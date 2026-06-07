@@ -460,6 +460,63 @@ def test_list_tasks_explicit_empty_string_overrides_env(populated_store, env):
 
 
 # --------------------------------------------------------------------------- #
+# PR #68 — assignee/agent symmetric matching (ADR-0008 D2 Q2-locked)          #
+# --------------------------------------------------------------------------- #
+def test_list_tasks_assignee_filter_matches_agent_field(tmp_path):
+    """Symmetric matching: row carries `agent`, filter uses `--assignee`."""
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    _store.add_task(store, id="a", title="A")
+    _store.update_task(store, "a", agent="proj-scitex-todo")
+    # Act
+    rows = _store.list_tasks(store, scope="", assignee="proj-scitex-todo")
+    # Assert
+    assert {r["id"] for r in rows} == {"a"}
+
+
+def test_list_tasks_assignee_filter_matches_legacy_assignee_field(tmp_path):
+    """Symmetric matching: row carries `assignee`, filter uses `--assignee`."""
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    _store.add_task(store, id="a", title="A", assignee="proj-scitex-todo")
+    # Act
+    rows = _store.list_tasks(store, scope="", assignee="proj-scitex-todo")
+    # Assert
+    assert {r["id"] for r in rows} == {"a"}
+
+
+def test_list_tasks_assignee_filter_prefers_agent_over_assignee(tmp_path):
+    """When a row carries BOTH, the `agent` field is the canonical owner.
+
+    Matters during the deprecation window: a row that's been touched
+    once carries `agent=proj-X`; the legacy `assignee=proj-Y` is stale.
+    Filter by `--assignee proj-X` should return the row (new owner is X).
+    """
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    _store.add_task(store, id="a", title="A", assignee="proj-stale")
+    _store.update_task(store, "a", agent="proj-fresh")
+    # Act
+    rows = _store.list_tasks(store, scope="", assignee="proj-fresh")
+    # Assert
+    assert {r["id"] for r in rows} == {"a"}
+
+
+def test_list_tasks_assignee_filter_excludes_other_owners(tmp_path):
+    """Filter is exclusive — rows owned by other agents still don't match."""
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    _store.add_task(store, id="a", title="A", assignee="proj-other")
+    _store.add_task(store, id="b", title="B")
+    _store.update_task(store, "b", agent="proj-other")
+    _store.add_task(store, id="c", title="C", assignee="proj-mine")
+    # Act
+    rows = _store.list_tasks(store, scope="", assignee="proj-mine")
+    # Assert
+    assert {r["id"] for r in rows} == {"c"}
+
+
+# --------------------------------------------------------------------------- #
 # summary                                                                     #
 # --------------------------------------------------------------------------- #
 def test_summary_total_count(populated_store):

@@ -164,7 +164,16 @@ def render_graph_cmd(tasks_path: str | None, output: str, print_mermaid: bool) -
     default=None,
     help="Match `scope` exactly (use '' to ignore $SCITEX_TODO_SCOPE).",
 )
-@click.option("--assignee", default=None, help="Match `assignee` exactly.")
+@click.option(
+    "--assignee",
+    default=None,
+    help=(
+        "Match the owning agent (deprecated alias — prefer `agent` long-"
+        "term per Q2 2026-06-07). Reads symmetrically: a row matches if "
+        "`(agent or assignee) == <value>`, so legacy `assignee`-only rows "
+        "AND new `agent`-only rows both surface."
+    ),
+)
 @click.option("--status", default=None, help="Match `status` exactly.")
 @click.option(
     "--json",

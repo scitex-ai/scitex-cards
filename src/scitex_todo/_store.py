@@ -131,11 +131,22 @@ def _utc_now_iso() -> str:
 def _match(task: dict, *, scope: str | None, assignee: str | None,
            status: str | None) -> bool:
     """Three-way string-equality filter. Any argument that is None is
-    treated as "no constraint"."""
+    treated as "no constraint".
+
+    **`assignee` semantics (PR #68, ADR-0008 D2 Q2-locked 2026-06-07):**
+    matches rows where ``(agent or assignee) == <value>``. ``agent`` is
+    the new PRIMARY linking field per the operator's Q2 confirmation;
+    ``assignee`` is the deprecated alias. Both readings now succeed
+    during the deprecation window — legacy rows with only ``assignee``
+    and new rows with only ``agent`` both surface when callers filter
+    by the legacy ``--assignee`` flag.
+    """
     if scope is not None and task.get("scope") != scope:
         return False
-    if assignee is not None and task.get("assignee") != assignee:
-        return False
+    if assignee is not None:
+        eff = task.get("agent") or task.get("assignee")
+        if eff != assignee:
+            return False
     if status is not None and task.get("status") != status:
         return False
     return True
