@@ -40,6 +40,16 @@ except ImportError:
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # HTTP Basic Auth gate driven by ``$SCITEX_TODO_BASIC_AUTH=user:password``.
+    # When the env var is UNSET this middleware is a passthrough (localhost dev
+    # unchanged); when SET it returns 401 for any request without valid
+    # credentials. Required prerequisite when exposing the board off
+    # ``127.0.0.1`` (e.g. via Cloudflare Tunnel) — the board's drag-reorder
+    # and Resolve buttons write to the YAML store, so an unauthed reachable
+    # board is read AND write open to anyone with the URL.
+    # Sits BEFORE CommonMiddleware so the 401 short-circuits before any
+    # URL-normalization redirects can leak the existence of protected paths.
+    "scitex_todo._django._basic_auth.BasicAuthMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
 
