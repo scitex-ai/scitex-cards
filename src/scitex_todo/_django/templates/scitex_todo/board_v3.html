@@ -150,8 +150,15 @@
   }
 
   /* === MAIN LAYOUT ======================================================== */
+  /* height:100% + overflow:hidden bound the board to the (viewport-capped)
+   * .ws-module-pane host. Without it, .main grows to content height and the
+   * module pane scrolls the whole board — which stretches the fixed-width
+   * .right BLOCKING-YOU aside to the tallest column (seen as a ~9000px
+   * panel for projects with many tasks). Bounding .main lets .columns and
+   * .right own their internal scroll, so .right stays a normal column. */
   .main {
     flex: 1; display: flex; min-height: 0;
+    height: 100%; overflow: hidden;
   }
   /* Operator UX (TG 370): columns were wrapping vertically because
    * the auto-fit grid runs out of horizontal room with many projects.
