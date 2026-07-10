@@ -51,6 +51,15 @@ class Command(BaseCommand):
             action="store_true",
             help="Don't open a browser automatically.",
         )
+        parser.add_argument(
+            "--no-reload",
+            action="store_true",
+            help=(
+                "Disable Django's auto-reloader. By default the board hot-reloads "
+                "on code changes (Django's own default); pass this for a stable "
+                "long-running server that should not restart itself."
+            ),
+        )
 
     def handle(self, *args, **options):
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "scitex_todo._django.settings")
@@ -84,7 +93,16 @@ class Command(BaseCommand):
 
         from django.core.management import call_command
 
-        call_command("runserver", f"127.0.0.1:{port}", "--noreload")
+        # Hot-reload by DEFAULT (operator directive, repeated): a Django
+        # development server should pick up code changes without a manual
+        # restart. The previous hardcoded ``--noreload`` is why a version
+        # bump (0.7.41 -> 0.7.50) kept serving stale code until someone
+        # killed and relaunched the process. Opt out with ``--no-reload``
+        # only for a deliberately stable long-running server.
+        runserver_args = [f"127.0.0.1:{port}"]
+        if options["no_reload"]:
+            runserver_args.append("--noreload")
+        call_command("runserver", *runserver_args)
 
 
 # EOF
