@@ -78,16 +78,22 @@ def _board_run_server(
     if no_browser:
         args += ["--no-browser"]
 
-    _board_write_pid(_os.getpid())
+    # Only the parent/watcher owns the pidfile. The reloader child
+    # (RUN_MAIN=true) must not write it (it would clobber the watcher pid
+    # that `board stop` targets) nor unlink it on its own restart.
+    _is_reloader_child = _os.environ.get("RUN_MAIN") == "true"
+    if not _is_reloader_child:
+        _board_write_pid(_os.getpid())
     try:
         call_command(*args)
     finally:
-        pf = _board_pidfile()
-        try:
-            if pf.exists():
-                pf.unlink()
-        except OSError:
-            pass
+        if not _is_reloader_child:
+            pf = _board_pidfile()
+            try:
+                if pf.exists():
+                    pf.unlink()
+            except OSError:
+                pass
 
 
 @click.group(
@@ -200,14 +206,24 @@ def board_start_cmd(
       $ scitex-todo board start --port 8051
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
-    # Guard rail: refuse to start if another board is already up so we
-    # don't fight over the pidfile or the port.
-    existing = _board_read_pid()
-    if existing is not None:
-        raise click.ClickException(
-            f"board is already running (pid {existing}). Use "
-            "`scitex-todo board stop` or `restart`."
-        )
+    import os as _os
+
+    # Django's autoreloader re-execs this exact command in a child process
+    # (it sets RUN_MAIN=true). That child is the process that actually
+    # serves; the PARENT/watcher already holds the pidfile. Without this
+    # guard the child re-enters here, sees the parent's pidfile, and aborts
+    # with "already running" — which is exactly why hot-reload was disabled
+    # (hardcoded --noreload) instead of fixed. Skip the double-start guard
+    # in the reloader child; let it fall through and serve.
+    if _os.environ.get("RUN_MAIN") != "true":
+        # Guard rail: refuse to start if another board is already up so we
+        # don't fight over the pidfile or the port.
+        existing = _board_read_pid()
+        if existing is not None:
+            raise click.ClickException(
+                f"board is already running (pid {existing}). Use "
+                "`scitex-todo board stop` or `restart`."
+            )
     if dry_run:
         click.echo(
             f"# dry-run: would start board on port {port}, "
