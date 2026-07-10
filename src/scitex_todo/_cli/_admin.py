@@ -11,7 +11,11 @@ conventions.
 
 Verb names follow audit §1 (bare transitive verbs at the top level
 need a noun object): `init` → `init-store`, `sync` → `sync-store`,
-`where` → `resolve-store`.
+`where` → `resolve-store`. `resolve-store` is a deliberate §1f
+exception (see `.scitex/dev/cli-audit-dict.yaml`): it means "figure
+out which config file path wins," not "close a task" — the blanket
+resolve→done verb-synonym mapping over-fires on this noun-scoped
+usage of "resolve."
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ from __future__ import annotations
 import json
 
 import click
+
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
 
 from .._paths import resolve_tasks_path
 from . import _write as _write_mod  # for the shared _TASKS_OPTION constant
@@ -94,9 +100,17 @@ def list_tasks_filtered(
 # --------------------------------------------------------------------------- #
 @click.command(
     "resolve-store",
-    help=(
-        "Show which store would be used and the precedence chain.\n\n"
-        "Example:\n  scitex-todo resolve-store"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Show which store would be used and the precedence chain.",
+        description=(
+            "Prints the resolved tasks.yaml path plus every candidate "
+            "in the precedence chain (explicit --tasks, "
+            "$SCITEX_TODO_TASKS, project store, user store, bundled "
+            "example) — the debugging tool for 'why is my task not "
+            "showing up.'",
+        ),
+        examples=(Example("{prog} resolve-store", "Show the resolved store."),),
     ),
 )
 @click.option("--json", "as_json", is_flag=True)
@@ -122,11 +136,15 @@ def resolve_store_cmd(as_json, tasks_path) -> None:
 # --------------------------------------------------------------------------- #
 @click.command(
     "init-store",
-    help=(
-        "Create an empty task store at the chosen scope (idempotent).\n\n"
-        "  --shared  -> ~/.scitex/todo/tasks.yaml (user scope, the default)\n"
-        "  --project -> <git-root>/.scitex/todo/tasks.yaml\n\n"
-        "Example:\n  scitex-todo init-store --shared"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Create an empty task store at the chosen scope (idempotent).",
+        description=(
+            "--shared -> ~/.scitex/todo/tasks.yaml (user scope, the "
+            "default). --project -> <git-root>/.scitex/todo/tasks.yaml. "
+            "No-op (prints 'exists') when the target already exists.",
+        ),
+        examples=(Example("{prog} init-store --shared", "Create the user-scope store."),),
     ),
 )
 @click.option(
@@ -190,12 +208,17 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
 # --------------------------------------------------------------------------- #
 @click.command(
     "sync-store",
-    help=(
-        "Sync the user-scope store across hosts. PHASE-1 STUB.\n\n"
-        "Phase 2 body: `git -C ~/.scitex/todo pull --rebase --autostash "
-        "&& git push` against an operator-owned remote. The stub prints\n"
-        "the plan and exits 0 so docs/skills can reference the verb today.\n\n"
-        "Example:\n  scitex-todo sync-store --dry-run"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Sync the user-scope store across hosts (PHASE-1 STUB).",
+        description=(
+            "Phase 2 body: `git -C ~/.scitex/todo pull --rebase "
+            "--autostash && git push` against an operator-owned remote. "
+            "The Phase-1 stub prints the plan and exits 0 (--dry-run is "
+            "the default mode) so docs/skills can reference the verb "
+            "today; --apply is not yet implemented and errors.",
+        ),
+        examples=(Example("{prog} sync-store --dry-run", "Preview the planned sync."),),
     ),
 )
 @click.option(

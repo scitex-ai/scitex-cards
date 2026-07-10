@@ -12,15 +12,22 @@ We prefer ``scitex_dev._mcp_cli.attach_mcp_subcommands`` when available
 (keeps every scitex package's `mcp` group identical) and fall back to a
 hand-rolled four-verb group when scitex-dev isn't installed (so a fresh
 ``pip install scitex-todo[mcp]`` still works).
+
+``install`` / ``install-fleet`` — the two verbs with the most help text
+and the merge-into-``.mcp.json`` logic — live in the sibling
+``_mcp_install.py`` module (extracted to keep this file under the
+project's 512-line convention; same split shape every other verb-group
+in this package already uses).
 """
 
 from __future__ import annotations
 
 import json
-import pathlib
 import sys
 
 import click
+
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand, SpecGroup
 
 _SERVER_PATH = "scitex_todo._mcp_server:mcp"
 _CLI_NAME = "scitex-todo"
@@ -51,9 +58,14 @@ def _fallback_mcp_group() -> click.Group:
 
     @click.group(
         "mcp",
-        help=(
-            "MCP server subcommands.\n\n"
-            "Required: start, doctor, list-tools, install (SciTeX §3)."
+        cls=SpecGroup,
+        command_categories=[
+            ("Core", ["start", "doctor", "list-tools", "install", "install-fleet"])
+        ],
+        help_spec=CliHelp(
+            summary="MCP server subcommands (SciTeX §3 required four).",
+            description="Required: start, doctor, list-tools, install.",
+            examples=(Example("{prog} mcp start", "Launch the MCP server (stdio)."),),
         ),
     )
     def mcp_group() -> None:
@@ -62,10 +74,13 @@ def _fallback_mcp_group() -> click.Group:
     # ── start ─────────────────────────────────────────────────────────── #
     @mcp_group.command(
         "start",
-        help=(
-            "Launch the MCP server (stdio).\n\n"
-            "Example:\n  scitex-todo mcp start            # stdio (default)\n"
-            "  scitex-todo mcp start --http --port 7700"
+        cls=SpecCommand,
+        help_spec=CliHelp(
+            summary="Launch the MCP server (stdio by default).",
+            examples=(
+                Example("{prog} mcp start", "stdio (default)."),
+                Example("{prog} mcp start --http --port 7700", "HTTP transport."),
+            ),
         ),
     )
     @click.option("--http", is_flag=True, help="Use HTTP transport instead of stdio.")
@@ -108,9 +123,10 @@ def _fallback_mcp_group() -> click.Group:
     # ── doctor ────────────────────────────────────────────────────────── #
     @mcp_group.command(
         "doctor",
-        help=(
-            "Self-diagnose the MCP install.\n\n"
-            "Example:\n  scitex-todo mcp doctor --json"
+        cls=SpecCommand,
+        help_spec=CliHelp(
+            summary="Self-diagnose the MCP install.",
+            examples=(Example("{prog} mcp doctor --json", "Structured diagnostic."),),
         ),
     )
     @click.option("--json", "as_json", is_flag=True)
@@ -160,9 +176,11 @@ def _fallback_mcp_group() -> click.Group:
     # ── list-tools ────────────────────────────────────────────────────── #
     @mcp_group.command(
         "list-tools",
-        help=(
-            "Enumerate registered MCP tools.\n\n"
-            "Example:\n  scitex-todo mcp list-tools -vv"
+        cls=SpecCommand,
+        help_spec=CliHelp(
+            summary="Enumerate registered MCP tools.",
+            description="Verbosity is additive (-v|-vv|-vvv), matching the §1a ladder.",
+            examples=(Example("{prog} mcp list-tools -vv", "Names + full descriptions."),),
         ),
     )
     @click.option("-v", "verbosity", count=True, help="Repeat for more detail.")
@@ -189,307 +207,11 @@ def _fallback_mcp_group() -> click.Group:
                 if verbosity >= 3:
                     click.echo(f"    full: {it}")
 
-    # ── install ───────────────────────────────────────────────────────── #
-    @mcp_group.command(
-        "install",
-        help=(
-            "Print or apply the Claude Code MCP install snippet.\n\n"
-            "Without --apply this command PRINTS the JSON snippet for\n"
-            "manual paste-in. With --apply, it MERGES the snippet into\n"
-            "the target ``.mcp.json`` file (default ``~/.mcp.json``),\n"
-            "idempotently — re-running is a no-op when the entry is\n"
-            "already present. Other servers' entries are preserved.\n\n"
-            "Examples:\n\n"
-            "Example (print):\n  scitex-todo mcp install --format raw\n\n"
-            "Example (fleet P3a — write into the user-scope .mcp.json):\n"
-            "  scitex-todo mcp install --apply --dry-run\n"
-            "  scitex-todo mcp install --apply -y\n\n"
-            "Example (project-scope .mcp.json):\n"
-            "  scitex-todo mcp install --apply --to ./.mcp.json\n\n"
-            "Example (fleet host-store pin — P3a wire-up so containerized\n"
-            "agents resolve the shared host tasks.yaml regardless of\n"
-            "$HOME / symlink state):\n"
-            "  scitex-todo mcp install --apply --to to_home/.mcp.json \\\n"
-            "    --env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y"
-        ),
-    )
-    @click.option(
-        "--format",
-        "fmt",
-        type=click.Choice(["claude-code", "raw"]),
-        default="claude-code",
-        show_default=True,
-    )
-    @click.option(
-        "--apply",
-        "do_apply",
-        is_flag=True,
-        help=(
-            "Write the snippet into the target ``.mcp.json`` file"
-            " (default ``~/.mcp.json``). Idempotent + non-destructive."
-        ),
-    )
-    @click.option(
-        "--to",
-        "target_path",
-        type=click.Path(
-            dir_okay=False, file_okay=True, writable=True, resolve_path=False
-        ),
-        default=None,
-        help=(
-            "Override the target file (default ``~/.mcp.json``)."
-            " Only meaningful with --apply."
-        ),
-    )
-    @click.option(
-        "--env-tasks-path",
-        "env_tasks_path",
-        type=str,
-        default=None,
-        help=(
-            "Pin SCITEX_TODO_TASKS in the snippet's `env` block — the MCP\n"
-            "subprocess uses this path as the task-store via the normal\n"
-            "resolution chain (explicit env > project > user > example).\n"
-            "Fleet P3a use case: when this CLI is run by agent-container\n"
-            "to seed every container's ``to_home/.mcp.json``, the pinned\n"
-            "path makes the wire-up self-documenting and immune to $HOME\n"
-            "or symlink drift in any container. Omit to leave the entry\n"
-            "without an env block (back-compat default)."
-        ),
-    )
-    @click.option(
-        "--dry-run",
-        is_flag=True,
-        help=(
-            "With --apply: print what would be written WITHOUT touching"
-            " the file. Without --apply: print the snippet (same as default)."
-        ),
-    )
-    @click.option(
-        "-y",
-        "--yes",
-        is_flag=True,
-        help=(
-            "With --apply: skip the confirmation prompt. Without"
-            " --apply: no-op (print-only path needs no confirmation)."
-        ),
-    )
-    def install(fmt, do_apply, target_path, env_tasks_path, dry_run, yes) -> None:
-        entry: dict = {
-            "command": _CLI_NAME,
-            "args": ["mcp", "start"],
-        }
-        # P3a host-store wire-up: when an explicit task-store path is
-        # provided, pin it in the MCP entry's `env` block. The MCP server
-        # subprocess picks up SCITEX_TODO_TASKS via the normal resolution
-        # chain (env beats project/user scopes), so a containerized agent
-        # ends up reading the shared host store regardless of its $HOME or
-        # symlink state. Keeping this OPT-IN preserves back-compat with
-        # the existing snippet shape.
-        if env_tasks_path:
-            entry["env"] = {"SCITEX_TODO_TASKS": env_tasks_path}
-        snippet = {"mcpServers": {_CLI_NAME: entry}}
+    from ._mcp_install import attach as _attach_install
 
-        if not do_apply:
-            # Print-only path (back-compat).
-            if fmt == "raw":
-                click.echo(json.dumps(snippet["mcpServers"]))
-                return
-            click.echo(json.dumps(snippet, indent=2))
-            return
-
-        # --apply: MERGE the entry into the target file. Fleet P3a path.
-        target = (
-            pathlib.Path(target_path).expanduser()
-            if target_path
-            else pathlib.Path.home() / ".mcp.json"
-        )
-
-        existing: dict = {}
-        if target.exists():
-            try:
-                existing = json.loads(target.read_text(encoding="utf-8") or "{}")
-            except json.JSONDecodeError as exc:
-                raise click.ClickException(
-                    f"target {target} exists but is not valid JSON: {exc}"
-                ) from None
-            if not isinstance(existing, dict):
-                raise click.ClickException(
-                    f"target {target} root is not a JSON object "
-                    f"(got {type(existing).__name__})"
-                )
-
-        merged = dict(existing)
-        servers = dict(merged.get("mcpServers") or {})
-        before_entry = servers.get(_CLI_NAME)
-        servers[_CLI_NAME] = snippet["mcpServers"][_CLI_NAME]
-        merged["mcpServers"] = servers
-
-        changed = before_entry != servers[_CLI_NAME]
-        action = (
-            "noop (entry already present)"
-            if not changed
-            else ("would update" if before_entry is not None else "would create")
-        )
-
-        new_text = json.dumps(merged, indent=2) + "\n"
-
-        if dry_run:
-            click.echo(f"# dry-run: --apply target={target} action={action}")
-            click.echo(new_text)
-            return
-
-        if not yes and changed:
-            # Refuse non-interactively rather than prompting — CLI convention:
-            # a mutating verb must not block on stdin; require explicit --yes.
-            raise click.ClickException(
-                f"Refusing to modify {target} ({action}) without confirmation"
-                " — re-run with --yes/-y to apply."
-            )
-
-        if not changed:
-            click.echo(f"# noop: {target} already has the scitex-todo entry")
-            return
-
-        # Backup the existing file before write (best-effort; failure to
-        # backup does NOT abort the write — but if the source was unreadable
-        # we already failed above with ClickException).
-        if target.exists():
-            backup = target.with_suffix(target.suffix + ".bak")
-            try:
-                backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
-            except OSError:
-                pass
-
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(new_text, encoding="utf-8")
-        click.echo(f"# applied: {target} updated ({action})")
-
-    # ── install-fleet ─────────────────────────────────────────────────── #
-    @mcp_group.command(
-        "install-fleet",
-        help=(
-            "Apply the scitex-todo MCP entry to EVERY agent's "
-            "``to_home/.mcp.json`` under an agents directory.\n\n"
-            "Fleet P3a unblock (lead a2a `1ab212f3`, 2026-06-14). Walks "
-            "``<agents-dir>/*/to_home/.mcp.json`` and runs the idempotent "
-            "merge for each. Files that don't exist yet are CREATED; "
-            "existing files preserve every sibling MCP server entry.\n\n"
-            "Example:\n"
-            "  scitex-todo mcp install-fleet \\\n"
-            "    --agents-dir ~/.dotfiles/src/.scitex/agent-container/agents \\\n"
-            "    --env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y"
-        ),
-    )
-    @click.option(
-        "--agents-dir",
-        "agents_dir",
-        type=click.Path(file_okay=False, dir_okay=True, resolve_path=False),
-        required=True,
-        help="Directory of per-agent subdirs each carrying `to_home/.mcp.json`.",
-    )
-    @click.option(
-        "--env-tasks-path",
-        "env_tasks_path",
-        type=str,
-        default=None,
-        help="Pin SCITEX_TODO_TASKS in every emitted entry's env block.",
-    )
-    @click.option(
-        "--dry-run", is_flag=True, help="Print planned per-agent action; no writes."
-    )
-    @click.option("-y", "--yes", "yes", is_flag=True, help="Skip per-agent prompts.")
-    def install_fleet(agents_dir, env_tasks_path, dry_run, yes) -> None:
-        """Apply the scitex-todo MCP entry to every agent's to_home/.mcp.json."""
-        agents_root = pathlib.Path(agents_dir).expanduser()
-        if not agents_root.is_dir():
-            raise click.ClickException(
-                f"agents-dir does not exist or is not a directory: {agents_root}"
-            )
-        entry: dict = {"command": _CLI_NAME, "args": ["mcp", "start"]}
-        if env_tasks_path:
-            entry["env"] = {"SCITEX_TODO_TASKS": env_tasks_path}
-
-        agent_count = applied = noop = 0
-        errors: list[str] = []
-        for agent_dir in sorted(agents_root.iterdir()):
-            if not agent_dir.is_dir():
-                continue
-            agent_count += 1
-            target = agent_dir / "to_home" / ".mcp.json"
-            try:
-                action, changed = _fleet_apply_one(target, entry, dry_run=dry_run)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{agent_dir.name}: {exc}")
-                click.echo(f"# error: {agent_dir.name} — {exc}", err=True)
-                continue
-            prefix = "# dry-run:" if dry_run else "# applied:"
-            click.echo(f"{prefix} {agent_dir.name}/to_home/.mcp.json — {action}")
-            if changed:
-                applied += 1
-            else:
-                noop += 1
-        click.echo(
-            f"# fleet sweep: agents={agent_count} "
-            f"{'would-update' if dry_run else 'updated'}={applied} "
-            f"noop={noop} errors={len(errors)}",
-            err=True,
-        )
-        if errors and not yes:
-            raise click.ClickException(
-                f"install-fleet completed with {len(errors)} error(s)"
-            )
+    _attach_install(mcp_group, cli_name=_CLI_NAME)
 
     return mcp_group
-
-
-def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
-    """Apply / merge the scitex-todo MCP entry into ONE target file.
-
-    Shared body for ``install-fleet``. Same rules as the single-file
-    ``install --apply``: existing JSON preserved + sibling mcpServers
-    kept; idempotent re-application is a noop; dry-run prints the
-    planned action without touching disk. Returns
-    ``(action_label, changed)``.
-    """
-    existing: dict = {}
-    if target.exists():
-        try:
-            existing = json.loads(target.read_text(encoding="utf-8") or "{}")
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"target {target} exists but is not valid JSON: {exc}"
-            ) from None
-        if not isinstance(existing, dict):
-            raise RuntimeError(
-                f"target {target} root is not a JSON object "
-                f"(got {type(existing).__name__})"
-            )
-    merged = dict(existing)
-    servers = dict(merged.get("mcpServers") or {})
-    before_entry = servers.get(_CLI_NAME)
-    servers[_CLI_NAME] = entry
-    merged["mcpServers"] = servers
-    changed = before_entry != entry
-    action = (
-        "noop (entry already present)"
-        if not changed
-        else ("would-update" if before_entry is not None else "would-create")
-    )
-    if dry_run or not changed:
-        return action, changed
-    if target.exists():
-        backup = target.with_suffix(target.suffix + ".bak")
-        try:
-            backup.write_text(
-                target.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-        except OSError:
-            pass
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
-    return ("updated" if before_entry is not None else "created"), True
 
 
 def _tools_dict(mcp_obj) -> dict:
@@ -567,7 +289,15 @@ def register(main: click.Group) -> None:
         from scitex_dev._mcp_cli import attach_mcp_subcommands  # type: ignore
 
         @click.group(
-            "mcp", help="MCP server subcommands (start/doctor/list-tools/install)."
+            "mcp",
+            cls=SpecGroup,
+            command_categories=[
+                ("Core", ["start", "doctor", "list-tools", "install", "install-fleet"])
+            ],
+            help_spec=CliHelp(
+                summary="MCP server subcommands (SciTeX §3 required four).",
+                examples=(Example("{prog} mcp start", "Launch the MCP server (stdio)."),),
+            ),
         )
         def mcp_group() -> None:
             pass

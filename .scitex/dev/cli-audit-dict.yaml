@@ -35,3 +35,18 @@ intransitive_verbs:
   - watch      # `scitex-todo watch`    — follow board changes live
   - summary    # `scitex-todo summary`  — print a task-state summary
   - manifest   # `scitex-todo skills manifest` — emit the skills manifest
+
+# §1f verb-synonym opt-outs. Every entry needs an inline `# why` — see
+# doctrine 07_audit-cli.md / 06_noun-verb-catalog.md.
+verb_exceptions:
+  - resolve  # why: `scitex-todo resolve-store` means "figure out which
+             # config file path wins" (store-path precedence-chain
+             # resolution — the debugging tool for "why is my task not
+             # showing up"), NOT "close a task with a resolution". The
+             # blanket resolve→done verb-synonym mapping (correct for
+             # task-lifecycle terminal states, see 06_noun-verb-catalog.md
+             # "Terminal-state verbs") over-fires on this noun-scoped
+             # "resolve a path" usage. `done`/`close` remain the only
+             # task-lifecycle terminal verbs; `resolve-store` is a
+             # read-only diagnostic, unrelated to that vocabulary.
+             # 2026-07-10 CLI-standardization audit pass.

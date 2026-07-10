@@ -28,6 +28,8 @@ import sys
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 
 def register(main: click.Group) -> None:
     """Attach the ``next`` and ``watch`` verbs to the root group."""
@@ -35,16 +37,20 @@ def register(main: click.Group) -> None:
     main.add_command(watch_cmd)
 
 
-@click.command("next", help=(
-    "Print the next runnable task for an agent (single canonical "
-    "predicate).\n\n"
-    "Used by every agent's harness on wake: pick the top task, flip "
-    "to in_progress, work it, comment progress, mark done. See the "
-    "'agent self-consumption loop' sub-skill (32) for the 7-step "
-    "pattern.\n\n"
-    "Example:\n"
-    "  scitex-todo next --mine --json"
-))
+@click.command(
+    "next",
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Print the next runnable task for an agent (single canonical predicate).",
+        description=(
+            "Used by every agent's harness on wake: pick the top task, "
+            "flip to in_progress, work it, comment progress, mark done. "
+            "See the 'agent self-consumption loop' sub-skill (32) for "
+            "the 7-step pattern.",
+        ),
+        examples=(Example("{prog} next --mine --json", "Pick my next task, as JSON."),),
+    ),
+)
 @click.option(
     "--tasks", "tasks_path", default=None,
     help="Path to tasks.yaml (default: resolver chain).",
@@ -153,15 +159,20 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
     save_tasks(tasks, path)
 
 
-@click.command("watch", help=(
-    "Watch tasks.yaml and POST /v1/turn to the owning agent on "
-    "new/commented/status-changed tasks (the push side of the "
-    "self-consuming board loop).\n\n"
-    "Pairs with `scitex-todo next` (the pull side) — see the "
-    "'agent self-consumption loop' sub-skill (32).\n\n"
-    "Example:\n"
-    "  scitex-todo watch --push --interval 2"
-))
+@click.command(
+    "watch",
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Watch tasks.yaml and POST /v1/turn to the owning agent on change.",
+        description=(
+            "Wakes on new/commented/status-changed tasks (the push side "
+            "of the self-consuming board loop). Pairs with `next` (the "
+            "pull side) — see the 'agent self-consumption loop' "
+            "sub-skill (32).",
+        ),
+        examples=(Example("{prog} watch --push --interval 2", "Poll every 2s and push wakes."),),
+    ),
+)
 @click.option(
     "--push", is_flag=True, default=True,
     help=(

@@ -63,6 +63,8 @@ from typing import Any
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 
 def register(main: click.Group) -> None:
     """Attach the ``ci-watch`` verb to the root CLI."""
@@ -158,18 +160,25 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
 
 @click.command(
     "ci-watch",
-    help=(
-        "Server-side CI poller (record-only, decoupled-pollers lane).\n\n"
-        "Polls every configured repo's GitHub CI default-branch state, "
-        "compares to the local state cache at "
-        "``~/.scitex/todo/ci-state.json`` (override via env "
-        "``SCITEX_TODO_CI_STATE``), and logs the transition.\n\n"
-        "Designed for cron use: ``--once`` runs ONE sweep + exits 0; "
-        "absence of ``--once`` loops with ``--interval`` (default 300s)."
-        "\n\nExamples:\n"
-        "  scitex-todo ci-watch --once\n"
-        "  scitex-todo ci-watch --interval 600\n"
-        "  SCITEX_TODO_FLEET_CI_REPOS=owner/a,owner/b scitex-todo ci-watch --once"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Server-side CI poller (record-only, decoupled-pollers lane).",
+        description=(
+            "Polls every configured repo's GitHub CI default-branch "
+            "state, compares to the local state cache at "
+            "~/.scitex/todo/ci-state.json (override via env "
+            "SCITEX_TODO_CI_STATE), and logs the transition. Designed "
+            "for cron use: --once runs ONE sweep + exits 0; absence of "
+            "--once loops with --interval (default 300s).",
+        ),
+        examples=(
+            Example("{prog} ci-watch --once", "One sweep (cron mode)."),
+            Example("{prog} ci-watch --interval 600", "Loop every 10 minutes."),
+            Example(
+                "SCITEX_TODO_FLEET_CI_REPOS=owner/a,owner/b {prog} ci-watch --once",
+                "Override the repo list for one run.",
+            ),
+        ),
     ),
 )
 @click.option(

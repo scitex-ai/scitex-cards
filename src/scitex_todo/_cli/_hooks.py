@@ -15,6 +15,8 @@ import sys
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand, SpecGroup
+
 
 def register(main: click.Group) -> None:
     """Attach the ``hook`` subgroup to the root CLI."""
@@ -23,12 +25,17 @@ def register(main: click.Group) -> None:
 
 @click.group(
     "hook",
-    help=(
-        "Hook-consumer wire (loose-coupling contract for SAC's push-"
-        "hook + dev's merge-Action).\n\n"
-        "Two verbs: ``push`` (record a git push event) + ``done`` "
-        "(record a PR-merge done event). Both idempotent. See also "
-        "the HTTP twins: POST /hooks/push, POST /hooks/done."
+    cls=SpecGroup,
+    command_categories=[("Core", ["push", "done"])],
+    help_spec=CliHelp(
+        summary="Hook-consumer wire for shell-driven event producers.",
+        description=(
+            "Loose-coupling contract for SAC's push-hook + dev's "
+            "merge-Action. Two verbs: push (record a git push event) + "
+            "done (record a PR-merge done event). Both idempotent. See "
+            "also the HTTP twins: POST /hooks/push, POST /hooks/done.",
+        ),
+        examples=(Example("{prog} hook push --payload event.json", "Record a push event."),),
     ),
 )
 def hook_group() -> None:
@@ -37,13 +44,15 @@ def hook_group() -> None:
 
 @hook_group.command(
     "push",
-    help=(
-        "Record a git-push event on the board.\n\n"
-        "Reads a canonical push-event JSON payload from `--payload "
-        "<FILE>` or stdin (when --payload is `-`). Idempotently "
-        "appends a comment to each named card.\n\n"
-        "Example:\n"
-        "  scitex-todo hook push --payload event.json"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Record a git-push event on the board.",
+        description=(
+            "Reads a canonical push-event JSON payload from --payload "
+            "<FILE> or stdin (when --payload is '-'). Idempotently "
+            "appends a comment to each named card.",
+        ),
+        examples=(Example("{prog} hook push --payload event.json", "Record from a file."),),
     ),
 )
 @click.option(
@@ -78,13 +87,15 @@ def hook_push_cmd(payload_path: str, dry_run: bool, yes: bool) -> None:
 
 @hook_group.command(
     "done",
-    help=(
-        "Record a PR-merge / done event on the board.\n\n"
-        "Reads a canonical done-event JSON payload from `--payload "
-        "<FILE>` or stdin (when --payload is `-`). Idempotently "
-        "flips each named card to status=done with pr_url stamped.\n\n"
-        "Example:\n"
-        "  scitex-todo hook done --payload event.json"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Record a PR-merge / done event on the board.",
+        description=(
+            "Reads a canonical done-event JSON payload from --payload "
+            "<FILE> or stdin (when --payload is '-'). Idempotently "
+            "flips each named card to status=done with pr_url stamped.",
+        ),
+        examples=(Example("{prog} hook done --payload event.json", "Record from a file."),),
     ),
 )
 @click.option(

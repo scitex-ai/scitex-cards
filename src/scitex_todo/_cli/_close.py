@@ -29,19 +29,30 @@ from __future__ import annotations
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 from .. import _store
 from ._write import _TASKS_OPTION, _emit
 
 
 @click.command(
     "close",
-    help=(
-        "Close a task WITH a reason (preserves context in comments[]).\n\n"
-        "Composes `comment_task` + `update_task(status=deferred)` and stamps\n"
-        "_log_meta.closed_{at,by}. Reason is REQUIRED.\n\n"
-        "Example:\n"
-        "  scitex-todo close stale-card --reason 'superseded by PR #142' "
-        "--by agent:proj-scitex-todo"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Close a task WITH a reason (preserves context in comments[]).",
+        description=(
+            "Composes comment_task + update_task(status=deferred) and "
+            "stamps _log_meta.closed_{at,by}. Reason is REQUIRED — the "
+            "whole point of this verb is honest reconciliation (a plain "
+            "`delete` drops the row and loses the reason).",
+        ),
+        examples=(
+            Example(
+                "{prog} close stale-card --reason 'superseded by PR #142' "
+                "--by agent:proj-scitex-todo",
+                "Close with a recorded reason.",
+            ),
+        ),
     ),
 )
 @click.argument("task_id")

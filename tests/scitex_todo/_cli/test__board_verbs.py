@@ -39,7 +39,7 @@ import pytest
 from click.testing import CliRunner
 
 from scitex_todo._cli import main
-from scitex_todo._cli._main import (
+from scitex_todo._cli._board import (
     _board_pidfile,
     _board_pid_alive,
     _board_read_pid,

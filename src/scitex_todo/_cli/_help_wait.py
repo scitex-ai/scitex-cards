@@ -20,20 +20,29 @@ from __future__ import annotations
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 from .. import _help_wait
 from ._write import _TASKS_OPTION, _emit
 
 
 @click.command(
     "help-wait",
-    help=(
-        "UPSERT the canonical 'agent is waiting on the operator' card.\n\n"
-        "Idempotent: exactly one help-<agent>-waiting card per agent; a "
-        "re-run refreshes the note + last_activity in place (never "
-        "duplicates).\n\n"
-        "Example:\n"
-        "  scitex-todo help-wait proj-scitex-todo "
-        "--question 'merge PR #240 or wait for CI?'"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="UPSERT the canonical 'agent is waiting on the operator' card.",
+        description=(
+            "Idempotent: exactly one help-<agent>-waiting card per "
+            "agent; a re-run refreshes the note + last_activity in "
+            "place (never duplicates).",
+        ),
+        examples=(
+            Example(
+                "{prog} help-wait proj-scitex-todo "
+                "--question 'merge PR #240 or wait for CI?'",
+                "Raise (or refresh) the waiting card.",
+            ),
+        ),
     ),
 )
 @click.argument("agent")
@@ -66,11 +75,11 @@ def help_wait_cmd(agent, question, host, as_json, tasks_path) -> None:
 
 @click.command(
     "help-clear",
-    help=(
-        "Resolve the help-<agent>-waiting card (status=done + clear "
-        "blocker). No-op (exit 0) if the card does not exist.\n\n"
-        "Example:\n"
-        "  scitex-todo help-clear proj-scitex-todo"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Resolve the help-<agent>-waiting card (status=done + clear blocker).",
+        description="No-op (exit 0) if the card does not exist.",
+        examples=(Example("{prog} help-clear proj-scitex-todo", "Clear the waiting card."),),
     ),
 )
 @click.argument("agent")

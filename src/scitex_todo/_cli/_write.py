@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side CLI verbs: add, update, done, summary, where, init, sync.
+"""Mutation-side CLI verbs: add, update.
 
 Wraps :mod:`scitex_todo._store` (the Python API). Each verb is a thin
 click command that resolves the store path through the usual precedence
@@ -13,12 +13,11 @@ The agent-facing convention these verbs honor (per
 
 - ``--scope LABEL`` / ``--assignee LABEL`` on read verbs respect
   ``$SCITEX_TODO_SCOPE`` as the default. Pass ``--scope ""`` to opt out.
-- ``--by NAME`` on ``done`` overrides the
-  ``$SCITEX_TODO_AGENT`` → ``$USER`` precedence chain.
 
-The ``sync`` verb is a deliberate Phase-1 no-op stub (Req 2 substrate
-lands in Phase 2). The stable name + flag shape exist now so docs and
-skills can reference them; the body just dry-prints the plan.
+``done`` and ``summary`` — the two short, self-contained verbs — live in
+the sibling ``_done_summary.py`` module (extracted to keep this file
+under the project's 512-line convention; same split shape every other
+verb-group in this package already uses).
 """
 
 from __future__ import annotations
@@ -26,6 +25,8 @@ from __future__ import annotations
 import json
 
 import click
+
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
 
 from .. import _store
 from .._model import VALID_BLOCKERS, VALID_KINDS, VALID_STATUSES
@@ -105,11 +106,23 @@ def _emit(payload, *, as_json: bool, human: str) -> None:
 # --------------------------------------------------------------------------- #
 @click.command(
     "add",
-    help=(
-        "Append a new task to the store.\n\n"
-        "Example:\n"
-        "  scitex-todo add my-task 'Implement my-task' "
-        "--agent proj-scitex-todo --project scitex-todo"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Append a new task to the store.",
+        description=(
+            "Inserts a new row identified by the positional ID + TITLE. "
+            "Raises on a duplicate id. The many optional flags mirror "
+            "every field on the task schema (agent/project/host, "
+            "kind=compute metadata, graph edges, …) — see the options "
+            "list below for the full set.",
+        ),
+        examples=(
+            Example(
+                "{prog} add my-task 'Implement my-task' "
+                "--agent proj-scitex-todo --project scitex-todo",
+                "Create a task owned by an agent.",
+            ),
+        ),
     ),
 )
 @click.argument("id")
@@ -282,14 +295,22 @@ def add_cmd(
 # --------------------------------------------------------------------------- #
 @click.command(
     "update",
-    help=(
-        "Mutate fields of an existing task by id.\n\n"
-        "Pass an empty string (e.g. --scope '') to CLEAR a field.\n"
-        "--depends-on / --blocks REPLACE the list (repeat the flag per id; "
-        "pass once with '' to clear; +/- delta semantics are a follow-up PR).\n\n"
-        "Example:\n"
-        "  scitex-todo update my-task --status in_progress --priority 1 "
-        "--agent proj-scitex-todo"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Mutate fields of an existing task by id.",
+        description=(
+            "Pass an empty string (e.g. --scope '') to CLEAR a field. "
+            "--depends-on / --blocks REPLACE the list (repeat the flag "
+            "per id; pass once with '' to clear; +/- delta semantics "
+            "are a follow-up).",
+        ),
+        examples=(
+            Example(
+                "{prog} update my-task --status in_progress --priority 1 "
+                "--agent proj-scitex-todo",
+                "Flip status + reprioritize.",
+            ),
+        ),
     ),
 )
 @click.argument("task_id")
@@ -461,73 +482,6 @@ def update_cmd(
 
 
 # --------------------------------------------------------------------------- #
-# done                                                                        #
-# --------------------------------------------------------------------------- #
-@click.command(
-    "done",
-    help=(
-        "Mark a task as done; stamps _log_meta.completed_{at,by}.\n\n"
-        "Idempotent: re-doneing a `done` task keeps the original stamp.\n\n"
-        "Example:\n"
-        "  scitex-todo done my-task --by agent:proj-scitex-todo"
-    ),
-)
-@click.argument("task_id")
-@click.option(
-    "--by",
-    default=None,
-    help="Override completed_by (default: $SCITEX_TODO_AGENT, then $USER).",
-)
-@click.option("--json", "as_json", is_flag=True)
-@_TASKS_OPTION
-def done_cmd(task_id, by, as_json, tasks_path) -> None:
-    """Set status=done and stamp the completion meta."""
-    try:
-        done = _store.complete_task(tasks_path, task_id, by=by)
-    except _store.TaskNotFoundError as exc:
-        raise click.ClickException(str(exc)) from None
-    stamp = done.get("_log_meta", {}).get("completed_at", "?")
-    who = done.get("_log_meta", {}).get("completed_by", "?")
-    _emit(
-        done,
-        as_json=as_json,
-        human=f"done {done['id']}  (by {who} at {stamp})",
-    )
-
-
-# --------------------------------------------------------------------------- #
-# summary                                                                     #
-# --------------------------------------------------------------------------- #
-@click.command(
-    "summary",
-    help=(
-        "Print counts by status / scope / assignee.\n\n"
-        "Example:\n  scitex-todo summary --json"
-    ),
-)
-@click.option("--scope", default=None, help="Filter to this scope before counting.")
-@click.option("--assignee", default=None)
-@click.option("--json", "as_json", is_flag=True)
-@_TASKS_OPTION
-def summary_cmd(scope, assignee, as_json, tasks_path) -> None:
-    """Counts by status, scope, assignee for the resolved store."""
-    info = _store.summarize_tasks(tasks_path, scope=scope, assignee=assignee)
-    if as_json:
-        click.echo(json.dumps(info))
-        return
-    click.echo(f"# {info['store']}  ({info['total']} tasks)")
-    click.echo("by_status:")
-    for s, n in info["by_status"].items():
-        click.echo(f"  {s:<12} {n}")
-    click.echo("by_scope:")
-    for s, n in sorted(info["by_scope"].items()):
-        click.echo(f"  {s or '(none)':<28} {n}")
-    click.echo("by_assignee:")
-    for s, n in sorted(info["by_assignee"].items()):
-        click.echo(f"  {s or '(none)':<28} {n}")
-
-
-# --------------------------------------------------------------------------- #
 # Registration                                                                #
 # --------------------------------------------------------------------------- #
 def register(main: click.Group) -> None:
@@ -538,13 +492,13 @@ def register(main: click.Group) -> None:
     its `register()`. `list-tasks` itself is owned by `_cli/_main.py` (the
     filter flags from the old `list` verb were folded in there; the `list`
     Click verb was removed per audit §1 — bare transitive verb at top level).
+    `done` / `summary` live in the sibling `_done_summary.py` module.
     """
-    from . import _admin, _close, _comment, _stale
+    from . import _admin, _close, _comment, _done_summary, _stale
 
     main.add_command(add_cmd, name="add")
     main.add_command(update_cmd, name="update")
-    main.add_command(done_cmd, name="done")
-    main.add_command(summary_cmd, name="summary")
+    _done_summary.register(main)
     _comment.register(main)
     _close.register(main)
     _stale.register(main)

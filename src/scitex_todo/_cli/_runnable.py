@@ -20,6 +20,8 @@ import sys
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 
 def register(main: click.Group) -> None:
     """Attach the ``runnable`` + ``blocked`` verbs to the root group."""
@@ -29,24 +31,21 @@ def register(main: click.Group) -> None:
 
 @click.command(
     "runnable",
-    help=(
-        "List ALL runnable tasks the dispatcher can pick up right now, "
-        "respecting depends_on closure.\n\n"
-        "Sister to `next` (which picks one). `runnable` is the batch "
-        "view the lead-side parallelism dispatcher consumes to fan out "
-        "work across agents/groups.\n\n"
-        "Filter:\n"
-        "  --agent <name>      Restrict to one agent's queue.\n"
-        "  --group <G>         Restrict to dispatch cluster <G> (T1.1).\n"
-        "                       Empty string ('') = ungrouped only.\n"
-        "  --mine              Same as --agent $SCITEX_TODO_AGENT.\n"
-        "\n"
-        "Output:\n"
-        "  Human: one row per task (id | pri | title | deadline).\n"
-        "  --json: full dicts + diagnostic counts.\n"
-        "\n"
-        "Example:\n"
-        "  scitex-todo runnable --group ci-recovery-wave --json"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="List ALL runnable tasks the dispatcher can pick up right now.",
+        description=(
+            "Respects depends_on closure. Sister to `next` (which picks "
+            "one) — `runnable` is the batch view the lead-side "
+            "parallelism dispatcher consumes to fan out work across "
+            "agents/groups. Filters: --agent restricts to one agent's "
+            "queue; --group restricts to a dispatch cluster ('' = "
+            "ungrouped only); --mine is shorthand for --agent "
+            "$SCITEX_TODO_AGENT.",
+        ),
+        examples=(
+            Example("{prog} runnable --group ci-recovery-wave --json", "One dispatch cluster, as JSON."),
+        ),
     ),
 )
 @click.option(
@@ -134,26 +133,21 @@ def runnable_cmd(
 
 @click.command(
     "blocked",
-    help=(
-        "List ALL not-runnable tasks + WHY (the inverse of `runnable`).\n\n"
-        "For each task in {pending, in_progress, blocked} that the "
-        "dispatcher can NOT pick up, name the reason "
-        "(`explicit-blocker` / `manual-block` / `depends-on` / "
-        "`reverse-blocks`) and the chain of upstream ids keeping it "
-        "parked. Use this to surface 'you can unblock K tasks by "
-        "finishing X' insight when the queue stalls.\n\n"
-        "Filter:\n"
-        "  --agent <name>      Restrict to one agent's queue.\n"
-        "  --group <G>         Restrict to dispatch cluster <G> (T1.1).\n"
-        "  --mine              Same as --agent $SCITEX_TODO_AGENT.\n"
-        "\n"
-        "Output:\n"
-        "  Human: `id | reason | chain | title` per row + by-reason\n"
-        "         footer.\n"
-        "  --json: full structured payload incl. by-reason histogram.\n"
-        "\n"
-        "Example:\n"
-        "  scitex-todo blocked --group paper-portfolio --json"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="List ALL not-runnable tasks + WHY (the inverse of `runnable`).",
+        description=(
+            "For each task in {pending, in_progress, blocked} that the "
+            "dispatcher can NOT pick up, names the reason "
+            "(explicit-blocker / manual-block / depends-on / "
+            "reverse-blocks) and the chain of upstream ids keeping it "
+            "parked. Use this to surface 'you can unblock K tasks by "
+            "finishing X' insight when the queue stalls. Filters: "
+            "--agent, --group, --mine (same semantics as `runnable`).",
+        ),
+        examples=(
+            Example("{prog} blocked --group paper-portfolio --json", "One cluster, as JSON."),
+        ),
     ),
 )
 @click.option(

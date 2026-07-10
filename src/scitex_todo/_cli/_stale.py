@@ -28,6 +28,8 @@ import json
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 from .._paths import resolve_tasks_path
 from .._store import load_tasks
 from ._write import _TASKS_OPTION, _emit
@@ -85,15 +87,19 @@ def _age_days(task: dict, now):
 
 @click.command(
     "stale-list",
-    help=(
-        "List PENDING cards that match the stale-review criteria.\n\n"
-        "Mirrors the board's `/stale` endpoint (PR #153) + the\n"
-        "🧹 Stale Review panel (PR #154) so the operator can sweep\n"
-        "from a shell. Default cutoff: 14 days.\n\n"
-        "Example:\n"
-        "  scitex-todo stale-list\n"
-        "  scitex-todo stale-list --days 30 --exclude-no-timestamp\n"
-        "  scitex-todo stale-list --project scitex-dev --json"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="List PENDING cards that match the stale-review criteria.",
+        description=(
+            "Mirrors the board's /stale endpoint (PR #153) + the Stale "
+            "Review panel (PR #154) so the operator can sweep from a "
+            "shell. Default cutoff: 14 days.",
+        ),
+        examples=(
+            Example("{prog} stale-list", "Default 14-day sweep."),
+            Example("{prog} stale-list --days 30 --exclude-no-timestamp", "Wider window, timestamped only."),
+            Example("{prog} stale-list --project scitex-dev --json", "One project, machine-readable."),
+        ),
     ),
 )
 @click.option(

@@ -34,6 +34,8 @@ import json
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 
 _DEFAULT_SKILL_FIELD = "metadata.labels.skills"
 
@@ -215,10 +217,14 @@ def build_manifest_cmd():
 
     @click.command(
         "manifest",
-        help=(
-            "Print the canonical skill-ID manifest (skills that should "
-            "appear in every fleet agent's required_skills list).\n\n"
-            "Example:\n  scitex-todo skills manifest --json"
+        cls=SpecCommand,
+        help_spec=CliHelp(
+            summary="Print the canonical skill-ID manifest.",
+            description=(
+                "The skills that should appear in every fleet agent's "
+                "required_skills list, per _skills/manifest.yaml.",
+            ),
+            examples=(Example("{prog} skills manifest --json", "Machine-readable manifest."),),
         ),
     )
     @click.option(
@@ -246,19 +252,27 @@ def build_propagate_cmd():
 
     @click.command(
         "propagate",
-        help=(
-            "Append the canonical scitex-todo skill IDs to every agent's "
-            "spec.yaml skill list (fleet-wide required_skills "
-            "propagation).\n\n"
-            "Default field is ``metadata.labels.skills`` (v3 CSV). Use "
-            "--field to target the YAML-list flavor "
-            "(``spec.required_skills``). Idempotent — repeated runs are a "
-            "no-op.\n\n"
-            "Example:\n"
-            "  scitex-todo skills propagate "
-            "--agents-dir ~/.scitex/agent-container/agents --dry-run\n"
-            "  scitex-todo skills propagate "
-            "--agents-dir ~/.scitex/agent-container/agents -y"
+        cls=SpecCommand,
+        help_spec=CliHelp(
+            summary="Append canonical scitex-todo skill IDs to every agent's spec.yaml.",
+            description=(
+                "Fleet-wide required_skills propagation. Default field "
+                "is `metadata.labels.skills` (v3 CSV) — use --field to "
+                "target the YAML-list flavor (`spec.required_skills`). "
+                "Idempotent — repeated runs are a no-op.",
+            ),
+            examples=(
+                Example(
+                    "{prog} skills propagate "
+                    "--agents-dir ~/.scitex/agent-container/agents --dry-run",
+                    "Preview the planned edits.",
+                ),
+                Example(
+                    "{prog} skills propagate "
+                    "--agents-dir ~/.scitex/agent-container/agents -y",
+                    "Apply the propagation.",
+                ),
+            ),
         ),
     )
     @click.option(

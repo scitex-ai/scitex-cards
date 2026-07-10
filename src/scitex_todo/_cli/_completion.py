@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import click
 
+from scitex_dev.ecosystem import CliHelp, Example, SpecCommand
+
 _COMPLETE_ENV = "_SCITEX_TODO_COMPLETE"
 _RC_MARKER = "# scitex-todo-completion: scitex-todo"
 
@@ -29,9 +31,15 @@ def _completion_source(shell: str) -> str:
 
 @click.command(
     "print-shell-completion",
-    help=(
-        "Print the shell completion script to stdout (no filesystem changes).\n\n"
-        'Example:\n  eval "$(scitex-todo print-shell-completion --shell bash)"'
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Print the shell completion script to stdout (no filesystem changes).",
+        examples=(
+            Example(
+                'eval "$({prog} print-shell-completion --shell bash)"',
+                "Load completion into the current shell.",
+            ),
+        ),
     ),
 )
 @click.option(
@@ -48,10 +56,17 @@ def print_shell_completion_cmd(shell: str) -> None:
 
 @click.command(
     "install-shell-completion",
-    help=(
-        "Install tab-completion by writing the static script to "
-        "~/.scitex/todo/runtime/completion/ and sourcing it from your shell rc.\n\n"
-        "Example:\n  scitex-todo install-shell-completion --shell bash"
+    cls=SpecCommand,
+    help_spec=CliHelp(
+        summary="Install tab-completion by writing the script + sourcing it from your rc.",
+        description=(
+            "Writes the static completion script to "
+            "~/.scitex/todo/runtime/completion/ and adds an idempotent "
+            "source line to your shell rc file.",
+        ),
+        examples=(
+            Example("{prog} install-shell-completion --shell bash", "Install for bash."),
+        ),
     ),
 )
 @click.option(
