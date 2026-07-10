@@ -39,6 +39,16 @@ except ImportError:
     pass
 
 MIDDLEWARE = [
+    # GZip FIRST so it wraps every response below it. /graph is ~5 MB of JSON
+    # (measured 2026-07-10: 1180 cards; comments 1.9 MB = 38%, notes 0.84 MB
+    # = 17%), refetched on every store change — and the store changes
+    # constantly with a live fleet. Uncompressed that is the board's dominant
+    # transfer cost and a large part of the operator's "遅すぎ". JSON of this
+    # shape compresses roughly 10x. Semantics-free: no payload or handler
+    # change, so it ships on its own. The structural fix (list payload
+    # WITHOUT note/comments + a per-card detail fetch) is
+    # todo-board-graph-payload-slim-20260710.
+    "django.middleware.gzip.GZipMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
