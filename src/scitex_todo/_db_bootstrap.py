@@ -309,6 +309,59 @@ def _insert_messages(conn, threads) -> int:
     return n
 
 
+#: Tables owned by the ``tasks.yaml`` doc. The ``messages`` table is DELIBERATELY
+#: absent: it is derived from the ``threads.yaml`` SIDECAR, which the doc-write
+#: path never touches. A doc mirror that cleared ``messages`` would silently
+#: destroy every DM thread on each card write — the tables must be owned by
+#: exactly the file that produces them.
+_DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t != "messages")
+
+
+def _rebuild_from_doc(
+    conn: sqlite3.Connection,
+    doc: dict,
+    *,
+    threads: dict[str, list[dict]] | None = None,
+) -> dict:
+    """Rebuild the doc-derived tables from an ALREADY-PARSED doc, in ONE txn.
+
+    The shared core of :func:`import_from_yaml` (which reads the doc off disk)
+    and :func:`mirror_doc` (S1 dual-write, which already holds the doc in memory
+    under the store lock and must NOT pay an 11-second re-parse to get it back).
+
+    ``threads`` rebuilds the ``messages`` table too. Pass it ONLY when the caller
+    genuinely owns the threads sidecar — the dual-write path does not, and
+    clearing ``messages`` there would wipe every DM on every card write.
+
+    Caller owns the transaction boundary and the connection.
+    """
+    clear = _CLEAR_ORDER if threads is not None else _DOC_CLEAR_ORDER
+    for table in clear:
+        conn.execute(f"DELETE FROM {table}")
+
+    summary: dict = {}
+    tasks = doc.get("tasks") if isinstance(doc, dict) else None
+    summary.update(_insert_tasks(conn, tasks if isinstance(tasks, list) else []))
+    summary.update(_insert_users(conn, doc.get("users")))
+    summary["notifications"] = _insert_notifications(conn, doc.get("inboxes"))
+    if threads is not None:
+        summary["messages"] = _insert_messages(conn, threads)
+    return summary
+
+
+def _stamp_meta(conn: sqlite3.Connection, source: str) -> None:
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('source', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (source,),
+    )
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (str(SCHEMA_VERSION),),
+    )
+
+
 def import_from_yaml(
     tasks_path: str | Path | None = None,
     db_path: str | Path | None = None,
@@ -330,29 +383,12 @@ def import_from_yaml(
     try:
         init_schema(conn)
         conn.execute("BEGIN IMMEDIATE")
-        for table in _CLEAR_ORDER:
-            conn.execute(f"DELETE FROM {table}")
-
         summary: dict = {
             "db_path": str(resolved_db),
             "yaml_path": str(store_path),
         }
-        tasks = doc.get("tasks") if isinstance(doc, dict) else None
-        task_counts = _insert_tasks(conn, tasks if isinstance(tasks, list) else [])
-        summary.update(task_counts)
-        summary.update(_insert_users(conn, doc.get("users")))
-        summary["notifications"] = _insert_notifications(conn, doc.get("inboxes"))
-        summary["messages"] = _insert_messages(conn, threads)
-
-        conn.execute(
-            "INSERT INTO schema_meta(key, value) VALUES('source', 'yaml-import') "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        )
-        conn.execute(
-            "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (str(SCHEMA_VERSION),),
-        )
+        summary.update(_rebuild_from_doc(conn, doc, threads=threads))
+        _stamp_meta(conn, "yaml-import")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -362,6 +398,44 @@ def import_from_yaml(
     return summary
 
 
-__all__ = ["import_from_yaml"]
+def mirror_doc(doc: dict, db_path: str | Path | None = None) -> dict:
+    """S1 DUAL-WRITE: mirror an in-memory doc into the DB. Raises on failure.
+
+    Called from the store's ONE write chokepoint
+    (:func:`scitex_todo._model._save_doc_unlocked`) AFTER the canonical YAML write
+    has succeeded, while the store lock is still held — so the mirror can never
+    interleave with another writer, and needs no lock of its own.
+
+    Takes the doc IN MEMORY on purpose: the caller already parsed it under the
+    lock, and re-reading ``tasks.yaml`` from disk to get it back would cost
+    another ~11 s parse (MEASURED, 1,257 cards) — doubling the very stall this
+    migration exists to remove.
+
+    Rebuilds the doc-derived tables in ONE transaction and leaves ``messages``
+    (owned by the threads sidecar) untouched.
+
+    RAISES on failure, deliberately. The POLICY of what to do about a failed
+    mirror — never break the user's write, but never be silent either — belongs
+    to the caller (:mod:`scitex_todo._dual_write`), not here. A primitive that
+    swallows its own errors cannot be given a policy later.
+    """
+    resolved_db = resolve_db_path(db_path)
+    conn = connect(resolved_db)
+    try:
+        init_schema(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        summary = _rebuild_from_doc(conn, doc)
+        summary["db_path"] = str(resolved_db)
+        _stamp_meta(conn, "dual-write")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return summary
+
+
+__all__ = ["import_from_yaml", "mirror_doc"]
 
 # EOF
