@@ -250,143 +250,28 @@ def _check_channel_capable() -> dict[str, Any]:
     }
 
 
-#: A card that carries ``_log_meta.closed_at`` has been CLOSED. These are the
-#: statuses that mean it is still OPEN. The two sets must not intersect.
-_OPEN_STATUSES = ("goal", "in_progress", "blocked", "deferred")
+# --------------------------------------------------------------------------- #
+# Card-data invariants — MOVED to `_health_cards` (this file hit the 512 cap).
+#
+# THE IMPORT SURFACE DOES NOT MOVE: the tests and every caller do
+# `from scitex_todo._health import _check_terminal_state_honest`, and every name
+# below is the SAME object it always was, defined next door. A split must leave
+# the original module re-exporting its public API, or it is a rename with extra
+# steps.
+#
+# `_health` = "is the INSTALLATION wired up?" (store, identity, notifyd, channel)
+# `_health_cards` = "do the CARDS CONTRADICT THEMSELVES?" — different inputs,
+# different failure modes, different fixes.
+# --------------------------------------------------------------------------- #
+from ._health_cards import (  # noqa: E402,F401  (re-export)
+    _CLOSURE_MARKERS,
+    _COMPLETED_STATUS,
+    _OPEN_STATUSES,
+    _TERMINAL_STATUSES,
+    _check_no_falsely_blocked,
+    _check_terminal_state_honest,
+)
 
-#: Every ``_log_meta`` key that means "this card was closed". If you add one,
-#: ADD IT HERE **and** give it a rule in _check_terminal_state_honest — that
-#: check reported ok on 5 real cards because it knew `closed_at` and had never
-#: been told about `completed_at`. test__completion_stamp_honesty pins that
-#: every marker listed here is actually enforced, so a new entry cannot be
-#: added decoratively.
-_CLOSURE_MARKERS = ("closed_at", "completed_at")
-
-#: The only status that means the work was DELIVERED. `cancelled` and `failed`
-#: are terminal but are NOT completions, and must never carry `completed_at`.
-_COMPLETED_STATUS = "done"
-
-
-def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
-    """ok when no card is CLOSED and OPEN at the same time.
-
-    THE INVARIANT: a card that carries ``_log_meta.closed_at`` OR
-    ``_log_meta.completed_at`` was closed. It cannot also be sitting in
-    ``deferred`` / ``in_progress`` / ``blocked`` / ``goal``. If it is, the
-    close DID NOT STICK, and the card is a ZOMBIE: finished work that keeps
-    nagging its owner in every digest, forever.
-
-    *** ``completed_at`` WAS ADDED ON 2026-07-14 AND THAT OMISSION IS THE
-    POINT. *** This check originally named ``closed_at`` alone — one marker of
-    closure — and was therefore silent on the other. Five cards on the live
-    board carried ``completed_at`` while sitting in ``deferred`` /
-    ``in_progress`` / ``cancelled``, and this check, whose whole job is to find
-    exactly that, reported ok. A guard that enumerates ONE cause of a condition
-    is an implicit claim that it is the only one; the enumeration reads as a
-    promise of completeness even when nobody meant it as one. If you add a
-    third closure marker, add it HERE, or this check will lie again.
-
-    ``completed_at`` is the worse of the two to leak, because it is not merely
-    ignored downstream — it is BELIEVED: ``_django/handlers/fleet/timing.py``
-    and ``timeline.py`` compute throughput from ``completed_at`` alone and
-    never consult ``status``. So a stamped-but-open card is counted as
-    delivered work AND nags as backlog, simultaneously.
-
-    *** THIS EXISTS BECAUSE IT ALREADY HAPPENED, TWICE, AND NOBODY NOTICED FOR
-    TWO DAYS. *** (2026-07-13: `selftest-card-20260701` and
-    `todo-board-reads-stale-project-store-not-canonical-20260706` both carried
-    `closed_at` and both sat in `deferred`. Both had COMMENTS saying they had
-    been moved to a terminal state — the prose claimed the change; the FIELD
-    never took it. They were found only by hand-scanning all 1,467 rows.)
-
-    A zombie is invisible precisely BECAUSE it looks like ordinary backlog. It
-    is a signal that keeps emitting after it stopped carrying information —
-    which is this codebase's recurring defect, and the reason the check is one
-    query rather than a note in a file nobody re-reads. AN INVARIANT NOBODY RUNS
-    IS NOT AN INVARIANT.
-
-    Never raises: an unreadable store is reported, not thrown.
-    """
-    try:
-        from ._store import load_tasks
-
-        tasks = load_tasks(store)
-    except Exception as exc:  # noqa: BLE001 — an unreadable store is a reportable state
-        return {
-            "ok": False,
-            "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-todo resolve-store`.",
-        }
-
-    # Two DISTINCT lies, deliberately not merged — they corrupt different
-    # readers and carry different fixes.
-    #
-    #   zombie          closed_at + an OPEN status. The close did not stick, so
-    #                   the card nags its owner forever as work already done.
-    #
-    #   false-completion  completed_at + any status that is NOT `done`. This one
-    #                   is not merely ignored downstream, it is BELIEVED:
-    #                   _django/handlers/fleet/timing.py and timeline.py compute
-    #                   throughput from completed_at ALONE and never look at
-    #                   status. A `cancelled` card carrying the stamp is counted
-    #                   as delivered work — the precise corruption that closing a
-    #                   killed card as "done" was supposed to avoid.
-    #
-    # Note a `cancelled` card is caught by the SECOND rule and not the first: it
-    # is terminal (it does not nag), yet it still inflates throughput.
-    zombies = [
-        str(t.get("id") or "?")
-        for t in tasks
-        if (t.get("_log_meta") or {}).get("closed_at")
-        and t.get("status") in _OPEN_STATUSES
-    ]
-    false_completions = [
-        str(t.get("id") or "?")
-        for t in tasks
-        if (t.get("_log_meta") or {}).get("completed_at")
-        and t.get("status") != _COMPLETED_STATUS
-    ]
-    if zombies or false_completions:
-        parts, hints = [], []
-        if zombies:
-            shown = ", ".join(zombies[:5])
-            more = f" (+{len(zombies) - 5} more)" if len(zombies) > 5 else ""
-            parts.append(
-                f"{len(zombies)} card(s) are CLOSED and OPEN at once — they carry "
-                f"_log_meta.closed_at but still sit in an open status, so they nag "
-                f"their owner forever as work that is already done: {shown}{more}"
-            )
-            hints.append(
-                "the close did not stick. Set the honest terminal state — `done` if "
-                "the work landed, `cancelled` if it was closed as not-planned — with "
-                "`scitex-todo update <id> --status done|cancelled`. A comment saying "
-                "a card is closed is NOT a decision; the STATUS FIELD is."
-            )
-        if false_completions:
-            shown = ", ".join(false_completions[:5])
-            more = (
-                f" (+{len(false_completions) - 5} more)"
-                if len(false_completions) > 5
-                else ""
-            )
-            parts.append(
-                f"{len(false_completions)} card(s) carry _log_meta.completed_at "
-                f"while NOT being `done` — the throughput and timeline surfaces "
-                f"aggregate on completed_at alone, so these count as DELIVERED "
-                f"WORK that was never delivered: {shown}{more}"
-            )
-            hints.append(
-                "un-completing a card must clear its stamp: use "
-                "`scitex_todo._store_lifecycle.clear_completion_stamp(task)`. "
-                "Moving the STATUS without clearing the STAMP fixes what the "
-                "sweeps read and leaves what the throughput reads still lying."
-            )
-        return {"ok": False, "detail": " | ".join(parts), "hint": " ".join(hints)}
-    return {
-        "ok": True,
-        "detail": f"no zombie cards ({len(tasks)} scanned): closed cards are closed",
-        "hint": None,
-    }
 
 
 # --------------------------------------------------------------------------- #
@@ -475,6 +360,7 @@ def health(
         # went unnoticed for two days — the comments SAID they were closed; the
         # status field never took it. A conclusion in a comment is not a decision.
         _run_check("terminal_state_honest", lambda: _check_terminal_state_honest(store)),
+        _run_check("no_falsely_blocked", lambda: _check_no_falsely_blocked(store)),
     ]
     ok = all(c["ok"] for c in checks)
     n_ok = sum(1 for c in checks if c["ok"])
