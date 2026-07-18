@@ -179,6 +179,31 @@ must not depend on a runtime. Any executor may implement it.
   it, and their absence will read as health. Compare against a declared roster
   instead.
 
+## A note on comments vs enforcement
+
+Two rules here look contradictory:
+
+- *enforcement beats documentation* — "a warning that must be READ to be true
+  is a warning that will be false" (the auth caveat was correct, printed, and
+  useless);
+- *write down WHY* — a comment explaining why a pin is a SHA, or why one job
+  runs on a hosted runner, is what stops the next agent "tidying" it back.
+
+The resolution, and it decides which one carries load: **a why-comment attached
+to an ENFORCED constraint is durable; a why-comment attached to nothing is a
+wish.**
+
+The live example: sac's hosted-runner exception is not a comment, it is
+`.github/hosted-runner-allowlist.yaml` with a machine-checked `reason:` field
+(the guard fails if the reason is under 40 characters or the entry goes
+stale), enforced three ways — CI job, pre-commit hook, and test. The comment
+did not do the work; the allowlist did. The comment made the allowlist
+SURVIVABLE by telling the next reader why the entry exists.
+
+So: enforce the constraint, and attach the reason to the enforcement. A
+comment alone is not a control, and a control without a stated reason gets
+removed by someone who cannot see why it is there.
+
 ## Non-goals
 
 - This does not specify HOW an actor observes work beginning; that is the
