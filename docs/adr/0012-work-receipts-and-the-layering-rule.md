@@ -66,14 +66,83 @@ behind this incident, found in source by scitex-agent-container:
    anything. There is no roster to compare against: **the enumeration IS the
    population, so absence is invisible by construction.**
 
-Net effect: five systemd timers reported `Result=success ExecMainStatus=0`
-every ten minutes while an agent sat login-expired for hours. Nothing was
-broken in the sense of erroring. The success was real, and meaningless.
-
 **This yields a mechanical audit** any package can run: find verdict functions
 whose return type cannot express three states (`list[str]`, `bool`), and
 exit-code functions with a bare `return 0` fallthrough. Treat each hit as a
 sample, not the population.
+
+### The tenth failure: this document's own evidence was false
+
+An earlier draft of this ADR ended the section above with: *"five systemd
+timers reported `Result=success ExecMainStatus=0` every ten minutes while an
+agent sat login-expired for hours."* **Three of those five units do not
+exist.** scitex-agent-container retracted the measurement before merge; the
+retraction is kept here rather than quietly edited out, because the way it
+failed is the thesis of the document.
+
+The probe was `systemctl --user show -p Result -p ExecMainStatus <unit>`.
+Reproduced independently on the host:
+
+```
+$ systemctl --user show -p Result -p ExecMainStatus this-unit-does-not-exist.service
+Result=success
+ExecMainStatus=0            # rc=0
+
+$ systemctl --user is-enabled this-unit-does-not-exist.service
+Failed to get unit file state for ...: No such file or directory   # rc=1
+```
+
+`show` answers with property **defaults** for a unit it has never heard of. So
+a unit that was never installed is indistinguishable from one that ran and
+succeeded — `unknown` rendered as the OK pole, by a tool, silently. The ADR
+about collapsed ternaries had a collapsed ternary in its evidence.
+
+**The corrected account is stronger than the one it replaces.** Three failures
+were stacked, each concealing the one beneath:
+
+1. `-> list[str]` destroyed a correctly-computed ternary (above). Real, and
+   fixed — but **not** what kept the agent down.
+2. **The remediator had no schedule at all.** Detection ran every ~10 minutes
+   and was healthy: 52 passes, 9 of which saw wedged agents. Its verb is
+   `cached` — it records the verdict and stops. `login-expired-restart-history.json`
+   holds exactly two entries, both stamped when an operator ran `--apply` by
+   hand. The agent sat **detected-but-wedged for five and a half hours**, with
+   a correct watcher writing the right answer into a file nothing consumed.
+3. The defaults-returning probe reported the missing timer as successful,
+   which is what allowed (2) to stay invisible while (1) looked like a
+   sufficient explanation.
+
+**A WATCHER THAT ONLY RECORDS IS NOT A REMEDIATOR.** Every one of those nine
+`cached … (1 wedged)` log lines was accurate. Accuracy was not the problem.
+
+### The instrument test
+
+Naming bad probes one at a time produces a list that is always incomplete and
+always one tool behind. The operative test is two questions:
+
+1. **Is this an artifact, or the mechanism's opinion of itself?** An HTTP 200
+   is the transport's opinion of itself. `systemctl show` is systemd's opinion
+   of a unit that does not exist. A registry's `running` is the registry's
+   opinion. A self-report must be *trusted*; an artifact must be *produced*.
+2. **Could this artifact exist if the work had NOT happened?** If yes, it is
+   not evidence — it is a coincidence you are permitted to have.
+
+Question 2 is not redundant, and the counter-example is a real one: reading
+`session_jsonl_bytes: 0` off disk *is* an artifact measurement, and it was
+still wrong, because the path was **assumed** and the agent was writing
+elsewhere. A missing file at a guessed path is perfectly consistent with the
+work having happened. It passes (1) and fails (2).
+
+The ideal case, by contrast: *a nonexistent timer cannot fabricate commits.*
+Five hourly snapshot commits with rising task counts could not exist unless
+the timer ran.
+
+**Corollary on redundancy.** One conclusion in this incident cited the same
+worthless `show` probe and survived anyway, because two independent legs held
+(`is-enabled`, and the commit log). Redundancy did not make that conclusion
+*more right*. It made the error *non-fatal* — a different and more useful
+property than confidence, and the reason to carry a second instrument even
+when the first seems sufficient.
 
 ## Decision
 
