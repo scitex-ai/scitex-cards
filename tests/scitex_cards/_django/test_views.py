@@ -177,18 +177,27 @@ def test_favicon_view_body_is_scitex_s_svg():
     assert b'id="scitex-logo"' in body
 
 
-def test_standalone_template_links_svg_favicon(store):
+def test_standalone_template_declares_no_favicon_of_its_own(store):
+    """SINGLE SOURCE: the brand mark is scitex-ui's, and only scitex-ui's.
+
+    This inverts an earlier pin (operator 3683) that required our own
+    ``<link rel="icon">`` here. The shell template gained a default favicon in
+    scitex-ui 0.7.1, so declaring a second one meant two copies of one mark,
+    free to drift apart — with ours winning by document order, which made
+    scitex-ui's copy the one that silently went stale. If the icon is wrong,
+    fix it in scitex-ui; do not re-add a link here.
+    """
     # Arrange
     request = RequestFactory().get(f"/?store={store}")
     # Act
     response = views.board_page(request)
-    # Assert — head should declare the SVG favicon (operator 3683).
-    assert b"scitex_cards/favicon.svg" in response.content
+    # Assert — our copy is not linked; the shell's default is what renders.
+    assert b"scitex_cards/favicon.svg" not in response.content
 
 
 @pytest.mark.parametrize(
     "forbidden",
-    [b"{#", b"#}", b"snake favicon", b"scitex-dev brand"],
+    [b"{#", b"#}", b"One source, not two copies", b"fix it in scitex-ui"],
 )
 def test_standalone_template_does_not_leak_django_comment(store, forbidden):
     """The favicon comment must NOT render as visible page text.

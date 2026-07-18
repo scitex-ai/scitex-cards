@@ -47,7 +47,11 @@ dev = [
     # suite rather than silently skipping the board tests (PS-210).
     "django>=4.2",
     "scitex_app",
-    "scitex_ui",
+    # >=0.7.1 for the shell template's DEFAULT favicon. We used to declare our
+    # own <link rel="icon"> in every template; that is now scitex-ui's job and
+    # ours are gone, so an older shell renders NO icon at all. This is a real
+    # dependency, not a preference — do not loosen it.
+    "scitex_ui>=0.7.1",
 ]
 docs = [
     "sphinx>=7.0",
@@ -59,7 +63,9 @@ docs = [
 web = [
     "django>=4.2",
     "scitex-app",
-    "scitex-ui",
+    # >=0.7.1: the shell supplies the default favicon our templates no longer
+    # declare. See the matching note in the dev extra.
+    "scitex-ui>=0.7.1",
 ]
 mcp = [
     # FastMCP is the canonical SciTeX MCP SDK (general skill §1). The MCP

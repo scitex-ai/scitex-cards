@@ -5,7 +5,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chat — scitex-todo v{{ scitex_cards_version }}</title>
-<link rel="icon" type="image/svg+xml" href="{% static 'scitex_cards/favicon.svg' %}">
+{% comment %}
+No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
+as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
+a local <link rel="icon"> — if the mark is wrong, fix it in scitex-ui, which
+owns the asset.
+
+NB: this MUST be a {% templatetag openblock %} comment {% templatetag closeblock %}
+block, not Django's single-hash syntax — that one is single-line only, and a
+multi-line hash block leaks its body into the rendered page.
+{% endcomment %}
 {% comment %}
 Operator↔agent DM view — minimal slice (card
 fleet-agent-direct-message-board-pane-20260707). Mobile-first: the agent

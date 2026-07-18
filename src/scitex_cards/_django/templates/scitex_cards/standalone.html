@@ -2,18 +2,16 @@
 {% load static %}
 {% block extra_css %}
     {% comment %}
-      SciTeX "S" snake favicon (scitex-dev brand). The parent shell template
-      has no favicon block, so we inject the link below here — extra_css is
-      in the head, so the link lands correctly.
+      No favicon link here: scitex-ui's shell supplies the shared SciTeX
+      brand mark as its default (>=0.7.1). One source, not two copies that
+      drift. Do NOT re-add a local <link rel="icon"> — if the mark is wrong,
+      fix it in scitex-ui, which owns the asset.
 
       NB: Django's single-hash comment syntax is single-line only — a
       multi-line single-hash block leaks its body into the rendered HTML
-      (operator-visible bug, fixed in this PR). Use this comment tag for any
-      multi-line note inside a template.
+      (operator-visible bug). Use this comment tag for any multi-line note
+      inside a template.
     {% endcomment %}
-    <link rel="icon"
-          type="image/svg+xml"
-          href="{% static 'scitex_cards/favicon.svg' %}">
     <link rel="stylesheet"
           crossorigin
           href="{% static 'scitex_cards/assets/index.css' %}">
