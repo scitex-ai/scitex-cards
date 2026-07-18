@@ -1,0 +1,149 @@
+# ADR-0012 — Work receipts: transport success is not work success
+
+**Status:** PROPOSED (operator-directed 2026-07-18; co-designed with
+scitex-agent-container, who co-signed the ternary and the 202 shape)
+**Owner:** scitex-cards (contract + record); the ACTOR side is owned by whoever
+executes work — today that is scitex-agent-container
+**Cards:** `incident-fleet-liveness-agents-stop-silently-20260718`,
+`may-stop-hook-cards-runnable-work-20260718`
+
+## Context — an incident, and eight failures with one shape
+
+An agent (`scitex-hub`) sat idle for 80+ minutes holding five `in_progress`
+cards. The OPERATOR noticed, twice, and had to supply the cause himself
+("Login expired — it needs a restart"). Every automated signal we had said
+things were fine.
+
+The re-drive made it worse in an instructive way: `agent_send` returned
+**HTTP 200 with an empty body**, and `idle_seconds` had not moved 75 seconds
+later. Both facts were recorded. The conclusion drawn was "dispatched" —
+reported as if it were "recovered".
+
+Reviewing the night, eight distinct failures across four subsystems share one
+shape: **a check that could not tell was read as a check that had answered.**
+
+Read as CONFIRMED when the truth was UNKNOWN:
+
+| Signal | Reality |
+|---|---|
+| `agent_send` → 200, empty body | prompt accepted by the TUI; nothing ran |
+| `heartbeat_at` stale | rendered `running`; a working agent read 102 min stale |
+| `auth_failed = None` (never probed) | displayed identically to auth-OK |
+| `auth-status` enumerates only running TUI agents | a wedged agent is ABSENT, not alarming |
+| image content-assert compared staged-vs-staged | passed a stale image |
+
+Read as REFUTED when the truth was UNKNOWN:
+
+| Signal | Reality |
+|---|---|
+| `session_jsonl_bytes: 0` | the path was derived from an assumption; the agent was writing elsewhere |
+| `git grep -c <symbol>` → 1 | the hit was a comment; a correct PR was blocked as "incomplete" |
+| no trailing `# owner` comment on a crontab line | said nothing about manifest membership; a false fleet-wide alarm |
+
+The operator named the root cause in one line:
+
+> 「True (rc=0), False, None を区別しないからおかしいのでは？」
+
+## Decision
+
+### 1. THE LAYERING RULE
+
+**Transport success is reported by the transport. Work success is reported by
+a receipt. The second is NEVER inferred from the first.**
+
+`200` on a dispatch means "I accepted your request" — true of the wire, silent
+about the work. Reading it as "the work happened" is the defect, and no amount
+of care prevents a re-occurrence, because the wire's answer is genuinely
+correct about the wire.
+
+A corollary, from three instances tonight (`200`, `Error: No such command`,
+`session_jsonl_bytes: 0`): **an answer describes the thing that answered, not
+the thing you meant to ask about.** `No such command` was true of the binary
+reached on a non-login PATH and false of the binary installed; the byte count
+was true of the path inspected and false of the agent.
+
+### 2. RECEIPTS ATTEST EFFECT, NEVER DELIVERY
+
+A receipt may only be issued by a party that OBSERVED the work begin. A
+receipt issued on transport success is this incident with a certificate
+attached.
+
+Only the runtime owner can observe that (it alone sees the session advance),
+so the runtime owner issues receipts. `scitex-cards` never does — it has no
+way to know, and acquiring one would couple it to a runtime.
+
+### 3. FOUR STATES, AND `pending` IS NOT `unknown`
+
+| State | Meaning |
+|---|---|
+| `pending` | accepted and in flight; ask again. Carries a deadline. |
+| `confirmed` | the issuer OBSERVED the work begin |
+| `refuted` | the issuer observed it NOT begin, **with a reason** |
+| `unknown` | the issuer could not determine, **with why** |
+
+`pending` MUST age out into `unknown` at its deadline. A receipt stuck
+`pending` forever is a failure wearing a progress bar — the same collapse one
+layer up.
+
+`unknown` is a first-class, recordable outcome. It is never an absent record,
+never folded into `refuted`, never rendered as success.
+
+### 4. STATUS CODES — reuse the standard vocabulary
+
+The operator's observation ("ネットワークの世界では番号で決まってるんじゃないの？")
+is correct, and the standard already contains the code we needed:
+
+| Situation | Code |
+|---|---|
+| dispatch accepted, outcome not yet known | **202 Accepted** (never 200) |
+| receipt: work observed to begin | 200 |
+| receipt: could not determine | 504 |
+| refuted — credential dead | 401 |
+| refuted — actor does not exist | 404 |
+| refuted — actor alive but unresponsive | 503 |
+| duplicate submission | 409 |
+| structurally valid, semantically wrong (e.g. `blocked` naming no blocker) | 422 |
+
+Shell boundary mirrors the ternary: exit `0` confirmed, `1` refuted (+reason),
+`2` unknown (+why).
+
+Returning **202** for a dispatch is the point: the protocol itself says
+"outcome unknown", so the ternary is enforced by the wire rather than by
+anyone remembering it. Every rule tonight that depended on discipline had
+already failed at least once.
+
+### 5. OWNERSHIP (operator's ruling, 2026-07-18)
+
+> 「scitex-cards は中立に受領証を必要とするかしないかを書いて sac を知らない。
+> sac は受領証を作るための仕組みを持つ、状態判定を持つ。」
+
+- **scitex-cards** records neutral facts only: `requires_receipt`, and
+  `receipt {by, at, outcome, reason, deadline}`. It knows nothing of TUI,
+  tmux, sessions, credentials, or any particular runtime. Reasons are stored
+  as OPAQUE strings so the actor's vocabulary can grow without a schema change
+  here.
+- **The actor** (today: scitex-agent-container) owns state determination and
+  receipt production.
+
+This spec is written in terms of an ACTOR, not a named package, because cards
+must not depend on a runtime. Any executor may implement it.
+
+## Consequences
+
+- A dispatch can no longer be mistaken for a completion, at the protocol level.
+- "We looked and could not tell" becomes visible instead of invisible, which
+  is what let an agent sit dead for 80 minutes.
+- The board can surface `outcome=unknown`, `aged-out pending`, and
+  `receipt absent` as THREE different states, because they are three different
+  facts.
+- Any check whose "cannot tell" answer equals its success or failure answer is
+  unsafe and must be fixed before its verdict is used anywhere.
+
+## Non-goals
+
+- This does not specify HOW an actor observes work beginning; that is the
+  actor's business and will differ per runtime.
+- This does not define the actor's reason vocabulary. Cards stores reasons
+  verbatim and does not interpret them.
+
+<!-- EOF -->
