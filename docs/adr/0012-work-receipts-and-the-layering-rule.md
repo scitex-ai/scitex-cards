@@ -44,6 +44,37 @@ The operator named the root cause in one line:
 
 > 「True (rc=0), False, None を区別しないからおかしいのでは？」
 
+### A ninth failure, of a different and worse kind
+
+The eight above are cases where a signal was READ wrongly. The ninth was
+computed RIGHTLY and then thrown away by a type — and it is the mechanism
+behind this incident, found in source by scitex-agent-container:
+
+1. `_authheal/_detect.py::evaluate_agents` computes the correct three states —
+   `ok` / `auth_failed` / `unknown` — and its docstring explicitly refuses to
+   treat `unknown` as a wedge ("absence of evidence is not evidence of a
+   wedge"). That reasoning is correct.
+2. Its signature is `-> list[str]`. It keeps `auth_failed` and **discards the
+   other two**. The ternary existed for the length of one function body and
+   then had nowhere to go. **The return type destroyed it.**
+3. Reports are built only from that list, so an agent whose pane could not be
+   read produces **no report at all**.
+4. The exit-code function ends in a bare `return 0`, so "no reports" means
+   both *everything was checked and is clean* and *nothing was observed*.
+5. The population is `_list_tui_sessions()` — live tmux sessions. An agent
+   whose session is gone never becomes a key, so it cannot be reported as
+   anything. There is no roster to compare against: **the enumeration IS the
+   population, so absence is invisible by construction.**
+
+Net effect: five systemd timers reported `Result=success ExecMainStatus=0`
+every ten minutes while an agent sat login-expired for hours. Nothing was
+broken in the sense of erroring. The success was real, and meaningless.
+
+**This yields a mechanical audit** any package can run: find verdict functions
+whose return type cannot express three states (`list[str]`, `bool`), and
+exit-code functions with a bare `return 0` fallthrough. Treat each hit as a
+sample, not the population.
+
 ## Decision
 
 ### 1. THE LAYERING RULE
@@ -138,6 +169,15 @@ must not depend on a runtime. Any executor may implement it.
   facts.
 - Any check whose "cannot tell" answer equals its success or failure answer is
   unsafe and must be fixed before its verdict is used anywhere.
+- **A verdict's TYPE must be able to hold every state the verdict can have.**
+  Computing three states and returning a container that expresses one is the
+  same defect as never computing them; the ninth failure above is exactly
+  that, and no amount of care at the call site can recover a state the return
+  type already discarded.
+- **An enumeration is not a population.** If the set of things checked is
+  built by listing what is currently alive, the broken cases cannot appear in
+  it, and their absence will read as health. Compare against a declared roster
+  instead.
 
 ## Non-goals
 
