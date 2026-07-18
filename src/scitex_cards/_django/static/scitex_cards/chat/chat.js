@@ -70,6 +70,16 @@
     return m ? m[1] + " " + m[2] : String(ts);
   }
 
+  /* Mount-relative API base: chat.html injects window.SCITEX_CARDS_API_BASE
+   * (server-derived — "/" standalone, "/<prefix>/" when a host mounts the
+   * app under a prefix) before this deferred script runs. Joining onto it
+   * keeps the /dm/* polls working under any mount instead of assuming the
+   * site root. */
+  function apiUrl(endpoint) {
+    var base = window.SCITEX_CARDS_API_BASE || "/";
+    return base + String(endpoint).replace(/^\/+/, "");
+  }
+
   function getJSON(url) {
     return fetch(url, { headers: { Accept: "application/json" } }).then(
       function (resp) {
@@ -110,7 +120,7 @@
   }
 
   function refreshAgents() {
-    getJSON("/dm/threads")
+    getJSON(apiUrl("dm/threads"))
       .then(function (data) {
         clearError();
         renderAgents(data.agents || []);
@@ -169,7 +179,8 @@
     } else {
       // append: the pane may still hold a hint ("Loading…" on open, or the
       // empty-thread hint before the first message lands).
-      if (state.emptyShown || !state.rendered.length) $messages.textContent = "";
+      if (state.emptyShown || !state.rendered.length)
+        $messages.textContent = "";
       plan.added.forEach(function (m) {
         $messages.appendChild(messageNode(m));
       });
@@ -191,7 +202,7 @@
   function refreshThread() {
     if (!state.peer) return;
     var peer = state.peer;
-    getJSON("/dm/thread/" + encodeURIComponent(peer) + "?mark_read=1")
+    getJSON(apiUrl("dm/thread/" + encodeURIComponent(peer) + "?mark_read=1"))
       .then(function (data) {
         if (state.peer !== peer) return; // switched away mid-flight
         clearError();
@@ -233,7 +244,7 @@
     var text = $body.value.trim();
     if (!text) return;
     $send.disabled = true;
-    fetch("/dm/thread/" + encodeURIComponent(state.peer), {
+    fetch(apiUrl("dm/thread/" + encodeURIComponent(state.peer)), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: text }),

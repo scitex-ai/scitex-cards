@@ -142,11 +142,11 @@
     );
   }
 
-  // ── data: raster views fetch /timeline ───────────────────────────────
+  // ── data: rasters fetch apiUrl("timeline…") (page global, mount base) ─
   function loadTimeline() {
     var hrs = WINDOWS[TL.windowKey] || 24;
     var laneBy = TL.view === "project" ? "project" : "agent";
-    fetch("/timeline?window_hours=" + hrs + "&lane_by=" + laneBy)
+    fetch(apiUrl("timeline?window_hours=" + hrs + "&lane_by=" + laneBy))
       .then(function (r) {
         if (!r.ok)
           return r

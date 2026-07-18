@@ -27,6 +27,43 @@ def _tasks_path_from_request(request):
     return request.GET.get("store") or None
 
 
+def _api_base(request) -> str:
+    """Mount-relative URL of the board root — the base every API fetch joins.
+
+    The board frontend used to fetch site-root absolute URLs ("/graph",
+    "/update", ...). Standalone (app mounted at "/") that worked; mounted by a
+    host project under a prefix (e.g. ``path("apps/cards/", include(...))``)
+    every fetch went to the HOST's site root and 404'd (hub card
+    hub-cards-board-data-404). The base is DERIVED from wherever the app is
+    actually mounted — never hardcoded — by reversing the board-root route:
+
+    * mounted via ``include()`` → the URL name lives under the include's
+      instance namespace (``request.resolver_match.namespace``, defaulting to
+      the ``app_name`` ``"scitex_cards"``) → e.g. ``"/apps/cards/"``;
+    * standalone (this urlconf IS ``ROOT_URLCONF``) → ``app_name`` creates no
+      namespace, so the bare name resolves → ``"/"``.
+    """
+    from django.urls import NoReverseMatch, reverse
+
+    match = getattr(request, "resolver_match", None)
+    candidates = []
+    if match is not None and getattr(match, "namespace", ""):
+        candidates.append(f"{match.namespace}:board")
+    candidates += ["scitex_cards:board", "board"]
+    for name in candidates:
+        try:
+            base = reverse(name)
+        except NoReverseMatch:
+            continue
+        return base if base.endswith("/") else base + "/"
+    # Unreachable through any Django registration shape we know; fail loud
+    # rather than emit fetches against the wrong root (no silent fallback).
+    raise NoReverseMatch(
+        "scitex-cards board root is not reversible "
+        f"(tried url names: {', '.join(candidates)})"
+    )
+
+
 def favicon_view(request):
     """Serve the bundled SciTeX "S" SVG for the implicit `/favicon.ico` request.
 
@@ -120,6 +157,10 @@ def board_v3_page(request):
                 "app_name": "scitex-todo",
                 "app_label": label,
                 "scitex_cards_version": _version,
+                # Mount-relative API base ("/" standalone, "/<prefix>/" when a
+                # host include()s the app). The template exposes it as the JS
+                # const every fetch joins onto — see _api_base.
+                "api_base": _api_base(request),
                 # Per-status SSOT colors for first-paint CSS vars (board_v3
                 # <head> renders a `:root{--status-fill-<s>...}` block from
                 # this so cards/timeline/mermaid never collapse 7→4 colors).
@@ -153,7 +194,12 @@ def chat_page(request):
         _version = "?"
     html = render_to_string(
         "scitex_cards/chat.html",
-        {"scitex_cards_version": _version},
+        {
+            "scitex_cards_version": _version,
+            # Same mount-relative base as board_v3 — chat.js joins its
+            # /dm/* polls onto it instead of the site root.
+            "api_base": _api_base(request),
+        },
         request=request,
     )
     return HttpResponse(html)

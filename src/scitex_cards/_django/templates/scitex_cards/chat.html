@@ -129,7 +129,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
   <span class="ver">scitex-todo v{{ scitex_cards_version }}</span>
-  <a class="board-link" href="/">&larr; board</a>
+  <a class="board-link" href="{{ api_base }}">&larr; board</a>
 </header>
 <div id="error-bar"></div>
 <div id="layout">
@@ -144,6 +144,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     </form>
   </main>
 </div>
+<script>
+  // Mount-relative API base (server-injected — views._api_base). "/" when
+  // standalone, "/<prefix>/" when a host include()s the app. chat.js joins
+  // its /dm/* polls onto this instead of assuming the site root. Inline
+  // (non-deferred) so it is set before the deferred scripts below run.
+  window.SCITEX_CARDS_API_BASE = "{{ api_base|escapejs }}";
+</script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 </body>

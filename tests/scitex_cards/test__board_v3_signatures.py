@@ -689,13 +689,20 @@ class TestMultiselectBatchOpsRemoved:
         ):
             assert fn not in board_js
 
-    def test_single_card_update_path_survives(self, board_js):
+    def test_single_card_update_posts_through_api_url(self, board_js):
         # The ctx-menu status change still posts to /update — the endpoint is
-        # untouched, only the bulk loop is gone.
+        # untouched, only the bulk loop is gone. The URL is joined through
+        # apiUrl() (mount-relative base) so the post works under any mount,
+        # not just site-root.
         # Arrange
         # Act
         # Assert
-        assert '"/update"' in board_js
+        assert 'apiUrl("update")' in board_js
+
+    def test_single_card_status_helper_survives(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "async function setCardStatus" in board_js
 
 
@@ -791,10 +798,14 @@ class TestStaleReviewPanel:
         assert "_renderStaleView(canvas)" in board_js
 
     def test_stale_fetch_target_endpoint(self, board_js):
+        # Mount-relative apiUrl("stale?...") — the endpoint key api_dispatch
+        # actually routes ("stale"), joined onto the server-injected base.
+        # The old '"/scitex-todo/stale?"' literal assumed a /scitex-todo/
+        # mount and 404'd everywhere else.
         # Arrange
         # Act
         # Assert
-        assert '"/scitex-todo/stale?"' in board_js
+        assert 'apiUrl("stale?"' in board_js
 
     def test_archive_helper_defined(self, board_js):
         # Arrange
@@ -803,10 +814,11 @@ class TestStaleReviewPanel:
         assert "async function archiveStaleCard" in board_js
 
     def test_archive_post_target_endpoint(self, board_js):
+        # Mount-relative apiUrl("archive") — same rationale as the stale pin.
         # Arrange
         # Act
         # Assert
-        assert '"/scitex-todo/archive"' in board_js
+        assert 'apiUrl("archive")' in board_js
 
     def test_archive_requires_reason(self, board_js):
         # Arrange
@@ -875,7 +887,11 @@ class TestMatrixDragRescore:
     def test_rescore_posts_to_the_rescore_endpoint(self, board_js):
         # Drag goes through /rescore -> the rescore_task verb, so the
         # rank_changed event still reaches agents (never a handler-flock write).
-        assert '"/rescore"' in board_js
+        # Joined through apiUrl() (mount-relative base).
+        # Arrange
+        # Act
+        # Assert
+        assert 'apiUrl("rescore")' in board_js
 
     def test_drag_drop_listener_wired(self, board_js):
         # The delegated drop listener that turns a drop into a rescore —
