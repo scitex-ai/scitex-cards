@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Mount-relative API base** (hub card hub-cards-board-data-404): board_v3 +
+  chat fetched site-root absolute URLs ("/graph", "/update", "/dm/threads",
+  ...), so a host mounting the app under a prefix (scitex-hub:
+  `/apps/cards/`) got 404 on every data fetch — chrome rendered, "load
+  error: HTTP 404". `views._api_base` now derives the base from wherever the
+  app is mounted (reverse of the board-root route — "/" standalone,
+  "/<prefix>/" mounted, never hardcoded), injects it as
+  `window.SCITEX_CARDS_API_BASE`, and every API fetch (template inline JS,
+  timeline.js, chat.js) joins onto it. The Stale-Review panel's
+  `"/scitex-todo/stale"`/`"/scitex-todo/archive"` literals (broken under ANY
+  mount incl. standalone — the dispatcher routes `stale`/`archive`) ride the
+  same fix.
+- **Honest empty store**: a resolved store path whose tasks.yaml does not
+  exist yet (fresh hub workspace) no longer 400s "No task store found." —
+  `get_board` skips `load_groups` on the absent file (the one leftover
+  raise; tasks/mtime already treated absence as empty), so read endpoints
+  return an honest 0-card payload and the board renders "no cards yet".
+  Unknown endpoints stay 404, update-on-missing-id stays 404, and create
+  still materializes the store via the write verbs' `missing_ok` convention.
+
 ## [0.16.0] - 2026-07-17 — the backup rail runs itself, off-site, and the decoupling is a CI invariant
 
 ### Added

@@ -221,8 +221,19 @@ def get_board(tasks_path: Optional[str] = None) -> BoardState:
     # P10: load + validate groups against the GLOBAL store only.
     # Per-project lanes don't currently carry groups; future PR can
     # union ``groups:`` similarly if the operator requests it.
+    #
+    # HONEST EMPTY STATE (hub card hub-cards-board-data-404): a resolved
+    # store path that does not exist yet is a LEGITIMATE fresh workspace
+    # (0 tasks), not an error — every other read above already treats it
+    # that way (`if resolved.exists() else ...`). Calling load_groups on
+    # the absent file was the one leftover raise (FileNotFoundError →
+    # api_dispatch 400 "No task store found.") that turned a brand-new
+    # tenant's board into an error banner. Reads now render "no cards
+    # yet"; writes keep their existing contracts (create makes the store
+    # via the locked verbs' ``missing_ok=True``; update/comment/delete on
+    # a missing id still 404 loudly).
     task_ids = {t["id"] for t in unioned if isinstance(t, dict) and t.get("id")}
-    groups = load_groups(resolved, task_ids=task_ids)
+    groups = load_groups(resolved, task_ids=task_ids) if resolved.exists() else []
 
     board = BoardState(
         tasks=unioned,
