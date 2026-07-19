@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from scitex_cards import _inbox
 from scitex_cards._mcp_channel import _serve, drain_once
 
@@ -43,22 +45,14 @@ def _seed(store, agent, n):
         )
 
 
-# --------------------------------------------------------------------------- #
-# Invariant: drain_once yields to the loop BEFORE it does blocking store IO    #
-# --------------------------------------------------------------------------- #
-def test_drain_yields_before_blocking_store_io(tmp_path):
-    """``drain_once`` must hand control back to the event loop before its first
-    push — i.e. the store reads run off-thread, not inline.
+def _run_drain_with_canary(store, agent):
+    """Drain with a canary task racing it; return (pushed, canary-seen flags).
 
-    We schedule a canary task and check whether it has been given a turn by the
-    time the FIRST ``send`` fires. With the store IO off-loaded to a thread, the
-    initial ``await`` yields and the canary runs first. If the reads were done
-    inline again (the bug) the canary would not have run yet when ``send`` is
-    first called.
+    We schedule a canary task and record whether it has been given a turn by the
+    time each ``send`` fires. With the store IO off-loaded to a thread, the
+    initial ``await`` yields and the canary runs before any send. If the reads
+    were done inline again (the bug) the canary would not have run yet.
     """
-    store = _store(tmp_path)
-    agent = "canary-agent"
-    _seed(store, agent, 5)
 
     async def body():
         canary_ran = {"v": False}
@@ -71,47 +65,27 @@ def test_drain_yields_before_blocking_store_io(tmp_path):
         async def send(params):
             first_send_saw_canary.append(canary_ran["v"])
 
-        # Schedule the canary, then drain. A non-blocking drain yields on its
-        # first off-thread store read, letting the canary run before any send.
         task = asyncio.ensure_future(canary())
         pushed = await drain_once(agent, send, store=str(store))
         await task
         return pushed, first_send_saw_canary
 
-    pushed, first_send_saw_canary = asyncio.run(body())
-
-    assert pushed == 5, "all seeded notifications should be pushed"
-    assert first_send_saw_canary, "send should have been called at least once"
-    assert first_send_saw_canary[0] is True, (
-        "drain_once ran store IO inline (blocking the loop) before its first "
-        "push — the poll loop would starve the MCP initialize handshake"
-    )
+    return asyncio.run(body())
 
 
-# --------------------------------------------------------------------------- #
-# End-to-end: a real MCP client completes initialize while the poll loop runs  #
-# --------------------------------------------------------------------------- #
-def test_initialize_completes_with_active_poll_loop(tmp_path, monkeypatch):
-    """Driving ``_serve`` (poll loop active) with a real in-memory MCP client,
-    the ``initialize`` handshake completes well within a tight timeout.
-
-    Pre-fix this would hang: the poll loop's inline store reads blocked the loop
-    so the initialize response was never sent.
-    """
+def _initialize_under_poll_loop(agent):
+    """Complete ``initialize`` with a real in-memory MCP client while ``_serve``
+    hammers its poll loop; return the initialize result."""
     import anyio
     from mcp import ClientSession
     from mcp.shared.memory import create_client_server_memory_streams
 
-    store = _store(tmp_path)
-    agent = "handshake-agent"
-    # A non-trivial inbox so the drain has real work to do each tick.
-    _seed(store, agent, 50)
-    # The poll loop resolves the store from the environment.
-    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", agent)
-
     async def body():
-        async with create_client_server_memory_streams() as (client_streams, server_streams):
+        captured = {}
+        async with create_client_server_memory_streams() as (
+            client_streams,
+            server_streams,
+        ):
             c_read, c_write = client_streams
             s_read, s_write = server_streams
 
@@ -130,12 +104,94 @@ def test_initialize_completes_with_active_poll_loop(tmp_path, monkeypatch):
                 tg.start_soon(run_server)
 
                 async with ClientSession(c_read, c_write) as session:
-                    result = await asyncio.wait_for(session.initialize(), timeout=5.0)
-                    assert result.protocolVersion
-                    # the channel capability must be advertised so pushes aren't dropped
-                    exp = result.capabilities.experimental or {}
-                    assert "claude/channel" in exp
+                    captured["result"] = await asyncio.wait_for(
+                        session.initialize(), timeout=5.0
+                    )
 
                 tg.cancel_scope.cancel()
+        return captured["result"]
 
-    asyncio.run(body())
+    return asyncio.run(body())
+
+
+@pytest.fixture()
+def drain_with_canary(tmp_path):
+    """Five seeded notifications drained with a canary task racing the loop."""
+    store = _store(tmp_path)
+    agent = "canary-agent"
+    _seed(store, agent, 5)
+    pushed, saw = _run_drain_with_canary(store, agent)
+    return {"pushed": pushed, "saw": saw}
+
+
+@pytest.fixture()
+def initialize_result(tmp_path, monkeypatch):
+    """``initialize`` completed against a server whose poll loop is running.
+
+    Pre-fix this would hang: the poll loop's inline store reads blocked the loop
+    so the initialize response was never sent.
+    """
+    store = _store(tmp_path)
+    agent = "handshake-agent"
+    # A non-trivial inbox so the drain has real work to do each tick.
+    _seed(store, agent, 50)
+    # The poll loop resolves the store from the environment.
+    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", agent)
+    return _initialize_under_poll_loop(agent)
+
+
+# --------------------------------------------------------------------------- #
+# Invariant: drain_once yields to the loop BEFORE it does blocking store IO    #
+# --------------------------------------------------------------------------- #
+def test_drain_pushes_every_seeded_notification(drain_with_canary):
+    # Arrange
+    result = drain_with_canary
+    # Act
+    pushed = result["pushed"]
+    # Assert
+    assert pushed == 5, "all seeded notifications should be pushed"
+
+
+def test_drain_calls_send_at_least_once(drain_with_canary):
+    # Arrange
+    result = drain_with_canary
+    # Act
+    saw = result["saw"]
+    # Assert — without this the yield assertion below would be vacuous.
+    assert saw, "send should have been called at least once"
+
+
+def test_drain_yields_before_blocking_store_io(drain_with_canary):
+    """``drain_once`` must hand control back to the event loop before its first
+    push — i.e. the store reads run off-thread, not inline."""
+    # Arrange
+    result = drain_with_canary
+    # Act
+    saw = result["saw"]
+    # Assert
+    assert saw[0] is True, (
+        "drain_once ran store IO inline (blocking the loop) before its first "
+        "push — the poll loop would starve the MCP initialize handshake"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# End-to-end: a real MCP client completes initialize while the poll loop runs  #
+# --------------------------------------------------------------------------- #
+def test_initialize_completes_with_active_poll_loop(initialize_result):
+    # Arrange
+    result = initialize_result
+    # Act
+    protocol_version = result.protocolVersion
+    # Assert — the handshake finished well within the tight timeout.
+    assert protocol_version
+
+
+def test_initialize_advertises_the_channel_capability(initialize_result):
+    # Arrange
+    result = initialize_result
+    # Act
+    experimental = result.capabilities.experimental or {}
+    # Assert — without the advertisement the client drops every channel push.
+    assert "claude/channel" in experimental

@@ -18,6 +18,7 @@ through the dispatcher's ``entry_points=`` seam. AAA pattern.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 
@@ -114,6 +115,52 @@ class _RecorderEP:
         return _record
 
 
+class _CriticalSlowEP:
+    """CRITICAL entry point (priority=10) whose handler outlives any budget."""
+
+    name = "critical-slow"
+
+    def load(self):
+        def _fn(_event):
+            time.sleep(30.0)
+
+        _fn.priority = 10
+        _fn.critical = True
+        return _fn
+
+
+class _CriticalRaiseEP:
+    """CRITICAL entry point (priority=10) whose handler raises immediately."""
+
+    name = "critical-raise"
+
+    def load(self):
+        def _fn(_event):
+            raise RuntimeError("boom")
+
+        _fn.priority = 10
+        _fn.critical = True
+        return _fn
+
+
+class _LaterEP:
+    """Fast entry point (priority=200) that records that it ran."""
+
+    name = "later"
+
+    def __init__(self, sink: list):
+        self._sink = sink
+
+    def load(self):
+        sink = self._sink
+
+        def _fn(_event):
+            sink.append("ran")
+
+        _fn.priority = 200
+        return _fn
+
+
 def _push_event() -> dict:
     return event_validate(
         {
@@ -126,16 +173,27 @@ def _push_event() -> dict:
     )
 
 
-def test_slow_plugin_does_not_hang_dispatch_and_records_timeout(env):
-    # Arrange — tiny budget; a handler that sleeps 30s.
+def test_slow_plugin_does_not_hang_dispatch(env):
+    # a tiny budget against a handler that sleeps 30s
+    # Arrange
     env.set(PLUGIN_TIMEOUT_ENV, "0.2")
     event = _push_event()
     started = time.monotonic()
-    # Act — must return within ~the budget, NOT 30s.
-    summary = dispatch_event(event, entry_points=[_SlowEP(30.0)])
+    # Act
+    dispatch_event(event, entry_points=[_SlowEP(30.0)])
     elapsed = time.monotonic() - started
-    # Assert — bounded return + a timeout-flagged plugin error.
+    # Assert — bounded return: ~the budget, NOT the handler's 30s.
     assert elapsed < 5.0
+
+
+def test_slow_plugin_records_a_timeout_flagged_error(env):
+    # a tiny budget against a handler that sleeps 30s
+    # Arrange
+    env.set(PLUGIN_TIMEOUT_ENV, "0.2")
+    event = _push_event()
+    # Act
+    summary = dispatch_event(event, entry_points=[_SlowEP(30.0)])
+    # Assert — flagged as a TIMEOUT, not an anonymous plugin failure.
     assert summary["plugin_errors"][0]["timeout"] is True
 
 
@@ -184,71 +242,57 @@ def test_ordering_and_mutation_preserved_in_bounded_mode(env):
     assert seen["owner"] == "agent-x"
 
 
-def test_critical_timeout_aborts_chain_and_later_handler_does_not_run(env):
-    # Arrange — a CRITICAL slow handler (priority=10) precedes a fast
-    # recorder (priority=200). The critical timeout must abort the chain.
+def test_critical_timeout_aborts_the_dispatch_chain(env):
+    # a CRITICAL slow handler (priority=10) precedes a fast recorder
+    # (priority=200); the critical timeout must abort the whole chain
+    # Arrange
     env.set(PLUGIN_TIMEOUT_ENV, "0.2")
     sink: list = []
-
-    class _CriticalSlowEP:
-        name = "critical-slow"
-
-        def load(self):
-            def _fn(_event):
-                time.sleep(30.0)
-
-            _fn.priority = 10
-            _fn.critical = True
-            return _fn
-
-    class _LaterEP:
-        name = "later"
-
-        def load(self):
-            def _fn(_event):
-                sink.append("ran")
-
-            _fn.priority = 200
-            return _fn
-
     event = _push_event()
-    # Act / Assert — dispatch raises; later handler never ran.
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(Exception):
-        dispatch_event(event, entry_points=[_CriticalSlowEP(), _LaterEP()])
+        dispatch_event(event, entry_points=[_CriticalSlowEP(), _LaterEP(sink)])
+
+
+def test_critical_timeout_stops_the_later_handler(env):
+    # the other half of the abort contract: the priority=200 handler
+    # queued behind the critical timeout must never run
+    # Arrange
+    env.set(PLUGIN_TIMEOUT_ENV, "0.2")
+    sink: list = []
+    event = _push_event()
+    # Act
+    with contextlib.suppress(Exception):
+        dispatch_event(event, entry_points=[_CriticalSlowEP(), _LaterEP(sink)])
+    # Assert — the chain aborted before the later handler could record.
     assert sink == []
 
 
-def test_critical_raise_aborts_chain_regression_guard(env):
-    # Arrange — bounded mode; a CRITICAL handler that RAISES must still
-    # abort the chain (the pre-C2 contract).
+def test_critical_raise_aborts_the_dispatch_chain(env):
+    # regression guard: in BOUNDED mode a CRITICAL handler that RAISES must
+    # still abort the chain (the pre-C2 contract)
+    # Arrange
     env.set(PLUGIN_TIMEOUT_ENV, "5.0")
     sink: list = []
-
-    class _CriticalRaiseEP:
-        name = "critical-raise"
-
-        def load(self):
-            def _fn(_event):
-                raise RuntimeError("boom")
-
-            _fn.priority = 10
-            _fn.critical = True
-            return _fn
-
-    class _LaterEP:
-        name = "later"
-
-        def load(self):
-            def _fn(_event):
-                sink.append("ran")
-
-            _fn.priority = 200
-            return _fn
-
     event = _push_event()
-    # Act / Assert
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(Exception):
-        dispatch_event(event, entry_points=[_CriticalRaiseEP(), _LaterEP()])
+        dispatch_event(event, entry_points=[_CriticalRaiseEP(), _LaterEP(sink)])
+
+
+def test_critical_raise_stops_the_later_handler(env):
+    # regression guard, second half: the priority=200 handler queued behind
+    # the raising critical handler must never run
+    # Arrange
+    env.set(PLUGIN_TIMEOUT_ENV, "5.0")
+    sink: list = []
+    event = _push_event()
+    # Act
+    with contextlib.suppress(Exception):
+        dispatch_event(event, entry_points=[_CriticalRaiseEP(), _LaterEP(sink)])
+    # Assert — the chain aborted before the later handler could record.
     assert sink == []
 
 

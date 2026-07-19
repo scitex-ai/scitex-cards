@@ -37,6 +37,10 @@ def _board() -> object:
     return next(j for j in provide_jobs() if j.name == "scitex-todo.dashboard")
 
 
+def _snapshot() -> object:
+    return next(j for j in provide_jobs() if j.name == "scitex-cards.snapshot")
+
+
 def test_board_kind_is_service():
     # Arrange
     # Act
@@ -101,18 +105,36 @@ def test_board_description_mentions_the_canonical_url():
     assert "8051" in job.description
 
 
-# EOF
+#: WHY the three `snapshot` tests below are split but share one rationale:
+#: the ADR-0010 backup rail runs on a TIMER, not on somebody remembering. A
+#: typo in the kind or the command silently disarms the whole backup rail, so
+#: the kind, the exact command, and the load-bearing `--refresh` flag are each
+#: pinned on their own.
 
 
 def test_provide_jobs_includes_the_snapshot_cadence():
-    """The ADR-0010 backup rail runs on a timer, not on somebody remembering."""
     # Arrange
-    from scitex_cards._jobs_provider import provide_jobs
+    # Act
+    job = _snapshot()
+    # Assert — cron kind = a timer, not a service somebody has to start.
+    assert job.kind == "cron"
 
-    jobs = {j.name: j for j in provide_jobs()}
+
+def test_snapshot_command_is_the_db_snapshot_verb():
+    # Arrange
+    # Act
+    job = _snapshot()
     # Assert
-    snap = jobs["scitex-cards.snapshot"]
-    assert snap.kind == "cron"
-    assert snap.command == "scitex-cards db snapshot --refresh --push"
-    # --refresh is load-bearing pre-cutover: import IS the freshness step.
-    assert "--refresh" in snap.command
+    assert job.command == "scitex-cards db snapshot --refresh --push"
+
+
+def test_snapshot_command_refreshes_before_pushing():
+    # Arrange
+    # Act
+    job = _snapshot()
+    # Assert — --refresh is load-bearing pre-cutover: import IS the
+    # freshness step.
+    assert "--refresh" in job.command
+
+
+# EOF

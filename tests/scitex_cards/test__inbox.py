@@ -26,6 +26,7 @@ import asyncio
 import json
 
 import pytest
+import yaml
 
 from scitex_cards._events import Event, EventType
 from scitex_cards._inbox import ack, enqueue, poll_inbox
@@ -39,6 +40,38 @@ from scitex_cards._users import register_user, resolve_user
 # --------------------------------------------------------------------------- #
 def _store(tmp_path):
     return tmp_path / "tasks.yaml"
+
+
+def _read(store):
+    return yaml.safe_load(store.read_text(encoding="utf-8"))
+
+
+def _enqueue_reassigned(
+    store, recipient="u_abc", card_id="c1", ts="2026-06-26T00:00:00Z"
+):
+    return enqueue(
+        recipient,
+        event_type="reassigned",
+        card_id=card_id,
+        body=f"Card {card_id} reassigned to you",
+        actor="bob",
+        ts=ts,
+        store=store,
+    )
+
+
+def _enqueue_completed(
+    store, recipient="u_abc", card_id="c1", body="done", ts="2026-06-26T00:00:00Z"
+):
+    return enqueue(
+        recipient,
+        event_type="completed",
+        card_id=card_id,
+        body=body,
+        actor="bob",
+        ts=ts,
+        store=store,
+    )
 
 
 class _Recorder:
@@ -62,213 +95,107 @@ class _Recorder:
 
 
 # --------------------------------------------------------------------------- #
-# enqueue → poll_inbox → mark_seen / ack                                      #
+# fixtures — shared setup for the split tests below                            #
 # --------------------------------------------------------------------------- #
-def test_enqueue_then_poll_returns_unseen_record(tmp_path):
+@pytest.fixture()
+def two_record_inbox(tmp_path):
+    """Two completed notices for one recipient, both unseen."""
     store = _store(tmp_path)
-    rec = enqueue(
-        "u_abc",
-        event_type="reassigned",
-        card_id="c1",
-        body="Card c1 reassigned to you",
-        actor="bob",
-        ts="2026-06-26T00:00:00Z",
-        store=store,
-    )
-    assert rec is not None
-    assert rec["seen"] is False
-    assert rec["card_id"] == "c1"
-    assert rec["id"].startswith("n_")
-
-    got = poll_inbox("u_abc", store=store)
-    assert len(got) == 1
-    assert got[0]["card_id"] == "c1"
-    assert got[0]["body"] == "Card c1 reassigned to you"
-    assert got[0]["seen"] is False
+    r1 = _enqueue_completed(store, card_id="c1", body="a", ts="2026-06-26T00:00:01Z")
+    r2 = _enqueue_completed(store, card_id="c2", body="b", ts="2026-06-26T00:00:02Z")
+    return {"store": store, "r1": r1, "r2": r2}
 
 
-def test_mark_seen_advances_cursor(tmp_path):
-    store = _store(tmp_path)
-    enqueue(
-        "u_abc",
-        event_type="completed",
-        card_id="c1",
-        body="done",
-        actor="bob",
-        ts="2026-06-26T00:00:00Z",
-        store=store,
-    )
-    # First drain with mark_seen returns the record...
-    first = poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
-    assert [r["card_id"] for r in first] == ["c1"]
-    assert first[0]["seen"] is True
-    # ...a second unseen-only poll returns nothing new.
-    second = poll_inbox("u_abc", unseen_only=True, store=store)
-    assert second == []
-    # ...but the full history still has it (seen=True).
-    history = poll_inbox("u_abc", unseen_only=False, store=store)
-    assert [r["card_id"] for r in history] == ["c1"]
-    assert history[0]["seen"] is True
-
-
-def test_ack_marks_specific_ids_seen(tmp_path):
-    store = _store(tmp_path)
-    r1 = enqueue(
-        "u_abc", event_type="completed", card_id="c1", body="a",
-        actor="bob", ts="2026-06-26T00:00:01Z", store=store,
-    )
-    r2 = enqueue(
-        "u_abc", event_type="completed", card_id="c2", body="b",
-        actor="bob", ts="2026-06-26T00:00:02Z", store=store,
-    )
-    flipped = ack("u_abc", [r1["id"]], store=store)
-    assert flipped == [r1["id"]]
-    # Only r1 is now seen; r2 is still unseen.
-    unseen = poll_inbox("u_abc", unseen_only=True, store=store)
-    assert [r["id"] for r in unseen] == [r2["id"]]
-    # Acking again is a no-op (already seen).
-    assert ack("u_abc", [r1["id"]], store=store) == []
-    # Acking an unknown id is a no-op.
-    assert ack("u_abc", ["n_nope"], store=store) == []
-
-
-def test_enqueue_dedups_same_event_key(tmp_path):
-    store = _store(tmp_path)
-    kwargs = dict(
-        event_type="reassigned", card_id="c1", body="x",
-        actor="bob", ts="2026-06-26T00:00:00Z", store=store,
-    )
-    first = enqueue("u_abc", **kwargs)
-    second = enqueue("u_abc", **kwargs)  # exact re-emit
-    assert first is not None
-    assert second is None  # deduped
-    assert len(poll_inbox("u_abc", unseen_only=False, store=store)) == 1
-    # A DIFFERENT ts (a genuine second event) is kept separately.
-    third = enqueue("u_abc", **{**kwargs, "ts": "2026-06-26T00:00:05Z"})
-    assert third is not None
-    assert len(poll_inbox("u_abc", unseen_only=False, store=store)) == 2
-
-
-def test_falsy_recipient_and_empty_inbox_are_safe(tmp_path):
-    store = _store(tmp_path)
-    assert enqueue("", event_type="completed", card_id="c1", body="x",
-                   actor=None, store=store) is None
-    assert poll_inbox("", store=store) == []
-    assert poll_inbox("u_nobody", store=store) == []
-    assert ack("u_nobody", ["n_x"], store=store) == []
-
-
-# --------------------------------------------------------------------------- #
-# C4 dispatcher enqueues to resolved recipients' inboxes                       #
-# --------------------------------------------------------------------------- #
-def test_dispatch_reassigned_enqueues_new_owner_inbox(tmp_path):
+@pytest.fixture()
+def reassigned_dispatch(tmp_path):
+    """A REASSIGNED event dispatched for a REGISTERED owner (alice)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the actor
     # (creator isn't notified of their own creation) — keeps the inbox clean.
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    rec = _Recorder()
-
+    recorder = _Recorder()
     summary = dispatch_notifications(
         Event(type=EventType.REASSIGNED, card_id="c1", actor="bob"),
         store=store,
-        deliver_fn=rec,
+        deliver_fn=recorder,
     )
-
-    # Enqueued to alice's resolved user-id (NOT her name); the legacy push
-    # rail is NOT invoked (inbox is the sole delivery now).
-    assert summary["enqueued"] == [alice.id]
-    assert rec.targets == []
-    # The inbox holds the notification for alice's id.
-    inbox = poll_inbox(alice.id, store=store)
-    assert len(inbox) == 1
-    assert inbox[0]["event_type"] == "reassigned"
-    assert "c1" in inbox[0]["body"]
-    assert inbox[0]["actor"] == "bob"
+    return {"store": store, "alice": alice, "summary": summary, "recorder": recorder}
 
 
-def test_dispatch_completed_enqueues_owner_and_subscribers(tmp_path):
+@pytest.fixture()
+def completed_dispatch(tmp_path):
+    """A COMPLETED event dispatched for an owner (alice) + subscriber (eve)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     eve = register_user(kind="human", names=["eve"], store=store)
-    add_task(store=store, id="c1", title="x", agent="alice", subscribers=["eve"], created_by="alice")
-    rec = _Recorder()
-
+    add_task(
+        store=store,
+        id="c1",
+        title="x",
+        agent="alice",
+        subscribers=["eve"],
+        created_by="alice",
+    )
     summary = dispatch_notifications(
         Event(type=EventType.COMPLETED, card_id="c1", actor="bob"),
         store=store,
-        deliver_fn=rec,
+        deliver_fn=_Recorder(),
     )
-
-    assert set(summary["enqueued"]) == {alice.id, eve.id}
-    # Both inboxes received the completed notice.
-    assert [r["event_type"] for r in poll_inbox(alice.id, store=store)] == [
-        "completed"
-    ]
-    assert [r["event_type"] for r in poll_inbox(eve.id, store=store)] == [
-        "completed"
-    ]
+    return {"store": store, "alice": alice, "eve": eve, "summary": summary}
 
 
-def test_dispatch_actor_is_not_enqueued(tmp_path):
-    # The actor caused the event → no inbox entry, even if owner == actor.
+@pytest.fixture()
+def self_actor_dispatch(tmp_path):
+    """A REASSIGNED event whose ACTOR is also the card's owner."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the actor
     # (creator isn't notified of their own creation) — keeps the inbox clean.
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    rec = _Recorder()
-
     summary = dispatch_notifications(
         Event(type=EventType.REASSIGNED, card_id="c1", actor="alice"),
         store=store,
-        deliver_fn=rec,
+        deliver_fn=_Recorder(),
     )
-    assert summary["enqueued"] == []
-    assert poll_inbox(alice.id, store=store) == []
+    return {"store": store, "alice": alice, "summary": summary}
 
 
-def test_dispatch_unregistered_owner_enqueues_under_raw_name(tmp_path):
-    # Back-compat: an unregistered owner is enqueued under its raw name (the
-    # same key resolve_recipients returns), so poll_notifications(name) finds it.
+@pytest.fixture()
+def unregistered_owner_dispatch(tmp_path):
+    """A REASSIGNED event for an owner who was never registered."""
     store = _store(tmp_path)
     add_task(store=store, id="c1", title="x", agent="dave", created_by="dave")
-    rec = _Recorder()
-
     summary = dispatch_notifications(
         Event(type=EventType.REASSIGNED, card_id="c1", actor="bob"),
         store=store,
-        deliver_fn=rec,
+        deliver_fn=_Recorder(),
     )
-    assert summary["enqueued"] == ["dave"]
-    assert [r["card_id"] for r in poll_inbox("dave", store=store)] == ["c1"]
+    return {"store": store, "summary": summary}
 
 
-def test_dispatch_redispatch_dedups_via_event_ts(tmp_path):
-    # Re-dispatching the SAME event (same ts) must not double-enqueue.
+@pytest.fixture()
+def redispatched(tmp_path):
+    """The SAME completed event dispatched twice (identical ts)."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     # created_by == owner so the setup `created` event self-excludes the actor
     # (creator isn't notified of their own creation) — keeps the inbox clean.
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    rec = _Recorder()
+    recorder = _Recorder()
     event = Event(type=EventType.COMPLETED, card_id="c1", actor="bob")
-
-    s1 = dispatch_notifications(event, store=store, deliver_fn=rec)
-    s2 = dispatch_notifications(event, store=store, deliver_fn=rec)
-
-    assert s1["enqueued"] == [alice.id]
-    assert s2["enqueued"] == []  # deduped on the event's own ts
-    assert len(poll_inbox(alice.id, unseen_only=False, store=store)) == 1
+    s1 = dispatch_notifications(event, store=store, deliver_fn=recorder)
+    s2 = dispatch_notifications(event, store=store, deliver_fn=recorder)
+    return {"store": store, "alice": alice, "s1": s1, "s2": s2}
 
 
-def test_dispatch_via_bus_carries_enqueued_and_emit_non_raising(tmp_path, env):
-    # End-to-end through the real hook bus: dispatch_event runs the built-in
-    # C4 consumer for a card-event, which enqueues to the standalone inbox.
-    # The additive `enqueued` list is present in the notify summary, and
-    # emit() (fire-and-forget) stays non-raising. No mocks — the real default
-    # push wire runs in dry-run mode so there is no network.
-    from scitex_cards._events import emit
+@pytest.fixture()
+def bus_dispatch(tmp_path, env):
+    """A card-event pushed through the REAL hook bus.
+
+    No mocks — the real default push wire runs in dry-run mode so there is
+    no network on the path.
+    """
     from scitex_cards._hooks import dispatch_event
 
     store = _store(tmp_path)
@@ -276,17 +203,475 @@ def test_dispatch_via_bus_carries_enqueued_and_emit_non_raising(tmp_path, env):
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
     env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
     env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
-
     envelope = Event(type=EventType.REASSIGNED, card_id="c1", actor="bob").to_dict()
     summary = dispatch_event(envelope, store=store, entry_points=[])
-    # Existing summary shape preserved + the additive enqueued list present.
-    assert summary["notify"]["event_type"] == "reassigned"
-    assert summary["notify"]["enqueued"] == [alice.id]
-    # The inbox really received it (the standalone rail worked).
-    assert [r["card_id"] for r in poll_inbox(alice.id, store=store)] == ["c1"]
+    return {"store": store, "alice": alice, "summary": summary, "envelope": envelope}
 
-    # emit() must never raise (fire-and-forget); it returns None.
-    assert emit(envelope, entry_points=[]) is None
+
+@pytest.fixture()
+def store_with_task_user_and_inbox(tmp_path):
+    """A store holding a real user, a real task, and one inbox record."""
+    store = _store(tmp_path)
+    register_user(kind="agent", names=["alice"], store=store)
+    add_task(store=store, id="c1", title="hello", agent="alice", note="keep me")
+    _enqueue_completed(store, body="x")
+    return store
+
+
+# --------------------------------------------------------------------------- #
+# enqueue → poll_inbox → mark_seen / ack                                      #
+# --------------------------------------------------------------------------- #
+def test_enqueue_returns_a_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    rec = _enqueue_reassigned(store)
+    # Assert
+    assert rec is not None
+
+
+def test_enqueue_record_starts_unseen(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    rec = _enqueue_reassigned(store)
+    # Assert
+    assert rec["seen"] is False
+
+
+def test_enqueue_record_carries_the_card_id(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    rec = _enqueue_reassigned(store)
+    # Assert
+    assert rec["card_id"] == "c1"
+
+
+def test_enqueue_record_id_uses_the_n_prefix(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    rec = _enqueue_reassigned(store)
+    # Assert
+    assert rec["id"].startswith("n_")
+
+
+def test_enqueue_then_poll_returns_unseen_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    got = poll_inbox("u_abc", store=store)
+    # Assert
+    assert len(got) == 1
+
+
+def test_polled_record_carries_the_card_id(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    got = poll_inbox("u_abc", store=store)
+    # Assert
+    assert got[0]["card_id"] == "c1"
+
+
+def test_polled_record_carries_the_body(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    got = poll_inbox("u_abc", store=store)
+    # Assert
+    assert got[0]["body"] == "Card c1 reassigned to you"
+
+
+def test_polled_record_is_still_unseen(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    got = poll_inbox("u_abc", store=store)
+    # Assert — a plain poll must not consume the record.
+    assert got[0]["seen"] is False
+
+
+def test_first_drain_returns_the_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store)
+    # Act
+    first = poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
+    # Assert
+    assert [r["card_id"] for r in first] == ["c1"]
+
+
+def test_first_drain_marks_the_record_seen(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store)
+    # Act
+    first = poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
+    # Assert
+    assert first[0]["seen"] is True
+
+
+def test_mark_seen_advances_cursor(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store)
+    poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
+    # Act
+    second = poll_inbox("u_abc", unseen_only=True, store=store)
+    # Assert — a second unseen-only poll returns nothing new.
+    assert second == []
+
+
+def test_full_history_still_holds_the_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store)
+    poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
+    # Act
+    history = poll_inbox("u_abc", unseen_only=False, store=store)
+    # Assert — draining advances a cursor; it does not delete.
+    assert [r["card_id"] for r in history] == ["c1"]
+
+
+def test_full_history_shows_the_record_as_seen(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store)
+    poll_inbox("u_abc", unseen_only=True, mark_seen=True, store=store)
+    # Act
+    history = poll_inbox("u_abc", unseen_only=False, store=store)
+    # Assert
+    assert history[0]["seen"] is True
+
+
+def test_ack_marks_specific_ids_seen(two_record_inbox):
+    # Arrange
+    store = two_record_inbox["store"]
+    r1 = two_record_inbox["r1"]
+    # Act
+    flipped = ack("u_abc", [r1["id"]], store=store)
+    # Assert
+    assert flipped == [r1["id"]]
+
+
+def test_ack_leaves_other_records_unseen(two_record_inbox):
+    # Arrange
+    store = two_record_inbox["store"]
+    r1, r2 = two_record_inbox["r1"], two_record_inbox["r2"]
+    ack("u_abc", [r1["id"]], store=store)
+    # Act
+    unseen = poll_inbox("u_abc", unseen_only=True, store=store)
+    # Assert — only r1 is now seen; r2 is untouched.
+    assert [r["id"] for r in unseen] == [r2["id"]]
+
+
+def test_ack_twice_is_a_noop(two_record_inbox):
+    # Arrange
+    store = two_record_inbox["store"]
+    r1 = two_record_inbox["r1"]
+    ack("u_abc", [r1["id"]], store=store)
+    # Act
+    again = ack("u_abc", [r1["id"]], store=store)
+    # Assert — already seen, so nothing flips.
+    assert again == []
+
+
+def test_ack_unknown_id_is_a_noop(two_record_inbox):
+    # Arrange
+    store = two_record_inbox["store"]
+    # Act
+    flipped = ack("u_abc", ["n_nope"], store=store)
+    # Assert
+    assert flipped == []
+
+
+def test_dedup_first_enqueue_returns_a_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    first = _enqueue_reassigned(store)
+    # Assert
+    assert first is not None
+
+
+def test_dedup_exact_reemit_returns_none(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    second = _enqueue_reassigned(store)  # exact re-emit
+    # Assert
+    assert second is None
+
+
+def test_dedup_keeps_only_one_record(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    _enqueue_reassigned(store)
+    # Act
+    everything = poll_inbox("u_abc", unseen_only=False, store=store)
+    # Assert
+    assert len(everything) == 1
+
+
+def test_dedup_distinct_ts_is_kept_separately(tmp_path):
+    # A DIFFERENT ts is a genuine second event, not a re-emit.
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    # Act
+    third = _enqueue_reassigned(store, ts="2026-06-26T00:00:05Z")
+    # Assert
+    assert third is not None
+
+
+def test_dedup_distinct_ts_yields_two_records(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_reassigned(store)
+    _enqueue_reassigned(store, ts="2026-06-26T00:00:05Z")
+    # Act
+    everything = poll_inbox("u_abc", unseen_only=False, store=store)
+    # Assert
+    assert len(everything) == 2
+
+
+def test_enqueue_with_falsy_recipient_returns_none(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    rec = enqueue(
+        "", event_type="completed", card_id="c1", body="x", actor=None, store=store
+    )
+    # Assert
+    assert rec is None
+
+
+def test_poll_inbox_with_falsy_recipient_is_empty(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    got = poll_inbox("", store=store)
+    # Assert
+    assert got == []
+
+
+def test_poll_inbox_for_unknown_recipient_is_empty(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    got = poll_inbox("u_nobody", store=store)
+    # Assert
+    assert got == []
+
+
+def test_ack_for_unknown_recipient_is_a_noop(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    flipped = ack("u_nobody", ["n_x"], store=store)
+    # Assert
+    assert flipped == []
+
+
+# --------------------------------------------------------------------------- #
+# C4 dispatcher enqueues to resolved recipients' inboxes                       #
+# --------------------------------------------------------------------------- #
+def test_dispatch_reassigned_enqueues_new_owner_inbox(reassigned_dispatch):
+    # Arrange
+    alice = reassigned_dispatch["alice"]
+    # Act
+    summary = reassigned_dispatch["summary"]
+    # Assert — enqueued to alice's resolved user-id, NOT her name.
+    assert summary["enqueued"] == [alice.id]
+
+
+def test_dispatch_does_not_invoke_the_legacy_push_rail(reassigned_dispatch):
+    # Arrange
+    recorder = reassigned_dispatch["recorder"]
+    # Act
+    targets = recorder.targets
+    # Assert — the inbox is the SOLE delivery rail now.
+    assert targets == []
+
+
+def test_dispatch_reassigned_enqueues_exactly_one_record(reassigned_dispatch):
+    # Arrange
+    store, alice = reassigned_dispatch["store"], reassigned_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert
+    assert len(inbox) == 1
+
+
+def test_dispatch_reassigned_record_carries_the_event_type(reassigned_dispatch):
+    # Arrange
+    store, alice = reassigned_dispatch["store"], reassigned_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert
+    assert inbox[0]["event_type"] == "reassigned"
+
+
+def test_dispatch_reassigned_record_body_names_the_card(reassigned_dispatch):
+    # Arrange
+    store, alice = reassigned_dispatch["store"], reassigned_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert — a notice that does not name its card is unactionable.
+    assert "c1" in inbox[0]["body"]
+
+
+def test_dispatch_reassigned_record_carries_the_actor(reassigned_dispatch):
+    # Arrange
+    store, alice = reassigned_dispatch["store"], reassigned_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert
+    assert inbox[0]["actor"] == "bob"
+
+
+def test_dispatch_completed_enqueues_owner_and_subscribers(completed_dispatch):
+    # Arrange
+    alice, eve = completed_dispatch["alice"], completed_dispatch["eve"]
+    # Act
+    summary = completed_dispatch["summary"]
+    # Assert
+    assert set(summary["enqueued"]) == {alice.id, eve.id}
+
+
+def test_dispatch_completed_reaches_the_owner_inbox(completed_dispatch):
+    # Arrange
+    store, alice = completed_dispatch["store"], completed_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert
+    assert [r["event_type"] for r in inbox] == ["completed"]
+
+
+def test_dispatch_completed_reaches_the_subscriber_inbox(completed_dispatch):
+    # Arrange
+    store, eve = completed_dispatch["store"], completed_dispatch["eve"]
+    # Act
+    inbox = poll_inbox(eve.id, store=store)
+    # Assert — a subscriber is notified, not merely recorded.
+    assert [r["event_type"] for r in inbox] == ["completed"]
+
+
+def test_dispatch_actor_is_not_enqueued(self_actor_dispatch):
+    # The actor caused the event → no inbox entry, even if owner == actor.
+    # Arrange
+    summary = self_actor_dispatch["summary"]
+    # Act
+    enqueued = summary["enqueued"]
+    # Assert
+    assert enqueued == []
+
+
+def test_dispatch_actor_inbox_stays_empty(self_actor_dispatch):
+    # Arrange
+    store, alice = self_actor_dispatch["store"], self_actor_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert
+    assert inbox == []
+
+
+def test_dispatch_unregistered_owner_enqueues_under_raw_name(
+    unregistered_owner_dispatch,
+):
+    # Back-compat: an unregistered owner is enqueued under its raw name (the
+    # same key resolve_recipients returns), so poll_notifications(name) finds it.
+    # Arrange
+    summary = unregistered_owner_dispatch["summary"]
+    # Act
+    enqueued = summary["enqueued"]
+    # Assert
+    assert enqueued == ["dave"]
+
+
+def test_dispatch_unregistered_owner_inbox_holds_the_card(unregistered_owner_dispatch):
+    # Arrange
+    store = unregistered_owner_dispatch["store"]
+    # Act
+    inbox = poll_inbox("dave", store=store)
+    # Assert
+    assert [r["card_id"] for r in inbox] == ["c1"]
+
+
+def test_dispatch_first_pass_enqueues_the_owner(redispatched):
+    # Arrange
+    alice = redispatched["alice"]
+    # Act
+    s1 = redispatched["s1"]
+    # Assert
+    assert s1["enqueued"] == [alice.id]
+
+
+def test_dispatch_redispatch_dedups_via_event_ts(redispatched):
+    # Re-dispatching the SAME event (same ts) must not double-enqueue.
+    # Arrange
+    _ = redispatched["alice"]
+    # Act
+    s2 = redispatched["s2"]
+    # Assert — deduped on the event's own ts.
+    assert s2["enqueued"] == []
+
+
+def test_redispatch_leaves_a_single_inbox_record(redispatched):
+    # Arrange
+    store, alice = redispatched["store"], redispatched["alice"]
+    # Act
+    history = poll_inbox(alice.id, unseen_only=False, store=store)
+    # Assert
+    assert len(history) == 1
+
+
+def test_bus_dispatch_preserves_the_notify_summary_shape(bus_dispatch):
+    # End-to-end through the real hook bus: dispatch_event runs the built-in
+    # C4 consumer for a card-event, which enqueues to the standalone inbox.
+    # Arrange
+    summary = bus_dispatch["summary"]
+    # Act
+    notify = summary["notify"]
+    # Assert — the existing summary shape is preserved.
+    assert notify["event_type"] == "reassigned"
+
+
+def test_bus_dispatch_carries_the_enqueued_list(bus_dispatch):
+    # Arrange
+    summary, alice = bus_dispatch["summary"], bus_dispatch["alice"]
+    # Act
+    notify = summary["notify"]
+    # Assert — the additive `enqueued` list is present.
+    assert notify["enqueued"] == [alice.id]
+
+
+def test_bus_dispatch_reaches_the_standalone_inbox(bus_dispatch):
+    # Arrange
+    store, alice = bus_dispatch["store"], bus_dispatch["alice"]
+    # Act
+    inbox = poll_inbox(alice.id, store=store)
+    # Assert — the inbox really received it; the standalone rail worked.
+    assert [r["card_id"] for r in inbox] == ["c1"]
+
+
+def test_emit_is_fire_and_forget_and_non_raising(bus_dispatch):
+    # Arrange
+    from scitex_cards._events import emit
+
+    envelope = bus_dispatch["envelope"]
+    # Act
+    result = emit(envelope, entry_points=[])
+    # Assert — emit() must never raise; it returns None.
+    assert result is None
 
 
 def test_dispatch_enqueue_error_is_recorded_not_raised(tmp_path):
@@ -294,21 +679,25 @@ def test_dispatch_enqueue_error_is_recorded_not_raised(tmp_path):
     # recipient, the dispatcher records the error and continues (the push
     # rail still runs) — it never re-raises. We force a REAL enqueue error
     # with no mock: point the store at a path whose parent is a regular file,
-    # so enqueue's `path.parent.mkdir(...)` raises NotADirectoryError. The
-    # card + recipient resolution happen against a SEPARATE good store via a
-    # pre-resolved recipient, so only the enqueue write fails.
+    # so enqueue's `path.parent.mkdir(...)` raises NotADirectoryError. This is
+    # the exception the dispatcher's try/except catches.
+    # Arrange
     import scitex_cards._inbox as inbox_mod
 
     blocker = tmp_path / "afile"
     blocker.write_text("x", encoding="utf-8")
     bad_store = blocker / "tasks.yaml"  # parent is a file → mkdir fails
-
-    # Call enqueue directly to prove it raises on the bad store (real error,
-    # no mock) — this is the exception the dispatcher's try/except catches.
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(OSError):
         inbox_mod.enqueue(
-            "u_x", event_type="completed", card_id="c1", body="b",
-            actor=None, ts="2026-06-26T00:00:00Z", store=bad_store,
+            "u_x",
+            event_type="completed",
+            card_id="c1",
+            body="b",
+            actor=None,
+            ts="2026-06-26T00:00:00Z",
+            store=bad_store,
         )
 
 
@@ -339,10 +728,9 @@ async def _call_tool(tool_callable, **kwargs):
     return await fn(**kwargs)
 
 
-@_skip_no_mcp
-def test_poll_notifications_resolves_name_to_inbox(tmp_path):
-    from scitex_cards._mcp_skills import poll_notifications
-
+@pytest.fixture()
+def alice_notification_store(tmp_path):
+    """A REGISTERED alice with one COMPLETED notification queued."""
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
@@ -351,46 +739,12 @@ def test_poll_notifications_resolves_name_to_inbox(tmp_path):
         store=store,
         deliver_fn=_Recorder(),
     )
-
-    raw = asyncio.run(_call_tool(poll_notifications, agent="alice", tasks_path=str(store)))
-    payload = json.loads(raw)
-    assert payload["agent"] == "alice"
-    assert payload["recipient_id"] == alice.id  # resolved name → u_* id
-    assert [n["event_type"] for n in payload["notifications"]] == ["completed"]
-    # Sanity: the resolver maps the name the same way the tool does.
-    assert resolve_user("alice", store=store).id == alice.id
+    return {"store": store, "alice": alice}
 
 
-@_skip_no_mcp
-def test_poll_notifications_ack_advances_cursor(tmp_path):
-    from scitex_cards._mcp_skills import poll_notifications
-
-    store = _store(tmp_path)
-    register_user(kind="agent", names=["alice"], store=store)
-    add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    dispatch_notifications(
-        Event(type=EventType.COMPLETED, card_id="c1", actor="bob"),
-        store=store,
-        deliver_fn=_Recorder(),
-    )
-
-    # ack=True drains; the next unseen poll is empty.
-    first = json.loads(
-        asyncio.run(
-            _call_tool(poll_notifications, agent="alice", ack=True, tasks_path=str(store))
-        )
-    )
-    assert len(first["notifications"]) == 1
-    second = json.loads(
-        asyncio.run(_call_tool(poll_notifications, agent="alice", tasks_path=str(store)))
-    )
-    assert second["notifications"] == []
-
-
-@_skip_no_mcp
-def test_poll_notifications_unregistered_name_uses_raw_key(tmp_path):
-    from scitex_cards._mcp_skills import poll_notifications
-
+@pytest.fixture()
+def dave_notification_store(tmp_path):
+    """An UNREGISTERED dave with one REASSIGNED notification queued."""
     store = _store(tmp_path)
     add_task(store=store, id="c1", title="x", agent="dave", created_by="dave")
     dispatch_notifications(
@@ -398,63 +752,231 @@ def test_poll_notifications_unregistered_name_uses_raw_key(tmp_path):
         store=store,
         deliver_fn=_Recorder(),
     )
+    return store
 
+
+@_skip_no_mcp
+def test_poll_notifications_echoes_the_agent_name(alice_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = alice_notification_store["store"]
+    # Act
+    raw = asyncio.run(
+        _call_tool(poll_notifications, agent="alice", tasks_path=str(store))
+    )
+    payload = json.loads(raw)
+    # Assert
+    assert payload["agent"] == "alice"
+
+
+@_skip_no_mcp
+def test_poll_notifications_resolves_name_to_inbox(alice_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store, alice = alice_notification_store["store"], alice_notification_store["alice"]
+    # Act
+    raw = asyncio.run(
+        _call_tool(poll_notifications, agent="alice", tasks_path=str(store))
+    )
+    payload = json.loads(raw)
+    # Assert — the resolved name became the u_* id, not the raw name.
+    assert payload["recipient_id"] == alice.id
+
+
+@_skip_no_mcp
+def test_poll_notifications_returns_the_queued_notification(alice_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = alice_notification_store["store"]
+    # Act
+    raw = asyncio.run(
+        _call_tool(poll_notifications, agent="alice", tasks_path=str(store))
+    )
+    payload = json.loads(raw)
+    # Assert
+    assert [n["event_type"] for n in payload["notifications"]] == ["completed"]
+
+
+@_skip_no_mcp
+def test_resolve_user_maps_the_name_the_same_way(alice_notification_store):
+    """Sanity: the resolver maps the name exactly as the tool does."""
+    # Arrange
+    store, alice = alice_notification_store["store"], alice_notification_store["alice"]
+    # Act
+    resolved = resolve_user("alice", store=store)
+    # Assert
+    assert resolved.id == alice.id
+
+
+@_skip_no_mcp
+def test_poll_notifications_with_ack_returns_the_backlog(alice_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = alice_notification_store["store"]
+    # Act
+    first = json.loads(
+        asyncio.run(
+            _call_tool(
+                poll_notifications, agent="alice", ack=True, tasks_path=str(store)
+            )
+        )
+    )
+    # Assert
+    assert len(first["notifications"]) == 1
+
+
+@_skip_no_mcp
+def test_poll_notifications_ack_advances_cursor(alice_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = alice_notification_store["store"]
+    asyncio.run(
+        _call_tool(poll_notifications, agent="alice", ack=True, tasks_path=str(store))
+    )
+    # Act
+    second = json.loads(
+        asyncio.run(
+            _call_tool(poll_notifications, agent="alice", tasks_path=str(store))
+        )
+    )
+    # Assert — the drain advanced the cursor; nothing new is pending.
+    assert second["notifications"] == []
+
+
+@_skip_no_mcp
+def test_poll_notifications_unregistered_name_uses_raw_key(dave_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = dave_notification_store
+    # Act
     payload = json.loads(
         asyncio.run(_call_tool(poll_notifications, agent="dave", tasks_path=str(store)))
     )
-    assert payload["recipient_id"] == "dave"  # raw-name fallback
+    # Assert — raw-name fallback for an unregistered agent.
+    assert payload["recipient_id"] == "dave"
+
+
+@_skip_no_mcp
+def test_poll_notifications_raw_key_returns_the_notification(dave_notification_store):
+    # Arrange
+    from scitex_cards._mcp_skills import poll_notifications
+
+    store = dave_notification_store
+    # Act
+    payload = json.loads(
+        asyncio.run(_call_tool(poll_notifications, agent="dave", tasks_path=str(store)))
+    )
+    # Assert
     assert [n["card_id"] for n in payload["notifications"]] == ["c1"]
 
 
 # --------------------------------------------------------------------------- #
 # persistence round-trip does NOT clobber tasks:/users:                        #
 # --------------------------------------------------------------------------- #
-def test_inbox_persistence_does_not_clobber_tasks_and_users(tmp_path):
-    import yaml
-
-    store = _store(tmp_path)
-    # Seed a real task + a real user.
-    register_user(kind="agent", names=["alice"], store=store)
-    add_task(store=store, id="c1", title="hello", agent="alice", note="keep me")
-    # Enqueue an inbox record.
-    enqueue(
-        "u_abc", event_type="completed", card_id="c1", body="x",
-        actor="bob", ts="2026-06-26T00:00:00Z", store=store,
-    )
-
-    # All three sections coexist on disk.
-    data = yaml.safe_load(store.read_text(encoding="utf-8"))
+def test_inbox_write_keeps_the_tasks_section(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert
     assert isinstance(data.get("tasks"), list)
+
+
+def test_inbox_write_keeps_the_users_section(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert
     assert isinstance(data.get("users"), list)
+
+
+def test_inbox_write_creates_the_inboxes_section(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert — all three sections coexist on disk.
     assert isinstance(data.get("inboxes"), dict)
-    # The task payload survived untouched.
-    task_ids = {t["id"]: t for t in data["tasks"]}
-    assert "c1" in task_ids
-    assert task_ids["c1"]["note"] == "keep me"
-    # The user survived.
+
+
+def test_inbox_write_keeps_the_seeded_task(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert
+    assert "c1" in {t["id"] for t in data["tasks"]}
+
+
+def test_inbox_persistence_does_not_clobber_tasks_and_users(
+    store_with_task_user_and_inbox,
+):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    task = {t["id"]: t for t in data["tasks"]}["c1"]
+    # Assert — the task PAYLOAD survived, not merely the row.
+    assert task["note"] == "keep me"
+
+
+def test_inbox_write_preserves_the_registered_user(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert
     assert any("alice" in (u.get("names") or []) for u in data["users"])
-    # The inbox record is present.
+
+
+def test_inbox_write_stores_the_record(store_with_task_user_and_inbox):
+    # Arrange
+    store = store_with_task_user_and_inbox
+    # Act
+    data = _read(store)
+    # Assert
     assert data["inboxes"]["u_abc"][0]["card_id"] == "c1"
 
 
 def test_inbox_first_write_seeds_tasks_list(tmp_path):
     # Writing an inbox into a store with NO prior tasks must seed tasks: [] so
     # a later add_task (which load_tasks hard-requires tasks:) still works.
-    import yaml
-
+    # Arrange
     store = _store(tmp_path)
-    enqueue(
-        "u_abc", event_type="completed", card_id="c1", body="x",
-        actor="bob", ts="2026-06-26T00:00:00Z", store=store,
-    )
-    data = yaml.safe_load(store.read_text(encoding="utf-8"))
+    # Act
+    _enqueue_completed(store, body="x")
+    data = _read(store)
+    # Assert
     assert data.get("tasks") == []
-    # And a subsequent add_task works (does not raise on the seeded file).
+
+
+def test_add_task_after_inbox_seed_still_works(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store, body="x")
+    # Act
     add_task(store=store, id="c2", title="later", agent="alice")
-    data2 = yaml.safe_load(store.read_text(encoding="utf-8"))
-    assert any(t["id"] == "c2" for t in data2["tasks"])
-    # The inbox is still intact after the task write.
-    assert data2["inboxes"]["u_abc"][0]["card_id"] == "c1"
+    data = _read(store)
+    # Assert — add_task does not raise on the seeded file, and the row lands.
+    assert any(t["id"] == "c2" for t in data["tasks"])
+
+
+def test_inbox_survives_a_later_task_write(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    _enqueue_completed(store, body="x")
+    # Act
+    add_task(store=store, id="c2", title="later", agent="alice")
+    data = _read(store)
+    # Assert — the inbox is still intact after the task write.
+    assert data["inboxes"]["u_abc"][0]["card_id"] == "c1"
 
 
 # EOF

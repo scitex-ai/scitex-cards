@@ -30,16 +30,44 @@ class TestHelpWaitCreate:
         # Assert
         assert card["id"] == "help-alice-waiting"
 
-    def test_title_status_blocker_assignee_scope(self, tmp_path):
+    def test_card_title_names_the_waiting_agent(self, tmp_path):
         # Arrange
         store = tmp_path / "tasks.yaml"
         # Act
         card = _help_wait.help_wait(store, "alice", question="merge or wait?")
         # Assert
         assert card["title"] == "[help] alice waiting on operator decision"
+
+    def test_card_status_is_blocked(self, tmp_path):
+        # Arrange
+        store = tmp_path / "tasks.yaml"
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        # Assert
         assert card["status"] == "blocked"
+
+    def test_card_blocker_is_operator_decision(self, tmp_path):
+        # Arrange
+        store = tmp_path / "tasks.yaml"
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        # Assert
         assert card["blocker"] == "operator-decision"
+
+    def test_card_assignee_is_the_agent(self, tmp_path):
+        # Arrange
+        store = tmp_path / "tasks.yaml"
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        # Assert
         assert card["assignee"] == "alice"
+
+    def test_card_scope_is_the_agent_slice(self, tmp_path):
+        # Arrange
+        store = tmp_path / "tasks.yaml"
+        # Act
+        card = _help_wait.help_wait(store, "alice", question="merge or wait?")
+        # Assert
         assert card["scope"] == "agent:alice"
 
     def test_question_stored_in_note(self, tmp_path):
@@ -91,12 +119,14 @@ class TestHelpWaitCreate:
         # Assert
         assert {r["id"] for r in rows} == {"help-alice-waiting"}
 
-    def test_blank_agent_raises(self, tmp_path):
+    def test_blank_agent_raises_on_help_wait(self, tmp_path):
         # Arrange
         store = tmp_path / "tasks.yaml"
-        # Act / Assert
+        blank_agent = "   "
+        # Act
+        # Assert — the raise IS the behaviour; act and assert are one statement.
         with pytest.raises(ValueError):
-            _help_wait.help_wait(store, "   ")
+            _help_wait.help_wait(store, blank_agent)
 
 
 # === help_wait: upsert (no duplicate) =======================================
@@ -109,7 +139,11 @@ class TestHelpWaitUpsert:
         _help_wait.help_wait(store, "alice", question="q1")
         # Act
         _help_wait.help_wait(store, "alice", question="q2")
-        rows = [r for r in _store.list_tasks(store, scope="") if r["id"] == "help-alice-waiting"]
+        rows = [
+            r
+            for r in _store.list_tasks(store, scope="")
+            if r["id"] == "help-alice-waiting"
+        ]
         # Assert
         assert len(rows) == 1
 
@@ -149,7 +183,7 @@ class TestHelpWaitUpsert:
 class TestHelpClear:
     """Resolving the card sets done + clears the blocker; absent => no-op."""
 
-    def test_clear_resolves_existing_card(self, tmp_path):
+    def test_clear_reports_the_card_as_cleared(self, tmp_path):
         # Arrange
         store = tmp_path / "tasks.yaml"
         _help_wait.help_wait(store, "alice", question="q1")
@@ -157,6 +191,14 @@ class TestHelpClear:
         payload = _help_wait.help_clear(store, "alice")
         # Assert
         assert payload["cleared"] is True
+
+    def test_clear_marks_the_card_done(self, tmp_path):
+        # Arrange
+        store = tmp_path / "tasks.yaml"
+        _help_wait.help_wait(store, "alice", question="q1")
+        # Act
+        payload = _help_wait.help_clear(store, "alice")
+        # Assert
         assert payload["task"]["status"] == "done"
 
     def test_clear_drops_the_blocker(self, tmp_path):
@@ -186,12 +228,14 @@ class TestHelpClear:
         # Assert
         assert payload["cleared"] is False
 
-    def test_blank_agent_raises(self, tmp_path):
+    def test_blank_agent_raises_on_help_clear(self, tmp_path):
         # Arrange
         store = tmp_path / "tasks.yaml"
-        # Act / Assert
+        blank_agent = ""
+        # Act
+        # Assert — the raise IS the behaviour; act and assert are one statement.
         with pytest.raises(ValueError):
-            _help_wait.help_clear(store, "")
+            _help_wait.help_clear(store, blank_agent)
 
 
 # === CLI verbs ==============================================================
@@ -203,7 +247,7 @@ class TestHelpWaitCli:
 
         return CliRunner()
 
-    def test_help_wait_cli_creates_card(self, tmp_path):
+    def test_help_wait_cli_exits_zero(self, tmp_path):
         # Arrange
         from scitex_cards._cli import main
 
@@ -215,11 +259,49 @@ class TestHelpWaitCli:
         )
         # Assert
         assert result.exit_code == 0
+
+    def test_help_wait_cli_stores_the_question_in_note(self, tmp_path):
+        # Arrange
+        from scitex_cards._cli import main
+
+        store = tmp_path / "tasks.yaml"
+        # Act
+        self._runner().invoke(
+            main,
+            ["help-wait", "alice", "--question", "merge?", "--tasks", str(store)],
+        )
         card = _store.get_task(store, task_id="help-alice-waiting")
+        # Assert
         assert card["note"] == "merge?"
+
+    def test_help_wait_cli_sets_the_operator_decision_blocker(self, tmp_path):
+        # Arrange
+        from scitex_cards._cli import main
+
+        store = tmp_path / "tasks.yaml"
+        # Act
+        self._runner().invoke(
+            main,
+            ["help-wait", "alice", "--question", "merge?", "--tasks", str(store)],
+        )
+        card = _store.get_task(store, task_id="help-alice-waiting")
+        # Assert
         assert card["blocker"] == "operator-decision"
 
-    def test_help_wait_cli_json(self, tmp_path):
+    def test_help_wait_cli_json_exits_zero(self, tmp_path):
+        # Arrange
+        from scitex_cards._cli import main
+
+        store = tmp_path / "tasks.yaml"
+        # Act
+        result = self._runner().invoke(
+            main,
+            ["help-wait", "alice", "--json", "--tasks", str(store)],
+        )
+        # Assert
+        assert result.exit_code == 0
+
+    def test_help_wait_cli_json_prints_the_card_id(self, tmp_path):
         # Arrange
         import json
 
@@ -232,10 +314,9 @@ class TestHelpWaitCli:
             ["help-wait", "alice", "--json", "--tasks", str(store)],
         )
         # Assert
-        assert result.exit_code == 0
         assert json.loads(result.output)["id"] == "help-alice-waiting"
 
-    def test_help_clear_cli_resolves(self, tmp_path):
+    def test_help_clear_cli_exits_zero(self, tmp_path):
         # Arrange
         from scitex_cards._cli import main
 
@@ -247,7 +328,18 @@ class TestHelpWaitCli:
         )
         # Assert
         assert result.exit_code == 0
-        assert _store.get_task(store, task_id="help-alice-waiting")["status"] == "done"
+
+    def test_help_clear_cli_marks_the_card_done(self, tmp_path):
+        # Arrange
+        from scitex_cards._cli import main
+
+        store = tmp_path / "tasks.yaml"
+        _help_wait.help_wait(store, "alice")
+        # Act
+        self._runner().invoke(main, ["help-clear", "alice", "--tasks", str(store)])
+        card = _store.get_task(store, task_id="help-alice-waiting")
+        # Assert
+        assert card["status"] == "done"
 
     def test_help_clear_cli_noop_exit_zero_when_absent(self, tmp_path):
         # Arrange
@@ -268,11 +360,11 @@ class TestHelpWaitMcp:
 
     def test_tools_in_tool_names(self):
         # Arrange
-        fastmcp = pytest.importorskip("fastmcp")
-        _ = fastmcp
+        pytest.importorskip("fastmcp")
+        # Act
         from scitex_cards._mcp_server import TOOL_NAMES
 
-        # Act / Assert
+        # Assert
         assert "help_wait" in TOOL_NAMES and "help_clear" in TOOL_NAMES
 
     def test_help_wait_tool_upserts(self, tmp_path):

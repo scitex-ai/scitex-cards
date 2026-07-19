@@ -75,121 +75,258 @@ def _add(backend, card_id: str, **extra):
 
 
 def test_get_backend_resolves_to_the_hub_client(hub):
-    assert isinstance(get_backend(), HubBackend)
+    # Arrange
+    expected = HubBackend
+    # Act
+    backend = get_backend()
+    # Assert
+    assert isinstance(backend, expected)
 
 
 def test_url_set_but_token_missing_hard_errors_at_first_call(hub, monkeypatch):
+    # Arrange
     monkeypatch.setenv("SCITEX_CARDS_HUB_TOKEN_FILE", "/nonexistent/hub.token")
     backend = get_backend()  # resolution itself stays import-safe
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(HubBackendError, match="no hub token"):
         backend.list_tasks(None)
 
 
 def test_unreachable_hub_hard_errors_with_the_tunnel_hint(hub, monkeypatch):
+    # Arrange
     monkeypatch.setenv("SCITEX_CARDS_HUB_URL", "http://127.0.0.1:1")
+    backend = get_backend()
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(HubBackendError, match="tunnel"):
-        get_backend().list_tasks(None)
+        backend.list_tasks(None)
 
 
 def test_caller_supplied_store_is_refused(hub):
+    # Arrange
+    caller_store = "/tmp/some/store.yaml"
+    backend = get_backend()
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(HubBackendError, match="pinned hub-side"):
-        get_backend().get_task("/tmp/some/store.yaml", "any")
+        backend.get_task(caller_store, "any")
 
 
 # === round trips (read-back DIRECTLY hub-side) =============================
 
 
-def test_add_task_round_trip_and_created_by_injection(hub):
+def test_add_task_round_trips_the_card_id(hub):
+    # Arrange
     backend = get_backend()
+    # Act
     created = _add(backend, "hb-add")
+    # Assert
     assert created["id"] == "hb-add"
-    on_disk = _store.get_task(hub["store"], "hb-add")
+
+
+def test_add_task_injects_the_remote_agent_as_created_by(hub):
     # The caller never set created_by; the CLIENT must have stamped the
     # remote agent's identity — the hub's env must not leak in.
+    # Arrange
+    backend = get_backend()
+    # Act
+    _add(backend, "hb-add")
+    on_disk = _store.get_task(hub["store"], "hb-add")
+    # Assert
     assert on_disk["created_by"] == "remote-agent"
 
 
 def test_explicit_identity_is_respected_not_overwritten(hub):
+    # Arrange
     backend = get_backend()
+    # Act
     _add(backend, "hb-by", created_by="named-human")
-    assert _store.get_task(hub["store"], "hb-by")["created_by"] == "named-human"
+    on_disk = _store.get_task(hub["store"], "hb-by")
+    # Assert
+    assert on_disk["created_by"] == "named-human"
 
 
-def test_update_task_round_trip(hub):
+def test_update_task_round_trips_the_status(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-upd")
+    # Act
     backend.update_task(None, "hb-upd", status="in_progress", note="over the wire")
     on_disk = _store.get_task(hub["store"], "hb-upd")
+    # Assert
     assert on_disk["status"] == "in_progress"
+
+
+def test_update_task_round_trips_the_note(hub):
+    # Arrange
+    backend = get_backend()
+    _add(backend, "hb-upd")
+    # Act
+    backend.update_task(None, "hb-upd", status="in_progress", note="over the wire")
+    on_disk = _store.get_task(hub["store"], "hb-upd")
+    # Assert
     assert on_disk["note"] == "over the wire"
+
+
+def test_a_note_set_over_the_wire_lands_hub_side(hub):
+    """The precondition the null-sentinel test below clears — pinned on its
+    own so a silently-dropped `note=` cannot make that test vacuously pass."""
+    # Arrange
+    backend = get_backend()
+    # Act
+    _add(backend, "hb-null", note="to be cleared")
+    on_disk = _store.get_task(hub["store"], "hb-null")
+    # Assert
+    assert "note" in on_disk
 
 
 def test_update_null_sentinel_deletes_hub_side(hub):
     """None must survive serialization as an explicit null and DELETE."""
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-null", note="to be cleared")
-    assert "note" in _store.get_task(hub["store"], "hb-null")
+    # Act
     backend.update_task(None, "hb-null", note=None)
-    assert "note" not in _store.get_task(hub["store"], "hb-null")
+    on_disk = _store.get_task(hub["store"], "hb-null")
+    # Assert — a client that strips nulls would leave the note standing.
+    assert "note" not in on_disk
 
 
-def test_comment_author_injection(hub):
+def test_comment_task_injects_the_remote_agent_as_author(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-com")
+    # Act
     result = backend.comment_task(None, "hb-com", "hello from afar")
+    # Assert
     assert result["comment"]["author"] == "remote-agent"
+
+
+def test_comment_task_round_trips_the_comment_text(hub):
+    # Arrange
+    backend = get_backend()
+    _add(backend, "hb-com")
+    # Act
+    backend.comment_task(None, "hb-com", "hello from afar")
     comments = _store.get_task(hub["store"], "hb-com")["comments"]
+    # Assert
     assert comments[-1]["text"] == "hello from afar"
 
 
-def test_complete_task_round_trip(hub):
+def test_complete_task_sets_the_status_done(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-done")
+    # Act
     backend.complete_task(None, "hb-done")
     on_disk = _store.get_task(hub["store"], "hb-done")
+    # Assert
     assert on_disk["status"] == "done"
+
+
+def test_complete_task_stamps_the_remote_agent_as_completer(hub):
+    # Arrange
+    backend = get_backend()
+    _add(backend, "hb-done")
+    # Act
+    backend.complete_task(None, "hb-done")
+    on_disk = _store.get_task(hub["store"], "hb-done")
+    # Assert — the hub's own identity must not be the one recorded.
     assert on_disk["_log_meta"]["completed_by"] == "remote-agent"
 
 
-def test_list_and_get_read_the_hub_store(hub):
+def test_list_tasks_reads_the_hub_store(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-read")
-    assert "hb-read" in {t["id"] for t in backend.list_tasks(None, scope="")}
-    assert backend.get_task(None, "hb-read")["title"] == "Card hb-read"
+    # Act
+    listed = {t["id"] for t in backend.list_tasks(None, scope="")}
+    # Assert
+    assert "hb-read" in listed
 
 
-def test_delete_restore_round_trip(hub):
+def test_get_task_reads_the_hub_store(hub):
+    # Arrange
+    backend = get_backend()
+    _add(backend, "hb-read")
+    # Act
+    fetched = backend.get_task(None, "hb-read")
+    # Assert
+    assert fetched["title"] == "Card hb-read"
+
+
+def test_delete_task_removes_the_card_hub_side(hub):
+    # Arrange
+    backend = get_backend()
+    _add(backend, "hb-del")
+    # Act
+    backend.delete_task(None, "hb-del")
+    # Assert — reading it back DIRECTLY hub-side now raises.
+    with pytest.raises(Exception):
+        _store.get_task(hub["store"], "hb-del")
+
+
+def test_restore_task_puts_the_card_back(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-del")
     removed = backend.delete_task(None, "hb-del")
-    with pytest.raises(Exception):
-        _store.get_task(hub["store"], "hb-del")
+    # Act
     backend.restore_task(None, task=removed["removed"], refs=removed.get("refs"))
-    assert _store.get_task(hub["store"], "hb-del")["id"] == "hb-del"
+    on_disk = _store.get_task(hub["store"], "hb-del")
+    # Assert
+    assert on_disk["id"] == "hb-del"
 
 
 def test_set_edge_round_trip(hub):
+    # Arrange
     backend = get_backend()
     _add(backend, "hb-e1")
     _add(backend, "hb-e2")
+    # Act
     backend.set_edge(
         None, action="add", kind="depends_on", source="hb-e2", target="hb-e1"
     )
-    assert _store.get_task(hub["store"], "hb-e2")["depends_on"] == ["hb-e1"]
+    on_disk = _store.get_task(hub["store"], "hb-e2")
+    # Assert
+    assert on_disk["depends_on"] == ["hb-e1"]
 
 
-def test_dm_pair_round_trip(hub):
+def test_dm_send_stamps_the_sending_agent(hub):
+    # Arrange
     backend = get_backend()
+    # Act
     record = backend.dm_send("remote-agent", "operator", "hub dm")
+    # Assert
     assert record["from"] == "remote-agent"
+
+
+def test_dm_list_returns_the_sent_message(hub):
+    # Arrange
+    backend = get_backend()
+    backend.dm_send("remote-agent", "operator", "hub dm")
+    # Act
     thread = backend.dm_list("operator", peer="remote-agent")
+    # Assert
     assert [m["body"] for m in thread["messages"]] == ["hub dm"]
 
 
-def test_poll_notifications_round_trip(hub):
+def test_poll_notifications_echoes_the_agent(hub):
+    # Arrange
     backend = get_backend()
+    # Act
     inbox = backend.poll_notifications("remote-agent")
+    # Assert
     assert inbox["agent"] == "remote-agent"
+
+
+def test_poll_notifications_returns_a_notifications_list(hub):
+    # Arrange
+    backend = get_backend()
+    # Act
+    inbox = backend.poll_notifications("remote-agent")
+    # Assert
     assert isinstance(inbox["notifications"], list)
 
 
@@ -197,18 +334,25 @@ def test_poll_notifications_round_trip(hub):
 
 
 def test_missing_card_raises_the_real_tasknotfound(hub):
+    # Arrange
     from scitex_cards._store import TaskNotFoundError
 
+    backend = get_backend()
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(TaskNotFoundError):
-        get_backend().get_task(None, "ghost")
+        backend.get_task(None, "ghost")
 
 
 def test_validation_error_crosses_the_wire_typed(hub):
+    # Arrange
     from scitex_cards import TaskValidationError
 
+    backend = get_backend()
+    # Act
+    # Assert — no owner → the validator refuses; the client re-raises typed.
     with pytest.raises((TaskValidationError, ValueError)):
-        # No owner → the validator refuses; the client re-raises typed.
-        get_backend().add_task(None, id="hb-bad", title="No owner")
+        backend.add_task(None, id="hb-bad", title="No owner")
 
 
 # EOF

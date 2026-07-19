@@ -27,15 +27,39 @@ from pathlib import Path
 import pytest
 
 from scitex_cards import _store
-from scitex_cards._health import _check_terminal_state_honest
+from scitex_cards._health import (
+    _check_no_falsely_blocked,
+    _check_terminal_state_honest,
+)
+
+#: WHY the four ``*_a_none_store`` / ``*_for_none_store`` tests below exist, and
+#: why they share the ``store_resolved_from_env`` fixture:
+#:
+#: A bare ``None`` store must resolve through the standard precedence chain,
+#: never reach ``load_tasks`` as ``None``. Regression (2026-07-16, reported by
+#: the dotfiles agent on v0.13.5): in a shell with no store env var, these
+#: checks fed ``None`` straight to ``load_tasks`` and reported "cannot read the
+#: task store (TypeError…)" — 7/9 UNHEALTHY on a perfectly healthy install.
+#: Both checks must therefore judge the resolved store (ok) AND say nothing
+#: about a TypeError (the symptom the regression printed).
 
 
 @pytest.fixture()
 def store(tmp_path: Path) -> Path:
     path = tmp_path / "tasks.yaml"
-    _store.add_task(path, id="live", title="ordinary open work", status="deferred", agent="a")
+    _store.add_task(
+        path, id="live", title="ordinary open work", status="deferred", agent="a"
+    )
     _store.add_task(path, id="finished", title="really done", status="done", agent="a")
     return path
+
+
+@pytest.fixture()
+def store_resolved_from_env(store: Path, monkeypatch) -> Path:
+    """The fixture store becomes what the precedence chain resolves to."""
+    monkeypatch.delenv("SCITEX_CARDS_TASKS_YAML_SHARED", raising=False)
+    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    return store
 
 
 def _zombify(path: Path, task_id: str, status: str) -> None:
@@ -44,7 +68,10 @@ def _zombify(path: Path, task_id: str, status: str) -> None:
     doc = _store.load_tasks(path)
     for t in doc:
         if t.get("id") == task_id:
-            t["_log_meta"] = {"closed_at": "2026-07-07T10:38:58Z", "closed_by": "someone"}
+            t["_log_meta"] = {
+                "closed_at": "2026-07-07T10:38:58Z",
+                "closed_by": "someone",
+            }
     from scitex_cards._model import save_tasks
 
     save_tasks(doc, path)
@@ -54,8 +81,10 @@ def _zombify(path: Path, task_id: str, status: str) -> None:
 # the happy path
 # --------------------------------------------------------------------------
 def test_a_clean_store_passes(store):
-    # Arrange / Act
-    result = _check_terminal_state_honest(store)
+    # Arrange
+    untouched = store
+    # Act
+    result = _check_terminal_state_honest(untouched)
     # Assert
     assert result["ok"] is True
 
@@ -63,6 +92,7 @@ def test_a_clean_store_passes(store):
 def test_a_genuinely_done_card_is_not_a_zombie(store):
     # `done` + closed_at is the CORRECT shape. The check must not flag it — a
     # check that cries wolf on healthy data is one its reader learns to ignore.
+    # Arrange
     _zombify(store, "finished", "done")  # closed_at on a `done` card: legitimate
     # Act
     result = _check_terminal_state_honest(store)
@@ -71,8 +101,12 @@ def test_a_genuinely_done_card_is_not_a_zombie(store):
 
 
 def test_a_cancelled_card_is_not_a_zombie(store):
+    # Arrange
     _zombify(store, "finished", "cancelled")
-    assert _check_terminal_state_honest(store)["ok"] is True
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is True
 
 
 # --------------------------------------------------------------------------
@@ -81,33 +115,50 @@ def test_a_cancelled_card_is_not_a_zombie(store):
 # --------------------------------------------------------------------------
 def test_closed_at_on_a_DEFERRED_card_is_caught(store):
     # THE EXACT SHAPE of both real zombies found on 2026-07-13.
+    # Arrange
     _zombify(store, "live", "deferred")
+    # Act
     result = _check_terminal_state_honest(store)
+    # Assert
     assert result["ok"] is False
 
 
 def test_closed_at_on_an_IN_PROGRESS_card_is_caught(store):
+    # Arrange
     _zombify(store, "live", "in_progress")
-    assert _check_terminal_state_honest(store)["ok"] is False
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is False
 
 
 def test_closed_at_on_a_BLOCKED_card_is_caught(store):
+    # Arrange
     _zombify(store, "live", "blocked")
-    assert _check_terminal_state_honest(store)["ok"] is False
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is False
 
 
 def test_the_failure_NAMES_the_offending_card(store):
     # A check that says "something is wrong" without saying WHICH card sends its
     # reader hand-scanning 1,467 rows — which is exactly what I had to do.
+    # Arrange
     _zombify(store, "live", "deferred")
+    # Act
     result = _check_terminal_state_honest(store)
+    # Assert
     assert "live" in result["detail"]
 
 
 def test_the_hint_says_what_to_actually_DO(store):
     # Every failing check owes its reader the next step, not just a verdict.
+    # Arrange
     _zombify(store, "live", "deferred")
+    # Act
     result = _check_terminal_state_honest(store)
+    # Assert
     assert "status" in result["hint"].lower()
 
 
@@ -115,36 +166,64 @@ def test_the_hint_says_what_to_actually_DO(store):
 # it must never raise — a health check that explodes reports nothing
 # --------------------------------------------------------------------------
 def test_an_unreadable_store_is_REPORTED_not_raised(tmp_path: Path):
-    # Arrange — a path that is not a readable store.
+    """The call must return a verdict, not take the whole doctor down."""
+    # Arrange
     missing = tmp_path / "nope" / "tasks.yaml"
-    # Act — must not raise.
+    # Act
     result = _check_terminal_state_honest(missing)
-    # Assert — it reports the problem instead of taking the whole doctor down.
+    # Assert — it reports a verdict instead of raising.
     assert result["ok"] in (True, False)
+
+
+def test_an_unreadable_store_still_reports_a_string_detail(tmp_path: Path):
+    """The verdict is useless without readable prose saying what went wrong."""
+    # Arrange
+    missing = tmp_path / "nope" / "tasks.yaml"
+    # Act
+    result = _check_terminal_state_honest(missing)
+    # Assert — always text, never a raised traceback.
     assert isinstance(result["detail"], str)
 
 
-def test_check_with_none_store_resolves_instead_of_typeerror(
-    store, monkeypatch
-):
-    """A bare ``None`` store resolves through the standard chain, never a TypeError.
-
-    Regression (2026-07-16, reported by the dotfiles agent on v0.13.5): in a
-    shell with no store env var, these checks fed ``None`` straight to
-    ``load_tasks`` and reported "cannot read the task store (TypeError…)" —
-    7/9 UNHEALTHY on a perfectly healthy install.
-    """
-    # Arrange — the fixture store becomes what the precedence chain resolves to.
-    monkeypatch.delenv("SCITEX_CARDS_TASKS_YAML_SHARED", raising=False)
-    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    from scitex_cards._health import _check_no_falsely_blocked
-
+# --------------------------------------------------------------------------
+# a bare `None` store resolves through the standard chain — see the module-level
+# rationale above
+# --------------------------------------------------------------------------
+def test_terminal_state_check_resolves_a_none_store(store_resolved_from_env):
+    # Arrange
+    no_explicit_store = None
     # Act
-    honest = _check_terminal_state_honest(None)
-    blocked = _check_no_falsely_blocked(None)
-
-    # Assert — both resolve and judge the store; neither reports a read error.
+    honest = _check_terminal_state_honest(no_explicit_store)
+    # Assert — it judged the resolved store, and that store is healthy.
     assert honest["ok"] is True
+
+
+def test_falsely_blocked_check_resolves_a_none_store(store_resolved_from_env):
+    # Arrange
+    no_explicit_store = None
+    # Act
+    blocked = _check_no_falsely_blocked(no_explicit_store)
+    # Assert — it judged the resolved store, and that store is healthy.
     assert blocked["ok"] is True
+
+
+def test_terminal_state_check_reports_no_typeerror_for_none_store(
+    store_resolved_from_env,
+):
+    # Arrange
+    no_explicit_store = None
+    # Act
+    honest = _check_terminal_state_honest(no_explicit_store)
+    # Assert — the exact symptom the v0.13.5 regression printed.
     assert "TypeError" not in honest.get("detail", "")
+
+
+def test_falsely_blocked_check_reports_no_typeerror_for_none_store(
+    store_resolved_from_env,
+):
+    # Arrange
+    no_explicit_store = None
+    # Act
+    blocked = _check_no_falsely_blocked(no_explicit_store)
+    # Assert — the exact symptom the v0.13.5 regression printed.
     assert "TypeError" not in blocked.get("detail", "")
