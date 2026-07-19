@@ -31,7 +31,8 @@ def _seed(store, recipient="u_cli"):
     )
 
 
-def test_notifyd_once_runs_single_pass(tmp_path):
+def _run_notifyd_once(tmp_path):
+    """One real delivery pass over a seeded store with a log channel."""
     store = tmp_path / "tasks.yaml"
     _seed(store)
     (tmp_path / "recipients.yaml").write_text(
@@ -39,16 +40,38 @@ def test_notifyd_once_runs_single_pass(tmp_path):
         encoding="utf-8",
     )
     runner = CliRunner()
-    result = runner.invoke(
-        main,
-        ["notifyd", "--tasks", str(store), "--once"],
-    )
+    return runner.invoke(main, ["notifyd", "--tasks", str(store), "--once"])
+
+
+def test_notifyd_once_exits_zero(tmp_path):
+    # Arrange
+    # Act
+    result = _run_notifyd_once(tmp_path)
+    # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_notifyd_once_announces_the_single_pass(tmp_path):
+    # Arrange
+    # Act
+    result = _run_notifyd_once(tmp_path)
+    # Assert
     assert "notifyd --once" in result.output
+
+
+def test_notifyd_once_runs_single_pass(tmp_path):
+    # Arrange
+    # Act
+    result = _run_notifyd_once(tmp_path)
+    # Assert — the seeded notification really went out.
     assert "sent=1" in result.output
 
 
-def test_notifyd_install_unit_writes_and_no_systemctl(tmp_path, monkeypatch):
+def _run_install_unit(tmp_path, monkeypatch):
+    """Install the systemd unit under a tmp $XDG_CONFIG_HOME.
+
+    Returns ``(result, target_path, subprocess_calls)``.
+    """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     calls: list = []
     real_run = subprocess.run
@@ -57,25 +80,61 @@ def test_notifyd_install_unit_writes_and_no_systemctl(tmp_path, monkeypatch):
         "run",
         lambda *a, **k: (calls.append((a, k)), real_run(*a, **k))[1],
     )
+    result = CliRunner().invoke(main, ["notifyd", "install-unit"])
+    target = tmp_path / "cfg" / "systemd" / "user" / "scitex-todo-notifyd.service"
+    return result, target, calls
 
-    runner = CliRunner()
-    result = runner.invoke(main, ["notifyd", "install-unit"])
+
+def test_notifyd_install_unit_exits_zero(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    result, _target, _calls = _run_install_unit(tmp_path, monkeypatch)
+    # Assert
     assert result.exit_code == 0, result.output
 
-    target = tmp_path / "cfg" / "systemd" / "user" / "scitex-todo-notifyd.service"
+
+def test_notifyd_install_unit_writes_the_unit_file(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    _result, target, _calls = _run_install_unit(tmp_path, monkeypatch)
+    # Assert
     assert target.exists()
+
+
+def test_notifyd_install_unit_reports_what_it_wrote(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    result, _target, _calls = _run_install_unit(tmp_path, monkeypatch)
+    # Assert
     assert "wrote systemd user unit" in result.output
+
+
+def test_notifyd_install_unit_prints_the_enable_commands(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    result, _target, _calls = _run_install_unit(tmp_path, monkeypatch)
+    # Assert — the operator-gated commands are printed for them to run.
     assert "systemctl --user daemon-reload" in result.output
-    # The tool printed the commands but never SHELLED OUT to systemctl.
+
+
+def test_notifyd_install_unit_never_runs_systemctl(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    _result, _target, calls = _run_install_unit(tmp_path, monkeypatch)
+    # Assert — the tool printed the commands but never SHELLED OUT.
     assert calls == []
 
 
-def test_run_reminder_sweep_resolves_none_store_and_enqueues(tmp_path, monkeypatch):
-    # Regression: the notifyd tick calls _run_reminder_sweep(store=None) (the
-    # daemon resolves its store internally), but the sweep passed None straight
-    # to load_tasks → Path(None) → TypeError, so the nag never ran. It must now
-    # resolve None via $SCITEX_TODO_TASKS_YAML_SHARED, load the store, and enqueue a
-    # reminder for a stale card — without raising.
+def _sweep_with_none_store(tmp_path, monkeypatch):
+    """Run the reminder sweep with ``store=None`` over one stale card.
+
+    Regression: the notifyd tick calls ``_run_reminder_sweep(store=None)`` (the
+    daemon resolves its store internally), but the sweep passed None straight
+    to load_tasks → Path(None) → TypeError, so the nag never ran. It must now
+    resolve None via $SCITEX_TODO_TASKS_YAML_SHARED, load the store, and enqueue
+    a reminder for a stale card — without raising. Returns the owner's digest
+    notifications.
+    """
     from scitex_cards._delivery._daemon import _run_reminder_sweep
     from scitex_cards._inbox import poll_inbox
     from scitex_cards._throughput import _now_utc
@@ -95,10 +154,23 @@ def test_run_reminder_sweep_resolves_none_store_and_enqueues(tmp_path, monkeypat
 
     _run_reminder_sweep(store=None, now=_now_utc())  # must NOT raise
 
-    # The owner gets ONE digest (event_type "reminder") listing their stale card.
     notes = poll_inbox("alice", unseen_only=False, mark_seen=False, store=store)
-    digest = [n for n in notes if n["event_type"] == "reminder"]
+    return [n for n in notes if n["event_type"] == "reminder"]
+
+
+def test_run_reminder_sweep_resolves_none_store_and_enqueues(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    digest = _sweep_with_none_store(tmp_path, monkeypatch)
+    # Assert — the owner gets ONE digest (event_type "reminder").
     assert len(digest) == 1
+
+
+def test_the_reminder_digest_names_the_stale_card(tmp_path, monkeypatch):
+    # Arrange
+    # Act
+    digest = _sweep_with_none_store(tmp_path, monkeypatch)
+    # Assert
     assert "c1" in digest[0]["body"]
 
 

@@ -50,89 +50,161 @@ def _drain(store, agent):
     poll_inbox(agent, unseen_only=True, mark_seen=True, store=store)
 
 
-def test_an_empty_board_allows_the_stop(store):
-    # Act
-    result, payload = _run(store)
-    # Assert — {} is "allow"; anything else would wedge an idle agent.
-    assert payload == {}
-    assert result.exit_code == 0
+def _seed_runnable_card(store, card_id="w1", agent="worker-x"):
+    """One runnable card owned by ``agent``, with its created-event drained."""
+    add_task(store=store, id=card_id, title=card_id, status="in_progress", agent=agent)
+    _drain(store, agent)
 
 
-def test_runnable_work_blocks_the_stop(store):
-    # Arrange
-    add_task(store=store, id="w1", title="w1", status="in_progress", agent="worker-x")
-    _drain(store, "worker-x")
-
-    # Act
-    result, payload = _run(store)
-
-    # Assert
-    assert payload["decision"] == "block"
-    assert result.exit_code == 0  # the hook succeeded; the STOP was refused
-
-
-def test_the_reason_names_the_card_and_says_what_to_do(store):
-    """A refusal that does not say what to do next leaves the agent idle."""
-    # Arrange
-    add_task(store=store, id="w1", title="w1", status="in_progress", agent="worker-x")
-    _drain(store, "worker-x")
-
-    # Act
-    _, payload = _run(store)
-    reason = payload["reason"]
-
-    # Assert — the card id, an action, and an explicit single-item instruction.
-    assert "w1" in reason
-    assert "work it, update it, or close it" in reason
-    assert "Pick ONE" in reason
-
-
-def test_a_detector_failure_allows_the_stop(store):
-    """FAIL-OPEN. Our bug must never be the reason an agent cannot finish."""
-    # Act — a store path that cannot be read at all.
-    result = CliRunner().invoke(
-        stop_hook_cmd, ["--agent", "worker-x", "--tasks", "/nonexistent/none.yaml"]
-    )
-
-    # Assert
-    assert json.loads(result.stdout) == {}
-    assert result.exit_code == 0
-
-
-def test_another_agents_work_does_not_block_this_agent(store):
-    # Arrange
-    add_task(store=store, id="w2", title="w2", status="in_progress", agent="worker-y")
-    _drain(store, "worker-y")
-
-    # Act / Assert
-    _, payload = _run(store, agent="worker-x")
-    assert payload == {}
-
-
-def test_the_reason_stays_bounded_on_a_large_board(store):
-    """An instruction listing forty cards is not an instruction."""
-    # Arrange
-    for i in range(12):
+def _seed_many_runnable_cards(store, count=12, agent="worker-x"):
+    """``count`` runnable cards owned by ``agent``, created-events drained."""
+    for i in range(count):
         add_task(
             store=store,
             id=f"c{i}",
             title=f"c{i}",
             status="in_progress",
-            agent="worker-x",
+            agent=agent,
         )
-    _drain(store, "worker-x")
+    _drain(store, agent)
 
+
+def _run_against_unreadable_store():
+    """Invoke the hook against a store path that cannot be read at all."""
+    return CliRunner().invoke(
+        stop_hook_cmd, ["--agent", "worker-x", "--tasks", "/nonexistent/none.yaml"]
+    )
+
+
+def test_an_empty_board_allows_the_stop(store):
+    # Arrange — the fixture store holds no cards.
+    board = store
+    # Act
+    _result, payload = _run(board)
+    # Assert — {} is "allow"; anything else would wedge an idle agent.
+    assert payload == {}
+
+
+def test_an_empty_board_exits_zero(store):
+    # Arrange — the fixture store holds no cards.
+    board = store
+    # Act
+    result, _payload = _run(board)
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_runnable_work_blocks_the_stop(store):
+    # Arrange
+    _seed_runnable_card(store)
+    # Act
+    _result, payload = _run(store)
+    # Assert
+    assert payload["decision"] == "block"
+
+
+def test_a_refused_stop_still_exits_zero(store):
+    # Arrange
+    _seed_runnable_card(store)
+    # Act
+    result, _payload = _run(store)
+    # Assert — the hook succeeded; it is the STOP that was refused.
+    assert result.exit_code == 0
+
+
+def test_the_reason_names_the_blocking_card(store):
+    """A refusal that does not name the card leaves the agent guessing."""
+    # Arrange
+    _seed_runnable_card(store)
     # Act
     _, payload = _run(store)
     reason = payload["reason"]
+    # Assert
+    assert "w1" in reason
 
-    # Assert — capped list, and the remainder is COUNTED rather than dropped
-    # silently (an omission the agent cannot see is a lie about the board).
+
+def test_the_reason_says_what_to_do_next(store):
+    """A refusal that does not say what to do next leaves the agent idle."""
+    # Arrange
+    _seed_runnable_card(store)
+    # Act
+    _, payload = _run(store)
+    reason = payload["reason"]
+    # Assert
+    assert "work it, update it, or close it" in reason
+
+
+def test_the_reason_instructs_a_single_item(store):
+    """The instruction is explicitly single-item, not a whole backlog."""
+    # Arrange
+    _seed_runnable_card(store)
+    # Act
+    _, payload = _run(store)
+    reason = payload["reason"]
+    # Assert
+    assert "Pick ONE" in reason
+
+
+def test_a_detector_failure_allows_the_stop(store):
+    """FAIL-OPEN. Our bug must never be the reason an agent cannot finish."""
+    # Arrange — an unreadable store stands in for a detector failure.
+    # Act
+    result = _run_against_unreadable_store()
+    # Assert
+    assert json.loads(result.stdout) == {}
+
+
+def test_a_detector_failure_still_exits_zero(store):
+    """FAIL-OPEN. The hook itself must not report an error status."""
+    # Arrange — an unreadable store stands in for a detector failure.
+    # Act
+    result = _run_against_unreadable_store()
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_another_agents_work_does_not_block_this_agent(store):
+    # Arrange
+    _seed_runnable_card(store, card_id="w2", agent="worker-y")
+    # Act
+    _, payload = _run(store, agent="worker-x")
+    # Assert
+    assert payload == {}
+
+
+def test_the_reason_caps_the_listed_cards(store):
+    """An instruction listing forty cards is not an instruction."""
+    # Arrange
+    _seed_many_runnable_cards(store, count=12)
+    # Act
+    _, payload = _run(store)
+    reason = payload["reason"]
     numbered = [
         ln for ln in reason.splitlines() if ln.strip()[:2].rstrip(".").isdigit()
     ]
+    # Assert
     assert len(numbered) <= 6
+
+
+def test_the_reason_flags_the_capped_remainder(store):
+    """The remainder is COUNTED rather than dropped silently."""
+    # Arrange
+    _seed_many_runnable_cards(store, count=12)
+    # Act
+    _, payload = _run(store)
+    reason = payload["reason"]
+    # Assert
     assert "more runnable item(s)" in reason
+
+
+def test_the_reason_reports_the_full_runnable_total(store):
+    """An omission the agent cannot see is a lie about the board."""
+    # Arrange
+    _seed_many_runnable_cards(store, count=12)
+    # Act
+    _, payload = _run(store)
+    reason = payload["reason"]
+    # Assert
     assert "12 runnable item(s)" in reason
 
 

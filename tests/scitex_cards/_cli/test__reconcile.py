@@ -36,8 +36,22 @@ def _store(tmp_path):
 
 
 def test_verb_is_registered():
-    # Arrange / Act / Assert
-    assert "reconcile-merged-prs" in main.commands
+    # Arrange
+    group = main
+    # Act
+    names = group.commands
+    # Assert
+    assert "reconcile-merged-prs" in names
+
+
+def test_dry_run_by_default_exits_zero(tmp_path):
+    # Arrange
+    path = _store(tmp_path)
+    runner = CliRunner()
+    # Act
+    res = runner.invoke(main, ["reconcile-merged-prs", "--tasks", str(path)])
+    # Assert
+    assert res.exit_code == 0
 
 
 def test_dry_run_by_default_prints_dry_run_banner(tmp_path):
@@ -45,11 +59,8 @@ def test_dry_run_by_default_prints_dry_run_banner(tmp_path):
     path = _store(tmp_path)
     runner = CliRunner()
     # Act
-    res = runner.invoke(
-        main, ["reconcile-merged-prs", "--tasks", str(path)]
-    )
+    res = runner.invoke(main, ["reconcile-merged-prs", "--tasks", str(path)])
     # Assert
-    assert res.exit_code == 0
     assert "DRY-RUN" in res.output
 
 
@@ -58,9 +69,7 @@ def test_json_output_is_machine_readable(tmp_path):
     path = _store(tmp_path)
     runner = CliRunner()
     # Act
-    res = runner.invoke(
-        main, ["reconcile-merged-prs", "--tasks", str(path), "--json"]
-    )
+    res = runner.invoke(main, ["reconcile-merged-prs", "--tasks", str(path), "--json"])
     # Assert
     payload = json.loads(res.output)
     assert payload["applied"] is False

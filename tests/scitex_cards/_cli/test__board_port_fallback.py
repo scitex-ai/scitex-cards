@@ -82,6 +82,20 @@ def _spawn_marked_listener(marker: str) -> tuple[subprocess.Popen, int]:
     return proc, port
 
 
+def _write_stale_pidfile(pidfile_path) -> None:
+    """Plant a pidfile naming a pid that cannot exist."""
+    pidfile_path.parent.mkdir(parents=True, exist_ok=True)
+    pidfile_path.write_text("999999")
+
+
+def _await_exit(proc: subprocess.Popen, tries: int = 50) -> None:
+    """Wait briefly for a SIGTERM to land on ``proc``."""
+    for _ in range(tries):
+        if proc.poll() is not None:
+            break
+        time.sleep(0.1)
+
+
 def _terminate(proc: subprocess.Popen) -> None:
     if proc.poll() is None:
         proc.terminate()
@@ -143,8 +157,10 @@ class TestCmdlineGuard:
         # Arrange
         proc, _ = _spawn_marked_listener("scitex_cards_board")
         try:
-            # Act / Assert
-            assert _board_cmdline_is_board(proc.pid) is True
+            # Act
+            verdict = _board_cmdline_is_board(proc.pid)
+            # Assert
+            assert verdict is True
         finally:
             _terminate(proc)
 
@@ -152,15 +168,20 @@ class TestCmdlineGuard:
         # Arrange
         proc, _ = _spawn_marked_listener("some-other-server")
         try:
-            # Act / Assert
-            assert _board_cmdline_is_board(proc.pid) is False
+            # Act
+            verdict = _board_cmdline_is_board(proc.pid)
+            # Assert
+            assert verdict is False
         finally:
             _terminate(proc)
 
     def test_dead_pid_is_rejected(self):
         # Arrange — a PID highly unlikely to exist.
-        # Act / Assert
-        assert _board_cmdline_is_board(999999) is False
+        dead_pid = 999999
+        # Act
+        verdict = _board_cmdline_is_board(dead_pid)
+        # Assert
+        assert verdict is False
 
 
 # === _board_resolve_pid =====================================================
@@ -193,15 +214,38 @@ class TestResolvePid:
     @_needs_port_tool
     def test_stale_pidfile_falls_back_to_port_board(self, pidfile_path):
         # Arrange — stale pidfile (dead pid) + a real marked board on port.
-        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
-        pidfile_path.write_text("999999")
+        _write_stale_pidfile(pidfile_path)
         proc, port = _spawn_marked_listener("scitex_cards_board")
         try:
             # Act
-            pid, untracked = _board_resolve_pid(port)
-            # Assert — fell back to the real board; stale pidfile removed.
+            pid, _untracked = _board_resolve_pid(port)
+            # Assert — fell back to the real board on the port.
             assert pid == proc.pid
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_stale_pidfile_fallback_is_flagged_untracked(self, pidfile_path):
+        # Arrange — stale pidfile (dead pid) + a real marked board on port.
+        _write_stale_pidfile(pidfile_path)
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act
+            _pid, untracked = _board_resolve_pid(port)
+            # Assert
             assert untracked is True
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_stale_pidfile_is_removed_by_the_fallback(self, pidfile_path):
+        # Arrange — stale pidfile (dead pid) + a real marked board on port.
+        _write_stale_pidfile(pidfile_path)
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act
+            _board_resolve_pid(port)
+            # Assert
             assert not pidfile_path.exists()
         finally:
             _terminate(proc)
@@ -214,17 +258,37 @@ class TestVerbsSurfaceUntracked:
     """`status` reports the untracked board; `stop --dry-run` names it."""
 
     @_needs_port_tool
-    def test_status_reports_untracked_port_board(self, pidfile_path):
+    def test_status_reports_the_board_as_running(self, pidfile_path):
         # Arrange — no pidfile; a marked board listens on a port.
         proc, port = _spawn_marked_listener("scitex_cards_board")
         try:
             # Act
-            result = CliRunner().invoke(
-                main, ["board", "status", "--port", str(port)]
-            )
-            # Assert — reported as running, flagged as untracked.
+            result = CliRunner().invoke(main, ["board", "status", "--port", str(port)])
+            # Assert
             assert "running" in result.output
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_status_flags_the_port_board_untracked(self, pidfile_path):
+        # Arrange — no pidfile; a marked board listens on a port.
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act
+            result = CliRunner().invoke(main, ["board", "status", "--port", str(port)])
+            # Assert
             assert "untracked" in result.output
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_status_reports_the_real_port_board_pid(self, pidfile_path):
+        # Arrange — no pidfile; a marked board listens on a port.
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act
+            result = CliRunner().invoke(main, ["board", "status", "--port", str(port)])
+            # Assert
             assert f"pid {proc.pid}" in result.output
         finally:
             _terminate(proc)
@@ -239,11 +303,38 @@ class TestVerbsSurfaceUntracked:
                 main,
                 ["board", "stop", "--port", str(port), "--dry-run"],
             )
-            # Assert — it identifies the real pid + the untracked note.
+            # Assert — it identifies the real pid.
             assert f"pid {proc.pid}" in result.output
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_stop_dry_run_flags_the_board_untracked(self, pidfile_path):
+        # Arrange — no pidfile; a marked board listens on a port.
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act — dry-run does NOT signal anything.
+            result = CliRunner().invoke(
+                main,
+                ["board", "stop", "--port", str(port), "--dry-run"],
+            )
+            # Assert
             assert "untracked" in result.output
-            # And the process is still alive (dry-run signalled nothing).
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_stop_dry_run_leaves_the_board_alive(self, pidfile_path):
+        # Arrange — no pidfile; a marked board listens on a port.
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act — dry-run does NOT signal anything.
+            CliRunner().invoke(
+                main,
+                ["board", "stop", "--port", str(port), "--dry-run"],
+            )
             time.sleep(0.1)
+            # Assert — the process is still alive (dry-run signalled nothing).
             assert proc.poll() is None
         finally:
             _terminate(proc)
@@ -263,19 +354,27 @@ class TestStopFallbackTerminates:
     @_needs_port_tool
     def test_stop_terminates_untracked_port_board(self, pidfile_path):
         # Arrange — stale pidfile + a real marked board on the port.
-        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
-        pidfile_path.write_text("999999")
+        _write_stale_pidfile(pidfile_path)
         proc, port = _spawn_marked_listener("scitex_cards_board")
         try:
             # Act
             CliRunner().invoke(main, ["board", "stop", "--port", str(port)])
-            # Wait briefly for SIGTERM to land.
-            for _ in range(50):
-                if proc.poll() is not None:
-                    break
-                time.sleep(0.1)
-            # Assert — the dummy board was stopped; stale pidfile cleaned.
+            _await_exit(proc)
+            # Assert — the dummy board was stopped.
             assert proc.poll() is not None
+        finally:
+            _terminate(proc)
+
+    @_needs_port_tool
+    def test_stop_cleans_up_the_stale_pidfile(self, pidfile_path):
+        # Arrange — stale pidfile + a real marked board on the port.
+        _write_stale_pidfile(pidfile_path)
+        proc, port = _spawn_marked_listener("scitex_cards_board")
+        try:
+            # Act
+            CliRunner().invoke(main, ["board", "stop", "--port", str(port)])
+            _await_exit(proc)
+            # Assert
             assert not pidfile_path.exists()
         finally:
             _terminate(proc)

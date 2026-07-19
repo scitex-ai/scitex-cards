@@ -31,7 +31,9 @@ def test_close_persists_comment_and_status_deferred_exit_code(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -49,15 +51,15 @@ def test_close_persists_comment_and_status_cancelled_status(tmp_path, env):
     # non-terminal (operator: deferred は終了ではない).
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
-    result = runner.invoke(
-        main, ["close", "a", "--reason", "superseded", "--tasks", store]
-    )
-    # Assert
+    runner.invoke(main, ["close", "a", "--reason", "superseded", "--tasks", store])
+    # Assert — the exit code for this same invocation is pinned by
+    # test_close_persists_comment_and_status_deferred_exit_code above.
     on_disk = _model.load_tasks(store)[0]
-    assert result.exit_code == 0, result.output
     assert on_disk["status"] == "cancelled"
 
 
@@ -65,7 +67,9 @@ def test_close_persists_comment_and_status_deferred_text(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -80,7 +84,9 @@ def test_close_persists_comment_and_status_deferred_closed_at(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -95,7 +101,9 @@ def test_close_persists_comment_and_status_deferred_closed_by(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -110,7 +118,9 @@ def test_close_missing_reason_is_usage_error(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["close", "a", "--tasks", store])
@@ -122,7 +132,9 @@ def test_close_empty_reason_is_usage_error(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["close", "a", "--reason", "   ", "--tasks", store])
@@ -134,7 +146,9 @@ def test_close_unknown_id_nonzero_no_traceback(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -148,7 +162,9 @@ def test_close_by_override_flows_into_comment_and_log_meta_author(tmp_path, env)
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:env")
     # Act
     runner.invoke(
@@ -173,7 +189,9 @@ def test_close_by_override_flows_into_comment_and_log_meta_closed_by(tmp_path, e
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:env")
     # Act
     runner.invoke(
@@ -198,7 +216,9 @@ def test_close_dry_run_does_not_mutate_get(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     runner.invoke(
@@ -214,7 +234,9 @@ def test_close_dry_run_does_not_mutate_get_2(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     runner.invoke(
@@ -230,7 +252,9 @@ def test_close_dry_run_does_not_mutate_value_excludes(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     runner.invoke(
@@ -246,7 +270,9 @@ def test_close_json_emits_structured_payload_exit_code(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -262,7 +288,9 @@ def test_close_json_emits_structured_payload_task_id(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -278,7 +306,9 @@ def test_close_json_emits_structured_payload_status(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -294,7 +324,9 @@ def test_close_json_emits_structured_payload_reason(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -310,7 +342,9 @@ def test_close_json_emits_structured_payload_text(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -326,7 +360,9 @@ def test_close_json_emits_structured_payload_closed_by(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(
@@ -342,7 +378,9 @@ def test_close_json_emits_structured_payload_closed_at(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(
+        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store]
+    )
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(

@@ -62,100 +62,207 @@ def _commands(settings):
     ]
 
 
+def _run_on_missing_settings(tmp_path):
+    """Apply against a settings path whose parent dir does not exist yet."""
+    path = tmp_path / "nested" / "settings.json"
+    result = CliRunner().invoke(
+        install_stop_hook_cmd, ["--settings", str(path), "--apply"]
+    )
+    return path, result
+
+
+def _run_on_corrupt_settings(tmp_path):
+    """Apply against an unparseable settings.json."""
+    path = tmp_path / "settings.json"
+    path.write_text("{not json", encoding="utf-8")
+    result = CliRunner().invoke(
+        install_stop_hook_cmd, ["--settings", str(path), "--apply"]
+    )
+    return path, result
+
+
+def test_dry_run_is_the_default_and_exits_zero(settings):
+    # Arrange
+    target = settings
+    # Act
+    result = _run(target)
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_dry_run_announces_itself_on_stdout(settings):
+    # Arrange
+    target = settings
+    # Act
+    result = _run(target)
+    # Assert — it REPORTS; a mutation must be asked for.
+    assert "DRY RUN" in result.stdout
+
+
 def test_dry_run_is_the_default_and_writes_nothing(settings):
     # Arrange
     before = settings.read_text(encoding="utf-8")
-
     # Act
-    result = _run(settings)
-
-    # Assert — reports, changes nothing. A mutation must be asked for.
-    assert result.exit_code == 0
-    assert "DRY RUN" in result.stdout
+    _run(settings)
+    # Assert
     assert settings.read_text(encoding="utf-8") == before
 
 
-def test_apply_registers_the_hook(settings):
+def test_apply_exits_zero(settings):
+    # Arrange
+    target = settings
     # Act
-    result = _run(settings, "--apply")
-
+    result = _run(target, "--apply")
     # Assert
     assert result.exit_code == 0
-    assert _CMD in _commands(settings)
+
+
+def test_apply_registers_the_hook(settings):
+    # Arrange
+    target = settings
+    # Act
+    _run(target, "--apply")
+    # Assert
+    assert _CMD in _commands(target)
+
+
+def test_apply_reports_the_read_back_verification(settings):
+    # Arrange
+    target = settings
+    # Act
+    result = _run(target, "--apply")
+    # Assert
     assert "verified by read-back" in result.stdout
 
 
-def test_apply_keeps_unrelated_settings_intact(settings):
+def test_apply_keeps_the_env_block_intact(settings):
     """The file belongs to the user; we add one entry and touch nothing else."""
+    # Arrange
+    target = settings
     # Act
-    _run(settings, "--apply")
-
+    _run(target, "--apply")
+    data = json.loads(target.read_text(encoding="utf-8"))
     # Assert
-    data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["env"] == {"KEEP_ME": "1"}
-    assert data["permissions"] == {"allow": ["Bash(ls:*)"]}
-    assert "other-thing.sh" in _commands(settings)  # the pre-existing Stop hook
 
 
-def test_it_is_idempotent(settings):
-    """Re-running must not stack duplicate hooks — this gets run by provisioning."""
+def test_apply_keeps_the_permissions_block_intact(settings):
+    """The file belongs to the user; we add one entry and touch nothing else."""
+    # Arrange
+    target = settings
     # Act
-    _run(settings, "--apply")
-    second = _run(settings, "--apply")
+    _run(target, "--apply")
+    data = json.loads(target.read_text(encoding="utf-8"))
+    # Assert
+    assert data["permissions"] == {"allow": ["Bash(ls:*)"]}
 
+
+def test_apply_keeps_the_pre_existing_stop_hook(settings):
+    """The file belongs to the user; we add one entry and touch nothing else."""
+    # Arrange
+    target = settings
+    # Act
+    _run(target, "--apply")
+    # Assert
+    assert "other-thing.sh" in _commands(target)
+
+
+def test_a_second_apply_exits_zero(settings):
+    """Re-running must not fail — this gets run by provisioning."""
+    # Arrange
+    _run(settings, "--apply")
+    # Act
+    second = _run(settings, "--apply")
     # Assert
     assert second.exit_code == 0
+
+
+def test_a_second_apply_reports_already_registered(settings):
+    """Re-running says so rather than pretending it did new work."""
+    # Arrange
+    _run(settings, "--apply")
+    # Act
+    second = _run(settings, "--apply")
+    # Assert
     assert "already registered" in second.stdout
+
+
+def test_a_second_apply_adds_no_duplicate_hook(settings):
+    """Re-running must not stack duplicate hooks."""
+    # Arrange
+    _run(settings, "--apply")
+    # Act
+    _run(settings, "--apply")
+    # Assert
     assert _commands(settings).count(_CMD) == 1
 
 
-def test_apply_leaves_a_backup(settings, tmp_path):
+def test_apply_leaves_exactly_one_backup(settings, tmp_path):
+    # Arrange
+    target = settings
     # Act
-    _run(settings, "--apply")
-
-    # Assert — the previous file survives a bad edit.
+    _run(target, "--apply")
     backups = list(tmp_path.glob("settings.json.bak-*"))
+    # Assert
     assert len(backups) == 1
+
+
+def test_the_backup_holds_the_previous_content(settings, tmp_path):
+    # Arrange
+    target = settings
+    # Act
+    _run(target, "--apply")
+    backups = list(tmp_path.glob("settings.json.bak-*"))
+    # Assert — the previous file survives a bad edit.
     assert "other-thing.sh" in backups[0].read_text(encoding="utf-8")
+
+
+def test_a_missing_settings_file_apply_exits_zero(tmp_path):
+    # Arrange
+    root = tmp_path
+    # Act
+    _path, result = _run_on_missing_settings(root)
+    # Assert
+    assert result.exit_code == 0
 
 
 def test_a_missing_settings_file_is_created(tmp_path):
     # Arrange
-    path = tmp_path / "nested" / "settings.json"
-
+    root = tmp_path
     # Act
-    result = CliRunner().invoke(
-        install_stop_hook_cmd, ["--settings", str(path), "--apply"]
-    )
-
+    path, _result = _run_on_missing_settings(root)
     # Assert
-    assert result.exit_code == 0
     assert _CMD in _commands(path)
 
 
-def test_corrupt_settings_is_refused_not_overwritten(tmp_path):
-    """FAIL LOUD. Silently replacing an unparseable config would destroy it."""
+def test_corrupt_settings_apply_exits_nonzero(tmp_path):
+    """FAIL LOUD rather than silently replacing an unparseable config."""
     # Arrange
-    path = tmp_path / "settings.json"
-    path.write_text("{not json", encoding="utf-8")
-
+    root = tmp_path
     # Act
-    result = CliRunner().invoke(
-        install_stop_hook_cmd, ["--settings", str(path), "--apply"]
-    )
-
-    # Assert — refused, and the original bytes are still there.
+    _path, result = _run_on_corrupt_settings(root)
+    # Assert
     assert result.exit_code != 0
+
+
+def test_corrupt_settings_is_refused_not_overwritten(tmp_path):
+    """Silently replacing an unparseable config would destroy it."""
+    # Arrange
+    root = tmp_path
+    # Act
+    path, _result = _run_on_corrupt_settings(root)
+    # Assert — the original bytes are still there.
     assert path.read_text(encoding="utf-8") == "{not json"
 
 
 def test_a_custom_command_can_be_pinned(settings):
     """Hosts that need an absolute venv path must not have to hand-edit."""
+    # Arrange
+    target = settings
     # Act
-    _run(settings, "--command", "/opt/venv/bin/scitex-cards stop-hook", "--apply")
-
+    _run(target, "--command", "/opt/venv/bin/scitex-cards stop-hook", "--apply")
     # Assert
-    assert "/opt/venv/bin/scitex-cards stop-hook" in _commands(settings)
+    assert "/opt/venv/bin/scitex-cards stop-hook" in _commands(target)
 
 
 # EOF

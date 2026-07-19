@@ -25,109 +25,289 @@ from scitex_cards._delivery._ledger import (
     ledger_path,
 )
 
+_NOW = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+_FAIL = DeliveryResult(status=Status.FAILED, channel="log")
+
 
 def _store(tmp_path):
     return tmp_path / "tasks.yaml"
 
 
-def test_ledger_path_under_store_runtime_dir(tmp_path):
-    store = _store(tmp_path)
-    assert ledger_path(store) == tmp_path / "runtime" / "delivery_ledger.yaml"
+def _raw_ledger(tmp_path):
+    """The persisted ledger YAML, parsed."""
+    return yaml.safe_load((tmp_path / "runtime" / "delivery_ledger.yaml").read_text())
 
 
-def test_record_sent_is_terminal_and_already_done(tmp_path):
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+def _ledger_with_one_sent(tmp_path):
+    """A ledger holding a single SENT record."""
+    led = Ledger.load(_store(tmp_path))
     led.record(
-        "u_a", "n_1", "log",
-        DeliveryResult(status=Status.SENT, channel="log"), now,
+        "u_a",
+        "n_1",
+        "log",
+        DeliveryResult(status=Status.SENT, channel="log"),
+        _NOW,
     )
-    assert led.already_done("u_a", "n_1", "log") is True
-    # Reload from disk → state persisted as a keyed map.
-    reloaded = Ledger.load(store)
-    assert reloaded.already_done("u_a", "n_1", "log") is True
-
-    raw = yaml.safe_load((tmp_path / "runtime" / "delivery_ledger.yaml").read_text())
-    assert isinstance(raw, dict)
-    assert len(raw) == 1  # ONE keyed entry, not an append list.
-    (entry,) = raw.values()
-    assert entry["status"] == "sent"
-    assert entry["attempts"] == 1
+    return led
 
 
-def test_failure_backoff_grows_and_caps_attempts(tmp_path):
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+def _ledger_with_one_failure(tmp_path):
+    """A ledger holding a single FAILED record at ``_NOW``."""
+    led = Ledger.load(_store(tmp_path))
+    led.record("u_a", "n_1", "log", _FAIL, _NOW)
+    return led
 
-    fail = DeliveryResult(status=Status.FAILED, channel="log")
-    led.record("u_a", "n_1", "log", fail, now)
-    assert led.has_failure("u_a", "n_1", "log") is True
-    # Within backoff → not eligible; after BASE backoff → eligible.
-    assert led.retry_eligible("u_a", "n_1", "log", now) is False
-    later = now + _dt.timedelta(seconds=BASE_BACKOFF_SEC + 1)
-    assert led.retry_eligible("u_a", "n_1", "log", later) is True
 
-    # Second failure → backoff doubles (2*BASE).
-    led.record("u_a", "n_1", "log", fail, later)
-    not_yet = later + _dt.timedelta(seconds=BASE_BACKOFF_SEC + 1)
-    assert led.retry_eligible("u_a", "n_1", "log", not_yet) is False
-    much_later = later + _dt.timedelta(seconds=2 * BASE_BACKOFF_SEC + 1)
-    assert led.retry_eligible("u_a", "n_1", "log", much_later) is True
+def _ledger_with_two_failures(tmp_path):
+    """A ledger holding two FAILED records; returns ``(led, second_ts)``."""
+    led = _ledger_with_one_failure(tmp_path)
+    later = _NOW + _dt.timedelta(seconds=BASE_BACKOFF_SEC + 1)
+    led.record("u_a", "n_1", "log", _FAIL, later)
+    return led, later
 
-    # Exhaust attempts → no longer retry-eligible even far in the future.
-    t = much_later
+
+def _ledger_with_attempts_exhausted(tmp_path):
+    """Keep failing until MAX_ATTEMPTS is spent; returns ``(led, last_ts)``."""
+    led, later = _ledger_with_two_failures(tmp_path)
+    t = later + _dt.timedelta(seconds=2 * BASE_BACKOFF_SEC + 1)
     while True:
         entry = led._get("u_a", "n_1", "log")
         if entry["attempts"] >= MAX_ATTEMPTS:
             break
         t = t + _dt.timedelta(hours=1)
-        led.record("u_a", "n_1", "log", fail, t)
-    far = t + _dt.timedelta(days=1)
-    assert led.retry_eligible("u_a", "n_1", "log", far) is False
+        led.record("u_a", "n_1", "log", _FAIL, t)
+    return led, t
 
 
-def test_exhausting_attempts_becomes_terminal_and_round_trips(tmp_path):
-    """A failure that exhausts MAX_ATTEMPTS becomes a TERMINAL comm-miss.
-
-    Also exercises the full persist→reload→query round-trip of the 0x1f
-    composite key + the terminal status through PyYAML (minor note #2).
-    """
-    store = _store(tmp_path)
-    led = Ledger.load(store)
+def _ledger_driven_terminal(tmp_path):
+    """Record MAX_ATTEMPTS failures, far enough apart each is its own attempt."""
+    led = Ledger.load(_store(tmp_path))
     fail = DeliveryResult(status=Status.FAILED, channel="log", detail="boom")
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
-
-    # Record MAX_ATTEMPTS failures (far enough apart each is its own attempt).
     for i in range(MAX_ATTEMPTS):
-        led.record("u_a", "n_1", "log", fail, now + _dt.timedelta(hours=i))
-
-    # Last record promoted it to terminal: not a plain failure, not retryable.
-    assert led.is_terminal("u_a", "n_1", "log") is True
-    assert led.has_failure("u_a", "n_1", "log") is False
-    assert led.retry_eligible(
-        "u_a", "n_1", "log", now + _dt.timedelta(days=365)
-    ) is False
-    assert led.already_done("u_a", "n_1", "log") is False
-
-    # Round-trips through disk: composite key + terminal status survive reload.
-    raw = yaml.safe_load((tmp_path / "runtime" / "delivery_ledger.yaml").read_text())
-    assert len(raw) == 1
-    (entry,) = raw.values()
-    assert entry["status"] == TERMINAL_STATUS
-    assert entry["attempts"] == MAX_ATTEMPTS
-
-    reloaded = Ledger.load(store)
-    assert reloaded.is_terminal("u_a", "n_1", "log") is True
+        led.record("u_a", "n_1", "log", fail, _NOW + _dt.timedelta(hours=i))
+    return led
 
 
 def _next_eligible(led, recipient, note_id, channel):
     """Parse the stored ``next_eligible_ts`` back to an aware datetime."""
     entry = led._get(recipient, note_id, channel)
-    return _dt.datetime.fromisoformat(
-        entry["next_eligible_ts"].replace("Z", "+00:00")
+    return _dt.datetime.fromisoformat(entry["next_eligible_ts"].replace("Z", "+00:00"))
+
+
+def test_ledger_path_under_store_runtime_dir(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    # Act
+    path = ledger_path(store)
+    # Assert
+    assert path == tmp_path / "runtime" / "delivery_ledger.yaml"
+
+
+# --------------------------------------------------------------------------- #
+# a SENT record is terminal                                                    #
+# --------------------------------------------------------------------------- #
+def test_record_sent_marks_the_delivery_done(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_with_one_sent(tmp_path)
+    # Assert
+    assert led.already_done("u_a", "n_1", "log") is True
+
+
+def test_record_sent_survives_a_reload_from_disk(tmp_path):
+    # Arrange
+    _ledger_with_one_sent(tmp_path)
+    # Act — reload from disk; state persisted as a keyed map.
+    reloaded = Ledger.load(_store(tmp_path))
+    # Assert
+    assert reloaded.already_done("u_a", "n_1", "log") is True
+
+
+def test_the_persisted_ledger_is_a_mapping(tmp_path):
+    # Arrange
+    _ledger_with_one_sent(tmp_path)
+    # Act
+    raw = _raw_ledger(tmp_path)
+    # Assert
+    assert isinstance(raw, dict)
+
+
+def test_the_persisted_ledger_holds_one_keyed_entry(tmp_path):
+    # Arrange
+    _ledger_with_one_sent(tmp_path)
+    # Act
+    raw = _raw_ledger(tmp_path)
+    # Assert — ONE keyed entry, not an append list.
+    assert len(raw) == 1
+
+
+def test_the_persisted_sent_entry_records_its_status(tmp_path):
+    # Arrange
+    _ledger_with_one_sent(tmp_path)
+    # Act
+    (entry,) = _raw_ledger(tmp_path).values()
+    # Assert
+    assert entry["status"] == "sent"
+
+
+def test_the_persisted_sent_entry_counts_one_attempt(tmp_path):
+    # Arrange
+    _ledger_with_one_sent(tmp_path)
+    # Act
+    (entry,) = _raw_ledger(tmp_path).values()
+    # Assert
+    assert entry["attempts"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# failure → exponential backoff, capped attempts                               #
+# --------------------------------------------------------------------------- #
+def test_a_failure_is_recorded_as_a_failure(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_with_one_failure(tmp_path)
+    # Assert
+    assert led.has_failure("u_a", "n_1", "log") is True
+
+
+def test_a_failure_is_not_retryable_within_its_backoff(tmp_path):
+    # Arrange
+    led = _ledger_with_one_failure(tmp_path)
+    # Act
+    eligible = led.retry_eligible("u_a", "n_1", "log", _NOW)
+    # Assert
+    assert eligible is False
+
+
+def test_a_failure_is_retryable_after_the_base_backoff(tmp_path):
+    # Arrange
+    led = _ledger_with_one_failure(tmp_path)
+    later = _NOW + _dt.timedelta(seconds=BASE_BACKOFF_SEC + 1)
+    # Act
+    eligible = led.retry_eligible("u_a", "n_1", "log", later)
+    # Assert
+    assert eligible is True
+
+
+def test_a_second_failure_doubles_the_backoff(tmp_path):
+    # Arrange
+    led, later = _ledger_with_two_failures(tmp_path)
+    not_yet = later + _dt.timedelta(seconds=BASE_BACKOFF_SEC + 1)
+    # Act — one BASE window is no longer enough.
+    eligible = led.retry_eligible("u_a", "n_1", "log", not_yet)
+    # Assert
+    assert eligible is False
+
+
+def test_a_second_failure_retries_after_the_doubled_backoff(tmp_path):
+    # Arrange
+    led, later = _ledger_with_two_failures(tmp_path)
+    much_later = later + _dt.timedelta(seconds=2 * BASE_BACKOFF_SEC + 1)
+    # Act
+    eligible = led.retry_eligible("u_a", "n_1", "log", much_later)
+    # Assert
+    assert eligible is True
+
+
+def test_exhausted_attempts_are_never_retryable_again(tmp_path):
+    # Arrange
+    led, t = _ledger_with_attempts_exhausted(tmp_path)
+    far = t + _dt.timedelta(days=1)
+    # Act
+    eligible = led.retry_eligible("u_a", "n_1", "log", far)
+    # Assert — not eligible even far in the future.
+    assert eligible is False
+
+
+# --------------------------------------------------------------------------- #
+# exhausting MAX_ATTEMPTS → a TERMINAL comm-miss that round-trips              #
+# --------------------------------------------------------------------------- #
+def test_exhausting_attempts_becomes_terminal(tmp_path):
+    """A failure that exhausts MAX_ATTEMPTS becomes a TERMINAL comm-miss."""
+    # Arrange
+    # Act
+    led = _ledger_driven_terminal(tmp_path)
+    # Assert
+    assert led.is_terminal("u_a", "n_1", "log") is True
+
+
+def test_a_terminal_entry_is_no_longer_a_plain_failure(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_driven_terminal(tmp_path)
+    # Assert
+    assert led.has_failure("u_a", "n_1", "log") is False
+
+
+def test_a_terminal_entry_is_not_retryable(tmp_path):
+    # Arrange
+    led = _ledger_driven_terminal(tmp_path)
+    # Act
+    eligible = led.retry_eligible("u_a", "n_1", "log", _NOW + _dt.timedelta(days=365))
+    # Assert
+    assert eligible is False
+
+
+def test_a_terminal_entry_does_not_count_as_done(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_driven_terminal(tmp_path)
+    # Assert — terminal is a MISS, not a delivery.
+    assert led.already_done("u_a", "n_1", "log") is False
+
+
+def test_a_terminal_entry_persists_as_one_key(tmp_path):
+    # Arrange
+    _ledger_driven_terminal(tmp_path)
+    # Act — the 0x1f composite key round-trips through PyYAML.
+    raw = _raw_ledger(tmp_path)
+    # Assert
+    assert len(raw) == 1
+
+
+def test_the_persisted_terminal_entry_records_its_status(tmp_path):
+    # Arrange
+    _ledger_driven_terminal(tmp_path)
+    # Act
+    (entry,) = _raw_ledger(tmp_path).values()
+    # Assert
+    assert entry["status"] == TERMINAL_STATUS
+
+
+def test_the_persisted_terminal_entry_spent_every_attempt(tmp_path):
+    # Arrange
+    _ledger_driven_terminal(tmp_path)
+    # Act
+    (entry,) = _raw_ledger(tmp_path).values()
+    # Assert
+    assert entry["attempts"] == MAX_ATTEMPTS
+
+
+def test_terminal_state_survives_a_reload_from_disk(tmp_path):
+    # Arrange
+    _ledger_driven_terminal(tmp_path)
+    # Act
+    reloaded = Ledger.load(_store(tmp_path))
+    # Assert
+    assert reloaded.is_terminal("u_a", "n_1", "log") is True
+
+
+# --------------------------------------------------------------------------- #
+# a Retry-After hint drives the backoff                                        #
+# --------------------------------------------------------------------------- #
+def _ledger_with_retry_after(tmp_path, retry_after):
+    """Record one FAILED telegram delivery carrying a ``retry_after`` hint."""
+    led = Ledger.load(_store(tmp_path))
+    led.record(
+        "u_a",
+        "n_1",
+        "telegram",
+        DeliveryResult(
+            status=Status.FAILED, channel="telegram", retry_after=retry_after
+        ),
+        _NOW,
     )
+    return led
 
 
 def test_retry_after_hint_drives_backoff_instead_of_exponential(tmp_path):
@@ -135,66 +315,107 @@ def test_retry_after_hint_drives_backoff_instead_of_exponential(tmp_path):
 
     Slice 3: a 429 ``Retry-After`` should set ``next_eligible_ts`` to
     ``now + min(retry_after, MAX_BACKOFF_SEC)`` rather than the exponential
-    default — while still counting toward MAX_ATTEMPTS.
+    default.
     """
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+    # Arrange
+    led = _ledger_with_retry_after(tmp_path, 900)
+    expected = _NOW + _dt.timedelta(seconds=min(900, MAX_BACKOFF_SEC))
+    # Act
+    actual = _next_eligible(led, "u_a", "n_1", "telegram")
+    # Assert — 900 < cap, so next_eligible == now + 900.
+    assert actual == expected
 
-    hinted = DeliveryResult(
-        status=Status.FAILED, channel="telegram", retry_after=900
-    )
-    led.record("u_a", "n_1", "telegram", hinted, now)
 
-    # next_eligible ~ now + min(900, MAX_BACKOFF_SEC); 900 < cap so == now+900.
-    expected = now + _dt.timedelta(seconds=min(900, MAX_BACKOFF_SEC))
-    assert _next_eligible(led, "u_a", "n_1", "telegram") == expected
-    # The hint did NOT cost extra budget — one attempt consumed.
-    assert led._get("u_a", "n_1", "telegram")["attempts"] == 1
-    # Still retryable (not terminal) after the hinted window elapses.
-    assert led.retry_eligible(
+def test_a_retry_after_hint_still_costs_one_attempt(tmp_path):
+    # Arrange
+    led = _ledger_with_retry_after(tmp_path, 900)
+    # Act
+    entry = led._get("u_a", "n_1", "telegram")
+    # Assert — the hint did NOT cost extra budget.
+    assert entry["attempts"] == 1
+
+
+def test_a_hinted_failure_is_retryable_once_the_window_elapses(tmp_path):
+    # Arrange
+    led = _ledger_with_retry_after(tmp_path, 900)
+    expected = _NOW + _dt.timedelta(seconds=min(900, MAX_BACKOFF_SEC))
+    # Act
+    eligible = led.retry_eligible(
         "u_a", "n_1", "telegram", expected + _dt.timedelta(seconds=1)
-    ) is True
+    )
+    # Assert — still retryable (not terminal).
+    assert eligible is True
 
 
 def test_retry_after_hint_is_clamped_to_max_backoff(tmp_path):
     """A retry hint larger than MAX_BACKOFF_SEC is clamped to the cap."""
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
-    huge = DeliveryResult(
-        status=Status.FAILED, channel="telegram",
-        retry_after=MAX_BACKOFF_SEC * 10,
-    )
-    led.record("u_a", "n_1", "telegram", huge, now)
-    expected = now + _dt.timedelta(seconds=MAX_BACKOFF_SEC)
-    assert _next_eligible(led, "u_a", "n_1", "telegram") == expected
+    # Arrange
+    led = _ledger_with_retry_after(tmp_path, MAX_BACKOFF_SEC * 10)
+    expected = _NOW + _dt.timedelta(seconds=MAX_BACKOFF_SEC)
+    # Act
+    actual = _next_eligible(led, "u_a", "n_1", "telegram")
+    # Assert
+    assert actual == expected
 
 
 def test_no_retry_after_keeps_exponential_default(tmp_path):
     """Without a hint, the existing exponential backoff still applies."""
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
-    fail = DeliveryResult(status=Status.FAILED, channel="log")  # no retry_after
-    led.record("u_a", "n_1", "log", fail, now)
-    # First attempt → BASE_BACKOFF_SEC * 2**0 == BASE.
-    expected = now + _dt.timedelta(seconds=BASE_BACKOFF_SEC)
-    assert _next_eligible(led, "u_a", "n_1", "log") == expected
+    # Arrange — `_FAIL` carries no retry_after.
+    led = _ledger_with_one_failure(tmp_path)
+    expected = _NOW + _dt.timedelta(seconds=BASE_BACKOFF_SEC)
+    # Act
+    actual = _next_eligible(led, "u_a", "n_1", "log")
+    # Assert — first attempt → BASE_BACKOFF_SEC * 2**0 == BASE.
+    assert actual == expected
+
+
+# --------------------------------------------------------------------------- #
+# a SKIPPED record spends no budget                                            #
+# --------------------------------------------------------------------------- #
+def _ledger_with_one_skip(tmp_path):
+    """A ledger holding a single SKIPPED record."""
+    led = Ledger.load(_store(tmp_path))
+    led.record(
+        "u_a",
+        "n_1",
+        "log",
+        DeliveryResult(status=Status.SKIPPED, channel="log"),
+        _NOW,
+    )
+    return led
+
+
+def test_a_skip_is_recorded_as_skipped(tmp_path):
+    # Arrange
+    led = _ledger_with_one_skip(tmp_path)
+    # Act
+    entry = led._get("u_a", "n_1", "log")
+    # Assert
+    assert entry["status"] == "skipped"
 
 
 def test_skipped_does_not_consume_attempts(tmp_path):
-    store = _store(tmp_path)
-    led = Ledger.load(store)
-    now = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
-    led.record(
-        "u_a", "n_1", "log",
-        DeliveryResult(status=Status.SKIPPED, channel="log"), now,
-    )
+    # Arrange
+    led = _ledger_with_one_skip(tmp_path)
+    # Act
     entry = led._get("u_a", "n_1", "log")
-    assert entry["status"] == "skipped"
-    assert entry["attempts"] == 0  # skipped is non-terminal, no budget spent
+    # Assert — skipped is non-terminal, no budget spent.
+    assert entry["attempts"] == 0
+
+
+def test_a_skip_does_not_count_as_done(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_with_one_skip(tmp_path)
+    # Assert
     assert led.already_done("u_a", "n_1", "log") is False
+
+
+def test_a_skip_does_not_count_as_a_failure(tmp_path):
+    # Arrange
+    # Act
+    led = _ledger_with_one_skip(tmp_path)
+    # Assert
     assert led.has_failure("u_a", "n_1", "log") is False
 
 

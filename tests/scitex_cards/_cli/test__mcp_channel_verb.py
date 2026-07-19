@@ -15,28 +15,69 @@ from click.testing import CliRunner
 from scitex_cards._cli import main
 
 
-def test_mcp_channel_verb_is_registered():
+def test_mcp_group_help_exits_zero():
+    # Arrange
     runner = CliRunner()
+    # Act
     result = runner.invoke(main, ["mcp", "--help"])
+    # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_mcp_group_help_lists_channel_verb():
+    # Arrange
+    runner = CliRunner()
+    # Act
+    result = runner.invoke(main, ["mcp", "--help"])
+    # Assert
     assert "channel" in result.output
 
 
-def test_mcp_channel_help_describes_standalone_server():
+def test_mcp_channel_help_exits_zero():
+    # Arrange
     runner = CliRunner()
+    # Act
     result = runner.invoke(main, ["mcp", "channel", "--help"])
+    # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_mcp_channel_help_advertises_name_option():
+    # Arrange
+    runner = CliRunner()
+    # Act
+    result = runner.invoke(main, ["mcp", "channel", "--help"])
+    # Assert
     assert "--name" in result.output
+
+
+def test_mcp_channel_help_advertises_interval_option():
+    # Arrange
+    runner = CliRunner()
+    # Act
+    result = runner.invoke(main, ["mcp", "channel", "--help"])
+    # Assert
     assert "--interval" in result.output
 
 
-def test_mcp_channel_unresolved_agent_fails_loud(env):
-    # No agent id in the env and none passed → fail loud (non-zero exit) with
-    # an actionable hint, rather than draining an "unknown" inbox.
+def test_mcp_channel_unresolved_agent_exits_nonzero(env):
+    # Arrange — no agent id in the env and none passed → fail loud rather than
+    # draining an "unknown" inbox.
     env.delete("SCITEX_TODO_AGENT_ID")
     runner = CliRunner()
+    # Act
     result = runner.invoke(main, ["mcp", "channel", "--interval", "0.01"])
+    # Assert
     assert result.exit_code != 0
+
+
+def test_mcp_channel_unresolved_agent_names_the_env_var(env):
+    # Arrange — the failure must carry an actionable hint.
+    env.delete("SCITEX_TODO_AGENT_ID")
+    runner = CliRunner()
+    # Act
+    result = runner.invoke(main, ["mcp", "channel", "--interval", "0.01"])
+    # Assert
     assert "SCITEX_TODO_AGENT_ID" in result.output
 
 
