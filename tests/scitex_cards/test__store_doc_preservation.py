@@ -49,149 +49,283 @@ def _seed_store_with_users(path, tasks, users):
         safe_dump({"tasks": norm, "users": users, "meta": {"seed": "v1"}}, handle)
 
 
+#: Each CRUD verb below is exercised once and then asserted on three ways: the
+#: ``users:`` registry survived, the unrelated ``meta:`` section survived, and
+#: the mutation itself actually landed. They are split into sibling tests
+#: because the third is what stops the other two from passing vacuously — a
+#: write path that preserved every section by never writing at all would sail
+#: through a users-only check.
+_ADD_USERS = {"alice": {"role": "dev"}, "bob": {"role": "qa"}}
+_UPDATE_USERS = {"alice": {"role": "dev"}}
+_DELETE_USERS = {"carol": {"role": "lead"}}
+_COMMENT_USERS = {"dave": {"role": "dev"}}
+_SEED_META = {"seed": "v1"}
+
+
+def _doc_after_add(tmp_path):
+    store = tmp_path / "tasks.yaml"
+    _seed_store_with_users(store, tasks=[{"id": "a", "title": "A"}], users=_ADD_USERS)
+    _store.add_task(store, id="b", title="B", assignee="agent:test")
+    return _model.load_doc(store)
+
+
+def _doc_after_update(tmp_path):
+    store = tmp_path / "tasks.yaml"
+    _seed_store_with_users(
+        store,
+        tasks=[{"id": "a", "title": "A", "status": "pending"}],
+        users=_UPDATE_USERS,
+    )
+    _store.update_task(store, task_id="a", status="in_progress")
+    return _model.load_doc(store)
+
+
+def _doc_after_delete(tmp_path):
+    store = tmp_path / "tasks.yaml"
+    _seed_store_with_users(
+        store,
+        tasks=[{"id": "a", "title": "A"}, {"id": "b", "title": "B"}],
+        users=_DELETE_USERS,
+    )
+    _store.delete_task(store, task_id="a")
+    return _model.load_doc(store)
+
+
+def _doc_after_comment(tmp_path):
+    store = tmp_path / "tasks.yaml"
+    _seed_store_with_users(
+        store, tasks=[{"id": "a", "title": "A"}], users=_COMMENT_USERS
+    )
+    _store.comment_task(store, task_id="a", text="hello", by="dave")
+    return _model.load_doc(store)
+
+
 class TestSectionPreservationAcrossCRUD:
     """The ``users:`` / ``meta:`` sections survive each write verb."""
 
     def test_users_survives_add_task(self, tmp_path):
-        # Arrange — a store with a pre-existing users registry.
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store,
-            tasks=[{"id": "a", "title": "A"}],
-            users={"alice": {"role": "dev"}, "bob": {"role": "qa"}},
-        )
+        # Arrange
+        expected = _ADD_USERS
         # Act
-        _store.add_task(store, id="b", title="B", assignee="agent:test")
-        # Assert — users unchanged, both tasks present.
-        doc = _model.load_doc(store)
-        assert doc["users"] == {"alice": {"role": "dev"}, "bob": {"role": "qa"}}
-        assert doc["meta"] == {"seed": "v1"}
-        assert {t["id"] for t in doc["tasks"]} == {"a", "b"}
+        doc = _doc_after_add(tmp_path)
+        # Assert
+        assert doc["users"] == expected
+
+    def test_meta_survives_add_task(self, tmp_path):
+        # Arrange
+        expected = _SEED_META
+        # Act
+        doc = _doc_after_add(tmp_path)
+        # Assert — it is not just `users:` that is recovered, but every section.
+        assert doc["meta"] == expected
+
+    def test_add_task_still_appends_the_new_row(self, tmp_path):
+        # Arrange
+        expected_ids = {"a", "b"}
+        # Act
+        doc = _doc_after_add(tmp_path)
+        # Assert — preservation must not come at the cost of the write.
+        assert {t["id"] for t in doc["tasks"]} == expected_ids
 
     def test_users_survives_update_task(self, tmp_path):
         # Arrange
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store,
-            tasks=[{"id": "a", "title": "A", "status": "pending"}],
-            users={"alice": {"role": "dev"}},
-        )
+        expected = _UPDATE_USERS
         # Act
-        _store.update_task(store, task_id="a", status="in_progress")
+        doc = _doc_after_update(tmp_path)
         # Assert
-        doc = _model.load_doc(store)
-        assert doc["users"] == {"alice": {"role": "dev"}}
+        assert doc["users"] == expected
+
+    def test_update_task_still_applies_the_status_flip(self, tmp_path):
+        # Arrange
+        expected_status = "in_progress"
+        # Act
+        doc = _doc_after_update(tmp_path)
+        # Assert
         task = next(t for t in doc["tasks"] if t["id"] == "a")
-        assert task["status"] == "in_progress"
+        assert task["status"] == expected_status
 
     def test_users_survives_delete_task(self, tmp_path):
         # Arrange
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store,
-            tasks=[{"id": "a", "title": "A"}, {"id": "b", "title": "B"}],
-            users={"carol": {"role": "lead"}},
-        )
+        expected = _DELETE_USERS
         # Act
-        _store.delete_task(store, task_id="a")
+        doc = _doc_after_delete(tmp_path)
         # Assert
-        doc = _model.load_doc(store)
-        assert doc["users"] == {"carol": {"role": "lead"}}
-        assert {t["id"] for t in doc["tasks"]} == {"b"}
+        assert doc["users"] == expected
+
+    def test_delete_task_still_removes_the_row(self, tmp_path):
+        # Arrange
+        expected_ids = {"b"}
+        # Act
+        doc = _doc_after_delete(tmp_path)
+        # Assert
+        assert {t["id"] for t in doc["tasks"]} == expected_ids
 
     def test_users_survives_comment_task(self, tmp_path):
         # Arrange
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store,
-            tasks=[{"id": "a", "title": "A"}],
-            users={"dave": {"role": "dev"}},
-        )
+        expected = _COMMENT_USERS
         # Act
-        _store.comment_task(store, task_id="a", text="hello", by="dave")
+        doc = _doc_after_comment(tmp_path)
         # Assert
-        doc = _model.load_doc(store)
-        assert doc["users"] == {"dave": {"role": "dev"}}
+        assert doc["users"] == expected
+
+    def test_comment_task_still_appends_the_comment(self, tmp_path):
+        # Arrange
+        expected_text = "hello"
+        # Act
+        doc = _doc_after_comment(tmp_path)
+        # Assert
         task = next(t for t in doc["tasks"] if t["id"] == "a")
-        assert any(c.get("text") == "hello" for c in task["comments"])
+        assert any(c.get("text") == expected_text for c in task["comments"])
 
 
 class TestRoundTrip:
     """The mutated payload is present after reload (write actually lands)."""
 
     def test_added_task_present_after_reload(self, tmp_path):
+        # Arrange
         store = tmp_path / "tasks.yaml"
         _store.add_task(store, id="x", title="X", assignee="agent:test")
+        # Act
         tasks = _model.load_tasks(store)
+        # Assert
         assert any(t["id"] == "x" for t in tasks)
+
+
+#: The doc primitives, each seeded then read back. As above, the section checks
+#: are split from the tasks check: a primitive that preserves everything by
+#: writing nothing is the exact bug these guard, and only the tasks assertion
+#: can catch it.
+def _seed_primitive_store(tmp_path, users):
+    store = tmp_path / "tasks.yaml"
+    _seed_store_with_users(store, tasks=[{"id": "a", "title": "A"}], users=users)
+    return store
+
+
+def _doc_after_save_doc_unlocked(tmp_path):
+    store = _seed_primitive_store(tmp_path, {"u": 1})
+    with _model._store_lock(store):
+        doc = _model.load_doc(store)
+        new_tasks = list(doc["tasks"]) + [
+            {"id": "b", "title": "B", "status": "pending"}
+        ]
+        _model._save_doc_unlocked(doc, store, tasks=new_tasks)
+    return _model.load_doc(store)
+
+
+def _doc_after_save_tasks_unlocked(tmp_path):
+    store = _seed_primitive_store(tmp_path, {"u": 2})
+    with _model._store_lock(store):
+        _model._save_tasks_unlocked(
+            [
+                {"id": "a", "title": "A", "status": "pending"},
+                {"id": "c", "title": "C", "status": "pending"},
+            ],
+            store,
+        )
+    return _model.load_doc(store)
 
 
 class TestDocPrimitives:
     """Direct unit coverage of the new ``load_doc`` / ``_save_doc_unlocked``."""
 
-    def test_load_doc_returns_full_mapping(self, tmp_path):
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store, tasks=[{"id": "a", "title": "A"}], users={"u": 1}
-        )
+    def test_load_doc_returns_the_users_section(self, tmp_path):
+        # Arrange
+        store = _seed_primitive_store(tmp_path, {"u": 1})
+        # Act
         doc = _model.load_doc(store)
+        # Assert
         assert doc.get("users") == {"u": 1}
-        assert doc.get("meta") == {"seed": "v1"}
+
+    def test_load_doc_returns_the_meta_section(self, tmp_path):
+        # Arrange
+        store = _seed_primitive_store(tmp_path, {"u": 1})
+        # Act
+        doc = _model.load_doc(store)
+        # Assert — the FULL doc, not a tasks-plus-users special case.
+        assert doc.get("meta") == _SEED_META
+
+    def test_load_doc_returns_the_tasks_list(self, tmp_path):
+        # Arrange
+        store = _seed_primitive_store(tmp_path, {"u": 1})
+        # Act
+        doc = _model.load_doc(store)
+        # Assert
         assert [t["id"] for t in doc["tasks"]] == ["a"]
 
-    def test_save_doc_unlocked_preserves_extra_sections(self, tmp_path):
-        # Arrange — an already-parsed doc with extra sections; mutate tasks.
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store, tasks=[{"id": "a", "title": "A"}], users={"u": 1}
-        )
-        with _model._store_lock(store):
-            doc = _model.load_doc(store)
-            new_tasks = list(doc["tasks"]) + [
-                {"id": "b", "title": "B", "status": "pending"}
-            ]
-            _model._save_doc_unlocked(doc, store, tasks=new_tasks)
+    def test_save_doc_unlocked_preserves_the_users_section(self, tmp_path):
+        # Arrange
+        expected = {"u": 1}
+        # Act
+        reloaded = _doc_after_save_doc_unlocked(tmp_path)
         # Assert
-        reloaded = _model.load_doc(store)
-        assert reloaded["users"] == {"u": 1}
-        assert reloaded["meta"] == {"seed": "v1"}
-        assert {t["id"] for t in reloaded["tasks"]} == {"a", "b"}
+        assert reloaded["users"] == expected
 
-    def test_save_tasks_unlocked_wrapper_still_preserves_sections(self, tmp_path):
-        # The thin back-compat wrapper (only holds `tasks`, not the doc) must
-        # STILL recover the on-disk `users:` section via its single re-read.
-        store = tmp_path / "tasks.yaml"
-        _seed_store_with_users(
-            store, tasks=[{"id": "a", "title": "A"}], users={"u": 2}
-        )
-        with _model._store_lock(store):
-            _model._save_tasks_unlocked(
-                [
-                    {"id": "a", "title": "A", "status": "pending"},
-                    {"id": "c", "title": "C", "status": "pending"},
-                ],
-                store,
-            )
-        reloaded = _model.load_doc(store)
-        assert reloaded["users"] == {"u": 2}
-        assert reloaded["meta"] == {"seed": "v1"}
-        assert {t["id"] for t in reloaded["tasks"]} == {"a", "c"}
+    def test_save_doc_unlocked_preserves_the_meta_section(self, tmp_path):
+        # Arrange
+        expected = _SEED_META
+        # Act
+        reloaded = _doc_after_save_doc_unlocked(tmp_path)
+        # Assert
+        assert reloaded["meta"] == expected
+
+    def test_save_doc_unlocked_writes_the_mutated_tasks(self, tmp_path):
+        # Arrange
+        expected_ids = {"a", "b"}
+        # Act
+        reloaded = _doc_after_save_doc_unlocked(tmp_path)
+        # Assert
+        assert {t["id"] for t in reloaded["tasks"]} == expected_ids
+
+    def test_save_tasks_unlocked_wrapper_preserves_users(self, tmp_path):
+        """The thin back-compat wrapper holds only `tasks`, not the doc — it
+        must STILL recover the on-disk `users:` via its single re-read."""
+        # Arrange
+        expected = {"u": 2}
+        # Act
+        reloaded = _doc_after_save_tasks_unlocked(tmp_path)
+        # Assert
+        assert reloaded["users"] == expected
+
+    def test_save_tasks_unlocked_wrapper_preserves_meta(self, tmp_path):
+        # Arrange
+        expected = _SEED_META
+        # Act
+        reloaded = _doc_after_save_tasks_unlocked(tmp_path)
+        # Assert
+        assert reloaded["meta"] == expected
+
+    def test_save_tasks_unlocked_wrapper_writes_the_new_tasks(self, tmp_path):
+        # Arrange
+        expected_ids = {"a", "c"}
+        # Act
+        reloaded = _doc_after_save_tasks_unlocked(tmp_path)
+        # Assert
+        assert {t["id"] for t in reloaded["tasks"]} == expected_ids
+
 
 class TestGitAutocommitOptOut:
     """The ``SCITEX_TODO_STORE_GIT_AUTOCOMMIT`` knob gates the per-save commit."""
 
     def test_autocommit_skipped_when_disabled(self, tmp_path, env):
-        # Arrange — knob off (the autouse fixture already sets it, be explicit).
+        # Arrange
         env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
         store = tmp_path / "tasks.yaml"
-        # Act — a write that would normally lazy-init + commit a per-store .git.
+        # Act
         _store.add_task(store, id="a", title="A", assignee="agent:test")
-        # Assert — no .git created; the write itself still landed.
+        # Assert — a write that would normally lazy-init a per-store .git did not.
         assert not (tmp_path / ".git").exists()
+
+    def test_write_still_lands_when_autocommit_is_disabled(self, tmp_path, env):
+        # Arrange
+        env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+        store = tmp_path / "tasks.yaml"
+        # Act
+        _store.add_task(store, id="a", title="A", assignee="agent:test")
+        # Assert — the knob turns off the recovery layer, not the store.
         assert any(t["id"] == "a" for t in _model.load_tasks(store))
 
     def test_autocommit_runs_when_enabled(self, tmp_path, env):
-        # Arrange — opt BACK IN over the autouse-off default.
+        # Arrange
         env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "1")
         store = tmp_path / "tasks.yaml"
         # Act
@@ -202,17 +336,18 @@ class TestGitAutocommitOptOut:
 
 class TestReadUnderLock:
     def test_on_disk_users_at_calltime_survives_locked_crud(self, tmp_path):
-        # Read-under-lock semantics: the `users:` present on disk WHEN the
-        # locked CRUD call begins is the version that survives — the write
-        # verb reads the full doc under the lock and rewrites it whole, so a
-        # concurrent writer's users-block that was already committed to disk
-        # at call-time is not clobbered by the tasks-only mutation.
+        """Read-under-lock semantics: the `users:` present on disk WHEN the
+        locked CRUD call begins is the version that survives — the write verb
+        reads the full doc under the lock and rewrites it whole, so a concurrent
+        writer's users-block that was already committed to disk at call-time is
+        not clobbered by the tasks-only mutation.
+        """
+        # Arrange
         store = tmp_path / "tasks.yaml"
         _seed_store_with_users(
             store, tasks=[{"id": "a", "title": "A"}], users={"e": {"x": 1}}
         )
-        # Mutate a DIFFERENT axis (tasks) via a CRUD verb.
+        # Act
         _store.update_task(store, task_id="a", priority=1)
-        # The users block on disk at call-time is intact post-write.
-        doc = _model.load_doc(store)
-        assert doc["users"] == {"e": {"x": 1}}
+        # Assert — the users block on disk at call-time is intact post-write.
+        assert _model.load_doc(store)["users"] == {"e": {"x": 1}}

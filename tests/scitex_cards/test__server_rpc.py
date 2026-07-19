@@ -113,142 +113,360 @@ def _add(rig_info, card_id: str, **extra):
 # === 1. auth ===============================================================
 
 
+#: Several refusals below are asserted twice — once for the STATUS code the
+#: transport returns, once for the message body naming what was wrong. They are
+#: split into sibling tests because the two failures are different bugs: a wrong
+#: code breaks every client's control flow, while a code that is right with an
+#: unhelpful body leaves an operator with a bare 400 and nothing to act on.
+
+
 def test_health_is_public(rig):
-    status, payload = _get(rig, "/v1/health")
+    # Arrange
+    endpoint = "/v1/health"
+    # Act
+    status, _payload = _get(rig, endpoint)
+    # Assert — no bearer, no identity header, still served.
     assert status == 200
+
+
+def test_health_reports_a_live_verb_surface(rig):
+    # Arrange
+    endpoint = "/v1/health"
+    # Act
+    _status, payload = _get(rig, endpoint)
+    # Assert — a probe that proves the RPC surface is actually wired up.
     assert payload["ok"] is True and payload["verbs"] > 0
 
 
 def test_missing_token_is_401(rig):
-    status, payload = _call(rig, "list_tasks", token=None)
+    # Arrange
+    verb = "list_tasks"
+    # Act
+    status, _payload = _call(rig, verb, token=None)
+    # Assert
     assert status == 401
+
+
+def test_missing_token_error_names_the_token(rig):
+    # Arrange
+    verb = "list_tasks"
+    # Act
+    _status, payload = _call(rig, verb, token=None)
+    # Assert
     assert "token" in payload["error"]
 
 
 def test_bad_token_is_401(rig):
-    status, _ = _call(rig, "list_tasks", token="not-the-token")
+    # Arrange
+    wrong_token = "not-the-token"
+    # Act
+    status, _ = _call(rig, "list_tasks", token=wrong_token)
+    # Assert
     assert status == 401
 
 
 def test_missing_identity_header_is_400(rig):
-    status, payload = _call(rig, "list_tasks", agent=None)
+    # Arrange
+    verb = "list_tasks"
+    # Act
+    status, _payload = _call(rig, verb, agent=None)
+    # Assert — authenticated but anonymous is a bad REQUEST, not a bad token.
     assert status == 400
+
+
+def test_missing_identity_header_error_names_the_header(rig):
+    # Arrange
+    verb = "list_tasks"
+    # Act
+    _status, payload = _call(rig, verb, agent=None)
+    # Assert
     assert "X-Scitex-Agent" in payload["error"]
 
 
 def test_token_file_is_minted_0600(rig):
-    mode = (rig["tokens_dir"] / "hub.token").stat().st_mode & 0o777
+    # Arrange
+    token_file = rig["tokens_dir"] / "hub.token"
+    # Act
+    mode = token_file.stat().st_mode & 0o777
+    # Assert — minted on first serve, and not world-readable.
     assert mode == 0o600
 
 
 # === 2. transport ==========================================================
 
 
-def test_unknown_verb_is_404_naming_the_surface(rig):
-    status, payload = _call(rig, "no_such_verb")
+def test_unknown_verb_is_404(rig):
+    # Arrange
+    verb = "no_such_verb"
+    # Act
+    status, _payload = _call(rig, verb)
+    # Assert
     assert status == 404
+
+
+def test_unknown_verb_error_names_the_surface(rig):
+    # Arrange
+    verb = "no_such_verb"
+    # Act
+    _status, payload = _call(rig, verb)
+    # Assert — the refusal lists what you COULD have called.
     assert "add_task" in payload["verbs"]
 
 
 def test_store_retarget_is_rejected(rig):
-    status, payload = _call(rig, "list_tasks", {"tasks_path": "/tmp/evil.yaml"})
+    # Arrange
+    body = {"tasks_path": "/tmp/evil.yaml"}
+    # Act
+    status, _payload = _call(rig, "list_tasks", body)
+    # Assert — a client must never point the hub at another store.
     assert status == 400
+
+
+def test_store_retarget_error_says_the_store_is_pinned(rig):
+    # Arrange
+    body = {"tasks_path": "/tmp/evil.yaml"}
+    # Act
+    _status, payload = _call(rig, "list_tasks", body)
+    # Assert
     assert "pinned" in payload["error"]
 
 
 def test_unknown_task_id_is_404(rig):
-    status, payload = _call(rig, "get_task", {"task_id": "ghost"})
+    # Arrange
+    body = {"task_id": "ghost"}
+    # Act
+    status, _payload = _call(rig, "get_task", body)
+    # Assert
     assert status == 404
+
+
+def test_unknown_task_id_error_names_the_exception_type(rig):
+    # Arrange
+    body = {"task_id": "ghost"}
+    # Act
+    _status, payload = _call(rig, "get_task", body)
+    # Assert — the engine's exception survives the transport by name.
     assert payload["type"] == "TaskNotFoundError"
 
 
 def test_validation_error_is_400(rig):
-    # add_task without an owner trips the validator, not a 500.
-    status, _ = _call(
-        rig, "add_task", {"id": "x", "title": "X", "created_by": "rpc-tester"}
-    )
+    # Arrange
+    owner_less = {"id": "x", "title": "X", "created_by": "rpc-tester"}
+    # Act
+    status, _ = _call(rig, "add_task", owner_less)
+    # Assert — a validator refusal is a 400, never a 500.
     assert status == 400
 
 
 # === 3. round trips (read-back through the ENGINE, never the server) ======
 
 
-def test_add_task_round_trip_with_attribution(rig):
-    status, created = _add(rig, "rt-add")
-    assert status == 200 and created["id"] == "rt-add"
+#: Every round trip below is asserted twice or more: once on what the SERVER
+#: answered, and once on what the ENGINE reads back off disk. The read-back is
+#: the design's PR-2 acceptance row — a server that echoes a plausible response
+#: without persisting anything would satisfy the first half and fail the fleet.
+#: Splitting them keeps "the wire lied" and "the write never landed" apart.
+
+
+def test_add_task_round_trip_returns_the_created_card(rig):
+    # Arrange
+    card_id = "rt-add"
+    # Act
+    status, created = _add(rig, card_id)
+    # Assert
+    assert (status, created["id"]) == (200, card_id)
+
+
+def test_add_task_over_http_persists_the_title(rig):
+    # Arrange
+    _add(rig, "rt-add")
+    # Act
     on_disk = _store.get_task(rig["store"], "rt-add")
+    # Assert — read back through the ENGINE, never the server under test.
     assert on_disk["title"] == "Card rt-add"
+
+
+def test_add_task_over_http_records_the_creating_agent(rig):
+    # Arrange
+    _add(rig, "rt-add")
+    # Act
+    on_disk = _store.get_task(rig["store"], "rt-add")
+    # Assert — attribution survives the hop as an explicit kwarg.
     assert on_disk["created_by"] == "rpc-tester"
 
 
-def test_update_task_round_trip(rig):
+def test_update_task_round_trip_returns_the_new_status(rig):
+    # Arrange
     _add(rig, "rt-upd")
+    # Act
     status, updated = _call(
         rig, "update_task", {"task_id": "rt-upd", "status": "in_progress"}
     )
-    assert status == 200 and updated["status"] == "in_progress"
+    # Assert
+    assert (status, updated["status"]) == (200, "in_progress")
+
+
+def test_update_task_over_http_persists_the_new_status(rig):
+    # Arrange
+    _add(rig, "rt-upd")
+    # Act
+    _call(rig, "update_task", {"task_id": "rt-upd", "status": "in_progress"})
+    # Assert
     assert _store.get_task(rig["store"], "rt-upd")["status"] == "in_progress"
 
 
-def test_comment_task_round_trip_with_author(rig):
+def _comment_over_the_wire(rig):
     _add(rig, "rt-com")
-    status, result = _call(
+    return _call(
         rig,
         "comment_task",
         {"task_id": "rt-com", "text": "over the wire", "by": "remote-agent"},
     )
-    assert status == 200 and result["comment"]["author"] == "remote-agent"
+
+
+def test_comment_task_round_trip_with_author(rig):
+    # Arrange
+    expected = (200, "remote-agent")
+    # Act
+    status, result = _comment_over_the_wire(rig)
+    # Assert — the REMOTE agent is the author, not the serving identity.
+    assert (status, result["comment"]["author"]) == expected
+
+
+def test_comment_task_over_http_persists_the_text(rig):
+    # Arrange
+    _comment_over_the_wire(rig)
+    # Act
     comments = _store.get_task(rig["store"], "rt-com")["comments"]
+    # Assert
     assert comments[-1]["text"] == "over the wire"
 
 
-def test_list_tasks_reads_the_pinned_store(rig):
+def test_list_tasks_over_http_returns_200(rig):
+    # Arrange
     _add(rig, "rt-list")
-    status, rows = _call(rig, "list_tasks", {"scope": ""})
+    # Act
+    status, _rows = _call(rig, "list_tasks", {"scope": ""})
+    # Assert
     assert status == 200
+
+
+def test_list_tasks_reads_the_pinned_store(rig):
+    # Arrange
+    _add(rig, "rt-list")
+    # Act
+    _status, rows = _call(rig, "list_tasks", {"scope": ""})
+    # Assert — the rows come from the store the server was pinned to.
     assert "rt-list" in {t["id"] for t in rows}
 
 
-def test_delete_then_restore_round_trip(rig):
+#: Delete-then-restore, staged. Returns ``(delete_status, removed_payload)``
+#: after the delete; ``_restored`` then feeds that payload back. Four tests
+#: split the one round trip: the delete's answer, the delete's effect, the
+#: restore's answer, and the restore's effect. An undo that reports success
+#: without putting the card back is the failure worth isolating.
+def _deleted(rig):
     _add(rig, "rt-del")
-    status, removed = _call(rig, "delete_task", {"task_id": "rt-del"})
-    assert status == 200 and removed["removed"]["id"] == "rt-del"
-    with pytest.raises(Exception):
-        _store.get_task(rig["store"], "rt-del")
-    status, _ = _call(
+    return _call(rig, "delete_task", {"task_id": "rt-del"})
+
+
+def _restored(rig):
+    _status, removed = _deleted(rig)
+    return _call(
         rig,
         "restore_task",
         {"task": removed["removed"], "refs": removed.get("refs")},
     )
-    assert status == 200
-    assert _store.get_task(rig["store"], "rt-del")["id"] == "rt-del"
 
 
-def test_dm_send_and_list_round_trip(rig):
-    status, record = _call(
+def test_delete_task_over_http_returns_the_removed_card(rig):
+    # Arrange
+    card_id = "rt-del"
+    # Act
+    status, removed = _deleted(rig)
+    # Assert
+    assert (status, removed["removed"]["id"]) == (200, card_id)
+
+
+def test_delete_task_over_http_removes_it_from_the_store(rig):
+    # Arrange
+    _deleted(rig)
+    # Act
+    gone = pytest.raises(Exception)
+    # Assert — the engine no longer resolves the id at all.
+    with gone:
+        _store.get_task(rig["store"], "rt-del")
+
+
+def test_restore_task_over_http_returns_200(rig):
+    # Arrange
+    expected_status = 200
+    # Act
+    status, _ = _restored(rig)
+    # Assert
+    assert status == expected_status
+
+
+def test_restore_task_over_http_puts_the_card_back(rig):
+    # Arrange
+    _restored(rig)
+    # Act
+    on_disk = _store.get_task(rig["store"], "rt-del")
+    # Assert — the undo is real, not just a 200.
+    assert on_disk["id"] == "rt-del"
+
+
+def _dm_sent(rig):
+    return _call(
         rig,
         "dm_send",
         {"sender": "remote-agent", "to": "operator", "body": "hello hub"},
     )
-    assert status == 200 and record["from"] == "remote-agent"
-    status, thread = _call(
-        rig, "dm_list", {"sender": "operator", "peer": "remote-agent"}
-    )
-    assert status == 200
-    assert [m["body"] for m in thread["messages"]] == ["hello hub"]
+
+
+def _dm_listed(rig):
+    _dm_sent(rig)
+    return _call(rig, "dm_list", {"sender": "operator", "peer": "remote-agent"})
+
+
+def test_dm_send_over_http_returns_the_stored_record(rig):
+    # Arrange
+    expected = (200, "remote-agent")
+    # Act
+    status, record = _dm_sent(rig)
+    # Assert — the sender the CLIENT declared is the record's author.
+    assert (status, record["from"]) == expected
+
+
+def test_dm_list_over_http_returns_200(rig):
+    # Arrange
+    expected_status = 200
+    # Act
+    status, _thread = _dm_listed(rig)
+    # Assert
+    assert status == expected_status
+
+
+def test_dm_send_and_list_round_trip(rig):
+    # Arrange
+    expected_bodies = ["hello hub"]
+    # Act
+    _status, thread = _dm_listed(rig)
+    # Assert — the peer reads back exactly what was sent, once.
+    assert [m["body"] for m in thread["messages"]] == expected_bodies
 
 
 # === 4. concurrency ========================================================
 
 
-def test_interleaved_remote_writers_lose_nothing(rig):
-    """Two HTTP clients hammering updates on two cards; every write lands.
-
-    The server threads call the locked verbs, so the store flock
-    serializes beneath HTTP concurrency — the design's whole claim. Ten
-    alternating updates per card; the final state and full comment count
-    prove no write was clobbered.
-    """
+#: Two HTTP clients hammering comments onto two cards, ten each. The server
+#: threads call the LOCKED verbs, so the store flock serializes beneath HTTP
+#: concurrency — the design's whole claim. Returns the exceptions the client
+#: threads collected (a non-200 is raised inside the thread and surfaced here
+#: rather than asserted there, so every assertion in this file stays in a test
+#: body). The three tests below split the proof: no client errored, and each
+#: card kept ALL ten of its writes. A lost update shows up only in the counts.
+def _hammer_two_cards(rig):
     _add(rig, "cc-a")
     _add(rig, "cc-b")
     errors: list = []
@@ -261,7 +479,8 @@ def test_interleaved_remote_writers_lose_nothing(rig):
                     "comment_task",
                     {"task_id": card_id, "text": f"c{i}", "by": "hammer"},
                 )
-                assert status == 200
+                if status != 200:
+                    raise RuntimeError(f"comment_task on {card_id} returned {status}")
         except Exception as exc:  # noqa: BLE001 — surfaced via the list
             errors.append(exc)
 
@@ -273,35 +492,96 @@ def test_interleaved_remote_writers_lose_nothing(rig):
         t.start()
     for t in threads:
         t.join(timeout=120)
+    return errors
 
-    assert errors == []
-    assert len(_store.get_task(rig["store"], "cc-a")["comments"]) == 10
-    assert len(_store.get_task(rig["store"], "cc-b")["comments"]) == 10
+
+def test_interleaved_remote_writers_hit_no_errors(rig):
+    # Arrange
+    expected_errors: list = []
+    # Act
+    errors = _hammer_two_cards(rig)
+    # Assert — HTTP concurrency never surfaced a refusal to either client.
+    assert errors == expected_errors
+
+
+def test_interleaved_remote_writers_lose_nothing_on_the_first_card(rig):
+    # Arrange
+    _hammer_two_cards(rig)
+    # Act
+    comments = _store.get_task(rig["store"], "cc-a")["comments"]
+    # Assert — all ten writes survived the interleave.
+    assert len(comments) == 10
+
+
+def test_interleaved_remote_writers_lose_nothing_on_the_second_card(rig):
+    # Arrange
+    _hammer_two_cards(rig)
+    # Act
+    comments = _store.get_task(rig["store"], "cc-b")["comments"]
+    # Assert
+    assert len(comments) == 10
 
 
 # === 5. audit ==============================================================
 
 
-def test_audit_line_per_authenticated_request(rig):
+#: The audit trail after one add and one get, both authenticated. Three tests
+#: split what one asserted: that BOTH verbs were logged, that every line carries
+#: the calling identity, and that every line is timestamped with an outcome. An
+#: audit log missing any one of those is not an audit log.
+def _audit_lines(rig):
     _add(rig, "au-1")
     _call(rig, "get_task", {"task_id": "au-1"})
-    lines = [
+    return [
         json.loads(line)
         for line in Path(rig["audit_path"]).read_text(encoding="utf-8").splitlines()
     ]
+
+
+def test_audit_line_per_authenticated_request(rig):
+    # Arrange
+    lines = _audit_lines(rig)
+    # Act
     verbs = [entry["verb"] for entry in lines]
+    # Assert — one line per request, not one per session.
     assert "add_task" in verbs and "get_task" in verbs
-    assert all(entry["agent"] == "rpc-tester" for entry in lines)
-    assert all("ts" in entry and "status" in entry for entry in lines)
 
 
-def test_rotation_revokes_without_restart(rig):
+def test_every_audit_line_names_the_calling_agent(rig):
+    # Arrange
+    lines = _audit_lines(rig)
+    # Act
+    agents = {entry["agent"] for entry in lines}
+    # Assert
+    assert agents == {"rpc-tester"}
+
+
+def test_every_audit_line_is_timestamped_with_an_outcome(rig):
+    # Arrange
+    lines = _audit_lines(rig)
+    # Act
+    incomplete = [e for e in lines if "ts" not in e or "status" not in e]
+    # Assert — a line without a time or a result cannot reconstruct anything.
+    assert incomplete == []
+
+
+def test_rotation_revokes_the_old_token(rig):
+    # Arrange
     old_token = rig["token"]
     _server.mint_token(rig["tokens_dir"], "hub")
+    # Act
     status, _ = _call(rig, "list_tasks", token=old_token)
+    # Assert — revoked in place, with no server restart.
     assert status == 401
+
+
+def test_rotation_admits_the_new_token(rig):
+    # Arrange
+    _server.mint_token(rig["tokens_dir"], "hub")
     new_token = (rig["tokens_dir"] / "hub.token").read_text().strip()
+    # Act
     status, _ = _call(rig, "list_tasks", token=new_token)
+    # Assert — rotation is not just revocation; the replacement must work.
     assert status == 200
 
 

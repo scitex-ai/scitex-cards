@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import warnings
 from pathlib import Path
 
 import pytest
@@ -235,18 +236,38 @@ def test_add_task_rejects_duplicate_id(tmp_path):
         _store.add_task(store, id="a", title="A2", assignee="agent:test-suite")
 
 
-def test_add_task_tolerates_invalid_status_with_warning(tmp_path):
-    # Arrange — operator ruling 2026-07-10: a status value must never cost
-    # someone their card. Save-side validation WARNS and persists; the
-    # fail-loud rejection lives at the sources (the CLI --status Choice).
+#: Operator ruling 2026-07-10: a status value must never cost someone their
+#: card. Save-side validation WARNS and persists; the fail-loud rejection lives
+#: at the sources (the CLI --status Choice). Both halves are asserted, in
+#: separate tests: silently persisting a bad value would be as wrong as
+#: refusing it, and one test could only ever have caught one of the two.
+def _add_with_invalid_status(store):
+    return _store.add_task(
+        store, id="a", title="A", status="not-a-status", assignee="agent:test-suite"
+    )
+
+
+def test_add_task_warns_about_an_invalid_status(tmp_path):
+    # Arrange
     store = tmp_path / "tasks.yaml"
     # Act
-    with pytest.warns(UserWarning, match="not-a-status"):
-        _store.add_task(
-            store, id="a", title="A", status="not-a-status", assignee="agent:test-suite"
-        )
+    warned = pytest.warns(UserWarning, match="not-a-status")
+    # Assert — loud, but not fatal.
+    with warned:
+        _add_with_invalid_status(store)
+
+
+def test_add_task_tolerates_invalid_status_with_warning(tmp_path):
+    # Arrange — the warning itself is pinned by the sibling test above, so it is
+    # merely silenced here rather than asserted on a second time.
+    store = tmp_path / "tasks.yaml"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        _add_with_invalid_status(store)
+    # Act
+    on_disk = _model.load_tasks(store)[0]
     # Assert — the card exists; nothing was destroyed over a bad value.
-    assert _model.load_tasks(store)[0]["status"] == "not-a-status"
+    assert on_disk["status"] == "not-a-status"
 
 
 # --------------------------------------------------------------------------- #
@@ -813,9 +834,10 @@ def test_list_tasks_filters_by_kind_compute(extended_store):
     assert {r["id"] for r in rows} == {"compute-1"}
 
 
+# proj-x-1, proj-x-2, proj-y-1 and proj-y-2 have NO kind field at all
+# (absent ≡ "task" per ADR-0002).
 def test_list_tasks_kind_task_matches_absent(extended_store):
-    # Arrange — proj-x-1, proj-x-2, proj-y-1, proj-y-2 have NO kind field
-    # (absent ≡ "task" per ADR-0002).
+    # Arrange
     store = extended_store
     # Act
     rows = _store.list_tasks(store, scope="", kind="task")
@@ -853,11 +875,11 @@ def test_list_tasks_multi_status_unions(extended_store):
 def test_list_tasks_filters_compose_AND(extended_store):
     # Arrange
     store = extended_store
-    # Act — agent=proj-y AND blocker=operator-decision
+    # Act
     rows = _store.list_tasks(
         store, scope="", agent="proj-y", blocker="operator-decision"
     )
-    # Assert
+    # Assert — agent AND blocker narrow together, they do not union.
     assert {r["id"] for r in rows} == {"proj-y-1"}
 
 
@@ -911,8 +933,10 @@ def test_summary_by_status_has_all_valid_statuses(populated_store):
         assert status in info["by_status"]
 
 
+# `add_task`'s default status is `deferred` since the abolition, so cards a
+# and b land there.
 def test_summary_by_status_deferred_count(populated_store):
-    # Arrange — add_task's default status is `deferred` since the abolition.
+    # Arrange
     store = populated_store
     # Act
     info = _store.summarize_tasks(store, scope="")
@@ -974,16 +998,26 @@ def test_summary_by_assignee_proj_count(populated_store):
     assert info["by_assignee"]["agent:proj-scitex-todo"] == 1
 
 
-def test_summary_by_assignee_empty_count(populated_store):
-    # Arrange — assignee is now MANDATORY (no card can have an empty assignee
-    # via add_task), so the three non-proj cards (a/c/d) bucket under their
-    # owner `agent:test-suite` rather than the old empty-string bucket. The
-    # summary counts by the now-always-present assignee.
+#: Assignee is now MANDATORY (no card can have an empty assignee via
+#: `add_task`), so the three non-proj cards (a/c/d) bucket under their owner
+#: `agent:test-suite` rather than the old empty-string bucket. Split in two:
+#: the old bucket is EMPTY, and the owner bucket holds all three. Asserting only
+#: the first would also pass if the summary had simply lost the three cards.
+def test_summary_by_assignee_has_no_empty_bucket(populated_store):
+    # Arrange
     store = populated_store
     # Act
     info = _store.summarize_tasks(store, scope="")
     # Assert
     assert info["by_assignee"].get("", 0) == 0
+
+
+def test_summary_by_assignee_buckets_cards_under_their_owner(populated_store):
+    # Arrange
+    store = populated_store
+    # Act
+    info = _store.summarize_tasks(store, scope="")
+    # Assert — the three otherwise-unscoped cards are counted, not dropped.
     assert info["by_assignee"]["agent:test-suite"] == 3
 
 
@@ -1121,10 +1155,12 @@ def test_explicit_store_path_wins(tmp_path, env):
 # --------------------------------------------------------------------------- #
 # created_by — the creating USER captured at insert (board ROLES section)     #
 # --------------------------------------------------------------------------- #
-def test_add_task_stores_created_by_explicit(tmp_path):
-    # Arrange
+#: Authorship is asserted twice for each source — on the RETURNED dict and on
+#: the row that reached DISK. They are separate tests because a verb that
+#: stamps the return value without persisting it looks perfectly correct to
+#: its caller and loses the attribution the board's ROLES section reads.
+def _added_with_explicit_author(tmp_path):
     store = tmp_path / "tasks.yaml"
-    # Act — explicit author wins over the env/login chain.
     inserted = _store.add_task(
         store,
         id="a",
@@ -1132,37 +1168,78 @@ def test_add_task_stores_created_by_explicit(tmp_path):
         created_by="agent:explicit",
         assignee="agent:test-suite",
     )
-    on_disk = _model.load_tasks(store)
+    return inserted, _model.load_tasks(store)
+
+
+def test_add_task_returns_the_explicit_created_by(tmp_path):
+    # Arrange
+    inserted, _on_disk = _added_with_explicit_author(tmp_path)
+    # Act
+    author = inserted["created_by"]
+    # Assert — an explicit author wins over the env/login chain.
+    assert author == "agent:explicit"
+
+
+def test_add_task_stores_created_by_explicit(tmp_path):
+    # Arrange
+    _inserted, on_disk = _added_with_explicit_author(tmp_path)
+    # Act
+    author = on_disk[0]["created_by"]
     # Assert
-    assert inserted["created_by"] == "agent:explicit"
-    assert on_disk[0]["created_by"] == "agent:explicit"
+    assert author == "agent:explicit"
 
 
-def test_add_task_defaults_created_by_from_env(tmp_path, env):
-    # Arrange — no explicit author; resolves from $SCITEX_TODO_AGENT_ID, the
-    # same chain comment authorship uses.
+def test_add_task_returns_created_by_from_env(tmp_path, env):
+    # Arrange
     store = tmp_path / "tasks.yaml"
     env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    # Assert
+    # Assert — no explicit author resolves from $SCITEX_TODO_AGENT_ID, the
+    # same chain comment authorship uses.
     assert inserted["created_by"] == "agent:fromenv"
-    assert _model.load_tasks(store)[0]["created_by"] == "agent:fromenv"
 
 
-def test_legacy_task_without_created_by_is_valid(tmp_path):
-    # Arrange — a hand-written legacy row with no created_by field loads
-    # and validates fine (back-compat: absent created_by is valid).
+def test_add_task_defaults_created_by_from_env(tmp_path, env):
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
+    # Act
+    on_disk = _model.load_tasks(store)
+    # Assert
+    assert on_disk[0]["created_by"] == "agent:fromenv"
+
+
+#: A hand-written legacy row with no created_by field must still load and
+#: validate — back-compat: absent created_by is valid. Two claims: the row
+#: loads at all, and the field really is absent (rather than back-filled,
+#: which would silently invent an author for someone else's card).
+def _legacy_row_without_created_by(tmp_path):
     store = tmp_path / "tasks.yaml"
     store.write_text(
         "tasks:\n  - id: legacy\n    title: Legacy\n    status: pending\n",
         encoding="utf-8",
     )
+    return _model.load_tasks(store)
+
+
+def test_legacy_task_without_created_by_is_valid(tmp_path):
+    # Arrange
+    on_disk = _legacy_row_without_created_by(tmp_path)
     # Act
-    on_disk = _model.load_tasks(store)
-    # Assert
-    assert on_disk[0]["id"] == "legacy"
-    assert "created_by" not in on_disk[0]
+    task_id = on_disk[0]["id"]
+    # Assert — it loaded and validated rather than being refused.
+    assert task_id == "legacy"
+
+
+def test_legacy_task_created_by_is_not_back_filled(tmp_path):
+    # Arrange
+    on_disk = _legacy_row_without_created_by(tmp_path)
+    # Act
+    row = on_disk[0]
+    # Assert — absent stays absent; no author is invented for the card.
+    assert "created_by" not in row
 
 
 # EOF

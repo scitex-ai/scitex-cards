@@ -51,6 +51,17 @@ def _git_config(store_dir: Path, key: str) -> str | None:
     return val or None
 
 
+def _commit_count(store_dir: Path) -> int:
+    """How many commits are reachable from HEAD in the autocommit repo."""
+    out = subprocess.run(
+        ["git", "-C", str(store_dir), "rev-list", "--count", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return int(out.stdout.strip() or 0)
+
+
 @pytest.fixture()
 def committed_store(tmp_path: Path) -> Path:
     """A store that has been written once, so the autocommit repo is initialized."""
@@ -60,29 +71,44 @@ def committed_store(tmp_path: Path) -> Path:
 
 
 def test_autocommit_initializes_a_repo(committed_store: Path):
-    assert (committed_store.parent / ".git").exists()
+    # Arrange
+    store_dir = committed_store.parent
+    # Act
+    git_dir = store_dir / ".git"
+    # Assert — one card write is enough to lazily init the recovery repo.
+    assert git_dir.exists()
 
 
 def test_gc_auto_is_NOT_disabled(committed_store: Path):
-    # THE 13 GB BUG. gc.auto=0 stops git ever packing, so every save's full blob
-    # stays a loose object forever. It must not be set to 0.
-    assert _git_config(committed_store.parent, "gc.auto") != "0"
+    """THE 13 GB BUG.
+
+    ``gc.auto=0`` stops git ever packing, so every save's full blob stays a
+    loose object forever. It must not be set to 0.
+    """
+    # Arrange
+    store_dir = committed_store.parent
+    # Act
+    gc_auto = _git_config(store_dir, "gc.auto")
+    # Assert — packing must stay ALLOWED.
+    assert gc_auto != "0"
 
 
 def test_pruning_is_forbidden(committed_store: Path):
-    # The guard that ACTUALLY protects old snapshots: gc may pack, never delete.
-    assert _git_config(committed_store.parent, "gc.pruneExpire") == "never"
+    # Arrange
+    store_dir = committed_store.parent
+    # Act
+    prune_expire = _git_config(store_dir, "gc.pruneExpire")
+    # Assert — the guard that ACTUALLY protects old snapshots: pack, never delete.
+    assert prune_expire == "never"
 
 
 def test_a_write_is_committed(committed_store: Path):
-    # The recovery layer still works — the point of the repo is the history.
-    out = subprocess.run(
-        ["git", "-C", str(committed_store.parent), "rev-list", "--count", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert int(out.stdout.strip() or 0) >= 1
+    # Arrange
+    store_dir = committed_store.parent
+    # Act
+    commits = _commit_count(store_dir)
+    # Assert — the recovery layer works; the point of the repo is the history.
+    assert commits >= 1
 
 
 def test_gc_packs_without_losing_commits(committed_store: Path):
@@ -92,24 +118,16 @@ def test_gc_packs_without_losing_commits(committed_store: Path):
     This is the property the 13 GB fix relies on, so it is pinned rather than
     assumed.
     """
-    d = committed_store.parent
+    # Arrange
+    store_dir = committed_store.parent
     for i in range(3):
         _store.update_task(committed_store, "c1", note=f"n{i}")
-
-    before = subprocess.run(
-        ["git", "-C", str(d), "rev-list", "--count", "HEAD"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
-
+    before = _commit_count(store_dir)
+    # Act
     subprocess.run(
-        ["git", "-C", str(d), "gc", "--prune=now"],
-        capture_output=True, check=False,
+        ["git", "-C", str(store_dir), "gc", "--prune=now"],
+        capture_output=True,
+        check=False,
     )
-
-    after = subprocess.run(
-        ["git", "-C", str(d), "rev-list", "--count", "HEAD"],
-        capture_output=True, text=True, check=False,
-    ).stdout.strip()
-
-    # gc PACKED; it did not delete a single commit.
-    assert after == before
+    # Assert — gc PACKED; it did not delete a single commit.
+    assert _commit_count(store_dir) == before

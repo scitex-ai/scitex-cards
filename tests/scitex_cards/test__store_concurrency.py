@@ -14,6 +14,8 @@ it was based on. Two primitives close it:
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from scitex_cards._model import (
@@ -34,23 +36,53 @@ def _seed(tmp_path, n=2):
     return p
 
 
+def _seed_with_users(tmp_path):
+    """A store carrying BOTH a ``users:`` registry and a ``tasks:`` list."""
+    p = tmp_path / "tasks.yaml"
+    p.write_text(
+        "users:\n  - {id: u1, name: someone}\ntasks:\n"
+        "  - {id: t0, title: T, status: deferred}\n"
+    )
+    return p
+
+
+#: The lost-update race, staged: writer A reads the world (taking a generation
+#: token), then writer B commits a row of its own. A's token is now stale, so
+#: A's pending mutation is based on a world that no longer exists. Returns
+#: ``(store, tasks_a, gen_a)`` with A's mutation already applied in memory but
+#: NOT yet written — the two tests below split what must happen when it is.
+def _staged_lost_update(tmp_path):
+    store = _seed(tmp_path)
+    gen_a = store_generation(store)
+    tasks_a = load_tasks(store)
+
+    tasks_b = load_tasks(store)
+    tasks_b.append({"id": "from-b", "title": "B's row", "status": "deferred"})
+    save_tasks(tasks_b, store)
+
+    tasks_a[0]["priority"] = 1
+    return store, tasks_a, gen_a
+
+
 class TestOptimisticConcurrency:
     def test_stale_write_is_refused(self, tmp_path):
-        # Arrange — writer A reads, then writer B commits.
-        store = _seed(tmp_path)
-        gen_a = store_generation(store)
-        tasks_a = load_tasks(store)
-        tasks_b = load_tasks(store)
-        tasks_b.append({"id": "from-b", "title": "B's row", "status": "deferred"})
-        save_tasks(tasks_b, store)
-
-        # Act / Assert — A's write is based on a world that no longer exists.
-        tasks_a[0]["priority"] = 1
-        with pytest.raises(StaleStoreError):
+        # Arrange
+        store, tasks_a, gen_a = _staged_lost_update(tmp_path)
+        # Act
+        refusal = pytest.raises(StaleStoreError)
+        # Assert — a write based on a vanished world is never applied.
+        with refusal:
             save_tasks(tasks_a, store, expected_generation=gen_a)
 
-        # And B's row survived — the refusal is what protected it.
-        assert any(t["id"] == "from-b" for t in load_tasks(store))
+    def test_refused_stale_write_leaves_the_other_writers_row(self, tmp_path):
+        # Arrange
+        store, tasks_a, gen_a = _staged_lost_update(tmp_path)
+        with contextlib.suppress(StaleStoreError):
+            save_tasks(tasks_a, store, expected_generation=gen_a)
+        # Act
+        surviving = load_tasks(store)
+        # Assert — B's row is what the refusal protected.
+        assert any(t["id"] == "from-b" for t in surviving)
 
     def test_fresh_write_passes(self, tmp_path):
         # Arrange
@@ -58,24 +90,28 @@ class TestOptimisticConcurrency:
         gen = store_generation(store)
         tasks = load_tasks(store)
         tasks[0]["priority"] = 1
-        # Act — nothing intervened, so the token still matches.
+        # Act
         save_tasks(tasks, store, expected_generation=gen)
-        # Assert
+        # Assert — nothing intervened, so the token still matched.
         assert load_tasks(store)[0]["priority"] == 1
 
     def test_without_token_behaviour_is_unchanged(self, tmp_path):
-        # Arrange — the token is opt-in; existing callers keep working.
+        # Arrange
         store = _seed(tmp_path)
         tasks = load_tasks(store)
         tasks[0]["priority"] = 3
         # Act
         save_tasks(tasks, store)
-        # Assert
+        # Assert — the token is opt-in; existing callers keep working.
         assert load_tasks(store)[0]["priority"] == 3
 
     def test_generation_of_missing_store(self, tmp_path):
-        # Arrange / Act / Assert — stable sentinel, no raise.
-        assert store_generation(tmp_path / "nope.yaml") == "absent"
+        # Arrange
+        absent = tmp_path / "nope.yaml"
+        # Act
+        generation = store_generation(absent)
+        # Assert — a stable sentinel, not a raise.
+        assert generation == "absent"
 
 
 class TestEditTasks:
@@ -89,38 +125,53 @@ class TestEditTasks:
         # Assert
         assert all(t["priority"] == 2 for t in load_tasks(store))
 
+    def test_body_exception_propagates_to_the_caller(self, tmp_path):
+        # Arrange
+        store = _seed(tmp_path)
+        # Act
+        propagated = pytest.raises(RuntimeError, match="boom")
+        # Assert — the cycle never swallows the caller's failure.
+        with propagated:
+            with edit_tasks(store) as tasks:
+                tasks[0]["priority"] = 9
+                raise RuntimeError("boom")
+
     def test_nothing_written_on_exception(self, tmp_path):
         # Arrange
         store = _seed(tmp_path)
         before = store_generation(store)
-        # Act
-        with pytest.raises(RuntimeError, match="boom"):
+        with contextlib.suppress(RuntimeError):
             with edit_tasks(store) as tasks:
                 tasks[0]["priority"] = 9
                 raise RuntimeError("boom")
+        # Act
+        after = store_generation(store)
         # Assert — the half-done mutation never reached disk.
-        assert store_generation(store) == before
+        assert after == before
 
     def test_preserves_non_tasks_sections(self, tmp_path):
-        # Arrange — the users: registry must survive a tasks-only edit.
-        store = tmp_path / "tasks.yaml"
-        store.write_text(
-            "users:\n  - {id: u1, name: someone}\ntasks:\n"
-            "  - {id: t0, title: T, status: deferred}\n"
-        )
+        # Arrange
+        store = _seed_with_users(tmp_path)
         # Act
         with edit_tasks(store) as tasks:
             tasks[0]["priority"] = 1
-        # Assert
-        text = store.read_text()
-        assert "u1" in text
+        # Assert — the users: registry survives a tasks-only edit.
+        assert "u1" in store.read_text()
+
+    def test_tasks_only_edit_still_persists_the_mutation(self, tmp_path):
+        # Arrange
+        store = _seed_with_users(tmp_path)
+        # Act
+        with edit_tasks(store) as tasks:
+            tasks[0]["priority"] = 1
+        # Assert — preserving users: must not cost the edit itself.
         assert load_tasks(store)[0]["priority"] == 1
 
     def test_append_inside_cycle(self, tmp_path):
-        # Arrange — the migration shape: read all, add rows, write back.
+        # Arrange
         store = _seed(tmp_path, n=1)
         # Act
         with edit_tasks(store) as tasks:
             tasks.append({"id": "new", "title": "added", "status": "deferred"})
-        # Assert
+        # Assert — the migration shape: read all, add rows, write back.
         assert {t["id"] for t in load_tasks(store)} == {"t0", "new"}

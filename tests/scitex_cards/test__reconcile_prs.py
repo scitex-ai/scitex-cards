@@ -31,7 +31,6 @@ from scitex_cards._reconcile_prs import (
     reconcile_merged_prs,
 )
 
-
 # === parse_pr_url (pure) ==================================================
 
 
@@ -45,8 +44,10 @@ from scitex_cards._reconcile_prs import (
     ],
 )
 def test_parse_pr_url_extracts_owner_repo_number(url, expected):
-    # Arrange / Act
-    ref = parse_pr_url(url)
+    # Arrange
+    raw = url
+    # Act
+    ref = parse_pr_url(raw)
     # Assert
     assert ref == expected
 
@@ -56,8 +57,12 @@ def test_parse_pr_url_extracts_owner_repo_number(url, expected):
     ["", None, "https://github.com/foo/bar/issues/1", "not a url", "github.com/foo"],
 )
 def test_parse_pr_url_returns_none_for_unparseable(url):
-    # Arrange / Act / Assert
-    assert parse_pr_url(url) is None
+    # Arrange
+    raw = url
+    # Act
+    ref = parse_pr_url(raw)
+    # Assert — unparseable is None, never a guessed PrRef.
+    assert ref is None
 
 
 # === decide_reconcile_action (pure) ======================================
@@ -118,11 +123,11 @@ def test_decide_skip_not_merged_when_pr_open():
 
 
 def test_decide_skip_unknown_is_fail_soft():
-    # Arrange — merge-state could not be determined; MUST NOT close.
+    # Arrange
     task = {"status": "in_progress", "pr_url": "https://github.com/o/r/pull/1"}
     # Act
     action = decide_reconcile_action(task, UNKNOWN)
-    # Assert
+    # Assert — merge-state could not be determined, so it MUST NOT close.
     assert action == ACTION_SKIP_UNKNOWN
 
 
@@ -170,39 +175,60 @@ def _fake_seam(mapping):
     return _fn
 
 
-def test_dry_run_reports_candidates_but_does_not_mutate(tmp_path):
-    # Arrange
+#: The full merge-state map for the fixture store: card 1 merged, card 2 still
+#: open, card 5 unknowable. Used by the dry-run and apply paths alike so the two
+#: only differ in the ``apply=`` flag.
+_ALL_STATES = {
+    "https://github.com/o/r/pull/1": MERGED,
+    "https://github.com/o/r/pull/2": OPEN,
+    "https://github.com/o/r/pull/5": UNKNOWN,
+}
+
+
+#: A dry run over that whole map. Returns ``(path, result)``. The three tests
+#: below split what one test asserted about it — that the merged-open card is
+#: REPORTED, that nothing was closed, and that the store on disk is untouched.
+#: The last is the one that actually makes it a dry run; the first two are how
+#: it stays useful. A single test could have passed on two of the three.
+def _dry_run(tmp_path):
     path = _store(tmp_path)
-    seam = _fake_seam(
-        {
-            "https://github.com/o/r/pull/1": MERGED,
-            "https://github.com/o/r/pull/2": OPEN,
-            "https://github.com/o/r/pull/5": UNKNOWN,
-        }
-    )
+    seam = _fake_seam(_ALL_STATES)
+    return path, reconcile_merged_prs(path, apply=False, merge_state_fn=seam)
+
+
+def test_dry_run_reports_the_merged_card_as_a_candidate(tmp_path):
+    # Arrange
+    _path, result = _dry_run(tmp_path)
     # Act
-    result = reconcile_merged_prs(path, apply=False, merge_state_fn=seam)
-    # Assert — the merged-open card is a candidate, nothing closed.
     ids = [c["id"] for c in result.would_close]
+    # Assert
     assert ids == ["merged-open-card"]
-    assert result.closed == []
-    # And the store is untouched.
+
+
+def test_dry_run_closes_nothing(tmp_path):
+    # Arrange
+    _path, result = _dry_run(tmp_path)
+    # Act
+    closed = result.closed
+    # Assert
+    assert closed == []
+
+
+def test_dry_run_leaves_the_store_untouched(tmp_path):
+    # Arrange
+    path, _result = _dry_run(tmp_path)
+    # Act
     statuses = {t["id"]: t["status"] for t in load_tasks(path)}
+    # Assert — the candidate is still open on disk; nothing was written.
     assert statuses["merged-open-card"] == "in_progress"
 
 
 def test_apply_closes_merged_card_and_comments(tmp_path):
     # Arrange
     path = _store(tmp_path)
-    seam = _fake_seam(
-        {
-            "https://github.com/o/r/pull/1": MERGED,
-            "https://github.com/o/r/pull/2": OPEN,
-            "https://github.com/o/r/pull/5": UNKNOWN,
-        }
-    )
+    seam = _fake_seam(_ALL_STATES)
     # Act
-    result = reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
+    reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
     # Assert — only the merged card flipped to done.
     tasks = {t["id"]: t for t in load_tasks(path)}
     assert tasks["merged-open-card"]["status"] == "done"
@@ -232,12 +258,12 @@ def test_apply_appends_auto_close_comment(tmp_path):
 
 
 def test_already_done_card_is_skipped(tmp_path):
-    # Arrange — even if its PR reads merged, a done card is never re-touched.
+    # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/3": MERGED})
     # Act
     result = reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
-    # Assert
+    # Assert — even with its PR merged, a done card is never re-touched.
     assert result.skipped.get(ACTION_SKIP_DONE, 0) >= 1
 
 
@@ -252,18 +278,18 @@ def test_missing_pr_url_card_is_skipped(tmp_path):
 
 
 def test_unknown_merge_state_never_closes(tmp_path):
-    # Arrange — fail-soft: an unknown state must leave the card open.
+    # Arrange
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/5": UNKNOWN})
     # Act
     reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
-    # Assert
+    # Assert — fail-soft: an unknown state leaves the card open.
     tasks = {t["id"]: t for t in load_tasks(path)}
     assert tasks["unknown-pr-card"]["status"] == "pending"
 
 
 def test_seam_exception_is_treated_as_unknown(tmp_path):
-    # Arrange — a raising seam must NOT close (fail-soft over the whole call).
+    # Arrange
     path = _store(tmp_path)
 
     def _boom(pr_url):
@@ -271,7 +297,7 @@ def test_seam_exception_is_treated_as_unknown(tmp_path):
 
     # Act
     result = reconcile_merged_prs(path, apply=True, merge_state_fn=_boom)
-    # Assert
+    # Assert — a raising seam must NOT close, fail-soft over the whole call.
     assert result.closed == []
 
 
@@ -280,9 +306,9 @@ def test_idempotent_second_run_closes_nothing_new(tmp_path):
     path = _store(tmp_path)
     seam = _fake_seam({"https://github.com/o/r/pull/1": MERGED})
     reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
-    # Act — second pass: the card is now done.
+    # Act
     result = reconcile_merged_prs(path, apply=True, merge_state_fn=seam)
-    # Assert
+    # Assert — the second pass finds the card already done.
     assert result.closed == []
 
 
