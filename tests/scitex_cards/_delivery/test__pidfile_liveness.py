@@ -24,6 +24,9 @@ identity that actually issues pids, and it is what the fix compares.
 NO mocks (STX-NM / PA-306): real pidfiles on a real ``tmp_path``, a real dead
 pid obtained by really running and reaping a real subprocess, our own real live
 pid, and real identity dicts.
+
+One assertion per test (STX-TQ007): each split test re-arranges its own
+pidfile through the ``_write_pidfile`` helper.
 """
 
 from __future__ import annotations
@@ -78,51 +81,27 @@ def _write_pidfile(dirpath, pid, *, identity, heartbeat, interval=120.0):
     return path
 
 
-# --------------------------------------------------------------------------- #
-# THE false-negative — a foreign, FRESH pidfile is ALIVE                      #
-# --------------------------------------------------------------------------- #
-def test_foreign_namespace_with_fresh_heartbeat_is_alive(tmp_path):
-    """The exact live false-negative. It must never regress.
+def _foreign_fresh_pidfile(tmp_path):
+    """A pidfile from another namespace whose daemon is still ticking.
 
     The pid does NOT exist here (really dead), yet the daemon that wrote it is
-    ticking in another namespace. Freshness, not identity, decides.
+    ticking elsewhere. Freshness, not identity, must decide.
     """
-    pidfile = _write_pidfile(
+    return _write_pidfile(
         tmp_path,
         _really_dead_pid(),  # unresolvable in OUR namespace...
         identity=_foreign_identity(),  # ...because it was never OUR pid.
         heartbeat=NOW - _dt.timedelta(seconds=30),  # ticking (interval 120s)
     )
 
-    verdict = assess_liveness(pidfile, now=NOW)
 
-    assert verdict["ok"] is True
-    assert verdict["state"] == "alive"
-    assert verdict["hint"] is None
-    # And it says WHY it did not trust the pid.
-    assert "NOT probed" in verdict["detail"]
-    assert "stale" not in verdict["detail"].lower()
+def _foreign_stale_pidfile(tmp_path):
+    """A foreign pidfile that stopped ticking, stamped with a LIVE local pid.
 
-
-def test_same_hostname_different_namespace_is_not_local(tmp_path):
-    """Hostname alone would have MISSED this: apptainer shares the UTS namespace."""
-    foreign = _foreign_identity()
-    assert foreign["host"] == local_identity()["host"]  # same name, other namespace
-    record = parse(render(1234, now=NOW, identity=foreign))
-    assert writer_is_local(record) is False
-
-
-# --------------------------------------------------------------------------- #
-# still FAIL-LOUD — a foreign daemon that STOPPED ticking is dead            #
-# --------------------------------------------------------------------------- #
-def test_foreign_namespace_with_stale_heartbeat_is_dead_with_hint(tmp_path):
-    """A real death across the boundary is still caught, loudly and actionably.
-
-    We deliberately stamp a pid that IS alive here (our own) — so if the check
-    ever fell back to probing the pid it would wrongly say "alive". The stale
-    heartbeat must decide.
+    If the check ever fell back to probing the pid it would wrongly say
+    "alive" — the stale heartbeat must decide.
     """
-    pidfile = _write_pidfile(
+    return _write_pidfile(
         tmp_path,
         os.getpid(),  # alive in OUR namespace — must not be consulted
         identity=_foreign_identity(),
@@ -130,140 +109,447 @@ def test_foreign_namespace_with_stale_heartbeat_is_dead_with_hint(tmp_path):
         interval=120.0,
     )
 
-    verdict = assess_liveness(pidfile, now=NOW)
 
-    assert verdict["ok"] is False
-    assert verdict["state"] == "dead"
-    assert "STALE" in verdict["detail"]
-    assert verdict["hint"], "a failing check must carry an actionable hint"
-    assert "restart" in verdict["hint"]
-
-
-def test_staleness_budget_is_a_multiple_of_the_recorded_tick_interval(tmp_path):
-    """One slow/missed tick is tolerated; a stopped daemon is not."""
-    ident = _foreign_identity()
-    # interval=600 => budget 1800s. 900s old is one-and-a-half ticks: ALIVE.
-    fresh = _write_pidfile(
-        tmp_path / "a",
-        4242,
-        identity=ident,
-        heartbeat=NOW - _dt.timedelta(seconds=900),
-        interval=600.0,
-    )
-    stale = _write_pidfile(
-        tmp_path / "b",
-        4242,
-        identity=ident,
-        heartbeat=NOW - _dt.timedelta(seconds=3600),
-        interval=600.0,
-    )
-    assert assess_liveness(fresh, now=NOW)["state"] == "alive"
-    assert assess_liveness(stale, now=NOW)["state"] == "dead"
-
-
-# --------------------------------------------------------------------------- #
-# LOCAL namespace — the precise pid probe is preserved                       #
-# --------------------------------------------------------------------------- #
-def test_local_dead_daemon_is_still_dead_even_with_a_fresh_heartbeat(tmp_path):
-    """Fail-loud preserved: in OUR namespace the pid probe is authoritative.
+def _local_dead_pidfile(tmp_path):
+    """OUR namespace, fresh heartbeat, but the process is really gone.
 
     A daemon that crashed a second after its last stamp leaves a FRESH
-    heartbeat behind. Freshness must not paper over a corpse we can actually see.
+    heartbeat behind; freshness must not paper over a corpse we can see.
     """
-    pidfile = _write_pidfile(
+    return _write_pidfile(
         tmp_path,
         _really_dead_pid(),
         identity=local_identity(),
         heartbeat=NOW - _dt.timedelta(seconds=1),
     )
 
-    verdict = assess_liveness(pidfile, now=NOW)
 
+# --------------------------------------------------------------------------- #
+# THE false-negative — a foreign, FRESH pidfile is ALIVE                      #
+# --------------------------------------------------------------------------- #
+def test_foreign_namespace_with_fresh_heartbeat_is_ok(tmp_path):
+    # Arrange
+    pidfile = _foreign_fresh_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    # the exact live false-negative; it must never regress.
+    assert verdict["ok"] is True
+
+
+def test_foreign_namespace_with_fresh_heartbeat_reports_alive(tmp_path):
+    # Arrange
+    pidfile = _foreign_fresh_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert verdict["state"] == "alive"
+
+
+def test_foreign_namespace_alive_verdict_carries_no_hint(tmp_path):
+    # Arrange
+    pidfile = _foreign_fresh_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    # a passing check has nothing to remedy.
+    assert verdict["hint"] is None
+
+
+def test_foreign_namespace_verdict_says_the_pid_was_not_probed(tmp_path):
+    # Arrange
+    pidfile = _foreign_fresh_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    # it says WHY it did not trust the pid.
+    assert "NOT probed" in verdict["detail"]
+
+
+def test_foreign_namespace_alive_verdict_never_mentions_staleness(tmp_path):
+    # Arrange
+    pidfile = _foreign_fresh_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert "stale" not in verdict["detail"].lower()
+
+
+def test_foreign_identity_shares_our_hostname_exactly(tmp_path):
+    # Arrange
+    # apptainer shares the UTS namespace, so the names match.
+    foreign = _foreign_identity()
+    # Act
+    mine = local_identity()
+    # Assert
+    # hostname alone would have MISSED the boundary.
+    assert foreign["host"] == mine["host"]
+
+
+def test_same_hostname_different_namespace_is_not_local(tmp_path):
+    # Arrange
+    foreign = _foreign_identity()
+    # Act
+    record = parse(render(1234, now=NOW, identity=foreign))
+    # Assert
+    assert writer_is_local(record) is False
+
+
+# --------------------------------------------------------------------------- #
+# still FAIL-LOUD — a foreign daemon that STOPPED ticking is dead            #
+# --------------------------------------------------------------------------- #
+def test_foreign_namespace_with_stale_heartbeat_is_not_ok(tmp_path):
+    # Arrange
+    pidfile = _foreign_stale_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    # a real death across the boundary is still caught.
     assert verdict["ok"] is False
+
+
+def test_foreign_namespace_with_stale_heartbeat_reports_dead(tmp_path):
+    # Arrange
+    pidfile = _foreign_stale_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
     assert verdict["state"] == "dead"
+
+
+def test_foreign_stale_verdict_names_staleness_in_the_detail(tmp_path):
+    # Arrange
+    pidfile = _foreign_stale_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert "STALE" in verdict["detail"]
+
+
+def test_foreign_stale_verdict_carries_an_actionable_hint(tmp_path):
+    # Arrange
+    pidfile = _foreign_stale_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert verdict["hint"], "a failing check must carry an actionable hint"
+
+
+def test_foreign_stale_hint_tells_the_reader_to_restart(tmp_path):
+    # Arrange
+    pidfile = _foreign_stale_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert "restart" in verdict["hint"]
+
+
+def test_one_and_a_half_missed_ticks_still_reads_as_alive(tmp_path):
+    # Arrange
+    # interval=600 => budget 1800s; 900s old is 1.5 ticks.
+    fresh = _write_pidfile(
+        tmp_path / "a",
+        4242,
+        identity=_foreign_identity(),
+        heartbeat=NOW - _dt.timedelta(seconds=900),
+        interval=600.0,
+    )
+    # Act
+    verdict = assess_liveness(fresh, now=NOW)
+    # Assert
+    # one slow/missed tick is tolerated.
+    assert verdict["state"] == "alive"
+
+
+def test_six_missed_ticks_exceeds_the_staleness_budget(tmp_path):
+    # Arrange
+    # interval=600 => budget 1800s; 3600s old is far past it.
+    stale = _write_pidfile(
+        tmp_path / "b",
+        4242,
+        identity=_foreign_identity(),
+        heartbeat=NOW - _dt.timedelta(seconds=3600),
+        interval=600.0,
+    )
+    # Act
+    verdict = assess_liveness(stale, now=NOW)
+    # Assert
+    # a stopped daemon is not tolerated.
+    assert verdict["state"] == "dead"
+
+
+# --------------------------------------------------------------------------- #
+# LOCAL namespace — the precise pid probe is preserved                       #
+# --------------------------------------------------------------------------- #
+def test_local_dead_daemon_with_fresh_heartbeat_is_not_ok(tmp_path):
+    # Arrange
+    pidfile = _local_dead_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    # in OUR namespace the pid probe is authoritative.
+    assert verdict["ok"] is False
+
+
+def test_local_dead_daemon_with_fresh_heartbeat_reports_dead(tmp_path):
+    # Arrange
+    pidfile = _local_dead_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
+    assert verdict["state"] == "dead"
+
+
+def test_local_dead_daemon_detail_says_it_is_not_running(tmp_path):
+    # Arrange
+    pidfile = _local_dead_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
     assert "is not running" in verdict["detail"]
+
+
+def test_local_dead_daemon_hint_names_the_notifyd_command(tmp_path):
+    # Arrange
+    pidfile = _local_dead_pidfile(tmp_path)
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
     assert "scitex-todo notifyd" in verdict["hint"]
 
 
-def test_local_live_daemon_is_alive(tmp_path):
+def test_local_live_daemon_verdict_is_ok(tmp_path):
+    # Arrange
     pidfile = _write_pidfile(
         tmp_path,
         os.getpid(),
         identity=local_identity(),
         heartbeat=NOW - _dt.timedelta(seconds=5),
     )
+    # Act
     verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
     assert verdict["ok"] is True
+
+
+def test_local_live_daemon_reports_state_alive(tmp_path):
+    # Arrange
+    pidfile = _write_pidfile(
+        tmp_path,
+        os.getpid(),
+        identity=local_identity(),
+        heartbeat=NOW - _dt.timedelta(seconds=5),
+    )
+    # Act
+    verdict = assess_liveness(pidfile, now=NOW)
+    # Assert
     assert verdict["state"] == "alive"
 
 
-def test_missing_pidfile_is_not_running(tmp_path):
-    verdict = assess_liveness(tmp_path / "notifyd.pid", now=NOW)
+def test_missing_pidfile_verdict_is_not_ok(tmp_path):
+    # Arrange
+    missing = tmp_path / "notifyd.pid"
+    # Act
+    verdict = assess_liveness(missing, now=NOW)
+    # Assert
     assert verdict["ok"] is False
+
+
+def test_missing_pidfile_reports_state_not_running(tmp_path):
+    # Arrange
+    missing = tmp_path / "notifyd.pid"
+    # Act
+    verdict = assess_liveness(missing, now=NOW)
+    # Assert
     assert verdict["state"] == "not_running"
+
+
+def test_missing_pidfile_hint_points_at_install_unit(tmp_path):
+    # Arrange
+    missing = tmp_path / "notifyd.pid"
+    # Act
+    verdict = assess_liveness(missing, now=NOW)
+    # Assert
     assert "install-unit" in verdict["hint"]
 
 
 # --------------------------------------------------------------------------- #
 # LEGACY pidfiles (bare pid, pre-heartbeat notifyd)                           #
 # --------------------------------------------------------------------------- #
-def test_legacy_bare_pidfile_alive_pid_is_alive(tmp_path):
+def test_legacy_bare_pidfile_with_live_pid_is_ok(tmp_path):
+    # Arrange
     path = tmp_path / "notifyd.pid"
     path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    # Act
     verdict = assess_liveness(path, now=NOW)
+    # Assert
     assert verdict["ok"] is True
+
+
+def test_legacy_bare_pidfile_with_live_pid_reports_alive(tmp_path):
+    # Arrange
+    path = tmp_path / "notifyd.pid"
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    # Act
+    verdict = assess_liveness(path, now=NOW)
+    # Assert
     assert verdict["state"] == "alive"
 
 
-def test_legacy_bare_pidfile_dead_pid_fails_loud_but_names_the_ambiguity(tmp_path):
-    """No stamp = no way to know. Stay loud, but say the verdict may be an artefact."""
+def test_legacy_bare_pidfile_with_dead_pid_is_not_ok(tmp_path):
+    # Arrange
+    # no stamp = no way to know; stay loud.
     path = tmp_path / "notifyd.pid"
     path.write_text(f"{_really_dead_pid()}\n", encoding="utf-8")
-
+    # Act
     verdict = assess_liveness(path, now=NOW)
-
+    # Assert
     assert verdict["ok"] is False
+
+
+def test_legacy_bare_pidfile_detail_names_the_missing_stamp(tmp_path):
+    # Arrange
+    path = tmp_path / "notifyd.pid"
+    path.write_text(f"{_really_dead_pid()}\n", encoding="utf-8")
+    # Act
+    verdict = assess_liveness(path, now=NOW)
+    # Assert
     assert "no host/namespace stamp" in verdict["detail"]
-    # The hint must tell the reader how to make the check trustworthy.
+
+
+def test_legacy_bare_pidfile_hint_admits_a_possible_false_verdict(tmp_path):
+    # Arrange
+    path = tmp_path / "notifyd.pid"
+    path.write_text(f"{_really_dead_pid()}\n", encoding="utf-8")
+    # Act
+    verdict = assess_liveness(path, now=NOW)
+    # Assert
+    # the verdict may be an artefact of the namespace boundary.
     assert "FALSE" in verdict["hint"]
+
+
+def test_legacy_bare_pidfile_hint_tells_the_reader_to_upgrade(tmp_path):
+    # Arrange
+    path = tmp_path / "notifyd.pid"
+    path.write_text(f"{_really_dead_pid()}\n", encoding="utf-8")
+    # Act
+    verdict = assess_liveness(path, now=NOW)
+    # Assert
+    # how to make the check trustworthy.
     assert "Upgrade" in verdict["hint"]
 
 
 # --------------------------------------------------------------------------- #
 # format — backward compatible + round-trips                                  #
 # --------------------------------------------------------------------------- #
-def test_first_token_is_still_the_bare_pid(tmp_path):
-    """Any old reader doing ``int(text.split()[0])`` must keep working."""
-    body = render(4242, now=NOW)
-    assert int(body.split()[0]) == 4242
+def test_first_token_is_still_the_bare_pid():
+    # Arrange
+    pid = 4242
+    # Act
+    body = render(pid, now=NOW)
+    # Assert
+    # any old reader doing ``int(text.split()[0])`` keeps working.
+    assert int(body.split()[0]) == pid
 
 
-def test_render_parse_round_trip():
+def test_render_parse_round_trip_keeps_the_pid():
+    # Arrange
+    ident = local_identity()
+    # Act
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Assert
+    assert record["pid"] == 99
+
+
+def test_render_parse_round_trip_keeps_the_host():
+    # Arrange
+    ident = local_identity()
+    # Act
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Assert
+    assert record["host"] == ident["host"]
+
+
+def test_render_parse_round_trip_keeps_the_pid_namespace():
+    # Arrange
+    ident = local_identity()
+    # Act
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Assert
+    assert record["pid_ns"] == ident["pid_ns"]
+
+
+def test_render_parse_round_trip_keeps_the_boot_id():
+    # Arrange
+    ident = local_identity()
+    # Act
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Assert
+    assert record["boot_id"] == ident["boot_id"]
+
+
+def test_render_parse_round_trip_keeps_the_tick_interval():
+    # Arrange
+    ident = local_identity()
+    # Act
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Assert
+    assert float(record["interval"]) == 42.0
+
+
+def test_round_tripped_heartbeat_age_is_zero_at_the_stamp_time():
+    # Arrange
     ident = local_identity()
     record = parse(render(99, interval=42.0, now=NOW, identity=ident))
-    assert record["pid"] == 99
-    assert record["host"] == ident["host"]
-    assert record["pid_ns"] == ident["pid_ns"]
-    assert record["boot_id"] == ident["boot_id"]
-    assert float(record["interval"]) == 42.0
-    assert _pidfile.heartbeat_age_seconds(record, NOW) == 0.0
-    assert writer_is_local(record, ident) is True
+    # Act
+    age = _pidfile.heartbeat_age_seconds(record, NOW)
+    # Assert
+    assert age == 0.0
+
+
+def test_round_tripped_local_identity_is_recognised_as_local():
+    # Arrange
+    ident = local_identity()
+    record = parse(render(99, interval=42.0, now=NOW, identity=ident))
+    # Act
+    is_local = writer_is_local(record, ident)
+    # Assert
+    assert is_local is True
 
 
 def test_naive_heartbeat_stamp_does_not_explode():
-    """A naive stamp meeting an aware `now` must not raise (a known repo trap)."""
+    # Arrange
+    # a naive stamp meeting an aware `now` (a known repo trap).
     record = {"heartbeat": "2026-07-13T11:59:00"}
-    assert _pidfile.heartbeat_age_seconds(record, NOW) == 60.0
+    # Act
+    age = _pidfile.heartbeat_age_seconds(record, NOW)
+    # Assert
+    assert age == 60.0
 
 
-def test_unparseable_pid_with_fresh_heartbeat_is_alive(tmp_path):
+def test_unparseable_pid_with_fresh_heartbeat_is_ok(tmp_path):
+    # Arrange
     path = tmp_path / "notifyd.pid"
     path.write_text(
         f"garbage\nhost=elsewhere\npid_ns=pid:[1]\nheartbeat={NOW.isoformat()}\n",
         encoding="utf-8",
     )
+    # Act
     verdict = assess_liveness(path, now=NOW)
+    # Assert
     assert verdict["ok"] is True
+
+
+def test_unparseable_pid_with_fresh_heartbeat_reports_alive(tmp_path):
+    # Arrange
+    path = tmp_path / "notifyd.pid"
+    path.write_text(
+        f"garbage\nhost=elsewhere\npid_ns=pid:[1]\nheartbeat={NOW.isoformat()}\n",
+        encoding="utf-8",
+    )
+    # Act
+    verdict = assess_liveness(path, now=NOW)
+    # Assert
     assert verdict["state"] == "alive"
 
 

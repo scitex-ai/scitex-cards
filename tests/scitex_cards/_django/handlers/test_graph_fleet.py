@@ -129,7 +129,8 @@ def _graph(store_path: str) -> dict:
     """GET /graph against the tmp store and return the parsed payload."""
     request = RequestFactory().get(f"/graph?store={store_path}")
     response = views.api_dispatch(request, "graph")
-    assert response.status_code == 200
+    if response.status_code != 200:
+        raise AssertionError(f"GET /graph failed: {response.content!r}")
     return json.loads(response.content)
 
 
@@ -161,7 +162,8 @@ def test_fleet_is_sorted_by_agent_name(store):
     # Arrange
     # Act
     payload = _graph(store)
-    # Assert — deterministic ordering so the FE dot-strip doesn't reshuffle
+    # Assert
+    # deterministic ordering so the FE dot-strip doesn't reshuffle
     # on every poll. Sorted by the `name` field ascending.
     names = [a["name"] for a in payload["fleet"]]
     assert names == sorted(names)
@@ -174,7 +176,8 @@ def test_orphan_task_with_no_agent_is_excluded(store):
     # Arrange
     # Act
     payload = _graph(store)
-    # Assert — the only task carrying neither `agent` nor `assignee`
+    # Assert
+    # the only task carrying neither `agent` nor `assignee`
     # should not surface a fleet row (the dot-strip stays focused on
     # known agents).
     names = {a["name"] for a in payload["fleet"]}
@@ -185,7 +188,8 @@ def test_assignee_is_used_as_agent_fallback(store):
     # Arrange
     # Act
     payload = _graph(store)
-    # Assert — older rows using `assignee` (the pre-rename field) still
+    # Assert
+    # older rows using `assignee` (the pre-rename field) still
     # surface as a fleet row keyed by that name.
     names = {a["name"] for a in payload["fleet"]}
     assert "legacy-agent" in names
@@ -195,7 +199,8 @@ def test_assignee_is_used_as_agent_fallback(store):
 
 
 def test_blocking_operator_takes_precedence_over_working(store):
-    # Arrange — proj-neurovista has 1 blocker=operator-decision + 1 pending.
+    # Arrange
+    # proj-neurovista has 1 blocker=operator-decision + 1 pending.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -203,7 +208,8 @@ def test_blocking_operator_takes_precedence_over_working(store):
 
 
 def test_in_progress_yields_working_status(store):
-    # Arrange — proj-paper-scitex-clew has an in_progress task + a pending.
+    # Arrange
+    # proj-paper-scitex-clew has an in_progress task + a pending.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -211,7 +217,8 @@ def test_in_progress_yields_working_status(store):
 
 
 def test_recent_activity_yields_active_status(store):
-    # Arrange — proj-scitex-hub has only pending tasks but one has
+    # Arrange
+    # proj-scitex-hub has only pending tasks but one has
     # last_activity set (no blocker, no in_progress).
     # Act
     fleet = _fleet_by_name(_graph(store))
@@ -220,7 +227,8 @@ def test_recent_activity_yields_active_status(store):
 
 
 def test_no_activity_no_progress_yields_idle_status(store):
-    # Arrange — legacy-agent owns one pending task with no last_activity.
+    # Arrange
+    # legacy-agent owns one pending task with no last_activity.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -228,7 +236,8 @@ def test_no_activity_no_progress_yields_idle_status(store):
 
 
 def test_stale_in_progress_decays_to_stale_status(store):
-    # Arrange — proj-scitex-orochi has an in_progress task whose
+    # Arrange
+    # proj-scitex-orochi has an in_progress task whose
     # last_activity is OLDER than the working window (the operator-TG12739
     # decay rule). Manual `working` is no longer treated as live activity.
     # Act
@@ -241,7 +250,8 @@ def test_stale_in_progress_decays_to_stale_status(store):
 
 
 def test_current_task_prefers_in_progress(store):
-    # Arrange — proj-paper-scitex-clew has clew-pac-line (in_progress) and
+    # Arrange
+    # proj-paper-scitex-clew has clew-pac-line (in_progress) and
     # clew-figure-fixes (pending). The dot-strip tooltip should name the
     # in_progress one.
     # Act
@@ -251,7 +261,8 @@ def test_current_task_prefers_in_progress(store):
 
 
 def test_current_task_falls_back_to_most_recent_activity(store):
-    # Arrange — proj-scitex-hub: no in_progress; one task with
+    # Arrange
+    # proj-scitex-hub: no in_progress; one task with
     # last_activity. The dot-strip should surface that one.
     # Act
     fleet = _fleet_by_name(_graph(store))
@@ -263,7 +274,8 @@ def test_current_task_falls_back_to_most_recent_activity(store):
 
 
 def test_task_count_matches_input(store):
-    # Arrange — proj-neurovista has 2 tasks in the fixture.
+    # Arrange
+    # proj-neurovista has 2 tasks in the fixture.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -271,7 +283,8 @@ def test_task_count_matches_input(store):
 
 
 def test_blocked_count_only_counts_status_blocked(store):
-    # Arrange — proj-neurovista has 1 blocked + 1 pending.
+    # Arrange
+    # proj-neurovista has 1 blocked + 1 pending.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -279,7 +292,8 @@ def test_blocked_count_only_counts_status_blocked(store):
 
 
 def test_blocking_operator_count_only_counts_operator_decision(store):
-    # Arrange — proj-neurovista has 1 task with blocker=operator-decision.
+    # Arrange
+    # proj-neurovista has 1 task with blocker=operator-decision.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -287,7 +301,8 @@ def test_blocking_operator_count_only_counts_operator_decision(store):
 
 
 def test_runnable_count_excludes_blocked_done_deferred_failed_goal(store):
-    # Arrange — proj-neurovista: 1 blocked + 1 pending. Runnable = the
+    # Arrange
+    # proj-neurovista: 1 blocked + 1 pending. Runnable = the
     # pending one. blocked / done / deferred / failed / goal are the
     # non-runnable set (mirrors the task-harvest skill).
     # Act
@@ -309,7 +324,8 @@ def test_overdue_count_present_on_every_fleet_row(store):
 
 
 def test_overdue_count_zero_when_no_deadlines(store):
-    # Arrange — fixture has no deadline fields anywhere.
+    # Arrange
+    # fixture has no deadline fields anywhere.
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
@@ -349,7 +365,8 @@ def overdue_store(tmp_path):
 
 
 def test_overdue_count_counts_pending_past_deadline(overdue_store):
-    # Arrange — proj-late has 1 overdue pending + 1 future + 1 done-past.
+    # Arrange
+    # proj-late has 1 overdue pending + 1 future + 1 done-past.
     # The done one must NOT count (terminal state); the future one must
     # NOT count (deadline ahead).
     # Act
@@ -402,7 +419,8 @@ def blocking_store(tmp_path):
 
 
 def test_blocking_operator_count_uses_canonical_predicate(blocking_store):
-    # Arrange — proj-blockq has exactly ONE card matching the BLOCKING-YOU
+    # Arrange
+    # proj-blockq has exactly ONE card matching the BLOCKING-YOU
     # predicate (blocked + operator-decision). The blocked-on-dependency
     # and the pending cards must NOT count.
     # Act
@@ -412,7 +430,8 @@ def test_blocking_operator_count_uses_canonical_predicate(blocking_store):
 
 
 def test_blocking_operator_ids_lists_only_the_matching_card(blocking_store):
-    # Arrange — same fixture; the id list must contain only the
+    # Arrange
+    # same fixture; the id list must contain only the
     # blocked+operator-decision card.
     # Act
     fleet = _fleet_by_name(_graph(blocking_store))
@@ -421,7 +440,8 @@ def test_blocking_operator_ids_lists_only_the_matching_card(blocking_store):
 
 
 def test_blocked_on_other_blocker_not_in_operator_queue(blocking_store):
-    # Arrange — a blocked card whose blocker is NOT operator-decision.
+    # Arrange
+    # a blocked card whose blocker is NOT operator-decision.
     # Act
     fleet = _fleet_by_name(_graph(blocking_store))
     # Assert
@@ -429,7 +449,8 @@ def test_blocked_on_other_blocker_not_in_operator_queue(blocking_store):
 
 
 def test_non_blocked_card_not_in_queue(blocking_store):
-    # Arrange — a non-blocked (pending) card; the canonical predicate
+    # Arrange
+    # a non-blocked (pending) card; the canonical predicate
     # requires status==blocked, so it must NOT surface.
     # Act
     fleet = _fleet_by_name(_graph(blocking_store))
@@ -440,6 +461,7 @@ def test_non_blocked_card_not_in_queue(blocking_store):
 def test_blocking_operator_ids_present_on_every_fleet_row(store):
     # The field must always be present (possibly empty) so the FE never
     # null-checks, mirroring overdue_count's contract.
+    # Arrange
     # Act
     fleet = _fleet_by_name(_graph(store))
     # Assert
