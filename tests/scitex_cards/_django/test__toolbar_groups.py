@@ -42,7 +42,6 @@ from pathlib import Path
 
 import pytest
 
-
 # --- repo paths -----------------------------------------------------------
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -183,9 +182,9 @@ def test_template_renders_group_class(selector_class: str) -> None:
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
-    assert (
-        selector_class in html
-    ), f"board_v3.html missing class {selector_class!r} on any element"
+    assert selector_class in html, (
+        f"board_v3.html missing class {selector_class!r} on any element"
+    )
 
 
 def test_template_loads_toolbar_css() -> None:
@@ -194,9 +193,9 @@ def test_template_loads_toolbar_css() -> None:
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
-    assert (
-        "07-toolbar-groups.css" in html
-    ), "board_v3.html never <link>s 07-toolbar-groups.css"
+    assert "07-toolbar-groups.css" in html, (
+        "board_v3.html never <link>s 07-toolbar-groups.css"
+    )
 
 
 def _view_group_body(html: str) -> str:
@@ -242,22 +241,53 @@ def test_template_view_group_dropped_sort_and_group(gone: str) -> None:
     assert gone not in view_body, f"VIEW group still carries retired control {gone!r}"
 
 
+def _primary_zone_match(html: str):
+    return re.search(
+        r"stx-todo-filterbar__primary[^>]*>(.*?)\{#\s*end PRIMARY",
+        html,
+        flags=re.DOTALL,
+    )
+
+
+def _search_group_match(html: str):
+    return re.search(
+        r"stx-todo-filterbar__group--search[^>]*>(.*?)\{#\s*end " r"\.fb-center",
+        html,
+        flags=re.DOTALL,
+    )
+
+
+def test_template_primary_zone_block_exists() -> None:
+    """The PRIMARY action zone wrapper must still be in the template."""
+    # Arrange
+    html = _read(_BOARD_V3_TEMPLATE)
+    # Act
+    m = _primary_zone_match(html)
+    # Assert
+    assert m, "could not locate PRIMARY zone block in template"
+
+
 def test_template_primary_zone_contains_add_task() -> None:
     """The PRIMARY action zone must wrap the +Add Task button so it pops
     as the right-most, brand-accent element."""
     # Arrange
     html = _read(_BOARD_V3_TEMPLATE)
     # Act
-    m = re.search(
-        r"stx-todo-filterbar__primary[^>]*>(.*?)\{#\s*end PRIMARY",
-        html,
-        flags=re.DOTALL,
-    )
+    m = _primary_zone_match(html)
     # Assert
-    assert m, "could not locate PRIMARY zone block in template"
-    assert (
-        'id="add-task-btn"' in m.group(1)
-    ), "PRIMARY zone missing the +Add Task button"
+    assert 'id="add-task-btn"' in m.group(1), (
+        "PRIMARY zone missing the +Add Task button"
+    )
+
+
+def test_template_search_group_block_exists() -> None:
+    """The SEARCH group wrapper must still be in the template."""
+    # Arrange
+    html = _read(_BOARD_V3_TEMPLATE)
+    # Act
+    m = _search_group_match(html)
+    # Assert
+    assert m, "could not locate SEARCH group block in template"
 
 
 def test_template_search_group_contains_search_input() -> None:
@@ -266,13 +296,8 @@ def test_template_search_group_contains_search_input() -> None:
     # Arrange
     html = _read(_BOARD_V3_TEMPLATE)
     # Act
-    m = re.search(
-        r"stx-todo-filterbar__group--search[^>]*>(.*?)\{#\s*end " r"\.fb-center",
-        html,
-        flags=re.DOTALL,
-    )
+    m = _search_group_match(html)
     # Assert
-    assert m, "could not locate SEARCH group block in template"
     assert 'id="f-search"' in m.group(1), "SEARCH group missing search input"
 
 
@@ -327,7 +352,9 @@ def test_template_dropped_every_retired_control(needle: str) -> None:
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
-    assert needle not in html, f"retired toolbar control is back in board_v3.html: {needle!r}"
+    assert needle not in html, (
+        f"retired toolbar control is back in board_v3.html: {needle!r}"
+    )
 
 
 def test_status_group_is_gone_from_the_template() -> None:
@@ -337,18 +364,26 @@ def test_status_group_is_gone_from_the_template() -> None:
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
-    assert (
-        "stx-todo-filterbar__group--status" not in html
-    ), "the STATUS toolbar group is back in board_v3.html"
+    assert "stx-todo-filterbar__group--status" not in html, (
+        "the STATUS toolbar group is back in board_v3.html"
+    )
 
 
 def test_recent_count_pill_moved_to_details_not_deleted() -> None:
-    """"114 new/24h ですが、それも details のほうで" — the counter MOVED. It must
-    still exist, and it must be rendered by the Details > Stats panel
-    (renderStats), not by the filterbar."""
+    """ "114 new/24h ですが、それも details のほうで" — the counter MOVED. It must
+    still exist somewhere in the template."""
     # Arrange
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
     assert 'id="recent-count-pill"' in html, "the 'N new / 24 h' counter was deleted"
+
+
+def test_details_stats_panel_hosts_the_moved_counter() -> None:
+    """The counter's new home: the Details > Stats panel (renderStats), not
+    the filterbar."""
+    # Arrange
+    # Act
+    html = _read(_BOARD_V3_TEMPLATE)
+    # Assert
     assert 'id="details-stats"' in html, "Details > Stats panel is missing"

@@ -17,10 +17,10 @@ real list-of-dicts inputs, a plain list-recorder ``enqueue``, a real
 from __future__ import annotations
 
 import datetime as _dt
+import warnings
 
 import pytest
 
-from scitex_cards import TaskValidationError
 from scitex_cards._model import VALID_STATUSES, is_overdue, load_tasks
 from scitex_cards._reconcile_prs import (
     ACTION_SKIP_NOT_OPEN,
@@ -48,27 +48,39 @@ def _iso(dt):
 NOW = _utc(2026, 6, 30, 12, 0, 0)
 
 
+def _write_store(tmp_path, text):
+    store = tmp_path / "tasks.yaml"
+    store.write_text(text, encoding="utf-8")
+    return store
+
+
 # --------------------------------------------------------------------------- #
 # enum membership + validation                                               #
 # --------------------------------------------------------------------------- #
 
 
 def test_cancelled_is_in_valid_statuses():
-    # "cancelled" is a recognized lifecycle status.
-    assert "cancelled" in VALID_STATUSES
+    # Arrange
+    statuses = VALID_STATUSES
+    # Act
+    known = "cancelled" in statuses
+    # Assert — "cancelled" is a recognized lifecycle status.
+    assert known
 
 
 def test_cancelled_is_distinct_from_done_and_failed():
-    # It is its OWN status, not an alias of done/failed.
-    assert {"done", "failed", "cancelled"} <= set(VALID_STATUSES)
+    # Arrange
+    statuses = set(VALID_STATUSES)
+    # Act
+    trio = {"done", "failed", "cancelled"}
+    # Assert — it is its OWN status, not an alias of done/failed.
+    assert trio <= statuses
 
 
 def test_load_tasks_accepts_cancelled_status(tmp_path):
     # Arrange — a store with a single cancelled card.
-    store = tmp_path / "tasks.yaml"
-    store.write_text(
-        "tasks:\n  - {id: x, title: Abandoned, status: cancelled}\n",
-        encoding="utf-8",
+    store = _write_store(
+        tmp_path, "tasks:\n  - {id: x, title: Abandoned, status: cancelled}\n"
     )
     # Act
     tasks = load_tasks(store)
@@ -83,12 +95,27 @@ def test_load_tasks_warns_on_unknown_status(tmp_path):
     # `cancelled` bricked every older reader. It still warns loudly, naming
     # the card, and the closed enum stays enforced at the SOURCES (the CLI
     # --status Choice, the board handlers' 400).
-    store = tmp_path / "tasks.yaml"
-    store.write_text(
-        "tasks:\n  - {id: x, title: X, status: wibble}\n", encoding="utf-8"
-    )
+    # Arrange
+    store = _write_store(tmp_path, "tasks:\n  - {id: x, title: X, status: wibble}\n")
+    # Act
+    # Assert
     with pytest.warns(UserWarning, match="wibble"):
+        load_tasks(store)
+
+
+def test_load_tasks_keeps_an_unknown_status_value(tmp_path):
+    """The tolerant reader must PRESERVE the value it warned about, not
+    normalize or drop it — a newer agent's status has to survive a
+    round-trip through an older reader."""
+    # Arrange
+    store = _write_store(tmp_path, "tasks:\n  - {id: x, title: X, status: wibble}\n")
+    # Act
+    # (the warning itself is pinned by the sibling test; silence it here so
+    # this test asserts only the preserved value)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
         tasks = load_tasks(store)
+    # Assert
     assert tasks[0]["status"] == "wibble"
 
 
@@ -97,26 +124,52 @@ def test_load_tasks_warns_on_unknown_status(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_cancelled_is_terminal():
-    # The central closed-status SSOT includes cancelled.
-    assert "cancelled" in TERMINAL_STATUSES
-    # Sanity: open statuses are not terminal.
-    assert "in_progress" not in TERMINAL_STATUSES
-    assert "pending" not in TERMINAL_STATUSES
+def test_cancelled_is_a_terminal_status():
+    # Arrange
+    terminal = TERMINAL_STATUSES
+    # Act
+    is_terminal = "cancelled" in terminal
+    # Assert — the central closed-status SSOT includes cancelled.
+    assert is_terminal
+
+
+def test_in_progress_is_not_a_terminal_status():
+    # Arrange
+    terminal = TERMINAL_STATUSES
+    # Act
+    is_terminal = "in_progress" in terminal
+    # Assert — sanity: open statuses are not terminal.
+    assert not is_terminal
+
+
+def test_pending_is_not_a_terminal_status():
+    # Arrange
+    terminal = TERMINAL_STATUSES
+    # Act
+    is_terminal = "pending" in terminal
+    # Assert
+    assert not is_terminal
 
 
 def test_cancelled_not_in_reconcile_open_statuses():
-    # The PR-reconciler never treats cancelled as open work to auto-close.
-    assert "cancelled" not in OPEN_STATUSES
+    # Arrange
+    open_statuses = OPEN_STATUSES
+    # Act
+    treated_as_open = "cancelled" in open_statuses
+    # Assert — the PR-reconciler never treats cancelled as open work.
+    assert not treated_as_open
 
 
 def test_reconcile_skips_cancelled_even_when_pr_merged():
-    # A cancelled card with a merged PR is NOT auto-flipped — it is closed.
+    # Arrange — a cancelled card with a merged PR.
     task = {
         "status": "cancelled",
         "pr_url": "https://github.com/o/r/pull/1",
     }
-    assert decide_reconcile_action(task, MERGED) == ACTION_SKIP_NOT_OPEN
+    # Act
+    action = decide_reconcile_action(task, MERGED)
+    # Assert — NOT auto-flipped; it is closed.
+    assert action == ACTION_SKIP_NOT_OPEN
 
 
 # --------------------------------------------------------------------------- #
@@ -124,18 +177,29 @@ def test_reconcile_skips_cancelled_even_when_pr_merged():
 # --------------------------------------------------------------------------- #
 
 
-def test_cancelled_excluded_from_open_count_like_done():
+_MIXED_STATUS_TASKS = [
+    {"id": "open1", "title": "o", "status": "in_progress", "agent": "a"},
+    {"id": "done1", "title": "d", "status": "done", "agent": "a"},
+    {"id": "cxl1", "title": "c", "status": "cancelled", "agent": "a"},
+]
+
+
+def test_aggregate_groups_one_owner_into_one_row():
     # Arrange — one open card + one done + one cancelled, same owner.
-    tasks = [
-        {"id": "open1", "title": "o", "status": "in_progress", "agent": "a"},
-        {"id": "done1", "title": "d", "status": "done", "agent": "a"},
-        {"id": "cxl1", "title": "c", "status": "cancelled", "agent": "a"},
-    ]
+    tasks = [dict(t) for t in _MIXED_STATUS_TASKS]
+    # Act
+    rows = aggregate(tasks, by="agent")
+    # Assert
+    assert len(rows) == 1
+
+
+def test_cancelled_excluded_from_open_count_like_done():
+    # Arrange
+    tasks = [dict(t) for t in _MIXED_STATUS_TASKS]
     # Act
     rows = aggregate(tasks, by="agent")
     # Assert — only the in_progress card counts as open. cancelled drops
     # out exactly like done.
-    assert len(rows) == 1
     assert rows[0].open_count == 1
 
 
@@ -155,10 +219,12 @@ def _card(cid, status, *, hours_ago):
 
 
 def test_cancelled_is_never_stale_active():
-    # A long-untouched cancelled card is NOT stale-active (it is closed,
-    # not live work the owner is claiming).
+    # Arrange — a long-untouched cancelled card.
     t = _card("x", "cancelled", hours_ago=999)
-    assert is_stale_active(t, now=NOW, stale_hours=2.0) is False
+    # Act
+    verdict = is_stale_active(t, now=NOW, stale_hours=2.0)
+    # Assert — it is closed, not live work the owner is claiming.
+    assert verdict is False
 
 
 def test_cancelled_excluded_from_stale_active_detection():
@@ -200,7 +266,15 @@ class _EnqueueRecorder:
         self.calls: list[dict] = []
 
     def __call__(
-        self, recipient_key, *, event_type, card_id, body, actor, ts, store,
+        self,
+        recipient_key,
+        *,
+        event_type,
+        card_id,
+        body,
+        actor,
+        ts,
+        store,
         supersede=False,
     ):
         rec = {
@@ -224,12 +298,8 @@ def _isolate_engine(monkeypatch):
     monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
 
 
-def test_reminder_sweep_does_not_nag_cancelled_card(tmp_path):
-    # Arrange — a single, long-untouched cancelled card owned by alice.
-    store = tmp_path / "tasks.yaml"
+def _sweep(tasks, store):
     rec = _EnqueueRecorder()
-    tasks = [_card("cxl", "cancelled", hours_ago=999)]
-    # Act
     out = sweep_reminders(
         tasks,
         store=store,
@@ -237,33 +307,69 @@ def test_reminder_sweep_does_not_nag_cancelled_card(tmp_path):
         enqueue=rec,
         resolve_key=lambda name: name,
     )
-    # Assert — no digest enqueued for the cancelled card.
+    return out, rec
+
+
+def test_reminder_sweep_digests_nothing_for_a_cancelled_card(tmp_path):
+    # Arrange — a single, long-untouched cancelled card.
+    store = tmp_path / "tasks.yaml"
+    tasks = [_card("cxl", "cancelled", hours_ago=999)]
+    # Act
+    out, _rec = _sweep(tasks, store)
+    # Assert
     assert out["digested"] == []
+
+
+def test_reminder_sweep_enqueues_nothing_for_a_cancelled_card(tmp_path):
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    tasks = [_card("cxl", "cancelled", hours_ago=999)]
+    # Act
+    _out, rec = _sweep(tasks, store)
+    # Assert — no digest enqueued for the cancelled card.
     assert rec.calls == []
 
 
-def test_reminder_sweep_nags_live_card_but_not_its_cancelled_sibling(tmp_path):
+def test_reminder_sweep_sends_exactly_one_digest_for_the_live_card(tmp_path):
     # Arrange — a stale in_progress card alongside a stale cancelled card,
-    # same owner. Only the live one should appear in the digest.
+    # same owner.
     store = tmp_path / "tasks.yaml"
-    rec = _EnqueueRecorder()
     tasks = [
         _card("live", "in_progress", hours_ago=10),
         _card("cxl", "cancelled", hours_ago=10),
     ]
     # Act
-    sweep_reminders(
-        tasks,
-        store=store,
-        now=NOW,
-        enqueue=rec,
-        resolve_key=lambda name: name,
-    )
-    # Assert — one digest, mentioning the live card but not the cancelled one.
+    _out, rec = _sweep(tasks, store)
+    # Assert
     digests = [c for c in rec.calls if c["event_type"] == EVENT_DIGEST]
     assert len(digests) == 1
-    body = digests[0]["body"]
+
+
+def test_reminder_sweep_digest_mentions_the_live_card(tmp_path):
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    tasks = [
+        _card("live", "in_progress", hours_ago=10),
+        _card("cxl", "cancelled", hours_ago=10),
+    ]
+    # Act
+    _out, rec = _sweep(tasks, store)
+    # Assert
+    body = [c for c in rec.calls if c["event_type"] == EVENT_DIGEST][0]["body"]
     assert "live" in body
+
+
+def test_reminder_sweep_digest_omits_the_cancelled_sibling(tmp_path):
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    tasks = [
+        _card("live", "in_progress", hours_ago=10),
+        _card("cxl", "cancelled", hours_ago=10),
+    ]
+    # Act
+    _out, rec = _sweep(tasks, store)
+    # Assert
+    body = [c for c in rec.calls if c["event_type"] == EVENT_DIGEST][0]["body"]
     assert "cxl" not in body
 
 
@@ -273,7 +379,9 @@ def test_reminder_sweep_nags_live_card_but_not_its_cancelled_sibling(tmp_path):
 
 
 def test_cancelled_with_past_deadline_is_not_overdue():
-    # A cancelled card with a deadline in the past is NOT overdue — it is
-    # closed, same as done/deferred/failed.
+    # Arrange — a cancelled card with a deadline in the past.
     task = {"id": "x", "title": "x", "status": "cancelled", "deadline": "2026-06-01"}
-    assert is_overdue(task, now=_utc(2026, 6, 30, 12, 0, 0)) is False
+    # Act
+    verdict = is_overdue(task, now=_utc(2026, 6, 30, 12, 0, 0))
+    # Assert — NOT overdue; it is closed, same as done/deferred/failed.
+    assert verdict is False

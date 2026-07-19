@@ -80,33 +80,43 @@ class TestAgeClock:
     def test_undatable_card_has_no_age(self):
         # Arrange
         t = {"id": "x", "title": "t", "status": "deferred"}
-        # Act / Assert
-        assert age_hours(t, NOW) is None
+        # Act
+        age = age_hours(t, NOW)
+        # Assert
+        assert age is None
 
 
 class TestRecencyWeighting:
     def test_newer_weighs_more_than_older(self):
-        # Arrange / Act
-        fresh = recency_weight(1.0, 168.0)
-        old = recency_weight(1000.0, 168.0)
+        # Arrange
+        half_life = 168.0
+        # Act
+        fresh = recency_weight(1.0, half_life)
+        old = recency_weight(1000.0, half_life)
         # Assert — the direction the operator corrected.
         assert fresh > old
 
     def test_one_half_life_halves_the_weight(self):
-        # Arrange / Act
-        w = recency_weight(168.0, 168.0)
+        # Arrange
+        half_life = 168.0
+        # Act
+        w = recency_weight(half_life, half_life)
         # Assert
         assert w == pytest.approx(0.5, rel=1e-9)
 
     def test_draw_favours_recent_cards(self):
         # Arrange — 1 fresh card, 20 nearly-expired ones. Over many draws the
         # fresh card must dominate.
-        tasks = [_card("fresh", days=0.1)] + [_card(f"old{i}", days=25) for i in range(20)]
+        tasks = [_card("fresh", days=0.1)] + [
+            _card(f"old{i}", days=25) for i in range(20)
+        ]
         rng = random.Random(1234)
         # Act
         hits = 0
         for _ in range(200):
-            drawn = sample_for_triage(tasks, n=1, now=NOW, rng=rng, half_life_hours=24.0)
+            drawn = sample_for_triage(
+                tasks, n=1, now=NOW, rng=rng, half_life_hours=24.0
+            )
             if drawn and drawn[0].id == "fresh":
                 hits += 1
         # Assert — 1-in-21 by chance; recency weighting must beat that badly.
@@ -140,17 +150,25 @@ class TestCandidatesAndExpiry:
         tasks = [_card("fresh", days=1), _card("rotten", days=DEFAULT_EXPIRY_DAYS + 5)]
         # Act
         drawable = {t["id"] for t in candidates(tasks, now=NOW)}
-        rotten = {t["id"] for t in expired(tasks, now=NOW)}
         # Assert
         assert drawable == {"fresh"}
+
+    def test_expired_cards_are_reported_as_expired(self):
+        # Arrange
+        tasks = [_card("fresh", days=1), _card("rotten", days=DEFAULT_EXPIRY_DAYS + 5)]
+        # Act
+        rotten = {t["id"] for t in expired(tasks, now=NOW)}
+        # Assert
         assert rotten == {"rotten"}
 
     def test_undatable_card_is_never_expired(self):
         # Arrange — refuse to propose destroying a card on a timestamp we
         # could not read.
         t = {"id": "x", "title": "t", "status": "deferred"}
-        # Act / Assert
-        assert is_expired(t, now=NOW) is False
+        # Act
+        verdict = is_expired(t, now=NOW)
+        # Assert
+        assert verdict is False
 
     def test_cooldown_suppresses_a_recently_triaged_card(self):
         # Arrange
@@ -161,7 +179,7 @@ class TestCandidatesAndExpiry:
         # Assert
         assert got == []
 
-    def test_cooldown_expires(self):
+    def test_cooldown_expires_and_the_card_is_drawable_again(self):
         # Arrange
         t = _card("c", days=10)
         t[FIELD_LAST_TRIAGED_AT] = _iso(5)
@@ -170,7 +188,7 @@ class TestCandidatesAndExpiry:
         # Assert
         assert [x["id"] for x in got] == ["c"]
 
-    def test_owner_filter(self):
+    def test_owner_filter_keeps_only_the_owners_cards(self):
         # Arrange
         tasks = [_card("mine", days=1), _card("theirs", days=1, agent="b")]
         # Act
@@ -182,12 +200,31 @@ class TestCandidatesAndExpiry:
 class TestNudgeBody:
     def test_body_states_that_keeping_does_not_reset_the_clock(self):
         # Arrange
-        drawn = sample_for_triage([_card("c", days=2)], n=1, now=NOW, rng=random.Random(0))
+        drawn = sample_for_triage(
+            [_card("c", days=2)], n=1, now=NOW, rng=random.Random(0)
+        )
         # Act
         body = build_triage_body(drawn, [])
         # Assert — the owner must know that "keep deferred" is not a free pass.
         assert "does not reset" in body
+
+    def test_body_names_the_card_it_drew_for_triage(self):
+        # Arrange
+        drawn = sample_for_triage(
+            [_card("c", days=2)], n=1, now=NOW, rng=random.Random(0)
+        )
+        # Act
+        body = build_triage_body(drawn, [])
+        # Assert
         assert "c" in body
+
+    def test_body_flags_the_expired_section(self):
+        # Arrange
+        rotten = [_card("old", days=DEFAULT_EXPIRY_DAYS + 1)]
+        # Act
+        body = build_triage_body([], rotten)
+        # Assert
+        assert "EXPIRED" in body
 
     def test_body_names_cancellation_as_the_default_for_expired(self):
         # Arrange
@@ -195,12 +232,20 @@ class TestNudgeBody:
         # Act
         body = build_triage_body([], rotten)
         # Assert
-        assert "EXPIRED" in body
         assert "cancellation" in body
+
+    def test_body_names_each_expired_card(self):
+        # Arrange
+        rotten = [_card("old", days=DEFAULT_EXPIRY_DAYS + 1)]
+        # Act
+        body = build_triage_body([], rotten)
+        # Assert
         assert "old" in body
 
     def test_empty_sweep_produces_no_noise(self):
-        # Arrange / Act
-        body = build_triage_body([], [])
+        # Arrange
+        nothing_drawn, nothing_expired = [], []
+        # Act
+        body = build_triage_body(nothing_drawn, nothing_expired)
         # Assert — a nudge with nothing to decide must not be sent.
         assert body == ""

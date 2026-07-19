@@ -121,6 +121,38 @@ def board_js(board_text, js_text) -> str:
     return board_text + "\n" + js_text
 
 
+def _valid_layouts_whitelist(board_js: str) -> str:
+    """The body of the ``VALID_LAYOUTS`` array literal.
+
+    The whitelist is a JS const, so it may live in the template or in an
+    extracted module. Assert the marker EXISTS before splitting on it: a bare
+    ``.split(...)[1]`` raises IndexError when the const is renamed/moved, which
+    reads as a crash rather than as the caller's pin telling you the whitelist
+    could not be found.
+    """
+    assert "VALID_LAYOUTS = " in board_js, (
+        "VALID_LAYOUTS marker not found in the template or any extracted "
+        "module — the layout whitelist was renamed or moved; re-point "
+        "this pin at its new shape"
+    )
+    return board_js.split("VALID_LAYOUTS = ")[1].split("]")[0]
+
+
+def test_valid_layouts_marker_is_present_in_the_gui(board_js):
+    """Every whitelist pin below reads through this marker — pin it directly
+    so a rename fails ONE readable test instead of every consumer."""
+    # Arrange
+    corpus = board_js
+    # Act
+    found = "VALID_LAYOUTS = " in corpus
+    # Assert
+    assert found, (
+        "VALID_LAYOUTS marker not found in the template or any extracted "
+        "module — the layout whitelist was renamed or moved; re-point "
+        "the whitelist pins at its new shape"
+    )
+
+
 # -----------------------------------------------------------------------------
 # P1 — search-as-launcher (PR #86)
 # -----------------------------------------------------------------------------
@@ -169,9 +201,9 @@ class TestP1SearchAsLauncher:
         # Arrange
         # Act
         # Assert
-        assert (
-            "Esc to blur" in board_text
-        ), "search input must hint at 'Esc to blur' in its placeholder"
+        assert "Esc to blur" in board_text, (
+            "search input must hint at 'Esc to blur' in its placeholder"
+        )
 
     def test_search_input_min_width_filterbar_scale(self, css_text):
         # Operator 2026-07-10 (でかすぎ,
@@ -207,33 +239,56 @@ class TestColumnAndTableLayoutsRemoved:
     the Stale layout was removed on 2026-07-10.
     """
 
-    def test_layout_buttons_gone(self, board_text):
+    def test_column_layout_button_id_gone(self, board_text):
         # Arrange
         # Act
         # Assert
         assert 'id="f-layout-column"' not in board_text
-        assert 'id="f-layout-table"' not in board_text
-        assert "📋 Column" not in board_text
-        assert "📑 Table" not in board_text
 
-    def test_layouts_out_of_the_whitelist(self, board_js):
+    def test_table_layout_button_id_gone(self, board_text):
         # Arrange
-        # The whitelist is a JS const, so it may live in the template or in
-        # an extracted module. Assert the marker EXISTS before splitting on
-        # it: a bare `.split(...)[1]` raises IndexError when the const is
-        # renamed/moved, which reads as a crash rather than as this pin
-        # telling you the whitelist could not be found.
-        assert "VALID_LAYOUTS = " in board_js, (
-            "VALID_LAYOUTS marker not found in the template or any extracted "
-            "module — the layout whitelist was renamed or moved; re-point "
-            "this pin at its new shape"
-        )
-        whitelist = board_js.split("VALID_LAYOUTS = ")[1].split("]")[0]
         # Act
         # Assert
+        assert 'id="f-layout-table"' not in board_text
+
+    def test_column_layout_button_label_gone(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "📋 Column" not in board_text
+
+    def test_table_layout_button_label_gone(self, board_text):
+        # Arrange
+        # Act
+        # Assert
+        assert "📑 Table" not in board_text
+
+    def test_column_layout_out_of_the_whitelist(self, board_js):
+        # Arrange
+        # Act
+        whitelist = _valid_layouts_whitelist(board_js)
+        # Assert
         assert '"column"' not in whitelist
+
+    def test_table_layout_out_of_the_whitelist(self, board_js):
+        # Arrange
+        # Act
+        whitelist = _valid_layouts_whitelist(board_js)
+        # Assert
         assert '"table"' not in whitelist
+
+    def test_stale_layout_out_of_the_whitelist(self, board_js):
+        # Arrange
+        # Act
+        whitelist = _valid_layouts_whitelist(board_js)
+        # Assert
         assert '"stale"' not in whitelist
+
+    def test_surviving_layouts_stay_in_the_whitelist(self, board_js):
+        # Arrange
+        # Act
+        whitelist = _valid_layouts_whitelist(board_js)
+        # Assert
         for live in ('"timeline"', '"wall"', '"graph"'):
             assert live in whitelist
 
@@ -246,17 +301,27 @@ class TestColumnAndTableLayoutsRemoved:
         # Assert
         assert 'const DEFAULT_LAYOUT = "timeline";' in board_js
 
-    def test_stale_persisted_layout_is_migrated(self, board_js):
+    def test_layout_normalizer_helper_is_defined(self, board_js):
         # A browser whose localStorage still says "column" / "table" must be
         # coerced to the default, not left on a dead layout.
         # Arrange
         # Act
         # Assert
         assert "function normalizeLayout" in board_js
+
+    def test_persisted_layout_is_run_through_the_normalizer(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "normalizeLayout(stored)" in board_js
+
+    def test_live_state_layout_is_run_through_the_normalizer(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "normalizeLayout(STATE.layout)" in board_js
 
-    def test_renderers_gone(self, board_js):
+    def test_column_and_table_renderers_are_gone(self, board_js):
         # Arrange
         # Act
         # Assert
@@ -286,14 +351,13 @@ class TestColumnAndTableLayoutsRemoved:
         ):
             assert fn not in board_js, f"{fn} must be removed"
 
-    def test_column_only_controls_gone(self, board_text, board_js):
+    def test_column_only_control_markup_gone(self, board_text):
         # Sort / Group / Group-by-time / bulk-select / project-column hide
         # all operated on column cards; a control that cannot act on anything
         # is a lie in the UI, so they went with the layouts.
         # Arrange
         # Act
-        # Assert
-        # Filterbar markup — stays in the template.
+        # Assert — filterbar markup stays in the template.
         for dom_id in (
             'id="f-sort"',
             'id="f-groupby"',
@@ -303,7 +367,12 @@ class TestColumnAndTableLayoutsRemoved:
             'id="proj-hide-wrap"',
         ):
             assert dom_id not in board_text, f"{dom_id} must be removed"
-        # Their JS must be gone from the whole GUI, not just the template.
+
+    def test_column_only_control_handlers_gone(self, board_js):
+        # Arrange
+        # Act
+        # Assert — their JS must be gone from the whole GUI, not just the
+        # template.
         for fn in (
             "function _sortComparator",
             "function renderGroupStrip",
@@ -313,12 +382,22 @@ class TestColumnAndTableLayoutsRemoved:
         ):
             assert fn not in board_js, f"{fn} must be removed"
 
-    def test_table_css_gone(self, css_text):
+    def test_table_layout_css_selector_gone(self, css_text):
         # Arrange
         # Act
         # Assert
         assert '[data-layout="table"]' not in css_text
+
+    def test_table_wrapper_css_class_gone(self, css_text):
+        # Arrange
+        # Act
+        # Assert
         assert ".tbl-wrap" not in css_text
+
+    def test_table_status_dot_css_class_gone(self, css_text):
+        # Arrange
+        # Act
+        # Assert
         assert ".tbl-status-dot" not in css_text
 
 
@@ -345,41 +424,78 @@ class TestGraphBackgroundRender:
         # Assert
         assert "function _graphSrc" in board_js
 
-    def test_prewarm_runs_on_idle(self, board_js):
+    def test_prewarm_helper_is_defined(self, board_js):
         # Arrange
         # Act
         # Assert
         assert "function _prewarmGraph" in board_js
+
+    def test_prewarm_is_scheduled_on_an_idle_callback(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "requestIdleCallback" in board_js
+
+    def test_prewarm_helper_is_actually_called(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "_prewarmGraph();" in board_js
 
-    def test_render_uses_the_promise_api_not_run(self, board_js):
-        # `mermaid.run({querySelector})` lays out against the LIVE canvas and
-        # blocks; `mermaid.render(id, src)` resolves an SVG string off-DOM.
+    def test_render_uses_the_mermaid_promise_api(self, board_js):
+        # `mermaid.render(id, src)` resolves an SVG string off-DOM.
         # Arrange
         # Act
         # Assert
         assert "mermaid.render(" in board_js
+
+    def test_render_no_longer_uses_the_blocking_run_api(self, board_js):
+        # `mermaid.run({querySelector})` lays out against the LIVE canvas and
+        # blocks — that was the freeze.
+        # Arrange
+        # Act
+        # Assert
         assert "mermaid.run(" not in board_js
 
-    def test_render_is_cached_by_source(self, board_js):
+    def test_a_render_cache_exists(self, board_js):
         # Re-rendering on every poll tick was the other half of the cost.
         # Arrange
         # Act
         # Assert
         assert "GRAPH_CACHE" in board_js
+
+    def test_render_cache_is_keyed_by_source(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "GRAPH_CACHE.key === built.src" in board_js
 
-    def test_svg_is_sized_to_the_panel(self, board_js, css_text):
+    def test_rendered_svg_declares_preserve_aspect_ratio(self, board_js):
         # An SVG rendered off-DOM carries mermaid's natural px width; dropped
-        # into the panel unscaled it overflows. The viewBox + the fit rule are
-        # what make it show up correctly sized.
+        # into the panel unscaled it overflows.
         # Arrange
         # Act
         # Assert
         assert "preserveAspectRatio" in board_js
+
+    def test_rendered_svg_declares_a_view_box(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "viewBox" in board_js
+
+    def test_graph_fit_rule_is_declared_in_css(self, css_text):
+        # The viewBox + this fit rule are what make the SVG show up correctly
+        # sized inside the panel.
+        # Arrange
+        # Act
+        # Assert
         assert ".graph-wrap--fit .graph-canvas svg" in css_text
+
+    def test_graph_canvas_class_is_declared_in_css(self, css_text):
+        # Arrange
+        # Act
+        # Assert
         assert ".graph-canvas" in css_text
 
 
@@ -445,7 +561,7 @@ class TestP2P9FilterAndSort:
         # Assert
         assert "function clearOneFilter" in board_js
 
-    def test_sort_control_removed_with_the_column_layout(self, board_text, board_js):
+    def test_sort_state_removed_with_the_column_layout(self, board_text):
         # P9's Sort dropdown only re-ordered cards WITHIN a column (and the
         # Table rows). Both layouts were removed 2026-07-13, so the control
         # and its comparator went too — see
@@ -460,7 +576,12 @@ class TestP2P9FilterAndSort:
         # about a symbol that is genuinely gone. The board_js corpus cannot
         # tell code from comments, so the narrower corpus is the honest one.
         assert "STATE.sort" not in board_text
+
+    def test_sort_comparator_removed_from_the_whole_gui(self, board_js):
         # The comparator is a real function — removal must hold GUI-wide.
+        # Arrange
+        # Act
+        # Assert
         assert "function _sortComparator" not in board_js
 
 
@@ -476,15 +597,28 @@ class TestP10GroupsRemoved:
     board-side clustering UI is gone.
     """
 
-    def test_group_clustering_ui_removed(self, board_text, board_js):
+    def test_group_by_state_is_removed(self, board_js):
+        # Arrange
+        # Act
+        # Assert — JS state must be gone from the whole GUI.
+        assert "STATE.groupBy" not in board_js
+
+    def test_group_strip_renderer_is_removed(self, board_js):
         # Arrange
         # Act
         # Assert
-        # JS state + renderers — must be gone from the whole GUI.
-        assert "STATE.groupBy" not in board_js
         assert "function renderGroupStrip" not in board_js
+
+    def test_group_clustering_helper_is_removed(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "function _applyGroupClustering" not in board_js
-        # The banner's DOM id is template markup.
+
+    def test_group_banner_markup_is_removed(self, board_text):
+        # Arrange
+        # Act
+        # Assert — the banner's DOM id is template markup.
         assert 'id="group-spans-all"' not in board_text
 
 
@@ -654,14 +788,19 @@ class TestMultiselectBatchOpsRemoved:
     the Wall notes / Timeline markers first — a separate card.
     """
 
-    def test_card_checkbox_gone(self, board_js):
-        # The checkbox was emitted from ``cardHtml``'s template literal and
-        # the flag is a JS global — both are JS source, so removal is pinned
-        # against the whole GUI.
+    def test_card_select_checkbox_markup_gone(self, board_js):
+        # The checkbox was emitted from ``cardHtml``'s template literal, so
+        # removal is pinned against the whole GUI.
         # Arrange
         # Act
         # Assert
         assert 'class="card-select"' not in board_js
+
+    def test_multiselect_global_flag_gone(self, board_js):
+        # The flag is a JS global — same corpus rationale as the checkbox.
+        # Arrange
+        # Act
+        # Assert
         assert "window.MULTISELECT" not in board_js
 
     def test_bulk_toolbar_gone(self, board_text):
@@ -689,13 +828,18 @@ class TestMultiselectBatchOpsRemoved:
         ):
             assert fn not in board_js
 
-    def test_single_card_update_path_survives(self, board_js):
+    def test_single_card_update_endpoint_survives(self, board_js):
         # The ctx-menu status change still posts to /update — the endpoint is
         # untouched, only the bulk loop is gone.
         # Arrange
         # Act
         # Assert
         assert '"/update"' in board_js
+
+    def test_single_card_status_setter_survives(self, board_js):
+        # Arrange
+        # Act
+        # Assert
         assert "async function setCardStatus" in board_js
 
 
@@ -755,28 +899,26 @@ class TestStaleReviewPanel:
     code.
     """
 
-    def test_stale_layout_button_removed_from_filterbar(self, board_text):
+    def test_stale_layout_button_id_removed_from_filterbar(self, board_text):
         # Arrange
         # Act
         # Assert
         assert 'id="f-layout-stale"' not in board_text
+
+    def test_stale_layout_button_label_removed_from_filterbar(self, board_text):
+        # Arrange
+        # Act
+        # Assert
         assert "🧹 Stale" not in board_text
 
     def test_stale_layout_unreachable_in_whitelist(self, board_js):
         # Arrange
-        # Assert the marker exists before splitting on it, so a moved/renamed
-        # whitelist fails this pin with a readable message instead of an
-        # IndexError. See TestColumnAndTableLayoutsRemoved for the twin pin.
-        assert "VALID_LAYOUTS = " in board_js, (
-            "VALID_LAYOUTS marker not found in the template or any extracted "
-            "module — the layout whitelist was renamed or moved; re-point "
-            "this pin at its new shape"
-        )
         # Act
+        whitelist = _valid_layouts_whitelist(board_js)
         # Assert
-        assert (
-            '"stale"' not in board_js.split("VALID_LAYOUTS = ")[1].split("]")[0]
-        ), "stale must stay out of the layout whitelist (operator removal)"
+        assert '"stale"' not in whitelist, (
+            "stale must stay out of the layout whitelist (operator removal)"
+        )
 
     def test_stale_render_helper_defined(self, board_js):
         # Arrange
@@ -859,28 +1001,43 @@ class TestMatrixDragRescore:
     wave. These pins are its guard.
     """
 
-    def test_cards_render_draggable(self, board_js):
+    def test_matrix_cards_render_draggable(self, board_js):
         # 14-matrix.js emits draggable cards so a matrix drag can start.
+        # Arrange
+        # Act
+        # Assert
         assert 'draggable="true"' in board_js
 
     def test_drop_axes_helper_present(self, board_js):
         # The pure cell-coordinate -> validated axes translation (module-side,
         # node-tested); reads coordinates, never scores.
+        # Arrange
+        # Act
+        # Assert
         assert "function dropAxes" in board_js
 
     def test_rescore_fetch_helper_defined(self, board_js):
         # The client write helper that POSTs only the dropped axes.
+        # Arrange
+        # Act
+        # Assert
         assert "async function rescoreCard" in board_js
 
     def test_rescore_posts_to_the_rescore_endpoint(self, board_js):
         # Drag goes through /rescore -> the rescore_task verb, so the
         # rank_changed event still reaches agents (never a handler-flock write).
+        # Arrange
+        # Act
+        # Assert
         assert '"/rescore"' in board_js
 
-    def test_drag_drop_listener_wired(self, board_js):
+    def test_drag_drop_listener_is_wired(self, board_js):
         # The delegated drop listener that turns a drop into a rescore —
         # delegated on `document` because the matrix canvas is innerHTML-
         # replaced every render.
+        # Arrange
+        # Act
+        # Assert
         assert 'addEventListener("drop"' in board_js
 
 

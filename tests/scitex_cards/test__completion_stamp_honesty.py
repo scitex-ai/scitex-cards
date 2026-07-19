@@ -39,18 +39,50 @@ def _meta(store, task_id):
     return task, (task.get("_log_meta") or {})
 
 
-def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path):
-    """The regression itself: reopen must un-complete, not just un-status."""
-    store = _store(tmp_path, [{"id": "a", "title": "A", "status": "blocked"}])
+def _one_blocked_card(tmp_path):
+    return _store(tmp_path, [{"id": "a", "title": "A", "status": "blocked"}])
 
+
+def test_complete_task_flips_the_card_to_done(tmp_path):
+    # Arrange
+    store = _one_blocked_card(tmp_path)
+    # Act
     complete_task(store, "a", by="tester")
-    task, meta = _meta(store, "a")
+    # Assert
+    task, _meta_map = _meta(store, "a")
     assert task["status"] == "done"
+
+
+def test_complete_task_stamps_completed_at(tmp_path):
+    # Arrange
+    store = _one_blocked_card(tmp_path)
+    # Act
+    complete_task(store, "a", by="tester")
+    # Assert
+    _task, meta = _meta(store, "a")
     assert meta.get("completed_at"), "complete_task must stamp completed_at"
 
+
+def test_reopen_task_restores_the_previous_status(tmp_path):
+    # Arrange
+    store = _one_blocked_card(tmp_path)
+    complete_task(store, "a", by="tester")
+    # Act
     reopen_task(store, "a", by="tester")
-    task, meta = _meta(store, "a")
+    # Assert
+    task, _meta_map = _meta(store, "a")
     assert task["status"] == "blocked"
+
+
+def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path):
+    """The regression itself: reopen must un-complete, not just un-status."""
+    # Arrange
+    store = _one_blocked_card(tmp_path)
+    complete_task(store, "a", by="tester")
+    # Act
+    reopen_task(store, "a", by="tester")
+    # Assert
+    _task, meta = _meta(store, "a")
     for key in COMPLETION_STAMP_KEYS:
         assert key not in meta, (
             f"reopened card still carries _log_meta.{key} — the throughput "
@@ -61,19 +93,18 @@ def test_complete_then_reopen_leaves_no_completion_stamp(tmp_path):
 
 def test_reopened_card_is_not_a_zombie_to_the_health_check(tmp_path):
     """End-to-end: the guard must agree the reopened card is honest."""
-    store = _store(tmp_path, [{"id": "a", "title": "A", "status": "blocked"}])
+    # Arrange
+    store = _one_blocked_card(tmp_path)
     complete_task(store, "a", by="tester")
     reopen_task(store, "a", by="tester")
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is True
 
-    assert _check_terminal_state_honest(store)["ok"] is True
 
-
-def test_health_check_catches_a_completed_at_zombie(tmp_path):
-    """The blind spot, pinned: open status + completed_at MUST be caught.
-
-    Before 2026-07-14 this returned ok — which is how five of them survived.
-    """
-    store = _store(
+def _completed_at_zombie_store(tmp_path):
+    return _store(
         tmp_path,
         [
             {
@@ -84,13 +115,34 @@ def test_health_check_catches_a_completed_at_zombie(tmp_path):
             }
         ],
     )
+
+
+def test_health_check_catches_a_completed_at_zombie(tmp_path):
+    """The blind spot, pinned: open status + completed_at MUST be caught.
+
+    Before 2026-07-14 this returned ok — which is how five of them survived.
+    """
+    # Arrange
+    store = _completed_at_zombie_store(tmp_path)
+    # Act
     result = _check_terminal_state_honest(store)
+    # Assert
     assert result["ok"] is False
+
+
+def test_completed_at_zombie_detail_names_the_card(tmp_path):
+    """A verdict nobody can act on is not a verdict — name the offender."""
+    # Arrange
+    store = _completed_at_zombie_store(tmp_path)
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
     assert "zombie" in result["detail"]
 
 
 def test_health_check_still_catches_a_closed_at_zombie(tmp_path):
     """Widening the check must not have dropped the marker it already had."""
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -102,7 +154,10 @@ def test_health_check_still_catches_a_closed_at_zombie(tmp_path):
             }
         ],
     )
-    assert _check_terminal_state_honest(store)["ok"] is False
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is False
 
 
 def test_every_closure_marker_is_actually_checked(tmp_path):
@@ -112,27 +167,35 @@ def test_every_closure_marker_is_actually_checked(tmp_path):
     This test makes the enumeration load-bearing: each marker in
     _CLOSURE_MARKERS must, on its own, be enough to convict an open card.
     """
-    for marker in _CLOSURE_MARKERS:
-        store = _store(
-            tmp_path / marker,
-            [
-                {
-                    "id": "z",
-                    "title": "z",
-                    "status": "deferred",
-                    "_log_meta": {marker: "2026-07-01T00:00:00Z"},
-                }
-            ],
+    # Arrange
+    markers = list(_CLOSURE_MARKERS)
+    # Act
+    results = {
+        marker: _check_terminal_state_honest(
+            _store(
+                tmp_path / marker,
+                [
+                    {
+                        "id": "z",
+                        "title": "z",
+                        "status": "deferred",
+                        "_log_meta": {marker: "2026-07-01T00:00:00Z"},
+                    }
+                ],
+            )
         )
-        result = _check_terminal_state_honest(store)
+        for marker in markers
+    }
+    # Assert
+    for marker, result in results.items():
         assert result["ok"] is False, (
             f"_log_meta.{marker} is listed in _CLOSURE_MARKERS but does not "
             "trip the zombie check — the guard's enumeration is a lie"
         )
 
 
-def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
-    """A TERMINAL card can still lie about throughput.
+def _cancelled_but_stamped_store(tmp_path):
+    """A TERMINAL card that still lies about throughput.
 
     `cancelled` is not an open status, so the zombie rule does not see it — it
     does not nag anyone. But fleet/timing.py and timeline.py aggregate on
@@ -144,7 +207,7 @@ def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
     correctly moved to `cancelled` — and kept its completion stamp. The status
     was fixed; the stamp was not.)
     """
-    store = _store(
+    return _store(
         tmp_path,
         [
             {
@@ -158,14 +221,38 @@ def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
             }
         ],
     )
+
+
+def test_cancelled_card_carrying_completed_at_is_caught(tmp_path):
+    # Arrange
+    store = _cancelled_but_stamped_store(tmp_path)
+    # Act
     result = _check_terminal_state_honest(store)
+    # Assert
     assert result["ok"] is False
+
+
+def test_cancelled_zombie_detail_names_the_card(tmp_path):
+    # Arrange
+    store = _cancelled_but_stamped_store(tmp_path)
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
     assert "killed-but-counted" in result["detail"]
+
+
+def test_cancelled_zombie_detail_explains_the_throughput_lie(tmp_path):
+    # Arrange
+    store = _cancelled_but_stamped_store(tmp_path)
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
     assert "DELIVERED WORK" in result["detail"]
 
 
 def test_a_genuinely_done_card_is_not_flagged(tmp_path):
     """The stamp is CORRECT on a done card — no false positives."""
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -180,25 +267,74 @@ def test_a_genuinely_done_card_is_not_flagged(tmp_path):
             }
         ],
     )
-    assert _check_terminal_state_honest(store)["ok"] is True
+    # Act
+    result = _check_terminal_state_honest(store)
+    # Assert
+    assert result["ok"] is True
 
 
-def test_clear_completion_stamp_is_idempotent_and_honest():
-    """Never invents a stamp, reports truthfully whether it removed one."""
-    assert clear_completion_stamp({"id": "x"}) is False
-    assert clear_completion_stamp({"id": "x", "_log_meta": {}}) is False
+def test_clear_completion_stamp_never_invents_a_meta_block():
+    """Never reports a removal on a task that has no _log_meta at all."""
+    # Arrange
+    task = {"id": "x"}
+    # Act
+    removed = clear_completion_stamp(task)
+    # Assert
+    assert removed is False
 
+
+def test_clear_completion_stamp_reports_nothing_on_an_empty_meta():
+    """An empty _log_meta holds no stamp, so nothing was cleared."""
+    # Arrange
+    task = {"id": "x", "_log_meta": {}}
+    # Act
+    removed = clear_completion_stamp(task)
+    # Assert
+    assert removed is False
+
+
+def test_clear_completion_stamp_reports_removing_a_real_stamp():
+    # Arrange
     task = {"id": "x", "_log_meta": {"completed_at": "t", "completed_by": "me"}}
-    assert clear_completion_stamp(task) is True
+    # Act
+    removed = clear_completion_stamp(task)
+    # Assert
+    assert removed is True
+
+
+def test_clear_completion_stamp_drops_an_emptied_meta_block():
+    # Arrange
+    task = {"id": "x", "_log_meta": {"completed_at": "t", "completed_by": "me"}}
+    # Act
+    clear_completion_stamp(task)
+    # Assert
     assert "_log_meta" not in task, "an emptied _log_meta should not linger"
-    assert clear_completion_stamp(task) is False
+
+
+def test_clear_completion_stamp_is_idempotent():
+    # Arrange
+    task = {"id": "x", "_log_meta": {"completed_at": "t", "completed_by": "me"}}
+    clear_completion_stamp(task)
+    # Act
+    second = clear_completion_stamp(task)
+    # Assert
+    assert second is False
+
+
+def test_clear_completion_stamp_reports_a_removal_on_mixed_meta():
+    """Only the completion keys go — started_at et al. are someone else's."""
+    # Arrange
+    task = {"id": "x", "_log_meta": {"completed_at": "t", "started_at": "s"}}
+    # Act
+    removed = clear_completion_stamp(task)
+    # Assert
+    assert removed is True
 
 
 def test_clear_completion_stamp_preserves_unrelated_meta():
-    """Only the completion keys go — started_at et al. are someone else's."""
-    task = {
-        "id": "x",
-        "_log_meta": {"completed_at": "t", "started_at": "s"},
-    }
-    assert clear_completion_stamp(task) is True
+    # Arrange
+    task = {"id": "x", "_log_meta": {"completed_at": "t", "started_at": "s"}}
+    # Act
+    clear_completion_stamp(task)
+    # Assert
     assert task["_log_meta"] == {"started_at": "s"}
