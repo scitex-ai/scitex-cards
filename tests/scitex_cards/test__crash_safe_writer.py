@@ -37,7 +37,6 @@ from scitex_cards._model import (
     save_tasks,
 )
 
-
 # === fixtures ===============================================================
 
 
@@ -320,24 +319,51 @@ def test_save_round_trips_tasks_exactly(tmp_path: Path):
 # === 6. Crash-safe path uses tmp + os.replace (no partial canonical) ========
 
 
-def test_save_yields_no_partial_file_and_leaves_no_tmp(tmp_path: Path):
+def _append_task_and_save(store: Path) -> None:
+    """Seed a multi-section store, append one card, and save it back."""
+    _write_store_with_extra_sections(store)
+    tasks = load_tasks(store)
+    tasks.append({"id": "t-new", "title": "new", "status": "pending"})
+    save_tasks(tasks, store)
+
+
+def test_append_save_leaves_no_tmp_sidecar_behind(tmp_path: Path):
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    tmp = store.parent / f".{store.name}.tmp"
+
+    # Act
+    _append_task_and_save(store)
+
+    # Assert — os.replace consumed the tmp; nothing stale remains.
+    assert not tmp.exists()
+
+
+def test_append_save_writes_a_complete_task_list(tmp_path: Path):
     from scitex_cards._yaml import safe_load
 
     # Arrange
     store = tmp_path / "tasks.yaml"
-    tmp = store.parent / f".{store.name}.tmp"
-    _write_store_with_extra_sections(store)
-    tasks = load_tasks(store)
 
     # Act
-    tasks.append({"id": "t-new", "title": "new", "status": "pending"})
-    save_tasks(tasks, store)
+    _append_task_and_save(store)
 
-    # Assert — no tmp sidecar left, and the canonical file parses to a
-    # complete, valid document (a partial write would fail to parse or
-    # miss sections).
-    assert not tmp.exists()
+    # Assert — a partial write would fail to parse or lose the appended card.
     with store.open(encoding="utf-8") as handle:
         after = safe_load(handle)
     assert [t["id"] for t in after["tasks"]] == ["t-a", "t-new"]
+
+
+def test_append_save_keeps_the_users_section_present(tmp_path: Path):
+    from scitex_cards._yaml import safe_load
+
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+
+    # Act
+    _append_task_and_save(store)
+
+    # Assert — a partial write would miss the non-`tasks` sections.
+    with store.open(encoding="utf-8") as handle:
+        after = safe_load(handle)
     assert "users" in after

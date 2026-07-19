@@ -60,17 +60,41 @@ def test_an_unexpanded_placeholder_never_overrides_a_real_value(placeholder):
     This is the half of the bug that corrupted `created_by` on every card an
     affected agent wrote.
     """
+    # Arrange
     env = {"SCITEX_TODO_AGENT_ID": "scitex-cards", "SCITEX_CARDS_AGENT_ID": placeholder}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env["SCITEX_TODO_AGENT_ID"] == "scitex-cards"
+
+
+def _mirror_a_refused_placeholder(caplog):
+    """Mirror an env whose new-prefix AGENT_ID is an unexpanded placeholder."""
+    env = {"SCITEX_TODO_AGENT_ID": "scitex-cards", "SCITEX_CARDS_AGENT_ID": "${NOPE}"}
+    with caplog.at_level(logging.ERROR):
+        mirror_env(env)
+    return env
 
 
 def test_a_refused_placeholder_is_reported_at_error_level(caplog):
     """A silent refusal would just relocate the mystery, not remove it."""
-    env = {"SCITEX_TODO_AGENT_ID": "scitex-cards", "SCITEX_CARDS_AGENT_ID": "${NOPE}"}
-    with caplog.at_level(logging.ERROR):
-        mirror_env(env)
+    # Arrange
+    # Act
+    _mirror_a_refused_placeholder(caplog)
+
+    # Assert
     assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+def test_a_refused_placeholder_is_named_as_unexpanded_in_the_log(caplog):
+    """The log must say WHY, or the reader cannot fix the template."""
+    # Arrange
+    # Act
+    _mirror_a_refused_placeholder(caplog)
+
+    # Assert
     assert "UNEXPANDED" in caplog.text
 
 
@@ -81,8 +105,13 @@ def test_a_value_merely_containing_a_dollar_is_still_honoured(tmp_path):
     that happens to contain `$` is unusual but legal, and refusing it would
     break a working configuration in the name of fixing one.
     """
+    # Arrange
     env = {"SCITEX_TODO_AGENT_ID": "old", "SCITEX_CARDS_AGENT_ID": "agent$7"}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env["SCITEX_TODO_AGENT_ID"] == "agent$7"
 
 
@@ -97,22 +126,47 @@ def test_relocating_a_populated_store_is_refused(populated_store, tmp_path):
     Honouring the new name here means writes land in `cards/` while every
     existing record stays in `todo/`, with nothing reconciling them.
     """
+    # Arrange
     env = {
         CANONICAL: str(populated_store),
         RENAMED: str(tmp_path / "cards" / "tasks.yaml"),
     }
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env[CANONICAL] == str(populated_store)
 
 
-def test_the_refusal_names_both_paths_so_the_fork_is_diagnosable(
-    populated_store, tmp_path, caplog
-):
+def _mirror_a_refused_relocation(populated_store, tmp_path, caplog):
+    """Mirror an env whose new store path would fork away from a populated one."""
     other = tmp_path / "cards" / "tasks.yaml"
     env = {CANONICAL: str(populated_store), RENAMED: str(other)}
     with caplog.at_level(logging.ERROR):
         mirror_env(env)
+    return other
+
+
+def test_the_relocation_refusal_names_the_populated_store(
+    populated_store, tmp_path, caplog
+):
+    # Arrange
+    # Act
+    _mirror_a_refused_relocation(populated_store, tmp_path, caplog)
+
+    # Assert — half of what makes the fork diagnosable.
     assert str(populated_store) in caplog.text
+
+
+def test_the_relocation_refusal_names_the_rejected_path(
+    populated_store, tmp_path, caplog
+):
+    # Arrange
+    # Act
+    other = _mirror_a_refused_relocation(populated_store, tmp_path, caplog)
+
+    # Assert — the other half; both paths together diagnose the fork.
     assert str(other) in caplog.text
 
 
@@ -121,26 +175,41 @@ def test_a_fresh_install_may_still_adopt_the_new_store_path(tmp_path):
     to strand, so this is a real migration and must be allowed — otherwise no
     new deployment could ever adopt the new variable name.
     """
+    # Arrange
     new = tmp_path / "cards" / "tasks.yaml"
     env = {CANONICAL: str(tmp_path / "todo" / "tasks.yaml"), RENAMED: str(new)}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env[CANONICAL] == str(new)
 
 
 def test_an_empty_old_store_is_not_treated_as_populated(tmp_path):
     """A zero-byte file holds no records, so moving off it strands nothing."""
+    # Arrange
     old = tmp_path / "todo" / "tasks.yaml"
     old.parent.mkdir(parents=True)
     old.write_text("")
     new = tmp_path / "cards" / "tasks.yaml"
     env = {CANONICAL: str(old), RENAMED: str(new)}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env[CANONICAL] == str(new)
 
 
 def test_pointing_both_names_at_the_same_store_is_not_a_fork(populated_store):
+    # Arrange
     env = {CANONICAL: str(populated_store), RENAMED: str(populated_store)}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env[CANONICAL] == str(populated_store)
 
 
@@ -148,11 +217,16 @@ def test_a_non_store_variable_is_never_refused_for_relocation(populated_store):
     """The relocation guard keys on DATA-STORE variables only. A behavioural
     setting that happens to look like a path must still be overridable.
     """
+    # Arrange
     env = {
         "SCITEX_TODO_LOG_DIR": str(populated_store),
         "SCITEX_CARDS_LOG_DIR": "/tmp/x",
     }
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env["SCITEX_TODO_LOG_DIR"] == "/tmp/x"
 
 
@@ -162,40 +236,72 @@ def test_a_non_store_variable_is_never_refused_for_relocation(populated_store):
 
 
 def test_a_normal_override_still_wins():
+    # Arrange
     env = {"SCITEX_TODO_SCOPE": "agent:old", "SCITEX_CARDS_SCOPE": "agent:new"}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env["SCITEX_TODO_SCOPE"] == "agent:new"
 
 
 def test_a_new_name_with_no_old_twin_is_mirrored():
+    # Arrange
     env = {"SCITEX_CARDS_SCOPE": "agent:new"}
+
+    # Act
     mirror_env(env)
+
+    # Assert
     assert env["SCITEX_TODO_SCOPE"] == "agent:new"
 
 
 def test_old_only_names_still_emit_the_deprecation_warning(caplog):
+    # Arrange
     env = {"SCITEX_TODO_AGENT_ID": "scitex-cards"}
+
+    # Act
     with caplog.at_level(logging.WARNING):
         mirror_env(env)
+
+    # Assert
     assert "deprecated SCITEX_TODO_*" in caplog.text
 
 
-def test_mirror_env_never_raises_on_a_hostile_path(tmp_path):
+def test_mirror_env_survives_a_hostile_old_path_and_still_mirrors(tmp_path):
     """This module runs at IMPORT time. A raise here does not fail one call —
     it makes `import scitex_cards` fail for every consumer of the package.
+
+    An unreadable old path is not evidence of a populated store, so the
+    relocation guard must swallow the error and let the mirror proceed. Asserting
+    the mirrored value proves BOTH halves: the call returned, and it returned
+    having made the documented conservative decision.
     """
-    env = {CANONICAL: "\0not/a/valid/path", RENAMED: str(tmp_path / "x.yaml")}
-    mirror_env(env)  # must not raise
+    # Arrange — a NUL byte makes every stat on this path raise.
+    new = tmp_path / "x.yaml"
+    env = {CANONICAL: "\0not/a/valid/path", RENAMED: str(new)}
+
+    # Act — must not raise.
+    mirror_env(env)
+
+    # Assert
+    assert env[CANONICAL] == str(new)
 
 
 def test_mirror_env_is_idempotent(populated_store, tmp_path):
+    # Arrange
     env = {
         CANONICAL: str(populated_store),
         RENAMED: str(tmp_path / "cards" / "tasks.yaml"),
     }
     mirror_env(env)
     first = dict(env)
+
+    # Act — a second pass over the already-mirrored env.
     mirror_env(env)
+
+    # Assert
     assert env == first
 
 

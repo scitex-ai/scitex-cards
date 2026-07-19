@@ -33,7 +33,18 @@ def store(tmp_path: Path) -> Path:
             "drained": [],
         },
     }
-    threads = {"dm:a::b": [{"id": "m_1", "from": "a", "to": "b", "body": "hi", "ts": "2026", "read": False}]}
+    threads = {
+        "dm:a::b": [
+            {
+                "id": "m_1",
+                "from": "a",
+                "to": "b",
+                "body": "hi",
+                "ts": "2026",
+                "read": False,
+            }
+        ]
+    }
     path = tmp_path / "tasks.yaml"
     path.write_text(safe_dump(doc), encoding="utf-8")
     (tmp_path / "threads.yaml").write_text(
@@ -42,34 +53,105 @@ def store(tmp_path: Path) -> Path:
     return path
 
 
-def test_rehearse_passes_on_a_round_trippable_store(store, tmp_path):
+def test_rehearse_judges_a_round_trippable_store_equal(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd"
+
     # Act
-    report = rehearse(tasks_path=store, workdir=tmp_path / "wd")
+    report = rehearse(tasks_path=store, workdir=workdir)
+
     # Assert
     assert report["equal"] is True
+
+
+def test_rehearse_reports_every_section_as_round_tripping(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd"
+
+    # Act
+    report = rehearse(tasks_path=store, workdir=workdir)
+
+    # Assert
     assert report["sections"] == {
         "tasks": True,
         "users": True,
         "inboxes": True,
         "threads": True,
     }
+
+
+def test_rehearse_counts_every_task_it_judged(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd"
+
+    # Act
+    report = rehearse(tasks_path=store, workdir=workdir)
+
+    # Assert
     assert report["tasks"] == 2
-    assert report["inbox_recipients"] == 2  # the drained one included
+
+
+def test_rehearse_counts_drained_inbox_recipients_too(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd"
+
+    # Act
+    report = rehearse(tasks_path=store, workdir=workdir)
+
+    # Assert — the drained recipient is included.
+    assert report["inbox_recipients"] == 2
 
 
 def test_rehearse_never_touches_the_live_store(store, tmp_path):
     # Arrange
     before = store.read_bytes()
+
     # Act
     rehearse(tasks_path=store, workdir=tmp_path / "wd")
+
     # Assert — byte-identical afterwards.
     assert store.read_bytes() == before
 
 
-def test_rehearse_passing_run_cleans_its_workdir_unless_kept(store, tmp_path):
+def test_a_passing_rehearsal_reports_no_workdir_by_default(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd1"
+
     # Act
-    cleaned = rehearse(tasks_path=store, workdir=tmp_path / "wd1")
-    kept = rehearse(tasks_path=store, workdir=tmp_path / "wd2", keep=True)
+    cleaned = rehearse(tasks_path=store, workdir=workdir)
+
     # Assert
-    assert cleaned["workdir"] is None and not (tmp_path / "wd1").exists()
-    assert kept["workdir"] == str(tmp_path / "wd2") and (tmp_path / "wd2").exists()
+    assert cleaned["workdir"] is None
+
+
+def test_a_passing_rehearsal_removes_its_workdir_by_default(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd1"
+
+    # Act
+    rehearse(tasks_path=store, workdir=workdir)
+
+    # Assert
+    assert not workdir.exists()
+
+
+def test_a_kept_rehearsal_reports_the_workdir_it_kept(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd2"
+
+    # Act
+    kept = rehearse(tasks_path=store, workdir=workdir, keep=True)
+
+    # Assert
+    assert kept["workdir"] == str(workdir)
+
+
+def test_a_kept_rehearsal_leaves_its_workdir_on_disk(store, tmp_path):
+    # Arrange
+    workdir = tmp_path / "wd2"
+
+    # Act
+    rehearse(tasks_path=store, workdir=workdir, keep=True)
+
+    # Assert — the evidence survives for inspection.
+    assert workdir.exists()

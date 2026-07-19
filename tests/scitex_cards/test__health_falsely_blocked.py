@@ -26,29 +26,55 @@ def _store(tmp_path, tasks):
     return p
 
 
+#: The regression itself: the only gate finished, the card still says blocked.
+_FALSELY_BLOCKED_TASKS = [
+    {"id": "gate", "title": "gate", "status": "done"},
+    {
+        "id": "waiter",
+        "title": "waiting on nothing",
+        "status": "blocked",
+        "blocker": "dependency",
+        "depends_on": ["gate"],
+    },
+]
+
+
 def test_blocked_on_a_done_card_is_caught(tmp_path):
-    """The regression itself: the only gate finished, the card still says blocked."""
-    store = _store(
-        tmp_path,
-        [
-            {"id": "gate", "title": "gate", "status": "done"},
-            {
-                "id": "waiter",
-                "title": "waiting on nothing",
-                "status": "blocked",
-                "blocker": "dependency",
-                "depends_on": ["gate"],
-            },
-        ],
-    )
+    # Arrange
+    store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
+
+    # Act
     result = _check_no_falsely_blocked(store)
+
+    # Assert
     assert result["ok"] is False
+
+
+def test_the_falsely_blocked_report_names_the_offending_card(tmp_path):
+    # Arrange
+    store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert — naming the card is what makes the finding actionable.
     assert "waiter" in result["detail"]
+
+
+def test_the_falsely_blocked_report_carries_a_hint(tmp_path):
+    # Arrange
+    store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
     assert result["hint"]
 
 
 def test_a_still_open_gate_is_not_flagged(tmp_path):
     """No false positives: a real gate means a real block."""
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -62,11 +88,17 @@ def test_a_still_open_gate_is_not_flagged(tmp_path):
             },
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is True
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is True
 
 
 def test_one_open_gate_among_several_still_blocks(tmp_path):
     """ALL deps must be terminal. One live gate is enough to justify `blocked`."""
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -81,7 +113,12 @@ def test_one_open_gate_among_several_still_blocks(tmp_path):
             },
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is True
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is True
 
 
 def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path):
@@ -90,6 +127,7 @@ def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path):
     Only `done` would be too narrow: a cancelled dependency is NEVER COMING, so a
     card waiting on it waits forever — the worst false block there is.
     """
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -104,7 +142,12 @@ def test_cancelled_and_failed_gates_also_count_as_finished(tmp_path):
             },
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is False
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is False
 
 
 def test_blocked_with_no_depends_on_is_left_alone(tmp_path):
@@ -113,6 +156,7 @@ def test_blocked_with_no_depends_on_is_left_alone(tmp_path):
     This check has no evidence about whether that gate is still real, so it must
     not guess. Flagging these would flood the signal with cards it cannot judge.
     """
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -124,7 +168,12 @@ def test_blocked_with_no_depends_on_is_left_alone(tmp_path):
             }
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is True
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is True
 
 
 def test_a_dangling_dependency_is_not_conflated(tmp_path):
@@ -133,6 +182,7 @@ def test_a_dangling_dependency_is_not_conflated(tmp_path):
     Treating "the gate does not exist" as "the gate is finished" would silently
     convert a data-integrity bug into an all-clear.
     """
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -145,11 +195,17 @@ def test_a_dangling_dependency_is_not_conflated(tmp_path):
             }
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is True
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is True
 
 
 def test_a_non_blocked_card_with_finished_deps_is_fine(tmp_path):
     """Only `blocked` cards make the claim. A deferred one claims nothing."""
+    # Arrange
     store = _store(
         tmp_path,
         [
@@ -162,35 +218,51 @@ def test_a_non_blocked_card_with_finished_deps_is_fine(tmp_path):
             },
         ],
     )
-    assert _check_no_falsely_blocked(store)["ok"] is True
+
+    # Act
+    result = _check_no_falsely_blocked(store)
+
+    # Assert
+    assert result["ok"] is True
+
+
+# AN INVARIANT NOBODY RUNS IS NOT AN INVARIANT. The check must appear in
+# `health()`'s report, not merely exist as a function. That is exactly how the
+# zombie cards survived a guard whose whole job was to catch them.
+def _falsely_blocked_health_report(tmp_path):
+    from scitex_cards._health import health
+
+    store = _store(tmp_path, _FALSELY_BLOCKED_TASKS)
+    return health(store=str(store))
 
 
 def test_the_check_is_wired_into_the_aggregator(tmp_path):
-    """AN INVARIANT NOBODY RUNS IS NOT AN INVARIANT.
+    # Arrange
+    # Act
+    report = _falsely_blocked_health_report(tmp_path)
 
-    The check must appear in `health()`'s report, not merely exist as a function.
-    That is exactly how the zombie cards survived a guard whose whole job was to
-    catch them.
-    """
-    from scitex_cards._health import health
-
-    store = _store(
-        tmp_path,
-        [
-            {"id": "gate", "title": "gate", "status": "done"},
-            {
-                "id": "waiter",
-                "title": "waiting on nothing",
-                "status": "blocked",
-                "blocker": "dependency",
-                "depends_on": ["gate"],
-            },
-        ],
-    )
-    report = health(store=str(store))
+    # Assert
     names = {c["name"] for c in report["checks"]}
     assert "no_falsely_blocked" in names, "the check exists but nothing runs it"
 
+
+def test_the_aggregated_check_reports_the_falsely_blocked_card(tmp_path):
+    # Arrange
+    report = _falsely_blocked_health_report(tmp_path)
+
+    # Act
     check = next(c for c in report["checks"] if c["name"] == "no_falsely_blocked")
+
+    # Assert — it is not merely wired in, it actually fires.
     assert check["ok"] is False
+
+
+def test_the_aggregated_failing_check_carries_a_hint(tmp_path):
+    # Arrange
+    report = _falsely_blocked_health_report(tmp_path)
+
+    # Act
+    check = next(c for c in report["checks"] if c["name"] == "no_falsely_blocked")
+
+    # Assert
     assert check["hint"], "a failing check must carry an actionable hint"

@@ -47,8 +47,8 @@ def test_entry_points_scanned_only_once_across_many_calls(monkeypatch):
 
 
 def test_cache_clear_forces_rediscovery(monkeypatch):
-    # The escape hatch must work: a live plugin reload / a test can force a
-    # fresh scan. Without this, caching would be a one-way door.
+    # Arrange — the escape hatch must work: a live plugin reload / a test can
+    # force a fresh scan. Without this, caching would be a one-way door.
     calls = {"n": 0}
     real = importlib.metadata.entry_points
 
@@ -58,18 +58,23 @@ def test_cache_clear_forces_rediscovery(monkeypatch):
 
     monkeypatch.setattr(importlib.metadata, "entry_points", counting_entry_points)
 
+    # Act — scan, drop the cache, scan again.
     _plugins._iter_entry_points()
     _plugins._iter_entry_points.cache_clear()
     _plugins._iter_entry_points()
 
+    # Assert
     assert calls["n"] == 2
 
 
-def test_result_is_stable_across_calls():
-    # Cached calls return the same discovered set — the behaviour dispatch_event
-    # relies on is unchanged, only faster.
+def test_cached_result_is_stable_across_calls():
+    # Arrange — cached calls must return the same discovered set: the behaviour
+    # dispatch_event relies on is unchanged, only faster.
+    # Act
     first = list(_plugins._iter_entry_points())
     second = list(_plugins._iter_entry_points())
+
+    # Assert
     assert [getattr(e, "name", e) for e in first] == [
         getattr(e, "name", e) for e in second
     ]
