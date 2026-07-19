@@ -25,41 +25,49 @@ must NOT keep the mirror's best-effort, never-raise posture: under
 it. Swallowing an exception here would silently drop the operator's cards,
 which is the single worst thing this package can do. See ``_store_write``.
 
-DEFAULT IS OFF. This flips the source of truth for the fleet's shared memory,
-so it is opt-in per process and reversible by unsetting one variable — with a
-full archive taken before the flip (~/.scitex/cards/.old/<stamp>/).
+THERE IS NO DEFAULT, BECAUSE THERE IS NO CHOICE. This module once exposed
+``SCITEX_CARDS_STORE_BACKEND`` and defaulted to OFF. The flag is gone (operator,
+2026-07-19): 「db_canonical とかいうのを置くな、DB 以外ありえない」. The cutover ran
+on 2026-07-19 — both YAML stores archived to ``~/.scitex/cards/.old/<stamp>/``,
+a snapshot pushed to the ``scitex-cards-cards`` backup repo, and the DB left as
+the only store on disk.
+
+Keeping the switch would have kept YAML mode alive as a supported way to run,
+and a mode that can be entered by OMISSION is entered eventually. It was, within
+the hour: an unset flag sent ``resolve_tasks_path(None)`` down its precedence
+chain to the BUNDLED EXAMPLE store in site-packages, and the DB's provenance
+stamp followed it there. YAML survives only as import/export/snapshot — a
+backup and interchange format, never a store.
 """
 
 from __future__ import annotations
 
-import os
-
-#: Selects the canonical store. ``sqlite`` = the DB IS the store; anything
-#: else (default) = the YAML is canonical and the DB is a mirror.
-ENV_STORE_BACKEND = "SCITEX_CARDS_STORE_BACKEND"
-
-#: Legacy twin. ``_env_compat`` mirrors SCITEX_CARDS_* onto SCITEX_TODO_* at
-#: import, but a process that sets only the OLD name must still be honoured
-#: during the transition window — so both are read here rather than trusting
-#: the mirror to have run.
-ENV_STORE_BACKEND_LEGACY = "SCITEX_TODO_STORE_BACKEND"
-
-BACKEND_SQLITE = "sqlite"
-
 
 def db_is_canonical() -> bool:
-    """True when SQLite is the STORE rather than a mirror of the YAML.
+    """SQLite IS the store. Always. Retained as a shim, about to be deleted.
 
-    Reads both env prefixes so it cannot be defeated by the rename being
-    half-applied — which is exactly how the fleet's dual-write silently sat
-    OFF on three daemons for hours (they carried no scitex env at all, so
-    every write they made skipped the mirror and rotted the DB).
+    THERE IS NO LONGER A FLAG (operator, 2026-07-19): 「db_canonical とかいうの
+    を置くな、DB 以外ありえない」 — do not keep a "db canonical" switch; nothing
+    but the DB is possible. This function returns ``True`` unconditionally and
+    exists only so the remaining call sites keep importing something while they
+    are unwound; it takes no argument, reads no environment, and has no other
+    branch to take.
+
+    WHY THE FLAG HAD TO GO, and it is not merely tidiness. A flag advertises
+    that the other setting is a supported way to run, so every reader must
+    still reason about YAML mode and every deployment can still land in it by
+    omission. That is not hypothetical: on 2026-07-19, with the flag unset in
+    one shell, ``resolve_tasks_path(None)`` walked its precedence chain past
+    the (now archived) canonical YAML and settled on the BUNDLED EXAMPLE store
+    inside site-packages — and the DB's provenance stamp was rewritten to point
+    at it. A configuration that can silently designate a packaged fixture as
+    the fleet's board is not a configuration, it is a trap. Deleting the choice
+    deletes the trap.
+
+    The YAML machinery that remains is import/export/snapshot only — a backup
+    and interchange format, never a store. See ``_db_export`` / ``db snapshot``.
     """
-    for name in (ENV_STORE_BACKEND, ENV_STORE_BACKEND_LEGACY):
-        raw = os.environ.get(name, "")
-        if raw.strip().lower() == BACKEND_SQLITE:
-            return True
-    return False
+    return True
 
 
 def write_doc_to_db(doc: dict, store_path) -> dict:
@@ -87,9 +95,6 @@ def write_doc_to_db(doc: dict, store_path) -> dict:
 
 
 __all__ = [
-    "BACKEND_SQLITE",
-    "ENV_STORE_BACKEND",
-    "ENV_STORE_BACKEND_LEGACY",
     "db_is_canonical",
     "write_doc_to_db",
 ]
