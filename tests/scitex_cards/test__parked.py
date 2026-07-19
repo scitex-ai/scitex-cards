@@ -54,23 +54,41 @@ def test_a_stated_reason_is_a_park():
 
 
 def test_a_card_with_no_parked_field_is_not_parked():
-    assert bt.is_parked(_card()) is False
+    # Arrange
+    task = _card()
+    # Act
+    parked = bt.is_parked(task)
+    # Assert
+    assert parked is False
 
 
 def test_an_empty_reason_is_not_a_park():
-    # A park with no stated reason is exactly the abandonment the sweep
-    # should still catch — so it is not a park.
-    assert bt.is_parked(_card(parked="")) is False
+    # Arrange — a park with no stated reason is exactly the abandonment the
+    # sweep should still catch, so it is not a park.
+    task = _card(parked="")
+    # Act
+    parked = bt.is_parked(task)
+    # Assert
+    assert parked is False
 
 
 def test_a_whitespace_only_reason_is_not_a_park():
-    assert bt.is_parked(_card(parked="   \n\t ")) is False
+    # Arrange
+    task = _card(parked="   \n\t ")
+    # Act
+    parked = bt.is_parked(task)
+    # Assert
+    assert parked is False
 
 
 def test_a_boolean_true_is_not_a_park():
-    # The whole design: `parked` is a REASON, not a flag. A bare `True` is a
-    # mute button, and a mute button is how an alarm dies.
-    assert bt.is_parked(_card(parked=True)) is False
+    # Arrange — the whole design: `parked` is a REASON, not a flag. A bare
+    # `True` is a mute button, and a mute button is how an alarm dies.
+    task = _card(parked=True)
+    # Act
+    parked = bt.is_parked(task)
+    # Assert
+    assert parked is False
 
 
 # --------------------------------------------------------------------------
@@ -130,8 +148,10 @@ def test_the_triage_draw_still_offers_an_unparked_card():
 def test_an_ancient_unparked_card_expires():
     # Arrange — deferred long past the 30d horizon.
     task = _card(deferred_at=LONG_AGO)
-    # Act / Assert
-    assert bt.is_expired(task, now=NOW) is True
+    # Act
+    expired = bt.is_expired(task, now=NOW)
+    # Assert
+    assert expired is True
 
 
 def test_an_ancient_PARKED_card_never_expires():
@@ -140,15 +160,20 @@ def test_an_ancient_PARKED_card_never_expires():
     # sole crime of standing — the exact opposite of what its owner asked for.
     # Age is a reason to discard work nobody is DOING, not a goal nobody has
     # ABANDONED.
+    # Arrange
     task = _card(deferred_at=LONG_AGO, parked="north star; children carry the work")
-    # Act / Assert
-    assert bt.is_expired(task, now=NOW) is False
+    # Act
+    expired = bt.is_expired(task, now=NOW)
+    # Assert
+    assert expired is False
 
 
 def test_the_expiry_list_omits_a_parked_card():
     # Arrange
-    tasks = [_card(id="live", deferred_at=LONG_AGO),
-             _card(id="standing", deferred_at=LONG_AGO, parked="north star")]
+    tasks = [
+        _card(id="live", deferred_at=LONG_AGO),
+        _card(id="standing", deferred_at=LONG_AGO, parked="north star"),
+    ]
     # Act
     rotten = bt.expired(tasks, now=NOW)
     # Assert
@@ -197,7 +222,9 @@ def test_an_unparked_task_omits_the_key_entirely():
     # to_dict omits default-valued fields so the YAML stays compact.
     from scitex_cards._task import Task
 
-    # Arrange / Act
-    round_tripped = Task.from_dict(_card()).to_dict()
+    # Arrange
+    row = _card()
+    # Act
+    round_tripped = Task.from_dict(row).to_dict()
     # Assert
     assert "parked" not in round_tripped

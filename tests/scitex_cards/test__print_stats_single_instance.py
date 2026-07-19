@@ -19,6 +19,7 @@ AAA structure.
 
 from __future__ import annotations
 
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -89,112 +90,313 @@ def _load_tasks_spy(monkeypatch):
 # --------------------------------------------------------------------------- #
 # lock HELD -> --notify skips cleanly, does NO store parse / rollup / push      #
 # --------------------------------------------------------------------------- #
-
-
-def test_notify_skips_when_lock_is_held(tmp_path, monkeypatch):
-    # Arrange — a prior run's flock is still held on the resolved lockfile.
+#: WHY the six `lock_is_held` tests below are split but share this rationale:
+#: a clean skip is a conjunction, and the pieces fail independently. The run
+#: must exit 0 (a cron that errors on a normal overlap pages someone), SAY why
+#: it skipped, print no push section, and — the CRITICAL 0.7.48 regression —
+#: do NO deliver AND no store parse. The 0.7.47 bug computed the expensive
+#: rollup ABOVE the guard, so `loads` would have been >= 1 while every other
+#: claim here still passed: the push was serialized, so a push-only spy saw
+#: nothing wrong. Only the store-parse claim catches it, which is exactly why
+#: it must not sit behind five earlier asserts.
+@pytest.fixture()
+def notify_run_while_lock_held(tmp_path, monkeypatch):
+    """Run the cron path while a prior run's flock is still held."""
     store = tmp_path / "tasks.yaml"
     _write_store(store)
     calls = _deliver_spy(monkeypatch)
     loads = _load_tasks_spy(monkeypatch)
     with single_instance(notify_lock_path(str(store))) as acquired:
-        assert acquired  # the test itself holds the lock
-        # Act — the cron path runs while a prior run still holds the lock.
         result = CliRunner().invoke(
             main, ["print-stats", "--by", "agent", "--notify", "--tasks", str(store)]
         )
+    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
 
-    # Assert — clean skip (exit 0), and the notify/push path was NOT entered.
+
+def test_the_test_itself_acquires_the_notify_lock(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    acquired = scenario["acquired"]
+    # Assert — the premise of every sibling below: the lock really was held.
+    assert acquired
+
+
+def test_notify_skips_when_lock_is_held(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert — a clean skip, not an error.
     assert result.exit_code == 0, result.output
+
+
+def test_notify_skip_names_the_prior_holder(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert — the skip explains itself.
     assert "a prior run still holds the lock" in result.output
+
+
+def test_notify_skip_prints_no_push_section(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert
     assert "# Notify push" not in result.output
-    assert calls == []  # spy proves deliver() was never called
-    # CRITICAL regression (0.7.48): the EXPENSIVE store parse / rollup must NOT
-    # run when the lock is held. The 0.7.47 bug computed the rollup ABOVE the
-    # guard, so this would have been >= 1. Guard now wraps the parse → ZERO.
-    assert loads == []  # spy proves load_tasks() / the rollup never ran
+
+
+def test_notify_skip_never_calls_deliver(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    calls = scenario["calls"]
+    # Assert — the spy proves deliver() was never called.
+    assert calls == []
+
+
+def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
+    # Arrange
+    scenario = notify_run_while_lock_held
+    # Act
+    loads = scenario["loads"]
+    # Assert — CRITICAL regression (0.7.48): the EXPENSIVE store parse /
+    # rollup must NOT run when the lock is held. The 0.7.47 bug computed the
+    # rollup ABOVE the guard, so this would have been >= 1. The guard now
+    # wraps the parse → ZERO.
+    assert loads == []
 
 
 # --------------------------------------------------------------------------- #
 # lock FREE -> --notify runs the notify path                                   #
 # --------------------------------------------------------------------------- #
-
-
-def test_notify_runs_when_lock_is_free(tmp_path, monkeypatch):
-    # Arrange — no prior holder.
+#: WHY the four `lock_is_free` tests below are split but share this rationale:
+#: the guard must not be a mute button. With no prior holder the run has to do
+#: all the work it skipped above — exit 0, print the push section, actually
+#: push for the agent, and actually parse the store. A guard that always skips
+#: would pass the whole lock-held group and fail only here.
+@pytest.fixture()
+def notify_run_with_lock_free(tmp_path, monkeypatch):
+    """Run the cron path with no prior holder."""
     store = tmp_path / "tasks.yaml"
     _write_store(store)
     calls = _deliver_spy(monkeypatch)
     loads = _load_tasks_spy(monkeypatch)
 
-    # Act
     result = CliRunner().invoke(
         main, ["print-stats", "--by", "agent", "--notify", "--tasks", str(store)]
     )
+    return {"result": result, "calls": calls, "loads": loads}
 
-    # Assert — the notify path ran, parsed the store, and pushed for the agent.
+
+def test_notify_runs_when_lock_is_free(notify_run_with_lock_free):
+    # Arrange
+    scenario = notify_run_with_lock_free
+    # Act
+    result = scenario["result"]
+    # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_notify_run_prints_the_push_section(notify_run_with_lock_free):
+    # Arrange
+    scenario = notify_run_with_lock_free
+    # Act
+    result = scenario["result"]
+    # Assert
     assert "# Notify push" in result.output
+
+
+def test_notify_run_pushes_for_the_owning_agent(notify_run_with_lock_free):
+    # Arrange
+    scenario = notify_run_with_lock_free
+    # Act
+    calls = scenario["calls"]
+    # Assert
     assert "proj-x" in calls
-    assert loads != []  # the rollup DID parse the store (lock was free)
+
+
+def test_notify_run_parses_the_store(notify_run_with_lock_free):
+    # Arrange
+    scenario = notify_run_with_lock_free
+    # Act
+    loads = scenario["loads"]
+    # Assert — the rollup DID parse the store (the lock was free).
+    assert loads != []
 
 
 # --------------------------------------------------------------------------- #
 # plain read is UNGUARDED — runs even while the lock is held                   #
 # --------------------------------------------------------------------------- #
-
-
-def test_plain_read_is_not_guarded_by_the_lock(tmp_path, monkeypatch):
-    # Arrange — hold the notify lock, then run a PLAIN print-stats (no --notify).
+#: WHY the seven `plain_read` tests below are split but share this rationale:
+#: the flock guards the SIDE-EFFECTING notify path only. An interactive read
+#: must never be blocked or skipped by a cron's lock, so while the lock is
+#: held a plain `print-stats` must still exit 0, print the table, parse the
+#: store — and at the same time show none of the notify path's output and
+#: perform no push. Scoping a lock too widely is the classic over-fix, and it
+#: shows up as exactly one of these claims flipping.
+@pytest.fixture()
+def plain_read_while_lock_held(tmp_path, monkeypatch):
+    """Hold the notify lock, then run a PLAIN print-stats (no --notify)."""
     store = tmp_path / "tasks.yaml"
     _write_store(store)
     calls = _deliver_spy(monkeypatch)
     loads = _load_tasks_spy(monkeypatch)
 
     with single_instance(notify_lock_path(str(store))) as acquired:
-        assert acquired
-        # Act — an interactive read must NOT be blocked by the notify lock.
         result = CliRunner().invoke(
             main, ["print-stats", "--by", "agent", "--tasks", str(store)]
         )
+    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
 
-    # Assert — the table printed read-only; no notify path, no skip line.
+
+def test_plain_read_scenario_really_holds_the_lock(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    acquired = scenario["acquired"]
+    # Assert — the premise of every sibling below.
+    assert acquired
+
+
+def test_plain_read_is_not_guarded_by_the_lock(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert — the read ran to completion despite the held notify lock.
     assert result.exit_code == 0, result.output
+
+
+def test_plain_read_prints_the_agent_table(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert
     assert "proj-x" in result.output
+
+
+def test_plain_read_prints_no_push_section(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert
     assert "# Notify push" not in result.output
+
+
+def test_plain_read_prints_no_skip_line(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    result = scenario["result"]
+    # Assert — it was never a candidate for skipping in the first place.
     assert "a prior run still holds the lock" not in result.output
+
+
+def test_plain_read_never_calls_deliver(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    calls = scenario["calls"]
+    # Assert
     assert calls == []
-    # The plain read is UNGUARDED: it parses the store even while the notify
-    # lock is held (interactive reads must never be blocked/skipped).
+
+
+def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
+    # Arrange
+    scenario = plain_read_while_lock_held
+    # Act
+    loads = scenario["loads"]
+    # Assert — the plain read is UNGUARDED: it parses the store even while the
+    # notify lock is held (interactive reads must never be blocked/skipped).
     assert loads != []
 
 
 # --------------------------------------------------------------------------- #
 # the lock is released after the run                                          #
 # --------------------------------------------------------------------------- #
-
-
-def test_lock_is_released_after_notify_run(tmp_path, monkeypatch):
-    # Arrange
+#: WHY the six `lock_is_released` tests below are split but share this
+#: rationale: a lock that is acquired but never released turns the guard into
+#: a permanent mute after the first run — worse than no guard at all. Release
+#: is proven three ways over one scenario: the first run works, a SECOND
+#: --notify acquires cleanly (runs the push, prints no skip line), and the
+#: test can itself take the flock afterwards.
+@pytest.fixture()
+def two_notify_runs_then_a_manual_lock(tmp_path, monkeypatch):
+    """Run --notify twice, then try to take the flock from the test itself."""
     store = tmp_path / "tasks.yaml"
     _write_store(store)
     _deliver_spy(monkeypatch)
 
-    # Act — a first --notify run acquires and RELEASES the lock on exit.
     first = CliRunner().invoke(
         main, ["print-stats", "--by", "agent", "--notify", "--tasks", str(store)]
     )
-    assert first.exit_code == 0, first.output
-    assert "# Notify push" in first.output
-
-    # Assert — a subsequent --notify acquires cleanly (proves release), and the
-    # test can itself take the flock now that the run has released it.
     second = CliRunner().invoke(
         main, ["print-stats", "--by", "agent", "--notify", "--tasks", str(store)]
     )
+    with single_instance(notify_lock_path(str(store))) as acquired:
+        pass
+    return {"first": first, "second": second, "acquired": acquired}
+
+
+def test_first_notify_run_exits_cleanly(two_notify_runs_then_a_manual_lock):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    first = scenario["first"]
+    # Assert
+    assert first.exit_code == 0, first.output
+
+
+def test_first_notify_run_prints_the_push_section(
+    two_notify_runs_then_a_manual_lock,
+):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    first = scenario["first"]
+    # Assert
+    assert "# Notify push" in first.output
+
+
+def test_second_notify_run_exits_cleanly(two_notify_runs_then_a_manual_lock):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    second = scenario["second"]
+    # Assert — it acquired the lock the first run released.
     assert second.exit_code == 0, second.output
+
+
+def test_second_notify_run_prints_the_push_section(
+    two_notify_runs_then_a_manual_lock,
+):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    second = scenario["second"]
+    # Assert — it really ran the notify path, it did not merely exit 0.
     assert "# Notify push" in second.output
+
+
+def test_second_notify_run_prints_no_skip_line(two_notify_runs_then_a_manual_lock):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    second = scenario["second"]
+    # Assert
     assert "a prior run still holds the lock" not in second.output
 
-    with single_instance(notify_lock_path(str(store))) as acquired:
-        assert acquired
+
+def test_lock_is_released_after_notify_run(two_notify_runs_then_a_manual_lock):
+    # Arrange
+    scenario = two_notify_runs_then_a_manual_lock
+    # Act
+    acquired = scenario["acquired"]
+    # Assert — the test can take the flock now that the runs released it.
+    assert acquired

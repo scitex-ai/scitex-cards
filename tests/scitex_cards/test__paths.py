@@ -84,31 +84,45 @@ def test_env_var_path_resolves_when_no_explicit(tmp_path, clean_tasks_env):
     assert resolved == target
 
 
+#: WHY the two `unresolvable_store` tests below are split but share this
+#: rationale: there is no last resort, and that absence is the safety
+#: property.
+#:
+#: These previously asserted the OPPOSITE — that resolution falls back to the
+#: bundled example. That fallback made a packaged demo file eligible to become
+#: the fleet's board: on 2026-07-19, with the canonical store archived by the
+#: SQLite cutover, resolution walked past every real candidate, settled on a
+#: file inside site-packages, and the live database's provenance stamp was
+#: rewritten to name it.
+#:
+#: An unresolvable store now returns the canonical path that does not exist, so
+#: the loader raises FileNotFoundError on it — a stated configuration error
+#: rather than a blank board to start writing into. That is two claims: where
+#: resolution must NOT land, and what it must return instead. Landing nowhere
+#: useful still satisfies the first on its own.
 def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(
     clean_tasks_env, isolated_cwd
 ):
-    """There is no last resort, and that absence is the safety property.
-
-    This test previously asserted the OPPOSITE — that resolution falls back to
-    the bundled example. That fallback made a packaged demo file eligible to
-    become the fleet's board: on 2026-07-19, with the canonical store archived
-    by the SQLite cutover, resolution walked past every real candidate, settled
-    on a file inside site-packages, and the live database's provenance stamp was
-    rewritten to name it.
-
-    An unresolvable store now returns the canonical path that does not exist, so
-    the loader raises FileNotFoundError on it — a stated configuration error
-    rather than a blank board to start writing into.
-    """
+    # Arrange
+    packaged_marker = "examples"
     # Act
     resolved = resolve_tasks_path(None)
-
     # Assert
-    assert "examples" not in resolved.parts, (
+    assert packaged_marker not in resolved.parts, (
         "resolution must never land on a packaged fixture — that is how demo "
         "data becomes production data"
     )
-    assert resolved.name == "tasks.yaml"
+
+
+def test_unresolvable_store_returns_the_canonical_store_filename(
+    clean_tasks_env, isolated_cwd
+):
+    # Arrange
+    canonical_name = "tasks.yaml"
+    # Act
+    resolved = resolve_tasks_path(None)
+    # Assert — the canonical path that does not exist, so the loader raises.
+    assert resolved.name == canonical_name
 
 
 def test_deprecated_env_var_fails_loud(monkeypatch, clean_tasks_env):
@@ -118,8 +132,10 @@ def test_deprecated_env_var_fails_loud(monkeypatch, clean_tasks_env):
     store."""
     # Arrange: only the deprecated old name is set.
     monkeypatch.setenv(ENV_TASKS_DEPRECATED, "/some/legacy/tasks.yaml")
-    # Act / Assert
-    with pytest.raises(RuntimeError, match=ENV_TASKS):
+    # Act
+    ctx = pytest.raises(RuntimeError, match=ENV_TASKS)
+    # Assert — the raise points at the CURRENT name, not the stale one.
+    with ctx:
         resolve_tasks_path(None)
 
 
@@ -149,8 +165,12 @@ def test_bundled_example_raises_because_no_yaml_store_ships_in_the_wheel():
     only as a raising stub so an external caller gets a reason rather than an
     import failure.
     """
-    # Act / Assert
-    with pytest.raises(RuntimeError, match="no bundled example"):
+    # Arrange
+    expected_reason = "no bundled example"
+    # Act
+    ctx = pytest.raises(RuntimeError, match=expected_reason)
+    # Assert — a stated reason, not an AttributeError.
+    with ctx:
         bundled_example()
 
 
@@ -180,14 +200,19 @@ def test_explicit_path_string_is_expanded(tmp_path, clean_tasks_env):
     assert resolved == target
 
 
-def test_user_scope_wins_over_project_store(tmp_path, clean_tasks_env, env):
-    """DATA store = USER-CANONICAL. Regression guard for the 2026-07-06 stale-
-    store incident: even when cwd is inside a repo that HAS a
-    ``<git-root>/.scitex/todo/tasks.yaml``, resolution must reach the canonical
-    USER store — never the per-repo copy. The data store has DELIBERATELY no
-    project-scope layer (only the CONFIG in _config.py keeps its project
-    override)."""
-    # Arrange — a fake project root with a real .git + a would-be shadow store.
+#: WHY the two `user_scope_wins` tests below are split but share this
+#: rationale: DATA store = USER-CANONICAL. Regression guard for the 2026-07-06
+#: stale-store incident: even when cwd is inside a repo that HAS a
+#: ``<git-root>/.scitex/todo/tasks.yaml``, resolution must reach the canonical
+#: USER store — never the per-repo copy. The data store has DELIBERATELY no
+#: project-scope layer (only the CONFIG in _config.py keeps its project
+#: override). Reaching the right store and avoiding the shadow are asserted
+#: separately because the incident was not "it picked nothing" — it was "it
+#: picked the wrong real file", which only the second claim names.
+@pytest.fixture()
+def resolution_with_a_project_shadow_store(tmp_path, clean_tasks_env, env):
+    """cwd inside a repo that HAS a shadow store, with a canonical user store."""
+    # A fake project root with a real .git + a would-be shadow store.
     project = tmp_path / "repo"
     project.mkdir()
     (project / ".git").mkdir()
@@ -203,11 +228,31 @@ def test_user_scope_wins_over_project_store(tmp_path, clean_tasks_env, env):
     user_store.write_text("tasks: []\n", encoding="utf-8")
     env.set("SCITEX_DIR", str(user_root))
     env.chdir(project)
+    return {
+        "resolved": resolve_tasks_path(None),
+        "user_store": user_store,
+        "proj_store": proj_store,
+    }
+
+
+def test_user_scope_wins_over_project_store(resolution_with_a_project_shadow_store):
+    # Arrange
+    scenario = resolution_with_a_project_shadow_store
     # Act
-    resolved = resolve_tasks_path(None)
-    # Assert — user store wins; the in-repo shadow is ignored.
-    assert resolved == user_store
-    assert resolved != proj_store
+    resolved = scenario["resolved"]
+    # Assert — the canonical user store wins.
+    assert resolved == scenario["user_store"]
+
+
+def test_resolution_ignores_the_in_repo_shadow_store(
+    resolution_with_a_project_shadow_store,
+):
+    # Arrange
+    scenario = resolution_with_a_project_shadow_store
+    # Act
+    resolved = scenario["resolved"]
+    # Assert — the per-repo copy is never the answer.
+    assert resolved != scenario["proj_store"]
 
 
 def test_user_scope_used_when_no_project_store(tmp_path, clean_tasks_env, env):
@@ -228,22 +273,39 @@ def test_user_scope_used_when_no_project_store(tmp_path, clean_tasks_env, env):
     assert resolved == user_store
 
 
-def test_find_git_root_walks_up(tmp_path):
-    """`_find_git_root` ascends parents from a deep subdir to the repo root.
-
-    The helper is retained (the CONFIG layer in _config.py still uses it for
-    the reminders config's project override) even though the DATA store no
-    longer consults it. Test it directly, not via resolve_tasks_path."""
-    # Arrange — repo at tmp_path/repo, subdir at tmp_path/repo/a/b/c.
+#: WHY the two `_find_git_root` tests below are split but share this
+#: rationale: the helper is retained (the CONFIG layer in _config.py still
+#: uses it for the reminders config's project override) even though the DATA
+#: store no longer consults it, so it is tested directly rather than via
+#: resolve_tasks_path. Ascending FROM a deep subdir and NOT claiming a repo
+#: from outside it are opposite failure directions — a helper that returns the
+#: repo for every path satisfies the first claim perfectly.
+@pytest.fixture()
+def repo_with_a_deep_subdir(tmp_path):
+    """A repo at tmp_path/repo with a subdir at tmp_path/repo/a/b/c."""
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     deep = repo / "a" / "b" / "c"
     deep.mkdir(parents=True)
+    return {"repo": repo, "deep": deep, "outside": tmp_path.parent}
+
+
+def test_find_git_root_walks_up(repo_with_a_deep_subdir):
+    # Arrange
+    scenario = repo_with_a_deep_subdir
     # Act
-    found = _find_git_root(deep)
-    # Assert — ascends to the repo root; a dir with no .git ancestor yields None.
-    assert found == repo.resolve()
-    assert _find_git_root(tmp_path.parent) != repo.resolve()
+    found = _find_git_root(scenario["deep"])
+    # Assert — ascends from the deep subdir to the repo root.
+    assert found == scenario["repo"].resolve()
+
+
+def test_find_git_root_does_not_claim_a_repo_from_outside(repo_with_a_deep_subdir):
+    # Arrange
+    scenario = repo_with_a_deep_subdir
+    # Act
+    found = _find_git_root(scenario["outside"])
+    # Assert — a dir with no .git ancestor never yields this repo.
+    assert found != scenario["repo"].resolve()
 
 
 # EOF

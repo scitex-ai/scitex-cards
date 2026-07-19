@@ -115,33 +115,71 @@ def test_live_server_instructions_name_no_scope_without_an_identity():
 # --------------------------------------------------------------------------- #
 # An UNRESOLVED identity fabricates nothing                                   #
 # --------------------------------------------------------------------------- #
+#: The ONLY `agent:` mention the unresolved branch may carry — an explicit
+#: placeholder that names nobody, as opposed to a fabricated concrete identity.
+PLACEHOLDER_SCOPE = "agent:<your-agent-id>"
+
+#: WHY the three `says_so_and_says_how_to_discover` tests below are split but
+#: share this rationale: an honest absence is a THREE-part contract, and the
+#: original single test hid parts 2 and 3 behind part 1's assert. The
+#: instructions must (a) ADMIT the identity is unresolved rather than silently
+#: printing a wrong example, (b) name the env var that fixes it, and (c) point
+#: at the tools that let an agent discover its own identity. Dropping any one
+#: of the three leaves an agent stuck with no example AND no way forward, which
+#: is the failure this file exists to prevent.
+
+
 @pytest.mark.parametrize("unresolved", [None, ""])
 def test_unresolved_identity_invents_no_scope_example(unresolved):
-    # Arrange / Act
+    # Arrange
+    permitted = PLACEHOLDER_SCOPE
+    # Act
     text = build_instructions(unresolved)
     # Assert — no `agent:<something>` example is fabricated. The only permitted
     # mention is the explicit `<your-agent-id>` placeholder, which names nobody.
     fabricated = [
         m.group(0)
         for m in re.finditer(r"agent:[A-Za-z0-9_.-]+", text)
-        if m.group(0) != "agent:<your-agent-id>"
+        if m.group(0) != permitted
     ]
     assert fabricated == []
 
 
 @pytest.mark.parametrize("unresolved", [None, ""])
-def test_unresolved_identity_says_so_and_says_how_to_discover(unresolved):
-    # Arrange / Act
+def test_unresolved_identity_admits_the_identity_is_unresolved(unresolved):
+    # Arrange
+    admission = "UNRESOLVED"
+    # Act
     text = build_instructions(unresolved)
-    # Assert — it admits the absence and points at the discovery path.
-    assert "UNRESOLVED" in text
-    assert "SCITEX_TODO_AGENT_ID" in text
-    assert "list_tasks" in text and "resolve_store" in text
+    # Assert — an honest absence, not a silently-wrong example.
+    assert admission in text
+
+
+@pytest.mark.parametrize("unresolved", [None, ""])
+def test_unresolved_identity_names_the_env_var_that_fixes_it(unresolved):
+    # Arrange
+    env_var = "SCITEX_TODO_AGENT_ID"
+    # Act
+    text = build_instructions(unresolved)
+    # Assert — the agent is told WHICH knob turns the absence into an identity.
+    assert env_var in text
+
+
+@pytest.mark.parametrize("unresolved", [None, ""])
+def test_unresolved_identity_points_at_the_discovery_tools(unresolved):
+    # Arrange
+    discovery_tools = ("list_tasks", "resolve_store")
+    # Act
+    text = build_instructions(unresolved)
+    # Assert — a way forward, not just an apology.
+    assert all(tool in text for tool in discovery_tools)
 
 
 def test_unresolved_branch_never_mentions_the_dead_prefix():
-    # Arrange / Act
-    text = build_instructions(None)
+    # Arrange
+    unresolved = None
+    # Act
+    text = build_instructions(unresolved)
     # Assert
     assert DEAD_PREFIX not in text
 
@@ -211,15 +249,27 @@ def _agent_facing_files(root: Path) -> list[Path]:
     pkg = root / "src" / "scitex_cards"
     files = [p for p in pkg.rglob("*.py")]
     files += list((pkg / "_skills").rglob("*.md"))
-    files += [p for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-todo.md") if p.exists()]
+    files += [
+        p
+        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-todo.md")
+        if p.exists()
+    ]
     return files
 
 
+#: The repo root, and whether we are reading a source checkout at all. Hoisted
+#: out of the test as a `skipif` guard (rather than an in-body `pytest.skip`)
+#: so the test body holds its one real assertion and nothing else.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_IS_SOURCE_CHECKOUT = (_REPO_ROOT / "src" / "scitex_cards").is_dir()
+
+
+@pytest.mark.skipif(
+    not _IS_SOURCE_CHECKOUT, reason="not running from a source checkout"
+)
 def test_no_dead_proj_identity_examples_in_shipped_surfaces():
     # Arrange
-    root = Path(__file__).resolve().parents[2]
-    if not (root / "src" / "scitex_cards").is_dir():  # installed, not a checkout
-        pytest.skip("not running from a source checkout")
+    root = _REPO_ROOT
 
     # Act
     offenders: list[str] = []

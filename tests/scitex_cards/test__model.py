@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 
 import pytest
 
@@ -57,15 +58,34 @@ def test_load_tasks_raises_on_duplicate_id(tmp_path):
         load_tasks(store)
 
 
-def test_load_tasks_warns_on_bad_status_but_loads(tmp_path):
-    # Arrange — tolerant read (2026-07-10 outage fix): an unknown VALUE must
-    # never take the whole store down; it may have been written by a newer
-    # agent. Structural corruption (missing title, dup id) still raises.
-    store = _write(tmp_path, "tasks:\n  - {id: x, title: X, status: wibble}\n")
+#: WHY the two `bad_status` tests below are split but share this rationale:
+#: tolerant read (2026-07-10 outage fix): an unknown status VALUE must never
+#: take the whole store down; it may have been written by a newer agent.
+#: Structural corruption (missing title, dup id) still raises. "Tolerant" is a
+#: two-part contract — the loader must SHOUT about the value it does not know
+#: AND still hand the row back — and silently dropping either half is what the
+#: outage was. So each half is asserted on its own.
+_BAD_STATUS_STORE = "tasks:\n  - {id: x, title: X, status: wibble}\n"
+
+
+def test_load_tasks_warns_on_an_unknown_status_value(tmp_path):
+    # Arrange
+    store = _write(tmp_path, _BAD_STATUS_STORE)
     # Act
-    with pytest.warns(UserWarning, match="wibble"):
+    ctx = pytest.warns(UserWarning, match="wibble")
+    # Assert — the unknown value is shouted about, not swallowed.
+    with ctx:
+        load_tasks(store)
+
+
+def test_load_tasks_still_returns_the_row_with_its_unknown_status(tmp_path):
+    # Arrange
+    store = _write(tmp_path, _BAD_STATUS_STORE)
+    # Act
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
         tasks = load_tasks(store)
-    # Assert — the row survives, shouted about but readable.
+    # Assert — the row survives, readable, with its unknown value intact.
     assert tasks[0]["status"] == "wibble"
 
 
@@ -183,9 +203,7 @@ def test_save_tasks_round_trips_data_across_rewrite(tmp_path):
     save_tasks(tasks, path)
     reloaded = load_tasks(path)
     # Assert — the mutated data round-trips exactly.
-    assert reloaded == [
-        {"id": "a", "title": "First", "status": "done", "priority": 1}
-    ]
+    assert reloaded == [{"id": "a", "title": "First", "status": "done", "priority": 1}]
 
 
 def test_save_tasks_drops_comments_by_design(tmp_path):
@@ -433,8 +451,7 @@ def test_load_rejects_non_string_scope(tmp_path):
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n"
-        "  - {id: a, title: A, status: pending, scope: 42}\n",
+        "tasks:\n  - {id: a, title: A, status: pending, scope: 42}\n",
     )
     # Act
     ctx = pytest.raises(TaskValidationError, match="non-string scope")
@@ -536,6 +553,7 @@ def test_save_tasks_round_trip_preserves_log_meta_completed_at(tmp_path):
 # Closed validated enum per lead a2a `2c7a431d` — fail-loud on unknown values
 # so a "comput" typo can't silently create an unrecognized kind.
 # ---------------------------------------------------------------------------
+
 
 def test_load_tasks_kind_defaults_to_task_when_absent(tmp_path):
     """Absence of `kind` is equivalent to `kind: task` (the default)."""
@@ -689,7 +707,9 @@ def test_load_tasks_raises_on_non_string_compute_field(tmp_path):
         "    job_id: 25754194\n",  # int, not string
     )
     # Act
-    ctx = pytest.raises(TaskValidationError, match=r"job_id.*non-string|non-string.*job_id")
+    ctx = pytest.raises(
+        TaskValidationError, match=r"job_id.*non-string|non-string.*job_id"
+    )
     # Assert
     with ctx:
         load_tasks(store)
@@ -763,6 +783,7 @@ def test_save_tasks_round_trip_drops_header_comment(tmp_path):
 # pillar #4, operator TG 9524). Extends VALID_KINDS from ADR-0002.
 # ---------------------------------------------------------------------------
 
+
 def test_load_tasks_accepts_kind_decision(tmp_path):
     """`kind: decision` is a valid kind alongside task / compute."""
     # Arrange
@@ -799,13 +820,13 @@ def test_load_tasks_decision_kind_uses_existing_statuses(tmp_path):
 # ADR-0004: closed validated enum, fail-loud, only on status=blocked rows.
 # ---------------------------------------------------------------------------
 
+
 def test_load_tasks_accepts_blocker_operator_decision_on_blocked(tmp_path):
     """`blocker: operator-decision` valid on a status=blocked task."""
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n"
-        "  - {id: x, title: X, status: blocked, blocker: operator-decision}\n",
+        "tasks:\n  - {id: x, title: X, status: blocked, blocker: operator-decision}\n",
     )
     # Act
     tasks = load_tasks(store)
@@ -828,7 +849,10 @@ def test_load_tasks_accepts_all_four_blocker_variants(tmp_path):
     tasks = load_tasks(store)
     # Assert
     assert [t["blocker"] for t in tasks] == [
-        "compute", "dep", "operator-decision", "agent-wait",
+        "compute",
+        "dep",
+        "operator-decision",
+        "agent-wait",
     ]
 
 
@@ -841,7 +865,8 @@ def test_load_tasks_raises_on_unknown_blocker(tmp_path):
     )
     # Act
     ctx = pytest.raises(
-        TaskValidationError, match=r"oprator.*operator-decision|operator-decision.*oprator"
+        TaskValidationError,
+        match=r"oprator.*operator-decision|operator-decision.*oprator",
     )
     # Assert
     with ctx:
@@ -857,7 +882,9 @@ def test_load_tasks_raises_on_blocker_with_non_blocked_status(tmp_path):
         "  - {id: x, title: X, status: in_progress, blocker: operator-decision}\n",
     )
     # Act
-    ctx = pytest.raises(TaskValidationError, match=r"blocker.*status: blocked|status: blocked.*blocker")
+    ctx = pytest.raises(
+        TaskValidationError, match=r"blocker.*status: blocked|status: blocked.*blocker"
+    )
     # Assert
     with ctx:
         load_tasks(store)
@@ -921,8 +948,8 @@ def _prepare_decision_store(tmp_path):
     """Arrange helper: write + load + mutate; returns (store_path, tasks)."""
     store = _write(tmp_path, _DECISION_ROUND_TRIP_YAML)
     tasks = load_tasks(store)
-    tasks[0]["status"] = "done"   # operator decided
-    tasks[0].pop("blocker")        # no longer blocked
+    tasks[0]["status"] = "done"  # operator decided
+    tasks[0].pop("blocker")  # no longer blocked
     return store, tasks
 
 
@@ -978,6 +1005,7 @@ _MIN_TASK_PAYLOAD = {"id": "x", "title": "X"}
 def test_task_dataclass_from_dict_carries_id():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_MIN_TASK_PAYLOAD)
     # Assert
@@ -987,6 +1015,7 @@ def test_task_dataclass_from_dict_carries_id():
 def test_task_dataclass_from_dict_carries_title():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_MIN_TASK_PAYLOAD)
     # Assert
@@ -996,6 +1025,7 @@ def test_task_dataclass_from_dict_carries_title():
 def test_task_dataclass_from_dict_defaults_status_to_deferred():
     # Arrange — `deferred` replaced the abolished `pending` as the default.
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_MIN_TASK_PAYLOAD)
     # Assert
@@ -1005,6 +1035,7 @@ def test_task_dataclass_from_dict_defaults_status_to_deferred():
 def test_task_dataclass_from_dict_defaults_comments_to_empty_list():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_MIN_TASK_PAYLOAD)
     # Assert
@@ -1029,6 +1060,7 @@ _OPERATOR_FIELDS_PAYLOAD = {
 def test_task_dataclass_from_dict_carries_task_field():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
@@ -1038,6 +1070,7 @@ def test_task_dataclass_from_dict_carries_task_field():
 def test_task_dataclass_from_dict_carries_project_field():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
@@ -1047,6 +1080,7 @@ def test_task_dataclass_from_dict_carries_project_field():
 def test_task_dataclass_from_dict_carries_host_field():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
@@ -1056,6 +1090,7 @@ def test_task_dataclass_from_dict_carries_host_field():
 def test_task_dataclass_from_dict_carries_goal_field():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
@@ -1065,6 +1100,7 @@ def test_task_dataclass_from_dict_carries_goal_field():
 def test_task_dataclass_from_dict_carries_pr_url_field():
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
@@ -1074,6 +1110,7 @@ def test_task_dataclass_from_dict_carries_pr_url_field():
 def test_task_dataclass_from_dict_ignores_unknown_keys():
     # Arrange
     from scitex_cards._model import Task
+
     # Act — unknown `future_field` must not raise (forward-compat).
     t = Task.from_dict({"id": "x", "title": "X", "future_field": "ok"})
     # Assert
@@ -1084,6 +1121,7 @@ def test_task_dataclass_from_dict_normalizes_legacy_dep_to_dependency():
     """Legacy `blocker: "dep"` → canonical `"dependency"` on dataclass read."""
     # Arrange
     from scitex_cards._model import Task
+
     # Act
     t = Task.from_dict({"id": "x", "title": "X", "status": "blocked", "blocker": "dep"})
     # Assert
@@ -1093,6 +1131,7 @@ def test_task_dataclass_from_dict_normalizes_legacy_dep_to_dependency():
 def test_task_dataclass_to_dict_omits_default_fields():
     # Arrange
     from scitex_cards._model import Task
+
     t = Task(id="x", title="X")
     # Act
     d = t.to_dict()
@@ -1103,6 +1142,7 @@ def test_task_dataclass_to_dict_omits_default_fields():
 def test_task_dataclass_to_dict_omits_empty_depends_on(tmp_path):
     # Arrange
     from scitex_cards._model import Task
+
     t = Task(id="x", title="X", depends_on=[], blocks=[], comments=[])
     # Act
     d = t.to_dict()
@@ -1113,6 +1153,7 @@ def test_task_dataclass_to_dict_omits_empty_depends_on(tmp_path):
 def test_task_dataclass_to_dict_omits_empty_blocks(tmp_path):
     # Arrange
     from scitex_cards._model import Task
+
     t = Task(id="x", title="X", depends_on=[], blocks=[], comments=[])
     # Act
     d = t.to_dict()
@@ -1123,6 +1164,7 @@ def test_task_dataclass_to_dict_omits_empty_blocks(tmp_path):
 def test_task_dataclass_to_dict_omits_empty_comments(tmp_path):
     # Arrange
     from scitex_cards._model import Task
+
     t = Task(id="x", title="X", depends_on=[], blocks=[], comments=[])
     # Act
     d = t.to_dict()
@@ -1131,10 +1173,16 @@ def test_task_dataclass_to_dict_omits_empty_comments(tmp_path):
 
 
 _ROUND_TRIP_PAYLOAD = {
-    "id": "x", "title": "X", "task": "do the thing",
-    "project": "scitex-todo", "host": "ywata", "agent": "proj-scitex-todo",
-    "status": "blocked", "blocker": "operator-decision",
-    "goal": "ship the board", "depends_on": ["a", "b"],
+    "id": "x",
+    "title": "X",
+    "task": "do the thing",
+    "project": "scitex-todo",
+    "host": "ywata",
+    "agent": "proj-scitex-todo",
+    "status": "blocked",
+    "blocker": "operator-decision",
+    "goal": "ship the board",
+    "depends_on": ["a", "b"],
     "tags": ["P0", "infra"],  # unknown key, gets dropped
 }
 
@@ -1142,6 +1190,7 @@ _ROUND_TRIP_PAYLOAD = {
 def test_task_dataclass_round_trip_preserves_task_field():
     # Arrange
     from scitex_cards._model import Task
+
     payload = _ROUND_TRIP_PAYLOAD
     # Act
     d = Task.from_dict(payload).to_dict()
@@ -1152,6 +1201,7 @@ def test_task_dataclass_round_trip_preserves_task_field():
 def test_task_dataclass_round_trip_preserves_status():
     # Arrange
     from scitex_cards._model import Task
+
     payload = _ROUND_TRIP_PAYLOAD
     # Act
     d = Task.from_dict(payload).to_dict()
@@ -1162,6 +1212,7 @@ def test_task_dataclass_round_trip_preserves_status():
 def test_task_dataclass_round_trip_preserves_blocker():
     # Arrange
     from scitex_cards._model import Task
+
     payload = _ROUND_TRIP_PAYLOAD
     # Act
     d = Task.from_dict(payload).to_dict()
@@ -1172,6 +1223,7 @@ def test_task_dataclass_round_trip_preserves_blocker():
 def test_task_dataclass_round_trip_preserves_depends_on():
     # Arrange
     from scitex_cards._model import Task
+
     payload = _ROUND_TRIP_PAYLOAD
     # Act
     d = Task.from_dict(payload).to_dict()
@@ -1182,6 +1234,7 @@ def test_task_dataclass_round_trip_preserves_depends_on():
 def test_task_dataclass_round_trip_drops_unknown_tags_field():
     # Arrange
     from scitex_cards._model import Task
+
     payload = _ROUND_TRIP_PAYLOAD
     # Act
     d = Task.from_dict(payload).to_dict()
@@ -1314,7 +1367,7 @@ def test_load_tasks_raises_on_empty_goal_string(tmp_path):
     # Arrange
     store = _write(
         tmp_path,
-        "tasks:\n  - {id: x, title: X, status: pending, goal: \"\"}\n",
+        'tasks:\n  - {id: x, title: X, status: pending, goal: ""}\n',
     )
     # Act
     ctx = pytest.raises(TaskValidationError, match="goal")
@@ -1330,6 +1383,7 @@ def test_load_tasks_raises_on_empty_goal_string(tmp_path):
 # can filter them out of the actionable default lens (separate frontend
 # PR). Just a flag — no compute-fields constraint, no cross-imply.
 # ---------------------------------------------------------------------------
+
 
 def test_load_tasks_accepts_kind_status(tmp_path):
     """`kind: status` is a valid kind alongside task / compute / decision."""
@@ -1393,5 +1447,6 @@ def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
     reloaded = load_tasks(store)[0]
     # Assert
     assert reloaded["kind"] == "status"
+
 
 # EOF

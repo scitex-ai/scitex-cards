@@ -773,9 +773,17 @@ def test_get_task_roundtrip_through_to_thread(tmp_path):
     assert out["id"] == "a"
 
 
-def test_reassign_task_roundtrip_through_to_thread(tmp_path):
-    # Covers the _mcp_skills offload path (reassign_task → _store.reassign_task).
-    # Arrange
+#: WHY the three `reassign_..._through_to_thread` tests below are split but
+#: share this rationale: they cover the _mcp_skills offload path
+#: (reassign_task → _store.reassign_task). `reassign_task` returns
+#: {task_id, from_owner, to_owner, actor, changed, task}, and the offload is
+#: only proven correct if ALL THREE parts survive the to_thread hop — the
+#: REPORTED new owner, the `changed` flag, and the card the store actually
+#: WROTE. A stale-but-plausible report with an unmutated card is exactly the
+#: failure mode a single first-assert would hide.
+@pytest.fixture()
+def reassigned_through_to_thread(tmp_path):
+    """Run the offloaded `reassign_task` once; the three tests below read it."""
     from scitex_cards._mcp_server import add_task
     from scitex_cards._mcp_skills import reassign_task
 
@@ -783,8 +791,7 @@ def test_reassign_task_roundtrip_through_to_thread(tmp_path):
     asyncio.run(
         _call_tool(add_task, id="a", title="A", agent="proj-x", tasks_path=store)
     )
-    # Act
-    out = json.loads(
+    return json.loads(
         asyncio.run(
             _call_tool(
                 reassign_task,
@@ -795,25 +802,55 @@ def test_reassign_task_roundtrip_through_to_thread(tmp_path):
             )
         )
     )
-    # Assert — reassign returns {task_id, from_owner, to_owner, actor,
-    # changed, task}; the offloaded call still mutated the owner.
-    assert out["to_owner"] == "proj-y"
-    assert out["changed"] is True
-    assert out["task"]["agent"] == "proj-y"
 
 
-def test_handler_does_not_block_event_loop(tmp_path, monkeypatch):
-    """A slow SYNC store call inside a handler must NOT freeze the loop.
-
-    Regression for Fix A. We monkeypatch `_store.get_task` with a variant
-    that sleeps 0.3 s (standing in for the flock-guarded multi-MB load),
-    then run the `get_task` handler concurrently with a 10 ms-cadence
-    ticker coroutine. If the blocking call ran ON the loop thread the
-    ticker would be frozen (≈0 ticks); because Fix A offloads it to a
-    worker thread, the ticker keeps advancing while the store op is
-    in-flight.
-    """
+def test_reassign_through_to_thread_reports_the_new_owner(
+    reassigned_through_to_thread,
+):
     # Arrange
+    expected_owner = "proj-y"
+    # Act
+    out = reassigned_through_to_thread
+    # Assert
+    assert out["to_owner"] == expected_owner
+
+
+def test_reassign_through_to_thread_reports_the_card_changed(
+    reassigned_through_to_thread,
+):
+    # Arrange
+    expected_changed = True
+    # Act
+    out = reassigned_through_to_thread
+    # Assert
+    assert out["changed"] is expected_changed
+
+
+def test_reassign_through_to_thread_actually_mutated_the_owner(
+    reassigned_through_to_thread,
+):
+    # Arrange
+    expected_owner = "proj-y"
+    # Act
+    out = reassigned_through_to_thread
+    # Assert — the returned card, not just the summary, carries the new owner.
+    assert out["task"]["agent"] == expected_owner
+
+
+#: WHY the two `slow_handler` tests below are split but share this rationale:
+#: Regression for Fix A. A slow SYNC store call inside a handler must NOT
+#: freeze the loop. The fixture replaces `_store.get_task` with a variant that
+#: sleeps 0.3 s (standing in for the flock-guarded multi-MB load), then runs
+#: the `get_task` handler concurrently with a 10 ms-cadence ticker coroutine.
+#: If the blocking call ran ON the loop thread the ticker would be frozen
+#: (≈0 ticks); because Fix A offloads it to a worker thread, the ticker keeps
+#: advancing while the store op is in-flight. BOTH halves matter and neither
+#: may hide behind the other: an offload that keeps the loop live but returns
+#: the wrong card is not a fix, and a correct card fetched by freezing the
+#: loop is the bug itself.
+@pytest.fixture()
+def slow_store_handler_run(tmp_path, monkeypatch):
+    """Drive the `get_task` handler over a 0.3 s store call; return (result, ticks)."""
     import time
 
     from scitex_cards import _store
@@ -846,8 +883,22 @@ def test_handler_does_not_block_event_loop(tmp_path, monkeypatch):
         ticker.cancel()
         return result, ticks
 
+    return asyncio.run(_drive())
+
+
+def test_slow_handler_still_returns_the_correct_task(slow_store_handler_run):
+    # Arrange
+    expected_id = "a"
     # Act
-    result, ticks = asyncio.run(_drive())
-    # Assert — correct result AND the loop stayed live during the 0.3 s call.
-    assert json.loads(result)["id"] == "a"
-    assert ticks >= 5, f"event loop appeared blocked (only {ticks} ticks)"
+    result, _ticks = slow_store_handler_run
+    # Assert
+    assert json.loads(result)["id"] == expected_id
+
+
+def test_slow_handler_does_not_block_the_event_loop(slow_store_handler_run):
+    # Arrange
+    minimum_ticks = 5
+    # Act
+    _result, ticks = slow_store_handler_run
+    # Assert — the loop stayed live during the 0.3 s store call.
+    assert ticks >= minimum_ticks, f"event loop appeared blocked (only {ticks} ticks)"

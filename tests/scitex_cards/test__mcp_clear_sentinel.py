@@ -107,21 +107,42 @@ def test_status_still_refuses_to_be_cleared(store):
     # Arrange
     add_task(store=store, id="t5", title="t5", agent="worker-x", status="in_progress")
 
-    # Act / Assert
-    with pytest.raises(Exception):
+    # Act
+    ctx = pytest.raises(Exception)
+
+    # Assert — the sentinel is refused, so the card keeps its decision.
+    with ctx:
         _update(store, "t5", status="__none")
 
 
+#: WHY the two tests below are split but share this rationale:
+#: `None` = "leave this field alone" is the OTHER half of the sentinel
+#: contract — adding a spelling that means "clear it" must not disturb the
+#: spelling that means "do not touch it". One call exercises both halves at
+#: once (an omitted `note` beside a supplied `title`), so each half is
+#: asserted in its own test rather than behind a first-assert that can hide
+#: the second.
+
+
 def test_an_omitted_field_is_still_left_alone(store):
-    """None = untouched must survive the sentinel change."""
     # Arrange
     add_task(store=store, id="t6", title="t6", agent="worker-x", note="keep me")
 
     # Act
     merged = _update(store, "t6", title="renamed")
 
-    # Assert
+    # Assert — `note` was not passed at all, so it must survive untouched.
     assert merged["note"] == "keep me"
+
+
+def test_a_field_passed_alongside_an_omitted_one_still_updates(store):
+    # Arrange
+    add_task(store=store, id="t6", title="t6", agent="worker-x", note="keep me")
+
+    # Act
+    merged = _update(store, "t6", title="renamed")
+
+    # Assert — the half of the same call that WAS passed still took effect.
     assert merged["title"] == "renamed"
 
 

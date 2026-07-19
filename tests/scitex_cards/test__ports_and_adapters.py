@@ -99,11 +99,17 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
     assert tasks[0]["id"] == "a"
 
 
-def test_local_file_sync_save_round_trips_task_data(tmp_path):
-    # Contract CHANGE (fix/fast-store-write): the underlying save_tasks now
-    # uses a fast safe dump. Comments are intentionally dropped; the task
-    # DATA must round-trip through LocalFileSync unchanged.
-    # Arrange
+#: WHY the two `save_round_trips` tests below are split but share this
+#: rationale: contract CHANGE (fix/fast-store-write) — the underlying
+#: save_tasks now uses a fast safe dump. Comments are intentionally dropped;
+#: the task DATA must round-trip through LocalFileSync unchanged. Those two
+#: claims point in opposite directions (what MUST survive the write vs what is
+#: ACCEPTED to be lost), and a save that silently wrote nothing would preserve
+#: the comment while discarding the mutation — passing the claim we care least
+#: about.
+@pytest.fixture()
+def local_file_sync_round_trip(tmp_path):
+    """Load, mutate, save and reload a store that carries a YAML comment."""
     p = _write_tasks_yaml(
         tmp_path,
         "# comment intentionally NOT preserved\n"
@@ -112,12 +118,26 @@ def test_local_file_sync_save_round_trips_task_data(tmp_path):
     sync = LocalFileSync(p)
     tasks = sync.load()
     tasks[0]["status"] = "done"
-    # Act
     sync.save(tasks)
-    reloaded = sync.load()
-    # Assert — the mutation round-trips; the comment is gone (accepted).
+    return {"reloaded": sync.load(), "on_disk": p.read_text()}
+
+
+def test_local_file_sync_save_round_trips_task_data(local_file_sync_round_trip):
+    # Arrange
+    scenario = local_file_sync_round_trip
+    # Act
+    reloaded = scenario["reloaded"]
+    # Assert — the mutation round-trips through save + load.
     assert reloaded[0]["status"] == "done"
-    assert "# comment intentionally NOT preserved" not in p.read_text()
+
+
+def test_local_file_sync_save_drops_yaml_comments(local_file_sync_round_trip):
+    # Arrange
+    scenario = local_file_sync_round_trip
+    # Act
+    on_disk = scenario["on_disk"]
+    # Assert — the comment is gone (the accepted half of the contract change).
+    assert "# comment intentionally NOT preserved" not in on_disk
 
 
 def test_local_file_sync_reload_detects_external_mutation(tmp_path):
