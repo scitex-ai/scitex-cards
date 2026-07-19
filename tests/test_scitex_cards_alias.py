@@ -13,8 +13,9 @@ the package, and if it silently disappears in the rename his startup breaks with
 "scitex-cards: not found" and no explanation.
 """
 
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 
 def _scripts() -> dict:
@@ -24,15 +25,29 @@ def _scripts() -> dict:
 
 
 def test_scitex_cards_console_script_exists():
-    assert "scitex-cards" in _scripts()
+    # Arrange
+    name = "scitex-cards"
+    # Act
+    scripts = _scripts()
+    # Assert
+    assert name in scripts
 
 
 def test_scitex_cards_points_at_the_same_cli():
     """Second name, same entry point — not a fork."""
+    # Arrange
+    new_name, old_name = "scitex-cards", "scitex-todo"
+    # Act
     scripts = _scripts()
-    assert scripts["scitex-cards"] == scripts["scitex-todo"]
+    # Assert
+    assert scripts[new_name] == scripts[old_name]
 
 
-def test_scitex_cards_console_script_still_exists():
+def test_scitex_todo_console_script_still_exists():
     """The old name must keep working — the whole fleet still calls it."""
-    assert "scitex-todo" in _scripts()
+    # Arrange
+    name = "scitex-todo"
+    # Act
+    scripts = _scripts()
+    # Assert
+    assert name in scripts

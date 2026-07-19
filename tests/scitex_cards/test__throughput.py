@@ -46,6 +46,27 @@ def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _pure_backlog_tasks():
+    """200 cards owned by agent `a`, not one of them actually in flight.
+
+    Shared by the three ``TestWipIsNotBacklog`` tests that each pin one
+    consequence of the same 2026-07-10 shape.
+    """
+    return (
+        [{"agent": "a", "status": "deferred"} for _ in range(50)]
+        + [{"agent": "a", "status": "blocked"} for _ in range(50)]
+        + [{"agent": "a", "status": "cancelled"} for _ in range(50)]
+        + [{"agent": "a", "status": "failed"} for _ in range(50)]
+    )
+
+
+def _sac_incident_tasks():
+    """The exact shape that made sac's gate say 88 and its digest say 2."""
+    return [{"agent": "a", "status": "deferred"} for _ in range(86)] + [
+        {"agent": "a", "status": "in_progress"} for _ in range(2)
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # aggregate                                                                   #
 # --------------------------------------------------------------------------- #
@@ -128,10 +149,11 @@ class TestAggregate:
 
     def test_unknown_by_axis_raises(self):
         # Arrange
+        axis = "nonsense"
         # Act
         # Assert
         with pytest.raises(ValueError):
-            aggregate([], by="nonsense")
+            aggregate([], by=axis)
 
 
 # --------------------------------------------------------------------------- #
@@ -241,8 +263,9 @@ class TestWipGate:
 
     def test_evaluate_wip_none_when_no_agent(self):
         # Arrange
+        agent = None
         # Act
-        rep = evaluate_wip([], agent=None)
+        rep = evaluate_wip([], agent=agent)
         # Assert
         assert rep is None
 
@@ -288,17 +311,28 @@ class TestWipIsNotBacklog:
     def test_backlog_does_not_consume_wip(self, env):
         # Arrange — a huge parked backlog, nothing actually in flight.
         env.set(ENV_WIP_LIMIT, "3")
-        tasks = (
-            [{"agent": "a", "status": "deferred"} for _ in range(50)]
-            + [{"agent": "a", "status": "blocked"} for _ in range(50)]
-            + [{"agent": "a", "status": "cancelled"} for _ in range(50)]
-            + [{"agent": "a", "status": "failed"} for _ in range(50)]
-        )
+        tasks = _pure_backlog_tasks()
         # Act
         rep = evaluate_wip(tasks, agent="a")
         # Assert — 200 cards, zero of them in flight.
         assert rep.wip_count == 0
+
+    def test_a_pure_backlog_owner_is_not_warned(self, env):
+        # Arrange
+        env.set(ENV_WIP_LIMIT, "3")
+        tasks = _pure_backlog_tasks()
+        # Act
+        rep = evaluate_wip(tasks, agent="a")
+        # Assert
         assert rep.is_warn is False
+
+    def test_a_pure_backlog_owner_is_not_refused(self, env):
+        # Arrange
+        env.set(ENV_WIP_LIMIT, "3")
+        tasks = _pure_backlog_tasks()
+        # Act
+        rep = evaluate_wip(tasks, agent="a")
+        # Assert — this is the refusal that jammed the fleet.
         assert rep.is_refuse is False
 
     def test_terminal_cards_drop_out_of_open_count(self):
@@ -316,16 +350,21 @@ class TestWipIsNotBacklog:
         # Assert — only the blocked card is still open.
         assert n == 1
 
-    def test_gate_and_digest_agree_on_open(self):
-        # Arrange — the exact shape that made sac say 88 and its digest say 2.
-        tasks = [{"agent": "a", "status": "deferred"} for _ in range(86)] + [
-            {"agent": "a", "status": "in_progress"} for _ in range(2)
-        ]
+    def test_gate_and_digest_agree_on_the_open_count(self):
+        # Arrange
+        tasks = _sac_incident_tasks()
         # Act
         rep = evaluate_wip(tasks, agent="a")
-        # Assert — one number for backlog, a different one for in-flight,
-        # and neither is silently doing the other's job.
+        # Assert — the backlog number, which is NOT the gate's budget.
         assert rep.open_count == 88
+
+    def test_gate_and_digest_agree_on_the_wip_count(self):
+        # Arrange
+        tasks = _sac_incident_tasks()
+        # Act
+        rep = evaluate_wip(tasks, agent="a")
+        # Assert — the in-flight number; neither is silently doing the
+        # other's job, which is the whole two-predicates-one-name bug.
         assert rep.wip_count == 2
 
     def test_recording_an_incident_is_never_refused(self, tmp_path, env, monkeypatch):
@@ -367,7 +406,9 @@ class TestWipIsNotBacklog:
         # Assert
         assert rec["id"] == "incident-the-gate-is-jammed"
 
-    def test_starting_more_work_past_2x_is_still_refused(self, tmp_path, env, monkeypatch):
+    def test_starting_more_work_past_2x_is_still_refused(
+        self, tmp_path, env, monkeypatch
+    ):
         # Arrange — the gate must not become a no-op.
         from scitex_cards._model import TaskValidationError
         from scitex_cards._paths import ENV_TASKS
@@ -386,7 +427,8 @@ class TestWipIsNotBacklog:
                 store=store,
             )
 
-        # Act / Assert
+        # Act
+        # Assert — a third in-flight card is past 2x and must be refused.
         with pytest.raises(TaskValidationError, match="in_progress"):
             add_task(
                 id="one-too-many",

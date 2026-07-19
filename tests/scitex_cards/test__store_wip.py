@@ -27,6 +27,30 @@ from scitex_cards._store_wip import (
 )
 from scitex_cards._throughput import ENV_WIP_LIMIT
 
+#: The escalated card from the 2026-07-12 incident — the P0 the board refused.
+#: Reused verbatim by every test that files an emergency over the cap.
+INCIDENT_CARD = {
+    "title": "[P0] fleet-wide config/state-loss hazard",
+    "status": "in_progress",
+    "priority": 1,
+    "agent": "a",
+}
+
+#: An ORDINARY over-cap card: no priority, no emergency, must be refused.
+ORDINARY_CARD = {"title": "just more work", "status": "in_progress", "agent": "a"}
+
+
+def _refusal_message(store, card_id: str) -> str:
+    """The text ``add_task`` refuses an over-cap ORDINARY card with.
+
+    The three ``TestRefusalMessageIsActionable`` tests each pin one property
+    of this ONE message, so the raise is driven once — here — instead of
+    being re-counted as a second assertion inside every sibling test.
+    """
+    with pytest.raises(TaskValidationError) as excinfo:
+        add_task(id=card_id, store=store, **ORDINARY_CARD)
+    return str(excinfo.value)
+
 
 @pytest.fixture()
 def over_cap(tmp_path, env, monkeypatch):
@@ -57,92 +81,109 @@ class TestPriorityExemptPredicate:
     """LOWER priority = MORE urgent. The exemption band is P0/P1."""
 
     def test_priority_one_is_exempt(self):
-        # Arrange / Act / Assert — 21 of 28 incident cards on the live store
-        # are priority 1; this is THE value the gate must never block.
-        assert is_priority_exempt(1) is True
+        """21 of 28 incident cards on the live store are priority 1 — THE
+        value the gate must never block."""
+        # Arrange
+        priority = 1
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is True
 
     def test_priority_zero_is_exempt(self):
-        # Arrange / Act / Assert — 0 is the most urgent value present.
-        assert is_priority_exempt(0) is True
+        """0 is the most urgent value present."""
+        # Arrange
+        priority = 0
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is True
 
     def test_priority_three_is_not_exempt(self):
-        # Arrange / Act / Assert — ordinary work stays capped.
-        assert is_priority_exempt(3) is False
+        """Ordinary work stays capped."""
+        # Arrange
+        priority = 3
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is False
 
     def test_missing_priority_is_not_exempt(self):
-        # Arrange / Act / Assert — the exemption is for DECLARED emergencies.
-        assert is_priority_exempt(None) is False
+        """The exemption is for DECLARED emergencies."""
+        # Arrange
+        priority = None
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is False
 
     def test_high_number_is_not_exempt(self):
-        # Arrange / Act / Assert — priority 8 is the LEAST important card, not
-        # the most; exempting it would have been exactly backwards.
-        assert is_priority_exempt(8) is False
+        """Priority 8 is the LEAST important card, not the most; exempting it
+        would have been exactly backwards."""
+        # Arrange
+        priority = 8
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is False
 
     def test_true_is_not_exempt(self):
-        # Arrange / Act / Assert — bool is an int in Python; a truthy flag
-        # fumbled into `priority` must not buy an emergency exemption.
-        assert is_priority_exempt(True) is False
+        """bool is an int in Python; a truthy flag fumbled into `priority`
+        must not buy an emergency exemption."""
+        # Arrange
+        priority = True
+        # Act
+        exempt = is_priority_exempt(priority)
+        # Assert
+        assert exempt is False
 
     def test_exempt_band_is_p0_p1(self):
-        # Arrange / Act / Assert — pin the constant itself.
-        assert EXEMPT_PRIORITY_MAX == 1
+        """Pin the constant itself."""
+        # Arrange
+        expected_max = 1
+        # Act
+        band_max = EXEMPT_PRIORITY_MAX
+        # Assert
+        assert band_max == expected_max
 
 
 class TestIncidentIsAlwaysRecordable:
     """priority <= 1 is never gated — no flag to remember mid-outage."""
 
     def test_p1_in_progress_card_is_accepted_over_the_cap(self, over_cap):
-        # Arrange — agent is at 8 in-flight against a refuse threshold of 2.
+        """The agent is at 8 in-flight against a refuse threshold of 2."""
+        # Arrange
+        card_id = "p0-config-loss"
         # Act
-        rec = add_task(
-            id="p0-config-loss",
-            title="[P0] fleet-wide config/state-loss hazard",
-            status="in_progress",
-            priority=1,
-            agent="a",
-            store=over_cap,
-        )
+        rec = add_task(id=card_id, store=over_cap, **INCIDENT_CARD)
         # Assert
-        assert rec["id"] == "p0-config-loss"
+        assert rec["id"] == card_id
 
     def test_p0_in_progress_card_is_accepted_over_the_cap(self, over_cap):
         # Arrange
+        card = dict(INCIDENT_CARD, title="[P0] production is on fire", priority=0)
         # Act
-        rec = add_task(
-            id="p0-zero",
-            title="[P0] production is on fire",
-            status="in_progress",
-            priority=0,
-            agent="a",
-            store=over_cap,
-        )
+        rec = add_task(id="p0-zero", store=over_cap, **card)
         # Assert
         assert rec["priority"] == 0
 
     def test_normal_card_is_still_refused_over_the_cap(self, over_cap):
-        # Arrange — the cap must still work for ordinary new work.
-        # Act / Assert
+        """The cap must still work for ordinary new work."""
+        # Arrange
+        card = dict(ORDINARY_CARD, priority=3)
+        # Act
+        # Assert
         with pytest.raises(TaskValidationError, match="WIP gate refuses add"):
-            add_task(
-                id="ordinary",
-                title="just more work",
-                status="in_progress",
-                priority=3,
-                agent="a",
-                store=over_cap,
-            )
+            add_task(id="ordinary", store=over_cap, **card)
 
     def test_unprioritised_card_is_still_refused_over_the_cap(self, over_cap):
-        # Arrange — no priority at all is not an emergency.
-        # Act / Assert
+        """No priority at all is not an emergency."""
+        # Arrange
+        card = dict(ORDINARY_CARD)
+        # Act
+        # Assert
         with pytest.raises(TaskValidationError, match="WIP gate refuses add"):
-            add_task(
-                id="unprioritised",
-                title="just more work",
-                status="in_progress",
-                agent="a",
-                store=over_cap,
-            )
+            add_task(id="unprioritised", store=over_cap, **card)
 
 
 class TestBypassIsLoudNotSilent:
@@ -150,65 +191,41 @@ class TestBypassIsLoudNotSilent:
 
     def test_bypassed_card_carries_the_audit_stamp(self, over_cap):
         # Arrange
-        rec = add_task(
-            id="p1-stamped",
-            title="[P0] fleet-wide config/state-loss hazard",
-            status="in_progress",
-            priority=1,
-            agent="a",
-            store=over_cap,
-        )
+        card_id = "p1-stamped"
         # Act
-        kinds = [c.get("kind") for c in rec.get("comments") or []]
+        rec = add_task(id=card_id, store=over_cap, **INCIDENT_CARD)
         # Assert
+        kinds = [c.get("kind") for c in rec.get("comments") or []]
         assert OVERRIDE_COMMENT_KIND in kinds
 
     def test_audit_stamp_records_the_wip_count_and_limit(self, over_cap):
         # Arrange
-        rec = add_task(
-            id="p1-counted",
-            title="[P0] fleet-wide config/state-loss hazard",
-            status="in_progress",
-            priority=1,
-            agent="a",
-            store=over_cap,
-        )
+        card_id = "p1-counted"
         # Act
-        text = rec["comments"][0]["text"]
+        rec = add_task(id=card_id, store=over_cap, **INCIDENT_CARD)
         # Assert — "8 tasks in_progress at insert time (limit 1; ...)".
+        text = rec["comments"][0]["text"]
         assert "8 tasks in_progress" in text and "limit 1" in text
 
     def test_audit_stamp_is_persisted_not_just_returned(self, over_cap):
         # Arrange
-        add_task(
-            id="p1-persisted",
-            title="[P0] fleet-wide config/state-loss hazard",
-            status="in_progress",
-            priority=1,
-            agent="a",
-            store=over_cap,
-        )
-        # Act — read it back off disk; the board renders THIS.
-        text = over_cap.read_text()
-        # Assert
-        assert OVERRIDE_COMMENT_KIND in text
+        card_id = "p1-persisted"
+        # Act
+        add_task(id=card_id, store=over_cap, **INCIDENT_CARD)
+        # Assert — read it back off disk; the board renders THIS.
+        assert OVERRIDE_COMMENT_KIND in over_cap.read_text()
 
     def test_card_under_the_cap_is_not_stamped(self, tmp_path, env, monkeypatch):
-        # Arrange — a P1 filed by an agent with room to spare is ordinary; the
-        # stamp must mean "a bypass happened", not "someone typed priority 1".
+        """A P1 filed by an agent with room to spare is ordinary; the stamp
+        must mean "a bypass happened", not "someone typed priority 1"."""
+        # Arrange
         env.set(ENV_WIP_LIMIT, "10")
         store = tmp_path / "tasks.yaml"
         store.write_text("tasks: []\n")
         monkeypatch.setenv(ENV_TASKS, str(store))
+        card = dict(INCIDENT_CARD, title="[P1] urgent but the board is calm")
         # Act
-        rec = add_task(
-            id="p1-roomy",
-            title="[P1] urgent but the board is calm",
-            status="in_progress",
-            priority=1,
-            agent="a",
-            store=store,
-        )
+        rec = add_task(id="p1-roomy", store=store, **card)
         # Assert
         assert not rec.get("comments")
 
@@ -219,42 +236,25 @@ class TestRefusalMessageIsActionable:
 
     def test_refusal_names_the_priority_escape_hatch(self, over_cap):
         # Arrange
+        hatch = "priority <= 1"
         # Act
-        with pytest.raises(TaskValidationError) as excinfo:
-            add_task(
-                id="ordinary-2",
-                title="just more work",
-                status="in_progress",
-                agent="a",
-                store=over_cap,
-            )
+        message = _refusal_message(over_cap, "ordinary-2")
         # Assert
-        assert "priority <= 1" in str(excinfo.value)
+        assert hatch in message
 
     def test_refusal_names_the_deferred_blocked_escape_hatch(self, over_cap):
         # Arrange
+        hatch = "deferred or blocked is never gated"
         # Act
-        with pytest.raises(TaskValidationError) as excinfo:
-            add_task(
-                id="ordinary-3",
-                title="just more work",
-                status="in_progress",
-                agent="a",
-                store=over_cap,
-            )
+        message = _refusal_message(over_cap, "ordinary-3")
         # Assert
-        assert "deferred or blocked is never gated" in str(excinfo.value)
+        assert hatch in message
 
     def test_refusal_does_not_tell_you_to_close_cards(self, over_cap):
-        # Arrange — the falsify-your-board incentive, removed at the source.
+        """The falsify-your-board incentive, removed at the source."""
+        # Arrange
+        removed = "Close existing tasks before adding more"
         # Act
-        with pytest.raises(TaskValidationError) as excinfo:
-            add_task(
-                id="ordinary-4",
-                title="just more work",
-                status="in_progress",
-                agent="a",
-                store=over_cap,
-            )
+        message = _refusal_message(over_cap, "ordinary-4")
         # Assert
-        assert "Close existing tasks before adding more" not in str(excinfo.value)
+        assert removed not in message

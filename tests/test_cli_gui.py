@@ -23,51 +23,96 @@ def _run(*args):
     return CliRunner().invoke(main, list(args))
 
 
+#: The exact argv his startup loop backgrounds with `&`. Named once so every
+#: `gui serve` property below is asserted against the SAME invocation.
+SERVE_ARGV = ("gui", "serve", "--dry-run")
+
+
 def test_gui_group_is_registered():
     """The whole incident in one assertion: `gui` must exist."""
-    assert "gui" in main.commands
+    # Arrange
+    noun = "gui"
+    # Act
+    commands = main.commands
+    # Assert
+    assert noun in commands
 
 
 def test_gui_exposes_the_four_standard_verbs():
-    assert sorted(main.commands["gui"].commands) == [
-        "open",
-        "serve",
-        "status",
-        "stop",
-    ]
+    # Arrange
+    expected = ["open", "serve", "status", "stop"]
+    # Act
+    verbs = sorted(main.commands["gui"].commands)
+    # Assert
+    assert verbs == expected
 
 
-def test_gui_serve_runs():
+def test_gui_serve_runs_without_error():
     """`scitex-todo gui serve` — the exact call his startup loop makes."""
-    assert _run("gui", "serve", "--dry-run").exit_code == 0
+    # Arrange
+    argv = SERVE_ARGV
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert result.exit_code == 0
 
 
 def test_gui_serve_defaults_to_port_8051():
     """His script expects 8051; `board` already defaults there. Don't drift."""
-    assert "8051" in _run("gui", "serve", "--dry-run").output
+    # Arrange
+    argv = SERVE_ARGV
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert "8051" in result.output
 
 
 def test_gui_serve_does_not_open_a_browser():
     """`serve` is headless by contract — `open` is the browser one."""
-    assert "no browser" in _run("gui", "serve", "--dry-run").output
+    # Arrange
+    argv = SERVE_ARGV
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert "no browser" in result.output
 
 
 def test_gui_serve_accepts_a_host():
-    assert _run("gui", "serve", "--host", "0.0.0.0", "--dry-run").exit_code == 0
+    # Arrange
+    argv = ("gui", "serve", "--host", "0.0.0.0", "--dry-run")
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert result.exit_code == 0
 
 
 def test_gui_serve_binds_loopback_by_default():
     """The board is UNAUTHENTICATED and serves every agent's cards."""
-    assert "127.0.0.1" in _run("gui", "serve", "--dry-run").output
+    # Arrange
+    argv = SERVE_ARGV
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert "127.0.0.1" in result.output
 
 
 def test_bare_gui_noun_is_a_usage_error():
     """Noun-verb convention (operator directive TG 13316) — no guessing."""
-    assert _run("gui").exit_code == 2
+    # Arrange
+    argv = ("gui",)
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert result.exit_code == 2
 
 
 def test_bare_gui_noun_names_the_verbs():
-    assert "gui serve" in _run("gui").output
+    # Arrange
+    argv = ("gui",)
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert "gui serve" in result.output
 
 
 def test_gui_status_shares_the_board_pidfile():
@@ -76,15 +121,29 @@ def test_gui_status_shares_the_board_pidfile():
     Two lifecycles racing for one port is the bug this aliasing avoids, so
     pin that the two verbs report from the same pidfile.
     """
-    assert _run("gui", "status", "--json").output == (
-        _run("board", "status", "--json").output
-    )
+    # Arrange
+    verb = ("status", "--json")
+    # Act
+    gui_output = _run("gui", *verb).output
+    board_output = _run("board", *verb).output
+    # Assert
+    assert gui_output == board_output
 
 
 def test_gui_stop_is_safe_when_nothing_runs():
-    assert _run("gui", "stop", "--dry-run").exit_code == 0
+    # Arrange
+    argv = ("gui", "stop", "--dry-run")
+    # Act
+    result = _run(*argv)
+    # Assert
+    assert result.exit_code == 0
 
 
 def test_board_group_still_exists():
     """`gui` is an ALIAS, not a replacement — `board` stays canonical."""
-    assert "board" in main.commands
+    # Arrange
+    noun = "board"
+    # Act
+    commands = main.commands
+    # Assert
+    assert noun in commands

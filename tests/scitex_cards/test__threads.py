@@ -67,15 +67,21 @@ def store(tmp_path: Path, env) -> Path:
 
 
 def test_thread_key_sorts_peers_lexicographically():
-    # Arrange / Act
-    key = thread_key("zeta", "alpha")
+    # Arrange
+    peers = ("zeta", "alpha")
+    # Act
+    key = thread_key(*peers)
     # Assert
     assert key == "dm:alpha::zeta"
 
 
 def test_thread_key_is_direction_agnostic():
-    # Arrange / Act / Assert
-    assert thread_key("operator", "agent-x") == thread_key("agent-x", "operator")
+    # Arrange
+    first, second = "operator", "agent-x"
+    # Act
+    forward, reverse = thread_key(first, second), thread_key(second, first)
+    # Assert
+    assert forward == reverse
 
 
 def test_peers_of_inverts_thread_key():
@@ -90,20 +96,98 @@ def test_peers_of_inverts_thread_key():
 # === append / get round-trip ===============================================
 
 
-def test_append_then_get_thread_round_trip(store):
-    # Arrange / Act
-    sent = append_message("operator", "agent-x", "hello there", store=store)
-    got = get_thread("agent-x", "operator", store=store)
-    # Assert — canonical record shape, both directions resolve the thread.
-    assert got == [sent]
-    assert set(sent) == {"id", "thread", "from", "to", "body", "ts", "read"}
-    assert sent["from"] == "operator"
-    assert sent["to"] == "agent-x"
-    assert sent["body"] == "hello there"
-    assert sent["thread"] == "dm:agent-x::operator"
-    assert sent["read"] is False
-    assert sent["id"].startswith("m_")
-    assert sent["ts"].endswith("Z")
+#: The one DM every round-trip test below inspects. Its canonical record
+#: shape — {id, thread, from, to, body, ts, read} — is the scitex-dev DM
+#: convention v1 contract, so each field gets its own failing test rather
+#: than hiding behind the first assertion that trips.
+DM_SENDER, DM_RECIPIENT, DM_BODY = "operator", "agent-x", "hello there"
+
+
+@pytest.fixture()
+def sent_message(store):
+    """One appended DM, returned as ``append_message`` handed it back."""
+    return append_message(DM_SENDER, DM_RECIPIENT, DM_BODY, store=store)
+
+
+def test_append_then_get_thread_round_trip(store, sent_message):
+    # Arrange
+    expected = [sent_message]
+    # Act — read back from the OTHER direction; both resolve one thread.
+    got = get_thread(DM_RECIPIENT, DM_SENDER, store=store)
+    # Assert
+    assert got == expected
+
+
+def test_sent_record_has_the_canonical_shape(sent_message):
+    # Arrange
+    expected = {"id", "thread", "from", "to", "body", "ts", "read"}
+    # Act
+    fields = set(sent_message)
+    # Assert
+    assert fields == expected
+
+
+def test_sent_record_names_the_sender(sent_message):
+    # Arrange
+    expected = DM_SENDER
+    # Act
+    sender = sent_message["from"]
+    # Assert
+    assert sender == expected
+
+
+def test_sent_record_names_the_recipient(sent_message):
+    # Arrange
+    expected = DM_RECIPIENT
+    # Act
+    recipient = sent_message["to"]
+    # Assert
+    assert recipient == expected
+
+
+def test_sent_record_carries_the_body(sent_message):
+    # Arrange
+    expected = DM_BODY
+    # Act
+    body = sent_message["body"]
+    # Assert
+    assert body == expected
+
+
+def test_sent_record_carries_the_sorted_thread_key(sent_message):
+    # Arrange
+    expected = "dm:agent-x::operator"
+    # Act
+    thread = sent_message["thread"]
+    # Assert
+    assert thread == expected
+
+
+def test_a_newly_sent_message_starts_unread(sent_message):
+    # Arrange
+    expected = False
+    # Act
+    read = sent_message["read"]
+    # Assert
+    assert read is expected
+
+
+def test_sent_record_gets_a_prefixed_message_id(sent_message):
+    # Arrange
+    prefix = "m_"
+    # Act
+    message_id = sent_message["id"]
+    # Assert
+    assert message_id.startswith(prefix)
+
+
+def test_sent_record_timestamp_is_utc_stamped(sent_message):
+    # Arrange
+    suffix = "Z"
+    # Act
+    ts = sent_message["ts"]
+    # Assert
+    assert ts.endswith(suffix)
 
 
 def test_append_preserves_chronological_order(store):
@@ -117,145 +201,377 @@ def test_append_preserves_chronological_order(store):
 
 
 def test_append_rejects_empty_body(store):
-    # Arrange / Act / Assert
+    # Arrange
+    blank = "   "
+    # Act
+    # Assert
     with pytest.raises(ValueError):
-        append_message("operator", "agent-x", "   ", store=store)
+        append_message("operator", "agent-x", blank, store=store)
+
+
+def test_no_sidecar_exists_before_any_append(store):
+    """The premise of the two never-raise tests below."""
+    # Arrange
+    sidecar = threads_path(store)
+    # Act
+    exists = sidecar.exists()
+    # Assert
+    assert not exists
 
 
 def test_get_thread_on_missing_sidecar_returns_empty(store):
-    # Arrange — no message ever appended, sidecar absent.
-    assert not threads_path(store).exists()
-    # Act / Assert — never raises.
-    assert get_thread("operator", "ghost", store=store) == []
-    assert list_threads(store=store) == {}
+    # Arrange
+    peer = "ghost"
+    # Act — never raises on an absent sidecar.
+    msgs = get_thread("operator", peer, store=store)
+    # Assert
+    assert msgs == []
+
+
+def test_list_threads_on_missing_sidecar_returns_empty(store):
+    # Arrange
+    expected = {}
+    # Act
+    summary = list_threads(store=store)
+    # Assert
+    assert summary == expected
 
 
 # === store isolation (sidecar, own lock) ===================================
 
 
-def test_threads_live_in_sidecar_not_tasks_yaml(store):
-    # Arrange / Act
-    append_message("operator", "agent-x", "hi", store=store)
-    # Assert — sidecar exists next to tasks.yaml and holds the thread...
+def test_the_threads_sidecar_sits_next_to_tasks_yaml(store, sent_message):
+    # Arrange
+    expected = store.parent / "threads.yaml"
+    # Act
     sidecar = threads_path(store)
-    assert sidecar == store.parent / "threads.yaml"
-    assert sidecar.exists()
-    doc = safe_load(sidecar.read_text(encoding="utf-8"))
-    assert "dm:agent-x::operator" in doc["threads"]
-    # ...while tasks.yaml carries NO threads section (isolation).
+    # Assert
+    assert sidecar == expected
+
+
+def test_the_threads_sidecar_is_created_on_append(store, sent_message):
+    # Arrange
+    sidecar = threads_path(store)
+    # Act
+    exists = sidecar.exists()
+    # Assert
+    assert exists
+
+
+def test_the_sidecar_holds_the_appended_thread(store, sent_message):
+    # Arrange
+    key = "dm:agent-x::operator"
+    # Act
+    doc = safe_load(threads_path(store).read_text(encoding="utf-8"))
+    # Assert
+    assert key in doc["threads"]
+
+
+def test_tasks_yaml_carries_no_threads_section(store, sent_message):
+    """The isolation half: a DM must never land inside the task store."""
+    # Arrange
+    section = "threads"
+    # Act
     tasks_doc = safe_load(store.read_text(encoding="utf-8"))
-    assert "threads" not in tasks_doc
+    # Assert
+    assert section not in tasks_doc
 
 
-def test_threads_use_their_own_lockfile(store):
-    # Arrange / Act
-    append_message("operator", "agent-x", "hi", store=store)
-    # Assert — a separate lock sentinel, not the tasks.yaml one.
-    assert (store.parent / ".threads.yaml.lock").exists()
+def test_threads_use_their_own_lockfile(store, sent_message):
+    # Arrange — a separate lock sentinel, not the tasks.yaml one.
+    lockfile = store.parent / ".threads.yaml.lock"
+    # Act
+    exists = lockfile.exists()
+    # Assert
+    assert exists
 
 
 # === crash-safe write ======================================================
 
 
-def test_sidecar_reparses_cleanly_after_writes(store):
-    # Arrange — several writes across two threads.
+@pytest.fixture()
+def two_written_threads(store):
+    """Several writes across TWO threads — the on-disk state the crash-safety
+    tests below reparse. Three messages to agent-x, one to agent-y."""
     for i in range(3):
         append_message("operator", "agent-x", f"msg {i}", store=store)
     append_message("agent-y", "operator", "other thread", store=store)
-    # Act — reparse the raw bytes exactly like the verify step does.
-    doc = safe_load(threads_path(store).read_text(encoding="utf-8"))
-    # Assert — full structure survives, no tmp sidecar left behind.
-    assert len(doc["threads"]) == 2
-    assert len(doc["threads"]["dm:agent-x::operator"]) == 3
-    assert not (store.parent / ".threads.yaml.tmp").exists()
+    return store
+
+
+def test_sidecar_reparses_cleanly_after_writes(two_written_threads):
+    """The full structure survives a reparse of the raw bytes, exactly like
+    the verify step does it."""
+    # Arrange
+    expected_threads = 2
+    # Act
+    doc = safe_load(threads_path(two_written_threads).read_text(encoding="utf-8"))
+    # Assert
+    assert len(doc["threads"]) == expected_threads
+
+
+def test_every_appended_message_survives_the_reparse(two_written_threads):
+    # Arrange
+    key = "dm:agent-x::operator"
+    # Act
+    doc = safe_load(threads_path(two_written_threads).read_text(encoding="utf-8"))
+    # Assert
+    assert len(doc["threads"][key]) == 3
+
+
+def test_writes_leave_no_tmp_sidecar_behind(two_written_threads):
+    # Arrange
+    tmp_sidecar = two_written_threads.parent / ".threads.yaml.tmp"
+    # Act
+    exists = tmp_sidecar.exists()
+    # Assert
+    assert not exists
 
 
 # === mark_read / list_threads ==============================================
 
 
-def test_mark_read_all_for_reader(store):
-    # Arrange — two inbound to operator, one outbound.
+@pytest.fixture()
+def two_inbound_one_outbound(store):
+    """Two messages INBOUND to the operator plus one they sent — the shape
+    that separates "flip the reader's unread" from "flip everything"."""
     append_message("agent-x", "operator", "one", store=store)
     append_message("agent-x", "operator", "two", store=store)
     append_message("operator", "agent-x", "reply", store=store)
+    return store
+
+
+def test_mark_read_all_for_reader(two_inbound_one_outbound):
+    # Arrange
     key = thread_key("operator", "agent-x")
     # Act
-    flipped = mark_read(key, "operator", store=store)
-    # Assert — only the reader's inbound messages flip.
+    flipped = mark_read(key, "operator", store=two_inbound_one_outbound)
+    # Assert — only the reader's two INBOUND messages count.
     assert flipped == 2
-    msgs = get_thread("operator", "agent-x", store=store)
+
+
+def test_mark_read_leaves_the_readers_own_message_unread(two_inbound_one_outbound):
+    """You never "read" your own outbound message."""
+    # Arrange
+    key = thread_key("operator", "agent-x")
+    # Act
+    mark_read(key, "operator", store=two_inbound_one_outbound)
+    # Assert
+    msgs = get_thread("operator", "agent-x", store=two_inbound_one_outbound)
     assert [m["read"] for m in msgs] == [True, True, False]
-    # Idempotent.
-    assert mark_read(key, "operator", store=store) == 0
+
+
+def test_mark_read_is_idempotent_on_a_second_call(two_inbound_one_outbound):
+    # Arrange
+    key = thread_key("operator", "agent-x")
+    mark_read(key, "operator", store=two_inbound_one_outbound)
+    # Act
+    flipped_again = mark_read(key, "operator", store=two_inbound_one_outbound)
+    # Assert
+    assert flipped_again == 0
 
 
 def test_mark_read_scoped_to_ids(store):
     # Arrange
     first = append_message("agent-x", "operator", "one", store=store)
     append_message("agent-x", "operator", "two", store=store)
-    key = first["thread"]
     # Act
-    flipped = mark_read(key, "operator", ids=[first["id"]], store=store)
+    flipped = mark_read(first["thread"], "operator", ids=[first["id"]], store=store)
     # Assert
     assert flipped == 1
+
+
+def test_mark_read_scoped_to_ids_leaves_the_rest_unread(store):
+    # Arrange
+    first = append_message("agent-x", "operator", "one", store=store)
+    append_message("agent-x", "operator", "two", store=store)
+    # Act
+    mark_read(first["thread"], "operator", ids=[first["id"]], store=store)
+    # Assert
     msgs = get_thread("operator", "agent-x", store=store)
     assert [m["read"] for m in msgs] == [True, False]
 
 
-def test_list_threads_summarizes_unread_and_last(store):
-    # Arrange
+@pytest.fixture()
+def two_pings(store):
+    """Two unread messages from agent-x to the operator, newest last."""
     append_message("agent-x", "operator", "ping", store=store)
     last = append_message("agent-x", "operator", "ping again", store=store)
+    return store, last
+
+
+def test_list_threads_reports_the_thread_peers(two_pings):
+    # Arrange
+    store, _ = two_pings
     # Act
-    summary = list_threads(store=store)
+    row = list_threads(store=store)["dm:agent-x::operator"]
     # Assert
-    row = summary["dm:agent-x::operator"]
     assert row["peers"] == ("agent-x", "operator")
+
+
+def test_list_threads_reports_the_message_count(two_pings):
+    # Arrange
+    store, _ = two_pings
+    # Act
+    row = list_threads(store=store)["dm:agent-x::operator"]
+    # Assert
     assert row["count"] == 2
+
+
+def test_list_threads_reports_unread_per_peer(two_pings):
+    """The sender has nothing unread; the operator has both."""
+    # Arrange
+    store, _ = two_pings
+    # Act
+    row = list_threads(store=store)["dm:agent-x::operator"]
+    # Assert
     assert row["unread"] == {"agent-x": 0, "operator": 2}
+
+
+def test_list_threads_reports_the_last_message(two_pings):
+    # Arrange
+    store, last = two_pings
+    # Act
+    row = list_threads(store=store)["dm:agent-x::operator"]
+    # Assert
     assert row["last"]["id"] == last["id"]
 
 
 # === dm-dispatch → recipient inbox =========================================
 
 
-def test_append_message_enqueues_dm_into_recipient_inbox(store):
-    # Arrange / Act
-    sent = append_message("operator", "agent-x", "please check PR", store=store)
-    # Assert — the recipient's pull-inbox in the REAL tasks store carries the
-    # dm record (raw-name key: agent-x is not in the users registry).
-    inbox = poll_inbox("agent-x", store=store)
-    assert len(inbox) == 1
-    rec = inbox[0]
-    assert rec["event_type"] == "dm"
-    assert rec["card_id"] == sent["thread"]
-    assert rec["body"] == "please check PR"
-    assert rec["actor"] == "operator"
-    assert rec["ts"] == sent["ts"]
+#: A DM whose delivery record the six tests below each pin one field of.
+#: The recipient is keyed by RAW NAME here — agent-x is not in the users
+#: registry, which is exactly the fallback the dispatcher must honour.
+DISPATCH_BODY = "please check PR"
 
 
-def test_agent_reply_enqueues_into_operator_inbox_for_symmetry(store):
-    # Arrange / Act — documented decision: the operator inbox is enqueued
-    # too (cheap + keeps a future operator-side drain surface working).
-    append_message("agent-x", "operator", "done, PR is green", store=store)
+@pytest.fixture()
+def dispatched_dm(store):
+    """One DM sent to an UNREGISTERED recipient, plus its inbox record."""
+    sent = append_message("operator", "agent-x", DISPATCH_BODY, store=store)
+    return sent, poll_inbox("agent-x", store=store)
+
+
+def test_append_message_enqueues_dm_into_recipient_inbox(dispatched_dm):
+    # Arrange
+    _, inbox = dispatched_dm
+    # Act
+    count = len(inbox)
     # Assert
-    inbox = poll_inbox("operator", store=store)
-    assert len(inbox) == 1
-    assert inbox[0]["event_type"] == "dm"
-    assert inbox[0]["actor"] == "agent-x"
+    assert count == 1
 
 
-def test_dispatch_resolves_registered_recipient_to_user_id(store):
-    # Arrange — register the recipient so dispatch must key by u_* id
-    # (exactly how poll_notifications resolves the drain key).
+def test_the_enqueued_record_is_typed_as_a_dm(dispatched_dm):
+    # Arrange
+    _, inbox = dispatched_dm
+    # Act
+    event_type = inbox[0]["event_type"]
+    # Assert
+    assert event_type == "dm"
+
+
+def test_the_enqueued_record_points_at_the_thread(dispatched_dm):
+    # Arrange
+    sent, inbox = dispatched_dm
+    # Act
+    card_id = inbox[0]["card_id"]
+    # Assert
+    assert card_id == sent["thread"]
+
+
+def test_the_enqueued_record_carries_the_body(dispatched_dm):
+    # Arrange
+    _, inbox = dispatched_dm
+    # Act
+    body = inbox[0]["body"]
+    # Assert
+    assert body == DISPATCH_BODY
+
+
+def test_the_enqueued_record_names_the_actor(dispatched_dm):
+    # Arrange
+    _, inbox = dispatched_dm
+    # Act
+    actor = inbox[0]["actor"]
+    # Assert
+    assert actor == "operator"
+
+
+def test_the_enqueued_record_shares_the_message_timestamp(dispatched_dm):
+    # Arrange
+    sent, inbox = dispatched_dm
+    # Act
+    ts = inbox[0]["ts"]
+    # Assert
+    assert ts == sent["ts"]
+
+
+#: Documented decision: an agent's REPLY enqueues into the operator's inbox
+#: too (cheap, and keeps a future operator-side drain surface working).
+@pytest.fixture()
+def operator_reply_inbox(store):
+    append_message("agent-x", "operator", "done, PR is green", store=store)
+    return poll_inbox("operator", store=store)
+
+
+def test_agent_reply_enqueues_into_operator_inbox_for_symmetry(
+    operator_reply_inbox,
+):
+    # Arrange
+    inbox = operator_reply_inbox
+    # Act
+    count = len(inbox)
+    # Assert
+    assert count == 1
+
+
+def test_the_operator_side_record_is_typed_as_a_dm(operator_reply_inbox):
+    # Arrange
+    inbox = operator_reply_inbox
+    # Act
+    event_type = inbox[0]["event_type"]
+    # Assert
+    assert event_type == "dm"
+
+
+def test_the_operator_side_record_names_the_replying_agent(operator_reply_inbox):
+    # Arrange
+    inbox = operator_reply_inbox
+    # Act
+    actor = inbox[0]["actor"]
+    # Assert
+    assert actor == "agent-x"
+
+
+@pytest.fixture()
+def registered_recipient(store):
+    """A REGISTERED recipient, so dispatch must key by its stable u_* id —
+    exactly how poll_notifications resolves the drain key."""
     from scitex_cards._users import register_user
 
     user = register_user(kind="agent", names=["agent-reg"], store=store)
-    # Act
     append_message("operator", "agent-reg", "hello registered", store=store)
-    # Assert — enqueued under the stable id, not the raw name.
-    assert len(poll_inbox(user.id, store=store)) == 1
-    assert poll_inbox("agent-reg", store=store) == []
+    return store, user
+
+
+def test_dispatch_resolves_registered_recipient_to_user_id(registered_recipient):
+    # Arrange
+    store, user = registered_recipient
+    # Act
+    inbox = poll_inbox(user.id, store=store)
+    # Assert — enqueued under the stable id.
+    assert len(inbox) == 1
+
+
+def test_dispatch_does_not_also_enqueue_under_the_raw_name(registered_recipient):
+    """Both keys filling would double-deliver every DM to a registered agent."""
+    # Arrange
+    store, _ = registered_recipient
+    # Act
+    inbox = poll_inbox("agent-reg", store=store)
+    # Assert
+    assert inbox == []
 
 
 # === read cache ============================================================

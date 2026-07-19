@@ -27,6 +27,7 @@ Real tmp files, NO mocks (STX-NM / PA-306).
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -57,31 +58,111 @@ def _write(path, text: str) -> None:
         handle.write(text)
 
 
+def _tmp_holding(tmp_path, text: str):
+    """A ``.tasks.yaml.tmp`` sidecar holding exactly ``text``."""
+    tmp = tmp_path / ".tasks.yaml.tmp"
+    _write(tmp, text)
+    return tmp
+
+
+def _verify_error_message(tmp, dumped: str) -> str:
+    """The text ``_verify_dumped_tmp`` rejects ``tmp`` with.
+
+    Lets a test pin ONE property of the message without re-counting the
+    raise itself as a second assertion.
+    """
+    with pytest.raises(StoreWriteVerifyError) as excinfo:
+        _verify_dumped_tmp(tmp, dumped)
+    return str(excinfo.value)
+
+
+def _events_before_failure(path):
+    """Parse ``path`` until the stream breaks; return the events consumed.
+
+    The parse MUST fail — that expectation is asserted here, so every test
+    built on this helper carries it without repeating it.
+    """
+    events = []
+    with pytest.raises(yaml.YAMLError):
+        with path.open(encoding="utf-8") as fh:
+            for event in yaml.parse(fh, Loader=_SAFE_LOADER):
+                events.append(event)
+    return events
+
+
+#: A valid dump whose LAST scalar is ``status: pending``, paired with a
+#: byte-for-byte SAME-LENGTH corruption of it: the first character of that
+#: scalar's value is replaced by a double-quote, opening a quoted scalar that
+#: is never closed before EOF. That is the 2026-06-13 incident shape at an
+#: IDENTICAL length — so the byte-length check passes and only the event-scan
+#: can catch it. The tests in ``TestSameLengthMidScalarCorruption`` each pin
+#: one link of that argument; dropping any of them leaves the claim
+#: "the event-scan is load-bearing" unproven.
+GOOD_DUMP = safe_dump({"tasks": [{"id": "a", "title": "A", "status": "pending"}]})
+BAD_SAME_LENGTH = GOOD_DUMP.replace("status: pending", 'status: "ending', 1)
+
+
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
+@pytest.fixture()
+def promoted_store(tmp_path, monkeypatch):
+    """A 3-task doc written end-to-end through the REAL save path.
+
+    Yields the canonical path after ``_save_doc_unlocked`` promoted it, so
+    each ``TestHappyPath`` test below pins one property of that single
+    completed write instead of re-running it.
+    """
+    monkeypatch.setenv("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    store = tmp_path / "tasks.yaml"
+    with _model._store_lock(store):
+        _model._save_doc_unlocked(_valid_doc(3), store)
+    return store
+
+
 class TestHappyPath:
     def test_valid_dump_verifies_without_raising(self, tmp_path):
+        # Arrange
         dumped = safe_dump(_valid_doc(5))
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, dumped)
-        # Returns None, does not raise.
-        assert _verify_dumped_tmp(tmp, dumped) is None
+        tmp = _tmp_holding(tmp_path, dumped)
+        # Act
+        out = _verify_dumped_tmp(tmp, dumped)
+        # Assert — returns None, does not raise.
+        assert out is None
 
-    def test_save_doc_unlocked_promotes_on_valid_write(self, tmp_path, monkeypatch):
-        # End-to-end: the write path still atomically promotes (os.replace)
-        # a valid doc into the canonical slot.
-        monkeypatch.setenv("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
-        store = tmp_path / "tasks.yaml"
-        doc = _valid_doc(3)
-        with _model._store_lock(store):
-            _model._save_doc_unlocked(doc, store)
-        # The canonical file exists, the tmp sidecar is gone, content round-trips.
-        assert store.exists()
-        assert not (tmp_path / ".tasks.yaml.tmp").exists()
-        reloaded = _model.load_doc(store)
-        assert {t["id"] for t in reloaded["tasks"]} == {"t0", "t1", "t2"}
-        assert reloaded["users"] == {"alice": {"role": "dev"}}
+    def test_save_doc_unlocked_promotes_the_canonical_file(self, promoted_store):
+        """End-to-end: the write path still atomically promotes (os.replace)
+        a valid doc into the canonical slot."""
+        # Arrange
+        store = promoted_store
+        # Act
+        exists = store.exists()
+        # Assert
+        assert exists
+
+    def test_save_doc_unlocked_removes_the_tmp_sidecar(self, promoted_store):
+        # Arrange
+        sidecar = promoted_store.parent / ".tasks.yaml.tmp"
+        # Act
+        exists = sidecar.exists()
+        # Assert
+        assert not exists
+
+    def test_save_doc_unlocked_round_trips_every_task(self, promoted_store):
+        # Arrange
+        expected = {"t0", "t1", "t2"}
+        # Act
+        reloaded = _model.load_doc(promoted_store)
+        # Assert
+        assert {t["id"] for t in reloaded["tasks"]} == expected
+
+    def test_save_doc_unlocked_round_trips_the_users_section(self, promoted_store):
+        # Arrange
+        expected = {"alice": {"role": "dev"}}
+        # Act
+        reloaded = _model.load_doc(promoted_store)
+        # Assert
+        assert reloaded["users"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -90,40 +171,60 @@ class TestHappyPath:
 class TestSameLengthMidScalarCorruption:
     """The event-scan is load-bearing beyond the byte-length check."""
 
-    def test_mid_scalar_corruption_same_length_is_caught(self, tmp_path):
-        # A valid dump whose LAST scalar is `status: pending`.
-        good = safe_dump({"tasks": [{"id": "a", "title": "A", "status": "pending"}]})
-        assert "status: pending" in good
+    def test_the_valid_dump_ends_with_a_status_scalar(self):
+        """The premise the corruption is crafted against."""
+        # Arrange
+        last_scalar = "status: pending"
+        # Act
+        dump = GOOD_DUMP
+        # Assert
+        assert last_scalar in dump
 
-        # Corrupt IN PLACE, byte-for-byte same length: replace the first char
-        # of the last scalar's value with a double-quote. This opens a
-        # double-quoted scalar that is never closed before EOF -> the parser
-        # errors mid/at-end-of-scalar (exactly the 2026-06-13 shape) even
-        # though the file is the SAME LENGTH as the valid dump.
-        bad = good.replace("status: pending", 'status: "ending', 1)
-        assert len(bad.encode("utf-8")) == len(good.encode("utf-8"))  # same length
+    def test_the_corruption_is_the_same_byte_length(self):
+        """Same length is the whole point — a length check cannot see it."""
+        # Arrange
+        good_size = len(GOOD_DUMP.encode("utf-8"))
+        # Act
+        bad_size = len(BAD_SAME_LENGTH.encode("utf-8"))
+        # Assert
+        assert bad_size == good_size
+
+    def test_the_corruption_really_differs_from_the_valid_dump(self):
+        """...and it is nonetheless a DIFFERENT file, not a no-op replace."""
+        # Arrange
+        good = GOOD_DUMP
+        # Act
+        bad = BAD_SAME_LENGTH
+        # Assert
         assert bad != good
 
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, bad)
+    def test_a_length_only_check_would_accept_the_corruption(self, tmp_path):
+        """Prove the length check alone is satisfied by the corrupt bytes."""
+        # Arrange
+        tmp = _tmp_holding(tmp_path, BAD_SAME_LENGTH)
+        # Act
+        on_disk_size = os.stat(tmp).st_size
+        # Assert
+        assert on_disk_size == len(BAD_SAME_LENGTH.encode("utf-8"))
 
-        # 1) The byte-length check ALONE would PASS: on-disk size == len(bad).
-        #    (Prove it: a length-only assertion is satisfied.)
-        import os
-
-        assert os.stat(tmp).st_size == len(bad.encode("utf-8"))
-
-        # 2) Yet _verify_dumped_tmp still RAISES — the event-scan catches the
-        #    mid-scalar corruption the length check cannot see.
+    def test_mid_scalar_corruption_same_length_is_caught(self, tmp_path):
+        """Yet the verify still RAISES — the event-scan catches what the
+        length check provably cannot."""
+        # Arrange
+        tmp = _tmp_holding(tmp_path, BAD_SAME_LENGTH)
+        # Act
+        # Assert
         with pytest.raises(StoreWriteVerifyError):
-            _verify_dumped_tmp(tmp, bad)
+            _verify_dumped_tmp(tmp, BAD_SAME_LENGTH)
 
-    def test_the_corruption_really_is_unparseable(self, tmp_path):
-        # Independent confirmation that the crafted `bad` bytes are genuinely
-        # malformed YAML (so the test above isn't passing for a spurious
-        # reason) — a plain safe_load also rejects them.
-        good = safe_dump({"tasks": [{"id": "a", "title": "A", "status": "pending"}]})
-        bad = good.replace("status: pending", 'status: "ending', 1)
+    def test_the_corruption_really_is_unparseable(self):
+        """Independent confirmation that the crafted bytes are genuinely
+        malformed YAML (so the test above is not passing for a spurious
+        reason) — a plain safe_load also rejects them."""
+        # Arrange
+        bad = BAD_SAME_LENGTH
+        # Act
+        # Assert
         with pytest.raises(yaml.YAMLError):
             yaml.load(bad, Loader=_SAFE_LOADER)
 
@@ -135,19 +236,22 @@ class TestTruncatedMidDocument:
     """Prove the written bytes are FULLY reparseable, not merely non-empty."""
 
     def test_truncated_mid_scalar_raises(self, tmp_path):
-        # Classic incident shape: the file ends in the MIDDLE of a quoted
-        # scalar (the canonical file "ended mid-string at line ~2784"). The
-        # opening quote is never closed -> the parser cannot reach StreamEnd.
+        """Classic incident shape: the file ends in the MIDDLE of a quoted
+        scalar (the canonical file "ended mid-string at line ~2784"). The
+        opening quote is never closed -> the parser cannot reach StreamEnd."""
+        # Arrange
         truncated = "tasks:\n- id: a\n  title: 'unterminated scalar that never clo"
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, truncated)
+        tmp = _tmp_holding(tmp_path, truncated)
+        # Act
+        # Assert
         with pytest.raises(StoreWriteVerifyError):
             _verify_dumped_tmp(tmp, truncated)
 
     def test_truncation_of_a_real_dump_raises(self, tmp_path):
-        # Take a REAL valid dump whose last field is a quoted scalar, then cut
-        # it off inside that scalar. Length matches what we pass as `dumped`
-        # (so the length check passes) — the event-scan is what rejects it.
+        """Take a REAL valid dump whose last field is a quoted scalar, then
+        cut it off inside that scalar. Length matches what we pass as
+        `dumped` (so the length check passes) — the event-scan rejects it."""
+        # Arrange
         doc = {
             "tasks": [
                 {
@@ -161,10 +265,10 @@ class TestTruncatedMidDocument:
             ]
         }
         good = safe_dump(doc)
-        # Cut off the trailing portion so we end inside the quoted `note`.
         cut = good[: good.index("forces")]  # ends mid-quoted-scalar
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, cut)
+        tmp = _tmp_holding(tmp_path, cut)
+        # Act
+        # Assert
         with pytest.raises(StoreWriteVerifyError):
             _verify_dumped_tmp(tmp, cut)
 
@@ -172,64 +276,92 @@ class TestTruncatedMidDocument:
 # ---------------------------------------------------------------------------
 # (c) event-scan must REACH stream-end, not stop at the first event
 # ---------------------------------------------------------------------------
+#: A stream whose first several events parse fine (StreamStart, DocStart,
+#: mapping start, the 'tasks' key, sequence start, the first task's scalars)
+#: and which THEN ends mid-way through the second task's quoted scalar. A
+#: first-event-only check would wrongly accept it; only a scan that runs to
+#: StreamEnd rejects it. The three tests below split that one argument:
+#: the early events DO parse, StreamEnd is NEVER reached, and the verify
+#: rejects the file.
+PARTIAL_STREAM = (
+    "tasks:\n"
+    "- id: a\n"
+    "  title: A\n"
+    "  status: pending\n"
+    "- id: b\n"
+    "  title: 'unterminated for b"  # EOF mid-quoted-scalar
+)
+
+
 class TestReachesStreamEnd:
     def test_large_valid_doc_accepted_after_full_consumption(self, tmp_path):
-        # A large multi-item doc: it is accepted (no raise) ONLY because the
-        # scan consumes every event through StreamEndEvent. If the loop stopped
-        # at the first event this doc could not be distinguished from one that
-        # truncates after item 1 (see next test).
+        """A large multi-item doc is accepted (no raise) ONLY because the scan
+        consumes every event through StreamEndEvent. If the loop stopped at
+        the first event this doc could not be distinguished from one that
+        truncates after item 1 (see the tests below)."""
+        # Arrange
         dumped = safe_dump(_valid_doc(2000))
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, dumped)
-        assert _verify_dumped_tmp(tmp, dumped) is None
+        tmp = _tmp_holding(tmp_path, dumped)
+        # Act
+        out = _verify_dumped_tmp(tmp, dumped)
+        # Assert
+        assert out is None
 
-    def test_first_events_ok_then_eof_mid_stream_raises(self, tmp_path):
-        # The first several events parse fine (StreamStart, DocStart, mapping
-        # start, the 'tasks' key, sequence start, the first task's scalars)
-        # and THEN the stream ends mid-way through the second task's quoted
-        # scalar. A first-event-only check would wrongly accept this; the
-        # to-StreamEnd scan RAISES.
-        partial = (
-            "tasks:\n"
-            "- id: a\n"
-            "  title: A\n"
-            "  status: pending\n"
-            "- id: b\n"
-            "  title: 'unterminated for b"  # EOF mid-quoted-scalar
-        )
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, partial)
+    def test_the_partial_stream_parses_several_events_first(self, tmp_path):
+        """Proves this is a "parses a few events then hits EOF" case, not an
+        immediate syntax error at event 0."""
+        # Arrange
+        tmp = _tmp_holding(tmp_path, PARTIAL_STREAM)
+        # Act
+        events = _events_before_failure(tmp)
+        # Assert — got past the stream/doc/mapping start events.
+        assert len(events) >= 4
 
-        # Sanity: the early events DO parse before the failure point — proving
-        # this is a "parses a few events then hits EOF" case, not an immediate
-        # syntax error at event 0.
-        events = []
-        with pytest.raises(yaml.YAMLError):
-            with tmp.open(encoding="utf-8") as fh:
-                for ev in yaml.parse(fh, Loader=_SAFE_LOADER):
-                    events.append(ev)
-        assert len(events) >= 4  # got past the stream/doc/mapping start events
+    def test_the_partial_stream_never_reaches_stream_end(self, tmp_path):
+        # Arrange
+        tmp = _tmp_holding(tmp_path, PARTIAL_STREAM)
+        # Act
+        events = _events_before_failure(tmp)
+        # Assert
         assert not any(isinstance(e, yaml.events.StreamEndEvent) for e in events)
 
-        # And the helper rejects it.
+    def test_first_events_ok_then_eof_mid_stream_raises(self, tmp_path):
+        """...and so the to-StreamEnd scan rejects the file."""
+        # Arrange
+        tmp = _tmp_holding(tmp_path, PARTIAL_STREAM)
+        # Act
+        # Assert
         with pytest.raises(StoreWriteVerifyError):
-            _verify_dumped_tmp(tmp, partial)
+            _verify_dumped_tmp(tmp, PARTIAL_STREAM)
 
 
 # ---------------------------------------------------------------------------
 # Byte-length short-write guard
 # ---------------------------------------------------------------------------
 class TestByteLengthGuard:
+    """The on-disk file is SHORTER than the string we intended to write (a
+    short / partial / disk-full write). The length check alone rejects it,
+    before the event-scan even runs."""
+
     def test_short_write_raises_on_length_mismatch(self, tmp_path):
-        # The on-disk file is SHORTER than the string we intended to write
-        # (short / partial / disk-full write). The length check alone rejects
-        # it before the event-scan even runs.
+        # Arrange
         dumped = safe_dump(_valid_doc(3))
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, dumped[: len(dumped) // 2])  # only half the bytes landed
-        with pytest.raises(StoreWriteVerifyError) as exc:
+        tmp = _tmp_holding(tmp_path, dumped[: len(dumped) // 2])
+        # Act
+        # Assert
+        with pytest.raises(StoreWriteVerifyError):
             _verify_dumped_tmp(tmp, dumped)
-        assert "size" in str(exc.value)
+
+    def test_short_write_error_names_the_size_mismatch(self, tmp_path):
+        """The message must say WHICH check refused, or a 3am reader cannot
+        tell a short write from a corrupt one."""
+        # Arrange
+        dumped = safe_dump(_valid_doc(3))
+        tmp = _tmp_holding(tmp_path, dumped[: len(dumped) // 2])
+        # Act
+        message = _verify_error_message(tmp, dumped)
+        # Assert
+        assert "size" in message
 
 
 # ---------------------------------------------------------------------------
@@ -238,17 +370,17 @@ class TestByteLengthGuard:
 # ---------------------------------------------------------------------------
 class TestPerfShape:
     def test_event_scan_verify_is_faster_than_full_safe_load(self, tmp_path):
-        # The whole point of Fix B2: prove parseability WITHOUT constructing
-        # the document's Python object graph. On a synthetic realistic-shape
-        # store the event-scan is measured ~2.4x faster than the old full
-        # ``safe_load`` construct-reparse (see PR body for numbers). We assert
-        # the RELATIVE property — event-scan strictly faster than the old
-        # approach — rather than an absolute wall-clock ceiling, so the test
-        # evidences the improvement without being flaky on loaded CI.
+        """The whole point of Fix B2: prove parseability WITHOUT constructing
+        the document's Python object graph. On a synthetic realistic-shape
+        store the event-scan measured ~2.4x faster than the old full
+        ``safe_load`` construct-reparse (see PR body for numbers). We assert
+        the RELATIVE property — event-scan strictly faster than the old
+        approach — rather than an absolute wall-clock ceiling, so the test
+        evidences the improvement without being flaky on loaded CI."""
         import io
 
-        # Realistic card shape (notes + comments) so the construct cost the old
-        # path paid is represented, not a degenerate all-tiny-scalars doc.
+        # Arrange — realistic card shape (notes + comments) so the construct
+        # cost the old path paid is represented, not a degenerate doc.
         doc = {
             "tasks": [
                 {
@@ -257,7 +389,11 @@ class TestPerfShape:
                     "status": "pending",
                     "note": "lorem ipsum dolor sit amet " * 12,
                     "comments": [
-                        {"text": "a comment here " * 4, "author": "x", "ts": "2026-01-01"}
+                        {
+                            "text": "a comment here " * 4,
+                            "author": "x",
+                            "ts": "2026-01-01",
+                        }
                         for _ in range(3)
                     ],
                 }
@@ -266,9 +402,8 @@ class TestPerfShape:
             "users": {"alice": {"role": "dev"}},
         }
         dumped = safe_dump(doc)
-        tmp = tmp_path / ".tasks.yaml.tmp"
-        _write(tmp, dumped)
-
+        tmp = _tmp_holding(tmp_path, dumped)
+        # Act
         # OLD approach: full safe_load construct-reparse (what we replaced).
         t0 = time.perf_counter()
         yaml.load(io.StringIO(dumped), Loader=_SAFE_LOADER)
@@ -278,7 +413,6 @@ class TestPerfShape:
         t0 = time.perf_counter()
         _verify_dumped_tmp(tmp, dumped)
         t_event_scan = time.perf_counter() - t0
-
-        # The event-scan must be strictly cheaper than the full construct it
-        # supersedes (measured ~2.4x; assert only < to stay non-flaky).
+        # Assert — strictly cheaper than the full construct it supersedes
+        # (measured ~2.4x; assert only `<` to stay non-flaky on loaded CI).
         assert t_event_scan < t_full_load
