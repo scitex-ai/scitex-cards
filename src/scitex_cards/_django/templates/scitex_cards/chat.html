@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — scitex-todo v{{ scitex_cards_version }}</title>
+<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -143,7 +143,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 <header>
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
-  <span class="ver">scitex-todo v{{ scitex_cards_version }}</span>
+  {% comment %}
+  DISPLAY name only. The package renamed to scitex-cards long ago and the
+  operator still read "scitex-todo" here, which is why he asked how long the
+  migration was going to run. Note this is NOT a blanket rename: the
+  localStorage keys ("scitex-todo:layout", ":hidden", ":show-done", …) stay as
+  they are, because renaming a storage key silently discards the saved layout
+  and hidden-card set on the operator's next load. Those need a
+  read-old-write-new migration, not a find-and-replace.
+  {% endcomment %}
+  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
   <a class="board-link" href="/">&larr; board</a>
 </header>
 <div id="error-bar"></div>
