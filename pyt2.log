@@ -1,0 +1,42 @@
+...............                                                          [100%]
+=============================== warnings summary ===============================
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_users_survives_add_task
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_add_task_still_appends_the_new_row
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_users_survives_comment_task
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_comment_task_still_appends_the_comment
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_doc_unlocked_preserves_the_users_section
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_doc_unlocked_writes_the_mutated_tasks
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_tasks_unlocked_wrapper_writes_the_new_tasks
+tests/scitex_cards/test__store_doc_preservation.py::TestReadUnderLock::test_on_disk_users_at_calltime_survives_locked_crud
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_store_write.py:241: UserWarning: [scitex-todo] TOLERATED (read-side): <save_tasks>: task 'a': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(tasks, source="<save_tasks>")  # hook-bypass: line-limit
+
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_users_survives_add_task
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_model.py:121: UserWarning: [scitex-todo] TOLERATED (read-side): <sqlite:/uvwork/tmp/pytest-of-agent/pytest-453/store0/tasks.yaml>: task 'a': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(
+
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_add_task_still_appends_the_new_row
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_model.py:121: UserWarning: [scitex-todo] TOLERATED (read-side): <sqlite:/uvwork/tmp/pytest-of-agent/pytest-453/store1/tasks.yaml>: task 'a': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(
+
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_users_survives_delete_task
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_delete_task_still_removes_the_row
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_doc_unlocked_preserves_the_users_section
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_doc_unlocked_writes_the_mutated_tasks
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_store_write.py:241: UserWarning: [scitex-todo] TOLERATED (read-side): <save_tasks>: task 'b': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(tasks, source="<save_tasks>")  # hook-bypass: line-limit
+
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_users_survives_comment_task
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_model.py:121: UserWarning: [scitex-todo] TOLERATED (read-side): <sqlite:/uvwork/tmp/pytest-of-agent/pytest-453/store6/tasks.yaml>: task 'a': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(
+
+tests/scitex_cards/test__store_doc_preservation.py::TestSectionPreservationAcrossCRUD::test_comment_task_still_appends_the_comment
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_model.py:121: UserWarning: [scitex-todo] TOLERATED (read-side): <sqlite:/uvwork/tmp/pytest-of-agent/pytest-453/store7/tasks.yaml>: task 'a': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(
+
+tests/scitex_cards/test__store_doc_preservation.py::TestDocPrimitives::test_save_tasks_unlocked_wrapper_writes_the_new_tasks
+  /home/ywatanabe/proj/scitex-cards/.worktrees/wf_ddd0e1f5-88c-4/src/scitex_cards/_store_write.py:241: UserWarning: [scitex-todo] TOLERATED (read-side): <save_tasks>: task 'c': status 'pending' was abolished 2026-07-10 — a card must carry a decision. Choose: 'in_progress' if you are working it, 'blocked' with a blocker naming the gate, or 'deferred' if it can wait.
+    _validate_tasks(tasks, source="<save_tasks>")  # hook-bypass: line-limit
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+15 passed, 1 deselected, 17 warnings in 100.12s (0:01:40)
