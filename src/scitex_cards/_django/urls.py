@@ -71,6 +71,15 @@ urlpatterns = [
     # Registered BEFORE the catch-all `<path:endpoint>` route so the
     # slashed paths are matched cleanly instead of 404ing in api_dispatch.
     path("chat", views.chat_page, name="chat_page"),
+    # ...and the SLASHED spelling, exactly as `legacy/` and `board-v3/` do above.
+    # Without it `/chat/` matches neither `chat` nor `chat/<card_id>` (a str
+    # converter will not match an empty segment), falls through to the catch-all
+    # and answers `{"error": "Unknown endpoint: chat/"}`. The operator hit that
+    # on 2026-07-24 the first time they opened the page: a trailing slash is the
+    # most natural thing in the world to type, and it 404'd a page that exists.
+    # `chat_page` already strips BOTH aliases off request.path when deriving the
+    # include root, so the slashed form was mount-aware before it was reachable.
+    path("chat/", views.chat_page, name="chat_page_slash"),
     path("dm/threads", dm_threads_view, name="dm_threads"),
     path("dm/thread/<str:peer>", dm_thread_view, name="dm_thread"),
     # Hook-consumer endpoints (lead a2a `6fff33d6` + `fbffb879`,

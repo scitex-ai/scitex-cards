@@ -85,11 +85,18 @@
     return node;
   }
 
+  /* Stamp on the viewer's own clock. The formatter lives in the DOM-free
+   * ChatDiff module so node can exercise the REAL file — chat.js touches the
+   * DOM and cannot be required under the JS test harness, so a pure function
+   * kept here is a pure function nothing tests.
+   *
+   * What was here before sliced the ISO string and called the result
+   * "local-enough": it was not local at all, it was UTC digits under a local
+   * label. That is how a 20:39Z stamp read as an evening message to an operator
+   * whose clock said 05:39 the next morning.
+   */
   function shortTs(ts) {
-    // "2026-07-07T09:15:02Z" -> "07-07 09:15" (local-enough for the floor).
-    if (!ts) return "";
-    var m = String(ts).match(/^\d{4}-(\d{2}-\d{2})T(\d{2}:\d{2})/);
-    return m ? m[1] + " " + m[2] : String(ts);
+    return diff.shortTs(ts);
   }
 
   function getJSON(url) {

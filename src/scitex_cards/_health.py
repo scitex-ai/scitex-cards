@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import _inbox
+from ._health_channel_reach import check_channel_reaches_session
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -435,6 +436,15 @@ def health(
             lambda: _check_channel_drain(soft_agent, store, unseen_threshold),
         ),
         _run_check("channel_capable", _check_channel_capable),
+        # Does the far end ACCEPT what we send? channel_capable (can we push?)
+        # and channel_drain (is the inbox consumed?) were both GREEN through the
+        # 2026-07-24 outage in which the whole fleet was deaf to the board: the
+        # scitex-todo -> scitex-cards rename left agent launch lines allowlisting
+        # the OLD server name, so every push was discarded on arrival while the
+        # drain kept marking records seen. Delivery here is fire-and-forget, so
+        # a name the client does not know does not delay a notification, it
+        # destroys it — silently. This is the only check that asks the far end.
+        _run_check("channel_reaches_session", check_channel_reaches_session),
         # Is our own reported version actually TRUE? An orphaned/stale .dist-info
         # reports a version that outlived the code it describes — and the fleet's
         # drift detector reads exactly that string, so a fossil silently turns the

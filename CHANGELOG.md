@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+## [0.17.7] - 2026-07-24
+
+Delivery that admits when it is not working, and a chat page that is readable.
+
+### Added
+
+- **`channel_reaches_session` health check** (#566). The client surfaces a
+  `notifications/claude/channel` push only from a server named on its launch
+  line (`--dangerously-load-development-channels server:<name>`), matched
+  against the key that server is registered under in the MCP config. A name the
+  client does not know is discarded on arrival — and because a channel
+  notification is fire-and-forget, the drain marks the record `seen` whether or
+  not the push was accepted, so a mismatch does not delay delivery, it destroys
+  it. Measured 2026-07-24: the scitex-todo → scitex-cards rename re-registered
+  this server as `scitex-cards` while agent launch lines still allowlisted the
+  pre-rename `scitex-todo`, and the fleet had been deaf to the board ever since.
+  A self-test notification was consumed and marked seen within six seconds and
+  never reached any session. `channel_capable` and `channel_drain` were green
+  throughout; neither asks whether the far end accepts what we send. The check
+  fails loudly, names both the registered and the allowlisted names, and prints
+  the exact flag to add plus the fact that a restart is required. It identifies
+  our server by program token, never by a substring of the command line — a
+  substring match claims sac's `sac mcp channel --name scitex-cards` entry as
+  ours and reports the channel healthy.
+
+### Fixed
+
+- **The chat thread renders in a readable centre column** (#567). Messages
+  spanned the full pane (measured at 1820px), putting a bubble at ~1420px. The
+  thread is now capped at 860px and centred, the compose box is capped and
+  centred to match, and the input starts at three rows instead of one.
+- **`/chat/` serves the DM page instead of 404ing** (#568). The page was
+  registered only as `chat`; `/chat/` matched neither that nor
+  `chat/<str:card_id>` (a str converter will not match an empty segment), fell
+  through to the catch-all and answered `{"error": "Unknown endpoint: chat/"}`.
+  Now dual-registered exactly as `legacy/` and `board-v3/` already were.
+- **Chat timestamps render on the viewer's clock** (#569). `shortTs`
+  string-sliced the ISO stamp and printed UTC digits under a local label, so a
+  message stored at `20:39Z` displayed as "20:39" to a reader whose clock said
+  05:39 the next morning. Now parsed and rendered at the viewer's own offset, so
+  the date rolls correctly; a stamp carrying no zone is pinned to UTC before
+  parsing (the store writes UTC), and an unparseable value is shown verbatim
+  rather than as a confidently wrong time.
+
 ## [0.17.6] - 2026-07-24
 
 Overdue-alarm correctness and store-export integrity, plus the hub-mount
