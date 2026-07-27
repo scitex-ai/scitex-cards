@@ -27,6 +27,11 @@ import pytest
 
 from scitex_cards._health import _verify_db_store
 
+_ROOT_BYPASSES_PERMISSIONS = pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root bypasses permission bits, so the probe cannot fail",
+)
+
 
 def _make_store(path):
     """A real, schema-complete SQLite store with one countable row."""
@@ -40,73 +45,102 @@ def _make_store(path):
     return path
 
 
-def test_a_writable_store_is_reported_writable(tmp_path):
-    # ARRANGE — the ordinary healthy case.
-    db = _make_store(tmp_path / "cards.db")
-
-    # ACT
-    result = _verify_db_store(db)
-
-    # ASSERT
-    assert result["ok"] is True
-    assert "writable" in result["detail"]
+@pytest.fixture
+def writable_store(tmp_path):
+    """The ordinary healthy case: a store this process can write."""
+    return _make_store(tmp_path / "cards.db")
 
 
-@pytest.mark.skipif(
-    os.geteuid() == 0, reason="root bypasses permission bits, so the probe cannot fail"
-)
-def test_a_read_only_store_is_reported_not_writable(tmp_path):
-    # ARRANGE — the store is readable and parses, but cannot be written.
+@pytest.fixture
+def read_only_store(tmp_path):
+    """A store that reads and parses fine but cannot be written."""
     db = _make_store(tmp_path / "cards.db")
     db.chmod(0o444)
-
-    # ACT
-    result = _verify_db_store(db)
-
-    # ASSERT — the whole point: this must FAIL, not claim "writable".
-    assert result["ok"] is False
+    return db
 
 
-@pytest.mark.skipif(
-    os.geteuid() == 0, reason="root bypasses permission bits, so the probe cannot fail"
-)
-def test_a_read_only_store_says_what_to_do_about_it(tmp_path):
-    # ARRANGE
-    db = _make_store(tmp_path / "cards.db")
-    db.chmod(0o444)
+@pytest.fixture
+def store_in_read_only_dir(tmp_path):
+    """A WRITABLE file inside a read-only directory.
 
-    # ACT
-    result = _verify_db_store(db)
-
-    # ASSERT — an error that only states what broke is half-written.
-    assert "not writable" in result["detail"].lower()
-    assert result["hint"] and str(db) in result["hint"]
-
-
-@pytest.mark.skipif(
-    os.geteuid() == 0, reason="root bypasses permission bits, so the probe cannot fail"
-)
-def test_a_writable_store_in_a_read_only_directory_is_reported_not_writable(tmp_path):
-    """SQLite writes `-wal` / `-journal` SIBLINGS, so the directory matters.
-
-    A writable file in a read-only directory still fails every write — the
+    SQLite creates `-wal` / `-journal` SIBLINGS, so the directory matters: a
     file-permission check alone would report a healthy store that cannot
     actually take a card.
     """
-    # ARRANGE
     store_dir = tmp_path / "cards"
     store_dir.mkdir()
     db = _make_store(store_dir / "cards.db")
     store_dir.chmod(0o555)
-    try:
-        # ACT
-        result = _verify_db_store(db)
+    yield db
+    # Restore so tmp_path cleanup can remove the tree.
+    store_dir.chmod(0o755)
 
-        # ASSERT
-        assert result["ok"] is False
-        assert str(store_dir) in result["detail"] or str(store_dir) in (
-            result["hint"] or ""
-        )
-    finally:
-        # Restore so tmp_path cleanup can remove the tree.
-        store_dir.chmod(0o755)
+
+def test_a_writable_store_passes_the_check(writable_store):
+    # Arrange — a store this process can write.
+    # Act
+    result = _verify_db_store(writable_store)
+
+    # Assert
+    assert result["ok"] is True
+
+
+def test_a_writable_store_is_described_as_writable(writable_store):
+    # Arrange — a store this process can write.
+    # Act
+    result = _verify_db_store(writable_store)
+
+    # Assert
+    assert "writable" in result["detail"]
+
+
+@_ROOT_BYPASSES_PERMISSIONS
+def test_a_read_only_store_fails_the_check(read_only_store):
+    # Arrange — readable and parseable, but unwritable.
+    # Act
+    result = _verify_db_store(read_only_store)
+
+    # Assert — the whole point: this must FAIL, not claim "writable".
+    assert result["ok"] is False
+
+
+@_ROOT_BYPASSES_PERMISSIONS
+def test_a_read_only_store_is_described_as_not_writable(read_only_store):
+    # Arrange — readable and parseable, but unwritable.
+    # Act
+    result = _verify_db_store(read_only_store)
+
+    # Assert
+    assert "not writable" in result["detail"].lower()
+
+
+@_ROOT_BYPASSES_PERMISSIONS
+def test_a_read_only_store_hint_names_the_offending_path(read_only_store):
+    # Arrange — readable and parseable, but unwritable.
+    # Act
+    result = _verify_db_store(read_only_store)
+
+    # Assert — an error that only states what broke is half-written.
+    assert str(read_only_store) in (result["hint"] or "")
+
+
+@_ROOT_BYPASSES_PERMISSIONS
+def test_a_store_in_a_read_only_directory_fails_the_check(store_in_read_only_dir):
+    # Arrange — writable file, unwritable directory: writes still fail.
+    # Act
+    result = _verify_db_store(store_in_read_only_dir)
+
+    # Assert
+    assert result["ok"] is False
+
+
+@_ROOT_BYPASSES_PERMISSIONS
+def test_a_store_in_a_read_only_directory_names_the_directory(store_in_read_only_dir):
+    # Arrange — writable file, unwritable directory: writes still fail.
+    store_dir = store_in_read_only_dir.parent
+
+    # Act
+    result = _verify_db_store(store_in_read_only_dir)
+
+    # Assert
+    assert str(store_dir) in f"{result['detail']}{result['hint'] or ''}"
