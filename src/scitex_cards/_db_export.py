@@ -52,9 +52,10 @@ def _record(row, table: str) -> dict[str, Any]:
     if blob is None:
         raise ExportRefused(
             f"{table} row {row['id']!r} has no record_json payload — this DB "
-            "predates schema v3 or was never re-imported. Run "
-            "`scitex-cards db import` first; exporting stripped "
-            "records is worse than exporting none."
+            "predates schema v3's payload columns and cannot be back-filled "
+            "(the importer was removed with the YAML tier); use a database "
+            "written by a current version. Exporting stripped records is worse "
+            "than exporting none."
         )
     rec = card_from_payload(blob)
     for col in _OVERLAYS[table]:
@@ -77,8 +78,9 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
         ).fetchall():
             if r["card_json"] is None:
                 raise ExportRefused(
-                    f"task {r['id']!r} has no card_json payload — run "
-                    "`scitex-cards db import` first."
+                    f"task {r['id']!r} has no card_json payload — this DB "
+                    "predates the payload columns; use one written by a "
+                    "current version."
                 )
             tasks.append(card_from_payload(r["card_json"]))
 

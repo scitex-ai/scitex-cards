@@ -240,8 +240,9 @@ def _read_canonical_db_or_raise() -> dict:
             f"canonical store {db_path} does not exist. REFUSING to continue: "
             f"the exporter answers a missing database with an empty document, "
             f"and this value is written back as the WHOLE store — every card "
-            f"replaced by nothing. Point $SCITEX_CARDS_DB at the real database, "
-            f"or bootstrap one with `scitex-cards db import`."
+            f"replaced by nothing. Point $SCITEX_CARDS_DB at the real database "
+            f"(there is no CLI verb that bootstraps one — a database is written "
+            f"by normal operation once the pointer is correct)."
         )
 
     # OWNERSHIP IS CHECKED HERE TOO, NOT ONLY ON WRITE. This is a read-MODIFY-
@@ -298,8 +299,8 @@ def _read_canonical_db_or_raise() -> dict:
             f"{exported} cards but the tasks table holds {in_table}. REFUSING "
             f"to continue — this document is written back as the whole store, "
             f"so the {in_table - exported} missing cards would be DELETED. "
-            f"Verify with `scitex-cards db verify`; re-bootstrap with "
-            f"`scitex-cards db import`."
+            f"Verify with `scitex-cards db verify`, then point $SCITEX_CARDS_DB "
+            f"at a complete database for this store."
         )
     return doc
 

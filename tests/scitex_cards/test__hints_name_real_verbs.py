@@ -46,6 +46,15 @@ CONTROL_VERBS = ("list-tasks", "add", "update", "health")
 #: Program names our hints may print. Both are shipped console scripts.
 _PROGRAMS = ("scitex-cards", "scitex-todo")
 
+#: A single clean command token: lowercase letters, digits, hyphens, starting
+#: with a letter. Every real CLI verb matches (``list-tasks``, ``db``,
+#: ``install-unit``, ``set-min-client-version``). The verb path stops at the
+#: first word that does NOT — an option, a ``[--flag]`` / ``<id>`` / ``$VAR`` /
+#: ``{...}`` placeholder, an f-string hole (``\x00``), or an inline alternation
+#: (``push|done``, ``a / b``). A naive "starts with -/</$/{" test let ``[…]``
+#: notation and slash-separated verb lists through as if they were verb tokens.
+_CLEAN_VERB_TOKEN = re.compile(r"[a-z][a-z0-9-]*\Z")
+
 
 def _all_verbs() -> set[str]:
     """Every command path the CLI actually exposes, e.g. ``{"db verify", ...}``."""
@@ -136,7 +145,7 @@ def _hinted_verbs() -> dict[str, list[str]]:
                     continue
                 verb: list[str] = []
                 for word in words[1:]:
-                    if word.startswith(("-", "<", "$", "{")) or "\x00" in word:
+                    if not _CLEAN_VERB_TOKEN.match(word):
                         break
                     verb.append(word)
                 if verb:
