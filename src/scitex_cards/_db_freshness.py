@@ -128,8 +128,7 @@ def check_fresh(
         return False, (
             f"this database belongs to a DIFFERENT store ({stamped!r}) than the "
             f"one being read ({canonical_path(store_path)!r}). Point "
-            "$SCITEX_CARDS_DB at this store's own database, or rebuild it: "
-            "`scitex-cards db import`."
+            "$SCITEX_CARDS_DB at this store's own database."
         )
     return True, None
 
