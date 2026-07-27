@@ -77,7 +77,7 @@ scitex-todo add <you>-smoke-$(date +%s) \
     '[P2] smoke: confirm I can write to the store' \
     --scope agent:<you> \
     --assignee <you> \
-    --status pending
+    --status deferred
 
 # 3. List your slice + confirm the row is there.
 scitex-todo list-tasks --scope agent:<you> --json | jq '.[].id'
@@ -178,7 +178,7 @@ names match too.
 scitex-todo add \
   scitex-todo-fleet-rollout \
   '[P1] Fleet rollout of scitex-todo skill across agents' \
-  --status pending \
+  --status deferred \
   --scope agent:scitex-todo \
   --assignee scitex-todo \
   --priority 10 \
@@ -278,11 +278,16 @@ MCP: `complete_task`. Python: `scitex_cards.complete_task`.
 
 ### RE-OPEN (undo a done / resolve)
 
-There's no `reopen` CLI verb today. Use `update --status pending`:
+There's no `reopen` CLI verb today. Re-open by setting a status that
+carries a decision — `deferred` if it can wait, `in_progress` if you are
+picking it back up:
 
 ```bash
-scitex-todo update scitex-todo-fleet-rollout --status pending
+scitex-todo update scitex-todo-fleet-rollout --status deferred
 ```
+
+The MCP `reopen_task` verb is not equivalent: it is the Resolve→Undo
+partner and flips `done` back to `blocked` / `blocker=operator-decision`.
 
 The web board's `/reopen` HTTP endpoint (PR #61) is operator-facing;
 the CLI parity is on the gap list.

@@ -172,7 +172,7 @@ def db_path_cmd(db_path: str | None) -> None:
 @db_group.command(
     "verify",
     help=(
-        "Open the shadow DB and verify its schema health.\n\n"
+        "Open the card database and verify its schema health.\n\n"
         "Checks PRAGMA user_version, the schema_meta version, presence of "
         "every expected table (with row counts), and PRAGMA quick_check. "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"

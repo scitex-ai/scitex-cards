@@ -50,7 +50,7 @@ store, NOT Claude's per-session list.
 Use instead:
   scitex-cards add <id> --title "..." --assignee <you>
   scitex-cards update <id> --status in_progress
-  scitex-cards list-tasks --assignee <you> --status pending
+  scitex-cards list-tasks --assignee <you> --status in_progress
 
 Or use the scitex-cards MCP server (already in .mcp.json on every
 container — see skill \`scitex-cards-usage\`).

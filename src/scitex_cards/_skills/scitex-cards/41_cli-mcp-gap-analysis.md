@@ -95,7 +95,7 @@ Missing filters:
 | `--blocker`         | Match `blocker` exactly; `__none` for "no blocker".                                |
 | `--kind`            | Match `kind` exactly; absent ⇒ "task" for filter purposes. Now includes `status` (PR #146) for non-actionable status-tracking rows (q-* quality flags etc.). |
 | `--blocking-me`     | Predicate: `status == "blocked" AND blocker == "operator-decision"` (BLOCKING YOU). |
-| `--status` (repeat) | Multi-status filter (e.g. `--status pending --status in_progress`).                |
+| `--status` (repeat) | Multi-status filter (e.g. `--status deferred --status in_progress`).               |
 | `--id-prefix`       | Substring/prefix match on `id` (cheap "find my project's rows").                   |
 | `--agent`           | Forward-compat alias for `--assignee` once the dataclass migration completes. NOT a gap today — `--assignee` is already primary + works (lead empirical 2026-06-07). |
 

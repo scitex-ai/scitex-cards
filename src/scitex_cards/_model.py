@@ -35,7 +35,11 @@ def load_tasks(path: str | Path) -> list[dict]:
     Parameters
     ----------
     path : str or pathlib.Path
-        Names which logical store is addressed; used in error text only.
+        The logical store identity. ACCEPTED AND IGNORED: the database is
+        resolved from the environment, and since the validation label started
+        naming the database actually read, this value reaches no error text
+        either. It survives as the signature every CRUD verb passes through —
+        verified 2026-07-22 that nothing else consumes it.
 
     Returns
     -------
@@ -74,7 +78,11 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
     Parameters
     ----------
     path : str or pathlib.Path
-        Names which logical store is addressed; used in error text only.
+        The logical store identity. ACCEPTED AND IGNORED: the database is
+        resolved from the environment, and since the validation label started
+        naming the database actually read, this value reaches no error text
+        either. It survives as the signature every CRUD verb passes through —
+        verified 2026-07-22 that nothing else consumes it.
     validate : bool, default False
         When True, run :func:`_validate_tasks` on ``data.get("tasks")``
         before returning (the read-time gate :func:`load_tasks` applies).
@@ -119,9 +127,18 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
 
     data = _read_canonical_db_or_raise()
     if validate:
+        # NAME THE DATABASE THAT WAS ACTUALLY READ, not ``path``. ``path`` is
+        # the caller's logical store name and is still a ``tasks.yaml`` in most
+        # call sites, so labelling it ``<sqlite:...>`` produced
+        # ``<sqlite:/home/agent/.scitex/cards/tasks.yaml>`` — a file that does
+        # not exist, welded to the identifier of the backend that did not read
+        # it. Every validation warning carried it, so anyone debugging a
+        # resolution problem was handed a path to chase that was never opened.
+        from ._db import resolve_db_path
+
         _validate_tasks(
             data.get("tasks"),
-            source=f"<sqlite:{path}>",
+            source=f"<sqlite:{resolve_db_path(None)}>",
             strict=False,
         )
     return data

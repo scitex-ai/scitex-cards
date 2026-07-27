@@ -41,7 +41,7 @@ The stderr message names the scitex-todo CLI verbs:
 ```
 scitex-todo add <id> --title "..." --assignee <you>
 scitex-todo update <id> --status in_progress
-scitex-todo list-tasks --assignee <you> --status pending
+scitex-todo list-tasks --assignee <you> --status in_progress
 ```
 
 …plus a pointer to the MCP wire (`add_task` / `update_task` /

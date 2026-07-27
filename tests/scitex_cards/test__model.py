@@ -1373,4 +1373,34 @@ def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
     assert reloaded["kind"] == "status"
 
 
+def test_validation_warning_names_the_database_not_a_yaml_path(tmp_path):
+    """The store label must name the file that was actually READ.
+
+    ``load_tasks``' path argument is a logical store identity and is still a
+    ``tasks.yaml`` at most call sites, while the data comes from SQLite. The
+    label used to interpolate that argument under the ``sqlite:`` scheme, so
+    every validation warning read ``<sqlite:/…/tasks.yaml>`` — the backend
+    that did not read it, welded to a file that does not exist. Anyone
+    debugging a store-resolution problem was handed a path to chase that was
+    never opened; it did exactly that during the 0.17.5 fleet verification.
+    """
+    # Arrange — a card whose status trips the read-side validator
+    store = _write(
+        tmp_path,
+        "tasks:\n  - {id: t, title: 't', status: pending}\n",
+    )
+    # Act
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        load_tasks(store)
+    labels = [
+        str(w.message).split(">")[0] for w in caught if "<sqlite:" in str(w.message)
+    ]
+    # Assert
+    assert labels, "expected a validation warning carrying the store label"
+    for label in labels:
+        assert label.endswith(".db"), f"label names a non-database file: {label}"
+        assert "tasks.yaml" not in label, f"label still names YAML: {label}"
+
+
 # EOF

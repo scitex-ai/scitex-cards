@@ -163,7 +163,7 @@ def emit_event_cmd(
         ),
         examples=(
             ("{prog} find-card --repo owner/repo", ""),
-            ("{prog} find-card --repo owner/repo --status pending", ""),
+            ("{prog} find-card --repo owner/repo --status in_progress", ""),
         ),
     ),
 )

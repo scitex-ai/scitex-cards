@@ -29,10 +29,10 @@ scitex-todo list-tasks --assignee <your-agent-id> --json
 scitex-todo list-tasks --project <package> --json
 
 # Filter to actionable only:
-scitex-todo list-tasks --project <package> --status pending --status in_progress --json
+scitex-todo list-tasks --project <package> --status deferred --status in_progress --json
 
-# All my pending cards (compact human view):
-scitex-todo list-tasks --assignee <your-agent-id> --status pending
+# All my open cards (compact human view):
+scitex-todo list-tasks --assignee <your-agent-id> --status in_progress --status blocked --status deferred
 ```
 
 Useful flags:
@@ -155,8 +155,8 @@ A future PR will wrap the generator in a `scitex-todo list-stale [--days 14]` CL
 ## 7. Quick reference card (for the lead's broadcast)
 
 ```
-LIST MY CARDS         scitex-todo list-tasks --assignee <me> --status pending
-LIST BY PACKAGE       scitex-todo list-tasks --project <pkg> --status pending
+LIST MY CARDS         scitex-todo list-tasks --assignee <me> --status in_progress
+LIST BY PACKAGE       scitex-todo list-tasks --project <pkg> --status deferred
 MARK DONE + PR        scitex-todo update <id> --status done --pr-url <url>
 CLOSE WITH REASON     scitex-todo close <id> --reason "<short why>"
 ADD COMMENT           scitex-todo comment <id> "<text>"
