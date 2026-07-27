@@ -98,6 +98,39 @@ def _verify_db_store(path: Path) -> dict[str, Any]:
                 f"{type(exc).__name__}: {exc}"
             ),
         }
+    # WRITABILITY IS MEASURED, NEVER ASSERTED. This probe opens the database
+    # `mode=ro`, so it learns nothing about writing — yet the detail string below
+    # claims "writable". That word used to be a hardcoded literal, so it could
+    # never be false: "a gate that cannot fail is not a gate ... the same as
+    # deleting it, except worse: the config still lists it and everyone believes
+    # it is working" (constitution §2). It is exactly how the 2026-07-28
+    # create-path outage stayed invisible — `add` refused every card while health
+    # cheerfully reported the same store readable AND writable. The sibling
+    # file-store branch already measures this with `os.access`; this branch now
+    # matches it. SQLite also writes `-wal` / `-journal` SIBLINGS, so the
+    # DIRECTORY must be writable too: a writable file in a read-only directory
+    # still fails every write.
+    if not os.access(path, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is NOT writable "
+                f"(SQLite, {n} cards, readable) — every card write will fail"
+            ),
+            "hint": f"fix permissions so {path} is writable (e.g. chmod u+w {path})",
+        }
+    if not os.access(path.parent, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is readable but its directory "
+                f"{path.parent} is NOT writable (SQLite, {n} cards) — SQLite "
+                f"cannot create the -wal/-journal siblings a write needs"
+            ),
+            "hint": (
+                f"make the store's directory writable (e.g. chmod u+w {path.parent})"
+            ),
+        }
     return {
         "ok": True,
         "detail": f"canonical store {path} (SQLite, {n} cards, readable, writable)",
