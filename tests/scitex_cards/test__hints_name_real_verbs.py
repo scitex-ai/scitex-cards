@@ -155,20 +155,23 @@ def _hinted_verbs() -> dict[str, list[str]]:
 
 def test_the_cli_enumeration_actually_works():
     """POSITIVE CONTROL. Without this, an empty enumeration passes everything."""
-    # Arrange / Act
+    # Arrange
+    control = set(CONTROL_VERBS)
+    # Act
     verbs = _all_verbs()
     # Assert
-    assert len(verbs) > 20, f"CLI enumeration returned only {len(verbs)} verbs"
-    missing = [v for v in CONTROL_VERBS if v not in verbs]
-    assert not missing, (
-        f"verbs known to exist were not found: {missing}. The enumeration is "
-        f"broken, so every other assertion in this file is vacuous."
+    missing = control - verbs
+    assert len(verbs) > 20 and not missing, (
+        f"CLI enumeration is broken: {len(verbs)} verbs found, missing known "
+        f"verbs {sorted(missing)}. Every other assertion in this file is "
+        f"vacuous if this fails."
     )
 
 
 def test_we_actually_found_hints_to_check():
     """SECOND CONTROL: a regex that matches nothing would also pass silently."""
-    # Arrange / Act
+    # Arrange
+    # Act
     hinted = _hinted_verbs()
     # Assert
     assert hinted, (
@@ -267,7 +270,9 @@ def test_the_check_would_catch_a_dead_verb(dead):
     fail is not a guard, so assert these are genuinely absent from the CLI
     rather than trusting that the check above would have noticed.
     """
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert dead not in _all_verbs(), (
         f"{dead!r} now exists — if it was added deliberately, this test's "
         f"premise is stale and the hint wording should be revisited."
