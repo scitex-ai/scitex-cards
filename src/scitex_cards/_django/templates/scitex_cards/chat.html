@@ -118,13 +118,32 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
     font: inherit; font-size: 0.9rem; min-height: 64px; max-height: 200px;
   }
-  #compose button { align-self: flex-end; }
+  /* DIRECT children only. These are the composer's OWN buttons (attach,
+     send). Written without the child combinator they also matched every
+     button nested inside the emoji picker, and an id selector outranks that
+     component's own classes — so its toggle and all sixty of its emoji
+     rendered as accent-filled Send buttons. A shared primitive must not be
+     restyled by the page hosting it. */
+  #compose > button { align-self: flex-end; }
   #compose textarea:focus { outline: 1px solid var(--accent); }
-  #compose button {
+  #compose > button {
     background: var(--accent); color: #fff; border: 0; border-radius: 8px;
     padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
-  #compose button:disabled { opacity: 0.45; cursor: default; }
+  #compose > button:disabled { opacity: 0.45; cursor: default; }
+  /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
+     page maps ITS palette onto the component's tokens instead of overriding
+     the component's rules — that is the whole contract, and it is what lets
+     the widget be lifted into scitex-ui without dragging this page's colors
+     along with it. */
+  #compose .stx-emoji-picker {
+    align-self: flex-end;
+    --stx-emoji-picker-surface: var(--panel-2);
+    --stx-emoji-picker-border: var(--line);
+    --stx-emoji-picker-text: var(--text);
+    --stx-emoji-picker-hover: var(--line);
+    --stx-emoji-picker-accent: var(--accent);
+  }
   #compose-attach {
     align-self: flex-end; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); padding: 0 12px; font-size: 1.05rem;
@@ -187,6 +206,14 @@ ships alongside this.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/context-menu.css' %}">
+{% comment %}
+Emoji picker — OUR file for now, but written as a harvestable primitive: it
+knows nothing about DMs, messages or `.msg`, and its palette rides
+`--stx-emoji-picker-*` tokens the host page maps (see the #compose block
+above). When scitex-ui adopts it, this link and the script tag at the bottom
+swap for the base ones and nothing else on this page moves.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu { position: fixed; display: none; z-index: 40; }
@@ -235,6 +262,13 @@ emits, so swapping to it will not change this block.
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
+      {% comment %}
+      Declarative mount: emoji_picker.js finds this by the attribute and
+      builds its own toggle + panel here, so the composer's behaviour file
+      (chat.js) gains not one line for this feature. The value is the id of
+      the field the emoji land in.
+      {% endcomment %}
+      <span class="stx-emoji-picker" data-stx-emoji-picker-for="compose-body"></span>
       <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
       <textarea id="compose-body" rows="3" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
       <button id="compose-send" type="submit" disabled>Send</button>
@@ -243,5 +277,6 @@ emits, so swapping to it will not change this block.
 </div>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
+<script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 </body>
 </html>
