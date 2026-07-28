@@ -60,6 +60,20 @@ def reaction_then_removed(one_reaction: Path) -> Path:
     return one_reaction
 
 
+@pytest.fixture()
+def after_a_refused_shrink(one_reaction: Path) -> Path:
+    """A store whose log survived a rejected shrinking write.
+
+    The rejection lives in a FIXTURE so the test that inspects the aftermath
+    holds exactly one assertion: ``pytest.raises`` counts as an assertion
+    (STX-TQ007), so a raises-block plus an ``assert`` would be two.
+    """
+    path = _reactions.reactions_path(one_reaction)
+    with pytest.raises(RuntimeError):
+        _reactions._save_events_unlocked([], path, previous=1)
+    return one_reaction
+
+
 def _raw_events(store: Path) -> list:
     path = _reactions.reactions_path(store)
     return json.loads(path.read_text(encoding="utf-8"))["reaction_events"]
@@ -191,11 +205,9 @@ def test_a_shrinking_write_is_refused(one_reaction: Path):
         _reactions._save_events_unlocked([], path, previous=1)
 
 
-def test_a_refused_shrink_leaves_the_file_intact(one_reaction: Path):
+def test_a_refused_shrink_leaves_the_file_intact(after_a_refused_shrink: Path):
     # Arrange
-    path = _reactions.reactions_path(one_reaction)
-    with pytest.raises(RuntimeError):
-        _reactions._save_events_unlocked([], path, previous=1)
+    one_reaction = after_a_refused_shrink
     # Act
     events = _raw_events(one_reaction)
     # Assert
