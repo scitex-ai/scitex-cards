@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 {% load static %}
-<html lang="en">
+{% comment %}data-theme="dark" ACTIVATES scitex-ui's dark token set — it is not
+decoration. theme.css defines --text-primary / --bg-page / --border-default /
+… twice, once under [data-theme="light"] and once under [data-theme="dark"],
+and DEFAULTS TO LIGHT when the attribute is absent. Without this every base
+component on the page silently resolves light values onto a dark surface, which
+is exactly how scitex-ui 0.12.0's context menu rendered near-invisible on
+2026-07-28. Dark is also the standing default (the operator's eyes are
+sensitive), so this is deliberate, not a preference to be "cleaned up".
+{% endcomment %}
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -25,10 +34,36 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 <512; this file is layout + CSS.
 {% endcomment %}
 <style>
+  /* EVERY COLOUR ON THIS PAGE COMES FROM scitex-ui. NOT ONE IS PICKED HERE.
+     Operator directive 2026-07-28, verbatim: "最適 ui を常に使ってください
+     勝手に変な色を使ったりするのでおかしなことになる … scitex の世界観も壊れる
+     ので s-ui を使ってほしい". They are right, and the bug below is the proof.
+
+     THIS PAGE USED TO HARD-CODE ITS OWN FIXED-DARK PALETTE (#1e1e2e, #7c5cbf,
+     …). That is what broke the right-click menu on 2026-07-28: scitex-ui
+     0.12.0's context-menu CSS reads --text-primary / --text-secondary, this
+     page defined neither, so the menu text fell back to the LIGHT-theme value
+     and rendered near-invisible on a dark menu. The items were live but looked
+     disabled. A private palette does not merely diverge in style — it silently
+     starves every base component the page later adopts, and the failure shows
+     up in the COMPONENT, not here, which is why it was hard to see.
+
+     The names below are ALIASES, not colours: each is a var() onto a scitex-ui
+     token, so the ~100 existing usages in this file keep working while the
+     values are entirely base's. Re-pointing an alias is how this page changes
+     palette from now on. DO NOT reintroduce a literal colour here. */
   :root {
-    --bg: #1e1e2e; --panel: #27273a; --panel-2: #313145; --line: #3d3d55;
-    --text: #e0e0e0; --dim: #a0a0b0; --accent: #7c5cbf; --accent-2: #9d7ce0;
-    --bubble-op: #4b3a78; --bubble-agent: #313145; --unread: #e0a030;
+    --bg: var(--bg-page);
+    --panel: var(--bg-surface);
+    --panel-2: var(--bg-muted);
+    --line: var(--border-default);
+    --text: var(--text-primary);
+    --dim: var(--text-muted);
+    --accent: var(--app-accent-figrecipe);
+    --accent-2: var(--app-accent-clew);
+    --bubble-op: var(--bg-muted);
+    --bubble-agent: var(--bg-surface);
+    --unread: var(--status-warning);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -89,13 +124,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agents .agent .avatar {
     flex: none; width: 34px; height: 34px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--text-primary); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
   }
   #agents .agent .cols { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   #agents .agent .row1 { display: flex; align-items: center; gap: 6px; }
   #agents .agent .name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .agent .badge {
-    margin-left: auto; background: var(--unread); color: #1e1e2e;
+    /* Dark text ON the warning fill — that is what --text-inverse is for. */
+    margin-left: auto; background: var(--unread); color: var(--text-inverse);
     border-radius: 9px; font-size: 0.68rem; font-weight: 700;
     padding: 1px 7px; min-width: 18px; text-align: center;
   }
@@ -141,8 +177,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      restyled by the page hosting it. */
   #compose > button { align-self: flex-end; }
   #compose textarea:focus { outline: 1px solid var(--accent); }
+  /* BOTH halves of a parallel change are needed here, so this resolution keeps
+     each. The CHILD combinator came from the emoji-picker PR and is load-bearing
+     — a descendant `#compose button` would restyle every button INSIDE the
+     picker as an accent-filled Send, which is what the note above warns about.
+     The token colour came from the palette change: no literal colours here. */
   #compose > button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--text-primary); border: 0; border-radius: 8px;
     padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
   #compose > button:disabled { opacity: 0.45; cursor: default; }
@@ -179,9 +220,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   .msg .att-file:hover { border-color: var(--accent); }
   #error-bar {
-    display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
+    /* The error rail rides base's status token, not a hand-mixed maroon. */
+    display: none; background: var(--status-error); color: var(--text-inverse); font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
   }
+  /* Same bar, success colour. A forward succeeds in a thread the operator is
+     not looking at, so it needs to say so — but announcing a success in the
+     red error bar is its own kind of wrong. */
+  #error-bar.ok { background: #2a5c3a; color: #d7ffe4; }
 
   /* ---- mobile: agent list becomes a drawer ---- */
   @media (max-width: 720px) {
@@ -245,8 +291,44 @@ and the page needs both — this was a textual collision, not a real one.)
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
-  #msg-menu { position: fixed; display: none; z-index: 40; }
-  #msg-menu.open { display: block; }
+  #msg-menu, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  #msg-menu.open, #forward-menu.open { display: block; }
+  /* The emoji bar is the one panel that is a ROW, not a list. */
+  #react-bar.open { display: flex; gap: 2px; padding: 4px; }
+  /* 44px is the smallest reliably tappable target on a phone, and this feature
+     exists for a phone. `manipulation` drops the ~300ms double-tap-zoom wait,
+     so a reaction registers immediately rather than feeling broken. */
+  #react-bar .react-emoji {
+    min-width: 44px; height: 44px; font-size: 1.35rem; line-height: 1;
+    background: none; border: 0; border-radius: 8px; cursor: pointer;
+    touch-action: manipulation; color: inherit;
+  }
+  #react-bar .react-emoji:hover { background: var(--panel-2); }
+  /* A long agent list must not run off the bottom of a phone screen. */
+  #forward-menu { max-height: 60vh; overflow-y: auto; }
+  #forward-menu .forward-empty {
+    padding: 8px 12px; font-size: 0.78rem; color: var(--dim); white-space: nowrap;
+  }
+
+  /* ---- reaction chips ---- */
+  /* Under the bubble, inside the message column, so a reaction reads as part
+     of the message rather than as a separate event — the same placement rule
+     the attachments already follow. */
+  .msg .reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; padding: 0 2px; }
+  .msg .reactions .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 11px; padding: 1px 7px; cursor: pointer;
+    color: var(--text); font: inherit; font-size: 0.72rem; line-height: 1.5;
+    touch-action: manipulation;
+  }
+  .msg .reactions .chip:hover { border-color: var(--accent); }
+  /* The viewer's own reaction is outlined, not just coloured: "have I already
+     reacted?" must be answerable without comparing two shades. */
+  .msg .reactions .chip.mine { border-color: var(--accent-2); background: var(--bubble-op); }
+  .msg .reactions .chip-emoji { font-size: 0.85rem; }
+  .msg .reactions .chip-count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .msg .reactions .chip.mine .chip-count { color: var(--text); }
 </style>
 </head>
 {% comment %}
@@ -283,9 +365,26 @@ Positioning/dismiss is wired below by hand; scitex-ui is shipping a
 emits, so swapping to it will not change this block.
 {% endcomment %}
   <div id="msg-menu" class="stx-app-context-menu" role="menu">
+    <button class="stx-app-context-menu__item" id="mm-react" role="menuitem">React&hellip;</button>
     <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+    <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
     <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
   </div>
+{% comment %}
+Reaction bar and forward picker — both second-level panels the context menu
+opens in place of itself, so only one thing is ever on screen.
+
+The emoji are NOT written here. chat_actions.js owns the palette and
+chat_menu.js builds the buttons from it, which is what keeps the set the picker
+offers identical to the set the Python side documents — a hardcoded row here
+would be a second copy, free to drift.
+
+Empty on purpose; both are populated at runtime (the forward list from the
+agent list chat.js already polls, so the picker cannot disagree with the drawer
+about who exists).
+{% endcomment %}
+  <div id="react-bar" class="stx-app-context-menu" role="menu" aria-label="React"></div>
+  <div id="forward-menu" class="stx-app-context-menu" role="menu" aria-label="Forward to"></div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
@@ -304,7 +403,22 @@ emits, so swapping to it will not change this block.
     </form>
   </main>
 </div>
+{% comment %}
+Load order matters and is one-directional: each file reads the ones before it
+off `window` and never the reverse.
+
+  chat_diff.js    pure render planning (no deps)
+  chat_actions.js pure message-action decisions (no deps)
+  chat_menu.js    the message context menu + reaction chips (reads ChatActions)
+  chat_attach.js  attachment uploads (no deps)
+  chat.js         the page orchestrator (mounts the two modules above)
+
+`defer` scripts execute in document order, so this list IS the order.
+{% endcomment %}
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 </body>

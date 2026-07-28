@@ -26,6 +26,44 @@
   out of `BACKEND_VERBS` — `_server.py` dispatches that tuple over HTTP, where
   a path-taking verb would be an arbitrary-file read.
 
+- **DMs live in `cards.db` (schema v5)**. Direct messages were the one piece of
+  fleet data the canonical store's protections did not cover: they sat in a
+  `threads.json` sidecar, so WAL, store-identity stamping, tombstones, the
+  no-shrink guard, export and snapshot all applied to cards and to nothing the
+  operator actually talks through. Appending one message rewrote the entire
+  document — the same whole-document read-modify-write shape behind the
+  2026-07 board wipes. Four append-only tables (`dm_threads`,
+  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus SQLite triggers
+  that make `DELETE` and post-hoc edits unreachable at the ENGINE, not merely
+  guarded in Python. `append_message` now writes the database FIRST and raises
+  on failure; the sidecar is mirrored best-effort and kept complete as the
+  rollback state. Backfill (`scitex-cards dm backfill`, **dry-run by default**),
+  the A/B gate (`dm verify`) and an append-only cross-host union
+  (`dm export` / `dm merge`) ship with it. Rehearsed on a copy of the live
+  store: 165 threads / 2352 messages carried with the sidecar byte-identical
+  afterwards, a re-run inserting 0, and `verify` clean.
+
+  Two things the schema deliberately does NOT copy from the superseded
+  `messages` table. There is no `recipient` column — recipients are derived
+  from thread membership, which is the schema-level reason group DM was
+  impossible and now is not. And read state is a per-reader receipts table
+  rather than a boolean, because a scalar cannot say "Bob read it, Carol did
+  not" — which also leaves `dm_messages` immutable, making a cross-host merge a
+  pure union with no arbitration. The old `messages` table is left in place
+  untouched forever: dropping a table holding real rows is a count decrease,
+  the exact bug class this change exists to avoid.
+
+### Fixed
+
+- **`threads_path()` no longer writes a file** (design part 2 §7.3). A PATH
+  QUERY materialised the sidecar from a legacy `threads.yaml` as a side effect
+  of being asked where the sidecar would be — a landmine that would re-create
+  the retired file behind the migration's back, and the last YAML reader on
+  this path. `attachments_root()` stops locating the attachments directory
+  through that function and resolves from the store instead (same directory, no
+  attachment moves). That decoupling is preserved where the layout now lives,
+  `scitex_cards._attachments.attachments_root()`.
+
 - **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
   typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
   なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい

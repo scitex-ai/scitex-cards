@@ -41,6 +41,9 @@ import os
 import sqlite3
 from pathlib import Path
 
+from ._db_dm_schema import DM_TABLES as _DM_TABLES
+from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+
 logger = logging.getLogger(__name__)
 
 #: Canonical DB filename. ``.db`` (not ``.sqlite``) so a future
@@ -89,7 +92,15 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: the JSON is the PAYLOAD — a column-based export would silently drop
 #: unknown keys, and the JSON-snapshot backup rail (ADR-0010) must be exact
 #: by construction.
-SCHEMA_VERSION = 4
+#:
+#: v5 (DM into the store) adds ``dm_threads`` / ``dm_thread_member_events`` /
+#: ``dm_messages`` / ``dm_receipts`` plus their append-only triggers. DMs were
+#: the ONE piece of fleet data the store's protections did not cover: they
+#: lived in a ``threads.json`` sidecar, so WAL, store-identity stamping,
+#: tombstones, no-shrink, export and snapshot all applied to cards and to
+#: nothing the operator actually talks through. See
+#: ``docs/design/dm-into-cards-db.md``.
+SCHEMA_VERSION = 5
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -266,7 +277,8 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 """
 
 #: Ordered tuple of every table name the schema creates — used by
-#: :func:`verify` and the tests to assert completeness.
+#: :func:`verify` and the tests to assert completeness. The ``dm_*`` block is
+#: schema v5; its DDL lives in :mod:`scitex_cards._db_dm_schema`.
 SCHEMA_TABLES: tuple[str, ...] = (
     "tasks",
     "task_comments",
@@ -277,6 +289,7 @@ SCHEMA_TABLES: tuple[str, ...] = (
     "inbox_recipients",
     "notifications",
     "messages",
+    *_DM_TABLES,
     "schema_meta",
 )
 
@@ -375,6 +388,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
+    _migrate_v4_to_v5(conn)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
@@ -407,65 +421,10 @@ def _open_at(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def verify(explicit: str | Path | None = None) -> dict:
-    """Open the DB read/verify its integrity + report table row counts.
-
-    Returns a JSON-friendly dict::
-
-        {"path", "exists", "ok", "user_version", "schema_version",
-         "quick_check", "tables": {<name>: <row_count>, ...}, "source"}
-
-    ``ok`` is True iff the file exists, ``user_version`` and the
-    ``schema_meta.schema_version`` both equal :data:`SCHEMA_VERSION`, every
-    expected table is present, and ``PRAGMA quick_check`` returns ``ok``.
-    Never raises on a merely-absent DB (``exists=False``, ``ok=False``).
-    """
-    path = resolve_db_path(explicit)
-    report: dict = {
-        "path": str(path),
-        "exists": path.exists(),
-        "ok": False,
-        "user_version": None,
-        "schema_version": None,
-        "quick_check": None,
-        "source": None,
-        "tables": {},
-    }
-    if not path.exists():
-        return report
-
-    conn = connect(path)
-    try:
-        report["user_version"] = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        report["quick_check"] = conn.execute("PRAGMA quick_check").fetchone()[0]
-        present = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        tables: dict[str, int] = {}
-        for name in SCHEMA_TABLES:
-            if name in present:
-                tables[name] = int(
-                    conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                )
-        report["tables"] = tables
-        meta = {
-            row[0]: row[1] for row in conn.execute("SELECT key, value FROM schema_meta")
-        }
-        report["schema_version"] = meta.get("schema_version")
-        report["source"] = meta.get("source")
-        all_tables_present = all(t in present for t in SCHEMA_TABLES)
-        report["ok"] = bool(
-            report["user_version"] == SCHEMA_VERSION
-            and report["schema_version"] == str(SCHEMA_VERSION)
-            and all_tables_present
-            and report["quick_check"] == "ok"
-        )
-    finally:
-        conn.close()
-    return report
+#: ``db verify`` lives in :mod:`scitex_cards._db_verify` (this module owns the
+#: schema and the connection; that one only INSPECTS a file). Re-exported so
+#: every existing ``from ._db import verify`` keeps resolving unchanged.
+from ._db_verify import verify  # noqa: E402  (re-export, after the definitions)
 
 
 def _utc_now_iso() -> str:

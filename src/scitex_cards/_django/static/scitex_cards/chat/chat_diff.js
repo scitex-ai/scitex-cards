@@ -36,21 +36,51 @@
    * equal fingerprints render identically, so a bubble already on screen
    * is still correct and can be left alone. Body is included on purpose:
    * an edited message changes its fingerprint without changing the
-   * thread's length, which a count-based check cannot see. */
-  function messageFingerprint(message) {
+   * thread's length, which a count-based check cannot see.
+   *
+   * `reactions` is the OPTIONAL {message_id: {emoji: [actors]}} map the thread
+   * endpoint returns alongside the messages. It belongs here because a
+   * reaction repaints a message WITHOUT changing the message: arriving
+   * reactions leave id/body/from/ts identical, so the plan below would compare
+   * equal, answer "noop", and the chip would never appear. Omitting the
+   * argument reproduces the old fingerprint exactly, so every existing caller
+   * and test is unaffected. */
+  function messageFingerprint(message, reactions) {
     if (!message) return "";
+    var perMessage = reactions ? reactions[messageKey(message)] : null;
     return [
       messageKey(message),
       String(message.body || ""),
       String(message.from || ""),
       String(message.ts || ""),
+      reactionSignature(perMessage),
     ].join("\u0000");
+  }
+
+  /* Stable string for one message's reactions; "" when there are none.
+   *
+   * Deliberately duplicated from ChatActions.reactionSignature rather than
+   * imported: chat_diff.js has no dependencies by design (it is the file the
+   * node tests load in isolation), and a load-order dependency between two
+   * plain <script> tags is the fragility that split these files apart in the
+   * first place. A test pins the two implementations to the same output. */
+  function reactionSignature(map) {
+    if (!map) return "";
+    return Object.keys(map)
+      .sort()
+      .map(function (emoji) {
+        return emoji + ":" + (map[emoji] || []).slice().sort().join(",");
+      })
+      .join(";");
   }
 
   /* Decide how to bring the pane from `rendered` to `messages`.
    *
    *   rendered  array of fingerprints currently in the DOM, in order
    *   messages  the server's chronological message list
+   *   reactions optional {message_id: {emoji: [actors]}} from the same
+   *             response, so a reaction that arrives on its own still
+   *             repaints (see messageFingerprint)
    *
    * Returns {mode, fingerprints, added}:
    *   "noop"     already correct — leave the DOM (and the user's text
@@ -63,10 +93,12 @@
    * Append is the overwhelmingly common case: a DM thread grows at the
    * end. Rebuild is the honest fallback rather than a guess.
    */
-  function planRender(rendered, messages) {
+  function planRender(rendered, messages, reactions) {
     var current = rendered || [];
     var list = messages || [];
-    var fingerprints = list.map(messageFingerprint);
+    var fingerprints = list.map(function (message) {
+      return messageFingerprint(message, reactions);
+    });
 
     if (current.length > fingerprints.length) {
       return { mode: "rebuild", fingerprints: fingerprints, added: [] };
@@ -94,7 +126,12 @@
    * An empty/short pane is "at bottom", so a freshly opened thread lands
    * on the newest message without a special case.
    */
-  function shouldStickToBottom(scrollTop, scrollHeight, clientHeight, threshold) {
+  function shouldStickToBottom(
+    scrollTop,
+    scrollHeight,
+    clientHeight,
+    threshold,
+  ) {
     var slack = typeof threshold === "number" ? threshold : 0;
     return scrollHeight - scrollTop - clientHeight <= slack;
   }
