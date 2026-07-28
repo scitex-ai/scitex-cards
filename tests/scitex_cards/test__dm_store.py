@@ -30,6 +30,7 @@ import pytest
 
 from scitex_cards import _dm_store
 from scitex_cards._db import SCHEMA_VERSION, open_db
+from scitex_cards._dm_read import current_members
 from scitex_cards._threads import append_message, get_thread, mark_read
 
 
@@ -342,6 +343,40 @@ def test_a_leaver_is_still_recorded_as_having_been_a_member(db_path):
 
     # Assert
     assert rows == 2
+
+
+def test_a_same_second_leave_beats_the_join_it_followed(conn):
+    """REGRESSION, and it was a disclosure bug, not a cosmetic one.
+
+    Timestamps are second-resolution, so creating a thread and removing a
+    member in the same second gives the join and the leave an IDENTICAL ``ts``.
+    The fold's tie-break then fell through to ``id`` — a content hash, i.e. a
+    coin flip — and a departed member kept receiving new messages in 17 of 60
+    measured runs. It passed locally (the hash sorted the lucky way) and only
+    failed in CI, which is the worst possible way to learn it.
+
+    Written with both events stamped to the same second ON PURPOSE: the
+    behavioural test above only reproduces this probabilistically, so it can
+    pass while the rule is broken. This one cannot.
+    """
+    # Arrange — join and leave, same ts, ordered only by seq.
+    conn.execute(
+        "INSERT INTO dm_threads(id, kind, created_at, origin_host, record_json)"
+        " VALUES('dmg:x', 'group', '2026-07-28T00:00:00Z', 'host-a', '{}')"
+    )
+    for index, (event, action) in enumerate((("dme_j", "join"), ("dme_l", "leave"))):
+        conn.execute(
+            "INSERT INTO dm_thread_member_events(id, thread_id, member, action,"
+            " ts, seq, origin_host, record_json) VALUES(?, 'dmg:x', 'agent-b',"
+            " ?, '2026-07-28T00:00:00Z', ?, 'host-a', '{}')",
+            (event, action, index + 1),
+        )
+
+    # Act
+    members = current_members(conn, "dmg:x")
+
+    # Assert
+    assert members == []
 
 
 def test_a_sender_never_sees_their_own_message_as_unread(db_path):

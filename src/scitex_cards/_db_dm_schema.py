@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS dm_thread_member_events (
     member       TEXT NOT NULL,
     action       TEXT NOT NULL,
     ts           TEXT NOT NULL,
+    seq          INTEGER NOT NULL DEFAULT 0,
     actor        TEXT,
     origin_host  TEXT NOT NULL,
     record_json  TEXT NOT NULL
@@ -161,6 +162,34 @@ def migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
     the artifact.
     """
     conn.executescript(SCHEMA_SQL_V5)
+    _ensure_column(conn, "dm_thread_member_events", "seq", "INTEGER NOT NULL DEFAULT 0")
+
+
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, column: str, decl: str
+) -> None:
+    """Add ``column`` to ``table`` if absent. Idempotent, race-tolerant.
+
+    ``CREATE TABLE IF NOT EXISTS`` does NOT alter an existing table, so a
+    database created by an earlier v5 build keeps the old column set unless
+    something ALTERs it — the same trap ``_migrate_v1_to_v2`` documents.
+
+    The `PRAGMA table_info` → `ALTER` window is a multi-process TOCTOU race
+    (two agents opening the same store), and ``duplicate column name`` is a
+    LOGICAL error that ``busy_timeout`` does nothing for. Uncaught it would
+    propagate out of ``init_schema`` and leave the loser unable to open the
+    store at all. Swallowing exactly that one message is the fix
+    claude-code-telegrammer already landed for the identical race
+    (``ts/lib/store-migrations.ts``); anything else still raises.
+    """
+    cols = {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column in cols:
+        return
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
 
 
 __all__ = ["DM_TABLES", "DM_TRIGGERS", "SCHEMA_SQL_V5", "migrate_v4_to_v5"]

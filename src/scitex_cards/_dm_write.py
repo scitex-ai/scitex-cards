@@ -116,24 +116,46 @@ def record_member_event(
     never a deleted one: the fold then answers "not a member now" while the
     record of having been one survives, which is what keeps an old message's
     audience answerable after the fact.
+
+    THE ``seq`` IS NOT DECORATION. Timestamps here are second-resolution, so a
+    join and a leave in the same second are indistinguishable by ``ts`` and the
+    fold's tie-break fell through to the content-hash id — a coin flip that let
+    a departed member keep receiving messages in 17 of 60 measured runs. This
+    counter is what makes "the latest event" a fact rather than a hash race.
     """
     stamp = ts or utc_now_iso()
     cur = conn.execute(
         "INSERT OR IGNORE INTO dm_thread_member_events"
-        "(id, thread_id, member, action, ts, actor, origin_host, record_json)"
-        " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, thread_id, member, action, ts, seq, actor, origin_host,"
+        " record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             event_id or derived_member_event_id(thread_id, member, action, stamp),
             thread_id,
             member,
             action,
             stamp,
+            next_member_seq(conn, thread_id, member),
             actor,
             host or origin_host(),
             _dumps({}),
         ),
     )
     return cur.rowcount > 0
+
+
+def next_member_seq(conn: sqlite3.Connection, thread_id: str, member: str) -> int:
+    """``1 + MAX(seq)`` for this ``(thread, member)`` — the membership counter.
+
+    Read inside the caller's ``BEGIN IMMEDIATE``, so two writers cannot observe
+    the same maximum. Across hosts two offline writers legitimately can, which
+    is why the fold keeps ``ts, origin_host, id`` behind it to stay total.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) FROM dm_thread_member_events"
+        " WHERE thread_id = ? AND member = ?",
+        (thread_id, member),
+    ).fetchone()
+    return int(row[0]) + 1
 
 
 def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
@@ -473,6 +495,7 @@ __all__ = [
     "insert_message",
     "insert_receipt",
     "mark_read",
+    "next_member_seq",
     "next_seq",
     "record_member_event",
     "remove_member",

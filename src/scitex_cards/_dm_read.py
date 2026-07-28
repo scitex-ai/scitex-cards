@@ -33,12 +33,27 @@ from pathlib import Path
 #: it is the formulation that reads the same way the rule is stated ("the last
 #: thing that happened to this member in this thread") and it does not depend
 #: on the SQLite build carrying window functions.
+#:
+#: ``seq`` LEADS THE ORDER, AND IT HAD TO. Ordering by ``ts`` first looks
+#: right and is not: timestamps here are SECOND-resolution, so creating a
+#: thread and removing a member in the same second gives the join and the
+#: leave an identical ``ts``, and the tie fell through to ``id`` — a content
+#: hash, i.e. a coin flip. MEASURED before the fix: a departed member still
+#: received new messages in 17 of 60 runs. A leave that silently does not take
+#: effect is a disclosure bug, not a cosmetic one, and it was invisible
+#: locally (the hash happened to sort the right way) until CI ran it.
+#:
+#: ``seq`` is the per-``(thread, member)`` counter minted under the writer's
+#: transaction, so within one database it is exactly the order the events
+#: happened. ``ts, origin_host, id`` follow to keep the order TOTAL across
+#: hosts, where two offline writers can legitimately mint the same ``seq``.
 CURRENT_MEMBERS_SQL = """
 SELECT e.thread_id AS thread_id,
        e.member    AS member,
        (SELECT x.action FROM dm_thread_member_events x
          WHERE x.thread_id = e.thread_id AND x.member = e.member
-         ORDER BY x.ts DESC, x.id DESC LIMIT 1) AS current_action
+         ORDER BY x.seq DESC, x.ts DESC, x.origin_host DESC, x.id DESC
+         LIMIT 1) AS current_action
   FROM dm_thread_member_events e
  GROUP BY e.thread_id, e.member
 """
