@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+## [0.17.8] - 2026-07-28
+
+Card creation was broken fleet-wide, and the check that should have caught it
+was the reason nobody saw it. Both are fixed here.
+
+### Fixed
+
+- **Card CREATE guards the resolved database, not a synthetic YAML label**
+  (#574). `add_task` passed the ambient-creation guard a display label
+  (`<db_dir>/tasks.yaml`) rather than the store's real location, and the guard
+  answers "would this write MANUFACTURE a board?" with a literal
+  `path.exists()`. The YAML tier was deleted (#512), so that label can never
+  exist and the guard refused unconditionally: **every `add` failed for any
+  agent whose environment lacked `$SCITEX_CARDS_DB`**, while reads and updates
+  on the same store succeeded. The error even advised running `init-store`,
+  which did not help, because the file it created was not the file being
+  tested. The guard now receives `resolve_db_path(store)` — the same location
+  `save_tasks` writes and `init-store` creates — so CREATE agrees with
+  read/update. `_resolved_store` is unchanged, so the read surface is
+  untouched. Reported and reproduced by scitex-ui on 0.17.7.
+
+- **`health` measures store writability instead of asserting it** (#575).
+  `_verify_db_store` opens the database `mode=ro`, learns nothing about
+  writing, and then reported the store "readable, writable" — that word was a
+  hardcoded literal, so it could never be false. This is why the create-path
+  outage above stayed invisible: `add` refused every card while `health` called
+  the same store writable. Writability is now measured with `os.access`,
+  matching the sibling file-store branch that already did so. The store's
+  **directory** is checked too, because SQLite creates `-wal` / `-journal`
+  siblings — a writable file in a read-only directory still fails every write.
+  Both failures name the offending path and say what to do.
+
+### Notes
+
+- The pre-existing decoy-board regression test previously passed for the wrong
+  reason (it refused because the synthetic label never exists, not because the
+  database was absent). It now passes for the right one.
+
 ## [0.17.7] - 2026-07-24
 
 Delivery that admits when it is not working, and a chat page that is readable.
