@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -172,15 +173,19 @@ def test_sent_dm_does_not_reach_the_canonical_database(tmp_path: Path, db_path):
 _DELETE_RE = re.compile(r"DELETE\s+FROM\s+([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
 
 
-def _delete_targets() -> list[str]:
-    """Every table named by a ``DELETE FROM`` in the package source."""
-    import scitex_cards
-
-    root = Path(scitex_cards.__file__).parent
+def _delete_targets(root: Path) -> list[str]:
+    """Every table named by a ``DELETE FROM`` under ``root``."""
     found: list[str] = []
     for path in sorted(root.rglob("*.py")):
         found.extend(_DELETE_RE.findall(path.read_text(encoding="utf-8")))
     return found
+
+
+def _package_root() -> Path:
+    """The installed package source tree this scan inspects."""
+    import scitex_cards
+
+    return Path(scitex_cards.__file__).parent
 
 
 def test_delete_from_scan_finds_the_known_card_deletes():
@@ -191,8 +196,11 @@ def test_delete_from_scan_finds_the_known_card_deletes():
     seeing that proves the instrument works before the next test trusts its
     silence.
     """
-    # Arrange / Act
-    targets = _delete_targets()
+    # Arrange
+    source_root = _package_root()
+
+    # Act
+    targets = _delete_targets(source_root)
 
     # Assert
     assert "tasks" in targets
@@ -206,8 +214,11 @@ def test_no_source_module_deletes_from_a_dm_table():
     operator's ruling is that a written record never disappears and a count
     decrease is itself a bug.
     """
-    # Arrange / Act
-    dm_targets = [name for name in _delete_targets() if name.startswith("dm_")]
+    # Arrange
+    source_root = _package_root()
+
+    # Act
+    dm_targets = [n for n in _delete_targets(source_root) if n.startswith("dm_")]
 
     # Assert
     assert dm_targets == []
@@ -227,11 +238,14 @@ def _tables(connection: sqlite3.Connection) -> set[str]:
 @_todo("section 3")
 def test_schema_declares_the_dm_threads_table(conn):
     """Threads become rows so the store's own rails finally cover them."""
-    # Arrange / Act
+    # Arrange
+    wanted = "dm_threads"
+
+    # Act
     present = _tables(conn)
 
     # Assert
-    assert "dm_threads" in present
+    assert wanted in present
 
 
 @_todo("section 3")
@@ -242,31 +256,40 @@ def test_schema_declares_the_dm_thread_member_events_table(conn):
     this thread" becomes unanswerable after the fact — and across hosts an
     event log merges by union with no arbitration.
     """
-    # Arrange / Act
+    # Arrange
+    wanted = "dm_thread_member_events"
+
+    # Act
     present = _tables(conn)
 
     # Assert
-    assert "dm_thread_member_events" in present
+    assert wanted in present
 
 
 @_todo("section 3")
 def test_schema_declares_the_dm_messages_table(conn):
     """The messages themselves, in the canonical store rather than a file."""
-    # Arrange / Act
+    # Arrange
+    wanted = "dm_messages"
+
+    # Act
     present = _tables(conn)
 
     # Assert
-    assert "dm_messages" in present
+    assert wanted in present
 
 
 @_todo("section 3")
 def test_schema_declares_the_dm_receipts_table(conn):
     """Read state needs its own rows once a thread can have three members."""
-    # Arrange / Act
+    # Arrange
+    wanted = "dm_receipts"
+
+    # Act
     present = _tables(conn)
 
     # Assert
-    assert "dm_receipts" in present
+    assert wanted in present
 
 
 @_todo("section 3.1")
@@ -279,11 +302,14 @@ def test_dm_messages_has_no_recipient_column(conn):
     missing table the column set is empty and the "not in" half would pass
     while proving nothing.
     """
-    # Arrange / Act
+    # Arrange
+    forbidden = "recipient"
+
+    # Act
     columns = table_columns(conn, "dm_messages")
 
     # Assert
-    assert columns and "recipient" not in columns
+    assert columns and forbidden not in columns
 
 
 @_todo("section 3.6")
@@ -294,11 +320,14 @@ def test_dm_messages_records_the_host_that_wrote_it(conn):
     id`` is not total, so two hosts holding identical rows can disagree about
     their order.
     """
-    # Arrange / Act
+    # Arrange
+    wanted = "origin_host"
+
+    # Act
     columns = table_columns(conn, "dm_messages")
 
     # Assert
-    assert "origin_host" in columns
+    assert wanted in columns
 
 
 # --------------------------------------------------------------------------- #
@@ -314,13 +343,14 @@ def test_dm_messages_refuses_physical_delete(conn):
     """
     # Arrange
     _seed_pair_message(conn)
+    delete = partial(conn.execute, "DELETE FROM dm_messages")
 
     # Act
-    with pytest.raises(sqlite3.DatabaseError) as excinfo:
-        conn.execute("DELETE FROM dm_messages")
+    refusal = pytest.raises(sqlite3.DatabaseError, match="append-only")
 
     # Assert
-    assert "append-only" in str(excinfo.value)
+    with refusal:
+        delete()
 
 
 @_todo("section 4.2")
@@ -332,13 +362,14 @@ def test_dm_messages_body_is_immutable(conn):
     """
     # Arrange
     _seed_pair_message(conn)
+    edit = partial(conn.execute, "UPDATE dm_messages SET body = 'tampered'")
 
     # Act
-    with pytest.raises(sqlite3.DatabaseError) as excinfo:
-        conn.execute("UPDATE dm_messages SET body = 'tampered'")
+    refusal = pytest.raises(sqlite3.DatabaseError, match="immutable")
 
     # Assert
-    assert "immutable" in str(excinfo.value)
+    with refusal:
+        edit()
 
 
 @_todo("section 4.3")
