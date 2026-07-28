@@ -97,7 +97,18 @@ def test_a_mismatch_is_reported_as_a_write_outage(two_stores):
 
 
 def test_the_hint_names_both_ways_to_resolve_it(two_stores):
-    """A failing check must say what to DO, not merely that something is wrong."""
+    """A failing check must say what to DO, not merely that something is wrong.
+
+    This assertion used to require the literal string ``db import`` — a CLI verb
+    that does not exist. So the test did not merely tolerate the dead remedy, it
+    PINNED it: removing the bad advice would have broken the suite. A test can
+    hold a defect in place, and this one did, on the total-write-outage path.
+
+    It now requires that the hint names the POINTER (the thing the reader can
+    actually change) and stays silent about re-stamping, which asserts the
+    database belongs to a different store — the very claim the ownership guard
+    exists to doubt.
+    """
     # Arrange
     _, store_b = two_stores
 
@@ -105,8 +116,12 @@ def test_the_hint_names_both_ways_to_resolve_it(two_stores):
     check = _check(health(store=str(store_b)), "store_identity")
 
     # Assert
-    assert "db import" in check["hint"]
     assert "SCITEX_CARDS_DB" in check["hint"]
+    assert "db path" in check["hint"], "the hint must name a runnable verb"
+    assert "db import" not in check["hint"], (
+        "`db import` does not exist; naming it strands the reader on the path "
+        "where every write is already being refused"
+    )
 
 
 def test_a_missing_db_is_not_an_alarm(tmp_path, env):
