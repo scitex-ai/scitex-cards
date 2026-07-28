@@ -419,16 +419,17 @@
 
   // ---- mobile drawer -----------------------------------------------------
 
-  function closeDrawer() {
-    $agents.classList.remove("open");
-    $scrim.classList.remove("open");
-  }
+  // State, inert-when-closed and the scrim pairing all live in ChatDrawer —
+  // see that module for the two defects this replaced (a closed drawer that
+  // was still tabbable, and a drawer/scrim desync that could strand the
+  // operator behind an undismissable scrim).
+  var drawer = window.ChatDrawer
+    ? window.ChatDrawer.mount({ panel: $agents, scrim: $scrim, trigger: $menuBtn })
+    : null;
 
-  $menuBtn.addEventListener("click", function () {
-    $agents.classList.toggle("open");
-    $scrim.classList.toggle("open");
-  });
-  $scrim.addEventListener("click", closeDrawer);
+  function closeDrawer() {
+    if (drawer) drawer.close();
+  }
 
   // Enter sends; Shift+Enter inserts a newline (phone keyboards send via
   // the button anyway — this is for desktop convenience).
