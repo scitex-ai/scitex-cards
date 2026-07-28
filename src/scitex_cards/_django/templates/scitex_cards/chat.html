@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — scitex-todo v{{ scitex_cards_version }}</title>
+<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -32,6 +32,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* Dark scrollbars (operator 2026-07-27): the OS-default light scrollbar
+     clashed with the fixed dark palette. Match --line/--panel. */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) var(--panel); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -153,7 +160,7 @@ must therefore ALWAYS be rendered.
 <header>
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
-  <span class="ver">scitex-todo v{{ scitex_cards_version }}</span>
+  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
   <a class="board-link" href="{{ api_base }}">&larr; board</a>
 </header>
 <div id="error-bar"></div>
