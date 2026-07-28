@@ -424,7 +424,11 @@
   // was still tabbable, and a drawer/scrim desync that could strand the
   // operator behind an undismissable scrim).
   var drawer = window.ChatDrawer
-    ? window.ChatDrawer.mount({ panel: $agents, scrim: $scrim, trigger: $menuBtn })
+    ? window.ChatDrawer.mount({
+        panel: $agents,
+        scrim: $scrim,
+        trigger: $menuBtn,
+      })
     : null;
 
   function closeDrawer() {
@@ -465,6 +469,7 @@
       messagesEl: $messages,
       composerEl: $body,
       showError: showError,
+      showNotice: showNotice,
       refreshThread: refreshThread,
       getPeer: function () {
         return state.peer;
@@ -478,9 +483,11 @@
       getAgents: function () {
         return state.agents;
       },
-      onForwarded: function (toPeer) {
+      onForwarded: function (toPeer, count) {
         refreshAgents();
-        showNotice("Forwarded to " + toPeer + ".");
+        var many =
+          count > 1 ? count + " messages forwarded to " : "Forwarded to ";
+        showNotice(many + toPeer + ".");
       },
     });
   }
