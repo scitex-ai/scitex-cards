@@ -163,6 +163,10 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
   }
+  /* Same bar, success colour. A forward succeeds in a thread the operator is
+     not looking at, so it needs to say so — but announcing a success in the
+     red error bar is its own kind of wrong. */
+  #error-bar.ok { background: #2a5c3a; color: #d7ffe4; }
 
   /* ---- mobile: agent list becomes a drawer ---- */
   @media (max-width: 720px) {
@@ -215,8 +219,44 @@ this page is in the <style> above (header .stx-cards-switcher).
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
-  #msg-menu { position: fixed; display: none; z-index: 40; }
-  #msg-menu.open { display: block; }
+  #msg-menu, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  #msg-menu.open, #forward-menu.open { display: block; }
+  /* The emoji bar is the one panel that is a ROW, not a list. */
+  #react-bar.open { display: flex; gap: 2px; padding: 4px; }
+  /* 44px is the smallest reliably tappable target on a phone, and this feature
+     exists for a phone. `manipulation` drops the ~300ms double-tap-zoom wait,
+     so a reaction registers immediately rather than feeling broken. */
+  #react-bar .react-emoji {
+    min-width: 44px; height: 44px; font-size: 1.35rem; line-height: 1;
+    background: none; border: 0; border-radius: 8px; cursor: pointer;
+    touch-action: manipulation; color: inherit;
+  }
+  #react-bar .react-emoji:hover { background: var(--panel-2); }
+  /* A long agent list must not run off the bottom of a phone screen. */
+  #forward-menu { max-height: 60vh; overflow-y: auto; }
+  #forward-menu .forward-empty {
+    padding: 8px 12px; font-size: 0.78rem; color: var(--dim); white-space: nowrap;
+  }
+
+  /* ---- reaction chips ---- */
+  /* Under the bubble, inside the message column, so a reaction reads as part
+     of the message rather than as a separate event — the same placement rule
+     the attachments already follow. */
+  .msg .reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; padding: 0 2px; }
+  .msg .reactions .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 11px; padding: 1px 7px; cursor: pointer;
+    color: var(--text); font: inherit; font-size: 0.72rem; line-height: 1.5;
+    touch-action: manipulation;
+  }
+  .msg .reactions .chip:hover { border-color: var(--accent); }
+  /* The viewer's own reaction is outlined, not just coloured: "have I already
+     reacted?" must be answerable without comparing two shades. */
+  .msg .reactions .chip.mine { border-color: var(--accent-2); background: var(--bubble-op); }
+  .msg .reactions .chip-emoji { font-size: 0.85rem; }
+  .msg .reactions .chip-count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .msg .reactions .chip.mine .chip-count { color: var(--text); }
 </style>
 </head>
 {% comment %}
@@ -253,9 +293,26 @@ Positioning/dismiss is wired below by hand; scitex-ui is shipping a
 emits, so swapping to it will not change this block.
 {% endcomment %}
   <div id="msg-menu" class="stx-app-context-menu" role="menu">
+    <button class="stx-app-context-menu__item" id="mm-react" role="menuitem">React&hellip;</button>
     <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+    <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
     <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
   </div>
+{% comment %}
+Reaction bar and forward picker — both second-level panels the context menu
+opens in place of itself, so only one thing is ever on screen.
+
+The emoji are NOT written here. chat_actions.js owns the palette and
+chat_menu.js builds the buttons from it, which is what keeps the set the picker
+offers identical to the set the Python side documents — a hardcoded row here
+would be a second copy, free to drift.
+
+Empty on purpose; both are populated at runtime (the forward list from the
+agent list chat.js already polls, so the picker cannot disagree with the drawer
+about who exists).
+{% endcomment %}
+  <div id="react-bar" class="stx-app-context-menu" role="menu" aria-label="React"></div>
+  <div id="forward-menu" class="stx-app-context-menu" role="menu" aria-label="Forward to"></div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
@@ -267,7 +324,22 @@ emits, so swapping to it will not change this block.
     </form>
   </main>
 </div>
+{% comment %}
+Load order matters and is one-directional: each file reads the ones before it
+off `window` and never the reverse.
+
+  chat_diff.js    pure render planning (no deps)
+  chat_actions.js pure message-action decisions (no deps)
+  chat_menu.js    the message context menu + reaction chips (reads ChatActions)
+  chat_attach.js  attachment uploads (no deps)
+  chat.js         the page orchestrator (mounts the two modules above)
+
+`defer` scripts execute in document order, so this list IS the order.
+{% endcomment %}
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 </body>
 </html>
