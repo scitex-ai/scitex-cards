@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TEST-FIRST intent for the DM backfill and the multi-host merge.
+"""The DM backfill and the multi-host merge, as executable requirements.
 
 DESIGN: ``docs/design/dm-into-cards-db-migration.md`` (part 2 — migration,
 reversibility, concurrency). Part 1 and its tests cover the schema and the
 append-only rules; see ``tests/scitex_cards/test__dm_into_db_design.py``.
 
-WHY THIS FILE EXISTS BEFORE THE MIGRATION. The two properties that make a
+These landed as non-strict ``xfail`` INTENT before the migration existed. The
+implementation is now in ``scitex_cards._dm_migrate``, so the markers are
+gone: an intent test that keeps its xfail after the feature ships stops being
+a requirement and becomes a note.
+
+WHY THIS FILE EXISTED BEFORE THE MIGRATION. The two properties that make a
 store migration survivable are not obvious from the code that performs it:
 that it can be RUN TWICE without doubling anything, and that it can be
 UNDONE because it never touched the source. Both are cheap to assert and
@@ -36,18 +41,6 @@ DESIGN_DOC = "docs/design/dm-into-cards-db-migration.md"
 
 #: The one pair thread every fixture below shares.
 THREAD_ID = "dm:agent-x::operator"
-
-
-def _todo(section: str):
-    """An xfail marker whose reason points at the design doc section.
-
-    Non-strict: an XPASS means the feature landed, which is good news and must
-    not fail the run.
-    """
-    return pytest.mark.xfail(
-        reason=f"DM-in-DB not implemented yet - see {DESIGN_DOC} {section}",
-        strict=False,
-    )
 
 
 @pytest.fixture()
@@ -103,7 +96,21 @@ def _peer_payload(message_ids: list[str]) -> dict:
     Shaped like the union-merge payload the design specifies: one entry per
     table, every row carrying its own primary key so the merge is an
     ``INSERT OR IGNORE`` with no arbitration.
+
+    ``seq`` IS DERIVED FROM THE ID, NOT FROM THE LIST POSITION, and the
+    distinction is load-bearing for ``test_thread_order_is_independent_of_
+    insertion_order``. That test merges this payload and its reverse, then
+    asserts both hosts render the same conversation — which is only a
+    statement about ORDERING if both hosts hold THE SAME ROWS. Numbering by
+    position made the reversed payload a set of DIFFERENT rows (same ids,
+    different ``seq``), so the test would have been asserting that ``seq`` is
+    ignored, and the only implementation satisfying it would have dropped the
+    per-thread counter that keeps same-second messages in append order.
+
+    In reality a message is authored ONCE, on one host, with one ``seq``;
+    merge copies it verbatim. Deriving from the id reproduces that.
     """
+    order = sorted(message_ids)
     return {
         "dm_threads": [
             {
@@ -122,11 +129,11 @@ def _peer_payload(message_ids: list[str]) -> dict:
                 "sender": "agent-x",
                 "body": f"from peer {mid}",
                 "ts": "2026-07-28T00:00:05Z",
-                "seq": index + 1,
+                "seq": order.index(mid) + 1,
                 "origin_host": "host-b",
                 "record_json": "{}",
             }
-            for index, mid in enumerate(message_ids)
+            for mid in message_ids
         ],
         "dm_receipts": [],
     }
@@ -135,7 +142,6 @@ def _peer_payload(message_ids: list[str]) -> dict:
 # --------------------------------------------------------------------------- #
 # INTENT — backfill (design part 2, M1)                                        #
 # --------------------------------------------------------------------------- #
-@_todo("M1")
 def test_backfill_leaves_the_sidecar_byte_identical(db_path, sidecar):
     """Reversibility is a property of the SOURCE being untouched, not of a plan.
 
@@ -155,7 +161,6 @@ def test_backfill_leaves_the_sidecar_byte_identical(db_path, sidecar):
     assert sidecar.read_bytes() == before
 
 
-@_todo("M1")
 def test_backfill_is_idempotent(db_path, sidecar):
     """A migration that cannot be re-run safely cannot be resumed safely.
 
@@ -176,7 +181,6 @@ def test_backfill_is_idempotent(db_path, sidecar):
     assert message_count(db=db_path) == first
 
 
-@_todo("M1")
 def test_backfill_carries_every_sidecar_message(db_path, sidecar):
     """The migration may lose nothing — not even a record with no id.
 
@@ -194,7 +198,6 @@ def test_backfill_carries_every_sidecar_message(db_path, sidecar):
     assert message_count(db=db_path) == 2
 
 
-@_todo("M1")
 def test_backfill_preserves_read_state_as_a_receipt(db_path, sidecar):
     """A read message must not pop unread for everyone at cutover.
 
@@ -215,7 +218,6 @@ def test_backfill_preserves_read_state_as_a_receipt(db_path, sidecar):
 # --------------------------------------------------------------------------- #
 # INTENT — group threads (design part 1 section 3, exercised end to end)        #
 # --------------------------------------------------------------------------- #
-@_todo("part 1 section 3.1")
 def test_group_message_is_visible_to_every_member(db_path):
     """The reason this card exists: one message, more than one recipient.
 
@@ -238,7 +240,6 @@ def test_group_message_is_visible_to_every_member(db_path):
     assert reached == {"agent-a", "agent-b"}
 
 
-@_todo("part 1 section 3.2")
 def test_read_receipt_is_scoped_to_one_reader(db_path):
     """With three members, "read" is not a property of the message.
 
@@ -265,7 +266,6 @@ def test_read_receipt_is_scoped_to_one_reader(db_path):
     assert [m["id"] for m in unread_for("agent-b", db=db_path)] == [message["id"]]
 
 
-@_todo("part 1 section 3.3")
 def test_group_thread_id_survives_a_membership_change(db_path):
     """A thread id derived from its members would orphan history on a join.
 
@@ -294,7 +294,6 @@ def test_group_thread_id_survives_a_membership_change(db_path):
 # --------------------------------------------------------------------------- #
 # INTENT — multi-host merge (design part 2 section 6.3)                         #
 # --------------------------------------------------------------------------- #
-@_todo("section 6.3")
 def test_merge_from_a_peer_host_is_a_union(db_path, sidecar):
     """Two hosts today FORK silently; reconciliation must add, never replace.
 
@@ -318,7 +317,6 @@ def test_merge_from_a_peer_host_is_a_union(db_path, sidecar):
     assert message_count(db=db_path) == 3
 
 
-@_todo("section 6.3")
 def test_merge_is_idempotent(db_path, sidecar):
     """Merging twice must be free, or no operator will dare run it twice.
 
@@ -344,7 +342,6 @@ def test_merge_is_idempotent(db_path, sidecar):
     assert message_count(db=db_path) == after_first
 
 
-@_todo("section 6.3")
 def test_merge_never_shrinks_the_message_count(db_path, sidecar):
     """The operator's ruling, made executable: a count decrease IS the bug.
 
@@ -370,7 +367,6 @@ def test_merge_never_shrinks_the_message_count(db_path, sidecar):
     assert message_count(db=db_path) == 2
 
 
-@_todo("part 1 section 3.6")
 def test_thread_order_is_independent_of_insertion_order(db_path, tmp_path):
     """Every host holding the same rows must render the same conversation.
 
