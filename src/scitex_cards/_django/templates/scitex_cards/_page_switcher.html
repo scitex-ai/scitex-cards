@@ -31,5 +31,11 @@ its own palette into that component's `--sw-*` tokens.
 {% endcomment %}
 <nav class="stx-cards-switcher" aria-label="Board or Chat">
   <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
-  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}chat" {% if active == 'chat' %}aria-current="page" {% endif %}title="Chat — direct messages with the agents">Chat</a>
+  {% comment %}Label is "DM", not "Chat" — operator's wording, 2026-07-28:
+    「Board | "DM" がよい」. The ROUTE stays /chat: renaming a published URL is a
+    migration, not a rename, and every existing bookmark and every agent's
+    reference would break for a label change. Change what the reader sees; leave
+    what the system resolves.
+  {% endcomment %}
+  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}chat" {% if active == 'chat' %}aria-current="page" {% endif %}title="Direct Message — talk to the agents">DM</a>
 </nav>
