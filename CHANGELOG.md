@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Board | Chat switcher on both pages.** `/chat/` was reachable only by
+  typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
+  なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい
+  です。」 With the migration off Telegram onto this chat under way, an
+  undiscoverable chat page is a migration blocker, not a polish item. One
+  partial (`templates/scitex_cards/_page_switcher.html`) renders on the board
+  home and on the DM page, so the two cannot drift; every href is built from
+  the view's `api_base` include root, the same mount-aware mechanism the
+  board's `API_BASE` const and the chat page's `<body data-api-base>` already
+  use — a hardcoded `/chat` is the bug class of #556 / #557 and is now linted
+  against. The chat header's old one-way "← board" link is replaced by the
+  switcher (the reverse trip was the missing half). Styling reuses the
+  segmented-control shape the board's Layout axis already uses; it reads the
+  host page's palette through six `--sw-*` variables and gets phone-sized tap
+  targets under the board's own 768px breakpoint.
+
 ## [0.17.9] - 2026-07-28
 
 Everything below already existed on `develop` and on the host — but under the
