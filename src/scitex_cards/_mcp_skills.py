@@ -241,6 +241,13 @@ async def dm_send(
     ($SCITEX_TODO_AGENT_ID). The operator's reserved peer name is
     ``"operator"`` — the operator reads the thread on the board's /chat view.
     Returns the stored record as JSON.
+
+    TEXT ONLY. To send a FILE — a PDF, a screenshot, a log — use
+    ``dm_send_document(to=..., file_path=..., caption=...)`` instead. Do NOT
+    describe the file in prose here and do NOT paste a filesystem path: the
+    operator reads this thread in a browser, where a path on your machine is
+    not something they can open. ``dm_send_document`` copies the bytes into
+    the board's attachment store so the file itself arrives.
     """
     sender, err = _dm_sender_or_error()
     if err is not None:

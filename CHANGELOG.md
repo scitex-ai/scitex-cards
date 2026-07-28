@@ -4,6 +4,28 @@
 
 ### Added
 
+- **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
+  `to` and `body` and nothing else, so there was no API for sending a file at
+  all — an agent asked which one to use for a PDF and the honest answer was
+  "none exists". The PDF arrived as prose describing a PDF. With the operator's
+  conversation now largely moved onto cards DMs, that made real deliverables
+  undeliverable: three SOHO application documents and a loan contract in a
+  single day, all summarised instead of sent. The receiving half already
+  worked, so this is the missing sending half and nothing more.
+  `dm_send_document(to, file_path, caption)` mirrors
+  claude-code-telegrammer's `send_document` argument-for-argument, so an agent
+  that can hand the operator a file over Telegram makes the same call here.
+  The bytes are **copied** into the existing attachment store and get the
+  existing `attachments/<YYYY-MM>/<uuid>/<name>` url, so the chat pane's
+  current renderer serves agent-sent and operator-uploaded files identically —
+  no second storage layout, and therefore no second renderer. Storage layout,
+  the `MAX_UPLOAD_BYTES` ceiling and the root-containment check move into
+  `scitex_cards._attachments` as the single source for both entry points.
+  The original path is never recorded and never served from (a file the agent
+  later deletes still reaches the operator), and the verb is deliberately kept
+  out of `BACKEND_VERBS` — `_server.py` dispatches that tuple over HTTP, where
+  a path-taking verb would be an arbitrary-file read.
+
 - **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
   typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
   なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい

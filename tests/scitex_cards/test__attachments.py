@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import pytest
 
+from scitex_cards import _attachments
 from scitex_cards._attachments import (
     MAX_UPLOAD_BYTES,
     AttachmentError,
@@ -157,28 +158,110 @@ def test_a_directory_is_not_a_sendable_file(store, tmp_path):
         store_local_file(folder, store=store)
 
 
-def test_an_over_size_file_is_refused(store, tmp_path):
-    """MAX_UPLOAD_BYTES is a guard against a disk-full board, not a preference."""
+def test_the_shipped_ceiling_is_25_mib():
+    """The VALUE, pinned separately from the ENFORCEMENT.
+
+    Written this way after a mutation probe embarrassed the first version:
+    that test sized its input as ``MAX_UPLOAD_BYTES + 1``, read from the
+    module under test, so raising the constant raised the test's own input
+    with it and the guard stayed green (while cheerfully writing 25 GB to
+    disk). A test must not take its expectation from the thing it is
+    measuring.
+    """
     # Arrange
-    fat = tmp_path / "huge.bin"
-    fat.write_bytes(b"\0" * (MAX_UPLOAD_BYTES + 1))
+    expected = 25 * 1024 * 1024
+    # Act
+    shipped = MAX_UPLOAD_BYTES
+    # Assert
+    assert shipped == expected
+
+
+@pytest.fixture
+def tiny_ceiling(monkeypatch):
+    """Lower the ceiling so the ENFORCEMENT is testable at any value."""
+    monkeypatch.setattr(_attachments, "MAX_UPLOAD_BYTES", 64)
+    return 64
+
+
+def test_a_file_over_the_ceiling_is_refused(store, tmp_path, tiny_ceiling):
+    """The ceiling guards against a disk-full board, which is a fleet outage."""
+    # Arrange
+    fat = tmp_path / "over.bin"
+    fat.write_bytes(b"\0" * (tiny_ceiling + 1))
     # Act / Assert
     with pytest.raises(AttachmentError):
         store_local_file(fat, store=store)
 
 
-def test_an_over_size_refusal_leaves_no_partial_directory(store, tmp_path):
+def test_a_file_at_the_ceiling_is_accepted(store, tmp_path, tiny_ceiling):
+    """The boundary is a ceiling, not an off-by-one that rejects a legal file."""
+    # Arrange
+    exact = tmp_path / "exact.bin"
+    exact.write_bytes(b"\0" * tiny_ceiling)
+    # Act
+    meta = store_local_file(exact, store=store)
+    # Assert
+    assert meta["size"] == tiny_ceiling
+
+
+def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
+    """A DECLARED size is a claim; the bytes are what count.
+
+    ``store_chunks`` is what the browser upload path feeds, and there the
+    length is whatever the client says it is. This drives the enforcement
+    that happens as the bytes arrive.
+    """
+    # Arrange
+    chunks = [b"\0" * 32] * 4
+    # Act / Assert
+    with pytest.raises(AttachmentError):
+        _attachments.store_chunks(iter(chunks), "over.bin", store=store)
+
+
+def test_an_over_size_refusal_leaves_no_partial_directory(store, tiny_ceiling):
     """A refusal must not litter the store with half a file."""
     # Arrange
-    fat = tmp_path / "huge.bin"
-    fat.write_bytes(b"\0" * (MAX_UPLOAD_BYTES + 1))
     with pytest.raises(AttachmentError):
-        store_local_file(fat, store=store)
+        _attachments.store_chunks(iter([b"\0" * 32] * 4), "over.bin", store=store)
     root = attachments_root(store)
     # Act
     leftovers = [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
     # Assert
     assert leftovers == []
+
+
+def test_a_symlink_out_of_the_store_is_not_served(store, stored, tmp_path):
+    """THE containment check, exercised for real.
+
+    The first version of this test passed ``../../etc/passwd`` as the name and
+    was green even with the containment check deleted — because ``safe_name``
+    had already reduced it to ``passwd``, which does not exist. It was
+    measuring basename reduction and calling it containment.
+
+    A symlink is the case that actually reaches the check: every path
+    COMPONENT is well-formed, so the shape guards admit it, and only the
+    re-check on the RESOLVED path notices that it lands outside the root.
+    """
+    # Arrange — plant a well-named symlink pointing out of the store.
+    _, subdir, token, _ = stored["url"].split("/")
+    outside = tmp_path / "secret.txt"
+    outside.write_text("not yours")
+    link = attachments_root(store) / subdir / token / "innocent.txt"
+    link.symlink_to(outside)
+    # Act
+    resolved = resolve_stored(subdir, token, "innocent.txt", store=store)
+    # Assert
+    assert resolved is None
+
+
+def test_a_traversal_name_is_reduced_to_its_basename(store, stored):
+    """The FIRST line of defence, named for what it actually does."""
+    # Arrange
+    hostile = "../../../../etc/passwd"
+    # Act
+    reduced = _attachments.safe_name(hostile)
+    # Assert
+    assert reduced == "passwd"
 
 
 def test_a_traversal_token_never_resolves(store, stored):
@@ -191,7 +274,13 @@ def test_a_traversal_token_never_resolves(store, stored):
     assert resolved is None
 
 
-def test_a_traversal_name_never_escapes_the_root(store, stored):
+def test_a_traversal_name_never_resolves_to_a_file(store, stored):
+    """End-to-end on the hostile name: reduced, then simply not found.
+
+    Kept alongside the symlink test above, which is the one that actually
+    exercises the resolved-path containment re-check — this one would stay
+    green without it.
+    """
     # Arrange
     _, subdir, token, _ = stored["url"].split("/")
     # Act
