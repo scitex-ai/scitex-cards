@@ -41,21 +41,27 @@
   }
 
   function mount(host) {
-    var $menu = document.getElementById("msg-menu");
+    /* The wrap is the whole primary popover: the quick reaction ROW on top,
+     * the action LIST beneath it, positioned and dismissed as ONE thing. That
+     * is the operator's sketch, and it is also why the row cannot drift away
+     * from the menu — there is only one positioned element. */
+    var $wrap = document.getElementById("msg-menu-wrap");
+    var $quick = document.getElementById("react-quick");
     var $react = document.getElementById("react-bar");
     var $forward = document.getElementById("forward-menu");
     var $messages = host.messagesEl;
     var $body = host.composerEl;
-    if (!$menu || !$messages) return null;
+    if (!$wrap || !$messages) return null;
 
     var target = null; // the .msg node the menu was opened on
+    var select = null; // the selection-mode module, mounted at the bottom
 
     /* Every popover this module owns. Closing "the menu" must close all
      * three: leaving the emoji bar hanging after the menu that spawned it is
      * gone reads as a stuck UI, and it is the kind of thing only ever noticed
      * on the phone. */
     function panels() {
-      return [$menu, $react, $forward].filter(Boolean);
+      return [$wrap, $react, $forward].filter(Boolean);
     }
 
     function closeAll() {
@@ -63,6 +69,9 @@
         panel.classList.remove("open");
       });
       target = null;
+      // A pending peer-picker handler belongs to the popover that is closing.
+      // Left set, the NEXT forward would run the previous one's callback.
+      forwardPick = null;
     }
 
     function closeSubPanels() {
@@ -180,42 +189,68 @@
         });
     }
 
-    /* Build the emoji bar once; the set never changes at runtime. */
-    function buildReactBar() {
+    /* One tappable emoji. The SAME button for the quick row and for the
+     * chevron's fuller picker — they are two views of one palette, so they
+     * must also be one behaviour. */
+    function emojiButton(emoji) {
+      var button = el("button", "react-emoji", emoji);
+      button.type = "button";
+      button.setAttribute("aria-label", "React " + emoji);
+      button.addEventListener("click", function () {
+        var record = recordOf(target);
+        if (!record) {
+          closeAll();
+          return;
+        }
+        var current = (host.getReactions()[record.id] || {})[emoji] || [];
+        sendReaction(
+          record.id,
+          emoji,
+          actions.nextAction(current, host.viewer),
+        );
+        closeAll();
+      });
+      return button;
+    }
+
+    /* Build both emoji panels once; neither set changes at runtime.
+     *
+     * The quick row's buttons are INSERTED BEFORE the chevron, which the
+     * template already ships — so the row reads ⭕ ❌ ❓ … ▾ with the escape
+     * hatch at the end, exactly as the reference has it. */
+    function buildEmojiPanels() {
+      var $more = document.getElementById("mm-react");
+      if ($quick && $more) {
+        actions.QUICK_REACTION_EMOJI.forEach(function (emoji) {
+          $quick.insertBefore(emojiButton(emoji), $more);
+        });
+      }
       if (!$react) return;
       $react.textContent = "";
       actions.REACTION_EMOJI.forEach(function (emoji) {
-        var button = el("button", "react-emoji", emoji);
-        button.type = "button";
-        button.setAttribute("aria-label", "React " + emoji);
-        button.addEventListener("click", function () {
-          var record = recordOf(target);
-          if (!record) {
-            closeAll();
-            return;
-          }
-          var current = (host.getReactions()[record.id] || {})[emoji] || [];
-          sendReaction(
-            record.id,
-            emoji,
-            actions.nextAction(current, host.viewer),
-          );
-          closeAll();
-        });
-        $react.appendChild(button);
+        $react.appendChild(emojiButton(emoji));
       });
     }
 
+    /* The chevron. It is the old "React…" ITEM, moved into the row: same id,
+     * same job — swap the primary popover for the full palette, so only one
+     * thing is ever on screen. */
     var $mmReact = document.getElementById("mm-react");
     if ($mmReact && $react) {
       $mmReact.addEventListener("click", function () {
-        var rect = $menu.getBoundingClientRect();
-        $menu.classList.remove("open");
+        var rect = $wrap.getBoundingClientRect();
+        $wrap.classList.remove("open");
         openAt($react, rect.left, rect.top);
       });
     }
 
     // ---- Forward ---------------------------------------------------------
+
+    /* Who the picked peer is handed to. Set by whoever opened the picker —
+     * the single Forward item, or selection mode's bulk Forward — so there is
+     * ONE peer picker on the page rather than two that could disagree about
+     * who exists. */
+    var forwardPick = null;
 
     /* Populate the peer picker from the agent list chat.js already polls —
      * a second /dm/threads round-trip would only add a way for the picker to
@@ -236,32 +271,50 @@
         item.type = "button";
         item.setAttribute("role", "menuitem");
         item.addEventListener("click", function () {
-          var record = recordOf(target);
+          // Captured BEFORE closeAll, which clears the pending handler.
+          var pick = forwardPick;
           closeAll();
-          if (record) sendForward(agent.name, record);
+          if (pick) pick(agent.name);
         });
         $forward.appendChild(item);
       });
+    }
+
+    /* Open the peer picker anchored at `rect`, handing the choice to `onPick`. */
+    function openForwardPicker(rect, onPick) {
+      if (!$forward) return;
+      $wrap.classList.remove("open");
+      forwardPick = onPick;
+      buildForwardMenu();
+      openAt($forward, rect.left, rect.top);
     }
 
     /* Forward = an ordinary message to another peer whose body opens with a
      * "[forwarded from <name>, <ts>]" banner. No new endpoint, no new field,
      * no new record kind — the existing compose path carries it, and an older
      * client shows the banner as text instead of showing nothing. */
-    function sendForward(toPeer, record) {
-      fetch(host.apiBase + "/dm/thread/" + encodeURIComponent(toPeer), {
+    /* POST one already-composed body to `toPeer`, resolving on success.
+     *
+     * The ONE forward POST on the page. Selection mode's bulk forward chains
+     * this rather than owning a second copy — two POSTs to the same endpoint
+     * would be two places for the error handling to drift apart. */
+    function sendForwardBody(toPeer, body) {
+      return fetch(host.apiBase + "/dm/thread/" + encodeURIComponent(toPeer), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: actions.forwardBody(record) }),
-      })
-        .then(function (resp) {
-          return resp.json().then(function (data) {
-            if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
-            return data;
-          });
-        })
+        body: JSON.stringify({ body: body }),
+      }).then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
+          return data;
+        });
+      });
+    }
+
+    function sendForward(toPeer, record) {
+      sendForwardBody(toPeer, actions.forwardBody(record))
         .then(function () {
-          host.onForwarded(toPeer);
+          host.onForwarded(toPeer, 1);
         })
         .catch(function (err) {
           host.showError("Forward failed: " + err.message);
@@ -271,10 +324,12 @@
     var $mmForward = document.getElementById("mm-forward");
     if ($mmForward && $forward) {
       $mmForward.addEventListener("click", function () {
-        var rect = $menu.getBoundingClientRect();
-        $menu.classList.remove("open");
-        buildForwardMenu();
-        openAt($forward, rect.left, rect.top);
+        // Captured BEFORE the picker opens: openForwardPicker closes the wrap,
+        // and the eventual pick happens long after `target` has been cleared.
+        var record = recordOf(target);
+        openForwardPicker($wrap.getBoundingClientRect(), function (peer) {
+          if (record) sendForward(peer, record);
+        });
       });
     }
 
@@ -283,12 +338,19 @@
     function openMenuFor(node, x, y) {
       target = node;
       closeSubPanels();
-      openAt($menu, x, y);
+      openAt($wrap, x, y);
+    }
+
+    /* In selection mode a press means "add this to the selection", so opening
+     * the menu on top of it would put two different answers under one gesture.
+     * Selection mode has its own bar for its own actions. */
+    function menuSuppressed() {
+      return !!(select && select.isActive());
     }
 
     $messages.addEventListener("contextmenu", function (event) {
       var node = event.target.closest ? event.target.closest(".msg") : null;
-      if (!node) return; // right-click on blank space keeps the browser menu
+      if (!node || menuSuppressed()) return; // blank space keeps the browser menu
       event.preventDefault();
       openMenuFor(node, event.clientX, event.clientY);
     });
@@ -313,7 +375,7 @@
       "touchstart",
       function (event) {
         var node = event.target.closest ? event.target.closest(".msg") : null;
-        if (!node || event.touches.length !== 1) return;
+        if (!node || event.touches.length !== 1 || menuSuppressed()) return;
         var touch = event.touches[0];
         pressAt = { x: touch.clientX, y: touch.clientY };
         pressTimer = setTimeout(function () {
@@ -369,6 +431,11 @@
      * gesture that should be one.
      */
     function renderReactions(wrap, message) {
+      // The per-message PAINT HOOK, so selection mode gets its highlight back
+      // after a poll rebuilds the pane. Without this the selection would look
+      // cleared every 5s while still being held — and the operator would
+      // re-tap a message that was already in the set, silently removing it.
+      if (select) select.decorate(wrap, message);
       var chips = actions.chipsOf(host.getReactions()[message.id], host.viewer);
       if (!chips.length) return null;
       var row = el("div", "reactions");
@@ -391,7 +458,41 @@
       return row;
     }
 
-    buildReactBar();
+    // ---- selection mode --------------------------------------------------
+
+    /* Mounted HERE rather than from chat.js: this module already holds every
+     * seam selection needs — the message list, the current peer, the one
+     * forward POST and the peer picker — so routing them through chat.js would
+     * add a pass-through and nothing else. chat.js is also at its 512-line
+     * budget, and a feature should not have to spend another file's budget to
+     * exist. */
+    if (root.ChatSelect) {
+      select = root.ChatSelect.mount({
+        messagesEl: $messages,
+        showError: host.showError,
+        showNotice: host.showNotice,
+        getMessages: host.getMessages,
+        openForwardPicker: openForwardPicker,
+        sendForwardBody: sendForwardBody,
+        onForwarded: host.onForwarded,
+      });
+    }
+
+    var $mmSelect = document.getElementById("mm-select");
+    if ($mmSelect && select) {
+      $mmSelect.addEventListener("click", function () {
+        var node = target;
+        closeAll();
+        select.enter(node);
+      });
+    } else if ($mmSelect) {
+      // The module failed to mount, so the item cannot work. Removing it is
+      // the honest outcome: a menu entry that does nothing is worse than one
+      // that is not there.
+      $mmSelect.remove();
+    }
+
+    buildEmojiPanels();
     return { close: closeAll, renderReactions: renderReactions };
   }
 

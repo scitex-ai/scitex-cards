@@ -254,4 +254,161 @@ def test_reaction_signature_ignores_actor_order():
     assert signatures[0] == signatures[1]
 
 
+# === the quick reaction row ================================================
+
+
+def test_the_quick_row_offers_maru():
+    """〇 — the operator asked for it by name (「〇、×、？ がいい」)."""
+    # Arrange
+    # Act
+    quick = _call("ChatActions.QUICK_REACTION_EMOJI")
+    # Assert
+    assert "⭕" in quick
+
+
+def test_the_quick_row_offers_batsu():
+    """×."""
+    # Arrange
+    # Act
+    quick = _call("ChatActions.QUICK_REACTION_EMOJI")
+    # Assert
+    assert "❌" in quick
+
+
+def test_the_quick_row_offers_hatena():
+    """？."""
+    # Arrange
+    # Act
+    quick = _call("ChatActions.QUICK_REACTION_EMOJI")
+    # Assert
+    assert "❓" in quick
+
+
+def test_the_quick_row_never_offers_thumbs_down():
+    """Operator: 「親指の下向きのやつはあまり好きじゃない、下品」.
+
+    Asserted rather than commented because 👎 is the obvious partner to 👍 —
+    exactly the kind of "sensible default" a later edit re-adds without
+    knowing it was refused. This makes that edit fail CI instead of arriving
+    on their phone.
+    """
+    # Arrange
+    # Act
+    quick = _call("ChatActions.QUICK_REACTION_EMOJI")
+    # Assert
+    assert "\U0001f44e" not in quick
+
+
+def test_the_full_palette_never_offers_thumbs_down():
+    """The chevron's fuller picker is not a loophole for the same glyph."""
+    # Arrange
+    # Act
+    full = _call("ChatActions.REACTION_EMOJI")
+    # Assert
+    assert "\U0001f44e" not in full
+
+
+def test_the_quick_row_is_a_subset_of_the_full_palette():
+    """Row and picker are two views of ONE palette, not two palettes."""
+    # Arrange
+    # Act
+    palettes = _call("[ChatActions.QUICK_REACTION_EMOJI, ChatActions.REACTION_EMOJI]")
+    # Assert
+    assert set(palettes[0]) <= set(palettes[1])
+
+
+def test_the_quick_row_stays_short_enough_for_one_phone_row():
+    """Six 44px targets plus the chevron is what fits a 375pt screen."""
+    # Arrange
+    # Act
+    quick = _call("ChatActions.QUICK_REACTION_EMOJI")
+    # Assert
+    assert len(quick) <= 6
+
+
+# === selection =============================================================
+
+
+def test_toggle_selection_adds_an_unselected_id():
+    # Arrange
+    # Act
+    ids = _call('ChatActions.toggleSelection(["m_1"], "m_2")')
+    # Assert
+    assert ids == ["m_1", "m_2"]
+
+
+def test_toggle_selection_removes_an_already_selected_id():
+    # Arrange
+    # Act
+    ids = _call('ChatActions.toggleSelection(["m_1", "m_2"], "m_1")')
+    # Assert
+    assert ids == ["m_2"]
+
+
+def test_toggle_selection_does_not_mutate_the_input_list():
+    """The caller holds the old list; a mutation would edit it behind them."""
+    # Arrange
+    # Act
+    before = _call(
+        '(function () { var held = ["m_1"]; '
+        'ChatActions.toggleSelection(held, "m_2"); return held; })()',
+    )
+    # Assert
+    assert before == ["m_1"]
+
+
+def test_toggle_selection_starts_from_nothing():
+    # Arrange
+    # Act
+    ids = _call('ChatActions.toggleSelection(null, "m_1")')
+    # Assert
+    assert ids == ["m_1"]
+
+
+def test_selection_label_counts_the_selection():
+    # Arrange
+    # Act
+    label = _call("ChatActions.selectionLabel(3)")
+    # Assert
+    assert label == "3 selected"
+
+
+def test_selected_records_returns_thread_order_not_tap_order():
+    """Tapping bottom-up must not forward the conversation backwards."""
+    # Arrange
+    messages = json.dumps(
+        [{"id": "m_1"}, {"id": "m_2"}, {"id": "m_3"}],
+    )
+    # Act
+    records = _call(f'ChatActions.selectedRecords({messages}, ["m_3", "m_1"])')
+    # Assert
+    assert [r["id"] for r in records] == ["m_1", "m_3"]
+
+
+def test_selected_records_drops_an_id_no_longer_in_the_thread():
+    # Arrange
+    messages = json.dumps([{"id": "m_1"}])
+    # Act
+    records = _call(f'ChatActions.selectedRecords({messages}, ["m_1", "m_gone"])')
+    # Assert
+    assert len(records) == 1
+
+
+def test_join_texts_separates_messages_with_a_blank_line():
+    # Arrange
+    # Act
+    joined = _call('ChatActions.joinTexts(["one", "two"])')
+    # Assert
+    assert joined == "one\n\ntwo"
+
+
+def test_join_texts_drops_an_attachment_only_message():
+    """An empty bubble must not leave a hole in the middle of the paste."""
+    # Arrange
+    # Act
+    joined = _call('ChatActions.joinTexts(["one", "   ", "two"])')
+    # Assert
+    assert joined == "one\n\ntwo"
+
+
 # EOF
