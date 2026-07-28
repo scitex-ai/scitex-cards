@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import TaskValidationError
+
+_LOG = logging.getLogger(__name__)
 
 
 def _as_aware_utc(dt):
@@ -74,54 +77,117 @@ def next_deadline_for_task(task: dict, *, now=None) -> str | None:
     what makes the overdue filter blind to it; both follow from this
     one function. (hook-bypass: line-limit.)
     """
-    import datetime as _dt
+    nxt_dt, _has_time = _next_deadline_dt_typed(task, now=now)
+    if nxt_dt is None:
+        return None
+    # Date-flatten for the FE date-pill / sort / org export. This is the ONE
+    # place the time-of-day is dropped; is_overdue takes the FULL datetime from
+    # the same helper, so a timed deadline still alarms at its timestamp.
+    return nxt_dt.date().isoformat()
 
-    candidates: list[_dt.datetime] = []
+
+def _next_deadline_dt_typed(task: dict, *, now=None):
+    """The datetime-carrying core shared by the date-pill and the alarm.
+
+    Returns ``(datetime | None, has_time)`` for the SOONEST deadline occurrence.
+    :func:`next_deadline_for_task` date-flattens this for the FE; :func:`is_overdue`
+    keeps the full timestamp so a timed deadline (``...T09:00``) is overdue the
+    moment it passes, not only once its whole day has. ``has_time`` is the winning
+    (soonest) candidate's — whether that source string carried a time-of-day.
+
+    THE SECOND INSTANCE of the blank-board bug lives here: ``min()`` over a mix
+    of naive and aware datetimes raises the SAME TypeError that 500'd ``/graph``
+    (2026-07-12). We key ``min`` on ``_as_aware_utc`` copies; the datetimes
+    handed back are untouched, preserving the naive-in / naive-out contract.
+    """
+    candidates: list[tuple] = []  # (datetime, has_time)
     deadlines = task.get("deadlines")
     if isinstance(deadlines, list) and deadlines:
         for entry in deadlines:
-            picked = _pick_next_dt(entry, now=now)
+            picked, has_time = _pick_next_dt_typed(entry, now=now)
             if picked is not None:
-                candidates.append(picked)
+                candidates.append((picked, has_time))
     else:
-        picked = _pick_next_dt(task.get("deadline"), now=now)
+        picked, has_time = _pick_next_dt_typed(task.get("deadline"), now=now)
         if picked is not None:
-            candidates.append(picked)
+            candidates.append((picked, has_time))
     if not candidates:
-        return None
-    # THE SECOND INSTANCE of the blank-board bug, and it has never fired only
-    # because no card yet carries BOTH a recurring and a bare deadline. `min()`
-    # over a mix of naive and aware datetimes raises the SAME TypeError that
-    # 500'd /graph. Compare on normalised copies; the values themselves are
-    # untouched, and the output is a bare date either way.
-    return min(candidates, key=_as_aware_utc).date().isoformat()
+        return None, False
+    return min(candidates, key=lambda c: _as_aware_utc(c[0]))
 
 
-def _pick_next_dt(value, *, now=None):
-    """Parse + (if recurring) advance to the next occurrence."""
+def _pick_next_dt_typed(value, *, now=None):
+    """Parse + (if recurring) advance, returning ``(datetime | None, has_time)``.
+
+    ``has_time`` reports whether ``value`` carried a time-of-day (an explicit
+    ``T``/space time part) versus a bare ``YYYY-MM-DD`` — it drives the overdue
+    granularity (see :func:`is_overdue`).
+
+    A stored deadline that will not parse is LOGGED (loud, greppable, names the
+    value) and treated as absent. The write path validates deadlines with this
+    same parser, so a parse failure at read time signals data corruption or a
+    schema skew worth a warning — but a single bad card must NOT crash the
+    fleet-wide overdue scan, so we log rather than raise (cf. the blank-board).
+    """
     if value is None:
-        return None
+        return None, False
     try:
         dt, repeater = _parse_deadline_or_raise(
             value, source="<runtime>", tid="<runtime>", label="deadline"
         )
     except TaskValidationError:
-        return None
+        _LOG.warning(
+            "is_overdue: ignoring unparseable stored deadline %r — the overdue "
+            "filter cannot evaluate it (fix the card's deadline field)",
+            value,
+        )
+        return None, False
+    has_time = _has_time_component(value)
     if repeater is None:
-        return dt
-    return repeater.next_occurrence(dt, now=now)
+        return dt, has_time
+    return repeater.next_occurrence(dt, now=now), has_time
+
+
+def _has_time_component(value) -> bool:
+    """True iff the deadline STRING carries a time-of-day.
+
+    A bare date is ``YYYY-MM-DD`` (no ``T``, no space). Any explicit time part —
+    ``2026-07-23T09:00``, ``2026-07-23 09:00``, or one with an offset — has one.
+    The repeater suffix (`` +1w`` / `` ++2d``) is stripped first, so
+    ``2026-07-01 +1w`` reads as date-only. Drives is_overdue's granularity.
+    """
+    if not isinstance(value, str):
+        return False
+    base = value
+    m = _get_repeater_rx().search(value)
+    if m:
+        base = value[: m.start()]
+    base = base.strip()
+    return "T" in base or " " in base
+
+
+def _pick_next_dt(value, *, now=None):
+    """Back-compat shim: the datetime-only half of :func:`_pick_next_dt_typed`.
+
+    Retained because ``_model`` re-exports it; new callers use the typed form.
+    """
+    dt, _has_time = _pick_next_dt_typed(value, now=now)
+    return dt
 
 
 def is_overdue(task: dict, *, now=None) -> bool:
     """Return True iff ``task`` has a next deadline strictly in the past.
 
-    A task is **overdue** when:
-      * it has a `deadline` or `deadlines` field, AND
-      * the next-occurrence (per :func:`next_deadline_for_task`) is
-        strictly before today (UTC by default), AND
-      * the task hasn't reached a terminal lifecycle state (`done` /
-        `deferred` / `failed` / `cancelled` aren't overdue — they're
-        closed). (hook-bypass: line-limit.)
+    A task is **overdue** when it has a `deadline`/`deadlines`, is NOT in a
+    terminal lifecycle state (`done` / `failed` / `cancelled` / `goal` are
+    closed; `deferred` is NOT — it can go overdue), AND its soonest deadline
+    occurrence is strictly in the past — at a granularity that follows the
+    stored form:
+      * a deadline WITH a time (`2026-07-23T09:00`) is overdue the moment that
+        TIMESTAMP passes, compared against ``now`` (UTC by default);
+      * a DATE-ONLY deadline (`2026-07-23`) is overdue only once its whole day
+        has passed — a bare "today" is not overdue until tomorrow.
+    (hook-bypass: line-limit.)
 
     Used by the fleet liveness handler and the CLI's `list-tasks
     --overdue` filter to surface late tasks at a glance (operator
@@ -152,16 +218,19 @@ def is_overdue(task: dict, *, now=None) -> bool:
     # overdue and must surface. (hook-bypass: line-limit.)
     if status in {"done", "failed", "cancelled", "goal"}:
         return False
-    nxt = next_deadline_for_task(task, now=now)
-    if not nxt:
+    nxt_dt, has_time = _next_deadline_dt_typed(task, now=now)
+    if nxt_dt is None:
         return False
     cur = now or _dt.datetime.now(tz=_dt.timezone.utc)
+    # A deadline that carried a TIME is overdue the moment its timestamp passes
+    # (aware-normalised so naive-vs-aware never raises — the blank-board scar).
+    # A DATE-ONLY deadline stays day-granular: overdue only once its whole day
+    # has passed, so a bare "today" is not overdue at 00:01. A ``now`` given as
+    # a bare date can't do sub-day precision, so it falls to the day path too.
+    if has_time and isinstance(cur, _dt.datetime):
+        return _as_aware_utc(nxt_dt) < _as_aware_utc(cur)
     today = cur.date() if hasattr(cur, "date") else cur
-    try:
-        nxt_date = _dt.date.fromisoformat(str(nxt)[:10])
-    except (TypeError, ValueError):
-        return False
-    return nxt_date < today
+    return nxt_dt.date() < today
 
 
 @dataclass(frozen=True)

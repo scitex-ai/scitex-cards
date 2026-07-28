@@ -152,9 +152,9 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
     logger.error(
         "!! REFUSING TO MIRROR: %s is the shadow DB of %s, but this write is to "
         "%s. Mirroring would REPLACE that store's rows with this one's. If you "
-        "meant to repoint the mirror, re-bootstrap it explicitly "
-        "(`scitex-cards db import`); if this is a test or scratch "
-        "store, point $SCITEX_CARDS_DB at a scratch DB.",
+        "meant to repoint the mirror, point $SCITEX_CARDS_DB at the intended "
+        "store's own database; if this is a test or scratch store, point it at "
+        "a scratch DB.",
         db_path,
         stamped,
         store_path,

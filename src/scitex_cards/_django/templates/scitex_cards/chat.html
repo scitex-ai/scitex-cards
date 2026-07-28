@@ -87,7 +87,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border-bottom: 1px solid var(--line); flex: 0 0 auto;
   }
   #thread-title b { color: var(--text); }
-  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 860px; margin-inline: auto; }
   .msg { max-width: 78%; display: flex; flex-direction: column; gap: 2px; }
   .msg .bubble {
     padding: 8px 12px; border-radius: 12px; font-size: 0.88rem;
@@ -102,15 +102,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 
   /* ---- compose ---- */
   #compose {
-    display: flex; gap: 8px; padding: 10px 12px;
+    display: flex; gap: 8px; justify-content: center; padding: 10px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
   #compose textarea {
-    flex: 1 1 auto; resize: none; background: var(--panel-2); color: var(--text);
+    flex: 1 1 auto; max-width: 760px; resize: none; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-    font: inherit; font-size: 0.9rem; min-height: 40px; max-height: 120px;
+    font: inherit; font-size: 0.9rem; min-height: 64px; max-height: 200px;
   }
+  #compose button { align-self: flex-end; }
   #compose textarea:focus { outline: 1px solid var(--accent); }
   #compose button {
     background: var(--accent); color: #fff; border: 0; border-radius: 8px;
@@ -163,7 +164,7 @@ must therefore ALWAYS be rendered.
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
-      <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
+      <textarea id="compose-body" rows="3" placeholder="Message&hellip;" disabled></textarea>
       <button id="compose-send" type="submit" disabled>Send</button>
     </form>
   </main>

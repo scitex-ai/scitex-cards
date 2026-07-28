@@ -3,7 +3,7 @@
 """Throughput aggregator — single source of truth for stats / WIP / notify.
 
 Shared by:
-  * ``scitex-todo stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
+  * ``scitex-todo print-stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
   * ``scitex-todo sync-github`` (permanent version of the lead's
     one-time GitHub → board sync)
   * ``_store.add_task``'s WIP-validation gate (env-bounded throttle
