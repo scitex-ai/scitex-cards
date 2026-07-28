@@ -5,6 +5,8 @@
 from django.urls import path
 
 from . import views
+from .handlers.attachments import serve_view as attachments_serve_view
+from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
 from .handlers.dm import dm_thread_view, dm_threads_view
 from .handlers.fleet import (
@@ -82,6 +84,16 @@ urlpatterns = [
     path("chat/", views.chat_page, name="chat_page_slash"),
     path("dm/threads", dm_threads_view, name="dm_threads"),
     path("dm/thread/<str:peer>", dm_thread_view, name="dm_thread"),
+    # Chat attachments — the operator's top blocker was a text-only chat.
+    # Upload returns a relative URL the composer puts in the message body;
+    # serve validates every path component and confirms the resolved file is
+    # still inside the attachments root before opening it.
+    path("dm/upload", attachments_upload_view, name="dm_upload"),
+    path(
+        "attachments/<str:subdir>/<str:token>/<str:name>",
+        attachments_serve_view,
+        name="dm_attachment",
+    ),
     # Hook-consumer endpoints (lead a2a `6fff33d6` + `fbffb879`,
     # 2026-06-14, operator-mandated). Loose-coupling contract for
     # SAC's push-hook + dev's merge-Action to record progress / DONE
