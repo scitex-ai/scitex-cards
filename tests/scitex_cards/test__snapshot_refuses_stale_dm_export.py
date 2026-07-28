@@ -5,10 +5,15 @@
 MEASURED 2026-07-28 on the live canonical store: the ``messages`` table held
 2042 rows whose newest ``ts`` was ``2026-07-19T00:49:05Z`` — NINE DAYS stale.
 Zero rows for 07-27 or 07-28; four DMs sent that morning were absent. Every DM
-since Jul 19 existed only in the ``threads.json`` sidecar, because ``messages``
-is a DERIVED mirror of it (see ``_db_mirror``) and had stopped being refreshed.
+since existed only in the ``threads.json`` sidecar.
 
-2042 rows is what makes this dangerous: the table LOOKS populated, so a reader
+The root cause is worse than a lapsed refresh: ``messages`` has NO LIVE WRITER.
+``_threads.append_message`` (the only DM write path) never touches SQLite, and
+``_insert_messages`` — the table's only writer — has a single caller guarded by
+an explicit ``threads=`` argument that nothing in ``src/`` passes. The table is
+a fossil left behind when the YAML tier was deleted.
+
+2042 rows is what makes that dangerous: the table LOOKS populated, so a reader
 gets a plausible, complete-shaped, nine-day-old answer and nothing errors. One
 agent queried it for a DM they had just received, found nothing, and nearly
 concluded "no recent DMs exist" from an instrument that could not have shown
@@ -16,13 +21,14 @@ one.
 
 ``_assert_export_reflects_live_db`` already refuses a stale snapshot — but it
 compares CARDS only, while the same report prints a ``messages`` count that
-reads as equally verified. A check that silently narrows its own scope is the
-shape this repo has been bitten by before: the report says "snapshot: N
-messages" and means "N rows copied from a mirror I did not check".
+reads as equally verified. A check that silently narrows its own scope while
+its output still looks complete is worse than no check, because the number
+reads as coverage.
 
-So this guard compares the exported DM count against the LIVE SIDECAR, which is
-the source of truth for DMs today. Had it existed, it would have fired nine days
-ago instead of letting every snapshot since bank a stale copy of the chat.
+So this guard compares the exported DM count against the LIVE SIDECAR, the
+source of truth for DMs today. Had it existed it would have fired on
+2026-07-19 instead of letting every snapshot since bank a stale copy of the
+chat as if it were a backup.
 """
 
 from __future__ import annotations
@@ -52,13 +58,35 @@ def _write_sidecar(db_path, threads):
     )
 
 
-def test_it_refuses_when_the_sidecar_holds_more_messages_than_the_export(db):
-    # Arrange - the exact production shape: sidecar moved on, mirror did not.
-    _write_sidecar(db, {"dm:a::b": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
+@pytest.fixture
+def drifted(db):
+    """A store whose sidecar holds 3 DMs while the export reported only 1.
 
-    # Act / Assert - the snapshot must not be committed as if current.
+    The exact production shape: the sidecar moved on and the mirror did not.
+    """
+    _write_sidecar(db, {"dm:a::b": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
+    return db
+
+
+@pytest.fixture
+def refusal_message(drifted):
+    """The text the guard refuses with, for the message-content assertions."""
+    with pytest.raises(Exception) as excinfo:
+        _assert_export_reflects_live_dms(str(drifted), {"messages": 1})
+    return str(excinfo.value)
+
+
+def test_it_refuses_when_the_sidecar_holds_more_messages_than_the_export(drifted):
+    # Arrange
+    report = {"messages": 1}
+
+    # Act
+    def snapshot_guard():
+        _assert_export_reflects_live_dms(str(drifted), report)
+
+    # Assert - the snapshot must not be committed as if current.
     with pytest.raises(Exception):
-        _assert_export_reflects_live_dms(str(db), {"messages": 1})
+        snapshot_guard()
 
 
 def test_it_passes_when_the_export_matches_the_live_sidecar(db):
@@ -74,38 +102,37 @@ def test_it_passes_when_the_export_matches_the_live_sidecar(db):
 
 def test_a_board_with_no_dms_is_not_a_failure(db):
     # Arrange - no sidecar written at all; a fresh board legitimately has none.
+    report = {"messages": 0}
 
     # Act
-    result = _assert_export_reflects_live_dms(str(db), {"messages": 0})
+    result = _assert_export_reflects_live_dms(str(db), report)
 
     # Assert
     assert result is None
 
 
-def test_the_refusal_names_the_live_count(db):
+def test_the_refusal_names_the_live_count(refusal_message):
     """An error that only says 'stale' makes the reader go find the numbers."""
-    # Arrange
-    _write_sidecar(db, {"dm:a::b": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
+    # Arrange - the fixture drove the guard to refuse on a drifted store.
+    live_count = "3"
 
     # Act
-    with pytest.raises(Exception) as excinfo:
-        _assert_export_reflects_live_dms(str(db), {"messages": 1})
+    message = refusal_message
 
     # Assert
-    assert "3" in str(excinfo.value)
+    assert live_count in message
 
 
-def test_the_refusal_names_the_exported_count(db):
+def test_the_refusal_names_the_exported_count(refusal_message):
     """Both sides of the disagreement, so the direction of drift is visible."""
     # Arrange
-    _write_sidecar(db, {"dm:a::b": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
+    exported_count = "1"
 
     # Act
-    with pytest.raises(Exception) as excinfo:
-        _assert_export_reflects_live_dms(str(db), {"messages": 1})
+    message = refusal_message
 
     # Assert
-    assert "1" in str(excinfo.value)
+    assert exported_count in message
 
 
 def test_a_malformed_sidecar_does_not_crash_the_snapshot(db):
@@ -113,9 +140,13 @@ def test_a_malformed_sidecar_does_not_crash_the_snapshot(db):
     # Arrange
     (db.parent / "threads.json").write_text("{not json", encoding="utf-8")
 
-    # Act / Assert
-    with pytest.raises(Exception):
+    # Act
+    def snapshot_guard():
         _assert_export_reflects_live_dms(str(db), {"messages": 0})
+
+    # Assert
+    with pytest.raises(Exception):
+        snapshot_guard()
 
 
 # EOF
