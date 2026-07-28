@@ -143,9 +143,7 @@ def test_board_v3_static_js_has_no_root_absolute_fetch(js_name):
     assert 'fetch("/' not in source, js_name
 
 
-@pytest.mark.parametrize(
-    "js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js"))
-)
+@pytest.mark.parametrize("js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js")))
 def test_chat_static_js_has_no_root_absolute_fetch(js_name):
     """The chat page's static JS must not hardcode root-absolute fetch paths
     either — chat.js reads the include root off <body data-api-base> (set by
@@ -158,9 +156,7 @@ def test_chat_static_js_has_no_root_absolute_fetch(js_name):
     assert 'fetch("/' not in source, js_name
 
 
-@pytest.mark.parametrize(
-    "js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js"))
-)
+@pytest.mark.parametrize("js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js")))
 def test_chat_static_js_has_no_root_absolute_getjson(js_name):
     """chat.js routes its GETs through the local getJSON helper — a
     root-absolute literal there escapes the mount exactly like a bare
@@ -201,14 +197,39 @@ def test_chat_page_api_base_marker_is_root_at_root_mount():
 
 
 def test_chat_page_board_link_targets_include_root():
-    """The "← board" header link must stay inside the mount, not escape to
-    the site root (on the hub "/" is the hub's landing page, not the board)."""
+    """The board link must stay inside the mount, not escape to the site root
+    (on the hub "/" is the hub's landing page, not the board).
+
+    Asserts the ANCHOR, not the wrapper. The previous form pinned
+    ``class="board-link" href=...`` on one element; when the one-way
+    "&larr; board" link became the Board | Chat switcher, the class moved to a
+    wrapping span and the href to an inner anchor. The mount-awareness — the
+    only thing this test exists to protect — never changed, but the assertion
+    broke, which is a test coupled to markup SHAPE rather than to BEHAVIOUR.
+    Pinning the href keeps the #556/#557 regression caught while letting the
+    chrome around it evolve.
+    """
     # Arrange
     request = RequestFactory().get("/apps/cards/chat")
     # Act
     body = views.chat_page(request).content.decode("utf-8")
     # Assert
-    assert 'class="board-link" href="/apps/cards/"' in body
+    assert '<a href="/apps/cards/">Board</a>' in body
+
+
+def test_chat_page_board_link_does_not_escape_to_the_site_root():
+    """The actual #556/#557 regression: an absolute "/" leaves the mount.
+
+    Separate from the test above because "the right link is present" and "the
+    wrong link is absent" are different claims, and a single assertion that
+    only checks presence would still pass if BOTH were emitted.
+    """
+    # Arrange
+    request = RequestFactory().get("/apps/cards/chat")
+    # Act
+    body = views.chat_page(request).content.decode("utf-8")
+    # Assert
+    assert '<a href="/">Board</a>' not in body
 
 
 # EOF
