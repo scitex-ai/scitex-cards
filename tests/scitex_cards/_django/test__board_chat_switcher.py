@@ -110,8 +110,10 @@ def chat_at_root():
 def test_board_page_links_to_the_chat_page(board_at_subpath):
     """Without this link the chat is a URL you have to know — the whole
     complaint. The href must carry the mount prefix, not a bare "/chat"."""
-    # Arrange / Act
-    item = _switcher_item(board_at_subpath, "Chat")
+    # Arrange
+    html = board_at_subpath
+    # Act
+    item = _switcher_item(html, "Chat")
     # Assert
     assert 'href="/apps/cards/chat"' in item
 
@@ -119,8 +121,10 @@ def test_board_page_links_to_the_chat_page(board_at_subpath):
 def test_board_page_chat_link_is_root_relative_at_root_mount(board_at_root):
     """Standalone (:8051) the include root is "/", so the link is "/chat" —
     the URL the operator was typing by hand."""
-    # Arrange / Act
-    item = _switcher_item(board_at_root, "Chat")
+    # Arrange
+    html = board_at_root
+    # Act
+    item = _switcher_item(html, "Chat")
     # Assert
     assert 'href="/chat"' in item
 
@@ -129,8 +133,10 @@ def test_board_page_marks_the_board_as_the_active_surface(board_at_subpath):
     """A switcher that does not say where you are is a pair of links, not a
     switcher. ``aria-current`` is the assertion because it is what a screen
     reader and the CSS active state both key off."""
-    # Arrange / Act
-    item = _switcher_item(board_at_subpath, "Board")
+    # Arrange
+    html = board_at_subpath
+    # Act
+    item = _switcher_item(html, "Board")
     # Assert
     assert 'aria-current="page"' in item
 
@@ -138,8 +144,10 @@ def test_board_page_marks_the_board_as_the_active_surface(board_at_subpath):
 def test_board_page_does_not_mark_chat_as_active(board_at_subpath):
     """Exactly one item may be current; a second one would make the marker
     meaningless."""
-    # Arrange / Act
-    item = _switcher_item(board_at_subpath, "Chat")
+    # Arrange
+    html = board_at_subpath
+    # Act
+    item = _switcher_item(html, "Chat")
     # Assert
     assert "aria-current" not in item
 
@@ -147,10 +155,12 @@ def test_board_page_does_not_mark_chat_as_active(board_at_subpath):
 def test_board_page_loads_the_shared_switcher_stylesheet(board_at_subpath):
     """Unstyled, the switcher is two stacked links the operator will not read
     as a control."""
-    # Arrange / Act
-    body = board_at_subpath
+    # Arrange
+    stylesheet = "scitex_cards/page-switcher.css"
+    # Act
+    linked = stylesheet in board_at_subpath
     # Assert
-    assert "scitex_cards/page-switcher.css" in body
+    assert linked
 
 
 # --- the chat page offers a way BACK to the board --------------------------
@@ -159,8 +169,10 @@ def test_board_page_loads_the_shared_switcher_stylesheet(board_at_subpath):
 def test_chat_page_links_back_to_the_board(chat_at_subpath):
     """The board link must stay inside the mount: on the hub "/" is the hub's
     own landing page, not this board."""
-    # Arrange / Act
-    item = _switcher_item(chat_at_subpath, "Board")
+    # Arrange
+    html = chat_at_subpath
+    # Act
+    item = _switcher_item(html, "Board")
     # Assert
     assert 'href="/apps/cards/"' in item
 
@@ -168,8 +180,10 @@ def test_chat_page_links_back_to_the_board(chat_at_subpath):
 def test_chat_page_board_link_is_root_relative_at_root_mount(chat_at_root):
     """Standalone the include root is "/" — chat_page strips its own trailing
     segment off request.path to recover it."""
-    # Arrange / Act
-    item = _switcher_item(chat_at_root, "Board")
+    # Arrange
+    html = chat_at_root
+    # Act
+    item = _switcher_item(html, "Board")
     # Assert
     assert 'href="/"' in item
 
@@ -177,16 +191,20 @@ def test_chat_page_board_link_is_root_relative_at_root_mount(chat_at_root):
 def test_chat_page_marks_chat_as_the_active_surface(chat_at_subpath):
     """Same switcher template, opposite active item — the partial takes the
     page name from its caller rather than sniffing the request."""
-    # Arrange / Act
-    item = _switcher_item(chat_at_subpath, "Chat")
+    # Arrange
+    html = chat_at_subpath
+    # Act
+    item = _switcher_item(html, "Chat")
     # Assert
     assert 'aria-current="page"' in item
 
 
 def test_chat_page_does_not_mark_board_as_active(chat_at_subpath):
     """See the board-side twin: exactly one current item."""
-    # Arrange / Act
-    item = _switcher_item(chat_at_subpath, "Board")
+    # Arrange
+    html = chat_at_subpath
+    # Act
+    item = _switcher_item(html, "Board")
     # Assert
     assert "aria-current" not in item
 
@@ -194,10 +212,12 @@ def test_chat_page_does_not_mark_board_as_active(chat_at_subpath):
 def test_chat_page_loads_the_shared_switcher_stylesheet(chat_at_subpath):
     """Both pages must link the SAME stylesheet, or the two switchers drift
     into looking like two different controls."""
-    # Arrange / Act
-    body = chat_at_subpath
+    # Arrange
+    stylesheet = "scitex_cards/page-switcher.css"
+    # Act
+    linked = stylesheet in chat_at_subpath
     # Assert
-    assert "scitex_cards/page-switcher.css" in body
+    assert linked
 
 
 # --- lint: the partial may never hardcode a root-absolute href -------------
