@@ -227,7 +227,10 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   /* Same bar, success colour. A forward succeeds in a thread the operator is
      not looking at, so it needs to say so — but announcing a success in the
      red error bar is its own kind of wrong. */
-  #error-bar.ok { background: #2a5c3a; color: #d7ffe4; }
+  /* Success variant of the same rail. Rides base's status token like the error
+     variant above — introduced with the reactions/forward work as a literal
+     pair and converted here, caught by the palette guard rather than by review. */
+  #error-bar.ok { background: var(--status-success); color: var(--text-inverse); }
 
   /* ---- mobile: agent list becomes a drawer ---- */
   @media (max-width: 720px) {
