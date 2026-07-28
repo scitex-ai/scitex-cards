@@ -65,6 +65,8 @@
   var $form = document.getElementById("compose");
   var $body = document.getElementById("compose-body");
   var $send = document.getElementById("compose-send");
+  var $attach = document.getElementById("compose-attach");
+  var $file = document.getElementById("compose-file");
   var $errorBar = document.getElementById("error-bar");
 
   // ---- helpers -----------------------------------------------------------
@@ -173,10 +175,56 @@
 
   // ---- thread pane -------------------------------------------------------
 
+  // An attachment is carried as its own line in the body: a relative URL under
+  // `attachments/`. Deliberately NOT a new sidecar field — threads.json is the
+  // DM store and widening its record mid-incident is the kind of change that
+  // has cost this board data before. The body is already the source of truth,
+  // so a line IS the reference, and an older client still shows something
+  // meaningful (the path) instead of nothing.
+  var IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+
+  function splitAttachments(body) {
+    var lines = String(body || "").split("\n");
+    var text = [];
+    var files = [];
+    lines.forEach(function (line) {
+      var t = line.trim();
+      if (t.indexOf("attachments/") === 0) files.push(t);
+      else text.push(line);
+    });
+    return { text: text.join("\n").trim(), files: files };
+  }
+
+  function attachmentNode(relUrl) {
+    var href = API_BASE + "/" + relUrl;
+    var name = relUrl.split("/").pop();
+    if (IMAGE_RE.test(name)) {
+      var a = el("a", "att-img");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener";
+      var img = document.createElement("img");
+      img.src = href;
+      img.alt = name;
+      img.loading = "lazy";
+      a.appendChild(img);
+      return a;
+    }
+    var link = el("a", "att-file", "📎 " + name);
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener";
+    return link;
+  }
+
   function messageNode(m) {
     var mine = m.from === "operator";
     var wrap = el("div", "msg " + (mine ? "from-operator" : "from-agent"));
-    wrap.appendChild(el("div", "bubble", m.body || ""));
+    var parts = splitAttachments(m.body);
+    if (parts.text) wrap.appendChild(el("div", "bubble", parts.text));
+    parts.files.forEach(function (rel) {
+      wrap.appendChild(attachmentNode(rel));
+    });
     wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
     return wrap;
   }
@@ -337,6 +385,62 @@
       event.preventDefault();
       $form.requestSubmit();
     }
+  });
+
+  // ---- attachments -------------------------------------------------------
+  // Three ways in, one path out: picker, clipboard paste, drag-drop all call
+  // uploadFiles, which appends the returned URL as its own line in the body.
+  // Uploading BEFORE send means a failed upload never produces a message that
+  // references a file that is not there.
+
+  function uploadFiles(files) {
+    var list = Array.prototype.slice.call(files || []).filter(Boolean);
+    if (!list.length) return;
+    clearError();
+    list.forEach(function (file) {
+      var form = new FormData();
+      form.append("file", file);
+      fetch(API_BASE + "/dm/upload", { method: "POST", body: form })
+        .then(function (resp) {
+          return resp.json().then(function (data) {
+            if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
+            return data;
+          });
+        })
+        .then(function (data) {
+          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
+          $body.value += sep + data.url + "\n";
+          $body.focus();
+        })
+        .catch(function (err) {
+          showError("Upload failed: " + err.message);
+        });
+    });
+  }
+
+  if ($attach && $file) {
+    $attach.addEventListener("click", function () {
+      $file.click();
+    });
+    $file.addEventListener("change", function () {
+      uploadFiles($file.files);
+      $file.value = "";
+    });
+  }
+
+  $body.addEventListener("paste", function (event) {
+    var items = (event.clipboardData || {}).files;
+    if (items && items.length) {
+      event.preventDefault();
+      uploadFiles(items);
+    }
+  });
+
+  ["dragover", "drop"].forEach(function (name) {
+    $body.addEventListener(name, function (event) {
+      event.preventDefault();
+      if (name === "drop") uploadFiles(event.dataTransfer.files);
+    });
   });
   $form.addEventListener("submit", sendMessage);
 

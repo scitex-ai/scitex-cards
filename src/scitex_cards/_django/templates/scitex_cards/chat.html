@@ -117,6 +117,25 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
   #compose button:disabled { opacity: 0.45; cursor: default; }
+  #compose-attach {
+    align-self: flex-end; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); padding: 0 12px; font-size: 1.05rem;
+  }
+  #compose-attach:hover { background: var(--line); }
+  /* Attachments render under the bubble, inside the same message column, so
+     an image reads as part of the message rather than a separate event. */
+  .msg .att-img { display: block; margin-top: 4px; max-width: 100%; }
+  .msg .att-img img {
+    max-width: min(360px, 100%); max-height: 360px; border-radius: 10px;
+    display: block; border: 1px solid var(--line);
+  }
+  .msg .att-file {
+    display: inline-block; margin-top: 4px; padding: 6px 10px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); text-decoration: none;
+    font-size: 0.82rem; word-break: break-all;
+  }
+  .msg .att-file:hover { border-color: var(--accent); }
   #error-bar {
     display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
@@ -163,7 +182,9 @@ must therefore ALWAYS be rendered.
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
-      <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
+      <input id="compose-file" type="file" multiple hidden>
+      <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+      <textarea id="compose-body" rows="1" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
       <button id="compose-send" type="submit" disabled>Send</button>
     </form>
   </main>
