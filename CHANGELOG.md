@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.17.10] - 2026-07-28
+
+Cut to DELIVER the chat work, not because the code needed a version. The
+operator is migrating off Telegram onto the cards chat TODAY and every fix
+below was invisible to them while it sat on `develop`: they run an installed
+package, not a checkout. Merged is not deployed.
+
+Everything under [Unreleased] below moves here.
+
+### Fixed
+
+- **The right-click menu rendered as unreadable grey.** Consuming scitex-ui
+  0.12.0 exposed a latent defect: its context-menu stylesheet reads
+  `--text-secondary` from `theme.css` but `--bg-secondary` from
+  `primitives/colors.css`, and this page linked only the former. One token
+  followed the theme, the other could never — dark grey text on a permanently
+  dark fill. The items were LIVE and merely looked disabled, which is worse
+  than broken because nobody files a bug against something that looks
+  deliberate. Fixed by activating base's dark theme (`<html data-theme="dark">`)
+  and taking every colour from scitex-ui: the page's local names are now
+  aliases onto base tokens and ZERO hex literals remain in its own CSS. A test
+  enforces that, because a written rule about not hardcoding colours is exactly
+  what gets forgotten. (Operator directive: 「最適 ui を常に使ってください」.)
+
 ## [Unreleased]
 
 ### Added
