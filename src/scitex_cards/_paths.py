@@ -116,7 +116,7 @@ def refuse_ambient_store_creation(
         f"wrong: set ${ENV_DB} to the real database, or pass the path "
         f"explicitly.\n"
         f"If you genuinely want a NEW empty board here, create it deliberately "
-        f"first: `scitex-cards init-store` (or `scitex-cards db import`)."
+        f"first: `scitex-cards init-store`."
     )
 
 

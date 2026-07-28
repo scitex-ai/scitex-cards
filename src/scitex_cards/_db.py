@@ -343,7 +343,9 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
     back-filled (a back-fill needs the YAML, which this layer does not have).
     Those NULLs are load-bearing — they are what makes the S2 read guard REFUSE a
     DB that has not been re-imported, instead of quietly serving cards with their
-    unknown fields stripped. Run ``scitex-todo db import`` to populate them.
+    unknown fields stripped. Nothing back-fills them: the importer was removed
+    with the YAML tier, so a database carrying these NULLs must be replaced with
+    one a current version wrote.
     """
     if "card_json" not in table_columns(conn, "tasks"):
         conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
@@ -354,8 +356,8 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
 
     Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
     NOT back-filled here — the exporter REFUSES NULL payloads loudly, which is
-    what forces a ``db import`` re-run instead of silently exporting stripped
-    records.
+    what forces the database to be replaced by a current one instead of silently
+    exporting stripped records.
     """
     for table in ("users", "notifications", "messages"):
         if "record_json" not in table_columns(conn, table):

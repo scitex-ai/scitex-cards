@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import _inbox
+from ._health_channel_reach import check_channel_reaches_session
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -88,8 +89,46 @@ def _verify_db_store(path: Path) -> dict[str, Any]:
             "ok": False,
             "detail": f"canonical database {path} did not open/read ({exc})",
             "hint": (
-                f"rebuild the database: `scitex-cards db import` (or "
-                f"`scitex-cards init-store` for an empty one). {type(exc).__name__}: {exc}"
+                f"do NOT overwrite it — a database that fails to open may still "
+                f"hold every card, and the recovery is to COPY IT ASIDE FIRST. "
+                f"Check the snapshot repo for the newest good copy, and "
+                f"`scitex-cards db verify` for the schema report. "
+                f"`scitex-cards init-store` creates an EMPTY store and is "
+                f"correct only when there is nothing to recover. "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        }
+    # WRITABILITY IS MEASURED, NEVER ASSERTED. This probe opens the database
+    # `mode=ro`, so it learns nothing about writing — yet the detail string below
+    # claims "writable". That word used to be a hardcoded literal, so it could
+    # never be false: "a gate that cannot fail is not a gate ... the same as
+    # deleting it, except worse: the config still lists it and everyone believes
+    # it is working" (constitution §2). It is exactly how the 2026-07-28
+    # create-path outage stayed invisible — `add` refused every card while health
+    # cheerfully reported the same store readable AND writable. The sibling
+    # file-store branch already measures this with `os.access`; this branch now
+    # matches it. SQLite also writes `-wal` / `-journal` SIBLINGS, so the
+    # DIRECTORY must be writable too: a writable file in a read-only directory
+    # still fails every write.
+    if not os.access(path, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is NOT writable "
+                f"(SQLite, {n} cards, readable) — every card write will fail"
+            ),
+            "hint": f"fix permissions so {path} is writable (e.g. chmod u+w {path})",
+        }
+    if not os.access(path.parent, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is readable but its directory "
+                f"{path.parent} is NOT writable (SQLite, {n} cards) — SQLite "
+                f"cannot create the -wal/-journal siblings a write needs"
+            ),
+            "hint": (
+                f"make the store's directory writable (e.g. chmod u+w {path.parent})"
             ),
         }
     return {
@@ -161,10 +200,15 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
         "ok": False,
         "detail": f"no store: the database {db} is absent",
         "hint": (
-            "bootstrap the DATABASE: `scitex-cards init-store` (empty) or "
-            "`scitex-cards db import` (seed from an export). Do NOT hand-write a "
-            "YAML store — a second store is how the board was destroyed on "
-            "2026-07-19."
+            "if this agent should have the FLEET board, the path is wrong — "
+            "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
+            "empty one here becomes a SECOND store, which is how the board was "
+            "destroyed on 2026-07-19. `scitex-cards db path` shows what resolved. "
+            "Only when this agent genuinely owns a new, separate store is "
+            "`scitex-cards init-store` correct. Restoring from a `scitex-cards "
+            "db export` dump has NO CLI verb today — it is a Python-level "
+            "operation (see scitex_cards._db_bootstrap) — so do not go looking "
+            "for an import subcommand."
         ),
     }
 
@@ -233,10 +277,15 @@ def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
             f"another's database is how a board gets destroyed)."
         ),
         "hint": (
-            f"decide which is right and make them agree. If {resolved} is the "
-            f"intended store, re-stamp the database against it (`scitex-cards db "
-            f"import`). If the database's {stamped} is right, point "
-            f"$SCITEX_CARDS_DB at that database."
+            f"decide which is right and make them agree, and change the POINTER "
+            f"rather than the stamp unless you are certain: re-stamping tells a "
+            f"database it belongs to a different store, which is the assertion "
+            f"the ownership guard exists to doubt. If {db_path} is the database "
+            f"this agent should use, point $SCITEX_CARDS_DB at {stamped} so the "
+            f"resolved store matches the stamp. If {resolved} is genuinely the "
+            f"intended store, the database for it is a DIFFERENT file — find or "
+            f"create that one rather than re-labelling this database. "
+            f"`scitex-cards db path` prints what currently resolves."
         ),
     }
 
@@ -435,6 +484,15 @@ def health(
             lambda: _check_channel_drain(soft_agent, store, unseen_threshold),
         ),
         _run_check("channel_capable", _check_channel_capable),
+        # Does the far end ACCEPT what we send? channel_capable (can we push?)
+        # and channel_drain (is the inbox consumed?) were both GREEN through the
+        # 2026-07-24 outage in which the whole fleet was deaf to the board: the
+        # scitex-todo -> scitex-cards rename left agent launch lines allowlisting
+        # the OLD server name, so every push was discarded on arrival while the
+        # drain kept marking records seen. Delivery here is fire-and-forget, so
+        # a name the client does not know does not delay a notification, it
+        # destroys it — silently. This is the only check that asks the far end.
+        _run_check("channel_reaches_session", check_channel_reaches_session),
         # Is our own reported version actually TRUE? An orphaned/stale .dist-info
         # reports a version that outlived the code it describes — and the fleet's
         # drift detector reads exactly that string, so a fossil silently turns the

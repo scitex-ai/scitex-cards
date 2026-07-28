@@ -99,10 +99,45 @@
     return scrollHeight - scrollTop - clientHeight <= slack;
   }
 
+  /* Format a stored UTC timestamp on the VIEWER'S OWN clock.
+   *
+   * This used to string-slice the ISO stamp ("…T20:39" -> "20:39"), printing
+   * UTC digits as though they were local. The operator, in Japan, read a
+   * 20:39Z stamp as an evening message and asked whether the board was on US
+   * time; it was 05:39 their morning. Slicing a timestamp is not formatting
+   * one — it silently asserts the reader's clock is UTC.
+   *
+   * The store writes UTC. A bare "…THH:MM:SS" carrying no Z and no offset is
+   * parsed as LOCAL by JS, which would shift exactly those stamps by the
+   * viewer's offset, so pin the value to UTC before parsing rather than
+   * trusting the shape. An unparseable value is returned verbatim: showing the
+   * raw string is honest, showing a confidently wrong time is not.
+   */
+  function shortTs(ts) {
+    if (!ts) return "";
+    var raw = String(ts);
+    var iso = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : raw + "Z";
+    var parsed = new Date(iso);
+    if (isNaN(parsed.getTime())) return raw;
+    function pad(n) {
+      return (n < 10 ? "0" : "") + n;
+    }
+    return (
+      pad(parsed.getMonth() + 1) +
+      "-" +
+      pad(parsed.getDate()) +
+      " " +
+      pad(parsed.getHours()) +
+      ":" +
+      pad(parsed.getMinutes())
+    );
+  }
+
   return {
     messageKey: messageKey,
     messageFingerprint: messageFingerprint,
     planRender: planRender,
+    shortTs: shortTs,
     shouldStickToBottom: shouldStickToBottom,
   };
 });
