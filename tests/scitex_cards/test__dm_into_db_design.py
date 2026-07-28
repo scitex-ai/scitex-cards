@@ -121,17 +121,17 @@ def test_dm_sidecar_is_a_file_beside_the_database(tmp_path: Path):
     assert resolved == tmp_path / "threads.json"
 
 
-def test_threads_path_materialises_the_sidecar_from_legacy_yaml(tmp_path: Path):
-    """Pin the landmine: a PATH QUERY writes a file, by reading YAML.
+def test_threads_path_does_not_materialise_the_sidecar(tmp_path: Path):
+    """The landmine is DEFUSED: a path query is a path query.
 
-    ``threads_path()`` calls ``_migrate_legacy_yaml_once``, so merely asking
-    where the sidecar *would* be creates it whenever a legacy ``threads.yaml``
-    is present. Any migration that retires the sidecar must remove this call
-    first or the file reappears behind its back — and the YAML read also
-    contradicts the operator's "we do not use YAML" ruling. Pinned so the
-    behaviour cannot be forgotten between design and implementation.
+    ``threads_path()`` used to call ``_migrate_legacy_yaml_once``, so merely
+    asking where the sidecar *would* be created it whenever a legacy
+    ``threads.yaml`` was present. A migration that retires the sidecar cannot
+    survive a function that re-creates it behind the migration's back, and the
+    YAML read contradicted the operator's "we do not use YAML" ruling besides.
+    This test was the pin on that behaviour; it is now the pin on its removal.
     """
-    # Arrange — legacy YAML present, JSON absent.
+    # Arrange — legacy YAML present, JSON absent. The exact trigger condition.
     store = tmp_path / "tasks.yaml"
     store.write_text("tasks: []\n", encoding="utf-8")
     (tmp_path / "threads.yaml").write_text("threads: {}\n", encoding="utf-8")
@@ -140,25 +140,51 @@ def test_threads_path_materialises_the_sidecar_from_legacy_yaml(tmp_path: Path):
     threads_path(store)
 
     # Assert
-    assert (tmp_path / "threads.json").exists()
+    assert not (tmp_path / "threads.json").exists()
 
 
-def test_sent_dm_does_not_reach_the_canonical_database(tmp_path: Path, db_path):
-    """Pin the actual defect in one line: the DB does not have the DM.
+def test_sent_dm_reaches_the_canonical_database(tmp_path: Path, db_path):
+    """The whole card in one line: the store now HAS the DM.
 
-    This is the whole card, made observable. A message is sent, the canonical
-    store beside it stays empty, and every protection that store offers
-    therefore covers nothing about that message.
+    This assertion used to read ``== 0`` and was the defect made observable —
+    a message was sent, the canonical store beside it stayed empty, and every
+    protection that store offers covered nothing about that message. Inverting
+    it is the deliverable.
     """
     # Arrange — a store whose database sits next to the sidecar.
     store = tmp_path / "tasks.yaml"
     store.write_text("tasks: []\n", encoding="utf-8")
-    connection = open_db(db_path)
 
     # Act
     append_message("operator", "agent-x", "hello there", store=store)
 
     # Assert
+    connection = open_db(db_path)
+    try:
+        rows = connection.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0]
+    finally:
+        connection.close()
+    assert rows == 1
+
+
+def test_the_superseded_messages_table_is_left_alone(tmp_path: Path, db_path):
+    """The v3 ``messages`` table is not written, not dropped, not rebuilt.
+
+    It is a derived mirror of the sidecar with no live writer — a fossil of
+    the deleted YAML tier. An append-only store does not remove a table
+    holding real rows (that is a count decrease, the exact bug class this
+    design exists to avoid), so it is FROZEN: kept as a pre-migration snapshot
+    and superseded by ``dm_messages`` rather than repaired.
+    """
+    # Arrange
+    store = tmp_path / "tasks.yaml"
+    store.write_text("tasks: []\n", encoding="utf-8")
+
+    # Act
+    append_message("operator", "agent-x", "hello there", store=store)
+
+    # Assert
+    connection = open_db(db_path)
     try:
         rows = connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     finally:
@@ -235,7 +261,6 @@ def _tables(connection: sqlite3.Connection) -> set[str]:
     return {row[0] for row in rows}
 
 
-@_todo("section 3")
 def test_schema_declares_the_dm_threads_table(conn):
     """Threads become rows so the store's own rails finally cover them."""
     # Arrange
@@ -248,7 +273,6 @@ def test_schema_declares_the_dm_threads_table(conn):
     assert wanted in present
 
 
-@_todo("section 3")
 def test_schema_declares_the_dm_thread_member_events_table(conn):
     """Membership is an append-only event log, not a mutable member list.
 
@@ -266,7 +290,6 @@ def test_schema_declares_the_dm_thread_member_events_table(conn):
     assert wanted in present
 
 
-@_todo("section 3")
 def test_schema_declares_the_dm_messages_table(conn):
     """The messages themselves, in the canonical store rather than a file."""
     # Arrange
@@ -279,7 +302,6 @@ def test_schema_declares_the_dm_messages_table(conn):
     assert wanted in present
 
 
-@_todo("section 3")
 def test_schema_declares_the_dm_receipts_table(conn):
     """Read state needs its own rows once a thread can have three members."""
     # Arrange
@@ -292,7 +314,6 @@ def test_schema_declares_the_dm_receipts_table(conn):
     assert wanted in present
 
 
-@_todo("section 3.1")
 def test_dm_messages_has_no_recipient_column(conn):
     """The single column that makes group DM impossible must not come along.
 
@@ -312,7 +333,6 @@ def test_dm_messages_has_no_recipient_column(conn):
     assert columns and forbidden not in columns
 
 
-@_todo("section 3.6")
 def test_dm_messages_records_the_host_that_wrote_it(conn):
     """Multi-host ordering and merge both need to know where a row came from.
 
@@ -333,7 +353,6 @@ def test_dm_messages_records_the_host_that_wrote_it(conn):
 # --------------------------------------------------------------------------- #
 # INTENT — append-only made unreachable (design section 4)                     #
 # --------------------------------------------------------------------------- #
-@_todo("section 4.2")
 def test_dm_messages_refuses_physical_delete(conn):
     """A guard can be bypassed; an engine trigger cannot be reached around.
 
@@ -353,7 +372,6 @@ def test_dm_messages_refuses_physical_delete(conn):
         delete()
 
 
-@_todo("section 4.2")
 def test_dm_messages_body_is_immutable(conn):
     """An edited message is a rewritten record, which append-only forbids.
 
@@ -372,7 +390,6 @@ def test_dm_messages_body_is_immutable(conn):
         edit()
 
 
-@_todo("section 4.3")
 def test_dm_messages_tombstone_marks_the_row_in_place(conn):
     """Deleting a DM must cost zero rows, exactly as deleting a card does.
 
@@ -390,7 +407,6 @@ def test_dm_messages_tombstone_marks_the_row_in_place(conn):
     assert conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0] == 1
 
 
-@_todo("section 3.3")
 def test_pair_thread_id_is_the_legacy_thread_key():
     """Existing thread ids must survive verbatim — rewriting one is a delete.
 
@@ -400,7 +416,6 @@ def test_pair_thread_id_is_the_legacy_thread_key():
     """
     # Arrange
     from scitex_cards._dm_store import pair_thread_id
-
     from scitex_cards._threads import thread_key
 
     # Act
