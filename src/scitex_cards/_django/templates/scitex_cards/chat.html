@@ -64,6 +64,20 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     --bubble-op: var(--bg-muted);
     --bubble-agent: var(--bg-surface);
     --unread: var(--status-warning);
+    /* ONE readable column for the whole surface. The message list and the
+       composer row are both capped here and centred as WHOLES, which is what
+       keeps them aligned with each other on a wide window. Two literals would
+       be two numbers free to drift, and a composer that does not line up with
+       the messages above it is precisely the "space used badly" the operator
+       objected to. */
+    --column-max: 860px;
+    /* Height every control in the composer row shares — attach, the field and
+       send all read it, so the row cannot end up three heights. 44px is this
+       page's standing floor for a phone tap target (the reaction bar states
+       the same number for the same reason), and it comfortably holds one line
+       of composer text plus its padding, so the row is ONE control tall at
+       rest instead of the old 96px band. */
+    --compose-control: 44px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -145,7 +159,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border-bottom: 1px solid var(--line); flex: 0 0 auto;
   }
   #thread-title b { color: var(--text); }
-  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 860px; margin-inline: auto; }
+  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: var(--column-max); margin-inline: auto; }
   .msg { max-width: 78%; display: flex; flex-direction: column; gap: 2px; }
   .msg .bubble {
     padding: 8px 12px; border-radius: 12px; font-size: 0.88rem;
@@ -158,53 +172,122 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   .msg.from-agent .bubble { background: var(--bubble-agent); border-bottom-left-radius: 3px; }
   #messages .hint { color: var(--dim); font-size: 0.8rem; margin: auto; text-align: center; }
 
-  /* ---- compose ---- */
+  /* ---- compose: ONE tight row, Telegram's shape ---- */
+  /* WHAT WAS WRONG. The row was `display: flex; justify-content: CENTER` with
+     a 64px-minimum textarea capped at 760px, inside 10px padding — a 96px band
+     on every screen. On the operator's 1496px window that centred the field
+     and left the attach and emoji buttons stranded in the gutter beside it,
+     with Send far off to the right: three controls floating around a hole.
+     Operator, verbatim: 「このスペースの使い方が下手」 (this space is used badly)
+     and 「telegram を真似てください」 (copy Telegram).
+
+     WHAT TELEGRAM DOES, which is what this is now. ONE row: attach at the far
+     left, the field taking every remaining pixel, emoji at the RIGHT EDGE OF
+     THE FIELD (inside it, not a fourth floating control), send at the far
+     right. Nothing is centred WITHIN the row — the row is centred as a whole,
+     capped at --column-max, so it lines up with the message column above it.
+     The row is one control tall at rest and grows only as you type
+     (chat_compose.js measures it; a textarea cannot do this in CSS), which is
+     where the other ~40px of that band went. */
   #compose {
-    display: flex; gap: 8px; justify-content: center; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   }
-  #compose textarea {
-    flex: 1 1 auto; max-width: 760px; resize: none; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-    font: inherit; font-size: 0.9rem; min-height: 64px; max-height: 200px;
+  #compose-row {
+    display: flex; align-items: flex-end; gap: 6px;
+    width: 100%; max-width: var(--column-max); margin-inline: auto;
   }
   /* DIRECT children only. These are the composer's OWN buttons (attach,
      send). Written without the child combinator they also matched every
      button nested inside the emoji picker, and an id selector outranks that
      component's own classes — so its toggle and all sixty of its emoji
      rendered as accent-filled Send buttons. A shared primitive must not be
-     restyled by the page hosting it. */
-  #compose > button { align-self: flex-end; }
-  #compose textarea:focus { outline: 1px solid var(--accent); }
-  /* BOTH halves of a parallel change are needed here, so this resolution keeps
-     each. The CHILD combinator came from the emoji-picker PR and is load-bearing
-     — a descendant `#compose button` would restyle every button INSIDE the
-     picker as an accent-filled Send, which is what the note above warns about.
-     The token colour came from the palette change: no literal colours here. */
-  #compose > button {
-    background: var(--accent); color: var(--text-primary); border: 0; border-radius: 8px;
-    padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+     restyled by the page hosting it. The combinator is still load-bearing now
+     that the row is the parent: the picker lives INSIDE #compose-field, so it
+     is not a direct child of the row and these rules cannot reach it. */
+  #compose-row > button {
+    flex: 0 0 auto; min-height: var(--compose-control);
+    background: var(--accent); color: var(--text-primary); border: 0;
+    border-radius: 10px; padding: 0 16px; font: inherit; font-size: 0.9rem;
+    font-weight: 600; cursor: pointer; touch-action: manipulation;
   }
-  #compose > button:disabled { opacity: 0.45; cursor: default; }
+  #compose-row > button:disabled { opacity: 0.45; cursor: default; }
+  /* Two ids, so this outranks the `#compose-row > button` rule above it —
+     an id-plus-element selector is MORE specific than a bare id, so the
+     shorter `#compose-attach` would have lost and the paperclip would have
+     rendered as a second accent-filled Send. */
+  #compose-row > #compose-attach {
+    min-width: var(--compose-control);
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); padding: 0 10px; font-size: 1.15rem;
+    font-weight: 400;
+  }
+  #compose-row > #compose-attach:hover { background: var(--line); }
+  /* The field owns the emoji button's seat: `position: relative` here is what
+     the absolutely-positioned picker below anchors to, and `min-width: 0` is
+     what lets a flex item shrink below its content on a narrow phone instead
+     of pushing Send off the screen. */
+  #compose-field { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
+  #compose-field textarea {
+    flex: 1 1 auto; width: 100%; resize: none;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    /* The right inset is the emoji button's seat: the component sizes its
+       toggle at 12px + glyph + 12px + borders (~43px) and it is placed 3px in,
+       so 52px leaves clearance rather than sitting exactly on the estimate.
+       The caret must never run underneath it. */
+    padding: 9px 52px 9px 12px;
+    font: inherit; font-size: 0.9rem; line-height: 1.35;
+    min-height: var(--compose-control); overflow-y: hidden;
+  }
+  #compose-field textarea:focus { outline: 1px solid var(--accent); }
   /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
      page maps ITS palette onto the component's tokens instead of overriding
      the component's rules — that is the whole contract, and it is what lets
      the widget be lifted into scitex-ui without dragging this page's colors
-     along with it. */
-  #compose .stx-emoji-picker {
-    align-self: flex-end;
+     along with it. PLACEMENT is the host's job by the component's own design
+     ("the host page decides WHERE the affordance sits"), so positioning it
+     inside the field is not an override; the bare-toggle look and the
+     right-anchored panel are both ASKED FOR through the component's tokens
+     and its --right modifier rather than by restyling its rules. */
+  #compose-field .stx-emoji-picker {
+    position: absolute; right: 3px; bottom: 3px;
     --stx-emoji-picker-surface: var(--panel-2);
     --stx-emoji-picker-border: var(--line);
-    --stx-emoji-picker-text: var(--text);
+    --stx-emoji-picker-text: var(--dim);
     --stx-emoji-picker-hover: var(--line);
     --stx-emoji-picker-accent: var(--accent);
+    --stx-emoji-picker-toggle-surface: transparent;
+    --stx-emoji-picker-toggle-border: transparent;
+    /* 38px tall inside a 44px field, and the component's own 12px side padding
+       carries the width to ~43px. Short of this page's 44px floor by design:
+       the toggle sits INSIDE the field, so a full-height square would leave no
+       field edge around it — and 38x43 is still a comfortable thumb target,
+       unlike the ~25px the content-sized default would have given. */
+    --stx-emoji-picker-toggle-min: 38px;
   }
-  #compose-attach {
-    align-self: flex-end; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); padding: 0 12px; font-size: 1.05rem;
+  /* The long-draft offer (chat_compose.js builds it; see chat_longtext.js for
+     the threshold). Same column as the row under it, so the composer reads as
+     one block rather than two things that happen to be adjacent. */
+  #compose-longtext {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    width: 100%; max-width: var(--column-max); margin-inline: auto;
+    font-size: 0.72rem; color: var(--dim);
   }
-  #compose-attach:hover { background: var(--line); }
+  #compose-longtext button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 10px; font: inherit; font-size: 0.72rem;
+    min-height: 32px; cursor: pointer; touch-action: manipulation;
+  }
+  #compose-longtext button:hover { border-color: var(--accent); }
+  /* `hidden` must actually hide. The rule above sets `display: flex` from an
+     ID selector, which OUTRANKS the UA's `[hidden] { display: none }` — the
+     bar would then sit above the composer permanently, announcing a long
+     message on an empty draft. Exactly the trap emoji_picker.css documents
+     for its own panel. */
+  #compose-longtext[hidden] { display: none; }
   /* Attachments render under the bubble, inside the same message column, so
      an image reads as part of the message rather than a separate event. */
   .msg .att-img { display: block; margin-top: 4px; max-width: 100%; }
@@ -219,6 +302,51 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-size: 0.82rem; word-break: break-all;
   }
   .msg .att-file:hover { border-color: var(--accent); }
+
+  /* ---- long messages ---- */
+  /* Operator, verbatim: 「長い文章はテキストファイルに変換してアップロード・
+     ダウンロードできるように、画面を埋め尽くさないように」. Their own thread is the
+     proof — one pasted element-inspector dump took the whole viewport and
+     pushed the conversation off it.
+
+     THE FULL TEXT IS IN THE DOM. This clamps HEIGHT only, so find-in-page,
+     select-all and copy still see every character and expanding is a class
+     flip. Slicing the string would have been fewer lines and would have
+     destroyed the tail; the rendering has no business being lossier than an
+     append-only store.
+
+     8 lines must equal chat_longtext.js's CLAMP_LINES — a test pins the two
+     so the JS decision and this budget cannot drift. It is about a quarter of
+     the message pane on the operator's phone, so four messages still fit. */
+  .msg .bubble.clamped {
+    --longtext-lines: 8;
+    /* 1.35em is the bubble's own line-height; 16px is its vertical padding. */
+    max-height: calc(var(--longtext-lines) * 1.35em + 16px);
+    overflow: hidden; position: relative;
+  }
+  /* A hard cut mid-glyph reads as a rendering fault. The fade says "there is
+     more" — and it must ride the SAME bubble fill on each side, which is why
+     there are two rules rather than one. */
+  .msg .bubble.clamped::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 1.6em; pointer-events: none;
+  }
+  .msg.from-operator .bubble.clamped::after {
+    background: linear-gradient(to bottom, transparent, var(--bubble-op));
+  }
+  .msg.from-agent .bubble.clamped::after {
+    background: linear-gradient(to bottom, transparent, var(--bubble-agent));
+  }
+  /* Outside the bubble on purpose: inside, `overflow: hidden` would clip the
+     very control that undoes the clipping. */
+  .msg .longtext-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; padding: 0 2px; }
+  .msg .longtext-btn {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 10px; font: inherit; font-size: 0.72rem;
+    min-height: 32px; cursor: pointer; touch-action: manipulation;
+  }
+  .msg .longtext-btn:hover { border-color: var(--accent); }
   #error-bar {
     /* The error rail rides base's status token, not a hand-mixed maroon. */
     display: none; background: var(--status-error); color: var(--text-inverse); font-size: 0.78rem;
@@ -394,15 +522,36 @@ about who exists).
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
       {% comment %}
-      Declarative mount: emoji_picker.js finds this by the attribute and
-      builds its own toggle + panel here, so the composer's behaviour file
-      (chat.js) gains not one line for this feature. The value is the id of
-      the field the emoji land in.
+      ORDER IS THE LAYOUT. Telegram's composer reads left to right: attach,
+      field, send — with emoji tucked into the right edge of the field rather
+      than standing beside it as a fourth control. This markup IS that order,
+      so the row needs no `order:` juggling to produce it, and a screen reader
+      meets the controls in the same sequence as the eye.
+
+      The bar chat_compose.js inserts above this row (the offer to send an
+      over-long draft as a .txt) is built in JS, not written here: it exists
+      only while a draft is over the threshold, and markup that is hidden
+      99% of the time is markup nobody maintains.
       {% endcomment %}
-      <span class="stx-emoji-picker" data-stx-emoji-picker-for="compose-body"></span>
-      <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
-      <textarea id="compose-body" rows="3" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
-      <button id="compose-send" type="submit" disabled>Send</button>
+      <div id="compose-row">
+        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+        <div id="compose-field">
+          <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
+          {% comment %}
+          Declarative mount: emoji_picker.js finds this by the attribute and
+          builds its own toggle + panel here, so the composer's behaviour file
+          (chat.js) gains not one line for this feature. The value is the id of
+          the field the emoji land in.
+
+          --right is the component's own modifier for a toggle at the END of
+          its row: the default panel hangs from the toggle's LEFT edge, which
+          from here would open a ~20rem popover rightwards off the side of a
+          phone screen.
+          {% endcomment %}
+          <span class="stx-emoji-picker stx-emoji-picker--right" data-stx-emoji-picker-for="compose-body"></span>
+        </div>
+        <button id="compose-send" type="submit" disabled>Send</button>
+      </div>
     </form>
   </main>
 </div>
@@ -410,11 +559,15 @@ about who exists).
 Load order matters and is one-directional: each file reads the ones before it
 off `window` and never the reverse.
 
-  chat_diff.js    pure render planning (no deps)
-  chat_actions.js pure message-action decisions (no deps)
-  chat_menu.js    the message context menu + reaction chips (reads ChatActions)
-  chat_attach.js  attachment uploads (no deps)
-  chat.js         the page orchestrator (mounts the two modules above)
+  chat_diff.js     pure render planning (no deps)
+  chat_actions.js  pure message-action decisions (no deps)
+  chat_menu.js     the message context menu + reaction chips (reads ChatActions)
+  chat_attach.js   attachment uploads (no deps)
+  chat_longtext.js the long-body clamp + .txt download (no deps)
+  chat_compose.js  the composer: auto-grow + the long-draft offer
+                   (reads ChatLongText for the threshold, and is handed
+                   ChatAttach's single-file upload by chat.js)
+  chat.js          the page orchestrator (mounts the modules above)
 
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}
@@ -423,6 +576,8 @@ off `window` and never the reverse.
 <script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 </body>
