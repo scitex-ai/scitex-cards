@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ._db import resolve_db_path
 from ._model import (
     TaskValidationError,
     _save_doc_unlocked,
@@ -93,7 +94,20 @@ def add_task(
     # nothing named the path — that is how a decoy board accumulates and then
     # gets imported over the real one. See the guard's docstring for the
     # measured 2026-07-20 chain. An explicit `store` is the opt-in.
-    _refuse_ambient_store_creation(resolved, store)
+    #
+    # The guard asks ONE question — "would this write MANUFACTURE a board?" —
+    # and answers it with `path.exists()`. So it must be handed the store's real
+    # LOCATION: the canonical SQLite database, which is what `save_tasks` writes
+    # and what `init-store` creates. `_resolved_store` returns a DISPLAY LABEL
+    # (`<db_dir>/tasks.yaml`) that the SQLite backend maps to that database —
+    # good enough to name a store in a message, never a thing on disk. The YAML
+    # tier was deleted (#512), so that label can NEVER exist, and passing it here
+    # made the guard refuse unconditionally: every `add` failed for any agent
+    # without $SCITEX_CARDS_DB while its own reads and updates succeeded, and the
+    # error told you to run `init-store` — which did not help, because the file
+    # it created was not the file being tested. Reported and reproduced by
+    # scitex-ui on 0.17.7. Guard the database, not the label.
+    _refuse_ambient_store_creation(resolve_db_path(store), store)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     # FAIL-LOUD on a missing/blank OWNER (operator mandate 2026-06-26,
     # constitution rule 2 "no silent fallbacks"). The OWNER is `assignee`

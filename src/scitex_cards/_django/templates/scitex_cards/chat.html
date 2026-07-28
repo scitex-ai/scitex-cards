@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — scitex-todo v{{ scitex_cards_version }}</title>
+<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -32,6 +32,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* Dark scrollbars (operator 2026-07-27): the OS-default light scrollbar
+     clashed with the fixed dark palette. Match --line/--panel. */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) var(--panel); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -87,7 +94,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border-bottom: 1px solid var(--line); flex: 0 0 auto;
   }
   #thread-title b { color: var(--text); }
-  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 860px; margin-inline: auto; }
   .msg { max-width: 78%; display: flex; flex-direction: column; gap: 2px; }
   .msg .bubble {
     padding: 8px 12px; border-radius: 12px; font-size: 0.88rem;
@@ -102,15 +109,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 
   /* ---- compose ---- */
   #compose {
-    display: flex; gap: 8px; padding: 10px 12px;
+    display: flex; gap: 8px; justify-content: center; padding: 10px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
   #compose textarea {
-    flex: 1 1 auto; resize: none; background: var(--panel-2); color: var(--text);
+    flex: 1 1 auto; max-width: 760px; resize: none; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-    font: inherit; font-size: 0.9rem; min-height: 40px; max-height: 120px;
+    font: inherit; font-size: 0.9rem; min-height: 64px; max-height: 200px;
   }
+  #compose button { align-self: flex-end; }
   #compose textarea:focus { outline: 1px solid var(--accent); }
   #compose button {
     background: var(--accent); color: #fff; border: 0; border-radius: 8px;
@@ -171,7 +179,7 @@ must therefore ALWAYS be rendered.
 <header>
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
-  <span class="ver">scitex-todo v{{ scitex_cards_version }}</span>
+  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
   <a class="board-link" href="{{ api_base }}">&larr; board</a>
 </header>
 <div id="error-bar"></div>
@@ -184,7 +192,7 @@ must therefore ALWAYS be rendered.
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
       <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
-      <textarea id="compose-body" rows="1" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
+      <textarea id="compose-body" rows="3" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
       <button id="compose-send" type="submit" disabled>Send</button>
     </form>
   </main>

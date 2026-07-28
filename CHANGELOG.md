@@ -2,11 +2,107 @@
 
 ## [Unreleased]
 
-Hub-mount integration follow-ups to #556 (board mount-awareness), completing
-hub card `hub-cards-board-data-404`.
+## [0.17.8] - 2026-07-28
+
+Card creation was broken fleet-wide, and the check that should have caught it
+was the reason nobody saw it. Both are fixed here.
 
 ### Fixed
 
+- **Card CREATE guards the resolved database, not a synthetic YAML label**
+  (#574). `add_task` passed the ambient-creation guard a display label
+  (`<db_dir>/tasks.yaml`) rather than the store's real location, and the guard
+  answers "would this write MANUFACTURE a board?" with a literal
+  `path.exists()`. The YAML tier was deleted (#512), so that label can never
+  exist and the guard refused unconditionally: **every `add` failed for any
+  agent whose environment lacked `$SCITEX_CARDS_DB`**, while reads and updates
+  on the same store succeeded. The error even advised running `init-store`,
+  which did not help, because the file it created was not the file being
+  tested. The guard now receives `resolve_db_path(store)` — the same location
+  `save_tasks` writes and `init-store` creates — so CREATE agrees with
+  read/update. `_resolved_store` is unchanged, so the read surface is
+  untouched. Reported and reproduced by scitex-ui on 0.17.7.
+
+- **`health` measures store writability instead of asserting it** (#575).
+  `_verify_db_store` opens the database `mode=ro`, learns nothing about
+  writing, and then reported the store "readable, writable" — that word was a
+  hardcoded literal, so it could never be false. This is why the create-path
+  outage above stayed invisible: `add` refused every card while `health` called
+  the same store writable. Writability is now measured with `os.access`,
+  matching the sibling file-store branch that already did so. The store's
+  **directory** is checked too, because SQLite creates `-wal` / `-journal`
+  siblings — a writable file in a read-only directory still fails every write.
+  Both failures name the offending path and say what to do.
+
+### Notes
+
+- The pre-existing decoy-board regression test previously passed for the wrong
+  reason (it refused because the synthetic label never exists, not because the
+  database was absent). It now passes for the right one.
+
+## [0.17.7] - 2026-07-24
+
+Delivery that admits when it is not working, and a chat page that is readable.
+
+### Added
+
+- **`channel_reaches_session` health check** (#566). The client surfaces a
+  `notifications/claude/channel` push only from a server named on its launch
+  line (`--dangerously-load-development-channels server:<name>`), matched
+  against the key that server is registered under in the MCP config. A name the
+  client does not know is discarded on arrival — and because a channel
+  notification is fire-and-forget, the drain marks the record `seen` whether or
+  not the push was accepted, so a mismatch does not delay delivery, it destroys
+  it. Measured 2026-07-24: the scitex-todo → scitex-cards rename re-registered
+  this server as `scitex-cards` while agent launch lines still allowlisted the
+  pre-rename `scitex-todo`, and the fleet had been deaf to the board ever since.
+  A self-test notification was consumed and marked seen within six seconds and
+  never reached any session. `channel_capable` and `channel_drain` were green
+  throughout; neither asks whether the far end accepts what we send. The check
+  fails loudly, names both the registered and the allowlisted names, and prints
+  the exact flag to add plus the fact that a restart is required. It identifies
+  our server by program token, never by a substring of the command line — a
+  substring match claims sac's `sac mcp channel --name scitex-cards` entry as
+  ours and reports the channel healthy.
+
+### Fixed
+
+- **The chat thread renders in a readable centre column** (#567). Messages
+  spanned the full pane (measured at 1820px), putting a bubble at ~1420px. The
+  thread is now capped at 860px and centred, the compose box is capped and
+  centred to match, and the input starts at three rows instead of one.
+- **`/chat/` serves the DM page instead of 404ing** (#568). The page was
+  registered only as `chat`; `/chat/` matched neither that nor
+  `chat/<str:card_id>` (a str converter will not match an empty segment), fell
+  through to the catch-all and answered `{"error": "Unknown endpoint: chat/"}`.
+  Now dual-registered exactly as `legacy/` and `board-v3/` already were.
+- **Chat timestamps render on the viewer's clock** (#569). `shortTs`
+  string-sliced the ISO stamp and printed UTC digits under a local label, so a
+  message stored at `20:39Z` displayed as "20:39" to a reader whose clock said
+  05:39 the next morning. Now parsed and rendered at the viewer's own offset, so
+  the date rolls correctly; a stamp carrying no zone is pinned to UTC before
+  parsing (the store writes UTC), and an unparseable value is shown verbatim
+  rather than as a confidently wrong time.
+
+## [0.17.6] - 2026-07-24
+
+Overdue-alarm correctness and store-export integrity, plus the hub-mount
+integration follow-ups to #556.
+
+### Fixed
+
+- **`overdue=True` honours the time-of-day in datetime deadlines** (#563).
+  `is_overdue` flattened every deadline to a bare date before comparing, so a
+  deadline carrying a time (`2026-07-23T09:00`) was not overdue until its whole
+  day had passed — and that filter is the only thing that surfaces an overdue
+  card, so a timed deadline was a silent no-op alarm. A timed deadline is now
+  overdue the moment its timestamp passes (aware-normalised, so naive-vs-aware
+  never raises); a date-only deadline keeps its whole-day semantics; a recurring
+  deadline stays never-overdue; the board date-pill is unchanged. A stored
+  deadline the parser cannot read now logs loudly instead of silently reading
+  as "not overdue".
+- **Store export + verify-count come from ONE snapshot** (#562), killing a
+  TOCTOU that could report a false `INCOMPLETE`.
 - **The chat page is mount-aware.** `chat.js` fetched root-absolute `/dm/*`
   paths, so the DM page's data calls escaped a sub-path mount (the hub's
   `/apps/cards/`) exactly like the board's did before #556. `chat_page` now
