@@ -22,6 +22,16 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
+# LAN / mobile access (opt-in). When the board is bound to 0.0.0.0 (via
+# `scitex-cards board --host 0.0.0.0`) so a phone on the same network can reach
+# it, Django still rejects the LAN Host header unless it is allowed here. Set
+# SCITEX_CARDS_ALLOWED_HOSTS to a comma-separated list (e.g. "192.168.11.121",
+# or "*" to allow any) to permit it. Default stays loopback-only. NOTE: the
+# standalone board has no auth, so only open it on a trusted network; the hub
+# (with auth) is the secure remote path.
+_extra_hosts = os.environ.get("SCITEX_CARDS_ALLOWED_HOSTS", "").strip()
+if _extra_hosts:
+    ALLOWED_HOSTS += [h.strip() for h in _extra_hosts.split(",") if h.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
