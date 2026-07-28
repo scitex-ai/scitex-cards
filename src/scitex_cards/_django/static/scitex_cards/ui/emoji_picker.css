@@ -1,0 +1,190 @@
+/* Emoji picker — component styles for static/scitex_cards/ui/emoji_picker.js.
+ *
+ * Written to be HARVESTED into scitex-ui as a shared primitive, so:
+ *   - every selector is self-describing and lives in its own
+ *     `stx-emoji-picker` block; nothing here reaches for `.msg`, `#compose`
+ *     or any other chat-specific ancestor.
+ *   - the palette is a set of COMPONENT TOKENS (`--stx-emoji-picker-*`) with
+ *     theme-aware defaults. A host page with its own palette maps onto those
+ *     tokens from a more specific selector instead of overriding our rules
+ *     one by one — see chat.html's `#compose .stx-emoji-picker` block.
+ *   - no @import, no font file, no remote asset. This board is served over a
+ *     tunnel to a phone; anything external simply does not load.
+ *
+ * THEME ORDER, and it matters: the base block is the light default, the
+ * prefers-color-scheme block flips it for a dark OS, and the [data-theme]
+ * blocks come LAST so an explicit theme attribute (scitex-ui's contract,
+ * <html data-theme="…">) wins over the OS preference in BOTH directions.
+ * Attribute selectors outrank the bare class regardless of the media query,
+ * which is exactly the precedence we want.
+ */
+
+.stx-emoji-picker {
+  --stx-emoji-picker-surface: var(--bg-surface, #ffffff);
+  --stx-emoji-picker-border: var(--border-muted, #c9c9d4);
+  --stx-emoji-picker-text: var(--text-primary, #22222e);
+  --stx-emoji-picker-hover: var(--bg-muted, #ececf2);
+  --stx-emoji-picker-accent: var(--brand-primary, #7c5cbf);
+  /* 2.75rem == 44px at the default root size: the smallest square a finger
+   * hits reliably. Sized in rem so it scales with the reader's font size
+   * instead of pinning a phone affordance to CSS pixels. */
+  --stx-emoji-picker-cell: 2.75rem;
+
+  position: relative;
+  display: inline-flex;
+}
+
+@media (prefers-color-scheme: dark) {
+  .stx-emoji-picker {
+    --stx-emoji-picker-surface: var(--bg-surface, #27273a);
+    --stx-emoji-picker-border: var(--border-muted, #3d3d55);
+    --stx-emoji-picker-text: var(--text-primary, #e0e0e0);
+    --stx-emoji-picker-hover: var(--bg-muted, #3d3d55);
+  }
+}
+
+[data-theme="light"] .stx-emoji-picker {
+  --stx-emoji-picker-surface: var(--bg-surface, #ffffff);
+  --stx-emoji-picker-border: var(--border-muted, #c9c9d4);
+  --stx-emoji-picker-text: var(--text-primary, #22222e);
+  --stx-emoji-picker-hover: var(--bg-muted, #ececf2);
+}
+
+[data-theme="dark"] .stx-emoji-picker {
+  --stx-emoji-picker-surface: var(--bg-surface, #27273a);
+  --stx-emoji-picker-border: var(--border-muted, #3d3d55);
+  --stx-emoji-picker-text: var(--text-primary, #e0e0e0);
+  --stx-emoji-picker-hover: var(--bg-muted, #3d3d55);
+}
+
+/* The emoji themselves come from whichever COLOR EMOJI FONT the device
+ * already has. Naming the platform families explicitly (rather than relying
+ * on the page font) is what keeps a glyph from falling back to a monochrome
+ * outline — or to tofu — on Windows and on bare Linux. All three are local
+ * system fonts: nothing is fetched. */
+.stx-emoji-picker__toggle,
+.stx-emoji-picker__item {
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+    "Segoe UI Symbol", sans-serif;
+}
+
+.stx-emoji-picker__toggle {
+  background: var(--stx-emoji-picker-surface);
+  color: var(--stx-emoji-picker-text);
+  border: 1px solid var(--stx-emoji-picker-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  /* Opts out of the mobile double-tap-to-zoom delay, so a tap opens the
+   * panel immediately instead of ~300ms later. */
+  touch-action: manipulation;
+}
+
+.stx-emoji-picker__toggle:hover:not(:disabled) {
+  background: var(--stx-emoji-picker-hover);
+}
+
+.stx-emoji-picker__toggle:focus-visible {
+  outline: 2px solid var(--stx-emoji-picker-accent);
+  outline-offset: 1px;
+}
+
+.stx-emoji-picker__toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Pressed-looking while the panel is up. The panel opens ABOVE the toggle,
+ * so on a phone it can sit off the top of a short viewport with only the
+ * toggle visible — without this there is nothing on screen saying the
+ * picker is the thing currently open. */
+.stx-emoji-picker--open .stx-emoji-picker__toggle {
+  border-color: var(--stx-emoji-picker-accent);
+  background: var(--stx-emoji-picker-hover);
+}
+
+/* Anchored ABOVE the toggle: this sits in a composer pinned to the bottom of
+ * the viewport, where a panel opening downwards would land under the phone's
+ * on-screen keyboard. Width is clamped to the viewport so a picker near
+ * either edge stays fully reachable. */
+.stx-emoji-picker__panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  width: min(20rem, calc(100vw - 1.5rem));
+  max-height: min(46vh, 20rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 10px 10px;
+  background: var(--stx-emoji-picker-surface);
+  color: var(--stx-emoji-picker-text);
+  border: 1px solid var(--stx-emoji-picker-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* `hidden` must actually hide: the rule above sets `position`/`display`
+ * context that would otherwise beat the UA's `[hidden] { display: none }`. */
+.stx-emoji-picker__panel[hidden] {
+  display: none;
+}
+
+.stx-emoji-picker__group-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin: 6px 2px 4px;
+}
+
+.stx-emoji-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--stx-emoji-picker-cell), 1fr)
+  );
+  gap: 2px;
+}
+
+/* The whole cell is the tap target, not just the glyph inside it — that is
+ * the difference between "tap the emoji" and "tap near the emoji" on a
+ * phone. Size comes from the shared cell token so the grid columns and the
+ * buttons in them cannot drift apart. */
+.stx-emoji-picker__item {
+  min-width: var(--stx-emoji-picker-cell);
+  min-height: var(--stx-emoji-picker-cell);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  /* The platform tap flash is a grey box the size of the whole cell and it
+   * lags the press; the :active fill below is the feedback we actually
+   * want, so suppress the default one rather than show both. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stx-emoji-picker__item:hover {
+  background: var(--stx-emoji-picker-hover);
+}
+
+.stx-emoji-picker__item:active {
+  background: var(--stx-emoji-picker-accent);
+}
+
+.stx-emoji-picker__item:focus-visible {
+  outline: 2px solid var(--stx-emoji-picker-accent);
+  outline-offset: -2px;
+}
+
+/* EOF */

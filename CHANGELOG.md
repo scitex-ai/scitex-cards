@@ -1,6 +1,85 @@
 # Changelog
 
+## [0.17.10] - 2026-07-28
+
+Cut to DELIVER the chat work, not because the code needed a version. The
+operator is migrating off Telegram onto the cards chat TODAY and every fix
+below was invisible to them while it sat on `develop`: they run an installed
+package, not a checkout. Merged is not deployed.
+
+Everything under [Unreleased] below moves here.
+
+### Fixed
+
+- **The right-click menu rendered as unreadable grey.** Consuming scitex-ui
+  0.12.0 exposed a latent defect: its context-menu stylesheet reads
+  `--text-secondary` from `theme.css` but `--bg-secondary` from
+  `primitives/colors.css`, and this page linked only the former. One token
+  followed the theme, the other could never — dark grey text on a permanently
+  dark fill. The items were LIVE and merely looked disabled, which is worse
+  than broken because nobody files a bug against something that looks
+  deliberate. Fixed by activating base's dark theme (`<html data-theme="dark">`)
+  and taking every colour from scitex-ui: the page's local names are now
+  aliases onto base tokens and ZERO hex literals remain in its own CSS. A test
+  enforces that, because a written rule about not hardcoding colours is exactly
+  what gets forgotten. (Operator directive: 「最適 ui を常に使ってください」.)
+
 ## [Unreleased]
+
+### Added
+
+- **DMs live in `cards.db` (schema v5)**. Direct messages were the one piece of
+  fleet data the canonical store's protections did not cover: they sat in a
+  `threads.json` sidecar, so WAL, store-identity stamping, tombstones, the
+  no-shrink guard, export and snapshot all applied to cards and to nothing the
+  operator actually talks through. Appending one message rewrote the entire
+  document — the same whole-document read-modify-write shape behind the
+  2026-07 board wipes. Four append-only tables (`dm_threads`,
+  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus SQLite triggers
+  that make `DELETE` and post-hoc edits unreachable at the ENGINE, not merely
+  guarded in Python. `append_message` now writes the database FIRST and raises
+  on failure; the sidecar is mirrored best-effort and kept complete as the
+  rollback state. Backfill (`scitex-cards dm backfill`, **dry-run by default**),
+  the A/B gate (`dm verify`) and an append-only cross-host union
+  (`dm export` / `dm merge`) ship with it. Rehearsed on a copy of the live
+  store: 165 threads / 2352 messages carried with the sidecar byte-identical
+  afterwards, a re-run inserting 0, and `verify` clean.
+
+  Two things the schema deliberately does NOT copy from the superseded
+  `messages` table. There is no `recipient` column — recipients are derived
+  from thread membership, which is the schema-level reason group DM was
+  impossible and now is not. And read state is a per-reader receipts table
+  rather than a boolean, because a scalar cannot say "Bob read it, Carol did
+  not" — which also leaves `dm_messages` immutable, making a cross-host merge a
+  pure union with no arbitration. The old `messages` table is left in place
+  untouched forever: dropping a table holding real rows is a count decrease,
+  the exact bug class this change exists to avoid.
+
+### Fixed
+
+- **`threads_path()` no longer writes a file** (design part 2 §7.3). A PATH
+  QUERY materialised the sidecar from a legacy `threads.yaml` as a side effect
+  of being asked where the sidecar would be — a landmine that would re-create
+  the retired file behind the migration's back, and the last YAML reader on
+  this path. `attachments_root()` stops locating the attachments directory
+  through that function and resolves from the store instead (same directory, no
+  attachment moves).
+
+- **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
+  typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
+  なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい
+  です。」 With the migration off Telegram onto this chat under way, an
+  undiscoverable chat page is a migration blocker, not a polish item. One
+  partial (`templates/scitex_cards/_page_switcher.html`) renders on the board
+  home and on the DM page, so the two cannot drift; every href is built from
+  the view's `api_base` include root, the same mount-aware mechanism the
+  board's `API_BASE` const and the chat page's `<body data-api-base>` already
+  use — a hardcoded `/chat` is the bug class of #556 / #557 and is now linted
+  against. The chat header's old one-way "← board" link is replaced by the
+  switcher (the reverse trip was the missing half). Styling reuses the
+  segmented-control shape the board's Layout axis already uses; it reads the
+  host page's palette through six `--sw-*` variables and gets phone-sized tap
+  targets under the board's own 768px breakpoint.
 
 ## [0.17.9] - 2026-07-28
 

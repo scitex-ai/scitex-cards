@@ -45,10 +45,18 @@ _SUBDIR_RE = re.compile(r"\A[0-9]{4}-[0-9]{2}\Z")
 
 
 def attachments_root(store=None) -> Path:
-    """``<store_dir>/attachments`` — beside the store, never inside it."""
-    from scitex_cards._threads import threads_path
+    """``<store_dir>/attachments`` — beside the store, never inside it.
 
-    return Path(threads_path(store)).parent / "attachments"
+    Resolved from the STORE, not from the DM sidecar. This used to read
+    ``threads_path(store).parent``, which located the attachments directory via
+    a file that is being retired (``docs/design/dm-into-cards-db-migration.md``
+    §7.2) — and, worse, via a path query that used to CREATE that file as a
+    side effect. Same directory either way, so no attachment moves; the change
+    is that the coupling is gone.
+    """
+    from scitex_cards._paths import resolve_tasks_path
+
+    return Path(resolve_tasks_path(store)).parent / "attachments"
 
 
 def _safe_name(raw: str) -> str:

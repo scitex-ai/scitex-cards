@@ -29,6 +29,21 @@ Endpoints::
          pull-inbox (the unified channel server pushes it into the agent's
          session). 400 on an empty body.
 
+         This is ALSO the forward path. A forward is not a distinct kind of
+         record — it is an ordinary message whose body opens with a
+         ``[forwarded from <name>, <ts>]`` banner, the same shape
+         claude-code-telegrammer renders for messages forwarded into it
+         (``ts/lib/forward.ts:forwardBanner``). Mirroring that instead of
+         inventing a second convention means the operator reads one banner
+         everywhere, and it needs no new endpoint and no new field.
+
+    POST /dm/thread/<peer>/reaction
+         body = {"message_id": "m_…", "emoji": "👍", "action": "add"|"remove"}
+      -> 200 + {"event": <stored event>, "reactions": {emoji: [actors]}}
+         Appends one APPEND-ONLY reaction event (:mod:`scitex_cards._reactions`)
+         and answers with the message's refolded state. 400 on a missing
+         message_id/emoji or an unknown action.
+
 The operator's reserved peer name is ``scitex_cards._threads.OPERATOR_NAME``
 (``"operator"``). All endpoints honour the ``?store=`` query param the rest
 of the board uses, so tests drive a real tmp store.
@@ -41,7 +56,7 @@ import json
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import _threads
+from scitex_cards import _reactions, _threads
 from scitex_cards._threads import OPERATOR_NAME
 
 
@@ -206,8 +221,18 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # scitex-cards-dm-store-from-query-and-forced-operator-author-20260728.
             _threads.mark_read(key, _author_of(request), store=store)
         messages = _threads.get_thread(OPERATOR_NAME, peer, store=store)
+        # Reactions ride ALONGSIDE the messages, never inside them. The stored
+        # DM records stay byte-identical to what an older client already
+        # understands, and the v5 design's rule that a message is immutable
+        # (docs/design/dm-into-cards-db.md §3.2) is not quietly broken by the
+        # wire shape. A client that ignores this key behaves exactly as before.
         return JsonResponse(
-            {"thread": key, "peer": peer, "messages": messages},
+            {
+                "thread": key,
+                "peer": peer,
+                "messages": messages,
+                "reactions": _reactions.thread_reactions(key, store=store),
+            },
             json_dumps_params={"default": str},
         )
 
@@ -225,6 +250,67 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     return JsonResponse({"message": record}, json_dumps_params={"default": str})
 
 
-__all__ = ["dm_thread_view", "dm_threads_view"]
+@csrf_exempt
+def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
+    """POST one reaction event onto a message in the operator↔``peer`` thread.
+
+    The THREAD is derived server-side from ``(operator, peer)`` — the caller
+    names a message and an emoji, never a thread id. A client that could name
+    the thread could attach a reaction to a conversation it is not part of;
+    deriving it means the URL already carries that authority.
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+    if not peer or not peer.strip():
+        return JsonResponse({"error": "empty peer name"}, status=400)
+    peer = peer.strip()
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        return JsonResponse({"error": f"invalid JSON body: {exc}"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "reaction requires a JSON object"}, status=400)
+
+    message_id = payload.get("message_id")
+    if not isinstance(message_id, str) or not message_id.strip():
+        return JsonResponse(
+            {"error": "reaction requires a non-empty 'message_id'"}, status=400
+        )
+    action = payload.get("action", _reactions.ACTION_ADD)
+    if action not in _reactions.ACTIONS:
+        return JsonResponse(
+            {
+                "error": f"unknown action {action!r}",
+                "valid": list(_reactions.ACTIONS),
+            },
+            status=400,
+        )
+    try:
+        emoji = _reactions.validate_emoji(payload.get("emoji"))
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    key = _threads.thread_key(OPERATOR_NAME, peer)
+    event = _reactions.append_reaction_event(
+        thread=key,
+        message_id=message_id.strip(),
+        actor=_author_of(request),
+        emoji=emoji,
+        action=action,
+        store=_write_store_of(request),
+    )
+    # Answer with the REFOLDED state rather than echoing the event, so the
+    # tapping client renders the same chips every other client will see on its
+    # next poll instead of guessing the result of its own write.
+    folded = _reactions.thread_reactions(key, store=_write_store_of(request))
+    return JsonResponse(
+        {"event": event, "reactions": folded.get(message_id.strip(), {})},
+        json_dumps_params={"default": str},
+    )
+
+
+__all__ = ["dm_reaction_view", "dm_thread_view", "dm_threads_view"]
 
 # EOF
