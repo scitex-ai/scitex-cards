@@ -1,0 +1,35 @@
+{% comment %}
+Board | Chat page switcher — rendered on BOTH top-level pages so neither one is
+reachable only by typing its URL.
+
+Operator, 2026-07-28 (TG): 「http://127.0.0.1:8051/chat/ 今だと chat が隠し URL
+みたいになってしまっているので、ホームに Board | Chat のスイッチャーを付けて
+欲しいです。」 They are migrating off Telegram onto this chat, so an
+undiscoverable chat page is a migration blocker, not a polish item.
+
+MOUNT AWARENESS — read before touching an href here. The hub mounts this app
+under a sub-path (e.g. /apps/cards/), where a hardcoded "/" lands on the hub's
+own landing page and a hardcoded "/chat" 404s. Both prior bugs of this class
+(#556, #557) were exactly that. Every href is therefore built from `api_base`
+— the include root each view derives from `request.path` — which is the SAME
+mechanism board_v3.html's `API_BASE` const and chat.html's `<body
+data-api-base>` already use, and it is always "…/"-terminated.
+
+`{% templatetag openblock %} url {% templatetag closeblock %}` is deliberately
+NOT used: this urlconf is served both as its own ROOT_URLCONF (standalone
+`scitex-cards board`, where the `app_name` application namespace is never
+registered) and via `include()` on the hub — one reverse() spelling cannot
+serve both, whereas `api_base` is correct in either.
+
+Callers pass the page they are on:
+
+    {% templatetag openblock %} include "scitex_cards/_page_switcher.html" with active="board" {% templatetag closeblock %}
+
+`api_base` is inherited from the page context — both views already provide it.
+Styling lives in static/scitex_cards/page-switcher.css; each host page feeds
+its own palette into that component's `--sw-*` tokens.
+{% endcomment %}
+<nav class="stx-cards-switcher" aria-label="Board or Chat">
+  <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
+  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}chat" {% if active == 'chat' %}aria-current="page" {% endif %}title="Chat — direct messages with the agents">Chat</a>
+</nav>

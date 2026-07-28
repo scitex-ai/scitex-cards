@@ -51,8 +51,23 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   header h1 { font-size: 1rem; margin: 0; color: var(--accent-2); font-weight: 600; }
   header .ver { color: var(--dim); font-size: 0.72rem; }
-  header a.board-link { margin-left: auto; color: var(--dim); font-size: 0.8rem; text-decoration: none; }
-  header a.board-link:hover { color: var(--text); }
+  /* Board | Chat switcher (shared component — page-switcher.css + the
+     _page_switcher.html partial). It REPLACED the old "← board" link: the
+     operator could reach the board from here, but not the reverse, which is
+     what made /chat/ a hidden URL. The component reads six --sw-* variables;
+     this page has its own fixed-dark palette (the :root above shadows the
+     scitex-ui theme tokens), so feed that palette in here. This block sits
+     BEFORE the page-switcher.css link further down <head>, which is fine:
+     `header .stx-cards-switcher` outranks the component's own
+     `.stx-cards-switcher` defaults on specificity, so source order does not
+     decide the winner. */
+  header .stx-cards-switcher {
+    margin-left: auto;
+    --sw-line: var(--line);
+    --sw-surface: var(--panel-2);
+    --sw-fg: var(--dim);
+    --sw-surface-on: var(--accent);
+  }
   #menu-btn {
     background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
     border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; cursor: pointer;
@@ -152,6 +167,11 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   /* ---- mobile: agent list becomes a drawer ---- */
   @media (max-width: 720px) {
     #menu-btn { display: block; }
+    /* The version chip is the first thing to go on a 375pt iPhone: hamburger
+       + title + version + switcher overflows the header, and the switcher is
+       the one item that MUST stay reachable. The board page still shows the
+       version. */
+    header .ver { display: none; }
     #agents {
       position: fixed; top: 0; bottom: 0; left: 0; z-index: 20;
       width: min(78vw, 300px); transform: translateX(-105%);
@@ -187,6 +207,12 @@ ships alongside this.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/context-menu.css' %}">
+{% comment %}
+Board | Chat switcher — the SAME stylesheet board_v3.html links, so the two
+pages cannot drift into two different-looking switchers. Palette mapping for
+this page is in the <style> above (header .stx-cards-switcher).
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu { position: fixed; display: none; z-index: 40; }
@@ -207,7 +233,7 @@ must therefore ALWAYS be rendered.
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
   <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
-  <a class="board-link" href="{{ api_base }}">&larr; board</a>
+  {% include "scitex_cards/_page_switcher.html" with active="chat" %}
 </header>
 <div id="error-bar"></div>
 <div id="layout">

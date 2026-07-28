@@ -50,6 +50,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator TODO 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/combobox.css' %}">
 <script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
@@ -227,6 +228,20 @@
   {% endcomment %}
   <div class="filterbar">
     <div class="fb-left">
+      {% comment %}
+        Board | Chat switcher, FIRST in the identity band. Position is
+        load-bearing, not taste: 05-responsive.css gives .filterbar
+        `overflow-x: auto` on phones, so anything placed after the title +
+        LIVE chip starts off-screen on a 375pt iPhone — which is the exact
+        problem this switcher exists to fix (operator 2026-07-28: chat was
+        「隠し URL みたい」). Leftmost = always on screen.
+
+        (hook-bypass: line-limit — this template was already 3512 lines,
+        far over the 1024 cap, before this change; splitting it is tracked
+        separately rather than smuggled into the switcher PR. Same call the
+        matrix-layout toggle above made.)
+      {% endcomment %}
+      {% include "scitex_cards/_page_switcher.html" with active="board" %}
       <h1>SciTeX Cards
         <span class="small">v{{ scitex_cards_version|default:"?" }}</span></h1>
       <span class="small"><span class="live-dot"></span>LIVE</span>

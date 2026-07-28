@@ -1,0 +1,91 @@
+/* Board | Chat page switcher — shared by board_v3.html and chat.html.
+ *
+ * Markup: templates/scitex_cards/_page_switcher.html (one partial, both
+ * pages), so the two surfaces cannot drift into two different switchers.
+ *
+ * VISUAL LANGUAGE: deliberately the same segmented control the board already
+ * uses for its Layout axis (`.filt-layout-seg` / `.filt-layout-btn` in
+ * board_v3/06-layout-and-recent.css) — 1px hairline, 8px radius, transparent
+ * items, filled active item. The operator already reads that shape as "pick
+ * one of these", so the page switcher borrows it rather than inventing a
+ * second idiom.
+ *
+ * WHY LOCAL `--sw-*` TOKENS instead of scitex-ui's theme tokens directly:
+ * both consumer pages ship their OWN fixed-dark palette in a `:root` block
+ * (board: board_v3/01-filterbar.css; chat: the <style> in chat.html), and
+ * those blocks SHADOW scitex-ui's `--text-muted` / `--border-*` — so reading
+ * the theme tokens here would resolve to a different (and on chat, a LIGHT)
+ * value per page. The component therefore exposes six variables and each host
+ * page feeds its own palette in. When a page adopts the scitex-ui theme layer
+ * it re-points these six at the theme tokens and the component follows the
+ * light/dark switch with no change here.
+ */
+
+.stx-cards-switcher {
+  /* Defaults = the board's palette (board_v3/01-filterbar.css). chat.html
+   * overrides them with its own; see the mapping block there. */
+  --sw-line: var(--border, #2a3140);
+  --sw-surface: var(--col-bg, #131820);
+  --sw-fg: var(--text-muted, #8a96a8);
+  --sw-fg-on: #fff;
+  --sw-surface-on: var(--purple, #6d4cad);
+  --sw-hover: rgba(255, 255, 255, 0.06);
+
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--sw-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sw-surface);
+}
+
+.stx-cards-switcher__item {
+  display: flex;
+  align-items: center;
+  /* min-height keeps the tap target usable on a phone; the operator reads
+   * this board on an iPhone. */
+  min-height: 32px;
+  padding: 4px 12px;
+  border-right: 1px solid var(--sw-line);
+  color: var(--sw-fg);
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+
+.stx-cards-switcher__item:last-child {
+  border-right: 0;
+}
+
+.stx-cards-switcher__item:hover {
+  background: var(--sw-hover);
+  color: var(--sw-fg-on);
+}
+
+.stx-cards-switcher__item--on,
+.stx-cards-switcher__item--on:hover {
+  background: var(--sw-surface-on);
+  color: var(--sw-fg-on);
+  font-weight: 700;
+}
+
+/* Keyboard focus must stay visible on both pages (the board's global reset
+ * does not style :focus-visible for anchors). */
+.stx-cards-switcher__item:focus-visible {
+  outline: 2px solid var(--sw-surface-on);
+  outline-offset: -2px;
+}
+
+/* Phone: Apple HIG tap targets. Same 768px breakpoint the board's
+ * 05-responsive.css uses, so the two agree on what "phone" means. */
+@media (max-width: 768px) {
+  .stx-cards-switcher__item {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+  }
+}
