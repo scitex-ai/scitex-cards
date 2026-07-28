@@ -107,6 +107,75 @@ def _assert_export_reflects_live_db(db_path: str | None, report: dict) -> None:
         )
 
 
+def _live_dm_count(db_path: str | None) -> int:
+    """Messages in the LIVE ``threads.json`` sidecar beside the DB.
+
+    The sidecar — not the DB's ``messages`` table — is the source of truth for
+    DMs today: ``messages`` is a DERIVED mirror of it (``_db_mirror``: "messages
+    is NOT ours"). So the sidecar is the INDEPENDENT ground truth to check a
+    DM export against, exactly as the typed columns are for cards.
+
+    A missing sidecar is zero, not an error: a board that has never carried a
+    DM legitimately has no file.
+    """
+    import json
+
+    from .._db import resolve_db_path
+    from .._threads import THREADS_FILENAME
+
+    path = resolve_db_path(db_path).parent / THREADS_FILENAME
+    if not path.exists():
+        return 0
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise click.ClickException(
+            f"REFUSING to snapshot: the live DM sidecar {path} could not be "
+            f"read ({exc}). A snapshot cannot certify DMs it cannot count.\n"
+            f"Inspect the file. If it is genuinely corrupt, restore it from the "
+            f"most recent GOOD snapshot before taking a new one — do not let a "
+            f"snapshot bank over it."
+        ) from exc
+    threads = doc.get("threads") or {}
+    return sum(len(v or []) for v in threads.values())
+
+
+def _assert_export_reflects_live_dms(db_path: str | None, report: dict) -> None:
+    """RAISE if the exported DM count does not match the LIVE sidecar.
+
+    MEASURED 2026-07-28 on the canonical store: ``messages`` held 2042 rows
+    whose newest ``ts`` was ``2026-07-19T00:49:05Z``. Nine days of DMs existed
+    ONLY in the sidecar, because the mirror had silently stopped refreshing.
+    2042 rows is what makes it dangerous — the table looks populated, so every
+    reader gets a plausible, complete-shaped, nine-day-old answer and nothing
+    errors.
+
+    :func:`_assert_export_reflects_live_db` does not cover this: it compares
+    CARDS, while the same report prints a ``messages`` count that reads as
+    equally verified. That is a check silently narrowing its own scope — the
+    snapshot says "N messages" and means "N rows copied from a mirror nobody
+    checked". Shrink, card-staleness and DM-staleness are three separate
+    failure modes and each needs its own refusal.
+
+    Had this existed it would have fired on 2026-07-19 instead of letting every
+    snapshot since bank a stale copy of the chat as if it were a backup.
+    """
+    live = _live_dm_count(db_path)
+    exported = int(report.get("messages") or 0)
+    if live != exported:
+        raise click.ClickException(
+            f"REFUSING to snapshot: STALE DM EXPORT. The live threads.json "
+            f"sidecar holds {live} message(s) right now, but the export "
+            f"produced {exported} — so the snapshot would bank a DM history "
+            f"that does not match reality.\n"
+            f"The DB's `messages` table is a DERIVED mirror of the sidecar; "
+            f"this disagreement means the mirror has drifted (it silently "
+            f"stopped refreshing on 2026-07-19 once already). Do not trust or "
+            f"push this snapshot. Refresh the mirror from the sidecar, then "
+            f"re-run `db snapshot`."
+        )
+
+
 def _previous_snapshot_count(git) -> int | None:
     """Cards recorded by the most recent snapshot commit, or ``None``.
 
@@ -341,6 +410,11 @@ def db_snapshot_cmd(
     # missing a card created in that same window. Shrink and staleness are
     # separate failure modes; this checks the one the other cannot see.
     _assert_export_reflects_live_db(db_path, report)
+    # ...and the same question for DMs, which the guard above does NOT ask.
+    # The report prints a `messages` count beside the `tasks` count, so both
+    # read as equally certified; only one of them was. Measured 2026-07-28:
+    # the mirror those messages come from had been frozen for nine days.
+    _assert_export_reflects_live_dms(db_path, report)
 
     def _git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
