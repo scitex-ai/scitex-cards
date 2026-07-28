@@ -144,18 +144,28 @@ def test_the_stored_copy_is_not_the_source_path(stored, source_pdf, store):
 def test_a_missing_source_is_refused(store, tmp_path):
     # Arrange
     absent = tmp_path / "not-here.pdf"
-    # Act / Assert — one raises assertion, per the one-assertion rule.
-    with pytest.raises(AttachmentError):
+
+    # Act
+    def send():
         store_local_file(absent, store=store)
+
+    # Assert
+    with pytest.raises(AttachmentError):
+        send()
 
 
 def test_a_directory_is_not_a_sendable_file(store, tmp_path):
     # Arrange
     folder = tmp_path / "a-folder"
     folder.mkdir()
-    # Act / Assert
-    with pytest.raises(AttachmentError):
+
+    # Act
+    def send():
         store_local_file(folder, store=store)
+
+    # Assert
+    with pytest.raises(AttachmentError):
+        send()
 
 
 def test_the_shipped_ceiling_is_25_mib():
@@ -188,9 +198,14 @@ def test_a_file_over_the_ceiling_is_refused(store, tmp_path, tiny_ceiling):
     # Arrange
     fat = tmp_path / "over.bin"
     fat.write_bytes(b"\0" * (tiny_ceiling + 1))
-    # Act / Assert
-    with pytest.raises(AttachmentError):
+
+    # Act
+    def send():
         store_local_file(fat, store=store)
+
+    # Assert
+    with pytest.raises(AttachmentError):
+        send()
 
 
 def test_a_file_at_the_ceiling_is_accepted(store, tmp_path, tiny_ceiling):
@@ -213,19 +228,37 @@ def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
     """
     # Arrange
     chunks = [b"\0" * 32] * 4
-    # Act / Assert
-    with pytest.raises(AttachmentError):
+
+    # Act
+    def send():
         _attachments.store_chunks(iter(chunks), "over.bin", store=store)
 
+    # Assert
+    with pytest.raises(AttachmentError):
+        send()
 
-def test_an_over_size_refusal_leaves_no_partial_directory(store, tiny_ceiling):
-    """A refusal must not litter the store with half a file."""
-    # Arrange
+
+@pytest.fixture
+def after_an_over_size_refusal(store, tiny_ceiling):
+    """Drive a refusal, then hand back the store root for inspection.
+
+    The refusal lives in the FIXTURE rather than the test body: a
+    ``pytest.raises`` block counts as an assertion, so keeping it inline
+    alongside the leftovers check would make this two assertions in one test.
+    """
     with pytest.raises(AttachmentError):
         _attachments.store_chunks(iter([b"\0" * 32] * 4), "over.bin", store=store)
-    root = attachments_root(store)
+    return attachments_root(store)
+
+
+def test_an_over_size_refusal_leaves_no_partial_directory(after_an_over_size_refusal):
+    """A refusal must not litter the store with half a file."""
+    # Arrange
+    root = after_an_over_size_refusal
+
     # Act
     leftovers = [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
+
     # Assert
     assert leftovers == []
 
