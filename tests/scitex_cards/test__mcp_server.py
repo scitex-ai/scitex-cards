@@ -115,6 +115,12 @@ _CONVENTION_A_NAMES = {
     # convention v1, threads.yaml sidecar).
     "dm_send",
     "dm_list",
+    # ...and the FILE half of the same surface — `_attachments.store_local_file`
+    # composed with `dm_send`. Text-only DMs meant a real deliverable reached
+    # the operator as prose describing a deliverable; this is the entry point
+    # that was missing, and it is deliberately NOT a BACKEND_VERBS member
+    # (a path-taking verb there would be dispatchable over HTTP).
+    "dm_send_document",
 }
 # Convention B — `todo_<verb>_<noun>` for the audit §5 required skills
 # tools. These don't map 1:1 to a Python API; they introspect the bundled
