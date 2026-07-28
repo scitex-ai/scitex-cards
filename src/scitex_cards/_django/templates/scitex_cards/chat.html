@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 {% load static %}
-<html lang="en">
+{% comment %}data-theme="dark" ACTIVATES scitex-ui's dark token set — it is not
+decoration. theme.css defines --text-primary / --bg-page / --border-default /
+… twice, once under [data-theme="light"] and once under [data-theme="dark"],
+and DEFAULTS TO LIGHT when the attribute is absent. Without this every base
+component on the page silently resolves light values onto a dark surface, which
+is exactly how scitex-ui 0.12.0's context menu rendered near-invisible on
+2026-07-28. Dark is also the standing default (the operator's eyes are
+sensitive), so this is deliberate, not a preference to be "cleaned up".
+{% endcomment %}
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -25,10 +34,36 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 <512; this file is layout + CSS.
 {% endcomment %}
 <style>
+  /* EVERY COLOUR ON THIS PAGE COMES FROM scitex-ui. NOT ONE IS PICKED HERE.
+     Operator directive 2026-07-28, verbatim: "最適 ui を常に使ってください
+     勝手に変な色を使ったりするのでおかしなことになる … scitex の世界観も壊れる
+     ので s-ui を使ってほしい". They are right, and the bug below is the proof.
+
+     THIS PAGE USED TO HARD-CODE ITS OWN FIXED-DARK PALETTE (#1e1e2e, #7c5cbf,
+     …). That is what broke the right-click menu on 2026-07-28: scitex-ui
+     0.12.0's context-menu CSS reads --text-primary / --text-secondary, this
+     page defined neither, so the menu text fell back to the LIGHT-theme value
+     and rendered near-invisible on a dark menu. The items were live but looked
+     disabled. A private palette does not merely diverge in style — it silently
+     starves every base component the page later adopts, and the failure shows
+     up in the COMPONENT, not here, which is why it was hard to see.
+
+     The names below are ALIASES, not colours: each is a var() onto a scitex-ui
+     token, so the ~100 existing usages in this file keep working while the
+     values are entirely base's. Re-pointing an alias is how this page changes
+     palette from now on. DO NOT reintroduce a literal colour here. */
   :root {
-    --bg: #1e1e2e; --panel: #27273a; --panel-2: #313145; --line: #3d3d55;
-    --text: #e0e0e0; --dim: #a0a0b0; --accent: #7c5cbf; --accent-2: #9d7ce0;
-    --bubble-op: #4b3a78; --bubble-agent: #313145; --unread: #e0a030;
+    --bg: var(--bg-page);
+    --panel: var(--bg-surface);
+    --panel-2: var(--bg-muted);
+    --line: var(--border-default);
+    --text: var(--text-primary);
+    --dim: var(--text-muted);
+    --accent: var(--app-accent-figrecipe);
+    --accent-2: var(--app-accent-clew);
+    --bubble-op: var(--bg-muted);
+    --bubble-agent: var(--bg-surface);
+    --unread: var(--status-warning);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -89,13 +124,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agents .agent .avatar {
     flex: none; width: 34px; height: 34px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--text-primary); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
   }
   #agents .agent .cols { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   #agents .agent .row1 { display: flex; align-items: center; gap: 6px; }
   #agents .agent .name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .agent .badge {
-    margin-left: auto; background: var(--unread); color: #1e1e2e;
+    /* Dark text ON the warning fill — that is what --text-inverse is for. */
+    margin-left: auto; background: var(--unread); color: var(--text-inverse);
     border-radius: 9px; font-size: 0.68rem; font-weight: 700;
     padding: 1px 7px; min-width: 18px; text-align: center;
   }
@@ -141,8 +177,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      restyled by the page hosting it. */
   #compose > button { align-self: flex-end; }
   #compose textarea:focus { outline: 1px solid var(--accent); }
+  /* BOTH halves of a parallel change are needed here, so this resolution keeps
+     each. The CHILD combinator came from the emoji-picker PR and is load-bearing
+     — a descendant `#compose button` would restyle every button INSIDE the
+     picker as an accent-filled Send, which is what the note above warns about.
+     The token colour came from the palette change: no literal colours here. */
   #compose > button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--text-primary); border: 0; border-radius: 8px;
     padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
   #compose > button:disabled { opacity: 0.45; cursor: default; }
@@ -179,7 +220,8 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   .msg .att-file:hover { border-color: var(--accent); }
   #error-bar {
-    display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
+    /* The error rail rides base's status token, not a hand-mixed maroon. */
+    display: none; background: var(--status-error); color: var(--text-inverse); font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
   }
   /* Same bar, success colour. A forward succeeds in a thread the operator is
