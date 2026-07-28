@@ -139,10 +139,32 @@ def may_stop(
 
     unread = poll_inbox(agent, unseen_only=True, store=store)
     if unread:
+        # NAME THE SENDER AND SHOW THE TEXT. A bare count is unactionable by
+        # construction: it cannot distinguish the operator asking a direct
+        # question from a card-status echo, so the rational response to it is
+        # to defer — and that is exactly what happened. On 2026-07-28 the
+        # operator asked sac for its top-5 tasks TWICE and told it they were
+        # migrating off Telegram onto cards DMs; all three arrived here as the
+        # number 4, went unread for two hours, and the operator reasonably
+        # believed they had been messaged while the agent believed nothing had
+        # arrived. Both were right, which is the worst shape a delivery bug can
+        # take, and it blocks the migration rather than merely annoying.
+        #
+        # The records already carry everything needed — _threads.py's
+        # dm-dispatch enqueues actor, card_id (the thread) and the full body —
+        # so this was discarding data it already had. sac cannot fix it on
+        # their side by design: their decider forwards this `reason` VERBATIM
+        # to the agent, deliberately, so it need not know our output format.
+        # That makes the wording here the whole user-visible signal.
+        latest = unread[-1]
+        who = (latest.get("actor") or "").strip() or "unknown sender"
+        text = " ".join((latest.get("body") or "").split())
+        snippet = text[:80] + ("…" if len(text) > 80 else "")
+        detail = f" — latest from {who}" + (f": {snippet}" if snippet else "")
         items.append(
             {
                 "card_id": "(inbox)",
-                "reason": f"{len(unread)} unread notification(s)",
+                "reason": f"{len(unread)} unread notification(s){detail}",
                 "next_action": "poll_notifications and act on them",
             }
         )
