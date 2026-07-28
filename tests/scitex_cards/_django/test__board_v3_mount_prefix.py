@@ -143,9 +143,7 @@ def test_board_v3_static_js_has_no_root_absolute_fetch(js_name):
     assert 'fetch("/' not in source, js_name
 
 
-@pytest.mark.parametrize(
-    "js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js"))
-)
+@pytest.mark.parametrize("js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js")))
 def test_chat_static_js_has_no_root_absolute_fetch(js_name):
     """The chat page's static JS must not hardcode root-absolute fetch paths
     either — chat.js reads the include root off <body data-api-base> (set by
@@ -158,9 +156,7 @@ def test_chat_static_js_has_no_root_absolute_fetch(js_name):
     assert 'fetch("/' not in source, js_name
 
 
-@pytest.mark.parametrize(
-    "js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js"))
-)
+@pytest.mark.parametrize("js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js")))
 def test_chat_static_js_has_no_root_absolute_getjson(js_name):
     """chat.js routes its GETs through the local getJSON helper — a
     root-absolute literal there escapes the mount exactly like a bare
@@ -201,14 +197,17 @@ def test_chat_page_api_base_marker_is_root_at_root_mount():
 
 
 def test_chat_page_board_link_targets_include_root():
-    """The "← board" header link must stay inside the mount, not escape to
-    the site root (on the hub "/" is the hub's landing page, not the board)."""
+    """The header's link BACK to the board must stay inside the mount, not
+    escape to the site root (on the hub "/" is the hub's landing page, not the
+    board). That link used to be a bare "← board" anchor; it is now the Board
+    item of the shared Board|Chat switcher, and the invariant is unchanged.
+    Switcher-specific behaviour is pinned in test__board_chat_switcher.py."""
     # Arrange
     request = RequestFactory().get("/apps/cards/chat")
     # Act
     body = views.chat_page(request).content.decode("utf-8")
     # Assert
-    assert 'class="board-link" href="/apps/cards/"' in body
+    assert 'stx-cards-switcher__item" href="/apps/cards/"' in body
 
 
 # EOF
