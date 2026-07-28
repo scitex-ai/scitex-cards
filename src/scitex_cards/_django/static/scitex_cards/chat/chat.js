@@ -42,17 +42,31 @@
   var THREAD_POLL_MS = 5000;
   var LIST_POLL_MS = 10000;
 
+  /* How long a transient confirmation stays on screen. */
+  var NOTICE_MS = 2500;
+
   /* How close to the bottom still counts as "at the bottom" when deciding
    * whether new messages follow down. A few px of rounding drift must not
    * strand the operator off the newest message. */
   var STICK_THRESHOLD_PX = 40;
 
   var diff = window.ChatDiff;
+  /* The message-action module (Reply / Copy / React / Forward + the reaction
+   * chips). Assigned at boot; messageNode asks it where chips go. */
+  var menu = null;
+
+  /* This page IS the operator's side of the DM board — every POST it makes is
+   * attributed to the operator server-side — so the operator is who a reaction
+   * chip should light up for. */
+  var VIEWER = "operator";
 
   var state = {
     peer: null, // currently open peer name, or null
     rendered: [], // fingerprints of the messages in the DOM, in order
     emptyShown: false, // the pane is currently the "no messages yet" hint
+    messages: [], // last painted message records (the menu addresses these)
+    reactions: {}, // {message_id: {emoji: [actors]}} from the last poll
+    agents: [], // last agent list, reused by the forward picker
     timerThread: null,
     timerList: null,
   };
@@ -72,12 +86,26 @@
   // ---- helpers -----------------------------------------------------------
 
   function showError(text) {
+    $errorBar.classList.remove("ok");
     $errorBar.textContent = text;
     $errorBar.style.display = "block";
   }
 
   function clearError() {
     $errorBar.style.display = "none";
+    $errorBar.classList.remove("ok");
+  }
+
+  /* Same bar, non-alarming colour. A forward lands in ANOTHER thread, so the
+   * operator sees nothing happen in the one they are looking at — without a
+   * confirmation the only honest read of a success is "the menu closed", which
+   * is indistinguishable from a no-op. Reporting it in the RED bar would be
+   * the opposite lie. */
+  function showNotice(text) {
+    $errorBar.textContent = text;
+    $errorBar.classList.add("ok");
+    $errorBar.style.display = "block";
+    setTimeout(clearError, NOTICE_MS);
   }
 
   function el(tag, className, text) {
@@ -173,7 +201,8 @@
     getJSON(API_BASE + "/dm/threads")
       .then(function (data) {
         clearError();
-        renderAgents(data.agents || []);
+        state.agents = data.agents || [];
+        renderAgents(state.agents);
       })
       .catch(function (err) {
         showError("Agent list failed: " + err.message);
@@ -227,12 +256,19 @@
   function messageNode(m) {
     var mine = m.from === "operator";
     var wrap = el("div", "msg " + (mine ? "from-operator" : "from-agent"));
+    // The id is what an ACTION addresses. Reacting to "the text in this
+    // bubble" would attach the reaction to whatever is on screen; reacting to
+    // an id survives a repaint.
+    if (m.id) wrap.setAttribute("data-msg-id", String(m.id));
     var parts = splitAttachments(m.body);
     if (parts.text) wrap.appendChild(el("div", "bubble", parts.text));
     parts.files.forEach(function (rel) {
       wrap.appendChild(attachmentNode(rel));
     });
     wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
+    // Reaction chips belong to the menu module (it owns every reaction write),
+    // so this file only says WHERE they go, never what they are.
+    if (menu) menu.renderReactions(wrap, m);
     return wrap;
   }
 
@@ -305,11 +341,15 @@
         if (state.peer !== peer) return; // switched away mid-flight
         clearError();
         var msgs = data.messages || [];
+        // Reactions must be in place BEFORE the plan is computed: the plan's
+        // fingerprints read them, and messageNode paints them.
+        state.reactions = data.reactions || {};
+        state.messages = msgs;
         if (!msgs.length) {
           renderEmpty();
           return;
         }
-        applyPlan(diff.planRender(state.rendered, msgs), msgs);
+        applyPlan(diff.planRender(state.rendered, msgs, state.reactions), msgs);
       })
       .catch(function (err) {
         showError("Thread failed: " + err.message);
@@ -322,6 +362,11 @@
     // with it — the two describe one fact and must not drift apart.
     state.rendered = [];
     state.emptyShown = false;
+    // Reactions and messages describe the pane that is being cleared, so they
+    // clear with it. A stale map would paint the previous thread's chips onto
+    // the first messages of this one.
+    state.reactions = {};
+    state.messages = [];
     $title.innerHTML = "";
     $title.appendChild(document.createTextNode("Thread with "));
     $title.appendChild(el("b", null, peer));
@@ -372,94 +417,6 @@
       });
   }
 
-  // ---- message context menu ----------------------------------------------
-  // Look and markup come from scitex-ui (.stx-app-context-menu, >=0.11.1). Only
-  // the MECHANICS are here, and only until scitex-ui's ts/app/context-menu
-  // module lands — they confirmed base ships the stylesheet and zero lines of
-  // behaviour, which is exactly the private-implementation gap this is meant to
-  // avoid. When their module ships, delete this block; the markup it emits is
-  // identical, so nothing here leaks into the template.
-
-  var $menu = document.getElementById("msg-menu");
-  var menuTarget = null; // the .msg the menu was opened on
-
-  function closeMenu() {
-    if ($menu) $menu.classList.remove("open");
-    menuTarget = null;
-  }
-
-  function openMenuAt(x, y, msgNode) {
-    if (!$menu) return;
-    menuTarget = msgNode;
-    $menu.classList.add("open");
-    // Clamp into the viewport: a menu opened near the right/bottom edge would
-    // otherwise render half off-screen, which on a phone means unreachable.
-    var rect = $menu.getBoundingClientRect();
-    var maxX = window.innerWidth - rect.width - 8;
-    var maxY = window.innerHeight - rect.height - 8;
-    $menu.style.left = Math.max(8, Math.min(x, maxX)) + "px";
-    $menu.style.top = Math.max(8, Math.min(y, maxY)) + "px";
-  }
-
-  function messageTextOf(node) {
-    var bubble = node ? node.querySelector(".bubble") : null;
-    return bubble ? bubble.textContent : "";
-  }
-
-  if ($menu && $messages) {
-    $messages.addEventListener("contextmenu", function (event) {
-      var msgNode = event.target.closest ? event.target.closest(".msg") : null;
-      if (!msgNode) return; // right-click on blank space keeps the browser menu
-      event.preventDefault();
-      openMenuAt(event.clientX, event.clientY, msgNode);
-    });
-
-    var $reply = document.getElementById("mm-reply");
-    var $copy = document.getElementById("mm-copy");
-
-    if ($reply) {
-      $reply.addEventListener("click", function () {
-        // Quote-prefill rather than a threaded reply: the store has no parent
-        // pointer yet (that arrives with the DM move into cards.db), so a
-        // visible quote is honest about what it is. scitex-ui is designing the
-        // reply-quote BLOCK in base; this is the composer half.
-        var text = messageTextOf(menuTarget).trim();
-        if (text) {
-          var oneLine = text.replace(/\s+/g, " ");
-          var quoted = oneLine.length > 140 ? oneLine.slice(0, 140) + "…" : oneLine;
-          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
-          $body.value += sep + "> " + quoted + "\n\n";
-        }
-        closeMenu();
-        $body.focus();
-      });
-    }
-
-    if ($copy) {
-      $copy.addEventListener("click", function () {
-        var text = messageTextOf(menuTarget);
-        if (text && navigator.clipboard) {
-          navigator.clipboard.writeText(text).catch(function () {
-            showError("Copy failed — the browser refused clipboard access.");
-          });
-        }
-        closeMenu();
-      });
-    }
-
-    document.addEventListener("click", function (event) {
-      if ($menu.classList.contains("open") && !$menu.contains(event.target)) {
-        closeMenu();
-      }
-    });
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") closeMenu();
-    });
-    // Scroll dismissal: the menu is position:fixed, so it would otherwise hang
-    // in place while the message it belongs to scrolls away underneath it.
-    $messages.addEventListener("scroll", closeMenu);
-  }
-
   // ---- mobile drawer -----------------------------------------------------
 
   function closeDrawer() {
@@ -482,64 +439,50 @@
     }
   });
 
-  // ---- attachments -------------------------------------------------------
-  // Three ways in, one path out: picker, clipboard paste, drag-drop all call
-  // uploadFiles, which appends the returned URL as its own line in the body.
-  // Uploading BEFORE send means a failed upload never produces a message that
-  // references a file that is not there.
-
-  function uploadFiles(files) {
-    var list = Array.prototype.slice.call(files || []).filter(Boolean);
-    if (!list.length) return;
-    clearError();
-    list.forEach(function (file) {
-      var form = new FormData();
-      form.append("file", file);
-      fetch(API_BASE + "/dm/upload", { method: "POST", body: form })
-        .then(function (resp) {
-          return resp.json().then(function (data) {
-            if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
-            return data;
-          });
-        })
-        .then(function (data) {
-          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
-          $body.value += sep + data.url + "\n";
-          $body.focus();
-        })
-        .catch(function (err) {
-          showError("Upload failed: " + err.message);
-        });
+  // Attachments (picker / paste / drag-drop) live in chat_attach.js.
+  if (window.ChatAttach) {
+    window.ChatAttach.mount({
+      apiBase: API_BASE,
+      composerEl: $body,
+      attachEl: $attach,
+      fileEl: $file,
+      showError: showError,
+      clearError: clearError,
     });
   }
-
-  if ($attach && $file) {
-    $attach.addEventListener("click", function () {
-      $file.click();
-    });
-    $file.addEventListener("change", function () {
-      uploadFiles($file.files);
-      $file.value = "";
-    });
-  }
-
-  $body.addEventListener("paste", function (event) {
-    var items = (event.clipboardData || {}).files;
-    if (items && items.length) {
-      event.preventDefault();
-      uploadFiles(items);
-    }
-  });
-
-  ["dragover", "drop"].forEach(function (name) {
-    $body.addEventListener(name, function (event) {
-      event.preventDefault();
-      if (name === "drop") uploadFiles(event.dataTransfer.files);
-    });
-  });
   $form.addEventListener("submit", sendMessage);
 
   // ---- boot --------------------------------------------------------------
+
+  // The message context menu (Reply / Copy / React / Forward) lives in
+  // chat_menu.js. It gets the seams this file owns and reaches back for
+  // nothing else.
+  if (window.ChatMenu) {
+    menu = window.ChatMenu.mount({
+      apiBase: API_BASE,
+      viewer: VIEWER,
+      messagesEl: $messages,
+      composerEl: $body,
+      showError: showError,
+      refreshThread: refreshThread,
+      getPeer: function () {
+        return state.peer;
+      },
+      getMessages: function () {
+        return state.messages;
+      },
+      getReactions: function () {
+        return state.reactions;
+      },
+      getAgents: function () {
+        return state.agents;
+      },
+      onForwarded: function (toPeer) {
+        refreshAgents();
+        showNotice("Forwarded to " + toPeer + ".");
+      },
+    });
+  }
 
   refreshAgents();
   state.timerList = setInterval(refreshAgents, LIST_POLL_MS);

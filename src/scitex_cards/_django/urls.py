@@ -8,7 +8,7 @@ from . import views
 from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
-from .handlers.dm import dm_thread_view, dm_threads_view
+from .handlers.dm import dm_reaction_view, dm_thread_view, dm_threads_view
 from .handlers.fleet import (
     fleet_ci_status_view,
     fleet_timing_view,
@@ -84,6 +84,15 @@ urlpatterns = [
     path("chat/", views.chat_page, name="chat_page_slash"),
     path("dm/threads", dm_threads_view, name="dm_threads"),
     path("dm/thread/<str:peer>", dm_thread_view, name="dm_thread"),
+    # Reactions on a DM. Nested UNDER the thread on purpose: the thread is then
+    # derived from the URL the caller already had the authority to address,
+    # rather than being a thread id the body could name. `<str:peer>` does not
+    # match a "/", so this route and the one above cannot shadow each other.
+    path(
+        "dm/thread/<str:peer>/reaction",
+        dm_reaction_view,
+        name="dm_reaction",
+    ),
     # Chat attachments — the operator's top blocker was a text-only chat.
     # Upload returns a relative URL the composer puts in the message body;
     # serve validates every path component and confirms the resolved file is
