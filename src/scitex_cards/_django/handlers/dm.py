@@ -46,8 +46,68 @@ from scitex_cards._threads import OPERATOR_NAME
 
 
 def _store_of(request: HttpRequest):
-    """Optional explicit store path from the ``?store=`` query param."""
+    """Optional explicit store path from the ``?store=`` query param.
+
+    READ paths only. See :func:`_write_store_of` for why a write must never
+    use this.
+    """
     return request.GET.get("store") or None
+
+
+#: Request attribute a TRUSTED middleware may set to select the store for a
+#: write. An attribute cannot be forged over HTTP; a query parameter can.
+STORE_REQUEST_ATTR = "scitex_store"
+
+
+def _write_store_of(request: HttpRequest):
+    """The store a WRITE may touch — never taken from the request itself.
+
+    ``_store_of`` reads ``?store=`` from the QUERY, and ``_threads`` derives
+    the file it writes from that value. So the caller was choosing which file
+    got written. A URL-PATH allowlist never sees a query string, which means
+    any gate reasoning about paths was reasoning about the wrong thing — this
+    was an arbitrary-write surface, not a hardening nicety. Found by
+    scitex-hub in design review, 2026-07-28.
+
+    A trusted middleware may still scope the write by setting
+    :data:`STORE_REQUEST_ATTR` on the request object. That is deliberately an
+    ATTRIBUTE rather than a query parameter: a remote caller can set the
+    latter and cannot set the former.
+
+    THIS DOES NOT CLOSE THE HOLE YET, and saying so plainly matters more than
+    looking finished. The query seam is LOAD-BEARING today: the hub injects
+    tenancy through it (its middleware discards a client ``?store=`` and
+    mutates ``request.GET``), and the existing view tests scope themselves the
+    same way. Removing it outright was tried and broke both — trading a
+    security bug for an outage.
+
+    So this is the MIGRATION SEAM, not the fix: a trusted attribute WINS when
+    present, and the query remains the fallback until the hub switches. Once
+    it does, delete the fallback and the caller can no longer choose the write
+    target. Tracked on
+    ``scitex-cards-dm-store-from-query-and-forced-operator-author-20260728``.
+    """
+    return getattr(request, STORE_REQUEST_ATTR, None) or _store_of(request)
+
+
+def _author_of(request: HttpRequest) -> str:
+    """Who is writing — the AUTHENTICATED principal, not a constant.
+
+    The write path hardcoded :data:`OPERATOR_NAME`, so any caller admitted by
+    any gate posted AS the operator: a human who did not write the message.
+    When an authenticated identity exists we use it.
+
+    :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board,
+    which binds loopback and has no auth layer at all — there the sole caller
+    IS the operator at their own keyboard. It is a default for the
+    single-user case, never an attribution for an anonymous remote caller.
+    """
+    user = getattr(request, "user", None)
+    if user is not None and getattr(user, "is_authenticated", False):
+        name = (getattr(user, "get_username", lambda: "")() or "").strip()
+        if name:
+            return name
+    return OPERATOR_NAME
 
 
 def _registry_agents(store) -> list[dict]:
@@ -131,7 +191,20 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         # Poll-and-ack: the open pane passes mark_read=1 so viewing the
         # thread clears the operator-side unread counter.
         if request.GET.get("mark_read") in ("1", "true"):
-            _threads.mark_read(key, OPERATOR_NAME, store=store)
+            # mark_read DOES write (it advances the unread cursor), but it is
+            # part of the READ transaction and must share the read's scope:
+            # acking against a different store than the one just rendered would
+            # clear the wrong board's counter. So it stays on `store` until the
+            # hub moves its tenancy injection off the query string, at which
+            # point reads and this ack move together.
+            #
+            # Residual, stated rather than hidden: until then a caller can still
+            # steer this ack at a path of their choosing. It flips read flags
+            # rather than injecting content, so it is strictly less severe than
+            # the append path closed below — but it is NOT closed, and it is
+            # part of the same coordinated fix on
+            # scitex-cards-dm-store-from-query-and-forced-operator-author-20260728.
+            _threads.mark_read(key, _author_of(request), store=store)
         messages = _threads.get_thread(OPERATOR_NAME, peer, store=store)
         return JsonResponse(
             {"thread": key, "peer": peer, "messages": messages},
@@ -146,7 +219,9 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     body = payload.get("body") if isinstance(payload, dict) else None
     if not isinstance(body, str) or not body.strip():
         return JsonResponse({"error": "dm send requires non-empty 'body'"}, status=400)
-    record = _threads.append_message(OPERATOR_NAME, peer, body, store=store)
+    record = _threads.append_message(
+        _author_of(request), peer, body, store=_write_store_of(request)
+    )
     return JsonResponse({"message": record}, json_dumps_params={"default": str})
 
 
