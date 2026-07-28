@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+## [0.17.9] - 2026-07-28
+
+Everything below already existed on `develop` and on the host — but under the
+version string `0.17.8`, which was **already published**. Agents run their own
+`/opt/venv-sac` inside a container image, so they saw `0.17.8` and got the OLD
+code. sac measured it: same version string, `_may_stop.py` still on the bare
+count, the new renderer absent. This release exists so the fixes can actually
+reach a container, and it is the correction of a mistake — installing changed
+code onto a host without bumping the version manufactured two different
+codebases sharing one number, which is the exact "a version string is not
+evidence of the code that runs" trap this project has hit repeatedly.
+
+### Fixed
+
+- **The unread-inbox signal names its sender** (#582). `may_stop` collapsed the
+  inbox to `"N unread notification(s)"`, discarding the `actor` and `body` the
+  records already carried. A bare count is unactionable by construction — it
+  cannot distinguish the operator asking a direct question from a card-status
+  echo, so deferring it is rational. On 2026-07-28 the operator asked an agent
+  for its top-5 tasks twice, and told it they were migrating off Telegram, and
+  all three arrived as the number `4` and went unread for two hours. This
+  blocks the Telegram→cards migration rather than merely annoying. Note the
+  consumer forwards this `reason` verbatim by design, so the wording here is
+  the entire user-visible signal.
+
+### Added
+
+- **Chat attachments** (#580). `POST /dm/upload` (25 MB cap, store resolved
+  server-side), files under `attachments/<YYYY-MM>/<uuid>/<name>` so identical
+  filenames cannot collide, and a serve route that validates every path
+  component *and* re-checks the resolved path is still inside the attachments
+  root. Composer gains a paperclip button, clipboard paste and drag-drop;
+  images render inline, other files as a download chip.
+- **Right-click menu on messages** (#581), consuming scitex-ui's
+  `.stx-app-context-menu` rather than shipping a private one — zero private
+  menu CSS, asserted by test. Requires scitex-ui >= 0.11.1 (0.11.1 adds
+  `font-family: inherit`, and the items are `<button>`). Reply prefills a
+  quote; Copy copies the text.
+
 ## [0.17.8] - 2026-07-28
 
 Card creation was broken fleet-wide, and the check that should have caught it

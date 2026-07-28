@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — scitex-todo v{{ scitex_cards_version }}</title>
+<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -32,6 +32,13 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* Dark scrollbars (operator 2026-07-27): the OS-default light scrollbar
+     clashed with the fixed dark palette. Match --line/--panel. */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) var(--panel); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -118,6 +125,25 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
   #compose button:disabled { opacity: 0.45; cursor: default; }
+  #compose-attach {
+    align-self: flex-end; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); padding: 0 12px; font-size: 1.05rem;
+  }
+  #compose-attach:hover { background: var(--line); }
+  /* Attachments render under the bubble, inside the same message column, so
+     an image reads as part of the message rather than a separate event. */
+  .msg .att-img { display: block; margin-top: 4px; max-width: 100%; }
+  .msg .att-img img {
+    max-width: min(360px, 100%); max-height: 360px; border-radius: 10px;
+    display: block; border: 1px solid var(--line);
+  }
+  .msg .att-file {
+    display: inline-block; margin-top: 4px; padding: 6px 10px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); text-decoration: none;
+    font-size: 0.82rem; word-break: break-all;
+  }
+  .msg .att-file:hover { border-color: var(--accent); }
   #error-bar {
     display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
@@ -139,6 +165,33 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     #scrim.open { display: block; }
   }
 </style>
+{% comment %}
+Right-click menu comes from scitex-ui — we do NOT ship our own. The operator's
+standing rule: anything shareable lives in base and is consumed from there
+(「共通化できるものは scitex-ui に入れて消費してください」). We were about to
+write a private one; scitex-ui pointed out base has shipped it since 0.11.0.
+
+Two files, in this order, and NO shell adoption is required (scitex-ui
+confirmed from the source): theme.css is the TOKEN layer only — context-menu.css
+consumes --bg-secondary / --border-default / --text-primary / --text-secondary.
+It has hardcoded dark fallbacks, so it renders without theme.css, but then it is
+permanently dark regardless of the viewer. Linking the tokens is what makes it
+follow the theme.
+
+MINIMUM scitex-ui 0.11.1, not 0.11.0: 0.11.1 adds `font-family: inherit` on
+__item. Items are <button>, buttons do not inherit the page font, and base ships
+no global button reset — without it the menu renders in the UA button font.
+The host was on 0.7.1 when this was written (the FILE existed there, but not the
+__label/__shortcut/:disabled rules — presence is not currency), so the upgrade
+ships alongside this.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_ui/css/app/context-menu.css' %}">
+<style>
+  /* Positioning only — every visual rule comes from base. */
+  #msg-menu { position: fixed; display: none; z-index: 40; }
+  #msg-menu.open { display: block; }
+</style>
 </head>
 {% comment %}
 Mount-aware API base (same contract as board_v3.html's API_BASE const):
@@ -153,18 +206,37 @@ must therefore ALWAYS be rendered.
 <header>
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
-  <span class="ver">scitex-todo v{{ scitex_cards_version }}</span>
+  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
   <a class="board-link" href="{{ api_base }}">&larr; board</a>
 </header>
 <div id="error-bar"></div>
 <div id="layout">
   <nav id="agents" aria-label="Agents"><div class="empty">Loading agents&hellip;</div></nav>
   <div id="scrim"></div>
+{% comment %}
+Markup is scitex-ui's contract, verbatim — do not "tidy" it:
+  * items MUST be <button>. The base CSS resets background/border and sets
+    font-family/text-align on the button, and a <div> also loses :disabled.
+  * __shortcut uses `margin-left: auto`, so it must be the LAST CHILD INSIDE
+    the item. Outside the item it will not right-align.
+  * use the real `disabled` attribute, not a class — base handles the hover
+    suppression off :disabled.
+Positioning/dismiss is wired below by hand; scitex-ui is shipping a
+`ts/app/context-menu` module (open-at-cursor, viewport clamping, outside-click
+/Escape/scroll dismissal, items-array API) and this markup is exactly what it
+emits, so swapping to it will not change this block.
+{% endcomment %}
+  <div id="msg-menu" class="stx-app-context-menu" role="menu">
+    <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+    <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
+  </div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
-      <textarea id="compose-body" rows="3" placeholder="Message&hellip;" disabled></textarea>
+      <input id="compose-file" type="file" multiple hidden>
+      <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+      <textarea id="compose-body" rows="3" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
       <button id="compose-send" type="submit" disabled>Send</button>
     </form>
   </main>
