@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Board | Chat switcher on both pages.** `/chat/` was reachable only by
+- **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
   typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
   なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい
   です。」 With the migration off Telegram onto this chat under way, an
