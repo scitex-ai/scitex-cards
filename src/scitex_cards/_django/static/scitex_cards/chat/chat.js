@@ -324,6 +324,94 @@
       });
   }
 
+  // ---- message context menu ----------------------------------------------
+  // Look and markup come from scitex-ui (.stx-app-context-menu, >=0.11.1). Only
+  // the MECHANICS are here, and only until scitex-ui's ts/app/context-menu
+  // module lands — they confirmed base ships the stylesheet and zero lines of
+  // behaviour, which is exactly the private-implementation gap this is meant to
+  // avoid. When their module ships, delete this block; the markup it emits is
+  // identical, so nothing here leaks into the template.
+
+  var $menu = document.getElementById("msg-menu");
+  var menuTarget = null; // the .msg the menu was opened on
+
+  function closeMenu() {
+    if ($menu) $menu.classList.remove("open");
+    menuTarget = null;
+  }
+
+  function openMenuAt(x, y, msgNode) {
+    if (!$menu) return;
+    menuTarget = msgNode;
+    $menu.classList.add("open");
+    // Clamp into the viewport: a menu opened near the right/bottom edge would
+    // otherwise render half off-screen, which on a phone means unreachable.
+    var rect = $menu.getBoundingClientRect();
+    var maxX = window.innerWidth - rect.width - 8;
+    var maxY = window.innerHeight - rect.height - 8;
+    $menu.style.left = Math.max(8, Math.min(x, maxX)) + "px";
+    $menu.style.top = Math.max(8, Math.min(y, maxY)) + "px";
+  }
+
+  function messageTextOf(node) {
+    var bubble = node ? node.querySelector(".bubble") : null;
+    return bubble ? bubble.textContent : "";
+  }
+
+  if ($menu && $messages) {
+    $messages.addEventListener("contextmenu", function (event) {
+      var msgNode = event.target.closest ? event.target.closest(".msg") : null;
+      if (!msgNode) return; // right-click on blank space keeps the browser menu
+      event.preventDefault();
+      openMenuAt(event.clientX, event.clientY, msgNode);
+    });
+
+    var $reply = document.getElementById("mm-reply");
+    var $copy = document.getElementById("mm-copy");
+
+    if ($reply) {
+      $reply.addEventListener("click", function () {
+        // Quote-prefill rather than a threaded reply: the store has no parent
+        // pointer yet (that arrives with the DM move into cards.db), so a
+        // visible quote is honest about what it is. scitex-ui is designing the
+        // reply-quote BLOCK in base; this is the composer half.
+        var text = messageTextOf(menuTarget).trim();
+        if (text) {
+          var oneLine = text.replace(/\s+/g, " ");
+          var quoted = oneLine.length > 140 ? oneLine.slice(0, 140) + "…" : oneLine;
+          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
+          $body.value += sep + "> " + quoted + "\n\n";
+        }
+        closeMenu();
+        $body.focus();
+      });
+    }
+
+    if ($copy) {
+      $copy.addEventListener("click", function () {
+        var text = messageTextOf(menuTarget);
+        if (text && navigator.clipboard) {
+          navigator.clipboard.writeText(text).catch(function () {
+            showError("Copy failed — the browser refused clipboard access.");
+          });
+        }
+        closeMenu();
+      });
+    }
+
+    document.addEventListener("click", function (event) {
+      if ($menu.classList.contains("open") && !$menu.contains(event.target)) {
+        closeMenu();
+      }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeMenu();
+    });
+    // Scroll dismissal: the menu is position:fixed, so it would otherwise hang
+    // in place while the message it belongs to scrolls away underneath it.
+    $messages.addEventListener("scroll", closeMenu);
+  }
+
   // ---- mobile drawer -----------------------------------------------------
 
   function closeDrawer() {
