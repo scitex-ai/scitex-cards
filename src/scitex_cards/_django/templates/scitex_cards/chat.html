@@ -146,6 +146,33 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     #scrim.open { display: block; }
   }
 </style>
+{% comment %}
+Right-click menu comes from scitex-ui — we do NOT ship our own. The operator's
+standing rule: anything shareable lives in base and is consumed from there
+(「共通化できるものは scitex-ui に入れて消費してください」). We were about to
+write a private one; scitex-ui pointed out base has shipped it since 0.11.0.
+
+Two files, in this order, and NO shell adoption is required (scitex-ui
+confirmed from the source): theme.css is the TOKEN layer only — context-menu.css
+consumes --bg-secondary / --border-default / --text-primary / --text-secondary.
+It has hardcoded dark fallbacks, so it renders without theme.css, but then it is
+permanently dark regardless of the viewer. Linking the tokens is what makes it
+follow the theme.
+
+MINIMUM scitex-ui 0.11.1, not 0.11.0: 0.11.1 adds `font-family: inherit` on
+__item. Items are <button>, buttons do not inherit the page font, and base ships
+no global button reset — without it the menu renders in the UA button font.
+The host was on 0.7.1 when this was written (the FILE existed there, but not the
+__label/__shortcut/:disabled rules — presence is not currency), so the upgrade
+ships alongside this.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_ui/css/app/context-menu.css' %}">
+<style>
+  /* Positioning only — every visual rule comes from base. */
+  #msg-menu { position: fixed; display: none; z-index: 40; }
+  #msg-menu.open { display: block; }
+</style>
 </head>
 {% comment %}
 Mount-aware API base (same contract as board_v3.html's API_BASE const):
@@ -167,6 +194,23 @@ must therefore ALWAYS be rendered.
 <div id="layout">
   <nav id="agents" aria-label="Agents"><div class="empty">Loading agents&hellip;</div></nav>
   <div id="scrim"></div>
+{% comment %}
+Markup is scitex-ui's contract, verbatim — do not "tidy" it:
+  * items MUST be <button>. The base CSS resets background/border and sets
+    font-family/text-align on the button, and a <div> also loses :disabled.
+  * __shortcut uses `margin-left: auto`, so it must be the LAST CHILD INSIDE
+    the item. Outside the item it will not right-align.
+  * use the real `disabled` attribute, not a class — base handles the hover
+    suppression off :disabled.
+Positioning/dismiss is wired below by hand; scitex-ui is shipping a
+`ts/app/context-menu` module (open-at-cursor, viewport clamping, outside-click
+/Escape/scroll dismissal, items-array API) and this markup is exactly what it
+emits, so swapping to it will not change this block.
+{% endcomment %}
+  <div id="msg-menu" class="stx-app-context-menu" role="menu">
+    <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+    <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
+  </div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
