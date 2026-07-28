@@ -194,6 +194,21 @@
     max-width: 100vw;
     width: 100vw;
   }
+
+  /* BOARD | CHAT SWITCHER. Colours come from the theme vars the shell already
+     defines, so light and dark both work with no second rule. Padding is 6px
+     vertical rather than 0 because the operator reaches this on a phone, where
+     a bare inline link is too small a tap target.
+     (hook-bypass: line-limit — board_v3.html is 3548 lines, over the HTML cap,
+     and already carries this bypass. Splitting the template is real work that
+     deserves its own PR; smuggling a 3500-line refactor into a nav change would
+     make both impossible to review.) */
+  .board-chat-switch { display: inline-flex; gap: 6px; align-items: center; }
+  .board-chat-switch a { color: var(--dim); text-decoration: none; padding: 6px 4px; }
+  .board-chat-switch a:hover { color: var(--text); }
+  /* The current surface is marked, not linked. */
+  .board-chat-switch strong { color: var(--text); font-weight: 600; padding: 6px 4px; }
+  .board-chat-switch span[aria-hidden] { color: var(--line); }
 </style>
 {% comment %}
   FIRST-PAINT status-color CSS vars — the SINGLE source of truth for the
@@ -230,6 +245,31 @@
       <h1>SciTeX Cards
         <span class="small">v{{ scitex_cards_version|default:"?" }}</span></h1>
       <span class="small"><span class="live-dot"></span>LIVE</span>
+      {% comment %}BOARD | CHAT SWITCHER — the operator's ask, verbatim: "chat が
+        隠し URL みたいになってしまっているので、ホームに Board | Chat のスイッチャーを
+        付けて欲しい". Chat was reachable only by typing the URL, which is a
+        migration blocker while they are moving off Telegram onto this surface.
+
+        href uses `{{ api_base }}` and NOT a hardcoded "/chat/". The hub mounts
+        this board under a sub-path (e.g. /apps/cards/), where an absolute path
+        leaves the mount entirely — that is exactly the class that broke the
+        board's API calls in #556/#557. `api_base` is the same request.path-derived
+        include root the JS already uses (API_BASE below) and that chat.html uses
+        for its reciprocal link, so root and sub-path mounts both resolve.
+
+        `{% templatetag openblock %} url {% templatetag closeblock %}` is NOT
+        usable here: this template renders under ROOT_URLCONF where the
+        `scitex_cards` namespace is not registered, so a namespaced reverse
+        raises NoReverseMatch and drops the whole board to its static fallback.
+        (hook-bypass: line-limit — board_v3.html is already over the HTML cap and
+        carries this bypass; splitting the template is tracked separately, and
+        smuggling a refactor into a nav change would be the wrong trade.)
+      {% endcomment %}
+      <span class="small board-chat-switch">
+        <strong aria-current="page">Board</strong>
+        <span aria-hidden="true">|</span>
+        <a href="{{ api_base }}chat/" title="Direct messages - operator and agents">Chat</a>
+      </span>
     </div>
 
     <div class="fb-center stx-todo-filterbar__group stx-todo-filterbar__group--search">

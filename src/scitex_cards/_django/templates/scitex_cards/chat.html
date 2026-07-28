@@ -51,8 +51,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   header h1 { font-size: 1rem; margin: 0; color: var(--accent-2); font-weight: 600; }
   header .ver { color: var(--dim); font-size: 0.72rem; }
-  header a.board-link { margin-left: auto; color: var(--dim); font-size: 0.8rem; text-decoration: none; }
-  header a.board-link:hover { color: var(--text); }
+  /* BOARD | CHAT SWITCHER. Was `header a.board-link` — an anchor. It is now a
+     span WRAPPING the pair, so the old selector would match nothing and the
+     control would render unstyled. Colours come from the theme vars, so light
+     and dark both work without a second rule. */
+  header .board-link { margin-left: auto; font-size: 0.8rem; display: flex; gap: 6px; align-items: center; }
+  header .board-link a { color: var(--dim); text-decoration: none; padding: 6px 4px; }
+  header .board-link a:hover { color: var(--text); }
+  /* The current surface is not a link: marked, not clickable. */
+  header .board-link strong { color: var(--text); font-weight: 600; padding: 6px 4px; }
+  header .board-link span[aria-hidden] { color: var(--line); }
   #menu-btn {
     background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
     border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; cursor: pointer;
@@ -207,7 +215,17 @@ must therefore ALWAYS be rendered.
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
   <h1>Direct messages</h1>
   <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
-  <a class="board-link" href="{{ api_base }}">&larr; board</a>
+  {% comment %}The RECIPROCAL half of the board's Board | Chat switcher. This
+    was a one-way "&larr; board" link: you could get back, but nothing here told
+    you the two surfaces are a pair, so chat still read as a detached page. Same
+    markup and same `api_base` root as the board side, with the current surface
+    marked rather than linked.
+  {% endcomment %}
+  <span class="board-link board-chat-switch">
+    <a href="{{ api_base }}">Board</a>
+    <span aria-hidden="true">|</span>
+    <strong aria-current="page">Chat</strong>
+  </span>
 </header>
 <div id="error-bar"></div>
 <div id="layout">
