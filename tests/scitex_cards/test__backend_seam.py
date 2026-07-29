@@ -462,4 +462,41 @@ def test_poll_notifications_through_the_seam_warns_that_the_cli_rail_is_refusing
     assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
 
 
+def _arrange_scitex_dev_that_exits(monkeypatch):
+    """A scitex-dev whose `ensure_current` calls `sys.exit()` — the LIBRARY BUG
+    the currency guard must absorb. `SystemExit` is a BaseException, not an
+    Exception, so the pre-fix `except Exception` did not stop it."""
+    monkeypatch.setattr(_currency, "_CACHED_VERDICT", None)
+    monkeypatch.setattr(_currency, "_WARNED_STALE", False)
+
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        sys.exit(f"scitex-dev exited while checking {dist_name}")
+
+    fake_package = types.ModuleType("scitex_dev")
+    fake_module = types.ModuleType("scitex_dev.staleness")
+    fake_module.ensure_current = _fake_ensure_current
+    fake_module.StalenessError = _FakeStalenessError
+    monkeypatch.setitem(sys.modules, "scitex_dev", fake_package)
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", fake_module)
+
+
+def test_dm_send_through_the_seam_still_delivers_when_the_currency_check_exits(
+    store, monkeypatch
+):
+    """THE REFUTED PROPERTY, measured where it broke. Before the fix the
+    `SystemExit` propagated out of `dm_send`, the store was never touched, and
+    the DM did not go out — the currency DIAGNOSTIC killed the last working
+    rail. Reading the body back is the proof the write actually landed."""
+    # Arrange
+    _arrange_scitex_dev_that_exits(monkeypatch)
+    # Act
+    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
+    thread = get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    # Assert
+    assert [m["body"] for m in thread["messages"]] == ["hello"]
+
+
 # EOF

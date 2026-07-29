@@ -311,6 +311,29 @@ def test_warn_if_stale_once_warning_names_the_sibling_cli_command(monkeypatch, c
     assert "scitex-cards list-tasks" in _currency_warnings(caplog)[0].getMessage()
 
 
+def test_warn_if_stale_once_warning_names_both_console_script_forms(
+    monkeypatch, caplog
+):
+    """The command that ACTUALLY refused in the 2026-07-29 incident was
+    `scitex-todo list-tasks` — the legacy console script, still installed
+    (pyproject ships both, same `_cli:main`) and still what much of the fleet
+    types. A reader who types that name must recognise the warning as being
+    about the command they are running, so BOTH forms are named."""
+    # Arrange
+    _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert
+    message = _currency_warnings(caplog)[0].getMessage()
+    assert all(
+        form in message
+        for form in ("scitex-cards list-tasks", "scitex-todo list-tasks")
+    )
+
+
 def test_warn_if_stale_once_warning_names_the_cli_and_mcp_rail(monkeypatch, caplog):
     # Arrange
     _stale_fake(monkeypatch)
@@ -384,7 +407,134 @@ def test_warn_if_stale_once_does_not_raise_when_scitex_dev_malfunctions(monkeypa
 
 
 # --------------------------------------------------------------------------- #
-# (f) the remedy — a BASE REBAKE, never an in-place upgrade                   #
+# (f) LIBRARY BUG vs STOP-NOW — what the guard swallows, and what it must not  #
+#                                                                             #
+# REFUTED HEADLINE PROPERTY (adversarial verifier, 2026-07-29): the guard      #
+# caught `Exception`, and `SystemExit` is not one. Measured end-to-end through #
+# the real seam, a `SystemExit` from the currency call propagated out of       #
+# `dm_send` and the store was never touched — the DM did NOT go out, on the    #
+# one rail this module exists to keep alive.                                   #
+#                                                                             #
+# The repair is NOT `except BaseException`: that would eat KeyboardInterrupt   #
+# and stop Ctrl-C working whenever a check is in flight. The rule is           #
+# `_RAIL_SAFE_ERRORS`: swallow LIBRARY MISBEHAVIOUR, propagate "STOP NOW".     #
+# Both halves are pinned below — the second so that a later "hardening" to     #
+# BaseException goes red instead of shipping.                                  #
+# --------------------------------------------------------------------------- #
+def _raising_fake(monkeypatch, exc):
+    """Arrange a scitex-dev whose `ensure_current` raises `exc`, with a normal
+    `StalenessError` published alongside so `exc` is unambiguously NOT the
+    staleness verdict. Identical setup for both halves of the split, so the
+    exception CLASS is the only variable between the two tests."""
+    _reset_warn_once_state(monkeypatch)
+
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        raise exc
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error=_FakeStalenessError
+    )
+
+
+def test_warn_if_stale_once_swallows_a_system_exit_from_the_currency_path(monkeypatch):
+    """A third-party diagnostic helper calling `sys.exit()` is a LIBRARY BUG;
+    absorbing it is correct. Reaching the assert at all is the did-not-escape
+    evidence — before the fix, this call terminated the caller instead."""
+    # Arrange
+    _raising_fake(monkeypatch, SystemExit("scitex-dev called sys.exit()"))
+
+    # Act
+    verdict = warn_if_stale_once()
+
+    # Assert
+    assert verdict.state == "unknown"
+
+
+def test_warn_if_stale_once_lets_a_keyboard_interrupt_propagate(monkeypatch):
+    """DELIBERATE, and pinned so nobody "simplifies" the guard to BaseException.
+    Ctrl-C is the operator's INTENT, not a malfunction to absorb."""
+    # Arrange
+    _raising_fake(monkeypatch, KeyboardInterrupt())
+
+    # Act / Assert
+    with pytest.raises(KeyboardInterrupt):
+        warn_if_stale_once()
+
+
+def test_currency_verdict_is_unknown_when_scitex_dev_exits_the_process(monkeypatch):
+    # Arrange
+    _raising_fake(monkeypatch, SystemExit("scitex-dev called sys.exit()"))
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert — a process exit is not a verdict about us.
+    assert verdict.state == "unknown"
+
+
+def test_currency_verdict_lets_a_keyboard_interrupt_propagate(monkeypatch):
+    # Arrange
+    _raising_fake(monkeypatch, KeyboardInterrupt())
+
+    # Act / Assert
+    with pytest.raises(KeyboardInterrupt):
+        currency_verdict()
+
+
+def test_currency_verdict_keeps_the_stale_verdict_when_the_message_cannot_render(
+    monkeypatch,
+):
+    """The detail may degrade; the VERDICT may not. Losing a true "your CLI
+    rail is down" because its `__str__` misbehaved is the worst outcome."""
+    # Arrange
+    _reset_warn_once_state(monkeypatch)
+
+    class _UnrenderableStalenessError(RuntimeError):
+        def __str__(self):
+            raise SystemExit("__str__ called sys.exit()")
+
+    def _fake_ensure_current(dist_name):
+        raise _UnrenderableStalenessError()
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error=_UnrenderableStalenessError
+    )
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert
+    assert verdict.state == "stale"
+
+
+def test_currency_verdict_is_unknown_when_staleness_error_is_not_an_exception(
+    monkeypatch,
+):
+    """A changed scitex-dev exporting a non-exception under that name makes
+    `except stale_error` raise TypeError while EVALUATING the clause — which
+    that clause's siblings cannot catch. The outer guard is what covers it."""
+    # Arrange
+    _reset_warn_once_state(monkeypatch)
+
+    def _fake_ensure_current(dist_name):
+        raise RuntimeError("scitex-cards 0.17.7 is behind latest 0.17.9")
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error="not an exception class"
+    )
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert
+    assert verdict.state == "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# (g) the remedy — a BASE REBAKE, never an in-place upgrade                   #
 # --------------------------------------------------------------------------- #
 def test_stale_remedy_does_not_prescribe_an_in_place_pip_upgrade():
     """An in-place upgrade inside an apptainer overlay leaves a whiteout that

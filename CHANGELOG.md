@@ -45,11 +45,30 @@ Everything under [Unreleased] below moves here.
   `CurrencyVerdict(state, detail, checked)` shape whose `state` is
   THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
   an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
-  `warn_if_stale_once()` wraps it, never raises (an unexpected exception out of
-  scitex-dev degrades to `"unknown"`), and logs ONE warning per process that
-  names the sibling rail explicitly — "this Python call SUCCEEDED, but the
-  CLI/MCP rail for this same package is currently REFUSING" — quotes
-  scitex-dev's message verbatim, and prescribes a BASE REBAKE.
+  `warn_if_stale_once()` wraps it and logs ONE warning per process that names
+  the sibling rail explicitly — "this Python call SUCCEEDED, but the CLI/MCP
+  rail for this same package is currently REFUSING" — quotes scitex-dev's
+  message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
+  console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
+  alias `scitex-todo list-tasks`, because the latter is what actually refused
+  in the incident and is still what much of the fleet types; a reader must
+  recognise the command they are running.
+
+  A FAILING CURRENCY CHECK CANNOT TAKE THE PYTHON RAIL DOWN — and the guard
+  states its limit rather than claiming a false absolute. It swallows every
+  `Exception` **and `SystemExit`**, degrading all of it to `"unknown"`.
+  `SystemExit` is deliberate and was a real hole: it derives from
+  `BaseException`, not `Exception`, so a `sys.exit()` anywhere on the currency
+  path used to propagate straight out of `dm_send` — measured, with the store
+  never touched and the DM never sent, on the one rail this feature exists to
+  keep alive. scitex-dev is optional and independently versioned and its API is
+  deliberately not pinned, so "present but changed" is exactly the case covered;
+  a library calling `sys.exit()` inside a diagnostic helper is a LIBRARY BUG and
+  absorbing it is correct. The guard is NOT `BaseException`, and a test pins
+  that: `KeyboardInterrupt` (and `GeneratorExit`, `asyncio.CancelledError`) must
+  still propagate, because Ctrl-C is the operator's INTENT and swallowing it
+  would trade one usability bug for another. Swallow library misbehaviour,
+  propagate "stop now".
 
   The remedy is a base rebake and never an in-place `pip` upgrade, and a test
   pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout

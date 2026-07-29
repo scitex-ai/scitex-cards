@@ -36,9 +36,11 @@ LAST WORKING RAIL away from an agent whose CLI is already refusing — a
 strictly worse failure than the one it fixes. SETTLED; do not revisit.
 
 What the Python rail gets instead is :func:`warn_if_stale_once`: a
-non-raising, warn-ONCE-per-process notice that names the SIBLING rail
-explicitly, so the reader — an agent who does not yet know their other rail
-is dead — learns it on the rail they are actually watching.
+warn-ONCE-per-process notice that names the SIBLING rail explicitly, so the
+reader — an agent who does not yet know their other rail is dead — learns it
+on the rail they are actually watching. A failure inside that notice cannot
+take the rail down with it (:data:`_RAIL_SAFE_ERRORS` states exactly what it
+absorbs and what it deliberately still lets through).
 
 THREE-VALUED, ALWAYS (constitution §2)
 --------------------------------------
@@ -61,6 +63,52 @@ _LOGGER = logging.getLogger(__name__)
 
 #: The distribution this gate speaks for.
 _DIST_NAME = "scitex-cards"
+
+#: WHAT A CURRENCY CHECK MAY SWALLOW — and what it must not. READ BEFORE EDITING.
+#:
+#: The requirement is narrow and worth stating exactly: THE CURRENCY CHECK MUST
+#: NEVER TAKE DOWN THE RAIL IT IS ONLY REPORTING ON. It is a diagnostic; the
+#: caller's DM, poll or list is the actual work. Both of the "obvious"
+#: simplifications of the tuple below are wrong, in opposite directions:
+#:
+#: * ``Exception`` ALONE LEAKS. ``SystemExit`` derives from ``BaseException``,
+#:   not from ``Exception``, so a ``sys.exit()`` (or bare ``raise SystemExit``)
+#:   anywhere on the currency path walks straight out of this module. Measured
+#:   end-to-end through the real seam: a ``SystemExit`` from the currency call
+#:   propagated out of ``dm_send`` and the store was never touched — the DM did
+#:   not go out. Reachable from ``ensure_current`` itself, from a PEP-562
+#:   module ``__getattr__``, from a raising ``__str__`` on the staleness
+#:   exception, and from a logging handler. scitex-dev is an OPTIONAL,
+#:   INDEPENDENTLY VERSIONED dependency whose API this module deliberately does
+#:   not pin, so "scitex-dev present but its API changed" is precisely the case
+#:   this module claims to cover. A third-party library calling ``sys.exit()``
+#:   inside a diagnostic helper is a LIBRARY BUG, and swallowing a library bug
+#:   is correct.
+#: * ``BaseException`` SWALLOWS TOO MUCH. It would eat ``KeyboardInterrupt``,
+#:   so Ctrl-C would stop working for the operator whenever a currency check is
+#:   in flight — trading one usability bug for another. It would also eat
+#:   ``GeneratorExit`` and ``asyncio.CancelledError`` (a ``BaseException`` since
+#:   3.8), i.e. unwinds already in progress. Those are not malfunctions to
+#:   absorb; they are the USER'S (or the runtime's) INTENT, and intent must
+#:   propagate.
+#:
+#: In one line: SWALLOW LIBRARY MISBEHAVIOUR, PROPAGATE "STOP NOW".
+_RAIL_SAFE_ERRORS = (Exception, SystemExit)
+
+
+def _stale_detail(exc: BaseException) -> str:
+    """scitex-dev's message VERBATIM, with a fallback that keeps the VERDICT.
+
+    ``str(exc)`` runs third-party code (the staleness exception's ``__str__``).
+    If that blows up we still know the install is stale, and dropping a true
+    STALE verdict merely because we could not format its detail would be the
+    worst of the three outcomes: the reader's CLI rail really is down and this
+    warning is their only signal. The detail degrades; the verdict does not.
+    """
+    try:
+        return str(exc)
+    except _RAIL_SAFE_ERRORS:
+        return "(scitex-dev refused, but its message could not be rendered)"
 
 
 def check_currency() -> None:
@@ -112,8 +160,11 @@ def currency_verdict() -> CurrencyVerdict:
     """Report this install's currency WITHOUT raising — the Python-rail read.
 
     The non-raising sibling of :func:`check_currency`. Same underlying
-    measurement (scitex-dev's ``ensure_current``), opposite failure mode: this
-    one never raises, and never no-ops silently into a false "fine".
+    measurement (scitex-dev's ``ensure_current``), opposite failure mode: a
+    malfunction here yields a verdict instead of an exception, and never
+    no-ops silently into a false "fine". The one thing that still propagates
+    is a "stop now" signal that is not an ``Exception`` — Ctrl-C and friends;
+    see :data:`_RAIL_SAFE_ERRORS` for why that asymmetry is deliberate.
 
     Three outcomes, per the constitution's three-valued rule:
 
@@ -132,21 +183,34 @@ def currency_verdict() -> CurrencyVerdict:
     not export it: on such a build, "raised at all" IS the staleness contract
     that :func:`check_currency` already relies on.
     """
+    unknown = CurrencyVerdict(state="unknown", detail=None, checked=False)
     try:
         import importlib
 
         staleness = importlib.import_module("scitex_dev.staleness")
         ensure_current = staleness.ensure_current
-    except Exception:  # noqa: BLE001 — absent/broken tooling is UNKNOWN, not OK
-        return CurrencyVerdict(state="unknown", detail=None, checked=False)
+        # The ``StalenessError`` lookup belongs INSIDE the guard: on a PEP-562
+        # module it runs scitex-dev's own ``__getattr__``, i.e. third-party
+        # code that can fail exactly like ``ensure_current`` can.
+        stale_error = getattr(staleness, "StalenessError", Exception)
+    except _RAIL_SAFE_ERRORS:  # absent/broken tooling is UNKNOWN, not OK
+        return unknown
 
-    stale_error = getattr(staleness, "StalenessError", Exception)
+    # NESTED ON PURPOSE. The outer guard covers three things the inner
+    # ``except`` clause cannot: a non-verdict raise out of ``ensure_current``,
+    # a ``TypeError`` from EVALUATING ``except stale_error`` when a changed
+    # scitex-dev exports a non-exception under that name (an exception raised
+    # while evaluating an except clause is not caught by that clause's
+    # siblings), and anything raised inside the handler itself.
     try:
-        ensure_current(_DIST_NAME)
-    except stale_error as exc:  # the verdict: this install is refused
-        return CurrencyVerdict(state="stale", detail=str(exc), checked=True)
-    except Exception:  # noqa: BLE001 — scitex-dev malfunctioned; not a verdict
-        return CurrencyVerdict(state="unknown", detail=None, checked=False)
+        try:
+            ensure_current(_DIST_NAME)
+        except stale_error as exc:  # the verdict: this install is refused
+            return CurrencyVerdict(
+                state="stale", detail=_stale_detail(exc), checked=True
+            )
+    except _RAIL_SAFE_ERRORS:  # scitex-dev malfunctioned; not a verdict about us
+        return unknown
     return CurrencyVerdict(state="current", detail=None, checked=True)
 
 
@@ -177,13 +241,23 @@ STALE_REMEDY = (
 #: just succeeded and who therefore has no reason to suspect anything is
 #: wrong — the whole job of this text is to tell them WHICH rail is down and
 #: that it will stay silent about it.
+#:
+#: BOTH console-script names are spelled out, and that is not redundancy. The
+#: command that actually refused in the 2026-07-29 incident was ``scitex-todo
+#: list-tasks`` — the LEGACY script, which ``pyproject.toml`` still installs
+#: alongside ``scitex-cards`` (both resolve to ``scitex_cards._cli:main``) and
+#: which much of the fleet still types. A reader who types ``scitex-todo`` may
+#: not recognise a warning phrased only in terms of ``scitex-cards``, which
+#: would defeat the single purpose of this text. Name whichever form they use.
 _STALE_HEADER = (
     "scitex-cards CURRENCY: this Python call SUCCEEDED, but the CLI/MCP rail "
-    "for this same package is currently REFUSING. Commands like "
-    "'scitex-cards list-tasks' (and every other scitex-cards CLI command, and "
-    "the scitex-cards MCP server) will FAIL until this install is fixed, "
-    "while Python calls such as dm_send keep working. Nothing on this rail "
-    "will error, so this warning is the only signal you get."
+    "for this same package is currently REFUSING. Both console scripts are "
+    "affected - 'scitex-cards list-tasks' AND its still-installed legacy "
+    "alias 'scitex-todo list-tasks' are the same program and will BOTH FAIL "
+    "until this install is fixed, as will every other scitex-cards CLI "
+    "command and the scitex-cards MCP server, while Python calls such as "
+    "dm_send keep working. Nothing on this rail will error, so this warning "
+    "is the only signal you get."
 )
 
 
@@ -215,10 +289,19 @@ def warn_if_stale_once() -> CurrencyVerdict:
 
     This is what the PYTHON rail calls. Contract, in order of importance:
 
-    1. IT NEVER RAISES — under any circumstance, including an unexpected
-       exception from scitex-dev itself. This path exists to keep an agent's
-       last working rail working; it must never be the thing that takes that
-       rail down. Everything degrades to ``unknown``.
+    1. A FAILING CURRENCY CHECK CANNOT TAKE THIS RAIL DOWN. This path exists
+       to keep an agent's last working rail working, so it swallows every
+       ``Exception`` from the check — and ``SystemExit``, which is NOT an
+       ``Exception`` and therefore leaks past the obvious guard — including
+       anything unexpected out of scitex-dev itself. All of it degrades to
+       ``unknown``.
+
+       It is NOT true that this "never raises under any circumstance", and the
+       precise limit is better than a false absolute: ``KeyboardInterrupt``
+       and the other non-``Exception`` "stop now" signals (``GeneratorExit``,
+       ``asyncio.CancelledError``) DELIBERATELY propagate, because Ctrl-C is
+       the operator's intent rather than a library bug and must keep working.
+       :data:`_RAIL_SAFE_ERRORS` carries the full reasoning.
     2. It emits exactly ONE ``logging.WARNING`` per process, and only when the
        verdict is ``"stale"``. Repeating it on every ``dm_send`` would be
        noise, against the operator's standing minimum-noise instruction.
@@ -244,7 +327,7 @@ def warn_if_stale_once() -> CurrencyVerdict:
         if should_warn:
             _LOGGER.warning("%s", stale_warning_text(verdict.detail))
         return verdict
-    except Exception:  # noqa: BLE001 — contract #1: this call cannot fail
+    except _RAIL_SAFE_ERRORS:  # contract #1: this call cannot kill the rail
         return CurrencyVerdict(state="unknown", detail=None, checked=False)
 
 
