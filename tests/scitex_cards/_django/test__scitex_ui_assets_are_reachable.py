@@ -143,17 +143,29 @@ def _node() -> str:
     return exe
 
 
-def _globals_attached_by(asset: str) -> list[str]:
-    """Execute the bundle with a bare `window` and report what it attached.
+def _installed_path(asset: str) -> str:
+    """Where the INSTALLED scitex-ui put `asset`.
 
-    Runs the file scitex-ui actually installed — the point is to observe the
-    shipped artifact's effect, which is not derivable from its path.
+    Raises rather than asserting so the caller keeps a single assertion: the
+    "is it shipped at all?" question already has its own test above, and a
+    second copy of it inside every other test only obscures which property
+    actually failed.
     """
     from django.contrib.staticfiles import finders
 
     resolved = finders.find(asset)
     if resolved is None:
         raise AssertionError(f"{asset} is not installed")
+    return resolved
+
+
+def _globals_attached_by(asset: str) -> list[str]:
+    """Execute the bundle with a bare `window` and report what it attached.
+
+    Runs the file scitex-ui actually installed — the point is to observe the
+    shipped artifact's effect, which is not derivable from its path.
+    """
+    resolved = _installed_path(asset)
     script = (
         "const fs = require('fs');\n"
         "const vm = require('vm');\n"
@@ -198,11 +210,7 @@ def test_the_combobox_exposes_the_fuzzy_matcher_as_a_static() -> None:
     meets two different search behaviours in one app.
     """
     # Arrange
-    from django.contrib.staticfiles import finders
-
-    resolved = finders.find("scitex_ui/js/app/combobox.js")
-    if resolved is None:  # covered by test_every_referenced_scitex_ui_asset_resolves
-        pytest.fail("scitex_ui/js/app/combobox.js is not installed")
+    resolved = _installed_path("scitex_ui/js/app/combobox.js")
     # Act
     script = (
         "const fs = require('fs');\n"
