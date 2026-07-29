@@ -2,7 +2,23 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-30
+Cut because 0.18.0 had been published while develop kept accumulating — 59
+commits, including four merged PRs that were reported as done and were not
+live anywhere. The installed 0.18.0 still carried the cross-tenant store
+fallback that #628 removed, and I cited #628 to scitex-hub as a reason to
+open writes under their public mount. Merged is not deployed; this release
+is the difference.
+
 ### Added
+
+- **DM bodies render as markdown** (#629) — headings, lists, tables, fenced
+  and inline code, blockquotes, bold/italic and links, built as DOM nodes
+  rather than an HTML string. `chat_markdown.js` never produces markup for
+  a parser to trust, so a hostile body cannot inject an element; only
+  `https:`, `http:` and `mailto:` become anchors. The rendered path drops
+  `white-space: pre-wrap`, since blocks already express the line breaks the
+  plain path needed it for.
 
 - **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
   pending notifications itself, then requires the ack. Delivery had exactly ONE
@@ -50,7 +66,47 @@
   the hook would block where the actor cannot remediate. No new ack path: it
   calls `confirm_notifications` like every other surface.
 
+### Changed
+
+- **`import scitex_cards` costs ~137 ms, down from ~425 ms** (#630) —
+  `importlib.metadata` was imported at module scope purely to compute
+  `__version__`, and reading package metadata drags in `email.message`,
+  `email.utils` and `zipfile` behind it: 223 ms of the 425 ms total. That
+  block sat three lines above the comment explaining that the PEP 562
+  machinery exists to keep cold start under the audit §10 budget of 500 ms.
+  `__version__` now resolves through the `__getattr__` that was already
+  there. Measured interleaved on one interpreter, 5 rounds: before
+  325–763 ms, after 108–168 ms — the distributions do not overlap.
+
+  The public surface is unchanged: `scitex_cards.__version__` still answers,
+  still prefers the `scitex-cards` dist, still falls back to `scitex-todo`
+  for un-cutover editable installs, and `dir()` still lists it.
+  `from scitex_cards import __version__` is covered separately because it
+  takes a different path than attribute access.
+
+- **`health()` check records are now THREE-VALUED.** A check's `ok` may be
+  `True`, `False` or `null` (UNKNOWN — the check could not measure). "nothing
+  is wrong" and "I cannot tell" are different answers and no longer collapse
+  into a pass. `report["ok"]` counts only real failures, so an unknown does not
+  redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
+  by `scitex-cards health`. The record keeps exactly its four standard fields.
+
 ### Fixed
+
+- **Consecutive messages send again** (#627) — the double-send guard set a
+  `sending` flag and released only the button, so one message per page load
+  got through and the operator was reloading with Ctrl+Shift+R every time.
+  Both halves of the guard now clear in the handler that runs on every path,
+  including failure, and a failed send restores the optimistically-cleared
+  text instead of eating it. Extracted to `chat_send.js` because `chat.js`
+  had passed its size cap and could not be edited at all.
+
+- **The board no longer falls back to the host store** (#628) — `dm.py`
+  resolved the store as `getattr(request, STORE_REQUEST_ATTR, None) or
+  _store_of(request)`. Under a multi-tenant mount, a request that arrived
+  without the injected attribute silently read and wrote the HOST store —
+  one user's writes landing in another's board. It now honours the request
+  attribute only, and fails rather than guessing.
 
 - **A fail-open test that never failed.** `test__stop_hook.py` arranged its
   "detector failure" as `SCITEX_CARDS_DB=/nonexistent/scitex-cards/none.db`,
@@ -82,15 +138,6 @@
   causes — the agent's `channels:` list not naming the MCP server that is
   actually registered, or a consumer that never confirms — plus how to tell
   them apart and that a restart is required.
-
-### Changed
-
-- **`health()` check records are now THREE-VALUED.** A check's `ok` may be
-  `True`, `False` or `null` (UNKNOWN — the check could not measure). "nothing
-  is wrong" and "I cannot tell" are different answers and no longer collapse
-  into a pass. `report["ok"]` counts only real failures, so an unknown does not
-  redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
-  by `scitex-cards health`. The record keeps exactly its four standard fields.
 
 ## [0.18.0] - 2026-07-29
 
