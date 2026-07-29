@@ -113,14 +113,13 @@ def test_the_message_explains_why_one_whiteout_is_not_enough(gate_error: str):
     assert present
 
 
-def test_a_standalone_install_is_left_alone(monkeypatch):
-    """A false positive would misdirect a user who is not in a container at all.
+@pytest.fixture
+def standalone_stale_install(monkeypatch) -> None:
+    """A stale install where detection says "this is NOT a layered filesystem".
 
-    Detection is deliberately conservative — when it cannot tell, it says no and
-    leaves scitex-dev's remedy untouched, because `pip install -U` IS correct
-    outside a layered filesystem.
+    Same arrangement as ``gate_error`` with the one difference that decides the
+    behaviour under test — the overlay probe answers False.
     """
-    # Arrange
     monkeypatch.setattr(_currency, "_running_over_overlay", lambda: False)
 
     def _boom(_dist):
@@ -133,12 +132,42 @@ def test_a_standalone_install_is_left_alone(monkeypatch):
     fake.ensure_current = _boom
     monkeypatch.setitem(_sys.modules, "scitex_dev.staleness", fake)
 
-    # Act
+
+@pytest.fixture
+def standalone_gate_error(standalone_stale_install) -> str:
+    """The message a caller sees when the gate fires OUTSIDE a container."""
     with pytest.raises(RuntimeError) as excinfo:
         _currency.check_currency()
+    return str(excinfo.value)
 
+
+def test_a_standalone_install_still_fails_the_currency_gate(
+    standalone_stale_install,
+):
+    """Qualifying the remedy must not have turned the gate off where it applies.
+
+    A gate that stops firing outside containers would be the quiet way to make
+    this whole check disappear on exactly the installs where `pip install -U`
+    is the right answer.
+    """
+    # Arrange (fixture)
+    # Act
     # Assert
-    assert "BASE REBAKE" not in str(excinfo.value)
+    with pytest.raises(RuntimeError):
+        _currency.check_currency()
+
+
+def test_a_standalone_install_is_left_alone(standalone_gate_error: str):
+    """A false positive would misdirect a user who is not in a container at all.
+
+    Detection is deliberately conservative — when it cannot tell, it says no and
+    leaves scitex-dev's remedy untouched, because `pip install -U` IS correct
+    outside a layered filesystem.
+    """
+    # Arrange (fixture)
+    # Act (fixture)
+    # Assert
+    assert "BASE REBAKE" not in standalone_gate_error
 
 
 # EOF

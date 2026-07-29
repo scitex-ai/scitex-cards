@@ -142,12 +142,22 @@ _WRITER_SRC = textwrap.dedent(
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def concurrent_read_result(tmp_path_factory):
     """Run the guarded read repeatedly WHILE a real writer commits rows.
 
-    All the work happens here so each test below can assert exactly one thing
-    about the outcome without paying for the setup again. The env var is set
+    FUNCTION-scoped deliberately (STX-TQ004): this fixture seeds a database,
+    spawns a process and mutates ``os.environ``, and a module-scoped fixture
+    doing that hands every test below the SAME mutated state — the tests then
+    silently depend on execution order. Each test therefore runs its own
+    independent trial of the experiment, at roughly 12s a trial. That is the
+    price of isolation here and it buys something real: three independent
+    reproductions instead of one, so a result that only holds by luck of
+    ordering cannot pass.
+
+    Every trial is gated before it asserts anything: the loop below fails the
+    test outright if the writer process dies or never commits, so no trial can
+    quietly degrade into "reads work on an idle database". The env var is set
     and restored inside this fixture, so nothing leaks to other tests.
     """
     from scitex_cards._store import _read_canonical_db_or_raise
@@ -239,9 +249,15 @@ def test_reads_under_concurrent_writes_return_the_whole_store(
 def test_the_concurrency_test_actually_had_a_concurrent_writer(
     concurrent_read_result,
 ):
-    """Guards the guard's test: without this the pair above silently degrades
-    into "reads work on an idle database", which is the always-green shape
-    this whole file exists to argue against."""
+    """Guards the guard's test: without this the two tests above silently
+    degrade into "reads work on an idle database", which is the always-green
+    shape this whole file exists to argue against.
+
+    Each test now runs its own trial (the fixture is function-scoped), so this
+    one proves the overlap is REACHED on a trial of exactly the same code the
+    others run; the fixture additionally fails any trial whose writer died or
+    never committed, so no trial can reach an assertion on an idle database.
+    """
     # Arrange (fixture)
     # Act (fixture)
     # Assert
@@ -286,9 +302,15 @@ _TRUNCATED_EXPORT_SRC = textwrap.dedent(
 )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def truncated_export_output(tmp_path_factory):
-    """Drive the real guard against a real DB with a genuinely partial export."""
+    """Drive the real guard against a real DB with a genuinely partial export.
+
+    FUNCTION-scoped for the same reason as ``concurrent_read_result``
+    (STX-TQ004): it seeds a database, writes a script and mutates
+    ``os.environ``, so sharing one run across the three tests below makes them
+    order-dependent. Each test runs the child process itself (~4s a trial).
+    """
     tmp_path = tmp_path_factory.mktemp("truncated")
     db = tmp_path / "cards.db"
     previous = os.environ.get(ENV_DB)
@@ -339,9 +361,7 @@ def test_the_refusal_still_names_both_counts(truncated_export_output):
     # Arrange (fixture)
     # Act (fixture)
     # Assert
-    assert "returned 11 cards but the tasks table holds 12" in (
-        truncated_export_output
-    )
+    assert "returned 11 cards but the tasks table holds 12" in (truncated_export_output)
 
 
 def test_the_refusal_still_names_what_would_have_been_deleted(
