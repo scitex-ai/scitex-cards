@@ -147,8 +147,12 @@ def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tupl
         return "", warnings
 
     # BOUND FIRST, on PRIOR counts, so an id we are about to give up on is
-    # never re-rendered and never re-charged.
-    spent = exhausted(counts_for(session_id, store))
+    # never re-rendered and never re-charged. Intersected with what is ACTUALLY
+    # pending: the session counter also remembers ids that have since been
+    # acked, and naming those in a warning would report a give-up on a message
+    # that was in fact delivered.
+    ids_now = {str(r.get("id")) for r in records}
+    spent = exhausted(counts_for(session_id, store)) & ids_now
     live_records = [r for r in records if str(r.get("id")) not in spent]
     if not live_records:
         warnings.append(
