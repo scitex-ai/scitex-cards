@@ -259,8 +259,28 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     assert not leaked, f"forbidden module(s) loaded despite blocker: {leaked}"
 
 
+@pytest.fixture()
+def forbidden_port_providers():
+    """The forbidden-package entry points registered into our hook groups.
+
+    Skips where the port has no provider: a skipped test reports its own
+    reduced power, where a silently passing one does not. This lives in a
+    fixture rather than in the test body because ``pytest.skip`` counts as an
+    assertion (scitex-dev STX-TQ007), and the precondition belongs to the
+    setup anyway.
+    """
+    provided = _forbidden_hook_entry_points()
+    if not provided:
+        pytest.skip(
+            "no forbidden package registers into our hook entry-point group "
+            "here, so the coupling surface this asserts on does not exist in "
+            "this environment (expected on CI, where sac is not installed)"
+        )
+    return provided
+
+
 def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
-    tmp_path, monkeypatch, caplog
+    tmp_path, monkeypatch, caplog, forbidden_port_providers
 ):
     """Prove the CRUD cycle REALLY reaches the coupling surface and tolerates it.
 
@@ -272,18 +292,11 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
 
     So this test asserts the load was ATTEMPTED and the failure SWALLOWED,
     by reading the warning ``_hooks._plugins`` emits at the ``except`` around
-    ``ep.load()``. It skips loudly, naming the reason, where the port has no
-    provider — a skipped test reports its own reduced power; a silently
-    passing one does not.
+    ``ep.load()``. The ``forbidden_port_providers`` fixture skips loudly,
+    naming the reason, where the port has no provider.
     """
     # Arrange
-    provided = _forbidden_hook_entry_points()
-    if not provided:
-        pytest.skip(
-            "no forbidden package registers into our hook entry-point group "
-            "here, so the coupling surface this asserts on does not exist in "
-            "this environment (expected on CI, where sac is not installed)"
-        )
+    provided = forbidden_port_providers
     monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "decoupling-gate-test")
     monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
