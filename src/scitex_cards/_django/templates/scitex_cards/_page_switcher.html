@@ -1,6 +1,16 @@
 {% comment %}
-Board | Chat page switcher — rendered on BOTH top-level pages so neither one is
+Board | DM page switcher — rendered on BOTH top-level pages so neither one is
 reachable only by typing its URL.
+
+THE LABEL IS "DM"; THE ROUTE IS STILL "/chat". Operator, 2026-07-29 (TG):
+「あと、"chat" となってますが、"DM" でそろえると良いと思います。」 — so every
+USER-VISIBLE string on both pages reads DM (this label, its tooltip, the nav's
+aria-label, and chat.html's <title>). The href below is NOT renamed and must not
+be: a published URL is a MIGRATION, not a label. The operator has /chat
+bookmarked, agents reference it, and both spellings (`chat`, `chat/`) are pinned
+by tests — renaming it would break all of that to change a word. Same reason the
+JS module filenames, the CSS classes and the template filenames still say chat:
+none of them is a string the operator reads.
 
 Operator, 2026-07-28 (TG): 「http://127.0.0.1:8051/chat/ 今だと chat が隠し URL
 みたいになってしまっているので、ホームに Board | Chat のスイッチャーを付けて
@@ -29,7 +39,7 @@ Callers pass the page they are on:
 Styling lives in static/scitex_cards/page-switcher.css; each host page feeds
 its own palette into that component's `--sw-*` tokens.
 {% endcomment %}
-<nav class="stx-cards-switcher" aria-label="Board or Chat">
+<nav class="stx-cards-switcher" aria-label="Board or DM">
   <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
-  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}chat" {% if active == 'chat' %}aria-current="page" {% endif %}title="Chat — direct messages with the agents">Chat</a>
+  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}chat" {% if active == 'chat' %}aria-current="page" {% endif %}title="Direct messages with the agents">DM</a>
 </nav>
