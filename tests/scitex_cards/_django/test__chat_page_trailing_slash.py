@@ -34,14 +34,16 @@ class TestChatPageAcceptsBothSpellings:
     """Both spellings reach the DM page; the per-card thread is not shadowed."""
 
     def test_unslashed_chat_resolves_to_the_dm_page(self):
-        # Arrange / Act
+        # Arrange
+        # Act
         match = resolve("/chat", urlconf=_URLCONF)
         # Assert
         assert match.func is views.chat_page
 
     def test_slashed_chat_resolves_to_the_dm_page(self):
         """THE regression: `/chat/` used to fall through to the API catch-all."""
-        # Arrange / Act
+        # Arrange
+        # Act
         match = resolve("/chat/", urlconf=_URLCONF)
         # Assert
         assert match.func is views.chat_page
@@ -53,13 +55,25 @@ class TestChatPageAcceptsBothSpellings:
         match = resolve("/chat/some-card-id", urlconf=_URLCONF)
         # Assert
         assert match.func is chat_view
+
+    def test_the_per_card_thread_still_captures_its_card_id(self):
+        # Arrange — reaching the right view with the id swallowed by the page
+        # route would serve the thread surface with nothing to show.
+        # Act
+        match = resolve("/chat/some-card-id", urlconf=_URLCONF)
+        # Assert
         assert match.kwargs["card_id"] == "some-card-id"
 
-    def test_neither_spelling_falls_through_to_the_api_catch_all(self):
+    def test_unslashed_chat_does_not_fall_through_to_the_api_catch_all(self):
         # Arrange — the catch-all is what produced the operator's JSON 404.
         # Act
         unslashed = resolve("/chat", urlconf=_URLCONF)
-        slashed = resolve("/chat/", urlconf=_URLCONF)
         # Assert
         assert unslashed.func is not views.api_dispatch
+
+    def test_slashed_chat_does_not_fall_through_to_the_api_catch_all(self):
+        # Arrange — this is the spelling that actually produced the JSON 404.
+        # Act
+        slashed = resolve("/chat/", urlconf=_URLCONF)
+        # Assert
         assert slashed.func is not views.api_dispatch
