@@ -234,6 +234,100 @@ def test_a_banner_written_without_a_recipient_is_still_recognised_as_forwarded()
     assert seen is True
 
 
+# === the start position decides ============================================
+
+# A real `closest`: it WALKS a parent chain and matches any of the comma
+# separated selectors, rather than replaying a recorded answer. A canned stub
+# would let the predicate pass by agreeing with the test instead of by working.
+_DOM = """
+function node(classes, parent) {
+  var self = {
+    classes: classes || [],
+    parent: parent || null,
+    closest: function (sel) {
+      var wanted = sel.split(",").map(function (s) { return s.trim(); });
+      var at = self;
+      while (at) {
+        for (var i = 0; i < wanted.length; i += 1) {
+          var w = wanted[i];
+          if (w.charAt(0) === "." && at.classes.indexOf(w.slice(1)) !== -1)
+            return at;
+          if (w.charAt(0) !== "." && at.classes.indexOf(w) !== -1) return at;
+        }
+        at = at.parent;
+      }
+      return null;
+    },
+  };
+  return self;
+}
+"""
+
+
+def _marquee(js: str) -> object:
+    """Evaluate against the real chat_marquee.js, with a walking DOM."""
+    assert MARQUEE_FILE.is_file(), f"module under test missing: {MARQUEE_FILE}"
+    script = (
+        f"const M = require({json.dumps(str(MARQUEE_FILE))}).ChatMarquee;\n"
+        + _DOM
+        + f"console.log(JSON.stringify({js}));"
+    )
+    proc = subprocess.run(
+        [_node(), "--input-type=commonjs", "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    return json.loads(proc.stdout.strip())
+
+
+def test_a_drag_starting_on_message_text_leaves_the_text_selection_alone():
+    # Arrange — the operator's case 2: pointer went down inside the bubble.
+    target = 'node(["bubble"], node(["msg"], node(["messages"])))'
+    # Act
+    keeps_native = _marquee(f"M.startsTextSelection({target})")
+    # Assert
+    assert keeps_native is True
+
+
+def test_a_drag_starting_on_blank_space_is_claimed_by_the_rectangle():
+    # Arrange — inside the list but outside any bubble.
+    target = 'node(["msg"], node(["messages"]))'
+    # Act
+    keeps_native = _marquee(f"M.startsTextSelection({target})")
+    # Assert
+    assert keeps_native is False
+
+
+def test_a_drag_starting_deep_inside_the_text_still_leaves_selection_alone():
+    # Arrange — a link nested in the bubble, so the rule must walk UP to find it.
+    target = 'node(["code"], node(["bubble"], node(["msg"])))'
+    # Act
+    keeps_native = _marquee(f"M.startsTextSelection({target})")
+    # Assert
+    assert keeps_native is True
+
+
+def test_a_drag_starting_on_a_reaction_chip_does_not_start_a_rectangle():
+    # Arrange
+    target = 'node(["chip"], node(["reactions"], node(["msg"])))'
+    # Act
+    keeps_native = _marquee(f"M.startsTextSelection({target})")
+    # Assert
+    assert keeps_native is True
+
+
+def test_a_drag_starting_on_the_show_all_control_does_not_start_a_rectangle():
+    # Arrange — the control PR #621 had to rescue from selection mode. A
+    # rectangle starting on it would take the gesture the same way.
+    target = 'node(["button"], node(["longtext-tools"], node(["msg"])))'
+    # Act
+    keeps_native = _marquee(f"M.startsTextSelection({target})")
+    # Assert
+    assert keeps_native is True
+
+
 # === touch is deliberately excluded ========================================
 
 

@@ -48,6 +48,21 @@
    * long-text expander), none of which should be swallowed by a drag. */
   var TEXT_SELECTOR = ".bubble, a, button, input, textarea, select, .reactions";
 
+  /* Does a pointerdown HERE mean "select text" rather than "draw a rectangle"?
+   *
+   * Module scope, not a closure inside mount(), so THE decision this whole
+   * module turns on is a named thing with a test rather than a condition
+   * buried in a listener — the same reason chat_select hoisted isViewControl
+   * after getting the equivalent rule wrong once.
+   *
+   * This IS the operator's spec: the start position decides, and it decides
+   * once. True means the browser keeps the gesture and the text inverts as it
+   * always has; false means blank space, so the rectangle takes it.
+   */
+  function startsTextSelection(target) {
+    return !!(target && target.closest && target.closest(TEXT_SELECTOR));
+  }
+
   function mount(host) {
     var $messages = host.messagesEl;
     if (!$messages || !actions) return null;
@@ -127,7 +142,7 @@
       // middle-click to the browser.
       if (event.button !== 0) return;
       var target = event.target;
-      if (target.closest && target.closest(TEXT_SELECTOR)) return; // case 2
+      if (startsTextSelection(target)) return; // case 2: the browser keeps it
       if (!target.closest || !target.closest("#messages")) return;
 
       origin = pointAt(event);
@@ -188,7 +203,10 @@
     return { isDragging: function () { return armed; } };
   }
 
-  root.ChatMarquee = { mount: mount };
+  root.ChatMarquee = {
+    mount: mount,
+    startsTextSelection: startsTextSelection,
+  };
 })(typeof self !== "undefined" ? self : this);
 
 /* EOF */
