@@ -89,7 +89,9 @@ def _uncommented(source: str) -> str:
 
 def test_the_page_serves_a_filter_input(page: str) -> None:
     """Written in the template so its delivery is assertable at all."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert 'id="agent-filter"' in page
 
 
@@ -97,7 +99,8 @@ def test_the_filter_input_is_a_search_field(page: str) -> None:
     """`type=search` is what gives phone keyboards the search affordance."""
     # Arrange
     match = re.search(r"<input[^>]*id=\"agent-filter\"[^>]*>", page, re.DOTALL)
-    # Act / Assert
+    # Act
+    # Assert
     assert match and 'type="search"' in match.group(0)
 
 
@@ -105,25 +108,31 @@ def test_the_filter_input_is_labelled(page: str) -> None:
     """It has no visible <label>; without this it is an unnamed box to a reader."""
     # Arrange
     match = re.search(r"<input[^>]*id=\"agent-filter\"[^>]*>", page, re.DOTALL)
-    # Act / Assert
+    # Act
+    # Assert
     assert match and 'aria-label="Filter agents"' in match.group(0)
 
 
 def test_the_page_serves_the_filter_module(page: str) -> None:
     """Markup with no behaviour is a dead control."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert "chat/chat_filter.js" in page
 
 
 def test_the_page_serves_the_scitex_ui_matcher(page: str) -> None:
     """The whole point: the matcher is base's, so search means one thing here."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert "scitex_ui/js/app/combobox.js" in page
 
 
 def test_the_matcher_loads_before_the_filter_module(page: str) -> None:
     """Both are `defer`, so document order IS execution order."""
-    # Arrange / Act
+    # Arrange
+    # Act
     combobox = page.index("scitex_ui/js/app/combobox.js")
     chat_filter = page.index("chat/chat_filter.js")
     # Assert
@@ -135,7 +144,9 @@ def test_the_matcher_loads_before_the_filter_module(page: str) -> None:
 
 def test_the_page_serves_a_separate_list_container(page: str) -> None:
     """`#agent-list` is the part `renderAgents` is allowed to clear."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert 'id="agent-list"' in page
 
 
@@ -147,7 +158,8 @@ def test_the_filter_input_is_not_inside_the_rebuilt_list(page: str) -> None:
     itself". Ordering the two ids in the document is enough to see it: the
     input must be served BEFORE the list opens.
     """
-    # Arrange / Act
+    # Arrange
+    # Act
     input_at = page.index('id="agent-filter"')
     list_at = page.index('id="agent-list"')
     # Assert
@@ -158,16 +170,26 @@ def test_chat_js_renders_into_the_list_not_the_nav(chat_js: str) -> None:
     """`$agents` must resolve to `#agent-list` — the clearable half."""
     # Arrange
     code = _uncommented(chat_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert 'var $agents = document.getElementById("agent-list");' in code
+
+
+def test_chat_js_keeps_a_handle_on_the_nav(chat_js: str) -> None:
+    """The drawer needs the NAV, which is no longer the same node as the list."""
+    # Arrange
+    code = _uncommented(chat_js)
+    # Act
+    # Assert
+    assert 'var $agentsPane = document.getElementById("agents");' in code
 
 
 def test_chat_js_still_slides_the_nav_as_the_drawer(chat_js: str) -> None:
     """Sliding `#agent-list` instead would strand the filter row off-drawer."""
     # Arrange
     code = _uncommented(chat_js)
-    # Act / Assert
-    assert 'var $agentsPane = document.getElementById("agents");' in code
+    # Act
+    # Assert
     assert re.search(r"panel:\s*\$agentsPane", code)
 
 
@@ -175,7 +197,8 @@ def test_chat_js_mounts_the_filter_over_input_and_list(chat_js: str) -> None:
     """Mounted with the two seams it needs and nothing else."""
     # Arrange
     code = _uncommented(chat_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert re.search(
         r"ChatFilter\.mount\(\{\s*input:\s*\$agentFilter,\s*list:\s*\$agents",
         code,
@@ -186,7 +209,8 @@ def test_chat_js_mounting_the_filter_is_optional(chat_js: str) -> None:
     """Same contract as ChatDrawer/ChatMenu — a missing module degrades."""
     # Arrange
     code = _uncommented(chat_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert "if (window.ChatFilter)" in code
 
 
@@ -220,19 +244,29 @@ def test_the_filter_reapplies_when_the_list_is_rebuilt(filter_js: str) -> None:
     """
     # Arrange
     code = _uncommented(filter_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert re.search(
         r"var Observer\s*=\s*scope\s*&&\s*scope\.MutationObserver\s*;",
         code,
     ), "the observer's capability check is no longer `scope && scope.MutationObserver`"
 
 
+def test_the_observer_is_constructed(filter_js: str) -> None:
+    """A capability check that builds nothing is a no-op with good vocabulary."""
+    # Arrange
+    code = _uncommented(filter_js)
+    # Act
+    # Assert
+    assert re.search(r"observer\s*=\s*new Observer\(", code)
+
+
 def test_the_observer_is_actually_started_on_the_list(filter_js: str) -> None:
     """Constructing one and never calling `observe` watches nothing."""
     # Arrange
     code = _uncommented(filter_js)
-    # Act / Assert
-    assert re.search(r"observer\s*=\s*new Observer\(", code)
+    # Act
+    # Assert
     assert re.search(r"observer\.observe\(\s*list\s*,\s*\{\s*childList:\s*true", code)
 
 
@@ -240,19 +274,29 @@ def test_the_observer_reapplies_the_filter(filter_js: str) -> None:
     """An observer whose callback does not re-filter is decoration."""
     # Arrange
     code = _uncommented(filter_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert re.search(
         r"new Observer\(function \(\) \{\s*apply\(\);\s*\}\)",
         code,
     )
 
 
-def test_the_observer_watches_only_childlist(filter_js: str) -> None:
-    """The handler writes `style` on children; observing attributes would loop."""
+def test_the_observer_does_not_watch_attributes(filter_js: str) -> None:
+    """The handler writes `style` on children — watching attributes would loop."""
     # Arrange
     code = _uncommented(filter_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert "attributes: true" not in code
+
+
+def test_the_observer_does_not_watch_the_subtree(filter_js: str) -> None:
+    """Rows are direct children; a subtree watch only widens the loop surface."""
+    # Arrange
+    code = _uncommented(filter_js)
+    # Act
+    # Assert
     assert "subtree: true" not in code
 
 
@@ -263,5 +307,6 @@ def test_the_module_reads_the_matcher_off_scitex_ui(filter_js: str) -> None:
     """A private subsequence matcher would make this page disagree with the board."""
     # Arrange
     code = _uncommented(filter_js)
-    # Act / Assert
+    # Act
+    # Assert
     assert "Combobox.fuzzyMatch" in code

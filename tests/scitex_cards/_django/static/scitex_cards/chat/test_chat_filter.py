@@ -112,7 +112,8 @@ def _filter(query: str, scope: str = _STX_SCOPE, names: list[str] | None = None)
 
 def test_it_calls_the_scitex_ui_matcher() -> None:
     """A private reimplementation would never touch `STX.Combobox.fuzzyMatch`."""
-    # Arrange / Act
+    # Arrange
+    # Act
     out = _run(
         _STX_SCOPE + f"ChatFilter.filterNames({json.dumps(AGENTS)}, 'lead', scope);\n"
         "console.log(JSON.stringify(calls.length > 0));"
@@ -123,7 +124,8 @@ def test_it_calls_the_scitex_ui_matcher() -> None:
 
 def test_it_passes_both_query_and_candidate_to_the_matcher() -> None:
     """Argument order is (query, haystack) — reversed, everything still 'works'."""
-    # Arrange / Act
+    # Arrange
+    # Act
     out = _run(
         _STX_SCOPE + "ChatFilter.filterNames(['dev-helper'], 'dev', scope);\n"
         "console.log(JSON.stringify(calls[0]));"
@@ -137,7 +139,8 @@ def test_it_passes_both_query_and_candidate_to_the_matcher() -> None:
 
 def test_a_subsequence_matches_where_a_substring_would_not() -> None:
     """'dvhlp' is not a substring of any agent name; it IS a subsequence."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("dvhlp")
     # Assert
     assert kept == ["dev-helper"]
@@ -145,7 +148,8 @@ def test_a_subsequence_matches_where_a_substring_would_not() -> None:
 
 def test_a_shared_prefix_keeps_both_siblings() -> None:
     """The whole point of the filter: narrowing, not guessing one winner."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("wtg")
     # Assert
     assert kept == [
@@ -156,7 +160,8 @@ def test_a_shared_prefix_keeps_both_siblings() -> None:
 
 def test_matching_ignores_case() -> None:
     """The operator types lowercase; agent names are not always lowercase."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("SciTeX-UI")
     # Assert
     assert "scitex-ui" in kept
@@ -164,7 +169,8 @@ def test_matching_ignores_case() -> None:
 
 def test_a_query_matching_nothing_keeps_nothing() -> None:
     """An honest empty result — the page says so rather than showing a blank."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("qqqq")
     # Assert
     assert kept == []
@@ -175,7 +181,8 @@ def test_a_query_matching_nothing_keeps_nothing() -> None:
 
 def test_an_empty_query_keeps_every_agent() -> None:
     """The default state of the page."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("")
     # Assert
     assert kept == AGENTS
@@ -183,7 +190,8 @@ def test_an_empty_query_keeps_every_agent() -> None:
 
 def test_a_whitespace_query_keeps_every_agent() -> None:
     """A stray space is not a filter — trimming it is not cosmetic."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("   ")
     # Assert
     assert kept == AGENTS
@@ -191,7 +199,8 @@ def test_a_whitespace_query_keeps_every_agent() -> None:
 
 def test_a_null_query_keeps_every_agent() -> None:
     """Before the input exists, `value` can arrive as null/undefined."""
-    # Arrange / Act
+    # Arrange
+    # Act
     out = _run(
         _STX_SCOPE + f"console.log(JSON.stringify("
         f"ChatFilter.filterNames({json.dumps(AGENTS)}, null, scope)));"
@@ -205,7 +214,8 @@ def test_a_null_query_keeps_every_agent() -> None:
 
 def test_without_scitex_ui_it_still_filters() -> None:
     """An old/absent scitex-ui must cost behaviour, not the page."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("telegrammer", scope="const scope = {};\n")
     # Assert
     assert kept == [
@@ -222,7 +232,8 @@ def test_the_fallback_is_substring_only_not_a_second_fuzzy_matcher() -> None:
     an old scitex-ui would look identical to a current one right up until the
     two implementations disagreed.
     """
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter("dvhlp", scope="const scope = {};\n")
     # Assert
     assert kept == []
@@ -230,7 +241,8 @@ def test_the_fallback_is_substring_only_not_a_second_fuzzy_matcher() -> None:
 
 def test_a_partial_scitex_ui_without_fuzzy_match_falls_back() -> None:
     """`STX.Combobox` present but no `fuzzyMatch` static — the 0.5.x shape."""
-    # Arrange / Act
+    # Arrange
+    # Act
     kept = _filter(
         "scitex-ui",
         scope="const scope = { STX: { Combobox: function () {} } };\n",

@@ -87,7 +87,9 @@ def referenced() -> dict[str, list[str]]:
 
 def test_the_scan_finds_scitex_ui_references_at_all(referenced) -> None:
     """If this goes red, every other test in this file is vacuous."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert referenced, (
         "no `{% static 'scitex_ui/...' %}` references found under "
         f"{_TEMPLATES} — the regex, not the assets, is what broke"
@@ -98,13 +100,16 @@ def test_the_scan_covers_both_operator_facing_pages(referenced) -> None:
     """board_v3 and chat both consume scitex-ui; a scan seeing one is half-blind."""
     # Arrange
     seen = {name for names in referenced.values() for name in names}
-    # Act / Assert
+    # Act
+    # Assert
     assert {"board_v3.html", "chat.html"} <= seen
 
 
 def test_the_combobox_bundle_is_among_them(referenced) -> None:
     """The specific asset the fuzzy-filter enhancement rides on."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert "scitex_ui/js/app/combobox.js" in referenced
 
 
@@ -147,7 +152,8 @@ def _globals_attached_by(asset: str) -> list[str]:
     from django.contrib.staticfiles import finders
 
     resolved = finders.find(asset)
-    assert resolved is not None, f"{asset} is not installed"
+    if resolved is None:
+        raise AssertionError(f"{asset} is not installed")
     script = (
         "const fs = require('fs');\n"
         "const vm = require('vm');\n"
@@ -173,7 +179,8 @@ def test_the_bundle_attaches_the_symbol_we_feature_detect(
     asset: str, symbol: str
 ) -> None:
     """`window.STX.<symbol>` — the exact expression our `if` guards evaluate."""
-    # Arrange / Act
+    # Arrange
+    # Act
     attached = _globals_attached_by(asset)
     # Assert
     assert symbol in attached, (
@@ -194,7 +201,8 @@ def test_the_combobox_exposes_the_fuzzy_matcher_as_a_static() -> None:
     from django.contrib.staticfiles import finders
 
     resolved = finders.find("scitex_ui/js/app/combobox.js")
-    assert resolved is not None
+    if resolved is None:  # covered by test_every_referenced_scitex_ui_asset_resolves
+        pytest.fail("scitex_ui/js/app/combobox.js is not installed")
     # Act
     script = (
         "const fs = require('fs');\n"
