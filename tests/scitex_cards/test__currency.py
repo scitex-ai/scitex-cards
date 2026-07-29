@@ -454,8 +454,10 @@ def test_warn_if_stale_once_swallows_a_system_exit_from_the_currency_path(monkey
 
 
 def test_warn_if_stale_once_lets_a_keyboard_interrupt_propagate(monkeypatch):
-    """DELIBERATE, and pinned so nobody "simplifies" the guard to BaseException.
-    Ctrl-C is the operator's INTENT, not a malfunction to absorb."""
+    """DELIBERATE, and pinned so nobody "hardens" the guard to BaseException.
+    Ctrl-C is the operator's INTENT, not a malfunction to absorb. (The other
+    direction — "simplifying" back to plain Exception — is pinned by the
+    SystemExit test above; both wrong edits now go red.)"""
     # Arrange
     _raising_fake(monkeypatch, KeyboardInterrupt())
 
