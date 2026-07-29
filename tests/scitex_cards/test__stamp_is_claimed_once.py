@@ -39,9 +39,10 @@ stamp. A hard link is the production shape exactly — one inode, two directory
 entries, NEITHER a symlink, so ``realpath`` cannot collapse them and the
 strings genuinely differ. That makes the INODE branch the branch that decides,
 which is the branch the live bind mount exercises inside the container (where
-both names are stat-able and the flip happened). Each test asserts the
-differing-realpath precondition, so a future change that made the two names
-collapse would surface as a failed precondition rather than a silent pass.
+both names are stat-able and the flip happened). That property is pinned by its
+OWN test rather than repeated as a precondition assert, so a future change that
+let the two names collapse fails loudly and once, instead of quietly turning
+every test below into a pass for the wrong reason.
 
 MITIGATION, NOT FIX. Path identity cannot be made correct across namespaces,
 only stable; the real repair is ``store_uuid`` (design PR #601,
@@ -114,26 +115,53 @@ def _one_file_two_names(tmp_path):
     return opened_as, other_name
 
 
+def test_the_two_names_fixture_is_one_inode_reached_by_two_realpaths(tmp_path):
+    """THE PRECONDITION EVERY TEST BELOW RESTS ON — and the branch that decides.
+
+    It is its own test because it is its own claim, and because the tests below
+    are worthless without it: if the two names ever collapsed to one realpath,
+    the string fallback of ``_same_file`` would carry them and they would pass
+    against the broken unconditional stamp. Asserting BOTH halves in one
+    statement is the point — different realpaths AND one inode is precisely the
+    state in which only the INODE branch can answer, which is the branch the
+    live bind mount exercises inside the container.
+    """
+    # Arrange
+    opened_as, other_name = _one_file_two_names(tmp_path)
+
+    # Act
+    same_inode = opened_as.stat().st_ino == other_name.stat().st_ino
+    same_realpath = os.path.realpath(opened_as) == os.path.realpath(other_name)
+
+    # Assert
+    assert (same_inode, same_realpath) == (True, False), (
+        "the fixture must give ONE inode under TWO different realpaths, or the "
+        "tests below are not reproducing the bug"
+    )
+
+
 def test_an_unstamped_database_is_claimed_by_the_first_stamp(tmp_path):
     """The claiming path is untouched: nothing has an identity until something writes.
 
     This is the branch every fresh database and every test fixture takes, and
     the branch an already-populated board took when it was adopted at deploy.
     Skipping the write when a stamp is already present must not become skipping
-    the write when there is nothing there yet.
+    the write when there is nothing there yet. The assertion is the TRANSITION,
+    so the "it started unclaimed" precondition is pinned by the same statement
+    that pins the claim.
     """
     # Arrange
     db = tmp_path / "fresh.db"
     from conftest import seed_db_from_doc
 
     seed_db_from_doc(_EMPTY, str(db))
-    assert _stamp_of(db) is None, "precondition: a seeded database carries no claim"
+    before = _stamp_of(db)
 
     # Act
     _stamp(db, db)
 
     # Assert
-    assert _stamp_of(db) == canonical_path(db), (
+    assert (before, _stamp_of(db)) == (None, canonical_path(db)), (
         "an unstamped database must be claimed by the first stamp — without "
         "this branch no database ever acquires an identity to guard"
     )
@@ -151,10 +179,6 @@ def test_a_stamp_naming_the_same_file_by_another_name_is_not_rewritten(tmp_path)
     # Arrange — the database is claimed under the OTHER namespace's name,
     # the state the live board was repaired INTO on 2026-07-28.
     opened_as, other_name = _one_file_two_names(tmp_path)
-    assert os.path.realpath(opened_as) != os.path.realpath(other_name), (
-        "precondition: two DIFFERENT realpaths for ONE inode, else this test "
-        "is not reproducing the bug"
-    )
     _stamp(opened_as, other_name)
 
     # Act — THIS namespace stamps the very same file under ITS OWN name.
@@ -178,12 +202,9 @@ def test_the_claimed_name_survives_successive_writes_through_the_real_write_door
     rewrite shows up on the first of them, and a rule that only holds for one
     call is not stability.
     """
-    # Arrange — claimed under the other namespace's name; this process writes
-    # through its own.
+    # Arrange — claimed under the other namespace's name, while this process
+    # writes through its own.
     opened_as, other_name = _one_file_two_names(tmp_path)
-    assert os.path.realpath(opened_as) != os.path.realpath(other_name), (
-        "precondition: two DIFFERENT realpaths for ONE inode"
-    )
     _stamp(opened_as, other_name)
     monkeypatch.setenv(ENV_DB, str(opened_as))
 
@@ -211,17 +232,15 @@ def test_a_genuinely_different_store_is_still_refused_at_the_write_door(
     is to refuse a write that would REPLACE another store's rows would be dead
     while every test above still passed.
     """
-    # Arrange — two separate files, not two names for one; the database is
-    # stamped for the foreign one.
+    # Arrange — two SEPARATELY CREATED files (so, necessarily two inodes — no
+    # link is made between them, unlike `_one_file_two_names` above), and the
+    # database is stamped for the foreign one.
     db = tmp_path / "mine.db"
     from conftest import seed_db_from_doc
 
     seed_db_from_doc(_EMPTY, str(db))
     foreign = tmp_path / "theirs.db"
     seed_db_from_doc(_EMPTY, str(foreign))
-    assert db.stat().st_ino != foreign.stat().st_ino, (
-        "precondition: genuinely two files"
-    )
     _stamp(db, foreign)
     monkeypatch.setenv(ENV_DB, str(db))
 
