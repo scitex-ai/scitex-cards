@@ -37,6 +37,92 @@
   redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
   by `scitex-cards health`. The record keeps exactly its four standard fields.
 
+
+## [0.18.0] - 2026-07-29
+
+MINOR, not a patch. This cut ADDS two published URLs (`/board` and `/dm`) and a
+new notification verb (`ack_notifications`), and DEPRECATES the ack-on-read
+shape of `poll_notifications`. New surface plus a deprecation is a minor bump,
+and calling it a patch would misreport what consumers are being handed.
+
+The store-identity UUID fix associated with this window is NOT in this release:
+it shipped in **0.17.13**, which is tagged and on PyPI. What is genuinely new
+since that tag is #615, #616 and #617 — nothing else.
+
+Two of those three reached `develop` with NO changelog entry at all. #615 and
+#616 merged without touching this file, so the section below described only
+#617, and a reader of the release notes would never have met either
+user-visible change. Both are written up below for the first time, from their
+commit messages. (Nothing was moved out of an older version's section this
+time; the `0.17.10 / 0.17.11 — entries filed late` heading further down is a
+PRIOR repair, already retired and documented, and is left untouched.)
+
+### Added
+
+- **`/board` and `/dm` are real routes** (#616). Both URLs 404'd. Not because
+  they collided with the `dm/*` JSON API — `path()` matches exact strings, so
+  `dm`, `dm/threads` and `dm/thread/<peer>` cannot shadow one another — but
+  because the catch-all `<path:endpoint>` at the bottom of the urlconf
+  swallowed both names into `api_dispatch`. The pages are now registered
+  BEFORE the catch-all. `/` and `/chat` (and `/chat/`) are KEPT: this is an
+  addition, not a rename, because a published URL is a migration and the
+  operator has both bookmarked. `views._include_root` knows the new aliases,
+  so the pages stay mount-aware under the hub sub-path, and its strip is
+  anchored to a whole path segment — a naive `endswith()` would have rewritten
+  an `/apps/scoreboard/` mount to `/apps/score`.
+
+  The guard `test_no_dm_page_route_was_invented` is SUPERSEDED, not deleted.
+  It was written against a label change and was right for that; the operator
+  then asked for `/board` and `/dm` directly. Deleting a guard because it went
+  red is how a rule gets lost, so the concern underneath it is restated: the
+  replacement asserts the half that still matters — `/chat` and `/dm` resolve
+  to one and the SAME view.
+
+### Changed
+
+- **One header, shared by both pages** (#616). The board rendered the page
+  switcher on the left, the DM page on the right via `margin-left:auto`. The
+  board bar was 8px/14px padding with a 48px floor, the DM header 10px/14px
+  with none — two heights, two baselines. Both pages now render one partial,
+  `_page_header.html`, with geometry in `page-header.css` and the switcher
+  LEFT on both. Each page's own header rule was stripped of those metrics
+  rather than left as a shadow copy, and keeps only its palette, fed in
+  through two `--stx-cards-header-*` variables. The tests pin that the two
+  pages AGREE, rather than pinning two positions that can drift apart.
+
+### Fixed
+
+- **The DESKTOP agent sidebar was blanked by the drawer logic** (#615).
+  `chat.js` passes `#agents` as the drawer panel, but above the 720px
+  breakpoint `#agents` is not a drawer — it is the permanently visible agent
+  sidebar. `render()` set `panel.inert` and an inline `visibility:hidden`
+  unconditionally from the open flag, and "closed" is the state at mount, so
+  merely loading the module blanked the sidebar on desktop. An inline style
+  beats the stylesheet, so no CSS could win it back. The operator saw
+  "No agent selected." beside an EMPTY sidebar while `/dm/threads` returned 15
+  agents and the tab title counted unread correctly. Reported twice. The API
+  was healthy throughout, which is exactly why checking the API instead of the
+  page missed it.
+
+  `render()` now asks which mode the page is in instead of assuming. The
+  COMPUTED display of `#menu-btn` already answers the question, so no
+  breakpoint number is duplicated in JS to drift from the CSS. On desktop BOTH
+  properties are cleared and the stylesheet decides: `inert` stops the keyboard
+  and assistive tech, `visibility` stops the pointer, neither implies the
+  other, and clearing only `visibility` leaves a sidebar that looks correct and
+  cannot be reached by keyboard. Drawer mode is unchanged.
+
+  This fix had already run live as a patch applied straight to the installed
+  file on the operator box, where the next `pip install` erased it an hour
+  after it worked. Shipping it in a release is what makes it survive.
+
+  The older `test__chat_drawer_is_inert_when_closed.py` scans source TEXT, and
+  every one of its assertions stayed green for the entire life of this defect:
+  the lines it looks for were present and correct, the condition around them
+  was missing, and a scan cannot see a missing condition. The new
+  `test_chat_drawer.py` RUNS the shipped module under node and reads back the
+  properties it actually wrote.
+
 - **DM delivery is now LOSSLESS: handover is no longer confirmation.**
   `poll_notifications` marked notifications SEEN at the moment it handed them
   over, so a consumer that read with `ack=True` and then failed to deliver had
