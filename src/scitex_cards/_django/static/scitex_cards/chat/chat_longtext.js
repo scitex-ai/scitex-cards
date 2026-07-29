@@ -165,7 +165,22 @@
     var fragment = document.createDocumentFragment();
     var bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.textContent = text;
+    // Markdown when the renderer is loaded, plain text otherwise. Both paths
+    // are node-based: ChatMarkdown.render returns real DOM built from
+    // createTextNode, so neither branch can turn a message body into markup.
+    // The fallback matters - the board must stay legible if one script fails.
+    var host = typeof self !== "undefined" ? self : null;
+    var md = host ? host.ChatMarkdown : null;
+    if (md && md.render) {
+      // `md` also switches the bubble off `white-space: pre-wrap`. The plain
+      // path NEEDS pre-wrap to keep the author's line breaks; the rendered
+      // path expresses those as real blocks, so leaving pre-wrap on would
+      // count every newline twice and space the message out enormously.
+      bubble.classList.add("md");
+      bubble.appendChild(md.render(text));
+    } else {
+      bubble.textContent = text;
+    }
     fragment.appendChild(bubble);
     if (!isLong(text)) return fragment;
 
