@@ -24,6 +24,23 @@
 
   var actions = root.ChatActions;
 
+  /* Is this click target a VIEW control that selection mode must let through?
+   *
+   * Module scope, not a closure inside mount(), so the rule is a named thing
+   * with a test rather than a condition buried in a listener — this exact
+   * decision has now been got wrong once and it is not self-evident.
+   *
+   * THE RULE IS WHAT THE CONTROL DOES, not that it is a control. Following an
+   * attachment link navigates away; toggling a reaction mutates the thread.
+   * Both are genuinely a second answer to one gesture and both stay BLOCKED.
+   * Expanding a clamped bubble, or copying it to a file, only changes what you
+   * can SEE — which is if anything a prerequisite for deciding whether to
+   * select it. Those live in `.longtext-tools`, so that container is the rule.
+   */
+  function isViewControl(target) {
+    return !!(target && target.closest && target.closest(".longtext-tools"));
+  }
+
   function mount(host) {
     var $bar = document.getElementById("select-bar");
     var $count = document.getElementById("sb-count");
@@ -105,10 +122,16 @@
      * handlers sit on descendants, so only a capture-phase listener runs
      * before them, and stopPropagation then keeps the event from ever
      * reaching them. */
+    /* ...but a VIEW control is not one of those handlers, and swallowing it
+     * makes long messages unreadable for as long as you are selecting. Operator,
+     * 2026-07-29: 「ショーオールをクリックすると、それに対応するメッセージが選択
+     * されてしまって、エクスパンドすることができません」 — "Show all" selected the
+     * message instead of expanding it. See isViewControl above for the rule. */
     $messages.addEventListener(
       "click",
       function (event) {
         if (!active) return;
+        if (isViewControl(event.target)) return; // let the control do its job
         var node = event.target.closest ? event.target.closest(".msg") : null;
         if (!node || !idOf(node)) return;
         event.preventDefault();
@@ -243,7 +266,7 @@
     };
   }
 
-  root.ChatSelect = { mount: mount };
+  root.ChatSelect = { isViewControl: isViewControl, mount: mount };
 })(typeof self !== "undefined" ? self : this);
 
 /* EOF */
