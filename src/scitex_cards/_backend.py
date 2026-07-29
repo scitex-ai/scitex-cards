@@ -44,6 +44,7 @@ from typing import Any
 
 from . import _help_wait, _inbox, _store, _threads
 from ._currency import warn_if_stale_once
+from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
 
@@ -70,6 +71,7 @@ BACKEND_VERBS: tuple[str, ...] = (
     "help_wait",
     "help_clear",
     "poll_notifications",
+    "ack_notifications",
     "dm_send",
     "dm_list",
 )
@@ -237,6 +239,10 @@ class LocalBackend:
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
         warn_if_stale_once()
+        # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
+        # cursor at handover, so a consumer that dies before delivering has
+        # destroyed the message. Deprecated, NOT changed — sac reads this path.
+        deprecation = warn_ack_on_read() if ack else None
         from ._users import resolve_user, touch_user
 
         user = resolve_user(agent, store=store)
@@ -254,11 +260,30 @@ class LocalBackend:
         notifications = _inbox.poll_inbox(
             recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
         )
-        return {
+        payload = {
             "agent": agent,
             "recipient_id": recipient_id,
             "notifications": notifications,
+            # The ids still awaiting confirmation, and the verb that confirms
+            # them: the safe loop must be the OBVIOUS one to write from here.
+            "unconfirmed": [
+                n.get("id") for n in notifications if n.get("id") and not n.get("seen")
+            ],
+            "confirm_with": "ack_notifications",
         }
+        if deprecation is not None:
+            payload["ack_on_read_deprecated"] = deprecation
+        return payload
+
+    def ack_notifications(
+        self,
+        agent: str,
+        ids: "list[str] | str | None" = None,
+        store: Any = None,
+    ) -> dict:
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
+        return confirm_notifications(agent, ids, store=store)
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **DM delivery is now LOSSLESS: handover is no longer confirmation.**
+  `poll_notifications` marked notifications SEEN at the moment it handed them
+  over, so a consumer that read with `ack=True` and then failed to deliver had
+  PERMANENTLY DESTROYED the message — it left the unseen set and no retry could
+  find it. We turned a transient delivery failure into permanent loss, and we
+  made that the easiest call in the API to write. Measured on the live store
+  2026-07-29: five operator DMs enqueued correctly, four marked SEEN, the agent
+  saw none of them; the operator asked twice, eleven minutes apart, because
+  nothing came back.
+
+  New verb `ack_notifications(agent, ids)` (MCP tool, backend verb, and
+  `POST /v1/rpc/ack_notifications`) is now the ONLY thing that advances the
+  cursor, and it advances it per id. Reading never does. Anything left
+  unconfirmed is redelivered on the next poll, so a consumer that dies between
+  read and confirm loses nothing. Confirming twice is a no-op, never an error.
+  `poll_notifications` additionally reports `unconfirmed` (the ids still
+  awaiting confirmation) and `confirm_with`, so the safe loop is the obvious
+  one to write.
+
+### Deprecated
+
+- `poll_notifications(ack=True)` — the ack-on-read shape above. Behaviour is
+  DELIBERATELY UNCHANGED (sac reads this path today and a surprise change to
+  their read path would be its own outage); it now announces itself on three
+  surfaces instead: a `DeprecationWarning`, one WARNING log line per process,
+  and an `ack_on_read_deprecated` field in the returned payload so the
+  consuming agent reads it too. Use `ack=False` + `ack_notifications`.
+
 ## [0.17.13] - 2026-07-29
 
 **0.17.12 was cut but never published, and the moving version string hid it.**
