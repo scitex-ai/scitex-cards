@@ -73,6 +73,68 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
 
 ### Fixed
 
+- **The currency gate was MANUFACTURING the fault it detects.** Reported by the
+  sac agent with a live reproduction inside their own container (scitex-ui,
+  2026-07-29). The chain:
+
+  1. the base image ships scitex-cards N; PyPI moves to N+1
+  2. our gate REFUSES to run the CLI and prints `run: pip install -U scitex-cards`
+  3. the agent does exactly that — inside a container that installs into the
+     AGENT'S OVERLAY, not into the read-only base
+  4. overlay N+1 alongside base N = TWO dist-info directories = ambiguous
+     metadata
+  5. which is precisely the integrity failure this gate exists to detect
+
+  The remedy was the disease's vector, and sac was about to scrub six agents'
+  overlays that our own error message could re-dirty the moment any of them
+  fell back to the CLI.
+
+  **The gate now BLOCKS WHERE THE ACTOR CAN REMEDIATE AND WARNS WHERE THEY
+  CANNOT**, and that sentence is in the code as the rule rather than as a
+  comment on one branch. On a BARE HOST an in-place upgrade genuinely repairs,
+  so refusing is correct and that path is untouched: it still RAISES, and its
+  message still carries scitex-dev's upgrade command verbatim, because there
+  that command IS the repair. IN AN OVERLAY the agent cannot repair anything —
+  the package comes from a read-only base they do not control, the only real fix
+  is an operator REBAKE — so the gate logs a warning and RETURNS. Blocking there
+  left an agent with no working rail AND a harmful instruction. A gate that
+  cannot be satisfied is a trap, not a gate.
+
+  **No in-place install command survives anywhere in the overlay output, from
+  any source.** This is the correction of 0.17.11, which appended a do-NOT block
+  AFTER scitex-dev's verbatim message and assumed that was enough — it is not,
+  and assuming it was is the mistake being fixed. An agent scanning for an
+  actionable command takes the FIRST one, and the first one harms. The verbatim
+  passthrough is now SCRUBBED: `scrub_install_commands()` removes the command
+  and keeps the facts, so the reader still learns which version is installed and
+  which is current (exactly what the operator needs in the rebake request) with
+  nothing runnable left in the text. The remover is narrow and its detector is
+  broad; when they disagree the quote is WITHHELD rather than printed, because
+  losing an upstream message costs a reader context while printing that command
+  costs them the container.
+
+  The overlay message states plainly that this container's package comes from a
+  READ-ONLY BASE IMAGE, that installing here creates a DUPLICATE INSTALL which
+  BREAKS METADATA RESOLUTION, and that the repair is an operator REBAKE OF THE
+  BASE IMAGE. It names the escape hatch outright —
+  `SCITEX_DEV_CURRENCY_SEVERITY=silent`, read off the installed scitex-dev
+  (`staleness._ENV_SEVERITY`) rather than invented — so nobody has to guess it,
+  and says why to prefer it over `SCITEX_DEV_NO_CURRENCY_GATE=1` (which prints a
+  bypass banner on stdout and corrupts `--json` output).
+
+  The barrier is MECHANICAL, not a docstring warning: a rule that must be
+  remembered is forgotten exactly when it matters, which is what 0.17.11 proved.
+  `test_the_overlay_text_carries_no_in_place_install_command_from_any_source`
+  scans the ENTIRE emitted text — passthrough included — against an
+  independently authored pattern list that is deliberately NOT imported from the
+  implementation, and a positive control proves that list can actually see a
+  command. Mutation-checked in two steps (probe confirmed present in the module
+  the interpreter actually loaded via `inspect.getsource`, then the test run):
+  making the scrubber a passthrough reddens that barrier; making the overlay
+  branch raise reddens `test_the_overlay_case_does_not_raise`; making the
+  bare-host branch warn reddens
+  `test_a_bare_host_install_still_fails_the_currency_gate`.
+
 - **The board decided whether the store existed by looking for a file the store
   does not use.** `get_board` gated the CARD read on the existence of the
   `tasks.yaml` SIDECAR beside the database:

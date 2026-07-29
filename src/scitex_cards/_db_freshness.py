@@ -30,6 +30,26 @@ predates this key. The first write claims it by stamping :data:`KEY_STORE_PATH`.
 This is what lets an already-populated board be adopted once, at deploy, and
 then be pinned to its own identity from that write on.
 
+CLAIMED ONCE, NOT REWRITTEN PER WRITE
+-------------------------------------
+The stamp says WHICH STORE this is the database of — not WHO WROTE LAST. Those
+read the same only while a store has exactly one name. This one has several: a
+container and the host reach ONE inode by names neither namespace can resolve
+for the other. So :func:`stamp_store_provenance` leaves an existing stamp alone
+whenever it already names the same file, and the name claimed first is the name
+kept. A stamp that changes with the writer cannot be the thing an ownership
+guard decides on; see that function for the outage this closes, and for why it
+is a MITIGATION of path-based identity rather than a fix for it.
+
+THE FIX ITSELF IS A UUID, AND IT HAS LANDED
+-------------------------------------------
+:mod:`scitex_cards._store_uuid` gives the database an opaque identity that no
+namespace can re-spell, and the ownership guard consults it FIRST. This module's
+``store_path`` row is therefore DIAGNOSTIC now — the legacy evidence used only
+when a database carries no identity AND the caller declares no expectation. It
+is kept, and kept stable, because that is every store until it has been through
+``scitex-cards store adopt-uuid``.
+
 WHY IDENTITY, NOT CONTENT
 -------------------------
 The comparison is CONTENT-INDEPENDENT on purpose: it never parses the store, it
@@ -67,43 +87,85 @@ def canonical_path(store_path: str | Path) -> str:
 def stamp_store_provenance(conn: sqlite3.Connection, store_path: str | Path) -> None:
     """Record WHICH store this database is the database of. Call inside the write txn.
 
-    DIAGNOSTIC, NOT AUTHORITATIVE. Since ``store_uuid`` decides identity (see
-    :mod:`scitex_cards._store_uuid`), this row exists to tell a human which
-    spelling the last writer used. It is still consulted as the LEGACY fallback
-    for a database with no identity facing a caller with no expectation, so it
-    is still written — but it is no longer the thing ownership rests on.
+    THE STAMP IS CLAIMED ONCE, NOT REWRITTEN PER WRITE::
 
-    THE STAMP IS NOT REWRITTEN WHEN IT ALREADY NAMES THE SAME FILE. This used
-    to be an unconditional ``ON CONFLICT DO UPDATE SET value=excluded.value``,
-    and that overwrite was the FLIP MECHANISM behind the 2026-07-28 outage: one
-    bind-mounted database is reachable as ``/home/agent/.scitex/cards/cards.db``
-    (container only), ``/home/ywatanabe/.scitex/cards/cards.db`` (both) and
-    ``/home/ywatanabe/.dotfiles/src/.scitex/cards/cards.db`` (the realpath).
-    Every write replaced the stamp with the WRITER'S OWN spelling, so the name
-    flipped each time the other namespace wrote a card; whenever it landed on
-    the container-only name the host could not ``stat`` it and the board was
-    refused its own database with an HTTP 500. Three repairs on 2026-07-28 were
-    each undone by nothing more than writing the next card from the other side.
+        unstamped                       -> stamp it; the first write claims it
+        stamped for THIS SAME FILE      -> LEAVE IT ALONE, however this caller
+                                           would have spelled that file
+        stamped for a DIFFERENT file    -> not this function's problem: the
+                                           ownership guard
+                                           (``_dual_write._db_mirrors_this_store``)
+                                           already refused upstream
 
-    So: same file, same spelling, or a spelling the kernel confirms is the same
-    file ⇒ leave the row ALONE. Rewriting it then is pure harm — it changes an
-    unauthoritative diagnostic into a moving target for the one branch that
-    still reads it. Sameness is asked of :func:`_dual_write._same_file`, the
-    package's ONE definition of it; when that cannot tell (a stamped path this
-    namespace cannot stat), the stamp IS refreshed to the spelling this writer
-    can actually see, which is strictly more useful to the next reader than a
-    name nobody here can resolve.
+    Sameness is asked of :func:`scitex_cards._dual_write._same_file` — the SAME
+    predicate the ownership guard uses, deliberately, so this package carries
+    exactly ONE definition of "the same store" and the stamper can never disagree
+    with the guard that reads the stamp.
+
+    WHY LEAVING AN EXISTING STAMP IS CORRECT, NOT MERELY CONVENIENT
+    ---------------------------------------------------------------
+    The stamp answers "WHICH STORE IS THIS THE DATABASE OF", not "who wrote
+    last". A path is only meaningful inside the namespace that produced it, so
+    overwriting the stamp with the current writer's spelling DESTROYS information
+    for every other namespace while ADDING none — the new name is no truer than
+    the old one, it is merely local. Whichever name was claimed first is at least
+    STABLE, and stability is the property the ownership guard actually needs: it
+    can only decide with a stamp it is able to resolve.
+
+    THE BUG THIS CLOSES, measured live 2026-07-28/29. One inode
+    (dev/ino 2096/3417791) is reached by three names::
+
+        /home/agent/.scitex/cards/cards.db                    container's name
+                                                              (host CANNOT stat it)
+        /home/ywatanabe/.scitex/cards/cards.db                the host's name
+        /home/ywatanabe/.dotfiles/src/.scitex/cards/cards.db  its realpath
+
+    The old unconditional ``ON CONFLICT DO UPDATE`` called itself "idempotent —
+    a re-stamp with the same store is a no-op". That holds only for a store with
+    ONE name. With two it is not a no-op, it is a FLIP. The operator's board was
+    repaired by stamping a HOST-VISIBLE name so the guard's inode branch could
+    run; ``/tasks`` went 500 -> 200 serving 2,684 cards. The very next
+    CONTAINER-side card write re-stamped ``/home/agent/...``, the host could no
+    longer ``stat`` the stamp, ``_same_file`` fell back to a realpath STRING
+    compare that can never match, and the board returned to 500. The repair lost
+    a race to the next write — and every container write wins that race. Inside
+    the container both names ARE stat-able (bind mount), so the inode branch
+    runs, this function sees "same file", and the host's stamp survives.
+
+    THIS WAS A MITIGATION; THE FIX HAS NOW LANDED
+    ---------------------------------------------
+    Path-based identity CANNOT be made correct across namespaces; it can only be
+    made STABLE. Two namespaces that both write will always disagree about the
+    name of one file, and no rule about which name wins changes that. The real
+    repair is an opaque ``store_uuid`` that no namespace can re-spell — designed
+    in PR #601 (``docs/design/store-identity-is-a-uuid.md``) and IMPLEMENTED in
+    :mod:`scitex_cards._store_uuid`, tracked by card
+    ``scitex-cards-resolver-never-default-yaml-20260727``.
+
+    So this row is now DIAGNOSTIC, not authoritative: it tells a human which
+    spelling claimed the database first. It is still read as the LEGACY fallback
+    on the guard's ``ADOPT`` branch — a database with no identity facing a caller
+    with no expectation, which is every database that has not yet run
+    ``scitex-cards store adopt-uuid`` — so stopping the thrash still matters
+    until each store is bound. Once a store carries an identity the path is not
+    consulted at all, and a container-written name being illegible to the host
+    stops mattering rather than being worked around.
     """
-    from ._dual_write import _same_file
+    existing = stamped_store_path(conn)
+    if existing is not None:
+        # ONE definition of "same store" in this package: the ownership guard's.
+        # Imported here, not at module scope, because `_dual_write` imports back
+        # into this module (`stamped_store_path`) — the same deferred-import
+        # shape `check_fresh` below already uses to keep the pair acyclic.
+        from ._dual_write import _same_file
 
-    canonical = canonical_path(store_path)
-    current = stamped_store_path(conn)
-    if current is not None and (current == canonical or _same_file(current, canonical)):
-        return
+        if _same_file(existing, store_path):
+            return
+
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES(?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (KEY_STORE_PATH, canonical),
+        (KEY_STORE_PATH, canonical_path(store_path)),
     )
 
 
@@ -146,6 +208,13 @@ def check_fresh(
     comparison is by :func:`_same_file` (inode), so the ``/home/agent`` vs
     ``/home/ywatanabe`` bind-mount alias reads as one store — consistent with
     the write guard.
+
+    UUID-FIRST, exactly as the ownership guard is. A stamped identity that
+    ACCEPTs decides and the path is never consulted. This function has no
+    production caller today, but leaving it path-only would build the read/write
+    asymmetry the design forbids the moment somebody wired it up — and that
+    asymmetry is what 2026-07-19 was made of, when the write door refused a
+    foreign store correctly all day while the read door returned its rows.
     """
     from ._store_uuid import (
         ACCEPT,
@@ -154,10 +223,6 @@ def check_fresh(
         read_store_uuid,
     )
 
-    # UUID-FIRST, exactly as the ownership guard is. A stamped identity that
-    # ACCEPTs decides, and the path is not consulted at all — otherwise the two
-    # checks could disagree about one database, which is the asymmetry class
-    # that let a packaged fixture be read AS THE BOARD on 2026-07-19.
     if identity_verdict(read_store_uuid(conn), expected_store_uuid()) == ACCEPT:
         return True, None
 
@@ -170,8 +235,8 @@ def check_fresh(
         return True, None
     if not Path(stamped).exists() or not Path(store_path).exists():
         # CANNOT TELL — say so. Claiming "a DIFFERENT store" here would be an
-        # assertion about a file this mount namespace cannot even stat, and
-        # that false claim is what the operator read during the 2026-07-28
+        # assertion about a file this mount namespace cannot even stat, and that
+        # false claim is exactly what the operator read during the 2026-07-28
         # outage while the database in question was in fact their own.
         return False, (
             f"ownership of this database CANNOT BE DETERMINED from a path in "
