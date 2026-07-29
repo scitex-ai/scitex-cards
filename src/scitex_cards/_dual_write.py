@@ -149,6 +149,44 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
         return True  # unstamped ⇒ adoptable
     if _same_file(stamped, str(store_path)):
         return True
+    # AN UNRESOLVABLE STAMP IS "CANNOT TELL", NOT "DIFFERENT STORE".
+    #
+    # The stamp is a PATH, and a path is only meaningful inside the mount
+    # namespace that produced it. This board is reached as
+    # /home/agent/.scitex/cards/cards.db from inside a container and as
+    # /home/ywatanabe/.scitex/cards/cards.db from the host — ONE bind-mounted
+    # file, two names. `_same_file` settles that by inode WHEN BOTH PATHS EXIST.
+    # From the host, /home/agent/... does not exist at all: the stat raises, the
+    # realpath fallback compares two strings that were never going to match, and
+    # the answer comes back "different store".
+    #
+    # MEASURED 2026-07-28: this took the operator's board down. `/tasks` returned
+    # HTTP 500 with "REFUSING TO READ ... stamped for a DIFFERENT store" against
+    # the very database it was pointed at, because the host cannot resolve a
+    # container-side path. `_same_file`'s own docstring records the same class of
+    # false negative from 2026-07-20 — the inode check was added then, and the
+    # string fallback it kept is reachable in exactly this case.
+    #
+    # Returning False here asserts knowledge we do not have. We were pointed at
+    # this database explicitly; a name we cannot resolve is not evidence that it
+    # belongs to someone else. So: say so loudly and proceed, rather than deny
+    # service on the store we were told to use.
+    #
+    # THIS IS A MITIGATION, NOT THE FIX. The real repair is an identity that is
+    # not a path — a uuid stamped in the store and compared exactly, which no
+    # namespace can re-spell. Card:
+    # scitex-cards-resolver-never-default-yaml-20260727.
+    if not Path(stamped).exists():
+        logger.warning(
+            "store stamp %r cannot be resolved in this mount namespace, so "
+            "ownership of %s CANNOT BE DETERMINED by path. Proceeding, because "
+            "an unresolvable name is not evidence of a different store — but "
+            "this comparison is unreliable across namespaces and is why store "
+            "identity must become a uuid rather than a path.",
+            stamped,
+            db_path,
+        )
+        return True
     logger.error(
         "!! REFUSING TO MIRROR: %s is the shadow DB of %s, but this write is to "
         "%s. Mirroring would REPLACE that store's rows with this one's. If you "
