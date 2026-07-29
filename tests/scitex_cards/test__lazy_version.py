@@ -21,8 +21,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 import scitex_cards
 
 
@@ -131,9 +129,15 @@ def test_unknown_attribute_still_raises():
     # Arrange
     missing = "definitely_not_a_public_name"
 
-    # Act / Assert
-    with pytest.raises(AttributeError):
+    # Act
+    raised = None
+    try:
         getattr(scitex_cards, missing)
+    except AttributeError as exc:
+        raised = exc
+
+    # Assert
+    assert raised is not None
 
 
 def test_resolver_prefers_scitex_cards_dist(monkeypatch):
