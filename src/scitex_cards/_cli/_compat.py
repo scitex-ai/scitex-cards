@@ -127,8 +127,7 @@ def _fallback_deprecated_alias(
     def _forward(ctx: click.Context) -> None:
         _warn_once(
             old_name,
-            f"'{old_name}' is deprecated — use '{display}' "
-            f"(removed in {version})",
+            f"'{old_name}' is deprecated — use '{display}' (removed in {version})",
         )
         target_cmd = group.get_command(ctx, target)
         if target_cmd is None:  # wiring bug — fail loud (exit 2)
@@ -138,9 +137,7 @@ def _fallback_deprecated_alias(
             )
         # Re-parse the raw argv through the target so its own
         # options/arguments apply.
-        sub_ctx = target_cmd.make_context(
-            display, list(ctx.args), parent=ctx.parent
-        )
+        sub_ctx = target_cmd.make_context(display, list(ctx.args), parent=ctx.parent)
         with sub_ctx:
             target_cmd.invoke(sub_ctx)
 
@@ -204,7 +201,12 @@ def _render_fallback_help(
     examples: tuple[tuple[str, str], ...],
     config_resolution: tuple[str, ...],
     version_of: str | None,
-    prog: str = "scitex-todo",
+    # Renders every `{prog}` placeholder in every example this fallback path
+    # emits, so it is the single biggest thing the CLI calls itself. The
+    # scitex-dev spec-help path already says `scitex-cards` (see `_main.py`'s
+    # `version_of` / `prog_name`); this default is what the NO-scitex-dev
+    # install shows, and it must not disagree with it.
+    prog: str = "scitex-cards",
 ) -> str:
     """Plain help body matching the doctrine §4 section order (fallback only)."""
     if version_of:
@@ -221,8 +223,7 @@ def _render_fallback_help(
     if examples:
         lines = ["\b", "Examples:"]
         lines.extend(
-            f"  $ {cmd.replace('{prog}', prog)}"
-            + (f"  {note}" if note else "")
+            f"  $ {cmd.replace('{prog}', prog)}" + (f"  {note}" if note else "")
             for cmd, note in examples
         )
         blocks.append("\n".join(lines))

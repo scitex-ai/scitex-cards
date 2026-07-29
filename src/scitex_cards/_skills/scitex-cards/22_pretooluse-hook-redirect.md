@@ -1,25 +1,25 @@
-# PreToolUse hook — redirect Claude `TaskCreate`/`TaskUpdate`/`TaskList` to scitex-todo
+# PreToolUse hook — redirect Claude `TaskCreate`/`TaskUpdate`/`TaskList` to scitex-cards
 
 Operator op-12038 doctrine: **every fleet agent uses ONE shared task
-store** — scitex-todo's YAML. Claude Code's built-in `TaskCreate` /
+store** — scitex-cards's YAML. Claude Code's built-in `TaskCreate` /
 `TaskUpdate` / `TaskList` tools create per-session scratch state
 that disappears when the turn ends; using them for durable work
 fragments the fleet's source of truth.
 
 This skill bundles a PreToolUse hook that intercepts those three
 tool names and BLOCKS them with a redirect message naming the
-scitex-todo CLI verb to use instead. The block is enforced
+scitex-cards CLI verb to use instead. The block is enforced
 (non-zero exit), not just a warning — the operator's directive is
 "redirect, don't allow drift."
 
 ## Install
 
-`scitex-todo skills install --claude-symlink` symlinks the whole
-skill tree under `~/.claude/skills/scitex/scitex-todo/`. From there,
+`scitex-cards skills install --claude-symlink` symlinks the whole
+skill tree under `~/.claude/skills/scitex/scitex-cards/`. From there,
 drop a symlink into Claude's hooks dir:
 
 ```bash
-ln -sf ~/.claude/skills/scitex/scitex-todo/hooks/pre-tool-use/redirect_claude_tasklist_to_scitex_cards.sh \
+ln -sf ~/.claude/skills/scitex/scitex-cards/hooks/pre-tool-use/redirect_claude_tasklist_to_scitex_cards.sh \
        ~/.claude/hooks/pre-tool-use/redirect_claude_tasklist_to_scitex_cards.sh
 ```
 
@@ -36,12 +36,12 @@ The script is shipped executable; no further setup is needed.
 
 ## Redirect copy
 
-The stderr message names the scitex-todo CLI verbs:
+The stderr message names the scitex-cards CLI verbs:
 
 ```
-scitex-todo add <id> --title "..." --assignee <you>
-scitex-todo update <id> --status in_progress
-scitex-todo list-tasks --assignee <you> --status pending
+scitex-cards add <id> --title "..." --assignee <you>
+scitex-cards update <id> --status in_progress
+scitex-cards list-tasks --assignee <you> --status pending
 ```
 
 …plus a pointer to the MCP wire (`add_task` / `update_task` /

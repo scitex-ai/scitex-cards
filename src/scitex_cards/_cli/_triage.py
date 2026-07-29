@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo triage`` — the backlog-consumption payload.
+"""CLI verb ``scitex-cards triage`` — the backlog-consumption payload.
 
 READ-ONLY. Draws an owner's pick-for-action sample (recency-weighted, see
 :mod:`scitex_cards._backlog_triage`) plus their expired set, and prints it.
@@ -9,7 +9,7 @@ the consumer decides, this verb only puts the decision in front of them.
 
 Primary consumer: a short-lived twin agent (sac concept, operator 2026-07-10)
 spawned from its parent with the PARENT's ``SCITEX_TODO_AGENT_ID``, which runs
-``scitex-todo triage --mine --json``, decides each drawn card (start it, name
+``scitex-cards triage --mine --json``, decides each drawn card (start it, name
 its blocker, cancel it, or keep it), and exits. The parent never stops.
 """
 
@@ -46,7 +46,7 @@ def register(main: click.Group) -> None:
         "Keep-deferred does NOT reset a card's age; the clock reads\n"
         "deferred_at, stamped once on entry into the backlog.\n\n"
         "Example:\n"
-        "  scitex-todo triage --mine --json"
+        "  scitex-cards triage --mine --json"
     ),
 )
 @click.option(

@@ -1,4 +1,6 @@
-/* Board | Chat page switcher — shared by board_v3.html and chat.html.
+/* Board | DM page switcher — shared by board_v3.html and chat.html.
+ * (The second item is LABELLED "DM"; its route is still /chat and the files
+ * are still chat.*. See _page_switcher.html for why the URL is not renamed.)
  *
  * Markup: templates/scitex_cards/_page_switcher.html (one partial, both
  * pages), so the two surfaces cannot drift into two different switchers.

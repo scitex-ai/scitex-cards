@@ -111,12 +111,12 @@ def _reason(agent: str, cards: list) -> str:
         f"you marked as being worked but have not finished:\n{body}\n\n"
         "Silently stopping with claimed work is the abandonment incident the board "
         "exists to prevent. For EACH card, pick one honest disposition now:\n"
-        "  1. Finish it  → scitex-todo close <id>  (or complete it).\n"
-        "  2. Hand it off → scitex-todo reassign <id> --to <owner>.\n"
+        "  1. Finish it  → scitex-cards close <id>  (or complete it).\n"
+        "  2. Hand it off → scitex-cards reassign <id> --to <owner>.\n"
         "  3. Genuinely can't proceed → set it blocked with a reason: "
-        "scitex-todo update <id> --status blocked --blocker <operator-decision|dependency> "
+        "scitex-cards update <id> --status blocked --blocker <operator-decision|dependency> "
         "and comment WHY.\n"
-        "  4. Not actually working it → scitex-todo update <id> --status deferred.\n"
+        "  4. Not actually working it → scitex-cards update <id> --status deferred.\n"
         "Once none of your in-progress cards are stale, you may stop."
     )
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the PR-merge recording mandate in the canonical scitex-todo
+"""Tests for the PR-merge recording mandate in the canonical scitex-cards
 skill (fleet-adoption multiplier #3, lead a2a `0cdca03a`).
 
-The skill is propagated into every agent via `scitex-todo skills
+The skill is propagated into every agent via `scitex-cards skills
 propagate` (PR #161). If these load-bearing phrases drift, every
 agent's read-on-boot mandate weakens — so we pin them to a test that
 runs in every CI cycle. No mocks (STX-NM / PA-306); just reads the
@@ -43,7 +43,7 @@ def test_skill_md_mandate_specifies_done_with_pr_url():
     text = SKILL_MD.read_text(encoding="utf-8")
     # boot can grep it directly.
     # Assert
-    assert "scitex-todo done <card-id> --pr-url" in text
+    assert "scitex-cards done <card-id> --pr-url" in text
 
 
 def test_skill_md_mandate_states_pr_url_is_required():
@@ -86,7 +86,7 @@ def test_leaf_doc_documents_bulk_catchup_verb():
     # Act
     text = LEAF_MD.read_text(encoding="utf-8")
     # Assert
-    assert "scitex-todo sync-github" in text
+    assert "scitex-cards sync-github" in text
 
 
 def test_leaf_doc_cites_lead_provenance():

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Package-level HEALTH check for scitex-todo (the ``health`` doctor).
+"""Package-level HEALTH check for scitex-cards (the ``health`` doctor).
 
 One PURE function, :func:`health`, aggregates a fixed set of store / identity /
 delivery checks and returns a machine-readable report in the cross-package
 standard shape shared with sac/cct::
 
     {
-      "package": "scitex-todo",
+      "package": "scitex-cards",
       "ok": <bool: true iff EVERY check ok>,
       "checks": [ {"name", "ok", "detail", "hint"}, ... ],
       "summary": <str>,
@@ -25,7 +25,7 @@ Why this exists (0.7.32 incident)
 ---------------------------------
 The unified ``mcp start`` server once starved its own ``initialize`` handshake
 when the inbox poll loop ran blocking store IO inline on the event loop — every
-fleet agent showed the ``scitex-todo`` server "not connected". The
+fleet agent showed the ``scitex-cards`` server "not connected". The
 ``channel_drain`` check below (large unseen backlog with ``seen==0``) turns that
 class of failure into a one-command diagnosis.
 
@@ -56,7 +56,7 @@ UNSEEN_BACKLOG_THRESHOLD = 50
 
 #: The exact drain-stuck remediation (kept verbatim per the cross-package spec).
 _DRAIN_HINT = (
-    "channel not draining — ensure `scitex-todo mcp start` is running for this "
+    "channel not draining — ensure `scitex-cards mcp start` is running for this "
     "agent with SCITEX_TODO_AGENT_ID set (needs >=0.7.32 where the poll loop no "
     "longer starves the handshake)"
 )
@@ -369,7 +369,7 @@ def _check_channel_capable() -> dict[str, Any]:
             "ok": False,
             "detail": f"import scitex_cards._mcp_channel failed ({exc})",
             "hint": (
-                "upgrade to scitex-todo>=0.7.32: pip install -U 'scitex-todo[mcp]'"
+                "upgrade to scitex-cards>=0.7.32: pip install -U 'scitex-cards[mcp]'"
             ),
         }
     missing = [attr for attr in ("_serve", "_run") if not hasattr(channel, attr)]
@@ -378,8 +378,8 @@ def _check_channel_capable() -> dict[str, Any]:
             "ok": False,
             "detail": f"scitex_cards._mcp_channel missing {missing}",
             "hint": (
-                "upgrade to scitex-todo>=0.7.32 (the unified tools+channel "
-                "server): pip install -U 'scitex-todo[mcp]'"
+                "upgrade to scitex-cards>=0.7.32 (the unified tools+channel "
+                "server): pip install -U 'scitex-cards[mcp]'"
             ),
         }
     return {
@@ -449,7 +449,7 @@ def health(
     agent_id: str | None = None,
     unseen_threshold: int = UNSEEN_BACKLOG_THRESHOLD,
 ) -> dict[str, Any]:
-    """Run every scitex-todo health check and return the standard report.
+    """Run every scitex-cards health check and return the standard report.
 
     Parameters
     ----------
@@ -487,7 +487,7 @@ def health(
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
-        # scitex-todo -> scitex-cards rename left agent launch lines allowlisting
+        # scitex-cards -> scitex-cards rename left agent launch lines allowlisting
         # the OLD server name, so every push was discarded on arrival while the
         # drain kept marking records seen. Delivery here is fire-and-forget, so
         # a name the client does not know does not delay a notification, it
@@ -523,7 +523,7 @@ def health(
     if failing:
         summary += "; failing: " + ", ".join(failing)
     return {
-        "package": "scitex-todo",
+        "package": "scitex-cards",
         "ok": ok,
         "checks": checks,
         "summary": summary,

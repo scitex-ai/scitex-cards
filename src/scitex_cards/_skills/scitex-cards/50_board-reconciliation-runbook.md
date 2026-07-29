@@ -1,7 +1,7 @@
 # Board Reconciliation Runbook — Canonical Verbs
 
 **Audience:** every fleet agent (scitex-* workers, hub, journal, ripple-wm, dev, agent-container, lead, …).
-**Owner:** scitex-todo.
+**Owner:** scitex-cards.
 **First landed:** 2026-06-13 (operator directive via lead).
 
 ## Why this exists
@@ -23,16 +23,16 @@ This runbook gives the **canonical command lines** every agent uses for the same
 
 ```sh
 # By assignee (the primary linking field):
-scitex-todo list-tasks --assignee <your-agent-id> --json
+scitex-cards list-tasks --assignee <your-agent-id> --json
 
 # By project (if you own a package, not an agent identity):
-scitex-todo list-tasks --project <package> --json
+scitex-cards list-tasks --project <package> --json
 
 # Filter to actionable only:
-scitex-todo list-tasks --project <package> --status pending --status in_progress --json
+scitex-cards list-tasks --project <package> --status pending --status in_progress --json
 
 # All my pending cards (compact human view):
-scitex-todo list-tasks --assignee <your-agent-id> --status pending
+scitex-cards list-tasks --assignee <your-agent-id> --status pending
 ```
 
 Useful flags:
@@ -47,13 +47,13 @@ Useful flags:
 
 ```sh
 # Preferred (records the lineage):
-scitex-todo update <task-id> --status done --pr-url https://github.com/<org>/<repo>/pull/<n>
+scitex-cards update <task-id> --status done --pr-url https://github.com/<org>/<repo>/pull/<n>
 
 # Optional but useful (mark who completed it):
-scitex-todo update <task-id> --status done --pr-url <url> --agent <your-agent-id>
+scitex-cards update <task-id> --status done --pr-url <url> --agent <your-agent-id>
 
 # Shorthand that stamps _log_meta.completed_{at,by}:
-scitex-todo done <task-id> [--by <author>]
+scitex-cards done <task-id> [--by <author>]
 # (Use this when there's no PR — e.g. data tidy-up, doc fix in a sibling system.
 #  Add a comment with context.)
 ```
@@ -67,13 +67,13 @@ Heuristic: if the card describes a deliverable that landed in a PR, **always use
 The `close` verb landed in PR #151 (2026-06-13). It records the reason in `comments[]` and flips status to `deferred` (the sentinel meaning "operator opted out, see reason" — no new status enum value cascading FE/test changes).
 
 ```sh
-scitex-todo close <task-id> --reason "<short reason in imperative or past tense>"
+scitex-cards close <task-id> --reason "<short reason in imperative or past tense>"
 
 # With author override (default chain: $SCITEX_TODO_AGENT_ID -> $USER):
-scitex-todo close <task-id> --reason "<text>" --by <author>
+scitex-cards close <task-id> --reason "<text>" --by <author>
 
 # Dry-run first (prints intent, does NOT mutate):
-scitex-todo close <task-id> --reason "<text>" --dry-run
+scitex-cards close <task-id> --reason "<text>" --dry-run
 ```
 
 Good reasons (≤ 1 sentence each):
@@ -97,7 +97,7 @@ After `close`, the card is hidden from default action lenses (status=deferred), 
 `comments[]` is the established Issue-activity log. Use it for status updates, blocker notes, decisions that don't warrant an ADR.
 
 ```sh
-scitex-todo comment <task-id> "<text>" [--author <agent-id>] [--json]
+scitex-cards comment <task-id> "<text>" [--author <agent-id>] [--json]
 ```
 
 (Shipped via PR #144. Same write-lock as `close` / `done`.)
@@ -110,19 +110,19 @@ A complete sweep for ONE agent looks like:
 
 ```sh
 # 0) Snapshot current state (saves a copy you can diff against later).
-scitex-todo list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-before.json
+scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-before.json
 
 # 1) For every recently-merged PR you owned: mark its card done with the PR pointer.
-scitex-todo update <card-id> --status done --pr-url <pr-url>
+scitex-cards update <card-id> --status done --pr-url <pr-url>
 
 # 2) For every pending card that's obsolete / superseded / no-longer-relevant:
-scitex-todo close <card-id> --reason "<short why>"
+scitex-cards close <card-id> --reason "<short why>"
 
 # 3) For every pending card that's STILL valid but you have new context: comment it.
-scitex-todo comment <card-id> "<update>"
+scitex-cards comment <card-id> "<update>"
 
 # 4) Re-snapshot + diff to verify your sweep landed:
-scitex-todo list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-after.json
+scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-after.json
 diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | head -200
 ```
 
@@ -130,7 +130,7 @@ diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | 
 
 ## 6. STALE candidates for OPERATOR review
 
-The operator (not agents) decides which orphaned cards to archive. scitex-todo generates a periodic **stale-candidates list** at:
+The operator (not agents) decides which orphaned cards to archive. scitex-cards generates a periodic **stale-candidates list** at:
 
 ```
 ~/.scitex/todo/STALE_CARDS_FOR_REVIEW.md
@@ -140,52 +140,52 @@ Criteria for inclusion:
 - `status=pending` AND `created_at > 14d` (or no `created_at`/`last_activity`), OR
 - title/owner unclear/orphaned (no clear deliverable).
 
-Format: per-project tables, oldest-first, `id | title | age | reasons`. Agents do NOT auto-close these — the operator scans + decides + applies `scitex-todo close <id> --reason "<text>"` himself (or the owning agent does it WITH his go-ahead).
+Format: per-project tables, oldest-first, `id | title | age | reasons`. Agents do NOT auto-close these — the operator scans + decides + applies `scitex-cards close <id> --reason "<text>"` himself (or the owning agent does it WITH his go-ahead).
 
 Regenerate the list:
 ```sh
-# scitex-todo refreshes this on operator demand. To trigger from any agent:
-# (a2a "regen stale list" to scitex-todo) — there's no scheduled cron yet.
+# scitex-cards refreshes this on operator demand. To trigger from any agent:
+# (a2a "regen stale list" to scitex-cards) — there's no scheduled cron yet.
 ```
 
-A future PR will wrap the generator in a `scitex-todo list-stale [--days 14]` CLI verb. Tracked as an in-board card.
+A future PR will wrap the generator in a `scitex-cards list-stale [--days 14]` CLI verb. Tracked as an in-board card.
 
 ---
 
 ## 7. Quick reference card (for the lead's broadcast)
 
 ```
-LIST MY CARDS         scitex-todo list-tasks --assignee <me> --status pending
-LIST BY PACKAGE       scitex-todo list-tasks --project <pkg> --status pending
-MARK DONE + PR        scitex-todo update <id> --status done --pr-url <url>
-CLOSE WITH REASON     scitex-todo close <id> --reason "<short why>"
-ADD COMMENT           scitex-todo comment <id> "<text>"
+LIST MY CARDS         scitex-cards list-tasks --assignee <me> --status pending
+LIST BY PACKAGE       scitex-cards list-tasks --project <pkg> --status pending
+MARK DONE + PR        scitex-cards update <id> --status done --pr-url <url>
+CLOSE WITH REASON     scitex-cards close <id> --reason "<short why>"
+ADD COMMENT           scitex-cards comment <id> "<text>"
 DRY-RUN ANY MUTATION  add --dry-run before the real call
 STORE OVERRIDE        --tasks <path>  OR  SCITEX_TODO_TASKS_YAML_SHARED=<path>
 
 # Fleet enablement (P3a, one-shot register the MCP server) ─ PR #155:
-PREVIEW REGISTRATION  scitex-todo mcp install --apply --dry-run
-REGISTER MCP SERVER   scitex-todo mcp install --apply -y
-REGISTER PROJECT MCP  scitex-todo mcp install --apply --to ./.mcp.json -y
+PREVIEW REGISTRATION  scitex-cards mcp install --apply --dry-run
+REGISTER MCP SERVER   scitex-cards mcp install --apply -y
+REGISTER PROJECT MCP  scitex-cards mcp install --apply --to ./.mcp.json -y
 ```
 
 ## 7.5. Fleet MCP enablement (P3a, lead-coordinated rollout)
 
-Each agent's `.mcp.json` needs the `scitex-todo` MCP server registered so the 16 board tools (`add_task` / `update_task` / `comment_task` / `list_tasks` / `delete_task` / `restore_task` / `resolve_task` / etc., see `21_fleet-mcp-rollout.md`) appear in its session. **PR #155** shipped a one-command idempotent enabler:
+Each agent's `.mcp.json` needs the `scitex-cards` MCP server registered so the 16 board tools (`add_task` / `update_task` / `comment_task` / `list_tasks` / `delete_task` / `restore_task` / `resolve_task` / etc., see `21_fleet-mcp-rollout.md`) appear in its session. **PR #155** shipped a one-command idempotent enabler:
 
 ```sh
 # Preview (dry-run; does not touch the file):
-scitex-todo mcp install --apply --dry-run
+scitex-cards mcp install --apply --dry-run
 
 # Commit (idempotent merge into ~/.mcp.json; preserves sibling servers):
-scitex-todo mcp install --apply -y
+scitex-cards mcp install --apply -y
 
 # Project-scope target (when the agent works inside a repo with its own .mcp.json):
-scitex-todo mcp install --apply --to ./.mcp.json -y
+scitex-cards mcp install --apply --to ./.mcp.json -y
 ```
 
 Behavior guarantees:
-- **Idempotent** — re-running prints `# noop: target already has the scitex-todo entry`.
+- **Idempotent** — re-running prints `# noop: target already has the scitex-cards entry`.
 - **Non-destructive** — sibling MCP server entries are preserved.
 - **Safe** — a `.mcp.json.bak` backup is created before overwriting an existing file.
 - **Fail-loud** — invalid JSON or a non-object root in the target raises a `ClickException` (clean non-zero exit, no traceback).
@@ -196,7 +196,7 @@ Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent w
 
 ## 8. Gotchas
 
-1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` (the SQLite database path). Check with `scitex-todo resolve-store`. Many agents bind only the user database; a project-scoped database can shadow it silently.
+1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` (the SQLite database path). Check with `scitex-cards resolve-store`. Many agents bind only the user database; a project-scoped database can shadow it silently.
 2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the SQLite migration; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
 3. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
 4. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
@@ -207,12 +207,12 @@ Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent w
 ## 9. Provenance
 
 - Operator directive 2026-06-13 (via lead a2a) — "make every agent reconcile their project's cards; 85 merges / 56 marked done is the drift signal".
-- Operator "all agents use scitex-todo, no parallel todo formats" → P3a fleet MCP rollout.
+- Operator "all agents use scitex-cards, no parallel todo formats" → P3a fleet MCP rollout.
 - Verb gap closure: PR #151 (`feat(cli): close verb`).
 - Comment verb: PR #144.
 - Skill bundle refresh: PR #149.
 - Recurring stale-review board panel: PR #153 (backend `/stale` + `/archive`) + PR #154 (FE 🧹 Stale layout + Archive button).
 - Fleet MCP enabler: PR #155 (`mcp install --apply`).
-- Stale-list generator: ad-hoc Python at `scitex-todo` (CLI verb is a follow-up).
+- Stale-list generator: ad-hoc Python at `scitex-cards` (CLI verb is a follow-up).
 
 End-of-file.
