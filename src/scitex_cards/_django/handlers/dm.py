@@ -56,7 +56,7 @@ import json
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import _reactions, _threads
+from scitex_cards import _dm_receipt_state, _reactions, _threads
 from scitex_cards._threads import OPERATOR_NAME
 
 
@@ -226,12 +226,21 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         # understands, and the v5 design's rule that a message is immutable
         # (docs/design/dm-into-cards-db.md §3.2) is not quietly broken by the
         # wire shape. A client that ignores this key behaves exactly as before.
+        #
+        # `receipts` rides in the same seat for the same reason, and answers a
+        # different question: `reactions` is what someone CHOSE to say about a
+        # message, `receipts` is whether the message got THERE. It is derived
+        # per message id from `dm_receipts` (rows written by the reader), never
+        # from a transport call returning — see _dm_receipt_state.
         return JsonResponse(
             {
                 "thread": key,
                 "peer": peer,
                 "messages": messages,
                 "reactions": _reactions.thread_reactions(key, store=store),
+                "receipts": _dm_receipt_state.receipt_state_for_thread(
+                    key, store=store
+                ),
             },
             json_dumps_params={"default": str},
         )

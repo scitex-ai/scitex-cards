@@ -214,6 +214,41 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     white-space: pre-wrap; word-break: break-word; line-height: 1.35;
   }
   .msg .meta { font-size: 0.65rem; color: var(--dim); padding: 0 4px; }
+  /* ---- delivery indicator (chat_receipts.js) ----
+     Three dots on a line, filling left to right: sent -> queued -> read.
+     QUIET BY REQUIREMENT — it sits on every message, and the operator's stated
+     goal is a clean screen, so it must not out-shout the message text.
+
+     STATE IS CARRIED BY SHAPE, NOT COLOUR: filled disc / hollow ring / DASHED
+     ring. Colour-only state fails for colour-blind readers and in high-contrast
+     modes, and the dashed ring is load-bearing — "we cannot see this step" must
+     not be readable as "confirmed" NOR as "hasn't happened", because the second
+     is also a claim we are not entitled to make.
+
+     `currentColor` throughout and no literal colour anywhere: the dots inherit
+     the meta line, so dark mode arrives with the theme tokens rather than being
+     re-specified here. */
+  .msg .meta .receipt {
+    display: inline-flex; align-items: center; gap: 2px;
+    margin-left: 6px; vertical-align: middle; white-space: nowrap;
+    cursor: default; line-height: 1;
+  }
+  .msg .meta .receipt:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+  .msg .meta .receipt i { width: 5px; height: 1px; background: currentColor; opacity: 0.45; }
+  .msg .meta .rc-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    border: 1px solid currentColor; box-sizing: border-box;
+  }
+  .msg .meta .rc-on { background: currentColor; }
+  .msg .meta .rc-off { background: transparent; opacity: 0.55; }
+  .msg .meta .rc-unknown { background: transparent; border-style: dashed; opacity: 0.4; }
+  /* The wording is present for hover, for screen readers and for a TAP, but it
+     only takes space once asked for — hover has no equivalent on the phone this
+     page is mostly read on, so the tap toggle is the mobile answer, not a
+     nicety. */
+  .msg .meta .rc-label { display: none; font-size: 0.62rem; margin-left: 4px; }
+  .msg .meta .receipt.rc-open { white-space: normal; }
+  .msg .meta .receipt.rc-open .rc-label { display: inline; }
   .msg.from-operator { align-self: flex-end; align-items: flex-end; }
   .msg.from-operator .bubble { background: var(--bubble-op); border-bottom-right-radius: 3px; }
   .msg.from-agent { align-self: flex-start; align-items: flex-start; }
@@ -753,6 +788,7 @@ off `window` and never the reverse.
   chat_compose.js  the composer: auto-grow + the long-draft offer
                    (reads ChatLongText for the threshold, and is handed
                    ChatAttach's single-file upload by chat.js)
+  chat_receipts.js the delivery indicator on a bubble (no deps)
   chat.js          the page orchestrator (mounts the modules above)
 
 chat_menu mounts chat_select rather than chat.js doing it: the menu already
@@ -779,6 +815,7 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_receipts.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 </body>
