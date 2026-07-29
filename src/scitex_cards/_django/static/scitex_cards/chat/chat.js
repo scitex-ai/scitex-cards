@@ -229,6 +229,11 @@
   // <img>/<a> for one. Both are statics, so no mount ordering applies.
   var attachments = window.ChatAttach;
 
+  // The delivery indicator: three dots filling sent -> queued -> read.
+  // Optional by design: an older page without the module renders exactly as it
+  // did before rather than guessing at a state it was not served.
+  var receipts = window.ChatReceipts;
+
   function messageNode(m) {
     var mine = m.from === "operator";
     var wrap = el("div", "msg " + (mine ? "from-operator" : "from-agent"));
@@ -241,7 +246,13 @@
     parts.files.forEach(function (rel) {
       wrap.appendChild(attachments.nodeFor(API_BASE, rel));
     });
-    wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
+    var meta = el("div", "meta", m.from + " · " + shortTs(m.ts));
+    // The delivery indicator belongs to chat_receipts.js, which owns what each
+    // step means; this file only says WHERE it goes. Into the META line on
+    // purpose: that row already exists, so the track costs no vertical space
+    // and cannot push the timestamp onto a second line on a phone.
+    if (receipts) receipts.render(meta, m, state.receipts);
+    wrap.appendChild(meta);
     // Reaction chips belong to the menu module (it owns every reaction write),
     // so this file only says WHERE they go, never what they are.
     if (menu) menu.renderReactions(wrap, m);
@@ -320,12 +331,18 @@
         // Reactions must be in place BEFORE the plan is computed: the plan's
         // fingerprints read them, and messageNode paints them.
         state.reactions = data.reactions || {};
+        // Same rule, same reason: the plan's fingerprints read the receipts, so
+        // a confirmation arriving on its own still repaints the bubble.
+        state.receipts = data.receipts || null;
         state.messages = msgs;
         if (!msgs.length) {
           renderEmpty();
           return;
         }
-        applyPlan(diff.planRender(state.rendered, msgs, state.reactions), msgs);
+        applyPlan(
+          diff.planRender(state.rendered, msgs, state.reactions, state.receipts),
+          msgs,
+        );
       })
       .catch(function (err) {
         showError("Thread failed: " + err.message);
@@ -342,6 +359,10 @@
     // clear with it. A stale map would paint the previous thread's chips onto
     // the first messages of this one.
     state.reactions = {};
+    // null, not {}: an empty map would mean "served, and every message is
+    // unknowable", which would paint a stale thread's bubbles with a state the
+    // server never sent. null means "not served yet" and paints nothing.
+    state.receipts = null;
     state.messages = [];
     $title.innerHTML = "";
     $title.appendChild(document.createTextNode("Thread with "));
@@ -357,12 +378,27 @@
 
   // ---- compose -----------------------------------------------------------
 
+  // Re-entry guard. `$send.disabled` does NOT prevent this: Enter calls
+  // `$form.requestSubmit()`, which runs the submit handler whether or not the
+  // BUTTON is disabled, and `sendMessage` never consulted that flag. With the
+  // textarea also cleared only after the response landed, every extra Enter
+  // pressed during the round trip re-sent the same text — the operator hit
+  // this live and diagnosed it themselves ("Enter を連発すると何個も送られる").
+  var sending = false;
+
   function sendMessage(event) {
     event.preventDefault();
+    if (sending) return;
     if (!state.peer) return;
     var text = $body.value.trim();
     if (!text) return;
+    sending = true;
     $send.disabled = true;
+    // Clear OPTIMISTICALLY so a repeated Enter finds an empty box and returns
+    // early even before `sending` is consulted — belt and braces, because the
+    // cost of a duplicate is a duplicate message the operator has to clean up.
+    // Restored verbatim on failure so a send that did not land is never lost.
+    $body.value = "";
     fetch(API_BASE + "/dm/thread/" + encodeURIComponent(state.peer), {
       method: "POST",
       headers: { "Content-Type": "application/json" },

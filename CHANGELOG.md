@@ -59,6 +59,39 @@
   The arrangement now uses a path that cannot be created
   (`/proc/1/.../cards.db`), which does raise.
 
+- **A notification the client discards is now VISIBLE instead of gone.** The
+  channel drain ack'd a record the instant `await send(params)` returned. That
+  proves only that our own stdout writer took the bytes: a
+  `notifications/claude/channel` push is a JSON-RPC NOTIFICATION, which by spec
+  has no reply, and Claude Code silently DISCARDS a push from a server missing
+  from its launch-line allowlist. So the drain was storing "the transport call
+  returned" as "the recipient received it". Measured 2026-07-29: one agent's
+  spec allowlisted `server:scitex-todo` while `.mcp.json` registers the server
+  as `scitex-cards` (renamed during the migration) — 228 rows enqueued for that
+  agent, ZERO unseen, weeks of operator DMs destroyed, every check green.
+
+  The drain now writes a RECEIPT: `record_push` advances the cursor and stamps
+  `pushed_at` in one atomic write, leaving `confirmed_at` for the recipient's
+  own `ack_notifications`. Each record is still pushed exactly once (no
+  redelivery); a receipt write that fails moves neither the stamp nor the
+  cursor, so that record retries on the next tick, bounded as before by
+  `MAX_PUSH_PER_DRAIN` (50 per tick).
+
+  New health check `delivery_confirmed` reports notifications pushed and never
+  confirmed past a 15-minute grace window, and its hint names both possible
+  causes — the agent's `channels:` list not naming the MCP server that is
+  actually registered, or a consumer that never confirms — plus how to tell
+  them apart and that a restart is required.
+
+### Changed
+
+- **`health()` check records are now THREE-VALUED.** A check's `ok` may be
+  `True`, `False` or `null` (UNKNOWN — the check could not measure). "nothing
+  is wrong" and "I cannot tell" are different answers and no longer collapse
+  into a pass. `report["ok"]` counts only real failures, so an unknown does not
+  redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
+  by `scitex-cards health`. The record keeps exactly its four standard fields.
+
 ## [0.18.0] - 2026-07-29
 
 MINOR, not a patch. This cut ADDS two published URLs (`/board` and `/dm`) and a
