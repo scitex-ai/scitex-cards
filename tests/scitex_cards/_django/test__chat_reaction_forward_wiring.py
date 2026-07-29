@@ -234,7 +234,12 @@ def test_the_template_does_not_hardcode_the_emoji(page: str):
 
 def test_the_js_and_python_palettes_are_the_same_set(actions_js: str):
     # Arrange
-    match = re.search(r"REACTION_EMOJI = \[(.*?)\];", actions_js, re.S)
+    # \b-anchored: chat_actions.js now also declares QUICK_REACTION_EMOJI, and
+    # an unanchored "REACTION_EMOJI = [" matches INSIDE that name. Whichever
+    # came first in the file would win, so this guard could silently compare
+    # the quick row against the full Python palette and pass or fail for
+    # reasons unrelated to what it claims to check.
+    match = re.search(r"(?<![A-Z_])REACTION_EMOJI = \[(.*?)\];", actions_js, re.S)
     # Act
     js_emoji = re.findall(r'"([^"]+)"', match.group(1))
     # Assert

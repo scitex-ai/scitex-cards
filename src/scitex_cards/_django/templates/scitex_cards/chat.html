@@ -422,19 +422,68 @@ and the page needs both — this was a textual collision, not a real one.)
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
-  #msg-menu, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
-  #msg-menu.open, #forward-menu.open { display: block; }
-  /* The emoji bar is the one panel that is a ROW, not a list. */
+  #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  #forward-menu.open { display: block; }
+  /* The wrap is the operator's sketch made literal: the quick reaction ROW,
+     then the action LIST beneath it, opening and closing as one thing. Only
+     the wrap is positioned — the two panels inside it are in normal flow, so
+     the row can never drift away from the menu it belongs to. */
+  #msg-menu-wrap.open { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  /* THE RESET THAT MAKES THE STACK WORK — do not delete it as redundant.
+     scitex-ui's context-menu.css puts `position: fixed` on the CLASS itself,
+     not on a positioned variant. Both panels inside the wrap carry that class,
+     so without this they leave the flex column entirely and render on top of
+     each other: the reaction row would sit over the action list rather than
+     above it. The row/list layout is a page concern, so the page reclaims the
+     positioning; every VISUAL rule still comes from base. */
+  #msg-menu-wrap > .stx-app-context-menu { position: static; }
+  /* The emoji panels are the ones that are a ROW, not a list. */
   #react-bar.open { display: flex; gap: 2px; padding: 4px; }
+  #react-quick { display: flex; gap: 2px; padding: 4px; }
   /* 44px is the smallest reliably tappable target on a phone, and this feature
      exists for a phone. `manipulation` drops the ~300ms double-tap-zoom wait,
      so a reaction registers immediately rather than feeling broken. */
-  #react-bar .react-emoji {
+  #react-bar .react-emoji, #react-quick .react-emoji, #react-quick .react-more {
     min-width: 44px; height: 44px; font-size: 1.35rem; line-height: 1;
     background: none; border: 0; border-radius: 8px; cursor: pointer;
     touch-action: manipulation; color: inherit;
   }
-  #react-bar .react-emoji:hover { background: var(--panel-2); }
+  #react-bar .react-emoji:hover, #react-quick .react-emoji:hover { background: var(--panel-2); }
+  /* The chevron is an affordance, not a reaction: dimmer, narrower, and set
+     off by a rule so the row does not read as seven equal choices. */
+  #react-quick .react-more {
+    min-width: 32px; font-size: 0.9rem; color: var(--dim);
+    border-left: 1px solid var(--line); border-radius: 0 8px 8px 0;
+  }
+  #react-quick .react-more:hover { background: var(--panel-2); color: var(--text); }
+
+  /* ---- selection mode ---- */
+  #select-bar {
+    display: none; align-items: center; gap: 8px; flex: 0 0 auto;
+    padding: 6px 14px; background: var(--panel-2);
+    border-bottom: 1px solid var(--line); font-size: 0.8rem;
+  }
+  #select-bar.open { display: flex; }
+  #select-bar #sb-count { color: var(--dim); margin-right: auto; font-variant-numeric: tabular-nums; }
+  #select-bar button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 0.8rem;
+    cursor: pointer; touch-action: manipulation;
+  }
+  #select-bar button:hover { border-color: var(--accent); }
+  #select-bar button:disabled { opacity: 0.45; cursor: default; }
+  #select-bar #sb-cancel { color: var(--dim); }
+  /* In selection mode a tap SELECTS rather than doing what a tap normally does,
+     so the pointer has to say so — and text selection has to stop fighting it,
+     which is what drags a caret across three bubbles on a desktop. */
+  #messages.selecting .msg { cursor: pointer; user-select: none; }
+  #messages.selecting .msg .bubble { outline: 1px solid transparent; }
+  /* The selected state rides the accent OUTLINE rather than a fill: a fill
+     would have to differ from both bubble colours, and the operator-side and
+     agent-side bubbles are already two different colours. */
+  #messages.selecting .msg.selected .bubble {
+    outline: 2px solid var(--accent-2); background: var(--bubble-op);
+  }
   /* A long agent list must not run off the bottom of a phone screen. */
   #forward-menu { max-height: 60vh; overflow-y: auto; }
   #forward-menu .forward-empty {
@@ -495,12 +544,51 @@ Positioning/dismiss is wired below by hand; scitex-ui is shipping a
 /Escape/scroll dismissal, items-array API) and this markup is exactly what it
 emits, so swapping to it will not change this block.
 {% endcomment %}
-  <div id="msg-menu" class="stx-app-context-menu" role="menu">
-    <button class="stx-app-context-menu__item" id="mm-react" role="menuitem">React&hellip;</button>
-    <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
-    <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
-    <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
+  <div id="msg-menu-wrap">
+{% comment %}
+The QUICK REACTION ROW, above the action list — the operator's sketch, and
+their reason for it: 「絵文字リアクションがすぐ打てると嬉しい」. A reaction was
+previously three taps (open menu -> React… -> emoji); here it is one, which is
+the whole point and the only reason this row exists.
+
+The emoji are NOT written here — chat_menu.js builds them from
+chat_actions.QUICK_REACTION_EMOJI and inserts them BEFORE the chevron. A copy in
+the template would be a second palette, free to drift from the Python one.
+
+The chevron IS the old "React…" item, moved into the row where the reference
+puts it: it opens #react-bar, the fuller picker over the whole palette. It keeps
+the id `mm-react` because it is the same affordance, and it lives in the
+template rather than in JS so the page can be asserted to actually SERVE it.
+`&#9662;` (▾) is a plain geometric glyph present in every system font — not an
+emoji, not an icon font, so it cannot fail to resolve over the tunnel.
+{% endcomment %}
+    <div id="react-quick" class="stx-app-context-menu" role="menu" aria-label="Quick reactions">
+      <button class="react-more" id="mm-react" type="button" role="menuitem" aria-label="More reactions">&#9662;</button>
+    </div>
+    <div id="msg-menu" class="stx-app-context-menu" role="menu">
+      <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+      <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy</button>
+      <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
+      <button class="stx-app-context-menu__item" id="mm-select" role="menuitem">Select</button>
+    </div>
   </div>
+{% comment %}
+DELIBERATELY ABSENT, and both absences are decisions rather than oversights:
+
+  Translate — the operator said 「translate はいらない」.
+
+  Pin — nothing in this codebase pins a DM. There is no pinned-message store,
+  no endpoint and no place to render one, so the item could only ever look
+  like it worked. A dead control is worse than a missing one.
+
+  Delete — the DM store is APPEND-ONLY by operator ruling
+  (「一度書いたものは消えない」); `_threads` has no delete and
+  `_reactions._save_events_unlocked` REFUSES a write that shrinks the log.
+  Deleting a message honestly means an append-only tombstone event log plus an
+  endpoint plus a fold plus a render — a feature, not a menu item — so it is
+  carded rather than faked. A red "Delete" that leaves the message on screen
+  after the next 5s poll is the worst of the three options.
+{% endcomment %}
 {% comment %}
 Reaction bar and forward picker — both second-level panels the context menu
 opens in place of itself, so only one thing is ever on screen.
@@ -518,6 +606,19 @@ about who exists).
   <div id="forward-menu" class="stx-app-context-menu" role="menu" aria-label="Forward to"></div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
+{% comment %}
+Selection mode's own bar. Hidden until "Select" is chosen, and it is the ONLY
+reason Select is in the menu at all: a selection that cannot be acted on is a
+mode with no exit and no purpose. Copy and Forward are both real destinations
+built on paths that already work — the clipboard, and the same POST a single
+Forward uses.
+{% endcomment %}
+    <div id="select-bar">
+      <span id="sb-count">0 selected</span>
+      <button id="sb-copy" type="button">Copy</button>
+      <button id="sb-forward" type="button">Forward&hellip;</button>
+      <button id="sb-cancel" type="button">Cancel</button>
+    </div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
@@ -561,18 +662,26 @@ off `window` and never the reverse.
 
   chat_diff.js     pure render planning (no deps)
   chat_actions.js  pure message-action decisions (no deps)
-  chat_menu.js     the message context menu + reaction chips (reads ChatActions)
+  chat_select.js   multi-select mode + its bulk actions (reads ChatActions)
+  chat_menu.js     the message context menu + reaction chips (reads both)
   chat_attach.js   attachment uploads (no deps)
+  chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
   chat_longtext.js the long-body clamp + .txt download (no deps)
   chat_compose.js  the composer: auto-grow + the long-draft offer
                    (reads ChatLongText for the threshold, and is handed
                    ChatAttach's single-file upload by chat.js)
   chat.js          the page orchestrator (mounts the modules above)
 
+chat_menu mounts chat_select rather than chat.js doing it: the menu already
+holds every seam selection needs (the message list, the peer, the forward
+picker), so routing them through chat.js would only add a pass-through — and
+chat.js is at its 512-line budget.
+
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>

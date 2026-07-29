@@ -477,6 +477,7 @@
       messagesEl: $messages,
       composerEl: $body,
       showError: showError,
+      showNotice: showNotice,
       refreshThread: refreshThread,
       getPeer: function () {
         return state.peer;
@@ -490,9 +491,11 @@
       getAgents: function () {
         return state.agents;
       },
-      onForwarded: function (toPeer) {
+      onForwarded: function (toPeer, count) {
         refreshAgents();
-        showNotice("Forwarded to " + toPeer + ".");
+        var many =
+          count > 1 ? count + " messages forwarded to " : "Forwarded to ";
+        showNotice(many + toPeer + ".");
       },
     });
   }
