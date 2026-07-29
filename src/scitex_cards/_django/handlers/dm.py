@@ -86,8 +86,52 @@ def _write_store_of(request: HttpRequest):
     it does, delete the fallback and the caller can no longer choose the write
     target. Tracked on
     ``scitex-cards-dm-store-from-query-and-forced-operator-author-20260728``.
+
+    Until then the query value is NARROWED rather than trusted — see
+    :func:`_query_store_for_write`.
     """
-    return getattr(request, STORE_REQUEST_ATTR, None) or _store_of(request)
+    trusted = getattr(request, STORE_REQUEST_ATTR, None)
+    if trusted:
+        return trusted
+    return _query_store_for_write(request)
+
+
+class UnusableWriteStore(ValueError):
+    """A write named a store this process must not create or invent."""
+
+
+def _query_store_for_write(request: HttpRequest):
+    """The query store, accepted for a write ONLY if it already exists.
+
+    This is the mitigation shippable WITHOUT the hub, and it is deliberately
+    narrow rather than clever. The hub's injected tenancy paths point at REAL
+    tenant stores, which exist; an attacker-supplied ``?store=/tmp/evil.yaml``
+    does not. Requiring existence kills "write to a path of my choosing"
+    while leaving every legitimate caller working.
+
+    It does NOT make the query seam safe: a caller can still name an EXISTING
+    store they should not touch, and only the hub's switch to
+    :data:`STORE_REQUEST_ATTR` closes that. Narrower is not closed, and this
+    should not be read as if it were.
+
+    Refusal is LOUD rather than a silent fall back to server-side resolution,
+    because quietly writing somewhere OTHER than the store the caller named is
+    how a second board gets manufactured — the exact failure class this
+    package already refuses elsewhere.
+    """
+    from pathlib import Path
+
+    raw = _store_of(request)
+    if not raw:
+        return None
+    if not Path(raw).expanduser().exists():
+        raise UnusableWriteStore(
+            f"refusing to write to a store that does not exist: {raw}. A write "
+            f"may not CREATE a store at a path supplied by the request — that is "
+            f"how a decoy board gets manufactured. Point at an existing store, or "
+            f"have trusted middleware set request.{STORE_REQUEST_ATTR}."
+        )
+    return raw
 
 
 def _author_of(request: HttpRequest) -> str:

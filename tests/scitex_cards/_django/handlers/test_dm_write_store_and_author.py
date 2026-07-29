@@ -19,8 +19,11 @@ the authenticated principal when one exists.
 
 from __future__ import annotations
 
+import pytest
+
 from scitex_cards._django.handlers.dm import (
     STORE_REQUEST_ATTR,
+    UnusableWriteStore,
     _author_of,
     _store_of,
     _write_store_of,
@@ -66,16 +69,31 @@ def test_a_trusted_attribute_overrides_the_store_query_parameter():
     assert resolved == "/srv/tenant/cards.db"
 
 
-def test_the_query_seam_still_applies_until_the_hub_migrates():
-    # Arrange — no trusted attribute set, which is today's normal case.
-    request = _Req(get={"store": "/srv/tenant/cards.db"})
+def test_an_existing_store_named_in_the_query_is_still_accepted(tmp_path):
+    """Today's contract, pinned deliberately: the hub injects through the query.
+
+    Narrowed, not closed — the hub's tenant stores EXIST, so they keep working.
+    """
+    # Arrange — a real store file, as the hub's injected paths are.
+    real = tmp_path / "cards.db"
+    real.write_text("", encoding="utf-8")
+    request = _Req(get={"store": str(real)})
 
     # Act
     resolved = _write_store_of(request)
 
-    # Assert — documents the CURRENT contract, deliberately, so the day it
-    # changes this test fails loudly instead of the behaviour drifting.
-    assert resolved == "/srv/tenant/cards.db"
+    # Assert
+    assert resolved == str(real)
+
+
+def test_a_write_to_a_store_that_does_not_exist_is_refused():
+    """The mitigation shippable without the hub: no CREATING at a caller path."""
+    # Arrange — the attacker shape: a path of their choosing that does not exist.
+    request = _Req(get={"store": "/tmp/attacker-chosen-does-not-exist.yaml"})
+
+    # Act / Assert — loud refusal, never a silent write somewhere else.
+    with pytest.raises(UnusableWriteStore):
+        _write_store_of(request)
 
 
 def test_a_read_still_honours_the_store_query_parameter():
