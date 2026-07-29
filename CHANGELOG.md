@@ -1,5 +1,166 @@
 # Changelog
 
+## [0.17.12] - 2026-07-29
+
+Cut to DELIVER the board fix, not because the code needed a version. The
+operator's board has been unusable for over a day — first serving a clean,
+zero-card page while 2654 cards sat in the canonical database, then a bare
+HTTP 500. The host runs a NON-EDITABLE wheel, so the fix reaches them the
+moment it reaches PyPI and not one minute before. Merged is not deployed.
+
+### Fixed
+
+- **The board decided whether the store existed by looking for a file the store
+  does not use.** `get_board` gated the CARD read on the existence of the
+  `tasks.yaml` SIDECAR beside the database:
+
+  ```python
+  store_exists = resolved.exists()
+  tasks = _load_global_tasks(resolved) if store_exists else []
+  ```
+
+  `resolve_tasks_path`'s own docstring says that path is "the non-task YAML
+  CONTAINER path — NOT the store identity"; card data lives in the database.
+  Under SQLite nothing creates that sidecar, so the gate was permanently shut
+  and the board took the literal `else []`. The card read was never ATTEMPTED,
+  which is why no guard anywhere had an opinion — the fail-loud reader in
+  `_read_canonical_db_or_raise` was never reached. Worse, the same branch set
+  `empty_store=True`, which tells the frontend to render a clean zero-card board
+  instead of an error banner. That is the visual signature of a WIPE, shown for
+  a store holding 2654 cards.
+
+  `get_board` now reads the cards unconditionally: no `else []`, no empty
+  fallback, no second read target. Every unreadable-store shape — absent
+  database, foreign identity stamp, an export disagreeing with its own
+  `COUNT(*)` — RAISES. `empty_store` is DERIVED FROM the read: true iff the
+  store was read and held no cards. Emptiness must be read, never inferred. The
+  sidecar now gates only what actually lives in it (`groups:`), through a named
+  `_load_sidecar_groups`, so the two reads cannot be conflated again by moving
+  one line. `_kick_board_refresh` carried the identical gate and could cache an
+  empty board that its deliberate except-keeps-previous branch would then serve
+  silently and indefinitely on `/graph` and `/timeline`; it is removed.
+
+  This is the same defect as the deleted `_store_read_sqlite` accelerator
+  (2026-07-21), whose post-mortem sits forty lines above the bug: a guard
+  comparing against a YAML file that stopped existing at the cutover, silently
+  degrading to an empty board. Fixing one instance of a pattern is not fixing
+  the pattern.
+
+- **The outage had no failing test because a fixture manufactured the missing
+  file.** The `_django` conftest carried an autouse fixture that CREATED the
+  `tasks.yaml` sidecar before every test in the package — precisely the file
+  production does not have. Every test in the package therefore ran in a world
+  where the gate was open, so the entire suite was green against a store shape
+  that has not existed since the SQLite cutover. The fixture is deleted. The one
+  test that genuinely needs a marker file — `test__board_stale_while_revalidate`,
+  which exercises the stat half of the cache key — now creates it in its own
+  fixture. The file is that test's subject, so that test owns it, and no other
+  test is handed a precondition production never provides.
+
+- **An unreadable store answered with an error page the board cannot parse.**
+  `api_dispatch` swallowed `FileNotFoundError` into a fixed 400 "No task store
+  found.", and every other load failure escaped the function entirely as an HTML
+  error page — which the board's `fetch` cannot read. That is why the operator
+  saw a bare HTTP 500 with no cause stated anywhere. It now answers an
+  unreadable store with a JSON 500 carrying the store's own reason.
+
+- **`/rev` reported the mtime of a file that does not exist, so an open board
+  stopped refreshing.** The reported store mtime was the SIDECAR's; under SQLite
+  that file is absent, so on any real deployment mtime was permanently `0.0`.
+  The board's AutoRefresh keys on `f"{mtime}:{count}"`, so with mtime frozen the
+  operator's open pane only refreshed when the card COUNT changed — a status
+  flip, a reorder, a reassignment or an edited title never reached the screen.
+  The store is the database, so the reported mtime is now the database's. WAL
+  can move it without a card change, which costs exactly one extra `/graph`
+  fetch: the frontend's `skipIfUnchanged` compares the fresh payload against the
+  last rendered one and returns before re-rendering. A spurious refresh is
+  invisible. A refresh that never happens is not.
+
+- **A retired environment variable was believed as policy during triage.**
+  `_env_compat.warn_retired_vars` now logs one ERROR per retired variable a live
+  config still exports. The board unit carries `SCITEX_CARDS_READ_BACKEND`,
+  which has zero references in `src`. It changed nothing, but it appeared to
+  state the read policy, so it was trusted while the board was down and sent
+  readers looking in the wrong place. The answer is never to make such a flag
+  work again — a flag that can be flipped is a second target that merely happens
+  to be switched the right way today.
+
+- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
+  package was renamed to `scitex-cards`, but what agents and humans actually
+  READ still said the old name: the `.mcp.json` key the install snippet emits
+  (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
+  every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
+  and `health` payloads, and the shipped skills. Two of these were not merely
+  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
+  dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
+  the `mcp__scitex-todo__*` tool namespace that no longer exists.
+
+  Renaming the emitted `.mcp.json` key would, on its own, have left configs
+  holding BOTH keys pointing at the same server — every tool loaded twice, both
+  copies writing one store. So `mcp install --apply` now RETIRES our stale
+  `scitex-todo` entry as part of writing the new one. Only our entry, matched on
+  console-script basename plus the `mcp` verb: an unrelated server that merely
+  shares the old key is left as found.
+
+  What the package PUBLISHES is unchanged, because that is a migration and not
+  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
+  variables, the `scitex_todo.*` legacy entry-point groups, the
+  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
+  all still work. Breaking any of them would have stopped the operator's running
+  units — one of which serves the board, and another of which is the live
+  systemd dashboard that execs the legacy console script.
+
+### Added
+
+- **The unread count now shows in the browser tab** — `(3) DM — SciTeX Cards
+  v0.17.12`. Operator, 2026-07-29: 「新着がある場合、ページタイトルに新着
+  メッセージ数（未読メッセージ数）を出してください。多少点滅などエフェクトが
+  あっても良いかもです。」 They are migrating off Telegram onto this page, and a
+  backgrounded tab looked identical whether or not an agent had written — the
+  one thing Telegram did for them that this page did not.
+
+  The count is NOT a new number. `/dm/threads` already returns per-peer
+  `unread` and the drawer already paints it as a badge beside each peer; the
+  title is handed that same array from that same 10s poll and sums it, so the
+  tab and the badges cannot disagree. `chat_title.js` has no fetch of its own,
+  and a test asserts it never grows one — a second reader of "how many unread?"
+  is a second answer waiting for `mark_read` to land between them.
+
+  The blink is BOUNDED and it is SILENT under `prefers-reduced-motion: reduce`.
+  A title that flashes until you look is hostile and unreadable in the tab
+  strip, so the alternation runs a fixed four half-steps at 700ms and then
+  settles on the count permanently; it also fires only when the count RISES,
+  because re-announcing a standing unread every poll is the forever-blink by
+  another route. Under reduced motion the count still appears — suppressing the
+  motion must not suppress the information.
+
+  `chat.js` was at its 512-line budget, so attachment RENDERING moved into
+  `chat_attach.js` — which already owned the upload that produces the url —
+  rather than the budget being exceeded. The url shape is one decision; the
+  code that writes it and the code that reads it now sit in one file. (The
+  peer-list rendering was the other extraction candidate and was deliberately
+  left alone: PR #604 is rewriting `renderAgents` in place, and moving a
+  function out from under an open PR is a merge conflict chosen for style.)
+
+### Changed
+
+- **The DM surface is called "DM" everywhere the operator reads it.** Operator,
+  2026-07-29: 「あと、"chat" となってますが、"DM" でそろえると良いと思います。」
+  The switcher, the heading and the browser tab now all say DM (the longer form
+  reads "Direct messages", their own preferred wording); the tab title was the
+  last holdout, still rendering `Chat — SciTeX Cards v…` in the screenshot they
+  sent. Tooltip and the switcher's `aria-label` moved with the label, because a
+  screen reader announcing "Board or Chat" over a control labelled DM is the
+  same inconsistency one layer down.
+
+  **The route is still `/chat` and deliberately stays there.** Renaming a
+  published URL is a MIGRATION, not a rename: the operator has it bookmarked,
+  agents reference it, and both spellings are pinned by tests. The same
+  reasoning leaves the JS module filenames (`chat_*.js`), the CSS classes and
+  the template filenames alone — none of them is a string the operator reads.
+  Tests hold both halves at once: visible text says DM, the URL still resolves
+  to `chat_page`.
+
 ## [0.17.11] - 2026-07-28
 
 ### Added
@@ -65,81 +226,7 @@ Everything under [Unreleased] below moves here.
 
 ## [Unreleased]
 
-### Fixed
-
-- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
-  package was renamed to `scitex-cards`, but what agents and humans actually
-  READ still said the old name: the `.mcp.json` key the install snippet emits
-  (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
-  every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
-  and `health` payloads, and the shipped skills. Two of these were not merely
-  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
-  dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
-  the `mcp__scitex-todo__*` tool namespace that no longer exists.
-
-  Renaming the emitted `.mcp.json` key would, on its own, have left configs
-  holding BOTH keys pointing at the same server -- every tool loaded twice,
-  both copies writing one store. So `mcp install --apply` now RETIRES our stale
-  `scitex-todo` entry as part of writing the new one. Only our entry: an
-  unrelated server that merely shares the old key is left untouched.
-
-  What the package PUBLISHES is unchanged, because that is a migration and not
-  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
-  variables, the `scitex_todo.*` legacy entry-point groups, the
-  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
-  all still work. Breaking any of them would have stopped the operator's
-  running units, one of which serves the board.
-
-### Added
-
-- **The unread count now shows in the browser tab** — `(3) DM — SciTeX Cards
-  v0.17.10`. Operator, 2026-07-29: 「新着がある場合、ページタイトルに新着
-  メッセージ数（未読メッセージ数）を出してください。多少点滅などエフェクトが
-  あっても良いかもです。」 They are migrating off Telegram onto this page, and a
-  backgrounded tab looked identical whether or not an agent had written — the
-  one thing Telegram did for them that this page did not.
-
-  The count is NOT a new number. `/dm/threads` already returns per-peer
-  `unread` and the drawer already paints it as a badge beside each peer; the
-  title is handed that same array from that same 10s poll and sums it, so the
-  tab and the badges cannot disagree. `chat_title.js` has no fetch of its own,
-  and a test asserts it never grows one — a second reader of "how many unread?"
-  is a second answer waiting for `mark_read` to land between them.
-
-  The blink is BOUNDED and it is SILENT under `prefers-reduced-motion: reduce`.
-  A title that flashes until you look is hostile and unreadable in the tab
-  strip, so the alternation runs a fixed four half-steps at 700ms and then
-  settles on the count permanently; it also fires only when the count RISES,
-  because re-announcing a standing unread every poll is the forever-blink by
-  another route. Under reduced motion the count still appears — suppressing the
-  motion must not suppress the information.
-
-  `chat.js` was at its 512-line budget, so attachment RENDERING moved into
-  `chat_attach.js` — which already owned the upload that produces the url —
-  rather than the budget being exceeded. The url shape is one decision; the
-  code that writes it and the code that reads it now sit in one file. (The
-  peer-list rendering was the other extraction candidate and was deliberately
-  left alone: PR #604 is rewriting `renderAgents` in place, and moving a
-  function out from under an open PR is a merge conflict chosen for style.)
-
 ### Changed
-
-- **The DM surface is called "DM" everywhere the operator reads it.** Operator,
-  2026-07-29: 「あと、"chat" となってますが、"DM" でそろえると良いと思います。」
-  The switcher, the heading and the browser tab now all say DM (the longer form
-  reads "Direct messages", their own preferred wording); the tab title was the
-  last holdout, still rendering `Chat — SciTeX Cards v…` in the screenshot they
-  sent. Tooltip and the switcher's `aria-label` moved with the label, because a
-  screen reader announcing "Board or Chat" over a control labelled DM is the
-  same inconsistency one layer down.
-
-  **The route is still `/chat` and deliberately stays there.** Renaming a
-  published URL is a MIGRATION, not a rename: the operator has it bookmarked,
-  agents reference it, and both spellings are pinned by tests. The same
-  reasoning leaves the JS module filenames (`chat_*.js`), the CSS classes and
-  the template filenames alone — none of them is a string the operator reads.
-  Tests hold both halves at once: visible text says DM, the URL still resolves
-  to `chat_page`.
 
 - **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
   `to` and `body` and nothing else, so there was no API for sending a file at
