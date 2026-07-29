@@ -14,14 +14,61 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "scitex-todo-standalone-dev-key-not-for-production",
-)
+_DEV_SECRET_KEY = "scitex-todo-standalone-dev-key-not-for-production"
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _DEV_SECRET_KEY)
+
+# --------------------------------------------------------------------------
+# Public exposure (Cloudflare Tunnel -> 127.0.0.1:8051)
+#
+# Setting SCITEX_CARDS_PUBLIC_HOST is the ONE switch that says "this board is
+# reachable from the internet". Everything below keys off it, because the
+# settings that make exposure safe are exactly the ones a person configuring
+# a tunnel is not thinking about — they are thinking about the tunnel.
+#
+# The defaults here are correct for loopback and catastrophic in public:
+# DEBUG=true serves tracebacks containing source, settings and environment to
+# whoever asks, and the fallback SECRET_KEY is a literal in a public repo, so
+# session and CSRF signatures are forgeable by anyone who reads it. Neither is
+# a problem on 127.0.0.1 and both are a breach the moment a hostname resolves.
+#
+# So this block does not merely *permit* exposure, it makes the unsafe
+# combination unreachable: DEBUG is forced off, and a missing DJANGO_SECRET_KEY
+# raises at import rather than serving one request with a known key.
+# --------------------------------------------------------------------------
+PUBLIC_HOST = os.environ.get("SCITEX_CARDS_PUBLIC_HOST", "").strip()
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
+
+if PUBLIC_HOST:
+    if SECRET_KEY == _DEV_SECRET_KEY:
+        raise RuntimeError(
+            "SCITEX_CARDS_PUBLIC_HOST is set (this board would be reachable "
+            f"at {PUBLIC_HOST!r}) but DJANGO_SECRET_KEY is not — the board "
+            "would sign sessions and CSRF tokens with a key published in the "
+            "repository, so anyone could forge them. Generate one: "
+            "python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+        )
+
+    ALLOWED_HOSTS = ALLOWED_HOSTS + [PUBLIC_HOST]
+
+    # A POST must survive the proxy or the board is read-only in practice —
+    # and "send a DM with an attachment from the phone" is the operator's
+    # stated acceptance test, which is a POST.
+    CSRF_TRUSTED_ORIGINS = [f"https://{PUBLIC_HOST}"]
+
+    # cloudflared terminates TLS and forwards plain HTTP to the origin, so
+    # request.is_secure() is False without this and Django will happily mark
+    # session/CSRF cookies as non-secure over what the user sees as HTTPS.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # Not negotiable, and deliberately not an env override: there is no
+    # legitimate reason to serve debug tracebacks on a public hostname.
+    DEBUG = False
 # LAN / mobile access (opt-in). When the board is bound to 0.0.0.0 (via
 # `scitex-cards board --host 0.0.0.0`) so a phone on the same network can reach
 # it, Django still rejects the LAN Host header unless it is allowed here. Set
