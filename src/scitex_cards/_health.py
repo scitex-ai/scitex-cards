@@ -39,15 +39,11 @@ from env).
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Callable
 
 from . import _inbox
 from ._health_channel_reach import check_channel_reaches_session
-from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
-    _check_store_identity_agrees,
-)
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -68,152 +64,17 @@ _DRAIN_HINT = (
 # --------------------------------------------------------------------------- #
 # Individual checks — each returns {ok, detail, hint}; may raise (wrapped).    #
 # --------------------------------------------------------------------------- #
-def _is_sqlite_db(path: Path) -> bool:
-    """True when ``path`` begins with the SQLite file magic header."""
-    try:
-        with path.open("rb") as handle:
-            return handle.read(16) == b"SQLite format 3\x00"
-    except OSError:
-        return False
-
-
-def _verify_db_store(path: Path) -> dict[str, Any]:
-    """Confirm the canonical database opens and carries a ``tasks`` table."""
-    import sqlite3
-
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            n = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "detail": f"canonical database {path} did not open/read ({exc})",
-            "hint": (
-                f"do NOT overwrite it — a database that fails to open may still "
-                f"hold every card, and the recovery is to COPY IT ASIDE FIRST. "
-                f"Check the snapshot repo for the newest good copy, and "
-                f"`scitex-cards db verify` for the schema report. "
-                f"`scitex-cards init-store` creates an EMPTY store and is "
-                f"correct only when there is nothing to recover. "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        }
-    # WRITABILITY IS MEASURED, NEVER ASSERTED. This probe opens the database
-    # `mode=ro`, so it learns nothing about writing — yet the detail string below
-    # claims "writable". That word used to be a hardcoded literal, so it could
-    # never be false: "a gate that cannot fail is not a gate ... the same as
-    # deleting it, except worse: the config still lists it and everyone believes
-    # it is working" (constitution §2). It is exactly how the 2026-07-28
-    # create-path outage stayed invisible — `add` refused every card while health
-    # cheerfully reported the same store readable AND writable. The sibling
-    # file-store branch already measures this with `os.access`; this branch now
-    # matches it. SQLite also writes `-wal` / `-journal` SIBLINGS, so the
-    # DIRECTORY must be writable too: a writable file in a read-only directory
-    # still fails every write.
-    if not os.access(path, os.W_OK):
-        return {
-            "ok": False,
-            "detail": (
-                f"canonical store {path} is NOT writable "
-                f"(SQLite, {n} cards, readable) — every card write will fail"
-            ),
-            "hint": f"fix permissions so {path} is writable (e.g. chmod u+w {path})",
-        }
-    if not os.access(path.parent, os.W_OK):
-        return {
-            "ok": False,
-            "detail": (
-                f"canonical store {path} is readable but its directory "
-                f"{path.parent} is NOT writable (SQLite, {n} cards) — SQLite "
-                f"cannot create the -wal/-journal siblings a write needs"
-            ),
-            "hint": (
-                f"make the store's directory writable (e.g. chmod u+w {path.parent})"
-            ),
-        }
-    return {
-        "ok": True,
-        "detail": f"canonical store {path} (SQLite, {n} cards, readable, writable)",
-        "hint": None,
-    }
-
-
-def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
-    """Resolve the task store and verify it is the canonical, healthy store.
-
-    The canonical store is the SQLite database ($SCITEX_CARDS_DB). ok when it
-    exists, opens, and carries a ``tasks`` table. An EXPLICIT file store (tests,
-    ``--tasks <file>``) is taken as the intended target and checked as a
-    serialized document with a top-level ``tasks`` key.
-    """
-    from ._db import resolve_db_path
-    from ._paths import resolve_tasks_path
-
-    db = Path(resolve_db_path(store))
-
-    # The canonical store IS the database — verify it directly.
-    if db.exists() and _is_sqlite_db(db):
-        return _verify_db_store(db)
-
-    # No database. An EXPLICIT file store (tests / `--tasks <file>`) is checked
-    # as a serialized document; otherwise the store is genuinely absent.
-    resolved = resolve_tasks_path(store)
-    if store is not None and resolved.exists():
-        if _is_sqlite_db(resolved):
-            return _verify_db_store(resolved)
-        if not os.access(resolved, os.R_OK):
-            return {
-                "ok": False,
-                "detail": f"store {resolved} is not readable",
-                "hint": f"fix permissions so {resolved} is readable (e.g. chmod u+r)",
-            }
-        if not os.access(resolved, os.W_OK):
-            return {
-                "ok": False,
-                "detail": f"store {resolved} is not writable",
-                "hint": f"fix permissions so {resolved} is writable (e.g. chmod u+w)",
-            }
-        from ._yaml import safe_load
-
-        try:
-            with resolved.open(encoding="utf-8") as handle:
-                data = safe_load(handle) or {}
-        except Exception as exc:  # noqa: BLE001 — a parse fail is a reportable state
-            return {
-                "ok": False,
-                "detail": f"store {resolved} did not parse ({exc})",
-                "hint": f"fix the document syntax in {resolved} ({type(exc).__name__}: {exc})",
-            }
-        if not isinstance(data, dict) or "tasks" not in data:
-            return {
-                "ok": False,
-                "detail": f"store {resolved} has no top-level 'tasks' key",
-                "hint": f"add a top-level `tasks:` list to {resolved}",
-            }
-        return {
-            "ok": True,
-            "detail": f"file store {resolved} (exists, readable, writable, parses)",
-            "hint": None,
-        }
-
-    return {
-        "ok": False,
-        "detail": f"no store: the database {db} is absent",
-        "hint": (
-            "if this agent should have the FLEET board, the path is wrong — "
-            "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
-            "empty one here becomes a SECOND store, which is how the board was "
-            "destroyed on 2026-07-19. `scitex-cards db path` shows what resolved. "
-            "Only when this agent genuinely owns a new, separate store is "
-            "`scitex-cards init-store` correct. Restoring from a `scitex-cards "
-            "db export` dump has NO CLI verb today — it is a Python-level "
-            "operation (see scitex_cards._db_bootstrap) — so do not go looking "
-            "for an import subcommand."
-        ),
-    }
+# The STORE checks — "is this the right store, and can we use it?" — moved to
+# `_health_store` (this file reached the 512-line cap). THE IMPORT SURFACE DOES
+# NOT MOVE: every name is re-exported here, so
+# `from scitex_cards._health import _verify_db_store` is the SAME object it
+# always was, defined next door. Same rule as the `_health_cards` split below.
+from ._health_store import (  # noqa: E402  (re-export)
+    _check_store_canonical,
+    _check_store_identity_agrees,
+    _is_sqlite_db,  # noqa: F401
+    _verify_db_store,  # noqa: F401
+)
 
 
 def _check_agent_id(agent_id: str | None) -> dict[str, Any]:
@@ -255,6 +116,26 @@ def _check_notifyd_alive(store: str | Path | None) -> dict[str, Any]:
     from ._delivery._pidfile import assess_liveness
 
     return assess_liveness(pidfile_path(store))
+
+
+def _check_delivery_liveness(store: str | Path | None) -> dict[str, Any]:
+    """Is anything actually being DELIVERED? (``notifyd_alive`` is not enough.)
+
+    ``notifyd_alive`` above answers "is the process ticking" — and on
+    2026-07-28/29 it was GREEN for a full day while every one of 1196
+    consecutive ticks failed to read the store and delivered nothing. A
+    heartbeat only proves the loop spins, not that the loop's work happens.
+
+    This reads the daemon's persisted delivery record (last successful
+    delivery, consecutive failing ticks, the underlying reason) and is
+    THREE-VALUED: ``delivering`` / ``failing`` / ``unknown``. No record is
+    ``unknown`` and stays ``ok`` — ``notifyd_alive`` already owns "not running
+    at all", and manufacturing a second alarm from a measurement nobody took
+    is the same lie as reporting zero pending when the store would not open.
+    """
+    from ._delivery._liveness import assess_delivery
+
+    return assess_delivery(store)
 
 
 def _check_channel_drain(
@@ -405,6 +286,13 @@ def health(
         _run_check("store_identity", lambda: _check_store_identity_agrees(store)),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
         _run_check("notifyd_alive", lambda: _check_notifyd_alive(store)),
+        # Is anything actually being DELIVERED? notifyd_alive answers the
+        # narrower "is the process ticking", and it was green throughout the
+        # 2026-07-28 outage in which every tick failed to read the store and
+        # the operator's DMs went undelivered for a day. A liveness signal that
+        # only proves the loop is spinning is not a signal for what it exists
+        # to do.
+        _run_check("delivery_liveness", lambda: _check_delivery_liveness(store)),
         _run_check(
             "channel_drain",
             lambda: _check_channel_drain(soft_agent, store, unseen_threshold),

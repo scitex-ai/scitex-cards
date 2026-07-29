@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Health checks about the STORE ITSELF — is it there, usable, and ours?
+
+Extracted from :mod:`scitex_cards._health` (which had reached its file budget)
+along the seam that module's own comment already draws:
+
+* ``_health``       = "is the INSTALLATION wired up?" (the aggregator + the
+  identity / notifyd / channel / delivery checks)
+* ``_health_store`` = "is the STORE the right store, and can we use it?"
+* ``_health_cards`` = "do the CARDS CONTRADICT THEMSELVES?"
+
+THE IMPORT SURFACE DOES NOT MOVE: ``_health`` re-exports every name below, so
+``from scitex_cards._health import _verify_db_store`` (which the tests do)
+keeps resolving to this same object. A split that breaks its callers is a
+rename with extra steps.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+
+def _is_sqlite_db(path: Path) -> bool:
+    """True when ``path`` begins with the SQLite file magic header."""
+    try:
+        with path.open("rb") as handle:
+            return handle.read(16) == b"SQLite format 3\x00"
+    except OSError:
+        return False
+
+
+def _verify_db_store(path: Path) -> dict[str, Any]:
+    """Confirm the canonical database opens and carries a ``tasks`` table."""
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            n = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return {
+            "ok": False,
+            "detail": f"canonical database {path} did not open/read ({exc})",
+            "hint": (
+                f"do NOT overwrite it — a database that fails to open may still "
+                f"hold every card, and the recovery is to COPY IT ASIDE FIRST. "
+                f"Check the snapshot repo for the newest good copy, and "
+                f"`scitex-cards db verify` for the schema report. "
+                f"`scitex-cards init-store` creates an EMPTY store and is "
+                f"correct only when there is nothing to recover. "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        }
+    # WRITABILITY IS MEASURED, NEVER ASSERTED. This probe opens the database
+    # `mode=ro`, so it learns nothing about writing — yet the detail string below
+    # claims "writable". That word used to be a hardcoded literal, so it could
+    # never be false: "a gate that cannot fail is not a gate ... the same as
+    # deleting it, except worse: the config still lists it and everyone believes
+    # it is working" (constitution §2). It is exactly how the 2026-07-28
+    # create-path outage stayed invisible — `add` refused every card while health
+    # cheerfully reported the same store readable AND writable. The sibling
+    # file-store branch already measures this with `os.access`; this branch now
+    # matches it. SQLite also writes `-wal` / `-journal` SIBLINGS, so the
+    # DIRECTORY must be writable too: a writable file in a read-only directory
+    # still fails every write.
+    if not os.access(path, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is NOT writable "
+                f"(SQLite, {n} cards, readable) — every card write will fail"
+            ),
+            "hint": f"fix permissions so {path} is writable (e.g. chmod u+w {path})",
+        }
+    if not os.access(path.parent, os.W_OK):
+        return {
+            "ok": False,
+            "detail": (
+                f"canonical store {path} is readable but its directory "
+                f"{path.parent} is NOT writable (SQLite, {n} cards) — SQLite "
+                f"cannot create the -wal/-journal siblings a write needs"
+            ),
+            "hint": (
+                f"make the store's directory writable (e.g. chmod u+w {path.parent})"
+            ),
+        }
+    return {
+        "ok": True,
+        "detail": f"canonical store {path} (SQLite, {n} cards, readable, writable)",
+        "hint": None,
+    }
+
+
+def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
+    """Resolve the task store and verify it is the canonical, healthy store.
+
+    The canonical store is the SQLite database ($SCITEX_CARDS_DB). ok when it
+    exists, opens, and carries a ``tasks`` table. An EXPLICIT file store (tests,
+    ``--tasks <file>``) is taken as the intended target and checked as a
+    serialized document with a top-level ``tasks`` key.
+    """
+    from ._db import resolve_db_path
+    from ._paths import resolve_tasks_path
+
+    db = Path(resolve_db_path(store))
+
+    # The canonical store IS the database — verify it directly.
+    if db.exists() and _is_sqlite_db(db):
+        return _verify_db_store(db)
+
+    # No database. An EXPLICIT file store (tests / `--tasks <file>`) is checked
+    # as a serialized document; otherwise the store is genuinely absent.
+    resolved = resolve_tasks_path(store)
+    if store is not None and resolved.exists():
+        if _is_sqlite_db(resolved):
+            return _verify_db_store(resolved)
+        if not os.access(resolved, os.R_OK):
+            return {
+                "ok": False,
+                "detail": f"store {resolved} is not readable",
+                "hint": f"fix permissions so {resolved} is readable (e.g. chmod u+r)",
+            }
+        if not os.access(resolved, os.W_OK):
+            return {
+                "ok": False,
+                "detail": f"store {resolved} is not writable",
+                "hint": f"fix permissions so {resolved} is writable (e.g. chmod u+w)",
+            }
+        from ._yaml import safe_load
+
+        try:
+            with resolved.open(encoding="utf-8") as handle:
+                data = safe_load(handle) or {}
+        except Exception as exc:  # noqa: BLE001 — a parse fail is a reportable state
+            return {
+                "ok": False,
+                "detail": f"store {resolved} did not parse ({exc})",
+                "hint": (
+                    f"fix the document syntax in {resolved} "
+                    f"({type(exc).__name__}: {exc})"
+                ),
+            }
+        if not isinstance(data, dict) or "tasks" not in data:
+            return {
+                "ok": False,
+                "detail": f"store {resolved} has no top-level 'tasks' key",
+                "hint": f"add a top-level `tasks:` list to {resolved}",
+            }
+        return {
+            "ok": True,
+            "detail": f"file store {resolved} (exists, readable, writable, parses)",
+            "hint": None,
+        }
+
+    return {
+        "ok": False,
+        "detail": f"no store: the database {db} is absent",
+        "hint": (
+            "if this agent should have the FLEET board, the path is wrong — "
+            "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
+            "empty one here becomes a SECOND store, which is how the board was "
+            "destroyed on 2026-07-19. `scitex-cards db path` shows what resolved. "
+            "Only when this agent genuinely owns a new, separate store is "
+            "`scitex-cards init-store` correct. Restoring from a `scitex-cards "
+            "db export` dump has NO CLI verb today — it is a Python-level "
+            "operation (see scitex_cards._db_bootstrap) — so do not go looking "
+            "for an import subcommand."
+        ),
+    }
+
+
+def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
+    """Does the RESOLVED store match the identity the database is stamped with?
+
+    The database records WHICH STORE it is the database of (its provenance
+    stamp). When the store this process resolves disagrees with that stamp, the
+    ownership guard in ``_dual_write`` / ``_store_backend`` refuses EVERY write —
+    correctly, since writing one store's rows into another store's database is
+    how a board gets destroyed. But the symptom is a total write outage with no
+    monitor, so this check surfaces it.
+
+    On 2026-07-19 the MCP server resolved one store while the database was
+    stamped for another; every write through the surface OTHER agents use was
+    refused, and it went unnoticed because the maintainer's own writes used an
+    explicit path. So this check answers "can this process write at all?" rather
+    than the narrower "does a parseable store exist there?" that
+    ``store_canonical`` answers.
+
+    IT NAMES THE ``store_uuid`` (contract point 8, human-facing half — design
+    §11 of ``docs/design/store-identity-is-a-uuid.md``). ``_run_check`` coerces
+    every check to ``{name, ok, detail, hint}``, so the identity has to be IN
+    the detail string to reach the doctor output at all, and a doctor that
+    cannot name the identity cannot diagnose an identity mismatch — precisely
+    the failure it exists to report.
+
+    IT MIRRORS THE GUARD'S OWN ORDER — uuid first, path only on ``ADOPT``. A
+    check that disagreed with the guard would be worse than no check: it would
+    either report a mismatch that is causing no refusals, or stay green through
+    one that is.
+    """
+    import sqlite3
+
+    from ._db import resolve_db_path
+    from ._db_freshness import stamped_store_path
+    from ._dual_write import _same_file
+    from ._store_uuid import (
+        ACCEPT,
+        ENV_EXPECTED_STORE_UUID,
+        REFUSE,
+        expected_store_uuid,
+        identity_verdict,
+        read_store_uuid,
+    )
+
+    resolved = str(resolve_db_path(store))
+    db_path = Path(resolve_db_path(None))
+    if not db_path.exists():
+        return {
+            "ok": True,
+            "detail": (
+                f"no database at {db_path} yet — nothing to disagree with "
+                f"(store_uuid=none)"
+            ),
+            "hint": None,
+        }
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            identity = read_store_uuid(conn)
+            stamped = stamped_store_path(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return {
+            "ok": False,
+            "detail": f"could not read the provenance stamp from {db_path} ({exc})",
+            "hint": f"check that {db_path} is readable and not corrupt",
+        }
+
+    expected = expected_store_uuid()
+    # EVERY detail below carries the identity — the ok branches as well as the
+    # failing ones. The registry that pairs (store_uuid, endpoint) is populated
+    # from a HEALTHY board, so an identity that only a failure reveals is an
+    # identity nobody can record.
+    ident = f"store_uuid={identity or 'none'} expected={expected or 'none'}"
+    verdict = identity_verdict(identity, expected)
+    if verdict == REFUSE:
+        return {
+            "ok": False,
+            "detail": (
+                f"STORE IDENTITY MISMATCH — {db_path} carries {ident}. EVERY "
+                f"WRITE AND EVERY READ IS BEING REFUSED by the ownership guard "
+                f"(correctly: writing one store into another's database is how "
+                f"a board gets destroyed)."
+            ),
+            "hint": (
+                f"fix the EXPECTATION, not the database. Either unset "
+                f"${ENV_EXPECTED_STORE_UUID} or set it to the identity the "
+                f"store you meant actually carries, or point $SCITEX_CARDS_DB "
+                f"at that store. If this database carries NO identity "
+                f"(store_uuid=none) the fix is to bind it once, deliberately: "
+                f"`scitex-cards store adopt-uuid`. Do NOT set "
+                f"${ENV_EXPECTED_STORE_UUID} to a value this database has never "
+                f"carried — that manufactures the evidence instead of checking "
+                f"it. `scitex-cards resolve-store --json` prints both values."
+            ),
+        }
+    if verdict == ACCEPT:
+        return {
+            "ok": True,
+            "detail": (
+                f"store identity accepted: {db_path} has {ident} — the path "
+                f"stamp ({stamped or 'none'}) is diagnostic only and was not "
+                f"consulted"
+            ),
+            "hint": None,
+        }
+
+    # ADOPT — no identity AND no expectation, so the legacy path stamp is the
+    # best evidence available. This is where every database sits today.
+    if not stamped:
+        return {
+            "ok": True,
+            "detail": f"{db_path} carries no store stamp yet (fresh database); {ident}",
+            "hint": None,
+        }
+    if _same_file(stamped, resolved):
+        return {
+            "ok": True,
+            "detail": f"store and database agree: both are {resolved}; {ident}",
+            "hint": None,
+        }
+    if not Path(stamped).exists() or not Path(resolved).exists():
+        # CANNOT TELL, said honestly. The realpath string fallback used to
+        # answer this case with "a DIFFERENT store" — a claim about a file this
+        # mount namespace cannot even stat, and the exact falsehood the operator
+        # read on 2026-07-28 about a database that was in fact their own.
+        return {
+            "ok": False,
+            "detail": (
+                f"OWNERSHIP OF {db_path} CANNOT BE DETERMINED from a path in "
+                f"this mount namespace: it is stamped for {stamped}, this "
+                f"process resolves {resolved}, and at least one of those cannot "
+                f"be stat'd here — so they may well be ONE file under two "
+                f"names. Every write and every read is being refused. {ident}"
+            ),
+            "hint": (
+                "do NOT re-stamp the path — that was tried on 2026-07-28 and "
+                "the board came back EMPTY, which is the 2,138-card-wipe "
+                "shape. Bind the store to an identity once, deliberately: "
+                "`scitex-cards store adopt-uuid`, then record the printed uuid "
+                "in the host registry. A uuid is the same string in both mount "
+                "namespaces; a path is not. `scitex-cards db path` prints what "
+                "currently resolves."
+            ),
+        }
+    return {
+        "ok": False,
+        "detail": (
+            f"STORE IDENTITY MISMATCH — this process resolves {resolved} but "
+            f"{db_path} is stamped for {stamped}. EVERY WRITE IS BEING REFUSED "
+            f"by the ownership guard (correctly: writing one store into "
+            f"another's database is how a board gets destroyed). {ident}"
+        ),
+        "hint": (
+            f"decide which is right and make them agree, and change the POINTER "
+            f"rather than the stamp unless you are certain: re-stamping tells a "
+            f"database it belongs to a different store, which is the assertion "
+            f"the ownership guard exists to doubt. If {db_path} is the database "
+            f"this agent should use, point $SCITEX_CARDS_DB at {stamped} so the "
+            f"resolved store matches the stamp. If {resolved} is genuinely the "
+            f"intended store, the database for it is a DIFFERENT file — find or "
+            f"create that one rather than re-labelling this database. "
+            f"`scitex-cards db path` prints what currently resolves."
+        ),
+    }
+
+
+__all__ = [
+    "_check_store_canonical",
+    "_check_store_identity_agrees",
+    "_is_sqlite_db",
+    "_verify_db_store",
+]
+
+# EOF
