@@ -14,6 +14,25 @@ canonical DB (``resolve_db_path(None)``) and ignores the path argument, so the
 board no longer globs per-project YAML lanes and unions them — every "source"
 would read the same DB. The board therefore loads exactly one store.
 
+THE DATABASE IS THE ONLY READ TARGET, AND THERE IS NO EMPTY FALLBACK
+--------------------------------------------------------------------
+``get_board`` reads the cards from the database unconditionally and RAISES when
+it cannot. It has no ``else []``, no cached-empty, no second backend, and no env
+flag selecting between them — because every one of those is a way for the board
+to answer "0 cards" without having asked the store.
+
+That is not a hypothetical. Twice now a read has degraded to empty by comparing
+against a YAML file that stopped existing at the SQLite cutover: the
+``_store_read_sqlite`` accelerator (2026-07-21, post-mortem in
+:func:`_load_global_tasks`), and this module's own ``if store_exists else []``
+gate on the ``tasks.yaml`` SIDECAR, which served the operator a 0-card board for
+over a day while 2,654 cards sat in the database.
+
+AN EMPTY BOARD IS THE WIPE SHAPE. A visible refusal is strictly better: it is
+recoverable, it names its reason, and nobody builds on it. So emptiness here is
+always READ (the store really holds no cards) and never INFERRED from a file
+that is missing.
+
 Cache invalidation keys on the DB's logical CONTENT version
 (:func:`scitex_cards._store_write.store_generation`), not the store-identity
 file's stat: a DB write never touches that file, so an mtime/inode key would
@@ -93,13 +112,24 @@ class BoardState:
     #: are unioned. Kept (always empty) for the BoardState wire shape callers
     #: still read.
     lane_paths: List[Path] = field(default_factory=list)
-    #: HONEST EMPTY STATE (hub card hub-cards-board-data-404, second half;
-    #: adapted from unpushed 9db9146b): True when the RESOLVED store-identity
-    #: file did not exist at load time — a brand-new workspace whose store has
-    #: not been materialized yet. That is a legitimate 0-card state, not an
-    #: error; the read handlers forward this flag so the frontend can render
-    #: the normal zero-card board instead of an error banner. Snapshot-stamped
-    #: here (not re-stat'd per request) so it stays consistent with ``tasks``.
+    #: HONEST EMPTY STATE — True when the canonical store was READ SUCCESSFULLY
+    #: and held zero cards. The read handlers forward it so the frontend can
+    #: render the normal zero-card board instead of an error banner.
+    #:
+    #: IT IS DERIVED FROM THE READ, NEVER INFERRED FROM A MISSING FILE, and that
+    #: is the whole point. It used to mean "the resolved store-identity FILE did
+    #: not exist" — but under SQLite that file is the ``tasks.yaml`` SIDECAR,
+    #: which stopped existing at the cutover, so on the live board this flag was
+    #: permanently True and the board permanently served ``[]`` while 2,654 cards
+    #: sat in the database. Worse than the missing cards: ``empty_store=True``
+    #: tells the frontend to render a CLEAN, BELIEVABLE zero-card board — the
+    #: exact visual signature of a wipe, with no error anywhere.
+    #:
+    #: Reaching this field at all now means the store was read. A store that
+    #: CANNOT be read raises out of ``get_board`` instead (see
+    #: :func:`scitex_cards._store._read_canonical_db_or_raise`): emptiness must
+    #: be READ, never inferred. Snapshot-stamped here (not re-derived per
+    #: request) so it stays consistent with ``tasks``.
     empty_store: bool = False
 
 
@@ -200,19 +230,18 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
         _refreshing.add(key)
 
     def _run():
-        from scitex_cards._groups import load_groups
-
         try:
-            # Same honest-empty-state rule as the foreground load in
-            # ``get_board``: an absent identity file is a fresh workspace
-            # (0 tasks, no groups), never a raise. Evaluate existence ONCE so
-            # tasks / groups / the flag describe the same snapshot.
-            store_exists = resolved.exists()
-            tasks = _load_global_tasks(resolved) if store_exists else []
+            # SAME READ RULE AS THE FOREGROUND LOAD IN ``get_board``: the tasks
+            # come from the canonical DATABASE, unconditionally. This used to
+            # read them only ``if resolved.exists()`` — gating the card read on
+            # the YAML SIDECAR — so a refresh could cache an EMPTY board and,
+            # because the ``except`` below deliberately keeps whatever is
+            # cached, serve it silently forever on /graph and /timeline. A
+            # background refresh must never be able to blank the board; the way
+            # to guarantee that is to have no empty-fallback here at all.
+            tasks = _load_global_tasks(resolved)
             task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
-            groups = (
-                load_groups(resolved, task_ids=task_ids) if store_exists else []
-            )
+            groups = _load_sidecar_groups(resolved, task_ids)
             fresh = BoardState(
                 tasks=tasks,
                 store_path=resolved,
@@ -220,7 +249,7 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
                 sig=effective_sig,
                 groups=groups,
                 lane_paths=[],
-                empty_store=not store_exists,
+                empty_store=not tasks,
             )
             _board_cache[key] = (fresh, time.time())
         except Exception:  # noqa: BLE001 — never break the served board
@@ -258,6 +287,30 @@ def _load_global_tasks(path: Path) -> list:
     return load_tasks(path)
 
 
+def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
+    """``groups:`` from the YAML SIDECAR — absent sidecar means no groups.
+
+    THE ONLY THING IN THE BOARD THAT MAY LEGITIMATELY DEGRADE TO EMPTY, and
+    that is not a hedge — groups genuinely live in the ``tasks.yaml`` sidecar
+    (see :func:`scitex_cards._paths.resolve_tasks_path`), so its absence is a
+    direct, positive reading of "no groups are defined": the board falls back
+    to its flat column view. Groups are a VIEWER concern; they carry no card
+    data, and rendering none of them loses nothing.
+
+    Cards are different in kind and must NOT share this shape. They live in the
+    database, so an absent sidecar says nothing whatsoever about them — and
+    reusing this existence test on the card read is precisely the defect this
+    helper exists to keep separated. It is a named function rather than an
+    inline ``if resolved.exists()`` so the next reader cannot mistake one for
+    the other, or extend the guard from groups to tasks by moving a line.
+    """
+    from scitex_cards._groups import load_groups
+
+    if not resolved.exists():
+        return []
+    return load_groups(resolved, task_ids=task_ids)
+
+
 def get_board(
     tasks_path: Optional[str] = None, *, allow_stale: bool = False
 ) -> BoardState:
@@ -290,28 +343,58 @@ def get_board(
     -------
     BoardState
         The validated task list + the resolved store anchor + its content sig.
+        ``empty_store`` is True only when the store was read and held no cards.
+
+    Raises
+    ------
+    RuntimeError
+        When the canonical database cannot be read as this process's store —
+        it does not exist, it is stamped for a DIFFERENT store, or its export
+        disagrees with its own ``COUNT(*)``. THIS FUNCTION HAS NO EMPTY
+        FALLBACK, deliberately: a board that cannot read the store must say so
+        (the caller renders a 500 carrying this message), because 0 cards
+        rendered as a healthy board is indistinguishable from a wipe and is
+        how the operator's board sat silently blank for a day.
     """
-    from scitex_cards._groups import load_groups
     from scitex_cards._paths import resolve_tasks_path
     from scitex_cards._store_write import store_generation
 
     _cleanup_expired()
 
     resolved = resolve_tasks_path(tasks_path)
-    # HONEST EMPTY STATE (hub card hub-cards-board-data-404, second half;
-    # adapted from unpushed 9db9146b): a RESOLVED identity path that does not
-    # exist yet is a legitimate fresh workspace (0 tasks), not an error. Every
-    # read below already treats it that way (`if store_exists else …`);
-    # calling ``load_groups`` on the absent file was the one leftover raise
-    # (FileNotFoundError → api_dispatch 400 "No task store found." / a
-    # /timeline 500) that turned a brand-new tenant's board into an error
-    # banner. Existence is evaluated ONCE so tasks / groups / the
-    # ``empty_store`` flag describe the same snapshot. Loud paths are
-    # unchanged: unknown endpoint stays 404, a mid-load raise still reaches
-    # the api_dispatch 400 backstop, handler exceptions stay 500.
-    store_exists = resolved.exists()
+    # ``resolved`` IS NOT THE STORE. It is the ``tasks.yaml`` SIDECAR beside the
+    # canonical database — the ``groups:`` container, the cache key, the
+    # provenance label the board displays. ``resolve_tasks_path``'s own
+    # docstring says so in its first line: "the non-task YAML CONTAINER path —
+    # NOT the store identity ... Card DATA lives in the database."
+    #
+    # THE BUG THIS REPLACES read that sentence and then used the sidecar's
+    # existence as the existence test for the STORE:
+    #
+    #     store_exists = resolved.exists()
+    #     tasks = _load_global_tasks(resolved) if store_exists else []
+    #
+    # Under SQLite that sidecar is not created, so on the operator's live board
+    # ``store_exists`` was permanently False and the board served the literal
+    # ``else []`` — 0 cards, while 2,654 sat in the database, for over a day.
+    # The card read was never even attempted: the fail-loud guard in
+    # ``_read_canonical_db_or_raise`` never ran, so nothing anywhere reported a
+    # problem. It rendered as a clean, healthy, empty board — the visual
+    # signature of a wipe — because ``empty_store=True`` suppresses the error
+    # banner by design.
+    #
+    # This is the SAME defect as the deleted ``_store_read_sqlite`` accelerator
+    # (2026-07-21), whose post-mortem sits 40 lines above in
+    # ``_load_global_tasks``: a guard comparing against a YAML file that stopped
+    # existing when SQLite became canonical, silently degrading to an empty
+    # board. Fixing one instance of a pattern is not fixing the pattern.
+    #
+    # So the sidecar now gates ONLY what actually lives in the sidecar
+    # (``groups:`` — see ``_load_sidecar_groups``), and the cards are read
+    # unconditionally from the database, which raises when it cannot be read.
+    sidecar_exists = resolved.exists()
     # REPORTED value only (the /rev wire contract); never the cache key.
-    effective_mtime = resolved.stat().st_mtime if store_exists else 0.0
+    effective_mtime = resolved.stat().st_mtime if sidecar_exists else 0.0
 
     # CACHE IDENTITY: the DB's logical-content version (the load-bearing signal
     # — a DB write self-invalidates even though it never touches the identity
@@ -321,7 +404,7 @@ def get_board(
     # and a plain read never writes the identity file. See BoardState.sig.
     effective_sig = (
         store_generation(resolved),
-        _stat_sig(resolved) if store_exists else (0, 0, 0),
+        _stat_sig(resolved) if sidecar_exists else (0, 0, 0),
     )
 
     key = str(resolved)
@@ -348,10 +431,17 @@ def get_board(
             _kick_board_refresh(key, resolved, effective_mtime, effective_sig)
             return board
 
-    tasks = _load_global_tasks(resolved) if store_exists else []
+    # THE CARD READ — UNCONDITIONAL, AND THERE IS NO ELSE BRANCH. Every way this
+    # can fail (database absent, stamped for another store, an export that
+    # under-reports against its own ``COUNT(*)``) raises out of
+    # ``_read_canonical_db_or_raise`` and reaches the operator as a 500 naming
+    # the reason. That is the point: a refusal is recoverable and visible, a
+    # believable empty board is neither. An ``else []`` here would be a second
+    # read target that merely happens to be unreachable today.
+    tasks = _load_global_tasks(resolved)
 
     task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
-    groups = load_groups(resolved, task_ids=task_ids) if store_exists else []
+    groups = _load_sidecar_groups(resolved, task_ids)
 
     board = BoardState(
         tasks=tasks,
@@ -360,7 +450,9 @@ def get_board(
         sig=effective_sig,
         groups=groups,
         lane_paths=[],
-        empty_store=not store_exists,
+        # READ, not inferred: we got here, so the store was read; it is empty
+        # iff it actually holds no cards. See BoardState.empty_store.
+        empty_store=not tasks,
     )
     _board_cache[key] = (board, time.time())
     logger.info(
