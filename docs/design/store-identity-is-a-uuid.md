@@ -1,15 +1,29 @@
 # Store identity is a UUID, not a path
 
-Status: DESIGN + TEST SKELETON. No guard behaviour changes in this PR.
+Status: IMPLEMENTED (2026-07-29). `scitex_cards._store_uuid` exists, the guard
+is uuid-first, and all 16 `xfail(strict=True)` markers are deleted.
 Card: `scitex-cards-resolver-never-default-yaml-20260727` (P0).
 Contract: accepted verbatim by scitex-dev 2026-07-28, adopted ecosystem-wide.
 
 This document specifies the change. The tests in
-`tests/scitex_cards/test__store_uuid_identity_contract.py` are the executable
-half of it: they are marked `xfail(strict=True)` against an API that does not
-exist yet, so the implementation PR removes the markers rather than writing new
+`tests/scitex_cards/test__store_uuid_identity_contract.py` and
+`tests/scitex_cards/test__store_uuid_guard_integration.py` are the executable
+half of it: they were marked `xfail(strict=True)` against an API that did not
+exist, so the implementation PR removed the markers rather than writing new
 assertions. Anything asserted there and not written here is a bug in this
 document.
+
+What landed, against what this document specifies:
+
+| section | landed as |
+| --- | --- |
+| §3 identity, §5 decision table | `scitex_cards._store_uuid` |
+| §7 uuid-first guard | `_dual_write._db_mirrors_this_store` |
+| §8 realpath fallback removed | `_dual_write._same_file` |
+| §9 migration verb | `scitex-cards store adopt-uuid` |
+| §11 exposure | `_store.resolve_store()`, `_health_store_identity` |
+
+Two things this document did not anticipate, both recorded in §14.
 
 ---
 
@@ -375,3 +389,47 @@ that is refused (the path says different). Under this design it is accepted (the
 uuid short-circuits and the path is never read). It cannot pass vacuously under
 today's code and it cannot pass vacuously under PR #598 either, because neither
 of them can reach ACCEPT by that route.
+
+## 14. What implementation found that this document did not say
+
+### 14.1 One existing test PINNED the realpath fallback
+
+`test__store_identity.py::test_a_store_that_does_not_exist_yet_falls_back_to_path_comparison`
+asserted the exact behaviour §8 removes: a stamped path that cannot be `stat`-ed
+compared equal to an identically-spelled caller path, so the guard returned
+True. §8's truth table says that row is now `CANNOT TELL -> False`, so the test
+had to change. It was rewritten (not deleted, not weakened) as
+`test_a_store_that_cannot_be_stat_ed_is_CANNOT_TELL_not_a_path_compare`, with
+the reasoning in its docstring and the second half — a genuinely different,
+also-unstat-able store is refused — kept intact.
+
+Its original premise no longer holds anywhere in production: "in DB-canonical
+mode the YAML store is frequently a NAME the database is stamped with rather
+than a file on disk". Both doors call `_db_mirrors_this_store(db_path, db_path)`
+and a nonexistent `db_path` returns True at the first line, so the only
+unstat-able side reachable in production is the STAMPED path — which is the
+cross-namespace case the fallback answered wrongly.
+
+### 14.2 The path stamp's unconditional overwrite was the FLIP MECHANISM
+
+The document diagnoses the path as the wrong identity but does not name what
+made the stamp move. `_db_freshness.stamp_store_provenance` used
+`ON CONFLICT(key) DO UPDATE SET value=excluded.value` — an UNCONDITIONAL
+rewrite — so every write replaced the stamp with the writer's own spelling of
+the file. That is why the outage recurred three times on 2026-07-28 after three
+correct repairs: writing a single card from the other namespace flipped it back.
+
+Now the stamp is left alone when it already names the SAME FILE
+(`_dual_write._same_file`, the package's one definition of sameness). The path
+stamp is DIAGNOSTIC once identity is a uuid, and rewriting a diagnostic on every
+write is pure harm. It is still refreshed when this namespace cannot stat the
+stamped path, because a spelling the current reader can resolve is strictly more
+useful than one nobody here can.
+
+### 14.3 `check_fresh` is uuid-first too
+
+§7 names only `_db_mirrors_this_store`. `_db_freshness.check_fresh` asks the
+same ownership question and has no production caller today, but leaving it
+path-only would have built the read/write asymmetry §7 forbids the moment
+someone wired it up. It now short-circuits on `ACCEPT` exactly as the guard
+does, and says CANNOT TELL honestly in the unstat-able case.

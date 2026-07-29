@@ -276,12 +276,30 @@ def resolve_store(store: str | Path | None = None) -> dict:
           "user_store":       "/abs/path/to/~/.scitex/cards/cards.db",
           "pkg_short":        "cards",
           "exists":           bool,
+          "store_uuid":       <the database's own identity, or None>,
+          "expected_uuid":    <$SCITEX_CARDS_STORE_UUID, or None>,
         }
+
+    ``store_uuid`` is contract point 8, machine-readable half (design §11). The
+    identity is what a host registry must record next to this board's endpoint,
+    and "open the database and run a SQL query" is archaeology. This function
+    already answers "WHICH store did I actually resolve"; it answers "and WHAT
+    IS IT" in the same breath. ``None`` means the database is absent or carries
+    no identity yet — bind it with ``scitex-cards store adopt-uuid``.
+
+    ``expected_uuid`` is reported beside it deliberately: the two most useful
+    facts about an identity mismatch are the value the database carries and the
+    value this process was told to expect, and reading them from two different
+    surfaces is how a mismatch stays undiagnosed.
+
+    THIS FUNCTION IS PURE REPORTING. Reading the identity here never mints one,
+    never stamps one, and never changes what resolves.
     """
     import os
 
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
+    from ._store_uuid import expected_store_uuid, store_uuid_at
 
     # The resolved store is the DATABASE — the sole store identity.
     resolved = resolve_db_path(
@@ -294,6 +312,8 @@ def resolve_store(store: str | Path | None = None) -> dict:
         "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
         "exists": Path(resolved).exists(),
+        "store_uuid": store_uuid_at(resolved),
+        "expected_uuid": expected_store_uuid(),
     }
 
 

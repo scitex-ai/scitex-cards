@@ -36,15 +36,9 @@ import sqlite3
 
 import pytest
 
-#: See the companion file. ``strict`` means an XPASS fails the suite, so the
-#: implementation PR must remove these markers rather than leave them behind.
-NOT_YET = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "scitex_cards._store_uuid does not exist yet -- this is the design PR's "
-        "executable spec; the implementation PR removes this marker"
-    ),
-)
+# THE ``@NOT_YET`` MARKERS ARE GONE — see the companion file. ``strict`` meant
+# an XPASS failed the suite, so landing the implementation FORCED their removal
+# rather than allowing a marker to sit behind as a silently-skipped promise.
 
 #: The same two fixed identities the companion file uses.
 IDENTITY_A = "3f2b8c1e-9d4a-4f77-b0c5-1a2e3d4f5a6b"
@@ -93,9 +87,8 @@ def _seed(db_path) -> None:
 
 def _bind(db_path, identity: str) -> None:
     """Stamp ``identity`` into ``schema_meta`` -- the migration step, by hand."""
-    from scitex_cards._store_uuid import stamp_store_uuid
-
     from scitex_cards._db import connect
+    from scitex_cards._store_uuid import stamp_store_uuid
 
     conn = connect(str(db_path))
     try:
@@ -141,7 +134,6 @@ def _detail(report: dict, check_name: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-@NOT_YET
 def test_the_identity_decides_even_when_the_stamped_path_contradicts_it(
     store_db, tmp_path, env
 ):
@@ -159,9 +151,8 @@ def test_the_identity_decides_even_when_the_stamped_path_contradicts_it(
     container and red on the host. This one cannot pass by either route.
     """
     # Arrange
-    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
-
     from scitex_cards._dual_write import _db_mirrors_this_store
+    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
 
     someone_elses = tmp_path / "someone-elses.db"
     someone_elses.write_bytes(b"")
@@ -176,7 +167,6 @@ def test_the_identity_decides_even_when_the_stamped_path_contradicts_it(
     assert mirrors
 
 
-@NOT_YET
 def test_a_database_carrying_another_stores_identity_is_refused(
     store_db, tmp_path, env
 ):
@@ -188,9 +178,8 @@ def test_a_database_carrying_another_stores_identity_is_refused(
     only a mispaired destination and no malice at all.
     """
     # Arrange
-    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
-
     from scitex_cards._dual_write import _db_mirrors_this_store
+    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
 
     _stamp_path(store_db, store_db)
     _bind(store_db, IDENTITY_A)
@@ -203,7 +192,6 @@ def test_a_database_carrying_another_stores_identity_is_refused(
     assert not mirrors
 
 
-@NOT_YET
 def test_an_unresolvable_path_stamp_no_longer_decides_anything(store_db, env):
     """The realpath string fallback is REMOVED, so this path answers nothing.
 
@@ -217,9 +205,8 @@ def test_an_unresolvable_path_stamp_no_longer_decides_anything(store_db, env):
     the unresolvable path is simply never consulted.
     """
     # Arrange
-    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
-
     from scitex_cards._dual_write import _db_mirrors_this_store
+    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
 
     _stamp_path(store_db, "/proc/self/no-such-mount-namespace/cards.db")
     _bind(store_db, IDENTITY_A)
@@ -275,7 +262,6 @@ def test_a_matching_identity_does_not_bypass_the_ambient_store_creation_guard(
 # --------------------------------------------------------------------------- #
 
 
-@NOT_YET
 def test_a_byte_copy_carries_the_same_identity_and_cannot_self_distinguish(
     store_db, tmp_path
 ):
@@ -298,9 +284,8 @@ def test_a_byte_copy_carries_the_same_identity_and_cannot_self_distinguish(
     populated without archaeology.
     """
     # Arrange
-    from scitex_cards._store_uuid import read_store_uuid
-
     from scitex_cards._db import connect
+    from scitex_cards._store_uuid import read_store_uuid
 
     _bind(store_db, IDENTITY_A)
     byte_copy = tmp_path / "byte-copy.db"
@@ -322,7 +307,6 @@ def test_a_byte_copy_carries_the_same_identity_and_cannot_self_distinguish(
 # --------------------------------------------------------------------------- #
 
 
-@NOT_YET
 def test_binding_an_identity_leaves_every_card_row_untouched(store_db):
     """The one-time migration step must be boring, and provably so.
 
@@ -343,7 +327,6 @@ def test_binding_an_identity_leaves_every_card_row_untouched(store_db):
     assert _card_ids(store_db) == before
 
 
-@NOT_YET
 def test_resolve_store_reports_the_databases_identity(store_db):
     """Contract point 8, machine-readable half.
 
@@ -364,7 +347,6 @@ def test_resolve_store_reports_the_databases_identity(store_db):
     assert resolved.get("store_uuid") == IDENTITY_A
 
 
-@NOT_YET
 def test_health_names_the_databases_identity(store_db):
     """Contract point 8, human-facing half.
 

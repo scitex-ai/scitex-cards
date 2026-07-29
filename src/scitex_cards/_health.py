@@ -45,6 +45,9 @@ from typing import Any, Callable
 
 from . import _inbox
 from ._health_channel_reach import check_channel_reaches_session
+from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
+    _check_store_identity_agrees,
+)
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -209,83 +212,6 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
             "db export` dump has NO CLI verb today — it is a Python-level "
             "operation (see scitex_cards._db_bootstrap) — so do not go looking "
             "for an import subcommand."
-        ),
-    }
-
-
-def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
-    """Does the RESOLVED store match the identity the database is stamped with?
-
-    The database records WHICH STORE it is the database of (its provenance
-    stamp). When the store this process resolves disagrees with that stamp, the
-    ownership guard in ``_dual_write`` / ``_store_backend`` refuses EVERY write —
-    correctly, since writing one store's rows into another store's database is
-    how a board gets destroyed. But the symptom is a total write outage with no
-    monitor, so this check surfaces it.
-
-    On 2026-07-19 the MCP server resolved one store while the database was
-    stamped for another; every write through the surface OTHER agents use was
-    refused, and it went unnoticed because the maintainer's own writes used an
-    explicit path. So this check answers "can this process write at all?" rather
-    than the narrower "does a parseable store exist there?" that
-    ``store_canonical`` answers.
-    """
-    import sqlite3
-
-    from ._db import resolve_db_path
-    from ._db_freshness import stamped_store_path
-    from ._dual_write import _same_file
-
-    resolved = str(resolve_db_path(store))
-    db_path = Path(resolve_db_path(None))
-    if not db_path.exists():
-        return {
-            "ok": True,
-            "detail": f"no database at {db_path} yet — nothing to disagree with",
-            "hint": None,
-        }
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            stamped = stamped_store_path(conn)
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "detail": f"could not read the provenance stamp from {db_path} ({exc})",
-            "hint": f"check that {db_path} is readable and not corrupt",
-        }
-    if not stamped:
-        return {
-            "ok": True,
-            "detail": f"{db_path} carries no store stamp yet (fresh database)",
-            "hint": None,
-        }
-    if _same_file(stamped, resolved):
-        return {
-            "ok": True,
-            "detail": f"store and database agree: both are {resolved}",
-            "hint": None,
-        }
-    return {
-        "ok": False,
-        "detail": (
-            f"STORE IDENTITY MISMATCH — this process resolves {resolved} but "
-            f"{db_path} is stamped for {stamped}. EVERY WRITE IS BEING REFUSED "
-            f"by the ownership guard (correctly: writing one store into "
-            f"another's database is how a board gets destroyed)."
-        ),
-        "hint": (
-            f"decide which is right and make them agree, and change the POINTER "
-            f"rather than the stamp unless you are certain: re-stamping tells a "
-            f"database it belongs to a different store, which is the assertion "
-            f"the ownership guard exists to doubt. If {db_path} is the database "
-            f"this agent should use, point $SCITEX_CARDS_DB at {stamped} so the "
-            f"resolved store matches the stamp. If {resolved} is genuinely the "
-            f"intended store, the database for it is a DIFFERENT file — find or "
-            f"create that one rather than re-labelling this database. "
-            f"`scitex-cards db path` prints what currently resolves."
         ),
     }
 
