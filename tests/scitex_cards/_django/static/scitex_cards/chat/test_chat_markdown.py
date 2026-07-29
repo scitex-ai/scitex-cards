@@ -196,44 +196,56 @@ def test_a_table_renders_as_a_table():
 
 
 def test_bold_renders_as_strong():
-    # Arrange / Act
-    html = _render("this is **important** here")
+    # Arrange
+    body = "this is **important** here"
+    # Act
+    html = _render(body)
     # Assert
     assert "<strong>" in html
 
 
 def test_a_bullet_list_renders_as_list_items():
-    # Arrange / Act
-    html = _render("- one\n- two")
+    # Arrange
+    body = "- one\n- two"
+    # Act
+    html = _render(body)
     # Assert
     assert html.count("<li>") == 2
 
 
 def test_inline_code_renders_as_code():
-    # Arrange / Act
-    html = _render("run `pip install` now")
+    # Arrange
+    body = "run `pip install` now"
+    # Act
+    html = _render(body)
     # Assert
     assert "<code>" in html
 
 
 def test_a_heading_renders_as_a_heading():
-    # Arrange / Act
-    html = _render("## Findings")
+    # Arrange
+    body = "## Findings"
+    # Act
+    html = _render(body)
     # Assert
     assert "<h2" in html
 
 
 def test_an_https_link_becomes_an_anchor():
-    # Arrange / Act
-    html = _render("[PR](https://github.com/x/y/pull/1)")
+    # Arrange
+    body = "[PR](https://github.com/x/y/pull/1)"
+    # Act
+    html = _render(body)
     # Assert
     assert 'href="https://github.com/x/y/pull/1"' in html
 
 
 def test_plain_text_survives_unchanged():
     """The common case must not be mangled by any of the above."""
-    # Arrange / Act
-    html = _render("just a sentence")
+    # Arrange
+    body = "just a sentence"
+    # Act
+    html = _render(body)
     # Assert
     assert "just a sentence" in html
 
