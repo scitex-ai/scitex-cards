@@ -6,9 +6,9 @@ description: |
   own tasks into the shared fleet board (the SQLite store) so the operator's
   board (http://127.0.0.1:8051/) auto-renders your tasks as a labeled column.
   [HOW] Set `project` + `agent` on every task you create + write via the
-  scitex-todo CLI or Python API. Three fields is the minimum for your work
+  scitex-cards CLI or Python API. Three fields is the minimum for your work
   to surface on the live board.
-tags: [scitex-todo-adopting]
+tags: [scitex-cards-adopting]
 ---
 
 # Adopting the shared task store from your project
@@ -47,7 +47,7 @@ distinct `project` values.
 ### From the CLI
 
 ```bash
-scitex-todo add \
+scitex-cards add \
     --id paper-scitex-clew/cohort-a-rerun \
     --title "Cohort A rerun #50" \
     --status in_progress \
@@ -95,10 +95,10 @@ add_task(
 When your task progresses:
 
 ```bash
-scitex-todo update <id> --status done                # finished
-scitex-todo update <id> --status blocked \           # blocked, name the variant
+scitex-cards update <id> --status done                # finished
+scitex-cards update <id> --status blocked \           # blocked, name the variant
     --blocker compute                                #   compute / dependency / operator-decision / agent-wait / none
-scitex-todo update <id> --task "<new one-line>" \    # update what you're doing
+scitex-cards update <id> --task "<new one-line>" \    # update what you're doing
     --last_activity "$(date -u +%FT%TZ)"
 ```
 
@@ -124,7 +124,7 @@ If you NEED the operator to decide something, model the decision as
 its OWN row with `kind: decision` + `blocker: operator-decision`:
 
 ```bash
-scitex-todo add \
+scitex-cards add \
     --id decide-paper-scitex-clew-a-b-inline-dag \
     --title "decide: clew (a)/(b) inline-DAG depth" \
     --status blocked \

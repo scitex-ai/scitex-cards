@@ -13,7 +13,21 @@ sensitive), so this is deliberate, not a preference to be "cleaned up".
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
+{% comment %}
+"DM", not "Chat". Operator, 2026-07-29 (TG): 「あと、"chat" となってますが、"DM"
+で揃えると良いと思います。」 The browser tab was the last place still saying
+Chat — the switcher, the heading and this title now all read DM.
+
+THE ROUTE IS STILL /chat AND STAYS THAT WAY. Renaming a published URL is a
+MIGRATION, not a rename: every bookmark the operator has and every agent
+reference to /chat would break for a label change. See _page_switcher.html,
+which carries the same decision next to the href it does NOT rename.
+
+chat_title.js PREFIXES this string at runtime — "(3) DM — SciTeX Cards v…" —
+so the base title lives here, in one place, and that module spells neither the
+version nor the word DM.
+{% endcomment %}
+<title>DM — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -100,7 +114,7 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   header h1 { font-size: 1rem; margin: 0; color: var(--accent-2); font-weight: 600; }
   header .ver { color: var(--dim); font-size: 0.72rem; }
-  /* Board | Chat switcher (shared component — page-switcher.css + the
+  /* Board | DM switcher (shared component — page-switcher.css + the
      _page_switcher.html partial). It REPLACED the old "← board" link: the
      operator could reach the board from here, but not the reverse, which is
      what made /chat/ a hidden URL. The component reads six --sw-* variables;
@@ -429,7 +443,7 @@ knows nothing about DMs, messages or `.msg`, and its palette rides
 above). When scitex-ui adopts it, this link and the script tag at the bottom
 swap for the base ones and nothing else on this page moves.
 
-Board | Chat switcher — the SAME stylesheet board_v3.html links, so the two
+Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
 pages cannot drift into two different-looking switchers. Palette mapping for
 this page is in the <style> above (header .stx-cards-switcher).
 
@@ -699,10 +713,11 @@ off `window` and never the reverse.
 
   combobox.js      scitex-ui's fuzzy matcher (STX.Combobox.fuzzyMatch)
   chat_diff.js     pure render planning (no deps)
+  chat_title.js    the unread count in the browser tab (no deps)
   chat_actions.js  pure message-action decisions (no deps)
   chat_select.js   multi-select mode + its bulk actions (reads ChatActions)
   chat_menu.js     the message context menu + reaction chips (reads both)
-  chat_attach.js   attachment uploads (no deps)
+  chat_attach.js   attachment uploads AND their rendering (no deps)
   chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
   chat_filter.js   fuzzy filter over the agent list (reads STX.Combobox)
   chat_longtext.js the long-body clamp + .txt download (no deps)
@@ -726,6 +741,7 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 {% endcomment %}
 <script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_title.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>

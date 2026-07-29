@@ -1,18 +1,18 @@
 ---
 description: |
   [TOPIC] Two-tier conventions + write protocol — project-level vs global
-  [DETAILS] How the fleet uses scitex-todo as the shared SSoT: per-project
+  [DETAILS] How the fleet uses scitex-cards as the shared SSoT: per-project
   `<project>/.scitex/todo/` (each agent owns its own lane) rolls up into the
   global `~/.scitex/todo/` (fleet-wide aggregate the board renders). Who
   writes what, when, and with which conflict rules — the load-bearing
   contract for the fleet migration off the lead's in-memory TaskList onto
   the persistent board.
-tags: [scitex-todo-conventions, scitex-todo-write-protocol, scitex-todo-fleet]
+tags: [scitex-cards-conventions, scitex-cards-write-protocol, scitex-cards-fleet]
 ---
 
 # Two-tier conventions + write protocol
 
-scitex-todo is the fleet's **shared dependency map** (HANDOFF.md
+scitex-cards is the fleet's **shared dependency map** (HANDOFF.md
 NORTH STAR, operator 9501 + 9667 + 9671 + 9674). For that to work
 without per-agent silos OR cross-agent drift, the package follows a
 **two-tier convention**:
@@ -27,13 +27,13 @@ This skill documents BOTH tiers + the write protocol that connects
 them. Once a project adopts this convention, the fleet can read each
 other's task state from one place + the board surfaces the whole map.
 
-## Architectural backbone — `scitex-todo` is STANDALONE; the fleet plugs in via PORTS
+## Architectural backbone — `scitex-cards` is STANDALONE; the fleet plugs in via PORTS
 
 Operator's defining rule (TG 9678, lead a2a `fae53b8e`):
 
-> "scitex-todo はそれだけで独立したパッケージであるべきで、他を知らないが、
+> "scitex-cards はそれだけで独立したパッケージであるべきで、他を知らないが、
 > extension port は持っている"
-> (scitex-todo MUST be standalone, knows nothing about fleet/sac/
+> (scitex-cards MUST be standalone, knows nothing about fleet/sac/
 > scitex-specifics, but exposes extension ports through which
 > fleet-specific behaviour plugs in.)
 
@@ -43,18 +43,18 @@ package never imports sac, a2a, SSH-fanout, or the 6-stream list**.
 Reading this skill, mentally replace:
 
 - "sync via git + GitHub" ⇒ "the TaskSyncPort impl your fleet installs"
-- "publish on `scitex-todo:task:<id>`" ⇒ "NotificationPort.publish"
+- "publish on `scitex-cards:task:<id>`" ⇒ "NotificationPort.publish"
 - "SSH-fanout to peer hosts for liveness" ⇒ "LivenessPort.list_agents"
 - "sac fleet groups gate ACL" ⇒ "IdentityACLPort answers"
 
 The fleet-specific implementations live in a SEPARATE package
-(e.g. `scitex-todo-fleet` or in the scitex-agent-container glue),
-not inside `scitex-todo`. ADR-0006 in `docs/adr/` has the four port
+(e.g. `scitex-cards-fleet` or in the scitex-agent-container glue),
+not inside `scitex-cards`. ADR-0006 in `docs/adr/` has the four port
 Protocol definitions + the dependency-injection wiring. This skill
 documents the **adoption-side** conventions; the **core-side**
 contract is in the ADR.
 
-A standalone `pip install scitex-todo` ships with default
+A standalone `pip install scitex-cards` ships with default
 implementations (LocalFileSync / InProcessPubSub / NullLiveness /
 OpenACL) so the package is independently usable. The conventions
 below describe the FLEET deployment shape — operator-host
@@ -104,7 +104,7 @@ SQLite database, filtered to rows with a fleet-coordination `scope`
 (vs a single project's scope). There is one canonical database, not
 one-file-per-project rolled up into a second file.
 
-The board (`scitex-todo board`) reads from this database. The mermaid
+The board (`scitex-cards board`) reads from this database. The mermaid
 adapter, the MCP tools, every UI surface — all read from the resolved
 `$SCITEX_CARDS_DB` as the canonical source.
 
@@ -191,7 +191,7 @@ OWNERSHIP rules below — they still bind.
 
 ## How a project adopts this convention
 
-1. Add tasks via `scitex-todo add` (CLI) or the MCP `add_task` tool
+1. Add tasks via `scitex-cards add` (CLI) or the MCP `add_task` tool
    with `--scope agent:<you> --project <repo-basename>`; they land in
    the shared database tagged with your scope.
 2. For any task that warrants long-form context: create
@@ -239,7 +239,7 @@ Examples:
 ```
 paper-scitex-clew/cohort-a-rerun
 scitex-hub/decide-prod-cutover-final-go
-scitex-todo/proj-scitex-todo-fleet-liveness
+scitex-cards/proj-scitex-todo-fleet-liveness
 ```
 
 **URL scheme** (the board's Django serves it):
@@ -268,7 +268,7 @@ the change is **published on the sac channel bus** the fleet already
 uses for agent wake-ups:
 
 ```
-event channel: scitex-todo:task:<project>/<local-id>
+event channel: scitex-cards:task:<project>/<local-id>
 payload:       {task_id, changes, ts, actor}
 ```
 
@@ -276,15 +276,15 @@ payload:       {task_id, changes, ts, actor}
 
 | Subscriber       | Subscribes to                                            | Action on receive                                                            |
 | ---------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| owning agent     | `scitex-todo:task:<own-project>/*`                       | wakes (empty-beacon-fix + wake-generalize) + acts on the change              |
-| dependent agent  | `scitex-todo:task:<each-of-its-depends_on-ids>`          | wakes + re-evaluates readiness; auto-unblock if a dep flipped to done       |
-| UI (every viewer)| `scitex-todo:task:*` (filtered client-side)              | re-fetches /graph + re-renders affected card / panel                         |
-| lead             | `scitex-todo:task:*` firehose                            | logs into _log_meta; no auto-action                                          |
+| owning agent     | `scitex-cards:task:<own-project>/*`                       | wakes (empty-beacon-fix + wake-generalize) + acts on the change              |
+| dependent agent  | `scitex-cards:task:<each-of-its-depends_on-ids>`          | wakes + re-evaluates readiness; auto-unblock if a dep flipped to done       |
+| UI (every viewer)| `scitex-cards:task:*` (filtered client-side)              | re-fetches /graph + re-renders affected card / panel                         |
+| lead             | `scitex-cards:task:*` firehose                            | logs into _log_meta; no auto-action                                          |
 | operator         | (interacts via UI; UI is the subscriber)                 | UI surfaces the change visually                                              |
 
 **Critical synergy**: this rides the SAME push infra being hardened
 by the empty-beacon fix (proj-scitex-agent-container) + the
-wake-generalize (any-channel-wakes-idle-agent). scitex-todo is one
+wake-generalize (any-channel-wakes-idle-agent). scitex-cards is one
 of the loadiest consumers — every task update is a potential
 agent-wake event. **Do NOT invent a parallel notification system.**
 
@@ -348,6 +348,6 @@ real signal we're ignoring and should be PROMOTED to required.
 Flag the pattern — don't let "always UNSTABLE" become invisible.
 
 This pattern is canonical for every fleet auto-merge loop, not just
-scitex-todo's. clew / neurovista / ripple / etc. that ship their own
+scitex-cards's. clew / neurovista / ripple / etc. that ship their own
 wait-on-CI auto-merge loops should match this shape. Documented here
-as the reference for the fleet's dogfood-of-scitex-todo adoption.
+as the reference for the fleet's dogfood-of-scitex-cards adoption.

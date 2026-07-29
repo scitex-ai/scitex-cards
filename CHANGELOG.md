@@ -65,6 +65,31 @@ Everything under [Unreleased] below moves here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
+  package was renamed to `scitex-cards`, but what agents and humans actually
+  READ still said the old name: the `.mcp.json` key the install snippet emits
+  (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
+  every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
+  and `health` payloads, and the shipped skills. Two of these were not merely
+  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
+  dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
+  the `mcp__scitex-todo__*` tool namespace that no longer exists.
+
+  Renaming the emitted `.mcp.json` key would, on its own, have left configs
+  holding BOTH keys pointing at the same server -- every tool loaded twice,
+  both copies writing one store. So `mcp install --apply` now RETIRES our stale
+  `scitex-todo` entry as part of writing the new one. Only our entry: an
+  unrelated server that merely shares the old key is left untouched.
+
+  What the package PUBLISHES is unchanged, because that is a migration and not
+  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
+  variables, the `scitex_todo.*` legacy entry-point groups, the
+  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
+  all still work. Breaking any of them would have stopped the operator's
+  running units, one of which serves the board.
+
 ### Added
 
 - **The chat page's agent list has a fuzzy filter, and the matcher is
@@ -107,6 +132,55 @@ Everything under [Unreleased] below moves here.
   `esbuild --format=esm`, producing valid JavaScript at the same path that
   passed every exists() check and set NO global — which would have pinned every
   consumer to its fallback permanently, with nothing failing anywhere.
+
+- **The unread count now shows in the browser tab** — `(3) DM — SciTeX Cards
+  v0.17.10`. Operator, 2026-07-29: 「新着がある場合、ページタイトルに新着
+  メッセージ数（未読メッセージ数）を出してください。多少点滅などエフェクトが
+  あっても良いかもです。」 They are migrating off Telegram onto this page, and a
+  backgrounded tab looked identical whether or not an agent had written — the
+  one thing Telegram did for them that this page did not.
+
+  The count is NOT a new number. `/dm/threads` already returns per-peer
+  `unread` and the drawer already paints it as a badge beside each peer; the
+  title is handed that same array from that same 10s poll and sums it, so the
+  tab and the badges cannot disagree. `chat_title.js` has no fetch of its own,
+  and a test asserts it never grows one — a second reader of "how many unread?"
+  is a second answer waiting for `mark_read` to land between them.
+
+  The blink is BOUNDED and it is SILENT under `prefers-reduced-motion: reduce`.
+  A title that flashes until you look is hostile and unreadable in the tab
+  strip, so the alternation runs a fixed four half-steps at 700ms and then
+  settles on the count permanently; it also fires only when the count RISES,
+  because re-announcing a standing unread every poll is the forever-blink by
+  another route. Under reduced motion the count still appears — suppressing the
+  motion must not suppress the information.
+
+  `chat.js` was at its 512-line budget, so attachment RENDERING moved into
+  `chat_attach.js` — which already owned the upload that produces the url —
+  rather than the budget being exceeded. The url shape is one decision; the
+  code that writes it and the code that reads it now sit in one file. (The
+  peer-list rendering was the other extraction candidate and was deliberately
+  left alone: PR #604 is rewriting `renderAgents` in place, and moving a
+  function out from under an open PR is a merge conflict chosen for style.)
+
+### Changed
+
+- **The DM surface is called "DM" everywhere the operator reads it.** Operator,
+  2026-07-29: 「あと、"chat" となってますが、"DM" でそろえると良いと思います。」
+  The switcher, the heading and the browser tab now all say DM (the longer form
+  reads "Direct messages", their own preferred wording); the tab title was the
+  last holdout, still rendering `Chat — SciTeX Cards v…` in the screenshot they
+  sent. Tooltip and the switcher's `aria-label` moved with the label, because a
+  screen reader announcing "Board or Chat" over a control labelled DM is the
+  same inconsistency one layer down.
+
+  **The route is still `/chat` and deliberately stays there.** Renaming a
+  published URL is a MIGRATION, not a rename: the operator has it bookmarked,
+  agents reference it, and both spellings are pinned by tests. The same
+  reasoning leaves the JS module filenames (`chat_*.js`), the CSS classes and
+  the template filenames alone — none of them is a string the operator reads.
+  Tests hold both halves at once: visible text says DM, the URL still resolves
+  to `chat_page`.
 
 - **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
   `to` and `body` and nothing else, so there was no API for sending a file at

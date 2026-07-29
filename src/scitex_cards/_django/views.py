@@ -286,12 +286,17 @@ STALE_OK_ENDPOINTS = frozenset({"graph", "timeline"})
 
 
 def _get_board(request, *, allow_stale: bool = False):
-    """Return the board for this request, or None when the store can't load."""
-    try:
-        return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
-    except FileNotFoundError:
-        logger.warning("[scitex-todo] task store not found")
-        return None
+    """Return the board for this request. RAISES when the store can't be read.
+
+    IT NO LONGER SWALLOWS ``FileNotFoundError`` into a ``None``. That None
+    became a 400 "No task store found." — a fixed sentence that replaced
+    whatever the store actually said, so the one message carrying the diagnosis
+    ("stamped for a DIFFERENT store", "canonical store ... does not exist", the
+    export/COUNT(*) disagreement) was thrown away at the door and the operator
+    got a generic banner instead. The caller now renders the real reason; see
+    :func:`api_dispatch`.
+    """
+    return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
 
 
 @csrf_exempt
@@ -304,12 +309,24 @@ def api_dispatch(request, endpoint):
     if endpoint in NO_BOARD_ENDPOINTS:
         return handler(request, None)
 
-    board = _get_board(
-        request,
-        allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
-    )
-    if board is None:
-        return JsonResponse({"error": "No task store found."}, status=400)
+    # A STORE THAT CANNOT BE READ IS A 500 CARRYING ITS OWN REASON. Two failure
+    # shapes converge here and both were unreadable before: a swallowed
+    # FileNotFoundError became a generic 400, and every OTHER load failure
+    # (notably the ownership refusal) escaped this function entirely, because
+    # this call sat OUTSIDE the try below — so Django answered with an HTML
+    # error page that the board's ``fetch`` cannot parse, and the frontend
+    # showed a bare "HTTP 500" with no cause. The board template already reads
+    # ``payload.error`` off a non-OK response and renders it in the loud red
+    # panel, so putting the store's own sentence in the body is what turns an
+    # outage into a diagnosis. NEVER answer this with an empty board.
+    try:
+        board = _get_board(
+            request,
+            allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
+        )
+    except Exception as exc:
+        logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)
+        return JsonResponse({"error": f"Cannot read the task store: {exc}"}, status=500)
 
     try:
         return handler(request, board)

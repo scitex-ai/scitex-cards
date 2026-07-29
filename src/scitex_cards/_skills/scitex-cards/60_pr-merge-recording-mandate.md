@@ -23,7 +23,7 @@ This mandate closes the gap at the source.
 When you merge a PR (or close an issue) that completes a board card:
 
 ```bash
-scitex-todo done <card-id> --pr-url <merged-PR-URL>
+scitex-cards done <card-id> --pr-url <merged-PR-URL>
 ```
 
 That single call writes:
@@ -57,7 +57,7 @@ ergonomic at your call site.
 ## MCP equivalent
 
 From inside an agent container, the MCP wire is preferred (it routes
-through ONE scitex-todo subprocess per host, serialized writes):
+through ONE scitex-cards subprocess per host, serialized writes):
 
 ```python
 # From a Claude Code agent:
@@ -68,7 +68,7 @@ await update_task(
 )
 ```
 
-(or via the `mcp__scitex-todo__update_task` tool name in the chat
+(or via the `mcp__scitex-cards__update_task` tool name in the chat
 session if you're calling it interactively).
 
 ## No-PR completions
@@ -78,9 +78,9 @@ an ad-hoc verification, an operator-side review. Record the evidence
 as a comment immediately before the done flip:
 
 ```bash
-scitex-todo comment <card-id> "no-PR completion: <one-line evidence>" \
+scitex-cards comment <card-id> "no-PR completion: <one-line evidence>" \
     --author <your-agent-name>
-scitex-todo done <card-id>
+scitex-cards done <card-id>
 ```
 
 The comment is the substitute for `pr_url` — the reconciliation pass
@@ -93,12 +93,12 @@ a break for half a day and merged 8 PRs without recording — the
 catch-up verb is:
 
 ```bash
-scitex-todo sync-github --since 2026-06-13T00:00Z -y
+scitex-cards sync-github --since 2026-06-13T00:00Z -y
 ```
 
 This walks the agent's recent merged PRs (per the agent's GitHub
 identity) and writes the missing `pr-<repo>-<num>` done-records in
-one transaction. scitex-todo used this overnight as the backfill
+one transaction. scitex-cards used this overnight as the backfill
 mechanism after the reconciliation pass surfaced the gap (lead a2a
 `fbd15187`).
 
@@ -110,19 +110,19 @@ lose the per-card detail that an inline `done --pr-url` preserves.
 
 Today: **culturally**. The mandate lives in this skill, which is
 propagated into every agent's `required_skills` via
-`scitex-todo skills propagate` (the #161 mechanism), so every agent
+`scitex-cards skills propagate` (the #161 mechanism), so every agent
 reads it on boot. The expectation is internalised, not blocked.
 
 Tomorrow (follow-up card, see board entry `rec-pr-merge-recording-
 enforcement-hook`): a Stop-hook OR a PostToolUse hook on `Bash` calls
 matching `gh pr merge` / `gh pr review --comment` could detect a
 just-merged PR in the agent's recent git activity and emit a stderr
-nudge if no matching `scitex-todo done --pr-url` call follows within
+nudge if no matching `scitex-cards done --pr-url` call follows within
 N turns. The skill-mandate is the floor; a hook is the ratchet.
 
 ## Anti-patterns
 
-- **`scitex-todo done <id>` with NO `--pr-url`** — the recording-gap.
+- **`scitex-cards done <id>` with NO `--pr-url`** — the recording-gap.
   The card looks closed on the board but the reconciliation pass
   can't verify the work landed. Don't.
 - **Telling the operator on Telegram "I merged PR #N" without

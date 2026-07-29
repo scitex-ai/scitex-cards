@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo board`` — dependency-graph board lifecycle.
+"""CLI noun group ``scitex-cards board`` — dependency-graph board lifecycle.
 
 Lifecycle verbs: start / stop / restart / status (operator TG12949/12950/
-12951 via lead a2a `b5726672`). Pre-this-change `scitex-todo board` was
+12951 via lead a2a `b5726672`). Pre-this-change `scitex-cards board` was
 a bare NOUN that launched directly — CLI noun-verb violation, and the
 operator had no clean way to restart after a card/source change ("port
 already in use" trap).
 
 Pidfile at ``~/.scitex/todo/board.pid`` so stop/restart/status are
-reliable across terminals. Bare ``scitex-todo board`` (no subcommand)
+reliable across terminals. Bare ``scitex-cards board`` (no subcommand)
 hard-errors with a redirect (operator directive TG 13316: noun-verb CLI
 convention, no bare-noun back-compat).
 
@@ -67,7 +67,7 @@ def _board_run_server(
     except ImportError:
         raise click.ClickException(
             "The board needs the web extra. Install it with:\n"
-            "  pip install scitex-todo[web]"
+            "  pip install scitex-cards[web]"
         ) from None
 
     _os.environ.setdefault(
@@ -133,17 +133,17 @@ def board_group(ctx: click.Context) -> None:
     also needs the same migration — flagged for lead's host-side pass.
     """
     if ctx.invoked_subcommand is not None:
-        # User typed `scitex-todo board start/stop/...` — let Click route
+        # User typed `scitex-cards board start/stop/...` — let Click route
         # to the subcommand.
         return
-    # Bare `scitex-todo board` — HARD ERROR.
+    # Bare `scitex-cards board` — HARD ERROR.
     click.echo(
-        "ERROR: `scitex-todo board` (no verb) is no longer supported.\n"
+        "ERROR: `scitex-cards board` (no verb) is no longer supported.\n"
         "Operator directive TG 13316 — noun-verb CLI convention. Use:\n"
-        "  scitex-todo board start [--port N] [--no-browser]\n"
-        "  scitex-todo board stop\n"
-        "  scitex-todo board restart\n"
-        "  scitex-todo board status",
+        "  scitex-cards board start [--port N] [--no-browser]\n"
+        "  scitex-cards board stop\n"
+        "  scitex-cards board restart\n"
+        "  scitex-cards board status",
         err=True,
     )
     ctx.exit(2)
@@ -156,7 +156,7 @@ def board_group(ctx: click.Context) -> None:
         description=(
             "Writes a pidfile at ~/.scitex/todo/board.pid so other "
             "terminals can `board stop` / `board restart`. Requires the "
-            "web extra: pip install scitex-todo[web]."
+            "web extra: pip install scitex-cards[web]."
         ),
         examples=(("{prog} board start --port 8051", "Serve on port 8051."),),
     ),
@@ -197,7 +197,7 @@ def board_start_cmd(
     """Foreground start. Pidfile written; removed on clean shutdown.
 
     Example:
-      $ scitex-todo board start --port 8051
+      $ scitex-cards board start --port 8051
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
     # Guard rail: refuse to start if another board is already up so we
@@ -206,7 +206,7 @@ def board_start_cmd(
     if existing is not None:
         raise click.ClickException(
             f"board is already running (pid {existing}). Use "
-            "`scitex-todo board stop` or `restart`."
+            "`scitex-cards board stop` or `restart`."
         )
     if dry_run:
         click.echo(
@@ -272,7 +272,7 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
     kernel and surfaces as a clear error below.
 
     Example:
-      $ scitex-todo board stop
+      $ scitex-cards board stop
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
     if dry_run:
@@ -375,7 +375,7 @@ def board_restart_cmd(
     """Stop then start. Both go through the same pidfile contract.
 
     Example:
-      $ scitex-todo board restart
+      $ scitex-cards board restart
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
     if dry_run:
@@ -438,8 +438,8 @@ def board_status_cmd(port: int, as_json: bool) -> None:
     """One-line status: pidfile first, port fallback if it's stale.
 
     Example:
-      $ scitex-todo board status
-      $ scitex-todo board status --json
+      $ scitex-cards board status
+      $ scitex-cards board status --json
     """
     import json as _json
 

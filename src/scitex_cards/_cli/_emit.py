@@ -5,7 +5,7 @@
 Fleet PRODUCERS (scitex-dev's C7 ``released`` / C8 ``pulled`` steps, and
 future federated producers) must emit canonical card-events WITHOUT
 importing :mod:`scitex_cards` — separation of concerns: a producer shells
-out to ``scitex-todo`` rather than coupling to its Python API. These two
+out to ``scitex-cards`` rather than coupling to its Python API. These two
 verbs are that shell-out seam:
 
   * ``emit-event`` constructs a canonical :class:`scitex_cards._events.Event`
@@ -73,8 +73,8 @@ def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
         "which the C4 consumer treats as a quiet no-op. Prints the dispatch "
         "summary as JSON (incl. any notify.enqueued / notify.delivered).\n\n"
         "Examples:\n"
-        "  scitex-todo emit-event --type pulled --repo owner/repo\n"
-        "  scitex-todo emit-event --type released --card-id my-card "
+        "  scitex-cards emit-event --type pulled --repo owner/repo\n"
+        "  scitex-cards emit-event --type released --card-id my-card "
         "--repo owner/repo --version v1.2.3 --actor ci"
     ),
 )

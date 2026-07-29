@@ -7,21 +7,21 @@ description: |
   "audit sweep" campaigns across the 66-package scitex ecosystem.
   Covers `check_releases.py` (PyPI-vs-pyproject roster) and
   `campaign_report.py` (campaign-status.md → diff-highlighted PDF).
-tags: [scitex-todo-campaign-tracking, scitex-todo, release-campaign]
+tags: [scitex-cards-campaign-tracking, scitex-cards, release-campaign]
 ---
 
 # Campaign tracking — companion tooling
 
-`scitex-todo` is the canonical task store. For multi-package campaigns
+`scitex-cards` is the canonical task store. For multi-package campaigns
 (release waves, audit sweeps), two companion helpers live under the
 user state dir `~/.scitex/cards/` and read the same store plus a
 flat board file `GITIGNORED/campaign-status.md` in the orchestrating
 repo (typically `scitex-lead`).
 
-These helpers are intentionally NOT bundled into the `scitex-todo`
+These helpers are intentionally NOT bundled into the `scitex-cards`
 package — they depend on the local fleet layout (campaign repos under
 `~/proj/scitex-*`, board markdown layout). Documenting them here so
-the scitex-todo user knows the campaign-side of the workflow.
+the scitex-cards user knows the campaign-side of the workflow.
 
 ## `~/.scitex/todo/check_releases.py`
 

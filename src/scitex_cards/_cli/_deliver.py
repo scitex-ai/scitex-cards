@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo deliver`` — one-shot notification delivery pass.
+"""CLI verb ``scitex-cards deliver`` — one-shot notification delivery pass.
 
 Runs :func:`scitex_cards._delivery.deliver_pending` once: read every
 configured recipient's pending notifications and hand them to the channels
@@ -33,8 +33,8 @@ def register(main: click.Group) -> None:
         "to the channels in recipients.json, recording outcomes in the "
         "delivery ledger so nothing is double-sent.\n\n"
         "Example:\n"
-        "  scitex-todo deliver\n"
-        "  scitex-todo deliver --json"
+        "  scitex-cards deliver\n"
+        "  scitex-cards deliver --json"
     ),
 )
 @click.option(
