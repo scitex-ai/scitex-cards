@@ -1,6 +1,20 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.13] - 2026-07-29
+
+**0.17.12 was cut but never published, and the moving version string hid it.**
+There is no `v0.17.12` tag, no GitHub release, nothing on PyPI, and `main` still
+sits on the 0.17.11 merge: the newest thing anyone can install is 0.17.11. So
+everything 0.17.12 claimed — the board that reads the database, and the HTTP 500
+it was cut to end — reaches an installed package for the FIRST TIME here.
+Bumping a number on a branch delivers nothing. Merged is not deployed, and
+neither is bumped.
+
+Cut now because SIX AGENTS ARE WAITING ON IT. sac cannot scrub the six container
+overlays that our own error message dirtied until the fix that stops the SEVENTH
+is on PyPI and content-verified. That fix is the currency-gate entry below. It
+has moved up out of the 0.17.12 section, where it had been filed by mistake:
+#609 merged AFTER that cut and has never been in any released version.
 
 ### Fixed
 
@@ -48,30 +62,6 @@
     `_paths.refuse_ambient_store_creation`; merging them would silently turn
     "no expectation is not evidence of a foreign store" into "use whatever you
     were pointed at".
-
-### Added
-
-- `scitex-cards store adopt-uuid [--uuid X]` — binds the resolved database to
-  an identity, once, deliberately. Writes ONE `schema_meta` row and prints it;
-  does not touch `store_path`, does not touch any card row, does not change
-  what any resolver resolves. Idempotent.
-- `resolve_store()` reports `store_uuid` and `expected_uuid`, and the `health`
-  doctor's `store_identity` check NAMES the identity in its detail — on the
-  passing branches too, so a registry can be populated from a healthy board.
-
-  Design: `docs/design/store-identity-is-a-uuid.md`. The 16
-  `xfail(strict=True)` spec tests written before the implementation now pass
-  with their markers deleted and not one assertion edited.
-
-## [0.17.12] - 2026-07-29
-
-Cut to DELIVER the board fix, not because the code needed a version. The
-operator's board has been unusable for over a day — first serving a clean,
-zero-card page while 2654 cards sat in the canonical database, then a bare
-HTTP 500. The host runs a NON-EDITABLE wheel, so the fix reaches them the
-moment it reaches PyPI and not one minute before. Merged is not deployed.
-
-### Fixed
 
 - **The currency gate was MANUFACTURING the fault it detects.** Reported by the
   sac agent with a live reproduction inside their own container (scitex-ui,
@@ -134,6 +124,196 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   branch raise reddens `test_the_overlay_case_does_not_raise`; making the
   bare-host branch warn reddens
   `test_a_bare_host_install_still_fails_the_currency_gate`.
+
+- **A notifyd tick that could not read the store printed the same line as a
+  healthy idle one.** Measured on the host: the daemon failed its store read on
+  1196 consecutive ticks over roughly a day, and the only line anyone reads
+  said `notifyd tick 1196: sent=0 failed=0 skipped=0 failed_terminal=0
+  (0 recorded)` — character-for-character what a daemon with nothing to do
+  prints. The exception WAS logged ("notifyd reminder sweep raised; continuing
+  to delivery") but never COUNTED, so the summary stayed clean. The operator's
+  DMs, including the answer an agent was blocked on, went undelivered; they
+  asked "are you making progress?" twice, eleven minutes apart, because nothing
+  came back. Their inbox held 196 notifications, all marked seen, none
+  delivered.
+
+  The defect fixed here is the COUNTER, not that particular outage (the store
+  bug is its own change). The next delivery outage will have a different cause
+  and must not be silent:
+
+  - **A swallowed exception is a FAILED tick.** Every guard inside the tick —
+    the reminder sweep, the liveness sweep, the heartbeat stamp, each
+    recipient's inbox read, the clock, and the tick body itself — now RETURNS
+    what it swallowed instead of discarding it. Guarding the loop against a bad
+    sweep was always right; letting the guard also hide the failure is what made
+    a day of silence look like a day of quiet. `sent=0` WITH a fault is a
+    failure, and there is no longer a way to log one without the summary showing
+    it.
+  - **`pending` is THREE-VALUED.** "nothing pending" is `pending=0`; "could not
+    determine what is pending" is `pending=unknown`. Any recipient whose inbox
+    cannot be read poisons the whole count rather than contributing zero to it —
+    a partial count presented as a total is a lie with a number on it.
+  - **Consecutive failures ESCALATE**, getting louder rather than quieter: INFO
+    while healthy, WARNING on a failing tick, ERROR once the streak reaches the
+    threshold, carrying the count, how long it has been failing, and the
+    underlying reason. The streak is persisted, so a systemd bounce does not
+    reset the alarm to zero.
+  - **A healthy idle tick stays at INFO and stays terse.** Making an idle daemon
+    noisy is how alarms get ignored, which would reproduce this same outage by a
+    different route.
+  - **`scitex-cards health` gained a `delivery_liveness` check** reading
+    `<store_dir>/runtime/notifyd-liveness.json` (last successful delivery, last
+    ok tick, consecutive failures, reason). `notifyd_alive` only answers "is the
+    process ticking" — it was GREEN throughout the outage, because the loop was
+    spinning perfectly while doing nothing. The new check is three-valued too:
+    no record reads `unknown`, never "healthy" and never "failing", because
+    inventing a verdict from a measurement nobody took is the same class of lie.
+
+  Shape: `TickReport` (`_delivery/_tick.py`) is a frozen dataclass with a
+  validator that refuses an unexplained `pending=None` and a fault count that
+  disagrees with the failure bookkeeping — malformed answers fail where they are
+  built. `DeliveryLiveness` (`_delivery/_liveness.py`) folds one tick's outcome
+  into the persisted streak. `deliver_pending` additionally returns `pending`
+  and `faults`. Terminal-comm-miss reporting moved to `_delivery/_terminal.py`
+  and the store checks to `_health_store.py` (both re-exported unchanged) to
+  stay under the file-size budget.
+
+- **The path stamp was claimed, then re-claimed, by whoever wrote last.**
+  `stamp_store_provenance` described itself as idempotent — "a re-stamp with the
+  same store is a no-op" — which is true only for a store with ONE name. This
+  one has three for a single inode, so the no-op was a FLIP, and the repair lost
+  a race to the next write that every container write wins. Measured live on
+  2026-07-28/29: stamping a host-visible name took `GET /tasks` from 500 to 200
+  serving 2,684 cards, and the next container-side card write put it back to 500.
+  The stamp now answers WHICH STORE THIS IS, not WHO WROTE LAST — an unstamped
+  database is claimed by the first write, a stamp already naming the same file is
+  left alone however this writer spells it, and a genuinely different file is
+  still refused upstream by the ownership guard. Sameness is asked of the SAME
+  `_same_file` predicate that guard uses, so the stamper cannot disagree with the
+  guard that reads its stamp. This shipped as a MITIGATION and says so in its own
+  docstring: path identity cannot be made correct across namespaces, only stable.
+  The uuid above is the real repair; this is what stopped the bleeding while it
+  was being built.
+
+### Added
+
+- `scitex-cards store adopt-uuid [--uuid X]` — binds the resolved database to
+  an identity, once, deliberately. Writes ONE `schema_meta` row and prints it;
+  does not touch `store_path`, does not touch any card row, does not change
+  what any resolver resolves. Idempotent.
+- `resolve_store()` reports `store_uuid` and `expected_uuid`, and the `health`
+  doctor's `store_identity` check NAMES the identity in its detail — on the
+  passing branches too, so a registry can be populated from a healthy board.
+
+  Design: `docs/design/store-identity-is-a-uuid.md`. The 16
+  `xfail(strict=True)` spec tests written before the implementation now pass
+  with their markers deleted and not one assertion edited.
+
+- **The chat page's agent list has a fuzzy filter, and the matcher is
+  scitex-ui's.** Operator standing request, repeated: 「普通にあいまい検索でフィ
+  ルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board
+  already honoured it — its six filter `<select>`s are wrapped by scitex-ui's
+  Combobox — but the chat page's agent list did not, and it is the list that
+  grows without bound: every agent the fleet has ever registered, one flat
+  column, findable only by scrolling. The filter consumes
+  `STX.Combobox.fuzzyMatch`, the static scitex-ui exports beside the Combobox
+  class for consumers that want a list narrowed rather than a `<select>`
+  replaced. Writing a second subsequence matcher here would have meant two
+  different search behaviours in one app, so a test asserts the module CALLS
+  base's rather than reimplementing it; the substring fallback for an old
+  scitex-ui is deliberately dumber, and a test pins that too, so a page running
+  degraded is visibly rather than silently degraded.
+
+  Two structural details are load-bearing. `renderAgents` clears its container
+  every 5s, so the input lives OUTSIDE the rebuilt element (`#agent-list` exists
+  to be the wiped part) — inside it, the operator's query would vanish four
+  seconds after they typed it, which no screenshot taken right after typing can
+  show. And because rows are hidden after render, that same rebuild un-hides
+  everything, so a MutationObserver re-applies the filter; without it the filter
+  quietly stops working and keeps looking correct until you glance away.
+  Verified under jsdom against the rendered page, not asserted: typing `dvhlp`
+  (a subsequence of `dev-helper`, a substring of nothing) leaves one row, `wtg`
+  leaves both `worker-telegrammer-*`, a non-matching query says which word
+  emptied the list rather than showing a blank column, and a forced repaint
+  leaves the filtered set unchanged.
+
+- **A guard that everything we load from scitex-ui actually arrives.** Both
+  pages consume base through `if (window.STX && window.STX.Combobox) {…}`, which
+  is the right shape — a missing component must not take the page down — and
+  which also means a missing asset produces no error, no warning and no visual
+  cue: the page keeps working in its degraded branch indefinitely. The new test
+  resolves every `{% static 'scitex_ui/…' %}` path our templates reference
+  through the real finders, and then executes the bundle we feature-detect to
+  confirm it still attaches `window.STX.Combobox`. The second half is not
+  hypothetical: on 2026-07-29 scitex-ui regenerated that bundle with
+  `esbuild --format=esm`, producing valid JavaScript at the same path that
+  passed every exists() check and set NO global — which would have pinned every
+  consumer to its fallback permanently, with nothing failing anywhere.
+
+- **The Python rail now tells you when the CLI rail is dead.** Measured by
+  agent `grant` inside their own container: `scitex-cards --version` answered
+  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
+  0.17.9". Their card rail had been dead for HOURS with no way to know it. They
+  reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
+  does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
+  nothing ever prompted them to suspect cards was broken. One rail dead, one
+  rail alive, and they were watching the live one.
+
+  The fix is deliberately NOT "add the same gate to Python": that would take
+  the LAST WORKING RAIL from an agent whose CLI is already refusing, which is
+  strictly worse than the bug it fixes. `check_currency()` is unchanged and
+  still ERRORS at the CLI and MCP entry points. What Python gets instead is a
+  non-raising sibling: `currency_verdict()` answers in a fixed
+  `CurrencyVerdict(state, detail, checked)` shape whose `state` is
+  THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
+  an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
+  `warn_if_stale_once()` wraps it and logs ONE warning per process that names
+  the sibling rail explicitly — "this Python call SUCCEEDED, but the CLI/MCP
+  rail for this same package is currently REFUSING" — quotes scitex-dev's
+  message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
+  console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
+  alias `scitex-todo list-tasks`, because the latter is what actually refused
+  in the incident and is still what much of the fleet types; a reader must
+  recognise the command they are running.
+
+  A FAILING CURRENCY CHECK CANNOT TAKE THE PYTHON RAIL DOWN — and the guard
+  states its limit rather than claiming a false absolute. It swallows every
+  `Exception` **and `SystemExit`**, degrading all of it to `"unknown"`.
+  `SystemExit` is deliberate and was a real hole: it derives from
+  `BaseException`, not `Exception`, so a `sys.exit()` anywhere on the currency
+  path used to propagate straight out of `dm_send` — measured, with the store
+  never touched and the DM never sent, on the one rail this feature exists to
+  keep alive. scitex-dev is optional and independently versioned and its API is
+  deliberately not pinned, so "present but changed" is exactly the case covered;
+  a library calling `sys.exit()` inside a diagnostic helper is a LIBRARY BUG and
+  absorbing it is correct. The guard is NOT `BaseException`, and a test pins
+  that: `KeyboardInterrupt` (and `GeneratorExit`, `asyncio.CancelledError`) must
+  still propagate, because Ctrl-C is the operator's INTENT and swallowing it
+  would trade one usability bug for another. Swallow library misbehaviour,
+  propagate "stop now".
+
+  The remedy is a base rebake and never an in-place `pip` upgrade, and a test
+  pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout
+  masking exactly ONE dist-info name; on the next base rebake that whiteout
+  covers a name that no longer exists, the new base copy is masked by nothing,
+  TWO dist-info directories appear, and the rail is dead AT BOOT. (Measured:
+  two agents, same version, same base, both healthy, OPPOSITE restart-safety,
+  differing only in WHEN they upgraded.)
+
+  Wired into the backend seam's messaging verbs — `LocalBackend.dm_send`
+  (the confirmed entry point from the incident), `dm_list` and
+  `poll_notifications` — and deliberately NOT into `_cli/_main.py` or
+  `_cli/_mcp.py`, which already call `check_currency()`.
+
+## [0.17.12] - 2026-07-29
+
+Cut to DELIVER the board fix, not because the code needed a version. The
+operator's board has been unusable for over a day — first serving a clean,
+zero-card page while 2654 cards sat in the canonical database, then a bare
+HTTP 500. The host runs a NON-EDITABLE wheel, so the fix reaches them the
+moment it reaches PyPI and not one minute before. Merged is not deployed.
+
+### Fixed
 
 - **The board decided whether the store existed by looking for a file the store
   does not use.** `get_board` gated the CARD read on the existence of the
@@ -332,7 +512,7 @@ operator is migrating off Telegram onto the cards chat TODAY and every fix
 below was invisible to them while it sat on `develop`: they run an installed
 package, not a checkout. Merged is not deployed.
 
-Everything under [Unreleased] below moves here.
+Everything under the retired heading below was cut here or in 0.17.11.
 
 ### Fixed
 
@@ -349,160 +529,16 @@ Everything under [Unreleased] below moves here.
   enforces that, because a written rule about not hardcoding colours is exactly
   what gets forgotten. (Operator directive: 「最適 ui を常に使ってください」.)
 
-## [Unreleased]
+## [0.17.10 / 0.17.11] — entries filed late
 
-### Fixed
-
-- **A notifyd tick that could not read the store printed the same line as a
-  healthy idle one.** Measured on the host: the daemon failed its store read on
-  1196 consecutive ticks over roughly a day, and the only line anyone reads
-  said `notifyd tick 1196: sent=0 failed=0 skipped=0 failed_terminal=0
-  (0 recorded)` — character-for-character what a daemon with nothing to do
-  prints. The exception WAS logged ("notifyd reminder sweep raised; continuing
-  to delivery") but never COUNTED, so the summary stayed clean. The operator's
-  DMs, including the answer an agent was blocked on, went undelivered; they
-  asked "are you making progress?" twice, eleven minutes apart, because nothing
-  came back. Their inbox held 196 notifications, all marked seen, none
-  delivered.
-
-  The defect fixed here is the COUNTER, not that particular outage (the store
-  bug is its own change). The next delivery outage will have a different cause
-  and must not be silent:
-
-  - **A swallowed exception is a FAILED tick.** Every guard inside the tick —
-    the reminder sweep, the liveness sweep, the heartbeat stamp, each
-    recipient's inbox read, the clock, and the tick body itself — now RETURNS
-    what it swallowed instead of discarding it. Guarding the loop against a bad
-    sweep was always right; letting the guard also hide the failure is what made
-    a day of silence look like a day of quiet. `sent=0` WITH a fault is a
-    failure, and there is no longer a way to log one without the summary showing
-    it.
-  - **`pending` is THREE-VALUED.** "nothing pending" is `pending=0`; "could not
-    determine what is pending" is `pending=unknown`. Any recipient whose inbox
-    cannot be read poisons the whole count rather than contributing zero to it —
-    a partial count presented as a total is a lie with a number on it.
-  - **Consecutive failures ESCALATE**, getting louder rather than quieter: INFO
-    while healthy, WARNING on a failing tick, ERROR once the streak reaches the
-    threshold, carrying the count, how long it has been failing, and the
-    underlying reason. The streak is persisted, so a systemd bounce does not
-    reset the alarm to zero.
-  - **A healthy idle tick stays at INFO and stays terse.** Making an idle daemon
-    noisy is how alarms get ignored, which would reproduce this same outage by a
-    different route.
-  - **`scitex-cards health` gained a `delivery_liveness` check** reading
-    `<store_dir>/runtime/notifyd-liveness.json` (last successful delivery, last
-    ok tick, consecutive failures, reason). `notifyd_alive` only answers "is the
-    process ticking" — it was GREEN throughout the outage, because the loop was
-    spinning perfectly while doing nothing. The new check is three-valued too:
-    no record reads `unknown`, never "healthy" and never "failing", because
-    inventing a verdict from a measurement nobody took is the same class of lie.
-
-  Shape: `TickReport` (`_delivery/_tick.py`) is a frozen dataclass with a
-  validator that refuses an unexplained `pending=None` and a fault count that
-  disagrees with the failure bookkeeping — malformed answers fail where they are
-  built. `DeliveryLiveness` (`_delivery/_liveness.py`) folds one tick's outcome
-  into the persisted streak. `deliver_pending` additionally returns `pending`
-  and `faults`. Terminal-comm-miss reporting moved to `_delivery/_terminal.py`
-  and the store checks to `_health_store.py` (both re-exported unchanged) to
-  stay under the file-size budget.
-
-### Added
-
-- **The chat page's agent list has a fuzzy filter, and the matcher is
-  scitex-ui's.** Operator standing request, repeated: 「普通にあいまい検索でフィ
-  ルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board
-  already honoured it — its six filter `<select>`s are wrapped by scitex-ui's
-  Combobox — but the chat page's agent list did not, and it is the list that
-  grows without bound: every agent the fleet has ever registered, one flat
-  column, findable only by scrolling. The filter consumes
-  `STX.Combobox.fuzzyMatch`, the static scitex-ui exports beside the Combobox
-  class for consumers that want a list narrowed rather than a `<select>`
-  replaced. Writing a second subsequence matcher here would have meant two
-  different search behaviours in one app, so a test asserts the module CALLS
-  base's rather than reimplementing it; the substring fallback for an old
-  scitex-ui is deliberately dumber, and a test pins that too, so a page running
-  degraded is visibly rather than silently degraded.
-
-  Two structural details are load-bearing. `renderAgents` clears its container
-  every 5s, so the input lives OUTSIDE the rebuilt element (`#agent-list` exists
-  to be the wiped part) — inside it, the operator's query would vanish four
-  seconds after they typed it, which no screenshot taken right after typing can
-  show. And because rows are hidden after render, that same rebuild un-hides
-  everything, so a MutationObserver re-applies the filter; without it the filter
-  quietly stops working and keeps looking correct until you glance away.
-  Verified under jsdom against the rendered page, not asserted: typing `dvhlp`
-  (a subsequence of `dev-helper`, a substring of nothing) leaves one row, `wtg`
-  leaves both `worker-telegrammer-*`, a non-matching query says which word
-  emptied the list rather than showing a blank column, and a forced repaint
-  leaves the filtered set unchanged.
-
-- **A guard that everything we load from scitex-ui actually arrives.** Both
-  pages consume base through `if (window.STX && window.STX.Combobox) {…}`, which
-  is the right shape — a missing component must not take the page down — and
-  which also means a missing asset produces no error, no warning and no visual
-  cue: the page keeps working in its degraded branch indefinitely. The new test
-  resolves every `{% static 'scitex_ui/…' %}` path our templates reference
-  through the real finders, and then executes the bundle we feature-detect to
-  confirm it still attaches `window.STX.Combobox`. The second half is not
-  hypothetical: on 2026-07-29 scitex-ui regenerated that bundle with
-  `esbuild --format=esm`, producing valid JavaScript at the same path that
-  passed every exists() check and set NO global — which would have pinned every
-  consumer to its fallback permanently, with nothing failing anywhere.
-
-- **The Python rail now tells you when the CLI rail is dead.** Measured by
-  agent `grant` inside their own container: `scitex-cards --version` answered
-  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
-  0.17.9". Their card rail had been dead for HOURS with no way to know it. They
-  reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
-  does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
-  nothing ever prompted them to suspect cards was broken. One rail dead, one
-  rail alive, and they were watching the live one.
-
-  The fix is deliberately NOT "add the same gate to Python": that would take
-  the LAST WORKING RAIL from an agent whose CLI is already refusing, which is
-  strictly worse than the bug it fixes. `check_currency()` is unchanged and
-  still ERRORS at the CLI and MCP entry points. What Python gets instead is a
-  non-raising sibling: `currency_verdict()` answers in a fixed
-  `CurrencyVerdict(state, detail, checked)` shape whose `state` is
-  THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
-  an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
-  `warn_if_stale_once()` wraps it and logs ONE warning per process that names
-  the sibling rail explicitly — "this Python call SUCCEEDED, but the CLI/MCP
-  rail for this same package is currently REFUSING" — quotes scitex-dev's
-  message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
-  console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
-  alias `scitex-todo list-tasks`, because the latter is what actually refused
-  in the incident and is still what much of the fleet types; a reader must
-  recognise the command they are running.
-
-  A FAILING CURRENCY CHECK CANNOT TAKE THE PYTHON RAIL DOWN — and the guard
-  states its limit rather than claiming a false absolute. It swallows every
-  `Exception` **and `SystemExit`**, degrading all of it to `"unknown"`.
-  `SystemExit` is deliberate and was a real hole: it derives from
-  `BaseException`, not `Exception`, so a `sys.exit()` anywhere on the currency
-  path used to propagate straight out of `dm_send` — measured, with the store
-  never touched and the DM never sent, on the one rail this feature exists to
-  keep alive. scitex-dev is optional and independently versioned and its API is
-  deliberately not pinned, so "present but changed" is exactly the case covered;
-  a library calling `sys.exit()` inside a diagnostic helper is a LIBRARY BUG and
-  absorbing it is correct. The guard is NOT `BaseException`, and a test pins
-  that: `KeyboardInterrupt` (and `GeneratorExit`, `asyncio.CancelledError`) must
-  still propagate, because Ctrl-C is the operator's INTENT and swallowing it
-  would trade one usability bug for another. Swallow library misbehaviour,
-  propagate "stop now".
-
-  The remedy is a base rebake and never an in-place `pip` upgrade, and a test
-  pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout
-  masking exactly ONE dist-info name; on the next base rebake that whiteout
-  covers a name that no longer exists, the new base copy is masked by nothing,
-  TWO dist-info directories appear, and the rail is dead AT BOOT. (Measured:
-  two agents, same version, same base, both healthy, OPPOSITE restart-safety,
-  differing only in WHEN they upgraded.)
-
-  Wired into the backend seam's messaging verbs — `LocalBackend.dm_send`
-  (the confirmed entry point from the incident), `dm_list` and
-  `poll_notifications` — and deliberately NOT into `_cli/_main.py` or
-  `_cli/_mcp.py`, which already call `check_currency()`.
+The 0.17.10 cut left a live `## [Unreleased]` heading HERE, below its own
+section, and later PRs appended to it — a search for "Unreleased" finds this one
+as readily as the one at the top of the file. #611's notifyd entry landed here,
+which would have shipped a day-long delivery outage documented below the 0.17.9
+heading where no reader of the release notes would ever meet it. Those entries
+have been moved up to 0.17.13. What remains below belongs to 0.17.10 and
+0.17.11, both already published. The heading is retired so nothing lands here
+again.
 
 ### Changed
 
