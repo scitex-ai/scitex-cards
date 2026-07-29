@@ -110,11 +110,21 @@ _CONVENTION_A_NAMES = {
     # Standalone pull-inbox read path — 1:1 with `_inbox.poll_inbox`
     # (registered in `_mcp_skills`). PULL card-message delivery, no sac.
     "poll_notifications",
+    # ...and the CONFIRM half — 1:1 with
+    # `_inbox_confirm.confirm_notifications`. Reading hands over; only this
+    # advances the cursor (lossless-delivery split, incident 2026-07-29).
+    "ack_notifications",
     # Operator↔agent direct messages — 1:1 with `_threads.append_message` /
     # `_threads.get_thread` (registered in `_mcp_skills`; scitex-dev DM
     # convention v1, threads.yaml sidecar).
     "dm_send",
     "dm_list",
+    # ...and the FILE half of the same surface — `_attachments.store_local_file`
+    # composed with `dm_send`. Text-only DMs meant a real deliverable reached
+    # the operator as prose describing a deliverable; this is the entry point
+    # that was missing, and it is deliberately NOT a BACKEND_VERBS member
+    # (a path-taking verb there would be dispatchable over HTTP).
+    "dm_send_document",
 }
 # Convention B — `todo_<verb>_<noun>` for the audit §5 required skills
 # tools. These don't map 1:1 to a Python API; they introspect the bundled

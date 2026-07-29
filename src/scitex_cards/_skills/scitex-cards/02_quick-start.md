@@ -3,7 +3,7 @@ description: |
   [TOPIC] Quick Start
   [DETAILS] 30-second tour — load the task store, build mermaid source,
   render to PNG (Python), plus the equivalent CLI one-liners.
-tags: [scitex-todo-quick-start]
+tags: [scitex-cards-quick-start]
 ---
 
 # Quick Start
@@ -38,14 +38,14 @@ tasks:
 
 ```bash
 # default store: $SCITEX_CARDS_DB, else the user-canonical database
-scitex-todo render-graph -o tasks.png
+scitex-cards render-graph -o tasks.png
 
 # inspect the generated mermaid without rendering
-scitex-todo render-graph --print-mermaid
+scitex-cards render-graph --print-mermaid
 
 # list the resolved tasks (machine-readable with --json)
-scitex-todo list-tasks --json
+scitex-cards list-tasks --json
 
 # read-only dependency-graph web board (needs the [web] extra)
-scitex-todo board --port 8051
+scitex-cards board --port 8051
 ```

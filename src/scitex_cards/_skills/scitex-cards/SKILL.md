@@ -1,22 +1,22 @@
 ---
-name: scitex-todo
+name: scitex-cards
 description: |
   [WHAT] Canonical SQLite task store with pluggable adapters — validate
   task rows (id/title/status + depends_on/blocks/priority/parent) and
   render them as a mermaid dependency graph (PNG), a read-only React-Flow web
   board, or a plain task listing.
-  [WHEN] **Use scitex-todo for EVERY durable / cross-session / cross-agent
+  [WHEN] **Use scitex-cards for EVERY durable / cross-session / cross-agent
   todo.** When the user wants to "track tasks as a dependency graph",
   "render my todo as a diagram", "show what blocks what", "list my
   tasks", or "launch the todo board" — AND any time YOU are
   about to write a private TODO / FUTURE / notes file in your repo's
   `GITIGNORED/` for something that should persist or be operator- or
   peer-visible.
-  [HOW] `import scitex_cards as todo` for the Python API; `scitex-todo --help`
+  [HOW] `import scitex_cards as todo` for the Python API; `scitex-cards --help`
   for the CLI; **or the MCP tools** (`add_task`, `update_task`,
   `comment_task`, `list_tasks` — see [05_mcp-tools.md](05_mcp-tools.md)) —
   THE preferred wire from inside an agent container.
-tags: [scitex-todo]
+tags: [scitex-cards]
 primary_interface: python
 interfaces:
   python: 3
@@ -26,7 +26,7 @@ interfaces:
   http: 0
 ---
 
-# scitex-todo
+# scitex-cards
 
 A canonical SQLite task store with pluggable adapters. The database
 (one `tasks` table) is the single source of truth; adapters render or
@@ -35,16 +35,16 @@ board ship today; org-mode and drag-to-reprioritize are on the roadmap.
 
 The store identity is `$SCITEX_CARDS_DB` (explicit env var wins,
 otherwise the user-canonical `~/.scitex/cards/cards.db` — see
-`scitex-todo resolve-store`).
+`scitex-cards resolve-store`).
 
 ## ⚑ MANDATE — single source of truth (operator + lead, 2026-06-12)
 
-scitex-todo is **THE fleet's single source of truth** for all durable /
+scitex-cards is **THE fleet's single source of truth** for all durable /
 cross-session / cross-agent task tracking. Every agent (workers + lead +
 the operator) writes here; every viewer reads from here. This is the
 binding rule:
 
-- **USE the scitex-todo MCP** (`add_task`, `update_task`,
+- **USE the scitex-cards MCP** (`add_task`, `update_task`,
   `comment_task`, `list_tasks` — see [05_mcp-tools.md](05_mcp-tools.md))
   for every todo. From a Claude-Code agent container, the MCP wire is
   the preferred path; the CLI is the equivalent fallback.
@@ -56,8 +56,8 @@ binding rule:
   single turn's check-off list — it disappears when the turn ends.
   Anything that should persist to the next turn, be visible to the
   operator or a peer, or carry a deadline / blocker / dependency goes
-  in scitex-todo.
-- **When in doubt, write to scitex-todo.** A stale entry is cheap to
+  in scitex-cards.
+- **When in doubt, write to scitex-cards.** A stale entry is cheap to
   update; a missing entry is invisible (operator + lead + every other
   agent can't react to what isn't on the board).
 
@@ -66,9 +66,9 @@ binding rule:
 Real corruption episode: on 2026-06-13 the (then file-based) shared
 store was found **truncated mid-string**. The board render broke, the
 throughput script broke, AND every agent's read/write through
-scitex-todo broke until the lead repaired it by hand. PR-#166's
+scitex-cards broke until the lead repaired it by hand. PR-#166's
 post-dump round-trip-validate layer made the WRITER side safer going
-forward — but only for writes through scitex-todo's API. The store
+forward — but only for writes through scitex-cards's API. The store
 has since moved to SQLite, which removes that specific failure class,
 but the underlying rule is unchanged: a hand-edit (direct SQL, a text
 editor on the file, GUI save on a raw export) bypasses every safety
@@ -80,7 +80,7 @@ The binding rule:
   raw export and re-importing it as canonical. The store is a
   binary-style asset from your point of view: read via the API,
   mutate via the API, write via the API.
-- **Always use one of**: the `scitex-todo` CLI verbs (`add`,
+- **Always use one of**: the `scitex-cards` CLI verbs (`add`,
   `update`, `done`, `comment`, `close`, `delete`, `sync-github`,
   `migrate-*`), the MCP tools (`add_task`, `update_task`,
   `comment_task`, `complete_task`, `delete_task`, …), or the
@@ -104,7 +104,7 @@ skip the audit trail (so the operator loses time-travel recovery on
 the bad version). Use the API.
 
 Enforcement: cultural for now (this skill is propagated to every
-agent via `scitex-todo skills propagate` per PR #161, so every
+agent via `scitex-cards skills propagate` per PR #161, so every
 agent reads it on boot).
 
 ## ⚑ MANDATE — record evidence at PR-merge / issue-close time (op-2026-06-13, lead a2a `0cdca03a`)
@@ -123,7 +123,7 @@ The hard rule:
   CLOSE an issue that does the same — you MUST IMMEDIATELY call:
 
   ```bash
-  scitex-todo done <card-id> --pr-url <merged-PR-URL>
+  scitex-cards done <card-id> --pr-url <merged-PR-URL>
   ```
 
   (or equivalently, via MCP / Python API:
@@ -143,9 +143,9 @@ The hard rule:
   signal, and the fleet plans on the signal not on the work itself.
 
 - **Bulk catch-up is also OK** when an agent realises a batch of
-  past PRs was never recorded: `scitex-todo sync-github --since
+  past PRs was never recorded: `scitex-cards sync-github --since
   <date> -y` walks the agent's recent merged PRs and writes the
-  `pr-<repo>-<num>` done-records in one shot (scitex-todo
+  `pr-<repo>-<num>` done-records in one shot (scitex-cards
   used this as the overnight backfill mechanism, lead a2a
   `fbd15187`).
 
@@ -172,57 +172,57 @@ full write-protocol table in
 Three rules to internalize: (a) you own rows where `task.agent ==
 <you>`; never edit another agent's fields — append a `comments[]`
 entry instead. (b) Status flips on your own rows go via
-`scitex-todo update --status` (or `comment_task` for activity-only).
-(c) When in doubt, write to scitex-todo — a stale row is cheap to
+`scitex-cards update --status` (or `comment_task` for activity-only).
+(c) When in doubt, write to scitex-cards — a stale row is cheap to
 update; a missing row is invisible to operator + lead + peers.
 
 Read [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md)
 in full before designing any new fleet workflow that would touch
 task state.
 
-### Using scitex-todo (CLI + MCP) — concrete how-to
+### Using scitex-cards (CLI + MCP) — concrete how-to
 
 Every fleet agent uses the same surface. The CLI works without the
 `[mcp]` extra; the MCP surface (`add_task` / `update_task` /
 `comment_task` / `list_tasks`) ships as `pip install
-'scitex-todo[mcp]>=0.5.2'` per the P3a dotfiles wave. Pick whichever
+'scitex-cards[mcp]>=0.5.2'` per the P3a dotfiles wave. Pick whichever
 is more ergonomic — the wire is identical.
 
 ```bash
 # Register a new task (operator drop / agent self-add).
-scitex-todo add --title "fix CI red on develop" \
-  --project scitex-todo --agent scitex-todo --priority 2
+scitex-cards add --title "fix CI red on develop" \
+  --project scitex-cards --agent scitex-cards --priority 2
 
 # Flip status as you work. --add-comment stamps an activity row.
-scitex-todo update todo-pXX --status in_progress \
+scitex-cards update todo-pXX --status in_progress \
   --add-comment "starting; PR draft soon"
 
-scitex-todo update todo-pXX --status done \
+scitex-cards update todo-pXX --status done \
   --pr-url https://github.com/.../pull/123 \
   --add-comment "merged; tests green"
 
 # Append a comment without changing any other field (PR #144).
-scitex-todo comment todo-pXX "lead a2a: please rebase before merging" \
-  --author scitex-todo
+scitex-cards comment todo-pXX "lead a2a: please rebase before merging" \
+  --author scitex-cards
 
 # List the tasks for a project / agent.
-scitex-todo list-tasks --agent scitex-todo
-scitex-todo list-tasks --status pending --project scitex-todo
+scitex-cards list-tasks --agent scitex-cards
+scitex-cards list-tasks --status pending --project scitex-cards
 
 # Filter by kind — e.g. hide non-actionable status-tracking cards
 # (q-* quality flags etc., PR #146 `kind: status`).
-scitex-todo list-tasks --kind task          # actionable only
-scitex-todo list-tasks --kind status        # status-tracking only
+scitex-cards list-tasks --kind task          # actionable only
+scitex-cards list-tasks --kind status        # status-tracking only
 
 # Set / clear an edge (depends_on).
-scitex-todo update todo-pYY --depends-on todo-pXX
+scitex-cards update todo-pYY --depends-on todo-pXX
 
 # Pick the next runnable task FOR THIS AGENT (single canonical rule).
-SCITEX_TODO_AGENT_ID=scitex-todo \
-  scitex-todo next --mine --auto-claim --json
+SCITEX_TODO_AGENT_ID=scitex-cards \
+  scitex-cards next --mine --auto-claim --json
 
 # Push side — wake the owning agent on new/commented/changed tasks.
-scitex-todo watch --push --interval 2
+scitex-cards watch --push --interval 2
 ```
 
 Equivalent MCP tools (Claude-Code container with the P3a stanza
@@ -238,8 +238,8 @@ Attribution: every write tags the agent via `SCITEX_TODO_AGENT_ID`
 
 [32_agent-self-consumption-loop.md](32_agent-self-consumption-loop.md)
 documents the 7-step loop every fleet agent runs on wake. The
-operator drops a request → it lands as a task → `scitex-todo watch
---push` wakes the owning agent → the agent runs `scitex-todo next
+operator drops a request → it lands as a task → `scitex-cards watch
+--push` wakes the owning agent → the agent runs `scitex-cards next
 --mine --auto-claim` → works → comments + flips status → the lead
 monitors. Read 32 before wiring up a new agent's harness.
 
@@ -249,7 +249,7 @@ monitors. Read 32 before wiring up a new agent's harness.
 - [01_installation.md](01_installation.md) — install + import sanity check
 - [02_quick-start.md](02_quick-start.md) — load → build_mermaid → render
 - [03_python-api.md](03_python-api.md) — public callables and the schema
-- [04_cli-reference.md](04_cli-reference.md) — `scitex-todo` subcommands
+- [04_cli-reference.md](04_cli-reference.md) — `scitex-cards` subcommands
 - [05_mcp-tools.md](05_mcp-tools.md) — the MCP tool surface (Convention A)
 
 ### Workflows (10+)
@@ -272,7 +272,7 @@ monitors. Read 32 before wiring up a new agent's harness.
   the fleet-wide P3a rollout (agent-container `to_home/_base/.mcp.json`)
 - [22_skills-propagation.md](22_skills-propagation.md) — **fleet-wide
   `required_skills` propagation** via the bundled manifest +
-  `scitex-todo skills propagate --agents-dir <DIR>` idempotent sweep.
+  `scitex-cards skills propagate --agents-dir <DIR>` idempotent sweep.
   Sister artifact to 21 (which covers the `.mcp.json` side).
 
 ### Architecture (30+)
@@ -284,7 +284,7 @@ monitors. Read 32 before wiring up a new agent's harness.
   spec; for the short how-to, use 11.
 - [32_agent-self-consumption-loop.md](32_agent-self-consumption-loop.md)
   — the **7-step agent loop**. Every fleet agent reads this. Pairs
-  with the `scitex-todo next` (pull side) + `scitex-todo watch --push`
+  with the `scitex-cards next` (pull side) + `scitex-cards watch --push`
   (push side) CLI verbs to realize the operator's TG 12038
   central-command vision: the board IS the work queue, agents drain
   the backlog autonomously, the lead coordinates and escalates.
@@ -310,7 +310,7 @@ monitors. Read 32 before wiring up a new agent's harness.
 
 ### For consuming agents (42+)
 - [42_for-consuming-agents.md](42_for-consuming-agents.md) — **start
-  here if you've been told "use scitex-todo for your todos."**
+  here if you've been told "use scitex-cards for your todos."**
   One-page protocol for any fleet agent: CRUD verbs, closed enums,
   title-prefix convention, lead↔worker sync wire. (Was `40_…` in PR
   #63's source branch; renumbered to `42_` during rebase to avoid

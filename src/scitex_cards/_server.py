@@ -50,7 +50,9 @@ from ._backend import BACKEND_VERBS, LocalBackend
 
 #: Verbs whose store parameter is named ``store`` (the dm/inbox
 #: compositions); every other backend verb takes ``tasks_path``.
-_STORE_KWARG_IS_STORE = frozenset({"dm_send", "dm_list", "poll_notifications"})
+_STORE_KWARG_IS_STORE = frozenset(
+    {"dm_send", "dm_list", "poll_notifications", "ack_notifications"}
+)
 
 #: Body keys that would retarget the pinned store — rejected outright.
 _FORBIDDEN_BODY_KEYS = frozenset({"tasks_path", "store"})

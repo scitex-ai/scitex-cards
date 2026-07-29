@@ -315,7 +315,7 @@ def test_local_dead_daemon_hint_names_the_notifyd_command(tmp_path):
     # Act
     verdict = assess_liveness(pidfile, now=NOW)
     # Assert
-    assert "scitex-todo notifyd" in verdict["hint"]
+    assert "scitex-cards notifyd" in verdict["hint"]
 
 
 def test_local_live_daemon_verdict_is_ok(tmp_path):

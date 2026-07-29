@@ -301,6 +301,10 @@ TOOL_NAMES: tuple[str, ...] = (
     "help_clear",
     # Standalone pull-inbox read path (1:1 `_inbox.poll_inbox`; in _mcp_skills).
     "poll_notifications",
+    # ...and its CONFIRM half (1:1 `_inbox_confirm.confirm_notifications`).
+    # Reading hands over; only this advances the cursor, so an undelivered
+    # notification is redelivered instead of destroyed (incident 2026-07-29).
+    "ack_notifications",
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
     "health",
@@ -309,6 +313,12 @@ TOOL_NAMES: tuple[str, ...] = (
     # Operator↔agent DMs (threads.json sidecar; registered in _mcp_skills).
     "dm_send",
     "dm_list",
+    # ...and the FILE half. Text-only DMs meant a deliverable reached the
+    # operator as prose describing a deliverable; this is the entry point that
+    # was simply missing. Composes _attachments with dm_send in-process, and
+    # is deliberately NOT a BACKEND_VERBS member — `_server.py` dispatches that
+    # tuple over HTTP, and a path-taking verb there would be remotely callable.
+    "dm_send_document",
 )
 
 # Imports for the registration side effect: these modules (kept separate for

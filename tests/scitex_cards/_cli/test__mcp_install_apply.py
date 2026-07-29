@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for `scitex-todo mcp install --apply` (fleet P3a).
+"""Tests for `scitex-cards mcp install --apply` (fleet P3a).
 
 The print-only path is already covered elsewhere; this module pins
 the new --apply behavior. CliRunner against a tmp ``.mcp.json`` (no
@@ -44,7 +44,7 @@ def test_apply_writes_scitex_cards_entry(tmp_path):
     # Act
     data = _read_json(target)
     # Assert
-    assert "scitex-todo" in data.get("mcpServers", {})
+    assert "scitex-cards" in data.get("mcpServers", {})
 
 
 def test_apply_writes_correct_command_args(tmp_path):
@@ -53,9 +53,9 @@ def test_apply_writes_correct_command_args(tmp_path):
     target = tmp_path / ".mcp.json"
     runner.invoke(main, ["mcp", "install", "--apply", "--to", str(target), "-y"])
     # Act
-    entry = _read_json(target)["mcpServers"]["scitex-todo"]
+    entry = _read_json(target)["mcpServers"]["scitex-cards"]
     # Assert
-    assert entry == {"command": "scitex-todo", "args": ["mcp", "start"]}
+    assert entry == {"command": "scitex-cards", "args": ["mcp", "start"]}
 
 
 # === --env-tasks-path pins the store path (P3a host-store wire-up) ==========
@@ -87,7 +87,7 @@ def test_apply_env_tasks_path_pins_env_block(tmp_path):
         ],
     )
     # Assert
-    entry = _read_json(target)["mcpServers"]["scitex-todo"]
+    entry = _read_json(target)["mcpServers"]["scitex-cards"]
     assert entry.get("env") == {"SCITEX_CARDS_DB": pinned}
 
 
@@ -111,8 +111,8 @@ def test_apply_env_tasks_path_preserves_command_args(tmp_path):
         ],
     )
     # Assert — command + args still present alongside the new env block.
-    entry = _read_json(target)["mcpServers"]["scitex-todo"]
-    assert entry["command"] == "scitex-todo" and entry["args"] == ["mcp", "start"]
+    entry = _read_json(target)["mcpServers"]["scitex-cards"]
+    assert entry["command"] == "scitex-cards" and entry["args"] == ["mcp", "start"]
 
 
 def test_apply_without_env_tasks_path_omits_env_block(tmp_path):
@@ -122,7 +122,7 @@ def test_apply_without_env_tasks_path_omits_env_block(tmp_path):
     # Act
     runner.invoke(main, ["mcp", "install", "--apply", "--to", str(target), "-y"])
     # Assert
-    entry = _read_json(target)["mcpServers"]["scitex-todo"]
+    entry = _read_json(target)["mcpServers"]["scitex-cards"]
     assert "env" not in entry
 
 
@@ -181,7 +181,7 @@ def test_apply_env_tasks_path_updates_when_pin_changes(tmp_path):
         ],
     )
     # Assert
-    entry = _read_json(target)["mcpServers"]["scitex-todo"]
+    entry = _read_json(target)["mcpServers"]["scitex-cards"]
     assert entry["env"]["SCITEX_CARDS_DB"] == "/new/cards.db"
 
 
@@ -314,7 +314,7 @@ def test_print_only_still_emits_snippet(tmp_path):
     # Act
     result = runner.invoke(main, ["mcp", "install"])
     # Assert
-    assert "scitex-todo" in result.output
+    assert "scitex-cards" in result.output
 
 
 # EOF

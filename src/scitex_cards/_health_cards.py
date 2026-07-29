@@ -100,7 +100,7 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-todo resolve-store`.",
+            "hint": "check the store path with `scitex-cards resolve-store`.",
         }
 
     # Two DISTINCT lies, deliberately not merged — they corrupt different
@@ -144,7 +144,7 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
             hints.append(
                 "the close did not stick. Set the honest terminal state — `done` if "
                 "the work landed, `cancelled` if it was closed as not-planned — with "
-                "`scitex-todo update <id> --status done|cancelled`. A comment saying "
+                "`scitex-cards update <id> --status done|cancelled`. A comment saying "
                 "a card is closed is NOT a decision; the STATUS FIELD is."
             )
         if false_completions:
@@ -227,7 +227,7 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-todo resolve-store`.",
+            "hint": "check the store path with `scitex-cards resolve-store`.",
         }
 
     by_id = {t.get("id"): t for t in tasks}
@@ -257,7 +257,7 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
             "hint": (
                 "the unblock event fired when the dependency completed and nobody "
                 "acted on it. Move each card to the honest status — `in_progress` if "
-                "it is being worked, `deferred` if it can wait — with `scitex-todo "
+                "it is being worked, `deferred` if it can wait — with `scitex-cards "
                 "update <id> --status in_progress|deferred`. A card blocked on a "
                 "finished card is not blocked, it is unstarted."
             ),

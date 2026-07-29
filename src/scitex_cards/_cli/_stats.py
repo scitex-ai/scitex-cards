@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo print-stats`` CLI verb.
+"""``scitex-cards print-stats`` CLI verb.
 
 Compute per-(agent | project | host) throughput from the canonical task
 store: created / completed / delta / ratio / velocity. Optionally
-pushes per-agent notify bodies via scitex-todo's self-contained HTTP
+pushes per-agent notify bodies via scitex-cards's self-contained HTTP
 push wire (:func:`scitex_cards._push.deliver`) — operator's standing
 direction that "agents see their own numbers every hour and
 self-correct."
@@ -72,11 +72,11 @@ def _format_json(rows: list[GroupStats]) -> str:
 
 
 def _push_notify(agent: str, body: str) -> str:
-    """Push the notify body to ``agent`` via scitex-todo's self-contained
+    """Push the notify body to ``agent`` via scitex-cards's self-contained
     push wire (:func:`scitex_cards._push.deliver`).
 
     Operator standing direction via lead a2a `8e51b1e07` + `ffc6629c8`
-    (2026-06-12): no `sac` CLI dependency — scitex-todo owns its push
+    (2026-06-12): no `sac` CLI dependency — scitex-cards owns its push
     delivery. Result label is the wire used (`http` / `dry-run`) or
     an error tag (`no-turn-url-configured` / `http-error` / etc.).
     """
@@ -164,7 +164,7 @@ def _rollup(path, by, since, fmt):
     is_flag=True,
     help=(
         "After printing the stats, push a per-agent notify body via "
-        "scitex-todo's self-contained HTTP push wire (_push.deliver). "
+        "scitex-cards's self-contained HTTP push wire (_push.deliver). "
         "The body lists each agent's open tasks (RUNNABLE first, "
         "then BLOCKED + reason), ⚠ on stale in_progress, and "
         "recently-completed lines so the receiver can self-correct."
@@ -200,10 +200,10 @@ def stats_cmd(
 
     \b
     Example:
-      $ scitex-todo print-stats --by agent --since 2026-06-01
-      $ scitex-todo print-stats --by agent --notify
-      $ scitex-todo print-stats --by agent --notify --nudge-quiet
-      $ scitex-todo print-stats --by project --format json
+      $ scitex-cards print-stats --by agent --since 2026-06-01
+      $ scitex-cards print-stats --by agent --notify
+      $ scitex-cards print-stats --by agent --notify --nudge-quiet
+      $ scitex-cards print-stats --by project --format json
     """
     path = resolve_tasks_path(None)
 

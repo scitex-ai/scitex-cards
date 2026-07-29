@@ -597,7 +597,11 @@ def test_loop_leaves_the_same_notifications_unseen(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_missing_recipients_file_yields_an_empty_summary(tmp_path):
     # Arrange
-    # a notification exists, but no recipients.json.
+    # a notification exists, but no recipients.json. The summary now
+    # also carries `pending` and `faults` — the pass reports what it FOUND and
+    # what it SWALLOWED, so a caller can tell "nothing to do" from "could not
+    # tell". With no recipients configured there is nothing to enumerate and
+    # nothing went wrong, so both are honestly empty.
     store = _store(tmp_path)
     _seed(store, "u_eve")
     recorder = RecorderChannel(name="log")
@@ -609,6 +613,8 @@ def test_missing_recipients_file_yields_an_empty_summary(tmp_path):
         "failed": 0,
         "skipped": 0,
         "failed_terminal": 0,
+        "pending": 0,
+        "faults": [],
         "outcomes": [],
     }
 
