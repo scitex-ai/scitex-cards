@@ -288,6 +288,61 @@ Everything under [Unreleased] below moves here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A notifyd tick that could not read the store printed the same line as a
+  healthy idle one.** Measured on the host: the daemon failed its store read on
+  1196 consecutive ticks over roughly a day, and the only line anyone reads
+  said `notifyd tick 1196: sent=0 failed=0 skipped=0 failed_terminal=0
+  (0 recorded)` — character-for-character what a daemon with nothing to do
+  prints. The exception WAS logged ("notifyd reminder sweep raised; continuing
+  to delivery") but never COUNTED, so the summary stayed clean. The operator's
+  DMs, including the answer an agent was blocked on, went undelivered; they
+  asked "are you making progress?" twice, eleven minutes apart, because nothing
+  came back. Their inbox held 196 notifications, all marked seen, none
+  delivered.
+
+  The defect fixed here is the COUNTER, not that particular outage (the store
+  bug is its own change). The next delivery outage will have a different cause
+  and must not be silent:
+
+  - **A swallowed exception is a FAILED tick.** Every guard inside the tick —
+    the reminder sweep, the liveness sweep, the heartbeat stamp, each
+    recipient's inbox read, the clock, and the tick body itself — now RETURNS
+    what it swallowed instead of discarding it. Guarding the loop against a bad
+    sweep was always right; letting the guard also hide the failure is what made
+    a day of silence look like a day of quiet. `sent=0` WITH a fault is a
+    failure, and there is no longer a way to log one without the summary showing
+    it.
+  - **`pending` is THREE-VALUED.** "nothing pending" is `pending=0`; "could not
+    determine what is pending" is `pending=unknown`. Any recipient whose inbox
+    cannot be read poisons the whole count rather than contributing zero to it —
+    a partial count presented as a total is a lie with a number on it.
+  - **Consecutive failures ESCALATE**, getting louder rather than quieter: INFO
+    while healthy, WARNING on a failing tick, ERROR once the streak reaches the
+    threshold, carrying the count, how long it has been failing, and the
+    underlying reason. The streak is persisted, so a systemd bounce does not
+    reset the alarm to zero.
+  - **A healthy idle tick stays at INFO and stays terse.** Making an idle daemon
+    noisy is how alarms get ignored, which would reproduce this same outage by a
+    different route.
+  - **`scitex-cards health` gained a `delivery_liveness` check** reading
+    `<store_dir>/runtime/notifyd-liveness.json` (last successful delivery, last
+    ok tick, consecutive failures, reason). `notifyd_alive` only answers "is the
+    process ticking" — it was GREEN throughout the outage, because the loop was
+    spinning perfectly while doing nothing. The new check is three-valued too:
+    no record reads `unknown`, never "healthy" and never "failing", because
+    inventing a verdict from a measurement nobody took is the same class of lie.
+
+  Shape: `TickReport` (`_delivery/_tick.py`) is a frozen dataclass with a
+  validator that refuses an unexplained `pending=None` and a fault count that
+  disagrees with the failure bookkeeping — malformed answers fail where they are
+  built. `DeliveryLiveness` (`_delivery/_liveness.py`) folds one tick's outcome
+  into the persisted streak. `deliver_pending` additionally returns `pending`
+  and `faults`. Terminal-comm-miss reporting moved to `_delivery/_terminal.py`
+  and the store checks to `_health_store.py` (both re-exported unchanged) to
+  stay under the file-size budget.
+
 ### Added
 
 - **The chat page's agent list has a fuzzy filter, and the matcher is
