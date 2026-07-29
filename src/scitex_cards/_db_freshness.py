@@ -30,6 +30,17 @@ predates this key. The first write claims it by stamping :data:`KEY_STORE_PATH`.
 This is what lets an already-populated board be adopted once, at deploy, and
 then be pinned to its own identity from that write on.
 
+CLAIMED ONCE, NOT REWRITTEN PER WRITE
+-------------------------------------
+The stamp says WHICH STORE this is the database of — not WHO WROTE LAST. Those
+read the same only while a store has exactly one name. This one has several: a
+container and the host reach ONE inode by names neither namespace can resolve
+for the other. So :func:`stamp_store_provenance` leaves an existing stamp alone
+whenever it already names the same file, and the name claimed first is the name
+kept. A stamp that changes with the writer cannot be the thing an ownership
+guard decides on; see that function for the outage this closes, and for why it
+is a MITIGATION of path-based identity rather than a fix for it.
+
 WHY IDENTITY, NOT CONTENT
 -------------------------
 The comparison is CONTENT-INDEPENDENT on purpose: it never parses the store, it
@@ -67,11 +78,73 @@ def canonical_path(store_path: str | Path) -> str:
 def stamp_store_provenance(conn: sqlite3.Connection, store_path: str | Path) -> None:
     """Record WHICH store this database is the database of. Call inside the write txn.
 
-    Writes the store's canonical path into :data:`KEY_STORE_PATH`. Idempotent —
-    a re-stamp with the same store is a no-op update. This is the whole of the
-    provenance now: there is no separate document whose ``mtime``/size/card-count
-    could drift, so there is nothing else to record.
+    THE STAMP IS CLAIMED ONCE, NOT REWRITTEN PER WRITE::
+
+        unstamped                       -> stamp it; the first write claims it
+        stamped for THIS SAME FILE      -> LEAVE IT ALONE, however this caller
+                                           would have spelled that file
+        stamped for a DIFFERENT file    -> not this function's problem: the
+                                           ownership guard
+                                           (``_dual_write._db_mirrors_this_store``)
+                                           already refused upstream
+
+    Sameness is asked of :func:`scitex_cards._dual_write._same_file` — the SAME
+    predicate the ownership guard uses, deliberately, so this package carries
+    exactly ONE definition of "the same store" and the stamper can never disagree
+    with the guard that reads the stamp.
+
+    WHY LEAVING AN EXISTING STAMP IS CORRECT, NOT MERELY CONVENIENT
+    ---------------------------------------------------------------
+    The stamp answers "WHICH STORE IS THIS THE DATABASE OF", not "who wrote
+    last". A path is only meaningful inside the namespace that produced it, so
+    overwriting the stamp with the current writer's spelling DESTROYS information
+    for every other namespace while ADDING none — the new name is no truer than
+    the old one, it is merely local. Whichever name was claimed first is at least
+    STABLE, and stability is the property the ownership guard actually needs: it
+    can only decide with a stamp it is able to resolve.
+
+    THE BUG THIS CLOSES, measured live 2026-07-28/29. One inode
+    (dev/ino 2096/3417791) is reached by three names::
+
+        /home/agent/.scitex/cards/cards.db                    container's name
+                                                              (host CANNOT stat it)
+        /home/ywatanabe/.scitex/cards/cards.db                the host's name
+        /home/ywatanabe/.dotfiles/src/.scitex/cards/cards.db  its realpath
+
+    The old unconditional ``ON CONFLICT DO UPDATE`` called itself "idempotent —
+    a re-stamp with the same store is a no-op". That holds only for a store with
+    ONE name. With two it is not a no-op, it is a FLIP. The operator's board was
+    repaired by stamping a HOST-VISIBLE name so the guard's inode branch could
+    run; ``/tasks`` went 500 -> 200 serving 2,684 cards. The very next
+    CONTAINER-side card write re-stamped ``/home/agent/...``, the host could no
+    longer ``stat`` the stamp, ``_same_file`` fell back to a realpath STRING
+    compare that can never match, and the board returned to 500. The repair lost
+    a race to the next write — and every container write wins that race. Inside
+    the container both names ARE stat-able (bind mount), so the inode branch
+    runs, this function sees "same file", and the host's stamp survives.
+
+    THIS IS A MITIGATION, NOT THE FIX
+    ---------------------------------
+    Path-based identity CANNOT be made correct across namespaces; it can only be
+    made STABLE. Two namespaces that both write will always disagree about the
+    name of one file, and no rule about which name wins changes that. The real
+    repair is an opaque ``store_uuid`` that no namespace can re-spell — design
+    merged in PR #601 (``docs/design/store-identity-is-a-uuid.md``), tracked by
+    card ``scitex-cards-resolver-never-default-yaml-20260727``. Until that lands,
+    this function only stops the stamp from THRASHING; it does not make a
+    container-written name legible to the host.
     """
+    existing = stamped_store_path(conn)
+    if existing is not None:
+        # ONE definition of "same store" in this package: the ownership guard's.
+        # Imported here, not at module scope, because `_dual_write` imports back
+        # into this module (`stamped_store_path`) — the same deferred-import
+        # shape `check_fresh` below already uses to keep the pair acyclic.
+        from ._dual_write import _same_file
+
+        if _same_file(existing, store_path):
+            return
+
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES(?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
