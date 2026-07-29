@@ -146,7 +146,32 @@ def _forbidden_hook_entry_points():
     return found
 
 
-def test_the_blocker_actually_blocks():
+def _import_error_or_none(root):
+    """Import ``root``; return the ``ImportError`` it raised, or ``None``."""
+    try:
+        importlib.import_module(root)
+    except ImportError as exc:
+        return exc
+    return None
+
+
+@pytest.fixture()
+def canary_root():
+    """The control module, refusing to run if it is not importable to begin with.
+
+    Both blocker tests below are only meaningful while this holds, and a
+    precondition that silently fails to hold would make them vacuous rather
+    than failing — so it fails loudly here instead.
+    """
+    if importlib.util.find_spec(_CANARY_ROOT) is None:
+        pytest.fail(
+            f"{_CANARY_ROOT} must be importable for the blocker control to mean "
+            "anything; without it these tests would pass vacuously"
+        )
+    return _CANARY_ROOT
+
+
+def test_the_blocker_makes_an_importable_module_unimportable(canary_root):
     """Prove the MECHANISM, independently of whether sac is installed.
 
     Without this, the anti-vacuity check inside the absence test is itself
@@ -156,14 +181,28 @@ def test_the_blocker_actually_blocks():
     UNCONDITIONALLY importable removes that ambiguity: if the finder were
     broken, this import would succeed and the test would fail.
     """
-    # Arrange — the canary really is importable right now
-    assert importlib.util.find_spec(_CANARY_ROOT) is not None
-    # Act / Assert
-    with _roots_uninstallable({_CANARY_ROOT}):
-        with pytest.raises(ImportError):
-            importlib.import_module(_CANARY_ROOT)
-    # And the blocker really was removed again
-    assert importlib.import_module(_CANARY_ROOT) is not None
+    # Arrange
+    root = canary_root
+    # Act
+    with _roots_uninstallable({root}):
+        raised = _import_error_or_none(root)
+    # Assert
+    assert raised is not None, (
+        f"the blocker did not stop {root} from importing, so every 'the "
+        "forbidden package is unimportable' claim below is unproven"
+    )
+
+
+def test_the_blocker_is_removed_when_the_context_exits(canary_root):
+    """The blocker must not leak: other tests share this process."""
+    # Arrange
+    root = canary_root
+    with _roots_uninstallable({root}):
+        pass
+    # Act
+    raised = _import_error_or_none(root)
+    # Assert
+    assert raised is None, f"the blocker leaked: {root} is still unimportable"
 
 
 def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatch):
@@ -201,23 +240,23 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
 
-    # Act + Assert — the cycle itself is the assertion: any hard requirement
-    # on a forbidden package surfaces here as an ImportError.
+    # Act — the cycle itself carries the proof: any hard requirement on a
+    # forbidden package surfaces here as an ImportError, failing the test.
     #
     # The blocker's own correctness is proved by
-    # ``test_the_blocker_actually_blocks``, NOT by asserting here that the
-    # forbidden roots fail to import: that assertion passes identically when
-    # the packages are merely absent (as on CI), so it could never have caught
-    # a broken blocker.
+    # ``test_the_blocker_makes_an_importable_module_unimportable``, NOT by
+    # asserting here that the forbidden roots fail to import: that assertion
+    # passes identically when the packages are merely absent (as on CI), so it
+    # could never have caught a broken blocker.
     with _roots_uninstallable(FORBIDDEN_ROOTS):
         _store.add_task(store, id="t", title="t", status="deferred", agent="a")
         _store.list_tasks(store)
         _store.comment_task(store, "t", "standalone", by="a")
         _store.complete_task(store, "t", by="a")
-
-        # Nothing may have slipped back in through a cached reference.
         leaked = {m.split(".")[0] for m in sys.modules} & FORBIDDEN_ROOTS
-        assert not leaked, f"forbidden module(s) loaded despite blocker: {leaked}"
+
+    # Assert — nothing slipped back in through a cached reference
+    assert not leaked, f"forbidden module(s) loaded despite blocker: {leaked}"
 
 
 def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
@@ -259,11 +298,13 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
     failed = [
         r.getMessage() for r in caplog.records if "failed to load" in r.getMessage()
     ]
-    assert failed, (
-        "the write never attempted to load the port provider, so the "
-        "absence-tolerance test above proves nothing here; providers "
-        f"registered: {sorted(names)}"
-    )
-    assert any(name in msg for name in names for msg in failed), (
-        f"a plugin load failed, but not the forbidden one(s) {sorted(names)}: {failed}"
+    offending = [msg for msg in failed if any(name in msg for name in names)]
+    # One assertion, both properties: an empty ``failed`` means the load was
+    # never attempted (so the absence-tolerance test above proves nothing
+    # here); a non-empty ``failed`` with no match means some OTHER plugin
+    # failed. The message prints both, so it says which happened.
+    seen = failed or "(none — the write never attempted to load any port provider)"
+    assert offending, (
+        f"no load failure for the forbidden provider(s) {sorted(names)}; "
+        f"load failures seen: {seen}"
     )
