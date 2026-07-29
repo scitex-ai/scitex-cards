@@ -16,7 +16,7 @@ description: |
   blockers, then a2a the lead with a punch-list. Lead-centric funnel —
   agents report new blockers BACK to the lead, the lead dispatches
   RUNNABLE work OUT.
-tags: [scitex-todo-task-harvest, scitex-todo-blockers, scitex-todo-throughput]
+tags: [scitex-cards-task-harvest, scitex-cards-blockers, scitex-cards-throughput]
 ---
 
 # Task harvest — blocker-driven backlog consumption
@@ -295,7 +295,7 @@ To add the task-harvest as a registered cron job:
    ```
    scitex_dev/_cli/cron/_task_harvest.py
        def run_once() -> None:
-           # 1. load the task store (resolve via the standard scitex-todo
+           # 1. load the task store (resolve via the standard scitex-cards
            #    store resolver)
            # 2. Phase 1 — re-check every blocked task, walking the
            #    task-dependency chain to its root (see "ROOT BLOCKER
@@ -316,7 +316,7 @@ To add the task-harvest as a registered cron job:
            "scitex-dev cron exec task-harvest "
            ">> $HOME/.scitex/dev/logs/cron-task-harvest.log 2>&1"
        ),
-       description="scitex-todo task-harvest (Phase 1 unblock + Phase 2 escalate).",
+       description="scitex-cards task-harvest (Phase 1 unblock + Phase 2 escalate).",
    ),
    ```
 
@@ -373,7 +373,7 @@ After a sweep, the lead sends three kinds of a2a messages:
 For every RUNNABLE task owned by `agent: <name>`:
 
 ```
-[ESCALATE scitex-todo] task-id "Title" — RUNNABLE, no blocker.
+[ESCALATE scitex-cards] task-id "Title" — RUNNABLE, no blocker.
    You can do this now. Report PR # / a2a / comment when picked up.
 ```
 

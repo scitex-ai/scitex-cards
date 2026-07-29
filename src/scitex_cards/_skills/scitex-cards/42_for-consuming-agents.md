@@ -31,7 +31,7 @@ Three rules, in priority order:
 1. **No memory.** Every task you accept lives in the shared store as a
    structured row from the moment you accept it. Never carry a
    commitment "in your head."
-2. **Fail loud, fail fast.** `scitex-todo` validates the schema on
+2. **Fail loud, fail fast.** `scitex-cards` validates the schema on
    every read + every write. If you set a status / kind / blocker
    value that isn't in the closed enum, the write RAISES. Don't
    catch-and-ignore — fix the input.
@@ -54,7 +54,7 @@ user root" file precedence are historical and no longer apply.
 Confirm where you're about to write BEFORE you write:
 
 ```bash
-scitex-todo resolve-store
+scitex-cards resolve-store
 # → prints {resolved: <path>, backend: sqlite, ...}
 ```
 
@@ -68,22 +68,22 @@ the single database, not as separate files.
 ## Your first task, in 30 seconds (fresh agent quick-start)
 
 ```bash
-# 1. Confirm scitex-todo is installed + which store it resolves to.
-scitex-todo --version
-scitex-todo resolve-store                  # prints the resolved DB path
+# 1. Confirm scitex-cards is installed + which store it resolves to.
+scitex-cards --version
+scitex-cards resolve-store                  # prints the resolved DB path
 
 # 2. Add a smoke task to YOUR slice.
-scitex-todo add <you>-smoke-$(date +%s) \
+scitex-cards add <you>-smoke-$(date +%s) \
     '[P2] smoke: confirm I can write to the store' \
     --scope agent:<you> \
     --assignee <you> \
     --status pending
 
 # 3. List your slice + confirm the row is there.
-scitex-todo list-tasks --scope agent:<you> --json | jq '.[].id'
+scitex-cards list-tasks --scope agent:<you> --json | jq '.[].id'
 
 # 4. Mark it done.
-scitex-todo done <you>-smoke-<that-stamp> --by <you>
+scitex-cards done <you>-smoke-<that-stamp> --by <you>
 
 # 5. See yourself on the board.
 # Open http://<board-host>:8051/  — your row is visible within 5s.
@@ -103,7 +103,7 @@ The validator REJECTS unknown values in the closed enums below.
 **Required fields:**
 
 - `id` (str, globally unique, kebab-case, **prefix with your project**:
-  e.g. `scitex-todo-fleet-rollout`, `clew-cohort-a-rerun`).
+  e.g. `scitex-cards-fleet-rollout`, `clew-cohort-a-rerun`).
 - `title` (str, short scannable label, ≤ 80 chars).
 - `status` (closed enum below).
 
@@ -121,7 +121,7 @@ blocker on a non-blocked row raises.
 **Recommended fields (operator-co-designed surface, TG 9667):**
 
 - `assignee` (str) — **PRIMARY agent-linking field. Set this to YOUR
-  agent name** (e.g. `scitex-todo`). `scitex-todo list-tasks --assignee
+  agent name** (e.g. `scitex-cards`). `scitex-cards list-tasks --assignee
   <agent-id>` filters correctly — this is THE field that lets every
   consumer (lead, board, you) ask "show me agent X's open tasks."
   Forward-compat: the dataclass also has an `agent` field as the
@@ -132,7 +132,7 @@ blocker on a non-blocked row raises.
   Distinct from `title` (the short scannable label). Populate this for
   the card to read well.
 - `project` (str) — your project's directory basename (e.g.
-  `scitex-todo`). Matches the canonical id prefix.
+  `scitex-cards`). Matches the canonical id prefix.
 - `host` (str) — where the work happens (`spartan` / `ywata-note-win`
   / etc.).
 - `goal` (str) — WHY (parent-goal text); rendered as the 🎯 line on the
@@ -172,17 +172,17 @@ child survives restart fleetwide`.
 Examples are CLI; MCP tool names match 1:1 (Convention A); Python API
 names match too.
 
-### CREATE — `scitex-todo add`
+### CREATE — `scitex-cards add`
 
 ```bash
-scitex-todo add \
-  scitex-todo-fleet-rollout \
-  '[P1] Fleet rollout of scitex-todo skill across agents' \
+scitex-cards add \
+  scitex-cards-fleet-rollout \
+  '[P1] Fleet rollout of scitex-cards skill across agents' \
   --status pending \
-  --scope agent:scitex-todo \
-  --assignee scitex-todo \
+  --scope agent:scitex-cards \
+  --assignee scitex-cards \
   --priority 10 \
-  --note 'See tasks/scitex-todo-fleet-rollout/README.md'
+  --note 'See tasks/scitex-cards-fleet-rollout/README.md'
 ```
 
 > **CLI gap (in flight, see [41_cli-mcp-gap-analysis.md](41_cli-mcp-gap-analysis.md)):**
@@ -199,20 +199,20 @@ Python equivalent:
 from scitex_cards import add_task
 add_task(
     None,                           # tasks_path; None = resolve default
-    id="scitex-todo-fleet-rollout",
-    title="[P1] Fleet rollout of scitex-todo skill across agents",
+    id="scitex-cards-fleet-rollout",
+    title="[P1] Fleet rollout of scitex-cards skill across agents",
     status="pending",
-    scope="agent:scitex-todo",
-    assignee="scitex-todo",
+    scope="agent:scitex-cards",
+    assignee="scitex-cards",
     priority=10,
-    note="See tasks/scitex-todo-fleet-rollout/README.md",
+    note="See tasks/scitex-cards-fleet-rollout/README.md",
 )
 ```
 
-### LIST — `scitex-todo list-tasks`
+### LIST — `scitex-cards list-tasks`
 
 ```bash
-scitex-todo list-tasks --scope agent:scitex-todo --json
+scitex-cards list-tasks --scope agent:scitex-cards --json
 ```
 
 Filters today: `--scope` / `--assignee` / `--status` (exact match).
@@ -222,10 +222,10 @@ Use `--json` for machine output.
 > `--blocker` / `--kind` / `--blocking-me` filters are NOT in yet.
 > Pipe through `jq` on the `--json` output for now.
 
-### UPDATE — `scitex-todo update`
+### UPDATE — `scitex-cards update`
 
 ```bash
-scitex-todo update scitex-todo-fleet-rollout \
+scitex-cards update scitex-cards-fleet-rollout \
   --status in_progress \
   --priority 5 \
   --note 'Skill draft pushed PR #N; gap closures next'
@@ -240,7 +240,7 @@ Pass an empty string (`--scope ''`) to CLEAR a field.
 
 The `comments: list[{ts, author, text}]` array is the **append-only
 activity log** every agent writes to when coordinating cross-lane.
-There is no `scitex-todo comment` verb today (that's the #1 CLI gap
+There is no `scitex-cards comment` verb today (that's the #1 CLI gap
 — see gap analysis). Use the Python API:
 
 ```python
@@ -249,12 +249,12 @@ from scitex_cards import _store
 import datetime as _dt
 _store.update_task(
     None,
-    "scitex-todo-fleet-rollout",
+    "scitex-cards-fleet-rollout",
     comments=[
         # ... existing comments preserved by load → append → save ...
         {
           "ts": _dt.datetime.utcnow().isoformat() + "Z",
-          "author": "scitex-todo",
+          "author": "scitex-cards",
           "text": "Skill draft pushed PR #N; awaiting lead design ACK.",
         },
     ],
@@ -264,10 +264,10 @@ _store.update_task(
 > **Don't** hand-edit the `comments[]` field outside the API. The
 > closed ts/author/text shape is validated; missing keys raise.
 
-### COMPLETE — `scitex-todo done`
+### COMPLETE — `scitex-cards done`
 
 ```bash
-scitex-todo done scitex-todo-fleet-rollout --by scitex-todo
+scitex-cards done scitex-cards-fleet-rollout --by scitex-cards
 ```
 
 Stamps `_log_meta.completed_at` (UTC ISO-8601) + `completed_by` (the
@@ -281,7 +281,7 @@ MCP: `complete_task`. Python: `scitex_cards.complete_task`.
 There's no `reopen` CLI verb today. Use `update --status pending`:
 
 ```bash
-scitex-todo update scitex-todo-fleet-rollout --status pending
+scitex-cards update scitex-cards-fleet-rollout --status pending
 ```
 
 The web board's `/reopen` HTTP endpoint (PR #61) is operator-facing;
@@ -294,9 +294,9 @@ the CLI parity is on the gap list.
 Whenever a task has substantive context, seed the per-task dir:
 
 ```bash
-mkdir -p tasks/scitex-todo-fleet-rollout
-$EDITOR tasks/scitex-todo-fleet-rollout/README.md   # what / why / how
-$EDITOR tasks/scitex-todo-fleet-rollout/adr.md      # ADR-template decisions
+mkdir -p tasks/scitex-cards-fleet-rollout
+$EDITOR tasks/scitex-cards-fleet-rollout/README.md   # what / why / how
+$EDITOR tasks/scitex-cards-fleet-rollout/adr.md      # ADR-template decisions
 ```
 
 - `README.md` is the **Issue BODY** — free-form markdown. Reference it
@@ -326,7 +326,7 @@ blocker drop within 5s.
 
 ```bash
 # (Once --depends-on lands as a CLI flag on update; today via Python.)
-scitex-todo update my-task --status blocked   # --blocker dependency pending CLI parity
+scitex-cards update my-task --status blocked   # --blocker dependency pending CLI parity
 # Python:
 import scitex_cards, datetime as _dt
 scitex_cards.update_task(
@@ -352,7 +352,7 @@ scitex_cards.update_task(
     comments=[
         # existing entries first (load → preserve)
         {"ts": _dt.datetime.utcnow().isoformat() + "Z",
-         "author": "scitex-todo",
+         "author": "scitex-cards",
          "text": "FYI my fleet-rollout PR will need this; flagged."},
     ],
 )
@@ -400,14 +400,14 @@ board converged: the aggregator sidecar (SSH-fanout, ~5s tick,
 surfaces UNREACHABLE per-tier rather than silently omitting rows),
 `git push`/`pull` on durable per-project state (minutes-scale, the
 cross-host substrate the aggregator complements), and a sac
-channel push (`scitex-todo:task:*`, sub-second — the fast path that
+channel push (`scitex-cards:task:*`, sub-second — the fast path that
 the 5s poll backstops if the bus is down).
 
 - **Worker:** writes to its own scope (`scope=agent:<you>`,
   `project=<repo>`) and pushes a channel event on high-priority
   status flips so the lead + operator wake immediately.
 - **Lead:** reads the fleet view via the board (`:8051`) +
-  `scitex-todo list-tasks`, subscribes to the `scitex-todo:task:*`
+  `scitex-cards list-tasks`, subscribes to the `scitex-cards:task:*`
   firehose (every worker write is a wake-up; no auto-action unless
   the row is a `kind: decision` the lead owns), and resolves
   operator-decision rows on the BLOCKING YOU panel when delegated.
@@ -431,17 +431,17 @@ the 5s poll backstops if the bus is down).
   full prose lives in `tasks/<id>/README.md`.
 - **Don't invent new statuses / kinds / blockers.** The validator
   REJECTS them. If a new value is needed, propose it in `adr.md` for
-  the package owner (`scitex-todo`) to add to the enum.
+  the package owner (`scitex-cards`) to add to the enum.
 
 ---
 
 ## Sanity-check yourself once you've adopted
 
 ```bash
-scitex-todo resolve-store                  # confirm the DB path you expect
-scitex-todo list-tasks --scope agent:<your-agent-name> --json | jq length
-scitex-todo add smoke-$(date +%s) '[P2] smoke from <your-agent-name>'
-scitex-todo done smoke-<that-stamp>
+scitex-cards resolve-store                  # confirm the DB path you expect
+scitex-cards list-tasks --scope agent:<your-agent-name> --json | jq length
+scitex-cards add smoke-$(date +%s) '[P2] smoke from <your-agent-name>'
+scitex-cards done smoke-<that-stamp>
 # Open http://<board-host>:8051/ — your row should appear in <5s.
 ```
 
@@ -459,23 +459,23 @@ This skill is the **teaching surface**: the operator's directive
 "how do I file a TODO" is the same answer everywhere.
 
 1. **Pip-install pins the version** — `pip install
-   scitex-todo>=<version>` lands the bundled skills under
-   `<site-packages>/scitex_cards/_skills/scitex-todo/`.
+   scitex-cards>=<version>` lands the bundled skills under
+   `<site-packages>/scitex_cards/_skills/scitex-cards/`.
 2. **Agent's spec references the bundled path** under a
    `required_skills:` entry — exact grammar is the SAC container
    glue's domain; the canonical reference shape is:
-   `"@scitex_cards:_skills/scitex-todo/40_for-consuming-agents.md"`.
+   `"@scitex_cards:_skills/scitex-cards/40_for-consuming-agents.md"`.
    (See [41_cli-mcp-gap-analysis.md § G](41_cli-mcp-gap-analysis.md#g-propagation-the-path-mechanism)
    for the wiring rationale.)
 3. **Container boot resolves the reference** — the skill text loads
    into the agent's context; the agent now knows the protocol.
-4. **Operator host: `scitex-todo skills install --claude-symlink`**
+4. **Operator host: `scitex-cards skills install --claude-symlink`**
    back-fills the symlink under `~/.claude/skills/scitex/` so
    Claude Code on the operator's host sees the same skill.
 
 **Versioning**: the skill is **version-pinned via the package**, NOT
 edited live. Editing one skill leaf does NOT propagate to a consuming
-agent's spec until the consumer pip-bumps `scitex-todo`. That gives
+agent's spec until the consumer pip-bumps `scitex-cards`. That gives
 the lead a deterministic rollout — pin the version on one agent at a
 time, watch it adopt, broaden once stable.
 

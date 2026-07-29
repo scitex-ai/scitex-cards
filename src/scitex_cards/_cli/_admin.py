@@ -300,7 +300,7 @@ def sync_store_cmd(mode, remote, yes) -> None:
         f"git -C {root} pull --rebase --autostash {remote}",
         f"git -C {root} push {remote}",
     ]
-    click.echo("# scitex-todo sync-store (PHASE-1 STUB)")
+    click.echo("# scitex-cards sync-store (PHASE-1 STUB)")
     click.echo(f"# store dir: {root}")
     click.echo(f"# remote:    {remote}")
     click.echo("# planned commands:")

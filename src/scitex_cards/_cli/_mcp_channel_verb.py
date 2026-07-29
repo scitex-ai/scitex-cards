@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo mcp channel` verb — the standalone channel server entry.
+"""`scitex-cards mcp channel` verb — the standalone channel server entry.
 
 Extracted from ``_cli/_mcp.py`` (which is at its size cap) so the verb can be
 wired into BOTH the scitex-dev-helper path and the hand-rolled fallback
@@ -16,9 +16,9 @@ import click
 def attach_channel_verb(mcp_group: click.Group) -> None:
     """Attach the ``channel`` verb to an existing ``mcp`` click group.
 
-    Runs scitex-todo's OWN long-running MCP stdio server (foreground) that
+    Runs scitex-cards's OWN long-running MCP stdio server (foreground) that
     pushes unsolicited ``notifications/claude/channel`` messages (rendered
-    ``<- scitex-todo``) into the Claude session, draining this agent's
+    ``<- scitex-cards``) into the Claude session, draining this agent's
     standalone inbox. ZERO external-runtime dependency. This is what an
     ``.mcp.json`` entry execs.
     """
@@ -34,7 +34,7 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
             "/$SCITEX_TODO_CHANNEL_INTERVAL then the defaults, so the .mcp.json\n"
             "entry can carry zero config args.\n\n"
             "Example:\n"
-            "  scitex-todo mcp channel --name stodo --interval 5"
+            "  scitex-cards mcp channel --name stodo --interval 5"
         ),
     )
     @click.option(
@@ -64,8 +64,8 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
             from .._mcp_channel import main as channel_main
         except ImportError as exc:  # pragma: no cover — mcp SDK missing
             raise click.ClickException(
-                "scitex-todo mcp channel needs the MCP SDK: "
-                f"pip install 'scitex-todo[mcp]' ({exc})"
+                "scitex-cards mcp channel needs the MCP SDK: "
+                f"pip install 'scitex-cards[mcp]' ({exc})"
             ) from None
         try:
             channel_main(name=name, interval=interval, agent=agent)

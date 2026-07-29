@@ -65,6 +65,31 @@ Everything under [Unreleased] below moves here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
+  package was renamed to `scitex-cards`, but what agents and humans actually
+  READ still said the old name: the `.mcp.json` key the install snippet emits
+  (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
+  every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
+  and `health` payloads, and the shipped skills. Two of these were not merely
+  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
+  dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
+  the `mcp__scitex-todo__*` tool namespace that no longer exists.
+
+  Renaming the emitted `.mcp.json` key would, on its own, have left configs
+  holding BOTH keys pointing at the same server -- every tool loaded twice,
+  both copies writing one store. So `mcp install --apply` now RETIRES our stale
+  `scitex-todo` entry as part of writing the new one. Only our entry: an
+  unrelated server that merely shares the old key is left untouched.
+
+  What the package PUBLISHES is unchanged, because that is a migration and not
+  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
+  variables, the `scitex_todo.*` legacy entry-point groups, the
+  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
+  all still work. Breaking any of them would have stopped the operator's
+  running units, one of which serves the board.
+
 ### Added
 
 - **The unread count now shows in the browser tab** — `(3) DM — SciTeX Cards

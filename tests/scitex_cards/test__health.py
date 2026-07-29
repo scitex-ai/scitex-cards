@@ -62,7 +62,7 @@ def test_report_names_the_package(tmp_path):
     report = _healthy_report(tmp_path)
 
     # Assert
-    assert report["package"] == "scitex-todo"
+    assert report["package"] == "scitex-cards"
 
 
 def test_report_ok_is_a_bool(tmp_path):
@@ -611,7 +611,7 @@ def test_health_still_names_the_package_on_bad_inputs(tmp_path):
     report = _report_for_bad_inputs(tmp_path)
 
     # Assert
-    assert report["package"] == "scitex-todo"
+    assert report["package"] == "scitex-cards"
 
 
 def test_health_still_returns_a_bool_ok_on_bad_inputs(tmp_path):

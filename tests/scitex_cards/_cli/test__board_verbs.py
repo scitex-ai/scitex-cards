@@ -40,8 +40,8 @@ from click.testing import CliRunner
 
 from scitex_cards._cli import main
 from scitex_cards._cli._board import (
-    _board_pidfile,
     _board_pid_alive,
+    _board_pidfile,
     _board_read_pid,
     _board_write_pid,
     board_group,
@@ -201,7 +201,7 @@ class TestBareBoardHardError:
         # we check the redirect message landed in the combined stream.
         result = runner.invoke(main, ["board"])
         # Assert — the redirect message names the canonical replacement.
-        assert "scitex-todo board start" in result.output
+        assert "scitex-cards board start" in result.output
 
     def test_bare_board_does_not_invoke_start(self, pidfile_path):
         # Arrange — set up a state that `board start` would normally
