@@ -13,10 +13,17 @@ No mocks (STX-NM / PA-306). One assertion per test (TQ002 / TQ007).
 
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli import main
 from scitex_cards._cli._compat import _render_fallback_help
+
+#: The [mcp] extra is optional, so gate the FastMCP-instance test at COLLECTION
+#: time rather than branching inside the test body.
+_HAS_FASTMCP = importlib.util.find_spec("fastmcp") is not None
 
 
 def _fallback_example() -> str:
@@ -74,13 +81,9 @@ def test_mcp_install_hint_names_an_installable_extra():
     assert "scitex-cards[mcp]" in _INSTALL_HINT
 
 
+@pytest.mark.skipif(not _HAS_FASTMCP, reason="the [mcp] extra is not installed")
 def test_mcp_server_instance_announces_scitex_cards():
     # Arrange — this is the name agents see the server by.
-    fastmcp = __import__("importlib").util.find_spec("fastmcp")
-    if fastmcp is None:  # pragma: no cover — [mcp] extra absent
-        import pytest
-
-        pytest.skip("fastmcp not installed")
     from scitex_cards._mcp_app import mcp
 
     # Act
