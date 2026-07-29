@@ -24,7 +24,11 @@ from pathlib import Path
 import pytest
 from django.test import RequestFactory
 
-from scitex_cards._django.handlers.dm import dm_reaction_view, dm_thread_view
+from scitex_cards._django.handlers.dm import (
+    STORE_REQUEST_ATTR,
+    dm_reaction_view,
+    dm_thread_view,
+)
 from scitex_cards._threads import append_message
 
 
@@ -44,11 +48,19 @@ def message(store: Path) -> dict:
 
 
 def _post_reaction(store: Path, payload: dict, peer: str = "agent-x"):
+    """A reaction is a WRITE, so it is scoped the way writes are now scoped.
+
+    Through the trusted request attribute, exactly as scitex-hub's tenancy
+    middleware sets it — not through ``?store=``, which a write no longer
+    honours. Scoping it through the query would have this exercise a path
+    production refuses.
+    """
     request = RequestFactory().post(
-        f"/dm/thread/{peer}/reaction?store={store}",
+        f"/dm/thread/{peer}/reaction",
         data=json.dumps(payload),
         content_type="application/json",
     )
+    setattr(request, STORE_REQUEST_ATTR, str(store))
     return dm_reaction_view(request, peer)
 
 
