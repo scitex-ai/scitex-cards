@@ -18,11 +18,14 @@ Three guarantees, per docs/design/remote-hub-backend.md §2/§6:
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
+import types
 
 import pytest
 
-from scitex_cards import _store
+from scitex_cards import _currency, _store
 from scitex_cards._backend import (
     BACKEND_VERBS,
     LocalBackend,
@@ -369,6 +372,94 @@ def test_poll_notifications_through_the_seam_returns_a_list(store):
     inbox = backend.poll_notifications("seam-bob", store=store)
     # Assert
     assert isinstance(inbox["notifications"], list)
+
+
+# --------------------------------------------------------------------------- #
+# 6. CURRENCY VISIBILITY — the Python rail tells you the CLI rail is dead     #
+#                                                                             #
+# The incident (2026-07-29): `scitex-cards --version` answered while          #
+# `list-tasks` REFUSED as stale, and the agent's DMs — which come through     #
+# this seam, NOT through the gated CLI/MCP entry points — kept working. The   #
+# card rail was dead for hours with nothing to signal it. The seam therefore  #
+# calls the NON-RAISING `warn_if_stale_once()`: it must warn, name the        #
+# sibling rail, and above all NOT take this rail down too.                    #
+# --------------------------------------------------------------------------- #
+def _arrange_stale_scitex_dev(monkeypatch):
+    """A scitex-dev whose `ensure_current` refuses, plus a cleared warn-once
+    sentinel — i.e. exactly the world the incident happened in."""
+    monkeypatch.setattr(_currency, "_CACHED_VERDICT", None)
+    monkeypatch.setattr(_currency, "_WARNED_STALE", False)
+
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        raise _FakeStalenessError(f"{dist_name} 0.17.7 is behind latest 0.17.9")
+
+    fake_package = types.ModuleType("scitex_dev")
+    fake_module = types.ModuleType("scitex_dev.staleness")
+    fake_module.ensure_current = _fake_ensure_current
+    fake_module.StalenessError = _FakeStalenessError
+    monkeypatch.setitem(sys.modules, "scitex_dev", fake_package)
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", fake_module)
+
+
+def _currency_warning_texts(caplog):
+    return [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == "scitex_cards._currency" and rec.levelno == logging.WARNING
+    ]
+
+
+def test_dm_send_through_the_seam_warns_that_the_cli_rail_is_refusing(
+    store, monkeypatch, caplog
+):
+    # Arrange
+    _arrange_stale_scitex_dev(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
+    # Act
+    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
+    # Assert
+    assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
+
+
+def test_dm_send_through_the_seam_still_delivers_when_the_install_is_stale(
+    store, monkeypatch
+):
+    """The warn path must never become the thing that takes the last working
+    rail down — that is the failure this whole change refuses to ship."""
+    # Arrange
+    _arrange_stale_scitex_dev(monkeypatch)
+    # Act
+    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
+    thread = get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    # Assert
+    assert [m["body"] for m in thread["messages"]] == ["hello"]
+
+
+def test_dm_list_through_the_seam_warns_that_the_cli_rail_is_refusing(
+    store, monkeypatch, caplog
+):
+    # Arrange
+    _arrange_stale_scitex_dev(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
+    # Act
+    get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    # Assert
+    assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
+
+
+def test_poll_notifications_through_the_seam_warns_that_the_cli_rail_is_refusing(
+    store, monkeypatch, caplog
+):
+    # Arrange
+    _arrange_stale_scitex_dev(monkeypatch)
+    caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
+    # Act
+    get_backend().poll_notifications("seam-bob", store=store)
+    # Assert
+    assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
 
 
 # EOF

@@ -28,6 +28,42 @@ Everything under [Unreleased] below moves here.
 
 ### Added
 
+- **The Python rail now tells you when the CLI rail is dead.** Measured by
+  agent `grant` inside their own container: `scitex-cards --version` answered
+  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
+  0.17.9". Their card rail had been dead for HOURS with no way to know it. They
+  reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
+  does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
+  nothing ever prompted them to suspect cards was broken. One rail dead, one
+  rail alive, and they were watching the live one.
+
+  The fix is deliberately NOT "add the same gate to Python": that would take
+  the LAST WORKING RAIL from an agent whose CLI is already refusing, which is
+  strictly worse than the bug it fixes. `check_currency()` is unchanged and
+  still ERRORS at the CLI and MCP entry points. What Python gets instead is a
+  non-raising sibling: `currency_verdict()` answers in a fixed
+  `CurrencyVerdict(state, detail, checked)` shape whose `state` is
+  THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
+  an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
+  `warn_if_stale_once()` wraps it, never raises (an unexpected exception out of
+  scitex-dev degrades to `"unknown"`), and logs ONE warning per process that
+  names the sibling rail explicitly — "this Python call SUCCEEDED, but the
+  CLI/MCP rail for this same package is currently REFUSING" — quotes
+  scitex-dev's message verbatim, and prescribes a BASE REBAKE.
+
+  The remedy is a base rebake and never an in-place `pip` upgrade, and a test
+  pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout
+  masking exactly ONE dist-info name; on the next base rebake that whiteout
+  covers a name that no longer exists, the new base copy is masked by nothing,
+  TWO dist-info directories appear, and the rail is dead AT BOOT. (Measured:
+  two agents, same version, same base, both healthy, OPPOSITE restart-safety,
+  differing only in WHEN they upgraded.)
+
+  Wired into the backend seam's messaging verbs — `LocalBackend.dm_send`
+  (the confirmed entry point from the incident), `dm_list` and
+  `poll_notifications` — and deliberately NOT into `_cli/_main.py` or
+  `_cli/_mcp.py`, which already call `check_currency()`.
+
 - **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
   `to` and `body` and nothing else, so there was no API for sending a file at
   all — an agent asked which one to use for a PDF and the honest answer was

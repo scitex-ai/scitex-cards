@@ -12,23 +12,74 @@ actually installed in the environment.
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 
 import pytest
 
-from scitex_cards._currency import check_currency
+from scitex_cards import _currency
+from scitex_cards._currency import (
+    STALE_REMEDY,
+    check_currency,
+    currency_verdict,
+    warn_if_stale_once,
+)
+
+_CURRENCY_LOGGER = "scitex_cards._currency"
 
 
-def _install_fake_staleness_module(monkeypatch, ensure_current):
+def _install_fake_staleness_module(monkeypatch, ensure_current, stale_error=None):
     """Register a fake `scitex_dev.staleness` module in `sys.modules` so
     `check_currency()`'s `from scitex_dev.staleness import ensure_current`
-    resolves to `ensure_current` — no real scitex-dev>=0.34.0 required."""
+    resolves to `ensure_current` — no real scitex-dev>=0.34.0 required.
+
+    `stale_error`, when given, is published as the module's `StalenessError`
+    so `currency_verdict()` can tell a real staleness VERDICT apart from
+    scitex-dev malfunctioning (the latter is `unknown`, not `stale`)."""
     fake_package = types.ModuleType("scitex_dev")
     fake_module = types.ModuleType("scitex_dev.staleness")
     fake_module.ensure_current = ensure_current
+    if stale_error is not None:
+        fake_module.StalenessError = stale_error
     monkeypatch.setitem(sys.modules, "scitex_dev", fake_package)
     monkeypatch.setitem(sys.modules, "scitex_dev.staleness", fake_module)
+
+
+def _reset_warn_once_state(monkeypatch):
+    """Clear the module-level warn-once + verdict cache for this test only.
+
+    `monkeypatch.setattr` restores whatever the rest of the suite had already
+    put there, so a test that trips the warning cannot leak into a later one
+    (and cannot be silenced by an earlier one)."""
+    monkeypatch.setattr(_currency, "_CACHED_VERDICT", None)
+    monkeypatch.setattr(_currency, "_WARNED_STALE", False)
+
+
+def _stale_fake(monkeypatch, message="scitex-cards 0.17.7 is behind latest 0.17.9"):
+    """Arrange the whole stale-install world: warn-once reset + a scitex-dev
+    whose `ensure_current` refuses with `message`. Returns the message."""
+    _reset_warn_once_state(monkeypatch)
+
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        raise _FakeStalenessError(message)
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error=_FakeStalenessError
+    )
+    return message
+
+
+def _currency_warnings(caplog):
+    """Only this module's WARNING records — the suite logs plenty else."""
+    return [
+        rec
+        for rec in caplog.records
+        if rec.name == _CURRENCY_LOGGER and rec.levelno == logging.WARNING
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +162,253 @@ def test_check_currency_broken_payload_error_also_propagates(monkeypatch):
     # Act / Assert
     with pytest.raises(RuntimeError, match="ambiguous dist-info"):
         check_currency()
+
+
+# --------------------------------------------------------------------------- #
+# (d) currency_verdict() — the NON-RAISING sibling, three-valued              #
+#                                                                             #
+# The Python rail is ungated ON PURPOSE (taking the last working rail from an #
+# agent whose CLI already refuses is strictly worse than the bug). It reads   #
+# the same measurement through this verdict instead. The constitution's       #
+# three-valued rule is what these tests pin: absent tooling is UNKNOWN, never #
+# "current".                                                                  #
+# --------------------------------------------------------------------------- #
+def test_currency_verdict_reports_unknown_when_scitex_dev_is_absent(monkeypatch):
+    # Arrange
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", None)
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert — NOT "current": absent tooling is not evidence of currency.
+    assert verdict.state == "unknown"
+
+
+def test_currency_verdict_does_not_claim_a_check_when_scitex_dev_is_absent(
+    monkeypatch,
+):
+    # Arrange
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", None)
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert — the separate named signal for "we did not measure".
+    assert verdict.checked is False
+
+
+def test_currency_verdict_reports_current_when_the_install_is_fresh(monkeypatch):
+    # Arrange
+    _install_fake_staleness_module(monkeypatch, lambda dist_name: None)
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert
+    assert verdict.state == "current"
+
+
+def test_currency_verdict_reports_stale_when_scitex_dev_refuses(monkeypatch):
+    # Arrange
+    _stale_fake(monkeypatch)
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert
+    assert verdict.state == "stale"
+
+
+def test_currency_verdict_carries_scitex_devs_message_verbatim(monkeypatch):
+    # Arrange
+    message = _stale_fake(monkeypatch)
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert — verbatim: the reader needs the versions scitex-dev computed.
+    assert verdict.detail == message
+
+
+def test_currency_verdict_is_unknown_when_scitex_dev_itself_malfunctions(monkeypatch):
+    # Arrange — not a staleness verdict, a broken scitex-dev.
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        raise TypeError("ensure_current() got an unexpected keyword argument")
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error=_FakeStalenessError
+    )
+
+    # Act
+    verdict = currency_verdict()
+
+    # Assert — degrades to UNKNOWN, not collapsed into either pole.
+    assert verdict.state == "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# (e) warn_if_stale_once() — the Python rail's notice                        #
+# --------------------------------------------------------------------------- #
+def test_warn_if_stale_once_does_not_raise_when_the_install_is_stale(monkeypatch):
+    """THE WHOLE POINT: the rail that still works must keep working. Reaching
+    the assert at all is the no-raise evidence."""
+    # Arrange
+    _stale_fake(monkeypatch)
+
+    # Act
+    verdict = warn_if_stale_once()
+
+    # Assert
+    assert verdict.state == "stale"
+
+
+def test_warn_if_stale_once_emits_a_warning_when_the_install_is_stale(
+    monkeypatch, caplog
+):
+    # Arrange
+    _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert
+    assert len(_currency_warnings(caplog)) == 1
+
+
+def test_warn_if_stale_once_warns_exactly_once_across_repeated_calls(
+    monkeypatch, caplog
+):
+    """Every dm_send calls this; repeating the notice per message would be
+    noise against the operator's standing minimum-noise instruction."""
+    # Arrange
+    _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+    warn_if_stale_once()
+    warn_if_stale_once()
+
+    # Assert
+    assert len(_currency_warnings(caplog)) == 1
+
+
+def test_warn_if_stale_once_warning_names_the_sibling_cli_command(monkeypatch, caplog):
+    """A warning that does not tell the reader WHICH rail is down fails its
+    job — the reader is an agent whose Python call just succeeded."""
+    # Arrange
+    _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert
+    assert "scitex-cards list-tasks" in _currency_warnings(caplog)[0].getMessage()
+
+
+def test_warn_if_stale_once_warning_names_the_cli_and_mcp_rail(monkeypatch, caplog):
+    # Arrange
+    _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert
+    assert "CLI/MCP" in _currency_warnings(caplog)[0].getMessage()
+
+
+def test_warn_if_stale_once_warning_quotes_scitex_devs_message_verbatim(
+    monkeypatch, caplog
+):
+    # Arrange
+    message = _stale_fake(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert
+    assert message in _currency_warnings(caplog)[0].getMessage()
+
+
+def test_warn_if_stale_once_is_silent_when_scitex_dev_is_absent(monkeypatch, caplog):
+    # Arrange
+    _reset_warn_once_state(monkeypatch)
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", None)
+    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
+
+    # Act
+    warn_if_stale_once()
+
+    # Assert — nothing was measured, so there is nothing to report.
+    assert _currency_warnings(caplog) == []
+
+
+def test_warn_if_stale_once_reports_unknown_when_scitex_dev_is_absent(monkeypatch):
+    # Arrange
+    _reset_warn_once_state(monkeypatch)
+    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", None)
+
+    # Act
+    verdict = warn_if_stale_once()
+
+    # Assert
+    assert verdict.state == "unknown"
+
+
+def test_warn_if_stale_once_does_not_raise_when_scitex_dev_malfunctions(monkeypatch):
+    # Arrange
+    _reset_warn_once_state(monkeypatch)
+
+    class _FakeStalenessError(RuntimeError):
+        pass
+
+    def _fake_ensure_current(dist_name):
+        raise TypeError("ensure_current() got an unexpected keyword argument")
+
+    _install_fake_staleness_module(
+        monkeypatch, _fake_ensure_current, stale_error=_FakeStalenessError
+    )
+
+    # Act
+    verdict = warn_if_stale_once()
+
+    # Assert
+    assert verdict.state == "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# (f) the remedy — a BASE REBAKE, never an in-place upgrade                   #
+# --------------------------------------------------------------------------- #
+def test_stale_remedy_does_not_prescribe_an_in_place_pip_upgrade():
+    """An in-place upgrade inside an apptainer overlay leaves a whiteout that
+    kills the rail AT BOOT on the next base rebake. The remedy we author must
+    not name that command anywhere — not even as an aside."""
+    # Arrange
+    forbidden = "pip install -U"
+
+    # Act
+    remedy = STALE_REMEDY
+
+    # Assert
+    assert forbidden not in remedy
+
+
+def test_stale_remedy_prescribes_a_base_rebake():
+    # Arrange
+    expected = "REBAKE THE CONTAINER BASE IMAGE"
+
+    # Act
+    remedy = STALE_REMEDY
+
+    # Assert
+    assert expected in remedy
 
 
 # EOF
