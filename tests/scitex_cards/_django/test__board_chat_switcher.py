@@ -3,10 +3,17 @@
 """The Board | DM switcher must exist on BOTH pages and survive a sub-path mount.
 
 NAMING (2026-07-29): the second item is LABELLED "DM" — operator, 「"chat" と
-なってますが、"DM" でそろえると良いと思います。」 — while its href is still
-``/chat``, which is why the label assertions below say DM and the href
-assertions still say chat. That split is deliberate: a published URL is a
-MIGRATION, not a label. ``test__dm_naming_is_consistent.py`` pins both sides.
+なってますが、"DM" でそろえると良いと思います。」 — and later the same day they
+asked for the URLs to match, verbatim: 「url も http://127.0.0.1:8051/board
+http://127.0.0.1:8051/dm とした方が良いと思いますけどね」. So the href assertions
+below say ``board`` / ``dm`` where they used to say ``/`` and ``chat``.
+
+THAT SWITCH IS ONLY SAFE BECAUSE THE OLD DOORS STAY OPEN, so the last section of
+this file pins exactly that: ``/``, ``/chat`` and ``/chat/`` must still SERVE a
+page, not merely resolve. A published URL is a MIGRATION, not a label — #616
+published ``/board`` and ``/dm`` as aliases first, and this file is the check
+that the alias half never quietly disappears afterwards, leaving every bookmark
+and agent reference pointing at a 404.
 
 WHY THIS FILE EXISTS
 --------------------
@@ -38,9 +45,12 @@ import pytest
 pytest.importorskip("django")
 
 from django.test import RequestFactory  # noqa: E402
+from django.urls import resolve  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
 from scitex_cards._django.services import _reset_cache  # noqa: E402
+
+_URLCONF = "scitex_cards._django.urls"
 
 _STORE_TEXT = (
     "tasks:\n"
@@ -113,26 +123,26 @@ def chat_at_root():
 # --- the board home offers a way INTO the chat -----------------------------
 
 
-def test_board_page_links_to_the_chat_page(board_at_subpath):
-    """Without this link the chat is a URL you have to know — the whole
-    complaint. The href must carry the mount prefix, not a bare "/chat"."""
+def test_board_page_links_to_the_dm_page_under_the_mount_prefix(board_at_subpath):
+    """Without this link the DM page is a URL you have to know — the whole
+    complaint. The href must carry the mount prefix, not a bare "/dm"."""
     # Arrange
     html = board_at_subpath
     # Act
     item = _switcher_item(html, "DM")
     # Assert
-    assert 'href="/apps/cards/chat"' in item
+    assert 'href="/apps/cards/dm"' in item
 
 
-def test_board_page_chat_link_is_root_relative_at_root_mount(board_at_root):
-    """Standalone (:8051) the include root is "/", so the link is "/chat" —
-    the URL the operator was typing by hand."""
+def test_board_page_sends_the_operator_to_slash_dm_at_root_mount(board_at_root):
+    """Standalone (:8051) the include root is "/", so the link is "/dm" — the
+    URL the operator asked to see in the address bar."""
     # Arrange
     html = board_at_root
     # Act
     item = _switcher_item(html, "DM")
     # Assert
-    assert 'href="/chat"' in item
+    assert 'href="/dm"' in item
 
 
 def test_board_page_marks_the_board_as_the_active_surface(board_at_subpath):
@@ -172,26 +182,26 @@ def test_board_page_loads_the_shared_switcher_stylesheet(board_at_subpath):
 # --- the chat page offers a way BACK to the board --------------------------
 
 
-def test_chat_page_links_back_to_the_board(chat_at_subpath):
-    """The board link must stay inside the mount: on the hub "/" is the hub's
-    own landing page, not this board."""
+def test_chat_page_links_back_to_the_board_under_the_mount_prefix(chat_at_subpath):
+    """The board link must stay inside the mount: on the hub a bare "/board" is
+    the hub's own 404, not this board."""
     # Arrange
     html = chat_at_subpath
     # Act
     item = _switcher_item(html, "Board")
     # Assert
-    assert 'href="/apps/cards/"' in item
+    assert 'href="/apps/cards/board"' in item
 
 
-def test_chat_page_board_link_is_root_relative_at_root_mount(chat_at_root):
+def test_chat_page_sends_the_operator_to_slash_board_at_root_mount(chat_at_root):
     """Standalone the include root is "/" — chat_page strips its own trailing
-    segment off request.path to recover it."""
+    segment off request.path to recover it — so the link reads "/board"."""
     # Arrange
     html = chat_at_root
     # Act
     item = _switcher_item(html, "Board")
     # Assert
-    assert 'href="/"' in item
+    assert 'href="/board"' in item
 
 
 def test_chat_page_marks_chat_as_the_active_surface(chat_at_subpath):
@@ -260,6 +270,79 @@ def test_switcher_stylesheet_exists_where_both_templates_point():
     exists = css_path.is_file()
     # Assert
     assert exists
+
+
+# --- the OLD urls still SERVE — the property that makes the switch safe ----
+
+
+def _serve(path: str):
+    """Serve ``path`` the way the urlconf does: resolve it, then call the view.
+
+    Deliberately stronger than the resolve-only assertions in
+    ``test__board_and_dm_routes.py``. Resolving proves a route EXISTS; the
+    operator's bookmark only survives if the route also RENDERS. A view that
+    resolves and then raises is a 500 on a URL this file has just stopped
+    linking to — the exact failure nobody would notice.
+    """
+    match = resolve(path, urlconf=_URLCONF)
+    request = RequestFactory().get(path)
+    return match.func(request, **match.kwargs)
+
+
+def test_the_root_url_still_serves_the_board_now_that_links_say_board(store):
+    """`/` is the URL in the operator's bookmark and in TG 263. The switcher no
+    longer points here, so nothing else would catch it going dark."""
+    # Arrange
+    path = "/"
+    # Act
+    response = _serve(path)
+    # Assert
+    assert response.status_code == 200
+
+
+def test_the_chat_url_still_serves_the_dm_page_now_that_links_say_dm():
+    """`/chat` is published — bookmarked, referenced by agents, and until this
+    change it was what the switcher rendered. Losing it is the one regression
+    that would hurt most, and no link exercises it any more."""
+    # Arrange
+    path = "/chat"
+    # Act
+    response = _serve(path)
+    # Assert
+    assert response.status_code == 200
+
+
+def test_the_slashed_chat_url_still_serves_the_dm_page():
+    """`/chat/` was itself a fix for an operator-hit 404 (2026-07-24). A later
+    migration must not quietly undo an earlier one."""
+    # Arrange
+    path = "/chat/"
+    # Act
+    response = _serve(path)
+    # Assert
+    assert response.status_code == 200
+
+
+def test_the_old_chat_url_serves_the_same_page_as_the_new_dm_url():
+    """Two doors, ONE room. A `/chat` that survives as a slightly different
+    page is the drift that makes the alias guarantee worthless — the operator
+    would be reading a stale surface and have no way to tell."""
+    # Arrange
+    paths = ("/chat", "/dm")
+    # Act
+    bodies = {_serve(path).content for path in paths}
+    # Assert
+    assert len(bodies) == 1
+
+
+def test_the_root_url_serves_the_same_page_as_the_new_board_url(store):
+    """The board half of the same guarantee."""
+    # Arrange
+    paths = ("/", "/board")
+    # Act
+    bodies = {_serve(path).content for path in paths}
+    # Assert
+    assert len(bodies) == 1
 
 
 # EOF

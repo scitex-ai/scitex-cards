@@ -198,16 +198,19 @@ def test_chat_page_api_base_marker_is_root_at_root_mount():
 
 def test_chat_page_board_link_targets_include_root():
     """The header's link BACK to the board must stay inside the mount, not
-    escape to the site root (on the hub "/" is the hub's landing page, not the
-    board). That link used to be a bare "← board" anchor; it is now the Board
-    item of the shared Board|Chat switcher, and the invariant is unchanged.
+    escape to the site root (on the hub "/" is the hub's landing page and a
+    bare "/board" is its 404, neither of them this board). That link used to be
+    a bare "← board" anchor, then the Board item of the shared switcher
+    pointing at the include root itself; since 2026-07-29 it points at the
+    operator-requested ``/board`` alias UNDER that root. The invariant — the
+    prefix — is unchanged, which is the only thing this file is about.
     Switcher-specific behaviour is pinned in test__board_chat_switcher.py."""
     # Arrange
     request = RequestFactory().get("/apps/cards/chat")
     # Act
     body = views.chat_page(request).content.decode("utf-8")
     # Assert
-    assert 'stx-cards-switcher__item" href="/apps/cards/"' in body
+    assert 'stx-cards-switcher__item" href="/apps/cards/board"' in body
 
 
 # EOF
