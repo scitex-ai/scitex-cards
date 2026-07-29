@@ -357,12 +357,27 @@
 
   // ---- compose -----------------------------------------------------------
 
+  // Re-entry guard. `$send.disabled` does NOT prevent this: Enter calls
+  // `$form.requestSubmit()`, which runs the submit handler whether or not the
+  // BUTTON is disabled, and `sendMessage` never consulted that flag. With the
+  // textarea also cleared only after the response landed, every extra Enter
+  // pressed during the round trip re-sent the same text — the operator hit
+  // this live and diagnosed it themselves ("Enter を連発すると何個も送られる").
+  var sending = false;
+
   function sendMessage(event) {
     event.preventDefault();
+    if (sending) return;
     if (!state.peer) return;
     var text = $body.value.trim();
     if (!text) return;
+    sending = true;
     $send.disabled = true;
+    // Clear OPTIMISTICALLY so a repeated Enter finds an empty box and returns
+    // early even before `sending` is consulted — belt and braces, because the
+    // cost of a duplicate is a duplicate message the operator has to clean up.
+    // Restored verbatim on failure so a send that did not land is never lost.
+    $body.value = "";
     fetch(API_BASE + "/dm/thread/" + encodeURIComponent(state.peer), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
