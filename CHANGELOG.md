@@ -28,6 +28,47 @@ Everything under [Unreleased] below moves here.
 
 ### Added
 
+- **The chat page's agent list has a fuzzy filter, and the matcher is
+  scitex-ui's.** Operator standing request, repeated: 「普通にあいまい検索でフィ
+  ルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board
+  already honoured it — its six filter `<select>`s are wrapped by scitex-ui's
+  Combobox — but the chat page's agent list did not, and it is the list that
+  grows without bound: every agent the fleet has ever registered, one flat
+  column, findable only by scrolling. The filter consumes
+  `STX.Combobox.fuzzyMatch`, the static scitex-ui exports beside the Combobox
+  class for consumers that want a list narrowed rather than a `<select>`
+  replaced. Writing a second subsequence matcher here would have meant two
+  different search behaviours in one app, so a test asserts the module CALLS
+  base's rather than reimplementing it; the substring fallback for an old
+  scitex-ui is deliberately dumber, and a test pins that too, so a page running
+  degraded is visibly rather than silently degraded.
+
+  Two structural details are load-bearing. `renderAgents` clears its container
+  every 5s, so the input lives OUTSIDE the rebuilt element (`#agent-list` exists
+  to be the wiped part) — inside it, the operator's query would vanish four
+  seconds after they typed it, which no screenshot taken right after typing can
+  show. And because rows are hidden after render, that same rebuild un-hides
+  everything, so a MutationObserver re-applies the filter; without it the filter
+  quietly stops working and keeps looking correct until you glance away.
+  Verified under jsdom against the rendered page, not asserted: typing `dvhlp`
+  (a subsequence of `dev-helper`, a substring of nothing) leaves one row, `wtg`
+  leaves both `worker-telegrammer-*`, a non-matching query says which word
+  emptied the list rather than showing a blank column, and a forced repaint
+  leaves the filtered set unchanged.
+
+- **A guard that everything we load from scitex-ui actually arrives.** Both
+  pages consume base through `if (window.STX && window.STX.Combobox) {…}`, which
+  is the right shape — a missing component must not take the page down — and
+  which also means a missing asset produces no error, no warning and no visual
+  cue: the page keeps working in its degraded branch indefinitely. The new test
+  resolves every `{% static 'scitex_ui/…' %}` path our templates reference
+  through the real finders, and then executes the bundle we feature-detect to
+  confirm it still attaches `window.STX.Combobox`. The second half is not
+  hypothetical: on 2026-07-29 scitex-ui regenerated that bundle with
+  `esbuild --format=esm`, producing valid JavaScript at the same path that
+  passed every exists() check and set NO global — which would have pinned every
+  consumer to its fallback permanently, with nothing failing anywhere.
+
 - **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
   `to` and `body` and nothing else, so there was no API for sending a file at
   all — an agent asked which one to use for a PDF and the honest answer was
@@ -78,6 +119,25 @@ Everything under [Unreleased] below moves here.
   the exact bug class this change exists to avoid.
 
 ### Fixed
+
+- **The declared scitex-ui floor was two minor versions under what the code
+  needs.** `pyproject.toml` asked for `>=0.7.1`; `chat.html` has documented
+  `>=0.11.1` since #581 and said "the upgrade ships alongside this". It never
+  did. 0.11.1 is where `.stx-app-context-menu__item` gets `font-family:
+  inherit`, and the items are `<button>`s — buttons do not inherit the page font
+  and base ships no global button reset, so a resolver honouring 0.7.1 gets a
+  right-click menu rendered in the UA button font. `context-menu.css` EXISTS at
+  0.7.1 without that rule, which is why no file-level check could have caught
+  it: presence is not currency, and a floor is the only thing that expresses the
+  difference. Measured against the scitex-ui tags rather than inferred.
+
+  Worth recording what this was NOT: the board's Combobox was investigated on
+  the belief it had been inert behind this same too-low floor. It had not been.
+  The Combobox bundle first shipped in scitex-ui **0.6.0**, below even the old
+  0.7.1 declaration, and a jsdom run of the rendered board confirms all six
+  filter `<select>`s are hidden and replaced by live comboboxes with working
+  subsequence matching. Nothing about the board's fuzzy filtering was broken —
+  the floor bug is real and adjacent, not the same bug.
 
 - **`threads_path()` no longer writes a file** (design part 2 §7.3). A PATH
   QUERY materialised the sidecar from a legacy `threads.yaml` as a side effect

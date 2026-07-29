@@ -111,10 +111,29 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #layout { flex: 1 1 auto; display: flex; min-height: 0; }
 
   /* ---- agent list (left) ---- */
+  /* The nav is now a COLUMN of two things — the filter row, which stays put,
+     and the scrolling list. `overflow-y` moved off the nav and onto #agent-list
+     for that reason: left on the nav, the filter scrolls away exactly when a
+     list long enough to need filtering is being scrolled. */
   #agents {
     width: 240px; flex: 0 0 auto; background: var(--panel);
-    border-right: 1px solid var(--line); overflow-y: auto;
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
   }
+  #agent-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+  /* Fuzzy filter over the agent list (operator standing request 2026-07-29:
+     「普通にあいまい検索でフィルタはいつも入れてください」). Every colour here is a
+     token — the matcher comes from scitex-ui and so does the palette. */
+  #agent-filter-row {
+    flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--line);
+  }
+  #agent-filter {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; font-size: 0.78rem; font-family: inherit;
+  }
+  #agent-filter::placeholder { color: var(--dim); }
+  #agent-filter:focus { outline: none; border-color: var(--accent); }
   #agents .agent {
     display: flex; flex-direction: row; align-items: center; gap: 9px;
     padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--line);
@@ -401,7 +420,25 @@ must therefore ALWAYS be rendered.
 </header>
 <div id="error-bar"></div>
 <div id="layout">
-  <nav id="agents" aria-label="Agents"><div class="empty">Loading agents&hellip;</div></nav>
+{% comment %}
+The agent list is now a filter row plus a scrolling list, not one flat nav.
+`renderAgents` in chat.js clears its container on every 5s poll, so the input
+CANNOT live inside the rebuilt element — it would be wiped four seconds after
+the operator typed in it. `#agent-list` exists to be the wiped part.
+
+The input is written HERE rather than created by chat_filter.js so the page can
+be asserted to actually SERVE it (same reason the context-menu items are in the
+template). `#agents` keeps its id because the mobile drawer is mounted on it and
+every `#agents .agent` rule still matches through the new wrapper.
+{% endcomment %}
+  <nav id="agents" aria-label="Agents">
+    <div id="agent-filter-row">
+      <input id="agent-filter" type="search" autocomplete="off"
+             placeholder="Filter agents&hellip;" aria-label="Filter agents"
+             aria-controls="agent-list">
+    </div>
+    <div id="agent-list"><div class="empty">Loading agents&hellip;</div></div>
+  </nav>
   <div id="scrim"></div>
 {% comment %}
 Markup is scitex-ui's contract, verbatim — do not "tidy" it:
@@ -511,11 +548,13 @@ Forward uses.
 Load order matters and is one-directional: each file reads the ones before it
 off `window` and never the reverse.
 
+  combobox.js     scitex-ui's fuzzy matcher (STX.Combobox.fuzzyMatch)
   chat_diff.js    pure render planning (no deps)
   chat_actions.js pure message-action decisions (no deps)
   chat_select.js  multi-select mode + its bulk actions (reads ChatActions)
   chat_menu.js    the message context menu + reaction chips (reads both)
   chat_attach.js  attachment uploads (no deps)
+  chat_filter.js  fuzzy filter over the agent list (reads STX.Combobox)
   chat.js         the page orchestrator (mounts the two modules above)
 
 chat_menu mounts chat_select rather than chat.js doing it: the menu already
@@ -523,14 +562,22 @@ holds every seam selection needs (the message list, the peer, the forward
 picker), so routing them through chat.js would only add a pass-through — and
 chat.js is at its 512-line budget.
 
+combobox.js is scitex-ui's, and it is here for its MATCHER, not its widget: the
+bundle attaches `window.STX.Combobox` and exports `fuzzyMatch` as a static, which
+is what makes "matches" mean the same thing on this page as on the board. It is
+the same file board_v3.html loads. chat_filter.js degrades to a substring match
+if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
+
 `defer` scripts execute in document order, so this list IS the order.
 {% endcomment %}
+<script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 </body>

@@ -71,7 +71,11 @@
     timerList: null,
   };
 
-  var $agents = document.getElementById("agents");
+  /* `#agents` is the NAV the drawer slides; `#agent-list` is the part
+   * renderAgents clears each poll. The filter input sits between them. */
+  var $agentsPane = document.getElementById("agents");
+  var $agents = document.getElementById("agent-list");
+  var $agentFilter = document.getElementById("agent-filter");
   var $scrim = document.getElementById("scrim");
   var $menuBtn = document.getElementById("menu-btn");
   var $title = document.getElementById("thread-title");
@@ -425,11 +429,17 @@
   // operator behind an undismissable scrim).
   var drawer = window.ChatDrawer
     ? window.ChatDrawer.mount({
-        panel: $agents,
+        panel: $agentsPane,
         scrim: $scrim,
         trigger: $menuBtn,
       })
     : null;
+
+  // Fuzzy filter over the agent list (scitex-ui's matcher). It re-applies
+  // itself after every poll, so nothing here has to remember it exists.
+  if (window.ChatFilter) {
+    window.ChatFilter.mount({ input: $agentFilter, list: $agents });
+  }
 
   function closeDrawer() {
     if (drawer) drawer.close();
