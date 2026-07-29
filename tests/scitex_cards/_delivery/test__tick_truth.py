@@ -197,15 +197,14 @@ class TestPendingIsThreeValued:
         # broken and an inbox that is empty produce the same green test.
         _break_the_inbox(tmp_path)
         # Act
-        with pytest.raises(Exception) as excinfo:
+        # Assert
+        with pytest.raises(Exception):
             poll_inbox(
                 "u_alice",
                 unseen_only=False,
                 mark_seen=False,
                 store=tmp_path / "tasks.yaml",
             )
-        # Assert
-        assert excinfo.value is not None
 
     def test_a_recipient_is_actually_configured(self, tmp_path):
         # Arrange

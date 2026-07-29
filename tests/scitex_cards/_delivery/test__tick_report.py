@@ -106,39 +106,42 @@ class TestVerdict:
 
 
 class TestValidator:
+    """``match=`` keeps each of these to ONE assertion (STX-TQ007).
+
+    The raises-block and the message check are a single expectation here: not
+    merely "it refused" but "it refused for the stated reason". Splitting them
+    into a `raises` plus a separate `assert` on `excinfo` is two.
+    """
+
     def test_unknown_pending_without_a_fault_is_refused(self):
         # Arrange
         # an unexplained UNKNOWN is a shape-shifting answer — it must
         # fail where it is built, not three layers downstream.
         # Act
-        with pytest.raises(ValueError) as excinfo:
-            TickReport(tick=1, pending=None)
         # Assert
-        assert "must name the reason" in str(excinfo.value)
+        with pytest.raises(ValueError, match="must name the reason"):
+            TickReport(tick=1, pending=None)
 
     def test_a_faulted_tick_must_count_itself_as_a_failure(self):
         # Arrange
         # Act
-        with pytest.raises(ValueError) as excinfo:
-            TickReport(tick=1, pending=0, faults=(FAULT,), consecutive_failures=0)
         # Assert
-        assert "must count at least itself" in str(excinfo.value)
+        with pytest.raises(ValueError, match="must count at least itself"):
+            TickReport(tick=1, pending=0, faults=(FAULT,), consecutive_failures=0)
 
     def test_a_clean_tick_may_not_claim_a_failure_streak(self):
         # Arrange
         # Act
-        with pytest.raises(ValueError) as excinfo:
-            TickReport(tick=1, pending=0, consecutive_failures=4)
         # Assert
-        assert "must be 0" in str(excinfo.value)
+        with pytest.raises(ValueError, match="must be 0"):
+            TickReport(tick=1, pending=0, consecutive_failures=4)
 
     def test_a_negative_count_is_refused(self):
         # Arrange
         # Act
-        with pytest.raises(ValueError) as excinfo:
-            TickReport(tick=1, pending=0, sent=-1)
         # Assert
-        assert "non-negative" in str(excinfo.value)
+        with pytest.raises(ValueError, match="non-negative"):
+            TickReport(tick=1, pending=0, sent=-1)
 
 
 class TestEmittedLine:
