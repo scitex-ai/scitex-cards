@@ -196,11 +196,12 @@ def _build_graph(board) -> dict:
         "mermaid": build_mermaid(board.tasks),
         "store_path": str(board.store_path),
         "task_count": len(board.tasks),
-        # HONEST EMPTY STATE (hub card hub-cards-board-data-404): True when
-        # the resolved store-identity file did not exist at load time — a
-        # brand-new workspace's legitimate 0-card board, not an error. The
-        # frontend renders the normal zero-card board on this instead of the
-        # red load-error banner.
+        # HONEST EMPTY STATE: True when the store was READ and held no cards —
+        # a legitimate 0-card board, on which the frontend renders the normal
+        # empty board instead of the red load-error banner. It is NOT "the
+        # store file is missing": a store that cannot be read raises out of
+        # get_board and arrives here as a 500, never as this flag. See
+        # BoardState.empty_store for why that distinction is load-bearing.
         "empty_store": board.empty_store,
         # Fleet liveness — per-agent at-a-glance summary the operator can
         # scan from the board header to answer "who is alive + working on
@@ -280,9 +281,9 @@ def handle_tasks(request, board):
         {
             "tasks": list(board.tasks),
             "store_path": str(board.store_path),
-            # Same honest-empty-state flag as the /graph payload: a resolved
-            # store file that does not exist yet is a fresh workspace, not an
-            # error (see BoardState.empty_store).
+            # Same honest-empty-state flag as the /graph payload: the store
+            # was read and holds no cards (see BoardState.empty_store). An
+            # unreadable store never reaches here — it is a 500.
             "empty_store": board.empty_store,
         }
     )
