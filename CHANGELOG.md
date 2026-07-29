@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.17.11] - 2026-07-28
+
+### Added
+
+- **Agents can attach files to a DM.** `dm_send_document(to, file_path,
+  caption)` — mirrors claude-code-telegrammer's `send_document`
+  argument-for-argument, so an agent that can send the operator a file over
+  Telegram makes the structurally identical call here. Until now there was NO
+  such API at any version: an agent asked which one to use and the honest
+  answer was "none exists", so a PDF arrived as prose describing a PDF. That
+  blocked the operator's migration off Telegram, because deliverables could not
+  reach them at all. Bytes are COPIED into the existing attachment store (the
+  source path is never recorded and never served from), reusing the same
+  storage and URL scheme as operator-side uploads so one renderer serves both.
+  The verb is deliberately absent from the HTTP backend surface — a path-taking
+  verb there would be an arbitrary-file read.
+
+### Fixed
+
+- **A closed mobile drawer was still in the tab order.** It is hidden with
+  `transform: translateX(-105%)`, and a transform moves PIXELS — it does not
+  remove an element from the tab order or the accessibility tree. At phone
+  width with the drawer shut, Tab put focus into the invisible agent list with
+  no visible focus ring, and the next Enter opened a thread the operator could
+  not see: the page appeared to jump on its own. Now `inert` (keyboard and
+  assistive tech) AND `visibility: hidden` (pointer) — neither implies the
+  other, so both are set and both are asserted separately.
+- **The drawer and its scrim could desync and strand the operator.** Two bare
+  `classList.toggle("open")` calls; `toggle()` flips whatever is there, so any
+  path clearing one without the other diverged them — and `close()` is called
+  from the thread-open handler. Once diverged, one tap put them in opposite
+  states, the bad half being a scrim with no drawer: greyed screen, nothing to
+  dismiss it, menu button behind it, force-reload the only exit. One boolean
+  now owns the state; a test rejects bare toggles so the pattern cannot return.
+  Escape closes it, and `aria-expanded` is maintained.
+
+Both drawer defects were found by scitex-ui while harvesting the component, and
+both were invisible to a screenshot, which is why they survived review.
+
 ## [0.17.10] - 2026-07-28
 
 Cut to DELIVER the chat work, not because the code needed a version. The
