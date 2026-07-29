@@ -2,7 +2,62 @@
 
 ## [Unreleased]
 
+### Added
+
+- **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
+  pending notifications itself, then requires the ack. Delivery had exactly ONE
+  rail: the MCP channel push. An agent spec whitelisted `server:scitex-todo`
+  while `.mcp.json` registered the server as `scitex-cards` (renamed during the
+  migration), so Claude Code SILENTLY DISCARDED every push — `send()` returned
+  normally, the drain acked on that success, and roughly three weeks of operator
+  DMs were gone. Measured on the affected agent: **228 inbox rows, ZERO unseen**.
+  sac found the same hazard armed on ~96 spec entries fleet-wide. Fixing that one
+  spec is not a fix for the class: a single rail with nothing independent
+  checking it fails again, silently, because *the transport returned* is not
+  *the recipient received*.
+
+  `scitex-cards stop-hook` now reads the store directly at turn end and puts the
+  message text in the `reason` it hands back. No push involved, so a channel
+  registration mistake cannot silence it.
+
+  **The order of operations is the safety property.** PULL (a pure read, cursor
+  untouched) → PRESENT (the reason IS the delivery) → only then REQUIRE the ack.
+  A hook that merely blocked on unacked messages would have DEADLOCKED every
+  agent on the morning of the outage: nothing had been shown, so nothing COULD
+  have been acked. That is enforced structurally rather than by care — the new
+  `scitex_cards._inbox_present.present()` returns `(text, presented_ids)` where
+  `presented_ids` is exactly the ids whose content is in `text`, and the hook
+  demands acks for those and no others. Overflow is counted out loud, left
+  unconfirmed, and redelivered next turn.
+
+  **Bounded**, because a hook that can refuse forever is a new outage: an
+  unreadable store, an unresolvable agent id or any rail exception ALLOWS the
+  stop and explains itself on stderr (each rail fails open independently); the
+  same message stops being demanded after 3 unacked presentations in a session
+  and the record is left unseen in the store; when the retry counter cannot be
+  persisted the harness's own `stop_hook_active` becomes the bound; a reason
+  that would be empty never blocks. Full table in
+  `_skills/scitex-cards/23_stop-hook-second-delivery-rail.md`.
+
+  Rides on `_inbox_confirm.confirm_notifications` — no second ack path. The hook
+  reads across BOTH inbox keys (raw name and resolved `u_*` id) via
+  `recipient_keys`, closing the same silent-miss shape as the outage itself:
+  `_may_stop` read only the raw name.
+
+- **`scitex-cards inbox ack --agent <a> <ids...>`** — the standalone surface onto
+  the one existing ack verb. The Stop hook demands an ack, so an agent that
+  installed scitex-cards and nothing else must be able to give one; without this
+  the hook would block where the actor cannot remediate. No new ack path: it
+  calls `confirm_notifications` like every other surface.
+
 ### Fixed
+
+- **A fail-open test that never failed.** `test__stop_hook.py` arranged its
+  "detector failure" as `SCITEX_CARDS_DB=/nonexistent/scitex-cards/none.db`,
+  which was MEASURED (2026-07-29) not to raise at all — it reads as an EMPTY
+  BOARD. Both fail-open tests passed for the wrong reason and proved nothing.
+  The arrangement now uses a path that cannot be created
+  (`/proc/1/.../cards.db`), which does raise.
 
 - **A notification the client discards is now VISIBLE instead of gone.** The
   channel drain ack'd a record the instant `await send(params)` returned. That
@@ -36,7 +91,6 @@
   into a pass. `report["ok"]` counts only real failures, so an unknown does not
   redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
   by `scitex-cards health`. The record keeps exactly its four standard fields.
-
 
 ## [0.18.0] - 2026-07-29
 

@@ -65,14 +65,20 @@ def _run_against_unreadable_store():
 
     The store is SQLite-only now and the ``--tasks`` CLI option is gone, so a
     detector failure is simulated faithfully by pointing the resolved database
-    env at a path that does not exist: the read raises ``RuntimeError`` and the
-    hook must fail open. (The old form named a missing ``tasks.yaml`` via
-    ``--tasks`` for the same effect.)
+    env at a path that cannot even be created: the read raises ``RuntimeError``
+    and the hook must fail open. (The old form named a missing ``tasks.yaml``
+    via ``--tasks`` for the same effect.)
+
+    The path changed 2026-07-29. It used to be ``/nonexistent/scitex-cards/
+    none.db``, which was MEASURED not to raise at all — it reads as an EMPTY
+    BOARD, so both tests below passed for the wrong reason and proved nothing
+    about fail-open. A fail-open test whose arrange step does not fail is
+    vacuous.
     """
     return CliRunner().invoke(
         stop_hook_cmd,
         ["--agent", "worker-x"],
-        env={"SCITEX_CARDS_DB": "/nonexistent/scitex-cards/none.db"},
+        env={"SCITEX_CARDS_DB": "/proc/1/definitely-not-a-directory/cards.db"},
     )
 
 
