@@ -73,7 +73,9 @@
     timerList: null,
   };
 
-  var $agents = document.getElementById("agents");
+  var $agentsPane = document.getElementById("agents");
+  var $agents = document.getElementById("agent-list");
+  var $agentFilter = document.getElementById("agent-filter");
   var $scrim = document.getElementById("scrim");
   var $menuBtn = document.getElementById("menu-btn");
   var $title = document.getElementById("thread-title");
@@ -395,12 +397,14 @@
 
   // ---- mobile drawer -----------------------------------------------------
 
-  // State, inert-when-closed and the scrim pairing all live in ChatDrawer —
-  // see that module for the two defects this replaced (a closed drawer that
-  // was still tabbable, and a drawer/scrim desync that could strand the
-  // operator behind an undismissable scrim).
-  var drawerHost = { panel: $agents, scrim: $scrim, trigger: $menuBtn };
+  // State, inert-when-closed and the scrim pairing live in ChatDrawer — see that
+  // module for the two defects it replaced (a closed drawer still in the tab
+  // order, and a drawer/scrim desync that could strand the operator behind an
+  // undismissable scrim). Panel is the NAV so the filter row travels with it.
+  var drawerHost = { panel: $agentsPane, scrim: $scrim, trigger: $menuBtn };
   var drawer = window.ChatDrawer ? window.ChatDrawer.mount(drawerHost) : null;
+  if (window.ChatFilter)
+    window.ChatFilter.mount({ input: $agentFilter, list: $agents });
 
   function closeDrawer() {
     if (drawer) drawer.close();
