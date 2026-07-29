@@ -22,6 +22,19 @@ exactly the "separate copy of the store" the one-database ruling forbids
 ``resolve_store`` and ``health`` are deliberately NOT backend verbs: they
 stay local and become backend-AWARE (reporting which backend is active) when
 the HTTP backend lands.
+
+THE CURRENCY VISIBILITY ASYMMETRY (incident 2026-07-29). This seam is the
+PYTHON rail, and it is deliberately NOT gated by
+``_currency.check_currency()``: an agent whose CLI/MCP rail is already
+REFUSING a stale install still reaches the operator through here, and taking
+that last rail away would be strictly worse than the bug it fixes (settled;
+see ``_currency.py``). It is, however, the only place such an agent will ever
+look — DMs keep arriving, so nothing else prompts them to suspect their card
+rail is dead. So the messaging verbs below call the NON-RAISING
+``warn_if_stale_once()``, which logs once per process naming the sibling rail.
+Deliberately NOT wired into the CLI (``_cli/_main.py``) or the MCP server
+(``_cli/_mcp.py``): both already call ``check_currency()``, and reporting the
+same fact twice on a rail that is already erroring is noise.
 """
 
 from __future__ import annotations
@@ -30,6 +43,7 @@ import os
 from typing import Any
 
 from . import _help_wait, _inbox, _store, _threads
+from ._currency import warn_if_stale_once
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
 
@@ -221,6 +235,8 @@ class LocalBackend:
         ack: bool = False,
         store: Any = None,
     ) -> dict:
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
         from ._users import resolve_user, touch_user
 
         user = resolve_user(agent, store=store)
@@ -247,6 +263,10 @@ class LocalBackend:
     # -- DMs (composition: thread key + ack + read) --------------------- #
 
     def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
+        # CURRENCY VISIBILITY (module docstring): the confirmed entry point
+        # from the incident. Non-raising and warn-once by contract, so the DM
+        # still goes out even when the currency check itself is unhappy.
+        warn_if_stale_once()
         return _threads.append_message(sender, to, body, store=store)
 
     def dm_list(
@@ -256,6 +276,8 @@ class LocalBackend:
         ack: bool = False,
         store: Any = None,
     ) -> dict:
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:

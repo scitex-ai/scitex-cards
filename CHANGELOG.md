@@ -288,6 +288,104 @@ Everything under [Unreleased] below moves here.
 
 ## [Unreleased]
 
+### Added
+
+- **The chat page's agent list has a fuzzy filter, and the matcher is
+  scitex-ui's.** Operator standing request, repeated: 「普通にあいまい検索でフィ
+  ルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board
+  already honoured it — its six filter `<select>`s are wrapped by scitex-ui's
+  Combobox — but the chat page's agent list did not, and it is the list that
+  grows without bound: every agent the fleet has ever registered, one flat
+  column, findable only by scrolling. The filter consumes
+  `STX.Combobox.fuzzyMatch`, the static scitex-ui exports beside the Combobox
+  class for consumers that want a list narrowed rather than a `<select>`
+  replaced. Writing a second subsequence matcher here would have meant two
+  different search behaviours in one app, so a test asserts the module CALLS
+  base's rather than reimplementing it; the substring fallback for an old
+  scitex-ui is deliberately dumber, and a test pins that too, so a page running
+  degraded is visibly rather than silently degraded.
+
+  Two structural details are load-bearing. `renderAgents` clears its container
+  every 5s, so the input lives OUTSIDE the rebuilt element (`#agent-list` exists
+  to be the wiped part) — inside it, the operator's query would vanish four
+  seconds after they typed it, which no screenshot taken right after typing can
+  show. And because rows are hidden after render, that same rebuild un-hides
+  everything, so a MutationObserver re-applies the filter; without it the filter
+  quietly stops working and keeps looking correct until you glance away.
+  Verified under jsdom against the rendered page, not asserted: typing `dvhlp`
+  (a subsequence of `dev-helper`, a substring of nothing) leaves one row, `wtg`
+  leaves both `worker-telegrammer-*`, a non-matching query says which word
+  emptied the list rather than showing a blank column, and a forced repaint
+  leaves the filtered set unchanged.
+
+- **A guard that everything we load from scitex-ui actually arrives.** Both
+  pages consume base through `if (window.STX && window.STX.Combobox) {…}`, which
+  is the right shape — a missing component must not take the page down — and
+  which also means a missing asset produces no error, no warning and no visual
+  cue: the page keeps working in its degraded branch indefinitely. The new test
+  resolves every `{% static 'scitex_ui/…' %}` path our templates reference
+  through the real finders, and then executes the bundle we feature-detect to
+  confirm it still attaches `window.STX.Combobox`. The second half is not
+  hypothetical: on 2026-07-29 scitex-ui regenerated that bundle with
+  `esbuild --format=esm`, producing valid JavaScript at the same path that
+  passed every exists() check and set NO global — which would have pinned every
+  consumer to its fallback permanently, with nothing failing anywhere.
+
+- **The Python rail now tells you when the CLI rail is dead.** Measured by
+  agent `grant` inside their own container: `scitex-cards --version` answered
+  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
+  0.17.9". Their card rail had been dead for HOURS with no way to know it. They
+  reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
+  does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
+  nothing ever prompted them to suspect cards was broken. One rail dead, one
+  rail alive, and they were watching the live one.
+
+  The fix is deliberately NOT "add the same gate to Python": that would take
+  the LAST WORKING RAIL from an agent whose CLI is already refusing, which is
+  strictly worse than the bug it fixes. `check_currency()` is unchanged and
+  still ERRORS at the CLI and MCP entry points. What Python gets instead is a
+  non-raising sibling: `currency_verdict()` answers in a fixed
+  `CurrencyVerdict(state, detail, checked)` shape whose `state` is
+  THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
+  an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
+  `warn_if_stale_once()` wraps it and logs ONE warning per process that names
+  the sibling rail explicitly — "this Python call SUCCEEDED, but the CLI/MCP
+  rail for this same package is currently REFUSING" — quotes scitex-dev's
+  message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
+  console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
+  alias `scitex-todo list-tasks`, because the latter is what actually refused
+  in the incident and is still what much of the fleet types; a reader must
+  recognise the command they are running.
+
+  A FAILING CURRENCY CHECK CANNOT TAKE THE PYTHON RAIL DOWN — and the guard
+  states its limit rather than claiming a false absolute. It swallows every
+  `Exception` **and `SystemExit`**, degrading all of it to `"unknown"`.
+  `SystemExit` is deliberate and was a real hole: it derives from
+  `BaseException`, not `Exception`, so a `sys.exit()` anywhere on the currency
+  path used to propagate straight out of `dm_send` — measured, with the store
+  never touched and the DM never sent, on the one rail this feature exists to
+  keep alive. scitex-dev is optional and independently versioned and its API is
+  deliberately not pinned, so "present but changed" is exactly the case covered;
+  a library calling `sys.exit()` inside a diagnostic helper is a LIBRARY BUG and
+  absorbing it is correct. The guard is NOT `BaseException`, and a test pins
+  that: `KeyboardInterrupt` (and `GeneratorExit`, `asyncio.CancelledError`) must
+  still propagate, because Ctrl-C is the operator's INTENT and swallowing it
+  would trade one usability bug for another. Swallow library misbehaviour,
+  propagate "stop now".
+
+  The remedy is a base rebake and never an in-place `pip` upgrade, and a test
+  pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout
+  masking exactly ONE dist-info name; on the next base rebake that whiteout
+  covers a name that no longer exists, the new base copy is masked by nothing,
+  TWO dist-info directories appear, and the rail is dead AT BOOT. (Measured:
+  two agents, same version, same base, both healthy, OPPOSITE restart-safety,
+  differing only in WHEN they upgraded.)
+
+  Wired into the backend seam's messaging verbs — `LocalBackend.dm_send`
+  (the confirmed entry point from the incident), `dm_list` and
+  `poll_notifications` — and deliberately NOT into `_cli/_main.py` or
+  `_cli/_mcp.py`, which already call `check_currency()`.
+
 ### Changed
 
 - **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
@@ -340,6 +438,25 @@ Everything under [Unreleased] below moves here.
   the exact bug class this change exists to avoid.
 
 ### Fixed
+
+- **The declared scitex-ui floor was two minor versions under what the code
+  needs.** `pyproject.toml` asked for `>=0.7.1`; `chat.html` has documented
+  `>=0.11.1` since #581 and said "the upgrade ships alongside this". It never
+  did. 0.11.1 is where `.stx-app-context-menu__item` gets `font-family:
+  inherit`, and the items are `<button>`s — buttons do not inherit the page font
+  and base ships no global button reset, so a resolver honouring 0.7.1 gets a
+  right-click menu rendered in the UA button font. `context-menu.css` EXISTS at
+  0.7.1 without that rule, which is why no file-level check could have caught
+  it: presence is not currency, and a floor is the only thing that expresses the
+  difference. Measured against the scitex-ui tags rather than inferred.
+
+  Worth recording what this was NOT: the board's Combobox was investigated on
+  the belief it had been inert behind this same too-low floor. It had not been.
+  The Combobox bundle first shipped in scitex-ui **0.6.0**, below even the old
+  0.7.1 declaration, and a jsdom run of the rendered board confirms all six
+  filter `<select>`s are hidden and replaced by live comboboxes with working
+  subsequence matching. Nothing about the board's fuzzy filtering was broken —
+  the floor bug is real and adjacent, not the same bug.
 
 - **`threads_path()` no longer writes a file** (design part 2 §7.3). A PATH
   QUERY materialised the sidecar from a legacy `threads.yaml` as a side effect
