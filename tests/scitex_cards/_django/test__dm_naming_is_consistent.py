@@ -20,6 +20,14 @@ none of them is a string the operator reads.
 So the two halves below are deliberately in tension, and both must hold:
 visible text says DM; the URL still says chat.
 
+LATER THE SAME DAY the operator asked for ``/dm`` as a URL outright — so a
+``/dm`` route now EXISTS, and the guard that used to forbid one has been
+replaced by ``test_the_dm_and_chat_routes_serve_the_SAME_surface`` (see its
+docstring for why the concern survives the reversal). This does not soften the
+paragraph above: ``/chat`` was ADDED to, not renamed, and every link this app
+emits still says chat. The rule was never "no second URL"; it was "no
+LABEL-driven migration of a published one".
+
 Rendered against the real views with ``RequestFactory`` — the convention the
 sibling ``_django`` view tests already follow (no mocks, no fake templates).
 """
@@ -189,20 +197,36 @@ def test_the_slashed_chat_route_still_resolves():
     assert match.func is views.chat_page
 
 
-def test_no_dm_page_route_was_invented():
-    """A "/dm" page alias would be the migration this change refuses to be —
-    two URLs for one surface, one of which every existing link ignores.
-    (The /dm/* JSON endpoints are a different thing and predate this.)"""
-    # Arrange
-    from django.urls.exceptions import Resolver404
+def test_the_dm_and_chat_routes_serve_the_SAME_surface():
+    """REPLACES ``test_no_dm_page_route_was_invented``, which asserted that no
+    ``/dm`` page alias existed at all.
 
+    That guard was correct for the change it was written against — a LABEL
+    change may not drag a published URL along with it — and is superseded now:
+    on 2026-07-29 the operator asked for ``/board`` and ``/dm`` DIRECTLY,
+    typed both, and got a JSON 404 that reads as the board being broken. A
+    guard written to protect against one instruction does not outrank a later,
+    explicit instruction to the contrary. But the concern underneath it does
+    not evaporate, so it is RESTATED here rather than dropped — deleting a
+    guard because it went red is how a rule gets lost.
+
+    The old concern was "two URLs for one surface, one of which every existing
+    link ignores". Half of that is now WANTED: two doors onto one room. What
+    is pinned here is the half that still matters — the two doors must open on
+    the SAME room. ``/chat`` keeping its own view while ``/dm`` quietly grew a
+    second, slightly different one is exactly the drift this file exists to
+    catch. The other half (every existing link still works) is
+    ``test_the_chat_route_still_resolves`` above, plus the alias tests in
+    ``test__board_and_dm_routes.py``; and the link targets themselves are
+    unchanged, which ``test_the_switcher_href_still_points_at_the_chat_route``
+    below still pins.
+    """
+    # Arrange
+    paths = ("/chat", "/dm")
     # Act
-    try:
-        resolved = resolve("/dm", urlconf=_URLCONF).func is views.chat_page
-    except Resolver404:
-        resolved = False
+    served = {resolve(path, urlconf=_URLCONF).func for path in paths}
     # Assert
-    assert not resolved
+    assert served == {views.chat_page}
 
 
 def test_the_switcher_href_still_points_at_the_chat_route(chat_html):

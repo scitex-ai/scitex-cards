@@ -377,10 +377,25 @@ class HubBackend:
         store: Any = None,
     ) -> dict:
         self._forbid_store(store)
+        if ack:
+            # HANDOVER IS NOT CONFIRMATION — warn on the CLIENT too, not just
+            # hub-side, so the deprecation reaches the process that wrote it.
+            from ._inbox_confirm import warn_ack_on_read
+
+            warn_ack_on_read()
         return self._call(
             "poll_notifications",
             {"agent": agent, "unseen_only": unseen_only, "ack": ack},
         )
+
+    def ack_notifications(
+        self,
+        agent: str,
+        ids: "list[str] | str | None" = None,
+        store: Any = None,
+    ) -> dict:
+        self._forbid_store(store)
+        return self._call("ack_notifications", {"agent": agent, "ids": ids})
 
     def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
         self._forbid_store(store)
