@@ -35,7 +35,40 @@
    * test pins the two together so the picker can never offer something the
    * server does not expect to see.
    */
-  var REACTION_EMOJI = ["👍", "✅", "❤️", "🎉", "🙏", "👀", "🔥", "❌"];
+  var REACTION_EMOJI = [
+    "⭕",
+    "❌",
+    "❓",
+    "👍",
+    "❤️",
+    "🎉",
+    "✅",
+    "🙏",
+    "👀",
+    "🔥",
+  ];
+
+  /* The QUICK row — the one-tap reactions that sit directly above the action
+   * list, exactly as the operator sketched it.
+   *
+   * MUST BE A SUBSET of REACTION_EMOJI (a test pins that), because the row and
+   * the chevron's fuller picker are two views of ONE palette. A row emoji the
+   * picker did not know about would be a second, drifting palette.
+   *
+   * The first three are the operator's own request, in their words —
+   * 「〇、×、？ がいい」. They are also the whole operator↔agent decision
+   * vocabulary: approve, reject, query. They lead the row because they are what
+   * gets tapped; the warm three follow.
+   *
+   * 👎 IS DELIBERATELY ABSENT, HERE AND FROM REACTION_EMOJI. The operator's
+   * words: 「親指の下向きのやつはあまり好きじゃない、下品」. ❌ already says
+   * "no" without the gesture. A test asserts its absence, so re-adding it as a
+   * "sensible default" fails CI rather than shipping.
+   *
+   * Six fits one 44px row plus the chevron inside a 375pt phone screen without
+   * wrapping; padding it to fill the width would only add taps nobody wants.
+   */
+  var QUICK_REACTION_EMOJI = ["⭕", "❌", "❓", "👍", "❤️", "🎉"];
 
   /* --- forward ---------------------------------------------------------- */
 
@@ -144,15 +177,71 @@
     return list.join(", ");
   }
 
+  /* --- selection -------------------------------------------------------- */
+
+  /* Add or drop `id`, returning a NEW list — the caller never mutates in place.
+   *
+   * A selection is an ordered list of message IDS rather than a set of DOM
+   * nodes for the same reason a reaction addresses an id: the thread repaints
+   * every ~5s, and a selection held as nodes would silently empty itself the
+   * first time a poll rebuilt the pane. Ids survive a repaint; nodes do not.
+   */
+  function toggleSelection(ids, id) {
+    var list = (ids || []).slice();
+    var at = list.indexOf(id);
+    if (at === -1) list.push(id);
+    else list.splice(at, 1);
+    return list;
+  }
+
+  /* The selection bar's count. */
+  function selectionLabel(count) {
+    return (count || 0) + " selected";
+  }
+
+  /* The selected records in THREAD order, not in tap order.
+   *
+   * Tap order is the order the operator happened to touch things in; a bulk
+   * copy or a bulk forward that came out in that order would scramble a
+   * conversation. Ordering by the message list restores the reading order, and
+   * an id no longer in the thread simply drops.
+   */
+  function selectedRecords(messages, ids) {
+    var wanted = ids || [];
+    return (messages || []).filter(function (m) {
+      return m && wanted.indexOf(String(m.id)) !== -1;
+    });
+  }
+
+  /* Join several message texts into one clipboard payload.
+   *
+   * A blank line between messages, and empty texts dropped — an attachment-only
+   * message has no text to contribute and must not leave a hole in the middle
+   * of the paste.
+   */
+  function joinTexts(texts) {
+    return (texts || [])
+      .map(function (t) {
+        return String(t == null ? "" : t).trim();
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
   return {
+    QUICK_REACTION_EMOJI: QUICK_REACTION_EMOJI,
     REACTION_EMOJI: REACTION_EMOJI,
     actorsLabel: actorsLabel,
     chipsOf: chipsOf,
     forwardBanner: forwardBanner,
     forwardBody: forwardBody,
     isForwarded: isForwarded,
+    joinTexts: joinTexts,
     nextAction: nextAction,
     reactionSignature: reactionSignature,
+    selectedRecords: selectedRecords,
+    selectionLabel: selectionLabel,
+    toggleSelection: toggleSelection,
   };
 });
 

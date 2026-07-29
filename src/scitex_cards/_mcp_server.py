@@ -309,6 +309,12 @@ TOOL_NAMES: tuple[str, ...] = (
     # Operator↔agent DMs (threads.json sidecar; registered in _mcp_skills).
     "dm_send",
     "dm_list",
+    # ...and the FILE half. Text-only DMs meant a deliverable reached the
+    # operator as prose describing a deliverable; this is the entry point that
+    # was simply missing. Composes _attachments with dm_send in-process, and
+    # is deliberately NOT a BACKEND_VERBS member — `_server.py` dispatches that
+    # tuple over HTTP, and a path-taking verb there would be remotely callable.
+    "dm_send_document",
 )
 
 # Imports for the registration side effect: these modules (kept separate for

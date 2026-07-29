@@ -15,6 +15,8 @@ two real name sets (STX-NM / PA-306).
 
 from __future__ import annotations
 
+import pytest
+
 from scitex_cards._health_channel_reach import (
     CHANNEL_FLAG,
     allowlisted_channel_servers,
@@ -185,22 +187,50 @@ class TestRegisteredServerNames:
         assert result == set()
 
 
+@pytest.fixture
+def rename_outage_result():
+    """The verbatim shape of the 2026-07-24 live incident.
+
+    Registered under the NEW name, allowlisted under the OLD one. Shared by the
+    four tests below so each can pin exactly one fact about the same verdict —
+    when the first `assert` fails the rest never run, so a verdict with four
+    separate obligations needs four separate tests.
+    """
+    registered = {"scitex-cards"}
+    allowed = {"scitex-todo", "sac", "claude-code-telegrammer"}
+    return evaluate_reachability(allowed, registered)
+
+
 class TestReachabilityDecision:
     """The decision half — this is where the outage is reproduced."""
 
-    def test_the_20260724_rename_outage_is_reported_not_ok(self):
-        # Arrange — verbatim shape of the live incident: registered under the NEW
-        # name, allowlisted under the OLD one.
-        registered = {"scitex-cards"}
-        allowed = {"scitex-todo", "sac", "claude-code-telegrammer"}
-        # Act
-        result = evaluate_reachability(allowed, registered)
-        # Assert — and the hint must name the exact flag to add, or the reader
-        # is told there is a problem and not what to do about it.
-        assert result["ok"] is False
-        assert "DISCARDED" in result["detail"]
-        assert f"{CHANNEL_FLAG} server:scitex-cards" in result["hint"]
-        assert "RESTART" in result["hint"]
+    def test_the_20260724_rename_outage_is_reported_not_ok(self, rename_outage_result):
+        # Arrange (fixture)
+        # Act (fixture)
+        # Assert
+        assert rename_outage_result["ok"] is False
+
+    def test_the_rename_outage_detail_says_pushes_are_discarded(
+        self, rename_outage_result
+    ):
+        # Arrange (fixture)
+        # Act (fixture)
+        # Assert
+        assert "DISCARDED" in rename_outage_result["detail"]
+
+    def test_the_rename_outage_hint_names_the_flag_to_add(self, rename_outage_result):
+        # Arrange — the hint must name the exact flag to add, or the reader is
+        # told there is a problem and not what to do about it.
+        # Act (fixture)
+        # Assert
+        assert f"{CHANNEL_FLAG} server:scitex-cards" in rename_outage_result["hint"]
+
+    def test_the_rename_outage_hint_demands_a_restart(self, rename_outage_result):
+        # Arrange — the flag only takes effect on the next launch; a hint that
+        # omits that leaves the agent still deaf after "fixing" it.
+        # Act (fixture)
+        # Assert
+        assert "RESTART" in rename_outage_result["hint"]
 
     def test_matching_name_is_ok(self):
         # Arrange
@@ -208,6 +238,12 @@ class TestReachabilityDecision:
         result = evaluate_reachability({"scitex-cards", "sac"}, {"scitex-cards"})
         # Assert
         assert result["ok"] is True
+
+    def test_matching_name_carries_no_remedial_hint(self):
+        # Arrange — nothing to remedy, so a hint here would be noise.
+        # Act
+        result = evaluate_reachability({"scitex-cards", "sac"}, {"scitex-cards"})
+        # Assert
         assert result["hint"] is None
 
     def test_transitional_both_names_allowlisted_is_ok(self):
@@ -225,6 +261,13 @@ class TestReachabilityDecision:
         result = evaluate_reachability(set(), {"scitex-cards"})
         # Assert
         assert result["ok"] is False
+
+    def test_empty_allowlist_detail_says_no_server_at_all(self):
+        # Arrange — the two red cases differ, so the detail must distinguish
+        # "allowlisted under another name" from "no channel flag at all".
+        # Act
+        result = evaluate_reachability(set(), {"scitex-cards"})
+        # Assert
         assert "no server at all" in result["detail"]
 
     def test_not_registered_is_not_applicable_rather_than_a_failure(self):
@@ -234,6 +277,13 @@ class TestReachabilityDecision:
         result = evaluate_reachability({"sac"}, set())
         # Assert
         assert result["ok"] is True
+
+    def test_not_registered_detail_says_not_applicable(self):
+        # Arrange — green for "nothing to check" must not read as green for
+        # "checked and reachable".
+        # Act
+        result = evaluate_reachability({"sac"}, set())
+        # Assert
         assert "not applicable" in result["detail"]
 
 
@@ -248,8 +298,8 @@ class TestCheckIsRegisteredInHealth:
         On this container's overlay filesystem that took longer than the rest of
         the file put together and left the run wedged at 100%, so the test said
         nothing about registration and everything about the filesystem. The two
-        facts that actually matter — the name is registered, and it is bound to
-        OUR function — are both cheap and exact.
+        facts that actually matter — the name is registered (here), and it is
+        bound to OUR function (next test) — are both cheap and exact.
         """
         # Arrange
         import inspect
@@ -260,4 +310,18 @@ class TestCheckIsRegisteredInHealth:
         registry_src = inspect.getsource(_health.health)
         # Assert
         assert '"channel_reaches_session"' in registry_src
-        assert _health.check_channel_reaches_session is check_channel_reaches_session
+
+    def test_health_binds_that_name_to_our_check_function(self):
+        """The name being present is not enough — it must resolve to US.
+
+        A registry entry pointing at some other callable would keep the name in
+        the report while never running this module's decision code, which is the
+        outage detector silently absent behind a green label.
+        """
+        # Arrange
+        from scitex_cards import _health
+
+        # Act
+        registered_fn = _health.check_channel_reaches_session
+        # Assert
+        assert registered_fn is check_channel_reaches_session

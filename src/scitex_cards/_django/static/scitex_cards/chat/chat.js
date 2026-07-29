@@ -51,6 +51,8 @@
   var STICK_THRESHOLD_PX = 40;
 
   var diff = window.ChatDiff;
+  /* Bubble construction — a long body clamps instead of filling the screen. */
+  var longtext = window.ChatLongText;
   /* The message-action module (Reply / Copy / React / Forward + the reaction
    * chips). Assigned at boot; messageNode asks it where chips go. */
   var menu = null;
@@ -261,7 +263,7 @@
     // an id survives a repaint.
     if (m.id) wrap.setAttribute("data-msg-id", String(m.id));
     var parts = splitAttachments(m.body);
-    if (parts.text) wrap.appendChild(el("div", "bubble", parts.text));
+    if (parts.text) wrap.appendChild(longtext.bubbleFor(parts.text, m));
     parts.files.forEach(function (rel) {
       wrap.appendChild(attachmentNode(rel));
     });
@@ -404,6 +406,8 @@
             });
         }
         $body.value = "";
+        // Clearing `value` from script fires no `input` event, so say so.
+        if (composer) composer.reset();
         clearError();
         refreshThread();
         refreshAgents();
@@ -419,16 +423,16 @@
 
   // ---- mobile drawer -----------------------------------------------------
 
-  function closeDrawer() {
-    $agents.classList.remove("open");
-    $scrim.classList.remove("open");
-  }
+  // State, inert-when-closed and the scrim pairing all live in ChatDrawer —
+  // see that module for the two defects this replaced (a closed drawer that
+  // was still tabbable, and a drawer/scrim desync that could strand the
+  // operator behind an undismissable scrim).
+  var drawerHost = { panel: $agents, scrim: $scrim, trigger: $menuBtn };
+  var drawer = window.ChatDrawer ? window.ChatDrawer.mount(drawerHost) : null;
 
-  $menuBtn.addEventListener("click", function () {
-    $agents.classList.toggle("open");
-    $scrim.classList.toggle("open");
-  });
-  $scrim.addEventListener("click", closeDrawer);
+  function closeDrawer() {
+    if (drawer) drawer.close();
+  }
 
   // Enter sends; Shift+Enter inserts a newline (phone keyboards send via
   // the button anyway — this is for desktop convenience).
@@ -440,16 +444,25 @@
   });
 
   // Attachments (picker / paste / drag-drop) live in chat_attach.js.
-  if (window.ChatAttach) {
-    window.ChatAttach.mount({
-      apiBase: API_BASE,
-      composerEl: $body,
-      attachEl: $attach,
-      fileEl: $file,
-      showError: showError,
-      clearError: clearError,
-    });
-  }
+  var attach = window.ChatAttach
+    ? window.ChatAttach.mount({
+        apiBase: API_BASE,
+        composerEl: $body,
+        attachEl: $attach,
+        fileEl: $file,
+        showError: showError,
+        clearError: clearError,
+      })
+    : null;
+  // Auto-grow + the offer to send an over-long draft through that SAME path.
+  var composer = window.ChatCompose
+    ? window.ChatCompose.mount({
+        form: $form,
+        textarea: $body,
+        uploadOne: attach ? attach.uploadOne : null,
+        showError: showError,
+      })
+    : null;
   $form.addEventListener("submit", sendMessage);
 
   // ---- boot --------------------------------------------------------------
@@ -464,6 +477,7 @@
       messagesEl: $messages,
       composerEl: $body,
       showError: showError,
+      showNotice: showNotice,
       refreshThread: refreshThread,
       getPeer: function () {
         return state.peer;
@@ -477,9 +491,11 @@
       getAgents: function () {
         return state.agents;
       },
-      onForwarded: function (toPeer) {
+      onForwarded: function (toPeer, count) {
         refreshAgents();
-        showNotice("Forwarded to " + toPeer + ".");
+        var many =
+          count > 1 ? count + " messages forwarded to " : "Forwarded to ";
+        showNotice(many + toPeer + ".");
       },
     });
   }

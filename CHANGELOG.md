@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.17.11] - 2026-07-28
+
+### Added
+
+- **Agents can attach files to a DM.** `dm_send_document(to, file_path,
+  caption)` — mirrors claude-code-telegrammer's `send_document`
+  argument-for-argument, so an agent that can send the operator a file over
+  Telegram makes the structurally identical call here. Until now there was NO
+  such API at any version: an agent asked which one to use and the honest
+  answer was "none exists", so a PDF arrived as prose describing a PDF. That
+  blocked the operator's migration off Telegram, because deliverables could not
+  reach them at all. Bytes are COPIED into the existing attachment store (the
+  source path is never recorded and never served from), reusing the same
+  storage and URL scheme as operator-side uploads so one renderer serves both.
+  The verb is deliberately absent from the HTTP backend surface — a path-taking
+  verb there would be an arbitrary-file read.
+
+### Fixed
+
+- **A closed mobile drawer was still in the tab order.** It is hidden with
+  `transform: translateX(-105%)`, and a transform moves PIXELS — it does not
+  remove an element from the tab order or the accessibility tree. At phone
+  width with the drawer shut, Tab put focus into the invisible agent list with
+  no visible focus ring, and the next Enter opened a thread the operator could
+  not see: the page appeared to jump on its own. Now `inert` (keyboard and
+  assistive tech) AND `visibility: hidden` (pointer) — neither implies the
+  other, so both are set and both are asserted separately.
+- **The drawer and its scrim could desync and strand the operator.** Two bare
+  `classList.toggle("open")` calls; `toggle()` flips whatever is there, so any
+  path clearing one without the other diverged them — and `close()` is called
+  from the thread-open handler. Once diverged, one tap put them in opposite
+  states, the bad half being a scrim with no drawer: greyed screen, nothing to
+  dismiss it, menu button behind it, force-reload the only exit. One boolean
+  now owns the state; a test rejects bare toggles so the pattern cannot return.
+  Escape closes it, and `aria-expanded` is maintained.
+
+Both drawer defects were found by scitex-ui while harvesting the component, and
+both were invisible to a screenshot, which is why they survived review.
+
 ## [0.17.10] - 2026-07-28
 
 Cut to DELIVER the chat work, not because the code needed a version. The
@@ -27,6 +66,28 @@ Everything under [Unreleased] below moves here.
 ## [Unreleased]
 
 ### Added
+
+- **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
+  `to` and `body` and nothing else, so there was no API for sending a file at
+  all — an agent asked which one to use for a PDF and the honest answer was
+  "none exists". The PDF arrived as prose describing a PDF. With the operator's
+  conversation now largely moved onto cards DMs, that made real deliverables
+  undeliverable: three SOHO application documents and a loan contract in a
+  single day, all summarised instead of sent. The receiving half already
+  worked, so this is the missing sending half and nothing more.
+  `dm_send_document(to, file_path, caption)` mirrors
+  claude-code-telegrammer's `send_document` argument-for-argument, so an agent
+  that can hand the operator a file over Telegram makes the same call here.
+  The bytes are **copied** into the existing attachment store and get the
+  existing `attachments/<YYYY-MM>/<uuid>/<name>` url, so the chat pane's
+  current renderer serves agent-sent and operator-uploaded files identically —
+  no second storage layout, and therefore no second renderer. Storage layout,
+  the `MAX_UPLOAD_BYTES` ceiling and the root-containment check move into
+  `scitex_cards._attachments` as the single source for both entry points.
+  The original path is never recorded and never served from (a file the agent
+  later deletes still reaches the operator), and the verb is deliberately kept
+  out of `BACKEND_VERBS` — `_server.py` dispatches that tuple over HTTP, where
+  a path-taking verb would be an arbitrary-file read.
 
 - **DMs live in `cards.db` (schema v5)**. Direct messages were the one piece of
   fleet data the canonical store's protections did not cover: they sat in a
@@ -63,7 +124,8 @@ Everything under [Unreleased] below moves here.
   the retired file behind the migration's back, and the last YAML reader on
   this path. `attachments_root()` stops locating the attachments directory
   through that function and resolves from the store instead (same directory, no
-  attachment moves).
+  attachment moves). That decoupling is preserved where the layout now lives,
+  `scitex_cards._attachments.attachments_root()`.
 
 - **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
   typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに

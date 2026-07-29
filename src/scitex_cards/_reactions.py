@@ -76,24 +76,52 @@ ACTION_ADD = "add"
 ACTION_REMOVE = "remove"
 ACTIONS = (ACTION_ADD, ACTION_REMOVE)
 
-#: The curated palette the picker offers — LITERAL unicode, no icon font.
+#: The curated palette the FULL picker offers — LITERAL unicode, no icon font.
 #:
 #: Same reasoning as the chat composer's literal-text paperclip: the board is
 #: served over a tunnel to a phone, and a glyph that fails to resolve leaves an
-#: empty box exactly where the affordance was. Eight fits one 44px row on a
-#: 375pt screen without wrapping.
+#: empty box exactly where the affordance was.
 #:
 #: This is the PICKER's set, not a validation allowlist — see
 #: :func:`validate_emoji`.
+#:
+#: 👎 IS DELIBERATELY ABSENT. Operator, verbatim: 「親指の下向きのやつはあまり
+#: 好きじゃない、下品」. ❌ already carries "no" without the gesture. A test
+#: asserts the absence in BOTH languages, so re-adding it as an obvious default
+#: fails CI rather than reaching their phone.
 REACTION_EMOJI = (
+    "⭕",
+    "❌",
+    "❓",
     "\U0001f44d",
-    "✅",
     "❤️",
     "\U0001f389",
+    "✅",
     "\U0001f64f",
     "\U0001f440",
     "\U0001f525",
+)
+
+#: The QUICK row — the one-tap reactions rendered directly above the message
+#: action list, per the operator's sketch of Telegram's menu.
+#:
+#: The first three are theirs by name: 「〇、×、？ がいい」. They are also the
+#: entire operator↔agent decision vocabulary — approve, reject, query — which is
+#: why they lead rather than trail the warm three.
+#:
+#: A SUBSET of :data:`REACTION_EMOJI` by construction, and a test pins that: the
+#: row and the chevron's fuller picker are two views of one palette, and a row
+#: emoji the picker did not know about would be a second palette free to drift.
+#:
+#: Six plus the chevron fits one 44px row inside a 375pt phone screen without
+#: wrapping.
+QUICK_REACTION_EMOJI = (
+    "⭕",
     "❌",
+    "❓",
+    "\U0001f44d",
+    "❤️",
+    "\U0001f389",
 )
 
 #: Upper bound on a stored emoji, in characters. A single emoji can legitimately
@@ -380,6 +408,7 @@ __all__ = [
     "ACTION_ADD",
     "ACTION_REMOVE",
     "MAX_EMOJI_LEN",
+    "QUICK_REACTION_EMOJI",
     "REACTIONS_FILENAME",
     "REACTION_EMOJI",
     "append_reaction_event",
