@@ -199,12 +199,20 @@
     $agents.scrollTop = scrollTop;
   }
 
+  // The unread count in the BROWSER TAB (chat_title.js). Fed the SAME array,
+  // from the SAME poll, as the per-peer badges above it: the tab and the
+  // drawer are one fact rendered twice, and neither counts anything itself.
+  // Giving the title its own request would be a second answer to "how many
+  // unread?" — do not.
+  var pageTitle = window.ChatTitle ? window.ChatTitle.mount({}) : null;
+
   function refreshAgents() {
     getJSON(API_BASE + "/dm/threads")
       .then(function (data) {
         clearError();
         state.agents = data.agents || [];
         renderAgents(state.agents);
+        if (pageTitle) pageTitle.update(state.agents);
       })
       .catch(function (err) {
         showError("Agent list failed: " + err.message);
@@ -213,47 +221,11 @@
 
   // ---- thread pane -------------------------------------------------------
 
-  // An attachment is carried as its own line in the body: a relative URL under
-  // `attachments/`. Deliberately NOT a new sidecar field — threads.json is the
-  // DM store and widening its record mid-incident is the kind of change that
-  // has cost this board data before. The body is already the source of truth,
-  // so a line IS the reference, and an older client still shows something
-  // meaningful (the path) instead of nothing.
-  var IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
-
-  function splitAttachments(body) {
-    var lines = String(body || "").split("\n");
-    var text = [];
-    var files = [];
-    lines.forEach(function (line) {
-      var t = line.trim();
-      if (t.indexOf("attachments/") === 0) files.push(t);
-      else text.push(line);
-    });
-    return { text: text.join("\n").trim(), files: files };
-  }
-
-  function attachmentNode(relUrl) {
-    var href = API_BASE + "/" + relUrl;
-    var name = relUrl.split("/").pop();
-    if (IMAGE_RE.test(name)) {
-      var a = el("a", "att-img");
-      a.href = href;
-      a.target = "_blank";
-      a.rel = "noopener";
-      var img = document.createElement("img");
-      img.src = href;
-      img.alt = name;
-      img.loading = "lazy";
-      a.appendChild(img);
-      return a;
-    }
-    var link = el("a", "att-file", "📎 " + name);
-    link.href = href;
-    link.target = "_blank";
-    link.rel = "noopener";
-    return link;
-  }
+  // Attachment RENDERING lives in chat_attach.js, beside the upload that
+  // produces the url — one module owns attachments end to end. `splitBody`
+  // separates an `attachments/…` line from the prose; `nodeFor` builds the
+  // <img>/<a> for one. Both are statics, so no mount ordering applies.
+  var attachments = window.ChatAttach;
 
   function messageNode(m) {
     var mine = m.from === "operator";
@@ -262,10 +234,10 @@
     // bubble" would attach the reaction to whatever is on screen; reacting to
     // an id survives a repaint.
     if (m.id) wrap.setAttribute("data-msg-id", String(m.id));
-    var parts = splitAttachments(m.body);
+    var parts = attachments.splitBody(m.body);
     if (parts.text) wrap.appendChild(longtext.bubbleFor(parts.text, m));
     parts.files.forEach(function (rel) {
-      wrap.appendChild(attachmentNode(rel));
+      wrap.appendChild(attachments.nodeFor(API_BASE, rel));
     });
     wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
     // Reaction chips belong to the menu module (it owns every reaction write),

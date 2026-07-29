@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The Board | Chat switcher must exist on BOTH pages and survive a sub-path mount.
+"""The Board | DM switcher must exist on BOTH pages and survive a sub-path mount.
+
+NAMING (2026-07-29): the second item is LABELLED "DM" — operator, 「"chat" と
+なってますが、"DM" でそろえると良いと思います。」 — while its href is still
+``/chat``, which is why the label assertions below say DM and the href
+assertions still say chat. That split is deliberate: a published URL is a
+MIGRATION, not a label. ``test__dm_naming_is_consistent.py`` pins both sides.
 
 WHY THIS FILE EXISTS
 --------------------
@@ -113,7 +119,7 @@ def test_board_page_links_to_the_chat_page(board_at_subpath):
     # Arrange
     html = board_at_subpath
     # Act
-    item = _switcher_item(html, "Chat")
+    item = _switcher_item(html, "DM")
     # Assert
     assert 'href="/apps/cards/chat"' in item
 
@@ -124,7 +130,7 @@ def test_board_page_chat_link_is_root_relative_at_root_mount(board_at_root):
     # Arrange
     html = board_at_root
     # Act
-    item = _switcher_item(html, "Chat")
+    item = _switcher_item(html, "DM")
     # Assert
     assert 'href="/chat"' in item
 
@@ -147,7 +153,7 @@ def test_board_page_does_not_mark_chat_as_active(board_at_subpath):
     # Arrange
     html = board_at_subpath
     # Act
-    item = _switcher_item(html, "Chat")
+    item = _switcher_item(html, "DM")
     # Assert
     assert "aria-current" not in item
 
@@ -194,7 +200,7 @@ def test_chat_page_marks_chat_as_the_active_surface(chat_at_subpath):
     # Arrange
     html = chat_at_subpath
     # Act
-    item = _switcher_item(html, "Chat")
+    item = _switcher_item(html, "DM")
     # Assert
     assert 'aria-current="page"' in item
 
