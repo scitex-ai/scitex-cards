@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CURRENCY gate — an outdated or broken install ERRORS, never warns.
+"""CURRENCY gate — a stale or broken install ERRORS on a bare host, WARNS in an overlay.
 
 Companion to the store-local MIN-CLIENT-VERSION FLOOR (``_min_client_version.py``,
 "FLOOR #548") — that gate is the OFFLINE backstop: it enforces THIS process's
@@ -17,7 +17,46 @@ a standalone scitex-cards install without scitex-dev keeps working exactly as
 before; this gate is then simply a no-op. Never promote it to a hard
 dependency.
 
-THE GATE'S OWN REMEDY IS UNSAFE INSIDE A CONTAINER, AND THIS MODULE SAYS SO.
+BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE THEY CANNOT
+-----------------------------------------------------------
+That is the rule this module now implements, and it is the whole shape of the
+gate. On a BARE HOST an in-place upgrade genuinely repairs the install, so the
+actor CAN remediate and refusing to run is correct — that path is unchanged and
+still RAISES. IN AN OVERLAY the actor CANNOT remediate: the package comes from
+a READ-ONLY BASE IMAGE they do not control, the only real repair is an operator
+REBAKE of that base, and the printed remedy ACTIVELY CREATES the very fault the
+gate detects. Blocking there leaves an agent with no working rail AND a harmful
+instruction. A gate that cannot be satisfied is a trap, not a gate.
+
+THE GATE WAS MANUFACTURING THE FAULT IT DETECTS (measured, scitex-ui 2026-07-29)
+-------------------------------------------------------------------------------
+The chain, reproduced live inside a container:
+
+    1. the base image ships scitex-cards N; PyPI moves to N+1
+    2. the gate REFUSES to run the CLI and prints an in-place upgrade command
+    3. the agent runs it — inside a container that installs into the AGENT'S
+       OVERLAY, not into the read-only base
+    4. overlay N+1 alongside base N = TWO dist-info directories
+    5. which is PRECISELY the ambiguous-metadata integrity failure this gate
+       exists to detect
+
+The remedy was the disease's vector. So in the overlay case this module does
+two things, and the second is not optional:
+
+    (a) it WARNS instead of raising, and
+    (b) it SCRUBS every in-place install command out of the emitted text —
+        INCLUDING scitex-dev's verbatim message, which is where the harmful
+        command actually comes from.
+
+(b) is the correction of an earlier, insufficient fix. 0.17.11 appended a
+"do NOT run this" block AFTER scitex-dev's verbatim message and assumed that
+was enough. It is not: an agent scanning for an actionable command takes the
+FIRST one, and the first one harms. A warning that must be READ IN FULL to be
+safe is not a barrier. Preserve the INFORMATION (which version is installed,
+which is current); remove the ACTIONABLE HARM.
+
+WHY AN IN-PLACE INSTALL IN AN OVERLAY BREAKS LATER, NOT NOW
+------------------------------------------------------------
 Measured by scitex-storage 2026-07-28 with a discriminating control:
 
     agent            overlay   whiteouts masked      dist-info at next boot
@@ -28,18 +67,12 @@ Same version, same base, both healthy at the time of measurement, OPPOSITE
 restart-safety. The only difference is WHEN each ran the upgrade — i.e. which
 base copy was underneath at that moment.
 
-The mechanism: `pip install -U` inside an apptainer overlay writes the new
+The mechanism: an in-place upgrade inside an apptainer overlay writes the new
 distribution into the WRITABLE layer and leaves a whiteout masking the copy in
 the base underneath. An overlayfs whiteout masks exactly ONE NAME. When the base
 image is next rebuilt, that whiteout covers a name that no longer exists while
 the NEW base copy is masked by nothing — so two dist-info directories become
 visible, metadata turns ambiguous, and the rail dies AT BOOT.
-
-So the gate CLEARS the immediate condition and ARMS a latent one, and nothing
-reports it until a base bump. Every agent it nudged into `pip install -U` became
-restart-unsafe. That is very likely the source of the duplicate-dist-info
-incidents this gate exists to catch — the control above is what makes that a
-finding rather than a suspicion.
 
 Neither agent could have seen this from inside their own container: whiteout
 names are invisible in the merged view. Which is why the remedy has to be
@@ -48,19 +81,36 @@ qualified HERE, at the point of prescription, rather than left to the reader.
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import sys
 from pathlib import Path
+
+_LOGGER = logging.getLogger(__name__)
+
+#: The supported escape hatch, READ OFF THE REAL scitex-dev RATHER THAN INVENTED.
+#: ``scitex_dev/staleness.py`` defines ``_ENV_SEVERITY`` with exactly this name
+#: and the severity ladder ``("silent", "warn", "error")``; ``silent`` runs
+#: nothing and prints nothing. It is named IN the overlay message so nobody has
+#: to guess it.
+CURRENCY_SEVERITY_ENV = "SCITEX_DEV_CURRENCY_SEVERITY"
+
+#: scitex-dev's other knob (``_ENV_BYPASS``). Named in the message only to say
+#: PREFER THE OTHER ONE: it prints a "CURRENCY GATE BYPASSED" banner on stdout
+#: regardless of severity, which corrupts this CLI's ``--json`` output — the
+#: measured reason ``tests/conftest.py`` uses the severity knob instead.
+CURRENCY_BYPASS_ENV = "SCITEX_DEV_NO_CURRENCY_GATE"
 
 
 def _running_over_overlay() -> bool:
     """True when this interpreter's site-packages sits on a layered filesystem.
 
-    Deliberately conservative: this only ever DOWNGRADES a remedy from
-    "run pip install -U" to "ask for a rebake", so a false positive costs a
-    cautious message while a false negative restores the trap. When the answer
-    cannot be determined, say NO and leave the original remedy alone — claiming
-    a container we are not in would misdirect a standalone user.
+    Deliberately conservative: a false positive costs a cautious message and a
+    warn-instead-of-raise, while a false negative restores the trap. When the
+    answer cannot be determined, say NO and leave the bare-host behaviour alone
+    — claiming a container we are not in would misdirect a standalone user AND
+    would silently downgrade a gate that should be refusing.
     """
     if os.environ.get("APPTAINER_CONTAINER") or os.environ.get("SINGULARITY_CONTAINER"):
         return True
@@ -85,40 +135,157 @@ def _running_over_overlay() -> bool:
     return best_fstype == "overlay"
 
 
-#: Appended to the gate's own error when we are demonstrably layered. Kept as a
-#: module constant so a test can assert the wording without provoking the gate.
-OVERLAY_REMEDY = (
-    "\n\n"
-    "!! DO NOT RUN `pip install -U` HERE. This process's site-packages is a "
-    "LAYERED (overlay) filesystem, so a local install is not a fix — it is a "
-    "deferred break.\n"
-    "   An overlayfs whiteout masks exactly ONE NAME: the base copy that "
-    "happens to be underneath right now. When the base image is next rebuilt, "
-    "that whiteout covers a name that no longer exists, the NEW base copy is "
-    "masked by nothing, and TWO dist-info directories become visible — "
-    "ambiguous metadata, and this rail dies AT BOOT rather than now.\n"
-    "   Measured 2026-07-28: two agents on the same version and the same base, "
-    "both healthy, had OPPOSITE restart-safety purely because they upgraded at "
-    "different times.\n"
-    "   CORRECT REMEDY: ask for a BASE REBAKE (sac), then restart onto the new "
-    "image. Fleet-managed packages arrive by rebake; they are not pip-installed "
-    "into overlays.\n"
-    "   If you must unblock yourself RIGHT NOW and accept that the next restart "
-    "will need a rebake anyway, say so explicitly when you report it — do not "
-    "leave the mortgage undocumented for whoever boots this container next."
+# --------------------------------------------------------------------------- #
+# Scrubbing third-party text — the mechanical half of decision (b)             #
+# --------------------------------------------------------------------------- #
+#: What replaces a removed command. Deliberately NOT a command, and deliberately
+#: not a paraphrase of one either ("upgrade the package" is still an instruction
+#: an agent can act on wrongly).
+INSTALL_COMMAND_REDACTION = "[in-place install command REMOVED - see REMEDY below]"
+
+#: Matches an in-place install command, plus the "- run:" lead-in scitex-dev
+#: puts in front of it, so the redaction reads as a sentence rather than as a
+#: dangling imperative. Stops at a double space or an opening paren so the
+#: trailing "(suppress: ...)" hint — INFORMATION, not a command — survives.
+_IN_PLACE_INSTALL_RE = re.compile(
+    r"(?:[-–—]\s*)?"
+    r"(?:\brun\b\s*:?\s*)?"
+    r"(?:\bsudo\s+)?"
+    r"(?:\bpython[\d.]*\s+-m\s+)?"
+    r"\b(?:uv\s+pip|uv|pip3|pip|pipx|conda|mamba|poetry|easy_install)\s+"
+    r"(?:install|add|upgrade|sync|reinstall)"
+    r"[^\n;]*?(?=\s{2,}|\s*\(|$)",
+    re.IGNORECASE,
+)
+
+#: A flag can outlive its verb across a line wrap or a reworded upstream
+#: message; on its own it is still an actionable instruction to an agent.
+_ORPHAN_INSTALL_FLAG_RE = re.compile(r"\s*--force-reinstall\b", re.IGNORECASE)
+
+#: The FAIL-SAFE detector, deliberately BROADER than the remover: it answers
+#: "does anything install-shaped survive?", not "where exactly is it?". If this
+#: still fires after scrubbing we do not emit the text at all — an upstream
+#: message we cannot make safe is withheld, never printed and apologised for.
+_INSTALL_COMMAND_SMELL_RE = re.compile(
+    r"--force-reinstall"
+    r"|\b(?:uv\s+pip|pip3?|pipx|conda|mamba|poetry|easy_install)\b"
+    r"[^\n]{0,32}?\b(?:install|add|upgrade|reinstall|sync)\b",
+    re.IGNORECASE,
+)
+
+#: Used when scrubbing cannot be verified safe. Losing the message is a real
+#: cost; printing a command that breaks the container is a larger one.
+UNSCRUBBABLE_NOTICE = (
+    "(scitex-dev's message contained an install command that could not be "
+    "safely removed, so the message is withheld rather than printed here. "
+    "Read it in full on a bare host, where acting on it is safe.)"
 )
 
 
+def scrub_install_commands(text: str) -> str:
+    """Return ``text`` with every in-place install command removed.
+
+    THIS IS THE POINT OF THE WHOLE CHANGE, so it is a function and not a
+    docstring warning: the harmful command originates in scitex-dev's message,
+    which we pass through verbatim. Appending "do not run the above" after it
+    was tried (0.17.11) and is insufficient — an agent scanning for something
+    actionable takes the FIRST command it finds.
+    """
+    scrubbed = _IN_PLACE_INSTALL_RE.sub(INSTALL_COMMAND_REDACTION, text)
+    scrubbed = _ORPHAN_INSTALL_FLAG_RE.sub(" " + INSTALL_COMMAND_REDACTION, scrubbed)
+    if _INSTALL_COMMAND_SMELL_RE.search(scrubbed):
+        return UNSCRUBBABLE_NOTICE
+    return scrubbed
+
+
+# --------------------------------------------------------------------------- #
+# The overlay message                                                          #
+# --------------------------------------------------------------------------- #
+#: Kept as module constants so tests can assert the wording without provoking
+#: the gate, and so a reviewer can read the emitted text in one place.
+OVERLAY_HEADER = (
+    "scitex-cards CURRENCY: this install is not current (or its payload is "
+    "broken), AND this process runs over a LAYERED (overlay) filesystem. The "
+    "gate WARNS here rather than refusing, and NO INSTALL COMMAND APPEARS "
+    "ANYWHERE BELOW - including in the quoted upstream message. That is "
+    "deliberate: in this container the obvious command is the one that breaks "
+    "you."
+)
+
+OVERLAY_UPSTREAM_LEAD = (
+    "WHAT scitex-dev MEASURED (quoted, with in-place install commands removed):"
+)
+
+OVERLAY_REMEDY = (
+    "WHY NOTHING HERE TELLS YOU TO INSTALL ANYTHING:\n"
+    "   WHERE THIS PACKAGE COMES FROM: a READ-ONLY BASE IMAGE that this agent "
+    "does not control. Nothing you install here can replace it. An install "
+    "here only stacks a SECOND copy on top of it in the writable overlay "
+    "layer.\n"
+    "   WHAT THAT ACTUALLY DOES: it writes a second distribution into the "
+    "writable layer and records a whiteout masking the base copy underneath. "
+    "An overlayfs whiteout masks exactly ONE NAME. When the base image is next "
+    "rebuilt, that whiteout covers a name that no longer exists while the NEW "
+    "base copy is masked by nothing, so TWO dist-info directories become "
+    "visible at once. That is a DUPLICATE INSTALL, it BREAKS METADATA "
+    "RESOLUTION, and it is the same integrity failure this very gate exists to "
+    "detect. The obvious remedy manufactures the fault.\n"
+    "   Measured 2026-07-28: two agents on the same version and the same base, "
+    "both healthy at the time, had OPPOSITE restart-safety purely because they "
+    "upgraded at different moments.\n"
+    "   THE REPAIR IS AN OPERATOR REBAKE: ask the operator to REBAKE THE BASE "
+    "IMAGE with the current scitex-cards, then restart this agent onto the new "
+    "base. Report the versions quoted above when you ask. Fleet-managed "
+    "packages arrive by rebake; they do not arrive by installing into an "
+    "overlay.\n"
+    f"   ESCAPE HATCH, while you wait for that rebake: set "
+    f"{CURRENCY_SEVERITY_ENV}=silent in this container's environment. It "
+    f"changes nothing on disk and it is the knob scitex-dev itself documents. "
+    f"({CURRENCY_BYPASS_ENV}=1 also exists, but it prints a bypass banner on "
+    f"stdout regardless of severity, which corrupts --json output - prefer the "
+    f"severity knob.)\n"
+    "   WHY THIS WARNED INSTEAD OF REFUSING: BLOCK WHERE THE ACTOR CAN "
+    "REMEDIATE, WARN WHERE THEY CANNOT. On a bare host an in-place upgrade "
+    "genuinely repairs the install, so the gate still REFUSES there. Here it "
+    "cannot be satisfied by anything you can do, and a gate that cannot be "
+    "satisfied is a trap rather than a gate."
+)
+
+
+def overlay_warning_text(detail: str) -> str:
+    """Compose the full text emitted when the gate fires INSIDE an overlay.
+
+    The upstream message is quoted for its INFORMATION (installed version,
+    latest version, which integrity half failed) and scrubbed of its ACTIONABLE
+    HARM. Composition lives here, in one function, so the emitted text is
+    testable end-to-end rather than assembled at the raise site.
+    """
+    return "\n".join(
+        (
+            OVERLAY_HEADER,
+            "",
+            OVERLAY_UPSTREAM_LEAD,
+            f"   {scrub_install_commands(detail)}",
+            "",
+            OVERLAY_REMEDY,
+        )
+    )
+
+
 def check_currency() -> None:
-    """Raise if this install is stale or its payload is broken (CURRENCY gate).
+    """Raise (bare host) or warn (overlay) when this install is stale or broken.
 
     Provided by scitex-dev >= 0.34.0; silently a no-op when scitex-dev is
     absent so scitex-cards stays standalone (decoupling rule).
 
-    When the gate fires INSIDE an overlay, its own remedy (`pip install -U`) is
-    re-raised with :data:`OVERLAY_REMEDY` appended. We do not own that message —
-    it is scitex-dev's — so we qualify it rather than rewrite it, and the
-    original text is preserved verbatim above the addition.
+    BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE THEY CANNOT:
+
+    * BARE HOST — unchanged, and deliberately so. scitex-dev's exception
+      propagates verbatim, install command and all, because there that command
+      is a real repair and the actor can run it.
+    * OVERLAY — a ``logging.WARNING`` carrying :func:`overlay_warning_text`,
+      and NO raise. The actor cannot repair a read-only base; refusing would
+      leave them with no working rail and an instruction that harms.
     """
     try:
         from scitex_dev.staleness import ensure_current
@@ -126,12 +293,23 @@ def check_currency() -> None:
         return
     try:
         ensure_current("scitex-cards")
-    except Exception as exc:  # noqa: BLE001 - re-raised below, never swallowed
+    except Exception as exc:  # noqa: BLE001 - re-raised or warned below
         if not _running_over_overlay():
             raise
-        raise type(exc)(f"{exc}{OVERLAY_REMEDY}") from exc
+        _LOGGER.warning("%s", overlay_warning_text(str(exc)))
 
 
-__all__ = ["check_currency", "OVERLAY_REMEDY"]
+__all__ = [
+    "CURRENCY_BYPASS_ENV",
+    "CURRENCY_SEVERITY_ENV",
+    "INSTALL_COMMAND_REDACTION",
+    "OVERLAY_HEADER",
+    "OVERLAY_REMEDY",
+    "OVERLAY_UPSTREAM_LEAD",
+    "UNSCRUBBABLE_NOTICE",
+    "check_currency",
+    "overlay_warning_text",
+    "scrub_install_commands",
+]
 
 # EOF
