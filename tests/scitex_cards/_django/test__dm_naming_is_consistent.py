@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Every USER-VISIBLE string says "DM" — and the /chat ROUTE is untouched.
+"""Every USER-VISIBLE string says "DM" — and the /chat ROUTE keeps working.
 
 Operator, 2026-07-29 (TG): 「あと、"chat" となってますが、"DM" でそろえると良いと
 思います。」 — and earlier the same day, that 「"Direct Message"」 is the wording
@@ -9,24 +9,25 @@ they were still looking at in their screenshot was the BROWSER TAB reading
 "Chat — SciTeX Cards v0.17.10". A tab title is a user-visible string, and it was
 the last one saying Chat.
 
-THE ROUTE IS NOT PART OF THE RENAME, and half of this file exists to keep it
-that way. Renaming a published URL is a MIGRATION, not a rename: the operator
-has /chat bookmarked, agents reference it, and both spellings are already pinned
-by ``test__chat_page_trailing_slash.py``. Renaming it to match a LABEL would
-break every one of those to change a word. The same reasoning covers the JS
-module filenames (chat_*.js), the CSS classes and the template filenames —
-none of them is a string the operator reads.
+THE ROUTE WAS NOT PART OF THE RENAME, and half of this file exists to keep the
+old one alive. Renaming a published URL is a MIGRATION, not a rename: the
+operator has /chat bookmarked, agents reference it, and both spellings are
+already pinned by ``test__chat_page_trailing_slash.py``. Renaming it to match a
+LABEL would have broken every one of those to change a word. The same reasoning
+still covers the JS module filenames (chat_*.js), the CSS classes and the
+template filenames — none of them is a string the operator reads.
 
-So the two halves below are deliberately in tension, and both must hold:
-visible text says DM; the URL still says chat.
-
-LATER THE SAME DAY the operator asked for ``/dm`` as a URL outright — so a
-``/dm`` route now EXISTS, and the guard that used to forbid one has been
-replaced by ``test_the_dm_and_chat_routes_serve_the_SAME_surface`` (see its
-docstring for why the concern survives the reversal). This does not soften the
-paragraph above: ``/chat`` was ADDED to, not renamed, and every link this app
-emits still says chat. The rule was never "no second URL"; it was "no
-LABEL-driven migration of a published one".
+LATER THE SAME DAY the operator asked for ``/board`` and ``/dm`` as URLs
+outright, and #616 published them as ALIASES — the guard that used to forbid a
+``/dm`` page is replaced by ``test_the_dm_and_chat_routes_serve_the_SAME_surface``
+(see its docstring for why the concern survives the reversal). THEN, with both
+doors open, the switcher's links moved to the new names, which is the second
+step of that same migration rather than a reversal of it: alias first, switch
+after. So the two halves below are still in tension and both must hold —
+visible text says DM, and ``/chat`` still SERVES (pinned in
+``test__board_and_dm_routes.py`` and ``test__board_chat_switcher.py``). The rule
+was never "no second URL", and never "the link may not move"; it was "no
+LABEL-driven migration that costs a published one".
 
 Rendered against the real views with ``RequestFactory`` — the convention the
 sibling ``_django`` view tests already follow (no mocks, no fake templates).
@@ -217,9 +218,10 @@ def test_the_dm_and_chat_routes_serve_the_SAME_surface():
     second, slightly different one is exactly the drift this file exists to
     catch. The other half (every existing link still works) is
     ``test_the_chat_route_still_resolves`` above, plus the alias tests in
-    ``test__board_and_dm_routes.py``; and the link targets themselves are
-    unchanged, which ``test_the_switcher_href_still_points_at_the_chat_route``
-    below still pins.
+    ``test__board_and_dm_routes.py`` and the SERVE assertions in
+    ``test__board_chat_switcher.py`` — which matter MORE now than when this was
+    written, because the switcher's links have since moved to ``/dm`` and
+    nothing this app emits exercises ``/chat`` any more.
     """
     # Arrange
     paths = ("/chat", "/dm")
@@ -229,19 +231,32 @@ def test_the_dm_and_chat_routes_serve_the_SAME_surface():
     assert served == {views.chat_page}
 
 
-def test_the_switcher_href_still_points_at_the_chat_route(chat_html):
-    """The label moved; the destination did not."""
+def test_the_switcher_href_points_at_the_dm_route(chat_html):
+    """REPLACES ``test_the_switcher_href_still_points_at_the_chat_route``, which
+    pinned ``/chat``.
+
+    That pin was the label-vs-URL guard: a LABEL change may not drag a
+    published URL along with it. It is not overridden here, it is spent — the
+    operator asked for the URL itself next, verbatim 「url も
+    http://127.0.0.1:8051/board http://127.0.0.1:8051/dm とした方が良いと思いま
+    すけどね」, and #616 had already published ``/dm`` as an ALIAS, so pointing
+    the link at it costs no bookmark. What the old pin was really protecting —
+    that ``/chat`` keeps working — is pinned in
+    ``test__board_chat_switcher.py`` as a SERVE assertion and above as a
+    resolve assertion, which is where it belongs now that no link exercises it.
+    """
     # Arrange
     html = chat_html
     # Act
     hrefs = re.findall(r'href="([^"]*)"[^>]*>DM</a>', html)
     # Assert
-    assert hrefs == ["/chat"]
+    assert hrefs == ["/dm"]
 
 
-def test_the_switcher_partial_documents_why_the_url_is_not_renamed():
-    """The next reader will see "chat" in an href under a "DM" label and reach
-    for consistency. The reason it must not be renamed lives beside it."""
+def test_the_switcher_partial_documents_the_migration_it_completes():
+    """The next reader will see a renamed URL under a rule that says published
+    URLs are not renamed, and will reasonably think one of them is wrong. The
+    reason the two agree — alias first, THEN switch — lives beside the code."""
     # Arrange
     partial_path = _PARTIAL
     # Act
