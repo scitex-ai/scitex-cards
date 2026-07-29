@@ -1,5 +1,144 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.19.0] - 2026-07-30
+Cut because 0.18.0 had been published while develop kept accumulating — 59
+commits, including four merged PRs that were reported as done and were not
+live anywhere. The installed 0.18.0 still carried the cross-tenant store
+fallback that #628 removed, and I cited #628 to scitex-hub as a reason to
+open writes under their public mount. Merged is not deployed; this release
+is the difference.
+
+### Added
+
+- **DM bodies render as markdown** (#629) — headings, lists, tables, fenced
+  and inline code, blockquotes, bold/italic and links, built as DOM nodes
+  rather than an HTML string. `chat_markdown.js` never produces markup for
+  a parser to trust, so a hostile body cannot inject an element; only
+  `https:`, `http:` and `mailto:` become anchors. The rendered path drops
+  `white-space: pre-wrap`, since blocks already express the line breaks the
+  plain path needed it for.
+
+- **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
+  pending notifications itself, then requires the ack. Delivery had exactly ONE
+  rail: the MCP channel push. An agent spec whitelisted `server:scitex-todo`
+  while `.mcp.json` registered the server as `scitex-cards` (renamed during the
+  migration), so Claude Code SILENTLY DISCARDED every push — `send()` returned
+  normally, the drain acked on that success, and roughly three weeks of operator
+  DMs were gone. Measured on the affected agent: **228 inbox rows, ZERO unseen**.
+  sac found the same hazard armed on ~96 spec entries fleet-wide. Fixing that one
+  spec is not a fix for the class: a single rail with nothing independent
+  checking it fails again, silently, because *the transport returned* is not
+  *the recipient received*.
+
+  `scitex-cards stop-hook` now reads the store directly at turn end and puts the
+  message text in the `reason` it hands back. No push involved, so a channel
+  registration mistake cannot silence it.
+
+  **The order of operations is the safety property.** PULL (a pure read, cursor
+  untouched) → PRESENT (the reason IS the delivery) → only then REQUIRE the ack.
+  A hook that merely blocked on unacked messages would have DEADLOCKED every
+  agent on the morning of the outage: nothing had been shown, so nothing COULD
+  have been acked. That is enforced structurally rather than by care — the new
+  `scitex_cards._inbox_present.present()` returns `(text, presented_ids)` where
+  `presented_ids` is exactly the ids whose content is in `text`, and the hook
+  demands acks for those and no others. Overflow is counted out loud, left
+  unconfirmed, and redelivered next turn.
+
+  **Bounded**, because a hook that can refuse forever is a new outage: an
+  unreadable store, an unresolvable agent id or any rail exception ALLOWS the
+  stop and explains itself on stderr (each rail fails open independently); the
+  same message stops being demanded after 3 unacked presentations in a session
+  and the record is left unseen in the store; when the retry counter cannot be
+  persisted the harness's own `stop_hook_active` becomes the bound; a reason
+  that would be empty never blocks. Full table in
+  `_skills/scitex-cards/23_stop-hook-second-delivery-rail.md`.
+
+  Rides on `_inbox_confirm.confirm_notifications` — no second ack path. The hook
+  reads across BOTH inbox keys (raw name and resolved `u_*` id) via
+  `recipient_keys`, closing the same silent-miss shape as the outage itself:
+  `_may_stop` read only the raw name.
+
+- **`scitex-cards inbox ack --agent <a> <ids...>`** — the standalone surface onto
+  the one existing ack verb. The Stop hook demands an ack, so an agent that
+  installed scitex-cards and nothing else must be able to give one; without this
+  the hook would block where the actor cannot remediate. No new ack path: it
+  calls `confirm_notifications` like every other surface.
+
+### Changed
+
+- **`import scitex_cards` costs ~137 ms, down from ~425 ms** (#630) —
+  `importlib.metadata` was imported at module scope purely to compute
+  `__version__`, and reading package metadata drags in `email.message`,
+  `email.utils` and `zipfile` behind it: 223 ms of the 425 ms total. That
+  block sat three lines above the comment explaining that the PEP 562
+  machinery exists to keep cold start under the audit §10 budget of 500 ms.
+  `__version__` now resolves through the `__getattr__` that was already
+  there. Measured interleaved on one interpreter, 5 rounds: before
+  325–763 ms, after 108–168 ms — the distributions do not overlap.
+
+  The public surface is unchanged: `scitex_cards.__version__` still answers,
+  still prefers the `scitex-cards` dist, still falls back to `scitex-todo`
+  for un-cutover editable installs, and `dir()` still lists it.
+  `from scitex_cards import __version__` is covered separately because it
+  takes a different path than attribute access.
+
+- **`health()` check records are now THREE-VALUED.** A check's `ok` may be
+  `True`, `False` or `null` (UNKNOWN — the check could not measure). "nothing
+  is wrong" and "I cannot tell" are different answers and no longer collapse
+  into a pass. `report["ok"]` counts only real failures, so an unknown does not
+  redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
+  by `scitex-cards health`. The record keeps exactly its four standard fields.
+
+### Fixed
+
+- **Consecutive messages send again** (#627) — the double-send guard set a
+  `sending` flag and released only the button, so one message per page load
+  got through and the operator was reloading with Ctrl+Shift+R every time.
+  Both halves of the guard now clear in the handler that runs on every path,
+  including failure, and a failed send restores the optimistically-cleared
+  text instead of eating it. Extracted to `chat_send.js` because `chat.js`
+  had passed its size cap and could not be edited at all.
+
+- **The board no longer falls back to the host store** (#628) — `dm.py`
+  resolved the store as `getattr(request, STORE_REQUEST_ATTR, None) or
+  _store_of(request)`. Under a multi-tenant mount, a request that arrived
+  without the injected attribute silently read and wrote the HOST store —
+  one user's writes landing in another's board. It now honours the request
+  attribute only, and fails rather than guessing.
+
+- **A fail-open test that never failed.** `test__stop_hook.py` arranged its
+  "detector failure" as `SCITEX_CARDS_DB=/nonexistent/scitex-cards/none.db`,
+  which was MEASURED (2026-07-29) not to raise at all — it reads as an EMPTY
+  BOARD. Both fail-open tests passed for the wrong reason and proved nothing.
+  The arrangement now uses a path that cannot be created
+  (`/proc/1/.../cards.db`), which does raise.
+
+- **A notification the client discards is now VISIBLE instead of gone.** The
+  channel drain ack'd a record the instant `await send(params)` returned. That
+  proves only that our own stdout writer took the bytes: a
+  `notifications/claude/channel` push is a JSON-RPC NOTIFICATION, which by spec
+  has no reply, and Claude Code silently DISCARDS a push from a server missing
+  from its launch-line allowlist. So the drain was storing "the transport call
+  returned" as "the recipient received it". Measured 2026-07-29: one agent's
+  spec allowlisted `server:scitex-todo` while `.mcp.json` registers the server
+  as `scitex-cards` (renamed during the migration) — 228 rows enqueued for that
+  agent, ZERO unseen, weeks of operator DMs destroyed, every check green.
+
+  The drain now writes a RECEIPT: `record_push` advances the cursor and stamps
+  `pushed_at` in one atomic write, leaving `confirmed_at` for the recipient's
+  own `ack_notifications`. Each record is still pushed exactly once (no
+  redelivery); a receipt write that fails moves neither the stamp nor the
+  cursor, so that record retries on the next tick, bounded as before by
+  `MAX_PUSH_PER_DRAIN` (50 per tick).
+
+  New health check `delivery_confirmed` reports notifications pushed and never
+  confirmed past a 15-minute grace window, and its hint names both possible
+  causes — the agent's `channels:` list not naming the MCP server that is
+  actually registered, or a consumer that never confirms — plus how to tell
+  them apart and that a restart is required.
+
 ## [0.18.0] - 2026-07-29
 
 MINOR, not a patch. This cut ADDS two published URLs (`/board` and `/dm`) and a

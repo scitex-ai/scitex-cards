@@ -67,6 +67,10 @@ from ._channel_guard import (
 # ``from scitex_cards._mcp_channel import resolve_agent_id`` keeps working.
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
 
+# The cursor advance is a RECEIPT now, not a claim of delivery — see
+# `_inbox_receipt` for what the MCP transport can and cannot tell us.
+from ._inbox_receipt import record_push
+
 logger = logging.getLogger(__name__)
 
 #: Env var overriding ``meta.source`` (the ``<- stodo`` render name)
@@ -90,7 +94,9 @@ _DEFAULT_SOURCE = "stodo"
 # --------------------------------------------------------------------------- #
 # Pure logic (tested directly — no live MCP session needed)                   #
 # --------------------------------------------------------------------------- #
-def build_channel_params(rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE) -> dict[str, Any]:
+def build_channel_params(
+    rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE
+) -> dict[str, Any]:
     """Project an inbox record onto the Claude channel notification shape.
 
     Returns ``{"content": <body str>, "meta": {<all-string-values>}}``. EVERY
@@ -157,12 +163,25 @@ async def drain_once(
     The seam that makes the receive→push path testable without a live MCP
     session. Drains EVERY key in :func:`recipient_keys` (the raw agent name
     AND its resolved user-id) so it always finds what the producer enqueued.
-    Reads UNSEEN records (``mark_seen=False`` — we ack ONLY after a successful
-    push so a push failure is retried next drain), builds the channel params,
-    awaits ``send(params)``, and on success ack's the record on the SAME key.
+    Reads UNSEEN records (``mark_seen=False`` — we record ONLY after a
+    successful push so a push failure is retried next drain), builds the channel
+    params, awaits ``send(params)``, and on success writes a PUSH RECEIPT on the
+    SAME key via :func:`scitex_cards._inbox_receipt.record_push`.
+
+    THE RECEIPT IS THE HONEST PART. ``await send(params)`` returning proves only
+    that our own stdout writer took the bytes: the push is a JSON-RPC
+    NOTIFICATION, which by spec has no reply, and Claude Code silently DISCARDS
+    a push from a server missing from its launch-line allowlist. This drain used
+    to ack there and call it delivered — which destroyed weeks of operator DMs
+    with every health check green (2026-07-29). It now advances the cursor and
+    stamps ``pushed_at`` in ONE atomic write, leaving ``confirmed_at`` for the
+    recipient's own ``ack_notifications``, so an undelivered notification stays
+    VISIBLE to the ``delivery_confirmed`` health check instead of vanishing.
 
     Fail-soft per record: one bad push (``send`` raises) leaves THAT record
-    un-ack'd (retried next drain) and does not abort the rest of the batch.
+    un-ack'd (retried next drain) and does not abort the rest of the batch. A
+    receipt write that fails moves NEITHER the stamp nor the cursor, so that
+    record is likewise retried — the same bound the old ack-failure path had.
 
     Burst-guarded: at most ``MAX_PUSH_PER_DRAIN`` records are pushed per call,
     across ALL recipient keys combined; the rest stay unseen and drain on the
@@ -200,12 +219,16 @@ async def drain_once(
     import anyio
 
     pushed = 0
-    keys = await anyio.to_thread.run_sync(partial(recipient_keys, agent_id, store=store))
+    keys = await anyio.to_thread.run_sync(
+        partial(recipient_keys, agent_id, store=store)
+    )
     for key in keys:
         if pushed >= MAX_PUSH_PER_DRAIN:
             break  # burst cap reached — remaining keys drain next tick
         records = await anyio.to_thread.run_sync(
-            partial(_inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store)
+            partial(
+                _inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store
+            )
         )
         for rec in records:
             if pushed >= MAX_PUSH_PER_DRAIN:
@@ -220,18 +243,29 @@ async def drain_once(
                     exc,
                 )
                 continue
-            # Ack ONLY after a successful send — a push failure stays unseen
-            # and is retried on the next drain. Ack on the SAME key it came
-            # from.
+            # Record the push ONLY after a successful send — a push failure
+            # stays unseen and is retried on the next drain. Recorded on the
+            # SAME key it came from.
+            #
+            # `record_push` is the old `_inbox.ack` plus the truth: it advances
+            # the cursor AND stamps `pushed_at` in one atomic UPDATE, so the row
+            # says "handed to the transport, confirmed by nobody" instead of
+            # silently claiming delivery. Confirmation is a separate stamp only
+            # the RECIPIENT can write (`ack_notifications`), because a JSON-RPC
+            # notification has no reply for us to wait on.
             rec_id = rec.get("id")
             if rec_id:
                 try:
                     await anyio.to_thread.run_sync(
-                        partial(_inbox.ack, key, [rec_id], store=store)
+                        partial(record_push, key, [rec_id], store=store)
                     )
-                except Exception as exc:  # noqa: BLE001 — ack failure shouldn't kill the loop
+                except Exception as exc:  # noqa: BLE001 — a receipt failure shouldn't kill the loop
                     logger.warning(
-                        "scitex-todo channel: ack of %s failed: %s", rec_id, exc
+                        "scitex-todo channel: recording the push of %s failed — "
+                        "the cursor did not move either, so it is retried next "
+                        "drain: %s",
+                        rec_id,
+                        exc,
                     )
             pushed += 1
     return pushed

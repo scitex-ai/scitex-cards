@@ -153,6 +153,8 @@ def confirm_notifications(
         "already_confirmed", "unknown"}`` — ``confirmed`` holds the ids this
         call actually flipped unseen -> seen.
     """
+    from ._inbox_receipt import record_confirmation
+
     keys = recipient_keys(agent, store)
     primary = keys[-1] if keys else agent
     requested = _normalize_ids(ids)
@@ -163,6 +165,13 @@ def confirm_notifications(
             for nid in _inbox.ack(key, requested, store=store):
                 if nid not in confirmed:
                     confirmed.append(nid)
+            # THE ONLY ARRIVAL EVIDENCE THAT EXISTS. Stamped separately from
+            # the cursor and independently of whether this call is the one that
+            # flipped it: the channel drain has usually already advanced `seen`
+            # (it pushed the record), so keying the confirmation off that flip
+            # would record nothing for exactly the records that were pushed —
+            # which is every record the `delivery_confirmed` check cares about.
+            record_confirmation(key, requested, store=store)
             for record in _inbox.poll_inbox(
                 key, unseen_only=False, mark_seen=False, store=store
             ):

@@ -87,12 +87,35 @@
    */
   var FORWARD_RE = /^\[forwarded from .*?\]/;
 
-  function forwardBanner(fromName, ts) {
+  /* `toName` is the ORIGINAL RECIPIENT, and it is optional.
+   *
+   * The operator asked for it in email terms — 「元の送信者と元の受信者って
+   * いうのが誰か」 — because "forwarded from scitex-dev" alone does not say
+   * whether they were reading their own thread or somebody else's. Rendered
+   * "[forwarded from <a> to <b>, <ts>]", which FORWARD_RE still matches, so a
+   * banner written by the older two-part form (and by claude-code-telegrammer,
+   * which does not know about `to`) is still recognised as a banner and still
+   * refuses to stack. Omitted rather than guessed when the caller cannot say
+   * who the recipient was: a wrong name here is worse than a missing one. */
+  function forwardBanner(fromName, ts, toName) {
     var who = String(fromName || "unknown").trim() || "unknown";
     var when = String(ts || "").trim();
-    return when
-      ? "[forwarded from " + who + ", " + when + "]"
-      : "[forwarded from " + who + "]";
+    var to = String(toName || "").trim();
+    var head = to ? "forwarded from " + who + " to " + to : "forwarded from " + who;
+    return when ? "[" + head + ", " + when + "]" : "[" + head + "]";
+  }
+
+  /* Who a message in the `peer` thread was originally sent TO.
+   *
+   * A DM thread has exactly two ends, so the recipient is whichever end did
+   * not write it. Derived rather than stored because the record carries only
+   * `from` — and deriving it keeps this correct for messages written long
+   * before the banner grew a `to`.
+   */
+  function forwardOriginalTo(message, peer, viewer) {
+    var from = String((message && message.from) || "");
+    if (!from) return "";
+    return from === String(viewer) ? String(peer || "") : String(viewer || "");
   }
 
   /* Whether `body` already opens with a forward banner. */
@@ -110,11 +133,83 @@
    * Attachment lines are part of the body, so a forwarded image forwards its
    * image for free; nothing here needs to know what an attachment is.
    */
-  function forwardBody(message) {
+  function forwardBody(message, toName) {
     var body = String((message && message.body) || "");
     if (isForwarded(body)) return body;
-    var banner = forwardBanner(message && message.from, message && message.ts);
+    var banner = forwardBanner(
+      message && message.from,
+      message && message.ts,
+      toName,
+    );
     return body ? banner + "\n" + body : banner;
+  }
+
+  /* --- marquee geometry ------------------------------------------------- */
+
+  /* The rectangle spanned by two points, in any drag direction.
+   *
+   * Normalised to left/top/right/bottom so a drag UP-AND-LEFT describes the
+   * same box as the same drag down-and-right — without this, three of the four
+   * drag directions select nothing, which is the classic marquee bug.
+   */
+  function marqueeRect(from, to) {
+    var ax = (from && from.x) || 0;
+    var ay = (from && from.y) || 0;
+    var bx = (to && to.x) || 0;
+    var by = (to && to.y) || 0;
+    return {
+      left: Math.min(ax, bx),
+      top: Math.min(ay, by),
+      right: Math.max(ax, bx),
+      bottom: Math.max(ay, by),
+    };
+  }
+
+  /* Whether two rectangles share any area.
+   *
+   * INTERSECTION, not containment: a marquee dragged across a long message
+   * must catch it even though the box never covers the whole bubble. Requiring
+   * containment would make tall messages unselectable, which on this board is
+   * most of them.
+   */
+  function rectsOverlap(a, b) {
+    if (!a || !b) return false;
+    return !(
+      a.right < b.left ||
+      a.left > b.right ||
+      a.bottom < b.top ||
+      a.top > b.bottom
+    );
+  }
+
+  /* The ids of `boxes` the rectangle touches, in the order boxes came in.
+   *
+   * Callers pass boxes in thread order, so the result is in thread order too —
+   * the same rule `selectedRecords` follows, and for the same reason: a
+   * forward must read in the order the conversation happened.
+   */
+  function idsWithin(boxes, rect) {
+    return (boxes || [])
+      .filter(function (box) {
+        return box && rectsOverlap(rect, box.rect);
+      })
+      .map(function (box) {
+        return box.id;
+      });
+  }
+
+  /* Union of two id lists, order-preserving and duplicate-free.
+   *
+   * A second marquee ADDS to the selection rather than replacing it, so the
+   * operator can gather messages from several places in a long thread without
+   * one careful drag having to catch them all.
+   */
+  function mergeIds(ids, extra) {
+    var out = (ids || []).slice();
+    (extra || []).forEach(function (id) {
+      if (out.indexOf(id) === -1) out.push(id);
+    });
+    return out;
   }
 
   /* --- reactions -------------------------------------------------------- */
@@ -235,9 +330,14 @@
     chipsOf: chipsOf,
     forwardBanner: forwardBanner,
     forwardBody: forwardBody,
+    forwardOriginalTo: forwardOriginalTo,
+    idsWithin: idsWithin,
     isForwarded: isForwarded,
     joinTexts: joinTexts,
+    marqueeRect: marqueeRect,
+    mergeIds: mergeIds,
     nextAction: nextAction,
+    rectsOverlap: rectsOverlap,
     reactionSignature: reactionSignature,
     selectedRecords: selectedRecords,
     selectionLabel: selectionLabel,

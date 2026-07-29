@@ -8,15 +8,24 @@ standard shape shared with sac/cct::
 
     {
       "package": "scitex-cards",
-      "ok": <bool: true iff EVERY check ok>,
+      "ok": <bool: true iff NO check FAILED>,
       "checks": [ {"name", "ok", "detail", "hint"}, ... ],
       "summary": <str>,
     }
 
 Contract
 --------
-* Every FAILING check carries an ACTIONABLE ``hint`` (the exact next step). A
-  passing check may leave ``hint`` ``None``.
+* A check's ``ok`` is THREE-VALUED: ``True`` (pass), ``False`` (fail) or
+  ``None`` (UNKNOWN — the check could not measure). "nothing is wrong" and "I
+  cannot tell" are different answers and must not collapse into ``ok=true``;
+  ``None`` is the only honest report for a check whose evidence is missing.
+  The record keeps exactly the four standard fields — the third value rides in
+  ``ok`` as JSON ``null`` rather than in a fifth key sac/cct would not read.
+* An UNKNOWN does not fail the run (``report["ok"]`` counts only ``False``) but
+  it is NAMED in ``summary``, so it can never read as a silent pass.
+* Every FAILING **and** every UNKNOWN check carries an ACTIONABLE ``hint`` (the
+  exact next step — for an unknown, how to make it measurable). A passing check
+  may leave ``hint`` ``None``.
 * :func:`health` NEVER raises: a check that errors internally is reported as
   ``ok=false`` with the error captured in its ``hint`` — no silent pass, no
   vague error, no exception out of the function.
@@ -44,6 +53,7 @@ from typing import Any, Callable
 
 from . import _inbox
 from ._health_channel_reach import check_channel_reaches_session
+from ._health_delivery import check_delivery_confirmed
 from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
     _check_store_identity_agrees,
 )
@@ -236,21 +246,30 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
 def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     """Run one check, coercing its result to the standard record + never raising.
 
+    ``ok`` is preserved THREE-VALUED: a check that returns ``None`` means "I
+    cannot tell" and keeps ``None`` here. Coercing that to ``False`` would
+    manufacture an alarm out of a measurement nobody took; coercing it to
+    ``True`` would hide it, which is the failure mode this whole PR exists for.
+
     A check that raises is reported as ``ok=false`` with the error in ``hint``
-    (never propagated). A failing check with an empty hint gets a fallback hint
-    so the "every failing check carries an actionable hint" rule always holds.
+    (never propagated) — an exception is evidence of a fault, not an absence of
+    evidence. Any non-passing check with an empty hint gets a fallback hint so
+    the "every failing or unknown check carries an actionable hint" rule always
+    holds.
     """
     try:
         res = fn()
-        ok = bool(res.get("ok"))
+        raw = res.get("ok")
+        ok = None if raw is None else bool(raw)
         detail = str(res.get("detail", ""))
         hint = res.get("hint")
     except Exception as exc:  # noqa: BLE001 — health must NEVER raise out
         ok = False
         detail = f"{name} check errored: {type(exc).__name__}: {exc}"
         hint = f"internal error in the {name} check: {exc}"
-    if not ok and not hint:
-        hint = f"{name} failed: {detail}"
+    if ok is not True and not hint:
+        verdict = "could not be evaluated" if ok is None else "failed"
+        hint = f"{name} {verdict}: {detail}"
     return {"name": name, "ok": ok, "detail": detail, "hint": hint}
 
 
@@ -319,6 +338,19 @@ def health(
         # a name the client does not know does not delay a notification, it
         # destroys it — silently. This is the only check that asks the far end.
         _run_check("channel_reaches_session", check_channel_reaches_session),
+        # Did anything we pushed ever get CONFIRMED? channel_reaches_session
+        # reads the launch line, which only exists when a Claude launcher is in
+        # our ancestry — under a container runtime that supplies the allowlist
+        # some other way, it reports "not applicable" and the fleet is blind
+        # again. This one asks the inbox instead: rows stamped `pushed_at` with
+        # no `confirmed_at` are notifications we handed to a transport that
+        # never said they arrived. That is the residue of the 2026-07-29 outage
+        # (228 rows enqueued and consumed for this agent, ZERO unseen, weeks of
+        # operator DMs destroyed) and it is visible with no /proc and no config.
+        _run_check(
+            "delivery_confirmed",
+            lambda: check_delivery_confirmed(soft_agent, store),
+        ),
         # Is our own reported version actually TRUE? An orphaned/stale .dist-info
         # reports a version that outlived the code it describes — and the fleet's
         # drift detector reads exactly that string, so a fossil silently turns the
@@ -342,12 +374,19 @@ def health(
         ),
         _run_check("no_falsely_blocked", lambda: _check_no_falsely_blocked(store)),
     ]
-    ok = all(c["ok"] for c in checks)
-    n_ok = sum(1 for c in checks if c["ok"])
-    failing = [c["name"] for c in checks if not c["ok"]]
+    # THREE-VALUED aggregation. An UNKNOWN (`ok is None`) is not a fault, so it
+    # must not fail the run — but it is not a pass either, so it is counted out
+    # of `n_ok` and NAMED in the summary. Collapsing it either way is how a
+    # check that measured nothing gets read as a check that found nothing.
+    failing = [c["name"] for c in checks if c["ok"] is False]
+    unknown = [c["name"] for c in checks if c["ok"] is None]
+    ok = not failing
+    n_ok = sum(1 for c in checks if c["ok"] is True)
     summary = f"{n_ok}/{len(checks)} checks passed"
     if failing:
         summary += "; failing: " + ", ".join(failing)
+    if unknown:
+        summary += "; unknown: " + ", ".join(unknown)
     return {
         "package": "scitex-cards",
         "ok": ok,

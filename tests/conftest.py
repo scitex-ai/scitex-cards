@@ -43,6 +43,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from _store_damage import content_or_none, damaged_candidates
 
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
@@ -172,9 +173,11 @@ def scratch_store_root() -> Path:
 # Everything above this line makes it mechanically hard for a test to RESOLVE
 # a real store path. It assumes that guard has a hole somewhere it hasn't been
 # found yet — proven true on 2026-07-21 (2,170 cards -> 18; THIRD such wipe,
-# two days after the 2026-07-19 fix above), so this layer checks the only
-# fact that actually matters: did a real file on disk change, regardless of
-# which env var or code path let a write through.
+# two days after the 2026-07-19 fix above), so this layer checks the fact that
+# actually matters, regardless of which env var or code path let a write
+# through: is the real board still INTACT — same or more cards, same identity
+# stamps, structurally sound? See :func:`_store_damage.damage` for why not
+# "did the file change", is the criterion on a shared live board.
 #
 # Both real homes this fleet's agents run under. Checked BY NAME, not by
 # reading $HOME/$SCITEX_DIR — the whole point is to catch a leak that reached
@@ -194,9 +197,8 @@ _REAL_STORE_CANDIDATES: tuple[Path, ...] = (
 def _stat_or_none(path: Path) -> tuple[int, int] | None:
     """``(mtime_ns, size)`` for ``path``, or ``None`` when it doesn't exist.
 
-    Never raises. A permission hiccup or a benign race here is not evidence
-    of the thing this function exists to detect (a WRITE), so it must not
-    itself blow up test collection/teardown.
+    Never raises. Diagnostic context only — see :func:`_store_damage.damage`
+    for why file stat is NOT the failure criterion.
     """
     try:
         st = path.stat()
@@ -211,36 +213,35 @@ def _stat_or_none(path: Path) -> tuple[int, int] | None:
 _REAL_STORE_BEFORE: dict[Path, tuple[int, int] | None] = {
     p: _stat_or_none(p) for p in _REAL_STORE_CANDIDATES
 }
+_REAL_CONTENT_BEFORE: dict[Path, dict | None] = {
+    p: content_or_none(p) for p in _REAL_STORE_CANDIDATES
+}
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _assert_real_store_untouched_by_session():
-    """FAIL LOUD if any real store candidate changed during this session.
+    """FAIL LOUD if any real store candidate was DAMAGED during this session.
 
     This is a DETECTOR, not a preventer — the prevention is the pinning above
     and in ``tests/scitex_cards/conftest.py``. If this fires, do not go
-    hunting for the one leaking test as a condition of fixing THIS card: per
-    the incident runbook, report the failing state (which candidate path
-    moved, and its before/after ``(mtime_ns, size)``) and treat it as a
-    signal that the pinning fixtures need a wider audit — finding the exact
-    leaking test is legitimate follow-up work, not a blocker on having this
-    guard at all.
+    hunting for the one leaking test as a condition of fixing the card in
+    hand: per the incident runbook, report the failing state (which candidate
+    path, and what changed) and treat it as a signal that the pinning
+    fixtures need a wider audit — finding the exact leaking test is
+    legitimate follow-up work, not a blocker on having this guard at all.
     """
     yield
-    changed = [
-        (path, _REAL_STORE_BEFORE[path], _stat_or_none(path))
-        for path in _REAL_STORE_CANDIDATES
-        if _REAL_STORE_BEFORE[path] != _stat_or_none(path)
-    ]
-    if not changed:
+    damaged = damaged_candidates(_REAL_CONTENT_BEFORE, _REAL_STORE_CANDIDATES)
+    if not damaged:
         return
     details = "\n".join(
-        f"  {path}\n    before (mtime_ns, size) = {before}\n"
-        f"    after  (mtime_ns, size) = {after}"
-        for path, before, after in changed
+        f"  {path}\n    {why}\n"
+        f"    stat before (mtime_ns, size) = {_REAL_STORE_BEFORE[path]}\n"
+        f"    stat after  (mtime_ns, size) = {_stat_or_none(path)}"
+        for path, why in damaged
     )
     pytest.fail(
-        "REAL TASK STORE MUTATED DURING THIS TEST SESSION.\n"
+        "REAL TASK STORE DAMAGED DURING THIS TEST SESSION.\n"
         "Every pinning fixture in this file and in "
         "tests/scitex_cards/conftest.py is supposed to make this "
         "impossible; one of them has a hole. Do NOT chase the individual "

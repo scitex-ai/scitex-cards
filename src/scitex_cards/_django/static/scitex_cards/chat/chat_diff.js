@@ -44,17 +44,43 @@
    * reactions leave id/body/from/ts identical, so the plan below would compare
    * equal, answer "noop", and the chip would never appear. Omitting the
    * argument reproduces the old fingerprint exactly, so every existing caller
-   * and test is unaffected. */
-  function messageFingerprint(message, reactions) {
+   * and test is unaffected.
+   *
+   * `receipts` is the OPTIONAL {message_id: {state, readers}} map from the same
+   * response, and is here for the IDENTICAL reason one step later: a receipt
+   * arriving on its own changes no message field AND no reaction, so without it
+   * the plan compares equal, answers "noop", and the read dot never fills. The
+   * indicator would then be blind in exactly the situation it exists to report
+   * - an agent confirming a message while nothing else is happening. */
+  function messageFingerprint(message, reactions, receipts) {
     if (!message) return "";
-    var perMessage = reactions ? reactions[messageKey(message)] : null;
+    var key = messageKey(message);
+    var perMessage = reactions ? reactions[key] : null;
     return [
-      messageKey(message),
+      key,
       String(message.body || ""),
       String(message.from || ""),
       String(message.ts || ""),
+      // BEFORE the reactions, not after: an existing test pins that the
+      // fingerprint ENDS WITH the reaction signature (it is how the duplicated
+      // reactionSignature is held to ChatActions'). Appending here would have
+      // broken that pin, for a field whose position in the join is arbitrary
+      // anyway — the fingerprint is compared whole, never parsed.
+      receiptSignature(receipts ? receipts[key] : null),
       reactionSignature(perMessage),
     ].join("\u0000");
+  }
+
+  /* Stable string for one message's RECEIPT entry; "" when there is none.
+   *
+   * Duplicated from ChatReceipts.receiptSignature on exactly the terms
+   * reactionSignature is duplicated below: this file is the one the node tests
+   * load in isolation and it must keep zero dependencies. A test pins the two
+   * implementations to the same output so they cannot drift apart silently. */
+  function receiptSignature(entry) {
+    if (!entry) return "";
+    var readers = entry.readers || [];
+    return String(entry.state || "") + ":" + readers.slice().sort().join(",");
   }
 
   /* Stable string for one message's reactions; "" when there are none.
@@ -93,11 +119,11 @@
    * Append is the overwhelmingly common case: a DM thread grows at the
    * end. Rebuild is the honest fallback rather than a guess.
    */
-  function planRender(rendered, messages, reactions) {
+  function planRender(rendered, messages, reactions, receipts) {
     var current = rendered || [];
     var list = messages || [];
     var fingerprints = list.map(function (message) {
-      return messageFingerprint(message, reactions);
+      return messageFingerprint(message, reactions, receipts);
     });
 
     if (current.length > fingerprints.length) {
@@ -174,6 +200,7 @@
     messageKey: messageKey,
     messageFingerprint: messageFingerprint,
     planRender: planRender,
+    receiptSignature: receiptSignature,
     shortTs: shortTs,
     shouldStickToBottom: shouldStickToBottom,
   };

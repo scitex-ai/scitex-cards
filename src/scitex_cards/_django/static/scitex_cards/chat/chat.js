@@ -229,6 +229,11 @@
   // <img>/<a> for one. Both are statics, so no mount ordering applies.
   var attachments = window.ChatAttach;
 
+  // The delivery indicator: three dots filling sent -> queued -> read.
+  // Optional by design: an older page without the module renders exactly as it
+  // did before rather than guessing at a state it was not served.
+  var receipts = window.ChatReceipts;
+
   function messageNode(m) {
     var mine = m.from === "operator";
     var wrap = el("div", "msg " + (mine ? "from-operator" : "from-agent"));
@@ -241,7 +246,13 @@
     parts.files.forEach(function (rel) {
       wrap.appendChild(attachments.nodeFor(API_BASE, rel));
     });
-    wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
+    var meta = el("div", "meta", m.from + " · " + shortTs(m.ts));
+    // The delivery indicator belongs to chat_receipts.js, which owns what each
+    // step means; this file only says WHERE it goes. Into the META line on
+    // purpose: that row already exists, so the track costs no vertical space
+    // and cannot push the timestamp onto a second line on a phone.
+    if (receipts) receipts.render(meta, m, state.receipts);
+    wrap.appendChild(meta);
     // Reaction chips belong to the menu module (it owns every reaction write),
     // so this file only says WHERE they go, never what they are.
     if (menu) menu.renderReactions(wrap, m);
@@ -320,12 +331,18 @@
         // Reactions must be in place BEFORE the plan is computed: the plan's
         // fingerprints read them, and messageNode paints them.
         state.reactions = data.reactions || {};
+        // Same rule, same reason: the plan's fingerprints read the receipts, so
+        // a confirmation arriving on its own still repaints the bubble.
+        state.receipts = data.receipts || null;
         state.messages = msgs;
         if (!msgs.length) {
           renderEmpty();
           return;
         }
-        applyPlan(diff.planRender(state.rendered, msgs, state.reactions), msgs);
+        applyPlan(
+          diff.planRender(state.rendered, msgs, state.reactions, state.receipts),
+          msgs,
+        );
       })
       .catch(function (err) {
         showError("Thread failed: " + err.message);
@@ -342,6 +359,10 @@
     // clear with it. A stale map would paint the previous thread's chips onto
     // the first messages of this one.
     state.reactions = {};
+    // null, not {}: an empty map would mean "served, and every message is
+    // unknowable", which would paint a stale thread's bubbles with a state the
+    // server never sent. null means "not served yet" and paints nothing.
+    state.receipts = null;
     state.messages = [];
     $title.innerHTML = "";
     $title.appendChild(document.createTextNode("Thread with "));
@@ -357,43 +378,9 @@
 
   // ---- compose -----------------------------------------------------------
 
-  function sendMessage(event) {
-    event.preventDefault();
-    if (!state.peer) return;
-    var text = $body.value.trim();
-    if (!text) return;
-    $send.disabled = true;
-    fetch(API_BASE + "/dm/thread/" + encodeURIComponent(state.peer), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: text }),
-    })
-      .then(function (resp) {
-        if (!resp.ok) {
-          return resp
-            .json()
-            .catch(function () {
-              return {};
-            })
-            .then(function (data) {
-              throw new Error(data.error || "HTTP " + resp.status);
-            });
-        }
-        $body.value = "";
-        // Clearing `value` from script fires no `input` event, so say so.
-        if (composer) composer.reset();
-        clearError();
-        refreshThread();
-        refreshAgents();
-      })
-      .catch(function (err) {
-        showError("Send failed: " + err.message);
-      })
-      .then(function () {
-        $send.disabled = false;
-        $body.focus();
-      });
-  }
+  // The send path (submit handler, Enter binding, in-flight guard) lives in
+  // chat_send.js — see that module for the two defects it replaced, the worse
+  // of which let the operator send exactly ONE message per page load.
 
   // ---- mobile drawer -----------------------------------------------------
 
@@ -409,15 +396,6 @@
   function closeDrawer() {
     if (drawer) drawer.close();
   }
-
-  // Enter sends; Shift+Enter inserts a newline (phone keyboards send via
-  // the button anyway — this is for desktop convenience).
-  $body.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      $form.requestSubmit();
-    }
-  });
 
   // Attachments (picker / paste / drag-drop) live in chat_attach.js.
   var attach = window.ChatAttach
@@ -439,7 +417,25 @@
         showError: showError,
       })
     : null;
-  $form.addEventListener("submit", sendMessage);
+  // Mounted AFTER `composer` exists, since it hands the composer its reset.
+  if (window.ChatSend) {
+    window.ChatSend.mount({
+      form: $form,
+      textarea: $body,
+      send: $send,
+      apiBase: API_BASE,
+      composer: composer,
+      getPeer: function () {
+        return state.peer;
+      },
+      onSent: function () {
+        refreshThread();
+        refreshAgents();
+      },
+      clearError: clearError,
+      showError: showError,
+    });
+  }
 
   // ---- boot --------------------------------------------------------------
 
