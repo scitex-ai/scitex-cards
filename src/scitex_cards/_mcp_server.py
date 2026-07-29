@@ -301,6 +301,10 @@ TOOL_NAMES: tuple[str, ...] = (
     "help_clear",
     # Standalone pull-inbox read path (1:1 `_inbox.poll_inbox`; in _mcp_skills).
     "poll_notifications",
+    # ...and its CONFIRM half (1:1 `_inbox_confirm.confirm_notifications`).
+    # Reading hands over; only this advances the cursor, so an undelivered
+    # notification is redelivered instead of destroyed (incident 2026-07-29).
+    "ack_notifications",
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
     "health",

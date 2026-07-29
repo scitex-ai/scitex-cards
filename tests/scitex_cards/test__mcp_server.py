@@ -110,6 +110,10 @@ _CONVENTION_A_NAMES = {
     # Standalone pull-inbox read path — 1:1 with `_inbox.poll_inbox`
     # (registered in `_mcp_skills`). PULL card-message delivery, no sac.
     "poll_notifications",
+    # ...and the CONFIRM half — 1:1 with
+    # `_inbox_confirm.confirm_notifications`. Reading hands over; only this
+    # advances the cursor (lossless-delivery split, incident 2026-07-29).
+    "ack_notifications",
     # Operator↔agent direct messages — 1:1 with `_threads.append_message` /
     # `_threads.get_thread` (registered in `_mcp_skills`; scitex-dev DM
     # convention v1, threads.yaml sidecar).
