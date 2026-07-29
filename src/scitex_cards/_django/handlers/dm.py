@@ -75,7 +75,7 @@ STORE_REQUEST_ATTR = "scitex_store"
 
 
 def _write_store_of(request: HttpRequest):
-    """The store a WRITE may touch — never taken from the request itself.
+    """The store a WRITE may touch — a TRUSTED ATTRIBUTE or nothing.
 
     ``_store_of`` reads ``?store=`` from the QUERY, and ``_threads`` derives
     the file it writes from that value. So the caller was choosing which file
@@ -84,25 +84,28 @@ def _write_store_of(request: HttpRequest):
     was an arbitrary-write surface, not a hardening nicety. Found by
     scitex-hub in design review, 2026-07-28.
 
-    A trusted middleware may still scope the write by setting
-    :data:`STORE_REQUEST_ATTR` on the request object. That is deliberately an
-    ATTRIBUTE rather than a query parameter: a remote caller can set the
-    latter and cannot set the former.
+    THE QUERY FALLBACK IS GONE, so a remote caller can no longer pick the
+    write target. Only a trusted middleware can, by setting
+    :data:`STORE_REQUEST_ATTR` on the request object — deliberately an
+    ATTRIBUTE rather than a query parameter, because a remote caller can set
+    the latter and cannot set the former.
 
-    THIS DOES NOT CLOSE THE HOLE YET, and saying so plainly matters more than
-    looking finished. The query seam is LOAD-BEARING today: the hub injects
-    tenancy through it (its middleware discards a client ``?store=`` and
-    mutates ``request.GET``), and the existing view tests scope themselves the
-    same way. Removing it outright was tried and broke both — trading a
-    security bug for an outage.
+    WHY THIS IS SAFE TO DELETE NOW, having been unsafe on 2026-07-28. The
+    fallback existed because removing it would have dropped the hub's tenancy
+    injection for a release window, and the board would then have fallen back
+    to its ambient canonical store — ONE store for every tenant. That is no
+    longer the situation: scitex-hub's ``TodoBoardTenancyMiddleware`` sets
+    ``request.scitex_store`` directly (its own comment calls that the PRIMARY
+    CHANNEL and marks the query injection as the legacy one to delete once
+    this side stops reading it). Both halves of the migration were in place
+    and each side was waiting on the other; measured 2026-07-29.
 
-    So this is the MIGRATION SEAM, not the fix: a trusted attribute WINS when
-    present, and the query remains the fallback until the hub switches. Once
-    it does, delete the fallback and the caller can no longer choose the write
-    target. Tracked on
-    ``scitex-cards-dm-store-from-query-and-forced-operator-author-20260728``.
+    ``None`` means NO trusted scope was supplied, and the caller must fall
+    back to its own server-side resolution rather than to anything the request
+    carried. Failing to a known store is safe; failing to a caller-named one
+    is the defect.
     """
-    return getattr(request, STORE_REQUEST_ATTR, None) or _store_of(request)
+    return getattr(request, STORE_REQUEST_ATTR, None)
 
 
 def _author_of(request: HttpRequest) -> str:
