@@ -37,7 +37,7 @@ from ._write import _emit
         "is a separate concern). Idempotent: reassigning to the SAME current\n"
         "owner is a no-op (no write, no event).\n\n"
         "Example:\n"
-        "  scitex-todo reassign my-task <new-owner-agent-id> --by operator"
+        "  scitex-cards reassign my-task <new-owner-agent-id> --by operator"
     ),
 )
 @click.argument("task_id")

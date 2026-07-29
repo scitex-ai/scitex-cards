@@ -42,8 +42,8 @@ try:
     from fastmcp import FastMCP
 except ImportError as _exc:  # pragma: no cover — exercised in the doctor test
     raise ImportError(
-        "scitex-todo MCP tools require the [mcp] extra. Install with:\n"
-        "  pip install 'scitex-todo[mcp]'"
+        "scitex-cards MCP tools require the [mcp] extra. Install with:\n"
+        "  pip install 'scitex-cards[mcp]'"
     ) from _exc
 
 from ._channel_identity import resolve_agent_id_optional
