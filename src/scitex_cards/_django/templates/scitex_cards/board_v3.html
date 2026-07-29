@@ -39,6 +39,7 @@
      to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
@@ -226,24 +227,30 @@
     Active-filter chips + qualifier hint pills move to a second row
     `<div class="filterbar-chips">` shown only when populated.
   {% endcomment %}
-  <div class="filterbar">
+  <div class="filterbar stx-cards-headerbar">
     <div class="fb-left">
       {% comment %}
-        Board | Chat switcher, FIRST in the identity band. Position is
-        load-bearing, not taste: 05-responsive.css gives .filterbar
-        `overflow-x: auto` on phones, so anything placed after the title +
+        Identity band — switcher, heading, version — from the SHARED partial
+        the DM page renders too, so the two headers cannot drift into two
+        different heights or two different switcher sides again (operator,
+        2026-07-29: 「ヘッダーがそろっていないのが気持ち悪い」). Geometry lives in
+        page-header.css; `.filterbar`'s own box metrics were removed rather
+        than left as a shadow copy. `.stx-cards-headerbar` above is what
+        makes this bar the same 48px as the DM page's.
+
+        The switcher stays FIRST inside that partial, and its position is
+        load-bearing rather than taste: 05-responsive.css gives .filterbar
+        `overflow-x: auto` on phones, so anything placed after the heading +
         LIVE chip starts off-screen on a 375pt iPhone — which is the exact
         problem this switcher exists to fix (operator 2026-07-28: chat was
         「隠し URL みたい」). Leftmost = always on screen.
 
         (hook-bypass: line-limit — this template was already 3512 lines,
         far over the 1024 cap, before this change; splitting it is tracked
-        separately rather than smuggled into the switcher PR. Same call the
+        separately rather than smuggled into the header PR. Same call the
         matrix-layout toggle above made.)
       {% endcomment %}
-      {% include "scitex_cards/_page_switcher.html" with active="board" %}
-      <h1>SciTeX Cards
-        <span class="small">v{{ scitex_cards_version|default:"?" }}</span></h1>
+      {% include "scitex_cards/_page_header.html" with active="board" page_title="SciTeX Cards" %}
       <span class="small"><span class="live-dot"></span>LIVE</span>
     </div>
 

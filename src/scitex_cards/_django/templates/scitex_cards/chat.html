@@ -107,25 +107,40 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
     display: flex; flex-direction: column;
   }
+  /* PALETTE ONLY. This header's BOX METRICS — display, gap, padding,
+     min-height, flex — come from page-header.css (`.stx-cards-headerbar`,
+     the class the <header> carries), which board_v3.html links too. They used
+     to live here as 10px/14px padding with no height floor, against the
+     board's 8px/14px and a 48px floor: two different-height headers, which is
+     what the operator saw on 2026-07-29 (「ヘッダーがそろっていないのが気持ち
+     悪い」). Do not restate a metric here — that is how they drifted.
+     The h1 and the version span are styled by the same shared sheet through
+     `.stx-cards-header`; this page only feeds its own colours in. */
   header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px; background: var(--panel);
-    border-bottom: 1px solid var(--line); flex: 0 0 auto;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    --stx-cards-header-fg: var(--accent-2);
+    --stx-cards-header-dim: var(--dim);
   }
-  header h1 { font-size: 1rem; margin: 0; color: var(--accent-2); font-weight: 600; }
-  header .ver { color: var(--dim); font-size: 0.72rem; }
   /* Board | DM switcher (shared component — page-switcher.css + the
-     _page_switcher.html partial). It REPLACED the old "← board" link: the
-     operator could reach the board from here, but not the reverse, which is
-     what made /chat/ a hidden URL. The component reads six --sw-* variables;
-     this page has its own fixed-dark palette (the :root above shadows the
-     scitex-ui theme tokens), so feed that palette in here. This block sits
-     BEFORE the page-switcher.css link further down <head>, which is fine:
-     `header .stx-cards-switcher` outranks the component's own
-     `.stx-cards-switcher` defaults on specificity, so source order does not
-     decide the winner. */
+     _page_switcher.html partial, now reached through _page_header.html). It
+     REPLACED the old "← board" link: the operator could reach the board from
+     here, but not the reverse, which is what made /chat/ a hidden URL. The
+     component reads six --sw-* variables; this page has its own fixed-dark
+     palette (the :root above shadows the scitex-ui theme tokens), so feed
+     that palette in here. This block sits BEFORE the page-switcher.css link
+     further down <head>, which is fine: `header .stx-cards-switcher` outranks
+     the component's own `.stx-cards-switcher` defaults on specificity, so
+     source order does not decide the winner.
+
+     THERE IS NO `margin-left: auto` HERE ANY MORE, and adding one back is the
+     regression. It is what put this page's switcher on the RIGHT while the
+     board's sat on the LEFT — the operator had already asked for LEFT on both
+     and restated it on 2026-07-29. The markup looked correct throughout: one
+     declaration moved the control while the template still read
+     switcher-first. page-header.css pins `margin-left: 0` and
+     test__page_header_is_shared.py fails on the auto margin. */
   header .stx-cards-switcher {
-    margin-left: auto;
     --sw-line: var(--line);
     --sw-surface: var(--panel-2);
     --sw-fg: var(--dim);
@@ -447,12 +462,17 @@ Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
 pages cannot drift into two different-looking switchers. Palette mapping for
 this page is in the <style> above (header .stx-cards-switcher).
 
+page-header.css is the same idea one level up: the SAME stylesheet the board
+links, holding the header bar's height/padding/gap so the two headers line up
+structurally instead of by two hand-synced numbers.
+
 (Both links kept: the emoji picker and the switcher arrived in parallel PRs
 that each added a stylesheet at this spot. They are independent components
 and the page needs both — this was a textual collision, not a real one.)
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
@@ -554,11 +574,20 @@ is an integration bug, never a silently-guessed root mount. This attribute
 must therefore ALWAYS be rendered.
 {% endcomment %}
 <body data-api-base="{{ api_base }}">
-<header>
+{% comment %}
+The header is the SHARED partial board_v3.html renders too, so the two pages
+cannot drift into two different heights or two different switcher sides again
+(operator, 2026-07-29). `.stx-cards-headerbar` carries the geometry; the
+palette above is all this page still says about it.
+
+`#menu-btn` stays FIRST because it is the phone-only agent-list toggle and a
+leading hamburger is the platform convention there — it is `display: none` on
+every viewport wide enough for the list to be visible, so on the desktop the
+switcher IS the leftmost thing in the header, exactly as on the board.
+{% endcomment %}
+<header class="stx-cards-headerbar">
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
-  <h1>Direct messages</h1>
-  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
-  {% include "scitex_cards/_page_switcher.html" with active="chat" %}
+  {% include "scitex_cards/_page_header.html" with active="chat" page_title="Direct messages" %}
 </header>
 <div id="error-bar"></div>
 <div id="layout">

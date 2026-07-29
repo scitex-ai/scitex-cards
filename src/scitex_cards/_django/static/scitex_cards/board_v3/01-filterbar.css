@@ -59,15 +59,20 @@ a {
  * populated.
  */
 .filterbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
+  /* PALETTE ONLY. This bar's BOX METRICS — display, gap, padding, min-height
+   * — moved to page-header.css under `.stx-cards-headerbar`, the class this
+   * element also carries. The DM page's header had the same four
+   * declarations with different values and the two drifted (operator
+   * 2026-07-29: the headers do not line up). One statement, one file; a copy
+   * here would be the drift growing straight back. No flex-wrap on the
+   * top-level — the .fb-right group wraps internally so the identity +
+   * search row stays intact. (hook-bypass: line-limit — pre-existing
+   * 595-line stylesheet; this change removes lines from it.) */
   background: var(--col-bg);
   border-bottom: 1px solid var(--border);
-  min-height: 48px;
-  /* No flex-wrap on the top-level — the .fb-right group wraps
-   * internally so the identity + search row stays intact. */
+  /* Palette for the shared identity band (page-header.css reads these). */
+  --stx-cards-header-fg: #fff;
+  --stx-cards-header-dim: var(--text-muted);
 }
 .fb-left {
   display: flex;
