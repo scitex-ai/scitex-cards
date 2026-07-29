@@ -177,8 +177,8 @@ def db_path_cmd(db_path: str | None) -> None:
         "every expected table (with row counts), and PRAGMA quick_check. "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
-        "  scitex-todo db verify\n"
-        "  scitex-todo db verify --json"
+        "  scitex-cards db verify\n"
+        "  scitex-cards db verify --json"
     ),
 )
 @_DB_OPTION
@@ -193,7 +193,7 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-todo db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards db verify: {status} — {report['path']}")
     if not report["exists"]:
         click.echo("[FAIL] db does not exist yet (run `init-store`)")
         raise SystemExit(1)

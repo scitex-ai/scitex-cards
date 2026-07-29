@@ -149,6 +149,12 @@ async def poll_notifications(
     WITHOUT any external runtime. The optional out-of-band push rail stays a
     parallel accelerator, not a dependency.
 
+    READING NEVER CONFIRMS. This call hands notifications over; it does NOT
+    advance the cursor. Confirm what you ACTUALLY DELIVERED with
+    ``ack_notifications(agent, ids)``. Anything you never confirm is still
+    unseen and COMES BACK on the next poll — so a consumer that dies between
+    read and confirm loses nothing.
+
     ``agent`` is resolved to its stable user-id via
     :func:`scitex_cards._users.resolve_user` (so a rename still finds the
     inbox); an UNREGISTERED name falls back to itself (the same raw-name key
@@ -156,14 +162,23 @@ async def poll_notifications(
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
          "notifications": [ {id, event_type, card_id, body, actor, ts, seen},
-                            ... ]}
+                            ... ],
+         "unconfirmed": [<ids still awaiting ack_notifications>],
+         "confirm_with": "ack_notifications"}
 
     Args:
       agent: the recipient name / id / host@name to poll for.
       unseen_only: when true (default) return only unseen notifications;
         false returns the full history.
-      ack: when true, advance the cursor — mark the RETURNED notifications
-        seen so a later poll does not return them again.
+      ack: DEPRECATED — DO NOT USE. Marks the returned notifications seen at
+        HANDOVER, so a consumer that reads them and then fails to deliver has
+        PERMANENTLY DESTROYED them: they leave the unseen set and no retry can
+        find them. Measured on the live store 2026-07-29 — five operator DMs
+        enqueued correctly, four marked SEEN, the agent saw none of them, and
+        the operator asked twice, eleven minutes apart, because nothing came
+        back. Still honoured (sac reads this path today) but it emits a
+        DeprecationWarning and an ``ack_on_read_deprecated`` field in the
+        payload. Use ``ack=false`` + ``ack_notifications`` instead.
     """
     # The composition (user resolution, fail-soft liveness heartbeat, poll)
     # lives in the backend so a remote backend can make it ONE round trip.
@@ -175,6 +190,42 @@ async def poll_notifications(
             ack=ack,
             store=tasks_path,
         )
+    )
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def ack_notifications(
+    agent: str,
+    ids: list[str],
+    tasks_path: str | None = None,
+) -> str:
+    """CONFIRM delivery of specific notifications — the ONLY cursor-advancing verb.
+
+    Call this AFTER you have actually delivered each notification, passing the
+    ids you delivered. Anything you do not confirm stays unseen and is
+    REDELIVERED on the next ``poll_notifications`` — that redelivery is the
+    whole point: a consumer that dies between reading and confirming must lose
+    nothing. (The reverse — confirming at handover — destroyed five operator
+    DMs on the live store on 2026-07-29; see ``poll_notifications``' ``ack``.)
+
+    IDEMPOTENT. Confirming the same id twice is a no-op, never an error, so a
+    retrying consumer is not punished for retrying. An id this agent's inbox
+    never held is likewise a no-op. The payload distinguishes the cases::
+
+        {"agent": <input>, "recipient_id": <resolved id/name>,
+         "requested": [...],           # what you asked to confirm
+         "confirmed": [...],           # flipped unseen -> seen by THIS call
+         "already_confirmed": [...],   # were already seen (a fine retry)
+         "unknown": [...]}             # no such id in this inbox
+
+    Args:
+      agent: the recipient name / id / host@name whose inbox to confirm in.
+      ids: the notification ids (the ``id`` field of each polled record) that
+        were successfully delivered.
+    """
+    result = await anyio.to_thread.run_sync(
+        functools.partial(get_backend().ack_notifications, agent, ids, store=tasks_path)
     )
     return json.dumps(result)
 
@@ -241,6 +292,13 @@ async def dm_send(
     ($SCITEX_TODO_AGENT_ID). The operator's reserved peer name is
     ``"operator"`` — the operator reads the thread on the board's /chat view.
     Returns the stored record as JSON.
+
+    TEXT ONLY. To send a FILE — a PDF, a screenshot, a log — use
+    ``dm_send_document(to=..., file_path=..., caption=...)`` instead. Do NOT
+    describe the file in prose here and do NOT paste a filesystem path: the
+    operator reads this thread in a browser, where a path on your machine is
+    not something they can open. ``dm_send_document`` copies the bytes into
+    the board's attachment store so the file itself arrives.
     """
     sender, err = _dm_sender_or_error()
     if err is not None:
@@ -249,6 +307,84 @@ async def dm_send(
         functools.partial(get_backend().dm_send, sender, to, body, store=tasks_path)
     )
     return json.dumps(record)
+
+
+def _attach_and_compose(
+    file_path: str, caption: str | None, tasks_path: str | None
+) -> "tuple[dict | None, str | None]":
+    """Copy ``file_path`` into the attachment store; return ``(parts, error)``.
+
+    ``parts`` is ``{"body", "attachment"}``. The message body IS the
+    reference: the stored url goes on its own line, which is exactly what the
+    operator's own uploads produce and what the chat pane already knows how
+    to render. No new record field, no second convention, and an older client
+    still shows something meaningful instead of nothing.
+    """
+    import os
+
+    from ._attachments import AttachmentError, store_local_file
+    from ._backend import _HUB_URL_ENV
+
+    if os.environ.get(_HUB_URL_ENV):
+        return None, json.dumps(
+            {
+                "error": "dm_send_document: a remote hub is configured "
+                f"({_HUB_URL_ENV}), so the file would be copied into the "
+                "LOCAL attachment store while the message went to the hub — "
+                "the operator would receive a link to nothing. Upload through "
+                "the hub's /dm/upload endpoint instead."
+            }
+        )
+    try:
+        meta = store_local_file(file_path, store=tasks_path)
+    except AttachmentError as exc:
+        return None, json.dumps({"error": f"dm_send_document: {exc}"})
+    label = (caption or "").strip() or meta["filename"]
+    return {"body": f"{label}\n{meta['url']}", "attachment": meta}, None
+
+
+@mcp.tool()
+async def dm_send_document(
+    to: str,
+    file_path: str,
+    caption: str | None = None,
+    tasks_path: str | None = None,
+) -> str:
+    """Send a FILE to a peer as a direct message (the DM attachment path).
+
+    Mirrors claude-code-telegrammer's ``send_document`` deliberately: same
+    three arguments (recipient, local path, optional caption), so an agent
+    that already knows how to hand the operator a PDF over Telegram does the
+    same thing here. ``file_path`` is an absolute path to a file THIS agent
+    can read.
+
+    The bytes are COPIED into the board's attachment store — the same store,
+    same ``attachments/<YYYY-MM>/<uuid>/<name>`` url and same renderer the
+    operator's own uploads use. The original path is never recorded and never
+    served from, so a file the agent later moves or deletes still reaches the
+    operator intact.
+
+    The stored url is appended to the message body on its own line, which is
+    how the chat pane recognises an attachment. ``caption`` becomes the
+    message text; without one the filename is used, so the thread list shows
+    something readable rather than a bare url.
+
+    Returns ``{"message": <stored DM record>, "attachment": {url, filename,
+    mime_type, size}}``. Refusals (missing file, not a regular file, over the
+    25 MB ceiling) come back as ``{"error": ...}`` naming what to fix.
+    """
+    sender, err = _dm_sender_or_error()
+    if err is not None:
+        return err
+    parts, err = _attach_and_compose(file_path, caption, tasks_path)
+    if err is not None:
+        return err
+    record = await anyio.to_thread.run_sync(
+        functools.partial(
+            get_backend().dm_send, sender, to, parts["body"], store=tasks_path
+        )
+    )
+    return json.dumps({"message": record, "attachment": parts["attachment"]})
 
 
 @mcp.tool()
@@ -277,8 +413,10 @@ async def dm_list(
 
 
 __all__ = [
+    "ack_notifications",
     "dm_list",
     "dm_send",
+    "dm_send_document",
     "health",
     "help_clear",
     "help_wait",

@@ -35,13 +35,22 @@ from scitex_cards._model import load_tasks
 def store(env):
     # SQLite cutover: card DATA lives in the canonical DB (a path-independent
     # read), so the two seeded cards are put THERE. But the board cache — the
-    # subject of this whole file — still keys its invalidation on the resolved
-    # store PATH's stat (mtime_ns, size, inode via ``_stat_sig``) and opens
-    # that path through ``load_groups``. So the store is the PINNED identity
-    # path, a real marker FILE (created empty by the _django conftest autouse
-    # fixture); the helpers below mutate the DB for card content AND move the
-    # marker file's stat so the cache observes the change, exactly as a write
-    # to the old single YAML store moved both at once.
+    # subject of this whole file — still keys HALF its invalidation on the
+    # resolved store PATH's stat (mtime_ns, size, inode via ``_stat_sig``) and
+    # opens that path through ``load_groups``. So the store is the PINNED
+    # identity path with a real marker FILE behind it; the helpers below mutate
+    # the DB for card content AND move the marker file's stat so the cache
+    # observes the change, exactly as a write to the old single YAML store
+    # moved both at once.
+    #
+    # THIS FIXTURE CREATES THAT FILE ITSELF, and that is the point. It used to
+    # arrive from an autouse fixture in the _django conftest that created it for
+    # EVERY test in the package — which is how the 2026-07-29 blank-board outage
+    # went untested: the board gated its card read on this file's existence, and
+    # the harness manufactured it before each test, so production's actual
+    # shape (no such file) was never exercised. The stat half of the cache key
+    # is genuinely THIS file's subject, so this file owns the file. Nothing
+    # else has to.
     seed_db_from_doc(
         {
             "tasks": [
@@ -52,6 +61,9 @@ def store(env):
         os.environ["SCITEX_CARDS_DB"],
     )
     path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if not Path(path).exists():
+        Path(path).write_text("", encoding="utf-8")
     services._board_cache.clear()
     services._refreshing.clear()
     # No per-project lanes in the fixture — keep the unit about the cache.

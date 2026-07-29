@@ -67,6 +67,53 @@ def test_an_existing_ambient_store_is_untouched_by_the_guard(tmp_path, monkeypat
     refuse_ambient_store_creation(present)
 
 
+def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypatch):
+    """The configuration EVERY fleet agent runs in: the board already exists at
+    the ambient default and nothing names it. Creating a card must WORK.
+
+    Reproduced by scitex-ui on 0.17.7: every `add` failed for any agent whose
+    env lacked ``$SCITEX_CARDS_DB``, while every read/update on the same store
+    succeeded. The cause was that CREATE guarded a SYNTHETIC display label
+    (``<db_dir>/tasks.yaml``) instead of the resolved store. The YAML tier was
+    deleted (#512), so that label can never exist and the guard refused
+    unconditionally — including, absurdly, right after `init-store` created the
+    very database the error told you to create.
+
+    The guard exists to stop a write MANUFACTURING a board. When the board is
+    already there, there is nothing to manufacture, so there is nothing to
+    refuse. An agent that cannot create a card cannot record work, hand off, or
+    escalate — so this is the pin that keeps CREATE agreeing with read/update.
+    """
+    # ARRANGE — a REAL store at the ambient default, named by nothing.
+    import scitex_cards
+    from scitex_cards._db import connect, init_schema, resolve_db_path
+
+    monkeypatch.delenv(ENV_DB, raising=False)
+    monkeypatch.delenv("SCITEX_TODO_DB", raising=False)
+    monkeypatch.setenv("SCITEX_DIR", str(tmp_path / "scitex"))
+
+    db = resolve_db_path(None)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = connect(db)
+    try:
+        init_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    assert db.exists(), "arrange failed: no store to write against"
+
+    # ACT
+    scitex_cards.add_task(
+        id="ambient-card",
+        title="created against an existing ambient store",
+        assignee="scitex-cards",
+        agent="scitex-cards",
+    )
+
+    # ASSERT — on the artefact: the card is readable back from the canonical store.
+    assert scitex_cards.get_task(task_id="ambient-card")["id"] == "ambient-card"
+
+
 def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
     tmp_path, monkeypatch
 ):
