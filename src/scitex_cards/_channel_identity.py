@@ -60,7 +60,7 @@ def resolve_agent_id(arg: str | None = None) -> str:
     # dead key.
     if resolved.startswith("$"):
         raise RuntimeError(
-            f"scitex-todo mcp channel: agent id is an unexpanded placeholder "
+            f"scitex-cards mcp channel: agent id is an unexpanded placeholder "
             f"({resolved!r}) — the launcher passed the literal text instead of "
             "the value. In .mcp.json use the brace form "
             '"SCITEX_TODO_AGENT_ID": "${SCITEX_TODO_AGENT_ID}" (Claude Code does '
@@ -91,7 +91,7 @@ def resolve_agent_id(arg: str | None = None) -> str:
             f"(the old name is no longer honoured)."
         )
     raise RuntimeError(
-        "scitex-todo mcp channel: agent id unresolved — set "
+        "scitex-cards mcp channel: agent id unresolved — set "
         "SCITEX_TODO_AGENT_ID=<your-agent> or pass --agent <id>. The channel "
         "server must drain a REAL agent's inbox; no silent fallback to a "
         "blank/'unknown' id."
@@ -101,7 +101,7 @@ def resolve_agent_id(arg: str | None = None) -> str:
 def resolve_agent_id_optional(arg: str | None = None) -> str | None:
     """Like :func:`resolve_agent_id` but returns ``None`` instead of raising.
 
-    For the UNIFIED server (``scitex-todo mcp start``): when no identity is
+    For the UNIFIED server (``scitex-cards mcp start``): when no identity is
     configured we still serve the card tools — only the digest push is disabled.
     A resolvable id enables the push; an unresolved one logs a loud warning and
     returns ``None`` so the caller runs tools-only rather than dying.
@@ -110,7 +110,7 @@ def resolve_agent_id_optional(arg: str | None = None) -> str | None:
         return resolve_agent_id(arg)
     except Exception as exc:  # noqa: BLE001 — absence ⇒ tools-only, not fatal
         logger.warning(
-            "scitex-todo mcp: %s — serving tools only, digest push disabled.", exc
+            "scitex-cards mcp: %s — serving tools only, digest push disabled.", exc
         )
         return None
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo reconcile-merged-prs` — auto-close cards whose linked PR merged.
+"""`scitex-cards reconcile-merged-prs` — auto-close cards whose linked PR merged.
 
 Terminal twin of the periodic JobSpec (``_jobs_provider.py``). Scans open
 cards (pending / in_progress / blocked) that carry a ``pr_url``, asks GitHub
@@ -32,9 +32,9 @@ from .._reconcile_prs import reconcile_merged_prs
         "fallback) and — when merged — flips the card to `done` with an "
         "audit comment. DRY-RUN by default; pass --apply to mutate.\n\n"
         "Examples:\n"
-        "  scitex-todo reconcile-merged-prs            # dry-run report\n"
-        "  scitex-todo reconcile-merged-prs --apply    # actually close\n"
-        "  scitex-todo reconcile-merged-prs --json"
+        "  scitex-cards reconcile-merged-prs            # dry-run report\n"
+        "  scitex-cards reconcile-merged-prs --apply    # actually close\n"
+        "  scitex-cards reconcile-merged-prs --json"
     ),
 )
 @click.option(

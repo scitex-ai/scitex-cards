@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo mcp` subgroup — §3 required four verbs (+ channel).
+"""`scitex-cards mcp` subgroup — §3 required four verbs (+ channel).
 
 Verbs:
     start          Launch the FastMCP server (stdio by default).
@@ -13,8 +13,8 @@ Verbs:
 We prefer ``scitex_dev._mcp_cli.attach_mcp_subcommands`` when available
 (keeps every scitex package's `mcp` group identical) and fall back to a
 hand-rolled group when scitex-dev isn't installed (so a fresh
-``pip install scitex-todo[mcp]`` still works). The ``channel`` verb is
-scitex-todo's OWN feature (no scitex-dev parallel) and is wired onto the
+``pip install scitex-cards[mcp]`` still works). The ``channel`` verb is
+scitex-cards' OWN feature (no scitex-dev parallel) and is wired onto the
 group in BOTH paths.
 
 The ``install`` / ``install-fleet`` verbs and the FastMCP tool-introspection
@@ -42,10 +42,20 @@ from ._mcp_tools import (  # noqa: F401
 )
 
 _SERVER_PATH = "scitex_cards._mcp_server:mcp"
-_CLI_NAME = "scitex-todo"
+
+# What this surface CALLS ITSELF. Used for three agent-visible things: the
+# `mcpServers` KEY in the emitted install snippet (so tools namespace as
+# `mcp__scitex-cards__*`), the `command` the entry execs, and the `{prog}` in
+# scitex-dev-rendered help. All three must say the CURRENT name.
+#
+# This is NOT the same decision as the console script: `scitex-todo` stays an
+# installed alias forever (the operator's running units invoke it). Renaming
+# what we ANNOUNCE is safe; renaming what we PUBLISH is not. See
+# `_mcp_install.LEGACY_CLI_NAME` for the matching entry migration.
+_CLI_NAME = "scitex-cards"
 
 _INSTALL_HINT = (
-    "scitex-todo MCP tools require the [mcp] extra:\n  pip install 'scitex-todo[mcp]'"
+    "scitex-cards MCP tools require the [mcp] extra:\n  pip install 'scitex-cards[mcp]'"
 )
 
 
@@ -60,12 +70,12 @@ def _try_import_mcp():
 
 
 def _run_unified_server() -> None:
-    """Run the ONE scitex-todo MCP server over stdio: it serves the card TOOLS
+    """Run the ONE scitex-cards MCP server over stdio: it serves the card TOOLS
     AND pushes this agent's digest (``notifications/claude/channel``).
 
     This merges what used to be two servers — the FastMCP tool server
     (``mcp start``) and the standalone channel server (``mcp channel``) — into a
-    single ``scitex-todo`` MCP integration (one ``.mcp.json`` entry). It reuses
+    single ``scitex-cards`` MCP integration (one ``.mcp.json`` entry). It reuses
     FastMCP's underlying low-level server (``mcp._mcp_server``, which already
     has every ``@mcp.tool()`` registered) and drives it with the channel
     module's own-the-session serve loop so the poll loop can push.
@@ -208,7 +218,7 @@ def _fallback_mcp_group() -> click.Group:
     @click.option("--json", "as_json", is_flag=True)
     def doctor(as_json) -> None:
         diag = {
-            "package": "scitex-todo",
+            "package": "scitex-cards",
             "server_path": _SERVER_PATH,
             "fastmcp": None,
             "tools": 0,
@@ -284,7 +294,7 @@ def _fallback_mcp_group() -> click.Group:
 
     # ── install / install-fleet (extracted) ───────────────────────────── #
     attach_install_verbs(mcp_group)
-    # ── channel (scitex-todo's own standalone server) ─────────────────── #
+    # ── channel (scitex-cards' own standalone server) ─────────────────── #
     attach_channel_verb(mcp_group)
     return mcp_group
 
@@ -317,10 +327,10 @@ def register(main: click.Group) -> None:
             pass
 
         attach_mcp_subcommands(mcp_group, server_path=_SERVER_PATH, cli_name=_CLI_NAME)
-        # Override scitex-dev's tools-only `start` with scitex-todo's UNIFIED
-        # server (tools + digest push) — one `scitex-todo` MCP integration.
+        # Override scitex-dev's tools-only `start` with scitex-cards' UNIFIED
+        # server (tools + digest push) — one `scitex-cards` MCP integration.
         _attach_unified_start(mcp_group)
-        # scitex-todo's OWN channel verb has no scitex-dev parallel — wire it
+        # scitex-cards' OWN channel verb has no scitex-dev parallel — wire it
         # on regardless of which path built the group (kept for back-compat).
         attach_channel_verb(mcp_group)
         main.add_command(mcp_group, name="mcp")

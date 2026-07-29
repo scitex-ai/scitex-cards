@@ -1196,7 +1196,7 @@ def test_mcp_install_payload_has_scitex_cards():
     # Act
     payload = json.loads(result.output)
     # Assert
-    assert "scitex-todo" in payload["mcpServers"]
+    assert "scitex-cards" in payload["mcpServers"]
 
 
 def _mcp_doctor_info():

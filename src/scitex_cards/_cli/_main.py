@@ -61,7 +61,7 @@ _COMMAND_CATEGORIES = (
             "reconcile-merged-prs",
         ),
     ),
-    ("Data & Sync", ("db", "dm", "sync-github", "sync-store", "deliver")),
+    ("Data & Sync", ("db", "dm", "store", "sync-github", "sync-store", "deliver")),
     (
         "Service",
         ("board", "gui", "hub", "mcp", "notifyd", "serve", "watch", "watch-ci"),

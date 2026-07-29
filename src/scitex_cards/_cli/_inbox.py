@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo inbox`` — inbox storage-backend lifecycle.
+"""CLI noun group ``scitex-cards inbox`` — inbox storage-backend lifecycle.
 
 Phase 1 of the store SQLite migration (incident card
 ``store-sqlite-migration-o1-writes-future-20260701``). The per-recipient
@@ -52,8 +52,8 @@ def inbox_group() -> None:
         "Idempotent (dedups on notification id) and reversible (never "
         "deletes the YAML section).\n\n"
         "Example:\n"
-        "  $ scitex-todo inbox migrate-to-sqlite --dry-run\n"
-        "  $ scitex-todo inbox migrate-to-sqlite -y"
+        "  $ scitex-cards inbox migrate-to-sqlite --dry-run\n"
+        "  $ scitex-cards inbox migrate-to-sqlite -y"
     ),
 )
 @click.option(
@@ -84,8 +84,8 @@ def inbox_migrate_cmd(
     """Copy YAML inbox records into SQLite.
 
     Example:
-      $ scitex-todo inbox migrate-to-sqlite --dry-run
-      $ scitex-todo inbox migrate-to-sqlite -y
+      $ scitex-cards inbox migrate-to-sqlite --dry-run
+      $ scitex-cards inbox migrate-to-sqlite -y
     """
     import json as _json
     import sys as _sys
@@ -148,8 +148,8 @@ def inbox_migrate_cmd(
         "Print status of the SQLite inbox DB (row count, unseen count, "
         "path).\n\n"
         "Example:\n"
-        "  $ scitex-todo inbox info\n"
-        "  $ scitex-todo inbox info --json"
+        "  $ scitex-cards inbox info\n"
+        "  $ scitex-cards inbox info --json"
     ),
 )
 @click.option(
@@ -162,8 +162,8 @@ def inbox_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite inbox DB.
 
     Example:
-      $ scitex-todo inbox info
-      $ scitex-todo inbox info --json
+      $ scitex-cards inbox info
+      $ scitex-cards inbox info --json
     """
     import json as _json
 
@@ -177,7 +177,7 @@ def inbox_info_cmd(as_json: bool) -> None:
         return
     if not payload["exists"]:
         click.echo(f"# inbox DB does not exist yet: {payload['path']}")
-        click.echo("# run `scitex-todo inbox migrate-to-sqlite -y` to populate.")
+        click.echo("# run `scitex-cards inbox migrate-to-sqlite -y` to populate.")
         return
     click.echo(
         f"# inbox DB: {payload['path']}\n"

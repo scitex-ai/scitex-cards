@@ -1,10 +1,10 @@
 ---
 description: |
   [TOPIC] Python API
-  [DETAILS] Public API of scitex-todo — loader/saver, mermaid builder,
+  [DETAILS] Public API of scitex-cards — loader/saver, mermaid builder,
   renderer (mmdc/kroki), path resolution, and the STATUS_STYLE / VALID_STATUSES
   tables. The full surface is `scitex_cards.__all__`.
-tags: [scitex-todo-python-api]
+tags: [scitex-cards-python-api]
 ---
 
 # Python API
@@ -19,7 +19,7 @@ task-store APIs that match a Convention A MCP tool name 1:1: `add_task` /
 `resolve_store`. The rendering / model / paths helpers below remain
 importable from their submodules (`scitex_cards._diagram`,
 `scitex_cards._diagram`, `scitex_cards._model`, `scitex_cards._paths`). Run
-`scitex-todo list-python-apis -v` for live signatures of the public surface.
+`scitex-cards list-python-apis -v` for live signatures of the public surface.
 
 ## Loading and saving
 

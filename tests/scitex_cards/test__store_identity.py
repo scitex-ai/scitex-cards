@@ -107,14 +107,37 @@ def test_a_genuinely_different_store_is_still_refused(tmp_path, monkeypatch):
     assert not allowed
 
 
-def test_a_store_that_does_not_exist_yet_falls_back_to_path_comparison(
+def test_a_store_that_cannot_be_stat_ed_is_CANNOT_TELL_not_a_path_compare(
     tmp_path, monkeypatch
 ):
-    """Identity needs a file to ask about; a name still has to work without one.
+    """CHANGED DELIBERATELY. This test used to pin the realpath STRING fallback.
 
-    In DB-canonical mode the YAML store is frequently a NAME the database is
-    stamped with rather than a file on disk, so ``stat`` has nothing to compare
-    and the realpath fallback carries the case.
+    It asserted that when a stamped path cannot be ``stat``-ed, the guard falls
+    back to comparing realpath strings — so a stamp and a caller that SPELL the
+    path identically are "the same store" even though neither exists. Under
+    ``docs/design/store-identity-is-a-uuid.md`` §8 that fallback is REMOVED and
+    this row of the truth table now reads ``either path not stat-able -> CANNOT
+    TELL -> False``.
+
+    WHY THE OLD ASSERTION HAD TO GO. scitex-dev's framing, endorsed in the
+    design: *a fallback that triggers only in the case it cannot judge is worse
+    than no fallback.* It fires precisely when a path is unstat-able — i.e.
+    exactly when you are across a mount-namespace boundary and least entitled
+    to an opinion. On the host, ``/home/agent/.scitex/cards/cards.db`` cannot be
+    stat'd, so the strings never matched, and the board was refused its own
+    database with an HTTP 500 all day on 2026-07-28.
+
+    WHY REMOVING IT COSTS NOTHING REAL. This test's original premise — "in
+    DB-canonical mode the YAML store is frequently a NAME the database is
+    stamped with rather than a file on disk" — no longer holds at any
+    production call site. Both doors call ``_db_mirrors_this_store(db_path,
+    db_path)``, and a ``db_path`` that does not exist returns ``True`` at the
+    first line. The only unstat-able side reachable in production is the STAMPED
+    path, which is the cross-namespace case the fallback answered WRONGLY.
+
+    The escape from CANNOT TELL is not a looser comparison — it is binding the
+    store to an identity once (``scitex-cards store adopt-uuid``), after which
+    the path is not consulted at all.
     """
     # Arrange — stamp for a path, then delete it.
     ghost = tmp_path / "ghost.yaml"
@@ -123,8 +146,8 @@ def test_a_store_that_does_not_exist_yet_falls_back_to_path_comparison(
     ghost.unlink()
     assert not ghost.exists()
 
-    # Act / Assert — same name, still the same store.
-    assert _db_mirrors_this_store(db, ghost)
+    # Act / Assert — the kernel cannot be asked, so the guard does not guess.
+    assert not _db_mirrors_this_store(db, ghost)
     assert not _db_mirrors_this_store(db, tmp_path / "someone-else.yaml")
 
 

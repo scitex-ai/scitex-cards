@@ -1,20 +1,20 @@
 ---
 description: |
   [TOPIC] MCP Tools Reference
-  [DETAILS] scitex-todo's FastMCP tool surface — Convention A (tool_name ==
+  [DETAILS] scitex-cards's FastMCP tool surface — Convention A (tool_name ==
   Python API name). Each tool is a thin async wrapper around the matching
   `scitex_cards.<api>` function and returns a JSON string of the same shape
   the Python API returns.
-tags: [scitex-todo-mcp-tools]
+tags: [scitex-cards-mcp-tools]
 ---
 
 # MCP Tools
 
 ```bash
-scitex-todo mcp list-tools -vv     # enumerate registered tools
-scitex-todo mcp doctor             # self-diagnose the install
-scitex-todo mcp install            # print Claude Code config snippet
-scitex-todo mcp start              # launch the FastMCP server (stdio)
+scitex-cards mcp list-tools -vv     # enumerate registered tools
+scitex-cards mcp doctor             # self-diagnose the install
+scitex-cards mcp install            # print Claude Code config snippet
+scitex-cards mcp start              # launch the FastMCP server (stdio)
 ```
 
 ## Tool surface (Convention A)
@@ -77,7 +77,7 @@ respect is documented in [02_quick-start.md](02_quick-start.md).
 ## Discovering tool names at runtime
 
 ```bash
-scitex-todo mcp list-tools --json | jq '.[].name'
+scitex-cards mcp list-tools --json | jq '.[].name'
 ```
 
 See `general/03_interface_03_mcp/` for the ecosystem-wide MCP tool grammar.
