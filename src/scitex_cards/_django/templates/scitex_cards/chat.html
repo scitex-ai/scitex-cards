@@ -471,6 +471,7 @@ that each added a stylesheet at this spot. They are independent components
 and the page needs both — this was a textual collision, not a real one.)
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
 <style>
@@ -772,7 +773,9 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_title.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_marquee.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longpress.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>

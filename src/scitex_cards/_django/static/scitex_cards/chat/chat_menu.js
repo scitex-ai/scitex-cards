@@ -289,15 +289,14 @@
       openAt($forward, rect.left, rect.top);
     }
 
-    /* Forward = an ordinary message to another peer whose body opens with a
-     * "[forwarded from <name>, <ts>]" banner. No new endpoint, no new field,
-     * no new record kind — the existing compose path carries it, and an older
-     * client shows the banner as text instead of showing nothing. */
     /* POST one already-composed body to `toPeer`, resolving on success.
      *
-     * The ONE forward POST on the page. Selection mode's bulk forward chains
-     * this rather than owning a second copy — two POSTs to the same endpoint
-     * would be two places for the error handling to drift apart. */
+     * Forward = an ordinary message whose body opens with a "[forwarded from
+     * <name> …]" banner. No new endpoint, no new field, no new record kind —
+     * the existing compose path carries it, and an older client shows the
+     * banner as text instead of showing nothing. This is the ONE forward POST
+     * on the page; selection mode's bulk forward chains it rather than owning
+     * a second copy that could drift apart on error handling. */
     function sendForwardBody(toPeer, body) {
       return fetch(host.apiBase + "/dm/thread/" + encodeURIComponent(toPeer), {
         method: "POST",
@@ -312,7 +311,10 @@
     }
 
     function sendForward(toPeer, record) {
-      sendForwardBody(toPeer, actions.forwardBody(record))
+      // Same provenance as the bulk path: one forward and six forwards must
+      // not disagree about who the message was originally sent to.
+      var to = actions.forwardOriginalTo(record, host.getPeer(), host.viewer);
+      sendForwardBody(toPeer, actions.forwardBody(record, to))
         .then(function () {
           host.onForwarded(toPeer, 1);
         })
@@ -350,60 +352,28 @@
 
     $messages.addEventListener("contextmenu", function (event) {
       var node = event.target.closest ? event.target.closest(".msg") : null;
-      if (!node || menuSuppressed()) return; // blank space keeps the browser menu
+      if (!node) return; // blank space keeps the browser menu
+      // preventDefault runs BEFORE the suppression check. Suppressed means "we
+      // open no menu", never "Chrome opens its own" — the old early return
+      // handed selection mode straight to the native menu, which is the bug
+      // the operator screenshotted (measured: defaultPrevented was false).
       event.preventDefault();
+      if (menuSuppressed()) {
+        if (select) select.toggleAt(node); // a press here means "select this"
+        return;
+      }
       openMenuFor(node, event.clientX, event.clientY);
     });
 
-    /* Touch has no right-click, and this board exists for a phone. A long
-     * press is the platform-native way to ask "what can I do with this?" —
-     * without it, React and Forward would be desktop-only features on a
-     * mobile-first page. Movement cancels, so a press that turns into a scroll
-     * does not fire a menu the operator did not ask for. */
-    var LONG_PRESS_MS = 420;
-    var MOVE_CANCEL_PX = 10;
-    var pressTimer = null;
-    var pressAt = null;
-
-    function clearPress() {
-      if (pressTimer) clearTimeout(pressTimer);
-      pressTimer = null;
-      pressAt = null;
+    /* Touch's stand-in for right-click. The gesture recogniser lives in
+     * chat_longpress.js; this only says what a recognised press means. */
+    if (root.ChatLongPress) {
+      root.ChatLongPress.mount({
+        messagesEl: $messages,
+        suppressed: menuSuppressed,
+        onLongPress: openMenuFor,
+      });
     }
-
-    $messages.addEventListener(
-      "touchstart",
-      function (event) {
-        var node = event.target.closest ? event.target.closest(".msg") : null;
-        if (!node || event.touches.length !== 1 || menuSuppressed()) return;
-        var touch = event.touches[0];
-        pressAt = { x: touch.clientX, y: touch.clientY };
-        pressTimer = setTimeout(function () {
-          openMenuFor(node, pressAt.x, pressAt.y);
-          clearPress();
-        }, LONG_PRESS_MS);
-      },
-      { passive: true },
-    );
-
-    $messages.addEventListener(
-      "touchmove",
-      function (event) {
-        if (!pressAt || !event.touches.length) return;
-        var touch = event.touches[0];
-        if (
-          Math.abs(touch.clientX - pressAt.x) > MOVE_CANCEL_PX ||
-          Math.abs(touch.clientY - pressAt.y) > MOVE_CANCEL_PX
-        ) {
-          clearPress();
-        }
-      },
-      { passive: true },
-    );
-
-    ["touchend", "touchcancel"].forEach(function (name) {
-      $messages.addEventListener(name, clearPress, { passive: true });
-    });
 
     document.addEventListener("click", function (event) {
       var inside = panels().some(function (panel) {
@@ -472,6 +442,8 @@
         showError: host.showError,
         showNotice: host.showNotice,
         getMessages: host.getMessages,
+        getPeer: host.getPeer,
+        viewer: host.viewer,
         openForwardPicker: openForwardPicker,
         sendForwardBody: sendForwardBody,
         onForwarded: host.onForwarded,
