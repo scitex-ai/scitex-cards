@@ -21,7 +21,7 @@ What landed, against what this document specifies:
 | §7 uuid-first guard | `_dual_write._db_mirrors_this_store` |
 | §8 realpath fallback removed | `_dual_write._same_file` |
 | §9 migration verb | `scitex-cards store adopt-uuid` |
-| §11 exposure | `_store.resolve_store()`, `_health_store_identity` |
+| §11 exposure | `_store.resolve_store()`, `_health_store._check_store_identity_agrees` |
 
 Two things this document did not anticipate, both recorded in §14.
 
@@ -426,7 +426,28 @@ write is pure harm. It is still refreshed when this namespace cannot stat the
 stamped path, because a spelling the current reader can resolve is strictly more
 useful than one nobody here can.
 
-### 14.3 `check_fresh` is uuid-first too
+### 14.3 Two sibling branches landed on the same lines while this was open
+
+Both were taken rather than clobbered, and neither was reverted.
+
+**#610, "the provenance stamp is claimed once, not rewritten per write."** This
+branch had made the same change for the same reason. #610's version is better —
+it carries the measured inode (`2096/3417791`), the three names, and the RACE
+that explains why three correct repairs were each undone: the repair stamps a
+host-visible name, the next container-side write re-stamps `/home/agent/...`,
+and every container write wins that race. Its version was taken whole. Only its
+"THIS IS A MITIGATION, NOT THE FIX ... until that lands" paragraph was updated,
+because with this PR the fix has landed and the path stamp is now diagnostic.
+Its `tests/scitex_cards/test__stamp_is_claimed_once.py` is untouched and passes:
+it builds its two names from a HARD LINK, so both paths are stat-able and the
+removal of the realpath fallback cannot reach it.
+
+**#611**, which split `_health.py` into `_health_store.py` for the same
+line-cap reason this PR did. Its structure was taken and this PR's separate
+`_health_store_identity.py` deleted — one home for the store checks, not two.
+The uuid-aware `_check_store_identity_agrees` now lives in `_health_store.py`.
+
+### 14.4 `check_fresh` is uuid-first too
 
 §7 names only `_db_mirrors_this_store`. `_db_freshness.check_fresh` asks the
 same ownership question and has no production caller today, but leaving it
