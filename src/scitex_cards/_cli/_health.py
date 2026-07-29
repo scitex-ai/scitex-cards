@@ -57,7 +57,10 @@ def health_cmd(as_json: bool) -> None:
     status = "OK" if report["ok"] else "UNHEALTHY"
     click.echo(f"# scitex-cards health: {status} — {report['summary']}")
     for check in report["checks"]:
-        mark = "ok  " if check["ok"] else "FAIL"
+        # THREE-VALUED. `ok is None` means the check could not measure, which is
+        # neither a pass nor a fault; printing it as FAIL invents an alarm and
+        # printing it as ok hides a blind spot. It gets its own mark.
+        mark = {True: "ok  ", False: "FAIL"}.get(check["ok"], "????")
         click.echo(f"[{mark}] {check['name']}: {check['detail']}")
         if check["hint"]:
             click.echo(f"        hint: {check['hint']}")
