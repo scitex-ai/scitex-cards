@@ -16,6 +16,10 @@ separation of concerns:
   gate (quiet-hours/consent); a False result is a NON-terminal ``skipped``.
 * Fail-soft per item: a channel that RAISES is caught, recorded ``failed``
   (retryable), surfaced to stderr, and never stops the other items.
+* Fail-soft is NOT fail-silent: a recipient whose INBOX cannot be read is
+  counted (``unreadable``) and named in ``faults``, and the pass then reports
+  ``pending=None`` — "I could not determine what is pending" — rather than the
+  ``0`` that made a day-long outage look like an idle daemon.
 """
 
 from __future__ import annotations
@@ -45,6 +49,25 @@ def _resolve_channels(
     return discover_channels()
 
 
+def _still_owed(ledger: Ledger, user: str, note_id: str, chan_name: str) -> bool:
+    """Does the ledger still owe this (notification, channel) a delivery?
+
+    False in exactly two cases, both permanent:
+
+    * ALREADY DELIVERED — the ledger is the truth; never re-send.
+    * PERMANENTLY FAILED — the retry budget is exhausted. That comm-miss was
+      recorded + surfaced loudly once; re-attempting or re-warning every run
+      would spam. The terminal marker stays in the ledger for audit.
+
+    A False here is NOT "nothing to do" for the tick as a whole — it is one
+    settled item. The pending COUNT this function feeds is what lets the tick
+    line say ``pending=0`` honestly.
+    """
+    if ledger.already_done(user, note_id, chan_name):
+        return False
+    return not ledger.is_terminal(user, note_id, chan_name)
+
+
 def _attempt_one(
     *,
     recipient: Recipient,
@@ -64,14 +87,8 @@ def _attempt_one(
     chan_name = channel.name
     user = recipient.user
 
-    # 1. Already delivered? Ledger is the truth — never re-send.
-    if ledger.already_done(user, note_id, chan_name):
-        return "noop"
-
-    # 1b. Permanently failed (retry budget exhausted). Already recorded +
-    #     surfaced loudly once; never re-attempt and never re-warn (that would
-    #     spam every run). The terminal marker stays in the ledger for audit.
-    if ledger.is_terminal(user, note_id, chan_name):
+    # 1. Settled already — delivered, or permanently failed. See _still_owed.
+    if not _still_owed(ledger, user, note_id, chan_name):
         return "noop"
 
     # 2. A prior failure that is NOT yet due for retry → skip silently.
@@ -166,20 +183,32 @@ def deliver_pending(
     -------
     dict
         ``{"sent": n, "failed": n, "skipped": n, "failed_terminal": n,
+        "unreadable": n, "pending": n | None, "faults": [...],
         "outcomes": [...]}`` where each outcome is
         ``{recipient, notification_id, channel, outcome}`` for every item that
         produced a ledger write this run (``noop`` items — already-sent /
         not-yet-retry-due / already-terminal — are NOT listed).
         ``failed_terminal`` counts items whose retry budget was exhausted THIS
-        run (a comm-miss surfaced loudly to stderr).
+        run (a comm-miss surfaced loudly to stderr). ``unreadable`` counts
+        recipients whose inbox could not be read at all, and ``pending`` is
+        THREE-VALUED: an int when every inbox was readable, else ``None`` —
+        "could not determine", never a stand-in ``0``.
     """
     now = now or _dt.datetime.now(_dt.timezone.utc)
     resolved_channels = _resolve_channels(channels)
     ledger = Ledger.load(store)
     recipients = load_recipients(store)
 
-    counts = {"sent": 0, "failed": 0, "skipped": 0, "failed_terminal": 0}
+    counts = {
+        "sent": 0,
+        "failed": 0,
+        "skipped": 0,
+        "failed_terminal": 0,
+        "unreadable": 0,
+    }
     outcomes: list[dict] = []
+    faults: list[str] = []
+    pending = 0
 
     for recipient in recipients:
         # READ-ONLY: full history, never advance the user's seen cursor.
@@ -191,10 +220,14 @@ def deliver_pending(
                 store=store,
             )
         except Exception as exc:  # noqa: BLE001 — one bad recipient ≠ all.
+            # COUNTED, not merely warned: with this recipient's inbox unread we
+            # no longer know what is pending, and the pass must say so.
             _warn(
                 f"failed to read inbox for {recipient.user!r}: "
                 f"{type(exc).__name__}: {exc}; skipping recipient"
             )
+            counts["unreadable"] += 1
+            faults.append(f"inbox[{recipient.user}]: {type(exc).__name__}: {exc}")
             continue
 
         for note in notes:
@@ -210,6 +243,8 @@ def deliver_pending(
                         f"skipping that channel"
                     )
                     continue
+                if _still_owed(ledger, recipient.user, note_id, channel.name):
+                    pending += 1
                 outcome = _attempt_one(
                     recipient=recipient,
                     channel_cfg=channel_cfg,
@@ -231,7 +266,14 @@ def deliver_pending(
                     }
                 )
 
-    return {**counts, "outcomes": outcomes}
+    # THREE-VALUED: an unreadable inbox means the pending count is a guess, and
+    # a guess reported as 0 is what made a broken daemon look idle. Say unknown.
+    return {
+        **counts,
+        "pending": None if counts["unreadable"] else pending,
+        "faults": faults,
+        "outcomes": outcomes,
+    }
 
 
 __all__ = ["deliver_pending"]

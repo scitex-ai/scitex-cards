@@ -24,13 +24,14 @@ external cron:
   forgotten, but the warning does not spam every tick.
 * SWEEPS (:mod:`._sweeps`): each tick first runs the reminder/escalation sweep,
   and — on its OWN much slower cadence (``--nudge-sweep-minutes``) — the
-  fleet-liveness stale/backlog nudge sweep, which before this had no scheduled
-  caller at all. Both are individually guarded: a raising sweep never stops the
-  delivery pass that follows it.
-* TICK RESILIENCE: each tick's work is wrapped so an unexpected error (ledger
-  corruption, a disk/clock fault) is logged with a traceback and the loop
-  CONTINUES to the next tick rather than dying. Combined with the unit's
-  ``Restart=on-failure`` this self-heals under both foreground and systemd runs.
+  fleet-liveness stale/backlog nudge sweep. Both are individually guarded: a
+  raising sweep never stops the delivery pass that follows it.
+* TICK RESILIENCE, AND TICK TRUTHFULNESS (:mod:`._liveness`): each tick's work
+  is wrapped so an unexpected error is logged and the loop CONTINUES rather
+  than dying — but every guard also RETURNS its verdict, so a tick that could
+  not read the store reports ``state=failed pending=unknown`` instead of the
+  ``sent=0 failed=0`` a healthy idle daemon prints. A run of failures escalates
+  to ERROR. Surviving an outage is worthless if nobody can see it happening.
 
 Test seams (NO mocks): inject ``sleep`` (a no-op so tests never sleep for
 real), ``now_fn`` (deterministic clock), a ``stop`` event (tripped after K
@@ -50,7 +51,8 @@ import time
 from pathlib import Path
 
 from .._inbox import _resolved_store
-from ._ledger import TERMINAL_STATUS, Ledger, _KEY_SEP, ledger_path
+from ._ledger import _KEY_SEP, TERMINAL_STATUS, Ledger, ledger_path
+from ._liveness import DeliveryLiveness, liveness_path, tick_health
 from ._loop import deliver_pending
 from ._pidfile import DEFAULT_INTERVAL as _PIDFILE_DEFAULT_INTERVAL
 from ._pidfile import render as _render_pidfile
@@ -96,16 +98,11 @@ def pidfile_path(store: str | Path | None = None) -> Path:
 class _SingleInstanceLock:
     """A NON-BLOCKING exclusive ``flock`` on the pidfile, held for the daemon's life.
 
-    Unlike :func:`scitex_cards._model._store_lock` (a blocking per-write lock
-    released at context exit), this lock is acquired ONCE at daemon start with
-    ``LOCK_NB`` so a second daemon fails fast rather than queueing behind the
-    first. The fd is kept open for the whole run; releasing it (and removing
-    the pidfile) is what frees the slot for a restart.
-
-    The pidfile is ALSO the daemon's HEARTBEAT (:mod:`._pidfile`): the bytes
-    carry our namespace identity plus a stamp refreshed every tick, because a
-    reader in a DIFFERENT PID namespace (the fleet's containers share the store
-    by bind-mount) cannot interpret the pid at all — only freshness.
+    Acquired ONCE at start with ``LOCK_NB`` so a second daemon fails fast rather
+    than queueing behind the first; releasing it (and removing the pidfile) is
+    what frees the slot for a restart. The pidfile is ALSO the daemon's
+    HEARTBEAT (:mod:`._pidfile`) — a cross-namespace reader cannot interpret our
+    pid at all, only the freshness of the stamp we refresh every tick.
     """
 
     def __init__(self, path: Path, *, interval: float = DEFAULT_INTERVAL):
@@ -181,14 +178,11 @@ def report_terminal_misses(store: str | Path | None = None) -> list[dict]:
     """Scan the ledger for ALL current ``failed_terminal`` entries.
 
     A terminal entry is a permanent comm-miss: the retry budget was exhausted
-    and the notification was never delivered. The loop surfaces each one LOUDLY
-    exactly once when it first turns terminal, but that stderr line scrolls
-    past. This scan lets the daemon re-surface the standing set periodically so
-    a long-undeliverable user is never silently forgotten.
-
-    Returns a list of ``{recipient, note_id, channel, attempts, last_ts,
-    detail}`` dicts, one per outstanding terminal entry, sorted for stable
-    output. Reads the ledger fresh off disk (it is the sole delivery truth).
+    and the notification was never delivered. This scan lets the daemon
+    re-surface the STANDING set periodically (the one-off stderr line scrolls
+    past), so a long-undeliverable user is never silently forgotten. Returns
+    ``{recipient, note_id, channel, attempts, last_ts, detail}`` dicts, sorted,
+    read fresh off disk — the ledger is the sole delivery truth.
     """
     ledger = Ledger.load(store)
     out: list[dict] = []
@@ -213,20 +207,6 @@ def report_terminal_misses(store: str | Path | None = None) -> list[dict]:
         )
     out.sort(key=lambda d: (d["recipient"], d["note_id"], d["channel"]))
     return out
-
-
-def _log_tick_summary(tick: int, summary: dict) -> None:
-    """Log the one-line per-tick delivery summary."""
-    logger.info(
-        "notifyd tick %d: sent=%d failed=%d skipped=%d failed_terminal=%d "
-        "(%d recorded)",
-        tick,
-        summary.get("sent", 0),
-        summary.get("failed", 0),
-        summary.get("skipped", 0),
-        summary.get("failed_terminal", 0),
-        len(summary.get("outcomes", [])),
-    )
 
 
 def _report_terminal_if_due(
@@ -351,14 +331,17 @@ def run_notifyd(
     Returns
     -------
     dict
-        ``{iterations, totals, stopped_by}`` — total ticks run, summed
-        sent/failed/skipped/failed_terminal counts, and why it stopped
-        (``"stop_event" | "max_iterations"``).
+        ``{iterations, totals, stopped_by, liveness}`` — total ticks run, summed
+        sent/failed/skipped/failed_terminal/unreadable counts, why it stopped
+        (``"stop_event" | "max_iterations"``), and the delivery-liveness
+        snapshot (consecutive failures, last successful delivery, per-state tick
+        counts) that :func:`scitex_cards._health.health` also reads off disk.
     """
     stop = stop or threading.Event()
     now_fn = now_fn or (lambda: _dt.datetime.now(_dt.timezone.utc))
     sweep_minutes = (
-        nudge_sweep_minutes if nudge_sweep_minutes is not None
+        nudge_sweep_minutes
+        if nudge_sweep_minutes is not None
         else _nudge_sweep_minutes()
     )
     last_nudge_sweep: _dt.datetime | None = None
@@ -369,9 +352,19 @@ def run_notifyd(
 
     restore_signals = _install_signal_handlers(stop)
 
-    totals = {"sent": 0, "failed": 0, "skipped": 0, "failed_terminal": 0}
+    totals = {
+        "sent": 0,
+        "failed": 0,
+        "skipped": 0,
+        "failed_terminal": 0,
+        "unreadable": 0,
+    }
     iterations = 0
     stopped_by = "stop_event"
+    # The thing that makes a broken tick COUNT: rolling liveness across ticks,
+    # which logs the per-tick verdict and escalates a run of failures to ERROR.
+    tracker = DeliveryLiveness()
+    liveness_file = liveness_path(store)
 
     logger.info(
         "notifyd started: pid=%d store=%s interval=%.1fs "
@@ -394,8 +387,10 @@ def run_notifyd(
             # write it must be loud (logged) yet must not cost us this tick's
             # delivery. A missed stamp is a health-visibility bug; a skipped
             # delivery is a comm-miss. Never trade the second for the first.
+            tick_at: _dt.datetime | None = None
             try:
-                lock.heartbeat(now_fn())
+                tick_at = now_fn()
+                lock.heartbeat(tick_at)
             except Exception:  # noqa: BLE001 — a bad disk/clock != kill the daemon
                 logger.exception(
                     "notifyd tick %d: heartbeat stamp failed; continuing",
@@ -407,29 +402,36 @@ def run_notifyd(
             # traceback, and continue to the next tick. This self-heals under
             # BOTH foreground `scitex-todo notifyd` AND systemd (which also has
             # Restart=on-failure as a second safety net).
+            # Every guarded step CONTRIBUTES its verdict here. A swallowed
+            # exception that leaves no trace in `faults` is the whole defect
+            # this collects against: the tick line then reads sent=0 failed=0,
+            # which is indistinguishable from a healthy idle daemon.
+            faults: list[str] = []
+            summary: dict | None = None
             try:
                 # NAG sweep FIRST: enqueue any due reminders / escalations so
                 # this same tick's deliver_pending sends them. Its own guard so
                 # a sweep error never blocks delivery of already-queued notes.
-                _run_reminder_sweep(store=store, now=now_fn())
+                faults += _run_reminder_sweep(store=store, now=now_fn()).faults
                 # LIVENESS sweep on its OWN (much slower) cadence — the stale/
                 # backlog nudge scans the whole store, so it stays OUT of the
                 # per-tick delivery path.
                 tick_now = now_fn()
-                if _nudge_sweep_due(
-                    last_nudge_sweep, tick_now, minutes=sweep_minutes
-                ):
+                if _nudge_sweep_due(last_nudge_sweep, tick_now, minutes=sweep_minutes):
                     last_nudge_sweep = tick_now
                     # Guarded AT THE CALL SITE, not only inside the sweep: the
                     # tick's outer guard would skip THIS TICK'S DELIVERY if the
                     # sweep escaped, which is precisely the coupling the sweep
                     # must never have. Delivery runs even when detection dies.
                     try:
-                        _run_stale_nudge_sweep(store=store, now=tick_now)
-                    except Exception:  # noqa: BLE001 — never block delivery
+                        faults += _run_stale_nudge_sweep(
+                            store=store, now=tick_now
+                        ).faults
+                    except Exception as exc:  # noqa: BLE001 — never block delivery
                         logger.exception(
                             "notifyd liveness sweep raised; continuing to delivery"
                         )
+                        faults.append(f"liveness_sweep: {type(exc).__name__}: {exc}")
                 summary = deliver_pending(
                     store=store,
                     channels=channels,
@@ -437,16 +439,27 @@ def run_notifyd(
                 )
                 for key in totals:
                     totals[key] += summary.get(key, 0)
-                _log_tick_summary(iterations, summary)
                 _report_terminal_if_due(
                     tick=iterations,
                     every=terminal_report_every,
                     store=store,
                 )
-            except Exception:  # noqa: BLE001 — one bad tick != kill the daemon
+            except Exception as exc:  # noqa: BLE001 — one bad tick != kill it
                 logger.exception(
                     "notifyd tick %d raised; continuing to next tick", iterations
                 )
+                faults.append(f"tick: {type(exc).__name__}: {exc}")
+            # The tick's ONE reported answer: quiet when idle, a WARNING when it
+            # could not tell what was pending, an ERROR once that persists.
+            tracker.record(
+                tick=iterations,
+                health=tick_health(summary, faults=faults),
+                # `tick_at` is None only when the injected clock itself failed
+                # (already logged above); liveness must still be stamped, so
+                # fall back to the real one rather than skip the accounting.
+                now=tick_at or _dt.datetime.now(_dt.timezone.utc),
+                path=liveness_file,
+            )
 
             # Re-check stop BEFORE sleeping so a stop set during the tick (or
             # by max_iterations) ends the loop without an extra wait.
@@ -472,6 +485,7 @@ def run_notifyd(
         "iterations": iterations,
         "totals": totals,
         "stopped_by": stopped_by,
+        "liveness": tracker.snapshot(),
     }
 
 

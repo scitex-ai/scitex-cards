@@ -24,6 +24,7 @@ from scitex_cards._delivery import _daemon
 from scitex_cards._delivery._sweeps import (
     DEFAULT_NUDGE_SWEEP_MINUTES,
     ENV_NUDGE_SWEEP_MINUTES,
+    SweepOutcome,
     _nudge_sweep_due,
     _nudge_sweep_minutes,
     _run_stale_nudge_sweep,
@@ -72,7 +73,7 @@ def _run_loop_with_raising_sweep(tmp_path, monkeypatch) -> dict:
 
     def _boom(*, store, now):
         calls.append(1)
-        raise RuntimeError("sweep exploded")
+        raise RuntimeError("sweep exploded")  # escapes the sweep's own guard
 
     monkeypatch.setattr(_daemon, "_run_stale_nudge_sweep", _boom)
 
@@ -106,6 +107,9 @@ def _run_loop_recording_sweep_calls(
 
     def _count(*, store, now):
         calls.append(now)
+        # The real sweep answers with a SweepOutcome the tick folds into its
+        # verdict; a stand-in that returned None would be a different contract.
+        return SweepOutcome.success("liveness_sweep")
 
     monkeypatch.setattr(_daemon, "_run_stale_nudge_sweep", _count)
 
@@ -182,7 +186,18 @@ class TestSweepIsFailSoft:
         outcome = _run_stale_nudge_sweep(store=store, now=T0)
         # Assert
         # it returned rather than raising out of the loop's tick.
-        assert outcome is None
+        assert isinstance(outcome, SweepOutcome)
+
+    def test_a_swallowed_error_is_still_REPORTED_to_the_tick(self, tmp_path):
+        # Arrange
+        # Swallowing kept the loop alive; NOT reporting is what made a
+        # day-long outage print the same line as a healthy idle daemon.
+        store = tmp_path / "tasks.yaml"
+        store.write_text("{{{ not yaml", encoding="utf-8")
+        # Act
+        outcome = _run_stale_nudge_sweep(store=store, now=T0)
+        # Assert
+        assert outcome.ok is False
 
 
 class TestNotifydLoop:

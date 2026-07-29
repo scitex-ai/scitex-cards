@@ -41,6 +41,13 @@ from ._daemon import (
     report_terminal_misses,
     run_notifyd,
 )
+from ._liveness import (
+    DeliveryLiveness,
+    TickHealth,
+    TickState,
+    assess_delivery_liveness,
+    liveness_path,
+)
 from ._loop import deliver_pending
 from ._recipients import load_recipients, should_deliver_now
 from ._registry import discover_channels
@@ -48,10 +55,15 @@ from ._registry import discover_channels
 __all__ = [
     "DaemonAlreadyRunning",
     "DeliveryChannel",
+    "DeliveryLiveness",
     "DeliveryResult",
     "Status",
+    "TickHealth",
+    "TickState",
+    "assess_delivery_liveness",
     "deliver_pending",
     "discover_channels",
+    "liveness_path",
     "load_recipients",
     "pidfile_path",
     "report_terminal_misses",
