@@ -121,14 +121,45 @@ environment: everything the verdict depends on is in its two arguments.
 | `db_uuid` | `expected` | verdict | why |
 | --- | --- | --- | --- |
 | `None` | `None` | `ADOPT` | legacy/fresh database, nothing claims it |
-| `None` | `X` | `ADOPT` | see the open question in section 10 |
+| `None` | `X` | `REFUSE` | a database that never demonstrated it is `X` does not satisfy a statement that it must be `X` (section 5.1) |
 | `X` | `None` | `ACCEPT` | absence of an expectation is not evidence of a foreign store (contract rule 4b) |
 | `X` | `X` | `ACCEPT` | same store, whatever it is called here |
-| `X` | `Y` | `REFUSE` | the ONLY refusal |
+| `X` | `Y` | `REFUSE` | a declared expectation, contradicted |
 
-`REFUSE` is reached in exactly one row. That is deliberate: a guard that
-refuses in the cases it cannot judge denies service to the process that was
-explicitly pointed at the store, which is what took the board down.
+`REFUSE` is reached in exactly the two rows where an expectation was DECLARED
+and the database did not meet it. Where no expectation was declared the guard
+never refuses: a guard that refuses in the cases it cannot judge denies service
+to the process that was explicitly pointed at the store, which is what took the
+board down. Row 1 therefore stays `ADOPT`, because today that is every database
+in existence, including the live board.
+
+### 5.1 Why row 2 REFUSES
+
+Recorded as an open question in the first draft of this document and DECIDED
+before merge. The reason is not symmetry with row 5; it is what `ADOPT` actually
+does on this row.
+
+Under `ADOPT` the guard does not merely proceed, it MINTS -- it writes the
+expected uuid into a database that never demonstrated it deserved that identity.
+A misresolution then becomes permanent, SELF-CERTIFYING identity that every later
+check agrees with, including the checks built to catch it. Refusing is
+recoverable; adopting manufactures the evidence.
+
+Measured corroboration: on 2026-07-28 a board served HTTP 200 with ZERO cards
+while the store held 2647. Row 1 (`None`/`None`) must stay `ADOPT` for legacy
+databases, so Row 2 = `REFUSE` is the ONLY rule that closes
+misresolution-to-an-empty-database.
+
+Note the asymmetry that keeps this consistent with contract rule 4b: 4b is about
+the CALLER lacking an expectation (accept -- absence of an expectation is not
+evidence of a foreign store). Row 2 is about the DATABASE lacking an identity
+while the caller HAS named one, which is a different question and gets a
+different answer.
+
+The cost of this row is that a store can no longer be bound by a write once an
+expectation is configured, so the migration must go through `adopt-uuid`. That
+is not a hazard on its own -- it is a hazard only if the two steps are done in
+the wrong order, which constraint 1 of section 9 forbids outright.
 
 ## 6. Identity and resolution stay TWO SEPARATE RULES
 
@@ -156,14 +187,21 @@ which is NOT xfail -- it passes today and must keep passing.
 
 ```
 1. database does not exist            -> True   (unchanged: nothing to clobber)
-2. read schema_meta.store_uuid
-3. present  -> identity_verdict(store_uuid, expected_store_uuid())
-                 ACCEPT -> True
-                 REFUSE -> False, logged
-               THE PATH IS NOT CONSULTED AT ALL on this branch.
-4. absent   -> LEGACY: today's store_path comparison, with the realpath
+2. read schema_meta.store_uuid        (MAY BE ABSENT -- absent is a legal input)
+3. identity_verdict(store_uuid, expected_store_uuid())
+     ACCEPT -> True.           THE PATH IS NOT CONSULTED AT ALL.
+     REFUSE -> False, logged.  THE PATH IS NOT CONSULTED AT ALL.
+     ADOPT  -> LEGACY: today's store_path comparison, with the realpath
                string fallback REMOVED (section 8).
 ```
+
+The verdict is consulted UNCONDITIONALLY, on an absent identity as well as a
+present one. It has to be: row 2 is an absent identity, and a guard that only
+asked when the answer was already stamped could never reach it. The legacy path
+comparison is therefore not the "no uuid" branch -- it is the `ADOPT` branch,
+which after section 5.1 means row 1 alone: no identity AND no expectation. That
+is exactly where a path compare is still the best available evidence, and
+nowhere else.
 
 Step 3 is the whole repair. Once the live database carries a `store_uuid`, the
 host and the container reach the same verdict because neither one looks at a
@@ -230,11 +268,27 @@ What it must NOT do, and why this is the part worth reading:
 - It does NOT change what any resolver resolves. `resolve_db_path` reads
   `$SCITEX_CARDS_DB`; nothing in the resolution chain reads `store_uuid`.
 
-The drive-by alternative -- the first write to an unstamped database claims it,
-stamping the configured expectation if one is set and a fresh mint otherwise --
-is preserved for continuity with today's adoption behaviour, but it is the
-fallback, not the plan. An explicit one-time bind is auditable; a bind that
-happens as a side effect of whichever process wrote first is not.
+The drive-by alternative -- the first write to an unstamped database claims it --
+survives only in the row 1 shape: no expectation was declared, so the write mints
+a FRESH identity. It may NEVER stamp a CONFIGURED expectation, because that is
+exactly the mint row 2 now refuses (section 5.1). An explicit one-time bind is
+auditable; a bind that happens as a side effect of whichever process wrote first
+is not.
+
+### Sequencing constraints
+
+1. **Stamp the store first. Declare the expectation second. Never ship an
+   environment naming an expected store uuid before that store carries one.**
+
+   This is the sequencing that stops row 2 = `REFUSE` from stranding an operator
+   mid-migration. Row 2 is reachable only by a database with no identity facing a
+   caller that names one, so it is unreachable for any store that was stamped
+   BEFORE its expectation was published. An operator is stranded only by
+   performing these two steps in the wrong order, never by the rule itself.
+
+   The order below obeys constraint 1: `adopt-uuid` (step 2) precedes the
+   registry entry (step 3), and `$SCITEX_CARDS_STORE_UUID` is set in no
+   environment until the uuid it names already exists in the database.
 
 Order of operations for the live board:
 
@@ -270,32 +324,17 @@ asserts the copy is INDISTINGUISHABLE -- so that nobody later "fixes" it by
 mixing a path or an inode back into the identity, which would reintroduce
 exactly the view-dependence this change removes.
 
-### OPEN QUESTION: an unstamped database when an expectation IS configured
+### RESOLVED: an unstamped database when an expectation IS configured
 
-Row 2 of the decision table (`db_uuid=None`, `expected=X` -> `ADOPT`) follows
-the contract's "a legacy UNSTAMPED database must stay ADOPTABLE" clause
-literally, and the test encodes the contract, not my preference.
+This was the one open question in the first draft of this document. It is
+decided: row 2 `REFUSE`s, for the reason set out in section 5.1, and the
+sequencing that makes it safe is constraint 1 of section 9. Nothing in this
+section is open.
 
-I think it is the weakest row, and I would rather it were `REFUSE`, for this
-reason: an expectation is a STATEMENT that this store must be X. A database
-that cannot show it is X does not satisfy that statement -- "no identity" is not
-"the identity you named". Accepting it means a packaged fixture or a scratch
-database resolved by accident is adopted AS the board by a process that had
-explicitly declared which board it wanted. That is the 2026-07-19 shape with the
-expectation already in hand and ignored.
-
-Note the asymmetry that makes this consistent with contract rule 4b: 4b is about
-the CALLER lacking an expectation (accept -- absence of an expectation is not
-evidence of a foreign store). Row 2 is about the DATABASE lacking an identity,
-which is a different question.
-
-Counter-argument, and the reason I did not just change it: refusing row 2 means
-a store cannot be bound by a write once an expectation is configured, so the
-migration MUST go through `adopt-uuid`. That is stricter and it can strand an
-operator mid-migration with a board that refuses every write.
-
-**This needs a decision before implementation.** It is one row of one table and
-one line of one test; it is not a reason to delay the rest.
+The contract's "a legacy UNSTAMPED database must stay ADOPTABLE" clause is
+satisfied by row 1, which is where every legacy database sits -- a legacy
+deployment has no expectation to declare, because there is as yet no uuid to
+name.
 
 ## 11. Exposure (contract point 8)
 

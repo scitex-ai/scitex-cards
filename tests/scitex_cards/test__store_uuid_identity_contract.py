@@ -100,8 +100,9 @@ def test_a_genuinely_different_store_is_still_refused():
     """The PAIR of the test above, and the reason it is not just ``return True``.
 
     Widening the comparison must not open the door: without this, an "always
-    accept" implementation satisfies every other test in this file and deletes
-    the guard. This is the ONLY row of the table that refuses.
+    accept" implementation satisfies every ACCEPT/ADOPT row in this file and
+    deletes the guard. This is one of the two rows that refuse, and both of them
+    are rows where an expectation was DECLARED and the database did not meet it.
     """
     # Arrange
     from scitex_cards._store_uuid import REFUSE, identity_verdict
@@ -117,10 +118,15 @@ def test_a_genuinely_different_store_is_still_refused():
 def test_a_legacy_unstamped_database_stays_adoptable():
     """EVERY database that exists today carries no identity.
 
-    Including the live ``cards.db``. If an unstamped database were refused,
+    Including the live ``cards.db``. If an unstamped database were refused HERE,
     landing this change would brick the fleet board on deploy -- read-only, no
     YAML behind it, the outage this work exists to end. Unstamped means "not yet
     claimed", never "wrong".
+
+    Since row 2 REFUSEs, this row carries the contract's whole "a legacy
+    UNSTAMPED database must stay ADOPTABLE" clause on its own, and that is
+    coherent: a legacy deployment has no expectation to declare, because there
+    is as yet no uuid for it to name.
     """
     # Arrange
     from scitex_cards._store_uuid import ADOPT, identity_verdict
@@ -133,28 +139,38 @@ def test_a_legacy_unstamped_database_stays_adoptable():
 
 
 @NOT_YET
-def test_a_legacy_database_is_adoptable_even_when_an_expectation_is_configured():
-    """Row 2 of the table -- the contract's reading, and an OPEN QUESTION.
+def test_an_unstamped_database_is_refused_when_an_expectation_is_configured():
+    """Row 2 of the table, and the row where ADOPT would MANUFACTURE EVIDENCE.
 
-    This encodes the agreed contract ("a legacy UNSTAMPED database must stay
-    ADOPTABLE"), not the author's preference. See section 10 of the design doc:
-    the argument for REFUSE here is that an expectation is a STATEMENT that this
-    store must be X, and a database that cannot show it is X does not satisfy
-    it -- "no identity" is not "the identity you named". The argument against is
-    that REFUSE strands an operator mid-migration with a board that refuses
-    every write.
+    Under ADOPT the guard does not merely proceed, it MINTS -- it writes the
+    expected uuid into a database that never demonstrated it deserved that
+    identity. A misresolution then becomes permanent, SELF-CERTIFYING identity
+    that every later check agrees with, including the checks built to catch it.
+    Refusing is recoverable; adopting manufactures the evidence.
 
-    A reviewer who prefers REFUSE changes this one line. It is flagged rather
-    than decided silently.
+    Measured corroboration: on 2026-07-28 a board served HTTP 200 with ZERO
+    cards while the store held 2647. Row 1 (None/None) must stay ADOPT for
+    legacy databases, so Row 2 = REFUSE is the ONLY rule that closes
+    misresolution-to-an-empty-database.
+
+    The asymmetry with contract rule 4b is deliberate and is what makes both
+    rows correct: 4b is about the CALLER lacking an expectation (accept). This
+    row is about the DATABASE lacking an identity while the caller HAS named
+    one -- a different question, pinned separately by
+    ``test_no_expectation_is_not_evidence_of_a_foreign_store``.
+
+    Section 5.1 of the design doc carries the decision; constraint 1 of section
+    9 ("stamp the store first, declare the expectation second") is the
+    sequencing that stops this row from stranding an operator mid-migration.
     """
     # Arrange
-    from scitex_cards._store_uuid import ADOPT, identity_verdict
+    from scitex_cards._store_uuid import REFUSE, identity_verdict
 
     # Act
     verdict = identity_verdict(None, IDENTITY_A)
 
     # Assert
-    assert verdict == ADOPT
+    assert verdict == REFUSE
 
 
 @NOT_YET
