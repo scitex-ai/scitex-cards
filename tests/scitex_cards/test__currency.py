@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the CURRENCY gate (operator directive: stale/broken installs ERROR).
+"""Tests for the CURRENCY gate (BARE-HOST behaviour: stale/broken installs ERROR).
 
 ``check_currency()`` delegates to ``scitex_dev.staleness.ensure_current`` when
 scitex-dev is installed, and is a no-op otherwise (decoupling rule — see
@@ -8,6 +8,16 @@ scitex-dev is installed, and is a no-op otherwise (decoupling rule — see
 ``sys.modules`` rather than requiring a real scitex-dev>=0.34.0 install or
 touching the network, so these tests are deterministic regardless of what is
 actually installed in the environment.
+
+SCOPE: this file covers the BARE-HOST rail, where the gate RAISES. The gate's
+behaviour is now conditional — BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE
+THEY CANNOT — so every raising case below pins ``_running_over_overlay`` to
+``False`` explicitly rather than inheriting whatever filesystem the test runner
+happens to sit on. Without that pin these tests would pass or fail according to
+whether CI ran on overlayfs, which is exactly the kind of environment-coupled
+assertion that reports the wrong thing later. The OVERLAY rail (warn, and no
+install command in the emitted text) is covered by
+``test__currency_remedy_is_container_safe.py``.
 """
 
 from __future__ import annotations
@@ -27,6 +37,11 @@ from scitex_cards._currency import (
 )
 
 _CURRENCY_LOGGER = "scitex_cards._currency"
+
+
+def _pin_to_bare_host(monkeypatch):
+    """Assert the BARE-HOST branch: the actor can remediate, so the gate raises."""
+    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: False)
 
 
 def _install_fake_staleness_module(monkeypatch, ensure_current, stale_error=None):
@@ -117,6 +132,8 @@ def test_check_currency_passes_through_when_the_install_is_current(monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_check_currency_raises_when_the_install_is_stale(monkeypatch):
     # Arrange — a fake `ensure_current` that raises like a stale install.
+    _pin_to_bare_host(monkeypatch)
+
     class _FakeStalenessError(RuntimeError):
         pass
 
@@ -132,7 +149,10 @@ def test_check_currency_raises_when_the_install_is_stale(monkeypatch):
 
 def test_check_currency_stale_error_message_carries_the_remedy_command(monkeypatch):
     # Arrange — a fake `ensure_current` that raises with the exact upgrade
-    # remedy scitex-dev would give a real caller.
+    # remedy scitex-dev would give a real caller. ON A BARE HOST that command
+    # IS the repair, so it must reach the reader untouched; the overlay rail
+    # scrubs it precisely because there it is not a repair.
+    _pin_to_bare_host(monkeypatch)
     remedy = "pip install -U scitex-cards"
 
     def _fake_ensure_current(dist_name):
@@ -152,8 +172,9 @@ def test_check_currency_broken_payload_error_also_propagates(monkeypatch):
     """The gate also covers the broken-payload incident class (ambiguous
     dist-info / missing RECORD files) — any `ensure_current` raise must
     propagate, not just a plain version-staleness one."""
-
     # Arrange
+    _pin_to_bare_host(monkeypatch)
+
     def _fake_ensure_current(dist_name):
         raise RuntimeError(f"{dist_name} has an ambiguous dist-info install")
 

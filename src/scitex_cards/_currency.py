@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CURRENCY gate — an outdated or broken install ERRORS, never warns.
+"""CURRENCY gate — a stale or broken install ERRORS on a bare host, WARNS in an overlay.
 
 Companion to the store-local MIN-CLIENT-VERSION FLOOR (``_min_client_version.py``,
 "FLOOR #548") — that gate is the OFFLINE backstop: it enforces THIS process's
@@ -8,42 +8,33 @@ version against a floor stamped INTO the store, on every DB connection, with
 zero network. THIS gate is the freshness+integrity check: it compares the
 INSTALLED distribution against the latest release AND validates its payload
 (ambiguous dist-info / missing RECORD files — the incident class this closes),
-via scitex-dev's dedicated staleness module. Operator directive: outdated or
-broken invocations must ERROR, not warn — same ruling as FLOOR #548, applied
-at the two process ENTRY points (CLI, MCP server) rather than at DB-open.
+via scitex-dev's dedicated staleness module. It is applied at the two process
+ENTRY points (CLI, MCP server) rather than at DB-open.
 
 DECOUPLING. scitex-dev is an OPTIONAL dependency (the ``currency`` extra) —
 a standalone scitex-cards install without scitex-dev keeps working exactly as
 before; this gate is then simply a no-op. Never promote it to a hard
 dependency.
 
-THE GATE'S OWN REMEDY IS UNSAFE INSIDE A CONTAINER, AND THIS MODULE SAYS SO.
-Measured by scitex-storage 2026-07-28 with a discriminating control:
+WHERE THE WORDS LIVE. Every constant and pure text function this module emits
+is in :mod:`scitex_cards._currency_text` and re-exported here. The split line
+is STATE, not topic: this module keeps everything that holds module state or is
+a test patch point (``_running_over_overlay``, the warn-once sentinels), because
+``monkeypatch.setattr`` on a RE-EXPORTED name does not change what the DEFINING
+module reads — a split along any other line would silently neuter those tests.
 
-    agent            overlay   whiteouts masked      dist-info at next boot
-    grant            0.17.10   0.17.5 + 0.17.7       2   -> RAIL DEAD AT BOOT
-    scitex-storage   0.17.10   0.17.7 + 0.17.9       1   -> fine
-
-Same version, same base, both healthy at the time of measurement, OPPOSITE
-restart-safety. The only difference is WHEN each ran the upgrade — i.e. which
-base copy was underneath at that moment.
-
-The mechanism: `pip install -U` inside an apptainer overlay writes the new
-distribution into the WRITABLE layer and leaves a whiteout masking the copy in
-the base underneath. An overlayfs whiteout masks exactly ONE NAME. When the base
-image is next rebuilt, that whiteout covers a name that no longer exists while
-the NEW base copy is masked by nothing — so two dist-info directories become
-visible, metadata turns ambiguous, and the rail dies AT BOOT.
-
-So the gate CLEARS the immediate condition and ARMS a latent one, and nothing
-reports it until a base bump. Every agent it nudged into `pip install -U` became
-restart-unsafe. That is very likely the source of the duplicate-dist-info
-incidents this gate exists to catch — the control above is what makes that a
-finding rather than a suspicion.
-
-Neither agent could have seen this from inside their own container: whiteout
-names are invisible in the merged view. Which is why the remedy has to be
-qualified HERE, at the point of prescription, rather than left to the reader.
+BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE THEY CANNOT
+-----------------------------------------------------------
+That is the rule this module implements, and it is the whole shape of the gate.
+On a BARE HOST an in-place upgrade genuinely repairs the install, so the actor
+CAN remediate and refusing to run is correct — that path RAISES, and its message
+carries scitex-dev's command verbatim. IN AN OVERLAY the actor CANNOT remediate:
+the package comes from a READ-ONLY BASE IMAGE they do not control, the only real
+repair is an operator REBAKE of that base, and the printed remedy ACTIVELY
+CREATES the very fault the gate detects (the full chain is in
+``_currency_text``'s docstring, with the measurements). Blocking there leaves an
+agent with no working rail AND a harmful instruction. A gate that cannot be
+satisfied is a trap, not a gate.
 
 THE VISIBILITY ASYMMETRY (incident 2026-07-29, measured by agent ``grant``)
 --------------------------------------------------------------------------
@@ -89,6 +80,20 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+
+from ._currency_text import (
+    CURRENCY_BYPASS_ENV,
+    CURRENCY_SEVERITY_ENV,
+    INSTALL_COMMAND_REDACTION,
+    OVERLAY_HEADER,
+    OVERLAY_REMEDY,
+    OVERLAY_UPSTREAM_LEAD,
+    STALE_REMEDY,
+    UNSCRUBBABLE_NOTICE,
+    overlay_warning_text,
+    scrub_install_commands,
+    stale_warning_text,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -145,11 +150,11 @@ def _stale_detail(exc: BaseException) -> str:
 def _running_over_overlay() -> bool:
     """True when this interpreter's site-packages sits on a layered filesystem.
 
-    Deliberately conservative: this only ever DOWNGRADES a remedy from
-    "run pip install -U" to "ask for a rebake", so a false positive costs a
-    cautious message while a false negative restores the trap. When the answer
-    cannot be determined, say NO and leave the original remedy alone — claiming
-    a container we are not in would misdirect a standalone user.
+    Deliberately conservative: a false positive costs a cautious message and a
+    warn-instead-of-raise, while a false negative restores the trap. When the
+    answer cannot be determined, say NO and leave the bare-host behaviour alone
+    — claiming a container we are not in would misdirect a standalone user AND
+    would silently downgrade a gate that should be refusing.
     """
     if os.environ.get("APPTAINER_CONTAINER") or os.environ.get("SINGULARITY_CONTAINER"):
         return True
@@ -174,51 +179,33 @@ def _running_over_overlay() -> bool:
     return best_fstype == "overlay"
 
 
-#: Appended to the gate's own error when we are demonstrably layered. Kept as a
-#: module constant so a test can assert the wording without provoking the gate.
-OVERLAY_REMEDY = (
-    "\n\n"
-    "!! DO NOT RUN `pip install -U` HERE. This process's site-packages is a "
-    "LAYERED (overlay) filesystem, so a local install is not a fix — it is a "
-    "deferred break.\n"
-    "   An overlayfs whiteout masks exactly ONE NAME: the base copy that "
-    "happens to be underneath right now. When the base image is next rebuilt, "
-    "that whiteout covers a name that no longer exists, the NEW base copy is "
-    "masked by nothing, and TWO dist-info directories become visible — "
-    "ambiguous metadata, and this rail dies AT BOOT rather than now.\n"
-    "   Measured 2026-07-28: two agents on the same version and the same base, "
-    "both healthy, had OPPOSITE restart-safety purely because they upgraded at "
-    "different times.\n"
-    "   CORRECT REMEDY: ask for a BASE REBAKE (sac), then restart onto the new "
-    "image. Fleet-managed packages arrive by rebake; they are not pip-installed "
-    "into overlays.\n"
-    "   If you must unblock yourself RIGHT NOW and accept that the next restart "
-    "will need a rebake anyway, say so explicitly when you report it — do not "
-    "leave the mortgage undocumented for whoever boots this container next."
-)
-
-
 def check_currency() -> None:
-    """Raise if this install is stale or its payload is broken (CURRENCY gate).
+    """Raise (bare host) or warn (overlay) when this install is stale or broken.
 
     Provided by scitex-dev >= 0.34.0; silently a no-op when scitex-dev is
     absent so scitex-cards stays standalone (decoupling rule).
 
-    When the gate fires INSIDE an overlay, its own remedy (`pip install -U`) is
-    re-raised with :data:`OVERLAY_REMEDY` appended. We do not own that message —
-    it is scitex-dev's — so we qualify it rather than rewrite it, and the
-    original text is preserved verbatim above the addition.
+    BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE THEY CANNOT:
+
+    * BARE HOST — scitex-dev's exception propagates verbatim, install command
+      and all, because there that command IS the repair and the actor can run
+      it. Do not weaken this path.
+    * OVERLAY — a ``logging.WARNING`` carrying :func:`overlay_warning_text`,
+      and NO raise. The actor cannot repair a read-only base; refusing would
+      leave them with no working rail and an instruction that harms. The
+      emitted text is scrubbed of every in-place install command, INCLUDING
+      scitex-dev's verbatim message.
     """
     try:
         from scitex_dev.staleness import ensure_current
     except ImportError:
         return
     try:
-        ensure_current("scitex-cards")
-    except Exception as exc:  # noqa: BLE001 - re-raised below, never swallowed
+        ensure_current(_DIST_NAME)
+    except Exception as exc:  # noqa: BLE001 - re-raised or warned below
         if not _running_over_overlay():
             raise
-        raise type(exc)(f"{exc}{OVERLAY_REMEDY}") from exc
+        _LOGGER.warning("%s", overlay_warning_text(_stale_detail(exc)))
 
 
 # --------------------------------------------------------------------------- #
@@ -311,66 +298,6 @@ def currency_verdict() -> CurrencyVerdict:
     return CurrencyVerdict(state="current", detail=None, checked=True)
 
 
-#: The remedy WE author, and it is deliberately NOT an in-place pip upgrade.
-#: Inside an apptainer overlay an in-place upgrade leaves a whiteout masking
-#: exactly ONE dist-info name; on the next base rebake that whiteout covers a
-#: name that no longer exists, the new base copy is masked by nothing, TWO
-#: dist-info directories appear, and the rail is dead AT BOOT — before any
-#: command runs. (Measured: two agents, same version, same base, both healthy,
-#: OPPOSITE restart-safety, differing only in WHEN they upgraded.) The text
-#: below therefore never spells an in-place upgrade command, not even to
-#: forbid one: this constant is asserted free of it, so a later edit cannot
-#: smuggle the bad remedy back in as an aside.
-STALE_REMEDY = (
-    "REMEDY - REBAKE THE CONTAINER BASE IMAGE with the current scitex-cards, "
-    "then restart this agent onto the new base. Do NOT upgrade this package "
-    "in place inside a running apptainer overlay: the overlay records a "
-    "whiteout masking exactly ONE dist-info name, and on the next base rebake "
-    "that whiteout covers a name that no longer exists - the new base copy is "
-    "masked by nothing, TWO dist-info directories appear, and the rail is "
-    "dead AT BOOT. (Measured: two agents, same version, same base, both "
-    "healthy, OPPOSITE restart-safety, differing only in WHEN they upgraded.) "
-    "Any in-place upgrade command in the scitex-dev message above is a "
-    "bare-host remedy and does not apply inside a container overlay."
-)
-
-#: Names the SIBLING rail EXPLICITLY. The reader is an agent whose Python call
-#: just succeeded and who therefore has no reason to suspect anything is
-#: wrong — the whole job of this text is to tell them WHICH rail is down and
-#: that it will stay silent about it.
-#:
-#: BOTH console-script names are spelled out, and that is not redundancy. The
-#: command that actually refused in the 2026-07-29 incident was ``scitex-todo
-#: list-tasks`` — the LEGACY script, which ``pyproject.toml`` still installs
-#: alongside ``scitex-cards`` (both resolve to ``scitex_cards._cli:main``) and
-#: which much of the fleet still types. A reader who types ``scitex-todo`` may
-#: not recognise a warning phrased only in terms of ``scitex-cards``, which
-#: would defeat the single purpose of this text. Name whichever form they use.
-_STALE_HEADER = (
-    "scitex-cards CURRENCY: this Python call SUCCEEDED, but the CLI/MCP rail "
-    "for this same package is currently REFUSING. Both console scripts are "
-    "affected - 'scitex-cards list-tasks' AND its still-installed legacy "
-    "alias 'scitex-todo list-tasks' are the same program and will BOTH FAIL "
-    "until this install is fixed, as will every other scitex-cards CLI "
-    "command and the scitex-cards MCP server, while Python calls such as "
-    "dm_send keep working. Nothing on this rail will error, so this warning "
-    "is the only signal you get."
-)
-
-
-def stale_warning_text(detail: str | None) -> str:
-    """Compose the warn-once text: which rail is down, why, and the remedy."""
-    return "\n".join(
-        (
-            _STALE_HEADER,
-            "",
-            f"scitex-dev reports: {detail}",
-            "",
-            STALE_REMEDY,
-        )
-    )
-
-
 # Warn-once state. ``_CACHED_VERDICT`` also bounds the COST: ``ensure_current``
 # does real work (payload validation, a freshness lookup) and the Python rail
 # calls this on every DM — so the measurement is taken at most ONCE per
@@ -429,11 +356,19 @@ def warn_if_stale_once() -> CurrencyVerdict:
 
 
 __all__ = [
+    "CURRENCY_BYPASS_ENV",
+    "CURRENCY_SEVERITY_ENV",
+    "INSTALL_COMMAND_REDACTION",
+    "OVERLAY_HEADER",
     "OVERLAY_REMEDY",
+    "OVERLAY_UPSTREAM_LEAD",
     "STALE_REMEDY",
+    "UNSCRUBBABLE_NOTICE",
     "CurrencyVerdict",
     "check_currency",
     "currency_verdict",
+    "overlay_warning_text",
+    "scrub_install_commands",
     "stale_warning_text",
     "warn_if_stale_once",
 ]
