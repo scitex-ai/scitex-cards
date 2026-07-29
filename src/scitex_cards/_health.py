@@ -44,6 +44,9 @@ from typing import Any, Callable
 
 from . import _inbox
 from ._health_channel_reach import check_channel_reaches_session
+from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
+    _check_store_identity_agrees,
+)
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -69,9 +72,18 @@ _DRAIN_HINT = (
 # NOT MOVE: every name is re-exported here, so
 # `from scitex_cards._health import _verify_db_store` is the SAME object it
 # always was, defined next door. Same rule as the `_health_cards` split below.
+#
+# `_check_store_identity_agrees` is NOT in this list. It is imported at the
+# top of the file from `_health_store_identity`, which is where the
+# UUID-AWARE version lives -- the one that asks the identity first and only
+# falls back to the path on ADOPT, mirroring the guard's own order. Taking
+# it from `_health_store` instead binds `health()` to the stale path-only
+# copy and leaves `_health_store_identity` imported by nothing, so the
+# doctor reports a verdict the guard does not share: it either names a
+# mismatch that is causing no refusals, or stays green through one that is.
+# Exactly ONE definition of the name exists in the package; see below.
 from ._health_store import (  # noqa: E402  (re-export)
     _check_store_canonical,
-    _check_store_identity_agrees,
     _is_sqlite_db,  # noqa: F401
     _verify_db_store,  # noqa: F401
 )
