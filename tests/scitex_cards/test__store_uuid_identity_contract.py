@@ -47,19 +47,12 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
-#: Applied to every test whose subject is not implemented yet. ``strict`` is the
-#: point: an XPASS fails the suite, so landing the implementation FORCES this
-#: marker to be removed test by test, and a marker left behind is a red build
-#: rather than a silently-skipped promise.
-NOT_YET = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "scitex_cards._store_uuid does not exist yet -- this is the design PR's "
-        "executable spec; the implementation PR removes this marker"
-    ),
-)
+# THE ``@NOT_YET`` MARKERS ARE GONE, and their absence is the record that the
+# implementation landed. Every test here was ``xfail(strict=True)`` against
+# ``scitex_cards._store_uuid`` before that module existed; ``strict`` turns an
+# XPASS into a FAILURE, so the implementation PR was FORCED to delete the
+# markers test by test rather than write fresh assertions against whatever it
+# happened to build. Not one assertion below was edited to land the code.
 
 #: A minted identity is a uuid4 in the bare lowercase 8-4-4-4-12 spelling.
 _MINTED_UUID4 = re.compile(
@@ -77,7 +70,6 @@ IDENTITY_B = "7c9e0d21-5b3f-4a08-9e6d-2f4a6b8c0d1e"
 # --------------------------------------------------------------------------- #
 
 
-@NOT_YET
 def test_one_store_reached_under_two_names_is_one_store():
     """The outage, at the level where it is decided.
 
@@ -95,7 +87,6 @@ def test_one_store_reached_under_two_names_is_one_store():
     assert verdict == ACCEPT
 
 
-@NOT_YET
 def test_a_genuinely_different_store_is_still_refused():
     """The PAIR of the test above, and the reason it is not just ``return True``.
 
@@ -114,7 +105,6 @@ def test_a_genuinely_different_store_is_still_refused():
     assert verdict == REFUSE
 
 
-@NOT_YET
 def test_a_legacy_unstamped_database_stays_adoptable():
     """EVERY database that exists today carries no identity.
 
@@ -138,7 +128,6 @@ def test_a_legacy_unstamped_database_stays_adoptable():
     assert verdict == ADOPT
 
 
-@NOT_YET
 def test_an_unstamped_database_is_refused_when_an_expectation_is_configured():
     """Row 2 of the table, and the row where ADOPT would MANUFACTURE EVIDENCE.
 
@@ -173,7 +162,6 @@ def test_an_unstamped_database_is_refused_when_an_expectation_is_configured():
     assert verdict == REFUSE
 
 
-@NOT_YET
 def test_no_expectation_is_not_evidence_of_a_foreign_store():
     """Contract rule 4b, and the rule most likely to be "improved" into a bug.
 
@@ -194,7 +182,6 @@ def test_no_expectation_is_not_evidence_of_a_foreign_store():
     assert verdict == ACCEPT
 
 
-@NOT_YET
 def test_the_comparison_is_exact_string_equality_not_a_uuid_parse():
     """Uppercase is a DIFFERENT string, therefore a different identity.
 
@@ -212,7 +199,6 @@ def test_the_comparison_is_exact_string_equality_not_a_uuid_parse():
     assert verdict == REFUSE
 
 
-@NOT_YET
 def test_the_comparison_does_not_normalise_a_braced_spelling():
     """The other normalisation temptation: ``{...}`` and ``urn:uuid:``.
 
@@ -235,7 +221,6 @@ def test_the_comparison_does_not_normalise_a_braced_spelling():
 # --------------------------------------------------------------------------- #
 
 
-@NOT_YET
 def test_minting_is_never_derived_so_two_mints_in_one_process_differ():
     """The "never derived from path, hostname, or timestamp" clause, enforced.
 
@@ -256,7 +241,6 @@ def test_minting_is_never_derived_so_two_mints_in_one_process_differ():
     assert minted[0] != minted[1]
 
 
-@NOT_YET
 def test_a_minted_identity_has_the_agreed_bare_lowercase_form():
     """The ecosystem-wide form: bare lowercase uuid4, 8-4-4-4-12.
 

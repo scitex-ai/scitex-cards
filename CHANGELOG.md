@@ -1,5 +1,68 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Store identity is a UUID, not a path — the ROOT FIX for the board's HTTP
+  500.** Ownership of a database was decided by comparing PATHS, and one
+  bind-mounted `cards.db` has three names here:
+  `/home/agent/.scitex/cards/cards.db` (container only — the host cannot
+  `stat` it), `/home/ywatanabe/.scitex/cards/cards.db` (both), and
+  `/home/ywatanabe/.dotfiles/src/.scitex/cards/cards.db` (the realpath). One
+  inode, three spellings.
+
+  `stamp_store_provenance` rewrote the stamp with the WRITER'S OWN spelling on
+  every write (`ON CONFLICT DO UPDATE SET value=excluded.value`), so the name
+  FLIPPED each time the other namespace wrote a card. Whenever it landed on the
+  container-only name the host could not resolve it, `_same_file` fell through
+  to a realpath STRING compare that can never match across that boundary, the
+  ownership guard said "different store", and the board answered `GET /tasks`
+  with HTTP 500. It was repaired three times on 2026-07-28 and broken three
+  times again by nothing more than writing the next card from the other side.
+
+  A path cannot be identity when two namespaces both write. So:
+
+  - NEW `scitex_cards._store_uuid`. `identity_verdict(db_uuid, expected)` is a
+    PURE function of two optional strings — no path, no connection, no
+    environment — so no mount namespace can change the answer. Identities are
+    minted as bare lowercase uuid4 and NEVER derived from a path, hostname or
+    timestamp (a deterministic hash would reintroduce exactly the
+    view-dependence being removed).
+  - `_dual_write._db_mirrors_this_store` is uuid-first. On `ACCEPT`/`REFUSE`
+    THE PATH IS NOT CONSULTED AT ALL. The legacy path compare survives only on
+    `ADOPT` — no identity AND no expectation, which is every database today.
+  - An unstamped database stays ADOPTABLE, so nothing existing breaks. A
+    database with no identity facing a caller that NAMES one is REFUSED:
+    adopting there would MINT the expected uuid into a database that never
+    earned it, making a misresolution permanent, self-certifying identity.
+  - The realpath STRING fallback in `_same_file` is REMOVED. It fired precisely
+    when a path could not be `stat`-ed — i.e. across a namespace boundary,
+    where it was least entitled to an opinion — and answered with the more
+    destructive of the two options. That case now says CANNOT TELL honestly
+    instead of claiming "stamped for a DIFFERENT store".
+  - The path stamp is no longer rewritten when it already names the SAME FILE.
+    It is diagnostic now, not authoritative, and rewriting it on every write was
+    the flip mechanism itself.
+  - IDENTITY AND RESOLUTION STAY TWO SEPARATE RULES. Nothing here bypasses
+    `_paths.refuse_ambient_store_creation`; merging them would silently turn
+    "no expectation is not evidence of a foreign store" into "use whatever you
+    were pointed at".
+
+### Added
+
+- `scitex-cards store adopt-uuid [--uuid X]` — binds the resolved database to
+  an identity, once, deliberately. Writes ONE `schema_meta` row and prints it;
+  does not touch `store_path`, does not touch any card row, does not change
+  what any resolver resolves. Idempotent.
+- `resolve_store()` reports `store_uuid` and `expected_uuid`, and the `health`
+  doctor's `store_identity` check NAMES the identity in its detail — on the
+  passing branches too, so a registry can be populated from a healthy board.
+
+  Design: `docs/design/store-identity-is-a-uuid.md`. The 16
+  `xfail(strict=True)` spec tests written before the implementation now pass
+  with their markers deleted and not one assertion edited.
+
 ## [0.17.12] - 2026-07-29
 
 Cut to DELIVER the board fix, not because the code needed a version. The

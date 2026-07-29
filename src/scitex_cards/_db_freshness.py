@@ -41,6 +41,15 @@ kept. A stamp that changes with the writer cannot be the thing an ownership
 guard decides on; see that function for the outage this closes, and for why it
 is a MITIGATION of path-based identity rather than a fix for it.
 
+THE FIX ITSELF IS A UUID, AND IT HAS LANDED
+-------------------------------------------
+:mod:`scitex_cards._store_uuid` gives the database an opaque identity that no
+namespace can re-spell, and the ownership guard consults it FIRST. This module's
+``store_path`` row is therefore DIAGNOSTIC now — the legacy evidence used only
+when a database carries no identity AND the caller declares no expectation. It
+is kept, and kept stable, because that is every store until it has been through
+``scitex-cards store adopt-uuid``.
+
 WHY IDENTITY, NOT CONTENT
 -------------------------
 The comparison is CONTENT-INDEPENDENT on purpose: it never parses the store, it
@@ -123,16 +132,24 @@ def stamp_store_provenance(conn: sqlite3.Connection, store_path: str | Path) -> 
     the container both names ARE stat-able (bind mount), so the inode branch
     runs, this function sees "same file", and the host's stamp survives.
 
-    THIS IS A MITIGATION, NOT THE FIX
-    ---------------------------------
+    THIS WAS A MITIGATION; THE FIX HAS NOW LANDED
+    ---------------------------------------------
     Path-based identity CANNOT be made correct across namespaces; it can only be
     made STABLE. Two namespaces that both write will always disagree about the
     name of one file, and no rule about which name wins changes that. The real
-    repair is an opaque ``store_uuid`` that no namespace can re-spell — design
-    merged in PR #601 (``docs/design/store-identity-is-a-uuid.md``), tracked by
-    card ``scitex-cards-resolver-never-default-yaml-20260727``. Until that lands,
-    this function only stops the stamp from THRASHING; it does not make a
-    container-written name legible to the host.
+    repair is an opaque ``store_uuid`` that no namespace can re-spell — designed
+    in PR #601 (``docs/design/store-identity-is-a-uuid.md``) and IMPLEMENTED in
+    :mod:`scitex_cards._store_uuid`, tracked by card
+    ``scitex-cards-resolver-never-default-yaml-20260727``.
+
+    So this row is now DIAGNOSTIC, not authoritative: it tells a human which
+    spelling claimed the database first. It is still read as the LEGACY fallback
+    on the guard's ``ADOPT`` branch — a database with no identity facing a caller
+    with no expectation, which is every database that has not yet run
+    ``scitex-cards store adopt-uuid`` — so stopping the thrash still matters
+    until each store is bound. Once a store carries an identity the path is not
+    consulted at all, and a container-written name being illegible to the host
+    stops mattering rather than being worked around.
     """
     existing = stamped_store_path(conn)
     if existing is not None:
@@ -191,19 +208,49 @@ def check_fresh(
     comparison is by :func:`_same_file` (inode), so the ``/home/agent`` vs
     ``/home/ywatanabe`` bind-mount alias reads as one store — consistent with
     the write guard.
+
+    UUID-FIRST, exactly as the ownership guard is. A stamped identity that
+    ACCEPTs decides and the path is never consulted. This function has no
+    production caller today, but leaving it path-only would build the read/write
+    asymmetry the design forbids the moment somebody wired it up — and that
+    asymmetry is what 2026-07-19 was made of, when the write door refused a
+    foreign store correctly all day while the read door returned its rows.
     """
+    from ._store_uuid import (
+        ACCEPT,
+        expected_store_uuid,
+        identity_verdict,
+        read_store_uuid,
+    )
+
+    if identity_verdict(read_store_uuid(conn), expected_store_uuid()) == ACCEPT:
+        return True, None
+
     stamped = stamped_store_path(conn)
     if stamped is None:
         return True, None
     from ._dual_write import _same_file
 
-    if not _same_file(stamped, store_path):
+    if _same_file(stamped, store_path):
+        return True, None
+    if not Path(stamped).exists() or not Path(store_path).exists():
+        # CANNOT TELL — say so. Claiming "a DIFFERENT store" here would be an
+        # assertion about a file this mount namespace cannot even stat, and that
+        # false claim is exactly what the operator read during the 2026-07-28
+        # outage while the database in question was in fact their own.
         return False, (
-            f"this database belongs to a DIFFERENT store ({stamped!r}) than the "
-            f"one being read ({canonical_path(store_path)!r}). Point "
-            "$SCITEX_CARDS_DB at this store's own database."
+            f"ownership of this database CANNOT BE DETERMINED from a path in "
+            f"this mount namespace: it is stamped for {stamped!r}, this read is "
+            f"of {canonical_path(store_path)!r}, and at least one of those "
+            f"cannot be stat'd here — they may well be ONE file under two "
+            f"names. Bind this store to an identity once: "
+            f"`scitex-cards store adopt-uuid`."
         )
-    return True, None
+    return False, (
+        f"this database belongs to a DIFFERENT store ({stamped!r}) than the "
+        f"one being read ({canonical_path(store_path)!r}). Point "
+        "$SCITEX_CARDS_DB at this store's own database."
+    )
 
 
 __all__ = [
