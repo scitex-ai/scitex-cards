@@ -23,6 +23,17 @@ it, force-reload the only exit.
 These are behavioural properties of a JS module, so they are asserted against
 the SOURCE rather than a rendered page — this repo has no browser in CI, and a
 test that silently could not observe the behaviour would be worse than none.
+
+WHAT A SOURCE SCAN CANNOT SEE, added 2026-07-29 after defect 3.
+Every assertion below stayed green for the whole life of defect 3, which blanked
+the DESKTOP agent sidebar by applying these same two properties to a panel that
+was not a drawer at the time. The lines the scan looks for were present and
+correct; what was wrong was the CONDITION they ran under, and a text scan cannot
+see a missing condition — only a missing string. So the scan is a floor, not a
+ceiling. New drawer behaviour belongs in
+``tests/scitex_cards/_django/static/scitex_cards/chat/test_chat_drawer.py``,
+which RUNS the shipped module under node and reads back the properties it wrote.
+Do not extend this file instead of that one.
 """
 
 from __future__ import annotations
@@ -32,10 +43,22 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards._django import views
-
+# Resolved from the REPO TREE, not from ``views.__file__``.
+# Via the installed package this reads whatever static files that install
+# happens to carry, which is not necessarily the source under review: on this
+# developer box the installed tree holds 2 of the 11 chat modules and no
+# chat_drawer.js at all, so the scan errored on a file it was never really
+# guarding. Every other JS test here resolves from the repo tree for that
+# reason; this one now agrees with them.
 _DRAWER = (
-    Path(views.__file__).parent / "static" / "scitex_cards" / "chat" / "chat_drawer.js"
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "scitex_cards"
+    / "_django"
+    / "static"
+    / "scitex_cards"
+    / "chat"
+    / "chat_drawer.js"
 )
 
 
