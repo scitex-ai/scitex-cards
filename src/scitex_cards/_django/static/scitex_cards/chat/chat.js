@@ -378,58 +378,9 @@
 
   // ---- compose -----------------------------------------------------------
 
-  // Re-entry guard. `$send.disabled` does NOT prevent this: Enter calls
-  // `$form.requestSubmit()`, which runs the submit handler whether or not the
-  // BUTTON is disabled, and `sendMessage` never consulted that flag. With the
-  // textarea also cleared only after the response landed, every extra Enter
-  // pressed during the round trip re-sent the same text — the operator hit
-  // this live and diagnosed it themselves ("Enter を連発すると何個も送られる").
-  var sending = false;
-
-  function sendMessage(event) {
-    event.preventDefault();
-    if (sending) return;
-    if (!state.peer) return;
-    var text = $body.value.trim();
-    if (!text) return;
-    sending = true;
-    $send.disabled = true;
-    // Clear OPTIMISTICALLY so a repeated Enter finds an empty box and returns
-    // early even before `sending` is consulted — belt and braces, because the
-    // cost of a duplicate is a duplicate message the operator has to clean up.
-    // Restored verbatim on failure so a send that did not land is never lost.
-    $body.value = "";
-    fetch(API_BASE + "/dm/thread/" + encodeURIComponent(state.peer), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: text }),
-    })
-      .then(function (resp) {
-        if (!resp.ok) {
-          return resp
-            .json()
-            .catch(function () {
-              return {};
-            })
-            .then(function (data) {
-              throw new Error(data.error || "HTTP " + resp.status);
-            });
-        }
-        $body.value = "";
-        // Clearing `value` from script fires no `input` event, so say so.
-        if (composer) composer.reset();
-        clearError();
-        refreshThread();
-        refreshAgents();
-      })
-      .catch(function (err) {
-        showError("Send failed: " + err.message);
-      })
-      .then(function () {
-        $send.disabled = false;
-        $body.focus();
-      });
-  }
+  // The send path (submit handler, Enter binding, in-flight guard) lives in
+  // chat_send.js — see that module for the two defects it replaced, the worse
+  // of which let the operator send exactly ONE message per page load.
 
   // ---- mobile drawer -----------------------------------------------------
 
@@ -445,15 +396,6 @@
   function closeDrawer() {
     if (drawer) drawer.close();
   }
-
-  // Enter sends; Shift+Enter inserts a newline (phone keyboards send via
-  // the button anyway — this is for desktop convenience).
-  $body.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      $form.requestSubmit();
-    }
-  });
 
   // Attachments (picker / paste / drag-drop) live in chat_attach.js.
   var attach = window.ChatAttach
@@ -475,7 +417,25 @@
         showError: showError,
       })
     : null;
-  $form.addEventListener("submit", sendMessage);
+  // Mounted AFTER `composer` exists, since it hands the composer its reset.
+  if (window.ChatSend) {
+    window.ChatSend.mount({
+      form: $form,
+      textarea: $body,
+      send: $send,
+      apiBase: API_BASE,
+      composer: composer,
+      getPeer: function () {
+        return state.peer;
+      },
+      onSent: function () {
+        refreshThread();
+        refreshAgents();
+      },
+      clearError: clearError,
+      showError: showError,
+    });
+  }
 
   // ---- boot --------------------------------------------------------------
 
