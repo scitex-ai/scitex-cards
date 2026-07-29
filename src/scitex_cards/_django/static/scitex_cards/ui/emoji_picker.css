@@ -29,6 +29,19 @@
    * hits reliably. Sized in rem so it scales with the reader's font size
    * instead of pinning a phone affordance to CSS pixels. */
   --stx-emoji-picker-cell: 2.75rem;
+  /* TOGGLE chrome, separate from the panel's. Both used to read the shared
+   * surface/border pair, which meant a host that wanted a BARE toggle (one
+   * sitting inside a text field, the way a chat composer places it) had no
+   * way to ask for it: mapping the shared token to `transparent` also erased
+   * the popover's own background and border, i.e. made the panel unreadable.
+   * Defaulting to the shared values keeps every existing host pixel-identical.
+   *
+   * `auto` for the minimum square keeps the historical content-sized button;
+   * a host that puts the toggle in a row of other controls maps it so the
+   * whole row is one tappable height. */
+  --stx-emoji-picker-toggle-surface: var(--stx-emoji-picker-surface);
+  --stx-emoji-picker-toggle-border: var(--stx-emoji-picker-border);
+  --stx-emoji-picker-toggle-min: auto;
 
   position: relative;
   display: inline-flex;
@@ -70,11 +83,13 @@
 }
 
 .stx-emoji-picker__toggle {
-  background: var(--stx-emoji-picker-surface);
+  background: var(--stx-emoji-picker-toggle-surface);
   color: var(--stx-emoji-picker-text);
-  border: 1px solid var(--stx-emoji-picker-border);
+  border: 1px solid var(--stx-emoji-picker-toggle-border);
   border-radius: 8px;
   padding: 0 12px;
+  min-width: var(--stx-emoji-picker-toggle-min);
+  min-height: var(--stx-emoji-picker-toggle-min);
   font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
@@ -125,6 +140,18 @@
   border: 1px solid var(--stx-emoji-picker-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* RIGHT-ANCHORED variant. The default panel hangs from the toggle's LEFT
+ * edge, which is right for a toggle at the start of a row. A toggle that sits
+ * at the END of its row — the placement a chat composer uses, with the emoji
+ * button tucked into the right edge of the input — then opens a ~20rem panel
+ * rightwards from a point already near the screen edge, and most of it lands
+ * outside a phone viewport. The host asks for the flip with this modifier;
+ * the component keeps owning the geometry. */
+.stx-emoji-picker--right .stx-emoji-picker__panel {
+  left: auto;
+  right: 0;
 }
 
 /* `hidden` must actually hide: the rule above sets `position`/`display`

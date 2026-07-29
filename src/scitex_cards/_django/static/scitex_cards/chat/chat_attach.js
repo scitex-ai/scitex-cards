@@ -20,21 +20,34 @@
     var $file = host.fileEl;
     if (!$body) return null;
 
+    /* ONE file to the store, returning its metadata — the whole HTTP half,
+     * with no opinion about what the caller then does with the url.
+     *
+     * Extracted so a second caller can reuse the endpoint instead of writing
+     * its own POST: chat_compose.js offers to send an over-long DRAFT as a
+     * .txt, and it must land in the same place, with the same url shape, for
+     * the thread's existing renderer to show it. A duplicated fetch would have
+     * been a second mechanism producing files that merely look the same. */
+    function uploadOne(file) {
+      var form = new FormData();
+      form.append("file", file);
+      return fetch(host.apiBase + "/dm/upload", {
+        method: "POST",
+        body: form,
+      }).then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
+          return data;
+        });
+      });
+    }
+
     function uploadFiles(files) {
       var list = Array.prototype.slice.call(files || []).filter(Boolean);
       if (!list.length) return;
       host.clearError();
       list.forEach(function (file) {
-        var form = new FormData();
-        form.append("file", file);
-        fetch(host.apiBase + "/dm/upload", { method: "POST", body: form })
-          .then(function (resp) {
-            return resp.json().then(function (data) {
-              if (!resp.ok)
-                throw new Error(data.error || "HTTP " + resp.status);
-              return data;
-            });
-          })
+        uploadOne(file)
           .then(function (data) {
             var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
             $body.value += sep + data.url + "\n";
@@ -71,7 +84,7 @@
       });
     });
 
-    return { uploadFiles: uploadFiles };
+    return { uploadFiles: uploadFiles, uploadOne: uploadOne };
   }
 
   root.ChatAttach = { mount: mount };
