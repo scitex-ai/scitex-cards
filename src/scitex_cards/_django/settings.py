@@ -169,4 +169,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [str(BASE_DIR / "static")]
 
+# Stamp the release onto every static URL so an upgrade actually reaches the
+# browser. Measured 2026-07-30: the operator's browser held a stale chat_menu.js
+# and right-click stopped opening the context menu -- unreproducible anywhere
+# else, fixed by a hard reload. Correctness must not depend on the user knowing
+# to press Ctrl+Shift+R. Applied at the storage backend rather than at the 61
+# `{% static %}` call sites, so it cannot be forgotten and new templates inherit
+# it. STORAGES REPLACES its defaults wholesale on Django >= 4.2, so "default"
+# must be restated here or file uploads lose their backend.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "scitex_cards._django.static_versioned.VersionedStaticFilesStorage",
+    },
+}
+
 # EOF
