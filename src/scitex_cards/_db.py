@@ -51,6 +51,7 @@ from ._db_migrations import (
     record_migration_provenance,
     table_columns,
 )
+from ._schema_shape import SCHEMA_VERSION_FLOOR_TRIGGER_SQL, stamp_schema_version
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # reaches FRESH files only, and these guards must reach every store the
     # current client opens or it cannot prove it is current (_store_retirement).
     conn.executescript(RETIREMENT_TRIGGER_SQL)
+    # Same reason, and doubly so: the client-side floor below binds only
+    # clients that HAVE it, while 2026-07-31 measured the live store swinging
+    # 5 -> 7 -> 5 with v7's artifacts physically present the whole time. This
+    # trigger is the copy of the rule an 0.18.0 writer cannot skip.
+    conn.executescript(SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
     # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
@@ -388,43 +394,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v4_to_v5(conn)
     _migrate_v5_to_v6(conn)
     _migrate_v6_to_v7(conn)
-    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT.
-    #
-    # This used to write SCHEMA_VERSION unconditionally, which let an OLDER client
-    # stamp a NEWER store as older. Measured on the live store 2026-07-30, four
-    # read-only connections seconds apart:
-    #
-    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
-    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
-    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
-    #     user_version=5  schema_meta=5  revision_col=True  trigger=True   <-- !
-    #
-    # The recorded version OSCILLATED between 5 and 6 while the physical schema
-    # (revision column, bump trigger) never regressed. ~90 fleet containers run
-    # 0.17.5 / 0.18.0 / 0.23.0 / 0.24.0 SIMULTANEOUSLY, so whichever version
-    # opened the store last decided what it claimed to be. The stamp was a race,
-    # not a fact -- and it read LOWER than the store's real shape, which is the
-    # dangerous direction: a reader can conclude a column is absent when it is
-    # physically there.
-    #
-    # Migrations here are additive (`ADD COLUMN`, `CREATE ... IF NOT EXISTS`), so
-    # applied schema never goes backwards. max() therefore describes reality; a
-    # bare assignment describes only the last writer. Same principle as
-    # `_blocked_age_hours`' permanent created_at fallback: a stamp encodes the
-    # WRITER's version, not the object's history, so never trust one writer to
-    # speak for a store ~90 processes share.
-    _stamp = max(_prior_version, SCHEMA_VERSION)
-    conn.execute(f"PRAGMA user_version={_stamp}")
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = "
-        # MAX in SQL, not in Python: another process may have raised it between
-        # our PRAGMA read and this statement, and CAST makes the comparison
-        # numeric rather than lexicographic ('10' < '9' as text).
-        "  CAST(MAX(CAST(schema_meta.value AS INTEGER), "
-        "           CAST(excluded.value AS INTEGER)) AS TEXT)",
-        (str(_stamp),),
-    )
+    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT. Both halves of that rule now
+    # live in _schema_shape: this client-side one, and the engine-side trigger
+    # applied above which binds the clients that predate this code.
+    stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
         (_utc_now_iso(),),
