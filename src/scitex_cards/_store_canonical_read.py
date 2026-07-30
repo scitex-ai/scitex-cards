@@ -26,6 +26,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from ._store_errors import StoreUnavailableError
+
 
 def _read_canonical_db_or_raise() -> dict:
     """Read the whole store from SQLite for a read-modify-write. FAILS LOUD.
@@ -64,7 +66,13 @@ def _read_canonical_db_or_raise() -> dict:
     # from a real empty board and is exactly what got written back over 2,138
     # cards. Ask the file system, not the exporter.
     if not db_path.exists():
-        raise RuntimeError(
+        # StoreUnavailableError, not a bare RuntimeError: this message names an
+        # absolute path and is rendered into a PAGE by the Django layer, which
+        # scitex-hub found being served verbatim to anonymous visitors of
+        # /apps/cards/. A named type lets that layer pick the audience-appropriate
+        # form instead of string-matching prose. Still a RuntimeError subclass, so
+        # every existing `except Exception` keeps working.
+        raise StoreUnavailableError(
             f"canonical store {db_path} does not exist. REFUSING to continue: "
             f"the exporter answers a missing database with an empty document, "
             f"and this value is written back as the WHOLE store — every card "
@@ -93,8 +101,61 @@ def _read_canonical_db_or_raise() -> dict:
             f"store's own database."
         )
 
+    # A RETIRED STORE IS NOT THE STORE, and this is the same shape as the
+    # ownership check above: reading it would serve yesterday's board while
+    # looking perfectly healthy. After a verified copy there are TWO stores with
+    # the same identity, so identity alone cannot say which one is authoritative
+    # -- only a statement of which is CURRENT can, and the cutover is the act of
+    # moving that statement into the old store precisely so a straggler holding
+    # the old path fails loudly here rather than quietly serving stale rows.
+    #
+    # Checked at the READ door deliberately. The 2026-07-19 outage was the write
+    # door refusing correctly all day while reads kept succeeding, and this
+    # docstring already says not to recreate that asymmetry.
+    _refuse_if_retired(db_path)
+
     doc = _export_and_count_in_one_snapshot(db_path)
     return doc
+
+
+def _refuse_if_retired(db_path: Path) -> None:
+    """Raise :class:`StoreRetired` if this store has been superseded.
+
+    ``unguarded_store=STATUS_CURRENT`` -- the PERMISSIVE era, and the choice is
+    stated here rather than defaulted so it is visible at the call site.
+
+    MEASURED 2026-07-30: no live store carries the retirement guards yet. They
+    install via ``init_schema`` on a WRITE open, and this path opens read-only,
+    where creating a trigger fails outright. Passing ``"refuse"`` today would
+    make every reader answer "I cannot prove this store is current" and refuse
+    on release day -- the guard causing the very outage it exists to prevent.
+    Flip to ``"refuse"`` once a released client has opened the live stores for
+    writing; that is a one-line change and it is meant to be visible.
+
+    The retirement branch is NOT deferred: a store that says it is retired is
+    refused in either era, which is what the cutover depends on.
+
+    A store too old to have ``schema_meta`` is treated as un-retired rather than
+    unreadable -- absence of the table is not a retirement, and refusing here
+    would break stores that predate it for no safety gain.
+    """
+    from ._store_retirement import STATUS_CURRENT, read_status
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        try:
+            rows = dict(conn.execute("SELECT key, value FROM schema_meta"))
+        except sqlite3.OperationalError:
+            return
+        triggers = {
+            name
+            for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+            )
+        }
+    finally:
+        conn.close()
+    read_status(rows, triggers, unguarded_store=STATUS_CURRENT)
 
 
 def _export_and_count_in_one_snapshot(db_path: Path) -> dict:

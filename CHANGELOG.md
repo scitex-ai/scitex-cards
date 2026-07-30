@@ -2,6 +2,164 @@
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-30
+
+The PostgreSQL migration became possible, and a byte that could have made it
+impossible was stopped at the door. Nothing here switches the store — this is
+the capability plus the guard, not the cutover.
+
+### A byte no backend can store (#663)
+
+A NUL is legal in SQLite TEXT and illegal in PostgreSQL TEXT, so a body SQLite
+accepted silently made the whole store unmigratable. Two rows in `messages`
+blocked the preflight; within ~2 minutes of clearing them a third arrived in
+`dm_messages`, written by an agent actively trying not to write one, in a
+message ANNOUNCING the fix. Prose about the byte is how the byte spreads.
+
+`dm_messages` is append-only and immutable except its tombstone columns, so that
+third row cannot be corrected in place. Write time is not the convenient place
+to catch this, it is the only place.
+
+Sanitised rather than rejected — rejecting would discard a legitimate 4 KB
+technical message whose only sin was quoting the byte it was about. The
+`record_json` already holds the body with the byte JSON-escaped, byte-identical
+to the column, so the original survives in the row. The marker is U+2400, not a
+backslash escape: one live body already contained `\x00` as prose, so a naive
+un-escape produced three NULs where the original had one. A marker a human can
+type by accident cannot be distinguished from content.
+
+The constant is `chr(0)`, never a literal. The first draft of the guard put a
+real NUL on line 53 and git classified the module as binary — precisely the
+defect the rows that started this were discussing. A test pins the source as
+plain text.
+
+### Reading either backend (#663)
+
+140 `execute()` sites write SQLite's `?` paramstyle. Porting each is 140 chances
+to miss one, so the translation is bound to the CONNECTION: code keeps writing
+`?` and forgetting is not expressible. A `?` inside a string literal is NOT a
+placeholder — card titles and message bodies contain them constantly, and a
+naive replace corrupts those literals silently, producing wrong data rather than
+an error.
+
+Read-only. The 52 upserts, 32 PRAGMA sites and 10 `BEGIN IMMEDIATE` blocks are
+not ported and no claim is made about writes. Verified against a real PostgreSQL
+18.4 holding a verified copy of the live store — the same query string returning
+the same answer from both backends, with the caller unaware which replied.
+
+### Store retirement, one-way and engine-enforced (#663)
+
+After a verified copy there are TWO stores with the same identity. Identity
+cannot say which is authoritative; only a statement of which is CURRENT can, and
+the cutover is the act of moving that statement into the OLD store so a
+straggler fails loudly instead of serving yesterday's board.
+
+Enforced by triggers, not client code: `schema_version` was measured oscillating
+7 → 5 → 6 within an hour because an older client stamps its own version
+unconditionally. A rule only the current client honours is not a rule.
+
+The guard has three states, and the third is deferred behind a REQUIRED
+`unguarded_store` keyword with no default. Wiring it as an immediate refusal
+would have blacked out every board on release day: the guards install via
+`init_schema` on a WRITE open, readers open `mode=ro`, and a read-only
+connection cannot create a trigger. The retirement branch itself is NOT
+deferred — a retired store is refused in either era.
+
+### Static assets carry the release (#663)
+
+The operator reported right-click no longer opening the DM context menu. It was
+unreproducible — and being unreproducible was the diagnosis, since a fresh
+browser cannot hold a stale file. A hard reload fixed it. Applied at the storage
+backend rather than at the 61 `{% static %}` call sites, so it cannot be
+forgotten and new templates inherit it.
+
+
+## [0.24.0] - 2026-07-30
+
+The DM thread is readable on a phone, and the board can be reached from one
+without being open to the network. Both requested repeatedly by the operator;
+0.23.0's attempt at the first one was reverted within minutes of shipping.
+
+### The DM render window (#656)
+
+0.23.0 used `content-visibility: auto` with a `contain-intrinsic-size` estimate.
+Typing got fast and the thread became unreadable: an off-screen message
+contributed an ESTIMATED height, scrolling replaced estimates with measurements,
+and total scroll height grew underneath the reader, so the bottom receded.
+Reverted in #655. The operator's words were 「一番下にたどり着けないの地獄すぎる」.
+
+Two things about that failure, recorded because they were avoidable:
+
+* The measurement needed to size the estimate (883 B/msg, so 250px+, not the
+  64px guessed) was already in my own notes on the card.
+* Guessing too small is the UNRECOVERABLE direction — it strands the reader at a
+  bottom that keeps moving. There was no reason to guess at all.
+
+This renders the newest 60 messages and builds no nodes for the rest, so a
+message either has real nodes or contributes no height; the 0.23.0 failure mode
+is unavailable rather than mitigated. Scrolling near the top reveals 60 more,
+which the operator preferred to a button.
+
+The load-bearing part is the correction, not the windowing. Prepending older
+messages pushes the view down, so `scrollTop` is adjusted by the height the pane
+actually gained, measured from the real pane after the repaint:
+
+    newTop = topBefore + (heightAfter - heightBefore)
+
+`createScrollUpLoader` keeps that arithmetic and the repaint in ONE unit. In
+0.23.0 they lived in separate files and nothing exercised the pair, so the
+combination shipped untested while both halves looked correct. The regression
+test drives the loader against a container whose `scrollHeight` grows with its
+node count: 60 messages at 250px, reader 100px from the top, grow to 120,
+`scrollTop` must become 15100. A test asserting "fewer nodes rendered" would have
+passed on the broken version, which is why that is not the test.
+
+* `chat_window.js` — window policy plus the loader, pure, 15 tests
+* `chat_avatar.js` — extracted en route, previously untested
+* The DM-only header colour overrides are gone. An earlier fix matched the header
+  TEXT across board and DM and left DM feeding `--accent-2`, so the heading still
+  differed between pages along an axis the first fix did not touch. Removed
+  rather than set to a matching value, which would agree today and drift later.
+
+### A password on the board (#657)
+
+The board had no authentication of any kind — no `django.contrib.auth`, no
+sessions, no login. That was survivable only on 127.0.0.1, where the operating
+system is the access control. Reaching it from a phone means binding the LAN,
+which removes the only gate it had.
+
+`SCITEX_CARDS_ALLOWED_HOSTS` now REQUIRES `SCITEX_CARDS_PASSWORD` and raises
+without it, so exposure-without-auth is unreachable instead of discouraged. The
+knob's previous comment said "the standalone board has no auth, so only open it
+on a trusted network" — advice, which is what you write when the code will still
+let you do the unsafe thing.
+
+* `_board_exposure.py` — the rule, importing nothing, because settings.py calls
+  it during Django's settings import
+* `_board_auth.py` — HTTP Basic, constant-time comparison, and
+  `MiddlewareNotUsed` so the loopback default pays nothing
+* Whitespace-only passwords are refused; a stray space in a shell export would
+  otherwise silently open the board
+* Nothing is exempt, including static files: an exemption list is a second place
+  for the gate's shape to be wrong
+
+Verified by mutation rather than by a green run: replacing the guard with
+`if False:` turns the refusal test red with its own message.
+
+LIMITS, stated because a password invites more trust than this one earns. Basic
+over `http://` is base64 — encoding, not encryption — so anyone who can watch the
+network sees it; this is for a trusted LAN. It is therefore deliberately NOT
+treated as sufficient for public exposure: `SCITEX_CARDS_PUBLIC_HOST` still
+requires the tunnel's own authenticator in front, because a tunnel carries no
+auth of its own.
+
+### Store internals
+
+* `tasks.revision` is now incremented by a DB trigger (schema v7, #654), so the
+  counter moves on every UPDATE regardless of the writing client's version. This
+  makes `revision` trustworthy; it is NOT yet a lock, because no caller passes a
+  `WHERE ... AND revision = ?` predicate. The lost-update hole is still open.
+
 ## [0.23.0] - 2026-07-30
 
 Two DM-page fixes, both reported by the operator and both cases where they

@@ -51,6 +51,7 @@ from ._dm_ids import (
     resolve_dm_db,
     utc_now_iso,
 )
+from ._dm_storable import to_storable
 
 
 def _open(db, store) -> sqlite3.Connection:
@@ -242,6 +243,9 @@ def append(
         raise ValueError("append requires a sender")
     if not isinstance(body, str) or not body.strip():
         raise ValueError("append requires a non-empty body")
+    body, unstorable = to_storable(body)
+    if unstorable:
+        record = {**(record or {}), "unstorable_offsets": unstorable}
     stamp = ts or utc_now_iso()
     host = origin_host()
     message_id = msg_id or new_message_id()

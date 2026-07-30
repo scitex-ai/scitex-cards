@@ -43,6 +43,15 @@ from pathlib import Path
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_migrations import (
+    _migrate_v1_to_v2,
+    _migrate_v2_to_v3,
+    _migrate_v5_to_v6,
+    _migrate_v6_to_v7,
+    record_migration_provenance,
+    table_columns,
+)
+from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +118,14 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: to believe you have answered when you have not: it checks ``rowcount`` in
 #: eight places and carries no revision column, so every one of those checks
 #: passes in exactly the case a lock exists to catch.
-SCHEMA_VERSION = 6
+#:
+#: v7 makes the v6 counter DB-ENFORCED via ``tasks_bump_revision``, so no writer
+#: version can skip the increment. Application-side incrementing would require
+#: every one of ~90 agent containers to be current for the lock to mean anything,
+#: and that condition is not establishable — measured 2026-07-30, the fleet was
+#: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
+#: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
+SCHEMA_VERSION = 7
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -344,77 +360,6 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    """The column names actually present on ``table`` in THIS database file.
-
-    The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
-    a number some code wrote — and a stamp is metadata, so it can outlive the
-    thing it describes. The columns are the artifact itself.
-    """
-    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-
-
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
-
-    ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
-    add a column — so a DB created before v2 keeps the old shape forever unless
-    something ALTERs it. That silently-missing column is precisely the sort of
-    thing a version stamp would have papered over.
-
-    Existing rows get ``card_json = NULL``: the column is added, but NOT
-    back-filled (a back-fill needs the YAML, which this layer does not have).
-    Those NULLs are load-bearing — they are what makes the S2 read guard REFUSE a
-    DB that has not been re-imported, instead of quietly serving cards with their
-    unknown fields stripped. Nothing back-fills them: the importer was removed
-    with the YAML tier, so a database carrying these NULLs must be replaced with
-    one a current version wrote.
-    """
-    if "card_json" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
-
-
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
-    """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
-
-    Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
-    NOT back-filled here — the exporter REFUSES NULL payloads loudly, which is
-    what forces the database to be replaced by a current one instead of silently
-    exporting stripped records.
-    """
-    for table in ("users", "notifications", "messages"):
-        if "record_json" not in table_columns(conn, table):
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
-
-
-def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.revision`` to a pre-v6 DB. Idempotent, additive, no rewrite.
-
-    ``DEFAULT 0`` back-fills every existing row, and unlike the ``card_json``
-    NULLs above that back-fill is CORRECT rather than a placeholder: revision is
-    a counter of writes observed under the new model, so "no write has been
-    observed yet" genuinely is 0 for every pre-existing card. Nothing is being
-    invented.
-
-    THE COLUMN MUST CROSS A STORE MIGRATION VERBATIM and belongs in any
-    migration's checksummed column set — it is user-visible causal state, not
-    backend bookkeeping. If a copy resets or re-sequences revisions, every lock
-    held by a process that read the old store still MATCHES, so concurrent
-    writers stop conflicting exactly when they should and last-write-wins
-    silently. scitex-db's Postgres tool is built against that requirement.
-
-    And preserving it is NOT sufficient. A writer that read revision=5 from
-    SQLite and writes to a copied store finds 5 there and succeeds — its lock is
-    satisfied — yet it computed against a read from a DIFFERENT store, so
-    anything that landed after the copy point is gone with no error anywhere.
-    Preserving the column makes the lock FUNCTION; only quiescing every writer
-    makes it MEAN anything across a store swap, because "nothing changed under
-    me since I read" is precisely what a swap violates.
-    """
-    if "revision" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
-
-
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the schema idempotently + stamp version. Commits on success.
 
@@ -423,7 +368,15 @@ def init_schema(conn: sqlite3.Connection) -> None:
     ``schema_meta`` rows (``schema_version`` always; ``created_at`` / ``source``
     only if absent so a re-init never clobbers the original provenance).
     """
+    # BEFORE the schema script, because that script is what makes a fresh file
+    # look initialised. 0 means "new file" and is a CREATE, not a migration.
+    _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+
     conn.executescript(_SCHEMA_SQL)
+    # Separate, not folded into _SCHEMA_SQL: per the note below, that script
+    # reaches FRESH files only, and these guards must reach every store the
+    # current client opens or it cannot prove it is current (_store_retirement).
+    conn.executescript(RETIREMENT_TRIGGER_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
     # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
@@ -434,11 +387,43 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # named so the gap is visible rather than inherited as a numbering quirk.
     _migrate_v4_to_v5(conn)
     _migrate_v5_to_v6(conn)
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    _migrate_v6_to_v7(conn)
+    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT.
+    #
+    # This used to write SCHEMA_VERSION unconditionally, which let an OLDER client
+    # stamp a NEWER store as older. Measured on the live store 2026-07-30, four
+    # read-only connections seconds apart:
+    #
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=5  schema_meta=5  revision_col=True  trigger=True   <-- !
+    #
+    # The recorded version OSCILLATED between 5 and 6 while the physical schema
+    # (revision column, bump trigger) never regressed. ~90 fleet containers run
+    # 0.17.5 / 0.18.0 / 0.23.0 / 0.24.0 SIMULTANEOUSLY, so whichever version
+    # opened the store last decided what it claimed to be. The stamp was a race,
+    # not a fact -- and it read LOWER than the store's real shape, which is the
+    # dangerous direction: a reader can conclude a column is absent when it is
+    # physically there.
+    #
+    # Migrations here are additive (`ADD COLUMN`, `CREATE ... IF NOT EXISTS`), so
+    # applied schema never goes backwards. max() therefore describes reality; a
+    # bare assignment describes only the last writer. Same principle as
+    # `_blocked_age_hours`' permanent created_at fallback: a stamp encodes the
+    # WRITER's version, not the object's history, so never trust one writer to
+    # speak for a store ~90 processes share.
+    _stamp = max(_prior_version, SCHEMA_VERSION)
+    conn.execute(f"PRAGMA user_version={_stamp}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
+        "ON CONFLICT(key) DO UPDATE SET value = "
+        # MAX in SQL, not in Python: another process may have raised it between
+        # our PRAGMA read and this statement, and CAST makes the comparison
+        # numeric rather than lexicographic ('10' < '9' as text).
+        "  CAST(MAX(CAST(schema_meta.value AS INTEGER), "
+        "           CAST(excluded.value AS INTEGER)) AS TEXT)",
+        (str(_stamp),),
     )
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
@@ -447,6 +432,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
     )
+    # An upgrade of an EXISTING store names itself. See that function for why:
+    # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
+    # the only evidence available was a sentinel that measures every neighbour.
+    #
+    # The condition is repeated here rather than left to the callee's own early
+    # return, because `__version__` resolves LAZILY on purpose (#630 took cold
+    # import from 425ms to ~137ms by deferring it) and ~90 containers call
+    # init_schema on every connection. Paying that resolution on every open, to
+    # stamp a row only a genuine upgrade writes, would spend the win #630 bought.
+    if _prior_version not in (0, SCHEMA_VERSION):
+        from . import __version__ as _client_version
+
+        record_migration_provenance(
+            conn,
+            _prior_version,
+            SCHEMA_VERSION,
+            _utc_now_iso(),
+            str(_client_version),
+        )
     conn.commit()
 
 
