@@ -944,5 +944,40 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_send.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
+{% comment %}
+SELF-VERIFYING WIRING, and it belongs HERE rather than in chat.js.
+
+On 2026-07-30 the operator's board served this template at 0.23.0 with 0.24.0 static
+files. chat_window.js and chat_avatar.js were fetchable (HTTP 200) but this template
+did not reference them, so their globals never existed. The consequences were both
+invisible: avatars fell back to a "?" chip, and the render-window fix simply DID NOT
+RUN while everyone believed it was shipped — the operator's typing stayed slow for
+two more days and it read as "the fix did not work" rather than "the fix is absent".
+Console errors: zero. It took an element-inspector dump to locate.
+
+THE TEMPLATE IS WHAT DECLARES THE MODULE SET, so the template is what should verify
+its own declaration arrived. Putting the check in chat.js would be checking a list
+against itself, and would be defeated by exactly the case that bit us — a stale
+chat.js paired with a current template, or the reverse.
+
+`load` rather than `DOMContentLoaded`: `defer` scripts run before DOMContentLoaded,
+but `load` is later still and costs nothing here, so a slow module cannot produce a
+false alarm. Report-only — never throw, because blanking the pane would trade a
+silent failure for a worse loud one.
+{% endcomment %}
+<script>
+window.addEventListener("load", function () {
+  var required = ["ChatDiff", "ChatWindow", "ChatAvatar"];
+  var missing = required.filter(function (name) { return !window[name]; });
+  if (missing.length) {
+    console.error(
+      "[chat] these modules did not load: " + missing.join(", ") +
+      " — the page will silently degrade (blank avatars, no render window). " +
+      "Most likely this template and the deployed static files are from " +
+      "different versions; check that both were deployed together."
+    );
+  }
+});
+</script>
 </body>
 </html>
