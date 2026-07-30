@@ -51,6 +51,7 @@ from ._db_migrations import (
     record_migration_provenance,
     table_columns,
 )
+from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
 
     conn.executescript(_SCHEMA_SQL)
+    # Separate, not folded into _SCHEMA_SQL: per the note below, that script
+    # reaches FRESH files only, and these guards must reach every store the
+    # current client opens or it cannot prove it is current (_store_retirement).
+    conn.executescript(RETIREMENT_TRIGGER_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
     # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
