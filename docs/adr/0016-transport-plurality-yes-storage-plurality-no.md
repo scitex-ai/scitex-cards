@@ -123,6 +123,122 @@ never updates: a stale row wins by being first, and the import reports success.
 Row-level writes remove one failure class and leave the other; both halves are
 needed.
 
+## AMENDMENT, 2026-07-30 — the operator revisited the ruling
+
+This ADR said a Postgres adapter would need the operator to revisit the
+2026-07-20 hard-mode ruling. **They have.** Verbatim, quoting their own earlier
+instruction back and then answering it:
+
+> 「例外を用意しないでください。甘くせずにハードに切り替えてください。曖昧にすると
+> バグが残ります。他のエージェントも迷ってしまいます。唯一の方法だけソースコードに
+> 含めてください。」
+>
+> これは私の指示が悪かったと思います。
+>
+> sqlite と postgres を対応させてください、可能ですか？
+
+So the title of this ADR is now **half wrong**, and the honest thing is to
+amend rather than quietly rewrite: storage plurality is permitted. What follows
+is the shape it is permitted in, and why that shape does not reopen the hole the
+original ruling closed.
+
+### The requirement changed, not the reasoning
+
+The RULE was too strong. The REASON was correct — ambiguity leaves bugs and
+confuses other agents — and it survives intact below.
+
+### scitex-db's correction: the cause was peer stores, not two engines
+
+Credit where it belongs. This ADR (and the author) had been carrying "two
+backends caused the board wipes". scitex-db read `_store_backend.py` and found
+the narrower, more useful mechanism:
+
+> reconciling two stores treated as PEERS, where absence in one is interpreted
+> as deletion in the other.
+
+That is what turned a 5-row temporary YAML into a replacement for 2,159 live
+rows. The distinction is load-bearing: the old framing forbids a harmless thing
+(two engines existing) while permitting the lethal one (a sync path that reads
+absence as delete). The corrected framing forbids the lethal one and permits the
+harmless one.
+
+**So the invariant that survives verbatim, with no exceptions, is:**
+
+> **No code may delete a row because it is absent from another store.**
+
+This is also what `_assert_no_shrink` enforces from the other side. The two
+guards now have one stated reason instead of two folk ones.
+
+### The permitted shape
+
+1. **One authoritative store per deployment**, never two at once. Default
+   SQLite: single-host, zero-config, no daemon.
+2. **Selected by a deploy-time config value read once at startup — NOT an env
+   var.** `_store_backend.py`'s own reasoning applies: an env var leaks
+   ambiently across every write in a process, which is exactly why
+   `allow_shrink` is keyword-only. (scitex-db caught the author about to
+   specify an env var after arguing against them.)
+3. **No sync path, ever.** Nothing keeps SQLite and Postgres in agreement. The
+   only crossing is a one-way migration that runs once and finishes.
+4. **No implicit fallback.** A configured-but-unreachable Postgres FAILS the
+   process; it must not fall back to SQLite. scitex-db's framing, which is
+   better than the author's: *a fallback does not merely read the wrong
+   database, it makes the wrong database WRITABLE* — and thereby manufactures
+   the second-authoritative-store condition the ruling exists to prevent.
+   Downtime is recoverable by restarting; a week of cards written into a store
+   nobody is reading is not. Precedent: `_backend_http.py:10-13`,
+   "FAIL-LOUD, NEVER FALL BACK".
+5. **An unmarked destination is UNUSABLE, not "probably fine."** The migration
+   writes its completion marker LAST; tool and adapter both refuse a
+   destination without it. A half-copied Postgres an adapter happily connects
+   to is the fallback bug with extra steps.
+
+Under this shape "both supported" and "exactly one authoritative store" are
+simultaneously true, and the operator's worry — agents not knowing which world
+they are in — has one answer per process, fixed at deploy time.
+
+### Ordering is not negotiable
+
+Row-level writes with the `revision` optimistic lock come FIRST
+(`cards-row-level-writes-with-revision-lock-20260730`). `_store_canonical_read.
+py:31` still reads the ENTIRE store to change one field; measured 2026-07-30,
+appending ONE comment showed as `task_comments` +2 −1 — existing rows deleted
+and reinserted. Over a network that is not merely slow: it widens the window in
+which a crash leaves rows deleted and not yet reinserted. The operator proposed
+this ordering themselves.
+
+### The migration must refuse to run while any writer is live
+
+Discovered by scitex-db at the boundary between the lock and the migration, and
+decided here because the lock is this package's.
+
+Preserving `revision` across the copy is necessary — it is user-visible causal
+state and belongs in the checksummed column set, not treated as backend
+bookkeeping. But it is **not sufficient**. A writer that read `revision=5` from
+SQLite and writes to Postgres after cutover finds `revision=5` and SUCCEEDS —
+its lock is satisfied, yet it computed against a read from a different store,
+and any write that landed in SQLite after the copy point is silently gone.
+Preserving `revision` makes the lock FUNCTION; it does not make it MEAN
+anything across a store swap, because the lock's premise ("nothing changed under
+me since I read") is what the swap violates.
+
+Therefore quiescence is not an optimisation, it is the only thing that makes the
+premise hold across the boundary.
+
+**And the tempting detector must be refused.** "Has anything been written
+recently?" is a heuristic, and a bad one here: measured 15.5 row-deltas/min of
+ordinary traffic, so a quiet 30 seconds proves nothing and a busy one proves
+only that somebody wrote. It passes exactly when it is least safe. The gate must
+be a state the WRITE PATH consults and fails closed on.
+
+Stated limit, so nobody builds against a promise: a gate inside the package is
+honoured only by processes running a version that HAS it. Measured 2026-07-30 —
+one agent resident on 0.17.5, another carrying `scitex_todo` 0.13.5, and the
+operator's own board process running code 57 minutes older than what was
+installed on disk. So for the FIRST migration the real mechanism is the operator
+quiescing the fleet; the in-package gate is what makes later ones unattended-safe.
+Do not call the migration safe-to-run-unattended until both exist.
+
 ## Note on method
 
 The audit's reading was the conclusion that suited every party at the table, and
