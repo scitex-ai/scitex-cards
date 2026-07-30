@@ -33,7 +33,67 @@ __all__ = [
     "_migrate_v5_to_v6",
     "_migrate_v6_to_v7",
     "REVISION_TRIGGER_SQL",
+    "record_migration_provenance",
 ]
+
+
+def record_migration_provenance(
+    conn: sqlite3.Connection,
+    prior_version: int,
+    new_version: int,
+    now_iso: str,
+    client_version: str,
+) -> bool:
+    """Stamp WHO upgraded an EXISTING store's schema, and WHEN. Returns whether.
+
+    WHY THIS EXISTS, from a diagnosis that went wrong for want of exactly this.
+    On 2026-07-30 the live store was found to have moved v5 -> v6. Nothing in the
+    store recorded which client did it or when, so the only available evidence was
+    a test-suite sentinel that compares the store before and after a run -- and
+    that store is written continuously by ~90 fleet agents, so it attributes every
+    neighbour's write to whoever happens to be running. I read it as my own work
+    and reported that I had migrated the production store. I had not. The
+    correction was only possible by INFERRING the culprit's version from what the
+    migration left behind (revision column present, v7 trigger absent, therefore a
+    SCHEMA_VERSION=6 client). That inference should not have been necessary.
+
+    So: an upgrade now names itself. ``schema_migrated_from`` /
+    ``schema_migrated_to`` / ``schema_migrated_at`` / ``schema_migrated_by``.
+
+    ONLY FOR AN UPGRADE OF AN EXISTING STORE. A fresh database reports
+    ``PRAGMA user_version == 0`` and is being CREATED, not migrated; stamping that
+    would put a migration record on every new store and make the field useless for
+    the question it exists to answer. Re-running against an already-current store
+    (``prior == new``) is likewise not a migration -- ~90 containers open this
+    store constantly and init_schema is idempotent by design, so recording those
+    would rewrite the stamp on every connection and destroy the timestamp's
+    meaning.
+
+    THIS IS A RECORD, NOT A GATE. It does not stop a client from silently
+    upgrading a shared store, which is the actual defect
+    (cards-pytest-collection-migrates-the-live-store-20260730): whichever client
+    connects first still decides the schema. Refusing to migrate without explicit
+    consent would break every fleet client that relies on auto-migration today,
+    so that change needs a fleet-wide decision and does not belong in this commit.
+    What this buys is that the next such event is attributable in one query
+    instead of by reasoning backwards from residue.
+    """
+    if prior_version == 0 or prior_version == new_version:
+        return False
+
+    rows = [
+        ("schema_migrated_from", str(prior_version)),
+        ("schema_migrated_to", str(new_version)),
+        ("schema_migrated_at", now_iso),
+        ("schema_migrated_by", client_version),
+    ]
+    conn.executemany(
+        "INSERT INTO schema_meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        rows,
+    )
+    return True
+
 
 #: The DB-side enforcement of the v6 counter. A module constant so the migration
 #: and any fresh-schema path install the SAME text, and so scitex-db's Postgres

@@ -43,8 +43,14 @@ from pathlib import Path
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
-from ._db_migrations import _migrate_v1_to_v2, _migrate_v2_to_v3
-from ._db_migrations import _migrate_v5_to_v6, _migrate_v6_to_v7, table_columns
+from ._db_migrations import (
+    _migrate_v1_to_v2,
+    _migrate_v2_to_v3,
+    _migrate_v5_to_v6,
+    _migrate_v6_to_v7,
+    record_migration_provenance,
+    table_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -361,6 +367,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     ``schema_meta`` rows (``schema_version`` always; ``created_at`` / ``source``
     only if absent so a re-init never clobbers the original provenance).
     """
+    # BEFORE the schema script, because that script is what makes a fresh file
+    # look initialised. 0 means "new file" and is a CREATE, not a migration.
+    _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+
     conn.executescript(_SCHEMA_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
@@ -373,11 +383,42 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v4_to_v5(conn)
     _migrate_v5_to_v6(conn)
     _migrate_v6_to_v7(conn)
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT.
+    #
+    # This used to write SCHEMA_VERSION unconditionally, which let an OLDER client
+    # stamp a NEWER store as older. Measured on the live store 2026-07-30, four
+    # read-only connections seconds apart:
+    #
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=5  schema_meta=5  revision_col=True  trigger=True   <-- !
+    #
+    # The recorded version OSCILLATED between 5 and 6 while the physical schema
+    # (revision column, bump trigger) never regressed. ~90 fleet containers run
+    # 0.17.5 / 0.18.0 / 0.23.0 / 0.24.0 SIMULTANEOUSLY, so whichever version
+    # opened the store last decided what it claimed to be. The stamp was a race,
+    # not a fact -- and it read LOWER than the store's real shape, which is the
+    # dangerous direction: a reader can conclude a column is absent when it is
+    # physically there.
+    #
+    # Migrations here are additive (`ADD COLUMN`, `CREATE ... IF NOT EXISTS`), so
+    # applied schema never goes backwards. max() therefore describes reality; a
+    # bare assignment describes only the last writer. Same principle as
+    # `_blocked_age_hours`' permanent created_at fallback: a stamp encodes the
+    # WRITER's version, not the object's history, so never trust one writer to
+    # speak for a store ~90 processes share.
+    _stamp = max(_prior_version, SCHEMA_VERSION)
+    conn.execute(f"PRAGMA user_version={_stamp}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
+        "ON CONFLICT(key) DO UPDATE SET value = "
+        # MAX in SQL, not in Python: another process may have raised it between
+        # our PRAGMA read and this statement, and CAST makes the comparison
+        # numeric rather than lexicographic ('10' < '9' as text).
+        "  CAST(MAX(CAST(schema_meta.value AS INTEGER), "
+        "           CAST(excluded.value AS INTEGER)) AS TEXT)",
+        (str(_stamp),),
     )
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
@@ -386,6 +427,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
     )
+    # An upgrade of an EXISTING store names itself. See that function for why:
+    # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
+    # the only evidence available was a sentinel that measures every neighbour.
+    #
+    # The condition is repeated here rather than left to the callee's own early
+    # return, because `__version__` resolves LAZILY on purpose (#630 took cold
+    # import from 425ms to ~137ms by deferring it) and ~90 containers call
+    # init_schema on every connection. Paying that resolution on every open, to
+    # stamp a row only a genuine upgrade writes, would spend the win #630 bought.
+    if _prior_version not in (0, SCHEMA_VERSION):
+        from . import __version__ as _client_version
+
+        record_migration_provenance(
+            conn,
+            _prior_version,
+            SCHEMA_VERSION,
+            _utc_now_iso(),
+            str(_client_version),
+        )
     conn.commit()
 
 
