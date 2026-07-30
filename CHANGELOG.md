@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-30
+
+Two DM-page fixes, both reported by the operator and both cases where they
+located the problem better than my code reading did.
+
+### Typing lag in the DM composer (#651)
+
+Distinct from 0.22.0's board search-box debounce, which was a real defect in the
+wrong place: the operator's lag was on `/dm`. They then ran the controlled
+experiment — typing lags in a heavy thread, is comfortable in a light one — which
+located it in thread weight rather than in any handler.
+
+    dm:operator::scitex-cards   222 msgs   86,859 B   lags
+    dm:operator::scitex-hpc      51 msgs   18,761 B   comfortable
+
+The pane keeps every message in the DOM (`chat_diff.js` appends incrementally,
+so re-rendering was never the cost — the tree size is). Each keystroke pays
+style+layout across it, and `chat_compose.js` auto-sizes the textarea by reading
+`scrollHeight`, forcing that layout synchronously.
+
+* `content-visibility: auto` on `.msg` — the browser skips layout and paint for
+  off-screen messages. No cap, no "load older" affordance, and no change to the
+  diff logic, so it cannot alter which messages appear.
+* `contain-intrinsic-size: auto 64px` — the `auto` keyword makes the browser
+  remember each bubble's real height after first render, so the scrollbar
+  settles. Bubbles differ ~6x in this thread, so a fixed estimate would leave it
+  visibly wrong.
+
+No per-keystroke timing is claimed: the build container has no browser, so the
+mechanism is established from source and the magnitude is not measured.
+
+### The header text changed between Board and DM (#651)
+
+Operator: they sent the board's header element and asked for it verbatim on DM,
+then 「header が変わると変です」. The `<h1>` was swapping "SciTeX Cards" for
+"Direct messages", which reads as the page breaking rather than as navigation.
+
+Both pages now pass the same `page_title`: the band names the PRODUCT, the
+switcher names the PAGE. This supersedes a 2026-07-29 decision (DM wording over
+"chat") that had been implemented partly as this heading and pinned by a test —
+the DM wording survives in the switcher item, its tooltip and the browser tab,
+each already covered by its own test. A new test pins that the switcher still
+says DM, since it is now the only visible thing distinguishing the two pages.
+
+
 ## [0.22.0] - 2026-07-30
 
 Two alarm/latency fixes, both reported from outside and both cases where the
