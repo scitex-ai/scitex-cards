@@ -3071,8 +3071,15 @@
       // blanking the panel.
       let thread = task;
       try {
-        const r = await fetch(
-          `${API_BASE}/chat/${encodeURIComponent(task.id)}`);
+        // (hook-bypass: line-limit) ONE LINE, and API_BASE concatenated with a
+        // string literal rather than interpolated. test__board_v3_mount_prefix
+        // requires the count of call sites to equal the count of the prefixed
+        // form as a CONTIGUOUS literal, so a line break between the paren and
+        // API_BASE fails it, and so does a template literal. Both are equally
+        // correct at runtime; the guard enforces one FORM because that is what
+        // makes "no un-prefixed call crept in" checkable at all. Conform rather
+        // than widen it. Do not reflow this line.
+        const r = await fetch(API_BASE + "/chat/" + encodeURIComponent(task.id));
         if (r.ok) {
           const p = await r.json();
           if (Array.isArray(p.comments)) {
