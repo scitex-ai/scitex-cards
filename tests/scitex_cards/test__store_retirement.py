@@ -186,7 +186,7 @@ class TestTheGuardHasThreeStates:
         # Arrange
         rows = {"store_uuid": "uuid-source"}
         # Act
-        status = read_status(rows, set(TRIGGER_NAMES))
+        status = read_status(rows, set(TRIGGER_NAMES), unguarded_store="refuse")
         # Assert
         assert status == STATUS_CURRENT
 
@@ -197,14 +197,14 @@ class TestTheGuardHasThreeStates:
         raised = pytest.raises(StoreRetired)
         # Assert
         with raised:
-            read_status(rows, set(TRIGGER_NAMES))
+            read_status(rows, set(TRIGGER_NAMES), unguarded_store="refuse")
 
     def test_the_retired_error_carries_the_successor(self):
         # Arrange
         rows = {"store_status": STATUS_RETIRED, "retired_in_favour_of": "uuid-dest"}
         successor = None
         try:
-            read_status(rows, set(TRIGGER_NAMES))
+            read_status(rows, set(TRIGGER_NAMES), unguarded_store="refuse")
         except StoreRetired as exc:
             successor = exc.successor
         # Act
@@ -217,7 +217,7 @@ class TestTheGuardHasThreeStates:
         rows = {"store_status": STATUS_RETIRED, "retired_in_favour_of": "uuid-dest"}
         message = ""
         try:
-            read_status(rows, set(TRIGGER_NAMES))
+            read_status(rows, set(TRIGGER_NAMES), unguarded_store="refuse")
         except StoreRetired as exc:
             message = str(exc)
         # Act
@@ -233,7 +233,7 @@ class TestTheGuardHasThreeStates:
         raised = pytest.raises(StoreCannotProveItsStatus)
         # Assert
         with raised:
-            read_status(rows, set())
+            read_status(rows, set(), unguarded_store="refuse")
 
     def test_a_partially_guarded_store_also_refuses(self):
         # Arrange: one of the two triggers present is not the guarantee.
@@ -242,7 +242,7 @@ class TestTheGuardHasThreeStates:
         raised = pytest.raises(StoreCannotProveItsStatus)
         # Assert
         with raised:
-            read_status(rows, {TRIGGER_NAMES[0]})
+            read_status(rows, {TRIGGER_NAMES[0]}, unguarded_store="refuse")
 
     def test_an_explicit_retirement_is_believed_even_without_the_guard(self):
         # Arrange: a retirement someone wrote is evidence; its ABSENCE on an
@@ -252,7 +252,57 @@ class TestTheGuardHasThreeStates:
         raised = pytest.raises(StoreRetired)
         # Assert
         with raised:
-            read_status(rows, set())
+            read_status(rows, set(), unguarded_store="refuse")
+
+
+class TestTheUnguardedEraMustBeStatedExplicitly:
+    """MEASURED 2026-07-30, and it is why the permissive answer exists at all.
+
+    The live canonical store carries six triggers and NONE of them are these.
+    They install via init_schema, which runs on a WRITE open; readers open
+    mode=ro and a read-only connection CANNOT create a trigger ("attempt to
+    write a readonly database", verified). So on release day every reader would
+    find no guard, refuse, and the board would go dark until some writer
+    happened to open the store -- the guard causing the very outage it exists to
+    prevent. Hence a required keyword rather than a default: each call site
+    states its era, and flipping it later is a visible one-line change.
+    """
+
+    def test_an_unguarded_store_is_current_during_the_rollout(self):
+        # Arrange
+        rows = {"store_uuid": "uuid-source"}
+        # Act
+        status = read_status(rows, set(), unguarded_store=STATUS_CURRENT)
+        # Assert
+        assert status == STATUS_CURRENT
+
+    def test_a_retirement_is_still_honoured_during_the_rollout(self):
+        # Arrange: the permissive era must NOT make a retired store readable.
+        # This is the branch the cutover depends on, and it is safe today.
+        rows = {"store_status": STATUS_RETIRED, "retired_in_favour_of": "uuid-dest"}
+        # Act
+        raised = pytest.raises(StoreRetired)
+        # Assert
+        with raised:
+            read_status(rows, set(), unguarded_store=STATUS_CURRENT)
+
+    def test_the_keyword_is_required(self):
+        # Arrange: no default, so nobody inherits an era they did not choose.
+        rows = {"store_uuid": "uuid-source"}
+        # Act
+        raised = pytest.raises(TypeError)
+        # Assert
+        with raised:
+            read_status(rows, set(TRIGGER_NAMES))
+
+    def test_an_unrecognised_era_is_rejected_rather_than_guessed(self):
+        # Arrange: a typo must not silently select the permissive branch.
+        rows = {"store_uuid": "uuid-source"}
+        # Act
+        raised = pytest.raises(ValueError)
+        # Assert
+        with raised:
+            read_status(rows, set(), unguarded_store="curent")
 
 
 class TestTheTriggersAreActuallyInstalled:

@@ -133,7 +133,12 @@ class StoreCannotProveItsStatus(RuntimeError):
         return "This task store cannot prove whether it is still current."
 
 
-def read_status(rows: dict[str, str], trigger_names: set[str]) -> str:
+def read_status(
+    rows: dict[str, str],
+    trigger_names: set[str],
+    *,
+    unguarded_store: str,
+) -> str:
     """Decide the store's status from its metadata and its installed guards.
 
     Pure: takes what was read rather than doing the reading, so every branch is
@@ -141,17 +146,46 @@ def read_status(rows: dict[str, str], trigger_names: set[str]) -> str:
 
     Three outcomes, deliberately -- two would be a bug:
       * retirement present            -> raise :class:`StoreRetired`
-      * guard absent                  -> raise :class:`StoreCannotProveItsStatus`
+      * guard absent                  -> governed by ``unguarded_store``
       * guard present, no retirement  -> ``STATUS_CURRENT``
 
     Order matters: an explicit retirement is believed even on a store that
     cannot enforce it. A retirement someone took the trouble to write is
     evidence; its absence on an unguarded store is not.
+
+    ``unguarded_store`` IS REQUIRED AND HAS NO DEFAULT, because getting it wrong
+    in either direction is severe and the right answer changes over time:
+
+      ``"refuse"``  -- the eventual, correct behaviour. A store with no guard
+                       cannot prove it is current, and "I could not tell" must
+                       be a refusal.
+      ``"current"`` -- the ONLY safe answer until the guards are actually
+                       installed on live stores.
+
+    WHY THE PERMISSIVE ANSWER EXISTS AT ALL, measured 2026-07-30:
+    the live canonical store carries SIX triggers and NONE of them are these --
+    they ship in this change and are installed by ``init_schema``, which runs on
+    a WRITE open. Readers open ``mode=ro``, and a read-only connection cannot
+    create a trigger ("attempt to write a readonly database", verified). So on
+    the day this releases, every reader would find no guard, refuse, and the
+    board would go dark until some writer happened to open the store. The guard
+    would cause precisely the outage it exists to prevent.
+
+    So it is a REQUIRED keyword rather than a default: every call site must
+    state which era it is in, and flipping to ``"refuse"`` is a visible one-line
+    change per site rather than a silent behavioural shift. A default here would
+    be the level-3 mistake -- something everyone has to remember.
     """
     if rows.get("store_status") == STATUS_RETIRED:
         raise StoreRetired(rows.get("retired_in_favour_of"))
     if not set(TRIGGER_NAMES).issubset(trigger_names):
-        raise StoreCannotProveItsStatus()
+        if unguarded_store == "refuse":
+            raise StoreCannotProveItsStatus()
+        if unguarded_store != STATUS_CURRENT:
+            raise ValueError(
+                f"unguarded_store must be 'refuse' or {STATUS_CURRENT!r}, "
+                f"got {unguarded_store!r}"
+            )
     return STATUS_CURRENT
 
 
