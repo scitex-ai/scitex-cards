@@ -95,6 +95,20 @@ def _blocked_age_hours(task: dict, now: _dt.datetime) -> float | None:
     ``created_at`` makes an unstamped card read as maximally stale, so the alarm
     errs toward FIRING. That is the safe direction: a spurious "has your blocker
     cleared?" costs a glance, a suppressed one costs a card.
+
+    THE FALLBACK IS PERMANENT. IT IS NOT A MIGRATION RAMP. DO NOT DELETE IT ONCE
+    "the fleet is current" — that condition is not establishable, and the whole
+    reason is grant's, 2026-07-30: **a stamp's presence encodes the WRITER's
+    version, not the card's history.** Every agent writes this store from its own
+    container (measured that day: 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0 all live), so
+    two cards blocked at the same moment report different ages purely by which
+    agent last touched them. "Unstamped" conflates *born blocked* with *last
+    written by an older agent*, and nothing in the row separates them.
+
+    So requiring the stamp would make an unstamped row read as an error or as age
+    zero — i.e. FRESH — which is the original bug wearing a new mechanism. The
+    fallback is not scaffolding around the field; it is what makes the field safe
+    to read at all.
     """
     ts = task.get(FIELD_BLOCKED_AT) or task.get("created_at")
     parsed = _parse_iso(ts)
