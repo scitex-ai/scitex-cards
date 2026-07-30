@@ -234,4 +234,48 @@ class TestStampBlockedAt:
         assert FIELD_BLOCKED_AT not in task
 
 
+def test_a_card_born_blocked_is_stamped_at_creation():
+    """``add_task(status="blocked")`` starts the clock, stated not inferred.
+
+    Before this, such a row carried no stamp and ``_blocked_age_hours`` fell back
+    to ``created_at`` — which is the RIGHT answer for a card born blocked, since
+    those two instants coincide. Correct-by-luck, and the luck is spent the
+    moment the fallback changes. Surfaced by grant 2026-07-30 while measuring why
+    a blocker change produced no stamp.
+    """
+    # Arrange
+    prior_status = None
+
+    # Act
+    task = {"status": "blocked", "blocker": "agent-wait"}
+    _stamp_blocked_at(task, prior_status, None)
+
+    # Assert
+    assert task.get(FIELD_BLOCKED_AT)
+
+
+def test_an_unstamped_card_is_still_read_as_maximally_stale():
+    """The fallback must survive: a stamp's presence encodes the WRITER's version.
+
+    grant's point, 2026-07-30: every agent writes this store from its own
+    container (0.13.5 / 0.17.5 / 0.18.0 / 0.22.0 all live that day), so
+    "unstamped" conflates *born blocked* with *last written by an older agent*
+    and nothing in the row separates them. Requiring the stamp would make an
+    unstamped row read as fresh — the original bug in a new mechanism. This test
+    exists to fail if someone later "cleans up" the fallback as a migration ramp.
+    """
+    # Arrange
+    card = _blocked(
+        "written-by-an-old-agent",
+        created_at=PAIR_SET_LONG_AGO,
+        last_activity=JUST_COMMENTED,
+    )
+
+    # Act
+    out = detect_blocked_external([card], now=NOW)
+
+    # Assert
+    assert out["grant"][0].age_hours == 30.0
+
+
 # EOF

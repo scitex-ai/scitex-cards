@@ -139,6 +139,18 @@ def add_task(
     _stamp = _utc_now_iso()
     new["created_at"] = _stamp
     new["last_activity"] = _stamp
+    # A card BORN blocked starts its blocked-check clock now, stated rather than
+    # inferred. Without this the row carries no `blocked_at` and
+    # `_blocked_age_hours` falls back to `created_at` — which returns the RIGHT
+    # answer here, since for a card born blocked those two instants are the same.
+    # That is correct-by-luck, and the luck is spent the moment the fallback
+    # changes. Surfaced by grant 2026-07-30 while measuring why their blocker
+    # change produced no stamp; the fallback is load-bearing enough that a path
+    # relying on it silently should not exist.
+    if status == "blocked":
+        from ._stale_active_clocks import FIELD_BLOCKED_AT
+
+        new[FIELD_BLOCKED_AT] = _stamp
     # `created_by` — the creating USER, STRICTLY resolved above (never a
     # blank/"unknown" placeholder). Drives the board detail ROLES section +
     # ADR-0009's creator auto-subscribe. (hook-bypass: line-limit)
