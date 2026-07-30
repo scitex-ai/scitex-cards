@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-30
+
+Two alarm/latency fixes, both reported from outside and both cases where the
+obvious measurement would have confirmed the wrong thing.
+
+### The blocked-check was silenceable by TYPING (#646)
+
+`detect_blocked_external` asks "has your blocker cleared?" but measured
+`last_activity` — "when was this touched". A comment moves `last_activity` and
+clears nothing, so annotating a stuck card hid it for another 24 h. Reported by
+grant across three consecutive sweeps: of five cards that dropped off, three had
+genuinely been reclassified and TWO had merely been commented on. That inverted
+the incentive — recording evidence on a stuck card is the behaviour we want, and
+doing it hid the card — so they had stopped commenting on seven genuine waits to
+keep them visible.
+
+Not a narrowed set: every card was inspected and answered. The clock measured a
+DIFFERENT QUANTITY than the question asked, which is why no filter fix would
+have touched it.
+
+* `blocked_at`, stamped by `_stamp_blocked_at` when the `(status, blocker)` PAIR
+  moves. A different blocker restarts the clock (a genuinely new wait); a comment
+  does not.
+* `_blocked_age_hours` falls back to `created_at` and NEVER to `last_activity` —
+  the 394 already-blocked cards carry no stamp, so a `last_activity` fallback
+  would have silenced the very cards that motivated the fix. `created_at` makes
+  an unstamped card read as maximally stale, so the alarm errs toward FIRING: a
+  spurious re-check costs a glance, a suppressed one costs a card.
+* `_detect_owned_untouched` takes a `clock`, defaulting to `_age_hours`, so
+  stale-active is unchanged — there a comment legitimately IS acting.
+
+Rollout measured with the real function against the live 394 blocked rows rather
+than a reimplemented predicate: 46 messages where 42 already went out daily, so
+4 owners newly nudged and 0 losing coverage. No backfill: there is no event log
+to reconstruct a stamp from (`task_comments.kind` is NULL on 5908/5967 rows).
+
+`_stale_active.py` split into `_stale_active_thresholds` (how long is too long)
+and `_stale_active_clocks` (which quantity each sweep measures). Both clocks now
+sit side by side, because picking the wrong one is the defect. Public API
+unchanged — all 23 `__all__` names still resolve.
+
+### The caret lagged the keyboard on the board (#647)
+
+Distinct from 0.21.0's payload work, and not fixable by it: that cut LOAD cost
+(21.0 MB → 11.9 MB), this is INTERACTION cost. `board_v3.html` called `render()`
+synchronously from `oninput`, which is dispatched BEFORE the browser paints — so
+a full-layout rebuild over 2885 cards sat on the critical path of displaying the
+character just typed. Hence the CARET lagging rather than results lagging the
+caret; only one of those complaints points at the input handler.
+
+New pure `board_v3/searchDebounce.js` (timers only, no DOM/STATE) providing a
+trailing-edge 120 ms debouncer, unit-tested under `node --test` like its 14
+siblings. A missing module degrades to the OLD synchronous `render()` — correct
+but slow — never to a board that stops responding to the filter.
+
+`renderSearchSuggest` is deliberately NOT debounced: it populates the state
+`onSearchKeyDown` reads to route Enter / Tab / ArrowDown, so deferring it would
+trade a working keyboard contract for a smaller saving.
+
+No per-keystroke timing is claimed — there is no browser in the build container,
+so the mechanism is established from source and the magnitude is not measured.
+
 ## [0.21.0] - 2026-07-30
 comments[] is GONE from the /graph payload. Step 3 of 3, and the step the
 other two existed to make safe.
