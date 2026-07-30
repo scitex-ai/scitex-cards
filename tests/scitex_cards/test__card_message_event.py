@@ -13,13 +13,13 @@ No mocks (STX-NM/PA-306). AAA pattern.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from scitex_cards._hooks import HookEventError, event_validate
 from scitex_cards._store import add_task, comment_task
-
 
 # === Validator branch for card-message =====================================
 
@@ -161,7 +161,7 @@ def bus():
 
 def test_comment_task_emits_card_message_event(tmp_path: Path, bus):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
     # Act
     comment_task(
@@ -180,7 +180,7 @@ def test_card_message_event_carries_card_id_body_author(
     bus,
 ):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
     # Act
     comment_task(
@@ -200,7 +200,7 @@ def test_card_message_owner_comes_from_agent_field(
     bus,
 ):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-clew")
     # Act
     comment_task(
@@ -220,7 +220,7 @@ def test_card_message_owner_falls_back_to_assignee(
     bus,
 ):
     # Arrange — no `agent` field; legacy `assignee` is the fallback.
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="proj-legacy")
     # Act
     comment_task(
@@ -240,10 +240,16 @@ def test_card_message_owner_is_none_when_card_has_neither(
     bus,
 ):
     # Arrange — naked card with no agent/assignee. add_task now REQUIRES an
-    # owner (fail-loud), so write a raw owner-less row directly to exercise
-    # the owner-is-None path (no owner -> card_owner returns None).
-    store = tmp_path / "tasks.yaml"
-    store.write_text("tasks:\n  - id: c-1\n    title: x\n    status: pending\n")
+    # owner (fail-loud), so seed a raw owner-less row straight into the
+    # canonical DB to exercise the owner-is-None path (no owner ->
+    # card_owner returns None).
+    from conftest import seed_db_from_doc
+
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    seed_db_from_doc(
+        {"tasks": [{"id": "c-1", "title": "x", "status": "deferred"}]},
+        os.environ["SCITEX_CARDS_DB"],
+    )
     # Act
     comment_task(
         store=store,
@@ -263,7 +269,7 @@ def test_card_message_collaborators_excludes_owner(
 ):
     # Arrange — owner already in the conversation; the event should
     # NOT echo them in collaborators (SAC routes to owner directly).
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", agent="proj-clew")
     comment_task(
         store=store,
@@ -292,7 +298,7 @@ def test_card_message_collaborators_excludes_new_author(
 ):
     # Arrange — the new commenter should NOT appear in their own
     # event's collaborators (SAC would echo the message back at them).
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
     comment_task(
         store=store,
@@ -320,7 +326,7 @@ def test_card_message_collaborators_lists_prior_commenters(
     bus,
 ):
     # Arrange — three earlier authors, current author is different.
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
     comment_task(
         store=store, task_id="c-1", text="a", by="alice", entry_points=bus.entry_points
@@ -349,7 +355,7 @@ def test_comment_task_save_succeeds_even_when_bus_raises(tmp_path: Path):
     # Arrange — a real fake handler that raises, injected via the
     # `entry_points=` seam (no monkeypatch). The comment must still land
     # on disk because comment_task swallows bus errors.
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
 
     def _bad(_event):
@@ -377,7 +383,7 @@ def test_card_message_created_at_matches_comment_ts(
     bus,
 ):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
     # Act
     comment_task(

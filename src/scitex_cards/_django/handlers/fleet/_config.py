@@ -3,9 +3,9 @@
 """Dashboard configuration loader.
 
 The fleet dashboard reads its watched-repo list from
-``~/.scitex/todo/dashboard.yaml`` under the key path
-``fleet.ci_status.repos`` (a list of ``owner/name`` GitHub slugs). The
-env var ``SCITEX_TODO_FLEET_CI_REPOS=slug1,slug2`` is the override hook
+``~/.scitex/cards/dashboard.json`` under the key path
+``fleet.ci_status.repos`` (a list of ``owner/name`` GitHub slugs).
+The env var ``SCITEX_TODO_FLEET_CI_REPOS=slug1,slug2`` is the override hook
 (handy for CI tests and for the operator to flip the set without editing
 a file).
 
@@ -14,9 +14,9 @@ Architectural principles in play:
 - NO hardcoded proper nouns. There is no
   ``["scitex-todo","scitex-dev",…]`` literal in this module — the
   config is the only source of truth.
-- Absence is NOT an error. A fresh install has no dashboard.yaml; that
+- Absence is NOT an error. A fresh install has no dashboard config; that
   means "no repos configured" and the UI hides the pills strip gracefully.
-- Malformed YAML IS an error — fail-loud per the harness contract so
+- A malformed config IS an error — fail-loud per the harness contract so
   the operator does not stare at a blank strip wondering why their
   config is being ignored.
 """
@@ -32,7 +32,7 @@ from ._errors import FleetAdapterError
 # Canonical config path. Kept here as a module-level constant so tests
 # can monkeypatch ``HOME`` and the function picks it up via
 # ``Path.home()`` without having to redefine the literal.
-_CONFIG_REL = Path(".scitex") / "todo" / "dashboard.yaml"
+_CONFIG_REL = Path(".scitex") / "cards" / "dashboard.json"
 
 # Env override — comma-separated slugs. Whitespace around commas is
 # tolerated (operator may copy-paste from a shell history).
@@ -40,7 +40,7 @@ _ENV_REPOS = "SCITEX_TODO_FLEET_CI_REPOS"
 
 
 def _config_path() -> Path:
-    """Resolve the canonical config path. Pure function — testable."""
+    """Resolve the canonical (JSON) config path. Pure function — testable."""
     return Path.home() / _CONFIG_REL
 
 
@@ -53,15 +53,10 @@ def _split_env(raw: str) -> list[str]:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def _load_yaml(path: Path) -> dict:
-    """Parse the YAML at ``path``; raise :class:`FleetAdapterError` on
-    a broken file (caller already checked the file exists)."""
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError as exc:  # pragma: no cover — yaml is a hard dep
-        raise FleetAdapterError(f"PyYAML is required to load {path}: {exc}") from exc
-
-    from scitex_cards._yaml import safe_load
+def _load_config(path: Path) -> dict:
+    """Parse the JSON dashboard config at ``path``; raise
+    :class:`FleetAdapterError` on a broken file (caller checked it exists)."""
+    import json
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -71,11 +66,9 @@ def _load_yaml(path: Path) -> dict:
         ) from exc
 
     try:
-        data = safe_load(text)
-    except yaml.YAMLError as exc:
-        raise FleetAdapterError(
-            f"malformed YAML in dashboard config {path}: {exc}"
-        ) from exc
+        data = json.loads(text) if text.strip() else None
+    except json.JSONDecodeError as exc:
+        raise FleetAdapterError(f"malformed dashboard config {path}: {exc}") from exc
 
     if data is None:
         # Empty file is the same as no file — "no repos configured".
@@ -88,7 +81,7 @@ def _load_yaml(path: Path) -> dict:
     return data
 
 
-# Ecosystem spin-out flag (operator opt-in). When truthy in dashboard.yaml
+# Ecosystem spin-out flag (operator opt-in). When truthy in the dashboard config
 # (``fleet.ci_status.ecosystem: true``) or via this env var, the watched-repo
 # list is UNIONed with the live SciTeX ecosystem registry.
 _ENV_ECOSYSTEM = "SCITEX_TODO_FLEET_CI_ECOSYSTEM"
@@ -100,7 +93,7 @@ _eco_cache: dict[str, Any] = {"ts": 0.0, "repos": []}
 
 
 def _truthy(val: Any) -> bool:
-    """Loose truthiness for a YAML / env flag (``true`` / ``1`` / ``yes`` / ``on``)."""
+    """Loose truthiness for a config / env flag (``true`` / ``1`` / ``yes`` / ``on``)."""
     if isinstance(val, bool):
         return val
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
@@ -162,7 +155,7 @@ def fleet_config_load() -> dict[str, Any]:
 
     Resolution order (later overrides earlier):
 
-    1. ``~/.scitex/todo/dashboard.yaml`` if present (otherwise empty
+    1. ``~/.scitex/cards/dashboard.json`` if present (otherwise empty
        config, NOT an error)
     2. ``SCITEX_TODO_FLEET_CI_REPOS`` env var — when set, replaces
        ``fleet.ci_status.repos`` regardless of file contents
@@ -179,7 +172,7 @@ def fleet_config_load() -> dict[str, Any]:
     """
     path = _config_path()
     if path.is_file():
-        data = _load_yaml(path)
+        data = _load_config(path)
     else:
         data = {}
 

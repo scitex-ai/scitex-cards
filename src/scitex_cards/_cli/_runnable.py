@@ -43,35 +43,39 @@ def register(main: click.Group) -> None:
             "$SCITEX_TODO_AGENT_ID.",
         ),
         examples=(
-            ("{prog} runnable --group ci-recovery-wave --json", "One dispatch cluster, as JSON."),
+            (
+                "{prog} runnable --group ci-recovery-wave --json",
+                "One dispatch cluster, as JSON.",
+            ),
         ),
     ),
 )
 @click.option(
-    "--tasks", "tasks_path", default=None,
-    help="Path to tasks.yaml (default: resolver chain).",
-)
-@click.option(
-    "--agent", default=None,
+    "--agent",
+    default=None,
     help="Agent name. Mutually exclusive with --mine.",
 )
 @click.option(
-    "--mine", "use_mine", is_flag=True,
+    "--mine",
+    "use_mine",
+    is_flag=True,
     help="Filter on $SCITEX_TODO_AGENT_ID.",
 )
 @click.option(
-    "--group", default=None,
+    "--group",
+    default=None,
     help=(
         "Dispatch-cluster name (the T1.1 `group` field). Pass an "
         "empty string ('') to ask for ungrouped-only tasks."
     ),
 )
 @click.option(
-    "--json", "as_json", is_flag=True,
+    "--json",
+    "as_json",
+    is_flag=True,
     help="Emit full task dicts + diagnostic counts as JSON.",
 )
 def runnable_cmd(
-    tasks_path: str | None,
     agent: str | None,
     use_mine: bool,
     group: str | None,
@@ -92,17 +96,22 @@ def runnable_cmd(
             )
         agent = env
 
-    path = resolve_tasks_path(tasks_path)
+    path = resolve_tasks_path(None)
     tasks = load_tasks(path)
 
     result = runnable_tasks(tasks, agent=agent, group=group)
 
     if as_json:
-        click.echo(json.dumps({
-            "tasks": result.tasks,
-            "candidate_count": result.candidate_count,
-            "blocked_by_deps_count": result.blocked_by_deps_count,
-        }, default=str))
+        click.echo(
+            json.dumps(
+                {
+                    "tasks": result.tasks,
+                    "candidate_count": result.candidate_count,
+                    "blocked_by_deps_count": result.blocked_by_deps_count,
+                },
+                default=str,
+            )
+        )
         return
 
     if not result.tasks:
@@ -121,7 +130,7 @@ def runnable_cmd(
         prio_str = f"#{prio}" if isinstance(prio, int) else "—"
         deadline = t.get("deadline") or "—"
         click.echo(
-            f"{t.get('id','')} | {prio_str} | {t.get('title','')} | {deadline}"
+            f"{t.get('id', '')} | {prio_str} | {t.get('title', '')} | {deadline}"
         )
     click.echo(
         f"# runnable={len(result.tasks)} candidates={result.candidate_count} "
@@ -149,27 +158,28 @@ def runnable_cmd(
     ),
 )
 @click.option(
-    "--tasks", "tasks_path", default=None,
-    help="Path to tasks.yaml (default: resolver chain).",
-)
-@click.option(
-    "--agent", default=None,
+    "--agent",
+    default=None,
     help="Agent name. Mutually exclusive with --mine.",
 )
 @click.option(
-    "--mine", "use_mine", is_flag=True,
+    "--mine",
+    "use_mine",
+    is_flag=True,
     help="Filter on $SCITEX_TODO_AGENT_ID.",
 )
 @click.option(
-    "--group", default=None,
+    "--group",
+    default=None,
     help="Dispatch-cluster name (T1.1 `group`); '' = ungrouped only.",
 )
 @click.option(
-    "--json", "as_json", is_flag=True,
+    "--json",
+    "as_json",
+    is_flag=True,
     help="Emit the full payload (tasks + by-reason histogram) as JSON.",
 )
 def blocked_cmd(
-    tasks_path: str | None,
     agent: str | None,
     use_mine: bool,
     group: str | None,
@@ -190,24 +200,30 @@ def blocked_cmd(
             )
         agent = env
 
-    path = resolve_tasks_path(tasks_path)
+    path = resolve_tasks_path(None)
     tasks = load_tasks(path)
 
     result = blocked_tasks(tasks, agent=agent, group=group)
 
     if as_json:
-        click.echo(json.dumps({
-            "tasks": [
+        click.echo(
+            json.dumps(
                 {
-                    "id": bt.id,
-                    "title": bt.title,
-                    "reason": bt.reason,
-                    "chain": list(bt.chain),
-                } for bt in result.tasks
-            ],
-            "total": result.total,
-            "by_reason": result.by_reason,
-        }, default=str))
+                    "tasks": [
+                        {
+                            "id": bt.id,
+                            "title": bt.title,
+                            "reason": bt.reason,
+                            "chain": list(bt.chain),
+                        }
+                        for bt in result.tasks
+                    ],
+                    "total": result.total,
+                    "by_reason": result.by_reason,
+                },
+                default=str,
+            )
+        )
         return
 
     if not result.tasks:
@@ -217,9 +233,7 @@ def blocked_cmd(
     for bt in result.tasks:
         chain_str = ",".join(bt.chain) if bt.chain else "—"
         click.echo(f"{bt.id} | {bt.reason} | {chain_str} | {bt.title}")
-    by_reason_str = " ".join(
-        f"{k}={v}" for k, v in result.by_reason.items() if v
-    )
+    by_reason_str = " ".join(f"{k}={v}" for k, v in result.by_reason.items() if v)
     click.echo(f"# blocked={result.total} ({by_reason_str})", err=True)
 
 

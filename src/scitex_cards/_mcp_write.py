@@ -33,6 +33,13 @@ from ._backend import get_backend
 # effect), so `import scitex_cards._mcp_write` cold raised ImportError.
 from ._mcp_app import _ENUM_FIELDS, mcp
 
+#: Transport-safe stand-in for ``""`` on a CLEAR. MCP clients strip
+#: empty-string params before the server sees them, which makes the
+#: documented ``field=""`` convention unreachable over MCP — the call arrives
+#: malformed rather than clearing anything. Same token `list_tasks` already
+#: uses for "no blocker", so callers learn one spelling, not two.
+_CLEAR = "__none"
+
 
 @mcp.tool()
 async def add_task(
@@ -70,12 +77,8 @@ async def add_task(
     deadlines: list[str] | None = None,
     scheduled: str | None = None,
     created_by: str | None = None,  # creating USER; hook-bypass: line-limit
-    tasks_path: str | None = None,
 ) -> str:
     """Append a new task to the store. Returns the inserted task as JSON.
-
-    ``tasks_path`` overrides the default resolution chain; pass ``None`` to
-    use the resolved default (project → user → bundled).
 
     Closed-enum fields (``status`` / ``kind`` / ``blocker``) are gated by
     the writer's validator — typos raise ``TaskValidationError`` with the
@@ -119,7 +122,7 @@ async def add_task(
     """
     _call = functools.partial(
         get_backend().add_task,
-        tasks_path,
+        None,
         id=id,
         title=title,
         status=status,
@@ -191,9 +194,18 @@ async def update_task(
     deadline: str | None = None,
     deadlines: list[str] | None = None,
     scheduled: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Mutate fields of an existing task. Returns the merged task as JSON.
+
+    TO CLEAR A FIELD OVER MCP, PASS ``"__none"`` — e.g. ``blocker="__none"``.
+    The bare ``field=""`` form documented below is correct for the Python and
+    CLI surfaces but DOES NOT WORK over MCP: clients strip empty-string
+    params before the server sees them, so the call arrives malformed instead
+    of clearing anything. ``"__none"`` survives transport and means exactly
+    the same thing (it is the same token ``list_tasks`` uses for "no
+    blocker"). This applies to ``blocker`` and ``kind`` (delete the key) and
+    to every free-text field including ``parked`` (un-park the card).
+    ``status`` still refuses to be cleared — a card must carry a decision.
 
     Pass an empty string (e.g. ``scope=""``) to CLEAR a string field.
     Pass an empty list to CLEAR a list field. Omit a field to leave it
@@ -258,6 +270,19 @@ async def update_task(
     ):
         if value is None:
             continue
+        # TRANSPORT-SAFE CLEAR. The documented convention is ``field=""``,
+        # and over MCP it is UNREACHABLE: the client strips empty-string
+        # params before the server ever sees them, so the call arrives
+        # malformed (`"field": }` -> InputValidationError) rather than
+        # clearing anything. Measured first-hand 2026-07-18 trying to clear a
+        # blocker; the documented escape hatch simply did not exist over the
+        # transport most agents use.
+        #
+        # ``"__none"`` survives transport and means exactly what ``""`` means.
+        # Reusing the token `list_tasks` already spends on "no blocker"
+        # instead of inventing a second spelling — one convention, two verbs.
+        if value == _CLEAR:
+            value = ""
         # Closed-enum fields go through VERBATIM — the store owns the
         # ""-clears rule for them (`blocker`/`kind`: delete the key;
         # `status`: refuse loudly, a card must carry a decision). Mapping
@@ -282,7 +307,7 @@ async def update_task(
     if deadlines is not None:
         fields["deadlines"] = list(deadlines) if deadlines else None
     merged = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().update_task, tasks_path, task_id, **fields)
+        functools.partial(get_backend().update_task, None, task_id, **fields)
     )
     return json.dumps(merged)
 

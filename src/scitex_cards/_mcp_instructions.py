@@ -26,11 +26,19 @@ the bug. The unresolved branch instead tells the agent how to DISCOVER its slice
 
 from __future__ import annotations
 
-#: Store-precedence sentence — identical in both branches of the instructions.
+#: Store-identity sentence — identical in both branches of the instructions.
+#:
+#: Agents read this string at session start and act on it, so it must describe
+#: the store as it actually is: the SQLite database at $SCITEX_CARDS_DB is the
+#: sole store identity (the pre-cutover YAML path and its "bundled example" tier
+#: are gone). A stale sentence here is the fleet being told to write to a store
+#: that does not exist.
 _STORE_LINE = (
-    "The canonical store lives at ~/.scitex/todo/tasks.yaml; precedence is "
-    "explicit > $SCITEX_TODO_TASKS_YAML_SHARED > project (<git-root>/.scitex/todo) > "
-    "user (~/.scitex/todo) > bundled example."
+    "The canonical store is the SQLite database at $SCITEX_CARDS_DB "
+    "(default ~/.scitex/cards/cards.db) — that path is the SOLE store identity; "
+    "call resolve_store to see which store you actually resolved to. An "
+    "unresolvable/absent store raises rather than silently handing you an "
+    "empty board."
 )
 
 
@@ -69,7 +77,7 @@ def build_instructions(agent_id: str | None) -> str:
             "SCITEX_TODO_AGENT_ID=<your-agent-id> so scoped queries work."
         )
     return (
-        "scitex-todo: shared YAML task store across agents and hosts. "
+        "scitex-cards: shared task store across agents and hosts. "
         f"{slice_line} {_STORE_LINE}"
     )
 

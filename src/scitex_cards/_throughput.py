@@ -3,7 +3,7 @@
 """Throughput aggregator — single source of truth for stats / WIP / notify.
 
 Shared by:
-  * ``scitex-todo stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
+  * ``scitex-todo print-stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
   * ``scitex-todo sync-github`` (permanent version of the lead's
     one-time GitHub → board sync)
   * ``_store.add_task``'s WIP-validation gate (env-bounded throttle
@@ -94,7 +94,7 @@ def _parse_iso(ts: str | None) -> _dt.datetime | None:
 
     Always returns a **UTC-aware** ``datetime``. Strings without an explicit
     timezone (e.g. ``"2026-06-08T00:42:30"``) are treated as UTC — the
-    canonical assumption for ``tasks.yaml`` timestamps. Without this coercion
+    canonical assumption for stored timestamps. Without this coercion
     a single naive ``last_activity`` field anywhere in the store makes the
     subsequent ``_now_utc() - parsed`` subtraction raise
     ``TypeError: can't subtract offset-naive and offset-aware datetimes``
@@ -280,7 +280,9 @@ def count_wip_for_agent(tasks: list[dict], agent: str) -> int:
     """
     if not agent:
         return 0
-    return sum(1 for t in tasks if t.get("agent") == agent and t.get("status") in WIP_STATUSES)
+    return sum(
+        1 for t in tasks if t.get("agent") == agent and t.get("status") in WIP_STATUSES
+    )
 
 
 def evaluate_wip(tasks: list[dict], agent: str | None) -> WipReport | None:
@@ -396,7 +398,10 @@ def build_notify_body(
         done_window = [
             t
             for t in done_tasks
-            if (_parse_iso(t.get("last_activity")) or _dt.datetime.min.replace(tzinfo=_dt.timezone.utc))
+            if (
+                _parse_iso(t.get("last_activity"))
+                or _dt.datetime.min.replace(tzinfo=_dt.timezone.utc)
+            )
             >= since_dt
         ]
     else:
@@ -412,11 +417,7 @@ def build_notify_body(
     stale_count = sum(1 for t in open_tasks if _is_stale(t))
     open_n = len(open_tasks)
     done_n = len(done_window)
-    ratio = (
-        f"{done_n / (open_n + done_n) * 100:.0f}%"
-        if (open_n + done_n)
-        else "—"
-    )
+    ratio = f"{done_n / (open_n + done_n) * 100:.0f}%" if (open_n + done_n) else "—"
 
     since_phrase = f" since {since}" if since else " all-time"
     header = (

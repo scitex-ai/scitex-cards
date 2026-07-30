@@ -4,7 +4,7 @@
 
 Kept separate from :mod:`scitex_cards._inbox` (the hot enqueue/poll path) so
 that module stays lean; these are operator-run, run-rarely sweeps over the
-whole ``inboxes:`` section.
+whole ``inboxes.json`` sidecar.
 
 ``collapse_digests`` is the ONE-TIME backlog fix for the digest replay-storm:
 a digest is a full point-in-time snapshot, but notifyd historically enqueued a
@@ -21,8 +21,8 @@ import logging
 from pathlib import Path
 
 from ._inbox import (
+    _inboxes_path,
     _load_inboxes_section,
-    _resolved_store,
     _save_inboxes_unlocked,
 )
 from ._model import _store_lock
@@ -32,15 +32,13 @@ logger = logging.getLogger(__name__)
 
 def _is_digest(record: dict, *, event_type: str, card_id: str) -> bool:
     """True when ``record`` is a cumulative digest (its type + synthetic id)."""
-    return (
-        record.get("event_type") == event_type and record.get("card_id") == card_id
-    )
+    return record.get("event_type") == event_type and record.get("card_id") == card_id
 
 
 def collapse_digests(store: str | Path | None = None) -> dict:
     """Collapse each recipient's UNSEEN digest backlog to the newest one.
 
-    One safe, locked maintenance pass over the whole ``inboxes:`` section: for
+    One safe, locked maintenance pass over the whole inboxes sidecar: for
     every recipient, keep the single NEWEST unseen digest record deliverable
     and mark ALL OLDER unseen digests ``seen=True`` (they are stale snapshots
     superseded by the newest one). Nothing is DELETED (history preserved); a
@@ -68,7 +66,7 @@ def collapse_digests(store: str | Path | None = None) -> dict:
     # import lazily to keep this maintenance module import-light and cycle-free.
     from ._reminders import DIGEST_CARD_ID, EVENT_DIGEST
 
-    path = _resolved_store(store)
+    path = _inboxes_path(store)
     recipients_collapsed = 0
     digests_marked_seen = 0
     with _store_lock(path):

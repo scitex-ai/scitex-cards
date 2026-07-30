@@ -11,13 +11,14 @@ A DB whose payloads are missing is REFUSED, not exported stripped.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+from conftest import seed_db_from_doc
 
-from scitex_cards._db import connect, init_schema, resolve_db_path
-from scitex_cards._db_bootstrap import import_from_yaml
-from scitex_cards._db_export import ExportRefused, export_doc, export_yaml
+from scitex_cards._db import connect, resolve_db_path
+from scitex_cards._db_export import ExportRefused, export_doc, export_json
 from scitex_cards._yaml import safe_dump, safe_load
 
 
@@ -75,21 +76,39 @@ def seeded(tmp_path: Path) -> dict:
         safe_dump({"threads": threads}), encoding="utf-8"
     )
     db = tmp_path / "cards.db"
-    import_from_yaml(tasks_path=tasks_yaml, db_path=db)
+    seed_db_from_doc(doc, db, threads=threads)
     return {"doc": doc, "threads": threads, "db": db, "tmp": tmp_path}
 
 
-def test_export_reproduces_doc_including_unknown_keys(seeded):
+def test_export_reproduces_the_doc_including_unknown_keys(seeded):
+    # Arrange
+    db = seeded["db"]
+
     # Act
-    doc, threads = export_doc(seeded["db"])
+    doc, _threads = export_doc(db)
+
     # Assert — semantic identity, unknown keys included.
     assert doc == seeded["doc"]
+
+
+def test_export_reproduces_the_threads_sidecar_including_unknown_keys(seeded):
+    # Arrange
+    db = seeded["db"]
+
+    # Act
+    _doc, threads = export_doc(db)
+
+    # Assert — semantic identity, unknown keys included.
     assert threads == seeded["threads"]
 
 
 def test_export_preserves_each_records_own_key_order(seeded):
+    # Arrange
+    db = seeded["db"]
+
     # Act
-    doc, _ = export_doc(seeded["db"])
+    doc, _ = export_doc(db)
+
     # Assert — the first card's key order is the order the yaml carried.
     assert list(doc["tasks"][0].keys()) == [
         "id",
@@ -100,20 +119,50 @@ def test_export_preserves_each_records_own_key_order(seeded):
     ]
 
 
-def test_export_yaml_round_trips_through_files(seeded):
+def _export_to_files(seeded) -> dict:
+    """Run `export_json` into a fresh dir; return the report + the two paths."""
+    out = seeded["tmp"] / "export" / "tasks.json"
+    threads_out = seeded["tmp"] / "export" / "threads.json"
+    report = export_json(db_path=seeded["db"], out=out, threads_out=threads_out)
+    return {"report": report, "out": out, "threads_out": threads_out}
+
+
+def test_export_json_file_reloads_to_the_original_doc(seeded):
+    # Arrange
     # Act
-    report = export_yaml(
-        db_path=seeded["db"],
-        out=seeded["tmp"] / "export" / "tasks.yaml",
-        threads_out=seeded["tmp"] / "export" / "threads.yaml",
-    )
-    # Assert — files reload to the original structures; counts are honest.
-    assert safe_load((seeded["tmp"] / "export" / "tasks.yaml").read_text()) == seeded["doc"]
-    assert safe_load((seeded["tmp"] / "export" / "threads.yaml").read_text()) == {
+    exported = _export_to_files(seeded)
+
+    # Assert
+    assert json.loads(exported["out"].read_text()) == seeded["doc"]
+
+
+def test_export_json_threads_file_reloads_to_the_original_threads(seeded):
+    # Arrange
+    # Act
+    exported = _export_to_files(seeded)
+
+    # Assert
+    assert json.loads(exported["threads_out"].read_text()) == {
         "threads": seeded["threads"]
     }
-    assert report["tasks"] == 2
-    assert report["messages"] == 1
+
+
+def test_export_json_report_counts_every_exported_task(seeded):
+    # Arrange
+    # Act
+    exported = _export_to_files(seeded)
+
+    # Assert
+    assert exported["report"]["tasks"] == 2
+
+
+def test_export_json_report_counts_every_exported_message(seeded):
+    # Arrange
+    # Act
+    exported = _export_to_files(seeded)
+
+    # Assert
+    assert exported["report"]["messages"] == 1
 
 
 def test_export_refuses_rows_without_verbatim_payload(seeded):
@@ -122,39 +171,61 @@ def test_export_refuses_rows_without_verbatim_payload(seeded):
     conn.execute("UPDATE users SET record_json = NULL")
     conn.commit()
     conn.close()
-    # Act / Assert — refusal, not a stripped export.
+
+    # Act
+    # Assert — refusal, not a stripped export.
     with pytest.raises(ExportRefused):
         export_doc(seeded["db"])
 
 
-def test_export_overlays_live_mutable_flags_over_payload(seeded):
-    # Arrange — the seen flag mutates in the DB after import (poll ack).
+def _export_after_acking_every_notification(seeded) -> dict:
+    """Flip every notification's `seen` in the DB, then export the record."""
     conn = connect(seeded["db"])
     conn.execute("UPDATE notifications SET seen = 1")
     conn.commit()
     conn.close()
-    # Act
     doc, _ = export_doc(seeded["db"])
-    # Assert — the export reflects live state, not the import-time snapshot.
     (record,) = doc["inboxes"]["u_000000000001"]
+    return record
+
+
+def test_export_overlays_the_live_seen_flag_over_the_payload(seeded):
+    # Arrange — the seen flag mutates in the DB after import (poll ack).
+    # Act
+    record = _export_after_acking_every_notification(seeded)
+
+    # Assert — the export reflects live state, not the import-time snapshot.
     assert record["seen"] is True
+
+
+def test_export_keeps_unknown_notification_keys_under_the_overlay(seeded):
+    # Arrange — the seen flag mutates in the DB after import (poll ack).
+    # Act
+    record = _export_after_acking_every_notification(seeded)
+
+    # Assert — overlaying live flags must not strip unknown keys.
     assert record["unknown_notif_key"] == 42
 
 
-def test_resolve_db_path_still_delegates(monkeypatch, tmp_path):
+def test_resolve_db_path_still_delegates_to_the_chain(monkeypatch, tmp_path):
     """Guard: the exporter's default path rides the S4a resolution chain."""
+    # Arrange
     monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "x.db"))
-    assert resolve_db_path() == tmp_path / "x.db"
+
+    # Act
+    resolved = resolve_db_path()
+
+    # Assert
+    assert resolved == tmp_path / "x.db"
 
 
-def test_export_preserves_drained_empty_inboxes(tmp_path):
-    """A recipient whose inbox list is EMPTY survives the round-trip (v4).
+def _export_a_store_with_one_drained_inbox(tmp_path) -> dict:
+    """Round-trip a store carrying one populated and one drained ([]) inbox.
 
     Regression: live-store rehearsal 2026-07-16 — 2 of 56 recipients had
     drained ([]) inboxes; zero notification rows carried no key, so the
     export silently dropped those recipients.
     """
-    # Arrange — one populated inbox, one drained.
     doc = {
         "tasks": [{"id": "t", "title": "t", "status": "done"}],
         "inboxes": {
@@ -165,113 +236,214 @@ def test_export_preserves_drained_empty_inboxes(tmp_path):
     tasks_yaml = tmp_path / "tasks.yaml"
     tasks_yaml.write_text(safe_dump(doc), encoding="utf-8")
     db = tmp_path / "cards.db"
-    import_from_yaml(tasks_path=tasks_yaml, db_path=db)
-    # Act
+    seed_db_from_doc(doc, db)
     out, _threads = export_doc(db)
+    return out
+
+
+def test_export_keeps_a_drained_inbox_as_an_empty_list(tmp_path):
+    # Arrange — one populated inbox, one drained.
+    # Act
+    out = _export_a_store_with_one_drained_inbox(tmp_path)
+
     # Assert — the drained key is present, as an empty list.
     assert out["inboxes"]["drained"] == []
+
+
+def test_export_drops_no_recipient_when_one_inbox_is_drained(tmp_path):
+    # Arrange — one populated inbox, one drained.
+    # Act
+    out = _export_a_store_with_one_drained_inbox(tmp_path)
+
+    # Assert — both recipients survive the round-trip.
     assert set(out["inboxes"]) == {"busy", "drained"}
 
 
-def test_snapshot_refresh_imports_then_exports(tmp_path, monkeypatch):
-    """`db snapshot --refresh` = rebuild from yaml, export, commit — one command.
+# === `db snapshot` — the cadence job's one-argv backup rail ================
+#
+# `db snapshot` exports the database to YAML text and git-commits the export
+# off-site. The `--refresh` flag (rebuild the DB from YAML first) is DELETED —
+# there is no YAML to rebuild from — so these tests seed the DATABASE directly
+# (`seed_db_from_doc`) and snapshot the already-populated store.
 
-    The cadence job's exact invocation shape (systemd ExecStart runs a
-    single argv — no shell `&&` available), so the flag must do both halves
-    itself.
-    """
+_SNAPSHOT_DOC = {"tasks": [{"id": "t", "title": "t", "status": "done"}]}
+
+
+def _seed_snapshot_db(tmp_path):
+    """Populate the DB the snapshot command will export, and return its path."""
+    db = tmp_path / "cards.db"
+    seed_db_from_doc(_SNAPSHOT_DOC, db)
+    return db
+
+
+def _run_snapshot(tmp_path):
+    """Seed the DB and run `db snapshot`; return (result, snap)."""
     from click.testing import CliRunner
 
     from scitex_cards._cli import main
 
-    # Arrange — canonical yaml resolved via env, like the host cadence run.
-    doc = {"tasks": [{"id": "t", "title": "t", "status": "done"}]}
-    store = tmp_path / "tasks.yaml"
-    store.write_text(safe_dump(doc), encoding="utf-8")
-    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    db = tmp_path / "cards.db"
+    db = _seed_snapshot_db(tmp_path)
     snap = tmp_path / "snapshots"
-    # Act
     result = CliRunner().invoke(
         main,
-        ["db", "snapshot", "--refresh", "--db", str(db), "--dir", str(snap)],
+        ["db", "snapshot", "--db", str(db), "--dir", str(snap)],
     )
-    # Assert — refreshed, exported, committed; read the export back.
+    return result, snap
+
+
+def test_snapshot_exits_clean(tmp_path):
+    # Arrange / Act
+    result, _snap = _run_snapshot(tmp_path)
+
+    # Assert
     assert result.exit_code == 0, result.output
-    assert "refreshed DB from YAML" in result.output
-    assert safe_load((snap / "tasks.yaml").read_text()) == doc
+
+
+def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
+    # Arrange / Act
+    _result, snap = _run_snapshot(tmp_path)
+
+    # Assert — read the export back; it is the seeded doc.
+    assert json.loads((snap / "tasks.json").read_text()) == _SNAPSHOT_DOC
+
+
+def test_snapshot_commits_the_export_into_a_git_repo(tmp_path):
+    # Arrange / Act
+    _result, snap = _run_snapshot(tmp_path)
+
+    # Assert — the commit ran; the dir is a repo.
     assert (snap / ".git").exists()
 
 
-def test_snapshot_push_lands_in_the_remote(tmp_path, monkeypatch):
-    """--push delivers the commit to origin — verified by reading the BARE
-    repo back, not by exit code (the rail's job is the off-site copy)."""
+def _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch):
+    """Bootstrap a snapshot repo wired to a bare origin, then `--push` to it.
+
+    Returns (first_result, push_result, bare).
+    """
     import subprocess
 
     from click.testing import CliRunner
 
     from scitex_cards._cli import main
 
-    # Arrange — a store, a bare origin, and a snapshot dir wired to it.
-    doc = {"tasks": [{"id": "t", "title": "t", "status": "done"}]}
-    store = tmp_path / "tasks.yaml"
-    store.write_text(safe_dump(doc), encoding="utf-8")
-    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    db = _seed_snapshot_db(tmp_path)
     bare = tmp_path / "offsite.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
-    db = tmp_path / "cards.db"
     snap = tmp_path / "snapshots"
     runner = CliRunner()
     first = runner.invoke(
         main,
-        ["db", "snapshot", "--refresh", "--db", str(db), "--dir", str(snap)],
+        ["db", "snapshot", "--db", str(db), "--dir", str(snap)],
     )
-    assert first.exit_code == 0, first.output
     subprocess.run(
         ["git", "-C", str(snap), "remote", "add", "origin", str(bare)],
         check=True,
     )
-    # Act
-    result = runner.invoke(
+    pushed = runner.invoke(
         main,
         [
-            "db", "snapshot", "--refresh", "--push",
-            "--db", str(db), "--dir", str(snap),
+            "db",
+            "snapshot",
+            "--push",
+            "--db",
+            str(db),
+            "--dir",
+            str(snap),
         ],
     )
+    return first, pushed, bare
+
+
+def test_snapshot_push_bootstrap_run_exits_clean(tmp_path, monkeypatch):
+    # Arrange — a store, a bare origin, and a snapshot dir wired to it.
+    # Act
+    first, _pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+
+    # Assert — the bootstrap snapshot the push builds on succeeded.
+    assert first.exit_code == 0, first.output
+
+
+def test_snapshot_push_run_exits_clean(tmp_path, monkeypatch):
+    # Arrange — a store, a bare origin, and a snapshot dir wired to it.
+    # Act
+    _first, pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+
+    # Assert
+    assert pushed.exit_code == 0, pushed.output
+
+
+def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, monkeypatch):
+    """--push delivers the commit to origin — verified by reading the BARE
+    repo back, not by exit code (the rail's job is the off-site copy)."""
+    import subprocess
+
+    # Arrange — a store, a bare origin, and a snapshot dir wired to it.
+    # Act
+    _first, _pushed, bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+
     # Assert — the BARE side has the snapshot commit.
-    assert result.exit_code == 0, result.output
     log = subprocess.run(
         ["git", "-C", str(bare), "log", "--oneline", "-1"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert "snapshot:" in log.stdout
 
 
-def test_snapshot_push_without_remote_is_reported_local_only(tmp_path, monkeypatch):
-    """No remote yet = legitimate local-only, exit 0, said out loud."""
-    import json as _json
-
+def _run_snapshot_push_without_a_remote(tmp_path, monkeypatch):
+    """`--push --json` against a snapshot dir that has no origin configured."""
     from click.testing import CliRunner
 
     from scitex_cards._cli import main
 
-    # Arrange
-    doc = {"tasks": [{"id": "t", "title": "t", "status": "done"}]}
-    store = tmp_path / "tasks.yaml"
-    store.write_text(safe_dump(doc), encoding="utf-8")
-    monkeypatch.setenv("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    # Act
-    result = CliRunner().invoke(
+    db = _seed_snapshot_db(tmp_path)
+    return CliRunner().invoke(
         main,
         [
-            "db", "snapshot", "--refresh", "--push", "--json",
-            "--db", str(tmp_path / "cards.db"),
-            "--dir", str(tmp_path / "snapshots"),
+            "db",
+            "snapshot",
+            "--push",
+            "--json",
+            "--db",
+            str(db),
+            "--dir",
+            str(tmp_path / "snapshots"),
         ],
     )
+
+
+def test_snapshot_push_without_remote_still_exits_zero(tmp_path, monkeypatch):
+    """No remote yet = legitimate local-only, exit 0, said out loud."""
+    # Arrange
+    # Act
+    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+
     # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, monkeypatch):
+    import json as _json
+
+    # Arrange
+    # Act
+    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+
+    # Assert — local-only is reported honestly, not claimed as a push.
     report = _json.loads(result.output.strip().splitlines()[-1])
     assert report["pushed"] is False
+
+
+def test_snapshot_push_without_remote_explains_why_it_was_local_only(
+    tmp_path, monkeypatch
+):
+    import json as _json
+
+    # Arrange
+    # Act
+    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+
+    # Assert — the reason is said out loud, not left to guesswork.
+    report = _json.loads(result.output.strip().splitlines()[-1])
     assert "no remote" in report["push_detail"]

@@ -303,9 +303,7 @@ class ReconcileResult:
 
 def _utc_now_iso() -> str:
     return (
-        datetime.datetime.now(datetime.timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
+        datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
     )
 
 
@@ -322,7 +320,7 @@ def reconcile_merged_prs(
     Parameters
     ----------
     store
-        Path to ``tasks.yaml`` (default: standard resolution).
+        Store path override (default: standard resolution).
     apply
         ``False`` (default) → DRY-RUN: report candidates, mutate NOTHING.
         ``True`` → flip merged-PR cards to ``done`` + append an audit comment.
@@ -411,7 +409,7 @@ def _apply_close(
     fail-soft: there is intentionally no consumer yet (C4 dispatcher is a
     separate card), so an emit with no plugin registered is a harmless noop.
     """
-    from ._store import complete_task, comment_task
+    from ._store import comment_task, complete_task
 
     complete_task(resolved, task_id, by=by)
     text = f"auto-closed {_utc_now_iso()}: linked PR {pr_url} merged"

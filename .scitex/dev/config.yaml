@@ -4,12 +4,23 @@
 project-type:
   - pip
 
-# Pre-approved rule skips (lead a2a `fb413fb038da49d1b18262b237385c33`,
-# 2026-06-12, PR #110 fix-forward). Each entry is a scitex-dev audit rule
-# code we accept as drift while a focused cleanup PR is queued. The
-# schema (`audit.skip`) is read by
-# scitex_dev/_cli/audit/_config/_loader.py::load_config.
 audit:
+  # PS-103 root-whitelist. `stub/` is not junk and not scratch: it holds the
+  # `scitex-todo` DEPRECATION STUB, a SEPARATE distribution published to PyPI
+  # from the same tag as this package (see tests/test_stub_version_sync.py,
+  # which pins the two versions together). The rule offers three remedies —
+  # move into ./src/<pkg>/ (wrong: it is its own wheel, not part of ours),
+  # move into ./.dev/ (wrong: it ships), or whitelist here. Whitelisting is
+  # the correct one, and it is reviewed rather than blanket-suppressed.
+  root-whitelist:
+    dirs:
+      - stub
+
+  # Pre-approved rule skips (lead a2a `fb413fb038da49d1b18262b237385c33`,
+  # 2026-06-12, PR #110 fix-forward). Each entry is a scitex-dev audit rule
+  # code we accept as drift while a focused cleanup PR is queued. The
+  # schema (`audit.skip`) is read by
+  # scitex_dev/_cli/audit/_config/_loader.py::load_config.
   skip:
     # PS-204 — `orphan-test-file`. Six tests in tests/scitex_todo/ are
     # tied to non-Python surfaces (board_v3.html template signatures,
@@ -28,3 +39,36 @@ audit:
     # secret is shared across the fleet — renaming requires cross-repo
     # rotation.
     - PS-168
+
+  # PER-SITE exemptions (`audit.exemptions`, {rule: [{path, line, reason}]}).
+  # Deliberately NOT `skip:` above: skip silences a rule REPO-WIDE, which for
+  # PS-224 would stop detecting ANY workflow aimed at a runner no machine
+  # serves — and that rule's whole value is catching the green-by-absence case
+  # where a job never runs and therefore never fails. Silencing it fleet-wide
+  # to excuse one deliberate exception is "a gate that cannot fail is not a
+  # gate" (constitution §2). One site, one reason, still enforced everywhere
+  # else.
+  exemptions:
+    PS-224:
+      # `runner-destination-unregistered` — cla.yml::CLAssistant targets
+      # ubuntu-latest, which no registered machine serves.
+      #
+      # This is NOT drift and must NOT be "fixed" by pointing the job at
+      # Spartan. It is a deliberate SECURITY decision, made in a090c283
+      # ("harden CLA — SHA-pin the third-party action + move it off the
+      # credential-holding runner", #496) which intentionally REVERSED the
+      # earlier blanket move to Spartan (7083b18c). CLAssistant runs a
+      # third-party action; our self-hosted Spartan runners hold fleet
+      # credentials, so running untrusted third-party code there trades a
+      # CI-hygiene rule for a credential-exposure risk. Repointing it would
+      # silently undo a security fix.
+      #
+      # Every other workflow in this repo is on self-hosted Spartan
+      # (pypi-publish, rtd-sphinx, quality-audit) — this is the sole
+      # exception, and it is bounded to this one job rather than the file.
+      - path: .github/workflows/cla.yml::CLAssistant
+        line: 0
+        reason: >-
+          third-party action, deliberately kept off the credential-holding
+          self-hosted runner by a090c283 (#496); repointing it at Spartan
+          would reverse that security hardening

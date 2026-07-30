@@ -51,7 +51,7 @@ class TestSeed:
         state = WatcherState()
         tasks = [{"id": "a", "title": "A", "status": "pending", "agent": "proj-x"}]
         # Act
-        out = detect_changes(state, tasks, now=0.0)
+        detect_changes(state, tasks, now=0.0)
         # Assert
         assert state.seeded is True
 
@@ -101,10 +101,11 @@ class TestTaskAdded:
         # Arrange
         state = WatcherState()
         _seed(state, [])
-        # Act
         tasks = [{"id": "a", "title": "A", "status": "pending"}]
-        # Assert
-        assert detect_changes(state, tasks, now=100.0) == []
+        # Act
+        out = detect_changes(state, tasks, now=100.0)
+        # Assert — nobody owns it, so there is nobody to wake.
+        assert out == []
 
 
 class TestCommentAdded:
@@ -268,7 +269,6 @@ class TestDebounce:
             }
         ]
         _seed(state, prev)
-        # Two comments in quick succession.
         cur1 = [
             {
                 "id": "a",
@@ -278,22 +278,10 @@ class TestDebounce:
                 "comments": [{"author": "lead", "text": "1"}],
             }
         ]
-        cur2 = [
-            {
-                "id": "a",
-                "title": "A",
-                "status": "pending",
-                "agent": "proj-x",
-                "comments": [
-                    {"author": "lead", "text": "1"},
-                    {"author": "lead", "text": "2"},
-                ],
-            }
-        ]
         # Act
         first = detect_changes(state, cur1, now=100.0, min_wake_interval_s=30.0)
-        # Assert
-        second = detect_changes(state, cur2, now=110.0, min_wake_interval_s=30.0)
+        # Assert — the FIRST change is never debounced; its sibling test below
+        # pins that a second one inside the window is.
         assert len(first) == 1
 
     def test_back_to_back_wakes_collapse_per_agent_second(self):
@@ -331,10 +319,10 @@ class TestDebounce:
                 ],
             }
         ]
-        # Act
-        first = detect_changes(state, cur1, now=100.0, min_wake_interval_s=30.0)
-        # Assert
+        detect_changes(state, cur1, now=100.0, min_wake_interval_s=30.0)
+        # Act — a second change 10s later, well inside the 30s window.
         second = detect_changes(state, cur2, now=110.0, min_wake_interval_s=30.0)
+        # Assert
         assert second == []  # debounced
 
     def test_wake_after_debounce_window_passes(self):
@@ -395,6 +383,14 @@ class _OkHandler(BaseHTTPRequestHandler):
         pass
 
 
+def _await_delivery() -> None:
+    """Give the daemon thread a moment to flush the handled POST."""
+    for _ in range(20):
+        if _OkHandler.received:
+            break
+        time.sleep(0.02)
+
+
 @pytest.fixture
 def http_server():
     """Stand up a one-shot localhost HTTP server on an ephemeral port."""
@@ -411,34 +407,29 @@ def http_server():
 class TestPostWake:
     def test_round_trip_to_local_server_ok(self, http_server):
         # Arrange
+        payload = {"hello": "world"}
         # Act
-        ok = post_wake(http_server, {"hello": "world"})
+        ok = post_wake(http_server, payload)
         # Assert
-        # Tiny pause for the daemon thread to flush.
-        for _ in range(20):
-            if _OkHandler.received:
-                break
-            time.sleep(0.02)
+        _await_delivery()
         assert ok is True
 
     def test_round_trip_to_local_server_received(self, http_server):
         # Arrange
+        payload = {"hello": "world"}
         # Act
-        ok = post_wake(http_server, {"hello": "world"})
+        post_wake(http_server, payload)
         # Assert
-        # Tiny pause for the daemon thread to flush.
-        for _ in range(20):
-            if _OkHandler.received:
-                break
-            time.sleep(0.02)
-        assert _OkHandler.received == [{"hello": "world"}]
+        _await_delivery()
+        assert _OkHandler.received == [payload]
 
     def test_returns_false_on_dead_port(self):
-        # Pick a port that's almost certainly unbound.
-        # Arrange
+        # Arrange — a port that is almost certainly unbound.
+        dead_port = 1
         # Act
+        ok = post_wake(dead_port, {"x": 1}, timeout_s=0.2)
         # Assert
-        assert post_wake(1, {"x": 1}, timeout_s=0.2) is False
+        assert ok is False
 
 
 class TestRecipients:
@@ -559,12 +550,25 @@ class TestSubscriberFanOut:
 
 
 def _write_store(path, tasks, *, agents=None) -> None:
-    """Write a minimal real tasks.yaml the watcher can load_doc()."""
+    """Seed the canonical DB with `tasks` AND write a physical store file.
+
+    The store is SQLite now: ``run_watcher_once`` reads task data via
+    ``load_doc``, which reads the canonical DB and IGNORES the path. So the
+    task data the watcher sees must be SEEDED into the DB, not written to a
+    YAML file. But ``run_watcher_once`` still ``stat()``s the passed path for
+    its mtime short-circuit, so a real file must also exist at ``path`` with a
+    mtime the test can pin/bump. This helper therefore does BOTH: seed the DB
+    (the data source) and write a physical YAML file (the mtime handle).
+    """
+    import os
+
     import yaml
+    from conftest import seed_db_from_doc
 
     doc: dict = {"tasks": tasks}
     if agents is not None:
         doc["agents"] = agents
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
     with open(path, "w", encoding="utf-8") as handle:
         yaml.safe_dump(doc, handle, sort_keys=False)
 
@@ -573,27 +577,45 @@ class TestIntervalFloor:
     """Anti-spiral fix #1 — the hard floor on --interval."""
 
     def test_sub_floor_interval_is_clamped_up(self):
-        # Arrange / Act
-        out = clamp_interval(2.0)
+        # Arrange
+        spiraling_interval = 2.0
+        # Act
+        out = clamp_interval(spiraling_interval)
         # Assert — the 2s value that spiraled the fleet is rejected.
         assert out == MIN_INTERVAL_FLOOR_S
 
     def test_at_floor_interval_is_kept(self):
-        # Arrange / Act / Assert
-        assert clamp_interval(MIN_INTERVAL_FLOOR_S) == MIN_INTERVAL_FLOOR_S
+        # Arrange
+        interval = MIN_INTERVAL_FLOOR_S
+        # Act
+        out = clamp_interval(interval)
+        # Assert
+        assert out == MIN_INTERVAL_FLOOR_S
 
     def test_above_floor_interval_is_unchanged(self):
-        # Arrange / Act / Assert
-        assert clamp_interval(30.0) == 30.0
+        # Arrange
+        interval = 30.0
+        # Act
+        out = clamp_interval(interval)
+        # Assert
+        assert out == 30.0
 
     def test_non_numeric_interval_falls_back_to_default(self):
-        # Arrange / Act / Assert
-        assert clamp_interval("not-a-number") == DEFAULT_INTERVAL_S
+        # Arrange
+        interval = "not-a-number"
+        # Act
+        out = clamp_interval(interval)
+        # Assert
+        assert out == DEFAULT_INTERVAL_S
 
     def test_default_interval_is_not_sub_floor(self):
-        # The shipped default must itself clear the floor.
-        # Arrange / Act / Assert
-        assert DEFAULT_INTERVAL_S >= MIN_INTERVAL_FLOOR_S
+        """The shipped default must itself clear the floor."""
+        # Arrange
+        floor = MIN_INTERVAL_FLOOR_S
+        # Act
+        shipped_default = DEFAULT_INTERVAL_S
+        # Assert
+        assert shipped_default >= floor
 
 
 class TestSingleInstanceLock:
@@ -650,10 +672,10 @@ class TestNoChangeTick:
 
     def test_unchanged_mtime_short_circuits_before_parse(self, tmp_path):
         # The mtime short-circuit must fire so a quiet board costs one
-        # stat(), not a full parse. Rewrite the store CONTENT (add task b)
-        # but reset the mtime back to the seeded value: if the tick parsed
-        # content it would wake on b; because it keys off mtime it must
-        # short-circuit and return [].
+        # stat(), not a full DB re-read. Re-seed the DB with task b (via
+        # _write_store) but reset the file mtime back to the seeded value:
+        # if the tick re-read the store it would wake on b; because it keys
+        # off mtime it must short-circuit and return [].
         # Arrange
         import os as _os
 

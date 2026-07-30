@@ -12,13 +12,13 @@ for that exact tuple::
       last_ts: 2026-06-27T10:00:00Z
       next_eligible_ts: 2026-06-27T10:00:30Z   # failures only
 
-Persisted as YAML at ``<store_dir>/delivery_ledger.yaml`` where
+Persisted as JSON at ``<store_dir>/runtime/delivery_ledger.json`` where
 ``<store_dir>`` is the parent directory of the resolved task store
-(:func:`scitex_cards._inbox._resolved_store`). Reads go through the fast safe
-loader (:func:`scitex_cards._yaml.safe_load`); writes are ATOMIC (temp file +
-``os.replace``) and serialised behind the same advisory ``flock`` the task
-store uses (:func:`scitex_cards._model._store_lock`), keyed on the LEDGER
-path — single-writer per ledger file.
+(:func:`scitex_cards._inbox._resolved_store`). This is regenerable runtime
+state, so an absent ledger simply starts empty (no legacy migration). Writes
+are ATOMIC (temp file + ``os.replace``) and serialised behind the same advisory
+``flock`` the task store uses (:func:`scitex_cards._model._store_lock`), keyed
+on the LEDGER path — single-writer per ledger file.
 
 The ledger is what makes delivery idempotent: it answers "have we already
 sent this?" (:meth:`Ledger.already_done`) and "is this failed item due for
@@ -34,11 +34,10 @@ from pathlib import Path
 
 from .._inbox import _resolved_store
 from .._model import _store_lock
-from .._yaml import safe_load
 from ._channel import DeliveryResult, Status
 
-#: Ledger filename, a sibling of the task store inside ``<store_dir>``.
-LEDGER_FILENAME = "delivery_ledger.yaml"
+#: Ledger filename, under the store's ``runtime/`` dir.
+LEDGER_FILENAME = "delivery_ledger.json"
 
 #: Max delivery attempts before a failed item is left terminal (no retry).
 MAX_ATTEMPTS = 5
@@ -88,7 +87,7 @@ def _parse_iso(value: str | None) -> _dt.datetime | None:
 
 
 def ledger_path(store: str | Path | None = None) -> Path:
-    """Resolve the ledger path: ``<store_dir>/runtime/delivery_ledger.yaml``.
+    """Resolve the ledger path: ``<store_dir>/runtime/delivery_ledger.json``.
 
     Lives under the store's ``runtime/`` dir (scitex convention for
     non-git-tracked runtime state), under whichever scope the store resolved to.
@@ -130,11 +129,21 @@ class Ledger:
 
     @staticmethod
     def _load_entries(path: Path) -> dict[str, dict]:
-        """Read the raw ledger mapping (defensive: bad shapes → {})."""
+        """Read the raw JSON ledger mapping (defensive: bad shapes → {}).
+
+        This is regenerable runtime state (a delivery-dedup ledger under
+        ``runtime/``), so there is no legacy migration: an absent/unreadable
+        ledger simply starts empty and is rebuilt on the next delivery run.
+        """
+        import json
+
         if not path.exists():
             return {}
-        with path.open(encoding="utf-8") as handle:
-            data = safe_load(handle) or {}
+        try:
+            text = path.read_text(encoding="utf-8")
+            data: object = json.loads(text) if text.strip() else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
         if not isinstance(data, dict):
             return {}
         out: dict[str, dict] = {}
@@ -204,9 +213,7 @@ class Ledger:
     # ------------------------------------------------------------------ #
     # Mutation                                                            #
     # ------------------------------------------------------------------ #
-    def _backoff_seconds(
-        self, attempts: int, retry_after: float | None = None
-    ) -> int:
+    def _backoff_seconds(self, attempts: int, retry_after: float | None = None) -> int:
         """Backoff in seconds for a failed attempt, capped at MAX_BACKOFF_SEC.
 
         When ``retry_after`` is a positive hint (a 429 ``Retry-After``), HONOR
@@ -302,19 +309,19 @@ class Ledger:
         half-written ledger; the advisory lock (keyed on the ledger path)
         serialises concurrent writers — single-writer per file.
         """
-        import yaml
+        import json
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with _store_lock(self._path):
             tmp_path = self._path.parent / f".{self._path.name}.tmp"
             try:
                 with tmp_path.open("w", encoding="utf-8") as handle:
-                    yaml.safe_dump(
+                    json.dump(
                         self._entries,
                         handle,
-                        default_flow_style=False,
                         sort_keys=True,
-                        allow_unicode=True,
+                        indent=2,
+                        ensure_ascii=False,
                     )
                     handle.flush()
                     try:

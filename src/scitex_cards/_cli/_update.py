@@ -5,8 +5,7 @@
 Extracted from ``_write.py`` (pure move; the one-verb-per-file precedent
 of ``_comment.py`` / ``_close.py`` / ``_reassign.py``) to bring that
 module back under the file-size cap. Shares the option plumbing
-(``_TASKS_OPTION`` / closed-enum choices / ``_emit``) with its siblings
-via ``._write``.
+(closed-enum choices / ``_emit``) with its siblings via ``._write``.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from ._write import (
     _BLOCKER_OR_CLEAR,
     _KIND_OR_CLEAR,
     _STATUS_CHOICE,
-    _TASKS_OPTION,
     _emit,
 )
 
@@ -43,7 +41,7 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
         examples=(
             (
                 "{prog} update my-task --status in_progress --priority 1 "
-                "--agent \"$SCITEX_TODO_AGENT_ID\"",
+                '--agent "$SCITEX_TODO_AGENT_ID"',
                 "Flip status + reprioritize.",
             ),
         ),
@@ -56,9 +54,12 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
 @click.option("--task", default=None, help="The BIG board-card text.")
 @click.option("--project", default=None)
 @click.option("--host", default=None)
-@click.option("--agent", default=None, help="Owning agent (forward-compat alias for --assignee).")
 @click.option(
-    "--group", default=None,
+    "--agent", default=None, help="Owning agent (forward-compat alias for --assignee)."
+)
+@click.option(
+    "--group",
+    default=None,
     help="TRACK-1 dispatch cluster. Use '' to CLEAR.",
 )
 @click.option("--goal", default=None)
@@ -72,6 +73,18 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
         "existing blocker on the card. Dev-flagged gap fix: previously "
         "the strict closed-enum rejected '' / 'none' so there was no "
         "CLI form for clearing the field."
+    ),
+)
+@click.option(
+    "--parked",
+    default=None,
+    help=(
+        "WHY this card deliberately stands (free text), OR '' to UN-PARK it. "
+        "A park exempts the card from the backlog nudge and from auto-expiry, "
+        "so a card that could be parked but not un-parked was a state you "
+        "could enter and not leave — while invisible to the sweep that exists "
+        "to catch exactly that. Every other clearable field had a CLI form; "
+        "this one was simply never wired."
     ),
 )
 @click.option("--pr-url", "pr_url", default=None)
@@ -119,7 +132,6 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
     is_flag=True,
     help="Skip confirmation (no-op today — update is non-interactive; reserved for §2).",
 )
-@_TASKS_OPTION
 def update_cmd(
     task_id,
     title,
@@ -132,6 +144,7 @@ def update_cmd(
     goal,
     last_activity,
     blocker,
+    parked,
     pr_url,
     issue_url,
     kind,
@@ -150,7 +163,6 @@ def update_cmd(
     as_json,
     dry_run,
     yes,
-    tasks_path,
 ) -> None:
     """Apply each provided field to the matching task."""
     _ = yes  # accepted for §2 compliance
@@ -176,6 +188,9 @@ def update_cmd(
         ("goal", goal),
         ("last_activity", last_activity),
         ("blocker", blocker),
+        # Free text, NOT a closed enum — so `--parked ''` reaches the store as
+        # None and un-parks the card, via the generic ""-clears rule below.
+        ("parked", parked),
         ("pr_url", pr_url),
         ("issue_url", issue_url),
         ("kind", kind),
@@ -215,12 +230,10 @@ def update_cmd(
         )
 
     if dry_run:
-        click.echo(
-            f"# dry-run: would update task_id={task_id!r} fields={fields!r}"
-        )
+        click.echo(f"# dry-run: would update task_id={task_id!r} fields={fields!r}")
         return
     try:
-        merged = _store.update_task(tasks_path, task_id, **fields)
+        merged = _store.update_task(None, task_id, **fields)
     except _store.TaskNotFoundError as exc:
         raise click.ClickException(str(exc)) from None
     except _store.TaskValidationError as exc:

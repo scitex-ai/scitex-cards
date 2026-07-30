@@ -11,7 +11,6 @@ one assertion per test.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -19,28 +18,25 @@ from click.testing import CliRunner
 from scitex_cards._cli import main
 from scitex_cards._store import add_task, list_tasks
 
-
 # === fixtures ===============================================================
 
 
 @pytest.fixture()
-def store_with_blocked_task(tmp_path: Path) -> Path:
-    store = tmp_path / "tasks.yaml"
+def store_with_blocked_task() -> None:
     add_task(
-        store=store,
         id="t-blocker-clear",
         title="card to test clear-blocker",
         status="blocked",
-        blocker="operator-decision", assignee="agent:test-suite",
+        blocker="operator-decision",
+        assignee="agent:test-suite",
     )
-    return store
 
 
-def _read_back(store: Path, tid: str) -> dict:
-    for t in list_tasks(store=store):
+def _read_back(tid: str) -> dict:
+    for t in list_tasks():
         if t.get("id") == tid:
             return t
-    raise AssertionError(f"missing {tid!r} in {store}")
+    raise AssertionError(f"missing {tid!r} in the store")
 
 
 # === --blocker '' clears the field ==========================================
@@ -49,11 +45,10 @@ def _read_back(store: Path, tid: str) -> dict:
 def test_empty_string_clear_blocker_runs_without_error(store_with_blocked_task):
     # Arrange
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     result = runner.invoke(
         main,
-        ["update", "t-blocker-clear", "--tasks", str(store), "--blocker", "", "-y"],
+        ["update", "t-blocker-clear", "--blocker", "", "-y"],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -62,14 +57,13 @@ def test_empty_string_clear_blocker_runs_without_error(store_with_blocked_task):
 def test_empty_string_clear_blocker_deletes_field(store_with_blocked_task):
     # Arrange
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     runner.invoke(
         main,
-        ["update", "t-blocker-clear", "--tasks", str(store), "--blocker", "", "-y"],
+        ["update", "t-blocker-clear", "--blocker", "", "-y"],
     )
     # Assert
-    assert "blocker" not in _read_back(store, "t-blocker-clear")
+    assert "blocker" not in _read_back("t-blocker-clear")
 
 
 # === --blocker none clears the field (string sentinel) =====================
@@ -78,50 +72,56 @@ def test_empty_string_clear_blocker_deletes_field(store_with_blocked_task):
 def test_none_sentinel_clears_blocker_field(store_with_blocked_task):
     # Arrange
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     runner.invoke(
         main,
-        ["update", "t-blocker-clear", "--tasks", str(store), "--blocker", "none", "-y"],
+        ["update", "t-blocker-clear", "--blocker", "none", "-y"],
     )
     # Assert
-    assert "blocker" not in _read_back(store, "t-blocker-clear")
+    assert "blocker" not in _read_back("t-blocker-clear")
 
 
 def test_none_sentinel_case_insensitive(store_with_blocked_task):
     # Arrange — caller passes "NONE" (mixed case); should still clear.
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     runner.invoke(
         main,
-        ["update", "t-blocker-clear", "--tasks", str(store), "--blocker", "NONE", "-y"],
+        ["update", "t-blocker-clear", "--blocker", "NONE", "-y"],
     )
     # Assert
-    assert "blocker" not in _read_back(store, "t-blocker-clear")
+    assert "blocker" not in _read_back("t-blocker-clear")
 
 
 # === closed-enum values still pass through unchanged =======================
 
 
-def test_setting_blocker_to_valid_enum_value_still_works(tmp_path: Path):
+def test_setting_blocker_to_valid_enum_value_still_works():
     # Arrange — round-trip a SET (not a clear) to make sure the new
     # ParamType doesn't break the existing closed-enum behavior.
     # Uses `compute` (a real VALID_BLOCKERS member, see _model.py).
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-set", title="set blocker", status="pending", assignee="agent:test-suite")
+    add_task(
+        id="t-set",
+        title="set blocker",
+        status="pending",
+        assignee="agent:test-suite",
+    )
     runner = CliRunner()
     # Act
     runner.invoke(
         main,
         [
-            "update", "t-set", "--tasks", str(store),
-            "--status", "blocked",
-            "--blocker", "compute", "-y",
+            "update",
+            "t-set",
+            "--status",
+            "blocked",
+            "--blocker",
+            "compute",
+            "-y",
         ],
     )
     # Assert
-    assert _read_back(store, "t-set").get("blocker") == "compute"
+    assert _read_back("t-set").get("blocker") == "compute"
 
 
 # === invalid values STILL rejected (no closed-enum bypass) ==================
@@ -131,13 +131,15 @@ def test_invalid_blocker_value_is_rejected(store_with_blocked_task):
     # Arrange — make sure '' / 'none' are the ONLY sentinels; arbitrary
     # strings still fail at parse time.
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     result = runner.invoke(
         main,
         [
-            "update", "t-blocker-clear", "--tasks", str(store),
-            "--blocker", "not-a-real-blocker-kind", "-y",
+            "update",
+            "t-blocker-clear",
+            "--blocker",
+            "not-a-real-blocker-kind",
+            "-y",
         ],
     )
     # Assert
@@ -151,12 +153,16 @@ def test_omitting_blocker_flag_leaves_field_intact(store_with_blocked_task):
     # Arrange — update some OTHER field without naming --blocker; the
     # existing blocker must survive untouched.
     runner = CliRunner()
-    store = store_with_blocked_task
     # Act
     runner.invoke(
         main,
-        ["update", "t-blocker-clear", "--tasks", str(store),
-         "--note", "drive-by edit", "-y"],
+        [
+            "update",
+            "t-blocker-clear",
+            "--note",
+            "drive-by edit",
+            "-y",
+        ],
     )
     # Assert
-    assert _read_back(store, "t-blocker-clear").get("blocker") == "operator-decision"
+    assert _read_back("t-blocker-clear").get("blocker") == "operator-decision"

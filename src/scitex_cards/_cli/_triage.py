@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo triage`` — the backlog-consumption payload.
+"""CLI verb ``scitex-cards triage`` — the backlog-consumption payload.
 
 READ-ONLY. Draws an owner's pick-for-action sample (recency-weighted, see
 :mod:`scitex_cards._backlog_triage`) plus their expired set, and prints it.
@@ -9,7 +9,7 @@ the consumer decides, this verb only puts the decision in front of them.
 
 Primary consumer: a short-lived twin agent (sac concept, operator 2026-07-10)
 spawned from its parent with the PARENT's ``SCITEX_TODO_AGENT_ID``, which runs
-``scitex-todo triage --mine --json``, decides each drawn card (start it, name
+``scitex-cards triage --mine --json``, decides each drawn card (start it, name
 its blocker, cancel it, or keep it), and exits. The parent never stops.
 """
 
@@ -46,27 +46,29 @@ def register(main: click.Group) -> None:
         "Keep-deferred does NOT reset a card's age; the clock reads\n"
         "deferred_at, stamped once on entry into the backlog.\n\n"
         "Example:\n"
-        "  scitex-todo triage --mine --json"
+        "  scitex-cards triage --mine --json"
     ),
 )
 @click.option(
-    "--tasks", "tasks_path", default=None,
-    help="Path to tasks.yaml (default: resolver chain).",
-)
-@click.option(
-    "--agent", "agent", default=None,
+    "--agent",
+    "agent",
+    default=None,
     help="Owner to triage. Mutually exclusive with --mine.",
 )
 @click.option(
-    "--mine", is_flag=True,
+    "--mine",
+    is_flag=True,
     help="Same as --agent $SCITEX_TODO_AGENT_ID.",
 )
 @click.option(
-    "--n", "sample_n", type=int, default=None,
+    "--n",
+    "sample_n",
+    type=int,
+    default=None,
     help="Sample size (default 10; env SCITEX_TODO_TRIAGE_SAMPLE).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-def triage_cmd(tasks_path, agent, mine, sample_n, as_json):
+def triage_cmd(agent, mine, sample_n, as_json):
     if mine and agent:
         raise click.UsageError("--mine and --agent are mutually exclusive.")
     if mine:
@@ -74,7 +76,7 @@ def triage_cmd(tasks_path, agent, mine, sample_n, as_json):
         if not agent:
             raise click.UsageError("--mine requires SCITEX_TODO_AGENT_ID to be set.")
 
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_tasks_path(None)
     tasks = load_tasks(resolved)
 
     drawn = sample_for_triage(tasks, owner=agent, n=sample_n)
@@ -94,13 +96,24 @@ def triage_cmd(tasks_path, agent, mine, sample_n, as_json):
                 for c in drawn
             ],
             "expired": [
-                {"id": t.get("id"), "title": t.get("title"), "owner": t.get("agent") or t.get("assignee")}
+                {
+                    "id": t.get("id"),
+                    "title": t.get("title"),
+                    "owner": t.get("agent") or t.get("assignee"),
+                }
                 for t in rotten
             ],
-            "decisions": ["in_progress", "blocked+blocker", "cancelled", "keep-deferred"],
+            "decisions": [
+                "in_progress",
+                "blocked+blocker",
+                "cancelled",
+                "keep-deferred",
+            ],
         }
         click.echo(json.dumps(payload, default=str))
         return
 
     body = build_triage_body(drawn, rotten)
-    click.echo(body if body else "Nothing to triage — no drawable or expired deferred cards.")
+    click.echo(
+        body if body else "Nothing to triage — no drawable or expired deferred cards."
+    )

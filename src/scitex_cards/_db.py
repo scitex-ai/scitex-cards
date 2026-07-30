@@ -1,38 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SHADOW SQLite adapter for scitex-todo — STAGE S0 (RFC #348).
+"""SQLite adapter — the canonical store lives here (schema, connect, resolution).
 
-SAFETY BOUNDARY (S0)
---------------------
-This module is PURELY ADDITIVE. The YAML store (``tasks.yaml`` + the
-``threads.yaml`` sidecar) stays the CANONICAL source of truth. The SQLite
-database created here is a **SHADOW** that is bootstrapped FROM the YAML by
-:mod:`scitex_cards._db_bootstrap`. Nothing in the existing CRUD / MCP /
-``load_doc`` / ``_save_doc_unlocked`` path reads or writes this DB in S0 —
-dual-write (S1) and DB-canonical (S2) are later, separately-shipped stages.
-The shadow DB is therefore INCAPABLE of harming the YAML by construction:
-it is a different file, opened read/create, never linked into any write path.
+THE STORE IS THIS DATABASE
+--------------------------
+Post-cutover, the SQLite database created here is THE canonical store — not a
+shadow of a YAML file. There is no second document to reconcile to: the CRUD /
+MCP / ``load_doc`` / ``_save_doc_unlocked`` path reads and writes this database
+directly (see :mod:`scitex_cards._store_backend`). ``$SCITEX_CARDS_DB`` (the
+database path) is the SOLE store identity, stamped into ``schema_meta`` and
+enforced by the ownership guard (:mod:`scitex_cards._dual_write`). The YAML that
+remains in the package is a BACKUP/EXPORT rail (``db export``) and a set of
+non-card sidecars — never the task store.
 
 Adapter scope
 -------------
-stdlib ``sqlite3`` ONLY (no scitex-db, no third-party) per the S0 decision on
-RFC #348 Q2 — keeps the corruption-adjacent canonical store dependency-light,
-mirroring scitex-clew's hand-rolled PRAGMA approach. On every writable connect
+stdlib ``sqlite3`` ONLY (no scitex-db, no third-party) — keeps the
+corruption-adjacent canonical store dependency-light. On every writable connect
 we set ``journal_mode=WAL``, ``synchronous=NORMAL``, ``busy_timeout=300000``
 (5 min), ``foreign_keys=ON``. The schema is created idempotently
-(``CREATE TABLE/INDEX IF NOT EXISTS``) and stamped with ``PRAGMA user_version=1``
-plus a ``schema_meta`` row.
+(``CREATE TABLE/INDEX IF NOT EXISTS``) and stamped with ``PRAGMA user_version``
+plus ``schema_meta`` rows.
 
-Path resolution (RFC #348 §1.2) — DELEGATED, never re-rolled
-------------------------------------------------------------
+Path resolution — DELEGATED, never re-rolled
+--------------------------------------------
 Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_TODO_DB``
 (deprecated, warned) → the ecosystem ``local_state.user_path("cards",
 "cards.db")``. We DELEGATE the final tier to
 ``scitex_config._ecosystem.local_state.user_path`` rather than re-rolling a
 project/user precedence chain. ``user_path()`` is user-canonical and CANNOT
-express a project scope — which is the whole point: the 2026-07-06 stale-store
-incident was caused by a rolled-own resolver that ranked a project copy above
-the user store. Resolves to ``~/.scitex/cards/cards.db``.
+express a project scope — the whole point: the 2026-07-06 stale-store incident
+was caused by a rolled-own resolver that ranked a project copy above the user
+store. Resolves to ``~/.scitex/cards/cards.db``.
 """
 
 from __future__ import annotations
@@ -41,6 +40,17 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
+
+from ._db_dm_schema import DM_TABLES as _DM_TABLES
+from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_migrations import (
+    _migrate_v1_to_v2,
+    _migrate_v2_to_v3,
+    _migrate_v5_to_v6,
+    _migrate_v6_to_v7,
+    record_migration_provenance,
+    table_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,15 +91,40 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: CONSTRUCTION, and it cannot rot as new fields are added.
 #: v4 adds ``inbox_recipients`` — the inboxes: MAP KEYS, so a recipient
 #: whose inbox is currently EMPTY (drained) still round-trips through the
-#: yaml export instead of silently vanishing with their zero rows.
+#: JSON export instead of silently vanishing with their zero rows.
 #:
 #: v3 (S4 export rail) extends the same verbatim-payload rule to the NON-CARD
 #: sections: ``users.record_json``, ``notifications.record_json``,
-#: ``messages.record_json`` hold each record EXACTLY as the YAML doc carried
-#: it. Same rationale as ``card_json``: typed columns are the INDEX, the JSON
-#: is the PAYLOAD — a column-based export would silently drop unknown keys,
-#: and the yaml-snapshot backup rail (ADR-0010) must be exact by construction.
-SCHEMA_VERSION = 4
+#: ``messages.record_json`` hold each record EXACTLY as the source document
+#: carried it. Same rationale as ``card_json``: typed columns are the INDEX,
+#: the JSON is the PAYLOAD — a column-based export would silently drop
+#: unknown keys, and the JSON-snapshot backup rail (ADR-0010) must be exact
+#: by construction.
+#:
+#: v5 (DM into the store) adds ``dm_threads`` / ``dm_thread_member_events`` /
+#: ``dm_messages`` / ``dm_receipts`` plus their append-only triggers. DMs were
+#: the ONE piece of fleet data the store's protections did not cover: they
+#: lived in a ``threads.json`` sidecar, so WAL, store-identity stamping,
+#: tombstones, no-shrink, export and snapshot all applied to cards and to
+#: nothing the operator actually talks through. See
+#: ``docs/design/dm-into-cards-db.md``.
+#:
+#: v6 (the optimistic lock) adds ``tasks.revision``, incremented by every
+#: row-level write and asserted in the write's WHERE clause. It exists so a
+#: writer can tell "the row is there" (which ``rowcount == 1`` already answers)
+#: apart from "nobody changed it under me since I read" — the question that
+#: actually prevents a lost update, and the one sac's state-db taught us is easy
+#: to believe you have answered when you have not: it checks ``rowcount`` in
+#: eight places and carries no revision column, so every one of those checks
+#: passes in exactly the case a lock exists to catch.
+#:
+#: v7 makes the v6 counter DB-ENFORCED via ``tasks_bump_revision``, so no writer
+#: version can skip the increment. Application-side incrementing would require
+#: every one of ~90 agent containers to be current for the lock to mean anything,
+#: and that condition is not establishable — measured 2026-07-30, the fleet was
+#: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
+#: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
+SCHEMA_VERSION = 7
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -172,7 +207,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     deadlines_json TEXT,
     log_meta_json  TEXT,
     row_order      INTEGER,
-    card_json      TEXT
+    card_json      TEXT,
+    revision       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status   ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_agent    ON tasks(agent);
@@ -266,7 +302,8 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 """
 
 #: Ordered tuple of every table name the schema creates — used by
-#: :func:`verify` and the tests to assert completeness.
+#: :func:`verify` and the tests to assert completeness. The ``dm_*`` block is
+#: schema v5; its DDL lives in :mod:`scitex_cards._db_dm_schema`.
 SCHEMA_TABLES: tuple[str, ...] = (
     "tasks",
     "task_comments",
@@ -277,6 +314,7 @@ SCHEMA_TABLES: tuple[str, ...] = (
     "inbox_recipients",
     "notifications",
     "messages",
+    *_DM_TABLES,
     "schema_meta",
 )
 
@@ -295,56 +333,30 @@ def connect(path: str | Path) -> sqlite3.Connection:
     Does NOT create the schema — call :func:`init_schema` (or the combined
     :func:`open_db`) for that. ``row_factory`` is :class:`sqlite3.Row` so
     callers get name-addressable rows.
+
+    THE MIN-CLIENT-VERSION GATE lives here, not in :func:`open_db`, because
+    this is the one function BOTH the read path (``_store_read_sqlite``
+    calls ``connect`` directly) and the write path (``open_db`` -> this
+    function, then :func:`init_schema`) open every connection through. See
+    :mod:`scitex_cards._min_client_version` for the full incident this
+    answers: an outdated client must ERROR the moment it opens the store,
+    not merely warn. A brand-new file (no ``schema_meta`` table yet) has no
+    floor stamped, so the gate is a no-op and :func:`init_schema` still runs
+    normally afterwards.
     """
     p = Path(path).expanduser()
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p))
     conn.row_factory = sqlite3.Row
     _apply_pragmas(conn)
+    from ._min_client_version import enforce_min_client_version
+
+    try:
+        enforce_min_client_version(conn)
+    except Exception:
+        conn.close()
+        raise
     return conn
-
-
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    """The column names actually present on ``table`` in THIS database file.
-
-    The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
-    a number some code wrote — and a stamp is metadata, so it can outlive the
-    thing it describes. The columns are the artifact itself.
-    """
-    return {
-        str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-
-
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
-
-    ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
-    add a column — so a DB created before v2 keeps the old shape forever unless
-    something ALTERs it. That silently-missing column is precisely the sort of
-    thing a version stamp would have papered over.
-
-    Existing rows get ``card_json = NULL``: the column is added, but NOT
-    back-filled (a back-fill needs the YAML, which this layer does not have).
-    Those NULLs are load-bearing — they are what makes the S2 read guard REFUSE a
-    DB that has not been re-imported, instead of quietly serving cards with their
-    unknown fields stripped. Run ``scitex-todo db import`` to populate them.
-    """
-    if "card_json" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
-
-
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
-    """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
-
-    Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
-    NOT back-filled here — the exporter REFUSES NULL payloads loudly, which is
-    what forces a ``db import`` re-run instead of silently exporting stripped
-    records.
-    """
-    for table in ("users", "notifications", "messages"):
-        if "record_json" not in table_columns(conn, table):
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -355,14 +367,58 @@ def init_schema(conn: sqlite3.Connection) -> None:
     ``schema_meta`` rows (``schema_version`` always; ``created_at`` / ``source``
     only if absent so a re-init never clobbers the original provenance).
     """
+    # BEFORE the schema script, because that script is what makes a fresh file
+    # look initialised. 0 means "new file" and is a CREATE, not a migration.
+    _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+
     conn.executescript(_SCHEMA_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+    # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
+    # only, which is FRESH-database-only. `CREATE TABLE IF NOT EXISTS` is a no-op
+    # on an existing table, so a v3 file upgraded straight to v5 never received
+    # them — the exact trap _migrate_v1_to_v2's docstring warns about, present in
+    # this very chain. Not fixed here (it needs establishing what v4 added);
+    # named so the gap is visible rather than inherited as a numbering quirk.
+    _migrate_v4_to_v5(conn)
+    _migrate_v5_to_v6(conn)
+    _migrate_v6_to_v7(conn)
+    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT.
+    #
+    # This used to write SCHEMA_VERSION unconditionally, which let an OLDER client
+    # stamp a NEWER store as older. Measured on the live store 2026-07-30, four
+    # read-only connections seconds apart:
+    #
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=6  schema_meta=6  revision_col=True  trigger=True
+    #     user_version=5  schema_meta=5  revision_col=True  trigger=True   <-- !
+    #
+    # The recorded version OSCILLATED between 5 and 6 while the physical schema
+    # (revision column, bump trigger) never regressed. ~90 fleet containers run
+    # 0.17.5 / 0.18.0 / 0.23.0 / 0.24.0 SIMULTANEOUSLY, so whichever version
+    # opened the store last decided what it claimed to be. The stamp was a race,
+    # not a fact -- and it read LOWER than the store's real shape, which is the
+    # dangerous direction: a reader can conclude a column is absent when it is
+    # physically there.
+    #
+    # Migrations here are additive (`ADD COLUMN`, `CREATE ... IF NOT EXISTS`), so
+    # applied schema never goes backwards. max() therefore describes reality; a
+    # bare assignment describes only the last writer. Same principle as
+    # `_blocked_age_hours`' permanent created_at fallback: a stamp encodes the
+    # WRITER's version, not the object's history, so never trust one writer to
+    # speak for a store ~90 processes share.
+    _stamp = max(_prior_version, SCHEMA_VERSION)
+    conn.execute(f"PRAGMA user_version={_stamp}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
+        "ON CONFLICT(key) DO UPDATE SET value = "
+        # MAX in SQL, not in Python: another process may have raised it between
+        # our PRAGMA read and this statement, and CAST makes the comparison
+        # numeric rather than lexicographic ('10' < '9' as text).
+        "  CAST(MAX(CAST(schema_meta.value AS INTEGER), "
+        "           CAST(excluded.value AS INTEGER)) AS TEXT)",
+        (str(_stamp),),
     )
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
@@ -371,6 +427,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
     )
+    # An upgrade of an EXISTING store names itself. See that function for why:
+    # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
+    # the only evidence available was a sentinel that measures every neighbour.
+    #
+    # The condition is repeated here rather than left to the callee's own early
+    # return, because `__version__` resolves LAZILY on purpose (#630 took cold
+    # import from 425ms to ~137ms by deferring it) and ~90 containers call
+    # init_schema on every connection. Paying that resolution on every open, to
+    # stamp a row only a genuine upgrade writes, would spend the win #630 bought.
+    if _prior_version not in (0, SCHEMA_VERSION):
+        from . import __version__ as _client_version
+
+        record_migration_provenance(
+            conn,
+            _prior_version,
+            SCHEMA_VERSION,
+            _utc_now_iso(),
+            str(_client_version),
+        )
     conn.commit()
 
 
@@ -390,70 +465,10 @@ def _open_at(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def verify(explicit: str | Path | None = None) -> dict:
-    """Open the DB read/verify its integrity + report table row counts.
-
-    Returns a JSON-friendly dict::
-
-        {"path", "exists", "ok", "user_version", "schema_version",
-         "quick_check", "tables": {<name>: <row_count>, ...}, "source"}
-
-    ``ok`` is True iff the file exists, ``user_version`` and the
-    ``schema_meta.schema_version`` both equal :data:`SCHEMA_VERSION`, every
-    expected table is present, and ``PRAGMA quick_check`` returns ``ok``.
-    Never raises on a merely-absent DB (``exists=False``, ``ok=False``).
-    """
-    path = resolve_db_path(explicit)
-    report: dict = {
-        "path": str(path),
-        "exists": path.exists(),
-        "ok": False,
-        "user_version": None,
-        "schema_version": None,
-        "quick_check": None,
-        "source": None,
-        "tables": {},
-    }
-    if not path.exists():
-        return report
-
-    conn = connect(path)
-    try:
-        report["user_version"] = int(
-            conn.execute("PRAGMA user_version").fetchone()[0]
-        )
-        report["quick_check"] = conn.execute(
-            "PRAGMA quick_check"
-        ).fetchone()[0]
-        present = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        tables: dict[str, int] = {}
-        for name in SCHEMA_TABLES:
-            if name in present:
-                tables[name] = int(
-                    conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                )
-        report["tables"] = tables
-        meta = {
-            row[0]: row[1]
-            for row in conn.execute("SELECT key, value FROM schema_meta")
-        }
-        report["schema_version"] = meta.get("schema_version")
-        report["source"] = meta.get("source")
-        all_tables_present = all(t in present for t in SCHEMA_TABLES)
-        report["ok"] = bool(
-            report["user_version"] == SCHEMA_VERSION
-            and report["schema_version"] == str(SCHEMA_VERSION)
-            and all_tables_present
-            and report["quick_check"] == "ok"
-        )
-    finally:
-        conn.close()
-    return report
+#: ``db verify`` lives in :mod:`scitex_cards._db_verify` (this module owns the
+#: schema and the connection; that one only INSPECTS a file). Re-exported so
+#: every existing ``from ._db import verify`` keeps resolving unchanged.
+from ._db_verify import verify  # noqa: E402  (re-export, after the definitions)
 
 
 def _utc_now_iso() -> str:

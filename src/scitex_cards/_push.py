@@ -49,7 +49,7 @@ Loud-but-not-fatal policy (lead-confirmed)
   stdout for dev / test; returns ``ok=True, wire="dry-run"``.
 
 Boot-time announcement (``announce_missing_at_boot``) lists the
-agents in ``tasks.yaml`` that don't have a configured URL so the
+agents in the store that don't have a configured URL so the
 operator can fix the gap before the first event.
 """
 
@@ -132,8 +132,12 @@ def _now_iso() -> str:
 
 
 def _timeout_result(
-    agent: str, kind: str, url: str, err: BaseException,
-    timeout: float, dispatched_is_ok: bool,
+    agent: str,
+    kind: str,
+    url: str,
+    err: BaseException,
+    timeout: float,
+    dispatched_is_ok: bool,
 ) -> dict:
     """Result dict for a client read-timeout, shared by both except-branches.
 
@@ -144,13 +148,21 @@ def _timeout_result(
     """
     reason = "dispatched" if dispatched_is_ok else "timeout"
     logger.warning(
-        "[scitex-todo._push] %s read-timeout after %.1fs for agent=%s "
-        "→ reason=%s. %s",
-        url, timeout, agent, reason, err,
+        "[scitex-todo._push] %s read-timeout after %.1fs for agent=%s → reason=%s. %s",
+        url,
+        timeout,
+        agent,
+        reason,
+        err,
     )
     return {
-        "ok": dispatched_is_ok, "agent": agent, "wire": "http",
-        "kind": kind, "url": url, "status": None, "reason": reason,
+        "ok": dispatched_is_ok,
+        "agent": agent,
+        "wire": "http",
+        "kind": kind,
+        "url": url,
+        "status": None,
+        "reason": reason,
         "error": str(err),
     }
 
@@ -221,9 +233,11 @@ def deliver(
     url = turn_url_for(agent)
     if not url:
         logger.error(
-            "[scitex-todo._push] no turn URL configured for agent=%r "
-            "(set %s or %s%s)",
-            agent, ENV_MAP, PER_AGENT_PREFIX, _slug(agent),
+            "[scitex-todo._push] no turn URL configured for agent=%r (set %s or %s%s)",
+            agent,
+            ENV_MAP,
+            PER_AGENT_PREFIX,
+            _slug(agent),
         )
         return {
             "ok": False,
@@ -269,11 +283,19 @@ def deliver(
     except urllib.error.HTTPError as e:
         logger.error(
             "[scitex-todo._push] HTTP %s from %s for agent=%s: %s",
-            e.code, url, agent, e.reason,
+            e.code,
+            url,
+            agent,
+            e.reason,
         )
         return {
-            "ok": False, "agent": agent, "wire": "http", "kind": kind,
-            "url": url, "status": e.code, "reason": "http-error",
+            "ok": False,
+            "agent": agent,
+            "wire": "http",
+            "kind": kind,
+            "url": url,
+            "status": e.code,
+            "reason": "http-error",
         }
     except TimeoutError as e:
         # Receiver's /v1/turn runs the turn synchronously up to ~120 s;
@@ -291,22 +313,32 @@ def deliver(
         # transport failure (connection refused / DNS / SSL handshake).
         nested = getattr(e, "reason", None)
         if isinstance(nested, TimeoutError) or "timed out" in str(e):
-            return _timeout_result(
-                agent, kind, url, e, timeout, dispatched_is_ok
-            )
+            return _timeout_result(agent, kind, url, e, timeout, dispatched_is_ok)
         logger.error(
             "[scitex-todo._push] transport error to %s for agent=%s: %s",
-            url, agent, e,
+            url,
+            agent,
+            e,
         )
         return {
-            "ok": False, "agent": agent, "wire": "http", "kind": kind,
-            "url": url, "status": None, "reason": "transport-error",
+            "ok": False,
+            "agent": agent,
+            "wire": "http",
+            "kind": kind,
+            "url": url,
+            "status": None,
+            "reason": "transport-error",
             "error": str(e),
         }
 
     return {
-        "ok": True, "agent": agent, "wire": "http", "kind": kind,
-        "url": url, "status": status, "reason": "delivered",
+        "ok": True,
+        "agent": agent,
+        "wire": "http",
+        "kind": kind,
+        "url": url,
+        "status": status,
+        "reason": "delivered",
     }
 
 
@@ -324,15 +356,14 @@ def announce_missing_at_boot(tasks: list[dict]) -> list[str]:
     """
     from ._owner import card_owner
 
-    agents = sorted({
-        owner for t in tasks if (owner := card_owner(t))
-    })
+    agents = sorted({owner for t in tasks if (owner := card_owner(t))})
     missing = [a for a in agents if turn_url_for(a) is None]
     if missing:
         logger.warning(
             "[scitex-todo._push] %d agent(s) without turn URL — "
             "nudge + comment-relay will return ok=False for them: %s",
-            len(missing), ", ".join(missing),
+            len(missing),
+            ", ".join(missing),
         )
     return missing
 

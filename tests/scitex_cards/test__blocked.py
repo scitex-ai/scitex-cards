@@ -13,7 +13,6 @@ No mocks (STX-NM / PA-306). AAA pattern, one assertion per test.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -26,7 +25,6 @@ from scitex_cards._runnable import (
     blocked_tasks,
 )
 from scitex_cards._store import add_task
-
 
 # === Reason discrimination ==================================================
 
@@ -268,42 +266,47 @@ def test_blocked_reasons_constant_has_four_entries():
 # === CLI =================================================================
 
 
-def test_cli_blocked_lists_blocked_tasks(tmp_path: Path):
+def test_cli_blocked_lists_blocked_tasks():
     # Arrange
-    store = tmp_path / "tasks.yaml"
     add_task(
-        store=store, id="t-a", title="x", status="blocked", blocker="operator-decision", assignee="agent:test-suite"
+        id="t-a",
+        title="x",
+        status="blocked",
+        blocker="operator-decision",
+        assignee="agent:test-suite",
     )
     runner = CliRunner()
     # Act
-    result = runner.invoke(main, ["blocked", "--tasks", str(store)])
+    result = runner.invoke(main, ["blocked"])
     # Assert
     assert result.exit_code == 0
 
 
-def test_cli_blocked_json_emits_structured_payload(tmp_path: Path):
+def test_cli_blocked_json_emits_structured_payload():
     # Arrange
-    store = tmp_path / "tasks.yaml"
     add_task(
-        store=store, id="t-a", title="x", status="blocked", blocker="operator-decision", assignee="agent:test-suite"
+        id="t-a",
+        title="x",
+        status="blocked",
+        blocker="operator-decision",
+        assignee="agent:test-suite",
     )
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["blocked", "--tasks", str(store), "--json"],
+        ["blocked", "--json"],
     )
     # Assert
     payload = json.loads(result.output)
     assert set(payload.keys()) == {"tasks", "total", "by_reason"}
 
 
-def test_cli_blocked_empty_queue_emits_clear_message(tmp_path: Path):
+def test_cli_blocked_empty_queue_emits_clear_message():
     # Arrange — no blocked tasks at all.
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-a", title="x", status="deferred", assignee="agent:test-suite")
+    add_task(id="t-a", title="x", status="deferred", assignee="agent:test-suite")
     runner = CliRunner()
     # Act
-    result = runner.invoke(main, ["blocked", "--tasks", str(store)])
+    result = runner.invoke(main, ["blocked"])
     # Assert — exit 0 (queue clear is a SUCCESS not a failure).
     assert result.exit_code == 0

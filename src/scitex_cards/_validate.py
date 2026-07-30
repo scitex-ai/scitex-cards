@@ -9,17 +9,17 @@ import fcntl
 import os
 from pathlib import Path
 
-from ._yaml import safe_dump, safe_load  # hook-bypass: line-limit
+from ._deadlines import _parse_deadline_or_raise
 from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import (
+    _BLOCKER_ALIASES,
     ABOLISHED_STATUSES,
     VALID_BLOCKERS,
     VALID_KINDS,
     VALID_STATUSES,
     TaskValidationError,
-    _BLOCKER_ALIASES,
 )
-from ._deadlines import _parse_deadline_or_raise
+
 
 def _warn_tolerated(msg: str) -> None:
     """Shout about a value this build does not understand, but keep going.

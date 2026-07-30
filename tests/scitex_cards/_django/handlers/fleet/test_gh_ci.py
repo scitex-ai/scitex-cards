@@ -35,7 +35,6 @@ from scitex_cards._django.handlers.fleet import (
 )
 from scitex_cards._django.handlers.fleet import _config as fleet_config_mod
 
-
 # ─── FleetAdapterError shape ────────────────────────────────────────────
 
 
@@ -68,7 +67,7 @@ def _isolate_home(env, tmp_path):
     """Point ``Path.home()`` at ``tmp_path`` and clear the env override.
 
     Each test owns its own HOME so we never read the operator's real
-    ``~/.scitex/todo/dashboard.yaml``. Uses the PA-306-compliant ``env``
+    ``~/.scitex/cards/dashboard.json``. Uses the PA-306-compliant ``env``
     helper from the shared conftest (NOT monkeypatch).
     """
     env.set("HOME", str(tmp_path))
@@ -76,7 +75,7 @@ def _isolate_home(env, tmp_path):
 
 
 def test_config_missing_file_returns_empty_repos(env, tmp_path) -> None:
-    """A fresh install has no ``dashboard.yaml`` and that is NOT an
+    """A fresh install has no ``dashboard.json`` and that is NOT an
     error — "no repos configured" is a valid steady state and the UI
     hides the pills strip gracefully."""
     # Arrange
@@ -92,17 +91,17 @@ def test_config_malformed_yaml_raises_raises_fleetadaptererror(env, tmp_path) ->
     an empty strip wondering why their config is being ignored."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    # Unterminated mapping — YAML parser bails.
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos: [a, b,\n",
+    # Unterminated mapping — JSON parser bails.
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": [a, b,',
         encoding="utf-8",
     )
     # Act
     # Assert
     # The message must name the file path so the operator can find it.
-    with pytest.raises(FleetAdapterError, match="dashboard.yaml"):
+    with pytest.raises(FleetAdapterError, match="dashboard.json"):
         fleet_config_load()
 
 
@@ -111,10 +110,10 @@ def test_config_env_override_replaces_file_list(env, tmp_path) -> None:
     operator to flip the set without editing the file."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos:\n      - file/one\n      - file/two\n",
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": ["file/one", "file/two"]}}}',
         encoding="utf-8",
     )
     env.set("SCITEX_TODO_FLEET_CI_REPOS", "env/aaa, env/bbb")
@@ -152,10 +151,10 @@ def test_config_reads_file_when_env_unset(env, tmp_path) -> None:
     """File-sourced list shines through when the env override is unset."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos:\n      - file/one\n      - file/two\n",
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": ["file/one", "file/two"]}}}',
         encoding="utf-8",
     )
     # Act
@@ -292,7 +291,7 @@ def test_config_module_constant_paths_str() -> None:
     # Act
     # Assert
     assert str(fleet_config_mod._CONFIG_REL) == str(
-        Path(".scitex") / "todo" / "dashboard.yaml"
+        Path(".scitex") / "cards" / "dashboard.json"
     )
 
 

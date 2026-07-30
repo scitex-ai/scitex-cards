@@ -5,7 +5,7 @@
  * 2026-06-12): "want GitHub-style autocomplete on the qualifier search".
  * Extension of PR #102 (searchQuery.js) — same qualifier vocabulary,
  * same closed enums; this module adds the SUGGESTION layer (key
- * completion + value completion driven by the actual tasks.yaml data).
+ * completion + value completion driven by the actual task-store data).
  *
  * Pure module — no DOM, no fetch, no zustand. The vanilla board_v3.html
  * + the React `SearchAutocomplete.tsx` both consume the same functions.

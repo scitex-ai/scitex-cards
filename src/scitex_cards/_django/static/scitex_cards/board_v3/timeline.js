@@ -146,7 +146,7 @@
   function loadTimeline() {
     var hrs = WINDOWS[TL.windowKey] || 24;
     var laneBy = TL.view === "project" ? "project" : "agent";
-    fetch("/timeline?window_hours=" + hrs + "&lane_by=" + laneBy)
+    fetch((window.API_BASE || "") + "/timeline?window_hours=" + hrs + "&lane_by=" + laneBy)
       .then(function (r) {
         if (!r.ok)
           return r
@@ -391,13 +391,13 @@
     var cards = rows
       .map(function (r) {
         var t = r.t;
-        var comments = Array.isArray(t.comments) ? t.comments : [];
-        var last = comments.length ? comments[comments.length - 1] : null;
+        var cs = Array.isArray(t.comments) ? t.comments : []; // fallback only
+        var last = t.last_comment || (cs.length ? cs[cs.length - 1] : null);
         var commentHtml = last
           ? '<div class="tl-card-comment"><span class="tl-card-comment-author">' +
             escapeHtml(last.author || "?") +
             "</span> " +
-            escapeHtml(_truncate(last.text || "", 160)) +
+            escapeHtml(_truncate(last.text_preview || last.text || "", 160)) +
             "</div>"
           : '<div class="tl-card-comment tl-card-comment--none">no comments yet</div>';
         var meta = [

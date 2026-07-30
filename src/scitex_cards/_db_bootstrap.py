@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""YAML → shadow-SQLite bootstrap import — STAGE S0 (RFC #348).
+"""SQLite table population from an in-memory document.
 
-Reads the CURRENT canonical YAML store (``tasks.yaml`` — tasks + users +
-inboxes — plus the ``threads.yaml`` sidecar) via the existing load path and
-populates the shadow SQLite DB across every table. The YAML is the source of
-truth and is opened READ-ONLY here; the import NEVER writes back to it (the S0
-safety boundary — verified byte-for-byte by the tests).
-
-Idempotency
------------
-The import is a FULL REBUILD inside one transaction: it clears every data
-table and re-inserts from the YAML. Re-running therefore yields byte-identical
-DB state (``import --from-yaml`` twice == once). This is the simplest correct
-idempotency for a SHADOW that is, by definition, a projection of the YAML —
-there is no DB-only state to preserve in S0.
+The import entry points that used to live here (the sidecar importer /
+``mirror_doc`` / ``_load_source``) are DELETED: SQLite is the only store, so
+there is no external document to read and no second representation to project from.
+What remains is the low-level table-writing machinery — the column maps, the
+per-table inserters, and :func:`_rebuild_from_doc` — used by the incremental
+mirror (:mod:`scitex_cards._db_mirror`) to populate a database from a document
+the caller already holds in memory.
 
 Field mapping (see :mod:`scitex_cards._db` for the schema rationale):
   * scalar Task fields → columns (``group`` → ``grp``; SQL reserved word),
@@ -24,17 +18,15 @@ Field mapping (see :mod:`scitex_cards._db` for the schema rationale):
   * ``collaborators`` / ``subscribers`` → ``task_roles``,
   * ``users`` → ``users`` + ``user_names`` (alias fan-out),
   * ``inboxes`` map → ``notifications`` (``recipient_id`` = map key),
-  * ``threads.yaml`` map → ``messages`` (``thread_key`` = map key).
+  * ``threads.json`` map → ``messages`` (``thread_key`` = map key).
 """
 
 from __future__ import annotations
 
 import logging
 import sqlite3
-from pathlib import Path
 
-from ._db import SCHEMA_VERSION, connect, init_schema, resolve_db_path
-from ._db_freshness import stamp_yaml_provenance
+from ._db import SCHEMA_VERSION
 from ._db_payload import CARD_JSON_COL, card_payload_json
 from ._db_payload import json_or_none as _json_or_none
 from ._db_sections import (  # re-exported: _db_mirror imports these from here
@@ -43,11 +35,10 @@ from ._db_sections import (  # re-exported: _db_mirror imports these from here
     _insert_notifications,
     _insert_users,
 )
-from ._paths import resolve_tasks_path
 
 logger = logging.getLogger(__name__)
 
-#: (column, yaml-key) pairs for the scalar ``tasks`` columns. ``group`` maps to
+#: (column, doc-key) pairs for the scalar ``tasks`` columns. ``group`` maps to
 #: the ``grp`` column (SQL reserved word); ``deadlines`` / ``_log_meta`` /
 #: ``row_order`` / ``card_json`` are handled separately (JSON / positional).
 _TASK_SCALAR_COLS: tuple[tuple[str, str], ...] = (
@@ -110,40 +101,6 @@ _CLEAR_ORDER: tuple[str, ...] = (
 )
 
 
-def _load_source(
-    tasks_path: str | Path | None,
-) -> tuple[dict, Path, tuple[int, int] | None]:
-    """Load the YAML doc (tasks/users/inboxes) + the store path + its stat snapshot.
-
-    Uses the existing ``load_doc`` read primitive (no validation gate — a
-    bootstrap must ingest whatever is on disk). A missing store yields an
-    empty doc so ``db import`` on a fresh install is a no-op, not a crash.
-
-    The stat is taken BEFORE the parse, on purpose. If another writer rewrites the
-    store while we are reading it, the snapshot we stamp is the pre-read one, which
-    will no longer match the file on disk — so the next read declares the mirror
-    STALE and falls back to YAML. Stat-AFTER-parse would instead stamp a version of
-    the file the DB never saw, and the mirror would look fresh while being wrong.
-    """
-    from ._db_freshness import stat_snapshot
-    from ._model import load_doc
-
-    path = resolve_tasks_path(tasks_path)
-    if not path.exists():
-        return {}, path, None
-    snapshot = stat_snapshot(path)
-    doc = load_doc(path, validate=False)
-    return (doc if isinstance(doc, dict) else {}), path, snapshot
-
-
-def _load_threads(store_path: Path) -> dict[str, list[dict]]:
-    """Load the ``threads.yaml`` sidecar map (absent → empty)."""
-    from . import _threads
-
-    tpath = _threads.threads_path(store_path)
-    return _threads._load_threads(tpath)
-
-
 def _dedupe_last_wins(tasks: list) -> list[tuple[int, dict]]:
     """``(row_order, card)`` pairs, duplicate ids collapsed — LAST occurrence wins.
 
@@ -169,8 +126,8 @@ def _dedupe_last_wins(tasks: list) -> list[tuple[int, dict]]:
         logger.error(
             "!! DUPLICATE CARD ID(S) IN THE CANONICAL STORE: %s. The mirror keeps "
             "the LAST occurrence of each (the same row `INSERT OR REPLACE` would "
-            "have kept), but the YAML itself is inconsistent and should be "
-            "repaired — two cards cannot share an id.",
+            "have kept), but the source document itself is inconsistent and "
+            "should be repaired — two cards cannot share an id.",
             ", ".join(sorted(set(dupes))),
         )
     ordered.extend(by_id.values())
@@ -222,8 +179,8 @@ def _insert_tasks(
         values.append(_json_or_none(row.get("_log_meta")))
         values.append(order)
         # The VERBATIM card — the payload an S2 read reconstructs from, exactly as
-        # it appeared in the YAML (unknown keys, key order, types and all). The
-        # typed columns above are only the INDEX. See :mod:`_db_payload`.
+        # it appeared in the source document (unknown keys, key order, types and
+        # all). The typed columns above are only the INDEX. See :mod:`_db_payload`.
         values.append(card_payload_json(row))
         conn.execute(insert_sql, values)
         counts["tasks"] += 1
@@ -293,8 +250,8 @@ def _insert_roles(conn, task_id, row) -> int:
     return n
 
 
-#: Tables owned by the ``tasks.yaml`` doc. The ``messages`` table is DELIBERATELY
-#: absent: it is derived from the ``threads.yaml`` SIDECAR, which the doc-write
+#: Tables owned by the legacy task-store doc. The ``messages`` table is
+#: DELIBERATELY absent: it is derived from the ``threads.json`` SIDECAR, which the doc-write
 #: path never touches. A doc mirror that cleared ``messages`` would silently
 #: destroy every DM thread on each card write — the tables must be owned by
 #: exactly the file that produces them.
@@ -309,15 +266,20 @@ def _rebuild_from_doc(
 ) -> dict:
     """Rebuild the doc-derived tables from an ALREADY-PARSED doc, in ONE txn.
 
-    The shared core of :func:`import_from_yaml` (which reads the doc off disk)
-    and :func:`mirror_doc` (S1 dual-write, which already holds the doc in memory
-    under the store lock and must NOT pay an 11-second re-parse to get it back).
+    The first-run rebuild primitive for :func:`scitex_cards._db_mirror`: when a
+    database has no prior hashes to diff against, it is populated from the doc
+    the caller holds in memory (under the store lock — no re-parse).
 
     ``threads`` rebuilds the ``messages`` table too. Pass it ONLY when the caller
-    genuinely owns the threads sidecar — the dual-write path does not, and
-    clearing ``messages`` there would wipe every DM on every card write.
+    genuinely owns the threads sidecar — the incremental mirror path does not,
+    and clearing ``messages`` there would wipe every DM on every card write.
 
     Caller owns the transaction boundary and the connection.
+
+    THIS DELETEs before it inserts, which is why it is FENCED: reached only on
+    first run against a database that has nothing to delete. The sidecar-import
+    caller that used to reach it on a populated database has been removed — do
+    not add another caller that runs this against a live board.
     """
     clear = _CLEAR_ORDER if threads is not None else _DOC_CLEAR_ORDER
     for table in clear:
@@ -350,86 +312,5 @@ def _stamp_meta(conn: sqlite3.Connection, source: str) -> None:
         (str(SCHEMA_VERSION),),
     )
 
-
-def import_from_yaml(
-    tasks_path: str | Path | None = None,
-    db_path: str | Path | None = None,
-) -> dict:
-    """Bootstrap the shadow DB from the canonical YAML store. Idempotent.
-
-    Reads the resolved ``tasks.yaml`` (+ ``threads.yaml`` sidecar) and rebuilds
-    every DB table inside ONE transaction. The YAML is opened read-only and is
-    never modified. Returns a summary dict::
-
-        {"db_path", "yaml_path", "tasks", "comments", "edges", "roles",
-         "users", "user_names", "notifications", "messages"}
-    """
-    doc, store_path, snapshot = _load_source(tasks_path)
-    threads = _load_threads(store_path)
-    resolved_db = resolve_db_path(db_path)
-    doc_cards = doc.get("tasks") if isinstance(doc, dict) else None
-    card_count = len(doc_cards) if isinstance(doc_cards, list) else 0
-
-    conn = connect(resolved_db)
-    try:
-        init_schema(conn)
-        conn.execute("BEGIN IMMEDIATE")
-        summary: dict = {
-            "db_path": str(resolved_db),
-            "yaml_path": str(store_path),
-        }
-        summary.update(_rebuild_from_doc(conn, doc, threads=threads))
-        _stamp_meta(conn, "yaml-import")
-        # Record WHICH yaml this mirror reflects, so a read can tell — with one
-        # stat(2) and no parse — whether the store has moved on since. Without
-        # this the DB looks perfectly healthy while serving a stale photograph.
-        stamp_yaml_provenance(conn, store_path, card_count, snapshot=snapshot)
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    return summary
-
-
-def mirror_doc(doc: dict, db_path: str | Path | None = None) -> dict:
-    """S1 DUAL-WRITE: mirror an in-memory doc into the DB. Raises on failure.
-
-    Called from the store's ONE write chokepoint
-    (:func:`scitex_cards._model._save_doc_unlocked`) AFTER the canonical YAML write
-    has succeeded, while the store lock is still held — so the mirror can never
-    interleave with another writer, and needs no lock of its own.
-
-    Takes the doc IN MEMORY on purpose: the caller already parsed it under the
-    lock, and re-reading ``tasks.yaml`` from disk to get it back would cost another
-    full parse (~1.0-1.7 s, MEASURED on 1,370 cards) inside the critical section.
-
-    Rebuilds the doc-derived tables in ONE transaction and leaves ``messages``
-    (owned by the threads sidecar) untouched.
-
-    RAISES on failure, deliberately. The POLICY of what to do about a failed
-    mirror — never break the user's write, but never be silent either — belongs
-    to the caller (:mod:`scitex_cards._dual_write`), not here. A primitive that
-    swallows its own errors cannot be given a policy later.
-    """
-    resolved_db = resolve_db_path(db_path)
-    conn = connect(resolved_db)
-    try:
-        init_schema(conn)
-        conn.execute("BEGIN IMMEDIATE")
-        summary = _rebuild_from_doc(conn, doc)
-        summary["db_path"] = str(resolved_db)
-        _stamp_meta(conn, "dual-write")
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    return summary
-
-
-__all__ = ["import_from_yaml", "mirror_doc"]
 
 # EOF

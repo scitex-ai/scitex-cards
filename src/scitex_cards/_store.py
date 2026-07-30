@@ -30,10 +30,10 @@ Design constraints
 ------------------
 - **Generic** (Req 8): scope/assignee/status are free-form strings. The
   helpers don't know what an "agent" is.
-- **Centralized** (Req 3): the default store is whatever
-  :func:`_paths.resolve_tasks_path` returns; callers can override with an
+- **Centralized** (Req 3): the default store is the SQLite database
+  resolved by ``$SCITEX_CARDS_DB``; callers can override with an
   explicit ``store=`` path. The user-scope default
-  (``~/.scitex/todo/tasks.yaml``) covers Req 7.
+  (``~/.scitex/cards/cards.db``) covers Req 7.
 - **Shared with scopes** (Req 1): ``$SCITEX_TODO_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
@@ -76,6 +76,7 @@ from pathlib import Path
 
 from ._model import (  # noqa: F401  (see the re-export note below)
     VALID_STATUSES,
+    StoreShrinkRefusedError,
     TaskValidationError,
     _save_doc_unlocked,
     _save_tasks_unlocked,
@@ -92,7 +93,6 @@ from ._paths import resolve_tasks_path  # noqa: F401  (re-export)
 # `_cli/_stale.py`: `from .._store import load_tasks`. "Unused in this file" is not
 # "unused". I pruned them once; the full suite caught it immediately. Do not prune
 # them again — remove the re-export only together with its importers.
-
 # The READ / QUERY surface now lives in `_store_list` — `list_tasks` /
 # `summarize_tasks` / `_match` and the resolvers they need. RE-EXPORTED HERE so
 # every existing caller keeps working untouched: `_store.list_tasks(...)`,
@@ -197,6 +197,17 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     return resolved
 
 
+# THE ONE FAIL-LOUD READER now lives in its own module — the guard, the
+# incident history behind each of its checks, and its tests belong
+# together rather than buried among the mutation helpers. Re-exported
+# here so every historical `from ._store import _read_canonical_db_or_raise`
+# keeps working, and so there is still exactly ONE reader shared by the
+# read door, the write door and `_model.load_doc`.
+from ._store_canonical_read import (  # noqa: F401  (re-export)
+    _read_canonical_db_or_raise,
+)
+
+
 def _utc_now_iso() -> str:
     """ISO-8601 UTC timestamp with second resolution and the ``Z`` suffix.
 
@@ -215,35 +226,35 @@ def _utc_now_iso() -> str:
 # --------------------------------------------------------------------------- #
 # Read-modify-write helper                                                     #
 # --------------------------------------------------------------------------- #
-def _read_write_doc(
-    path: str | Path, *, missing_ok: bool = False
-) -> tuple[dict, list]:
+def _read_write_doc(path: str | Path) -> tuple[dict, list]:
     """Load the FULL store doc ONCE for a locked read-modify-write cycle.
 
     Returns ``(doc, tasks)`` where ``tasks is doc["tasks"]`` (always a list).
     Callers mutate ``tasks`` (or rebind it) then persist via
-    ``_save_doc_unlocked(doc, path, tasks=tasks)`` — so the ONE parse done
-    here serves BOTH the mutated ``tasks`` payload AND the non-``tasks``
-    sections (``users:`` etc.) that must survive the rewrite, eliminating the
-    second ``safe_load`` the old ``_save_tasks_unlocked`` re-read performed.
+    ``_save_doc_unlocked(doc, path, tasks=tasks)``, so this one read serves
+    BOTH the mutated ``tasks`` payload AND the non-``tasks`` sections
+    (``users:`` etc.) that must survive the rewrite.
 
-    Mirrors the two historical read shapes:
-    - ``missing_ok=False`` (default) → ``load_tasks(p)`` semantics: raises
-      ``FileNotFoundError`` if the store is absent; also re-validates on read.
-    - ``missing_ok=True`` → ``load_tasks(p) if p.exists() else []`` semantics:
-      an absent store yields an empty doc instead of raising.
+    THE ``missing_ok`` PARAMETER IS GONE, and its removal is the safety
+    property rather than a tidy-up. It used to mean "an absent store yields an
+    empty doc instead of raising", which was reasonable when the store was a
+    file that a fresh install legitimately lacked. Against a database it is a
+    loaded gun: an empty doc flows into a read-modify-write, the caller appends
+    its one new card, and ``mirror_doc_incremental`` diffs that one-card
+    document against the DB and DELETES every card missing from it.
+
+    Measured on a scratch store during this cutover: five sequential writes
+    left exactly ONE row each time. On the live board that is 2065 cards down
+    to 1, silently, with nothing raised anywhere in the stack. Found by
+    round-tripping real writes, not by reading the diff — the write path looked
+    correct in isolation and only end-to-end exercise showed the loss.
+
+    So there is no "absent store" case to be tolerant about: a missing database
+    is a configuration error and :func:`_read_canonical_db_or_raise` says so.
+    Emptiness must never be inferred; it must be read.
     """
-    p = Path(path)
-    if missing_ok and not p.exists():
-        return {"tasks": []}, []
-    doc = load_doc(p, validate=True)  # raises FileNotFoundError if absent
-    if not isinstance(doc, dict):
-        doc = {"tasks": []}
-    tasks = doc.get("tasks")
-    if not isinstance(tasks, list):
-        tasks = []
-        doc["tasks"] = tasks
-    return doc, tasks
+    doc = _read_canonical_db_or_raise()
+    return doc, doc["tasks"]
 
 
 # --------------------------------------------------------------------------- #
@@ -259,36 +270,50 @@ def resolve_store(store: str | Path | None = None) -> dict:
     Output shape::
 
         {
-          "resolved":         "/abs/path/to/tasks.yaml",
+          "resolved":         "/abs/path/to/cards.db",
           "explicit":         <the `store` arg you passed, or None>,
-          "env_tasks":        <value of $SCITEX_TODO_TASKS_YAML_SHARED, or None>,
-          "user_store":       "/abs/path/to/~/.scitex/todo/tasks.yaml",
-          "bundled_example":  "/abs/path/to/bundled/example.yaml",
-          "pkg_short":        "scitex_cards",
+          "db_env":           <value of $SCITEX_CARDS_DB, or None>,
+          "user_store":       "/abs/path/to/~/.scitex/cards/cards.db",
+          "pkg_short":        "cards",
           "exists":           bool,
+          "store_uuid":       <the database's own identity, or None>,
+          "expected_uuid":    <$SCITEX_CARDS_STORE_UUID, or None>,
         }
+
+    ``store_uuid`` is contract point 8, machine-readable half (design §11). The
+    identity is what a host registry must record next to this board's endpoint,
+    and "open the database and run a SQL query" is archaeology. This function
+    already answers "WHICH store did I actually resolve"; it answers "and WHAT
+    IS IT" in the same breath. ``None`` means the database is absent or carries
+    no identity yet — bind it with ``scitex-cards store adopt-uuid``.
+
+    ``expected_uuid`` is reported beside it deliberately: the two most useful
+    facts about an identity mismatch are the value the database carries and the
+    value this process was told to expect, and reading them from two different
+    surfaces is how a mismatch stays undiagnosed.
+
+    THIS FUNCTION IS PURE REPORTING. Reading the identity here never mints one,
+    never stamps one, and never changes what resolves.
     """
     import os
 
-    from ._paths import (
-        ENV_TASKS,
-        PKG_SHORT,
-        _user_root,
-        bundled_example,
-        resolve_tasks_path,
-    )
+    from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
+    from ._paths import PKG_SHORT, _user_root
+    from ._store_uuid import expected_store_uuid, store_uuid_at
 
-    resolved = resolve_tasks_path(
+    # The resolved store is the DATABASE — the sole store identity.
+    resolved = resolve_db_path(
         store if isinstance(store, (str, type(None))) else str(store)
     )
     return {
         "resolved": str(resolved),
         "explicit": str(store) if store is not None else None,
-        "env_tasks": os.environ.get(ENV_TASKS),
-        "user_store": str(_user_root() / "tasks.yaml"),
-        "bundled_example": str(bundled_example()),
+        "db_env": os.environ.get(ENV_DB),
+        "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
         "exists": Path(resolved).exists(),
+        "store_uuid": store_uuid_at(resolved),
+        "expected_uuid": expected_store_uuid(),
     }
 
 
@@ -302,8 +327,13 @@ def get_task(
     natural "read one" verb every CRUD surface expects but the Python
     API was missing (PR #56 audit gap). The MCP wrapper exposes this as
     ``get_task`` per Convention A.
+
+    A TOMBSTONED row (see :func:`scitex_cards._task._is_tombstoned`) is
+    treated as NOT FOUND — the 2026-07-21 tombstone change keeps a
+    deleted card's row on disk forever, but this read must behave exactly
+    as it did when ``delete_task`` physically removed it.
     """
-    from . import _model
+    from . import _model, _task
 
     tasks_path = _resolved_store(store)
     if not task_id:
@@ -311,7 +341,7 @@ def get_task(
     with _model._store_lock(tasks_path):
         tasks = _model.load_tasks(tasks_path)
         for t in tasks:
-            if t.get("id") == task_id:
+            if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
     raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
 
@@ -338,24 +368,25 @@ from ._store_lifecycle import (  # noqa: E402,F401  (re-export)
     resolve_task,
     restore_task,
 )
-from ._store_reassign import reassign_all  # noqa: E402,F401  (re-export)
 from ._store_mutate import (  # noqa: E402,F401  (re-export)
     _stamp_deferred_at,
     _wip_statuses,
     add_task,
     update_task,
 )
-from ._store_rescore import rescore_task  # noqa: E402,F401  (re-export)
+from ._store_reassign import reassign_all  # noqa: E402,F401  (re-export)
 from ._store_relations import (  # noqa: E402,F401  (re-export)
     _set_list_member,
     set_collaborator,
     set_edge,
     set_subscriber,
 )
+from ._store_rescore import rescore_task  # noqa: E402,F401  (re-export)
 
 __all__ = [
     "ENV_AGENT",
     "ENV_SCOPE",
+    "StoreShrinkRefusedError",
     "TaskNotFoundError",
     "TaskValidationError",
     "add_task",

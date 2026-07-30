@@ -10,9 +10,9 @@ contract (lead a2a ``c2908456`` / ``d35f5ae6``, 2026-06-11): one
 per-package systemctl ceremony.
 
 scitex-todo's only piece today is the **board** web dashboard — the
-live ``http://127.0.0.1:8051/`` view of the shared
-``~/.scitex/todo/tasks.yaml`` board that every sac agent reads from
-and writes to. The board is the operator's primary daily surface;
+live ``http://127.0.0.1:8051/`` view of the shared task store that
+every sac agent reads from and writes to. The board is the operator's
+primary daily surface;
 having it brought up + kept alive at the systemd layer
 (``Restart=on-failure``) is what makes the cross-fleet feedback loop
 actually visible.
@@ -74,14 +74,14 @@ def provide_jobs() -> list[JobSpec]:
             command="scitex-todo board start --port 8051",
             description=(
                 "scitex-todo board start — read-only live view of the "
-                "shared ~/.scitex/todo/tasks.yaml at http://127.0.0.1:8051/"
+                "shared task store at http://127.0.0.1:8051/"
             ),
             on_boot_sec="15s",
             restart_policy="on-failure",
             timeout_sec=30,
         ),
         # P3b + P3d (lead-approved 2026-06-12) — wake-watcher. The push
-        # side of the self-consuming board loop: polls tasks.yaml,
+        # side of the self-consuming board loop: polls the task store,
         # detects new/commented/changed tasks, POSTs /v1/turn to the
         # owning agent's a2a port. Pairs with `scitex-todo next --mine`
         # (pull side) + the agent self-consumption loop sub-skill (32).
@@ -129,10 +129,7 @@ def provide_jobs() -> list[JobSpec]:
             # 5-field cron schedule (min hour dom mon dow): every 10 min.
             kind="cron",
             schedule="*/10 * * * *",
-            command=(
-                "scitex-todo print-stats --by agent "
-                "--notify --nudge-quiet"
-            ),
+            command=("scitex-todo print-stats --by agent --notify --nudge-quiet"),
             description=(
                 "scitex-todo throughput pulse — pushes per-agent open "
                 "list + quiet-nudge every 10 min. Pairs with the "
@@ -185,13 +182,33 @@ def provide_jobs() -> list[JobSpec]:
         # wrongly close). kind=cron / restart_policy=no: a missed tick just
         # closes on the next one — no long-running process to keep alive.
         # cards-snapshot (ADR-0010 backup rail cadence, card
-        # scitex-cards-snapshot-cadence-and-offsite-20260717) — hourly
-        # rebuild-then-export: `db snapshot --refresh` imports the canonical
-        # YAML into ~/.scitex/cards/cards.db, exports it back to YAML text,
-        # and git-commits the export in the self-contained snapshots repo.
-        # Import-first is DELIBERATE while the yaml is still canonical (it
-        # is the freshness step); after the S6 canonicality flip the
-        # --refresh flag drops away and this becomes a pure export.
+        # scitex-cards-snapshot-cadence-and-offsite-20260717) — hourly EXPORT:
+        # read the database, write its contents out as YAML text, and git-commit
+        # that text in the self-contained snapshots repo. Git tracks an EXPORT,
+        # never live data, and nothing reads these snapshots back as a store.
+        #
+        # `--refresh` USED TO BE HERE AND MUST NOT COME BACK. It rebuilds
+        # cards.db FROM a YAML file. That was the correct first half of the job
+        # while YAML was canonical and the database was a mirror of it — the
+        # import WAS the freshness step. Once the database is the store it
+        # inverts into a data-loss engine that runs on a timer: every hour it
+        # would overwrite the DB, including every card written in the preceding
+        # hour, with whatever a frozen YAML file happened to contain. It would
+        # log a successful refresh and a successful push the entire time.
+        #
+        # This is not a precaution against something imagined. On 2026-07-20 the
+        # live board went from 2,165 cards to 5 when an import pulled a 1,349-byte
+        # fixture over it, and `--refresh` is the flag that performs that import.
+        #
+        # THE UNIT ON THIS HOST WAS ONLY SAFE BY ACCIDENT OF A SECOND FILE. The
+        # generated systemd unit still carried `--refresh --push`, and a drop-in
+        # (`no-yaml-refresh.conf`) reset ExecStart to the safe form. Measured
+        # 2026-07-20: the resolved ExecStart was `db snapshot --push`, so the
+        # rail was not firing destructively — but the danger sat one deleted
+        # file away, and the declaration here is what regenerates the unit.
+        # A dangerous default cancelled by an override is not a safe system; it
+        # is a safe system's understudy. Fix the declaration.
+        #
         # Minute 7: off the */5, */10 and */15 stampedes above.
         JobSpec(
             name="scitex-cards.snapshot",
@@ -201,12 +218,11 @@ def provide_jobs() -> list[JobSpec]:
             # ywatanabe1989/scitex-cards-cards, operator-chosen 2026-07-17);
             # a failed push exits 1 so the cron tick reads red, never
             # "backed up" with a local-only commit.
-            command="scitex-cards db snapshot --refresh --push",
+            command="scitex-cards db snapshot --push",
             description=(
                 "scitex-cards snapshot — hourly backup rail (ADR-0010): "
-                "rebuild cards.db from the canonical store, export to YAML "
-                "text, git-commit the export. Git tracks an EXPORT, never "
-                "live data."
+                "export the database to YAML text and git-commit the export. "
+                "Git tracks an EXPORT, never live data."
             ),
             restart_policy="no",
             timeout_sec=300,

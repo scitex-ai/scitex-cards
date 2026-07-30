@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo mcp install` / `install-fleet` verbs.
+"""`scitex-cards mcp install` / `install-fleet` verbs.
 
 Extracted from ``_cli/_mcp.py`` (size cap) — the install verbs are the
 file's largest cluster. ``attach_install_verbs(mcp_group)`` wires both onto
@@ -17,7 +17,57 @@ import click
 
 from ._compat import spec_command_kwargs
 
-_CLI_NAME = "scitex-todo"
+#: The `mcpServers` KEY we write, and the `command` the entry execs. The key is
+#: the namespace agents see their tools under (`mcp__scitex-cards__add_task`),
+#: so it must say the current name.
+_CLI_NAME = "scitex-cards"
+
+#: The key we used to write. Kept ONLY so we can RETIRE it — see
+#: :func:`_retire_legacy_entry`. This is not a fallback we ever write.
+LEGACY_CLI_NAME = "scitex-todo"
+
+#: Commands that mark an `.mcp.json` entry as OURS. Both console scripts are
+#: installed (``scitex-todo`` stays a permanent alias), so a legacy entry may
+#: exec either one.
+_OUR_COMMANDS = frozenset({"scitex-cards", "scitex-todo"})
+
+
+def _is_our_entry(entry: object) -> bool:
+    """True when ``entry`` is an MCP server entry THIS package wrote.
+
+    Deliberately strict: it must exec one of our console scripts (basename, so
+    an absolute path still matches) AND run the ``mcp`` subcommand. Anything
+    else that merely happens to sit under the legacy key belongs to someone
+    else and must not be touched.
+    """
+    if not isinstance(entry, dict):
+        return False
+    command = entry.get("command")
+    if not isinstance(command, str) or not command:
+        return False
+    if pathlib.PurePath(command).name not in _OUR_COMMANDS:
+        return False
+    args = entry.get("args")
+    return isinstance(args, list) and bool(args) and args[0] == "mcp"
+
+
+def _retire_legacy_entry(servers: dict) -> bool:
+    """Drop OUR stale ``scitex-todo`` entry from ``servers``. Returns whether it did.
+
+    Renaming the key we write is only half a migration. Left alone, a config
+    that already had ``scitex-todo`` would end up with BOTH keys pointing at the
+    same server — the agent would load two copies of every tool
+    (``mcp__scitex-todo__add_task`` *and* ``mcp__scitex-cards__add_task``),
+    both writing the same store. So writing the new key RETIRES the old one.
+
+    Only OUR entry is retired (see :func:`_is_our_entry`); a third-party server
+    that happens to be keyed ``scitex-todo`` is left exactly as found.
+    """
+    legacy = servers.get(LEGACY_CLI_NAME)
+    if legacy is None or not _is_our_entry(legacy):
+        return False
+    del servers[LEGACY_CLI_NAME]
+    return True
 
 
 def attach_install_verbs(mcp_group: click.Group) -> None:
@@ -39,12 +89,15 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
                 ("{prog} mcp install --format raw", "Print the raw snippet."),
                 ("{prog} mcp install --apply --dry-run", "Preview a user-scope apply."),
                 ("{prog} mcp install --apply -y", "Write into ~/.mcp.json."),
-                ("{prog} mcp install --apply --to ./.mcp.json", "Project-scope .mcp.json."),
+                (
+                    "{prog} mcp install --apply --to ./.mcp.json",
+                    "Project-scope .mcp.json.",
+                ),
                 (
                     "{prog} mcp install --apply --to to_home/.mcp.json "
-                    "--env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y",
+                    "--env-tasks-path /home/agent/.scitex/cards/cards.db -y",
                     "Fleet host-store pin (P3a).",
-        ),
+                ),
             ),
         ),
     )
@@ -82,10 +135,9 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         type=str,
         default=None,
         help=(
-            "Pin SCITEX_TODO_TASKS_YAML_SHARED in the snippet's `env` block — the MCP\n"
-            "subprocess uses this path as the task-store via the normal\n"
-            "resolution chain (explicit env > project > user > example).\n"
-            "Fleet P3a use case: when this CLI is run by agent-container\n"
+            "Pin $SCITEX_CARDS_DB in the snippet's `env` block — the MCP\n"
+            "subprocess uses this database path as the store (the sole store\n"
+            "identity). Fleet use case: when this CLI is run by agent-container\n"
             "to seed every container's ``to_home/.mcp.json``, the pinned\n"
             "path makes the wire-up self-documenting and immune to $HOME\n"
             "or symlink drift in any container. Omit to leave the entry\n"
@@ -114,15 +166,13 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
             "command": _CLI_NAME,
             "args": ["mcp", "start"],
         }
-        # P3a host-store wire-up: when an explicit task-store path is
-        # provided, pin it in the MCP entry's `env` block. The MCP server
-        # subprocess picks up SCITEX_TODO_TASKS_YAML_SHARED via the normal resolution
-        # chain (env beats project/user scopes), so a containerized agent
-        # ends up reading the shared host store regardless of its $HOME or
-        # symlink state. Keeping this OPT-IN preserves back-compat with
-        # the existing snippet shape.
+        # Host-store wire-up: when an explicit database path is provided, pin
+        # it in the MCP entry's `env` block as $SCITEX_CARDS_DB (the sole store
+        # identity), so a containerized agent reads the shared host store
+        # regardless of its $HOME or symlink state. OPT-IN preserves back-compat
+        # with the existing snippet shape.
         if env_tasks_path:
-            entry["env"] = {"SCITEX_TODO_TASKS_YAML_SHARED": env_tasks_path}
+            entry["env"] = {"SCITEX_CARDS_DB": env_tasks_path}
         snippet = {"mcpServers": {_CLI_NAME: entry}}
 
         if not do_apply:
@@ -158,14 +208,18 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         servers = dict(merged.get("mcpServers") or {})
         before_entry = servers.get(_CLI_NAME)
         servers[_CLI_NAME] = snippet["mcpServers"][_CLI_NAME]
+        retired = _retire_legacy_entry(servers)
         merged["mcpServers"] = servers
 
-        changed = before_entry != servers[_CLI_NAME]
-        action = (
-            "noop (entry already present)"
-            if not changed
-            else ("would update" if before_entry is not None else "would create")
-        )
+        # A retirement alone is a real change: the file already had the new key
+        # but ALSO the stale one, and leaving it would double every tool.
+        changed = before_entry != servers[_CLI_NAME] or retired
+        if not changed:
+            action = "noop (entry already present)"
+        else:
+            action = "would update" if before_entry is not None else "would create"
+            if retired:
+                action += f" (retiring the legacy {LEGACY_CLI_NAME} entry)"
 
         new_text = json.dumps(merged, indent=2) + "\n"
 
@@ -183,7 +237,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
             )
 
         if not changed:
-            click.echo(f"# noop: {target} already has the scitex-todo entry")
+            click.echo(f"# noop: {target} already has the {_CLI_NAME} entry")
             return
 
         # Backup the existing file before write (best-effort; failure to
@@ -214,9 +268,9 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
                 (
                     "{prog} mcp install-fleet "
                     "--agents-dir ~/.dotfiles/src/.scitex/agent-container/agents "
-                    "--env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y",
+                    "--env-tasks-path /home/agent/.scitex/cards/cards.db -y",
                     "Sweep every agent's to_home/.mcp.json.",
-        ),
+                ),
             ),
         ),
     )
@@ -232,14 +286,14 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         "env_tasks_path",
         type=str,
         default=None,
-        help="Pin SCITEX_TODO_TASKS_YAML_SHARED in every emitted entry's env block.",
+        help="Pin $SCITEX_CARDS_DB in every emitted entry's env block.",
     )
     @click.option(
         "--dry-run", is_flag=True, help="Print planned per-agent action; no writes."
     )
     @click.option("-y", "--yes", "yes", is_flag=True, help="Skip per-agent prompts.")
     def install_fleet(agents_dir, env_tasks_path, dry_run, yes) -> None:
-        """Apply the scitex-todo MCP entry to every agent's to_home/.mcp.json."""
+        """Apply the scitex-cards MCP entry to every agent's to_home/.mcp.json."""
         agents_root = pathlib.Path(agents_dir).expanduser()
         if not agents_root.is_dir():
             raise click.ClickException(
@@ -247,7 +301,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
             )
         entry: dict = {"command": _CLI_NAME, "args": ["mcp", "start"]}
         if env_tasks_path:
-            entry["env"] = {"SCITEX_TODO_TASKS_YAML_SHARED": env_tasks_path}
+            entry["env"] = {"SCITEX_CARDS_DB": env_tasks_path}
 
         agent_count = applied = noop = 0
         errors: list[str] = []
@@ -281,12 +335,13 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
 
 
 def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
-    """Apply / merge the scitex-todo MCP entry into ONE target file.
+    """Apply / merge the scitex-cards MCP entry into ONE target file.
 
     Shared body for ``install-fleet``. Same rules as the single-file
     ``install --apply``: existing JSON preserved + sibling mcpServers
     kept; idempotent re-application is a noop; dry-run prints the
-    planned action without touching disk. Returns
+    planned action without touching disk; OUR stale ``scitex-todo`` entry is
+    retired so no agent ends up loading both copies. Returns
     ``(action_label, changed)``.
     """
     existing: dict = {}
@@ -306,13 +361,15 @@ def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
     servers = dict(merged.get("mcpServers") or {})
     before_entry = servers.get(_CLI_NAME)
     servers[_CLI_NAME] = entry
+    retired = _retire_legacy_entry(servers)
     merged["mcpServers"] = servers
-    changed = before_entry != entry
-    action = (
-        "noop (entry already present)"
-        if not changed
-        else ("would-update" if before_entry is not None else "would-create")
-    )
+    changed = before_entry != entry or retired
+    if not changed:
+        action = "noop (entry already present)"
+    else:
+        action = "would-update" if before_entry is not None else "would-create"
+        if retired:
+            action += f" (retiring the legacy {LEGACY_CLI_NAME} entry)"
     if dry_run or not changed:
         return action, changed
     if target.exists():
@@ -329,6 +386,12 @@ def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
     return ("updated" if before_entry is not None else "created"), True
 
 
-__all__ = ["attach_install_verbs", "_fleet_apply_one"]
+__all__ = [
+    "attach_install_verbs",
+    "_fleet_apply_one",
+    "_retire_legacy_entry",
+    "_is_our_entry",
+    "LEGACY_CLI_NAME",
+]
 
 # EOF

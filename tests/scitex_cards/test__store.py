@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import warnings
 from pathlib import Path
 
 import pytest
@@ -27,23 +28,35 @@ from scitex_cards import _model, _store
 # --------------------------------------------------------------------------- #
 def test_add_task_returns_inserted_dict(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     inserted = _store.add_task(
-        store, id="design", title="Design phase", status="pending", assignee="agent:test-suite"
+        store,
+        id="design",
+        title="Design phase",
+        status="pending",
+        assignee="agent:test-suite",
     )
     # Assert — core fields present (created_at + last_activity auto-stamped
     # by D11 partial-fix; their exact ISO values are tested separately).
     assert {k: inserted[k] for k in ("id", "title", "status")} == {
-        "id": "design", "title": "Design phase", "status": "pending"
+        "id": "design",
+        "title": "Design phase",
+        "status": "pending",
     }
 
 
 def test_add_task_creates_store_on_disk(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
-    _store.add_task(store, id="design", title="Design phase", status="pending", assignee="agent:test-suite")
+    _store.add_task(
+        store,
+        id="design",
+        title="Design phase",
+        status="pending",
+        assignee="agent:test-suite",
+    )
     on_disk = _model.load_tasks(store)
     # Assert
     assert len(on_disk) == 1
@@ -51,9 +64,15 @@ def test_add_task_creates_store_on_disk(tmp_path):
 
 def test_add_task_id_round_trips(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
-    _store.add_task(store, id="design", title="Design phase", status="pending", assignee="agent:test-suite")
+    _store.add_task(
+        store,
+        id="design",
+        title="Design phase",
+        status="pending",
+        assignee="agent:test-suite",
+    )
     on_disk = _model.load_tasks(store)
     # Assert
     assert on_disk[0]["id"] == "design"
@@ -61,11 +80,19 @@ def test_add_task_id_round_trips(tmp_path):
 
 def test_add_task_appends_preserves_order(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     on_disk = _model.load_tasks(store)
     # Assert
@@ -74,11 +101,19 @@ def test_add_task_appends_preserves_order(tmp_path):
 
 def test_add_task_appends_status(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -87,11 +122,19 @@ def test_add_task_appends_status(tmp_path):
 
 def test_add_task_appends_scope(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -100,11 +143,19 @@ def test_add_task_appends_scope(tmp_path):
 
 def test_add_task_appends_assignee(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -113,11 +164,19 @@ def test_add_task_appends_assignee(tmp_path):
 
 def test_add_task_appends_priority(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -126,11 +185,19 @@ def test_add_task_appends_priority(tmp_path):
 
 def test_add_task_appends_parent(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -139,11 +206,19 @@ def test_add_task_appends_parent(tmp_path):
 
 def test_add_task_appends_note(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    _store.add_task(store, id="b", title="B", status="in_progress",
-                    scope="agent:proj-scitex-todo", assignee="agent:proj-scitex-todo",
-                    priority=2, parent="a", note="b is under a")
+    _store.add_task(
+        store,
+        id="b",
+        title="B",
+        status="in_progress",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:proj-scitex-todo",
+        priority=2,
+        parent="a",
+        note="b is under a",
+    )
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
@@ -152,7 +227,7 @@ def test_add_task_appends_note(tmp_path):
 
 def test_add_task_rejects_duplicate_id(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     ctx = pytest.raises(_model.TaskValidationError)
@@ -161,18 +236,38 @@ def test_add_task_rejects_duplicate_id(tmp_path):
         _store.add_task(store, id="a", title="A2", assignee="agent:test-suite")
 
 
-def test_add_task_tolerates_invalid_status_with_warning(tmp_path):
-    # Arrange — operator ruling 2026-07-10: a status value must never cost
-    # someone their card. Save-side validation WARNS and persists; the
-    # fail-loud rejection lives at the sources (the CLI --status Choice).
-    store = tmp_path / "tasks.yaml"
+#: Operator ruling 2026-07-10: a status value must never cost someone their
+#: card. Save-side validation WARNS and persists; the fail-loud rejection lives
+#: at the sources (the CLI --status Choice). Both halves are asserted, in
+#: separate tests: silently persisting a bad value would be as wrong as
+#: refusing it, and one test could only ever have caught one of the two.
+def _add_with_invalid_status(store):
+    return _store.add_task(
+        store, id="a", title="A", status="not-a-status", assignee="agent:test-suite"
+    )
+
+
+def test_add_task_warns_about_an_invalid_status(tmp_path):
+    # Arrange
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
-    with pytest.warns(UserWarning, match="not-a-status"):
-        _store.add_task(
-            store, id="a", title="A", status="not-a-status", assignee="agent:test-suite"
-        )
+    warned = pytest.warns(UserWarning, match="not-a-status")
+    # Assert — loud, but not fatal.
+    with warned:
+        _add_with_invalid_status(store)
+
+
+def test_add_task_tolerates_invalid_status_with_warning(tmp_path):
+    # Arrange — the warning itself is pinned by the sibling test above, so it is
+    # merely silenced here rather than asserted on a second time.
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        _add_with_invalid_status(store)
+    # Act
+    on_disk = _model.load_tasks(store)[0]
     # Assert — the card exists; nothing was destroyed over a bad value.
-    assert _model.load_tasks(store)[0]["status"] == "not-a-status"
+    assert on_disk["status"] == "not-a-status"
 
 
 # --------------------------------------------------------------------------- #
@@ -180,9 +275,11 @@ def test_add_task_tolerates_invalid_status_with_warning(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_add_task_accepts_project_via_extras(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
-    _store.add_task(store, id="a", title="A", project="scitex-todo", assignee="agent:test-suite")
+    _store.add_task(
+        store, id="a", title="A", project="scitex-todo", assignee="agent:test-suite"
+    )
     on_disk = _model.load_tasks(store)[0]
     # Assert
     assert on_disk["project"] == "scitex-todo"
@@ -190,7 +287,7 @@ def test_add_task_accepts_project_via_extras(tmp_path):
 
 def test_add_task_accepts_agent_via_extras(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     _store.add_task(store, id="a", title="A", agent="proj-scitex-todo")
     on_disk = _model.load_tasks(store)[0]
@@ -200,7 +297,7 @@ def test_add_task_accepts_agent_via_extras(tmp_path):
 
 def test_add_task_accepts_pr_url_via_extras(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     url = "https://github.com/ywatanabe1989/scitex-todo/pull/65"
     # Act
     _store.add_task(store, id="a", title="A", pr_url=url, assignee="agent:test-suite")
@@ -211,13 +308,17 @@ def test_add_task_accepts_pr_url_via_extras(tmp_path):
 
 def test_add_task_kind_compute_persists_kind(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     _store.add_task(
-        store, id="a", title="A",
-        kind="compute", job_id="25754194",
+        store,
+        id="a",
+        title="A",
+        kind="compute",
+        job_id="25754194",
         command="srun -p gpu my_script.py",
-        started_at="2026-06-07T00:00:00Z", assignee="agent:test-suite",
+        started_at="2026-06-07T00:00:00Z",
+        assignee="agent:test-suite",
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -226,17 +327,19 @@ def test_add_task_kind_compute_persists_kind(tmp_path):
 
 def test_add_task_invalid_kind_raises_validation_error(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     ctx = pytest.raises(_model.TaskValidationError)
     # Assert
     with ctx:
-        _store.add_task(store, id="a", title="A", kind="bogus", assignee="agent:test-suite")
+        _store.add_task(
+            store, id="a", title="A", kind="bogus", assignee="agent:test-suite"
+        )
 
 
 def test_add_task_none_extras_are_dropped(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     _store.add_task(
         store, id="a", title="A", project=None, agent=None, assignee="agent:test"
@@ -245,12 +348,13 @@ def test_add_task_none_extras_are_dropped(tmp_path):
     # Assert
     assert "project" not in on_disk
 
+
 # --------------------------------------------------------------------------- #
 # D11 partial-fix — auto-stamp created_at + last_activity (PR #67-stamps)     #
 # --------------------------------------------------------------------------- #
 def test_add_task_auto_stamps_created_at(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Assert — created_at present and ISO-Z formatted
@@ -259,7 +363,7 @@ def test_add_task_auto_stamps_created_at(tmp_path):
 
 def test_add_task_auto_stamps_last_activity(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Assert
@@ -268,7 +372,7 @@ def test_add_task_auto_stamps_last_activity(tmp_path):
 
 def test_add_task_created_at_equals_last_activity_on_insert(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Assert
@@ -277,11 +381,12 @@ def test_add_task_created_at_equals_last_activity_on_insert(tmp_path):
 
 def test_update_task_auto_bumps_last_activity(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     insert_stamp = inserted["last_activity"]
     # Wait a beat so the next stamp differs at second resolution.
     import time as _time
+
     _time.sleep(1.1)
     # Act
     merged = _store.update_task(store, "a", status="in_progress")
@@ -291,7 +396,7 @@ def test_update_task_auto_bumps_last_activity(tmp_path):
 
 def test_update_task_preserves_created_at(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     created = inserted["created_at"]
     # Act
@@ -302,7 +407,7 @@ def test_update_task_preserves_created_at(tmp_path):
 
 def test_update_task_explicit_last_activity_wins_over_auto_stamp(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     explicit = "2026-01-01T00:00:00Z"
     # Act
@@ -316,40 +421,43 @@ def test_update_task_explicit_last_activity_wins_over_auto_stamp(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_update_task_changes_status(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", priority=10, assignee="agent:test-suite")
     # Act
-    merged = _store.update_task(store, "a", status="in_progress", priority=1,
-                                scope="agent:lead")
+    merged = _store.update_task(
+        store, "a", status="in_progress", priority=1, scope="agent:lead"
+    )
     # Assert
     assert merged["status"] == "in_progress"
 
 
 def test_update_task_changes_priority(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", priority=10, assignee="agent:test-suite")
     # Act
-    merged = _store.update_task(store, "a", status="in_progress", priority=1,
-                                scope="agent:lead")
+    merged = _store.update_task(
+        store, "a", status="in_progress", priority=1, scope="agent:lead"
+    )
     # Assert
     assert merged["priority"] == 1
 
 
 def test_update_task_changes_scope(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", priority=10, assignee="agent:test-suite")
     # Act
-    merged = _store.update_task(store, "a", status="in_progress", priority=1,
-                                scope="agent:lead")
+    merged = _store.update_task(
+        store, "a", status="in_progress", priority=1, scope="agent:lead"
+    )
     # Assert
     assert merged["scope"] == "agent:lead"
 
 
 def test_update_task_persists_scope(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", priority=10, assignee="agent:test-suite")
     _store.update_task(store, "a", scope="agent:lead")
     # Act
@@ -360,8 +468,14 @@ def test_update_task_persists_scope(tmp_path):
 
 def test_update_task_passing_none_clears_field_in_return(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    _store.add_task(store, id="a", title="A", scope="agent:proj-scitex-todo", assignee="agent:test-suite")
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    _store.add_task(
+        store,
+        id="a",
+        title="A",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:test-suite",
+    )
     # Act
     merged = _store.update_task(store, "a", scope=None)
     # Assert
@@ -370,8 +484,14 @@ def test_update_task_passing_none_clears_field_in_return(tmp_path):
 
 def test_update_task_passing_none_clears_field_on_disk(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    _store.add_task(store, id="a", title="A", scope="agent:proj-scitex-todo", assignee="agent:test-suite")
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    _store.add_task(
+        store,
+        id="a",
+        title="A",
+        scope="agent:proj-scitex-todo",
+        assignee="agent:test-suite",
+    )
     # Act
     _store.update_task(store, "a", scope=None)
     on_disk = _model.load_tasks(store)[0]
@@ -381,7 +501,7 @@ def test_update_task_passing_none_clears_field_on_disk(tmp_path):
 
 def test_update_task_missing_raises_TaskNotFound(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     ctx = pytest.raises(_store.TaskNotFoundError)
@@ -392,7 +512,7 @@ def test_update_task_missing_raises_TaskNotFound(tmp_path):
 
 def test_update_task_empty_id_typeerror(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     ctx = pytest.raises(TypeError)
@@ -406,7 +526,7 @@ def test_update_task_empty_id_typeerror(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_complete_task_sets_status_done(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
@@ -417,7 +537,7 @@ def test_complete_task_sets_status_done(tmp_path, env):
 
 def test_complete_task_stamps_completed_by(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
@@ -428,7 +548,7 @@ def test_complete_task_stamps_completed_by(tmp_path, env):
 
 def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
@@ -439,7 +559,7 @@ def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
 
 def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
@@ -450,7 +570,7 @@ def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
 
 def test_complete_task_persists_completed_by(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
@@ -462,7 +582,7 @@ def test_complete_task_persists_completed_by(tmp_path, env):
 
 def test_complete_task_persists_completed_at(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
@@ -475,7 +595,7 @@ def test_complete_task_persists_completed_at(tmp_path, env):
 
 def test_complete_task_explicit_by_overrides_env(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:env")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
@@ -486,7 +606,7 @@ def test_complete_task_explicit_by_overrides_env(tmp_path, env):
 
 def test_complete_task_is_idempotent_timestamp(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     first = _store.complete_task(store, "a")
@@ -499,7 +619,7 @@ def test_complete_task_is_idempotent_timestamp(tmp_path, env):
 
 def test_complete_task_is_idempotent_preserves_original_by(tmp_path, env):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     _store.complete_task(store, "a")
@@ -512,7 +632,7 @@ def test_complete_task_is_idempotent_preserves_original_by(tmp_path, env):
 
 def test_complete_task_missing_raises(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     ctx = pytest.raises(_store.TaskNotFoundError)
@@ -526,8 +646,10 @@ def test_complete_task_missing_raises(tmp_path):
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def populated_store(tmp_path):
-    store = tmp_path / "tasks.yaml"
-    _store.add_task(store, id="a", title="A", scope="agent:lead", assignee="agent:test-suite")
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    _store.add_task(
+        store, id="a", title="A", scope="agent:lead", assignee="agent:test-suite"
+    )
     _store.add_task(
         store,
         id="b",
@@ -535,13 +657,16 @@ def populated_store(tmp_path):
         scope="agent:proj-scitex-todo",
         assignee="agent:proj-scitex-todo",
     )
-    _store.add_task(store, id="c", title="C", status="done", assignee="agent:test-suite")
+    _store.add_task(
+        store, id="c", title="C", status="done", assignee="agent:test-suite"
+    )
     _store.add_task(
         store,
         id="d",
         title="D",
         scope="agent:proj-scitex-todo",
-        status="in_progress", assignee="agent:test-suite",
+        status="in_progress",
+        assignee="agent:test-suite",
     )
     return store
 
@@ -617,29 +742,41 @@ def extended_store(tmp_path):
     lands in a sibling PR; this PR's filter logic doesn't require
     that surface to be exercised end-to-end.
     """
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="proj-x-1", title="X1", assignee="agent:test-suite")
-    _store.update_task(
-        store, "proj-x-1", agent="proj-x", project="x", host="alpha"
+    _store.update_task(store, "proj-x-1", agent="proj-x", project="x", host="alpha")
+    _store.add_task(
+        store,
+        id="proj-x-2",
+        title="X2",
+        status="in_progress",
+        assignee="agent:test-suite",
     )
-    _store.add_task(store, id="proj-x-2", title="X2", status="in_progress", assignee="agent:test-suite")
-    _store.update_task(
-        store, "proj-x-2", agent="proj-x", project="x", host="beta"
+    _store.update_task(store, "proj-x-2", agent="proj-x", project="x", host="beta")
+    _store.add_task(
+        store, id="proj-y-1", title="Y1", status="blocked", assignee="agent:test-suite"
     )
-    _store.add_task(store, id="proj-y-1", title="Y1", status="blocked", assignee="agent:test-suite")
     _store.update_task(
-        store, "proj-y-1", agent="proj-y", project="y", host="alpha",
+        store,
+        "proj-y-1",
+        agent="proj-y",
+        project="y",
+        host="alpha",
         blocker="operator-decision",
     )
-    _store.add_task(store, id="proj-y-2", title="Y2", status="blocked", assignee="agent:test-suite")
+    _store.add_task(
+        store, id="proj-y-2", title="Y2", status="blocked", assignee="agent:test-suite"
+    )
     _store.update_task(
-        store, "proj-y-2", agent="proj-y", project="y", host="alpha",
+        store,
+        "proj-y-2",
+        agent="proj-y",
+        project="y",
+        host="alpha",
         blocker="dependency",
     )
     _store.add_task(store, id="compute-1", title="C1", assignee="agent:test-suite")
-    _store.update_task(
-        store, "compute-1", agent="proj-x", kind="compute", job_id="999"
-    )
+    _store.update_task(store, "compute-1", agent="proj-x", kind="compute", job_id="999")
     return store
 
 
@@ -697,16 +834,15 @@ def test_list_tasks_filters_by_kind_compute(extended_store):
     assert {r["id"] for r in rows} == {"compute-1"}
 
 
+# proj-x-1, proj-x-2, proj-y-1 and proj-y-2 have NO kind field at all
+# (absent ≡ "task" per ADR-0002).
 def test_list_tasks_kind_task_matches_absent(extended_store):
-    # Arrange — proj-x-1, proj-x-2, proj-y-1, proj-y-2 have NO kind field
-    # (absent ≡ "task" per ADR-0002).
+    # Arrange
     store = extended_store
     # Act
     rows = _store.list_tasks(store, scope="", kind="task")
     # Assert
-    assert {r["id"] for r in rows} == {
-        "proj-x-1", "proj-x-2", "proj-y-1", "proj-y-2"
-    }
+    assert {r["id"] for r in rows} == {"proj-x-1", "proj-x-2", "proj-y-1", "proj-y-2"}
 
 
 def test_list_tasks_blocking_me_predicate(extended_store):
@@ -731,9 +867,7 @@ def test_list_tasks_multi_status_unions(extended_store):
     # Arrange
     store = extended_store
     # Act
-    rows = _store.list_tasks(
-        store, scope="", statuses=["in_progress", "blocked"]
-    )
+    rows = _store.list_tasks(store, scope="", statuses=["in_progress", "blocked"])
     # Assert
     assert {r["id"] for r in rows} == {"proj-x-2", "proj-y-1", "proj-y-2"}
 
@@ -741,25 +875,27 @@ def test_list_tasks_multi_status_unions(extended_store):
 def test_list_tasks_filters_compose_AND(extended_store):
     # Arrange
     store = extended_store
-    # Act — agent=proj-y AND blocker=operator-decision
+    # Act
     rows = _store.list_tasks(
         store, scope="", agent="proj-y", blocker="operator-decision"
     )
-    # Assert
+    # Assert — agent AND blocker narrow together, they do not union.
     assert {r["id"] for r in rows} == {"proj-y-1"}
 
 
 @pytest.fixture
 def overdue_store(tmp_path):
     """Fixture for the ``--overdue`` predicate. Three tasks:
-      * past-due pending  → matches
-      * past-due done     → terminal, does NOT match
-      * future-due pending → not yet due, does NOT match
+    * past-due pending  → matches
+    * past-due done     → terminal, does NOT match
+    * future-due pending → not yet due, does NOT match
     """
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _store.add_task(store, id="past-pending", title="P", assignee="agent:test-suite")
     _store.update_task(store, "past-pending", deadline="2000-01-01")
-    _store.add_task(store, id="past-done", title="D", status="done", assignee="agent:test-suite")
+    _store.add_task(
+        store, id="past-done", title="D", status="done", assignee="agent:test-suite"
+    )
     _store.update_task(store, "past-done", deadline="2000-01-01")
     _store.add_task(store, id="future-pending", title="F", assignee="agent:test-suite")
     _store.update_task(store, "future-pending", deadline="2099-01-01")
@@ -797,8 +933,10 @@ def test_summary_by_status_has_all_valid_statuses(populated_store):
         assert status in info["by_status"]
 
 
+# `add_task`'s default status is `deferred` since the abolition, so cards a
+# and b land there.
 def test_summary_by_status_deferred_count(populated_store):
-    # Arrange — add_task's default status is `deferred` since the abolition.
+    # Arrange
     store = populated_store
     # Act
     info = _store.summarize_tasks(store, scope="")
@@ -860,16 +998,26 @@ def test_summary_by_assignee_proj_count(populated_store):
     assert info["by_assignee"]["agent:proj-scitex-todo"] == 1
 
 
-def test_summary_by_assignee_empty_count(populated_store):
-    # Arrange — assignee is now MANDATORY (no card can have an empty assignee
-    # via add_task), so the three non-proj cards (a/c/d) bucket under their
-    # owner `agent:test-suite` rather than the old empty-string bucket. The
-    # summary counts by the now-always-present assignee.
+#: Assignee is now MANDATORY (no card can have an empty assignee via
+#: `add_task`), so the three non-proj cards (a/c/d) bucket under their owner
+#: `agent:test-suite` rather than the old empty-string bucket. Split in two:
+#: the old bucket is EMPTY, and the owner bucket holds all three. Asserting only
+#: the first would also pass if the summary had simply lost the three cards.
+def test_summary_by_assignee_has_no_empty_bucket(populated_store):
+    # Arrange
     store = populated_store
     # Act
     info = _store.summarize_tasks(store, scope="")
     # Assert
     assert info["by_assignee"].get("", 0) == 0
+
+
+def test_summary_by_assignee_buckets_cards_under_their_owner(populated_store):
+    # Arrange
+    store = populated_store
+    # Act
+    info = _store.summarize_tasks(store, scope="")
+    # Assert — the three otherwise-unscoped cards are counted, not dropped.
     assert info["by_assignee"]["agent:test-suite"] == 3
 
 
@@ -925,7 +1073,7 @@ def test_two_concurrent_writers_serialize_via_flock(tmp_path):
     """Two real subprocesses each insert N tasks; the lock must serialize
     them so ALL 2N tasks land in the store with no lost write."""
     # Arrange
-    store = tmp_path / "tasks.yaml"
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     barrier = tmp_path / "barrier"
     # Seed an existing store so the writers exercise the merge path
     # (existing_doc is not None), which is where a non-locking writer
@@ -955,7 +1103,22 @@ def test_two_concurrent_writers_serialize_via_flock(tmp_path):
     ]
     # Drop the barrier — both writers leap.
     barrier.write_text("go")
-    outs = [p.communicate(timeout=30) for p in procs]
+    # This timeout is a DEADLOCK DETECTOR, not a latency assertion. The test
+    # asserts that flock SERIALIZES the two writers; how long that takes is a
+    # property of the machine, not of the lock. A deadlocked flock never
+    # returns, so any generous bound catches the real failure — while a tight
+    # one fails on a merely busy host and says "lock broken" when it means
+    # "runner loaded".
+    #
+    # It was 30s, and that is exactly what happened: on the shared GPFS-backed
+    # CI runner this test timed out and BLOCKED a P0 data-integrity fix (#508)
+    # that had nothing to do with locking. Measured on one idle container,
+    # same code, same interpreter, five consecutive runs:
+    #     35.08s · 4.02s · 16.33s · 8.10s · 2.86s   (12x spread, max > the old bound)
+    # The spread is the signal: a bound inside the noise band converts load
+    # into a false failure, and a red CI is a drift detector switched off.
+    _DEADLOCK_TIMEOUT_SEC = 300
+    outs = [p.communicate(timeout=_DEADLOCK_TIMEOUT_SEC) for p in procs]
     # Raise (not assert) on subprocess failure so the lock assertion below is
     # the single assert in this test body (STX-TQ007).
     for (stdout, stderr), p in zip(outs, procs):
@@ -966,71 +1129,105 @@ def test_two_concurrent_writers_serialize_via_flock(tmp_path):
     # Act
     tasks = _model.load_tasks(store)
     ids = {t["id"] for t in tasks}
-    expected = {"seed"} | {f"alpha-{i}" for i in range(10)} | {
-        f"beta-{i}" for i in range(10)
-    }
+    expected = (
+        {"seed"} | {f"alpha-{i}" for i in range(10)} | {f"beta-{i}" for i in range(10)}
+    )
     # Assert
     assert ids == expected, (
-        "lost writes: expected 21 ids, got "
-        f"{len(ids)} (diff: {sorted(expected - ids)})"
+        f"lost writes: expected 21 ids, got {len(ids)} (diff: {sorted(expected - ids)})"
     )
-
-
-# --------------------------------------------------------------------------- #
-# Path resolution (`_resolved_store` + `where`-style introspection)           #
-# --------------------------------------------------------------------------- #
-def test_explicit_store_path_wins(tmp_path, env):
-    # Arrange
-    other = tmp_path / "elsewhere.yaml"
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(tmp_path / "envdefault.yaml"))
-    _store.add_task(other, id="here", title="Here", assignee="agent:test-suite")
-    # Act
-    on_disk = _model.load_tasks(other)
-    # Assert
-    assert on_disk[0]["id"] == "here"
 
 
 # --------------------------------------------------------------------------- #
 # created_by — the creating USER captured at insert (board ROLES section)     #
 # --------------------------------------------------------------------------- #
+#: Authorship is asserted twice for each source — on the RETURNED dict and on
+#: the row that reached DISK. They are separate tests because a verb that
+#: stamps the return value without persisting it looks perfectly correct to
+#: its caller and loses the attribution the board's ROLES section reads.
+def _added_with_explicit_author(tmp_path):
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    inserted = _store.add_task(
+        store,
+        id="a",
+        title="A",
+        created_by="agent:explicit",
+        assignee="agent:test-suite",
+    )
+    return inserted, _model.load_tasks(store)
+
+
+def test_add_task_returns_the_explicit_created_by(tmp_path):
+    # Arrange
+    inserted, _on_disk = _added_with_explicit_author(tmp_path)
+    # Act
+    author = inserted["created_by"]
+    # Assert — an explicit author wins over the env/login chain.
+    assert author == "agent:explicit"
+
+
 def test_add_task_stores_created_by_explicit(tmp_path):
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    # Act — explicit author wins over the env/login chain.
-    inserted = _store.add_task(
-        store, id="a", title="A", created_by="agent:explicit", assignee="agent:test-suite"
-    )
-    on_disk = _model.load_tasks(store)
+    _inserted, on_disk = _added_with_explicit_author(tmp_path)
+    # Act
+    author = on_disk[0]["created_by"]
     # Assert
-    assert inserted["created_by"] == "agent:explicit"
-    assert on_disk[0]["created_by"] == "agent:explicit"
+    assert author == "agent:explicit"
 
 
-def test_add_task_defaults_created_by_from_env(tmp_path, env):
-    # Arrange — no explicit author; resolves from $SCITEX_TODO_AGENT_ID, the
-    # same chain comment authorship uses.
-    store = tmp_path / "tasks.yaml"
+def test_add_task_returns_created_by_from_env(tmp_path, env):
+    # Arrange
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    # Assert
+    # Assert — no explicit author resolves from $SCITEX_TODO_AGENT_ID, the
+    # same chain comment authorship uses.
     assert inserted["created_by"] == "agent:fromenv"
-    assert _model.load_tasks(store)[0]["created_by"] == "agent:fromenv"
 
 
-def test_legacy_task_without_created_by_is_valid(tmp_path):
-    # Arrange — a hand-written legacy row with no created_by field loads
-    # and validates fine (back-compat: absent created_by is valid).
-    store = tmp_path / "tasks.yaml"
-    store.write_text(
-        "tasks:\n  - id: legacy\n    title: Legacy\n    status: pending\n",
-        encoding="utf-8",
-    )
+def test_add_task_defaults_created_by_from_env(tmp_path, env):
+    # Arrange
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     on_disk = _model.load_tasks(store)
     # Assert
-    assert on_disk[0]["id"] == "legacy"
-    assert "created_by" not in on_disk[0]
+    assert on_disk[0]["created_by"] == "agent:fromenv"
+
+
+#: A hand-written legacy row with no created_by field must still load and
+#: validate — back-compat: absent created_by is valid. Two claims: the row
+#: loads at all, and the field really is absent (rather than back-filled,
+#: which would silently invent an author for someone else's card).
+def _legacy_row_without_created_by(tmp_path):
+    from conftest import seed_db_from_doc
+
+    # The subject is a hand-written legacy row that carries NO created_by field.
+    # YAML is gone, so seed the canonical DB from the same in-memory doc the YAML
+    # text held and read it back through the pinned store (THE STORE-PATH RULE).
+    doc = {"tasks": [{"id": "legacy", "title": "Legacy", "status": "pending"}]}
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    return _model.load_tasks(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
+
+
+def test_legacy_task_without_created_by_is_valid(tmp_path):
+    # Arrange
+    on_disk = _legacy_row_without_created_by(tmp_path)
+    # Act
+    task_id = on_disk[0]["id"]
+    # Assert — it loaded and validated rather than being refused.
+    assert task_id == "legacy"
+
+
+def test_legacy_task_created_by_is_not_back_filled(tmp_path):
+    # Arrange
+    on_disk = _legacy_row_without_created_by(tmp_path)
+    # Act
+    row = on_disk[0]
+    # Assert — absent stays absent; no author is invented for the card.
+    assert "created_by" not in row
 
 
 # EOF

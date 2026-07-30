@@ -13,6 +13,7 @@ assertion per test.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -24,26 +25,33 @@ from scitex_cards._django.handlers.runnable import (
 )
 from scitex_cards._store import add_task
 
-
 # === fixtures ==============================================================
 
 
 @pytest.fixture()
-def store_with_runnable(tmp_path: Path, env) -> Path:
-    """A store with one runnable + one blocked task; pin via
-    SCITEX_TODO_TASKS_YAML_SHARED so the view's `resolve_tasks_path(None)` picks
-    it up."""
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-runnable", title="r", group="paper", assignee="agent:test-suite")
+def store_with_runnable() -> Path:
+    """Seed the canonical DB with one runnable + one blocked task.
+
+    The store is SQLite now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
+    and SCITEX_CARDS_DB at a per-test scratch DB, and the view's ``get_board``
+    -> ``resolve_tasks_path(None)`` reads that SAME store. Seed via
+    ``add_task`` (store=None resolves the pinned store and writes the canonical
+    DB) and return the pinned STORE-identity path (a provenance label only —
+    NOT a tmp_path yaml, which would trip the store-stamp refusal)."""
     add_task(
-        store=store,
+        id="t-runnable",
+        title="r",
+        group="paper",
+        assignee="agent:test-suite",
+    )
+    add_task(
         id="t-blocked",
         title="b",
         status="blocked",
-        blocker="operator-decision", assignee="agent:test-suite",
+        blocker="operator-decision",
+        assignee="agent:test-suite",
     )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    return store
+    return Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
 
 
 # === /runnable =============================================================

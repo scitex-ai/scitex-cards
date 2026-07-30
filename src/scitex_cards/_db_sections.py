@@ -11,9 +11,9 @@ The ownership rule that governs this file, and that S1 nearly broke:
 
     A TABLE IS OWNED BY EXACTLY THE FILE THAT PRODUCES IT.
 
-``users`` and ``notifications`` come from the ``tasks.yaml`` doc (its ``users:``
-and ``inboxes:`` sections). ``messages`` does NOT — it is derived from the
-``threads.yaml`` SIDECAR. A doc-write path that rebuilt ``messages`` would delete
+``users`` and ``notifications`` come from the legacy task-store doc (its
+``users:`` and ``inboxes:`` sections). ``messages`` does NOT — it is derived
+from the ``threads.json`` SIDECAR. A doc-write path that rebuilt ``messages`` would delete
 every DM thread on every card write, which is why
 :data:`_db_bootstrap._DOC_CLEAR_ORDER` excludes it.
 """
@@ -56,7 +56,7 @@ def _insert_users(conn, users: list) -> dict[str, int]:
                 u.get("created_at"),
                 u.get("last_seen"),
                 # Verbatim payload (v3): the columns are the index, this is
-                # the record — the yaml exporter reproduces it exactly.
+                # the record — the JSON exporter reproduces it exactly.
                 # STRICT encoder (key order kept, no coercion, NULL on
                 # non-round-trippable) — same policy as tasks.card_json.
                 _record_json(u),
@@ -69,8 +69,7 @@ def _insert_users(conn, users: list) -> dict[str, int]:
                 if not (isinstance(name, str) and name):
                     continue
                 conn.execute(
-                    "INSERT OR REPLACE INTO user_names(name, user_id) "
-                    "VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO user_names(name, user_id) VALUES (?, ?)",
                     (name, uid),
                 )
                 counts["user_names"] += 1
@@ -90,8 +89,7 @@ def _insert_notifications(conn, inboxes) -> int:
         # the round-trip, and zero notification rows cannot carry the
         # key (schema v4).
         conn.execute(
-            "INSERT OR REPLACE INTO inbox_recipients(recipient_id) "
-            "VALUES (?)",
+            "INSERT OR REPLACE INTO inbox_recipients(recipient_id) VALUES (?)",
             (recipient_id,),
         )
         for r in records:

@@ -24,13 +24,8 @@ import json
 
 import click
 
-from ._compat import spec_command_kwargs
-
-from .._paths import resolve_tasks_path
-from . import _write as _write_mod  # for the shared _TASKS_OPTION constant
-
-
-_TASKS_OPTION = _write_mod._TASKS_OPTION
+from .._db import resolve_db_path
+from ._compat import spec_command_kwargs, spec_group_kwargs
 
 
 # --------------------------------------------------------------------------- #
@@ -85,14 +80,11 @@ def list_tasks_filtered(
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_db_path(tasks_path)
     click.echo(f"# {resolved}  ({len(rows)} tasks)")
     for task in rows:
         sc = task.get("scope") or "-"
-        click.echo(
-            f"{task['id']:<24} {task['status']:<12} "
-            f"{sc:<28} {task['title']}"
-        )
+        click.echo(f"{task['id']:<24} {task['status']:<12} {sc:<28} {task['title']}")
 
 
 def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
@@ -112,7 +104,7 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_db_path(tasks_path)
     if not rows:
         click.echo("✓ Nothing is waiting on the operator (0 operator-decision blocks).")
         click.echo(f"# {resolved}")
@@ -137,7 +129,9 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
             if note:
                 click.echo(f"      ↳ {note.splitlines()[0]}")
             else:
-                click.echo("      ↳ (no context noted — ask the owner to add why + options)")
+                click.echo(
+                    "      ↳ (no context noted — ask the owner to add why + options)"
+                )
     click.echo(
         "\nClear a block from the board, or via the CLI update/resolve verbs "
         "once you've decided."
@@ -152,31 +146,27 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
     **spec_command_kwargs(
         summary="Show which store would be used and the precedence chain.",
         description=(
-            "Prints the resolved tasks.yaml path plus every candidate "
-            "in the precedence chain (explicit --tasks, "
-            "$SCITEX_TODO_TASKS, project store, user store, bundled "
-            "example) — the debugging tool for 'why is my task not "
-            "showing up.'",
+            "Prints the resolved store path plus every candidate in the "
+            "precedence chain — the debugging tool for 'why is my task "
+            "not showing up.'",
         ),
         examples=(("{prog} resolve-store", "Show the resolved store."),),
     ),
 )
 @click.option("--json", "as_json", is_flag=True)
-@_TASKS_OPTION
-def resolve_store_cmd(as_json, tasks_path) -> None:
+def resolve_store_cmd(as_json) -> None:
     """Resolve the store path and print the chain so agents can verify."""
     from .. import _store
 
-    info = _store.resolve_store(tasks_path)
+    info = _store.resolve_store(None)
     if as_json:
         click.echo(json.dumps(info))
         return
     click.echo(f"resolved:        {info['resolved']}")
     click.echo(f"exists:          {info['exists']}")
     click.echo(f"explicit:        {info['explicit']}")
-    click.echo(f"$SCITEX_TODO_TASKS_YAML_SHARED: {info['env_tasks']}")
+    click.echo(f"$SCITEX_CARDS_DB:  {info['db_env']}")
     click.echo(f"user store:      {info['user_store']}")
-    click.echo(f"bundled example: {info['bundled_example']}")
 
 
 # --------------------------------------------------------------------------- #
@@ -185,11 +175,12 @@ def resolve_store_cmd(as_json, tasks_path) -> None:
 @click.command(
     "init-store",
     **spec_command_kwargs(
-        summary="Create an empty task store at the chosen scope (idempotent).",
+        summary="Create an empty SQLite task store at the chosen scope (idempotent).",
         description=(
-            "--shared -> ~/.scitex/todo/tasks.yaml (user scope, the "
-            "default). --project -> <git-root>/.scitex/todo/tasks.yaml. "
-            "No-op (prints 'exists') when the target already exists.",
+            "--shared -> ~/.scitex/cards/cards.db (user scope, the "
+            "default). --project -> <git-root>/.scitex/cards/cards.db. "
+            "Creates an empty, schema-complete SQLite DB. No-op (prints "
+            "'exists') when the target DB already exists.",
         ),
         examples=(("{prog} init-store --shared", "Create the user-scope store."),),
     ),
@@ -199,13 +190,13 @@ def resolve_store_cmd(as_json, tasks_path) -> None:
     "scope_choice",
     flag_value="shared",
     default="shared",
-    help="Create the user-scope store (~/.scitex/todo/tasks.yaml).",
+    help="Create the user-scope SQLite store (~/.scitex/cards/cards.db).",
 )
 @click.option(
     "--project",
     "scope_choice",
     flag_value="project",
-    help="Create <git-root>/.scitex/todo/tasks.yaml instead.",
+    help="Create <git-root>/.scitex/cards/cards.db instead.",
 )
 @click.option(
     "--dry-run",
@@ -219,12 +210,12 @@ def resolve_store_cmd(as_json, tasks_path) -> None:
     help="Skip confirmation (no-op today — init-store is non-interactive; reserved for §2).",
 )
 def init_store_cmd(scope_choice, dry_run, yes) -> None:
-    """Materialize an empty `tasks: []` store at the chosen scope."""
+    """Create an empty, schema-complete SQLite store at the chosen scope."""
     _ = yes  # accepted for §2 compliance
     from pathlib import Path
 
-    from .._model import save_tasks
-    from .._paths import _find_git_root, _user_root
+    from .._db import connect, init_schema
+    from .._paths import _find_git_root
 
     if scope_choice == "project":
         git_root = _find_git_root(Path.cwd())
@@ -234,9 +225,9 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
                 "no `.git` directory found in any parent of "
                 f"{Path.cwd()}"
             )
-        target = git_root / ".scitex" / "todo" / "tasks.yaml"
+        target = git_root / ".scitex" / "cards" / "cards.db"
     else:
-        target = _user_root() / "tasks.yaml"
+        target = resolve_db_path(None)
 
     if dry_run:
         click.echo(f"# dry-run: would create {target} (scope={scope_choice})")
@@ -244,8 +235,15 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
     if target.exists():
         click.echo(f"exists: {target}  (no-op)")
         return
+    # The store is the canonical SQLite DB — no YAML. Create it empty and
+    # schema-complete; an unstamped DB is adoptable, so the first write claims it.
     target.parent.mkdir(parents=True, exist_ok=True)
-    save_tasks([], target)
+    conn = connect(target)
+    try:
+        init_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
     click.echo(f"created: {target}")
 
 
@@ -302,7 +300,7 @@ def sync_store_cmd(mode, remote, yes) -> None:
         f"git -C {root} pull --rebase --autostash {remote}",
         f"git -C {root} push {remote}",
     ]
-    click.echo("# scitex-todo sync-store (PHASE-1 STUB)")
+    click.echo("# scitex-cards sync-store (PHASE-1 STUB)")
     click.echo(f"# store dir: {root}")
     click.echo(f"# remote:    {remote}")
     click.echo("# planned commands:")
@@ -316,13 +314,95 @@ def sync_store_cmd(mode, remote, yes) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# store adopt-uuid — bind this database to an identity, ONCE, deliberately     #
+# --------------------------------------------------------------------------- #
+@click.group(
+    "store",
+    **spec_group_kwargs(
+        summary="Store-identity operations on the resolved database.",
+        description=(
+            "Store IDENTITY is a uuid carried in the database, not a path. A "
+            "path is not identity when more than one view can produce it — one "
+            "bind-mounted cards.db has three names here, and the ownership "
+            "guard refused the board its own database for a day because of it.",
+        ),
+    ),
+)
+def store_group() -> None:
+    """Store-identity operations."""
+
+
+@store_group.command(
+    "adopt-uuid",
+    **spec_command_kwargs(
+        summary="Bind the resolved database to a store identity (mints one).",
+        description=(
+            "Writes ONE schema_meta row and prints the identity. It does NOT "
+            "touch store_path (re-stamping that produced an EMPTY board on "
+            "2026-07-28), does NOT touch any card row, and does NOT change "
+            "what any resolver resolves. Idempotent: a database that already "
+            "carries an identity keeps it and that value is printed. "
+            "SEQUENCING MATTERS: stamp the store FIRST, declare the "
+            "expectation ($SCITEX_CARDS_STORE_UUID, or a host-registry entry) "
+            "SECOND. Publishing an expected uuid before the store carries one "
+            "makes every read and write refuse.",
+        ),
+        examples=(
+            ("{prog} store adopt-uuid", "Mint and bind an identity."),
+            ("{prog} store adopt-uuid --json", "Same, machine-readable."),
+        ),
+    ),
+)
+@click.option(
+    "--uuid",
+    "identity",
+    default=None,
+    help=(
+        "Bind this exact identity (bare lowercase 8-4-4-4-12) instead of "
+        "minting one. For adopting an identity another scitex package already "
+        "minted for the SAME database."
+    ),
+)
+@click.option("--json", "as_json", is_flag=True)
+def store_adopt_uuid_cmd(identity, as_json) -> None:
+    """Bind the resolved database to a store identity and print it."""
+    from .._store_uuid import adopt_store_uuid
+
+    db_path = resolve_db_path(None)
+    if not db_path.exists():
+        raise click.ClickException(
+            f"no database at {db_path}. REFUSING to create one: an identity "
+            f"belongs to a store that already exists, and manufacturing a "
+            f"board here is how one gets replaced. Point $SCITEX_CARDS_DB at "
+            f"the real database first."
+        )
+    try:
+        value = adopt_store_uuid(db_path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if identity is not None and value != identity:
+        raise click.ClickException(
+            f"{db_path} already carries identity {value!r}; refusing to "
+            f"re-identify it as {identity!r}. A store's identity is minted "
+            f"once — every check that agreed with the old value would become "
+            f"retroactively meaningless."
+        )
+    if as_json:
+        click.echo(json.dumps({"db": str(db_path), "store_uuid": value}))
+        return
+    click.echo(f"db:         {db_path}")
+    click.echo(f"store_uuid: {value}")
+
+
+# --------------------------------------------------------------------------- #
 # Registration                                                                #
 # --------------------------------------------------------------------------- #
 def register(main: click.Group) -> None:
-    """Attach the admin-side verbs (resolve-store / init-store / sync-store)."""
+    """Attach the admin-side verbs (resolve-store / init-store / sync-store / store)."""
     main.add_command(resolve_store_cmd, name="resolve-store")
     main.add_command(init_store_cmd, name="init-store")
     main.add_command(sync_store_cmd, name="sync-store")
+    main.add_command(store_group, name="store")
 
 
 # EOF

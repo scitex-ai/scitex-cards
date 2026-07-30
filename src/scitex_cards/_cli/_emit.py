@@ -5,7 +5,7 @@
 Fleet PRODUCERS (scitex-dev's C7 ``released`` / C8 ``pulled`` steps, and
 future federated producers) must emit canonical card-events WITHOUT
 importing :mod:`scitex_cards` — separation of concerns: a producer shells
-out to ``scitex-todo`` rather than coupling to its Python API. These two
+out to ``scitex-cards`` rather than coupling to its Python API. These two
 verbs are that shell-out seam:
 
   * ``emit-event`` constructs a canonical :class:`scitex_cards._events.Event`
@@ -20,10 +20,9 @@ verbs are that shell-out seam:
     when a card exists, falling back to ``--repo``-only when none.
 
 Both match the surface shape of the sibling verbs in ``_write.py`` /
-``_reassign.py`` (``--tasks`` store precedence, ``_emit`` JSON/human
-helper). They live in their own module per the one-verb-per-file
-precedent (``_comment.py`` / ``_reassign.py``) — ``_write.py`` is already
-at its line budget.
+``_reassign.py`` (``_emit`` JSON/human helper). They live in their own
+module per the one-verb-per-file precedent (``_comment.py`` /
+``_reassign.py``) — ``_write.py`` is already at its line budget.
 """
 
 from __future__ import annotations
@@ -34,7 +33,6 @@ import click
 
 from .. import _events, _store
 from ._compat import deprecated_alias, spec_command_kwargs
-from ._write import _TASKS_OPTION
 
 
 def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
@@ -75,8 +73,8 @@ def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
         "which the C4 consumer treats as a quiet no-op. Prints the dispatch "
         "summary as JSON (incl. any notify.enqueued / notify.delivered).\n\n"
         "Examples:\n"
-        "  scitex-todo emit-event --type pulled --repo owner/repo\n"
-        "  scitex-todo emit-event --type released --card-id my-card "
+        "  scitex-cards emit-event --type pulled --repo owner/repo\n"
+        "  scitex-cards emit-event --type released --card-id my-card "
         "--repo owner/repo --version v1.2.3 --actor ci"
     ),
 )
@@ -86,10 +84,17 @@ def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
     required=True,
     help="Canonical event type (closed enum — one of EVENT_TYPES).",
 )
-@click.option("--card-id", "card_id", default=None, help="Board card the event concerns (optional).")
+@click.option(
+    "--card-id",
+    "card_id",
+    default=None,
+    help="Board card the event concerns (optional).",
+)
 @click.option("--repo", default=None, help="owner/repo for git-flavoured events.")
 @click.option("--branch", default=None, help="Branch name (push / commit events).")
-@click.option("--pr-url", "pr_url", default=None, help="Pull-request URL (merge / done events).")
+@click.option(
+    "--pr-url", "pr_url", default=None, help="Pull-request URL (merge / done events)."
+)
 @click.option("--sha", default=None, help="Commit sha (commit / push events).")
 @click.option("--version", default=None, help="Release version / tag (release events).")
 @click.option(
@@ -103,7 +108,6 @@ def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
     multiple=True,
     help="Free-form KEY=VALUE payload (repeatable).",
 )
-@_TASKS_OPTION
 def emit_event_cmd(
     event_type,
     card_id,
@@ -114,7 +118,6 @@ def emit_event_cmd(
     version,
     actor,
     extra,
-    tasks_path,
 ) -> None:
     """Construct + emit a canonical card-event; print the dispatch summary."""
     # Fail-loud on an out-of-set type BEFORE constructing the Event, so the
@@ -137,12 +140,11 @@ def emit_event_cmd(
         version=version,
         extra=extra_dict,
     )
-    # Thread --tasks straight through emit() -> dispatch_event so the C4
-    # consumer + standalone inbox resolve the SAME store the producer points
-    # at (deterministic; no env-var mutation). `None` means the normal
-    # precedence chain. emit() returns the dispatch summary (or None only if
-    # the dispatch itself raised — fail-soft).
-    summary = _events.emit(event, store=tasks_path or None)
+    # `None` means the normal precedence chain, so the C4 consumer + the
+    # standalone inbox resolve the SAME ambient store this producer does.
+    # emit() returns the dispatch summary (or None only if the dispatch
+    # itself raised — fail-soft).
+    summary = _events.emit(event, store=None)
     # Print the dispatch summary as JSON so the producer can inspect
     # notify.enqueued / notify.delivered.
     click.echo(json.dumps(summary, default=str))
@@ -165,17 +167,20 @@ def emit_event_cmd(
         ),
     ),
 )
-@click.option("--repo", required=True, help="owner/repo to match the card's `repo` field.")
+@click.option(
+    "--repo", required=True, help="owner/repo to match the card's `repo` field."
+)
 @click.option("--kind", default=None, help="Optional card-kind filter (closed enum).")
-@click.option("--status", default=None, help="Optional card-status filter (closed enum).")
-@_TASKS_OPTION
-def find_card_cmd(repo, kind, status, tasks_path) -> None:
+@click.option(
+    "--status", default=None, help="Optional card-status filter (closed enum)."
+)
+def find_card_cmd(repo, kind, status) -> None:
     """Print ids of cards with ``repo == <R>`` (one per line; empty when none)."""
     # `scope=""` opts out of the $SCITEX_TODO_SCOPE env default — a producer
     # resolving repo->card must see EVERY matching card, not just its own
     # scope slice.
     cards = _store.list_tasks(
-        tasks_path,
+        None,
         scope="",
         repo=repo,
         kind=kind,

@@ -13,7 +13,7 @@ store-size daemon):
   The managed notify cron runs ``scitex-todo print-stats --by agent
   --notify --nudge-quiet`` every 10 minutes. ``print-stats --by agent``
   re-derives per-agent rollups from all ~930 cards in the ~9 MB
-  ``tasks.yaml``. When a single run exceeds the 10-min period it OVERLAPS
+  store. When a single run exceeds the 10-min period it OVERLAPS
   the next cron tick, so runs STACK (observed: 2 concurrent at ~63% CPU
   each) — the cron/one-shot analogue of the wake-watcher death-spiral (#344)
   and the MCP inbox-drain spin (#345). Same store-size root; the durable
@@ -58,9 +58,7 @@ def _acquire(lock_path: Path) -> Optional[TextIO]:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         handle = lock_path.open("w", encoding="utf-8")
     except OSError as exc:  # pragma: no cover - defensive
-        logger.warning(
-            "single-instance: cannot open lockfile %s: %s", lock_path, exc
-        )
+        logger.warning("single-instance: cannot open lockfile %s: %s", lock_path, exc)
         return None
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

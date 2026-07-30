@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from pathlib import Path
+import os
 
 import pytest
 
@@ -33,7 +33,6 @@ from scitex_cards._django.handlers.fleet import (  # noqa: E402
 )
 from scitex_cards._store import add_task  # noqa: E402
 
-
 # === fixtures ==============================================================
 
 
@@ -44,12 +43,15 @@ def _now_minus(minutes: float) -> str:
 
 
 @pytest.fixture()
-def store_with_done_task(tmp_path: Path, env) -> Path:
-    """Seed a tmp store with one done task carrying a full ``_log_meta``
-    set so the timing compute has something to aggregate. Pinned via
-    ``SCITEX_TODO_TASKS_YAML_SHARED`` so the view's ``resolve_tasks_path(None)``
-    picks it up."""
-    store = tmp_path / "tasks.yaml"
+def store_with_done_task() -> str:
+    """Seed the canonical DB with one done task carrying a full ``_log_meta``
+    set so the timing compute has something to aggregate. The store is the
+    pinned SQLite DB; ``add_task`` writes there and the view's
+    ``resolve_tasks_path(None)`` resolves the SAME pinned identity, so the
+    seeded card round-trips into the payload. Passing the pinned STORE path
+    (never a ``tmp_path`` yaml) keeps the DB provenance stamp matching what the
+    read path resolves — see THE STORE-PATH RULE."""
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # add_task's **extras pathway accepts arbitrary keys; the writer
     # validator gates closed enums but lets free-form fields through —
     # we use it to inject ``_log_meta`` directly so the test doesn't
@@ -68,7 +70,6 @@ def store_with_done_task(tmp_path: Path, env) -> Path:
             "completed_by": "agent-alpha",
         },
     )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
     return store
 
 

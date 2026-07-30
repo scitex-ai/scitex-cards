@@ -159,7 +159,7 @@ export function FleetCiPills() {
       <span
         className="stx-todo-fleet-ci stx-todo-fleet-ci--note"
         title={
-          "Set fleet.ci_status.repos in ~/.scitex/todo/dashboard.yaml " +
+          "Set fleet.ci_status.repos in ~/.scitex/cards/dashboard.json " +
           "or SCITEX_TODO_FLEET_CI_REPOS=owner/name,owner/other to enable."
         }
       >

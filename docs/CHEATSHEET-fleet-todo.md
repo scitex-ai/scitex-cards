@@ -417,7 +417,7 @@ the backlog sweep does the same for untouched `deferred` cards.
 
 ## 10 — Where to file bugs / requests
 
-This package: `https://github.com/ywatanabe1989/scitex-todo`. The
+This package: `https://github.com/scitex-ai/scitex-cards`. The
 `scitex-todo` agent owns it. The lead and operator triage feature
 requests on the operator-channel; agents file via sac peer-message to
 `scitex-todo`.

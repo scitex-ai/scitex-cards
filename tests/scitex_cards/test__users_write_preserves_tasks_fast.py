@@ -22,32 +22,69 @@ AND pin that the slow ruamel round-trip does not creep back in.
 
 import inspect
 
+import pytest
+import yaml
+
 from scitex_cards._users import _store as users_store
+from scitex_cards._users._model import UserValidationError
 from scitex_cards._users._store import _save_users_unlocked
+
+#: The user row a heartbeat write lands. Copied at every call site — the
+#: writer must never see a shared mutable instance.
+USER_ROW = {
+    "id": "u_a",
+    "kind": "agent",
+    "names": ["alice"],
+    "last_seen": "2026-07-15T00:00:00Z",
+}
+
+#: A row missing BOTH `id` and `names`: it fails `validate_user` before a
+#: single byte is written. The three crash-safety tests below all drive this
+#: same failure and each pins one consequence of it.
+INVALID_ROW = {"kind": "agent"}
 
 
 def _read(path):
-    import yaml
-
     return yaml.safe_load(path.read_text())
+
+
+def _store_with_tasks(tmp_path, task_count: int):
+    """A real store carrying `task_count` task rows and an empty users list."""
+    store = tmp_path / "tasks.yaml"
+    tasks = [
+        {"id": f"t{i}", "title": f"task {i}", "status": "deferred"}
+        for i in range(task_count)
+    ]
+    store.write_text(yaml.safe_dump({"tasks": tasks, "users": []}))
+    return store
+
+
+def _attempt_invalid_users_write(store) -> None:
+    """Drive the validation failure, swallowing the expected raise."""
+    with pytest.raises(UserValidationError):
+        _save_users_unlocked([dict(INVALID_ROW)], store)
 
 
 def test_users_write_preserves_the_entire_tasks_payload(tmp_path):
     """Replacing users: must leave every task row untouched."""
-    import yaml
-
-    store = tmp_path / "tasks.yaml"
-    tasks = [{"id": f"t{i}", "title": f"task {i}", "status": "deferred"} for i in range(50)]
-    store.write_text(yaml.safe_dump({"tasks": tasks, "users": []}))
-
-    _save_users_unlocked(
-        [{"id": "u_a", "kind": "agent", "names": ["alice"], "last_seen": "2026-07-15T00:00:00Z"}],
-        store,
-    )
-
+    # Arrange
+    store = _store_with_tasks(tmp_path, 50)
+    expected_ids = [f"t{i}" for i in range(50)]
+    # Act
+    _save_users_unlocked([dict(USER_ROW)], store)
+    # Assert
     doc = _read(store)
-    assert [t["id"] for t in doc["tasks"]] == [f"t{i}" for i in range(50)], "task payload changed"
-    assert len(doc["users"]) == 1 and doc["users"][0]["id"] == "u_a"
+    assert [t["id"] for t in doc["tasks"]] == expected_ids, "task payload changed"
+
+
+def test_users_write_replaces_the_users_section(tmp_path):
+    # Arrange
+    store = _store_with_tasks(tmp_path, 50)
+    # Act
+    _save_users_unlocked([dict(USER_ROW)], store)
+    # Assert
+    doc = _read(store)
+    assert [u["id"] for u in doc["users"]] == ["u_a"]
 
 
 def test_users_first_write_seeds_an_empty_tasks_list(tmp_path):
@@ -56,36 +93,60 @@ def test_users_first_write_seeds_an_empty_tasks_list(tmp_path):
     `_model.load_tasks` hard-requires a top-level `tasks:` list; a file carrying
     only `users:` would make a later `add_task` fail-loud.
     """
-    import yaml
-
+    # Arrange
     store = tmp_path / "tasks.yaml"
     store.write_text(yaml.safe_dump({"users": []}))
-    _save_users_unlocked([{"id": "u_a", "kind": "agent", "names": ["a"]}], store)
-
+    # Act
+    _save_users_unlocked([dict(USER_ROW)], store)
+    # Assert
     doc = _read(store)
-    assert isinstance(doc.get("tasks"), list) and doc["tasks"] == []
-    assert len(doc["users"]) == 1
+    assert doc.get("tasks") == []
 
 
-def test_users_write_is_crash_safe_no_partial_file(tmp_path):
-    """A mid-write failure must leave the canonical file untouched, no .tmp litter."""
-    import yaml
-
+def test_users_first_write_still_persists_the_user(tmp_path):
+    # Arrange
     store = tmp_path / "tasks.yaml"
-    original = {"tasks": [{"id": "t0", "title": "keep me", "status": "done"}], "users": []}
-    store.write_text(yaml.safe_dump(original))
+    store.write_text(yaml.safe_dump({"users": []}))
+    # Act
+    _save_users_unlocked([dict(USER_ROW)], store)
+    # Assert
+    doc = _read(store)
+    assert [u["id"] for u in doc["users"]] == ["u_a"]
 
-    # A user row that fails validation aborts BEFORE any write.
-    import pytest
 
-    with pytest.raises(Exception):
-        _save_users_unlocked([{"kind": "agent"}], store)  # missing id/names → invalid
+def test_an_invalid_user_row_is_refused_outright(tmp_path):
+    """Validation aborts BEFORE any write — the premise the two tests below
+    depend on."""
+    # Arrange
+    store = _store_with_tasks(tmp_path, 1)
+    # Act
+    # Assert
+    with pytest.raises(UserValidationError):
+        _save_users_unlocked([dict(INVALID_ROW)], store)
 
+
+def test_a_failed_users_write_leaves_the_canonical_file_intact(tmp_path):
+    """A mid-write failure must leave the canonical file untouched."""
+    # Arrange
+    store = _store_with_tasks(tmp_path, 1)
+    original = _read(store)
+    # Act
+    _attempt_invalid_users_write(store)
+    # Assert
     assert _read(store) == original, "canonical file was mutated on a failed write"
+
+
+def test_a_failed_users_write_leaves_no_tmp_sidecar(tmp_path):
+    """...and no .tmp litter next to it."""
+    # Arrange
+    store = _store_with_tasks(tmp_path, 1)
+    # Act
+    _attempt_invalid_users_write(store)
+    # Assert
     assert not (store.parent / f".{store.name}.tmp").exists(), "left a .tmp turd"
 
 
-def test_the_slow_ruamel_round_trip_did_not_creep_back(tmp_path):
+def test_the_slow_ruamel_round_trip_did_not_creep_back():
     """PIN THE FIX: the heartbeat write must NOT ruamel round-trip the store.
 
     A ruamel round-trip of the whole tasks blob is what cost 46–171 s/write. This
@@ -93,15 +154,32 @@ def test_the_slow_ruamel_round_trip_did_not_creep_back(tmp_path):
     on purpose — the performance cliff is invisible to a behavioural test on a
     small fixture, so it must be pinned structurally.
     """
+    # Arrange
+    banned = ("from ruamel", "YAML()")
+    # Act
     src = inspect.getsource(_save_users_unlocked)
-    assert "from ruamel" not in src and "YAML()" not in src, (
+    # Assert
+    assert not [token for token in banned if token in src], (
         "the users/heartbeat write reintroduced a ruamel round-trip — that cost "
         "46–171 s PER card write on the live store. Use the fast safe path."
     )
-    # and it DOES use the fast safe path
-    assert "safe_dump" in src and "safe_load" in src
+
+
+def test_the_heartbeat_write_uses_the_fast_safe_path():
+    """The other half of the fix: it must round-trip through safe_load/dump."""
+    # Arrange
+    required = ("safe_dump", "safe_load")
+    # Act
+    src = inspect.getsource(_save_users_unlocked)
+    # Assert
+    assert [token for token in required if token in src] == list(required)
 
 
 def test_module_still_exposes_the_helper():
     """Guard the import surface used by the liveness heartbeat."""
-    assert hasattr(users_store, "_save_users_unlocked")
+    # Arrange
+    name = "_save_users_unlocked"
+    # Act
+    exposed = hasattr(users_store, name)
+    # Assert
+    assert exposed

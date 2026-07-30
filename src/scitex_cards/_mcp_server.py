@@ -54,6 +54,26 @@ from ._backend import get_backend
 # silently unregistered two tools instead.
 from ._mcp_app import _ENUM_FIELDS, mcp  # noqa: F401  (re-export)
 
+# NOTE on the CURRENCY gate (scitex_cards._currency.check_currency): it does
+# NOT live here at module level. It used to (2026-07-21), and
+# `tests/scitex_cards/test__import_order.py` correctly caught that as a bug:
+# `import scitex_cards._mcp_server` raised a real StalenessError in a fresh
+# subprocess whose env carries none of the test suite's suppression pins.
+# Importing a module must be side-effect-free — same principle that exempts a
+# docs build. The gate now lives at the actual SERVER-START call site instead:
+# see `_attach_unified_start`'s `start()` handler in `_cli/_mcp.py`, which
+# covers `scitex-cards mcp start` (both the stdio-unified and `--http`
+# branches). A client that launches this module directly, bypassing that CLI
+# (e.g. `fastmcp run scitex_cards._mcp_server:mcp`), is NOT gated — FastMCP
+# does offer a `lifespan=` hook on `FastMCP(...)`, but wiring it here is
+# unsafe: `_mcp_channel._run()` drives `mcp._mcp_server` (the low-level
+# server) by hand for the stdio-unified path, entering `server.lifespan(server)`
+# directly rather than through `FastMCP.run()`/`_lifespan_manager()`, and a
+# non-default `lifespan=` in that shape raises `RuntimeError("... no lifespan
+# result is set ...")` — i.e. it would break the DEFAULT `mcp start` command
+# it was meant to protect. Left as a known, honestly-disclosed gap rather than
+# a half-fixed lifespan wiring.
+
 # --------------------------------------------------------------------------- #
 # Task-store tools — Convention A (tool name == Python API name).             #
 # --------------------------------------------------------------------------- #
@@ -67,7 +87,6 @@ from ._mcp_app import _ENUM_FIELDS, mcp  # noqa: F401  (re-export)
 async def complete_task(
     task_id: str,
     by: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Mark a task done and stamp `_log_meta.completed_{at,by}`.
 
@@ -75,7 +94,7 @@ async def complete_task(
     `by` overrides the $SCITEX_TODO_AGENT_ID → $USER precedence.
     """
     done = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().complete_task, tasks_path, task_id, by=by)
+        functools.partial(get_backend().complete_task, None, task_id, by=by)
     )
     return json.dumps(done)
 
@@ -94,7 +113,6 @@ async def list_tasks(
     id_prefix: str | None = None,
     blocking_me: bool = False,
     overdue: bool = False,
-    tasks_path: str | None = None,
 ) -> str:
     """List tasks, filtered by any combination of fields. Returns a JSON array.
 
@@ -116,7 +134,7 @@ async def list_tasks(
     """
     _call = functools.partial(
         get_backend().list_tasks,
-        tasks_path,
+        None,
         scope=scope,
         assignee=assignee,
         status=status,
@@ -138,31 +156,29 @@ async def list_tasks(
 async def summarize_tasks(
     scope: str | None = None,
     assignee: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Numeric progress: counts by status / scope / assignee."""
     result = await anyio.to_thread.run_sync(
         functools.partial(
-            get_backend().summarize_tasks, tasks_path, scope=scope, assignee=assignee
+            get_backend().summarize_tasks, None, scope=scope, assignee=assignee
         )
     )
     return json.dumps(result)
 
 
 @mcp.tool()
-async def resolve_store(tasks_path: str | None = None) -> str:
+async def resolve_store() -> str:
     """Show the resolved store path and the precedence chain.
 
     Useful for an agent to confirm "yes, I am writing to the shared
     user-scope store, not to a project shadow."
     """
-    return json.dumps(_store.resolve_store(tasks_path))
+    return json.dumps(_store.resolve_store(None))
 
 
 @mcp.tool()
 async def get_task(
     task_id: str,
-    tasks_path: str | None = None,
 ) -> str:
     """Return one task by id as JSON. Raises if the id is unknown.
 
@@ -171,7 +187,7 @@ async def get_task(
     MCP agents can use it without going through HTTP.
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().get_task, tasks_path, task_id)
+        functools.partial(get_backend().get_task, None, task_id)
     )
     return json.dumps(result)
 
@@ -179,7 +195,6 @@ async def get_task(
 @mcp.tool()
 async def delete_task(
     task_id: str,
-    tasks_path: str | None = None,
 ) -> str:
     """Delete a task + scrub references; returns the lossless payload
     a follow-up ``restore_task`` can consume to undo.
@@ -188,7 +203,7 @@ async def delete_task(
     Wraps the board v3 Delete-with-Undo flow for MCP agents.
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().delete_task, tasks_path, task_id)
+        functools.partial(get_backend().delete_task, None, task_id)
     )
     return json.dumps(result)
 
@@ -197,13 +212,12 @@ async def delete_task(
 async def restore_task(
     task: dict,
     refs: list[str] | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Undo a ``delete_task`` — re-insert at the original id. ``task``
     must be the exact dict ``delete_task`` returned in ``"removed"``.
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().restore_task, tasks_path, task=task, refs=refs)
+        functools.partial(get_backend().restore_task, None, task=task, refs=refs)
     )
     return json.dumps(result)
 
@@ -213,14 +227,13 @@ async def comment_task(
     task_id: str,
     text: str,
     by: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Append an entry to a task's ``comments[]`` thread (the
     Gitea-compatible Issue-activity log). ``by`` overrides the default
     author resolution ($SCITEX_TODO_AGENT_ID → $USER).
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().comment_task, tasks_path, task_id, text, by=by)
+        functools.partial(get_backend().comment_task, None, task_id, text, by=by)
     )
     return json.dumps(result)
 
@@ -229,7 +242,6 @@ async def comment_task(
 async def resolve_task(
     task_id: str,
     actor: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Flip a blocked task to done + clear the blocker. Appends an audit
     comment naming the actor. Idempotent on already-resolved tasks.
@@ -238,7 +250,7 @@ async def resolve_task(
     button (ADR-0006/0007).
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().resolve_task, tasks_path, task_id, actor=actor)
+        functools.partial(get_backend().resolve_task, None, task_id, actor=actor)
     )
     return json.dumps(result)
 
@@ -247,13 +259,12 @@ async def resolve_task(
 async def reopen_task(
     task_id: str,
     by: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Un-resolve: flip ``status=done`` back to ``blocked`` /
     ``blocker=operator-decision``. The Resolve→Undo partner.
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().reopen_task, tasks_path, task_id, by=by)
+        functools.partial(get_backend().reopen_task, None, task_id, by=by)
     )
     return json.dumps(result)
 
@@ -290,14 +301,24 @@ TOOL_NAMES: tuple[str, ...] = (
     "help_clear",
     # Standalone pull-inbox read path (1:1 `_inbox.poll_inbox`; in _mcp_skills).
     "poll_notifications",
+    # ...and its CONFIRM half (1:1 `_inbox_confirm.confirm_notifications`).
+    # Reading hands over; only this advances the cursor, so an undelivered
+    # notification is redelivered instead of destroyed (incident 2026-07-29).
+    "ack_notifications",
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
     "health",
     "todo_skills_list",
     "todo_skills_get",
-    # Operator↔agent DMs (threads.yaml sidecar; registered in _mcp_skills).
+    # Operator↔agent DMs (threads.json sidecar; registered in _mcp_skills).
     "dm_send",
     "dm_list",
+    # ...and the FILE half. Text-only DMs meant a deliverable reached the
+    # operator as prose describing a deliverable; this is the entry point that
+    # was simply missing. Composes _attachments with dm_send in-process, and
+    # is deliberately NOT a BACKEND_VERBS member — `_server.py` dispatches that
+    # tuple over HTTP, and a path-taking verb there would be remotely callable.
+    "dm_send_document",
 )
 
 # Imports for the registration side effect: these modules (kept separate for

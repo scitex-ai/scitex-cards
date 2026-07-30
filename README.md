@@ -319,33 +319,58 @@ export SCITEX_TODO_AGENT_ID='agent:<name>'     # this agent's identity (channel 
 export SCITEX_TODO_SCOPE='agent:<name>'        # default list/summary filter
 ```
 
-## CLI reference
+## 5 Interfaces (Python · CLI · MCP · Skills · Web)
 
 <details>
-<summary><strong>Task store</strong></summary>
+<summary><strong>Python API</strong></summary>
+
+```python
+from scitex_cards import add_task, list_tasks, complete_task
+
+add_task(None, id="my-card", title="Ship the thing", assignee="me")
+open_cards = [t for t in list_tasks(None) if t["status"] == "in_progress"]
+complete_task(None, "my-card")
+```
+
+`scitex-cards dev list-python-apis -v` enumerates the full public surface.
+
+</details>
+
+<details>
+<summary><strong>CLI — task store</strong></summary>
 
 ```bash
-scitex-todo render-graph -o tasks.png       # YAML -> dependency PNG
-scitex-todo list-tasks --json               # resolved tasks, machine-readable
-scitex-todo list-tasks --assignee X --status pending --status in_progress
-scitex-todo list-tasks --blocking-operator  # the operator's decision queue
-scitex-todo list-python-apis -v             # introspect the Python surface
-scitex-todo install-shell-completion        # bash/zsh/fish tab-completion
+scitex-cards render-graph -o tasks.png       # dependency PNG
+scitex-cards list-tasks --json               # resolved tasks, machine-readable
+scitex-cards list-tasks --assignee X --status in_progress
+scitex-cards runnable --mine                 # what this agent can pick up now
+scitex-cards resolve-store                   # which store am I actually reading?
+scitex-cards install-shell-completion        # bash/zsh/fish tab-completion
 ```
 
 </details>
 
 <details>
-<summary><strong>Communication</strong></summary>
+<summary><strong>MCP — the agent-facing rail</strong></summary>
 
 ```bash
-scitex-todo mcp start [--http --port N]     # CRUD + roles + poll tools
-scitex-todo mcp doctor                      # self-diagnose the MCP install
-scitex-todo mcp list-tools -vv              # enumerate registered tools
-scitex-todo mcp install                     # print the .mcp.json snippet
-scitex-todo mcp channel --agent X           # drain inbox → push into Claude
-scitex-todo notifyd [--interval N | --once] # reminders + delivery daemon
-scitex-todo notifyd install-unit            # write the systemd user unit (operator-gated)
+scitex-cards mcp start [--http --port N]     # CRUD + roles + poll tools
+scitex-cards mcp doctor                      # self-diagnose the MCP install
+scitex-cards mcp list-tools -vv              # enumerate registered tools
+scitex-cards mcp install                     # print the .mcp.json snippet
+scitex-cards mcp channel --agent X           # drain inbox → push into Claude
+scitex-cards notifyd [--interval N | --once] # reminders + delivery daemon
+```
+
+</details>
+
+<details>
+<summary><strong>Skills</strong></summary>
+
+```bash
+scitex-cards skills list                     # bundled agent skills
+scitex-cards skills get 02_quick-start       # read one
+scitex-cards skills install                  # install into ~/.claude/skills
 ```
 
 </details>
@@ -354,9 +379,9 @@ scitex-todo notifyd install-unit            # write the systemd user unit (opera
 <summary><strong>Web board</strong></summary>
 
 ```bash
-pip install scitex-todo[web]
-scitex-todo board start --port 8051         # kanban + timeline, opens http://127.0.0.1:8051/
-scitex-todo board status | stop | restart   # pidfile-backed lifecycle
+pip install scitex-cards[web]
+scitex-cards board start --port 8051         # kanban + timeline, http://127.0.0.1:8051/
+scitex-cards board status | stop | restart   # pidfile-backed lifecycle
 ```
 
 </details>

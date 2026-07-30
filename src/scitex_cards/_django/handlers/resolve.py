@@ -37,7 +37,7 @@ def handle_resolve(request, board):
     and appends a ``comments[]`` entry recording the resolution + actor.
     This is the load-bearing GUI→code loop the operator explicitly named
     (TG 9522 + 9667 + 9671 + 9674): clicking Resolve on a BLOCKING YOU
-    row writes to ``tasks.yaml`` so the dependent agent's depends_on
+    row writes to the store so the dependent agent's depends_on
     auto-unblocks within 5s via AutoRefresh (or via push when the SacChannel
     notification adapter lands in the live-data PR per ADR-0006).
 

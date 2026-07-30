@@ -25,23 +25,49 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import seed_db_from_doc
 
 from scitex_cards._django import services
+from scitex_cards._model import load_tasks
 
 
 @pytest.fixture()
-def store(tmp_path, monkeypatch):
-    path = tmp_path / "tasks.yaml"
-    path.write_text(
-        "tasks:\n"
-        "  - id: a\n    title: a\n    status: in_progress\n"
-        "  - id: b\n    title: b\n    status: done\n",
-        encoding="utf-8",
+def store(env):
+    # SQLite cutover: card DATA lives in the canonical DB (a path-independent
+    # read), so the two seeded cards are put THERE. But the board cache — the
+    # subject of this whole file — still keys HALF its invalidation on the
+    # resolved store PATH's stat (mtime_ns, size, inode via ``_stat_sig``) and
+    # opens that path through ``load_groups``. So the store is the PINNED
+    # identity path with a real marker FILE behind it; the helpers below mutate
+    # the DB for card content AND move the marker file's stat so the cache
+    # observes the change, exactly as a write to the old single YAML store
+    # moved both at once.
+    #
+    # THIS FIXTURE CREATES THAT FILE ITSELF, and that is the point. It used to
+    # arrive from an autouse fixture in the _django conftest that created it for
+    # EVERY test in the package — which is how the 2026-07-29 blank-board outage
+    # went untested: the board gated its card read on this file's existence, and
+    # the harness manufactured it before each test, so production's actual
+    # shape (no such file) was never exercised. The stat half of the cache key
+    # is genuinely THIS file's subject, so this file owns the file. Nothing
+    # else has to.
+    seed_db_from_doc(
+        {
+            "tasks": [
+                {"id": "a", "title": "a", "status": "in_progress"},
+                {"id": "b", "title": "b", "status": "done"},
+            ]
+        },
+        os.environ["SCITEX_CARDS_DB"],
     )
+    path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if not Path(path).exists():
+        Path(path).write_text("", encoding="utf-8")
     services._board_cache.clear()
     services._refreshing.clear()
     # No per-project lanes in the fixture — keep the unit about the cache.
-    monkeypatch.setenv("SCITEX_TODO_LANE_GLOBS", "")
+    env.set("SCITEX_TODO_LANE_GLOBS", "")
     yield str(path)
     services._board_cache.clear()
     services._refreshing.clear()
@@ -84,39 +110,102 @@ def _bump_mtime(store) -> None:
     os.utime(store, (bumped, bumped))
 
 
-def test_a_write_does_not_make_the_next_read_pay_a_rebuild(store):
-    # Arrange: warm the cache.
-    first = services.get_board(store, allow_stale=True)
+def _append_card(store, cid: str, status: str = "deferred") -> None:
+    """Add one card, moving BOTH halves a board read consults.
+
+    Card data lives in the canonical DB now, so the new card is seeded there
+    (a rebuild reads it back). The board's cache invalidation keys on the
+    marker file's stat, so the file is also grown — by a comment line, which
+    moves its size + mtime without turning it into a non-mapping that the
+    group loader (``load_groups`` -> ``safe_load``) would choke on.
+    """
+    tasks = list(load_tasks(store))
+    tasks.append({"id": cid, "title": cid, "status": status})
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    with open(store, "a", encoding="utf-8") as fh:
+        fh.write(f"# {cid}\n")
+
+
+def _break_the_rebuild(monkeypatch) -> None:
+    """Make the background rebuild raise, as an unreadable store would."""
+
+    def _boom(path):
+        raise RuntimeError("store unreadable")
+
+    monkeypatch.setattr(services, "_load_global_tasks", _boom)
+
+
+def _rewrite_same_length(store, before) -> None:
+    """Mutate a card so ONLY the inode betrays it — same length, same timestamp.
+
+    Card side: title ``"a"`` -> ``"A"`` is an equal-length edit, applied to the
+    DB where card data now lives. File side: the marker file is rewritten
+    through atomic ``os.replace``, which allocates a new inode, then its
+    original length and stamp are restored — so neither ``st_size`` nor
+    ``st_mtime_ns`` moves and only ``st_ino`` does. That is the case
+    ``(mtime_ns, size)`` alone cannot catch, which is why the inode is in the
+    cache key.
+    """
+    tasks = list(load_tasks(store))
+    for task in tasks:
+        if task.get("id") == "a":
+            task["title"] = "A"
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    text = Path(store).read_text(encoding="utf-8")
+    tmp = Path(str(store) + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, store)
+    os.utime(store, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+
+def test_a_warm_stale_board_holds_every_seeded_card(store):
+    # Arrange
+    store_path = store
+    # Act
+    first = services.get_board(store_path, allow_stale=True)
+    # Assert
     assert len(first.tasks) == 2
 
-    # Act: a writer rolls the store's mtime, then the board is read again.
-    _bump_mtime(store)
-    t0 = time.time()
-    served = services.get_board(store, allow_stale=True)
-    elapsed = time.time() - t0
 
-    # Assert: served from cache, not rebuilt — the point of the change.
-    assert elapsed < 0.5
-    assert len(served.tasks) == 2
+def test_a_write_does_not_make_the_next_read_pay_a_rebuild(store):
+    # Arrange
+    # Warm the cache, then let a writer roll the store's mtime.
+    services.get_board(store, allow_stale=True)
+    _bump_mtime(store)
+    # Act
+    t0 = time.time()
+    services.get_board(store, allow_stale=True)
+    elapsed = time.time() - t0
     _settle()
+    # Assert — served from cache, not rebuilt: the point of the change.
+    assert elapsed < 0.5
+
+
+def test_a_stale_read_after_a_write_still_returns_a_full_board(store):
+    # Arrange
+    services.get_board(store, allow_stale=True)
+    _bump_mtime(store)
+    # Act
+    served = services.get_board(store, allow_stale=True)
+    _settle()
+    # Assert
+    assert len(served.tasks) == 2
 
 
 def test_the_background_refresh_actually_lands(store):
     # Arrange
     services.get_board(store, allow_stale=True)
-
-    # Act: append a card, then read (gets the stale board) and let it settle.
-    with open(store, "a", encoding="utf-8") as fh:
-        fh.write("  - id: c\n    title: c\n    status: deferred\n")
+    # Act — append a card, then read (gets the stale board) and let it settle.
+    _append_card(store, "c")
     services.get_board(store, allow_stale=True)
     _settle()
-
-    # Assert: the refresh picked the new card up for the NEXT reader.
+    # Assert — the refresh picked the new card up for the NEXT reader.
     assert {t["id"] for t in services.get_board(store).tasks} == {"a", "b", "c"}
 
 
 def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
-    # Arrange: make the rebuild slow enough that polls overlap it.
+    # Arrange
+    # Make the rebuild slow enough that polls overlap it.
     services.get_board(store, allow_stale=True)
     calls = {"n": 0}
     real = services._load_global_tasks
@@ -127,38 +216,42 @@ def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
         return real(path)
 
     monkeypatch.setattr(services, "_load_global_tasks", _slow)
-
-    # Act: ten rapid reads against a changed store (the operator's browser
+    # Act — ten rapid reads against a changed store (the operator's browser
     # polling while a rebuild is in flight).
     _bump_mtime(store)
     for _ in range(10):
         services.get_board(store, allow_stale=True)
     _settle()
-
-    # Assert: one rebuild, not ten.
+    # Assert — one rebuild, not ten.
     assert calls["n"] == 1
 
 
 def test_a_failing_refresh_keeps_serving_the_previous_board(store, monkeypatch):
     # Arrange
     good = services.get_board(store, allow_stale=True)
-
-    def _boom(path):
-        raise RuntimeError("store unreadable")
-
-    monkeypatch.setattr(services, "_load_global_tasks", _boom)
-
-    # Act: the store changes and the background rebuild blows up.
+    _break_the_rebuild(monkeypatch)
+    # Act — the store changes and the background rebuild blows up.
     _bump_mtime(store)
     served = services.get_board(store, allow_stale=True)
     _settle()
-
-    # Assert: the operator still has a board — never blanked, and a further
-    # stale read keeps serving it rather than surfacing the failure.
-    # (A STRICT read would rightly raise here: the store really is unreadable,
-    # and fail-loud is correct when the caller cannot tolerate staleness.)
+    # Assert — the operator still has a board; it is never blanked.
     assert len(served.tasks) == len(good.tasks)
-    assert len(services.get_board(store, allow_stale=True).tasks) == 2
+
+
+def test_a_further_stale_read_after_a_failed_refresh_still_serves(store, monkeypatch):
+    # Arrange
+    services.get_board(store, allow_stale=True)
+    _break_the_rebuild(monkeypatch)
+    _bump_mtime(store)
+    services.get_board(store, allow_stale=True)
+    _settle()
+    # Act
+    served_again = services.get_board(store, allow_stale=True)
+    # Assert — a further stale read keeps serving the last good board rather
+    # than surfacing the failure. (A STRICT read would rightly raise here: the
+    # store really is unreadable, and fail-loud is correct when the caller
+    # cannot tolerate staleness.)
+    assert len(served_again.tasks) == 2
 
 
 def test_a_strict_caller_is_never_served_stale(store):
@@ -171,16 +264,26 @@ def test_a_strict_caller_is_never_served_stale(store):
     endpoint that writes must see its write; only opted-in read-only views
     may lag.
     """
-    # Arrange: warm the cache.
+    # Arrange
+    # Warm the cache.
     services.get_board(store)
-
-    # Act: a write lands, then a DEFAULT (strict) read.
-    with open(store, "a", encoding="utf-8") as fh:
-        fh.write("  - id: z\n    title: z\n    status: in_progress\n")
+    # Act — a write lands, then a DEFAULT (strict) read.
+    _append_card(store, "z", status="in_progress")
     served = services.get_board(store)
-
-    # Assert: the new card is there — no staleness without opting in.
+    # Assert — the new card is there: no staleness without opting in.
     assert {t["id"] for t in served.tasks} == {"a", "b", "z"}
+
+
+def test_rewinding_the_stamp_really_hides_the_write_from_the_clock(store):
+    """The trap this file's granularity pins depend on is actually armed."""
+    # Arrange
+    services.get_board(store)
+    before = os.stat(store)
+    # Act — a real write, then rewind the clock so ONLY the size betrays it.
+    _append_card(store, "z", status="in_progress")
+    os.utime(store, ns=(before.st_atime_ns, before.st_mtime_ns))
+    # Assert
+    assert os.stat(store).st_mtime_ns == before.st_mtime_ns
 
 
 def test_a_write_inside_one_timestamp_granule_is_still_seen(store):
@@ -198,19 +301,38 @@ def test_a_write_inside_one_timestamp_granule_is_still_seen(store):
     condition deterministically on ANY filesystem by forcing the stamp back to
     its pre-write value, which is what a coarse-granularity fs does for free.
     """
-    # Arrange: warm the cache and capture the exact stamp it recorded.
+    # Arrange
+    # Warm the cache and capture the exact stamp it recorded.
     services.get_board(store)
     before = os.stat(store)
-
-    # Act: a real write, then rewind the clock so ONLY the size betrays it.
-    with open(store, "a", encoding="utf-8") as fh:
-        fh.write("  - id: z\n    title: z\n    status: in_progress\n")
+    # Act — a real write, then rewind the clock so ONLY the size betrays it.
+    _append_card(store, "z", status="in_progress")
     os.utime(store, ns=(before.st_atime_ns, before.st_mtime_ns))
-    assert os.stat(store).st_mtime_ns == before.st_mtime_ns  # the trap is armed
     served = services.get_board(store)
-
-    # Assert: the write is visible despite an unchanged timestamp.
+    # Assert — the write is visible despite an unchanged timestamp.
     assert {t["id"] for t in served.tasks} == {"a", "b", "z"}
+
+
+def test_a_same_length_edit_leaves_the_file_size_unchanged(store):
+    """Half of the trap the inode pin needs: the size must not betray the edit."""
+    # Arrange
+    services.get_board(store)
+    before = os.stat(store)
+    # Act
+    _rewrite_same_length(store, before)
+    # Assert
+    assert os.stat(store).st_size == before.st_size
+
+
+def test_a_same_length_edit_leaves_the_mtime_unchanged(store):
+    """The other half of the trap: the clock must not betray the edit either."""
+    # Arrange
+    services.get_board(store)
+    before = os.stat(store)
+    # Act
+    _rewrite_same_length(store, before)
+    # Assert
+    assert os.stat(store).st_mtime_ns == before.st_mtime_ns
 
 
 def test_a_same_length_edit_inside_one_granule_is_still_seen(store):
@@ -228,38 +350,33 @@ def test_a_same_length_edit_inside_one_granule_is_still_seen(store):
     make it pass under the buggy key).
     """
     # Arrange
-    first = services.get_board(store)
-    assert {t["id"] for t in first.tasks} == {"a", "b"}
+    services.get_board(store)
     before = os.stat(store)
-
-    # Act: rewrite atomically with the SAME byte length (in_progress -> done__
-    # is not equal-length, so swap a title instead: "a" -> "A" keeps length).
-    text = Path(store).read_text(encoding="utf-8").replace("title: a\n", "title: A\n")
-    tmp = Path(str(store) + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, store)
-    os.utime(store, ns=(before.st_atime_ns, before.st_mtime_ns))
-
-    after = os.stat(store)
-    assert after.st_size == before.st_size  # size unchanged
-    assert after.st_mtime_ns == before.st_mtime_ns  # stamp unchanged
+    # Act
+    _rewrite_same_length(store, before)
     served = services.get_board(store)
-
-    # Assert: the edit is visible even though only the inode moved.
+    # Assert — the edit is visible even though only the inode moved.
     assert {t["title"] for t in served.tasks} == {"A", "b"}
 
 
-def test_it_can_be_switched_off(store, monkeypatch):
+def test_the_first_strict_board_read_sees_both_seeded_cards(store):
+    """The baseline the same-length mutation pin is measured against."""
+    # Arrange
+    store_path = store
+    # Act
+    first = services.get_board(store_path)
+    # Assert
+    assert {t["id"] for t in first.tasks} == {"a", "b"}
+
+
+def test_stale_while_revalidate_can_be_switched_off(store, env):
     # Arrange
     services.get_board(store, allow_stale=True)
-    monkeypatch.setenv("SCITEX_CARDS_BOARD_SWR", "0")
-
-    # Act: with SWR off, a changed store rebuilds synchronously.
-    with open(store, "a", encoding="utf-8") as fh:
-        fh.write("  - id: d\n    title: d\n    status: deferred\n")
+    env.set("SCITEX_CARDS_BOARD_SWR", "0")
+    # Act — with SWR off, a changed store rebuilds synchronously.
+    _append_card(store, "d")
     served = services.get_board(store, allow_stale=True)
-
-    # Assert: the caller sees the new card immediately (blocking rebuild).
+    # Assert — the caller sees the new card immediately (blocking rebuild).
     assert {t["id"] for t in served.tasks} == {"a", "b", "d"}
 
 

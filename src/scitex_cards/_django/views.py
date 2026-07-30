@@ -27,6 +27,39 @@ def _tasks_path_from_request(request):
     return request.GET.get("store") or None
 
 
+def _include_root(path: str, aliases: tuple[str, ...]) -> str:
+    """Recover the app's include root from a page's own ``request.path``.
+
+    A page served at ``<include-root><alias>`` must prefix every fetch and
+    every in-app link with ``<include-root>`` — "/" standalone, "/apps/cards/"
+    on the hub. The root ("") route needs no strip; every OTHER spelling of
+    the same page sits one segment deeper and does.
+
+    The alias is only stripped when it is a WHOLE trailing SEGMENT — i.e. the
+    path IS the alias, or it ends with ``"/" + alias``. The naive
+    ``endswith(alias)`` this replaces would have eaten the tail of an
+    unrelated mount: with ``/board`` now an alias, a hub mounting this app at
+    ``/apps/scoreboard/`` would have had its include root rewritten to
+    ``/apps/score`` and every call on the operator's board would 404 — the
+    exact class of bug #556 and #557 were.
+    """
+    for alias in aliases:
+        for candidate in (alias + "/", alias):
+            if path == candidate or path.endswith("/" + candidate):
+                return path[: len(path) - len(candidate)]
+    return path
+
+
+#: Every route in ``urls.py`` that serves the BOARD page, longest first so
+#: ``board-v3`` is tested before its ``board`` prefix-mate. The root ("")
+#: route is absent on purpose: there is nothing to strip there.
+_BOARD_ALIASES = ("board-v3", "board")
+
+#: Every route that serves the DM page. ``chat`` is the ORIGINAL published
+#: spelling and stays first; ``dm`` is the name the operator asked for.
+_DM_ALIASES = ("chat", "dm")
+
+
 def favicon_view(request):
     """Serve the bundled SciTeX "S" SVG for the implicit `/favicon.ico` request.
 
@@ -71,7 +104,7 @@ def board_v3_page(request):
 
     Parallel to ``board_page`` (per lead a2a `62094366` — isolable, screen-
     shottable, A/B-comparable against the static :8052 prototype). Renders
-    a self-contained HTML page that fetches ``/graph`` for real tasks.yaml
+    a self-contained HTML page that fetches ``/graph`` for real task-store
     data + renders the operator-co-designed layout (project columns +
     BLOCKING YOU panel + Resolve→``/resolve`` button per ADR-0006/0007).
 
@@ -113,6 +146,16 @@ def board_v3_page(request):
     # WARN once per process even if board_v3_page is hit many times.
     _maybe_announce_missing_turn_urls(request)
 
+    # Mount-aware API base (P1, scitex-hub): the hub mounts this board under
+    # a sub-path (e.g. /apps/cards/), where the template's former root-absolute
+    # fetches 404'd — https://scitex.ai/graph → 404 while
+    # https://scitex.ai/apps/cards/graph → 200. ``request.path`` is the board
+    # page's own URL; for the "" (root) route that IS the include root. The
+    # /board-v3 and /board aliases serve the same view one path segment
+    # deeper, so strip that trailing segment to recover the include root there
+    # too. See :func:`_include_root` for why the strip is segment-anchored.
+    api_base = _include_root(request.path, _BOARD_ALIASES)
+
     try:
         html = render_to_string(
             "scitex_cards/board_v3.html",
@@ -120,6 +163,10 @@ def board_v3_page(request):
                 "app_name": "scitex-todo",
                 "app_label": label,
                 "scitex_cards_version": _version,
+                # Include-root prefix for every board fetch (see above). The
+                # template strips trailing slashes, so a root mount renders
+                # API_BASE == "" and calls stay "/graph"-shaped.
+                "api_base": api_base,
                 # Per-status SSOT colors for first-paint CSS vars (board_v3
                 # <head> renders a `:root{--status-fill-<s>...}` block from
                 # this so cards/timeline/mermaid never collapse 7→4 colors).
@@ -151,9 +198,23 @@ def chat_page(request):
         from scitex_cards import __version__ as _version
     except Exception:  # noqa: BLE001
         _version = "?"
+
+    # Mount-aware API base — same contract as board_v3_page (see there for the
+    # full story). The chat page is served at "<include-root>chat" and, since
+    # 2026-07-29, also at "<include-root>dm", so stripping its own trailing
+    # segment off request.path recovers the include root the /dm/* fetches must
+    # be prefixed with ("/apps/cards/" on the hub, "/" standalone). Serving the
+    # page at /dm without teaching this the new alias would have left
+    # api_base == "/dm", pointing every DM poll at "/dm/dm/threads" and every
+    # switcher link at "/dmchat" — the page would render and then do nothing.
+    # chat.html ALWAYS sets window.API_BASE from this; chat.js refuses to run
+    # without it (a missing marker is an integration bug, never a silent
+    # root-mount guess).
+    api_base = _include_root(request.path, _DM_ALIASES)
+
     html = render_to_string(
         "scitex_cards/chat.html",
-        {"scitex_cards_version": _version},
+        {"scitex_cards_version": _version, "api_base": api_base},
         request=request,
     )
     return HttpResponse(html)
@@ -166,7 +227,7 @@ def _maybe_announce_missing_turn_urls(request) -> None:
     """Boot-time WARN listing agents without a configured turn URL.
 
     Fires once per process (the module-level guard). The agent set is
-    read from the live tasks.yaml via :func:`get_board` so the warning
+    read from the live store via :func:`get_board` so the warning
     reflects whatever store the request resolves to.
     """
     global _TURN_URL_ANNOUNCED
@@ -255,12 +316,17 @@ STALE_OK_ENDPOINTS = frozenset({"graph", "timeline"})
 
 
 def _get_board(request, *, allow_stale: bool = False):
-    """Return the board for this request, or None when the store can't load."""
-    try:
-        return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
-    except FileNotFoundError:
-        logger.warning("[scitex-todo] task store not found")
-        return None
+    """Return the board for this request. RAISES when the store can't be read.
+
+    IT NO LONGER SWALLOWS ``FileNotFoundError`` into a ``None``. That None
+    became a 400 "No task store found." — a fixed sentence that replaced
+    whatever the store actually said, so the one message carrying the diagnosis
+    ("stamped for a DIFFERENT store", "canonical store ... does not exist", the
+    export/COUNT(*) disagreement) was thrown away at the door and the operator
+    got a generic banner instead. The caller now renders the real reason; see
+    :func:`api_dispatch`.
+    """
+    return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
 
 
 @csrf_exempt
@@ -273,12 +339,47 @@ def api_dispatch(request, endpoint):
     if endpoint in NO_BOARD_ENDPOINTS:
         return handler(request, None)
 
-    board = _get_board(
-        request,
-        allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
-    )
-    if board is None:
-        return JsonResponse({"error": "No task store found."}, status=400)
+    # A STORE THAT CANNOT BE READ IS A 500 CARRYING ITS OWN REASON. Two failure
+    # shapes converge here and both were unreadable before: a swallowed
+    # FileNotFoundError became a generic 400, and every OTHER load failure
+    # (notably the ownership refusal) escaped this function entirely, because
+    # this call sat OUTSIDE the try below — so Django answered with an HTML
+    # error page that the board's ``fetch`` cannot parse, and the frontend
+    # showed a bare "HTTP 500" with no cause. The board template already reads
+    # ``payload.error`` off a non-OK response and renders it in the loud red
+    # panel, so putting the store's own sentence in the body is what turns an
+    # outage into a diagnosis. NEVER answer this with an empty board.
+    try:
+        board = _get_board(
+            request,
+            allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
+        )
+    except Exception as exc:
+        logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)
+        # THE FULL SENTENCE STAYS FOR US AND GOES NOWHERE ELSE.
+        #
+        # The comment above is right that the store's own sentence is what turns
+        # an outage into a diagnosis, and that stays true on the loopback board.
+        # But scitex-hub loaded /apps/cards/ ANONYMOUSLY in a browser and got the
+        # whole paragraph, including the absolute container path
+        # /app/.scitex/cards/cards.db. A stranger learns our filesystem layout and
+        # reads a rationale addressed to us.
+        #
+        # settings.DEBUG is the switch, and it is already correct on both sides
+        # with no new configuration: the local board runs DEBUG=true and keeps the
+        # diagnosis, while SCITEX_CARDS_PUBLIC_HOST FORCES DEBUG=false (settings.py,
+        # deliberately not env-overridable), so anything publicly reachable gets the
+        # summary. A second flag would be a second thing to set wrongly.
+        #
+        # The log line above is unconditional, so the detail is never lost - it
+        # moves from the response body to the place that was always the right home
+        # for it.
+        from django.conf import settings
+
+        public = getattr(exc, "public_summary", None)
+        if public is not None and not settings.DEBUG:
+            return JsonResponse({"error": public}, status=500)
+        return JsonResponse({"error": f"Cannot read the task store: {exc}"}, status=500)
 
     try:
         return handler(request, board)

@@ -84,6 +84,19 @@ class TestOverdueCardIsStillNeverNudged:
     still no sweep says a word, because it was touched a minute ago.
     """
 
+    def test_the_fresh_in_progress_card_really_is_overdue(self):
+        # Arrange — overdue, but touched a minute ago (threshold is 2 h).
+        task = _card(
+            status="in_progress",
+            last_activity="2026-07-12T11:59:00+00:00",
+            deadline=PAST_DEADLINE,
+        )
+        # Act
+        overdue = is_overdue(task, now=NOW)
+        # Assert — the premise. Without it the no-nudge result below would be
+        # an artefact of a fixture that never expired.
+        assert overdue is True
+
     def test_stale_active_sweep_ignores_the_passed_deadline(self):
         # Arrange — overdue, but touched a minute ago (threshold is 2 h).
         task = _card(
@@ -94,8 +107,20 @@ class TestOverdueCardIsStillNeverNudged:
         # Act
         nudges = detect_stale_active([task], now=NOW)
         # Assert — overdue, yet nobody is told. Freshness is all that counts.
-        assert is_overdue(task, now=NOW) is True
         assert nudges == {}
+
+    def test_the_fresh_deferred_card_really_is_overdue(self):
+        # Arrange — a deferred card, overdue, but touched an hour ago
+        # (the backlog threshold is 24 h).
+        task = _card(
+            status="deferred",
+            last_activity="2026-07-12T11:00:00+00:00",
+            deadline=PAST_DEADLINE,
+        )
+        # Act
+        overdue = is_overdue(task, now=NOW)
+        # Assert — the premise for the backlog sweep's no-nudge result.
+        assert overdue is True
 
     def test_backlog_sweep_ignores_the_passed_deadline(self):
         # Arrange — a deferred card, overdue, but touched an hour ago
@@ -108,7 +133,6 @@ class TestOverdueCardIsStillNeverNudged:
         # Act
         nudges = detect_pending_backlog([task], now=NOW)
         # Assert
-        assert is_overdue(task, now=NOW) is True
         assert nudges == {}
 
 
@@ -116,7 +140,18 @@ class TestInactivityIsWhatNudges:
     """The control: the sweeps DO fire — on silence, not on deadlines. Without
     this, the assertions above would pass even if the sweeps were dead."""
 
-    def test_quiet_card_with_no_deadline_at_all_is_nudged(self):
+    def test_a_card_with_no_deadline_is_never_overdue(self):
+        # Arrange — no deadline whatsoever; simply untouched for ~2 days.
+        task = _card(
+            status="in_progress",
+            last_activity="2026-07-10T12:00:00+00:00",
+        )
+        # Act
+        overdue = is_overdue(task, now=NOW)
+        # Assert — the premise: this card is nudged despite never being overdue.
+        assert overdue is False
+
+    def test_quiet_card_with_no_deadline_at_all_nudges_its_owner(self):
         # Arrange — no deadline whatsoever; simply untouched for ~2 days.
         task = _card(
             status="in_progress",
@@ -124,9 +159,18 @@ class TestInactivityIsWhatNudges:
         )
         # Act
         nudges = detect_stale_active([task], now=NOW)
-        # Assert — never overdue (no deadline), yet nudged anyway.
-        assert is_overdue(task, now=NOW) is False
+        # Assert — nudged anyway; silence, not the deadline, is the trigger.
         assert list(nudges) == ["scitex-storage"]
+
+    def test_quiet_card_with_no_deadline_at_all_is_named_in_the_nudge(self):
+        # Arrange — no deadline whatsoever; simply untouched for ~2 days.
+        task = _card(
+            status="in_progress",
+            last_activity="2026-07-10T12:00:00+00:00",
+        )
+        # Act
+        nudges = detect_stale_active([task], now=NOW)
+        # Assert
         assert [c.id for c in nudges["scitex-storage"]] == ["card-1"]
 
 
@@ -140,7 +184,30 @@ class TestSweepOutputIsIndependentOfTheDeadline:
             for owner, cards in nudges.items()
         }
 
-    def test_adding_a_deadline_changes_nothing(self):
+    def test_the_card_without_a_deadline_is_not_overdue(self):
+        # Arrange — the quiet card, no deadline.
+        without = _card(
+            status="in_progress",
+            last_activity="2026-07-10T12:00:00+00:00",
+        )
+        # Act
+        overdue = is_overdue(without, now=NOW)
+        # Assert — half the premise: the two cards DIFFER in overdue-ness.
+        assert overdue is False
+
+    def test_the_card_with_a_passed_deadline_is_overdue(self):
+        # Arrange — the same quiet card, plus a passed deadline.
+        with_deadline = _card(
+            status="in_progress",
+            last_activity="2026-07-10T12:00:00+00:00",
+            deadline=PAST_DEADLINE,
+        )
+        # Act
+        overdue = is_overdue(with_deadline, now=NOW)
+        # Assert — the other half of the premise.
+        assert overdue is True
+
+    def test_adding_a_deadline_changes_the_sweep_output_not_at_all(self):
         # Arrange — the same quiet card, with and without a passed deadline.
         without = _card(
             status="in_progress",
@@ -154,9 +221,7 @@ class TestSweepOutputIsIndependentOfTheDeadline:
         # Act
         a = detect_stale_active([without], now=NOW)
         b = detect_stale_active([with_deadline], now=NOW)
-        # Assert — identical output; only one of the two is even overdue.
-        assert is_overdue(without, now=NOW) is False
-        assert is_overdue(with_deadline, now=NOW) is True
+        # Assert — identical output, though only one of the two is overdue.
         assert self._shape(a) == self._shape(b)
 
 
@@ -166,8 +231,10 @@ class TestRecurringDeadlineIsNeverOverdue:
     un-notified, it never even reaches the `overdue=True` filter."""
 
     def test_next_occurrence_is_always_in_the_future(self):
-        # Arrange / Act — a weekly deadline seeded ~6 months before NOW.
-        nxt = next_deadline_for_task({"deadline": RECURRING_DEADLINE}, now=NOW)
+        # Arrange — a weekly deadline seeded ~6 months before NOW.
+        task = {"deadline": RECURRING_DEADLINE}
+        # Act
+        nxt = next_deadline_for_task(task, now=NOW)
         # Assert — rolled forward past today, not left in January.
         assert nxt > NOW.date().isoformat()
 
@@ -179,20 +246,46 @@ class TestRecurringDeadlineIsNeverOverdue:
             _utc(2026, 12, 31, 23, 0, 0),
             _utc(2027, 3, 3, 12, 0, 0),
         ]
-        for deadline in (RECURRING_DEADLINE, RECURRING_DEADLINE_CATCHUP):
-            for now in nows:
-                task = _card(
-                    status="in_progress",
-                    last_activity="2026-07-12T11:59:00+00:00",
-                    deadline=deadline,
-                )
-                # Act / Assert — never overdue, however long it is left.
-                assert is_overdue(task, now=now) is False, (
-                    f"{deadline!r} unexpectedly overdue at {now} — if the "
-                    "repeater no longer rolls forward, the docs saying a "
-                    "recurring deadline never reaches the overdue filter are "
-                    "now wrong and must be updated."
-                )
+        cases = [
+            (deadline, now)
+            for deadline in (RECURRING_DEADLINE, RECURRING_DEADLINE_CATCHUP)
+            for now in nows
+        ]
+        # Act — never overdue, however long it is left.
+        overdue_at = [
+            (
+                deadline,
+                now,
+                is_overdue(
+                    _card(
+                        status="in_progress",
+                        last_activity="2026-07-12T11:59:00+00:00",
+                        deadline=deadline,
+                    ),
+                    now=now,
+                ),
+            )
+            for deadline, now in cases
+        ]
+        # Assert
+        assert [flag for _d, _n, flag in overdue_at] == [False] * len(cases), (
+            f"unexpectedly overdue: {[(d, str(n)) for d, n, f in overdue_at if f]}"
+            " — if the repeater no longer rolls forward, the docs saying a "
+            "recurring deadline never reaches the overdue filter are now wrong "
+            "and must be updated."
+        )
+
+    def test_a_quiet_recurring_card_is_still_not_overdue(self):
+        # Arrange — recurring deadline, untouched for ~2 days.
+        task = _card(
+            status="in_progress",
+            last_activity="2026-07-10T12:00:00+00:00",
+            deadline=RECURRING_DEADLINE,
+        )
+        # Act
+        overdue = is_overdue(task, now=NOW)
+        # Assert — the premise: the nudge below cannot be coming from overdue-ness.
+        assert overdue is False
 
     def test_recurring_card_is_nudged_only_once_it_goes_quiet(self):
         # Arrange — recurring deadline, untouched for ~2 days.
@@ -205,7 +298,6 @@ class TestRecurringDeadlineIsNeverOverdue:
         nudges = detect_stale_active([task], now=NOW)
         # Assert — the nudge comes from the SILENCE, never from the repeater
         # (which is not overdue and never fires anything on its own).
-        assert is_overdue(task, now=NOW) is False
         assert [c.id for c in nudges["scitex-storage"]] == ["card-1"]
 
 

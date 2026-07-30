@@ -13,7 +13,6 @@ No mocks (STX-NM / PA-306). AAA pattern, one assertion per test.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -26,7 +25,6 @@ from scitex_cards._runnable import (
     runnable_tasks,
 )
 from scitex_cards._store import add_task
-
 
 # === Base filter (status + blocker) ========================================
 
@@ -242,75 +240,72 @@ def test_lower_priority_number_picked_first():
 # === CLI verb ==============================================================
 
 
-def test_cli_runnable_lists_runnable_tasks(tmp_path: Path):
+def test_cli_runnable_lists_runnable_tasks():
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
+    add_task(id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["runnable", "--tasks", str(store)],
+        ["runnable"],
     )
     # Assert — exit 0 (something runnable), one line of output.
     assert result.exit_code == 0
 
 
-def test_cli_runnable_json_emits_full_payload(tmp_path: Path):
+def test_cli_runnable_json_emits_full_payload():
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
+    add_task(id="t-a", title="x", group="paper-portfolio", assignee="agent:test-suite")
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["runnable", "--tasks", str(store), "--json"],
+        ["runnable", "--json"],
     )
     # Assert — JSON parses + has the expected keys.
     payload = json.loads(result.output)
     assert set(payload.keys()) == {"tasks", "candidate_count", "blocked_by_deps_count"}
 
 
-def test_cli_runnable_group_filter_narrows_results(tmp_path: Path):
+def test_cli_runnable_group_filter_narrows_results():
     # Arrange
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-paper", title="x", group="paper-portfolio", assignee="agent:test-suite")
-    add_task(store=store, id="t-ci", title="y", group="ci-recovery", assignee="agent:test-suite")
+    add_task(
+        id="t-paper", title="x", group="paper-portfolio", assignee="agent:test-suite"
+    )
+    add_task(id="t-ci", title="y", group="ci-recovery", assignee="agent:test-suite")
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["runnable", "--tasks", str(store), "--group", "paper-portfolio", "--json"],
+        ["runnable", "--group", "paper-portfolio", "--json"],
     )
     # Assert
     payload = json.loads(result.output)
     assert [t["id"] for t in payload["tasks"]] == ["t-paper"]
 
 
-def test_cli_runnable_exit_1_when_queue_empty(tmp_path: Path):
+def test_cli_runnable_exit_1_when_queue_empty():
     # Arrange — empty store.
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-done", title="x", status="done", assignee="agent:test-suite")
+    add_task(id="t-done", title="x", status="done", assignee="agent:test-suite")
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["runnable", "--tasks", str(store)],
+        ["runnable"],
     )
     # Assert — exit 1 lets shell scripts test "did the queue empty?"
     assert result.exit_code == 1
 
 
-def test_cli_runnable_mine_uses_env_agent(tmp_path: Path, env):
+def test_cli_runnable_mine_uses_env_agent(env):
     # Arrange — --mine reads $SCITEX_TODO_AGENT_ID.
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="t-a", title="x", agent="proj-scitex-todo")
+    add_task(id="t-a", title="x", agent="proj-scitex-todo")
     env.set("SCITEX_TODO_AGENT_ID", "proj-scitex-todo")
     runner = CliRunner()
     # Act
     result = runner.invoke(
         main,
-        ["runnable", "--tasks", str(store), "--mine", "--json"],
+        ["runnable", "--mine", "--json"],
     )
     # Assert
     payload = json.loads(result.output)

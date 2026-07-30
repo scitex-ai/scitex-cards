@@ -8,22 +8,21 @@ A dotfiles hook used to hand-roll these cards by shelling out to the generic
 silently. These two verbs own the card semantics in-package (the single
 source of truth) so the hook can become a thin trigger that calls one verb.
 
-  scitex-todo help-wait  <agent> [--question TEXT] [--host HOST] [--tasks PATH]
-  scitex-todo help-clear <agent> [--tasks PATH]
+  scitex-todo help-wait  <agent> [--question TEXT] [--host HOST]
+  scitex-todo help-clear <agent>
 
 The card contract (byte-for-byte what the old hook produced) lives in
 :mod:`scitex_cards._help_wait`; these verbs are thin click wrappers around it,
-resolving the store path through the usual ``--tasks`` precedence chain.
+writing to the ambient store.
 """
 
 from __future__ import annotations
 
 import click
 
-from ._compat import spec_command_kwargs
-
 from .. import _help_wait
-from ._write import _TASKS_OPTION, _emit
+from ._compat import spec_command_kwargs
+from ._write import _emit
 
 
 @click.command(
@@ -37,7 +36,7 @@ from ._write import _TASKS_OPTION, _emit
         ),
         examples=(
             (
-                "{prog} help-wait \"$SCITEX_TODO_AGENT_ID\" "
+                '{prog} help-wait "$SCITEX_TODO_AGENT_ID" '
                 "--question 'merge PR #240 or wait for CI?'",
                 "Raise (or refresh) the waiting card.",
             ),
@@ -56,13 +55,10 @@ from ._write import _TASKS_OPTION, _emit
     help="Where the agent is waiting (default: best-effort hostname).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the upserted card as JSON.")
-@_TASKS_OPTION
-def help_wait_cmd(agent, question, host, as_json, tasks_path) -> None:
+def help_wait_cmd(agent, question, host, as_json) -> None:
     """UPSERT the help-<agent>-waiting card (status=blocked / operator-decision)."""
     try:
-        card = _help_wait.help_wait(
-            tasks_path, agent, question=question, host=host
-        )
+        card = _help_wait.help_wait(None, agent, question=question, host=host)
     except ValueError as exc:
         raise click.UsageError(str(exc)) from None
     _emit(
@@ -77,16 +73,17 @@ def help_wait_cmd(agent, question, host, as_json, tasks_path) -> None:
     **spec_command_kwargs(
         summary="Resolve the help-<agent>-waiting card (status=done + clear blocker).",
         description="No-op (exit 0) if the card does not exist.",
-        examples=(("{prog} help-clear \"$SCITEX_TODO_AGENT_ID\"", "Clear the waiting card."),),
+        examples=(
+            ('{prog} help-clear "$SCITEX_TODO_AGENT_ID"', "Clear the waiting card."),
+        ),
     ),
 )
 @click.argument("agent")
 @click.option("--json", "as_json", is_flag=True, help="Emit the clear payload as JSON.")
-@_TASKS_OPTION
-def help_clear_cmd(agent, as_json, tasks_path) -> None:
+def help_clear_cmd(agent, as_json) -> None:
     """Resolve the help-<agent>-waiting card; no-op when absent."""
     try:
-        payload = _help_wait.help_clear(tasks_path, agent)
+        payload = _help_wait.help_clear(None, agent)
     except ValueError as exc:
         raise click.UsageError(str(exc)) from None
     if payload["cleared"]:

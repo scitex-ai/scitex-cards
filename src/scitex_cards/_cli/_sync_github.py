@@ -28,22 +28,27 @@ from datetime import datetime, timezone
 
 import click
 
-from ._compat import spec_command_kwargs
-
 from .._model import load_tasks
 from .._paths import resolve_tasks_path
+from ._compat import spec_command_kwargs
 
 
 def _gh_merged_prs(since: str) -> list[dict]:
     """Fetch ``ywatanabe1989/*`` PRs merged in the ``--since`` window."""
     proc = subprocess.run(
         [
-            "gh", "search", "prs",
-            "--owner", "ywatanabe1989",
+            "gh",
+            "search",
+            "prs",
+            "--owner",
+            "ywatanabe1989",
             "--merged",
-            "--merged-at", f"{since}..*",
-            "--limit", "300",
-            "--json", "number,title,repository,author",
+            "--merged-at",
+            f"{since}..*",
+            "--limit",
+            "300",
+            "--json",
+            "number,title,repository,author",
         ],
         capture_output=True,
         text=True,
@@ -55,7 +60,7 @@ def _gh_merged_prs(since: str) -> list[dict]:
 
 def _project_for_repo(repo: str) -> str:
     """Map a GitHub repo name → board ``project`` field. The default is
-    the repo name verbatim (matches the existing tasks.yaml convention)."""
+    the repo name verbatim (matches the store's existing convention)."""
     # neurovista repo → paper-neurovista project (operator's title-prefix
     # convention puts "paper-" on cohort papers).
     overrides = {"neurovista": "paper-neurovista"}
@@ -111,15 +116,7 @@ def _is_ci_speedup(title: str) -> bool:
         "scripted / cron invocations (stdin not a TTY → auto-yes)."
     ),
 )
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: project -> user -> bundled example).",
-)
-def sync_github_cmd(
-    since: str | None, dry_run: bool, assume_yes: bool, tasks_path: str | None
-) -> None:
+def sync_github_cmd(since: str | None, dry_run: bool, assume_yes: bool) -> None:
     """Permanent GitHub→board sync.
 
     Pulls merged PRs across ``ywatanabe1989/*`` since the given date
@@ -154,7 +151,7 @@ def sync_github_cmd(
             "sync-github mutates the store. Pass --yes / -y to confirm, "
             "or --dry-run to preview the planned actions."
         )
-    path = resolve_tasks_path(tasks_path)
+    path = resolve_tasks_path(None)
     tasks = load_tasks(path)
     by_pr_url = {t["pr_url"]: t for t in tasks if t.get("pr_url")}
 
@@ -174,7 +171,9 @@ def sync_github_cmd(
             f"- {p['repository']['name']}#{p['number']}: {p['title']}"
             for p in ci_speedup
         )
-        title = f"CI-speedup wave (L1-L5) across {len(repos)} repos — merged {target_since}"
+        title = (
+            f"CI-speedup wave (L1-L5) across {len(repos)} repos — merged {target_since}"
+        )
         if bundle_id not in {t.get("id") for t in tasks}:
             click.echo(f"+ NEW  {bundle_id}  ({len(ci_speedup)} PRs)")
             actions_planned += 1
@@ -194,9 +193,11 @@ def sync_github_cmd(
                     # blank/"unknown"). This sync verb is a housekeeping
                     # importer, so it stamps itself as the creator.
                     created_by="sync-github",
-                    note=("Consolidated record of the scitex-dev L1-L5 "
-                          "CI-speedup template apply wave merged "
-                          f"{target_since}. Individual PRs:\n{links}"),
+                    note=(
+                        "Consolidated record of the scitex-dev L1-L5 "
+                        "CI-speedup template apply wave merged "
+                        f"{target_since}. Individual PRs:\n{links}"
+                    ),
                 )
 
     # --- (2) Other PRs: match-or-create -----------------------------------

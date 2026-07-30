@@ -40,31 +40,49 @@ def _resolve(card, cfg):
 
 
 def test_active_card_sets_the_clock():
+    # Arrange
     cards = [_Card("active")]
+    # Act
     got = resolve_owner_interval(
-        cards, backlog_ids=set(), by_id={"active": {}}, cfg={},
+        cards,
+        backlog_ids=set(),
+        by_id={"active": {}},
+        cfg={},
         resolve_interval_minutes=_resolve,
     )
+    # Assert
     assert got == DEFAULT_INTERVAL_MINUTES
 
 
 def test_backlog_only_owner_rides_the_lenient_clock():
     """THE BUG: this owner used to be nagged every 5 minutes."""
+    # Arrange
     cards = [_Card("parked")]
+    # Act
     got = resolve_owner_interval(
-        cards, backlog_ids={"parked"}, by_id={"parked": {}}, cfg={},
+        cards,
+        backlog_ids={"parked"},
+        by_id={"parked": {}},
+        cfg={},
         resolve_interval_minutes=_resolve,
     )
+    # Assert
     assert got == DEFAULT_BACKLOG_INTERVAL_MINUTES
 
 
 def test_backlog_only_clock_is_much_slower_than_the_active_one():
-    assert DEFAULT_BACKLOG_INTERVAL_MINUTES > DEFAULT_INTERVAL_MINUTES * 100
+    # Arrange
+    much_slower = DEFAULT_INTERVAL_MINUTES * 100
+    # Act
+    backlog_clock = DEFAULT_BACKLOG_INTERVAL_MINUTES
+    # Assert
+    assert backlog_clock > much_slower
 
 
 def test_a_parked_card_cannot_pull_the_digest_faster():
     """One active card + 86 parked ones -> the active card's clock, not a
     tighter one borrowed from the pile."""
+    # Arrange
     cards = [_Card("active")] + [_Card("p%d" % i) for i in range(86)]
     parked = {"p%d" % i for i in range(86)}
     by_id = {"active": {}}
@@ -72,38 +90,64 @@ def test_a_parked_card_cannot_pull_the_digest_faster():
     # min()-across-both-sets it would have won and set a 1-minute clock.
     for p in parked:
         by_id[p] = {"reminder_interval_minutes": 1}
+    # Act
     got = resolve_owner_interval(
-        cards, backlog_ids=parked, by_id=by_id, cfg={},
+        cards,
+        backlog_ids=parked,
+        by_id=by_id,
+        cfg={},
         resolve_interval_minutes=_resolve,
     )
+    # Assert
     assert got == DEFAULT_INTERVAL_MINUTES
 
 
 def test_an_urgent_active_card_still_pulls_the_clock_tighter():
     """The feature is preserved: an ACTIVE card may still ask for a fast nag."""
+    # Arrange
     cards = [_Card("urgent"), _Card("normal")]
     by_id = {"urgent": {"reminder_interval_minutes": 2}, "normal": {}}
+    # Act
     got = resolve_owner_interval(
-        cards, backlog_ids=set(), by_id=by_id, cfg={},
+        cards,
+        backlog_ids=set(),
+        by_id=by_id,
+        cfg={},
         resolve_interval_minutes=_resolve,
     )
+    # Assert
     assert got == 2
 
 
 def test_forced_interval_wins_outright():
+    # Arrange
     cards = [_Card("parked")]
+    # Act
     got = resolve_owner_interval(
-        cards, backlog_ids={"parked"}, by_id={"parked": {}}, cfg={},
-        resolve_interval_minutes=_resolve, forced=7.0,
+        cards,
+        backlog_ids={"parked"},
+        by_id={"parked": {}},
+        cfg={},
+        resolve_interval_minutes=_resolve,
+        forced=7.0,
     )
+    # Assert
     assert got == 7.0
 
 
 def test_config_can_override_the_backlog_clock():
-    assert backlog_interval_minutes({"backlog_interval_minutes": 90}) == 90
+    # Arrange
+    cfg = {"backlog_interval_minutes": 90}
+    # Act
+    got = backlog_interval_minutes(cfg)
+    # Assert
+    assert got == 90
 
 
 def test_bad_config_falls_back_to_the_default():
-    assert backlog_interval_minutes({"backlog_interval_minutes": "nonsense"}) == (
-        DEFAULT_BACKLOG_INTERVAL_MINUTES
-    )
+    # Arrange
+    cfg = {"backlog_interval_minutes": "nonsense"}
+    # Act
+    got = backlog_interval_minutes(cfg)
+    # Assert
+    assert got == DEFAULT_BACKLOG_INTERVAL_MINUTES

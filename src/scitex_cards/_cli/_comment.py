@@ -12,17 +12,15 @@ mutation verbs in ``_write.py`` (``add`` / ``update`` / ``done``):
   * ``--json`` emits the structured ``{task_id, comment}`` payload
   * ``--dry-run`` prints the intended mutation and exits 0
   * ``-y`` / ``--yes`` accepted as a §2 forward-compat no-op
-  * ``--tasks`` honors the standard store-resolution precedence
 """
 
 from __future__ import annotations
 
 import click
 
-from ._compat import spec_command_kwargs
-
 from .. import _store
-from ._write import _TASKS_OPTION, _emit
+from ._compat import spec_command_kwargs
+from ._write import _emit
 
 
 @click.command(
@@ -37,7 +35,7 @@ from ._write import _TASKS_OPTION, _emit
         examples=(
             (
                 "{prog} comment my-task 'investigating crash' "
-                "--author \"$SCITEX_TODO_AGENT_ID\"",
+                '--author "$SCITEX_TODO_AGENT_ID"',
                 "Append a comment as a specific author.",
             ),
         ),
@@ -50,7 +48,9 @@ from ._write import _TASKS_OPTION, _emit
     default=None,
     help="Override comment author (default: $SCITEX_TODO_AGENT_ID, then $USER).",
 )
-@click.option("--json", "as_json", is_flag=True, help="Emit the comment payload as JSON.")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit the comment payload as JSON."
+)
 @click.option(
     "--dry-run",
     is_flag=True,
@@ -62,8 +62,7 @@ from ._write import _TASKS_OPTION, _emit
     is_flag=True,
     help="Skip confirmation (no-op today — comment is non-interactive; reserved for §2).",
 )
-@_TASKS_OPTION
-def comment_cmd(task_id, text, author, as_json, dry_run, yes, tasks_path) -> None:
+def comment_cmd(task_id, text, author, as_json, dry_run, yes) -> None:
     """Append a comment to ``task.comments[]`` via ``_store.comment_task``."""
     _ = yes  # accepted for §2 compliance
     if dry_run:
@@ -73,7 +72,7 @@ def comment_cmd(task_id, text, author, as_json, dry_run, yes, tasks_path) -> Non
         )
         return
     try:
-        payload = _store.comment_task(tasks_path, task_id, text, by=author)
+        payload = _store.comment_task(None, task_id, text, by=author)
     except _store.TaskNotFoundError as exc:
         raise click.ClickException(str(exc)) from None
     except (_store.TaskValidationError, ValueError) as exc:

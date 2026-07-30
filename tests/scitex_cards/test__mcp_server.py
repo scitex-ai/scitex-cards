@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import os
 
 import pytest
 
@@ -109,11 +110,21 @@ _CONVENTION_A_NAMES = {
     # Standalone pull-inbox read path — 1:1 with `_inbox.poll_inbox`
     # (registered in `_mcp_skills`). PULL card-message delivery, no sac.
     "poll_notifications",
+    # ...and the CONFIRM half — 1:1 with
+    # `_inbox_confirm.confirm_notifications`. Reading hands over; only this
+    # advances the cursor (lossless-delivery split, incident 2026-07-29).
+    "ack_notifications",
     # Operator↔agent direct messages — 1:1 with `_threads.append_message` /
     # `_threads.get_thread` (registered in `_mcp_skills`; scitex-dev DM
     # convention v1, threads.yaml sidecar).
     "dm_send",
     "dm_list",
+    # ...and the FILE half of the same surface — `_attachments.store_local_file`
+    # composed with `dm_send`. Text-only DMs meant a real deliverable reached
+    # the operator as prose describing a deliverable; this is the entry point
+    # that was missing, and it is deliberately NOT a BACKEND_VERBS member
+    # (a path-taking verb there would be dispatchable over HTTP).
+    "dm_send_document",
 }
 # Convention B — `todo_<verb>_<noun>` for the audit §5 required skills
 # tools. These don't map 1:1 to a Python API; they introspect the bundled
@@ -204,7 +215,6 @@ def test_add_returns_id(tmp_path):
             title="A",
             scope="agent:test",
             assignee="agent:test",
-            tasks_path=store,
         )
     )
     # Assert
@@ -225,7 +235,6 @@ def test_add_task_stores_created_by(tmp_path):
             title="A",
             assignee="agent:explicit",
             created_by="agent:explicit",
-            tasks_path=store,
         )
     )
     # Assert
@@ -239,9 +248,7 @@ def test_add_task_defaults_created_by_from_env(tmp_path, env):
     store = str(tmp_path / "tasks.yaml")
     env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
     # Act
-    add = asyncio.run(
-        _call_tool(add_task, id="a", title="A", assignee="agent:x", tasks_path=store)
-    )
+    add = asyncio.run(_call_tool(add_task, id="a", title="A", assignee="agent:x"))
     # Assert
     assert json.loads(add)["created_by"] == "agent:fromenv"
 
@@ -258,11 +265,10 @@ def test_add_then_list_round_trip(tmp_path):
             title="A",
             scope="agent:test",
             assignee="agent:test",
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, tasks_path=store))
+    listed = asyncio.run(_call_tool(list_tasks))
     rows = json.loads(listed)
     # Assert
     assert {r["id"] for r in rows} == {"a"}
@@ -273,22 +279,17 @@ def test_scope_filter_excludes_other_scope(tmp_path):
     from scitex_cards._mcp_server import add_task, list_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(
-        _call_tool(add_task, id="a", title="A", scope="agent:lead", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A", scope="agent:lead"))
     asyncio.run(
         _call_tool(
             add_task,
             id="b",
             title="B",
             scope="agent:proj-scitex-todo",
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(
-        _call_tool(list_tasks, scope="agent:proj-scitex-todo", tasks_path=store)
-    )
+    listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-todo"))
     # Assert
     assert {r["id"] for r in json.loads(listed)} == {"b"}
 
@@ -298,16 +299,10 @@ def test_list_tasks_filter_by_agent(tmp_path):
     from scitex_cards._mcp_server import add_task, list_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(
-        _call_tool(add_task, id="a", title="A", agent="proj-x", tasks_path=store)
-    )
-    asyncio.run(
-        _call_tool(add_task, id="b", title="B", agent="proj-y", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A", agent="proj-x"))
+    asyncio.run(_call_tool(add_task, id="b", title="B", agent="proj-y"))
     # Act
-    listed = asyncio.run(
-        _call_tool(list_tasks, scope="", agent="proj-x", tasks_path=store)
-    )
+    listed = asyncio.run(_call_tool(list_tasks, scope="", agent="proj-x"))
     # Assert
     assert {r["id"] for r in json.loads(listed)} == {"a"}
 
@@ -317,7 +312,7 @@ def test_list_tasks_filter_blocking_me(tmp_path):
     from scitex_cards._mcp_server import add_task, list_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     asyncio.run(
         _call_tool(
             add_task,
@@ -325,13 +320,10 @@ def test_list_tasks_filter_blocking_me(tmp_path):
             title="B",
             status="blocked",
             blocker="operator-decision",
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(
-        _call_tool(list_tasks, scope="", blocking_me=True, tasks_path=store)
-    )
+    listed = asyncio.run(_call_tool(list_tasks, scope="", blocking_me=True))
     # Assert
     assert {r["id"] for r in json.loads(listed)} == {"b"}
 
@@ -351,7 +343,6 @@ def test_list_tasks_filter_overdue(tmp_path):
             id="late",
             title="Late",
             deadline="2000-01-01",
-            tasks_path=store,
         )
     )
     asyncio.run(
@@ -360,7 +351,6 @@ def test_list_tasks_filter_overdue(tmp_path):
             id="future",
             title="Future",
             deadline="2099-01-01",
-            tasks_path=store,
         )
     )
     asyncio.run(
@@ -369,7 +359,6 @@ def test_list_tasks_filter_overdue(tmp_path):
             id="done-past",
             title="Done-Past",
             deadline="2000-01-01",
-            tasks_path=store,
         )
     )
     asyncio.run(
@@ -377,7 +366,6 @@ def test_list_tasks_filter_overdue(tmp_path):
             update_task,
             task_id="done-past",
             status="done",
-            tasks_path=store,
         )
     )
     # Act
@@ -386,7 +374,6 @@ def test_list_tasks_filter_overdue(tmp_path):
             list_tasks,
             scope="",
             overdue=True,
-            tasks_path=store,
         )
     )
     # Assert
@@ -408,11 +395,10 @@ def test_add_task_with_deadline_sets_deadline_field(tmp_path):
             title="A",
             assignee="agent:x",
             deadline="2030-01-01",
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, scope="", tasks_path=store))
+    listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
     rows = json.loads(listed)
     assert rows[0]["deadline"] == "2030-01-01"
@@ -425,19 +411,16 @@ def test_update_task_with_deadline_sets_deadline_field(tmp_path):
     from scitex_cards._mcp_server import add_task, list_tasks, update_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(
-        _call_tool(add_task, id="a", title="A", assignee="agent:x", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A", assignee="agent:x"))
     asyncio.run(
         _call_tool(
             update_task,
             task_id="a",
             deadline="2030-06-15",
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, scope="", tasks_path=store))
+    listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
     rows = json.loads(listed)
     assert rows[0]["deadline"] == "2030-06-15"
@@ -456,11 +439,10 @@ def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
             title="A",
             assignee="agent:x",
             deadlines=["2030-01-01", "2030-07-01"],
-            tasks_path=store,
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, scope="", tasks_path=store))
+    listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
     rows = json.loads(listed)
     assert rows[0]["deadlines"] == ["2030-01-01", "2030-07-01"]
@@ -475,11 +457,9 @@ def test_complete_sets_status_done(tmp_path, env):
     )
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
-    out = json.loads(
-        asyncio.run(_call_tool(complete_task, task_id="a", tasks_path=store))
-    )
+    out = json.loads(asyncio.run(_call_tool(complete_task, task_id="a")))
     # Assert
     assert out["status"] == "done"
 
@@ -493,11 +473,9 @@ def test_complete_stamps_completed_by(tmp_path, env):
     )
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
-    out = json.loads(
-        asyncio.run(_call_tool(complete_task, task_id="a", tasks_path=store))
-    )
+    out = json.loads(asyncio.run(_call_tool(complete_task, task_id="a")))
     # Assert
     assert out["_log_meta"]["completed_by"] == "agent:mcp-test"
 
@@ -511,11 +489,9 @@ def test_complete_stamps_completed_at_z_suffix(tmp_path, env):
     )
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
-    out = json.loads(
-        asyncio.run(_call_tool(complete_task, task_id="a", tasks_path=store))
-    )
+    out = json.loads(asyncio.run(_call_tool(complete_task, task_id="a")))
     # Assert
     assert out["_log_meta"]["completed_at"].endswith("Z")
 
@@ -533,7 +509,6 @@ def test_add_task_accepts_agent_field(tmp_path):
                 id="a",
                 title="A",
                 agent="proj-scitex-todo",
-                tasks_path=store,
             )
         )
     )
@@ -555,7 +530,6 @@ def test_add_task_accepts_kind_compute(tmp_path):
                 title="A",
                 kind="compute",
                 job_id="123",
-                tasks_path=store,
             )
         )
     )
@@ -568,7 +542,7 @@ def test_update_task_sets_agent(tmp_path):
     from scitex_cards._mcp_server import add_task, update_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
     out = json.loads(
         asyncio.run(
@@ -576,7 +550,6 @@ def test_update_task_sets_agent(tmp_path):
                 update_task,
                 task_id="a",
                 agent="proj-scitex-todo",
-                tasks_path=store,
             )
         )
     )
@@ -589,7 +562,7 @@ def test_update_sets_status(tmp_path):
     from scitex_cards._mcp_server import add_task, update_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
     out = json.loads(
         asyncio.run(
@@ -598,7 +571,6 @@ def test_update_sets_status(tmp_path):
                 task_id="a",
                 status="in_progress",
                 scope="agent:lead",
-                tasks_path=store,
             )
         )
     )
@@ -611,7 +583,7 @@ def test_update_sets_scope(tmp_path):
     from scitex_cards._mcp_server import add_task, update_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
     out = json.loads(
         asyncio.run(
@@ -620,7 +592,6 @@ def test_update_sets_scope(tmp_path):
                 task_id="a",
                 status="in_progress",
                 scope="agent:lead",
-                tasks_path=store,
             )
         )
     )
@@ -633,12 +604,10 @@ def test_summary_returns_total(tmp_path):
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
-    asyncio.run(
-        _call_tool(add_task, id="b", title="B", status="done", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
+    asyncio.run(_call_tool(add_task, id="b", title="B", status="done"))
     # Act
-    info = json.loads(asyncio.run(_call_tool(summarize_tasks, tasks_path=store)))
+    info = json.loads(asyncio.run(_call_tool(summarize_tasks)))
     # Assert
     assert info["total"] == 2
 
@@ -648,12 +617,10 @@ def test_summary_returns_done_count(tmp_path):
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
-    asyncio.run(
-        _call_tool(add_task, id="b", title="B", status="done", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
+    asyncio.run(_call_tool(add_task, id="b", title="B", status="done"))
     # Act
-    info = json.loads(asyncio.run(_call_tool(summarize_tasks, tasks_path=store)))
+    info = json.loads(asyncio.run(_call_tool(summarize_tasks)))
     # Assert
     assert info["by_status"]["done"] == 1
 
@@ -663,34 +630,33 @@ def test_summary_returns_deferred_count(tmp_path):
     from scitex_cards._mcp_server import add_task, summarize_tasks
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
-    asyncio.run(
-        _call_tool(add_task, id="b", title="B", status="done", tasks_path=store)
-    )
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
+    asyncio.run(_call_tool(add_task, id="b", title="B", status="done"))
     # Act
-    info = json.loads(asyncio.run(_call_tool(summarize_tasks, tasks_path=store)))
+    info = json.loads(asyncio.run(_call_tool(summarize_tasks)))
     # Assert
     assert info["by_status"]["deferred"] == 1
 
 
 def test_where_returns_resolved_path(tmp_path):
-    # Arrange
+    # Arrange — the store identity is the database path ($SCITEX_CARDS_DB).
     from scitex_cards._mcp_server import resolve_store
 
-    store = str(tmp_path / "tasks.yaml")
+    store = os.environ["SCITEX_CARDS_DB"]
     # Act
-    info = json.loads(asyncio.run(_call_tool(resolve_store, tasks_path=store)))
+    info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert
     assert info["resolved"] == store
 
 
-def test_where_returns_exists_false_when_absent(tmp_path):
-    # Arrange
+def test_where_returns_exists_false_when_absent(tmp_path, env):
+    # Arrange — point the store identity at a database that does not exist.
     from scitex_cards._mcp_server import resolve_store
 
-    store = str(tmp_path / "tasks.yaml")
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent.db"))
+    env.set("SCITEX_TODO_DB", str(tmp_path / "absent.db"))
     # Act
-    info = json.loads(asyncio.run(_call_tool(resolve_store, tasks_path=store)))
+    info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert
     assert info["exists"] is False
 
@@ -766,61 +732,94 @@ def test_get_task_roundtrip_through_to_thread(tmp_path):
     from scitex_cards._mcp_server import add_task, get_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(_call_tool(add_task, id="a", title="A", tasks_path=store))
+    asyncio.run(_call_tool(add_task, id="a", title="A"))
     # Act
-    out = json.loads(asyncio.run(_call_tool(get_task, task_id="a", tasks_path=store)))
+    out = json.loads(asyncio.run(_call_tool(get_task, task_id="a")))
     # Assert
     assert out["id"] == "a"
 
 
-def test_reassign_task_roundtrip_through_to_thread(tmp_path):
-    # Covers the _mcp_skills offload path (reassign_task → _store.reassign_task).
-    # Arrange
+#: WHY the three `reassign_..._through_to_thread` tests below are split but
+#: share this rationale: they cover the _mcp_skills offload path
+#: (reassign_task → _store.reassign_task). `reassign_task` returns
+#: {task_id, from_owner, to_owner, actor, changed, task}, and the offload is
+#: only proven correct if ALL THREE parts survive the to_thread hop — the
+#: REPORTED new owner, the `changed` flag, and the card the store actually
+#: WROTE. A stale-but-plausible report with an unmutated card is exactly the
+#: failure mode a single first-assert would hide.
+@pytest.fixture()
+def reassigned_through_to_thread(tmp_path):
+    """Run the offloaded `reassign_task` once; the three tests below read it."""
     from scitex_cards._mcp_server import add_task
     from scitex_cards._mcp_skills import reassign_task
 
     store = str(tmp_path / "tasks.yaml")
-    asyncio.run(
-        _call_tool(add_task, id="a", title="A", agent="proj-x", tasks_path=store)
-    )
-    # Act
-    out = json.loads(
+    asyncio.run(_call_tool(add_task, id="a", title="A", agent="proj-x"))
+    return json.loads(
         asyncio.run(
             _call_tool(
                 reassign_task,
                 task_id="a",
                 new_owner="proj-y",
                 by="agent:test",
-                tasks_path=store,
             )
         )
     )
-    # Assert — reassign returns {task_id, from_owner, to_owner, actor,
-    # changed, task}; the offloaded call still mutated the owner.
-    assert out["to_owner"] == "proj-y"
-    assert out["changed"] is True
-    assert out["task"]["agent"] == "proj-y"
 
 
-def test_handler_does_not_block_event_loop(tmp_path, monkeypatch):
-    """A slow SYNC store call inside a handler must NOT freeze the loop.
-
-    Regression for Fix A. We monkeypatch `_store.get_task` with a variant
-    that sleeps 0.3 s (standing in for the flock-guarded multi-MB load),
-    then run the `get_task` handler concurrently with a 10 ms-cadence
-    ticker coroutine. If the blocking call ran ON the loop thread the
-    ticker would be frozen (≈0 ticks); because Fix A offloads it to a
-    worker thread, the ticker keeps advancing while the store op is
-    in-flight.
-    """
+def test_reassign_through_to_thread_reports_the_new_owner(
+    reassigned_through_to_thread,
+):
     # Arrange
+    expected_owner = "proj-y"
+    # Act
+    out = reassigned_through_to_thread
+    # Assert
+    assert out["to_owner"] == expected_owner
+
+
+def test_reassign_through_to_thread_reports_the_card_changed(
+    reassigned_through_to_thread,
+):
+    # Arrange
+    expected_changed = True
+    # Act
+    out = reassigned_through_to_thread
+    # Assert
+    assert out["changed"] is expected_changed
+
+
+def test_reassign_through_to_thread_actually_mutated_the_owner(
+    reassigned_through_to_thread,
+):
+    # Arrange
+    expected_owner = "proj-y"
+    # Act
+    out = reassigned_through_to_thread
+    # Assert — the returned card, not just the summary, carries the new owner.
+    assert out["task"]["agent"] == expected_owner
+
+
+#: WHY the two `slow_handler` tests below are split but share this rationale:
+#: Regression for Fix A. A slow SYNC store call inside a handler must NOT
+#: freeze the loop. The fixture replaces `_store.get_task` with a variant that
+#: sleeps 0.3 s (standing in for the flock-guarded multi-MB load), then runs
+#: the `get_task` handler concurrently with a 10 ms-cadence ticker coroutine.
+#: If the blocking call ran ON the loop thread the ticker would be frozen
+#: (≈0 ticks); because Fix A offloads it to a worker thread, the ticker keeps
+#: advancing while the store op is in-flight. BOTH halves matter and neither
+#: may hide behind the other: an offload that keeps the loop live but returns
+#: the wrong card is not a fix, and a correct card fetched by freezing the
+#: loop is the bug itself.
+@pytest.fixture()
+def slow_store_handler_run(tmp_path, monkeypatch):
+    """Drive the `get_task` handler over a 0.3 s store call; return (result, ticks)."""
     import time
 
     from scitex_cards import _store
     from scitex_cards._mcp_server import get_task
 
-    store = str(tmp_path / "tasks.yaml")
-    _store.add_task(store, id="a", title="A", assignee="agent:test")
+    _store.add_task(None, id="a", title="A", assignee="agent:test")
 
     real_get_task = _store.get_task
 
@@ -840,14 +839,28 @@ def test_handler_does_not_block_event_loop(tmp_path, monkeypatch):
                 ticks += 1
 
         fn = getattr(get_task, "fn", None) or get_task
-        handler = asyncio.ensure_future(fn(task_id="a", tasks_path=store))
+        handler = asyncio.ensure_future(fn(task_id="a"))
         ticker = asyncio.ensure_future(_ticker())
         result = await handler
         ticker.cancel()
         return result, ticks
 
+    return asyncio.run(_drive())
+
+
+def test_slow_handler_still_returns_the_correct_task(slow_store_handler_run):
+    # Arrange
+    expected_id = "a"
     # Act
-    result, ticks = asyncio.run(_drive())
-    # Assert — correct result AND the loop stayed live during the 0.3 s call.
-    assert json.loads(result)["id"] == "a"
-    assert ticks >= 5, f"event loop appeared blocked (only {ticks} ticks)"
+    result, _ticks = slow_store_handler_run
+    # Assert
+    assert json.loads(result)["id"] == expected_id
+
+
+def test_slow_handler_does_not_block_the_event_loop(slow_store_handler_run):
+    # Arrange
+    minimum_ticks = 5
+    # Act
+    _result, ticks = slow_store_handler_run
+    # Assert — the loop stayed live during the 0.3 s store call.
+    assert ticks >= minimum_ticks, f"event loop appeared blocked (only {ticks} ticks)"

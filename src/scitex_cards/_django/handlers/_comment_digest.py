@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Derived scalars that stand in for a card's full ``comments[]``.
+
+WHY THIS EXISTS — measured, twice, a fortnight apart:
+
+    2026-07-17  1,837 cards   /graph ~6 MB     comments[] 4,409,085 B
+    2026-07-30  2,854 cards   /graph 19.8 MB   1.0-2.6 s per request
+
+The board polls ``/graph``, and every poll ships every comment of every
+card. The payload grows with the store, so this gets worse on its own. The
+operator reports it as the DM page stuttering and other browser tabs
+slowing — and it is not only their browser: gzip on a payload this size
+costs ~1.7 s of SERVER time per request (measured plain 0.67-1.18 s vs
+gzip 2.45-2.81 s), and on a single worker that blocks concurrent requests.
+
+These four scalars replace ``comments[]`` for every LIST surface. Measured
+2026-07-17: 4,409,085 B of comments become 445,184 B of scalars, a 89.9%
+cut of that portion. The full thread stays available from the existing
+``/chat/<card_id>`` endpoint, which already preserves each comment's
+``kind`` so the route-trace timeline keeps working.
+
+THE NAME ``text_preview`` IS LOAD-BEARING, not decoration. It is a
+TRUNCATED copy. If a caller ever posts it back as the comment body it
+silently destroys the tail of that comment. The field is named so that
+writing such code reads wrong. The same class of bug already exists one
+field over: ``board_v3.html`` prefills the note textarea from the payload
+and posts it back unconditionally, so dropping ``note`` from the payload
+WIPES notes on Save — which is why ``note`` is deliberately NOT part of
+this change.
+"""
+
+from __future__ import annotations
+
+#: Characters of the last comment kept for the list view. Mirrored by the
+#: client helper; changing one without the other makes the client
+#: re-truncate (harmless) or render a stale budget (not).
+PREVIEW_CHARS = 160
+
+# ``first_comment_ts`` IS POSITIONAL — ``items[0].ts``, the thread opener,
+# so it and ``first_comment_author`` describe the SAME comment. That is a
+# deliberate choice and it is not the same question as "the earliest
+# timestamp", so the difference is written down here rather than assumed.
+#
+# board_v3's recentSort.js:62 ``earliestCommentTs`` scans EVERY comment for
+# ``min(ts)`` and skips unparseable ones, because it answers "when did this
+# task first show activity" for legacy rows with no ``created_at``. Swapping
+# that scan for this scalar is only correct while the two agree.
+#
+# MEASURED 2026-07-30 against the live store, 1,766 cards with comments:
+#     positional != earliest : 0
+#     missing/empty ts       : 0
+# So they agree today, and the migration is safe today.
+#
+# RE-CHECK THIS IF the store ever gains out-of-order comment timestamps —
+# a backfill, an import, or a clock-skewed writer would all do it. The
+# comment thread is append-only, which is why the two agree now; nothing
+# ENFORCES that ``ts`` ascends. If they ever diverge, recentSort silently
+# starts sorting by a different key than before, with no error.
+
+
+def _truncate(text: str, limit: int = PREVIEW_CHARS) -> str:
+    """First ``limit`` characters of ``text``. No ellipsis.
+
+    Deliberately not adding an ellipsis: the client re-truncates to the
+    same budget, and an ellipsis would then be counted as content and
+    truncated again, drifting the boundary by one character per hop.
+    """
+    return text[:limit]
+
+
+def rescore_history(task: dict) -> list[dict]:
+    """The rescore events the Matrix view needs, and nothing else.
+
+    THIS IS THE ONE CONSUMER THAT NEEDS COMMENT *CONTENT*, not a summary,
+    and it is why the four scalars alone cannot finish the payload
+    reduction. ``board_v3/14-matrix.js:198`` walks every comment on every
+    card looking for ``kind == "rescore"`` and reads
+    ``rescore.urgency[0]`` / ``rescore.importance[0]`` — the OLD half of
+    each ``[old, new]`` pair — to draw quadrant transitions over time.
+    Drop ``comments[]`` without replacing that and the Matrix silently
+    renders "now" only, with no error anywhere.
+
+    It is cheap to serve directly. Measured against the live store, 2,864
+    cards: 30 rescore events on 30 cards, **9,307 bytes** against
+    ``comments[]``'s 8,493,993 — **0.11%**. Rescores are operator
+    matrix-drags, not routine writes, so this stays small as the board
+    grows.
+
+    Order is preserved deliberately: the view assigns an insertion index
+    as its stable tiebreak for events sharing a timestamp, so re-sorting
+    here would change which transition wins a tie.
+
+    Returns ``[]`` rather than ``None`` for a card with no rescores, so
+    the client can iterate without a null check.
+    """
+    raw = task.get("comments")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for c in raw:
+        if not isinstance(c, dict) or c.get("kind") != "rescore":
+            continue
+        rs = c.get("rescore")
+        if not isinstance(rs, dict):
+            continue
+        out.append({"ts": c.get("ts"), "rescore": rs})
+    return out
+
+
+def comment_scalars(task: dict) -> dict:
+    """The four list-view scalars derived from ``task['comments']``.
+
+    Returns the same keys whatever the input, so a caller never has to
+    branch on "did this card have comments" — a card with none reports
+    ``comment_count: 0`` and ``last_comment: None`` rather than omitting
+    the fields. Absent keys are how a consumer silently reads ``undefined``
+    and renders nothing while looking like it worked.
+
+    Tolerates a malformed store: a non-list ``comments`` and non-dict
+    entries are treated as absent rather than raising, because ``/graph``
+    renders the whole board and one bad row must not blank the page.
+    """
+    raw = task.get("comments")
+    items = [c for c in raw if isinstance(c, dict)] if isinstance(raw, list) else []
+
+    if not items:
+        return {
+            "comment_count": 0,
+            "last_comment": None,
+            "first_comment_ts": None,
+            "first_comment_author": None,
+        }
+
+    first, last = items[0], items[-1]
+    return {
+        "comment_count": len(items),
+        "last_comment": {
+            "author": last.get("author"),
+            # NOT the comment body. See the module docstring.
+            "text_preview": _truncate(str(last.get("text") or "")),
+        },
+        "first_comment_ts": first.get("ts"),
+        "first_comment_author": first.get("author"),
+    }
+
+
+# EOF

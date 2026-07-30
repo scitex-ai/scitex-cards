@@ -86,8 +86,23 @@ echo "PyPI token minted (length=${#MINTED})"
 echo "=== installing twine into the publish venv ==="
 uv pip install --python "$PY" twine
 
-echo "=== twine upload dist/* ==="
+# --skip-existing makes the publish IDEMPOTENT: re-running a tag, or tagging a
+# version whose files already reached PyPI, skips those files instead of
+# failing the job. Without it the only outcomes are "published" and "red", and
+# a version can only be published once — so ANY re-run is permanently red.
+#
+# This is not hypothetical: 0.17.0 was published out-of-band with a manual
+# `twine upload` (my mistake — the tag-triggered workflow already existed and
+# I did not read it), which left the correct path unable to run at all without
+# going red. A red run that means "already done" is a drift detector turned
+# off: it trains the reader to skip release failures, and the next one that
+# means something real gets skipped too.
+#
+# It does NOT weaken the gate. A genuinely failed upload — bad token, network,
+# rejected metadata — still fails loudly; only an ALREADY-PRESENT file is
+# skipped, and that file is byte-identical by PyPI's own immutability rule.
+echo "=== twine upload dist/* (--skip-existing: publishing is idempotent) ==="
 TWINE_USERNAME="__token__" TWINE_PASSWORD="$MINTED" \
-    "$PY" -m twine upload --non-interactive --disable-progress-bar dist/*
+    "$PY" -m twine upload --non-interactive --disable-progress-bar --skip-existing dist/*
 
 echo "PUBLISH-OK: dist/* uploaded to PyPI via manual OIDC trusted publishing (uv-provisioned python)"

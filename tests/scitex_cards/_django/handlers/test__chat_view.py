@@ -20,7 +20,7 @@ Django RequestFactory; no mocks (STX-NM / PA-306). AAA pattern.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
 
 import pytest
 from django.test import RequestFactory
@@ -28,41 +28,29 @@ from django.test import RequestFactory
 from scitex_cards._django.handlers.chat import chat_view
 from scitex_cards._store import add_task, comment_task
 
-
 # === fixtures ==============================================================
 
 
 @pytest.fixture()
-def store_with_chat_task(tmp_path: Path, env) -> Path:
-    """Seed a tmp store with one task that already carries one comment,
-    pinned via ``SCITEX_TODO_TASKS_YAML_SHARED`` so the view's ``resolve_tasks_path(None)``
-    picks it up.
+def store_with_chat_task() -> str:
+    """Seed the canonical (SQLite) store with one task that already carries
+    one comment, plus an empty-thread task, so the view's
+    ``resolve_tasks_path(None)`` — pinned to the scratch store by the root and
+    ``_django`` conftests — reads them back.
 
-    The pre-existing comment exercises the GET shape; the empty
-    ``t-empty`` task lets a different test exercise an empty-thread
-    GET payload.
+    The store is SQLite now: ``add_task`` / ``comment_task`` write the canonical
+    DB, and passing ``store=None`` (the default) resolves the pinned store and
+    round-trips (per THE STORE-PATH RULE — a ``tmp_path`` yaml would trip the
+    "stamped for a DIFFERENT store" refusal). Returns the pinned STORE-identity
+    path (never used for reads/writes now — only a provenance label).
+
+    The pre-existing comment exercises the GET shape; the empty ``t-empty``
+    task lets a different test exercise an empty-thread GET payload.
     """
-    store = tmp_path / "tasks.yaml"
-    add_task(
-        store=store,
-        id="t-chat",
-        title="Live chat thread",
-        agent="agent-a",
-    )
-    add_task(
-        store=store,
-        id="t-empty",
-        title="Empty thread",
-        agent="agent-b",
-    )
-    comment_task(
-        store=store,
-        task_id="t-chat",
-        text="hello from agent-a",
-        by="agent-a",
-    )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    return store
+    add_task(id="t-chat", title="Live chat thread", agent="agent-a")
+    add_task(id="t-empty", title="Empty thread", agent="agent-b")
+    comment_task(task_id="t-chat", text="hello from agent-a", by="agent-a")
+    return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
 # === GET ===================================================================

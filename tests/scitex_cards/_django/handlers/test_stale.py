@@ -27,16 +27,20 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
+from pathlib import Path
 
 import pytest
-import yaml
 
 pytest.importorskip("django")
 
+from conftest import seed_db_from_doc  # noqa: E402
 from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
 from scitex_cards._django.services import _reset_cache  # noqa: E402
+from scitex_cards._model import load_tasks  # noqa: E402
+from scitex_cards._yaml import safe_load  # noqa: E402
 
 
 def _iso(dt: datetime.datetime) -> str:
@@ -80,11 +84,18 @@ tasks:
 
 
 @pytest.fixture
-def store(tmp_path):
-    path = tmp_path / "tasks.yaml"
-    path.write_text(_STORE_TEXT, encoding="utf-8")
+def store():
+    # SQLite store: seed the prior cards into the canonical DB, then hand the
+    # handler the PINNED store-identity path (never a tmp_path YAML — a write
+    # stamped with a tmp path fails the next read's ownership check). The DB is
+    # authoritative for content; the handler treats the path as a provenance
+    # label. The board/services layer (get_board -> load_groups) still stat()s
+    # the identity file, so it must EXIST even though its content is never read.
+    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_CARDS_DB"])
+    store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()
-    yield str(path)
+    yield store_path
     _reset_cache()
 
 
@@ -103,9 +114,8 @@ def _post(endpoint, store_path, body):
 
 
 def _load(store_path):
-    with open(store_path, encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    return {t["id"]: t for t in data["tasks"]}
+    # Read back through the canonical store (SQLite); the path is a label only.
+    return {t["id"]: t for t in load_tasks(store_path)}
 
 
 # === GET /stale ==============================================================

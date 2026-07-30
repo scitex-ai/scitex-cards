@@ -14,17 +14,19 @@ import sys
 import click
 
 from .. import __version__
+from .._currency import check_currency
+from .._db import resolve_db_path
 from .._diagram import build_mermaid, render
 from .._model import load_tasks
 from .._paths import resolve_tasks_path
 from ._compat import spec_command_kwargs, spec_group_kwargs
 
 _STORE_RESOLUTION = (
-    "Task store resolution (first existing wins): an explicit --tasks path,",
-    "then $SCITEX_TODO_TASKS_YAML_SHARED, then the project store",
-    "<git-root>/.scitex/todo/tasks.yaml, then the user store",
-    "~/.scitex/todo/tasks.yaml (relocatable via $SCITEX_DIR), then the",
-    "bundled generic example. See the README 'Where your task data lives'.",
+    "Canonical store: the SQLite database at $SCITEX_CARDS_DB (default",
+    "~/.scitex/cards/cards.db, relocatable via $SCITEX_DIR). That path is the",
+    "SOLE store identity. An unresolvable/absent store raises rather than",
+    "standing in an empty board. Run `scitex-cards resolve-store` to see what",
+    "you actually resolved to.",
 )
 
 # Doctrine §4a (10a_command-categories.md): fixed, ordered category headers.
@@ -59,7 +61,7 @@ _COMMAND_CATEGORIES = (
             "reconcile-merged-prs",
         ),
     ),
-    ("Data & Sync", ("db", "sync-github", "sync-store", "deliver")),
+    ("Data & Sync", ("db", "dm", "store", "sync-github", "sync-store", "deliver")),
     (
         "Service",
         ("board", "gui", "hub", "mcp", "notifyd", "serve", "watch", "watch-ci"),
@@ -123,7 +125,7 @@ def _emit_help_recursive(ctx, as_json):
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
     **spec_group_kwargs(
-        summary="Canonical YAML task store + adapters for the agent fleet.",
+        summary="Shared task store (SQLite canonical) + adapters for the agent fleet.",
         config_resolution=_STORE_RESOLUTION,
         version_of="scitex-cards",
         command_categories=_COMMAND_CATEGORIES,
@@ -145,6 +147,17 @@ def _emit_help_recursive(ctx, as_json):
 @click.pass_context
 def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
     """scitex-cards CLI entry point."""
+    # CURRENCY gate (operator directive: stale or broken installs ERROR, never
+    # warn) — every CLI invocation is gated here, before any subcommand runs.
+    # `check_currency()` is a no-op when scitex-dev is absent; when present it
+    # raises with the exact remedy command, which we surface as a clean
+    # ClickException rather than a raw traceback. See `_currency.py`.
+    try:
+        check_currency()
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
     if help_recursive or as_json:
         _emit_help_recursive(ctx, as_json=as_json)
         ctx.exit(0)
@@ -168,18 +181,11 @@ def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
         ),
         examples=(
             (
-                "{prog} render-graph --tasks ./.scitex/todo/tasks.yaml -o tasks.png",
-                "Render the project store to tasks.png.",
+                "{prog} render-graph -o tasks.png",
+                "Render the resolved store to tasks.png.",
             ),
         ),
     ),
-)
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: project -> user -> bundled example, "
-    "or $SCITEX_TODO_TASKS_YAML_SHARED).",
 )
 @click.option(
     "-o",
@@ -193,9 +199,9 @@ def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
     is_flag=True,
     help="Print the generated mermaid source to stdout and exit (no render).",
 )
-def render_graph_cmd(tasks_path: str | None, output: str, print_mermaid: bool) -> None:
+def render_graph_cmd(output: str, print_mermaid: bool) -> None:
     """Render the resolved task store to a dependency PNG."""
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_tasks_path(None)
     tasks = load_tasks(resolved)
     mermaid_src = build_mermaid(tasks)
 
@@ -204,7 +210,7 @@ def render_graph_cmd(tasks_path: str | None, output: str, print_mermaid: bool) -
         return
 
     engine = render(mermaid_src, output)
-    click.echo(f"{output}  (rendered via {engine}; source: {resolved})")
+    click.echo(f"{output}  (rendered via {engine}; source: {resolve_db_path(None)})")
 
 
 # --------------------------------------------------------------------------- #
@@ -231,13 +237,6 @@ def render_graph_cmd(tasks_path: str | None, output: str, print_mermaid: bool) -
             ("{prog} list-tasks --blocker __none", "rows with no blocker"),
         ),
     ),
-)
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: project -> user -> bundled example, "
-    "or $SCITEX_TODO_TASKS_YAML_SHARED).",
 )
 @click.option(
     "--scope",
@@ -317,7 +316,6 @@ def render_graph_cmd(tasks_path: str | None, output: str, print_mermaid: bool) -
     help="Emit the resolved tasks as a JSON array.",
 )
 def list_tasks_cmd(
-    tasks_path: str | None,
     scope: str | None,
     assignee: str | None,
     agent: str | None,
@@ -338,7 +336,7 @@ def list_tasks_cmd(
     if blocking_operator:
         from ._admin import list_blocking_operator
 
-        list_blocking_operator(tasks_path, as_json)
+        list_blocking_operator(None, as_json)
         return
     # Normalize: click's multiple=True returns a tuple; the helper
     # signature takes a list[str] | None. Empty tuple = no constraint.
@@ -373,7 +371,7 @@ def list_tasks_cmd(
             # is empty / multi; the multi case feeds `statuses=`.
             None,
             as_json,
-            tasks_path,
+            None,
             statuses=statuses_list,
             agent=agent,
             project=project,
@@ -386,12 +384,16 @@ def list_tasks_cmd(
         )
         return
     # Plain path — backward-compatible plain table / JSON array.
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_tasks_path(None)
     tasks = load_tasks(resolved)
     if as_json:
         click.echo(json.dumps(tasks))
         return
-    click.echo(f"# {resolved}  ({len(tasks)} tasks)")
+    # Header names the STORE (the SQLite database) — NOT `resolved`, which is
+    # the non-task sidecar container `load_tasks` takes only for naming in
+    # error text (see `_paths.resolve_tasks_path`). Printing that sidecar
+    # here mislabeled the header with a path the data never lived at.
+    click.echo(f"# {resolve_db_path(None)}  ({len(tasks)} tasks)")
     for task in tasks:
         click.echo(f"{task['id']:<24} {task['status']:<12} {task['title']}")
 
@@ -435,7 +437,7 @@ _gui.register(main)
 _index.register(main)
 # inbox <verb> — inbox storage-backend lifecycle (migrate-to-sqlite / info).
 # Phase 1 of the store SQLite migration: moves the per-recipient inbox off the
-# monolithic tasks.yaml so a 5 s digest-poll no longer re-parses all cards.
+# monolithic task document so a 5 s digest-poll no longer re-parses all cards.
 _inbox.register(main)
 # migration <verb> — directory-card enforcement migration (plan / apply).
 # Extracted to _migration_cli.py alongside the board split.
@@ -489,7 +491,7 @@ _reconcile.register(
 # deliver (slice 1 of the standalone notification-DELIVERY rail). One-shot
 # delivery pass — reads each recipient's pending notifications (read-only,
 # never touches the user's `seen` cursor) and hands them to the channels in
-# recipients.yaml, recording outcomes in the delivery ledger. cron/loop-
+# recipients.json, recording outcomes in the delivery ledger. cron/loop-
 # runnable; the daemon + systemd unit are a LATER slice. See
 # src/scitex_cards/_delivery/.
 _deliver.register(main)

@@ -9,14 +9,6 @@ it imports nothing else from this package, so ``_deadlines`` / ``_validate``
 
 from __future__ import annotations
 
-import contextlib
-import fcntl
-import os
-from pathlib import Path
-
-from ._yaml import safe_dump, safe_load  # hook-bypass: line-limit
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
-
 # Valid task statuses. ``goal`` marks a north-star objective (rendered gold);
 # the rest are ordinary execution states.
 # ``pending`` was ABOLISHED 2026-07-10 by operator directive: "pending という
@@ -89,19 +81,19 @@ VALID_KINDS: tuple[str, ...] = (
 #
 # Operator's enumeration (verbatim, TG 9524):
 #   compute            (計算リソース)      — waiting on a kind=compute row to finish
-#   dep                (依存)              — waiting on another task (explicit form of the implicit
-#                                            dep-edge case; useful when the dep is the *concept*
+#   dep                (依存)              — waiting on another task (explicit form of the implicit  # noqa: E501
+#                                            dep-edge case; useful when the dep is the *concept*  # noqa: E501
 #                                            even if no edge id is known yet)
-#   operator-decision  (ユーザー判断)      — waiting on the operator to decide; this is the LOUD
-#                                            variant the operator opens the UI to find. Usually
-#                                            paired with kind=decision rows but the enums are
-#                                            ORTHOGONAL (a kind=task can also be blocker=
-#                                            operator-decision if it's waiting on a decision that
-#                                            hasn't been promoted to its own kind=decision node
+#   operator-decision  (ユーザー判断)      — waiting on the operator to decide; this is the LOUD  # noqa: E501
+#                                            variant the operator opens the UI to find. Usually  # noqa: E501
+#                                            paired with kind=decision rows but the enums are  # noqa: E501
+#                                            ORTHOGONAL (a kind=task can also be blocker=  # noqa: E501
+#                                            operator-decision if it's waiting on a decision that  # noqa: E501
+#                                            hasn't been promoted to its own kind=decision node  # noqa: E501
 #                                            yet).
-#   agent-wait         (他エージェント待ち) — waiting on a specific agent action (e.g. "lead to
-#                                            write the ADR-0007 entry"). Distinct from `dep`
-#                                            because the blocker is a *human/agent action*, not
+#   agent-wait         (他エージェント待ち) — waiting on a specific agent action (e.g. "lead to  # noqa: E501
+#                                            write the ADR-0007 entry"). Distinct from `dep`  # noqa: E501
+#                                            because the blocker is a *human/agent action*, not  # noqa: E501
 #                                            a graph-edge dep.
 #
 # Closed validated set per ADR-0004 (this PR) — same fail-loud pattern as
@@ -120,7 +112,7 @@ VALID_BLOCKERS: tuple[str, ...] = (
     # (TG 9667, lead a2a `6d9b6073`). ``"dep"`` is the legacy alias from
     # ADR-0004's first cut; the validator accepts BOTH during a
     # deprecation window and normalizes on write (`_normalize_blocker`).
-    # Once existing tasks.yaml stores are swept, ``"dep"`` drops out.
+    # Once existing stores are swept, ``"dep"`` drops out.
     "dependency",
     "dep",
     "operator-decision",
@@ -160,6 +152,76 @@ class StaleStoreError(RuntimeError):
     """
 
 
+class StoreShrinkRefusedError(RuntimeError):
+    """A doc-level write would remove rows the store already has. Refused.
+
+    THE THIRD BOARD WIPE (P0, 2026-07-21): the ``tasks`` table went
+    2170 -> 18 because a full-suite pytest run's ambient environment
+    happened to name the LIVE store, and a stale/replacement document
+    missing almost every row was persisted straight over it. The
+    snapshot rail already refused to SNAPSHOT a collapsed count
+    (2026-07-19, ``_cli/_db.py``'s ``_SHRINK_REFUSAL_RATIO`` guard) —
+    this is that guard's sibling on the LIVE WRITE path, which no
+    earlier incident had covered.
+
+    Operator ruling — 一度書いたものは消えない, "a written card never
+    disappears" — sets the bar at ANY row disappearing, not a ratio: a
+    doc-level write is refused the moment it is missing even ONE id the
+    store currently has (and that id is not named in the write's
+    ``deleted_ids``, the one legitimate single-card removal path — see
+    :func:`_is_tombstoned` for why a normal ``delete_task`` no longer
+    even uses that path). There is no small-store exemption, because
+    there is nothing to be generous about: growing a store from zero
+    never removes anything, so the check never fires on it.
+
+    Remedy: if the shrink is genuinely intentional (a deliberate bulk
+    archive or migration, never an ordinary card write), re-run the
+    call with ``allow_shrink=True``.
+    """
+
+
+#: ``_log_meta`` key marking a row as TOMBSTONED — removed via
+#: :func:`scitex_cards._store_lifecycle.delete_task`, never a physical
+#: SQL ``DELETE``. See :func:`_is_tombstoned`.
+TOMBSTONE_KEY = "deleted_at"
+
+
+def _is_tombstoned(task: dict) -> bool:
+    """True if ``task`` was removed via :func:`delete_task`'s tombstone.
+
+    2026-07-21 P0 (third board wipe) replaced physical delete with an
+    in-place mark, per operator ruling 一度書いたものは消えない ("a
+    written card never disappears"): the row survives forever, its
+    ``status`` flips to ``cancelled``, and ``_log_meta.deleted_at``
+    records when. Presence of ``deleted_at`` — not merely
+    ``status == "cancelled"`` — is the marker: a card can be
+    legitimately cancelled by a human/agent without ever being deleted,
+    and conflating the two would hide real cancelled work from the
+    board.
+    """
+    log_meta = task.get("_log_meta")
+    return bool(isinstance(log_meta, dict) and log_meta.get(TOMBSTONE_KEY))
+
+
+def _find_live_task(tasks: list[dict], task_id: str) -> dict | None:
+    """First NON-tombstoned task with id == ``task_id``, else ``None``.
+
+    THE shared "does this id exist" lookup for every ordinary write verb
+    (complete / resolve / reopen / reassign / rescore / comment / update
+    / delete / set_edge / set_collaborator / set_subscriber) operating
+    on the raw read-modify-write ``tasks`` list. A tombstoned row is
+    retained on disk forever (see :func:`_is_tombstoned`) but must
+    behave as ABSENT to all of them — mutating a deleted card would
+    silently resurrect it. ``restore_task`` is the ONE verb whose job is
+    exactly that resurrection, so it does its own raw (tombstone-
+    INCLUSIVE) scan instead of calling this helper.
+    """
+    for t in tasks:
+        if t.get("id") == task_id and not _is_tombstoned(t):
+            return t
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Task dataclass — SINGLE schema source (ADR-0007, quality-hygiene PR)
 # ---------------------------------------------------------------------------
@@ -184,7 +246,7 @@ class StaleStoreError(RuntimeError):
 
 
 from dataclasses import dataclass, field  # noqa: E402
-from dataclasses import fields as _dc_fields
+from dataclasses import fields as _dc_fields  # noqa: E402
 
 
 @dataclass(slots=True)
@@ -372,7 +434,7 @@ class Task:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Task":
-        """Construct from a tasks.yaml dict.
+        """Construct from a stored task dict.
 
         - Unknown keys are silently dropped (forward-compat).
         - Missing keys fill with the dataclass default.
@@ -436,5 +498,3 @@ class Task:
                 continue
             result[f.name] = value
         return result
-
-

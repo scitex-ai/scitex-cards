@@ -4,7 +4,7 @@
 
 The config half of foundation C3 (see :mod:`scitex_cards._notify`). Holds the
 fail-loud coercion helpers (shared by the sidecar reader AND the per-card
-parser in :mod:`._resolver`), the ``notify.yaml`` sidecar reader, and
+parser in :mod:`._resolver`), the ``notify.json`` sidecar reader, and
 :func:`load_notify_config` which merges the built-in
 :data:`~scitex_cards._notify._rules.DEFAULT_NOTIFY_RULES` with an optional
 sidecar. Fail-loud on a malformed sidecar; zero-config returns the built-ins.
@@ -42,15 +42,12 @@ def validate_event_type(event_type: object, *, where: str) -> str:
 def validate_roles(value: object, *, where: str) -> list[str]:
     """Coerce + validate a role list (every item must be a known role)."""
     if not isinstance(value, (list, tuple)):
-        raise NotifyConfigError(
-            f"{where}: role list must be a list, got {value!r}"
-        )
+        raise NotifyConfigError(f"{where}: role list must be a list, got {value!r}")
     out: list[str] = []
     for role in value:
         if not (isinstance(role, str) and role in VALID_ROLES):
             raise NotifyConfigError(
-                f"{where}: invalid role {role!r}; must be one of "
-                f"{sorted(VALID_ROLES)}"
+                f"{where}: invalid role {role!r}; must be one of {sorted(VALID_ROLES)}"
             )
         out.append(role)
     return out
@@ -59,13 +56,12 @@ def validate_roles(value: object, *, where: str) -> list[str]:
 def coerce_rules_mapping(raw: object, *, where: str) -> dict[str, list[str]]:
     """Validate a ``{event_type: [role, ...]}`` mapping, returning a copy.
 
-    Used for both the ``notify.yaml`` rules section and a per-card ``events``
+    Used for both the ``notify.json`` rules section and a per-card ``events``
     override — the shape is identical (event_type → role list).
     """
     if not isinstance(raw, Mapping):
         raise NotifyConfigError(
-            f"{where}: must be a mapping of event_type -> [role, ...], "
-            f"got {raw!r}"
+            f"{where}: must be a mapping of event_type -> [role, ...], got {raw!r}"
         )
     coerced: dict[str, list[str]] = {}
     for event_type, roles in raw.items():
@@ -91,10 +87,10 @@ def coerce_id_list(value: object, *, where: str) -> list[str]:
 
 
 # --------------------------------------------------------------------------- #
-# notify.yaml sidecar                                                         #
+# notify.json sidecar                                                         #
 # --------------------------------------------------------------------------- #
 def _read_sidecar(path: Path) -> dict[str, list[str]]:
-    """Read + validate the ``notify.yaml`` sidecar's rule overrides.
+    """Read + validate the notify sidecar's JSON rule overrides.
 
     Accepts two shapes for forward-compat / brevity:
 
@@ -105,31 +101,26 @@ def _read_sidecar(path: Path) -> dict[str, list[str]]:
     Returns the validated overrides (an empty dict for an empty document).
     Raises :class:`NotifyConfigError` on a malformed file (fail-loud).
     """
-    import yaml
-
-    from .._yaml import safe_load
+    import json
 
     try:
-        with path.open(encoding="utf-8") as handle:
-            data = safe_load(handle)
-    except yaml.YAMLError as exc:  # malformed YAML — fail loud
-        raise NotifyConfigError(
-            f"{path}: notify sidecar is not valid YAML: {exc}"
-        ) from exc
+        text = path.read_text(encoding="utf-8")
+        data = json.loads(text) if text.strip() else None
+    except Exception as exc:  # noqa: BLE001 — malformed sidecar — fail loud
+        raise NotifyConfigError(f"{path}: notify sidecar is not valid ({exc})") from exc
 
     if data is None:
         return {}
     if not isinstance(data, Mapping):
         raise NotifyConfigError(
-            f"{path}: notify sidecar top level must be a mapping, got "
-            f"{data!r}"
+            f"{path}: notify sidecar top level must be a mapping, got {data!r}"
         )
     raw_rules = data["rules"] if "rules" in data else data
     return coerce_rules_mapping(raw_rules, where=f"{path} rules")
 
 
 def notify_sidecar_path(store: str | Path | None) -> Path | None:
-    """Resolve the ``notify.yaml`` path that sits next to the task store.
+    """Resolve the ``notify.json`` path that sits next to the task store.
 
     Reuses :func:`scitex_cards._paths.resolve_tasks_path` so the sidecar
     tracks the SAME store the tasks live in. Returns ``None`` only if the
@@ -138,9 +129,7 @@ def notify_sidecar_path(store: str | Path | None) -> Path | None:
     """
     try:
         tasks_path = (
-            resolve_tasks_path(store)
-            if store is None
-            else Path(store).expanduser()
+            resolve_tasks_path(store) if store is None else Path(store).expanduser()
         )
     except Exception:  # noqa: BLE001 — never break on a path-resolution edge
         return None
@@ -151,8 +140,8 @@ def load_notify_config(store: str | Path | None = None) -> NotifyConfig:
     """Return the GLOBAL notify layer: built-in defaults merged with sidecar.
 
     The built-in :data:`~scitex_cards._notify._rules.DEFAULT_NOTIFY_RULES` is
-    the SSOT baseline. If a ``notify.yaml`` sidecar exists next to the
-    resolved ``tasks.yaml`` store, its ``{event_type: [role, ...]}`` entries
+    the SSOT baseline. If a ``notify.json`` sidecar exists next to the
+    resolved task store, its ``{event_type: [role, ...]}`` entries
     OVERRIDE the built-in entry for those event types (per-event replacement,
     not a deep merge). Events the sidecar does not mention keep their built-in
     default. With no sidecar the built-ins are returned unchanged (zero-config
@@ -173,16 +162,17 @@ def load_notify_config(store: str | Path | None = None) -> NotifyConfig:
     Raises
     ------
     NotifyConfigError
-        If the sidecar exists but is malformed (bad YAML, non-mapping top
+        If the sidecar exists but is malformed (bad JSON, non-mapping top
         level, unknown event type, or invalid role).
     """
     merged: dict[str, list[str]] = {
         et: list(roles) for et, roles in DEFAULT_NOTIFY_RULES.items()
     }
     sidecar = notify_sidecar_path(store)
-    if sidecar is not None and sidecar.exists():
-        for event_type, roles in _read_sidecar(sidecar).items():
-            merged[event_type] = roles
+    if sidecar is not None:
+        if sidecar.exists():
+            for event_type, roles in _read_sidecar(sidecar).items():
+                merged[event_type] = roles
     return NotifyConfig(rules=merged)
 
 

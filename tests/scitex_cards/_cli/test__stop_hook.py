@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli._stop_hook import stop_hook_cmd
@@ -33,106 +32,183 @@ from scitex_cards._inbox import poll_inbox
 from scitex_cards._store import add_task
 
 
-@pytest.fixture()
-def store(tmp_path):
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return str(path)
-
-
-def _run(store, agent="worker-x"):
-    result = CliRunner().invoke(stop_hook_cmd, ["--agent", agent, "--tasks", store])
+def _run(agent="worker-x"):
+    result = CliRunner().invoke(stop_hook_cmd, ["--agent", agent])
     return result, json.loads(result.stdout)
 
 
-def _drain(store, agent):
+def _drain(agent):
     """Ack the created-events add_task enqueues, so they don't count as work."""
-    poll_inbox(agent, unseen_only=True, mark_seen=True, store=store)
+    poll_inbox(agent, unseen_only=True, mark_seen=True)
 
 
-def test_an_empty_board_allows_the_stop(store):
-    # Act
-    result, payload = _run(store)
-    # Assert — {} is "allow"; anything else would wedge an idle agent.
-    assert payload == {}
-    assert result.exit_code == 0
+def _seed_runnable_card(card_id="w1", agent="worker-x"):
+    """One runnable card owned by ``agent``, with its created-event drained."""
+    add_task(id=card_id, title=card_id, status="in_progress", agent=agent)
+    _drain(agent)
 
 
-def test_runnable_work_blocks_the_stop(store):
-    # Arrange
-    add_task(store=store, id="w1", title="w1", status="in_progress", agent="worker-x")
-    _drain(store, "worker-x")
-
-    # Act
-    result, payload = _run(store)
-
-    # Assert
-    assert payload["decision"] == "block"
-    assert result.exit_code == 0  # the hook succeeded; the STOP was refused
-
-
-def test_the_reason_names_the_card_and_says_what_to_do(store):
-    """A refusal that does not say what to do next leaves the agent idle."""
-    # Arrange
-    add_task(store=store, id="w1", title="w1", status="in_progress", agent="worker-x")
-    _drain(store, "worker-x")
-
-    # Act
-    _, payload = _run(store)
-    reason = payload["reason"]
-
-    # Assert — the card id, an action, and an explicit single-item instruction.
-    assert "w1" in reason
-    assert "work it, update it, or close it" in reason
-    assert "Pick ONE" in reason
-
-
-def test_a_detector_failure_allows_the_stop(store):
-    """FAIL-OPEN. Our bug must never be the reason an agent cannot finish."""
-    # Act — a store path that cannot be read at all.
-    result = CliRunner().invoke(
-        stop_hook_cmd, ["--agent", "worker-x", "--tasks", "/nonexistent/none.yaml"]
-    )
-
-    # Assert
-    assert json.loads(result.stdout) == {}
-    assert result.exit_code == 0
-
-
-def test_another_agents_work_does_not_block_this_agent(store):
-    # Arrange
-    add_task(store=store, id="w2", title="w2", status="in_progress", agent="worker-y")
-    _drain(store, "worker-y")
-
-    # Act / Assert
-    _, payload = _run(store, agent="worker-x")
-    assert payload == {}
-
-
-def test_the_reason_stays_bounded_on_a_large_board(store):
-    """An instruction listing forty cards is not an instruction."""
-    # Arrange
-    for i in range(12):
+def _seed_many_runnable_cards(count=12, agent="worker-x"):
+    """``count`` runnable cards owned by ``agent``, created-events drained."""
+    for i in range(count):
         add_task(
-            store=store,
             id=f"c{i}",
             title=f"c{i}",
             status="in_progress",
-            agent="worker-x",
+            agent=agent,
         )
-    _drain(store, "worker-x")
+    _drain(agent)
 
+
+def _run_against_unreadable_store():
+    """Invoke the hook against a store that cannot be read at all.
+
+    The store is SQLite-only now and the ``--tasks`` CLI option is gone, so a
+    detector failure is simulated faithfully by pointing the resolved database
+    env at a path that cannot even be created: the read raises ``RuntimeError``
+    and the hook must fail open. (The old form named a missing ``tasks.yaml``
+    via ``--tasks`` for the same effect.)
+
+    The path changed 2026-07-29. It used to be ``/nonexistent/scitex-cards/
+    none.db``, which was MEASURED not to raise at all — it reads as an EMPTY
+    BOARD, so both tests below passed for the wrong reason and proved nothing
+    about fail-open. A fail-open test whose arrange step does not fail is
+    vacuous.
+    """
+    return CliRunner().invoke(
+        stop_hook_cmd,
+        ["--agent", "worker-x"],
+        env={"SCITEX_CARDS_DB": "/proc/1/definitely-not-a-directory/cards.db"},
+    )
+
+
+def test_an_empty_board_allows_the_stop():
+    # Arrange — the per-test store holds no cards.
     # Act
-    _, payload = _run(store)
-    reason = payload["reason"]
+    _result, payload = _run()
+    # Assert — {} is "allow"; anything else would wedge an idle agent.
+    assert payload == {}
 
-    # Assert — capped list, and the remainder is COUNTED rather than dropped
-    # silently (an omission the agent cannot see is a lie about the board).
+
+def test_an_empty_board_exits_zero():
+    # Arrange — the per-test store holds no cards.
+    # Act
+    result, _payload = _run()
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_runnable_work_blocks_the_stop():
+    # Arrange
+    _seed_runnable_card()
+    # Act
+    _result, payload = _run()
+    # Assert
+    assert payload["decision"] == "block"
+
+
+def test_a_refused_stop_still_exits_zero():
+    # Arrange
+    _seed_runnable_card()
+    # Act
+    result, _payload = _run()
+    # Assert — the hook succeeded; it is the STOP that was refused.
+    assert result.exit_code == 0
+
+
+def test_the_reason_names_the_blocking_card():
+    """A refusal that does not name the card leaves the agent guessing."""
+    # Arrange
+    _seed_runnable_card()
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
+    # Assert
+    assert "w1" in reason
+
+
+def test_the_reason_says_what_to_do_next():
+    """A refusal that does not say what to do next leaves the agent idle."""
+    # Arrange
+    _seed_runnable_card()
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
+    # Assert
+    assert "work it, update it, or close it" in reason
+
+
+def test_the_reason_instructs_a_single_item():
+    """The instruction is explicitly single-item, not a whole backlog."""
+    # Arrange
+    _seed_runnable_card()
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
+    # Assert
+    assert "Pick ONE" in reason
+
+
+def test_a_detector_failure_allows_the_stop():
+    """FAIL-OPEN. Our bug must never be the reason an agent cannot finish."""
+    # Arrange — an unreadable store stands in for a detector failure.
+    # Act
+    result = _run_against_unreadable_store()
+    # Assert
+    assert json.loads(result.stdout) == {}
+
+
+def test_a_detector_failure_still_exits_zero():
+    """FAIL-OPEN. The hook itself must not report an error status."""
+    # Arrange — an unreadable store stands in for a detector failure.
+    # Act
+    result = _run_against_unreadable_store()
+    # Assert
+    assert result.exit_code == 0
+
+
+def test_another_agents_work_does_not_block_this_agent():
+    # Arrange
+    _seed_runnable_card(card_id="w2", agent="worker-y")
+    # Act
+    _, payload = _run(agent="worker-x")
+    # Assert
+    assert payload == {}
+
+
+def test_the_reason_caps_the_listed_cards():
+    """An instruction listing forty cards is not an instruction."""
+    # Arrange
+    _seed_many_runnable_cards(count=12)
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
     numbered = [
         ln for ln in reason.splitlines() if ln.strip()[:2].rstrip(".").isdigit()
     ]
+    # Assert
     assert len(numbered) <= 6
+
+
+def test_the_reason_flags_the_capped_remainder():
+    """The remainder is COUNTED rather than dropped silently."""
+    # Arrange
+    _seed_many_runnable_cards(count=12)
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
+    # Assert
     assert "more runnable item(s)" in reason
+
+
+def test_the_reason_reports_the_full_runnable_total():
+    """An omission the agent cannot see is a lie about the board."""
+    # Arrange
+    _seed_many_runnable_cards(count=12)
+    # Act
+    _, payload = _run()
+    reason = payload["reason"]
+    # Assert
     assert "12 runnable item(s)" in reason
 
 

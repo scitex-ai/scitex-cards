@@ -351,6 +351,11 @@ def timeline_view(request: HttpRequest) -> HttpResponse:
 
     payload = _build_payload(tasks, window_hours=window_hours, lane_by=lane_by)
     payload["store_path"] = str(board.store_path)
+    # HONEST EMPTY STATE: the store was READ and holds no cards — a legitimate
+    # 0-event timeline, not an error (see BoardState.empty_store). Fail-loud is
+    # intact for every other shape: a store that cannot be read raises out of
+    # ``get_board`` above, and this view deliberately does not catch it.
+    payload["empty_store"] = board.empty_store
     return JsonResponse(payload, json_dumps_params={"default": str})
 
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Layered ``config.yaml`` for scitex-todo knobs (nudge cadence, …).
+"""Layered ``config.json`` for scitex-cards knobs (nudge cadence, …).
 
 The board is fleet infra, so its behaviour must be a KNOB the operator can
 turn — not a constant baked into the code. Config lives in the same SciTeX
 local-state convention as the task store (:mod:`scitex_cards._paths`), in a
-``config.yaml`` resolved across two scopes and LAYERED:
+``config.json`` resolved across two scopes and LAYERED:
 
-    1. user scope:     ``$SCITEX_DIR/todo/config.yaml`` (default ``~/.scitex/todo``)
-    2. project scope:  ``<git-root>/.scitex/todo/config.yaml``
+    1. user scope:     ``$SCITEX_DIR/cards/config.json`` (default ``~/.scitex/cards``)
+    2. project scope:  ``<git-root>/.scitex/cards/config.json``
 
 The user file is the BASE; the project file OVERRIDES it key-by-key (a repo
 can tighten/loosen a knob without touching the user default). A missing /
@@ -39,8 +39,8 @@ from ._paths import PKG_SHORT, _find_git_root, _user_root
 
 logger = logging.getLogger(__name__)
 
-#: Config file name (sibling of ``tasks.yaml`` in each scope).
-CONFIG_NAME = "config.yaml"
+#: Config file name (in each scope's ``.scitex/cards`` dir).
+CONFIG_NAME = "config.json"
 
 #: The ``reminders:`` knobs.
 REMINDERS_SECTION = "reminders"
@@ -67,10 +67,8 @@ def config_paths() -> list[Path]:
 
 
 def _read_one(path: Path) -> dict:
-    """Read one config file → mapping; missing/malformed → ``{}`` (fail-soft)."""
-    import yaml
-
-    from ._yaml import safe_load
+    """Read one JSON config file → mapping; missing/malformed → ``{}`` (fail-soft)."""
+    import json
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -80,8 +78,8 @@ def _read_one(path: Path) -> dict:
         logger.warning("config: cannot read %s: %s", path, exc)
         return {}
     try:
-        data = safe_load(text) or {}
-    except yaml.YAMLError as exc:
+        data = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError as exc:
         logger.warning("config: malformed %s: %s", path, exc)
         return {}
     return data if isinstance(data, dict) else {}
@@ -98,10 +96,7 @@ def load_config() -> dict:
     for path in config_paths():
         data = _read_one(path)
         for key, value in data.items():
-            if (
-                isinstance(value, dict)
-                and isinstance(merged.get(key), dict)
-            ):
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
                 merged[key] = {**merged[key], **value}
             else:
                 merged[key] = value

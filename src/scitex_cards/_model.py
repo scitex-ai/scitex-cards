@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Canonical task model + YAML loader/validator/writer for scitex-todo.
+"""Canonical task model + loader/validator/writer for scitex-todo.
 
-The task store is a YAML document with a top-level ``tasks:`` list. Each
-task is a mapping with ``id`` + ``title`` + ``status`` (required) and
+The task store is the SQLite database; this module models it as a
+top-level ``tasks:`` list for the validation + adapter layers built on
+top. Each task is a mapping with ``id`` + ``title`` + ``status`` (required) and
 optional ``repo`` / ``depends_on`` / ``blocks`` / ``note`` / ``priority`` /
 ``parent`` fields. ``priority`` is an explicit integer rank (lower = higher
 priority); when absent, document order is the implicit ordering. ``parent``
@@ -17,30 +18,24 @@ This module is the single validation gate: ``load_tasks`` raises
 ``TaskValidationError`` on a malformed store (missing id/title, duplicate
 id, invalid status, non-integer priority, non-string parent) so downstream
 adapters can assume well-formed input. ``save_tasks`` re-runs the same gate
-before writing back and preserves the hand-written YAML comments +
-structure via ruamel.yaml.
+before writing back.
 """
 
 from __future__ import annotations
 
-import contextlib
-import fcntl
-import os
 from pathlib import Path
 
-from ._yaml import safe_dump, safe_load  # hook-bypass: line-limit
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import VALID_STATUSES, TaskValidationError  # noqa: F401
 from ._validate import _validate_tasks  # noqa: F401
 
+
 def load_tasks(path: str | Path) -> list[dict]:
-    """Load and validate the task list from a YAML store.
+    """Load and validate the task list from the store.
 
     Parameters
     ----------
     path : str or pathlib.Path
-        Path to the YAML task store. The document must have a top-level
-        ``tasks:`` list.
+        Names which logical store is addressed; used in error text only.
 
     Returns
     -------
@@ -59,7 +54,7 @@ def load_tasks(path: str | Path) -> list[dict]:
 
     Examples
     --------
-    >>> tasks = load_tasks("tasks.yaml")  # doctest: +SKIP
+    >>> tasks = load_tasks()  # doctest: +SKIP
     >>> tasks[0]["id"]                     # doctest: +SKIP
     'design'
     """
@@ -68,55 +63,68 @@ def load_tasks(path: str | Path) -> list[dict]:
 
 
 def load_doc(path: str | Path, *, validate: bool = False) -> dict:
-    """Load the FULL parsed mapping from a YAML store in ONE ``safe_load``.
+    """Load the FULL store document from the database.
 
-    This is the single-read primitive that both :func:`load_tasks` and the
-    ``_store`` CRUD verbs build on. Returning the *whole* top-level mapping
-    (not just ``tasks``) lets a read-modify-write cycle reuse the one parse
-    for BOTH the ``tasks`` payload it mutates AND the non-``tasks`` sections
-    (notably the ``users:`` registry) it must carry through untouched — so
-    the store is parsed once under the lock instead of twice (the old
-    ``_save_tasks_unlocked`` re-read is eliminated; the ~2.3 s per single-card
-    write it cost on the ~7.7 MB shared store goes away).
+    The single-read primitive that both :func:`load_tasks` and the ``_store``
+    CRUD verbs build on. Returning the *whole* top-level mapping (not just
+    ``tasks``) lets a read-modify-write cycle reuse one read for BOTH the
+    ``tasks`` payload it mutates AND the non-``tasks`` sections (notably the
+    ``users:`` registry) it must carry through untouched.
 
     Parameters
     ----------
     path : str or pathlib.Path
-        Path to the YAML task store.
+        Names which logical store is addressed; used in error text only.
     validate : bool, default False
-        When True, run :func:`_validate_tasks` on ``data.get("tasks")`` before
-        returning (the read-time gate :func:`load_tasks` applies). Left off for
-        pure write-preservation reads that validate at dump time instead.
+        When True, run :func:`_validate_tasks` on ``data.get("tasks")``
+        before returning (the read-time gate :func:`load_tasks` applies).
 
     Returns
     -------
     dict
-        The parsed top-level mapping. Empty/``None`` documents normalize to
-        ``{}``; a non-mapping top level is returned as-is (the caller decides).
+        The store document.
 
     Raises
     ------
-    FileNotFoundError
-        If ``path`` does not exist.
+    RuntimeError
+        If the database is missing, or its read returns no usable document.
+        It RAISES rather than returning ``{}``, and that is load-bearing: an
+        empty document flows into a read-modify-write and is written back as
+        the whole store, which is how 2,138 cards once became one. Emptiness
+        must be read, never inferred.
     TaskValidationError
         Only when ``validate=True`` and the ``tasks`` payload is invalid.
     """
     path = Path(path).expanduser()
-    if not path.exists():
-        raise FileNotFoundError(f"task store not found: {path}")
 
-    with path.open(encoding="utf-8") as handle:
-        data = safe_load(handle) or {}  # hook-bypass: line-limit
+    # DB-CANONICAL: read the doc FROM SQLITE, not from a file that no longer
+    # exists. This is not an optimisation — it is what makes the mode safe.
+    #
+    # WITHOUT IT, EVERY WRITE ERASES THE BOARD, and the mechanism is worth
+    # spelling out because it is silent and total. The CRUD verbs are
+    # read-modify-write: they call this function, mutate `doc["tasks"]`, and
+    # hand the whole doc to the writer. If this still read the (absent) YAML it
+    # would return `{}`, so the "modify" step would build a document holding
+    # ONLY the new card, and `mirror_doc_incremental` — which diffs the doc
+    # against the DB and deletes what is missing — would remove every other
+    # card. Measured on a scratch store during the cutover: writing a second
+    # card left exactly one row. On the live board that is 2065 cards down to 1,
+    # with no error raised anywhere.
+    # `or {}` on this read would be a total-loss hazard: whatever this returns
+    # feeds a read-modify-write, so an empty dict is not "no cards" but "write
+    # nothing over everything". Delegated to the one fail-loud reader so every
+    # caller shares a single policy — one sibling expression being fixed and
+    # another not is exactly how that survived the last time.
+    from ._store import _read_canonical_db_or_raise
 
+    data = _read_canonical_db_or_raise()
     if validate:
-        tasks = data.get("tasks") if isinstance(data, dict) else None
-        # READ side: tolerate values this build does not know (a newer agent
-        # may have written them) and warn loudly. Structural corruption still
-        # raises. One unknown status must never take the fleet's board down.
-        _validate_tasks(tasks, source=str(path), strict=False)
+        _validate_tasks(
+            data.get("tasks"),
+            source=f"<sqlite:{path}>",
+            strict=False,
+        )
     return data
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -128,16 +136,6 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
 # `from scitex_cards._model import ...`; every name below is the SAME object it
 # always was, defined next door. Same contract as the `_store_write` split (#391).
 # ---------------------------------------------------------------------------
-from ._task import (  # noqa: E402,F401
-    ABOLISHED_STATUSES,
-    StaleStoreError,
-    Task,
-    TaskValidationError,
-    VALID_BLOCKERS,
-    VALID_KINDS,
-    VALID_STATUSES,
-    _BLOCKER_ALIASES,
-)
 from ._deadlines import (  # noqa: E402,F401
     Repeater,
     _add_period,
@@ -150,8 +148,16 @@ from ._deadlines import (  # noqa: E402,F401
     is_overdue,
     next_deadline_for_task,
 )
+from ._task import (  # noqa: E402,F401
+    _BLOCKER_ALIASES,
+    ABOLISHED_STATUSES,
+    VALID_BLOCKERS,
+    VALID_KINDS,
+    StaleStoreError,
+    StoreShrinkRefusedError,
+    Task,
+)
 from ._validate import (  # noqa: E402,F401
-    _validate_tasks,
     _warn_tolerated,
 )
 

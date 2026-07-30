@@ -40,7 +40,7 @@ from scitex_cards._django.handlers.fleet import (  # noqa: E402
 
 def _isolate_home(env, tmp_path: Path) -> None:
     """Point HOME at tmp_path so we never read the operator's real
-    dashboard.yaml. Also clear any leaked env override from a sibling
+    dashboard.json. Also clear any leaked env override from a sibling
     test."""
     env.set("HOME", str(tmp_path))
     env.delete("SCITEX_TODO_FLEET_CI_REPOS")
@@ -231,14 +231,14 @@ def test_empty_config_returns_200_with_empty_list_repos_2(env, tmp_path) -> None
 
 
 def test_malformed_config_returns_500_status_code(env, tmp_path) -> None:
-    """A broken ``dashboard.yaml`` is the one error that DOES blank the
+    """A broken ``dashboard.json`` is the one error that DOES blank the
     strip — the whole thing is unconfigurable. Fail-loud per harness."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos: [a, b,\n",
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": [a, b,',
         encoding="utf-8",
     )
 
@@ -253,14 +253,14 @@ def test_malformed_config_returns_500_status_code(env, tmp_path) -> None:
 
 
 def test_malformed_config_returns_500_data_contains(env, tmp_path) -> None:
-    """A broken ``dashboard.yaml`` is the one error that DOES blank the
+    """A broken ``dashboard.json`` is the one error that DOES blank the
     strip — the whole thing is unconfigurable. Fail-loud per harness."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos: [a, b,\n",
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": [a, b,',
         encoding="utf-8",
     )
 
@@ -275,14 +275,14 @@ def test_malformed_config_returns_500_data_contains(env, tmp_path) -> None:
 
 
 def test_malformed_config_returns_500_error_contains(env, tmp_path) -> None:
-    """A broken ``dashboard.yaml`` is the one error that DOES blank the
+    """A broken ``dashboard.json`` is the one error that DOES blank the
     strip — the whole thing is unconfigurable. Fail-loud per harness."""
     # Arrange
     _isolate_home(env, tmp_path)
-    cfg_dir = tmp_path / ".scitex" / "todo"
+    cfg_dir = tmp_path / ".scitex" / "cards"
     cfg_dir.mkdir(parents=True)
-    (cfg_dir / "dashboard.yaml").write_text(
-        "fleet:\n  ci_status:\n    repos: [a, b,\n",
+    (cfg_dir / "dashboard.json").write_text(
+        '{"fleet": {"ci_status": {"repos": [a, b,',
         encoding="utf-8",
     )
 
@@ -293,4 +293,4 @@ def test_malformed_config_returns_500_error_contains(env, tmp_path) -> None:
     # Assert
     data = json.loads(response.content)
     # The message should mention the file so the operator can find it.
-    assert "dashboard.yaml" in data["error"]
+    assert "dashboard.json" in data["error"]

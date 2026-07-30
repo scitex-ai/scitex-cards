@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""DB → YAML export: the backup/audit rail of ADR-0010.
+"""DB → JSON export: the backup/audit rail of ADR-0010.
 
 The operator's ruling (2026-07-16): the DATABASE is the single source of
-truth; backup = periodically EXPORT a YAML snapshot *from* the DB and git-
+truth; backup = periodically EXPORT a JSON snapshot *from* the DB and git-
 snapshot that export. Git tracks an export, never live data — which is what
 retires the "dotfiles working tree IS the live store" merge hazard.
 
@@ -25,6 +25,7 @@ import-time snapshot of those flags.
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +53,10 @@ def _record(row, table: str) -> dict[str, Any]:
     if blob is None:
         raise ExportRefused(
             f"{table} row {row['id']!r} has no record_json payload — this DB "
-            "predates schema v3 or was never re-imported. Run "
-            "`scitex-cards db import --from-yaml` first; exporting stripped "
-            "records is worse than exporting none."
+            "predates schema v3's payload columns and cannot be back-filled "
+            "(the importer was removed with the YAML tier); use a database "
+            "written by a current version. Exporting stripped records is worse "
+            "than exporting none."
         )
     rec = card_from_payload(blob)
     for col in _OVERLAYS[table]:
@@ -63,13 +65,40 @@ def _record(row, table: str) -> dict[str, Any]:
     return rec
 
 
-def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
+def export_doc(
+    db_path: str | Path | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[dict, dict]:
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
     Tasks come back in document order (``row_order``); inbox and thread
-    records in insertion (rowid) order — matching how the YAML lists grew.
+    records in insertion (rowid) order — matching how the exported lists grew.
+
+    ``conn`` — READ THE EXPORT AND ITS VERIFICATION FROM ONE SNAPSHOT.
+    A caller that must cross-check this export against the database (see
+    :func:`scitex_cards._store._read_canonical_db_or_raise`) cannot re-count on
+    a SECOND connection: the store is WAL, so two connections take two
+    INDEPENDENT snapshots taken however long the export took apart, and any
+    concurrent writer in that window makes the two disagree with no card
+    missing at all. That false "INCOMPLETE" refusal blanked ``list_tasks``
+    fleet-wide (observed 2,374 exported vs 2,375 in-table while
+    ``scitex-cards db verify`` reported the DB perfectly healthy).
+
+    So the caller opens ONE connection, begins ONE read transaction, and hands
+    it here. When ``conn`` is supplied it is used as-is and NOT closed —
+    ownership stays with the caller, whose transaction defines the snapshot
+    both the export and the verifying ``COUNT(*)`` observe. ``db_path`` is
+    ignored in that case (the connection already names the database).
+
+    The connection MUST have been opened through :func:`scitex_cards._db.connect`
+    (directly or via :func:`open_db`), because that is where the
+    min-client-version gate lives. Hand-rolling a bare ``sqlite3.connect`` here
+    would silently delete that gate.
     """
-    conn = open_db(db_path)
+    owned = conn is None
+    if owned:
+        conn = open_db(db_path)
     try:
         tasks: list[dict] = []
         for r in conn.execute(
@@ -77,16 +106,15 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
         ).fetchall():
             if r["card_json"] is None:
                 raise ExportRefused(
-                    f"task {r['id']!r} has no card_json payload — run "
-                    "`scitex-cards db import --from-yaml` first."
+                    f"task {r['id']!r} has no card_json payload — this DB "
+                    "predates the payload columns; use one written by a "
+                    "current version."
                 )
             tasks.append(card_from_payload(r["card_json"]))
 
         users = [
             _record(r, "users")
-            for r in conn.execute(
-                "SELECT * FROM users ORDER BY rowid"
-            ).fetchall()
+            for r in conn.execute("SELECT * FROM users ORDER BY rowid").fetchall()
         ]
 
         # Seed from the recipients table first so a DRAINED inbox (a
@@ -97,22 +125,17 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
                 "SELECT recipient_id FROM inbox_recipients ORDER BY rowid"
             ).fetchall()
         }
-        for r in conn.execute(
-            "SELECT * FROM notifications ORDER BY rowid"
-        ).fetchall():
+        for r in conn.execute("SELECT * FROM notifications ORDER BY rowid").fetchall():
             inboxes.setdefault(r["recipient_id"], []).append(
                 _record(r, "notifications")
             )
 
         threads: dict[str, list[dict]] = {}
-        for r in conn.execute(
-            "SELECT * FROM messages ORDER BY rowid"
-        ).fetchall():
-            threads.setdefault(r["thread_key"], []).append(
-                _record(r, "messages")
-            )
+        for r in conn.execute("SELECT * FROM messages ORDER BY rowid").fetchall():
+            threads.setdefault(r["thread_key"], []).append(_record(r, "messages"))
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
     doc: dict[str, Any] = {"tasks": tasks}
     if users:
@@ -120,6 +143,21 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
     if inboxes:
         doc["inboxes"] = inboxes
     return doc, threads
+
+
+def _newest_last_activity(tasks: list) -> str | None:
+    """The lexically-latest ``last_activity`` among ``tasks``, or ``None``.
+
+    ``last_activity`` is always an ISO-8601 UTC timestamp with the ``Z``
+    suffix (see ``_db._utc_now_iso``), so a plain lexical max sorts correctly
+    without parsing. Exposed on the export report so a caller (``db
+    snapshot``'s freshness guard) can compare it against a LIVE query of the
+    DB's typed ``last_activity`` column — the export is built exclusively
+    from ``card_json`` (never the typed columns), so the two values agree in
+    a healthy DB and diverge exactly when the export has gone stale.
+    """
+    values = [t.get("last_activity") for t in tasks if t.get("last_activity")]
+    return max(values) if values else None
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -133,52 +171,54 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def export_yaml(
+def export_json(
     db_path: str | Path | None = None,
     out: str | Path | None = None,
     threads_out: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Export the DB to YAML text files; return a count report.
+    """Export the DB to JSON text files; return a count report.
 
-    ``out`` defaults to ``<db_dir>/export/tasks.yaml``; ``threads_out``
-    defaults to ``threads.yaml`` beside it. The report carries the counts so
+    ``out`` defaults to ``<db_dir>/export/tasks.json``; ``threads_out``
+    defaults to ``threads.json`` beside it. The report carries the counts so
     a caller (or the snapshot rail) prints what was exported — a silent
     export is a bulk operation with no dry-run trace.
     """
+    import json
+
     from ._db import resolve_db_path
-    from ._yaml import safe_dump
 
     doc, threads = export_doc(db_path)
 
     db = resolve_db_path(db_path)
-    out_path = (
-        Path(out).expanduser() if out else db.parent / "export" / "tasks.yaml"
-    )
+    out_path = Path(out).expanduser() if out else db.parent / "export" / "tasks.json"
     threads_path = (
         Path(threads_out).expanduser()
         if threads_out
-        else out_path.parent / "threads.yaml"
+        else out_path.parent / "threads.json"
     )
 
-    _atomic_write(out_path, safe_dump(doc))
+    _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
     # The sidecar contract is a top-level ``threads:`` mapping
     # (scitex_cards._threads._load_threads reads exactly that key) — an
     # export must be loadable by the same reader as the live sidecar.
-    _atomic_write(threads_path, safe_dump({"threads": threads}))
+    _atomic_write(
+        threads_path, json.dumps({"threads": threads}, indent=2, ensure_ascii=False)
+    )
 
     return {
         "db": str(db),
-        "tasks_yaml": str(out_path),
-        "threads_yaml": str(threads_path),
+        "tasks_json": str(out_path),
+        "threads_json": str(threads_path),
         "tasks": len(doc.get("tasks", [])),
         "users": len(doc.get("users", [])),
         "inbox_recipients": len(doc.get("inboxes", {})),
         "notifications": sum(len(v) for v in doc.get("inboxes", {}).values()),
         "threads": len(threads),
         "messages": sum(len(v) for v in threads.values()),
+        "newest_last_activity": _newest_last_activity(doc.get("tasks", [])),
     }
 
 
-__all__ = ["ExportRefused", "export_doc", "export_yaml"]
+__all__ = ["ExportRefused", "export_doc", "export_json"]
 
 # EOF
