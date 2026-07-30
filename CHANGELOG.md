@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-30
+comments[] is GONE from the /graph payload. Step 3 of 3, and the step the
+other two existed to make safe.
+
+MEASURED ON THE LIVE STORE at 2,881 cards, not inherited from the estimate
+this had carried since 2026-07-17:
+
+    comments[]        9,015,360 B   REMOVED
+    comment_scalars     707,195 B   kept (0.19.0)
+    rescore_history      15,343 B   kept (0.20.0)
+    NET REMOVED       8,292,822 B   = 7.9 MiB
+
+The replacements cost 8.0% of what they replace. The field had grown past
+the 8.5 MB figure quoted earlier the same evening, which is why it was
+re-measured rather than reused.
+
+Why it mattered: the board polls /rev every 5000 ms and refetches the whole
+response on any change, while the store is written every ~4 s (15.5
+row-deltas/min of ordinary fleet traffic). So it refetched this on very
+nearly every tick, and `skipIfUnchanged` only skips the REDRAW - the
+download had already happened.
+
+WHY THIS IS ONE LINE AND NOT A FLAG DAY. A previous attempt removed the
+field and added its replacements in a single branch; that broke every
+consumer at once and sat unmergeable for twelve days. This time the
+replacements AND the per-consumer fallbacks shipped first, in 0.19.0 and
+0.20.0, so a consumer missed here degrades to its fallback instead of
+breaking. Do NOT remove those fallbacks in the same release as this.
+
+NEW GUARD, because nothing pinned the field's ABSENCE. Re-adding it would
+have been silent AND would have looked fine: every consumer still has a
+comments[] fallback, so the board would keep working while the payload
+quietly tripled. The guard asserts the thread is gone, the three
+replacements are present, and - as a PROPERTY rather than a key name - that
+no comment prose survives anywhere in the serialized node, so
+reintroducing the thread under a different name also fails.
+
+The full thread is still served by GET /chat/<card_id>.
+
 ## [0.20.0] - 2026-07-30
 Cut so five merged PRs actually reach a running process. 0.19.0 was live on
 the operator's board and none of tonight's work was in it — the same
