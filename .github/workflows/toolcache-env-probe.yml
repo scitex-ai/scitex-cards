@@ -1,0 +1,66 @@
+name: toolcache-env-probe
+
+# TEMPORARY DIAGNOSTIC — delete with the branch.
+#
+# Question it answers, and nothing else: can a STEP-LEVEL `env:` override
+# RUNNER_TOOL_CACHE for a JavaScript action?
+#
+# Why it matters: scitex-ai/.github's reusable pytest-matrix.yml sets
+#   env: RUNNER_TOOL_CACHE: /tmp/scitex-ci-runner-work/toolcache/${{ runner.name }}
+# on the setup-uv step, to stop ~80 runners sharing one mutable cache on a
+# shared home. Measured on scitex-cards PR #667 (run 30568910438), ALL THREE
+# matrix legs -- including the one that PASSED -- still logged
+#   "Added /home/ywatanabe/.runner-toolcache/uv/0.12.0/x86_64 to the path"
+# so the override is inert. The job-log group header only echoes the AUTHORED
+# env: block, not the process environment, so it cannot distinguish "the
+# runner overrode it" from "the action ignored it". This does.
+#
+# Runs one job, on the same self-hosted Spartan pool, and installs nothing
+# beyond what setup-uv would install anyway.
+
+on:
+  push:
+    branches: [probe/toolcache-env]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    timeout-minutes: 10
+    steps:
+      - name: Baseline - what the runner itself provides
+        run: |
+          set -euo pipefail
+          echo "runner.name              = ${{ runner.name }}"
+          echo "RUNNER_TOOL_CACHE        = ${RUNNER_TOOL_CACHE:-<unset>}"
+          echo "AGENT_TOOLSDIRECTORY     = ${AGENT_TOOLSDIRECTORY:-<unset>}"
+          echo "RUNNER_TEMP              = ${RUNNER_TEMP:-<unset>}"
+          echo "--- is the shared cache real, and what is in it? ---"
+          ls -la "${RUNNER_TOOL_CACHE:-/nonexistent}/uv" 2>&1 | head -10 || true
+
+      - name: Can a step-level env override it for a SHELL step?
+        env:
+          RUNNER_TOOL_CACHE: /tmp/probe-shell/${{ runner.name }}
+        run: |
+          set -euo pipefail
+          echo "RUNNER_TOOL_CACHE = ${RUNNER_TOOL_CACHE:-<unset>}"
+          # If this prints /tmp/probe-shell/... the override reaches shell steps.
+
+      - name: Can a step-level env override it for a JS ACTION? (the real question)
+        env:
+          RUNNER_TOOL_CACHE: /tmp/probe-jsaction/${{ runner.name }}
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+          # Read the "Added <path> to the path" line this emits.
+          # /tmp/probe-jsaction/... -> the override WORKS and the pytest-matrix
+          #                            failure has some other cause.
+          # /home/ywatanabe/...     -> the override is INERT for JS actions, so
+          #                            the fix must move to the runner supervisor.
+
+      - name: Where did uv actually land?
+        run: |
+          set -euo pipefail
+          echo "which uv  = $(command -v uv || echo '<not found>')"
+          echo "uv version= $(uv --version 2>&1 || true)"
+          echo "PATH      = $PATH"
