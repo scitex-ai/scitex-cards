@@ -208,7 +208,35 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   }
   #thread-title b { color: var(--text); }
   #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: var(--column-max); margin-inline: auto; }
-  .msg { max-width: 78%; display: flex; flex-direction: column; gap: 2px; }
+  /* TYPING COST, not paint cost. Operator 2026-07-30: typing lags in a HEAVY
+     thread and is comfortable in a light one — 「軽いとこ…だとカーソルが付いて
+     きて快適に…なので何かページの重さに依存している」. Measured:
+     operator::scitex-cards 222 msgs / 86,859 B lags; operator::scitex-hpc
+     51 msgs / 18,761 B does not.
+
+     The pane keeps EVERY message in the DOM (chat_diff.js appends
+     incrementally, so re-render was never the cost). Every keystroke in the
+     composer then pays style+layout across the whole tree — and the composer
+     auto-sizes by reading scrollHeight, which forces that layout synchronously.
+     So the cost scales with thread weight, exactly as reported.
+
+     `content-visibility: auto` lets the browser SKIP layout and paint for
+     off-screen messages entirely, which is the cheapest fix that keeps full
+     history visible — no cap, no "load older" affordance, no change to the
+     diff logic that decides what to append.
+
+     `contain-intrinsic-size: auto 64px` matters more than it looks: the `auto`
+     keyword makes the browser REMEMBER each message's real height once it has
+     been rendered, so the scrollbar stops jumping after first pass. A bare
+     fixed size would estimate every bubble identically, and in this thread
+     bubbles differ ~6x in length (883 B/msg from the agent vs 145 B/msg from
+     the operator), so a fixed guess would make the scrollbar visibly wrong.
+     64px is only the never-yet-seen fallback. */
+  .msg {
+    max-width: 78%; display: flex; flex-direction: column; gap: 2px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 64px;
+  }
   .msg .bubble {
     padding: 8px 12px; border-radius: 12px; font-size: 0.88rem;
     white-space: pre-wrap; word-break: break-word; line-height: 1.35;
@@ -665,7 +693,24 @@ switcher IS the leftmost thing in the header, exactly as on the board.
 {% endcomment %}
 <header class="stx-cards-headerbar">
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
-  {% include "scitex_cards/_page_header.html" with active="chat" page_title="Direct messages" %}
+  {% comment %}
+  page_title IS THE PRODUCT NAME ON BOTH PAGES, and it is deliberately NOT
+  "Direct messages". Operator, 2026-07-30: 「ボードの上で張った部分は DM でも
+  同じにしてください」 then 「header が変わると変です」 — they pasted the board's
+  identity band and asked for it verbatim here, because a header whose text
+  changes as you move between Board and DM reads as the page breaking rather
+  than as navigation.
+
+  THIS SUPERSEDES A DECISION FROM 2026-07-29, so do not "restore" it: back then
+  the same operator asked for DM wording over "chat" (「"Direct Message" が
+  よい」), and that was implemented partly as this heading. Their newer
+  instruction is about the heading CHANGING, not about the word — so the DM
+  wording stays in all three places that identify the PAGE (the switcher item
+  reads "DM" and is the thing that highlights, its tooltip reads "Direct
+  messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
+  The band above the switcher names the PRODUCT; the switcher names the page.
+  {% endcomment %}
+  {% include "scitex_cards/_page_header.html" with active="chat" page_title="SciTeX Cards" %}
 </header>
 <div id="error-bar"></div>
 <div id="layout">
