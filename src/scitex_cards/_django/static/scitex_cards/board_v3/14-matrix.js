@@ -165,9 +165,9 @@
 
   /* Occupancy OVER TIME (ADR-0011 §8) — "are we living in I+II?" as a
    * reviewable series, not a hope. A READ MODEL, never storage: reconstructed
-   * by replaying the rescore audit trail (kind:"rescore" comments, each
-   * carrying {urgency:[old,new], importance:[old,new]} + the comment ts) that
-   * rescore_task appends. Client-side — /graph already ships comments[].
+   * by replaying the rescore audit trail (each event carrying
+   * {urgency:[old,new], importance:[old,new]} + the ts) that rescore_task
+   * appends. Client-side — /graph ships those events; see _rescoreEvents.
    *
    * Reconstructed BACKWARD from the authoritative live occupancy so the
    * series' LAST point is EXACTLY occupancy(nodes) (the header pills): start
@@ -186,6 +186,37 @@
    * {I,II,III,IV,unscored} count and ts is the ISO stamp of the rescore that
    * produced that state (null for the pre-history baseline). Length 1 (just
    * "now") when there are no rescores yet. */
+  /* One card's rescore events, preferring the field the server derives.
+   *
+   * `rescore_history` is /graph's projection of exactly these events —
+   * [{ts, rescore}], insertion order preserved — added so that comments[]
+   * can leave the payload entirely. comments[] is 8.5 MB of a 19.8 MB
+   * response that the board refetches on nearly every 5 s poll; this view
+   * was the last consumer needing comment CONTENT rather than a summary,
+   * and 30 rescore events cost 9,307 B against those 8.5 MB.
+   *
+   * The scan over comments[] stays as a live fallback, not as dead code:
+   * a server that predates the derived field still serves comments[] and
+   * no `rescore_history`, so keeping both means this file is correct on
+   * either side of that removal AND in whichever order the two changes
+   * land. Delete the fallback only once no reachable server omits the
+   * field — and until then, deleting it is what silently empties the
+   * chart.
+   *
+   * Presence, not truthiness, chooses the fast path. A card with no
+   * rescores yields `[]`, which is truthy in JS and so would work by
+   * accident with `||`; Array.isArray says what is actually meant and
+   * also rejects a malformed non-array. */
+  function _rescoreEvents(n) {
+    if (n && Array.isArray(n.rescore_history)) return n.rescore_history;
+    var out = [];
+    ((n && n.comments) || []).forEach(function (c) {
+      if (!c || c.kind !== "rescore" || !c.rescore) return;
+      out.push({ ts: c.ts, rescore: c.rescore });
+    });
+    return out;
+  }
+
   function occupancyHistory(nodes) {
     nodes = nodes || [];
     var state = {};
@@ -195,8 +226,8 @@
     });
     var trans = [];
     nodes.forEach(function (n) {
-      (n.comments || []).forEach(function (c) {
-        if (!c || c.kind !== "rescore" || !c.rescore) return;
+      _rescoreEvents(n).forEach(function (c) {
+        if (!c || !c.rescore) return;
         trans.push({
           ts: String(c.ts || ""),
           gi: trans.length, // insertion order — the same-ts stable tiebreak
