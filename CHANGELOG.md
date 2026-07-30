@@ -2,6 +2,78 @@
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-30
+
+The PostgreSQL migration became possible, and a byte that could have made it
+impossible was stopped at the door. Nothing here switches the store — this is
+the capability plus the guard, not the cutover.
+
+### A byte no backend can store (#663)
+
+A NUL is legal in SQLite TEXT and illegal in PostgreSQL TEXT, so a body SQLite
+accepted silently made the whole store unmigratable. Two rows in `messages`
+blocked the preflight; within ~2 minutes of clearing them a third arrived in
+`dm_messages`, written by an agent actively trying not to write one, in a
+message ANNOUNCING the fix. Prose about the byte is how the byte spreads.
+
+`dm_messages` is append-only and immutable except its tombstone columns, so that
+third row cannot be corrected in place. Write time is not the convenient place
+to catch this, it is the only place.
+
+Sanitised rather than rejected — rejecting would discard a legitimate 4 KB
+technical message whose only sin was quoting the byte it was about. The
+`record_json` already holds the body with the byte JSON-escaped, byte-identical
+to the column, so the original survives in the row. The marker is U+2400, not a
+backslash escape: one live body already contained `\x00` as prose, so a naive
+un-escape produced three NULs where the original had one. A marker a human can
+type by accident cannot be distinguished from content.
+
+The constant is `chr(0)`, never a literal. The first draft of the guard put a
+real NUL on line 53 and git classified the module as binary — precisely the
+defect the rows that started this were discussing. A test pins the source as
+plain text.
+
+### Reading either backend (#663)
+
+140 `execute()` sites write SQLite's `?` paramstyle. Porting each is 140 chances
+to miss one, so the translation is bound to the CONNECTION: code keeps writing
+`?` and forgetting is not expressible. A `?` inside a string literal is NOT a
+placeholder — card titles and message bodies contain them constantly, and a
+naive replace corrupts those literals silently, producing wrong data rather than
+an error.
+
+Read-only. The 52 upserts, 32 PRAGMA sites and 10 `BEGIN IMMEDIATE` blocks are
+not ported and no claim is made about writes. Verified against a real PostgreSQL
+18.4 holding a verified copy of the live store — the same query string returning
+the same answer from both backends, with the caller unaware which replied.
+
+### Store retirement, one-way and engine-enforced (#663)
+
+After a verified copy there are TWO stores with the same identity. Identity
+cannot say which is authoritative; only a statement of which is CURRENT can, and
+the cutover is the act of moving that statement into the OLD store so a
+straggler fails loudly instead of serving yesterday's board.
+
+Enforced by triggers, not client code: `schema_version` was measured oscillating
+7 → 5 → 6 within an hour because an older client stamps its own version
+unconditionally. A rule only the current client honours is not a rule.
+
+The guard has three states, and the third is deferred behind a REQUIRED
+`unguarded_store` keyword with no default. Wiring it as an immediate refusal
+would have blacked out every board on release day: the guards install via
+`init_schema` on a WRITE open, readers open `mode=ro`, and a read-only
+connection cannot create a trigger. The retirement branch itself is NOT
+deferred — a retired store is refused in either era.
+
+### Static assets carry the release (#663)
+
+The operator reported right-click no longer opening the DM context menu. It was
+unreproducible — and being unreproducible was the diagnosis, since a fresh
+browser cannot hold a stale file. A hard reload fixed it. Applied at the storage
+backend rather than at the 61 `{% static %}` call sites, so it cannot be
+forgotten and new templates inherit it.
+
+
 ## [0.24.0] - 2026-07-30
 
 The DM thread is readable on a phone, and the board can be reached from one
