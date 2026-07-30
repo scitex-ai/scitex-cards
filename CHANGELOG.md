@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-30
+Cut so five merged PRs actually reach a running process. 0.19.0 was live on
+the operator's board and none of tonight's work was in it — the same
+merged-is-not-deployed gap 0.19.0 itself was cut to close, one turn later.
+
+DM READ RECEIPTS FIRE AT ALL (#639). The operator reported a DM arriving
+with the sent/queued/read lamps dead. Measured on the live store: every
+operator -> agent message had ZERO receipts while every agent -> operator
+message had one, and across the whole `dm_receipts` table only THREE
+readers had ever written a row. A receipt was only written by
+`dm_list(ack=True)`, which an agent receiving DM bodies over the channel
+push never calls — so "the agent has not read this" was indistinguishable
+from "the agent is dead", the one distinction the feature exists to make.
+
+`_inbox.enqueue` now carries `msg_id`, which is the fix
+`_dm_receipt_state.py` had already specified in prose, and receipts are
+written at CONFIRM. Not at push: a returning `send()` proves only that the
+stdout writer took the bytes, and treating that as delivery is what
+destroyed weeks of operator DMs on 2026-07-29.
+
+Two bugs fell out of that change:
+- `msg_id` becomes the dedupe key. The old key was
+  `(event_type, card_id, ts, actor)`; DM timestamps are second-resolution,
+  so it was many-to-one BY CONSTRUCTION, and two distinct durable messages
+  were measured collapsing onto one notification — the second never
+  delivered.
+- A FRESH STORE COULD NOT INITIALISE ITS INBOX. The legacy-YAML reader
+  promised "malformed -> {}" but did not catch malformed-because-BINARY, so
+  it raised on a SQLite store. Existing stores escape only because their
+  migration flag predates the cutover. A NEW HOST IS THE FRESH-STORE CASE,
+  so this sat directly on the multi-host path.
+
+/graph PAYLOAD: EVERY CONSUMER MIGRATED (#637, #638, #640). comments[] is
+8.5 MB of a 19.8 MB payload, and the board refetches it on nearly every
+5 s poll because the store is written every ~4 s. Nothing in the board
+requires it any more: the Matrix reads a new `rescore_history` field
+(9,307 B — 0.11% of what it replaces), the detail panel reads the summary
+scalars, the timeline footer reads `last_comment`, and the detail thread
+fetches `GET /chat/<id>` on open. Every one keeps a fallback, so the field
+can be deleted without a flag day — which is the point of doing it in six
+pieces rather than one. The deletion itself is NOT in this release.
+
+ADR-0016 amended (#636): the operator revisited the 2026-07-20
+single-backend ruling, so storage plurality is permitted. Records the shape
+it is permitted in, and scitex-db's correction that the board wipes were
+caused by reconciling PEER stores where absence reads as deletion — not by
+two backends existing.
+
 ## [0.19.0] - 2026-07-30
 Cut because 0.18.0 had been published while develop kept accumulating — 59
 commits, including four merged PRs that were reported as done and were not
