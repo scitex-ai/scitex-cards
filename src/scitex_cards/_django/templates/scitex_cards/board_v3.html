@@ -3051,10 +3051,36 @@
       hops.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
       return hops;
     }
-    function renderComments(task) {
+    async function renderComments(task) {
       const list = document.getElementById("d-comment-list");
       if (!list) return;
-      const hops = _routeHops(task);
+      // THE THREAD FETCHES ITSELF (hook-bypass: line-limit) — this is the last
+      // surface that reads comments[] off /graph, and the only one that
+      // genuinely needs comment CONTENT rather than a summary. comments[] is
+      // 8.5 MB of a 19.8 MB payload that the board refetches on nearly every
+      // 5 s poll, so having every card pay on every poll to serve one panel
+      // that is usually closed is the wrong trade: it pays for its own read,
+      // on open. GET /chat/<id> already returns {card_id, title, comments} and
+      // 404s an unknown card, so no new endpoint was needed.
+      //
+      // ALWAYS fetch, rather than only when comments[] is absent. Gating on
+      // absence would leave this path dormant until step 3 deletes the field —
+      // and code that has never run is exactly what bit us tonight in the
+      // fresh-store inbox bug. The payload copy stays as the FAILURE fallback
+      // only, so a fetch error degrades to today's behaviour instead of
+      // blanking the panel.
+      let thread = task;
+      try {
+        const r = await fetch(
+          `${API_BASE}/chat/${encodeURIComponent(task.id)}`);
+        if (r.ok) {
+          const p = await r.json();
+          if (Array.isArray(p.comments)) {
+            thread = Object.assign({}, task, { comments: p.comments });
+          }
+        }
+      } catch { /* keep `thread = task` — the /graph copy, if it is still sent */ }
+      const hops = _routeHops(thread);
       if (!hops.length) {
         list.innerHTML = `<div class="comment-empty">No route activity yet.</div>`;
         return;
