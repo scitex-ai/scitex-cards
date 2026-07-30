@@ -37,6 +37,27 @@ from __future__ import annotations
 #: re-truncate (harmless) or render a stale budget (not).
 PREVIEW_CHARS = 160
 
+# ``first_comment_ts`` IS POSITIONAL — ``items[0].ts``, the thread opener,
+# so it and ``first_comment_author`` describe the SAME comment. That is a
+# deliberate choice and it is not the same question as "the earliest
+# timestamp", so the difference is written down here rather than assumed.
+#
+# board_v3's recentSort.js:62 ``earliestCommentTs`` scans EVERY comment for
+# ``min(ts)`` and skips unparseable ones, because it answers "when did this
+# task first show activity" for legacy rows with no ``created_at``. Swapping
+# that scan for this scalar is only correct while the two agree.
+#
+# MEASURED 2026-07-30 against the live store, 1,766 cards with comments:
+#     positional != earliest : 0
+#     missing/empty ts       : 0
+# So they agree today, and the migration is safe today.
+#
+# RE-CHECK THIS IF the store ever gains out-of-order comment timestamps —
+# a backfill, an import, or a clock-skewed writer would all do it. The
+# comment thread is append-only, which is why the two agree now; nothing
+# ENFORCES that ``ts`` ascends. If they ever diverge, recentSort silently
+# starts sorting by a different key than before, with no error.
+
 
 def _truncate(text: str, limit: int = PREVIEW_CHARS) -> str:
     """First ``limit`` characters of ``text``. No ellipsis.

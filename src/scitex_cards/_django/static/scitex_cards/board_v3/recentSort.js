@@ -60,6 +60,21 @@ function parseIso(value) {
  * task first show activity" when `created_at` is absent on a legacy row.
  */
 function earliestCommentTs(task) {
+  // PREFER the server-derived scalar. /graph ships comments[] at 8.4 MB of a
+  // 19.8 MB payload and is being reduced to these scalars; this reads the
+  // cheap field first and keeps the scan only as a fallback for a payload
+  // that predates it.
+  //
+  // The scalar is POSITIONAL (the thread opener) while the scan below is
+  // MIN(ts). Measured 2026-07-30 on 1,766 cards with comments: they agree in
+  // every case, and none had a missing ts. They agree because the thread is
+  // append-only — nothing enforces that ts ascends, so if a backfill or a
+  // clock-skewed writer ever changes that, this preference changes the sort
+  // key silently. See handlers/_comment_digest.py for the same note and the
+  // condition to re-check.
+  const scalar = parseIso(task && task.first_comment_ts);
+  if (scalar) return scalar;
+
   const comments = task && Array.isArray(task.comments) ? task.comments : [];
   let earliest = null;
   for (const c of comments) {
