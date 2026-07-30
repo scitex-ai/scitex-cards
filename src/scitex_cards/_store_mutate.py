@@ -8,6 +8,8 @@ every name below so ``from ._store import add_task`` keeps working:
     add_task            Append a new task (owner + creator FAIL-LOUD, WIP gate).
     update_task         Mutate fields of an existing task by id.
     _stamp_deferred_at  Stamp the backlog age clock on ENTRY into `deferred`.
+    _stamp_blocked_at   Stamp the blocked-check clock when the (status, blocker)
+                        PAIR moves — never on a passing comment.
     _wip_statuses       Back-compat re-export of ``_throughput.WIP_STATUSES``.
 
 Named ``_store_mutate`` rather than ``_store_write`` because ``_store_write``
@@ -242,6 +244,33 @@ def _stamp_deferred_at(task: dict, prior_status: str | None) -> None:
     task[FIELD_DEFERRED_AT] = _utc_now_iso()
 
 
+def _stamp_blocked_at(
+    task: dict, prior_status: str | None, prior_blocker: str | None
+) -> None:
+    """Set ``blocked_at`` when the ``(status, blocker)`` PAIR moves, and only then.
+
+    The blocked-check's clock, exactly parallel to :func:`_stamp_deferred_at` but
+    keyed on the pair rather than the status alone — because re-blocking the same
+    card on a DIFFERENT blocker genuinely starts a new wait, while commenting on
+    it does not. A comment changes ``last_activity`` and neither element of the
+    pair, so it must leave this stamp alone: keying the sweep on a field every
+    mutation touches is what made the alarm silenceable by typing.
+
+    Cards already blocked before this shipped carry no stamp; they are left
+    untouched here rather than back-filled on a passing mutation, and
+    ``_blocked_age_hours`` reads their age from ``created_at`` instead. That
+    makes them read as maximally stale, so the alarm errs toward firing.
+    """
+    from ._stale_active_clocks import FIELD_BLOCKED_AT
+    from ._store import _utc_now_iso
+
+    if task.get("status") != "blocked":
+        return
+    if prior_status == "blocked" and task.get("blocker") == prior_blocker:
+        return  # Pair unchanged — not a new wait.
+    task[FIELD_BLOCKED_AT] = _utc_now_iso()
+
+
 def _wip_statuses() -> frozenset[str]:
     """Re-export from ``_throughput`` so the gate's predicate stays a single
     source of truth. WIP is work in flight — ``in_progress`` — not backlog.
@@ -317,6 +346,7 @@ def update_task(
             # silently resurrect it (2026-07-21 tombstone change).
             if task.get("id") == task_id and not _task._is_tombstoned(task):
                 prior_status = task.get("status")
+                prior_blocker = task.get("blocker")
                 for key, value in fields.items():
                     if value is None:
                         task.pop(key, None)
@@ -335,6 +365,9 @@ def update_task(
                 # would read as permanently young and could never expire. The
                 # rot would be real and invisible at the same time.
                 _stamp_deferred_at(task, prior_status)
+                # Same lesson, the blocked-check's clock: stamp when the
+                # (status, blocker) PAIR moves, never on a passing comment.
+                _stamp_blocked_at(task, prior_status, prior_blocker)
                 _save_doc_unlocked(doc, resolved, tasks=tasks)
                 result = dict(task)
                 transitioned_to_done = (
@@ -397,6 +430,7 @@ def update_task(
 
 __all__ = [
     "_stamp_deferred_at",
+    "_stamp_blocked_at",
     "_wip_statuses",
     "add_task",
     "update_task",
