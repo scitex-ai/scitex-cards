@@ -426,6 +426,101 @@ class TestTheRetireVerbHandlesTheUpsertHazard:
             retire_store(conn, successor_uuid="   ", by="me", at="2026-07-30T15:00:00Z")
 
 
+class TestTheReadDoorActuallyRefusesARetiredStore:
+    """The primitive existing is not the point -- something must CALL it.
+
+    Six times today the shape was "the artifact exists, the consumer cannot see
+    it". A retirement guard nothing invokes is that shape exactly, so these
+    tests exercise the read door itself rather than read_status.
+    """
+
+    def test_a_retired_store_is_refused_at_the_read_door(self, tmp_path):
+        # Arrange
+        from scitex_cards._store_canonical_read import _refuse_if_retired
+
+        path = tmp_path / "retired.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.executescript(RETIREMENT_TRIGGER_SQL)
+        retire_store(
+            conn, successor_uuid="uuid-dest", by="me", at="2026-07-30T16:00:00Z"
+        )
+        conn.commit()
+        conn.close()
+        # Act
+        raised = pytest.raises(StoreRetired)
+        # Assert
+        with raised:
+            _refuse_if_retired(path)
+
+    def test_a_current_store_is_allowed_through(self, tmp_path):
+        # Arrange: the regression that matters -- this path reads the live board,
+        # and a guard that refuses everything is as useless as one that refuses
+        # nothing.
+        from scitex_cards._store_canonical_read import _refuse_if_retired
+
+        path = tmp_path / "current.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO schema_meta(key, value) VALUES('store_uuid', 'u')")
+        conn.executescript(RETIREMENT_TRIGGER_SQL)
+        conn.commit()
+        conn.close()
+        # Act
+        _refuse_if_retired(path)
+        # Assert -- returning at all is the assertion; it must not raise
+        assert path.exists()
+
+    def test_a_store_without_schema_meta_is_not_treated_as_retired(self, tmp_path):
+        # Arrange: absence of the table is not a retirement, and refusing here
+        # would break stores predating it for no safety gain.
+        from scitex_cards._store_canonical_read import _refuse_if_retired
+
+        path = tmp_path / "bare.db"
+        sqlite3.connect(path).close()
+        # Act
+        _refuse_if_retired(path)
+        # Assert
+        assert path.exists()
+
+    def test_an_unguarded_store_is_allowed_during_the_rollout(self, tmp_path):
+        # Arrange: MEASURED -- no live store carries the guards yet, they install
+        # on a WRITE open, and this door opens read-only. Refusing here would
+        # black out every board on release day.
+        from scitex_cards._store_canonical_read import _refuse_if_retired
+
+        path = tmp_path / "unguarded.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO schema_meta(key, value) VALUES('store_uuid', 'u')")
+        conn.commit()
+        conn.close()
+        # Act
+        _refuse_if_retired(path)
+        # Assert
+        assert path.exists()
+
+    def test_an_unguarded_store_that_IS_retired_is_still_refused(self, tmp_path):
+        # Arrange: the permissive era must never make a retired store readable.
+        # This is the branch the cutover depends on.
+        from scitex_cards._store_canonical_read import _refuse_if_retired
+
+        path = tmp_path / "unguarded-retired.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('store_status', ?)",
+            (STATUS_RETIRED,),
+        )
+        conn.commit()
+        conn.close()
+        # Act
+        raised = pytest.raises(StoreRetired)
+        # Assert
+        with raised:
+            _refuse_if_retired(path)
+
+
 class TestTheTriggersAreActuallyInstalled:
     def test_both_guards_exist_after_applying_the_schema(self, guarded_store):
         # Arrange
