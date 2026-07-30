@@ -193,13 +193,21 @@ def test_lenient_sweep_reports_the_externally_blocked_card():
 
 
 def test_lenient_sweep_holds_fire_inside_its_threshold():
-    """Blocked an hour ago is not yet worth a "has it cleared?" ping."""
+    """Blocked an hour ago is not yet worth a "has it cleared?" ping.
+
+    The contract is unchanged; the FIELD carrying it moved. This sweep now
+    measures how long the ``(status, blocker)`` pair has stood (``blocked_at``)
+    rather than when the card was last touched, because a comment touches a card
+    without clearing its blocker (2026-07-30). Expressing "recently blocked" as
+    a recent ``last_activity`` was the conflation being fixed, so the fixture
+    states it directly instead.
+    """
     # Arrange
     fresh = _card(
         "just-blocked",
         "blocked",
         "dependency",
-        last_activity="2026-07-12T11:30:00Z",  # 30 min before NOW
+        blocked_at="2026-07-12T11:30:00Z",  # pair set 30 min before NOW
     )
     # Act
     got = detect_blocked_external([fresh], now=NOW)
