@@ -76,6 +76,15 @@
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/searchSuggest.js' %}"></script>
 {% comment %}
+  searchDebounce.js — when to rebuild the board while the operator types.
+  Pure module (timers only). render() used to run synchronously from
+  `oninput`, which is dispatched BEFORE paint, so a full-layout rebuild sat
+  on the critical path of showing the character just typed — the caret
+  lagged the keyboard. Exposes window.STX.searchDebounce. Operator
+  2026-07-30.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/searchDebounce.js' %}"></script>
+{% comment %}
   timelinePack.js — pure beeswarm sub-row packer for the Timeline raster.
   MUST load BEFORE timeline.js: it publishes window.STX.timelinePack, which
   timeline.js's IIFE captures at init so co-located markers fan out into
@@ -1065,6 +1074,26 @@
       wrap.innerHTML = pills.join("");
     }
 
+    // Rebuild the board AFTER typing settles, never during it — see
+    // static/scitex_cards/board_v3/searchDebounce.js for the full reasoning.
+    // Short version: `oninput` is dispatched BEFORE the browser paints, so
+    // calling render() here put a full-layout rebuild over every node on the
+    // critical path of displaying the character just typed. That is why the
+    // CARET lagged the keyboard, not just the results lagging the caret
+    // (operator, 2026-07-30).
+    //
+    // Falls back to calling render() synchronously when the deferred module
+    // hasn't executed yet — same stance the Wall and Matrix layouts take. A
+    // missing module must degrade to the OLD behaviour (correct but slow), never
+    // to a board that silently stops responding to the filter.
+    let _searchDebouncer = null;
+    function _scheduleSearchRender() {
+      const SD = (window.STX && window.STX.searchDebounce) || null;
+      if (!SD) { render(); return; }
+      if (!_searchDebouncer) _searchDebouncer = SD.createSearchDebouncer();
+      _searchDebouncer.schedule(render);
+    }
+
     function onSearchInput(e) {
       STATE.filters.search = e.currentTarget.value;
       // Invalidate the qualifier-parse cache on every keystroke.
@@ -1072,8 +1101,11 @@
       STATE._searchParsedRaw = null;
       renderQualifierHints(e.currentTarget.value);
       renderActiveFilterChips();  // P2: surface the search chip while typing
+      // NOT debounced: onSearchKeyDown reads the list's hidden flag and
+      // _SEARCH_SUGG_ITEMS to route Enter/Tab/ArrowDown, so deferring this
+      // would break the keyboard contract for a fast typist.
       renderSearchSuggest(e.currentTarget);
-      render();
+      _scheduleSearchRender();
     }
 
     // === Search autocomplete (operator TG 12318) ===========================
