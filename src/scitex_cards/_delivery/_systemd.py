@@ -42,7 +42,7 @@ UNIT_NAME = "scitex-todo-notifyd.service"
 UNIT_TEMPLATE = """\
 [Unit]
 Description=scitex-todo notify daemon — standalone notification-delivery loop
-Documentation=https://github.com/ywatanabe1989/scitex-todo
+Documentation=https://github.com/scitex-ai/scitex-cards
 After=network-online.target
 Wants=network-online.target
 
