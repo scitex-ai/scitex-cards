@@ -397,11 +397,23 @@ def test_a_sender_never_sees_their_own_message_as_unread(db_path):
 # --------------------------------------------------------------------------- #
 # Schema stamping                                                              #
 # --------------------------------------------------------------------------- #
-def test_the_schema_version_advanced_to_five(db_path):
-    """The DM tables are a schema change, and the stamp has to say so.
+#: The schema version at which the DM tables landed. A FLOOR, not an equality —
+#: see ``test_the_version_is_at_or_above_the_dm_floor``.
+DM_SCHEMA_FLOOR = 5
 
-    Checked against the FILE's ``user_version``, not against the constant: a
-    stamp that agrees with itself proves nothing.
+
+def test_the_file_stamp_matches_the_code_version(db_path):
+    """The FILE's ``user_version`` agrees with the constant the code believes.
+
+    This is the non-vacuous half of what used to be
+    ``test_the_schema_version_advanced_to_five``: as that test's own docstring
+    said, a stamp compared against itself proves nothing, so the comparison that
+    earns its place is file-vs-code.
+
+    The half that did NOT earn its place was the literal ``== 5`` welded onto the
+    same assert. It broke the moment v6 (``tasks.revision``) landed, and it would
+    break on every future bump — a test pinned to a number that is designed to
+    increase reports a defect every time the thing it guards works correctly.
     """
     # Arrange
     connection = open_db(db_path)
@@ -413,7 +425,26 @@ def test_the_schema_version_advanced_to_five(db_path):
         connection.close()
 
     # Assert
-    assert stamped == SCHEMA_VERSION == 5
+    assert stamped == SCHEMA_VERSION
+
+
+def test_the_version_is_at_or_above_the_dm_floor():
+    """The DM tables were a schema change, so the version cannot go back below it.
+
+    Keeps the historical claim the old literal was reaching for — "DM advanced
+    the schema" — as a FLOOR that survives later bumps. That the tables actually
+    arrive on open is covered separately by
+    ``test_a_v4_database_gains_the_dm_tables_on_open``, which checks the artifact
+    rather than the number.
+    """
+    # Arrange
+    floor = DM_SCHEMA_FLOOR
+
+    # Act
+    actual = SCHEMA_VERSION
+
+    # Assert
+    assert actual >= floor
 
 
 def test_a_v4_database_gains_the_dm_tables_on_open(tmp_path):
