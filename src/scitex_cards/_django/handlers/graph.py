@@ -99,26 +99,32 @@ def _build_graph(board) -> dict:
             # id the frontend treats this task as top-level (same lenient
             # stance as edges to unknown ids).
             "parent": t.get("parent"),
-            # Append-only comment thread (list of {ts, author, text}); always
-            # a list so the frontend can render / count without null-checks.
+            # comments[] IS GONE FROM THIS PAYLOAD. Step 3 of 3, and the step
+            # the other two existed to make safe. It was 8.5 MB of a 19.8 MB
+            # response that the board refetched on nearly every 5 s /rev poll,
+            # because the store is written every ~4 s.
             #
-            # BEING REMOVED, in three shippable steps rather than one. This
-            # field is 4.4 MB of a 19.8 MB payload (measured 2026-07-17 at
-            # 1,837 cards; the store is 2,854 now) and every board poll
-            # carries all of it. The previous attempt removed it and the
-            # summary fields in a single branch, which broke every consumer
-            # at once and sat unmergeable for twelve days until its owner
-            # stopped existing — so:
-            #   1. THIS STEP: emit the summary scalars ALONGSIDE comments[].
-            #      Purely additive, every consumer keeps working, ships green.
-            #   2. migrate the list consumers onto the scalars, one PR each.
-            #   3. delete this line once nothing reads it.
-            # Step 1 costs ~445 KB (2% of the payload) and buys the ability
-            # to land 2 incrementally instead of in a flag day.
-            "comments": t.get("comments") or [],
-            # List-view stand-ins for the thread above. The full thread is
-            # at /chat/<card_id>, which already preserves each comment's
-            # `kind` so the route-trace timeline keeps working.
+            # A previous attempt removed it and added its replacements in ONE
+            # branch. That broke every consumer at once and sat unmergeable for
+            # twelve days until its owner stopped existing. So this time:
+            #   1. #634 emitted the summary scalars ALONGSIDE it (additive).
+            #   1b. #637 added rescore_history — the Matrix reads comment
+            #       CONTENT, so the scalars alone could not have replaced it.
+            #   2. #635/#638/#640 migrated every consumer, each keeping a
+            #      FALLBACK to comments[] so either payload shape works.
+            #   3. this deletion.
+            #
+            # The fallbacks are why this is a one-line change and not a flag
+            # day: they were deployed BEFORE the thing that needs them, so a
+            # consumer I missed degrades instead of breaking. Do not remove
+            # them in the same release as this — that ordering is the whole
+            # lesson of the twelve-day branch.
+            #
+            # The full thread is served by GET /chat/<card_id>, which preserves
+            # each comment's `kind` so the route-trace timeline still works,
+            # and the detail panel fetches it on open.
+            #
+            # List-view stand-ins follow.
             **comment_scalars(t),
             # The Matrix view is the one list surface that needs comment
             # CONTENT rather than a summary: it reads the [old, new] axis
