@@ -163,14 +163,51 @@ def test_no_switcher_tooltip_still_says_chat(chat_html):
 # --- the page heading ------------------------------------------------------
 
 
-def test_the_page_heading_uses_the_direct_message_wording(chat_html):
-    """The <h1> the operator reads on the page itself."""
+def test_the_page_heading_does_not_change_between_board_and_dm(chat_html):
+    """The identity band names the PRODUCT, so it reads the same on both pages.
+
+    SUPERSEDES ``test_the_page_heading_uses_the_direct_message_wording``, which
+    pinned ``<h1>Direct messages</h1>``. Operator, 2026-07-30: 「ボードの上で
+    張った部分は DM でも同じにしてください」 then 「header が変わると変です」 —
+    they sent the board's header and asked for it verbatim here, because a
+    heading whose text changes as you move between Board and DM reads as the
+    page breaking rather than as navigation.
+
+    THE DM WORDING WAS NOT DROPPED, and the three tests around this one are why
+    this change is safe: the switcher item still reads "DM" and is the element
+    that highlights, its tooltip still reads "Direct messages with the agents",
+    and the browser tab still reads "DM — SciTeX Cards v…". Their 2026-07-29
+    request was "not chat, use DM wording"; this one is about the heading
+    CHANGING. Both hold once the band names the product and the switcher names
+    the page.
+    """
     # Arrange
     html = chat_html
+
     # Act
-    heading = "<h1>Direct messages</h1>" in html
+    heading = "<h1>SciTeX Cards</h1>" in html
+
     # Assert
     assert heading
+
+
+def test_the_page_still_identifies_itself_as_dm_somewhere_visible(chat_html):
+    """The control that says WHICH page you are on must still say DM.
+
+    Guards the half the change above could have quietly cost: with the heading
+    now naming the product on both pages, the switcher is the only visible thing
+    left distinguishing them. If it ever stopped saying DM, the two pages would
+    become indistinguishable — which is a worse version of the complaint that
+    prompted the change.
+    """
+    # Arrange
+    html = chat_html
+
+    # Act
+    identified = ">DM</a>" in html
+
+    # Assert
+    assert identified
 
 
 # --- the ROUTE is NOT renamed ----------------------------------------------

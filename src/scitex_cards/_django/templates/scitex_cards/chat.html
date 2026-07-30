@@ -693,7 +693,24 @@ switcher IS the leftmost thing in the header, exactly as on the board.
 {% endcomment %}
 <header class="stx-cards-headerbar">
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
-  {% include "scitex_cards/_page_header.html" with active="chat" page_title="Direct messages" %}
+  {% comment %}
+  page_title IS THE PRODUCT NAME ON BOTH PAGES, and it is deliberately NOT
+  "Direct messages". Operator, 2026-07-30: 「ボードの上で張った部分は DM でも
+  同じにしてください」 then 「header が変わると変です」 — they pasted the board's
+  identity band and asked for it verbatim here, because a header whose text
+  changes as you move between Board and DM reads as the page breaking rather
+  than as navigation.
+
+  THIS SUPERSEDES A DECISION FROM 2026-07-29, so do not "restore" it: back then
+  the same operator asked for DM wording over "chat" (「"Direct Message" が
+  よい」), and that was implemented partly as this heading. Their newer
+  instruction is about the heading CHANGING, not about the word — so the DM
+  wording stays in all three places that identify the PAGE (the switcher item
+  reads "DM" and is the thing that highlights, its tooltip reads "Direct
+  messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
+  The band above the switcher names the PRODUCT; the switcher names the page.
+  {% endcomment %}
+  {% include "scitex_cards/_page_header.html" with active="chat" page_title="SciTeX Cards" %}
 </header>
 <div id="error-bar"></div>
 <div id="layout">

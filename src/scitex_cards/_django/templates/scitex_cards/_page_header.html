@@ -28,9 +28,13 @@ Callers pass the page they are on and the heading it wants:
 both views already provide them, and `api_base` is what `_page_switcher.html`
 builds its mount-aware hrefs from (read its header before touching a link).
 
-The `<h1>` carries NO class on purpose: `test__dm_naming_is_consistent.py`
-pins the DM heading as the exact string `<h1>Direct messages</h1>`, and each
-host page already styles `h1` inside its own header. page-header.css styles it
+The `<h1>` carries NO class on purpose, and each host page already styles `h1`
+inside its own header. NOTE both pages now pass the SAME `page_title` ("SciTeX
+Cards"): the band names the PRODUCT and the switcher names the page. That is the
+operator's 2026-07-30 instruction — a heading that changes between Board and DM
+reads as the page breaking. `test__dm_naming_is_consistent.py` pins the stable
+heading AND pins that the switcher still says DM, so the two pages cannot become
+indistinguishable. page-header.css styles it
 through `.stx-cards-header h1` so the typography is shared without the markup
 having to say so.
 {% endcomment %}
