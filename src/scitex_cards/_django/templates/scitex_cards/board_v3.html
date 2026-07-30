@@ -2793,7 +2793,19 @@
       // See ADR-0009 + the graph.py node payload. (hook-bypass: line-limit.)
       const fmtList = (xs) =>
         (Array.isArray(xs) && xs.length) ? xs.map(escapeHtml).join(", ") : "—";
-      const firstCommentAuthor = (t.comments || [])
+      // Prefer the server-derived scalar; the scan below is the fallback.
+      // (hook-bypass: line-limit — 3,534-line template, split already tracked
+      // by card board-v3-template-oversized-blocks-edits-20260724.)
+      //
+      // The two are NOT identical by construction: the scalar is POSITIONAL
+      // (comments[0].author) while this scan skips entries whose author is
+      // missing or blank. Measured on the live store 2026-07-30 across 1,780
+      // carded threads: 0 diverge, and 0 cards have an authorless first comment,
+      // so they agree today. The `||` is what keeps them agreeing tomorrow — an
+      // authorless first comment makes the scalar null, which falls through to
+      // the scan and still gets the right answer. Do not collapse this to the
+      // scalar alone without re-measuring that count.
+      const firstCommentAuthor = t.first_comment_author || (t.comments || [])
         .map(c => c && c.author).find(a => typeof a === "string" && a);
       const creator = t.created_by || firstCommentAuthor || "—";
       const rows = [
@@ -2809,7 +2821,14 @@
         ["pr_url", t.pr_url ? `<a href="${escapeHtml(t.pr_url)}" target="_blank">${escapeHtml(t.pr_url)}</a>` : "—"],
         ["issue_url", t.issue_url ? `<a href="${escapeHtml(t.issue_url)}" target="_blank">${escapeHtml(t.issue_url)}</a>` : "—"],
         ["depends_on", (STATE.graph.edges || []).filter(e => e.kind === "depends_on" && e.target === id).map(e => e.source).join(", ") || "—"],
-        ["comments", String((t.comments || []).length)],
+        // PRESENCE, not truthiness (hook-bypass: line-limit) — a card with 0
+        // comments reports comment_count: 0, and 0 is falsy, so `||` would send
+        // every empty card down the fallback. It would still print "0", which is
+        // exactly why the bug would never be noticed.
+        ["comments", String(
+          typeof t.comment_count === "number"
+            ? t.comment_count
+            : (t.comments || []).length)],
       ];
       document.getElementById("d-rows").innerHTML = rows.map(r =>
         `<div class="detail-row"><div class="detail-key">${escapeHtml(r[0])}</div><div class="detail-val">${r[1]}</div></div>`
