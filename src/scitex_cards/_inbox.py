@@ -121,8 +121,26 @@ def _read_legacy_embedded_inboxes(path: Path) -> dict[str, list[dict]]:
         return {}
     from ._yaml import safe_load
 
-    with path.open(encoding="utf-8") as handle:
-        data = safe_load(handle) or {}
+    try:
+        with path.open(encoding="utf-8") as handle:
+            data = safe_load(handle) or {}
+    except (UnicodeDecodeError, ValueError, OSError):
+        # THE STORE IS SQLITE NOW, so "the legacy document" is a binary file
+        # and reading it as UTF-8 YAML raises rather than returning nothing.
+        # This function's contract has always been "absent / malformed -> {}";
+        # it just never covered malformed-because-binary.
+        #
+        # It matters because a FRESH store hits it on its very first inbox
+        # access: the one-time migration runs (no `migrated_from_yaml` flag
+        # yet), reaches here, and raises — so the inbox cannot initialise at
+        # all. Existing stores escape only because their flag was set back
+        # when the store really was YAML. A brand-new host is precisely the
+        # fresh-store case, so this is on the multi-host path.
+        #
+        # Returning {} is right, not a papering-over: a SQLite store HAS no
+        # embedded `inboxes:` section, so "nothing to migrate" is the true
+        # answer. The DB's own rows are read by the SQLite backend directly.
+        return {}
     raw = data.get(_INBOXES_KEY) if isinstance(data, dict) else None
     if not isinstance(raw, dict):
         return {}
@@ -283,6 +301,7 @@ def enqueue(
     actor: str | None,
     ts: str | None = None,
     supersede: bool = False,
+    msg_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """Append a notification record to ``recipient_id``'s inbox (STANDALONE).
@@ -327,6 +346,16 @@ def enqueue(
         reassigned / completed / escalation) are each DISTINCT and must NOT
         supersede. The default (``False``) keeps the plain
         ``(type,card,ts,actor)`` dedup path unchanged.
+    msg_id : str | None
+        The id of the DURABLE object this notification is about — today, a
+        ``dm_messages.id``. Carried so a consumer can join the notification
+        back to the message EXACTLY. Without it the only available key is
+        ``(event_type, card_id, ts, actor)``, which is many-to-one by
+        construction because DM timestamps are second-resolution: measured on
+        the live store, two distinct durable messages collapsed onto one
+        notification. When present it also becomes the dedupe key, so that
+        collapse cannot happen. ``None`` for events with no such object (card
+        events, digests), and ``None`` on rows enqueued before this existed.
     store : str | pathlib.Path | None
         Store path override (default: the resolved task store).
 
@@ -347,6 +376,7 @@ def enqueue(
             actor=actor,
             ts=ts,
             supersede=supersede,
+            msg_id=msg_id,
             store=store,
         )
     if not recipient_id:
@@ -368,7 +398,12 @@ def enqueue(
                     r.get("event_type") == event_type and r.get("card_id") == card_id
                 )
             ]
-        if _is_duplicate(
+        if msg_id:
+            # Exact dedupe when the producer named the message (see the
+            # ``msg_id`` parameter docs for why the tuple below cannot be).
+            if any(r.get("msg_id") == msg_id for r in records):
+                return None
+        elif _is_duplicate(
             records,
             event_type=event_type,
             card_id=card_id,
@@ -384,6 +419,7 @@ def enqueue(
             "actor": actor,
             "ts": timestamp,
             "seen": False,
+            "msg_id": msg_id,
         }
         records.append(record)
         _save_inboxes_unlocked(inboxes, path)
