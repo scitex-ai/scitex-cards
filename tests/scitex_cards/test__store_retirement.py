@@ -25,6 +25,7 @@ from scitex_cards._store_retirement import (
     StoreCannotProveItsStatus,
     StoreRetired,
     read_status,
+    retire_store,
 )
 
 
@@ -303,6 +304,126 @@ class TestTheUnguardedEraMustBeStatedExplicitly:
         # Assert
         with raised:
             read_status(rows, set(), unguarded_store="curent")
+
+
+class TestTheRetireVerbHandlesTheUpsertHazard:
+    """schema_meta's idiom is INSERT OR REPLACE, which SQLite implements as
+    DELETE-then-INSERT, so the obvious upsert trips the delete guard on an
+    already-retired store. The verb exists so nobody has to remember that.
+    """
+
+    def test_it_retires_a_current_store(self, guarded_store):
+        # Arrange
+        conn = guarded_store
+        # Act
+        retire_store(
+            conn,
+            successor_uuid="uuid-dest",
+            by="scitex-cards",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Assert
+        assert _value_of(conn, "store_status") == STATUS_RETIRED
+
+    def test_it_records_the_successor(self, guarded_store):
+        # Arrange
+        conn = guarded_store
+        # Act
+        retire_store(
+            conn,
+            successor_uuid="uuid-dest",
+            by="scitex-cards",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Assert
+        assert _value_of(conn, "retired_in_favour_of") == "uuid-dest"
+
+    def test_it_works_on_a_store_with_no_status_row_at_all(self, guarded_store):
+        # Arrange: a store too old to carry store_status -- UPDATE alone would
+        # match zero rows and silently do nothing.
+        guarded_store.execute("DELETE FROM schema_meta WHERE key = 'store_status'")
+        # Act
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-dest",
+            by="me",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Assert
+        assert _value_of(guarded_store, "store_status") == STATUS_RETIRED
+
+    def test_calling_it_twice_is_permitted(self, guarded_store):
+        # Arrange
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-dest",
+            by="me",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Act
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-other",
+            by="you",
+            at="2026-07-30T16:00:00Z",
+        )
+        # Assert
+        assert _value_of(guarded_store, "store_status") == STATUS_RETIRED
+
+    def test_a_second_call_does_not_rewrite_the_original_successor(self, guarded_store):
+        # Arrange: the moment a store was retired is a FACT; a later call must
+        # not overwrite it. That is the correct reading of one-way.
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-dest",
+            by="me",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Act
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-other",
+            by="you",
+            at="2026-07-30T16:00:00Z",
+        )
+        # Assert
+        assert _value_of(guarded_store, "retired_in_favour_of") == "uuid-dest"
+
+    def test_a_second_call_does_not_rewrite_the_original_timestamp(self, guarded_store):
+        # Arrange
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-dest",
+            by="me",
+            at="2026-07-30T15:00:00Z",
+        )
+        # Act
+        retire_store(
+            guarded_store,
+            successor_uuid="uuid-dest",
+            by="me",
+            at="2026-07-30T16:00:00Z",
+        )
+        # Assert
+        assert _value_of(guarded_store, "retired_at") == "2026-07-30T15:00:00Z"
+
+    def test_it_refuses_without_a_successor(self, guarded_store):
+        # Arrange: retiring in favour of nothing leaves a reader nowhere to go.
+        conn = guarded_store
+        # Act
+        raised = pytest.raises(ValueError)
+        # Assert
+        with raised:
+            retire_store(conn, successor_uuid="", by="me", at="2026-07-30T15:00:00Z")
+
+    def test_it_refuses_a_whitespace_successor(self, guarded_store):
+        # Arrange
+        conn = guarded_store
+        # Act
+        raised = pytest.raises(ValueError)
+        # Assert
+        with raised:
+            retire_store(conn, successor_uuid="   ", by="me", at="2026-07-30T15:00:00Z")
 
 
 class TestTheTriggersAreActuallyInstalled:

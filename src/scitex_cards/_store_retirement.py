@@ -53,6 +53,7 @@ __all__ = [
     "StoreRetired",
     "StoreCannotProveItsStatus",
     "read_status",
+    "retire_store",
 ]
 
 STATUS_CURRENT = "current"
@@ -187,6 +188,50 @@ def read_status(
                 f"got {unguarded_store!r}"
             )
     return STATUS_CURRENT
+
+
+def retire_store(conn, *, successor_uuid: str, by: str, at: str) -> None:
+    """Retire this store in favour of ``successor_uuid``. THE ONLY WAY TO DO IT.
+
+    Exists so nobody has to remember the hazard at 3am during a cutover: this
+    package's idiom for ``schema_meta`` is ``INSERT OR REPLACE``, which SQLite
+    implements as DELETE-then-INSERT, so the obvious upsert trips the delete
+    guard on an already-retired store. Rather than document that and hope, the
+    correct sequence is bound to a verb -- level 1 beats level 2.
+
+    ``INSERT OR IGNORE`` then ``UPDATE`` covers both shapes without ever issuing
+    a DELETE: the INSERT creates ``store_status`` on a store too old to have one
+    and is skipped when it already exists, and the UPDATE then moves an existing
+    ``current`` to ``retired``.
+
+    Idempotent by construction. Re-retiring is permitted -- the one-way trigger
+    only fires when the NEW value is not ``retired`` -- and the detail rows use
+    ``INSERT OR IGNORE``, so a second call keeps the FIRST retirement's
+    timestamp and successor. That is the correct reading of one-way: the moment
+    a store was retired is a fact, and a later call must not rewrite it.
+
+    Does not commit. The caller owns the transaction, because a cutover retires
+    the store as part of a larger step and a half-applied retirement is worse
+    than none.
+    """
+    if not successor_uuid or not successor_uuid.strip():
+        raise ValueError("retire_store requires the successor's store_uuid")
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('store_status', ?)",
+        (STATUS_RETIRED,),
+    )
+    conn.execute(
+        "UPDATE schema_meta SET value = ? WHERE key = 'store_status'",
+        (STATUS_RETIRED,),
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES(?, ?)",
+        [
+            ("retired_at", at),
+            ("retired_in_favour_of", successor_uuid.strip()),
+            ("retired_by", by),
+        ],
+    )
 
 
 # EOF
