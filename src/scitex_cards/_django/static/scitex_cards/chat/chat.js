@@ -71,6 +71,11 @@
     agents: [], // last agent list, reused by the forward picker
     timerThread: null,
     timerList: null,
+    // Trailing messages rendered; grows on scroll-up. openThread resets it, but
+    // an explicit default matters: `undefined` makes windowed() return the WHOLE
+    // thread (length <= undefined is false, then slice(NaN)), which is safe but
+    // silently un-does the fix. See chat_window.js.
+    windowSize: 60,
   };
 
   var $agentsPane = document.getElementById("agents");
@@ -144,26 +149,14 @@
 
   // ---- agent list --------------------------------------------------------
 
-  // Deterministic per-agent avatar: hue from a stable name hash, initials
-  // from the name's distinctive words (the shared "scitex-" prefix carries
-  // no identity, so it is stripped before initials are taken).
+  /* Deterministic per-agent avatar. The hash/initials logic is pure and lives in
+   * chat_avatar.js so node can test it; this builds the element from the spec. */
   function avatarFor(name) {
-    var hash = 0;
-    for (var i = 0; i < name.length; i++) {
-      hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-    }
-    var words = name
-      .replace(/^scitex-/, "")
-      .split(/[-_]+/)
-      .filter(Boolean);
-    var initials = words
-      .slice(0, 2)
-      .map(function (w) {
-        return w.charAt(0).toUpperCase();
-      })
-      .join("");
-    var av = el("span", "avatar", initials || "?");
-    av.style.background = "hsl(" + (hash % 360) + ", 55%, 42%)";
+    var spec = (window.ChatAvatar || null)
+      ? window.ChatAvatar.avatarSpec(name)
+      : { initials: "?", background: "transparent" };
+    var av = el("span", "avatar", spec.initials);
+    av.style.background = spec.background;
     return av;
   }
 
@@ -283,6 +276,32 @@
   /* Bring the pane in line with `messages` by the smallest edit that will
    * do, holding the operator's scroll position unless they were already at
    * the bottom. */
+  /* The render window. Policy, arithmetic AND the scroll-up behaviour live in
+   * chat_window.js; this only supplies the collaborators. Its header explains why
+   * a window rather than content-visibility. */
+  var win = (typeof window !== "undefined" && window.ChatWindow) || null;
+
+  /* Rebuild the pane from a slice. Used by the scroll-up loader, which grew the
+   * window at the FRONT — so the old fingerprints are a SUFFIX and planRender's
+   * append path (prefix-only) cannot apply. */
+  function repaintWindow(msgs) {
+    $messages.textContent = "";
+    msgs.forEach(function (m) {
+      $messages.appendChild(messageNode(m));
+    });
+    state.rendered = diff.planRender(
+      [],
+      msgs,
+      state.reactions,
+      state.receipts,
+    ).fingerprints;
+  }
+
+  var loader = win
+    ? win.createScrollUpLoader($messages, state, repaintWindow)
+    : null;
+  if (loader) $messages.addEventListener("scroll", loader.onScroll);
+
   function applyPlan(plan, messages) {
     if (plan.mode === "noop") return;
 
@@ -339,9 +358,14 @@
           renderEmpty();
           return;
         }
+        // Plan against the WINDOW, not the whole thread: state.messages stays
+        // complete for everything else, only rendering is bounded.
+        var view = win
+      ? win.windowed(state.messages, state.windowSize)
+      : msgs;
         applyPlan(
-          diff.planRender(state.rendered, msgs, state.reactions, state.receipts),
-          msgs,
+          diff.planRender(state.rendered, view, state.reactions, state.receipts),
+          view,
         );
       })
       .catch(function (err) {
@@ -354,6 +378,9 @@
     // The pane is cleared just below, so the rendered set must be cleared
     // with it — the two describe one fact and must not drift apart.
     state.rendered = [];
+    // The window belongs to the OPEN THREAD, so it resets with the pane. Leaving
+    // it grown would render 200 nodes of a thread the operator just switched to.
+    state.windowSize = win ? win.WINDOW_INITIAL : Infinity;
     state.emptyShown = false;
     // Reactions and messages describe the pane that is being cleared, so they
     // clear with it. A stale map would paint the previous thread's chips onto

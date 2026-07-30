@@ -115,12 +115,28 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      what the operator saw on 2026-07-29 (「ヘッダーがそろっていないのが気持ち
      悪い」). Do not restate a metric here — that is how they drifted.
      The h1 and the version span are styled by the same shared sheet through
-     `.stx-cards-header`; this page only feeds its own colours in. */
+     `.stx-cards-header`.
+
+     THIS PAGE NO LONGER OVERRIDES THE HEADING COLOUR, and that is the fix for
+     操作者 2026-07-30: 「SciTeX Cards の色がおかしい DM のほう赤い」. It used to
+     feed `--stx-cards-header-fg: var(--accent-2)` (the clew accent, red), while
+     board_v3.html feeds nothing and so gets page-header.css's own default. Two
+     pages, two heading colours.
+
+     That was tolerable while the DM heading read "Direct messages" — a different
+     label in a different colour looks intentional. Once both pages were made to
+     read "SciTeX Cards" (their earlier request: a heading that changes between
+     Board and DM reads as the page breaking), the colour became the ONLY
+     difference, and an identical word in two colours reads as a rendering fault.
+     I fixed the text and left the colour, so the header still changed — just
+     along a different axis than the one reported.
+
+     So: omit both overrides and let the SHARED sheet decide, which is the only
+     arrangement that cannot drift. Adding a colour back here re-creates the bug
+     even if it happens to match today. */
   header {
     background: var(--panel);
     border-bottom: 1px solid var(--line);
-    --stx-cards-header-fg: var(--accent-2);
-    --stx-cards-header-dim: var(--dim);
   }
   /* Board | DM switcher (shared component — page-switcher.css + the
      _page_switcher.html partial, now reached through _page_header.html). It
@@ -904,6 +920,14 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 {% endcomment %}
 <script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+{% comment %}
+  chat_window.js — which messages render, and where scroll lands after older
+  ones load. Pure (no DOM of its own; the scrolling element is passed in).
+  MUST load before the controller that consumes it, like chat_diff.js.
+  chat_avatar.js — the per-agent initials/hue, pure, same reason.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/chat/chat_window.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_avatar.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_title.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_marquee.js' %}"></script>
