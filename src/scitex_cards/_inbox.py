@@ -111,45 +111,18 @@ def _inboxes_path(store: str | Path | None) -> Path:
     return path
 
 
-def _read_legacy_embedded_inboxes(path: Path) -> dict[str, list[dict]]:
-    """Read the LEGACY embedded ``inboxes:`` section off the pre-cutover
-    monolithic task-store document (absent / malformed -> {}). Shared by
-    this module's one-time JSON-sidecar migration and
-    :mod:`scitex_cards._inbox_sqlite`'s one-time SQLite migration.
-    """
-    if not path.exists():
-        return {}
-    from ._yaml import safe_load
-
-    with path.open(encoding="utf-8") as handle:
-        data = safe_load(handle) or {}
-    raw = data.get(_INBOXES_KEY) if isinstance(data, dict) else None
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, list[dict]] = {}
-    for rid, records in raw.items():
-        if not isinstance(rid, str) or not rid:
-            continue
-        out[rid] = (
-            [r for r in records if isinstance(r, dict)]
-            if isinstance(records, list)
-            else []
-        )
-    return out
-
-
-def _migrate_legacy_yaml_once(json_path: Path, legacy_doc_path: Path) -> None:
-    """Fold a legacy EMBEDDED ``inboxes:`` section into ``inboxes.json``, once.
-
-    No-op unless ``json_path`` is absent AND the legacy document has data.
-    No permanent YAML fallback: once ``inboxes.json`` exists, never fires
-    again.
-    """
-    if json_path.exists():
-        return
-    raw = _read_legacy_embedded_inboxes(legacy_doc_path)
-    if raw:
-        _save_inboxes_unlocked(raw, json_path)
+# The LEGACY-YAML readers live in _inbox_migrate.py — they are migration
+# concerns, not inbox concerns, and they exist only for stores that predate the
+# split. Re-exported because `_inboxes_path` above calls
+# `_migrate_legacy_yaml_once` and the tests import both by these names from
+# here. `_inbox_migrate` already imported `_read_legacy_embedded_inboxes` back
+# out of this module, which was the tell that it sat on the wrong side of the
+# seam. Function-local imports on both sides keep the mutual reference from
+# becoming a load-time cycle.
+from ._inbox_migrate import (  # noqa: E402,F401
+    _migrate_legacy_yaml_once,
+    _read_legacy_embedded_inboxes,
+)
 
 
 def _utc_now_iso() -> str:
@@ -283,6 +256,7 @@ def enqueue(
     actor: str | None,
     ts: str | None = None,
     supersede: bool = False,
+    msg_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """Append a notification record to ``recipient_id``'s inbox (STANDALONE).
@@ -327,6 +301,16 @@ def enqueue(
         reassigned / completed / escalation) are each DISTINCT and must NOT
         supersede. The default (``False``) keeps the plain
         ``(type,card,ts,actor)`` dedup path unchanged.
+    msg_id : str | None
+        The id of the DURABLE object this notification is about — today, a
+        ``dm_messages.id``. Carried so a consumer can join the notification
+        back to the message EXACTLY. Without it the only available key is
+        ``(event_type, card_id, ts, actor)``, which is many-to-one by
+        construction because DM timestamps are second-resolution: measured on
+        the live store, two distinct durable messages collapsed onto one
+        notification. When present it also becomes the dedupe key, so that
+        collapse cannot happen. ``None`` for events with no such object (card
+        events, digests), and ``None`` on rows enqueued before this existed.
     store : str | pathlib.Path | None
         Store path override (default: the resolved task store).
 
@@ -347,6 +331,7 @@ def enqueue(
             actor=actor,
             ts=ts,
             supersede=supersede,
+            msg_id=msg_id,
             store=store,
         )
     if not recipient_id:
@@ -368,7 +353,12 @@ def enqueue(
                     r.get("event_type") == event_type and r.get("card_id") == card_id
                 )
             ]
-        if _is_duplicate(
+        if msg_id:
+            # Exact dedupe when the producer named the message (see the
+            # ``msg_id`` parameter docs for why the tuple below cannot be).
+            if any(r.get("msg_id") == msg_id for r in records):
+                return None
+        elif _is_duplicate(
             records,
             event_type=event_type,
             card_id=card_id,
@@ -384,6 +374,7 @@ def enqueue(
             "actor": actor,
             "ts": timestamp,
             "seen": False,
+            "msg_id": msg_id,
         }
         records.append(record)
         _save_inboxes_unlocked(inboxes, path)

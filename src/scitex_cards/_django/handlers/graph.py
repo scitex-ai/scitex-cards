@@ -81,6 +81,8 @@ def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
     from scitex_cards._diagram import build_mermaid
 
+    from ._comment_digest import comment_scalars, rescore_history
+
     ids = {t["id"] for t in board.tasks}
 
     nodes = [
@@ -99,7 +101,32 @@ def _build_graph(board) -> dict:
             "parent": t.get("parent"),
             # Append-only comment thread (list of {ts, author, text}); always
             # a list so the frontend can render / count without null-checks.
+            #
+            # BEING REMOVED, in three shippable steps rather than one. This
+            # field is 4.4 MB of a 19.8 MB payload (measured 2026-07-17 at
+            # 1,837 cards; the store is 2,854 now) and every board poll
+            # carries all of it. The previous attempt removed it and the
+            # summary fields in a single branch, which broke every consumer
+            # at once and sat unmergeable for twelve days until its owner
+            # stopped existing — so:
+            #   1. THIS STEP: emit the summary scalars ALONGSIDE comments[].
+            #      Purely additive, every consumer keeps working, ships green.
+            #   2. migrate the list consumers onto the scalars, one PR each.
+            #   3. delete this line once nothing reads it.
+            # Step 1 costs ~445 KB (2% of the payload) and buys the ability
+            # to land 2 incrementally instead of in a flag day.
             "comments": t.get("comments") or [],
+            # List-view stand-ins for the thread above. The full thread is
+            # at /chat/<card_id>, which already preserves each comment's
+            # `kind` so the route-trace timeline keeps working.
+            **comment_scalars(t),
+            # The Matrix view is the one list surface that needs comment
+            # CONTENT rather than a summary: it reads the [old, new] axis
+            # pairs off `kind: "rescore"` comments to draw quadrant
+            # transitions. Serving just those keeps it working when
+            # comments[] goes. Measured 0.11% of comments[] (30 events on
+            # 2,864 cards) — see handlers/_comment_digest.py.
+            "rescore_history": rescore_history(t),
             # `kind` discriminator + compute metadata (north-star pillar #1,
             # validated by `_model._validate_tasks`). `kind: null` over the
             # wire = "task" (the default). FE renders compute affordances

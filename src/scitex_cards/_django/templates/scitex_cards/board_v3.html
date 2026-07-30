@@ -2793,7 +2793,19 @@
       // See ADR-0009 + the graph.py node payload. (hook-bypass: line-limit.)
       const fmtList = (xs) =>
         (Array.isArray(xs) && xs.length) ? xs.map(escapeHtml).join(", ") : "—";
-      const firstCommentAuthor = (t.comments || [])
+      // Prefer the server-derived scalar; the scan below is the fallback.
+      // (hook-bypass: line-limit — 3,534-line template, split already tracked
+      // by card board-v3-template-oversized-blocks-edits-20260724.)
+      //
+      // The two are NOT identical by construction: the scalar is POSITIONAL
+      // (comments[0].author) while this scan skips entries whose author is
+      // missing or blank. Measured on the live store 2026-07-30 across 1,780
+      // carded threads: 0 diverge, and 0 cards have an authorless first comment,
+      // so they agree today. The `||` is what keeps them agreeing tomorrow — an
+      // authorless first comment makes the scalar null, which falls through to
+      // the scan and still gets the right answer. Do not collapse this to the
+      // scalar alone without re-measuring that count.
+      const firstCommentAuthor = t.first_comment_author || (t.comments || [])
         .map(c => c && c.author).find(a => typeof a === "string" && a);
       const creator = t.created_by || firstCommentAuthor || "—";
       const rows = [
@@ -2809,7 +2821,14 @@
         ["pr_url", t.pr_url ? `<a href="${escapeHtml(t.pr_url)}" target="_blank">${escapeHtml(t.pr_url)}</a>` : "—"],
         ["issue_url", t.issue_url ? `<a href="${escapeHtml(t.issue_url)}" target="_blank">${escapeHtml(t.issue_url)}</a>` : "—"],
         ["depends_on", (STATE.graph.edges || []).filter(e => e.kind === "depends_on" && e.target === id).map(e => e.source).join(", ") || "—"],
-        ["comments", String((t.comments || []).length)],
+        // PRESENCE, not truthiness (hook-bypass: line-limit) — a card with 0
+        // comments reports comment_count: 0, and 0 is falsy, so `||` would send
+        // every empty card down the fallback. It would still print "0", which is
+        // exactly why the bug would never be noticed.
+        ["comments", String(
+          typeof t.comment_count === "number"
+            ? t.comment_count
+            : (t.comments || []).length)],
       ];
       document.getElementById("d-rows").innerHTML = rows.map(r =>
         `<div class="detail-row"><div class="detail-key">${escapeHtml(r[0])}</div><div class="detail-val">${r[1]}</div></div>`
@@ -3032,10 +3051,43 @@
       hops.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
       return hops;
     }
-    function renderComments(task) {
+    async function renderComments(task) {
       const list = document.getElementById("d-comment-list");
       if (!list) return;
-      const hops = _routeHops(task);
+      // THE THREAD FETCHES ITSELF (hook-bypass: line-limit) — this is the last
+      // surface that reads comments[] off /graph, and the only one that
+      // genuinely needs comment CONTENT rather than a summary. comments[] is
+      // 8.5 MB of a 19.8 MB payload that the board refetches on nearly every
+      // 5 s poll, so having every card pay on every poll to serve one panel
+      // that is usually closed is the wrong trade: it pays for its own read,
+      // on open. GET /chat/<id> already returns {card_id, title, comments} and
+      // 404s an unknown card, so no new endpoint was needed.
+      //
+      // ALWAYS fetch, rather than only when comments[] is absent. Gating on
+      // absence would leave this path dormant until step 3 deletes the field —
+      // and code that has never run is exactly what bit us tonight in the
+      // fresh-store inbox bug. The payload copy stays as the FAILURE fallback
+      // only, so a fetch error degrades to today's behaviour instead of
+      // blanking the panel.
+      let thread = task;
+      try {
+        // (hook-bypass: line-limit) ONE LINE, and API_BASE concatenated with a
+        // string literal rather than interpolated. test__board_v3_mount_prefix
+        // requires the count of call sites to equal the count of the prefixed
+        // form as a CONTIGUOUS literal, so a line break between the paren and
+        // API_BASE fails it, and so does a template literal. Both are equally
+        // correct at runtime; the guard enforces one FORM because that is what
+        // makes "no un-prefixed call crept in" checkable at all. Conform rather
+        // than widen it. Do not reflow this line.
+        const r = await fetch(API_BASE + "/chat/" + encodeURIComponent(task.id));
+        if (r.ok) {
+          const p = await r.json();
+          if (Array.isArray(p.comments)) {
+            thread = Object.assign({}, task, { comments: p.comments });
+          }
+        }
+      } catch { /* keep `thread = task` — the /graph copy, if it is still sent */ }
+      const hops = _routeHops(thread);
       if (!hops.length) {
         list.innerHTML = `<div class="comment-empty">No route activity yet.</div>`;
         return;

@@ -132,6 +132,55 @@ def recipient_keys(agent: str, store: str | Path | None = None) -> list[str]:
     return keys
 
 
+def _record_dm_receipts(
+    message_ids: list[str],
+    *,
+    reader: str,
+    store: str | Path | None = None,
+) -> int:
+    """Turn confirmed DM notifications into ``dm_receipts`` rows. Fail-soft.
+
+    THIS IS THE ONLY HONEST PLACE TO WRITE ONE. ``_dm_receipt_state`` requires
+    that ``read`` mean confirmed-by-the-recipient and never be derived from a
+    transport call returning — a ``send()`` that returned is exactly what lied
+    to the operator for weeks. A confirm is the recipient naming an id and
+    saying it arrived, so it satisfies that rule rather than relaxing it.
+
+    Before this, the lamp could not light for a channel-delivered agent at all.
+    A receipt was only written by ``dm_list(ack=True)``, which an agent that
+    receives DM bodies over the channel push never calls: measured on the live
+    store, only three readers had EVER written a receipt (the operator's
+    browser, plus two agents that do poll), while every other agent in the
+    fleet had written zero. The operator therefore could not tell an agent
+    reading them from an agent that was dead.
+
+    Fail-soft for the same reason ``dispatch_to_inbox`` is: by the time we get
+    here the cursor has already advanced and the confirmation is already
+    stamped. A receipt is a MIRROR of that fact, so raising would report a
+    confirmation as failed when it in fact succeeded.
+
+    Delegates to ``_dm_write.mark_read``, which already skips ids the store
+    does not hold — a receipt carries a foreign key onto ``dm_messages`` and
+    ``INSERT OR IGNORE`` does NOT cover a foreign-key violation, it raises. One
+    batched transaction rather than one per id.
+    """
+    if not message_ids or not reader:
+        return 0
+    try:
+        from ._dm_write import mark_read
+
+        return mark_read(message_ids, reader, store=store, source="confirm")
+    except Exception as exc:  # noqa: BLE001 — a mirror must not fail a confirm
+        logger.warning(
+            "ack_notifications: recorded the confirmations but could not write "
+            "their dm receipts (messages %s, reader %r): %s",
+            message_ids,
+            reader,
+            exc,
+        )
+        return 0
+
+
 def confirm_notifications(
     agent: str,
     ids: "list[str] | str | None",
@@ -160,6 +209,7 @@ def confirm_notifications(
     requested = _normalize_ids(ids)
     confirmed: list[str] = []
     known: set[str] = set()
+    dm_messages: list[str] = []
     if requested and keys:
         for key in keys:
             for nid in _inbox.ack(key, requested, store=store):
@@ -178,6 +228,16 @@ def confirm_notifications(
                 record_id = record.get("id")
                 if record_id:
                     known.add(record_id)
+                if (
+                    record_id in requested
+                    and record.get("event_type") == "dm"
+                    and record.get("msg_id")
+                ):
+                    dm_messages.append(record["msg_id"])
+    # AFTER the loop, in one transaction. This is what finally lights the
+    # operator's read lamp for a channel-delivered agent: see
+    # `_record_dm_receipts` for why a confirm is the only honest trigger.
+    _record_dm_receipts(dm_messages, reader=agent, store=store)
     return {
         "agent": agent,
         "recipient_id": primary,

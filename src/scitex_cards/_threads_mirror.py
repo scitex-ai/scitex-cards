@@ -52,6 +52,13 @@ def dispatch_to_inbox(record: dict, store: str | Path | None) -> None:
             body=record["body"],
             actor=record["from"],
             ts=record["ts"],
+            # THE POINT OF THIS WHOLE CHAIN. The message id was always right
+            # here (the failure log below already prints it) but never reached
+            # the inbox, so a confirmed notification could not be joined back
+            # to the message it delivered — which is why the operator's read
+            # lamp never lit for a channel-delivered agent, and why `queued`
+            # was left uncomputable (_dm_receipt_state.py:43-48).
+            msg_id=record.get("id"),
             store=store,
         )
     except Exception:  # noqa: BLE001 — delivery accelerator, not the SSOT
