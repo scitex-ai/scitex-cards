@@ -26,6 +26,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from ._store_errors import StoreUnavailableError
+
 
 def _read_canonical_db_or_raise() -> dict:
     """Read the whole store from SQLite for a read-modify-write. FAILS LOUD.
@@ -64,7 +66,13 @@ def _read_canonical_db_or_raise() -> dict:
     # from a real empty board and is exactly what got written back over 2,138
     # cards. Ask the file system, not the exporter.
     if not db_path.exists():
-        raise RuntimeError(
+        # StoreUnavailableError, not a bare RuntimeError: this message names an
+        # absolute path and is rendered into a PAGE by the Django layer, which
+        # scitex-hub found being served verbatim to anonymous visitors of
+        # /apps/cards/. A named type lets that layer pick the audience-appropriate
+        # form instead of string-matching prose. Still a RuntimeError subclass, so
+        # every existing `except Exception` keeps working.
+        raise StoreUnavailableError(
             f"canonical store {db_path} does not exist. REFUSING to continue: "
             f"the exporter answers a missing database with an empty document, "
             f"and this value is written back as the WHOLE store — every card "

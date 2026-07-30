@@ -356,6 +356,29 @@ def api_dispatch(request, endpoint):
         )
     except Exception as exc:
         logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)
+        # THE FULL SENTENCE STAYS FOR US AND GOES NOWHERE ELSE.
+        #
+        # The comment above is right that the store's own sentence is what turns
+        # an outage into a diagnosis, and that stays true on the loopback board.
+        # But scitex-hub loaded /apps/cards/ ANONYMOUSLY in a browser and got the
+        # whole paragraph, including the absolute container path
+        # /app/.scitex/cards/cards.db. A stranger learns our filesystem layout and
+        # reads a rationale addressed to us.
+        #
+        # settings.DEBUG is the switch, and it is already correct on both sides
+        # with no new configuration: the local board runs DEBUG=true and keeps the
+        # diagnosis, while SCITEX_CARDS_PUBLIC_HOST FORCES DEBUG=false (settings.py,
+        # deliberately not env-overridable), so anything publicly reachable gets the
+        # summary. A second flag would be a second thing to set wrongly.
+        #
+        # The log line above is unconditional, so the detail is never lost - it
+        # moves from the response body to the place that was always the right home
+        # for it.
+        from django.conf import settings
+
+        public = getattr(exc, "public_summary", None)
+        if public is not None and not settings.DEBUG:
+            return JsonResponse({"error": public}, status=500)
         return JsonResponse({"error": f"Cannot read the task store: {exc}"}, status=500)
 
     try:
