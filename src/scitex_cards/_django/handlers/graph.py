@@ -81,7 +81,7 @@ def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
     from scitex_cards._diagram import build_mermaid
 
-    from ._comment_digest import comment_scalars
+    from ._comment_digest import comment_scalars, rescore_history
 
     ids = {t["id"] for t in board.tasks}
 
@@ -120,6 +120,13 @@ def _build_graph(board) -> dict:
             # at /chat/<card_id>, which already preserves each comment's
             # `kind` so the route-trace timeline keeps working.
             **comment_scalars(t),
+            # The Matrix view is the one list surface that needs comment
+            # CONTENT rather than a summary: it reads the [old, new] axis
+            # pairs off `kind: "rescore"` comments to draw quadrant
+            # transitions. Serving just those keeps it working when
+            # comments[] goes. Measured 0.11% of comments[] (30 events on
+            # 2,864 cards) — see handlers/_comment_digest.py.
+            "rescore_history": rescore_history(t),
             # `kind` discriminator + compute metadata (north-star pillar #1,
             # validated by `_model._validate_tasks`). `kind: null` over the
             # wire = "task" (the default). FE renders compute affordances
