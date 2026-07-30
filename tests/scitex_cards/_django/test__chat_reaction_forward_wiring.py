@@ -145,8 +145,18 @@ def test_the_scripts_are_linked_in_dependency_order(page: str):
     # the bare token also matches prose: a template comment naming a module put
     # its "hit" thousands of bytes before the real <script>, and this test went
     # red for a documentation change (2026-07-30). `src="..."` cannot be produced
-    # by prose, so the test now measures what its name claims.
-    positions = [page.index(f'{name}"') for name in order]
+    # by prose, so the test measures what its name claims.
+    #
+    # The trailing quote is NOT part of the anchor any more. Static URLs now
+    # carry a cache-busting `?v=<release>` suffix, so the rendered reference is
+    # `chat_diff.js?v=0.24.0"` and anchoring on `chat_diff.js"` stopped matching
+    # at all — ValueError, all three CI legs, 2026-07-30. The anchor is the
+    # `src="` prefix plus the filename, with the query string optional, which
+    # keeps prose out without pinning a value designed to change.
+    pattern = 'src="[^"]*{}(?:\\?[^"]*)?"'
+    positions = [
+        re.search(pattern.format(re.escape(name)), page).start() for name in order
+    ]
     # Assert
     # `defer` executes in document order, so this list IS the load order;
     # chat_menu reads ChatActions and the controller mounts chat_menu.
