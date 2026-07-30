@@ -111,63 +111,18 @@ def _inboxes_path(store: str | Path | None) -> Path:
     return path
 
 
-def _read_legacy_embedded_inboxes(path: Path) -> dict[str, list[dict]]:
-    """Read the LEGACY embedded ``inboxes:`` section off the pre-cutover
-    monolithic task-store document (absent / malformed -> {}). Shared by
-    this module's one-time JSON-sidecar migration and
-    :mod:`scitex_cards._inbox_sqlite`'s one-time SQLite migration.
-    """
-    if not path.exists():
-        return {}
-    from ._yaml import safe_load
-
-    try:
-        with path.open(encoding="utf-8") as handle:
-            data = safe_load(handle) or {}
-    except (UnicodeDecodeError, ValueError, OSError):
-        # THE STORE IS SQLITE NOW, so "the legacy document" is a binary file
-        # and reading it as UTF-8 YAML raises rather than returning nothing.
-        # This function's contract has always been "absent / malformed -> {}";
-        # it just never covered malformed-because-binary.
-        #
-        # It matters because a FRESH store hits it on its very first inbox
-        # access: the one-time migration runs (no `migrated_from_yaml` flag
-        # yet), reaches here, and raises — so the inbox cannot initialise at
-        # all. Existing stores escape only because their flag was set back
-        # when the store really was YAML. A brand-new host is precisely the
-        # fresh-store case, so this is on the multi-host path.
-        #
-        # Returning {} is right, not a papering-over: a SQLite store HAS no
-        # embedded `inboxes:` section, so "nothing to migrate" is the true
-        # answer. The DB's own rows are read by the SQLite backend directly.
-        return {}
-    raw = data.get(_INBOXES_KEY) if isinstance(data, dict) else None
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, list[dict]] = {}
-    for rid, records in raw.items():
-        if not isinstance(rid, str) or not rid:
-            continue
-        out[rid] = (
-            [r for r in records if isinstance(r, dict)]
-            if isinstance(records, list)
-            else []
-        )
-    return out
-
-
-def _migrate_legacy_yaml_once(json_path: Path, legacy_doc_path: Path) -> None:
-    """Fold a legacy EMBEDDED ``inboxes:`` section into ``inboxes.json``, once.
-
-    No-op unless ``json_path`` is absent AND the legacy document has data.
-    No permanent YAML fallback: once ``inboxes.json`` exists, never fires
-    again.
-    """
-    if json_path.exists():
-        return
-    raw = _read_legacy_embedded_inboxes(legacy_doc_path)
-    if raw:
-        _save_inboxes_unlocked(raw, json_path)
+# The LEGACY-YAML readers live in _inbox_migrate.py — they are migration
+# concerns, not inbox concerns, and they exist only for stores that predate the
+# split. Re-exported because `_inboxes_path` above calls
+# `_migrate_legacy_yaml_once` and the tests import both by these names from
+# here. `_inbox_migrate` already imported `_read_legacy_embedded_inboxes` back
+# out of this module, which was the tell that it sat on the wrong side of the
+# seam. Function-local imports on both sides keep the mutual reference from
+# becoming a load-time cycle.
+from ._inbox_migrate import (  # noqa: E402,F401
+    _migrate_legacy_yaml_once,
+    _read_legacy_embedded_inboxes,
+)
 
 
 def _utc_now_iso() -> str:

@@ -27,6 +27,68 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _read_legacy_embedded_inboxes(path: Path) -> dict[str, list[dict]]:
+    """Read the LEGACY embedded ``inboxes:`` section off the pre-cutover
+    monolithic task-store document (absent / malformed -> {}). Shared by
+    the one-time JSON-sidecar migration and the one-time SQLite migration.
+    """
+    from ._inbox import _INBOXES_KEY
+
+    if not path.exists():
+        return {}
+    from ._yaml import safe_load
+
+    try:
+        with path.open(encoding="utf-8") as handle:
+            data = safe_load(handle) or {}
+    except (UnicodeDecodeError, ValueError, OSError):
+        # THE STORE IS SQLITE NOW, so "the legacy document" is a binary file
+        # and reading it as UTF-8 YAML raises rather than returning nothing.
+        # This function's contract has always been "absent / malformed -> {}";
+        # it just never covered malformed-because-binary.
+        #
+        # It matters because a FRESH store hits it on its very first inbox
+        # access: the one-time migration runs (no `migrated_from_yaml` flag
+        # yet), reaches here, and raises — so the inbox cannot initialise at
+        # all. Existing stores escape only because their flag was set back
+        # when the store really was YAML. A brand-new host is precisely the
+        # fresh-store case, so this is on the multi-host path.
+        #
+        # Returning {} is right, not a papering-over: a SQLite store HAS no
+        # embedded `inboxes:` section, so "nothing to migrate" is the true
+        # answer. The DB's own rows are read by the SQLite backend directly.
+        return {}
+    raw = data.get(_INBOXES_KEY) if isinstance(data, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, list[dict]] = {}
+    for rid, records in raw.items():
+        if not isinstance(rid, str) or not rid:
+            continue
+        out[rid] = (
+            [r for r in records if isinstance(r, dict)]
+            if isinstance(records, list)
+            else []
+        )
+    return out
+
+
+def _migrate_legacy_yaml_once(json_path: Path, legacy_doc_path: Path) -> None:
+    """Fold a legacy EMBEDDED ``inboxes:`` section into ``inboxes.json``, once.
+
+    No-op unless ``json_path`` is absent AND the legacy document has data.
+    No permanent YAML fallback: once ``inboxes.json`` exists, never fires
+    again.
+    """
+    from ._inbox import _save_inboxes_unlocked
+
+    if json_path.exists():
+        return
+    raw = _read_legacy_embedded_inboxes(legacy_doc_path)
+    if raw:
+        _save_inboxes_unlocked(raw, json_path)
+
+
 def gather_migratable_inboxes(store: str | Path | None) -> dict[str, list]:
     """Read + merge every pre-existing file-backed inbox source, per recipient.
 
@@ -35,12 +97,7 @@ def gather_migratable_inboxes(store: str | Path | None) -> dict[str, list]:
     break-glass ``inboxes.json`` sidecar. Read-only. Shared by
     :func:`_migrate_into_conn` and the CLI's ``--dry-run`` preview.
     """
-    from ._inbox import (
-        _INBOXES_FILENAME,
-        _load_inboxes_section,
-        _read_legacy_embedded_inboxes,
-        _resolved_store,
-    )
+    from ._inbox import _INBOXES_FILENAME, _load_inboxes_section, _resolved_store
 
     path = _resolved_store(store)
     inboxes: dict[str, list] = {}
@@ -160,6 +217,8 @@ def info(store: str | Path | None = None) -> dict[str, Any]:
 
 __all__ = [
     "_migrate_into_conn",
+    "_migrate_legacy_yaml_once",
+    "_read_legacy_embedded_inboxes",
     "gather_migratable_inboxes",
     "info",
     "migrate_to_sqlite",
