@@ -73,6 +73,8 @@ from dataclasses import dataclass
 __all__ = [
     "SCHEMA_VERSION_FLOOR_TRIGGER_SQL",
     "SCHEMA_VERSION_FLOOR_TRIGGER",
+    "SCHEMA_VERSION_DOWNGRADE_KEYS",
+    "downgrade_report",
     "SHAPE_LADDER",
     "ShapeAgreement",
     "SchemaShape",
@@ -94,6 +96,30 @@ SCHEMA_VERSION_FLOOR_TRIGGER = "schema_meta_version_never_regresses"
 # (recursive_triggers OFF) it does not re-fire at all; with it ON it re-fires
 # once with NEW=high and OLD=low, where the WHEN clause is false. Safe under
 # both settings, and both are tested rather than assumed from the default.
+#
+# IT ALSO RECORDS THE ATTEMPT, and that half is not decoration.
+#
+# A self-healing guard has a specific failure mode: it makes the thing it
+# defends against INVISIBLE. Measured 2026-07-31 -- with the floor installed,
+# `schema_meta` held at 7 through every sample while `user_version` kept
+# dropping to 5 and once to 6, and after eliminating three separate
+# hypotheses (the fleet, my own container, the host daemons) the writer was
+# STILL unidentified. The store could say it had been migrated and by whom
+# (`schema_migrated_by`), but the DESTRUCTIVE event was the one event with no
+# audit trail at all.
+#
+# So the trigger writes what it can see: how many downgrades were refused,
+# when the last one was, and what value was attempted. A trigger cannot name
+# the process -- SQLite has no view of the caller -- but a count and a
+# timestamp turn "something invisible is happening" into a signal that can be
+# correlated against process activity, which is exactly what was missing
+# while three wrong hypotheses were being formed.
+SCHEMA_VERSION_DOWNGRADE_KEYS = (
+    "schema_version_downgrades_refused",
+    "schema_version_downgrade_last_at",
+    "schema_version_downgrade_last_attempt",
+)
+
 SCHEMA_VERSION_FLOOR_TRIGGER_SQL = f"""
 CREATE TRIGGER IF NOT EXISTS {SCHEMA_VERSION_FLOOR_TRIGGER}
 AFTER UPDATE OF value ON schema_meta
@@ -101,6 +127,18 @@ WHEN NEW.key = 'schema_version'
  AND CAST(NEW.value AS INTEGER) < CAST(OLD.value AS INTEGER)
 BEGIN
     UPDATE schema_meta SET value = OLD.value WHERE key = 'schema_version';
+    INSERT INTO schema_meta(key, value)
+        VALUES('schema_version_downgrades_refused', '1')
+        ON CONFLICT(key) DO UPDATE SET
+            value = CAST(CAST(schema_meta.value AS INTEGER) + 1 AS TEXT);
+    INSERT INTO schema_meta(key, value)
+        VALUES('schema_version_downgrade_last_at',
+               strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+    INSERT INTO schema_meta(key, value)
+        VALUES('schema_version_downgrade_last_attempt',
+               CAST(OLD.value AS TEXT) || ' -> ' || CAST(NEW.value AS TEXT))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 END;
 """
 
@@ -178,6 +216,56 @@ class SchemaShape:
         that claim was measured wrong in the unsafe direction.
         """
         return self.observed
+
+
+@dataclass(frozen=True)
+class DowngradeReport:
+    """What the store knows about attempts to move its version backwards.
+
+    ``refused`` is a COUNT OF REFUSALS, not of writers: one process looping
+    contributes many, and a caller must not read it as a population size.
+    That distinction is stated here because reading a count as a population
+    is precisely the error that produced two wrong diagnoses on 2026-07-31.
+    """
+
+    refused: int
+    last_at: str = ""
+    last_attempt: str = ""
+
+    def __post_init__(self) -> None:
+        if self.refused < 0:
+            raise ValueError(f"refused must be >= 0, got {self.refused}")
+
+    @property
+    def ever_attempted(self) -> bool:
+        """True if the store has ever refused a downgrade.
+
+        A False here means "no downgrade has been refused SINCE THE TRIGGER
+        WAS INSTALLED" -- never "this store was always consistent". A store
+        that was downgraded before the guard existed reports False.
+        """
+        return self.refused > 0
+
+
+def downgrade_report(conn) -> DowngradeReport:
+    """Read the refusal counters the floor trigger maintains. Read-only."""
+    if not _has_table(conn, "schema_meta"):
+        return DowngradeReport(refused=0)
+    rows = dict(
+        conn.execute(
+            "SELECT key, value FROM schema_meta WHERE key IN (?, ?, ?)",
+            SCHEMA_VERSION_DOWNGRADE_KEYS,
+        ).fetchall()
+    )
+    try:
+        refused = int(rows.get("schema_version_downgrades_refused", 0) or 0)
+    except (TypeError, ValueError):
+        refused = 0
+    return DowngradeReport(
+        refused=refused,
+        last_at=rows.get("schema_version_downgrade_last_at", "") or "",
+        last_attempt=rows.get("schema_version_downgrade_last_attempt", "") or "",
+    )
 
 
 def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:

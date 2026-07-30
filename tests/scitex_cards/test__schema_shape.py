@@ -13,8 +13,10 @@ import pytest
 from scitex_cards._schema_shape import (
     SCHEMA_VERSION_FLOOR_TRIGGER,
     SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
+    DowngradeReport,
     SchemaShape,
     ShapeAgreement,
+    downgrade_report,
     observed_version,
 )
 
@@ -108,6 +110,100 @@ class TestTheFloorHoldsAgainstTheRealOldClient:
         ).fetchone()[0]
         assert got == "migrated"
         conn.close()
+
+
+class TestTheRefusalIsRecorded:
+    """A self-healing guard hides the thing it defends against unless it says
+    so. On 2026-07-31 the floor held while the writer stayed unidentified
+    through three wrong hypotheses, because the destructive event left no
+    trace at all.
+    """
+
+    def test_a_refused_downgrade_is_counted(self, tmp_path):
+        # Arrange
+        conn = _store(tmp_path, version="7")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert downgrade_report(conn).refused == 1
+        conn.close()
+
+    def test_repeated_downgrades_accumulate(self, tmp_path):
+        # Arrange
+        conn = _store(tmp_path, version="7")
+        # Act
+        for _ in range(3):
+            conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert downgrade_report(conn).refused == 3
+        conn.close()
+
+    def test_it_records_what_was_attempted(self, tmp_path):
+        # Arrange
+        conn = _store(tmp_path, version="7")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert downgrade_report(conn).last_attempt == "7 -> 5"
+        conn.close()
+
+    def test_it_records_when(self, tmp_path):
+        # Arrange
+        conn = _store(tmp_path, version="7")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert downgrade_report(conn).last_at.endswith("Z")
+        conn.close()
+
+    def test_a_legal_raise_records_nothing(self, tmp_path):
+        # Arrange: only REFUSALS are counted, not ordinary writes.
+        conn = _store(tmp_path, version="5")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("7",))
+        # Assert
+        assert downgrade_report(conn).refused == 0
+        conn.close()
+
+    def test_an_untouched_store_reports_never_attempted(self, tmp_path):
+        # Arrange
+        conn = _store(tmp_path, version="7")
+        # Act
+        report = downgrade_report(conn)
+        # Assert
+        assert report.ever_attempted is False
+        conn.close()
+
+    def test_recording_does_not_disturb_the_floor(self, tmp_path):
+        # Arrange: the counters are written INSIDE the same trigger, so a bug
+        # there could clobber the value the trigger just restored.
+        conn = _store(tmp_path, version="7")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert _version(conn) == "7"
+        conn.close()
+
+    def test_recording_cannot_recurse_with_recursive_triggers_on(self, tmp_path):
+        # Arrange: the trigger now writes to its OWN table, which is the
+        # classic way to build an infinite loop. The WHEN clause keys on
+        # 'schema_version', so the counter rows cannot re-fire it.
+        conn = _store(tmp_path, version="7")
+        conn.execute("PRAGMA recursive_triggers=ON")
+        # Act
+        conn.execute(OLD_CLIENT_STAMP, ("5",))
+        # Assert
+        assert downgrade_report(conn).refused == 1
+        conn.close()
+
+    def test_a_negative_count_is_rejected(self):
+        # Arrange
+        kwargs = dict(refused=-1)
+        # Act
+        raised = pytest.raises(ValueError)
+        # Assert
+        with raised:
+            DowngradeReport(**kwargs)
 
 
 class TestItCannotLoop:
