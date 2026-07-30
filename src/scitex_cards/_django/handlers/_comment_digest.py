@@ -69,6 +69,45 @@ def _truncate(text: str, limit: int = PREVIEW_CHARS) -> str:
     return text[:limit]
 
 
+def rescore_history(task: dict) -> list[dict]:
+    """The rescore events the Matrix view needs, and nothing else.
+
+    THIS IS THE ONE CONSUMER THAT NEEDS COMMENT *CONTENT*, not a summary,
+    and it is why the four scalars alone cannot finish the payload
+    reduction. ``board_v3/14-matrix.js:198`` walks every comment on every
+    card looking for ``kind == "rescore"`` and reads
+    ``rescore.urgency[0]`` / ``rescore.importance[0]`` — the OLD half of
+    each ``[old, new]`` pair — to draw quadrant transitions over time.
+    Drop ``comments[]`` without replacing that and the Matrix silently
+    renders "now" only, with no error anywhere.
+
+    It is cheap to serve directly. Measured against the live store, 2,864
+    cards: 30 rescore events on 30 cards, **9,307 bytes** against
+    ``comments[]``'s 8,493,993 — **0.11%**. Rescores are operator
+    matrix-drags, not routine writes, so this stays small as the board
+    grows.
+
+    Order is preserved deliberately: the view assigns an insertion index
+    as its stable tiebreak for events sharing a timestamp, so re-sorting
+    here would change which transition wins a tie.
+
+    Returns ``[]`` rather than ``None`` for a card with no rescores, so
+    the client can iterate without a null check.
+    """
+    raw = task.get("comments")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for c in raw:
+        if not isinstance(c, dict) or c.get("kind") != "rescore":
+            continue
+        rs = c.get("rescore")
+        if not isinstance(rs, dict):
+            continue
+        out.append({"ts": c.get("ts"), "rescore": rs})
+    return out
+
+
 def comment_scalars(task: dict) -> dict:
     """The four list-view scalars derived from ``task['comments']``.
 
