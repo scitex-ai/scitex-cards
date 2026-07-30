@@ -234,9 +234,16 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 
      BEFORE RETRYING: measure real bubble heights in a browser and set
      contain-intrinsic-size from that (erring high), and add a check that the
-     thread can still be scrolled to its last message. Note chat.js's
-     stick-to-bottom reads $messages.scrollHeight, which content-visibility makes
-     unstable — that interaction needs testing too, not reasoning about. */
+     thread can still be scrolled to its last message. Note that the pane
+     controller's stick-to-bottom logic (applyPlan) reads
+     $messages.scrollHeight, which content-visibility makes unstable — that
+     interaction needs testing too, not reasoning about.
+
+     NB no bare module filenames in this comment on purpose:
+     test__chat_reaction_forward_wiring indexes the rendered page for those
+     tokens to check <script> load order, so naming one here in prose moves the
+     match earlier in the document and fails the test. I did exactly that and it
+     went red. Refer to modules by their FUNCTION here, not their filename. */
   .msg {
     max-width: 78%; display: flex; flex-direction: column; gap: 2px;
   }
