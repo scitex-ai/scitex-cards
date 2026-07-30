@@ -43,6 +43,8 @@ from pathlib import Path
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_migrations import _migrate_v1_to_v2, _migrate_v2_to_v3
+from ._db_migrations import _migrate_v5_to_v6, _migrate_v6_to_v7, table_columns
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +111,14 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: to believe you have answered when you have not: it checks ``rowcount`` in
 #: eight places and carries no revision column, so every one of those checks
 #: passes in exactly the case a lock exists to catch.
-SCHEMA_VERSION = 6
+#:
+#: v7 makes the v6 counter DB-ENFORCED via ``tasks_bump_revision``, so no writer
+#: version can skip the increment. Application-side incrementing would require
+#: every one of ~90 agent containers to be current for the lock to mean anything,
+#: and that condition is not establishable — measured 2026-07-30, the fleet was
+#: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
+#: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
+SCHEMA_VERSION = 7
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -344,77 +353,6 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    """The column names actually present on ``table`` in THIS database file.
-
-    The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
-    a number some code wrote — and a stamp is metadata, so it can outlive the
-    thing it describes. The columns are the artifact itself.
-    """
-    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-
-
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
-
-    ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
-    add a column — so a DB created before v2 keeps the old shape forever unless
-    something ALTERs it. That silently-missing column is precisely the sort of
-    thing a version stamp would have papered over.
-
-    Existing rows get ``card_json = NULL``: the column is added, but NOT
-    back-filled (a back-fill needs the YAML, which this layer does not have).
-    Those NULLs are load-bearing — they are what makes the S2 read guard REFUSE a
-    DB that has not been re-imported, instead of quietly serving cards with their
-    unknown fields stripped. Nothing back-fills them: the importer was removed
-    with the YAML tier, so a database carrying these NULLs must be replaced with
-    one a current version wrote.
-    """
-    if "card_json" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
-
-
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
-    """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
-
-    Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
-    NOT back-filled here — the exporter REFUSES NULL payloads loudly, which is
-    what forces the database to be replaced by a current one instead of silently
-    exporting stripped records.
-    """
-    for table in ("users", "notifications", "messages"):
-        if "record_json" not in table_columns(conn, table):
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
-
-
-def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.revision`` to a pre-v6 DB. Idempotent, additive, no rewrite.
-
-    ``DEFAULT 0`` back-fills every existing row, and unlike the ``card_json``
-    NULLs above that back-fill is CORRECT rather than a placeholder: revision is
-    a counter of writes observed under the new model, so "no write has been
-    observed yet" genuinely is 0 for every pre-existing card. Nothing is being
-    invented.
-
-    THE COLUMN MUST CROSS A STORE MIGRATION VERBATIM and belongs in any
-    migration's checksummed column set — it is user-visible causal state, not
-    backend bookkeeping. If a copy resets or re-sequences revisions, every lock
-    held by a process that read the old store still MATCHES, so concurrent
-    writers stop conflicting exactly when they should and last-write-wins
-    silently. scitex-db's Postgres tool is built against that requirement.
-
-    And preserving it is NOT sufficient. A writer that read revision=5 from
-    SQLite and writes to a copied store finds 5 there and succeeds — its lock is
-    satisfied — yet it computed against a read from a DIFFERENT store, so
-    anything that landed after the copy point is gone with no error anywhere.
-    Preserving the column makes the lock FUNCTION; only quiescing every writer
-    makes it MEAN anything across a store swap, because "nothing changed under
-    me since I read" is precisely what a swap violates.
-    """
-    if "revision" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
-
-
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the schema idempotently + stamp version. Commits on success.
 
@@ -434,6 +372,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # named so the gap is visible rather than inherited as a numbering quirk.
     _migrate_v4_to_v5(conn)
     _migrate_v5_to_v6(conn)
+    _migrate_v6_to_v7(conn)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "

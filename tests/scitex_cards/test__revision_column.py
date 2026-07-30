@@ -44,10 +44,18 @@ def pre_v6_db():
     Built by initialising current schema then DROPPING the column, rather than
     by hand-writing an old CREATE TABLE — so it stays a real store (indices,
     triggers, DM tables) and cannot drift from the v5 shape as the schema moves.
+
+    The v7 trigger is dropped FIRST, and that is faithfulness rather than a
+    workaround: ``tasks_bump_revision`` references ``NEW.revision``, so SQLite
+    refuses to drop a column a trigger depends on ("error in trigger
+    tasks_bump_revision after drop column"). A genuine pre-v6 database never had
+    that trigger either — v7 introduced it — so removing both is what a real v5
+    file looks like. Dropping only the column would be an impossible state.
     """
     d = pathlib.Path(tempfile.mkdtemp())
     conn = _db.connect(d / "old.db")
     _db.init_schema(conn)
+    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision")
     conn.execute("ALTER TABLE tasks DROP COLUMN revision")
     conn.execute("PRAGMA user_version=5")
     conn.execute(
@@ -163,12 +171,19 @@ def test_migrating_twice_does_not_raise(pre_v6_db):
     assert "revision" in _db.table_columns(pre_v6_db, "tasks")
 
 
-def test_the_column_survives_a_row_update(fresh_db):
-    """A plain column write must not silently reset the counter.
+def test_a_row_update_never_moves_the_counter_backwards(fresh_db):
+    """A plain column write must never RESET the counter. Monotonic, not fixed.
 
-    Not the lock — just the floor it stands on. If an ordinary UPDATE zeroed
-    revision, every lock built on it would compare against a value that resets
-    under load, which is worse than having no lock because it would look present.
+    SUPERSEDES an assertion of mine that pinned the value UNCHANGED (== 7). That
+    was the correct contract at v6, when nothing incremented the column; v7's
+    ``tasks_bump_revision`` makes an ordinary UPDATE bump it to 8 deliberately,
+    so the old assertion reported a defect for behaviour that is now the point.
+
+    The property worth pinning is the one that holds under both: revision never
+    goes BACKWARDS. A counter that resets under load would make every lock built
+    on it compare against a recycled value — worse than no lock, because it would
+    look present. `>=` catches that; `==` only caught the version it was written
+    against. See test__revision_trigger.py for the increment's own tests.
     """
     # Arrange
     fresh_db.execute("INSERT INTO tasks(id, title, status) VALUES('c', 't', 'blocked')")
@@ -179,7 +194,7 @@ def test_the_column_survives_a_row_update(fresh_db):
 
     # Assert
     assert (
-        fresh_db.execute("select revision from tasks where id='c'").fetchone()[0] == 7
+        fresh_db.execute("select revision from tasks where id='c'").fetchone()[0] >= 7
     )
 
 
