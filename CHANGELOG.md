@@ -4,8 +4,33 @@
 
 ## [0.30.1] - 2026-08-01
 
-**Retirement now stops DM writes, not only card writes.** Required before any
-store is retired; 0.30.0 carries the gap.
+**DM writes work on PostgreSQL, and retirement now stops them.** 0.30.0 carries
+both defects: DMs could not be written to a server store at all, and a retired
+store accepted them.
+
+### DM writes died on a server store while cards worked (#710)
+
+`resolve_dm_db` fell through to `resolve_db_path` for its ambient tier, and that
+**raises** on a DSN. With `$SCITEX_CARDS_DB` pointing at PostgreSQL:
+
+```
+READ  list_tasks   2971 cards            ok
+WRITE dm funnel    StoreTargetIsNotAPath
+```
+
+Card reads and card writes were unaffected — only DMs, which agents send
+constantly. The two tiers above stay paths deliberately: an explicit `db` or
+`store` names a file, and deriving the DM database from `store.parent` is what
+stops a test with a tmp store writing its DMs into the live fleet database. Only
+the **ambient** tier can be a server.
+
+Found by booting the rebuilt image the way an agent does and attempting a write.
+Every cheaper check passed on the broken build — right version, driver present,
+`backend: postgresql`, correct uuid, 2971 cards readable.
+
+### Retirement now stops DM writes (#708)
+
+Required before any store is retired.
 
 Card writes reached the guard only *incidentally* — they are read-modify-write,
 so they pass through the canonical read, which checks. DM writes had their own
