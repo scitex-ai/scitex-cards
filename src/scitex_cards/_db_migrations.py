@@ -24,6 +24,8 @@ Consequence for anything reading the stamp: check the COLUMNS
 
 from __future__ import annotations
 
+from ._ddl import execute_ddl
+
 import sqlite3
 
 __all__ = [
@@ -139,7 +141,7 @@ def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
     ``PRAGMA recursive_triggers`` both 0 and 1 — correctness does not rest on a
     default someone may later flip.
     """
-    conn.executescript(REVISION_TRIGGER_SQL)
+    execute_ddl(conn, REVISION_TRIGGER_SQL)
 
 
 def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
