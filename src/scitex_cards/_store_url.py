@@ -40,6 +40,7 @@ __all__ = [
     "BACKEND_SQLITE",
     "POSTGRES_SCHEMES",
     "backend_of",
+    "is_postgres_conninfo",
     "is_postgres_url",
     "to_paramstyle",
 ]
@@ -53,8 +54,63 @@ BACKEND_POSTGRES = "postgresql"
 POSTGRES_SCHEMES = ("postgresql://", "postgres://")
 
 
+#: libpq accepts a KEYWORD/VALUE conninfo string as well as a URL --
+#: ``host=127.0.0.1 port=5432 dbname=cards`` -- and psycopg.connect() takes it
+#: happily. Only the URL form was recognised here, so a keyword/value DSN was
+#: classified SQLITE and opened AS A FILENAME.
+#:
+#: That is not theoretical: on 2026-07-31, testing this very module, I passed
+#: ``host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards`` and it
+#: created a SQLite database in the working directory literally named that,
+#: reported backend "sqlite", accepted writes, and answered queries. A wrong
+#: store that works is the failure this package keeps meeting: nothing raises,
+#: and the board looks healthy and empty.
+#:
+#: Detection is by KEYWORD rather than by "contains =", because a filesystem
+#: path may legitimately contain "=" and must keep resolving to SQLite.
+_LIBPQ_KEYWORDS = frozenset(
+    {
+        "host",
+        "hostaddr",
+        "port",
+        "dbname",
+        "user",
+        "password",
+        "passfile",
+        "service",
+        "sslmode",
+        "sslrootcert",
+        "connect_timeout",
+        "application_name",
+        "options",
+    }
+)
+
+
+def is_postgres_conninfo(target: object) -> bool:
+    """True iff ``target`` is a libpq KEYWORD/VALUE conninfo string.
+
+    Requires the FIRST token to be ``<known-keyword>=``: a path such as
+    ``/srv/data/a=b/cards.db`` contains an ``=`` but does not begin with a libpq
+    keyword, so it stays SQLite.
+    """
+    if not isinstance(target, str):
+        return False
+    head = target.strip()
+    if "=" not in head:
+        return False
+    first = head.split(maxsplit=1)[0]
+    key, sep, _ = first.partition("=")
+    return bool(sep) and key.lower() in _LIBPQ_KEYWORDS
+
+
 def is_postgres_url(target: object) -> bool:
     """True iff ``target`` explicitly names a PostgreSQL server.
+
+    Accepts BOTH spellings libpq accepts: the URL form (``postgresql://``,
+    ``postgres://``) and the keyword/value conninfo form. The name is kept for
+    its callers; see :func:`is_postgres_conninfo` for why the second form is
+    here at all.
 
     Scheme comparison is case-insensitive because URL schemes are, and leading
     whitespace is tolerated because environment variables collect it. Anything
@@ -64,7 +120,7 @@ def is_postgres_url(target: object) -> bool:
     if not isinstance(target, str):
         return False
     head = target.strip().lower()
-    return head.startswith(POSTGRES_SCHEMES)
+    return head.startswith(POSTGRES_SCHEMES) or is_postgres_conninfo(target)
 
 
 def backend_of(target: object) -> str:
