@@ -51,12 +51,12 @@ from ._db_migrations import (
     record_migration_provenance,
     table_columns,
 )
+from ._ddl import execute_ddl
 from ._schema_shape import (
     SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
     observed_version,
     stamp_schema_version,
 )
-from ._ddl import execute_ddl
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
@@ -171,159 +171,11 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
 
 
-# --------------------------------------------------------------------------- #
-# Schema                                                                      #
-# --------------------------------------------------------------------------- #
-#
-# Rule (RFC #348 §2): a field any read path filters/sorts on → typed column +
-# index; rare / nested / opaque payloads → JSON TEXT. ``group`` is remapped to
-# the ``grp`` column (``group`` is a SQL reserved word); the adapter/bootstrap
-# translate the name so the Python/YAML field is unchanged. ``deadlines`` and
-# ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
-# tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS tasks (
-    id             TEXT PRIMARY KEY,
-    title          TEXT NOT NULL,
-    status         TEXT NOT NULL DEFAULT 'pending',
-    kind           TEXT,
-    blocker        TEXT,
-    task           TEXT,
-    note           TEXT,
-    goal           TEXT,
-    project        TEXT,
-    repo           TEXT,
-    host           TEXT,
-    agent          TEXT,
-    assignee       TEXT,
-    scope          TEXT,
-    grp            TEXT,
-    priority       INTEGER,
-    parent         TEXT,
-    pr_url         TEXT,
-    issue_url      TEXT,
-    deadline       TEXT,
-    scheduled      TEXT,
-    created_at     TEXT,
-    last_activity  TEXT,
-    started_at     TEXT,
-    finished_at    TEXT,
-    created_by     TEXT,
-    job_id         TEXT,
-    command        TEXT,
-    deadlines_json TEXT,
-    log_meta_json  TEXT,
-    row_order      INTEGER,
-    card_json      TEXT,
-    revision       INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_status   ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_agent    ON tasks(agent);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
-CREATE INDEX IF NOT EXISTS idx_tasks_scope    ON tasks(scope);
-CREATE INDEX IF NOT EXISTS idx_tasks_kind     ON tasks(kind);
-CREATE INDEX IF NOT EXISTS idx_tasks_blocker  ON tasks(blocker);
-CREATE INDEX IF NOT EXISTS idx_tasks_project  ON tasks(project);
-CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent   ON tasks(parent);
-CREATE INDEX IF NOT EXISTS idx_tasks_pr_url   ON tasks(pr_url);
-
-CREATE TABLE IF NOT EXISTS task_comments (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    seq     INTEGER NOT NULL,
-    author  TEXT,
-    ts      TEXT,
-    kind    TEXT,
-    text    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
-
-CREATE TABLE IF NOT EXISTS task_edges (
-    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    dst_task_id TEXT NOT NULL,
-    edge_type   TEXT NOT NULL,
-    PRIMARY KEY (src_task_id, dst_task_id, edge_type)
-);
-CREATE INDEX IF NOT EXISTS idx_edges_dst ON task_edges(dst_task_id);
-
-CREATE TABLE IF NOT EXISTS task_roles (
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    who     TEXT NOT NULL,
-    role    TEXT NOT NULL,
-    PRIMARY KEY (task_id, who, role)
-);
-CREATE INDEX IF NOT EXISTS idx_roles_who ON task_roles(who);
-
-CREATE TABLE IF NOT EXISTS users (
-    id           TEXT PRIMARY KEY,
-    kind         TEXT NOT NULL,
-    host_at_name TEXT,
-    notify_json  TEXT,
-    turn_url     TEXT,
-    a2a_port     INTEGER,
-    created_at   TEXT,
-    last_seen    TEXT,
-    record_json  TEXT
-);
-CREATE TABLE IF NOT EXISTS user_names (
-    name    TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_user_names_uid ON user_names(user_id);
-
-CREATE TABLE IF NOT EXISTS inbox_recipients (
-    recipient_id TEXT PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id           TEXT PRIMARY KEY,
-    recipient_id TEXT NOT NULL,
-    event_type   TEXT NOT NULL,
-    card_id      TEXT,
-    body         TEXT,
-    actor        TEXT,
-    ts           TEXT NOT NULL,
-    seen         INTEGER NOT NULL DEFAULT 0,
-    record_json  TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
-    ON notifications(recipient_id, seen);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id         TEXT PRIMARY KEY,
-    thread_key TEXT NOT NULL,
-    sender     TEXT NOT NULL,
-    recipient  TEXT NOT NULL,
-    body       TEXT NOT NULL,
-    ts         TEXT NOT NULL,
-    read       INTEGER NOT NULL DEFAULT 0,
-    record_json TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_key, ts);
-
-CREATE TABLE IF NOT EXISTS schema_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
-
-#: Ordered tuple of every table name the schema creates — used by
-#: :func:`verify` and the tests to assert completeness. The ``dm_*`` block is
-#: schema v5; its DDL lives in :mod:`scitex_cards._db_dm_schema`.
-SCHEMA_TABLES: tuple[str, ...] = (
-    "tasks",
-    "task_comments",
-    "task_edges",
-    "task_roles",
-    "users",
-    "user_names",
-    "inbox_recipients",
-    "notifications",
-    "messages",
-    *_DM_TABLES,
-    "schema_meta",
-)
+# The core schema DDL and the table roster live in ``_db_schema_sql`` --
+# ``_db`` owns connections, not the shape of the store. Re-exported under
+# the historical private name so existing callers and tests are unaffected.
+from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
+from ._db_schema_sql import SCHEMA_TABLES
 
 
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
@@ -350,7 +202,42 @@ def connect(path: str | Path) -> sqlite3.Connection:
     not merely warn. A brand-new file (no ``schema_meta`` table yet) has no
     floor stamped, so the gate is a no-op and :func:`init_schema` still runs
     normally afterwards.
+
+    A POSTGRESQL TARGET IS NOT A PATH, and this is where that stops mattering to
+    callers. ``path`` may be a PostgreSQL URL or a libpq keyword/value conninfo;
+    those are dispatched to :func:`scitex_cards._backend_connect.connect` and
+    come back as a ``StoreConnection``. The SQLite branch is unchanged, so every
+    existing caller still receives the exact ``sqlite3.Connection`` it always
+    has — this widens what ``connect`` ACCEPTS without changing what it returns
+    for the only target in production today.
+
+    THE DISPATCH IS THE FIRST STATEMENT, before any ``Path`` handling, and that
+    ordering is the point. ``Path(dsn)`` on a conninfo does not raise: it yields
+    a plausible relative path, and ``mkdir`` + ``sqlite3.connect`` then
+    MANUFACTURE a SQLite file named after the DSN — which accepts writes and
+    answers queries while the real server sits untouched. That file was created
+    and observed while testing #682. Nothing raised, and the store looked
+    healthy, which is exactly why the check cannot live further down.
     """
+    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
+
+    target = str(path)
+    if is_postgres_url(target):
+        from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
+        from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
+
+        # PRAGMAs are deliberately NOT applied: journal_mode / synchronous /
+        # busy_timeout / foreign_keys are SQLite storage-engine settings that the
+        # server owns instead. ``rows_by_name`` because the store reads columns
+        # by name throughout.
+        pg = _connect_backend(target, read_only=False, rows_by_name=True)
+        try:
+            enforce_min_client_version(pg)
+        except Exception:
+            pg.close()
+            raise
+        return pg
+
     p = Path(path).expanduser()
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p))

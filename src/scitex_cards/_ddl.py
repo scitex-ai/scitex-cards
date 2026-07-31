@@ -62,6 +62,51 @@ __all__ = [
 _BEGIN_RE = re.compile(r"\bBEGIN\s*$", re.IGNORECASE)
 _END_RE = re.compile(r"^\s*END\s*;?\s*$", re.IGNORECASE)
 
+#: ``AUTOINCREMENT`` is the one construct in this schema with NO portable
+#: spelling, so it is the one that forces a dialect branch. Measured on both
+#: engines 2026-07-31:
+#:
+#:     INTEGER PRIMARY KEY AUTOINCREMENT   sqlite OK    postgres SYNTAX ERROR
+#:     INTEGER PRIMARY KEY                 sqlite OK    postgres NotNullViolation
+#:     GENERATED ALWAYS AS IDENTITY        sqlite ERROR postgres OK
+#:
+#: THE MIDDLE ROW IS THE TRAP, and it is what a careless port reaches for: it
+#: PARSES on both engines and fails only at INSERT, because PostgreSQL does not
+#: auto-assign a plain ``INTEGER PRIMARY KEY`` the way SQLite's rowid alias
+#: does. DDL-time success, runtime failure. So the replacement below was
+#: verified by INSERTING a row and reading the generated id back, not merely by
+#: creating the table.
+_AUTOINCREMENT_RE = re.compile(
+    r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", re.IGNORECASE
+)
+
+#: Matches a trigger DEFINITION and captures its name. Anchored at the start of
+#: an already-split statement, so it cannot fire on the words "create trigger"
+#: appearing inside a comment or a string literal elsewhere in the script.
+#: ``IF NOT EXISTS`` is optional because both spellings appear in the schema
+#: constants and both need the same substitution on PostgreSQL.
+_CREATE_TRIGGER_RE = re.compile(
+    r"CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_]\w*)", re.IGNORECASE
+)
+_PG_IDENTITY = "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
+
+
+def to_dialect(statement: str, *, postgres: bool) -> str:
+    """Translate one SQLite-flavoured DDL statement for the target engine.
+
+    A no-op for SQLite, which is why the schema constants stay written in the
+    dialect the production store actually speaks today -- the translation is
+    applied at execution time, to the engine that needs it, rather than
+    rewriting the source of truth for a backend nothing runs yet.
+
+    Deliberately NOT a general SQL translator. It handles the constructs this
+    schema actually contains and measurement has shown to differ; anything
+    broader would be untested guesswork wearing the same name.
+    """
+    if not postgres:
+        return statement
+    return _AUTOINCREMENT_RE.sub(_PG_IDENTITY, statement)
+
 
 def _strip_comments(line: str) -> str:
     """Drop a trailing ``--`` comment, respecting single-quoted literals.
@@ -146,11 +191,47 @@ def execute_ddl(conn, script: str) -> int:
     installed nine triggers. A caller can now assert the number it expected,
     which is the difference between "the guards are installed" and "the install
     call did not raise".
+
+    A SQLITE ``CREATE TRIGGER`` IS SUBSTITUTED ON POSTGRESQL, NOT SKIPPED. The
+    schema constants define guards in SQLite's inline-body form, which
+    PostgreSQL cannot parse at all -- it needs a plpgsql FUNCTION plus a trigger
+    that calls it, and it has no ``IF NOT EXISTS`` for triggers. Each such
+    statement is therefore replaced by its equivalent pair from
+    :mod:`scitex_cards._pg_triggers`, and an UNRECOGNISED trigger name RAISES.
+
+    That last part is the design. Skipping what a backend cannot run is the
+    tempting move and it is silently wrong: the tables come up, the database
+    looks healthy, and an append-only table quietly accepts DELETE because its
+    guard was never installed. A raise turns "someone added a trigger and did
+    not port it" into a failure at schema-creation time, where it is cheap.
     """
-    statements = split_sql_script(script)
-    for statement in statements:
-        conn.execute(statement)
-    return len(statements)
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    postgres = _is_postgres(conn)
+    executed = 0
+    for statement in split_sql_script(script):
+        match = _CREATE_TRIGGER_RE.match(statement.lstrip()) if postgres else None
+        if match is not None:
+            from ._pg_triggers import PG_TRIGGER_BY_NAME  # noqa: PLC0415
+
+            name = match.group(1)
+            pair = PG_TRIGGER_BY_NAME.get(name)
+            if pair is None:
+                raise ValueError(
+                    f"trigger {name!r} has no PostgreSQL equivalent in "
+                    "scitex_cards._pg_triggers. A SQLite trigger body does not "
+                    "port as text: write the plpgsql FUNCTION plus a "
+                    "CREATE OR REPLACE TRIGGER that calls it, add both under "
+                    f"{name!r}, and re-run. Refusing to create a store whose "
+                    "guard would be missing."
+                )
+            for pg_statement in pair:
+                conn.execute(pg_statement)
+                executed += 1
+            continue
+        conn.execute(to_dialect(statement, postgres=postgres))
+        executed += 1
+    return executed
 
 
 # EOF
