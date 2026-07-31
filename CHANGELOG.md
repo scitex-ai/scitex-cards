@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-08-01
+
+**Retirement now stops DM writes, not only card writes.** Required before any
+store is retired; 0.30.0 carries the gap.
+
+Card writes reached the guard only *incidentally* — they are read-modify-write,
+so they pass through the canonical read, which checks. DM writes had their own
+path and checked nothing. Measured during the PostgreSQL cutover:
+
+```
+14:16  a card write   REFUSED   (correct)
+14:26  a DM write     LANDED    in the retired store
+```
+
+So retirement was a fence for one path and a signpost for the other, and
+"stragglers fail loudly" held only for readers.
+
+The refusal lives in `_dm_write_rows._open`, the DM **write funnel** — all five
+mutating verbs open through it and nothing else does. Deliberately **not** in
+`open_db`: the canonical read and the export/snapshot paths open through that
+too, and a retired store must stay **readable**, because recovering from a
+retirement means reading the store you retired.
+
+Reuses the existing `_refuse_if_retired_on` rather than adding a second
+definition of "is this store retired" — per that helper's own docstring,
+duplicating it per caller is how the two answers drift.
+
+Two of the new tests assert the store stays **readable** after retirement,
+specifically so a later "fix" that moves the guard into `open_db` goes red.
+Negative control, run against unfixed 0.30.0 source: the retired store opens for
+a DM write and the test fails (`- refused / + opened`).
+
 ## [0.30.0] - 2026-08-01
 
 **The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
