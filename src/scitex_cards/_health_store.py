@@ -96,6 +96,115 @@ def _verify_db_store(path: Path) -> dict[str, Any]:
     }
 
 
+def _verify_postgres_store(target: str) -> dict[str, Any]:
+    """Confirm a PostgreSQL store opens, carries `tasks`, and can be WRITTEN.
+
+    THE SAME THREE QUESTIONS AS THE SQLITE BRANCH, re-asked for a server. Each
+    one means something different here, and pretending otherwise is how a check
+    starts answering a question nobody asked:
+
+      exists    -- not a `stat()` and not the SQLite magic header. A server can
+                   be reachable while holding no store at all, so the question
+                   is whether this database carries the schema.
+      readable  -- the COUNT(*) below either returns or it does not.
+      writable  -- MEASURED, NEVER ASSERTED. This is the rule this file already
+                   states in `_verify_db_store`: the word "writable" was once a
+                   hardcoded literal that could not be false, and that is how
+                   the 2026-07-28 outage stayed invisible while `add` refused
+                   every card and health called the store writable.
+
+    Writability is TWO conditions here, exactly as the SQLite branch needs both
+    the file and its directory:
+
+      has_table_privilege(...,'INSERT')  the role may write the table
+      NOT pg_is_in_recovery()            this is not a read-only standby
+
+    Either alone is insufficient: a grant on a hot standby still cannot write,
+    and a primary still refuses a role without the grant. Both are read-only
+    probes, so this reports on the store without altering it.
+    """
+    from ._db import connect
+    from ._schema_probe import _sole_value, has_table
+
+    try:
+        conn = connect(target)
+    except Exception as exc:  # noqa: BLE001 -- a failed open is a reportable state
+        return {
+            "ok": False,
+            "detail": f"PostgreSQL store {target!r} did not open ({exc})",
+            "hint": (
+                "check the server is reachable and the DSN is right "
+                "(`scitex-cards store resolve` shows what resolved). Do NOT "
+                "point the store elsewhere to make this green -- a fresh empty "
+                "target becomes a SECOND store, which is how the board was "
+                f"destroyed on 2026-07-19. {type(exc).__name__}: {exc}"
+            ),
+        }
+
+    try:
+        if not has_table(conn, "tasks"):
+            return {
+                "ok": False,
+                "detail": f"PostgreSQL store {target!r} has no `tasks` table",
+                "hint": (
+                    "the server is reachable but holds no store. Verify the "
+                    "DATABASE name in the DSN before creating anything -- an "
+                    "empty database that gets initialised here is a second "
+                    "store, not a repair."
+                ),
+            }
+        n = int(_sole_value(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()))
+        may_insert = bool(
+            _sole_value(
+                conn.execute(
+                    "SELECT has_table_privilege(current_user, 'tasks', 'INSERT')"
+                ).fetchone()
+            )
+        )
+        in_recovery = bool(
+            _sole_value(conn.execute("SELECT pg_is_in_recovery()").fetchone())
+        )
+    except Exception as exc:  # noqa: BLE001 -- a failed probe is a reportable state
+        return {
+            "ok": False,
+            "detail": f"PostgreSQL store {target!r} did not read ({exc})",
+            "hint": (
+                "do NOT re-initialise it -- a store that fails to read may still "
+                "hold every card. `scitex-cards db verify` reports the schema. "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        }
+    finally:
+        try:
+            conn.rollback()
+        finally:
+            conn.close()
+
+    if not may_insert:
+        return {
+            "ok": False,
+            "detail": (
+                f"PostgreSQL store {target!r} is readable ({n} cards) but the "
+                f"current role has no INSERT on `tasks`"
+            ),
+            "hint": "GRANT INSERT (and UPDATE/DELETE) on the store tables to this role",
+        }
+    if in_recovery:
+        return {
+            "ok": False,
+            "detail": (
+                f"PostgreSQL store {target!r} is readable ({n} cards) but the "
+                f"server is IN RECOVERY -- a standby, so every write will fail"
+            ),
+            "hint": "point the store at the primary, not a read replica",
+        }
+    return {
+        "ok": True,
+        "detail": f"PostgreSQL store {target!r} ({n} cards, readable, writable)",
+        "hint": None,
+    }
+
+
 def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
     """Resolve the task store and verify it is the canonical, healthy store.
 
@@ -106,6 +215,18 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
     """
     from ._db import resolve_db_path
     from ._paths import resolve_tasks_path
+    from ._store_target import resolve_store_target
+    from ._store_url import is_postgres_url
+
+    # POSTGRESQL BRANCHES FIRST, and it has to: `resolve_db_path` is typed
+    # `-> Path` and REFUSES a DSN outright since #692, so on a PostgreSQL store
+    # the health check would raise from its own first statement -- crashing on
+    # exactly the backend it exists to report on. Health that cannot run against
+    # the live store is worse than absent, because a crashing doctor reads as an
+    # infrastructure problem rather than as "I never checked".
+    target = resolve_store_target(store)
+    if is_postgres_url(target):
+        return _verify_postgres_store(target)
 
     db = Path(resolve_db_path(store))
 
