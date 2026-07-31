@@ -51,9 +51,40 @@ from ._schema_probe import _sole_value
 
 
 def _open(db, store) -> sqlite3.Connection:
-    from ._db import open_db
+    """Open the DM store for WRITING, refusing a retired one.
 
-    return open_db(resolve_dm_db(db, store=store))
+    THE REFUSAL IS HERE, NOT IN ``open_db``. Card writes reach the retirement
+    guard only incidentally — they are read-modify-write, so they pass through
+    the canonical read, which checks. DM writes have their own path and checked
+    NOTHING. Measured 2026-07-31 during the cutover: a peer's card write was
+    refused at 14:16 while my own DM write LANDED in the retired store at
+    14:26. Retirement was a fence for one path and a signpost for the other.
+
+    ``open_db`` would be the tempting place and is the WRONG one: the canonical
+    read and the export/snapshot paths also open through it, and a retired
+    store must stay READABLE. Archaeology is what makes retirement survivable —
+    recovering one means reading it. So the refusal belongs at the point of
+    WRITE, and this function is the DM write funnel: all five mutating verbs
+    (append, append_pair, create_group_thread, mark_read, tombstone) open here
+    and nothing else does.
+
+    Reuses ``_refuse_if_retired_on`` rather than re-deriving the condition. Its
+    docstring already states why: both backends must run ONE definition of "is
+    this store retired", because duplicating it per caller is how the answers
+    drift — and the entire point is that exactly one store can be current.
+    """
+    from ._db import open_db
+    from ._store_canonical_read import _refuse_if_retired_on
+
+    conn = open_db(resolve_dm_db(db, store=store))
+    try:
+        _refuse_if_retired_on(conn)
+    except BaseException:
+        # Do not leak the handle when we refuse. The caller never sees this
+        # connection, so nobody else can close it.
+        conn.close()
+        raise
+    return conn
 
 
 def _dumps(payload: dict) -> str:
