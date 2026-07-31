@@ -85,32 +85,76 @@ class TestAUrlSurvivesResolution:
         assert target == PG_URL
 
 
-class TestTheOldResolverStillMangles:
-    """POSITIVE CONTROL for the defect this module exists to route around.
+class TestTheOldResolverNoLongerMangles:
+    """THE DEFECT THIS MODULE ROUTED AROUND IS NOW FIXED AT SOURCE.
 
-    If either test here fails, ``resolve_db_path`` has changed and the new
-    resolver's reason for existing must be re-derived rather than assumed.
+    This class used to be a positive control asserting that
+    ``resolve_db_path`` MANGLED a DSN into a relative path, and its docstring
+    instructed that if it ever failed, this module's reason for existing must
+    be RE-DERIVED rather than assumed. It failed on 2026-07-31. Here is the
+    re-derivation.
+
+    WHY IT CHANGED. The mangling was not merely untidy. Measured on the live
+    system: with ``$SCITEX_CARDS_DB`` set to a PostgreSQL URL, ``list_tasks``
+    returned 0 cards against a real board of 2960, ``resolve-store`` reported
+    ``exists: True``, and a real EMPTY 217 KB SQLite database was created at
+    the mangled path. An empty board reporting itself healthy is the outage
+    this package's guards exist to prevent, so ``resolve_db_path`` now REFUSES
+    a non-path target instead of coercing one.
+
+    DOES ``_store_target`` STILL HAVE A REASON TO EXIST? Yes, and a clearer one
+    than before. The two resolvers now answer different questions:
+
+        resolve_db_path()        -> a filesystem Path, or REFUSES
+        resolve_store_target()   -> the target, WHATEVER KIND it is
+
+    Callers that need a file (backup, vacuum, inode checks) want the first and
+    should fail loudly on a server. Callers that must route to whichever
+    backend is configured want the second. Before this change the distinction
+    was "one of them is broken"; now it is a genuine division of labour, which
+    is a better foundation than the one this module was built on.
     """
 
-    def test_it_coerces_a_url_to_a_relative_path(self, store_env):
+    def test_it_refuses_a_url_instead_of_coercing_it(self, store_env):
         # Arrange
         store_env(PG_URL)
 
         # Act
-        coerced = resolve_db_path()
+        try:
+            resolve_db_path()
+            refused = False
+        except StoreTargetIsNotAPath:
+            refused = True
 
         # Assert
-        assert not coerced.is_absolute()
+        assert refused
 
-    def test_the_coerced_path_loses_a_slash(self, store_env):
+    def test_the_refusal_explains_the_empty_board_hazard(self, store_env):
+        """The message must carry WHY, or the next reader re-coerces it."""
         # Arrange
         store_env(PG_URL)
 
         # Act
-        coerced = str(resolve_db_path())
+        try:
+            resolve_db_path()
+            message = ""
+        except StoreTargetIsNotAPath as exc:
+            message = str(exc)
 
         # Assert
-        assert coerced.startswith("postgresql:/user")
+        assert "0 cards" in message
+
+    def test_a_real_path_still_resolves(self, tmp_path):
+        """Positive control: refusing a DSN must not break the SQLite path,
+        which is what every deployment uses today."""
+        # Arrange
+        target = tmp_path / "cards.db"
+
+        # Act
+        resolved = resolve_db_path(target)
+
+        # Assert
+        assert resolved == target
 
 
 class TestRequireDbPathRefusesRatherThanMangles:

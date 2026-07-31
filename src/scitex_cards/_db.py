@@ -147,12 +147,54 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
        ecosystem user-canonical resolver (never a re-rolled precedence).
 
     Returns a :class:`~pathlib.Path`; does NOT create the file.
+
+    A POSTGRESQL TARGET IS REFUSED HERE, LOUDLY, RATHER THAN COERCED. This
+    function used to run ``Path(value)`` over whatever it was given, and
+    ``Path`` accepts a DSN without complaint: ``postgresql://host/db`` becomes
+    the relative path ``postgresql:/host/db`` — the ``//`` silently collapses.
+
+    MEASURED 2026-07-31, and it is the worst failure this store can have.
+    With ``SCITEX_CARDS_DB`` set to a PostgreSQL URL:
+
+        list_tasks()            ->     0 cards   (SQLite target: 2960)
+        resolve-store `exists`  ->  True         the guard reported healthy
+        and on disk:  ./postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards
+                      a real, freshly created, EMPTY 217 KB SQLite database
+
+    So it did not merely resolve wrong. The store layer MANUFACTURED a new
+    empty store at the mangled path, initialised its schema, declared it
+    present, and served nothing. An empty board that reports itself healthy is
+    the exact outage this package's read-door and retirement guards exist to
+    prevent — the one that previously took this store from 2170 rows to 18.
+
+    ``_db.connect`` learned to dispatch a PostgreSQL target in #685, but the
+    STORE reaches the database through THIS function, so closing one door left
+    the other open. Refusing is correct even once PostgreSQL is fully
+    supported: this function's contract is to return a filesystem Path, and a
+    DSN is not one. Routing a server target belongs in the caller
+    (:mod:`scitex_cards._store_target` already provides
+    ``resolve_store_target`` / ``resolve_store_backend`` for that).
     """
+    from ._store_target import StoreTargetIsNotAPath  # noqa: PLC0415
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    def _as_path(value: str | Path, source: str) -> Path:
+        if is_postgres_url(str(value)):
+            raise StoreTargetIsNotAPath(
+                f"{source} names a PostgreSQL server, not a file path: "
+                f"{value!r}. resolve_db_path returns a filesystem Path, and "
+                "coercing a DSN here silently creates an EMPTY SQLite store at "
+                "a mangled path and serves 0 cards while reporting healthy. "
+                "Use scitex_cards._store_target.resolve_store_target() to get "
+                "the target, or _db.connect() to open it."
+            )
+        return Path(value).expanduser()
+
     if explicit is not None:
-        return Path(explicit).expanduser()
+        return _as_path(explicit, "the explicit target")
     env_val = os.environ.get(ENV_DB)
     if env_val:
-        return Path(env_val).expanduser()
+        return _as_path(env_val, f"${ENV_DB}")
     legacy_val = os.environ.get(ENV_DB_DEPRECATED)
     if legacy_val:
         logger.warning(
@@ -162,7 +204,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
             ENV_DB_DEPRECATED,
             ENV_DB,
         )
-        return Path(legacy_val).expanduser()
+        return _as_path(legacy_val, f"${ENV_DB_DEPRECATED}")
     # Final tier — DELEGATE to the ecosystem user-canonical resolver.
     # Imported lazily so a caller passing an explicit / env path never
     # hard-requires scitex_config to be importable.
