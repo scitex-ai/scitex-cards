@@ -302,11 +302,21 @@ def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = "
-        # MAX in SQL, not in Python: another process may have raised it between
-        # our PRAGMA read and this statement, and CAST makes the comparison
-        # numeric rather than lexicographic ('10' < '9' as text).
-        "  CAST(MAX(CAST(schema_meta.value AS INTEGER), "
-        "           CAST(excluded.value AS INTEGER)) AS TEXT)",
+        # The max is taken IN SQL, not in Python: another process may have
+        # raised it between our PRAGMA read and this statement, and CAST makes
+        # the comparison numeric rather than lexicographic ('10' < '9' as text).
+        #
+        # SPELT AS A CASE RATHER THAN MAX(a, b). SQLite's two-argument MAX is a
+        # scalar; PostgreSQL's MAX is an AGGREGATE ONLY, and the two-argument
+        # call is not a subtle behaviour difference there but a hard
+        # `function max(integer, integer) does not exist`. GREATEST() is the
+        # PostgreSQL spelling and SQLite does not have it, so neither engine's
+        # native form is portable -- but CASE is, and it is standard SQL.
+        # Verified on both: max(7,5)=7, max(5,7)=7, max(10,9)=10.
+        "  CAST(CASE WHEN CAST(schema_meta.value AS INTEGER) "
+        "                 > CAST(excluded.value AS INTEGER) "
+        "            THEN CAST(schema_meta.value AS INTEGER) "
+        "            ELSE CAST(excluded.value AS INTEGER) END AS TEXT)",
         (str(stamp),),
     )
 
