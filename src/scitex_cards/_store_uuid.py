@@ -52,6 +52,8 @@ import uuid as _uuid_module
 from pathlib import Path
 from typing import Final
 
+from ._store_tx import begin_write_transaction
+
 logger = logging.getLogger(__name__)
 
 #: ``schema_meta`` key holding this database's own identity.
@@ -372,7 +374,7 @@ def adopt_store_uuid(db_path: str | Path, identity: str | None = None) -> str:
     value = identity if identity is not None else mint_store_uuid()
     conn = connect(str(db_path))
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         stamp_store_uuid(conn, value)
         conn.commit()
     finally:
