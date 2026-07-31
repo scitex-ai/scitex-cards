@@ -57,6 +57,18 @@ logger = logging.getLogger(__name__)
 #: ``schema_meta`` key holding this database's own identity.
 KEY_STORE_UUID: Final[str] = "store_uuid"
 
+#: libpq's own connect-timeout variable. Used rather than rewriting the DSN:
+#: appending a parameter means parsing and re-emitting a connection string in
+#: two syntaxes (URL and keyword/value), and a reporting primitive should not be
+#: in the business of editing the target it was asked to describe.
+_PGCONNECT_TIMEOUT_ENV: Final[str] = "PGCONNECT_TIMEOUT"
+
+#: Seconds :func:`store_uuid_at` will wait for a server before answering None.
+#: Deliberately short: this backs the "which store am I on?" diagnostic, whose
+#: whole value is being fast when everything else is broken. A store that cannot
+#: answer within this window is not one whose identity is worth blocking on.
+_REPORTING_CONNECT_TIMEOUT_S: Final[str] = "3"
+
 #: Environment variable carrying the caller's EXPECTATION of which store it
 #: should find. The expectation is INJECTED — an explicit argument, else this
 #: variable, else absent. It is NEVER read out of the database and NEVER
@@ -222,12 +234,61 @@ def read_store_uuid(conn: sqlite3.Connection) -> str | None:
 
 
 def store_uuid_at(db_path: str | Path) -> str | None:
-    """Read a database's identity by PATH, read-only, never raising.
+    """Read a database's identity by TARGET, read-only, never raising.
 
     The exposure primitive (design §11 / contract point 8): ``resolve_store``
     and the health doctor use it so the identity can be put into config without
     archaeology. Absent file, unreadable file, no schema — all ``None``.
+
+    ``db_path`` may be a filesystem path OR a PostgreSQL URL. Handling the
+    server case is not a nicety: ``Path("postgresql://h/db").exists()`` is
+    False, so before this branch existed a PostgreSQL store reported
+    ``store_uuid: None`` — indistinguishable from "this store has no identity",
+    and reported by the very verb an operator runs to check identity. That is
+    the worse failure, because it does not look like one. An identity that
+    silently reads None also makes ``expected_uuid`` unfalsifiable, which is
+    how a mismatch guard passes on the wrong store.
+
+    The server branch is TIME-BOUNDED, and that is part of the contract rather
+    than a tuning detail. libpq applies no connect timeout by default, so a
+    server that is down (as opposed to refusing) leaves this blocked
+    indefinitely — measured at over 40s against a dead port before the bound
+    existed. This primitive backs ``resolve-store``, which is what someone runs
+    WHEN THINGS ARE ALREADY BROKEN, so hanging is not a lesser failure than
+    answering wrongly: both leave the operator with no answer, and the hang also
+    burns the time they are trying to save. "Never raises" is only half a
+    reporting contract; "answers promptly" is the other half.
+
+    An explicit ``connect_timeout`` in the DSN or a caller-set
+    ``$PGCONNECT_TIMEOUT`` still WINS — the bound is a default for the case
+    where nobody expressed an intent, never an override of one.
     """
+    from ._store_url import is_postgres_url
+
+    if is_postgres_url(db_path):
+        prior_timeout = os.environ.get(_PGCONNECT_TIMEOUT_ENV)
+        if prior_timeout is None:
+            os.environ[_PGCONNECT_TIMEOUT_ENV] = _REPORTING_CONNECT_TIMEOUT_S
+        try:
+            from ._db import connect
+
+            conn = connect(str(db_path))
+        except Exception:
+            # Same contract as the SQLite branch: unreachable or unreadable is
+            # None, never an exception. A server adds failure modes a file does
+            # not have (down, refused, auth), and a REPORTING call must not
+            # raise on any of them.
+            return None
+        finally:
+            if prior_timeout is None:
+                os.environ.pop(_PGCONNECT_TIMEOUT_ENV, None)
+        try:
+            return read_store_uuid(conn)
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     path = Path(db_path)
     if not path.exists():
         return None

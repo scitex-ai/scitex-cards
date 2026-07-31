@@ -68,9 +68,42 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     Resolution: an explicit path wins outright; otherwise the container is the
     ``tasks.yaml`` beside the resolved database (``$SCITEX_CARDS_DB``'s dir), so
     there is no separate, YAML-named identity variable.
+
+    A SERVER STORE HAS NO DIRECTORY, and that is the whole reason this function
+    stopped deriving from the database unconditionally. ``$SCITEX_CARDS_DB`` may
+    now name a PostgreSQL server, and ``resolve_db_path`` RAISES on one rather
+    than coerce it (``Path("postgresql://h/db")`` silently collapses to the
+    relative ``postgresql:/h/db``). Every caller here — the users/groups sidecar,
+    pidfiles, the delivery ledger, reminder state — wants a LOCAL directory, and
+    wants one just as much when the cards live on a server. Deriving it from the
+    store identity welded the two together, so pointing the fleet at PostgreSQL
+    made the whole query side raise before it ever opened a connection.
+
+    Measured 2026-07-31, the failure this removes::
+
+        SCITEX_CARDS_DB=postgresql:///scitex_cards  scitex-cards list-tasks
+        StoreTargetIsNotAPath: names a PostgreSQL server, not a file path
+
+    Card DATA never needed this path: :func:`scitex_cards._model.load_doc` calls
+    ``_read_canonical_db_or_raise()`` with NO argument and interpolates the path
+    into an error message only. So the two axes are genuinely independent, and
+    are now resolved independently:
+
+    - store IDENTITY — ``$SCITEX_CARDS_DB``; a path OR a server URL
+    - local state DIR — always a real directory, whatever the backend
+
+    On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
+    aware), the same ambient default a fresh install uses.
     """
     if explicit is not None:
         return Path(explicit).expanduser()
+
+    from ._store_target import resolve_store_target
+    from ._store_url import is_postgres_url
+
+    if is_postgres_url(resolve_store_target(None)):
+        return _user_root() / "tasks.yaml"
+
     from ._db import resolve_db_path
 
     return resolve_db_path(None).parent / "tasks.yaml"
