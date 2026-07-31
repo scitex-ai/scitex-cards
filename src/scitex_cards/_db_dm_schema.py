@@ -33,9 +33,9 @@ database quietly stop being the same shape.
 
 from __future__ import annotations
 
-from ._ddl import execute_ddl
-
 import sqlite3
+
+from ._ddl import execute_ddl
 
 #: Every table this script creates, in dependency order (parents first).
 DM_TABLES: tuple[str, ...] = (
@@ -184,8 +184,13 @@ def _ensure_column(
     claude-code-telegrammer already landed for the identical race
     (``ts/lib/store-migrations.ts``); anything else still raises.
     """
-    cols = {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column in cols:
+    from ._schema_probe import column_names  # noqa: PLC0415 -- import cycle
+
+    # Delegated: PRAGMA table_info is SQLite-only. Read directly it made this
+    # guard raise on PostgreSQL from inside init_schema -- found by running the
+    # real server, not by scanning, because this module is not in the init path
+    # anyone thinks to grep.
+    if column in column_names(conn, table):
         return
     try:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")

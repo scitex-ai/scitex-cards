@@ -177,7 +177,30 @@ def connect(
             raw.row_factory = sqlite3.Row
         return StoreConnection(raw, backend)
 
-    import psycopg  # noqa: PLC0415 -- optional dependency, resolved on demand
+    try:
+        import psycopg  # noqa: PLC0415 -- optional dependency, resolved on demand
+    except ModuleNotFoundError as exc:  # pragma: no cover - environment-dependent
+        # A BARE ModuleNotFoundError NAMES THE SYMPTOM, NOT THE FIX. Measured
+        # 2026-07-31: psycopg is declared in the `all`, `dev` and `postgres`
+        # extras but NOT in `mcp`, and `mcp` is what both deployment paths
+        # install -- the host venv and the container recipe. So the driver is
+        # absent by default on every machine that has not asked for it, and the
+        # failure surfaces only when something first touches PostgreSQL, which
+        # is at cutover.
+        #
+        # Every other check passes in that state: the wheel contains this
+        # module, connect() dispatches correctly, the schema builds. The code is
+        # right and the environment cannot run it. Saying so, with the command
+        # that fixes it, is the difference between a five-minute repair and a
+        # confusing outage.
+        raise ModuleNotFoundError(
+            "PostgreSQL support needs the psycopg driver, which is NOT "
+            "installed here. It ships in an optional extra that 'mcp' does not "
+            "include, so a default install has no driver:\n"
+            "    pip install 'scitex-cards[postgres]'\n"
+            "    (or add psycopg[binary]>=3.1 to whatever installs this env)\n"
+            f"target was: {target!r}"
+        ) from exc
 
     if rows_by_name:
         from psycopg.rows import dict_row  # noqa: PLC0415

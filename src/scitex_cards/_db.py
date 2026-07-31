@@ -147,12 +147,54 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
        ecosystem user-canonical resolver (never a re-rolled precedence).
 
     Returns a :class:`~pathlib.Path`; does NOT create the file.
+
+    A POSTGRESQL TARGET IS REFUSED HERE, LOUDLY, RATHER THAN COERCED. This
+    function used to run ``Path(value)`` over whatever it was given, and
+    ``Path`` accepts a DSN without complaint: ``postgresql://host/db`` becomes
+    the relative path ``postgresql:/host/db`` — the ``//`` silently collapses.
+
+    MEASURED 2026-07-31, and it is the worst failure this store can have.
+    With ``SCITEX_CARDS_DB`` set to a PostgreSQL URL:
+
+        list_tasks()            ->     0 cards   (SQLite target: 2960)
+        resolve-store `exists`  ->  True         the guard reported healthy
+        and on disk:  ./postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards
+                      a real, freshly created, EMPTY 217 KB SQLite database
+
+    So it did not merely resolve wrong. The store layer MANUFACTURED a new
+    empty store at the mangled path, initialised its schema, declared it
+    present, and served nothing. An empty board that reports itself healthy is
+    the exact outage this package's read-door and retirement guards exist to
+    prevent — the one that previously took this store from 2170 rows to 18.
+
+    ``_db.connect`` learned to dispatch a PostgreSQL target in #685, but the
+    STORE reaches the database through THIS function, so closing one door left
+    the other open. Refusing is correct even once PostgreSQL is fully
+    supported: this function's contract is to return a filesystem Path, and a
+    DSN is not one. Routing a server target belongs in the caller
+    (:mod:`scitex_cards._store_target` already provides
+    ``resolve_store_target`` / ``resolve_store_backend`` for that).
     """
+    from ._store_target import StoreTargetIsNotAPath  # noqa: PLC0415
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    def _as_path(value: str | Path, source: str) -> Path:
+        if is_postgres_url(str(value)):
+            raise StoreTargetIsNotAPath(
+                f"{source} names a PostgreSQL server, not a file path: "
+                f"{value!r}. resolve_db_path returns a filesystem Path, and "
+                "coercing a DSN here silently creates an EMPTY SQLite store at "
+                "a mangled path and serves 0 cards while reporting healthy. "
+                "Use scitex_cards._store_target.resolve_store_target() to get "
+                "the target, or _db.connect() to open it."
+            )
+        return Path(value).expanduser()
+
     if explicit is not None:
-        return Path(explicit).expanduser()
+        return _as_path(explicit, "the explicit target")
     env_val = os.environ.get(ENV_DB)
     if env_val:
-        return Path(env_val).expanduser()
+        return _as_path(env_val, f"${ENV_DB}")
     legacy_val = os.environ.get(ENV_DB_DEPRECATED)
     if legacy_val:
         logger.warning(
@@ -162,7 +204,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
             ENV_DB_DEPRECATED,
             ENV_DB,
         )
-        return Path(legacy_val).expanduser()
+        return _as_path(legacy_val, f"${ENV_DB_DEPRECATED}")
     # Final tier — DELEGATE to the ecosystem user-canonical resolver.
     # Imported lazily so a caller passing an explicit / env path never
     # hard-requires scitex_config to be importable.
@@ -263,7 +305,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     """
     # BEFORE the schema script, because that script is what makes a fresh file
     # look initialised. 0 means "new file" and is a CREATE, not a migration.
-    _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if _is_postgres(conn):
+        # PostgreSQL has no user_version and rejects PRAGMA outright. 0 is the
+        # honest starting point here for the same reason it is on a fresh file:
+        # "no stamp read" is not "version zero asserted", and the physical-shape
+        # read immediately below supplies the real prior version via max().
+        _prior_version = 0
+    else:
+        _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
 
     # AND THE PRAGMA ALONE IS NOT TRUSTWORTHY HERE. A PRAGMA cannot carry a
     # trigger, so the engine-level floor applied below protects `schema_meta`
@@ -309,12 +360,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.
     stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
+    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is SQLite-only
+    # syntax. The two are equivalent here -- both leave an existing row alone,
+    # which is what preserves the ORIGINAL provenance on a re-init -- but only
+    # this spelling parses on PostgreSQL. (`?` is fine on both: StoreConnection
+    # translates paramstyle, so call sites stay written in one dialect.)
     conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
+        "INSERT INTO schema_meta(key, value) VALUES('created_at', ?) "
+        "ON CONFLICT(key) DO NOTHING",
         (_utc_now_iso(),),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
+        "INSERT INTO schema_meta(key, value) VALUES('source', 'fresh') "
+        "ON CONFLICT(key) DO NOTHING",
     )
     # An upgrade of an EXISTING store names itself. See that function for why:
     # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
@@ -341,14 +399,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
 def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:
     """Resolve → connect → ensure schema. The one-call adapter entry point.
 
-    Combines :func:`resolve_db_path`, :func:`connect`, and
+    Combines :func:`resolve_store_target`, :func:`connect`, and
     :func:`init_schema`. Returns a ready-to-use connection whose schema is
     guaranteed present (created on first open; a no-op on an existing DB).
+
+    RESOLVES THE TARGET, NOT A PATH. ``resolve_db_path`` is typed ``-> Path``
+    and now refuses a DSN outright, so routing through it made this function --
+    the one-call entry point the canonical read path uses -- structurally unable
+    to reach PostgreSQL, no matter that :func:`connect` had already learned to
+    dispatch one. That is why ``_store_target``'s docstring could say the seam
+    existed and NOTHING imported it. Filesystem-only callers (snapshots,
+    backups, the on-disk health probes) keep ``resolve_db_path`` deliberately.
     """
-    return _open_at(resolve_db_path(explicit))
+    from ._store_target import resolve_store_target  # noqa: PLC0415
+
+    return _open_at(resolve_store_target(explicit))
 
 
-def _open_at(path: Path) -> sqlite3.Connection:
+def _open_at(path: str | Path) -> sqlite3.Connection:
     conn = connect(path)
     init_schema(conn)
     return conn

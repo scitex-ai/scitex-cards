@@ -35,11 +35,15 @@ the first.
 
 from __future__ import annotations
 
+import re
+
 __all__ = [
     "trigger_names",
     "table_names",
+    "column_names",
     "has_trigger",
     "has_table",
+    "has_column",
 ]
 
 #: PostgreSQL: exclude ``tgisinternal`` rows -- every FK constraint installs
@@ -58,6 +62,21 @@ _SQLITE_TRIGGERS = "SELECT name FROM sqlite_master WHERE type = 'trigger'"
 _SQLITE_TABLES = (
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
 )
+#: The column catalogue. ``PRAGMA table_info`` is SQLite-only, so the ladder's
+#: column rungs could not be read on PostgreSQL at all -- and an unreadable rung
+#: is reported ABSENT, which downgrades the observed version rather than
+#: erroring. That is the same quiet direction :func:`has_trigger` documents.
+_PG_COLUMNS = (
+    "SELECT column_name FROM information_schema.columns "
+    "WHERE table_schema = current_schema() AND table_name = '{table}'"
+)
+
+#: The table name is INTERPOLATED, not bound, because the two engines disagree
+#: on the placeholder (``?`` vs ``%s``) and this module deliberately holds no
+#: paramstyle layer. Interpolation is only safe on a constrained identifier, so
+#: the name is validated rather than trusted: every caller passes an internal
+#: constant today, and this keeps that true if one ever stops.
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _is_postgres(conn) -> bool:
@@ -121,6 +140,33 @@ def has_trigger(conn, name: str) -> bool:
 
 def has_table(conn, name: str) -> bool:
     return name in table_names(conn)
+
+
+def column_names(conn, table: str) -> set[str]:
+    """Every column on ``table``; an empty set when the table is absent.
+
+    An absent table yields an empty set on BOTH engines rather than raising:
+    ``information_schema`` simply returns no rows, and ``PRAGMA table_info`` on
+    an unknown table returns no rows too. The ladder's column rungs already ask
+    ``has_table`` first, so this only has to agree with them, not duplicate them.
+    """
+    if not _IDENTIFIER_RE.match(table):
+        raise ValueError(
+            f"refusing to interpolate {table!r} into a catalogue query: only "
+            "a plain SQL identifier is accepted here. See _IDENTIFIER_RE."
+        )
+    if _is_postgres(conn):
+        return _query(conn, _PG_COLUMNS.format(table=table))
+    # SQLite only. `PRAGMA table_info` returns (cid, name, type, ...) and the
+    # name is at index 1, so `_sole_value` -- which takes the FIRST column --
+    # would silently return the integer cid and every lookup would miss.
+    cur = conn.execute(f'PRAGMA table_info("{table}")')
+    rows = cur.fetchall() if hasattr(cur, "fetchall") else cur
+    return {row[1] for row in rows}
+
+
+def has_column(conn, table: str, column: str) -> bool:
+    return column in column_names(conn, table)
 
 
 # EOF
