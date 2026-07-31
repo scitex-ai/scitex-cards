@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-08-01
+
+**The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
+still died, because the write side had never been ported. SQLite remains the
+DEFAULT and PostgreSQL stays OPT-IN via `$SCITEX_CARDS_DB`.
+
+### The read path stopped taking the query side down (#704)
+
+Pointing `$SCITEX_CARDS_DB` at PostgreSQL made the whole query side raise
+*before opening a connection* — `list-tasks` died in path resolution while the
+write and canonical-read paths were already DSN-aware. One resolver conflated
+two things, and a server store has no directory:
+
+- store **identity** — `$SCITEX_CARDS_DB`; a path OR a server URL
+- local state **dir** — pidfiles, delivery ledger, reminder state, the
+  users/groups sidecar; always a real directory, whatever the backend
+
+Card data never needed that path: `load_doc` opens the store with no argument
+and interpolates the path into an error string only.
+
+Two diagnostics that lied are fixed with it. `resolve-store` — the verb whose
+whole job is *which store am I on?* — crashed on the answer; it now reports the
+target uncoerced plus a `backend` field, with `exists` three-valued (`None` on
+a server, because `False` reads as "your store is missing"). And `store_uuid_at`
+was path-only, so `Path("postgresql://…").exists()` was `False` and it returned
+`None` **without raising** — a PostgreSQL store reported "no identity",
+indistinguishable from having none, which silently disarmed `expected_uuid`.
+
+### The write path is ported (#705)
+
+Every store-path statement now uses ONE form both engines understand, rather
+than a dialect-translation layer:
+
+```
+INSERT OR IGNORE   ->  INSERT ... ON CONFLICT DO NOTHING
+INSERT OR REPLACE  ->  INSERT ... ON CONFLICT(<key>) DO UPDATE SET ...
+```
+
+**This also fixes the v7 optimistic-lock counter, which had never once fired.**
+`INSERT OR REPLACE` is DELETE+INSERT, so `AFTER UPDATE ON tasks` was never
+reached and `revision` read `0` on all 2957 live rows. Measured after: a card
+update advances the counter (`1 -> 2`), and the live distribution now carries
+non-zero revisions.
+
+Two hazards were measured before converting, not after:
+
+- `REPLACE` resets columns the statement does not name; `DO UPDATE` preserves
+  them. Every `REPLACE` site names **every** column of its table, so the forms
+  are equivalent here.
+- The append-only guards are `BEFORE DELETE … RAISE(ABORT)`, so conversion
+  could have silently *removed* a refusal. The intersection is **empty**: every
+  delete-guarded table is written with the non-deleting `IGNORE` form. That is
+  a design property, not a coincidence — which is why all four `_dm_write`
+  conversions are `DO NOTHING`, preserving "skip, never overwrite".
+
+Also: positional `r[0]` under psycopg's `dict_row` raised `KeyError: 0` inside
+the shrink guard, and the ambient-store guard coerced the DSN while evaluating
+an *argument*, so it raised before the guard it feeds ever ran.
+
+`_dm_write.py` was 515 lines against a 512 cap; row primitives moved to
+`_dm_write_rows.py` and every name is re-exported, so the public import surface
+does not move.
+
 ## [0.29.0] - 2026-07-31
 
 **The store layer now REACHES PostgreSQL.** 0.28.0 made a PostgreSQL store
