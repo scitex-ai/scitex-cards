@@ -165,13 +165,27 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     DATABASE. Deriving from ``store.parent`` keeps the DB in exactly the
     directory the sidecar was already in.
     """
-    from ._db import DEFAULT_DB_FILENAME, resolve_db_path
+    from ._db import DEFAULT_DB_FILENAME
 
     if db is not None:
         return Path(db).expanduser()
     if store is not None:
         return Path(store).expanduser().parent / DEFAULT_DB_FILENAME
-    return resolve_db_path(None)
+
+    # THE AMBIENT TIER RETURNS THE TARGET AS WRITTEN, path or server URL.
+    # It used to call resolve_db_path, which RAISES on a DSN -- so with
+    # $SCITEX_CARDS_DB pointing at PostgreSQL every DM write died here, while
+    # card reads and writes worked. Measured 2026-08-01 by booting the rebuilt
+    # image the way an agent does: list_tasks returned 2971 cards and the DM
+    # write funnel raised StoreTargetIsNotAPath.
+    #
+    # The two tiers above stay PATHS on purpose and are not a bug: an explicit
+    # db or store names a file, and deriving the DM database from
+    # ``store.parent`` is what stops a test with a tmp store writing its DMs
+    # into the live fleet database. Only the AMBIENT tier can be a server.
+    from ._store_target import resolve_store_target
+
+    return resolve_store_target(None)
 
 
 def utc_now_iso() -> str:
