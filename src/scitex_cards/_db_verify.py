@@ -17,6 +17,8 @@ shape that makes a missing table invisible.
 
 from __future__ import annotations
 
+from ._schema_probe import table_names
+
 from pathlib import Path
 
 
@@ -53,12 +55,7 @@ def verify(explicit: str | Path | None = None) -> dict:
     try:
         report["user_version"] = int(conn.execute("PRAGMA user_version").fetchone()[0])
         report["quick_check"] = conn.execute("PRAGMA quick_check").fetchone()[0]
-        present = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
+        present = table_names(conn)
         tables: dict[str, int] = {}
         for name in SCHEMA_TABLES:
             if name in present:

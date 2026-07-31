@@ -139,6 +139,7 @@ def _refuse_if_retired(db_path: Path) -> None:
     unreadable -- absence of the table is not a retirement, and refusing here
     would break stores that predate it for no safety gain.
     """
+    from ._schema_probe import trigger_names
     from ._store_retirement import STATUS_CURRENT, read_status
 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -147,12 +148,12 @@ def _refuse_if_retired(db_path: Path) -> None:
             rows = dict(conn.execute("SELECT key, value FROM schema_meta"))
         except sqlite3.OperationalError:
             return
-        triggers = {
-            name
-            for (name,) in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'trigger'"
-            )
-        }
+        # Via the shared probe: this set feeds read_status, and on a backend
+        # whose catalogue this query cannot reach the set comes back EMPTY --
+        # which reads as "no guards" and, under unguarded_store=STATUS_CURRENT,
+        # reports the store healthy and current. A store that can prove nothing
+        # must not answer yes.
+        triggers = trigger_names(conn)
     finally:
         conn.close()
     read_status(rows, triggers, unguarded_store=STATUS_CURRENT)

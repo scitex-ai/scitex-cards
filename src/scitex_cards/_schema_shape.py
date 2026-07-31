@@ -67,6 +67,8 @@ while never being able to lower the recorded version.
 
 from __future__ import annotations
 
+from ._schema_probe import has_table, has_trigger
+
 import enum
 from dataclasses import dataclass
 
@@ -322,17 +324,15 @@ def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
 
 
 def _has_table(conn, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone()
-    return row is not None
+    """Delegated so the ladder reads the right catalogue on either backend."""
+    return has_table(conn, name)
 
 
 def _has_trigger(conn, name: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?", (name,)
-    ).fetchone()
-    return row is not None
+    """Delegated: sqlite_master does not exist on PostgreSQL, and a rung that
+    cannot be seen is reported ABSENT -- which downgrades the observed version
+    rather than erroring, the quiet direction."""
+    return has_trigger(conn, name)
 
 
 def _has_column(conn, table: str, column: str) -> bool:
