@@ -382,15 +382,30 @@ def _export_and_count_in_one_snapshot(db_path: Path) -> dict:
         # Our own read transaction: opened explicitly so the snapshot is ours
         # and pinned, rolled back in `finally` so this never holds a lock and
         # never writes.
-        # BEGIN DEFERRED is SQLite's spelling. PostgreSQL has no DEFERRED mode
-        # on BEGIN, and psycopg opens a transaction implicitly on the first
-        # statement anyway -- so the snapshot this function depends on is
-        # already ours there. The property that matters is UNCHANGED on both:
-        # the export and the COUNT(*) below read one pinned state, rolled back
-        # in `finally` so this never holds a lock and never writes.
+        # BEGIN DEFERRED is SQLite's spelling. On PostgreSQL "psycopg opens a
+        # transaction implicitly" is TRUE AND NOT SUFFICIENT, which is what an
+        # earlier version of this comment got wrong: PostgreSQL's default
+        # isolation is READ COMMITTED, and under READ COMMITTED **every
+        # statement takes a fresh snapshot even inside a transaction**.
+        # Measured on the live server -- `SHOW transaction_isolation` on our own
+        # connection returned `read committed`.
+        #
+        # So being in a transaction was never the property this function needs.
+        # It needs ONE snapshot spanning the export and the COUNT(*), which on
+        # PostgreSQL is REPEATABLE READ. Without it the cross-check compares two
+        # different database states and still passes almost every time -- the
+        # same shape as the 2,374-vs-2,375 fleet-wide refusal, only rarer and so
+        # harder to attribute.
+        #
+        # The rollback first is deliberate: SET/BEGIN ISOLATION LEVEL must be
+        # the first statement of a transaction, and psycopg may already have
+        # opened one on an earlier statement.
         from ._schema_probe import _is_postgres  # noqa: PLC0415
 
-        if not _is_postgres(conn):
+        if _is_postgres(conn):
+            conn.rollback()
+            conn.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        else:
             conn.execute("BEGIN DEFERRED")
 
         doc = export_doc(conn=conn)[0]
