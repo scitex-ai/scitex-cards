@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-31
+
+**The backend seam becomes reachable.** Until this release `_backend_connect`
+and `_store_url` were implemented, tested, and imported by nothing — every read
+and write called `sqlite3` directly, so a PostgreSQL store could receive no
+tables and, more importantly, **no guards**. A store with no retirement guard
+reports itself current and authoritative, which is the failure that took this
+board from 2170 rows to 18.
+
+A recurring lesson runs through the SQL fixes below: **both looked like they
+needed a dialect branch and neither did.** `GREATEST` is PostgreSQL-only and
+two-argument `MAX` is SQLite-only, but the standard-SQL spelling works on both.
+Try standard SQL against both engines before adding a translation layer — every
+branch is a place the two backends can drift.
+
+### Added
+- **A DDL runner that works on both backends (#675).**
+  `sqlite3.Connection.executescript` is pysqlite-only and was how *every* schema
+  object here got installed, all nine triggers included. The difficulty is one
+  character: a trigger body is `BEGIN <stmt>; <stmt>; END`, so its semicolons are
+  internal and a naive `split(';')` severs it — and the first fragment can still
+  parse as a complete `CREATE TRIGGER`, installing a **truncated guard** that
+  every by-name presence probe then reports as present. `split_sql_script`
+  tracks nesting instead. `execute_ddl` returns a **count**, because
+  `executescript` returned a cursor nobody read and "installed nothing" looked
+  exactly like "installed nine triggers".
+
+- **`resolve_store_target` — the store target without assuming it is a path
+  (#674).** `resolve_db_path` is typed `-> Path`, so a URL cannot be
+  represented; it was coerced instead:
+  `postgresql://user@host:5432/db` → `Path('postgresql:/user@host:5432/db')`, a
+  **relative** path, silently, one slash lost. The caller then creates an empty
+  SQLite file at that name and reports a healthy empty board.
+
+### Fixed
+- **Guards are read from the right catalogue (#676, #678).** Four sites asked
+  `sqlite_master` which guards a store carries — a table PostgreSQL does not
+  have. The quiet failure is the dangerous one: the query returns nothing, the
+  store looks unguarded, and it is reported healthy and current. A store that
+  can prove nothing must not answer yes. The PostgreSQL query excludes
+  `tgisinternal`, since every FK constraint installs internal triggers and
+  counting them would report a guard-free store as richly guarded.
+
+- **Every DDL install routes through the runner (#677).** Verified by building
+  the same database twice, one process per branch: 44 objects vs 44 objects,
+  identical `sqlite_master`, `user_version` 7, 9 triggers. The transaction
+  boundary was the risk rather than the SQL — `executescript` issues an implicit
+  COMMIT before running — so only building both databases establishes the result
+  is the same.
+
+- **NULL-safe comparison both engines accept (#679).** The inbox dedups on four
+  nullable columns. SQLite spells it `x IS ?`; PostgreSQL rejects that outright.
+  The tempting fix, `=`, **parses on both and silently stops deduplicating** —
+  `actor = NULL` is UNKNOWN, never true — producing a notification storm and
+  quietly killing the "at most one pending digest per recipient" invariant.
+  Measured against a NULL column: `IS ?` → 1 row, `IS NOT DISTINCT FROM ?` → 1
+  row, `= ?` → **0 rows**. That last line is now a test.
+
+- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on SQLite and
+  an **aggregate only** on PostgreSQL — `function max(integer, integer) does not
+  exist`, measured live. Spelt as `CASE`, which is standard SQL.
+
+
 ## [0.26.1] - 2026-07-31
 
 ### Fixed
