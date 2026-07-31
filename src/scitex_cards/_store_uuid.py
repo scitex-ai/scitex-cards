@@ -205,9 +205,19 @@ def read_store_uuid(conn: sqlite3.Connection) -> str | None:
         ).fetchone()
     except sqlite3.Error:
         return None
-    if row is None or row[0] is None:
+    if row is None:
         return None
-    value = str(row[0])
+    # _sole_value, NOT row[0]: psycopg's dict_row yields a real dict, which
+    # raises KeyError on a positional index. THIRD instance of this same bug
+    # in one port (after _read_stamps and the canonical read's COUNT), so it
+    # is a pattern rather than three accidents -- every one-column fetchone()
+    # in this package is a candidate.
+    from ._schema_probe import _sole_value  # noqa: PLC0415 -- import cycle
+
+    raw = _sole_value(row)
+    if raw is None:
+        return None
+    value = str(raw)
     return value or None
 
 
