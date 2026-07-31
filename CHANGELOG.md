@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-07-31
+
+### Fixed
+- **The migration decision now floors on the physical shape, not the PRAGMA
+  (#671).** A PRAGMA cannot carry a trigger, so 0.26.0's engine-level floor
+  protects `schema_meta` and *structurally cannot* protect `user_version` — and
+  `init_schema` reads exactly that PRAGMA to decide whether it is migrating.
+
+  Observed on the live store, from its own stamps:
+
+  ```
+  schema_migrated_at   02:45:01Z -> 02:45:47Z -> 03:00:03Z -> 03:00:47Z
+  schema_migrated_from 5, then 6, then 5
+  schema_migrated_by   0.25.0
+  ```
+
+  while v6's `tasks.revision` and v7's `tasks_bump_revision` were physically
+  present throughout. `record_migration()` returns early when `prior == new`, so
+  that advancing timestamp is not noise — it is proof the PRAGMA kept reading
+  back as 5. A current client was re-migrating a store that had never been
+  behind, every ~45 seconds, rewriting the migration record each time. The one
+  field that could say when the store was last really migrated was being
+  destroyed by the loop it exists to document.
+
+  Applied schema is additive, so the physical shape cannot go backwards — it is
+  the one floor a stale stamp cannot lower. `_prior_version` now takes
+  `max(user_version, observed_version(conn).observed)`. This is what
+  `_schema_shape` was built for in 0.26.0 and was not yet wired into the
+  decision it exists to inform.
+
+  **This does not stop the writer**, which remains unidentified. It stops
+  current clients from being misled by it. Fresh databases are unaffected:
+  `observed` is None with no rung present, preserving the CREATE-not-migrate
+  branch.
+
+
 ## [0.26.0] - 2026-07-31
 
 **Three safeguards that existed in code and did not hold in practice.** A
