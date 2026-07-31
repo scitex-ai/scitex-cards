@@ -29,7 +29,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ._db import resolve_db_path
 from ._model import (
     TaskValidationError,
     _save_doc_unlocked,
@@ -39,6 +38,7 @@ from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creat
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
+from ._store_target import resolve_store_target
 
 
 def add_task(
@@ -109,7 +109,14 @@ def add_task(
     # error told you to run `init-store` — which did not help, because the file
     # it created was not the file being tested. Reported and reproduced by
     # scitex-ui on 0.17.7. Guard the database, not the label.
-    _refuse_ambient_store_creation(resolve_db_path(store), store)
+    # resolve_store_target, NOT resolve_db_path: the latter RAISES on a server
+    # target, and it raises while evaluating this ARGUMENT — so every write
+    # against PostgreSQL died here, before the guard it feeds ever ran. The
+    # guard itself is fine with a DSN (it returns early; a server store cannot
+    # be manufactured by a write). Handing it the target as written keeps the
+    # SQLite behaviour byte-identical and stops the coercion happening on the
+    # way in.
+    _refuse_ambient_store_creation(resolve_store_target(store), store)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     # FAIL-LOUD on a missing/blank OWNER (operator mandate 2026-06-26,
     # constitution rule 2 "no silent fallbacks"). The OWNER is `assignee`

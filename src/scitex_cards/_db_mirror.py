@@ -208,7 +208,8 @@ def mirror_doc_incremental(
         if not prior:
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(str(c["id"]), _card_hash(c)) for c in cards],
             )
             _remember_sections(conn, doc)
@@ -262,7 +263,8 @@ def mirror_doc_incremental(
 
         if changed:
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(tid, now_hashes[tid]) for tid in changed],
             )
 
@@ -308,7 +310,8 @@ def _section_key(name: str) -> str:
 
 def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
     conn.executemany(
-        f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+        f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+        f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
         [(_section_key(k), _section_hash(doc.get(k))) for k in _SECTION_KEYS],
     )
 
@@ -335,7 +338,8 @@ def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
             conn.execute("DELETE FROM notifications")
             _insert_notifications(conn, doc.get("inboxes"))
         conn.execute(
-            f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+            f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+            f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
             (_section_key(key), want),
         )
 

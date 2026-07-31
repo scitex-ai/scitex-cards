@@ -135,6 +135,18 @@ def refuse_ambient_store_creation(
         When ``resolved`` does not exist and nothing named it.
     """
     from ._db import ENV_DB
+    from ._store_url import is_postgres_url
+
+    # A SERVER TARGET CANNOT BE MANUFACTURED BY A WRITE, so the question this
+    # guard asks does not arise. The hazard it exists for is filesystem-shaped:
+    # an ambiently-resolved PATH that does not exist gets CREATED, and the empty
+    # store then looks real to everything that reads it. Connecting to a
+    # PostgreSQL server creates no database — the server either has it or the
+    # connection fails loudly. Returning early is therefore not a relaxation;
+    # asking `Path(dsn).exists()` would be, because it is False for every DSN
+    # and would make this refuse every server write unconditionally.
+    if is_postgres_url(resolved):
+        return
 
     path = Path(resolved)
     if path.exists() or explicit is not None or os.environ.get(ENV_DB):
