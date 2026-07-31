@@ -57,6 +57,7 @@ from ._dm_write import (
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
 from ._schema_probe import _sole_value
+from ._store_tx import begin_write_transaction
 
 #: The tables a merge payload carries, PARENT FIRST. Order is not cosmetic:
 #: ``dm_messages`` has a foreign key onto ``dm_threads`` and ``dm_receipts``
@@ -137,7 +138,7 @@ def backfill_from_sidecar(
     conn = _open(db, store)
     report["db"] = str(resolve_dm_db(db, store=store))
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         report["db_messages_before"] = _count(conn)
         for thread_id, records in threads.items():
             report["inserted_threads"] += int(
@@ -247,7 +248,7 @@ def merge_dm(
     conn = _open(db, store)
     report = {"merged": {}, "db": str(resolve_dm_db(db, store=store))}
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         before = _count(conn)
         for table in MERGE_TABLES:
             rows = payload.get(table) or []

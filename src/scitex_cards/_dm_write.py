@@ -36,12 +36,6 @@ what makes a cross-host merge a pure union.
 
 from __future__ import annotations
 
-# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
-# KeyError on a positional index, and since #693 open_db can hand this
-# module a PostgreSQL connection. _schema_probe imports nothing from this
-# package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value
-
 import json
 import sqlite3
 from pathlib import Path
@@ -58,8 +52,6 @@ from ._dm_ids import (
     utc_now_iso,
 )
 from ._dm_storable import to_storable
-
-
 
 # ---------------------------------------------------------------------------
 # Row primitives live next door (`_dm_write_rows`). This module was 515 lines
@@ -81,6 +73,13 @@ from ._dm_write_rows import (  # noqa: E402,F401
     record_member_event,
 )
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+from ._store_tx import begin_write_transaction
+
 
 def append(
     thread_id: str,
@@ -97,8 +96,9 @@ def append(
 
     A pair thread is materialised on demand (with both peers joined); a group
     thread must already exist, because a group's membership cannot be inferred
-    from its opaque id. The whole append runs in one ``BEGIN IMMEDIATE`` so
-    the ``seq`` read and the insert cannot interleave with another appender.
+    from its opaque id. The whole append runs in one write transaction (see
+    :func:`~scitex_cards._store_tx.begin_write_transaction`) so the ``seq`` read
+    and the insert cannot interleave with another appender — on either backend.
     """
     if not thread_id:
         raise ValueError("append requires a thread_id")
@@ -114,7 +114,7 @@ def append(
     message_id = msg_id or new_message_id()
     conn = _open(db, store)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         if is_pair_thread(thread_id):
             ensure_thread(conn, thread_id, kind="pair", created_at=stamp, host=host)
             for peer in peers_of_pair(thread_id):
@@ -200,7 +200,7 @@ def create_group_thread(
     host = origin_host()
     conn = _open(db, store)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         ensure_thread(
             conn,
             thread_id,
@@ -233,7 +233,7 @@ def create_group_thread(
 def _member_change(thread_id, who, action, db, store, actor):
     conn = _open(db, store)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         if not conn.execute(
             "SELECT 1 FROM dm_threads WHERE id = ?", (thread_id,)
         ).fetchone():
@@ -310,7 +310,7 @@ def mark_read(
     inserted = 0
     conn = _open(db, store)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        begin_write_transaction(conn)
         for message_id in _known_messages(conn, message_ids):
             inserted += int(
                 insert_receipt(
