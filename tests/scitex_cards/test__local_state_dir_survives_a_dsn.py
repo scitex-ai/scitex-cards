@@ -282,5 +282,34 @@ class TestStoreUuidReaderIsNotPathOnly:
             f"never raise (it is a reporting primitive), got {got!r}"
         )
 
+    def test_unreachable_server_answers_promptly(self):
+        # Arrange
+        import time
+
+        from scitex_cards._store_uuid import store_uuid_at
+
+        unroutable = "postgresql://someone@192.0.2.1:5432/scitex_cards"
+
+        # Act
+        started = time.monotonic()
+        store_uuid_at(unroutable)
+        elapsed = time.monotonic() - started
+
+        # Assert
+        # A CEILING, not the configured value. libpq applies no connect timeout
+        # by default, and this hung >40s against a dead port before the bound
+        # existed. 192.0.2.0/24 is TEST-NET-1 (RFC 5737) — reserved and
+        # unroutable, so it BLACKHOLES rather than refusing; a refused port
+        # returns instantly and would pass even with the bug present, which is
+        # what makes this address the real control. Asserting the exact timeout
+        # would pin a value designed to be tuned; asserting "bounded" pins the
+        # property that matters.
+        assert elapsed < 30, (
+            f"store_uuid_at blocked {elapsed:.1f}s on an unroutable server. It "
+            f"backs `resolve-store`, which is run precisely when things are "
+            f"broken — hanging there is not a lesser failure than answering "
+            f"wrongly."
+        )
+
 
 # EOF
