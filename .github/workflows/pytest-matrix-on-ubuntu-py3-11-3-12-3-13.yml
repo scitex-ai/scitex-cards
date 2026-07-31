@@ -28,3 +28,23 @@ jobs:
   pytest-matrix:
     uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
     secrets: inherit
+    with:
+      # GITHUB-HOSTED, not the Spartan pool. Operator ruling 2026-07-31: hosted
+      # is the default choice now — this repository is public, so the minutes
+      # are free, and our own machines are not faster for a pure-Python test
+      # matrix that finishes in about a minute.
+      #
+      # The immediate reason is the shared tool cache. Every runner on the
+      # Spartan lease inherits one mutable ~/.runner-toolcache on GPFS, so
+      # runners contend for a single directory and jobs fail BOTH reading it
+      # (`uv: No such file` -> exit 127) and writing it (ENOENT during copy).
+      # Measured here 2026-07-31: seven failures across five pull requests in
+      # one afternoon, four differently-named runners, every one cleared by a
+      # plain rerun. The tell is DURATION — failures finish in 14-30s where
+      # passing legs take 62-66s, so a job that dies in 14 seconds has not run
+      # a test.
+      #
+      # Revert this to inherit the default once each runner has its own
+      # AGENT_TOOLSDIRECTORY; the shared workflow's `runs_on` input documents
+      # that fix and why it has not fired yet.
+      runs_on: '["ubuntu-latest"]'
