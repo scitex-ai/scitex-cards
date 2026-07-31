@@ -246,7 +246,7 @@ def enqueue(
 
     Builds ``{id, event_type, card_id, body, actor, ts, seen: False}`` and
     inserts it for ``recipient_id``. Dedups on ``(event_type, card_id, ts,
-    actor)`` (NULL-safe via the ``IS`` operator so ``actor=None`` dedups
+    actor)`` (NULL-safe via ``IS NOT DISTINCT FROM`` so ``actor=None`` dedups
     correctly). When ``supersede`` is set, every EXISTING UNSEEN row matching
     both ``event_type`` AND ``card_id`` is deleted BEFORE the dedup/insert, so
     at most one pending digest per recipient survives (SEEN history is kept).
@@ -265,7 +265,8 @@ def enqueue(
         if supersede:
             conn.execute(
                 "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
-                "AND event_type IS ? AND card_id IS ?",
+                "AND event_type IS NOT DISTINCT FROM ? "
+                "AND card_id IS NOT DISTINCT FROM ?",
                 (recipient_id, event_type, card_id),
             )
         if msg_id:
@@ -277,13 +278,17 @@ def enqueue(
             # never delivered. `msg_id` makes the key exact, which is a
             # correctness fix in its own right, not just plumbing.
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? AND msg_id IS ? LIMIT 1",
+                "SELECT 1 FROM inbox WHERE recipient = ? "
+                "AND msg_id IS NOT DISTINCT FROM ? LIMIT 1",
                 (recipient_id, msg_id),
             ).fetchone()
         else:
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? AND event_type IS ? "
-                "AND card_id IS ? AND ts IS ? AND actor IS ? LIMIT 1",
+                "SELECT 1 FROM inbox WHERE recipient = ? "
+                "AND event_type IS NOT DISTINCT FROM ? "
+                "AND card_id IS NOT DISTINCT FROM ? "
+                "AND ts IS NOT DISTINCT FROM ? "
+                "AND actor IS NOT DISTINCT FROM ? LIMIT 1",
                 (recipient_id, event_type, card_id, timestamp, actor),
             ).fetchone()
         if dup is not None:
