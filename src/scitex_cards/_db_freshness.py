@@ -60,6 +60,12 @@ guard on the write path needs.
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import row_values
+
 import sqlite3
 from pathlib import Path
 
@@ -176,7 +182,11 @@ def read_provenance(conn: sqlite3.Connection) -> dict[str, str]:
         f"SELECT key, value FROM schema_meta WHERE key IN ({placeholders})",
         _KEYS,
     ).fetchall()
-    return {str(r[0]): str(r[1]) for r in rows}
+    # row_values, NOT r[0]/r[1]: psycopg's dict_row yields a real dict, which
+    # raises KeyError on a positional index. This reads schema_meta, so it runs
+    # on BOTH backends by definition -- it is the currency check, and a currency
+    # check that crashes on the new store is worse than one that is absent.
+    return {str(v[0]): str(v[1]) for v in (row_values(r) for r in rows)}
 
 
 def stamped_store_path(conn: sqlite3.Connection) -> str | None:

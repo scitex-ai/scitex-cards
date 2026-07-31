@@ -59,6 +59,12 @@ from ._db_bootstrap import (
 )
 from ._db_freshness import stamp_store_provenance
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value, row_values
+
 #: Per-card content hashes, so a write can tell what actually changed.
 HASH_TABLE = "mirror_hashes"
 
@@ -89,7 +95,12 @@ def _section_hash(value) -> str:
 def _existing_hashes(conn: sqlite3.Connection) -> dict[str, str]:
     conn.execute(_HASH_DDL)
     rows = conn.execute(f"SELECT task_id, hash FROM {HASH_TABLE}").fetchall()
-    return {r[0]: r[1] for r in rows}
+    # row_values, NOT r[0]/r[1]: the annotation says sqlite3.Connection, but an
+    # annotation is a claim, not a guarantee -- this takes the CALLER's
+    # connection, and since #693 that caller can be holding a psycopg one, whose
+    # dict_row raises KeyError on a positional index.
+
+    return {v[0]: v[1] for v in (row_values(r) for r in rows)}
 
 
 def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
@@ -314,7 +325,7 @@ def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
         row = conn.execute(
             f"SELECT hash FROM {HASH_TABLE} WHERE task_id = ?", (_section_key(key),)
         ).fetchone()
-        if row and row[0] == want:
+        if row and _sole_value(row) == want:
             continue
         if key == "users":
             conn.execute("DELETE FROM user_names")

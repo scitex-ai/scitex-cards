@@ -36,6 +36,12 @@ what makes a cross-host merge a pure union.
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+
 import json
 import sqlite3
 from pathlib import Path
@@ -156,7 +162,7 @@ def next_member_seq(conn: sqlite3.Connection, thread_id: str, member: str) -> in
         " WHERE thread_id = ? AND member = ?",
         (thread_id, member),
     ).fetchone()
-    return int(row[0]) + 1
+    return int(_sole_value(row)) + 1
 
 
 def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
@@ -171,7 +177,7 @@ def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
         "SELECT COALESCE(MAX(seq), 0) FROM dm_messages WHERE thread_id = ?",
         (thread_id,),
     ).fetchone()
-    return int(row[0]) + 1
+    return int(_sole_value(row)) + 1
 
 
 def insert_message(
