@@ -165,10 +165,26 @@ def store_generation(path: str | Path) -> str:
     import json
 
     from ._db import resolve_db_path
+    from ._store_target import resolve_store_target
+    from ._store_url import is_postgres_url
 
-    db = Path(resolve_db_path(None)).expanduser()
-    if not db.exists():
-        return "absent"
+    # THE EXISTENCE GATE IS A *FILE* GATE, AND A SERVER STORE HAS NO FILE.
+    # ``resolve_db_path`` REFUSES a DSN rather than coercing it — coercion would
+    # manufacture an empty SQLite store at a mangled path and serve 0 cards
+    # while reporting healthy — so calling it unconditionally raised on every
+    # PostgreSQL deployment. That took the board down with it, because
+    # ``get_board`` computes this generation on its read path.
+    #
+    # A server's existence is established by CONNECTING, which ``load_doc``
+    # does below and which raises when it cannot. So on a server there is
+    # nothing to pre-check and we fall straight through to the hash. Note the
+    # asymmetry is deliberate: "absent" disables the optimistic-concurrency
+    # guard, so it is reserved for the one case that genuinely means "no store
+    # yet" — a missing local file.
+    if not is_postgres_url(resolve_store_target(None)):
+        db = Path(resolve_db_path(None)).expanduser()
+        if not db.exists():
+            return "absent"
     doc = load_doc(path, validate=False)
     return hashlib.sha256(
         json.dumps(doc, sort_keys=True, default=str).encode("utf-8")

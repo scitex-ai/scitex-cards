@@ -356,9 +356,10 @@ def get_board(
         rendered as a healthy board is indistinguishable from a wipe and is
         how the operator's board sat silently blank for a day.
     """
-    from scitex_cards._db import resolve_db_path
     from scitex_cards._paths import resolve_tasks_path
     from scitex_cards._store_write import store_generation
+
+    from ._revision import store_change_stamp
 
     _cleanup_expired()
 
@@ -395,35 +396,22 @@ def get_board(
     # unconditionally from the database, which raises when it cannot be read.
     sidecar_exists = resolved.exists()
 
-    # THE STORE'S mtime IS THE DATABASE'S. Reported only (it is the ``/rev``
-    # wire contract the frontend fingerprints on), never the cache key — that
-    # is ``sig``.
+    # THE STORE'S CHANGE STAMP IS THE DATABASE'S, never the sidecar's. Reported
+    # only (it is the ``/rev`` wire contract the frontend fingerprints on),
+    # never the cache key — that is ``sig``. Both backends are handled in
+    # ``store_change_stamp``, which documents why a server store reports a
+    # content fingerprint there rather than a time.
     #
-    # THE SECOND DEFECT OF THE SAME ROOT CAUSE. This used to report the
-    # SIDECAR's mtime, which under SQLite means a permanent 0.0 on any real
-    # deployment. ``/rev`` answers ``{mtime, count}`` and the board's
-    # AutoRefresh keys on ``f"{mtime}:{count}"``, so with mtime frozen the open
-    # pane only refreshed when the card COUNT changed. A status flip, a
-    # priority reorder, a reassignment, an edited title — none of those move
-    # the count, so none of them ever reached the operator's screen.
-    #
-    # WAL can move the database's mtime without a card change, so this may tick
-    # spuriously. That costs exactly ONE extra /graph fetch: the frontend's
-    # ``skipIfUnchanged`` compares the fresh payload against the last rendered
-    # one and returns before re-rendering, so there is no flash and no scroll
-    # jump. A spurious refresh is invisible. A refresh that never happens is
-    # what the operator has been living with.
-    db_path = Path(resolve_db_path(None))
-    effective_mtime = db_path.stat().st_mtime if db_path.exists() else 0.0
-
     # CACHE IDENTITY: the DB's logical-content version (the load-bearing signal
     # — a DB write self-invalidates even though it never touches the identity
     # file) paired with the identity file's stat (so a harness moving that file
     # still invalidates, matching the old self-invalidation). Both read-stable:
     # store_generation hashes the logical doc (not the .db bytes WAL rewrites),
     # and a plain read never writes the identity file. See BoardState.sig.
+    generation = store_generation(resolved)
+    effective_mtime = store_change_stamp(generation)
     effective_sig = (
-        store_generation(resolved),
+        generation,
         _stat_sig(resolved) if sidecar_exists else (0, 0, 0),
     )
 
