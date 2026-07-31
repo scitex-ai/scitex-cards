@@ -73,7 +73,8 @@ def export_doc(
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
     Tasks come back in document order (``row_order``); inbox and thread
-    records in insertion (rowid) order — matching how the exported lists grew.
+    records in creation order (timestamp, then primary key as tie-breaker) —
+    matching how the exported lists grew, and expressible on either backend.
 
     ``conn`` — READ THE EXPORT AND ITS VERIFICATION FROM ONE SNAPSHOT.
     A caller that must cross-check this export against the database (see
@@ -112,9 +113,24 @@ def export_doc(
                 )
             tasks.append(card_from_payload(r["card_json"]))
 
+        # ORDERED BY REAL COLUMNS, NOT ``rowid``. ``rowid`` is a SQLite
+        # implementation detail with no PostgreSQL equivalent, so these four
+        # queries were the export path's hard stop against a server backend --
+        # and they would have failed at CUTOVER, not at porting time.
+        #
+        # The replacement keeps the property that actually mattered. ``rowid``
+        # was never the goal; a STABLE, REPRODUCIBLE order was, so that an
+        # export of an unchanged store is byte-identical each time. A creation
+        # timestamp with the primary key as tie-breaker gives that on both
+        # engines, and on append-only tables it is the same order ``rowid``
+        # produced. The tie-break is not decorative: timestamps here have
+        # one-second resolution, so same-second rows would otherwise order
+        # arbitrarily and the export would differ run to run.
         users = [
             _record(r, "users")
-            for r in conn.execute("SELECT * FROM users ORDER BY rowid").fetchall()
+            for r in conn.execute(
+                "SELECT * FROM users ORDER BY created_at, id"
+            ).fetchall()
         ]
 
         # Seed from the recipients table first so a DRAINED inbox (a
@@ -122,16 +138,16 @@ def export_doc(
         inboxes: dict[str, list[dict]] = {
             r["recipient_id"]: []
             for r in conn.execute(
-                "SELECT recipient_id FROM inbox_recipients ORDER BY rowid"
+                "SELECT recipient_id FROM inbox_recipients ORDER BY recipient_id"
             ).fetchall()
         }
-        for r in conn.execute("SELECT * FROM notifications ORDER BY rowid").fetchall():
+        for r in conn.execute("SELECT * FROM notifications ORDER BY ts, id").fetchall():
             inboxes.setdefault(r["recipient_id"], []).append(
                 _record(r, "notifications")
             )
 
         threads: dict[str, list[dict]] = {}
-        for r in conn.execute("SELECT * FROM messages ORDER BY rowid").fetchall():
+        for r in conn.execute("SELECT * FROM messages ORDER BY ts, id").fetchall():
             threads.setdefault(r["thread_key"], []).append(_record(r, "messages"))
     finally:
         if owned:
