@@ -222,12 +222,41 @@ def read_store_uuid(conn: sqlite3.Connection) -> str | None:
 
 
 def store_uuid_at(db_path: str | Path) -> str | None:
-    """Read a database's identity by PATH, read-only, never raising.
+    """Read a database's identity by TARGET, read-only, never raising.
 
     The exposure primitive (design §11 / contract point 8): ``resolve_store``
     and the health doctor use it so the identity can be put into config without
     archaeology. Absent file, unreadable file, no schema — all ``None``.
+
+    ``db_path`` may be a filesystem path OR a PostgreSQL URL. Handling the
+    server case is not a nicety: ``Path("postgresql://h/db").exists()`` is
+    False, so before this branch existed a PostgreSQL store reported
+    ``store_uuid: None`` — indistinguishable from "this store has no identity",
+    and reported by the very verb an operator runs to check identity. That is
+    the worse failure, because it does not look like one. An identity that
+    silently reads None also makes ``expected_uuid`` unfalsifiable, which is
+    how a mismatch guard passes on the wrong store.
     """
+    from ._store_url import is_postgres_url
+
+    if is_postgres_url(db_path):
+        try:
+            from ._db import connect
+
+            conn = connect(str(db_path))
+        except Exception:
+            # Same contract as the SQLite branch: unreachable or unreadable is
+            # None, never an exception. A server adds failure modes a file does
+            # not have (down, refused, auth), and a REPORTING call must not
+            # raise on any of them.
+            return None
+        try:
+            return read_store_uuid(conn)
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     path = Path(db_path)
     if not path.exists():
         return None
