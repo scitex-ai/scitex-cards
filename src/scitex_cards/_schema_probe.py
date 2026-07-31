@@ -74,10 +74,35 @@ def _is_postgres(conn) -> bool:
     return type(conn).__module__.split(".")[0] in {"psycopg", "psycopg2"}
 
 
+def _sole_value(row):
+    """The single column of a one-column row, whatever shape the row is.
+
+    THREE ROW SHAPES REACH THIS MODULE and only two of them index by position.
+    A plain ``sqlite3`` connection yields tuples; ``sqlite3.Row`` yields
+    something that accepts BOTH ``row[0]`` and ``row["col"]``; psycopg's
+    ``dict_row`` yields a real ``dict``, which accepts ONLY the name and raises
+    ``KeyError: 0`` on the position.
+
+    So ``{row[0] for row in rows}`` worked right up until a caller passed a
+    connection opened with ``rows_by_name=True`` -- which is precisely what
+    :func:`scitex_cards._db.connect` must do for PostgreSQL, because the rest of
+    the store reads columns by name. The probe would then raise from inside a
+    predicate whose whole job is to answer "does this table exist?", turning a
+    routine question into a crash on the backend it was written to support.
+
+    Keying off the row's TYPE rather than trying ``row[0]`` and catching the
+    failure keeps the two cases explicit; a bare ``except KeyError`` here would
+    also swallow a genuinely malformed row.
+    """
+    if isinstance(row, dict):
+        return next(iter(row.values()))
+    return row[0]
+
+
 def _query(conn, sql: str) -> set[str]:
     cur = conn.execute(sql)
     rows = cur.fetchall() if hasattr(cur, "fetchall") else cur
-    return {row[0] for row in rows}
+    return {_sole_value(row) for row in rows}
 
 
 def trigger_names(conn) -> set[str]:
