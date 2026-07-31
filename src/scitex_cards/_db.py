@@ -56,6 +56,7 @@ from ._schema_shape import (
     observed_version,
     stamp_schema_version,
 )
+from ._ddl import execute_ddl
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
@@ -396,16 +397,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     if _shape.observed is not None:
         _prior_version = max(_prior_version, _shape.observed)
 
-    conn.executescript(_SCHEMA_SQL)
+    execute_ddl(conn, _SCHEMA_SQL)
     # Separate, not folded into _SCHEMA_SQL: per the note below, that script
     # reaches FRESH files only, and these guards must reach every store the
     # current client opens or it cannot prove it is current (_store_retirement).
-    conn.executescript(RETIREMENT_TRIGGER_SQL)
+    execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
     # Same reason, and doubly so: the client-side floor below binds only
     # clients that HAVE it, while 2026-07-31 measured the live store swinging
     # 5 -> 7 -> 5 with v7's artifacts physically present the whole time. This
     # trigger is the copy of the rule an 0.18.0 writer cannot skip.
-    conn.executescript(SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
+    execute_ddl(conn, SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
     _migrate_v1_to_v2(conn)
     _migrate_v2_to_v3(conn)
     # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
