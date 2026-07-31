@@ -87,6 +87,52 @@ class StoreConnection:
     def fetchone(self, sql: str, params: Iterable[Any] = ()) -> Any:
         return self.execute(sql, params).fetchone()
 
+    # --- the write path -------------------------------------------------- #
+    #
+    # Added because the seam could not carry a write without them, which is why
+    # nothing imported it: `_db.init_schema` alone needs executescript and
+    # commit, and every mutation module needs commit/rollback. The module's
+    # header used to say it "makes no claim about writes" -- these are that
+    # claim, and each one is a DELEGATION rather than a reimplementation, so
+    # the driver keeps owning its own semantics.
+
+    def executemany(self, sql: str, seq_of_params: Iterable[Iterable[Any]]) -> Any:
+        """Batch form of :meth:`execute`, translated once rather than per row.
+
+        GOES THROUGH A CURSOR because the two drivers disagree about where this
+        method lives: ``sqlite3.Connection`` has ``executemany``, psycopg's
+        ``Connection`` does NOT -- it is cursor-only, and calling it on the
+        connection raises ``AttributeError``. Both drivers agree on
+        ``cursor().executemany(...)``, so that is the form used.
+        """
+        cur = self._raw.cursor()
+        cur.executemany(
+            to_paramstyle(sql, self._backend), [tuple(p) for p in seq_of_params]
+        )
+        return cur
+
+    def executescript(self, script: str) -> int:
+        """Run a multi-statement DDL script; return how many statements ran.
+
+        NOT delegated to ``sqlite3.executescript``, which psycopg does not have
+        and which would silently commit first. Goes through the shared splitter
+        so a trigger body's internal semicolons do not sever it -- a severed
+        trigger's first fragment still parses as a complete CREATE TRIGGER, and
+        every by-name presence probe then reports the truncated guard PRESENT.
+
+        Returns a count for the same reason ``execute_ddl`` does: a script that
+        installed nothing must not look like one that installed nine triggers.
+        """
+        from ._ddl import execute_ddl  # noqa: PLC0415 -- avoids an import cycle
+
+        return execute_ddl(self, script)
+
+    def commit(self) -> None:
+        self._raw.commit()
+
+    def rollback(self) -> None:
+        self._raw.rollback()
+
     def close(self) -> None:
         self._raw.close()
 
@@ -97,7 +143,9 @@ class StoreConnection:
         self.close()
 
 
-def connect(target: str, *, read_only: bool = True) -> StoreConnection:
+def connect(
+    target: str, *, read_only: bool = True, rows_by_name: bool = False
+) -> StoreConnection:
     """Open ``target``, which is either a filesystem path or a PostgreSQL URL.
 
     ``read_only`` is honoured for SQLite (``mode=ro``, so a reader cannot
@@ -107,16 +155,34 @@ def connect(target: str, *, read_only: bool = True) -> StoreConnection:
     something the connection does not enforce would be worse than not claiming
     it. Grant SELECT-only to the role if that is the guarantee you need.
 
+    ``rows_by_name`` makes rows indexable as ``row["column"]`` on EITHER
+    backend, which the store's callers require -- ``_db.connect`` sets
+    ``sqlite3.Row`` and mutation code reads columns by name throughout.
+
+    ONE ASYMMETRY REMAINS AND IS NOT PAPERED OVER. ``sqlite3.Row`` supports BOTH
+    ``row["col"]`` and ``row[0]``; psycopg's ``dict_row`` supports only the
+    former. So positional access keeps working on SQLite and raises on
+    PostgreSQL. Faking it (a wrapper that accepts both) would hide the
+    difference until a caller hit it on the live store; leaving it visible means
+    the port finds those call sites while it is still cheap. Use column names.
+
     ``psycopg`` is imported lazily so SQLite-only deployments -- which is every
     deployment today -- do not need the driver installed.
     """
     backend = backend_of(target)
     if backend != BACKEND_POSTGRES:
         uri = f"file:{target}?mode=ro" if read_only else str(target)
-        return StoreConnection(sqlite3.connect(uri, uri=read_only), backend)
+        raw = sqlite3.connect(uri, uri=read_only)
+        if rows_by_name:
+            raw.row_factory = sqlite3.Row
+        return StoreConnection(raw, backend)
 
     import psycopg  # noqa: PLC0415 -- optional dependency, resolved on demand
 
+    if rows_by_name:
+        from psycopg.rows import dict_row  # noqa: PLC0415
+
+        return StoreConnection(psycopg.connect(target, row_factory=dict_row), backend)
     return StoreConnection(psycopg.connect(target), backend)
 
 
