@@ -34,6 +34,12 @@ a stale snapshot treated as truth, deleting the rows it happened to lack.
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+
 import json
 import sqlite3
 from pathlib import Path
@@ -206,7 +212,9 @@ def _backfill_records(conn, thread_id, records, stamp, host, report) -> None:
 
 
 def _count(conn: sqlite3.Connection) -> int:
-    return int(conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0])
+    return int(
+        _sole_value(conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone())
+    )
 
 
 def _assert_no_shrink(before: int, after: int) -> None:
@@ -328,7 +336,10 @@ def verify_against_sidecar(
     conn = _open(db, store)
     try:
         conn.execute("BEGIN")
-        db_ids = {r[0] for r in conn.execute("SELECT id FROM dm_messages").fetchall()}
+        db_ids = {
+            _sole_value(r)
+            for r in conn.execute("SELECT id FROM dm_messages").fetchall()
+        }
         conn.commit()
     finally:
         conn.close()

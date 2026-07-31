@@ -23,6 +23,12 @@ hosts the log merges by union with no arbitration — where a mutable
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+
 import json
 import sqlite3
 from pathlib import Path
@@ -220,7 +226,9 @@ def message_count(
     conn = _open(db, store)
     try:
         return int(
-            conn.execute(f"SELECT COUNT(*) FROM dm_messages{clause}").fetchone()[0]
+            _sole_value(
+                conn.execute(f"SELECT COUNT(*) FROM dm_messages{clause}").fetchone()
+            )
         )
     finally:
         conn.close()

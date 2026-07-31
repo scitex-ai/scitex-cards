@@ -44,6 +44,7 @@ __all__ = [
     "has_trigger",
     "has_table",
     "has_column",
+    "row_values",
 ]
 
 #: PostgreSQL: exclude ``tgisinternal`` rows -- every FK constraint installs
@@ -116,6 +117,30 @@ def _sole_value(row):
     if isinstance(row, dict):
         return next(iter(row.values()))
     return row[0]
+
+
+def row_values(row):
+    """A row's columns IN SELECT ORDER, whatever shape the driver returned.
+
+    THE COMPANION TO :func:`_sole_value`, for rows with more than one column.
+    ``_sole_value`` covers ``fetchone()[0]``; this covers ``row[0], row[1]``,
+    which a dozen call sites in this package still do.
+
+    Why this is safe rather than a guess about dict ordering: psycopg builds a
+    ``dict_row`` from ``cursor.description``, which IS the SELECT order, and
+    Python dicts preserve insertion order. So ``list(row.values())[i]`` means
+    exactly what ``row[i]`` meant on a tuple. Positional access is recoverable;
+    it just is not spelled the same way on both drivers.
+
+    Measured cost of not having this: three separate ``KeyError: 0`` crashes
+    during the PostgreSQL port (``_read_stamps``, the canonical read's
+    ``COUNT(*)``, and ``read_store_uuid``), each found one at a time by running
+    the real server. Three instances is a pattern, and fixing a pattern one
+    instance at a time is how the fourth one ships.
+    """
+    if isinstance(row, dict):
+        return list(row.values())
+    return list(row)
 
 
 def _query(conn, sql: str) -> set[str]:
