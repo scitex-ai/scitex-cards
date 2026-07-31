@@ -217,7 +217,8 @@ def retire_store(conn, *, successor_uuid: str, by: str, at: str) -> None:
     if not successor_uuid or not successor_uuid.strip():
         raise ValueError("retire_store requires the successor's store_uuid")
     conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('store_status', ?)",
+        "INSERT INTO schema_meta(key, value) VALUES('store_status', ?)"
+        " ON CONFLICT DO NOTHING",
         (STATUS_RETIRED,),
     )
     conn.execute(
@@ -225,7 +226,7 @@ def retire_store(conn, *, successor_uuid: str, by: str, at: str) -> None:
         (STATUS_RETIRED,),
     )
     conn.executemany(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES(?, ?)",
+        "INSERT INTO schema_meta(key, value) VALUES(?, ?) ON CONFLICT DO NOTHING",
         [
             ("retired_at", at),
             ("retired_in_favour_of", successor_uuid.strip()),
