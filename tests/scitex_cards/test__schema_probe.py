@@ -18,6 +18,8 @@ from __future__ import annotations
 import sqlite3
 
 from scitex_cards._schema_probe import (
+    column_names,
+    has_column,
     has_table,
     has_trigger,
     table_names,
@@ -150,6 +152,101 @@ class TestPostgresTakesTheOtherBranch:
 
         # Assert
         assert "information_schema.tables" in conn.seen[0]
+
+    def test_columns_use_information_schema_not_pragma(self):
+        """PRAGMA table_info is SQLite-only, so the column rungs of the version
+        ladder were unreadable on PostgreSQL -- and an unreadable rung reads as
+        ABSENT, reporting the store OLDER than it physically is."""
+        # Arrange
+        conn = _RecordingPostgresConnection([("revision",)])
+
+        # Act
+        column_names(conn, "tasks")
+
+        # Assert
+        assert "information_schema.columns" in conn.seen[0]
+
+    def test_columns_never_issue_a_pragma_on_postgres(self):
+        """PostgreSQL rejects PRAGMA outright: syntax error at or near PRAGMA."""
+        # Arrange
+        conn = _RecordingPostgresConnection([("revision",)])
+
+        # Act
+        column_names(conn, "tasks")
+
+        # Assert
+        assert "PRAGMA" not in conn.seen[0]
+
+    def test_columns_are_scoped_to_the_table_asked_about(self):
+        """Without the table filter every column in the database comes back,
+        so any column lookup on any table would answer yes."""
+        # Arrange
+        conn = _RecordingPostgresConnection([("revision",)])
+
+        # Act
+        column_names(conn, "tasks")
+
+        # Assert
+        assert "table_name = 'tasks'" in conn.seen[0]
+
+
+class TestColumnNamesOnSqlite:
+    def test_it_reads_the_name_not_the_column_index(self, tmp_path):
+        """PRAGMA table_info returns (cid, name, type, ...). Taking the FIRST
+        column -- which is what the shared _sole_value helper does -- would
+        yield the integer cid, and every lookup would silently miss."""
+        # Arrange
+        conn = sqlite3.connect(tmp_path / "cols.db")
+        conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, revision INTEGER)")
+
+        # Act
+        names = column_names(conn, "tasks")
+
+        # Assert
+        conn.close()
+        assert names == {"id", "revision"}
+
+    def test_it_reports_a_missing_column_absent(self, tmp_path):
+        """The negative must be reachable, or the positive proves nothing."""
+        # Arrange
+        conn = sqlite3.connect(tmp_path / "cols2.db")
+        conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY)")
+
+        # Act
+        found = has_column(conn, "tasks", "revision")
+
+        # Assert
+        conn.close()
+        assert not found
+
+    def test_an_absent_table_yields_an_empty_set_rather_than_raising(self, tmp_path):
+        # Arrange
+        conn = sqlite3.connect(tmp_path / "cols3.db")
+
+        # Act
+        names = column_names(conn, "nosuchtable")
+
+        # Assert
+        conn.close()
+        assert names == set()
+
+    def test_it_refuses_a_name_it_cannot_safely_interpolate(self, tmp_path):
+        """The table name is interpolated, not bound, because the two engines
+        disagree on the placeholder. Interpolation is only safe on a
+        constrained identifier, so the name is validated rather than trusted."""
+        # Arrange
+        conn = sqlite3.connect(tmp_path / "cols4.db")
+
+        # Act
+        try:
+            column_names(conn, "tasks; DROP TABLE tasks")
+            raised = None
+        except ValueError as exc:
+            raised = exc
+
+        # Assert
+        conn.close()
+        assert raised is not None
 
 
 # EOF
