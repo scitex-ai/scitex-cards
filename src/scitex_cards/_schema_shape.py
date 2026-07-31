@@ -67,10 +67,16 @@ while never being able to lower the recorded version.
 
 from __future__ import annotations
 
-from ._schema_probe import has_table, has_trigger
-
 import enum
 from dataclasses import dataclass
+
+from ._schema_probe import (
+    _is_postgres,
+    _sole_value,
+    has_column,
+    has_table,
+    has_trigger,
+)
 
 __all__ = [
     "SCHEMA_VERSION_FLOOR_TRIGGER_SQL",
@@ -300,7 +306,13 @@ def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
     to speak for a store ~90 processes share.
     """
     stamp = max(prior_version, schema_version)
-    conn.execute(f"PRAGMA user_version={stamp}")
+    # SQLite ONLY. PostgreSQL has no `user_version` and rejects PRAGMA outright
+    # (`syntax error at or near "PRAGMA"`, measured on the live server), so on
+    # that backend the schema_meta upsert below is the WHOLE stamp -- which is
+    # the direction this function's own docstring argues for anyway: the row is
+    # trigger-protected and the PRAGMA structurally cannot be.
+    if not _is_postgres(conn):
+        conn.execute(f"PRAGMA user_version={stamp}")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = "
@@ -336,9 +348,13 @@ def _has_trigger(conn, name: str) -> bool:
 
 
 def _has_column(conn, table: str, column: str) -> bool:
+    """Delegated for the same reason as the two above: ``PRAGMA table_info``
+    does not exist on PostgreSQL, so every COLUMN rung of the ladder was
+    unreadable there -- and an unreadable rung reads as ABSENT, which reports
+    the store OLDER than it physically is."""
     if not _has_table(conn, table):
         return False
-    return any(r[1] == column for r in conn.execute(f'PRAGMA table_info("{table}")'))
+    return has_column(conn, table, column)
 
 
 def _rung_present(conn, kind: str, name: str, extra: str) -> bool:
@@ -352,10 +368,16 @@ def _rung_present(conn, kind: str, name: str, extra: str) -> bool:
 
 
 def _read_stamps(conn) -> tuple[int | None, int | None]:
-    try:
-        pragma = int(conn.execute("PRAGMA user_version").fetchone()[0])
-    except (ValueError, TypeError, IndexError):
+    # PostgreSQL has no PRAGMA at all, so it has no second stamp to disagree
+    # with: `meta` is the only reading, and None here says "this backend does
+    # not carry one" rather than "the read failed".
+    if _is_postgres(conn):
         pragma = None
+    else:
+        try:
+            pragma = int(conn.execute("PRAGMA user_version").fetchone()[0])
+        except (ValueError, TypeError, IndexError):
+            pragma = None
     meta = None
     if _has_table(conn, "schema_meta"):
         row = conn.execute(
@@ -363,8 +385,12 @@ def _read_stamps(conn) -> tuple[int | None, int | None]:
         ).fetchone()
         if row is not None:
             try:
-                meta = int(row[0])
-            except (ValueError, TypeError):
+                # _sole_value, NOT row[0]: psycopg's dict_row yields a real
+                # dict, which raises KeyError on a positional index. The
+                # version read must not crash on the backend it is being
+                # taught to read.
+                meta = int(_sole_value(row))
+            except (ValueError, TypeError, KeyError, StopIteration):
                 meta = None
     return meta, pragma
 

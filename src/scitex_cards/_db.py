@@ -305,7 +305,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     """
     # BEFORE the schema script, because that script is what makes a fresh file
     # look initialised. 0 means "new file" and is a CREATE, not a migration.
-    _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if _is_postgres(conn):
+        # PostgreSQL has no user_version and rejects PRAGMA outright. 0 is the
+        # honest starting point here for the same reason it is on a fresh file:
+        # "no stamp read" is not "version zero asserted", and the physical-shape
+        # read immediately below supplies the real prior version via max().
+        _prior_version = 0
+    else:
+        _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
 
     # AND THE PRAGMA ALONE IS NOT TRUSTWORTHY HERE. A PRAGMA cannot carry a
     # trigger, so the engine-level floor applied below protects `schema_meta`
@@ -351,12 +360,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.
     stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
+    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is SQLite-only
+    # syntax. The two are equivalent here -- both leave an existing row alone,
+    # which is what preserves the ORIGINAL provenance on a re-init -- but only
+    # this spelling parses on PostgreSQL. (`?` is fine on both: StoreConnection
+    # translates paramstyle, so call sites stay written in one dialect.)
     conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
+        "INSERT INTO schema_meta(key, value) VALUES('created_at', ?) "
+        "ON CONFLICT(key) DO NOTHING",
         (_utc_now_iso(),),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
+        "INSERT INTO schema_meta(key, value) VALUES('source', 'fresh') "
+        "ON CONFLICT(key) DO NOTHING",
     )
     # An upgrade of an EXISTING store names itself. See that function for why:
     # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
@@ -383,14 +399,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
 def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:
     """Resolve → connect → ensure schema. The one-call adapter entry point.
 
-    Combines :func:`resolve_db_path`, :func:`connect`, and
+    Combines :func:`resolve_store_target`, :func:`connect`, and
     :func:`init_schema`. Returns a ready-to-use connection whose schema is
     guaranteed present (created on first open; a no-op on an existing DB).
+
+    RESOLVES THE TARGET, NOT A PATH. ``resolve_db_path`` is typed ``-> Path``
+    and now refuses a DSN outright, so routing through it made this function --
+    the one-call entry point the canonical read path uses -- structurally unable
+    to reach PostgreSQL, no matter that :func:`connect` had already learned to
+    dispatch one. That is why ``_store_target``'s docstring could say the seam
+    existed and NOTHING imported it. Filesystem-only callers (snapshots,
+    backups, the on-disk health probes) keep ``resolve_db_path`` deliberately.
     """
-    return _open_at(resolve_db_path(explicit))
+    from ._store_target import resolve_store_target  # noqa: PLC0415
+
+    return _open_at(resolve_store_target(explicit))
 
 
-def _open_at(path: Path) -> sqlite3.Connection:
+def _open_at(path: str | Path) -> sqlite3.Connection:
     conn = connect(path)
     init_schema(conn)
     return conn

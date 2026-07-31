@@ -24,9 +24,9 @@ Consequence for anything reading the stamp: check the COLUMNS
 
 from __future__ import annotations
 
-from ._ddl import execute_ddl
-
 import sqlite3
+
+from ._ddl import execute_ddl
 
 __all__ = [
     "table_columns",
@@ -150,8 +150,16 @@ def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
     a number some code wrote — and a stamp is metadata, so it can outlive the
     thing it describes. The columns are the artifact itself.
+
+    Delegated to :func:`scitex_cards._schema_probe.column_names` so the artifact
+    can be read on PostgreSQL too. ``PRAGMA table_info`` does not exist there,
+    and every migration guard below asks this question first — so on that
+    backend they would each have seen an empty set and concluded the column was
+    missing, then tried to ADD a column that is already present.
     """
-    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    from ._schema_probe import column_names  # noqa: PLC0415 -- import cycle
+
+    return {str(name) for name in column_names(conn, table)}
 
 
 def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
