@@ -33,6 +33,30 @@ audit:
     # tests/integration/test_cross_package_imports.py gate file lists
     # an older import set; needs a regeneration sweep.
     - PS-140
+    # PS-169 — `hosted-runner-forbidden`. Unlike PS-224 next to it, this rule
+    # offers NO exemption path: its own message says "forbidden without
+    # exception" and the only remedy it names is the self-hosted pool. So a
+    # per-rule skip WITH A WRITTEN REASON is the sole lever available, and it is
+    # the one the constitution section 2 prescribes ("one at a time, in a config
+    # file, each with a written reason") — the thing it forbids is a blanket
+    # FLAG that silences the whole run, which this is not.
+    #
+    # The rule's premise is superseded. It cites an operator mandate of
+    # 2026-07-14; two CURRENT documents say the opposite:
+    #   constitution section 4 — "CI defaults to GitHub-hosted runners" — and it
+    #     cites THIS repo, 2026-07-31: four runners sharing one uv toolcache,
+    #     seven failures across five PRs in an afternoon, the 14-30s vs 62-66s
+    #     duration tell.
+    #   the operator's mantra glossary, さいしーあいとういつ — same policy, same
+    #     incident, same instruction to isolate toolcache per runner.
+    #
+    # Reported as dev-ps169-forbids-hosted-runners-policy-superseded-20260731 so
+    # the RULE gets fixed; this entry is the bridge and should be deleted the
+    # moment scitex-dev lands that. Repo-wide is narrower here than it sounds:
+    # this is the only workflow in the repo that names a runner in-file
+    # (pytest-matrix delegates to a reusable workflow, cla.yml is exempted
+    # above), so it silences exactly the job it is meant to.
+    - PS-169
     # PS-168 — `secret-env-prefix-missing`. cla.yml uses
     # `GH_PERSONAL_ACCESS_TOKEN` without the SCITEX_TODO_ per-package
     # prefix. The rule was codified after cla.yml shipped and the
@@ -72,3 +96,12 @@ audit:
           third-party action, deliberately kept off the credential-holding
           self-hosted runner by a090c283 (#496); repointing it at Spartan
           would reverse that security hardening
+      # `quality-audit::audit` targets ubuntu-latest for the same class of
+      # reason, but a different one: RUNNER RELIABILITY, not credentials.
+      # See the PS-169 entry below for the measurement.
+      - path: .github/workflows/scitex-todo-quality-audit-on-ubuntu-latest.yml::audit
+        line: 0
+        reason: >-
+          moved to a hosted runner because several self-hosted runners share one
+          uv toolcache and lose the race; constitution section 4 makes hosted the
+          default and cites this exact incident
