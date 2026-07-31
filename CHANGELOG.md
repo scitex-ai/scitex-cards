@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-31
+
+**A PostgreSQL store can now be built and reached — not just described.** 0.27.0
+made the backend seam importable; this release makes it usable. `_db.connect()`
+accepts a PostgreSQL target, the schema script creates a working store on
+PostgreSQL including every guard, and the export path no longer speaks SQLite.
+Nothing writes to PostgreSQL yet: the canonical store is still SQLite, and the
+cutover switches are deliberately not in this release.
+
+**A theme, and it is the reason for the test style below: on this port, the
+dangerous failures pass at DDL time and fail at runtime.** `AUTOINCREMENT` has
+no portable spelling, and the obvious substitute — a plain `INTEGER PRIMARY KEY`
+— *parses on both engines* and only fails when you INSERT, because PostgreSQL
+does not auto-assign it the way SQLite's rowid alias does. So the tests here
+insert a row and read the generated id back; asserting `CREATE TABLE` succeeded
+would have certified the broken choice.
+
+### Added
+- `_db.connect()` dispatches a PostgreSQL URL or a libpq keyword/value conninfo
+  to the backend seam. The dispatch is the **first** statement in the function:
+  `Path(dsn)` on a conninfo does not raise, it manufactures a SQLite file named
+  after the DSN that accepts writes while the real server sits untouched. That
+  file was created and observed during development, so the test asserts **no
+  file appears** (#685).
+- `_pg_triggers` — PostgreSQL equivalents of all nine guard triggers, and
+  `execute_ddl` now **substitutes** them when it meets a SQLite `CREATE TRIGGER`.
+  An unrecognised trigger name **raises**. Skipping what a backend cannot run is
+  the tempting move and it is silently wrong: the tables come up, the store
+  passes every smoke test, and an append-only table quietly accepts `DELETE`
+  because its guard was never installed (#687).
+- A DDL dialect step translating `AUTOINCREMENT` at execution time, so the
+  schema constants stay written in the dialect the production store speaks
+  today (#686).
+- `_db_schema_sql` — the core schema DDL extracted from `_db`, joining
+  `_db_dm_schema` / `_store_retirement` / `_schema_shape` so every piece of DDL
+  now lives in a module named for what it creates (#685).
+
+### Fixed
+- The min-client-version gate no longer assumes SQLite. It recognised a missing
+  `schema_meta` by catching `sqlite3.OperationalError`; PostgreSQL raises
+  `UndefinedTable`, so opening a **brand-new** PostgreSQL store raised out of a
+  function whose contract is "no floor stamped, this is a no-op". It also read
+  `row[0]` positionally, which `dict_row` refuses (#684).
+- `_schema_probe` built its result set positionally too, so `has_table` raised
+  `KeyError: 0` on exactly the by-name connection PostgreSQL requires (#684).
+- The canonical export ordered four result sets by `rowid`, which PostgreSQL
+  does not have — this would have failed **at cutover**, inside the code that
+  writes the YAML the whole fleet reads. Now ordered by creation timestamp with
+  the primary key as tie-breaker; the tie-breaker is load-bearing, because these
+  timestamps have one-second resolution and same-second rows would otherwise
+  order arbitrarily, making the export differ run to run (#688).
+- `StoreConnection` gained `executemany` / `executescript` / `commit` /
+  `rollback` and opt-in by-name rows, which is what the write path needed
+  before anything could adopt the seam (#682).
+
+### Notes
+- The nine PostgreSQL guards are **generated** from a running server via
+  `pg_get_triggerdef` / `pg_get_functiondef`, not hand-written. A retyped
+  plpgsql guard that reads correctly and permits what it forbids is precisely
+  the failure this avoids.
+- Guard tests attempt the forbidden operation rather than counting triggers, and
+  include a positive control (a legal `7 -> 8` upgrade must still succeed) so a
+  guard cannot pass by refusing everything.
+
 ## [0.27.0] - 2026-07-31
 
 **The backend seam becomes reachable.** Until this release `_backend_connect`
