@@ -2,6 +2,95 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-31
+
+**Three safeguards that existed in code and did not hold in practice.** A
+version floor only the clients carrying it obeyed; an enforcement probe that
+could pass without testing anything; a working PostgreSQL backend whose driver
+the package never asked for. In each case the artifact was real and the
+protection was not.
+
+### Fixed
+- **The schema version stamp is floored in the ENGINE, not in the client
+  (#667).** Measured on the live fleet store, with nothing of this agent's
+  writing to it and no tests running:
+
+  ```
+  t=02:45:25  schema_version='5'
+  t=02:45:50  schema_version='7'
+  t=02:46:15  schema_version='5'
+  ```
+
+  and, settled minutes later: `tasks.revision` column present, the
+  `tasks_bump_revision` trigger present — both installed by the v5→v6 and
+  v6→v7 migrations — while the stamp read `5`. **The store WAS v7 and SAID
+  v5**, which is the unsafe direction: a reader gating on the stamp concludes
+  `tasks.revision` is absent while it is physically there, and writes
+  accordingly.
+
+  0.25.0 already took `max(prior, SCHEMA_VERSION)` when stamping. That fix was
+  real, and it was the "remember to apply it" kind — it binds only the clients
+  that have it, and any client still executing a bare
+  `PRAGMA user_version={SCHEMA_VERSION}` overwrote the store regardless. The
+  floor now lives in a SQLite trigger on `schema_meta`, so it applies to every
+  writer whether or not that writer knows it exists.
+
+  It ASSIGNS rather than REJECTS, deliberately: `RAISE(ABORT)` would fail every
+  old writer's connection outright on a mixed-version fleet. A refused
+  downgrade is recorded (`schema_version_downgrades_refused` plus the timestamp
+  and the attempted transition), so the condition is counted instead of merely
+  prevented — on the live store that counter is now in the thousands, all
+  `7 → 5`, and the store has held at 7 throughout.
+
+  Adds `_schema_shape.py`, which reads the store's PHYSICAL shape (which
+  tables, columns and triggers actually exist) and reports agreement with the
+  stamp as a three-valued answer rather than trusting either alone.
+
+### Added
+- **A vacuous enforcement probe is now unconstructible (#666).** The same trap
+  caught two agents independently, hours apart, both of whom knew the
+  principle:
+
+  - a guard tested with `DELETE ... WHERE id = 'nonexistent-id'` was reported
+    NOT ENFORCED, against a guard that demonstrably refuses — a `BEFORE DELETE`
+    trigger fires PER ROW, so deleting zero rows succeeds;
+  - a cutover pre-check specified as "flip `store_status` retired → current,
+    expect ABORT" would, on a store with no `store_status` row, match nothing,
+    succeed, and halt the cutover by declaring a working guard dead.
+
+  Same shape both times: **a statement that touches nothing cannot be refused,
+  and "was not refused" reads identically to "is not guarded."**
+
+  `probe_enforcement()` counts the rows the forbidden statement would touch
+  BEFORE attempting it and raises `VacuousProbe` on zero, naming the remedy
+  (manufacture the precondition inside a transaction, probe, roll back).
+  `EnforcementVerdict` re-checks the same rule in `__post_init__`, so a vacuous
+  verdict cannot be smuggled past by constructing one directly.
+  `expect_refusal_containing` is REQUIRED and must be non-empty, because a
+  read-only connection, a typo and a lock all raise, and a probe that catches
+  any exception reads all three as proof of enforcement.
+
+- **The `postgres` extra, so the PostgreSQL path is reachable by install
+  (#668).** `_backend_connect` reads a PostgreSQL store today: the same query
+  string, written with SQLite's `?` placeholders and never rewritten by the
+  caller, returned the same row count through both backends against PostgreSQL
+  18.4, because `to_paramstyle` translates in transit. 39 tests cover it and it
+  was independently reproduced.
+
+  It worked because psycopg *happened* to be installed where it was tried.
+  Measured in a normal environment: `psycopg available: False`. The capability
+  was real, tested, and unreachable by anyone installing the package normally —
+  including its author. **A capability with no declared dependency is not
+  shipped, it is merely written.**
+
+  psycopg is declared in `postgres`, in `all` so CI exercises the backend
+  rather than merely compiling it, and in `dev` so a fresh
+  `pip install -e .[dev]` runs the backend tests instead of erroring on their
+  unguarded import. Guarding those imports with `importorskip` was rejected: a
+  skipped test for a capability about to be cut over to reads green while
+  measuring nothing.
+
+
 ## [0.25.0] - 2026-07-30
 
 The PostgreSQL migration became possible, and a byte that could have made it

@@ -29,8 +29,10 @@ file resolves the ambient store, migrates data, or touches the live fleet.
 
 from __future__ import annotations
 
+import ast
 import re
 import sqlite3
+from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
 
@@ -195,15 +197,50 @@ def test_the_superseded_messages_table_is_left_alone(tmp_path: Path, db_path):
 # --------------------------------------------------------------------------- #
 # PASSING GUARDS — the append-only scan, with its positive control             #
 # --------------------------------------------------------------------------- #
-#: ``DELETE FROM <table>`` anywhere in the package source.
+#: ``DELETE FROM <table>`` in a string the interpreter could hand to a driver.
 _DELETE_RE = re.compile(r"DELETE\s+FROM\s+([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
+
+
+def _docstrings(tree: ast.AST) -> set[ast.Constant]:
+    """The string literals that are PROSE ABOUT code rather than values it uses."""
+    holders = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+    found: set[ast.Constant] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, holders) or not node.body:
+            continue
+        first = node.body[0]
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+            if isinstance(first.value.value, str):
+                found.add(first.value)
+    return found
+
+
+def _executable_strings(path: Path) -> Iterator[str]:
+    """Every string literal in ``path`` that could reach a database driver.
+
+    Scanned via the AST rather than the raw file TEXT, because a text scan
+    cannot tell a delete from a sentence about one. Comments never enter the
+    AST at all, and a docstring is prose ABOUT the code rather than a value
+    the code passes anywhere, so both are excluded here.
+
+    A ``SyntaxError`` is raised, never swallowed: a module that does not parse
+    is one this scan did not read, and silently skipping it would let the guard
+    narrow its own scope while still reporting a clean verdict.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    prose = _docstrings(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node not in prose:
+                yield node.value
 
 
 def _delete_targets(root: Path) -> list[str]:
     """Every table named by a ``DELETE FROM`` under ``root``."""
     found: list[str] = []
     for path in sorted(root.rglob("*.py")):
-        found.extend(_DELETE_RE.findall(path.read_text(encoding="utf-8")))
+        for literal in _executable_strings(path):
+            found.extend(_DELETE_RE.findall(literal))
     return found
 
 
@@ -248,6 +285,53 @@ def test_no_source_module_deletes_from_a_dm_table():
 
     # Assert
     assert dm_targets == []
+
+
+def test_prose_about_a_delete_is_not_counted_as_one(tmp_path):
+    """A sentence describing the forbidden write is not the forbidden write.
+
+    The scan read raw file TEXT until 2026-07-31, so a docstring explaining
+    WHY ``dm_messages`` must never be deleted from tripped the guard forbidding
+    it — measured on ``_enforcement_probe.py``, whose incident write-up quotes
+    the statement it is warning about. Documenting a rule must not violate it,
+    or the guard teaches maintainers to stop writing the rationale down.
+    """
+    # Arrange
+    module = tmp_path / "explains.py"
+    module.write_text(
+        '"""Never DELETE FROM dm_messages — the operator ruled records persist."""\n'
+        "# Not even DELETE FROM dm_receipts when a row looks wrong.\n"
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+
+    # Act
+    targets = _delete_targets(tmp_path)
+
+    # Assert
+    assert targets == []
+
+
+def test_a_real_delete_is_still_counted(tmp_path):
+    """POSITIVE CONTROL for the exclusion above — it must not blind the scan.
+
+    Narrowing a scan to fix a false positive is how a guard stops guarding, so
+    the executable statement is pinned in the same breath as the prose that is
+    now ignored.
+    """
+    # Arrange
+    module = tmp_path / "deletes.py"
+    module.write_text(
+        "def purge(conn):\n"
+        '    conn.execute("DELETE FROM dm_messages WHERE id = ?", ("x",))\n',
+        encoding="utf-8",
+    )
+
+    # Act
+    targets = _delete_targets(tmp_path)
+
+    # Assert
+    assert targets == ["dm_messages"]
 
 
 # --------------------------------------------------------------------------- #
