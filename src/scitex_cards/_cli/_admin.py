@@ -163,6 +163,10 @@ def resolve_store_cmd(as_json) -> None:
         click.echo(json.dumps(info))
         return
     click.echo(f"resolved:        {info['resolved']}")
+    click.echo(f"backend:         {info['backend']}")
+    # Printed right under `backend` because `exists` is only meaningful for a
+    # file store; on a server it is None, and a bare "None" with no backend
+    # beside it is the kind of output an operator reads as "broken".
     click.echo(f"exists:          {info['exists']}")
     click.echo(f"explicit:        {info['explicit']}")
     click.echo(f"$SCITEX_CARDS_DB:  {info['db_env']}")

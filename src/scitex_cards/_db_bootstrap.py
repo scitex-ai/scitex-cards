@@ -247,8 +247,12 @@ def _insert_edges(conn, task_id, row) -> int:
             if not (isinstance(dst, str) and dst):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO task_edges"
-                "(src_task_id, dst_task_id, edge_type) VALUES (?, ?, ?)",
+                # DO NOTHING: all three columns ARE the primary key, so a
+                # conflicting row is byte-identical and there is nothing to
+                # update. (REPLACE here was DELETE+INSERT of an identical row.)
+                "INSERT INTO task_edges"
+                "(src_task_id, dst_task_id, edge_type) VALUES (?, ?, ?)"
+                " ON CONFLICT DO NOTHING",
                 (task_id, dst, edge_type),
             )
             n += 1
@@ -265,8 +269,10 @@ def _insert_roles(conn, task_id, row) -> int:
             if not (isinstance(who, str) and who):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO task_roles(task_id, who, role) "
-                "VALUES (?, ?, ?)",
+                # Same shape as task_edges: the three columns are the whole
+                # primary key, so a conflict has nothing left to write.
+                "INSERT INTO task_roles(task_id, who, role) "
+                "VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                 (task_id, who, role),
             )
             n += 1

@@ -299,19 +299,35 @@ def resolve_store(store: str | Path | None = None) -> dict:
 
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
+    from ._store_target import resolve_store_target
+    from ._store_url import backend_of, is_postgres_url
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
-    # The resolved store is the DATABASE — the sole store identity.
-    resolved = resolve_db_path(
-        store if isinstance(store, (str, type(None))) else str(store)
-    )
+    # The resolved store is the DATABASE — the sole store identity. It may be a
+    # PATH or a SERVER URL, so it is resolved WITHOUT coercion: this verb exists
+    # to answer "which store am I on?", and it was the one verb that CRASHED the
+    # moment the answer stopped being a path (measured 2026-07-31, mid-cutover —
+    # `resolve-store` raised StoreTargetIsNotAPath against PostgreSQL while
+    # `list-tasks` served 2973 cards). A diagnostic that dies on the case you are
+    # diagnosing is worse than no diagnostic: it reads as "the store is broken".
+    _arg = store if isinstance(store, (str, type(None))) else str(store)
+    target = resolve_store_target(_arg)
+    on_server = is_postgres_url(target)
+    resolved = target if on_server else str(resolve_db_path(_arg))
     return {
-        "resolved": str(resolved),
+        "resolved": resolved,
         "explicit": str(store) if store is not None else None,
         "db_env": os.environ.get(ENV_DB),
         "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
-        "exists": Path(resolved).exists(),
+        "backend": backend_of(target),
+        # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
+        # answer for a server, and BOTH poles actively mislead: False reads as
+        # "your store is missing" to every operator staring at a cutover, True
+        # would assert a reachability this function is forbidden to test (it is
+        # pure reporting — it never opens anything). Read `backend` to know
+        # which question was asked.
+        "exists": None if on_server else Path(resolved).exists(),
         "store_uuid": store_uuid_at(resolved),
         "expected_uuid": expected_store_uuid(),
     }

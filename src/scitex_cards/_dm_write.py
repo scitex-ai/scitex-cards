@@ -36,6 +36,12 @@ what makes a cross-host merge a pure union.
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+
 import json
 import sqlite3
 from pathlib import Path
@@ -54,169 +60,26 @@ from ._dm_ids import (
 from ._dm_storable import to_storable
 
 
-def _open(db, store) -> sqlite3.Connection:
-    from ._db import open_db
 
-    return open_db(resolve_dm_db(db, store=store))
-
-
-def _dumps(payload: dict) -> str:
-    """Serialise a verbatim payload. Key ORDER is preserved, never sorted."""
-    return json.dumps(payload, ensure_ascii=False)
-
-
-def ensure_thread(
-    conn: sqlite3.Connection,
-    thread_id: str,
-    *,
-    kind: str = "pair",
-    title: str | None = None,
-    created_at: str | None = None,
-    created_by: str | None = None,
-    host: str | None = None,
-    record: dict | None = None,
-) -> bool:
-    """``INSERT OR IGNORE`` the thread row. True iff this call created it.
-
-    Idempotent by primary key, so it is safe on every append — which is what
-    lets a pair thread come into existence from its first message without a
-    separate "create thread" step, exactly as the sidecar's
-    ``setdefault(key, [])`` did.
-    """
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO dm_threads"
-        "(id, kind, title, created_at, created_by, origin_host, record_json)"
-        " VALUES(?, ?, ?, ?, ?, ?, ?)",
-        (
-            thread_id,
-            kind,
-            title,
-            created_at or utc_now_iso(),
-            created_by,
-            host or origin_host(),
-            _dumps(record if record is not None else {}),
-        ),
-    )
-    return cur.rowcount > 0
-
-
-def record_member_event(
-    conn: sqlite3.Connection,
-    thread_id: str,
-    member: str,
-    action: str,
-    *,
-    ts: str | None = None,
-    actor: str | None = None,
-    host: str | None = None,
-    event_id: str | None = None,
-) -> bool:
-    """Append one membership event. True iff it was new.
-
-    ``action`` is ``'join'`` or ``'leave'``. Removing a member is a LEAVE ROW,
-    never a deleted one: the fold then answers "not a member now" while the
-    record of having been one survives, which is what keeps an old message's
-    audience answerable after the fact.
-
-    THE ``seq`` IS NOT DECORATION. Timestamps here are second-resolution, so a
-    join and a leave in the same second are indistinguishable by ``ts`` and the
-    fold's tie-break fell through to the content-hash id — a coin flip that let
-    a departed member keep receiving messages in 17 of 60 measured runs. This
-    counter is what makes "the latest event" a fact rather than a hash race.
-    """
-    stamp = ts or utc_now_iso()
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO dm_thread_member_events"
-        "(id, thread_id, member, action, ts, seq, actor, origin_host,"
-        " record_json) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            event_id or derived_member_event_id(thread_id, member, action, stamp),
-            thread_id,
-            member,
-            action,
-            stamp,
-            next_member_seq(conn, thread_id, member),
-            actor,
-            host or origin_host(),
-            _dumps({}),
-        ),
-    )
-    return cur.rowcount > 0
-
-
-def next_member_seq(conn: sqlite3.Connection, thread_id: str, member: str) -> int:
-    """``1 + MAX(seq)`` for this ``(thread, member)`` — the membership counter.
-
-    Read inside the caller's ``BEGIN IMMEDIATE``, so two writers cannot observe
-    the same maximum. Across hosts two offline writers legitimately can, which
-    is why the fold keeps ``ts, origin_host, id`` behind it to stay total.
-    """
-    row = conn.execute(
-        "SELECT COALESCE(MAX(seq), 0) FROM dm_thread_member_events"
-        " WHERE thread_id = ? AND member = ?",
-        (thread_id, member),
-    ).fetchone()
-    return int(row[0]) + 1
-
-
-def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
-    """``1 + MAX(seq)`` for the thread — the per-thread logical counter.
-
-    Read inside the caller's ``BEGIN IMMEDIATE`` so two appenders cannot both
-    observe the same maximum. A collision is not a correctness bug (``seq`` is
-    a SORT HINT and the order is total without it) but it would reorder a
-    conversation, which users notice.
-    """
-    row = conn.execute(
-        "SELECT COALESCE(MAX(seq), 0) FROM dm_messages WHERE thread_id = ?",
-        (thread_id,),
-    ).fetchone()
-    return int(row[0]) + 1
-
-
-def insert_message(
-    conn: sqlite3.Connection,
-    *,
-    message_id: str,
-    thread_id: str,
-    sender: str,
-    body: str,
-    ts: str,
-    seq: int,
-    host: str,
-    record: dict,
-) -> bool:
-    """``INSERT OR IGNORE`` one message row. True iff it was new."""
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO dm_messages"
-        "(id, thread_id, sender, body, ts, seq, origin_host, record_json)"
-        " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-        (message_id, thread_id, sender, body, ts, seq, host, _dumps(record)),
-    )
-    return cur.rowcount > 0
-
-
-def insert_receipt(
-    conn: sqlite3.Connection,
-    message_id: str,
-    reader: str,
-    *,
-    read_at: str | None = None,
-    host: str | None = None,
-    source: str = "live",
-) -> bool:
-    """``INSERT OR IGNORE`` a read receipt. True iff it was new.
-
-    A receipt is MONOTONE: it is never removed and "unread again" is not
-    expressible. That is deliberate — it is what makes the receipts table
-    merge across hosts by union with no arbitration.
-    """
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO dm_receipts"
-        "(message_id, reader, read_at, origin_host, source) VALUES(?, ?, ?, ?, ?)",
-        (message_id, reader, read_at or utc_now_iso(), host or origin_host(), source),
-    )
-    return cur.rowcount > 0
+# ---------------------------------------------------------------------------
+# Row primitives live next door (`_dm_write_rows`). This module was 515 lines
+# against a 512 cap, and the two halves were already separate: single-row
+# writes below the line, composed DM verbs above it.
+#
+# RE-EXPORTED, NOT RELOCATED. 43 test files and every fleet agent import these
+# names FROM HERE; each object below is the same one it always was, defined in
+# the sibling module. Same contract as the `_model` / `_store_write` splits.
+# ---------------------------------------------------------------------------
+from ._dm_write_rows import (  # noqa: E402,F401
+    _dumps,
+    _open,
+    ensure_thread,
+    insert_message,
+    insert_receipt,
+    next_member_seq,
+    next_seq,
+    record_member_event,
+)
 
 
 def append(

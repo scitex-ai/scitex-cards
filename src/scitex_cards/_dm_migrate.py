@@ -52,6 +52,12 @@ from ._dm_write import (
     record_member_event,
 )
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value
+
 #: The tables a merge payload carries, PARENT FIRST. Order is not cosmetic:
 #: ``dm_messages`` has a foreign key onto ``dm_threads`` and ``dm_receipts``
 #: onto ``dm_messages``, and connections run with ``foreign_keys=ON``.
@@ -206,7 +212,7 @@ def _backfill_records(conn, thread_id, records, stamp, host, report) -> None:
 
 
 def _count(conn: sqlite3.Connection) -> int:
-    return int(conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0])
+    return int(_sole_value(conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()))
 
 
 def _assert_no_shrink(before: int, after: int) -> None:
@@ -275,7 +281,8 @@ def _insert_row(conn: sqlite3.Connection, table: str, row: dict) -> int:
         return 0
     placeholders = ", ".join("?" for _ in cols)
     cur = conn.execute(
-        f"INSERT OR IGNORE INTO {table}({', '.join(cols)}) VALUES({placeholders})",
+        f"INSERT INTO {table}({', '.join(cols)}) VALUES({placeholders})"
+        f" ON CONFLICT DO NOTHING",
         [_coerce(row[c]) for c in cols],
     )
     return 1 if cur.rowcount > 0 else 0
@@ -328,7 +335,10 @@ def verify_against_sidecar(
     conn = _open(db, store)
     try:
         conn.execute("BEGIN")
-        db_ids = {r[0] for r in conn.execute("SELECT id FROM dm_messages").fetchall()}
+        db_ids = {
+            _sole_value(r)
+            for r in conn.execute("SELECT id FROM dm_messages").fetchall()
+        }
         conn.commit()
     finally:
         conn.close()

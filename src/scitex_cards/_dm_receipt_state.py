@@ -64,6 +64,12 @@ has none, and that -- not a missing receipt -- is what "cannot tell" means.
 
 from __future__ import annotations
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value, row_values
+
 import sqlite3
 from pathlib import Path
 
@@ -114,7 +120,7 @@ def _current_members(conn: sqlite3.Connection, thread_id: str) -> set[str]:
         "WHERE thread_id = ? AND current_action = 'join'",
         (thread_id,),
     ).fetchall()
-    return {str(r[0]) for r in rows}
+    return {str(_sole_value(r)) for r in rows}
 
 
 def _readers_by_message(
@@ -132,7 +138,8 @@ def _readers_by_message(
         "WHERE m.thread_id = ?",
         (thread_id,),
     ):
-        out.setdefault(str(row[0]), set()).add(str(row[1]))
+        vals = row_values(row)
+        out.setdefault(str(vals[0]), set()).add(str(vals[1]))
     return out
 
 
@@ -154,7 +161,8 @@ def receipt_state_for_conn(conn: sqlite3.Connection, thread_id: str) -> dict[str
 
     out: dict[str, dict] = {}
     for row in rows:
-        message_id, sender = str(row[0]), str(row[1])
+        vals = row_values(row)
+        message_id, sender = str(vals[0]), str(vals[1])
         recipients = recipients_of(members, sender)
         confirmed = readers.get(message_id, set()) & recipients
         out[message_id] = {
