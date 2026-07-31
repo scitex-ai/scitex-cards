@@ -33,6 +33,8 @@ database quietly stop being the same shape.
 
 from __future__ import annotations
 
+from ._ddl import execute_ddl
+
 import sqlite3
 
 #: Every table this script creates, in dependency order (parents first).
@@ -161,7 +163,7 @@ def migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
     ``user_version`` stamp claimed v5. The stamp is metadata; the tables are
     the artifact.
     """
-    conn.executescript(SCHEMA_SQL_V5)
+    execute_ddl(conn, SCHEMA_SQL_V5)
     _ensure_column(conn, "dm_thread_member_events", "seq", "INTEGER NOT NULL DEFAULT 0")
 
 
