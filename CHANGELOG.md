@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-08-01
+
+**DM writes work on PostgreSQL, and retirement now stops them.** 0.30.0 carries
+both defects: DMs could not be written to a server store at all, and a retired
+store accepted them.
+
+### DM writes died on a server store while cards worked (#710)
+
+`resolve_dm_db` fell through to `resolve_db_path` for its ambient tier, and that
+**raises** on a DSN. With `$SCITEX_CARDS_DB` pointing at PostgreSQL:
+
+```
+READ  list_tasks   2971 cards            ok
+WRITE dm funnel    StoreTargetIsNotAPath
+```
+
+Card reads and card writes were unaffected — only DMs, which agents send
+constantly. The two tiers above stay paths deliberately: an explicit `db` or
+`store` names a file, and deriving the DM database from `store.parent` is what
+stops a test with a tmp store writing its DMs into the live fleet database. Only
+the **ambient** tier can be a server.
+
+Found by booting the rebuilt image the way an agent does and attempting a write.
+Every cheaper check passed on the broken build — right version, driver present,
+`backend: postgresql`, correct uuid, 2971 cards readable.
+
+### Retirement now stops DM writes (#708)
+
+Required before any store is retired.
+
+Card writes reached the guard only *incidentally* — they are read-modify-write,
+so they pass through the canonical read, which checks. DM writes had their own
+path and checked nothing. Measured during the PostgreSQL cutover:
+
+```
+14:16  a card write   REFUSED   (correct)
+14:26  a DM write     LANDED    in the retired store
+```
+
+So retirement was a fence for one path and a signpost for the other, and
+"stragglers fail loudly" held only for readers.
+
+The refusal lives in `_dm_write_rows._open`, the DM **write funnel** — all five
+mutating verbs open through it and nothing else does. Deliberately **not** in
+`open_db`: the canonical read and the export/snapshot paths open through that
+too, and a retired store must stay **readable**, because recovering from a
+retirement means reading the store you retired.
+
+Reuses the existing `_refuse_if_retired_on` rather than adding a second
+definition of "is this store retired" — per that helper's own docstring,
+duplicating it per caller is how the two answers drift.
+
+Two of the new tests assert the store stays **readable** after retirement,
+specifically so a later "fix" that moves the guard into `open_db` goes red.
+Negative control, run against unfixed 0.30.0 source: the retired store opens for
+a DM write and the test fails (`- refused / + opened`).
+
 ## [0.30.0] - 2026-08-01
 
 **The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
