@@ -2,6 +2,121 @@
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-08-01
+
+**The schema is now asserted once per store, not once per open.** Required
+before a fleet of ~90 agents can share one PostgreSQL store: at that width the
+old behaviour is not a slow path, it is a broken one.
+
+### Concurrent opens were deadlocking on the system catalogue (#714)
+
+`init_schema` ran its full DDL on **every connection**. On SQLite that was very
+nearly free. Against a shared PostgreSQL server it is DDL against the system
+catalogues, and `CREATE OR REPLACE FUNCTION` rewrites the `pg_proc` row every
+time — it is *not* a no-op when the definition already matches.
+
+Measured on the live store with the entire fleet **stopped** and only four host
+daemons connected — `pg_proc.xmin` sampled every 10s while idle:
+
+```
+t+10  all 9 trigger functions  5069 -> 5075
+t+20  all 9 trigger functions  5075 -> 5082
+t+30  all 9 trigger functions  5082 -> 5087
+```
+
+and concurrency did not survive it:
+
+```
+ 4 simultaneous open_db  ->  at least 1 deadlock
+12 simultaneous open_db  ->  11 of 12 FAILED, DeadlockDetected on pg_proc
+```
+
+Two clients replacing the same function at once contend on the catalogue and
+PostgreSQL resolves it by killing one. `init_schema`'s own comment already noted
+that "~90 containers call init_schema on every connection".
+
+The new gate in `_schema_current` skips the DDL when the store already has the
+shape this client would assert. **Conservative by construction:** every
+uncertain answer falls through to the full DDL, so the worst case is exactly the
+previous behaviour. The version must match, the physical rungs and the stamp
+must agree, and an unreadable catalogue is not a current schema.
+
+**The guard triggers are verified, not assumed.** They are the retirement
+enforcement *and* the proof-of-currency mechanism, so a client that skipped the
+DDL without confirming their presence could leave a store unguarded while
+believing it had guarded it. Presence is read from the catalogue on every open;
+only the *write* is skipped.
+
+| check | before | after |
+| --- | --- | --- |
+| fresh store gets all 9 guards | — | all 9 present |
+| functions rewritten per `open_db` | 9 of 9 | 0 of 9 |
+| 12 simultaneous `open_db` | 11 failed | 0 failed |
+| 24 simultaneous `open_db` | — | 0 failed |
+
+The fresh-store row is the positive control: it proves the gate does not skip
+*creation*, which is the dangerous direction.
+
+## [0.30.2] - 2026-08-01
+
+**The board could not read a PostgreSQL store at all, and every DM write died
+before it began.** Both defects were found by exercising the real path after the
+fleet cutover, and both were invisible to every cheaper check.
+
+### The board answered 500 to every data request (#712)
+
+Two calls on `get_board`'s read path coerced the store target to a filesystem
+`Path`, and `resolve_db_path` **refuses** a DSN rather than coercing it:
+`_django/services.py` for the `/rev` mtime, and `_store_write.store_generation`'s
+file-existence gate.
+
+The refusal is correct and load-bearing. Coercing a DSN would have created an
+empty SQLite store at a mangled path and served 0 cards **while reporting
+healthy** — the exact failure `services.py` already carries a post-mortem for.
+The guard worked; the server branch behind it was missing.
+
+`store_generation` now gates on the file only when the target *is* a file — a
+server's existence is established by connecting, which `load_doc` does and which
+raises when it cannot. `"absent"` stays reserved for a genuinely missing local
+file, because it disables the optimistic-concurrency guard.
+
+The `/rev` stamp moves to `_django/_revision.store_change_stamp`. On a file store
+it is the database mtime; on a server it is a content fingerprint derived from
+the generation hash already computed on that path. `/rev`'s `mtime` is typed
+float but consumed only as an equality key, and was already documented as
+REPORTED, not trusted. The server value sits far outside epoch range so anything
+treating it as a time is obviously wrong rather than subtly skewed.
+
+### Every DM write died on `BEGIN IMMEDIATE` (#712)
+
+`syntax error at or near "IMMEDIATE"` — SQLite-only spelling, reported by
+scitex-db with a live reproduction. It failed before writing anything, so no data
+was harmed, but DM is the operator's channel to the fleet.
+
+A gap in the 0.30.0 port: the statements *inside* the transaction were made
+portable and the statement that *opens* it was not.
+
+**A plain `BEGIN` would have been worse than the syntax error.** `IMMEDIATE` is
+not decoration — SQLite takes the write lock at BEGIN so two appenders serialise,
+and the DM append reads `max(seq)` then inserts `seq + 1`. PostgreSQL defaults to
+READ COMMITTED, under which both appenders read the same `max(seq)` and both
+insert. That parses, runs, passes a smoke test, and silently reintroduces the
+exact race `IMMEDIATE` exists to prevent. SERIALIZABLE detects it but by aborting
+one side, which every call site would have to retry.
+
+New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on SQLite and
+`BEGIN` plus `pg_advisory_xact_lock` on PostgreSQL — blocking, not aborting, and
+released on commit or rollback alike. It replaces all 7 executable sites
+(`_dm_write` ×4, `_dm_migrate` ×2, `_store_uuid` ×1). The lock is store-wide,
+matching SQLite where the write lock covers the whole file: this is a
+compatibility seam, not a concurrency rewrite.
+
+### Verified against the live server, not a fixture
+
+`get_board` returns 2980 cards with `empty_store` false and the discriminators
+land both ways; `begin_write_transaction` opens a write transaction; a real
+`append_pair` landed a message at seq 2.
+
 ## [0.30.1] - 2026-08-01
 
 **DM writes work on PostgreSQL, and retirement now stops them.** 0.30.0 carries

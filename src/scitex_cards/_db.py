@@ -335,6 +335,42 @@ def init_schema(conn: sqlite3.Connection) -> None:
     if _shape.observed is not None:
         _prior_version = max(_prior_version, _shape.observed)
 
+    # ASSERT THE SCHEMA ONCE PER STORE, NOT ONCE PER OPEN.
+    #
+    # Everything below this point is DDL. On SQLite that was very nearly free.
+    # Against a shared PostgreSQL server it is DDL against the system
+    # catalogues, and CREATE OR REPLACE FUNCTION rewrites the pg_proc row every
+    # single time -- it is not a no-op when the function already matches.
+    #
+    # MEASURED on the live store 2026-08-01, with the entire fleet STOPPED and
+    # only four host daemons connected: all 9 trigger functions were dropped and
+    # recreated every ~10 seconds, continuously. And concurrency did not
+    # survive it:
+    #
+    #      4 simultaneous open_db  ->  at least 1 deadlock
+    #     12 simultaneous open_db  ->  11 of 12 failed, DeadlockDetected
+    #
+    # on pg_proc, which is exactly the contention two clients create by
+    # replacing the same function at the same time. The comment further down
+    # this function already notes that "~90 containers call init_schema on every
+    # connection"; at that width this is not a slow path, it is a broken one.
+    #
+    # So: when the store ALREADY has the shape this client would assert, skip
+    # the assertion entirely. The gate is a READ, and it is deliberately
+    # conservative -- every branch that is not provably current falls through to
+    # the full DDL below, so the worst case is exactly today's behaviour.
+    #
+    # THE GUARD TRIGGERS ARE CHECKED, NOT ASSUMED. They are not decoration: they
+    # are the retirement enforcement AND the proof-of-currency mechanism, so a
+    # client that skipped the DDL without confirming they exist could leave a
+    # store unguarded while believing it had guarded it. Presence is verified
+    # against the catalogue on every open; only the WRITE is skipped.
+    from ._schema_current import schema_already_current  # noqa: PLC0415
+
+    if schema_already_current(conn, _shape, SCHEMA_VERSION):
+        conn.commit()
+        return
+
     execute_ddl(conn, _SCHEMA_SQL)
     # Separate, not folded into _SCHEMA_SQL: per the note below, that script
     # reaches FRESH files only, and these guards must reach every store the
