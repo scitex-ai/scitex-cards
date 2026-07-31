@@ -514,4 +514,92 @@ class TestItIsSafeOnAReadOnlyConnection:
         ro.close()
 
 
+class TestInitSchemaTakesTheShapeAsItsFloor:
+    """``PRAGMA user_version`` cannot carry a trigger, so the shape must floor it.
+
+    The engine-level floor protects ``schema_meta`` and structurally cannot
+    protect the PRAGMA. Measured on the live store 2026-07-31:
+    ``schema_migrated_at`` advanced every ~45s with ``from=5 to=7`` while v6's
+    ``tasks.revision`` and v7's ``tasks_bump_revision`` were physically present
+    throughout. ``record_migration`` returns early when ``prior == new``, so
+    that churn proves the PRAGMA genuinely kept reading 5 -- a current client
+    re-migrating a store that was never behind, forever.
+    """
+
+    def test_a_backwards_pragma_does_not_re_trigger_a_migration(self, tmp_path):
+        """The loop: shape says 7, a stale PRAGMA says 5, so a migration is recorded."""
+        # Arrange
+        from scitex_cards._db import init_schema
+
+        path = tmp_path / "loop.db"
+        conn = sqlite3.connect(path)
+        init_schema(conn)
+        conn.execute("DELETE FROM schema_meta WHERE key LIKE 'schema_migrated%'")
+        conn.execute("PRAGMA user_version=5")
+        conn.commit()
+
+        # Act
+        init_schema(conn)
+
+        # Assert
+        migrated = conn.execute(
+            "SELECT COUNT(*) FROM schema_meta WHERE key = 'schema_migrated_at'"
+        ).fetchone()[0]
+        conn.close()
+        assert migrated == 0
+
+    def test_the_client_side_max_restores_the_pragma_without_the_shape(self, tmp_path):
+        """NOT bound to the shape floor, and named so nobody thinks it is.
+
+        Measured by mutation: with the shape floor disabled this still passes,
+        because ``stamp_schema_version`` already writes
+        ``max(prior, SCHEMA_VERSION)``. Two different mechanisms restore the
+        PRAGMA and only the OTHER test distinguishes them, so calling this one
+        "restored to the shape" would credit this change for work it does not
+        do -- and a suite that misattributes its own coverage is how a fix gets
+        removed later on the belief that a green test still guards it.
+
+        Kept because the invariant is real and worth pinning on its own terms.
+        """
+        # Arrange
+        from scitex_cards._db import init_schema
+
+        path = tmp_path / "restore.db"
+        conn = sqlite3.connect(path)
+        init_schema(conn)
+        conn.execute("PRAGMA user_version=5")
+        conn.commit()
+
+        # Act
+        init_schema(conn)
+
+        # Assert
+        stamped = conn.execute("PRAGMA user_version").fetchone()[0]
+        conn.close()
+        assert stamped >= 7
+
+    def test_a_fresh_file_is_still_a_create_not_a_migration(self, tmp_path):
+        """The regression guard: flooring must not make every new store look migrated.
+
+        ``observed`` is None when no rung is present, which must leave the prior
+        version at 0 -- the branch that distinguishes CREATE from MIGRATE. A
+        floor that silently turned fresh databases into migrations would make
+        ``schema_migrated_at`` useless for the one question it exists to answer.
+        """
+        # Arrange
+        from scitex_cards._db import init_schema
+
+        conn = sqlite3.connect(tmp_path / "fresh.db")
+
+        # Act
+        init_schema(conn)
+
+        # Assert
+        migrated = conn.execute(
+            "SELECT COUNT(*) FROM schema_meta WHERE key = 'schema_migrated_at'"
+        ).fetchone()[0]
+        conn.close()
+        assert migrated == 0
+
+
 # EOF

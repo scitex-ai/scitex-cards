@@ -51,7 +51,11 @@ from ._db_migrations import (
     record_migration_provenance,
     table_columns,
 )
-from ._schema_shape import SCHEMA_VERSION_FLOOR_TRIGGER_SQL, stamp_schema_version
+from ._schema_shape import (
+    SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
+    observed_version,
+    stamp_schema_version,
+)
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 logger = logging.getLogger(__name__)
@@ -372,6 +376,25 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # BEFORE the schema script, because that script is what makes a fresh file
     # look initialised. 0 means "new file" and is a CREATE, not a migration.
     _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
+
+    # AND THE PRAGMA ALONE IS NOT TRUSTWORTHY HERE. A PRAGMA cannot carry a
+    # trigger, so the engine-level floor applied below protects `schema_meta`
+    # and structurally CANNOT protect `user_version`; any writer executing a
+    # bare `PRAGMA user_version=<its own>` still knocks it backwards.
+    #
+    # Measured on the live store 2026-07-31: `schema_migrated_at` advanced every
+    # ~45s with from=5 to=7 by 0.25.0, while v6's `tasks.revision` and v7's
+    # `tasks_bump_revision` were physically present the entire time. Since
+    # record_migration() returns early when prior == new, that churn is proof
+    # the PRAGMA genuinely kept reading 5 -- a current client re-migrating a
+    # store that was never behind, in a loop, forever.
+    #
+    # The physical shape cannot be un-migrated by a stamp, so it is the floor.
+    # `observed` is None on a fresh file (no rung present), which leaves
+    # _prior_version at 0 and preserves the CREATE-not-migration branch above.
+    _shape = observed_version(conn)
+    if _shape.observed is not None:
+        _prior_version = max(_prior_version, _shape.observed)
 
     conn.executescript(_SCHEMA_SQL)
     # Separate, not folded into _SCHEMA_SQL: per the note below, that script

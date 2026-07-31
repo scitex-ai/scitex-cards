@@ -153,13 +153,29 @@ def test_reopening_does_not_overwrite_an_existing_record():
 
 def test_init_schema_stamps_a_real_upgrade(tmp_path):
     """Through the production entry point, on a file that starts at an old
-    version -- so the wiring in _db.py is exercised, not just the helper."""
+    version -- so the wiring in _db.py is exercised, not just the helper.
+
+    THE FIXTURE REMOVES THE ARTIFACTS, not just the labels, and that distinction
+    is the whole point. It used to fake an old store by running init_schema and
+    then writing ``PRAGMA user_version=5`` over the result -- a PHYSICALLY v7
+    file wearing a v5 label. That is not an old store; it is exactly the
+    corruption observed on the live store on 2026-07-31, where the stamp read 5
+    while ``tasks.revision`` and ``tasks_bump_revision`` were both present, and
+    a current client re-migrated it every ~45s forever.
+
+    So the old fixture could not tell the case it is named for from the bug we
+    now defend against, and a test that cannot distinguish those two has to
+    fail one of them. Dropping v6's column and v7's trigger makes the store
+    genuinely v5, and the assertion then means what its name says.
+    """
     # Arrange
     from scitex_cards import _db
 
     db_path = tmp_path / "old.db"
     conn = sqlite3.connect(db_path)
     _db.init_schema(conn)
+    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision")
+    conn.execute("ALTER TABLE tasks DROP COLUMN revision")
     conn.execute("PRAGMA user_version=5")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('schema_version','5') "
