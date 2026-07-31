@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-08-01
+
+**The board could not read a PostgreSQL store at all, and every DM write died
+before it began.** Both defects were found by exercising the real path after the
+fleet cutover, and both were invisible to every cheaper check.
+
+### The board answered 500 to every data request (#712)
+
+Two calls on `get_board`'s read path coerced the store target to a filesystem
+`Path`, and `resolve_db_path` **refuses** a DSN rather than coercing it:
+`_django/services.py` for the `/rev` mtime, and `_store_write.store_generation`'s
+file-existence gate.
+
+The refusal is correct and load-bearing. Coercing a DSN would have created an
+empty SQLite store at a mangled path and served 0 cards **while reporting
+healthy** — the exact failure `services.py` already carries a post-mortem for.
+The guard worked; the server branch behind it was missing.
+
+`store_generation` now gates on the file only when the target *is* a file — a
+server's existence is established by connecting, which `load_doc` does and which
+raises when it cannot. `"absent"` stays reserved for a genuinely missing local
+file, because it disables the optimistic-concurrency guard.
+
+The `/rev` stamp moves to `_django/_revision.store_change_stamp`. On a file store
+it is the database mtime; on a server it is a content fingerprint derived from
+the generation hash already computed on that path. `/rev`'s `mtime` is typed
+float but consumed only as an equality key, and was already documented as
+REPORTED, not trusted. The server value sits far outside epoch range so anything
+treating it as a time is obviously wrong rather than subtly skewed.
+
+### Every DM write died on `BEGIN IMMEDIATE` (#712)
+
+`syntax error at or near "IMMEDIATE"` — SQLite-only spelling, reported by
+scitex-db with a live reproduction. It failed before writing anything, so no data
+was harmed, but DM is the operator's channel to the fleet.
+
+A gap in the 0.30.0 port: the statements *inside* the transaction were made
+portable and the statement that *opens* it was not.
+
+**A plain `BEGIN` would have been worse than the syntax error.** `IMMEDIATE` is
+not decoration — SQLite takes the write lock at BEGIN so two appenders serialise,
+and the DM append reads `max(seq)` then inserts `seq + 1`. PostgreSQL defaults to
+READ COMMITTED, under which both appenders read the same `max(seq)` and both
+insert. That parses, runs, passes a smoke test, and silently reintroduces the
+exact race `IMMEDIATE` exists to prevent. SERIALIZABLE detects it but by aborting
+one side, which every call site would have to retry.
+
+New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on SQLite and
+`BEGIN` plus `pg_advisory_xact_lock` on PostgreSQL — blocking, not aborting, and
+released on commit or rollback alike. It replaces all 7 executable sites
+(`_dm_write` ×4, `_dm_migrate` ×2, `_store_uuid` ×1). The lock is store-wide,
+matching SQLite where the write lock covers the whole file: this is a
+compatibility seam, not a concurrency rewrite.
+
+### Verified against the live server, not a fixture
+
+`get_board` returns 2980 cards with `empty_store` false and the discriminators
+land both ways; `begin_write_transaction` opens a write transaction; a real
+`append_pair` landed a message at seq 2.
+
 ## [0.30.1] - 2026-08-01
 
 **DM writes work on PostgreSQL, and retirement now stops them.** 0.30.0 carries
