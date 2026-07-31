@@ -2,6 +2,60 @@
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-31
+
+**The store layer now REACHES PostgreSQL.** 0.28.0 made a PostgreSQL store
+buildable; this release makes the package actually read one. Measured against
+the live server: `2962` cards and `6171` comments at `schema_version 7`, not the
+`0` a broken path returns. SQLite remains the DEFAULT and PostgreSQL is OPT-IN
+via `$SCITEX_CARDS_DB`; the SQLite path is byte-identical to 0.28.0.
+
+**The blocker was one line, and it explains why the seam sat unused.**
+`open_db` — the one-call entry point the canonical read path uses — resolved
+through `resolve_db_path`, which is typed `-> Path` and refuses a DSN. So no
+call site could reach PostgreSQL however well `connect()` dispatched, which is
+exactly what `_store_target.py`'s docstring meant by "NOTHING in the package
+imports them". It now resolves the TARGET (#693).
+
+**A PostgreSQL DSN is refused, never coerced (#692).** `Path("postgresql://h/db")`
+collapses to the RELATIVE path `postgresql:/h/db`, which manufactures an empty
+SQLite file and then serves 0 cards while reporting `exists: True`. Two stores,
+both looking healthy, is a failure this package has scar tissue from.
+
+**Schema init is portable (#693).** `PRAGMA` is SQLite-only and PostgreSQL
+rejects it outright, so the version stamp and the column probe are now
+dialect-aware. On PostgreSQL the trigger-protected `schema_meta` row IS the
+stamp — the direction `stamp_schema_version` already argued for, since a PRAGMA
+structurally cannot carry a trigger.
+
+**Canonical read reaches PostgreSQL with its guards intact (#694).** Existence,
+ownership and retirement are re-expressed for a server rather than a file,
+because each asks a question whose MEANING differs by backend: existence is a
+catalogue question, not a `stat()` call. Every failure raises — this is
+read-modify-write, and returning an empty document here is written back as the
+whole store.
+
+**The v7 revision lock was INERT and now fires (#695).** `INSERT OR REPLACE` is
+`DELETE` + `INSERT`, so it never fired the `AFTER UPDATE` trigger that bumps
+`revision`. The lock was installed, present, and doing nothing. `ON CONFLICT DO
+UPDATE` makes it real, parses on both engines, and drops the `ON DELETE CASCADE`
+work this codebase measured at 42x. BREAKING: an upsert through the mirror now
+bumps `revision` where it previously did not.
+
+**The PostgreSQL cross-check is snapshot-consistent (#696).** PostgreSQL's
+default isolation is READ COMMITTED, under which every statement takes a fresh
+snapshot EVEN INSIDE A TRANSACTION — so holding one connection was never enough.
+The export and its verifying `COUNT(*)` now run in `REPEATABLE READ`. Without
+it the guard compares two different database states and reports success.
+
+**Three defects in this release were found only by running the real server, and
+two of those only by the NEGATIVE control.** A static scan of the obvious
+init-path modules missed the `PRAGMA` inside `init_schema` itself. An existence
+guard placed after `open_db()` could never fire, because `init_schema` CREATES
+the tables — pointed at an empty database it built the whole schema and returned
+0 tasks instead of refusing. A guard defeated by the act of opening is not a
+guard, and the positive control passed in every one of those cases.
+
 ## [0.28.0] - 2026-07-31
 
 **A PostgreSQL store can now be built and reached — not just described.** 0.27.0
