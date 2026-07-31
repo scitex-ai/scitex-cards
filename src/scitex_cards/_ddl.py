@@ -62,6 +62,42 @@ __all__ = [
 _BEGIN_RE = re.compile(r"\bBEGIN\s*$", re.IGNORECASE)
 _END_RE = re.compile(r"^\s*END\s*;?\s*$", re.IGNORECASE)
 
+#: ``AUTOINCREMENT`` is the one construct in this schema with NO portable
+#: spelling, so it is the one that forces a dialect branch. Measured on both
+#: engines 2026-07-31:
+#:
+#:     INTEGER PRIMARY KEY AUTOINCREMENT   sqlite OK    postgres SYNTAX ERROR
+#:     INTEGER PRIMARY KEY                 sqlite OK    postgres NotNullViolation
+#:     GENERATED ALWAYS AS IDENTITY        sqlite ERROR postgres OK
+#:
+#: THE MIDDLE ROW IS THE TRAP, and it is what a careless port reaches for: it
+#: PARSES on both engines and fails only at INSERT, because PostgreSQL does not
+#: auto-assign a plain ``INTEGER PRIMARY KEY`` the way SQLite's rowid alias
+#: does. DDL-time success, runtime failure. So the replacement below was
+#: verified by INSERTING a row and reading the generated id back, not merely by
+#: creating the table.
+_AUTOINCREMENT_RE = re.compile(
+    r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", re.IGNORECASE
+)
+_PG_IDENTITY = "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
+
+
+def to_dialect(statement: str, *, postgres: bool) -> str:
+    """Translate one SQLite-flavoured DDL statement for the target engine.
+
+    A no-op for SQLite, which is why the schema constants stay written in the
+    dialect the production store actually speaks today -- the translation is
+    applied at execution time, to the engine that needs it, rather than
+    rewriting the source of truth for a backend nothing runs yet.
+
+    Deliberately NOT a general SQL translator. It handles the constructs this
+    schema actually contains and measurement has shown to differ; anything
+    broader would be untested guesswork wearing the same name.
+    """
+    if not postgres:
+        return statement
+    return _AUTOINCREMENT_RE.sub(_PG_IDENTITY, statement)
+
 
 def _strip_comments(line: str) -> str:
     """Drop a trailing ``--`` comment, respecting single-quoted literals.
@@ -147,9 +183,12 @@ def execute_ddl(conn, script: str) -> int:
     which is the difference between "the guards are installed" and "the install
     call did not raise".
     """
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    postgres = _is_postgres(conn)
     statements = split_sql_script(script)
     for statement in statements:
-        conn.execute(statement)
+        conn.execute(to_dialect(statement, postgres=postgres))
     return len(statements)
 
 
