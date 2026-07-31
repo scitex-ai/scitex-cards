@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-08-01
+
+**The schema is now asserted once per store, not once per open.** Required
+before a fleet of ~90 agents can share one PostgreSQL store: at that width the
+old behaviour is not a slow path, it is a broken one.
+
+### Concurrent opens were deadlocking on the system catalogue (#714)
+
+`init_schema` ran its full DDL on **every connection**. On SQLite that was very
+nearly free. Against a shared PostgreSQL server it is DDL against the system
+catalogues, and `CREATE OR REPLACE FUNCTION` rewrites the `pg_proc` row every
+time — it is *not* a no-op when the definition already matches.
+
+Measured on the live store with the entire fleet **stopped** and only four host
+daemons connected — `pg_proc.xmin` sampled every 10s while idle:
+
+```
+t+10  all 9 trigger functions  5069 -> 5075
+t+20  all 9 trigger functions  5075 -> 5082
+t+30  all 9 trigger functions  5082 -> 5087
+```
+
+and concurrency did not survive it:
+
+```
+ 4 simultaneous open_db  ->  at least 1 deadlock
+12 simultaneous open_db  ->  11 of 12 FAILED, DeadlockDetected on pg_proc
+```
+
+Two clients replacing the same function at once contend on the catalogue and
+PostgreSQL resolves it by killing one. `init_schema`'s own comment already noted
+that "~90 containers call init_schema on every connection".
+
+The new gate in `_schema_current` skips the DDL when the store already has the
+shape this client would assert. **Conservative by construction:** every
+uncertain answer falls through to the full DDL, so the worst case is exactly the
+previous behaviour. The version must match, the physical rungs and the stamp
+must agree, and an unreadable catalogue is not a current schema.
+
+**The guard triggers are verified, not assumed.** They are the retirement
+enforcement *and* the proof-of-currency mechanism, so a client that skipped the
+DDL without confirming their presence could leave a store unguarded while
+believing it had guarded it. Presence is read from the catalogue on every open;
+only the *write* is skipped.
+
+| check | before | after |
+| --- | --- | --- |
+| fresh store gets all 9 guards | — | all 9 present |
+| functions rewritten per `open_db` | 9 of 9 | 0 of 9 |
+| 12 simultaneous `open_db` | 11 failed | 0 failed |
+| 24 simultaneous `open_db` | — | 0 failed |
+
+The fresh-store row is the positive control: it proves the gate does not skip
+*creation*, which is the dangerous direction.
+
 ## [0.30.2] - 2026-08-01
 
 **The board could not read a PostgreSQL store at all, and every DM write died
