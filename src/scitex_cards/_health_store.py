@@ -133,8 +133,9 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
             "ok": False,
             "detail": f"PostgreSQL store {target!r} did not open ({exc})",
             "hint": (
-                "check the server is reachable and the DSN is right "
-                "(`scitex-cards store resolve` shows what resolved). Do NOT "
+                "check the server is reachable and that $SCITEX_CARDS_DB names "
+                "the right database. NOTE `scitex-cards db path` does NOT help "
+                "here -- it resolves a filesystem path and refuses a DSN. Do NOT "
                 "point the store elsewhere to make this green -- a fresh empty "
                 "target becomes a SECOND store, which is how the board was "
                 f"destroyed on 2026-07-19. {type(exc).__name__}: {exc}"
