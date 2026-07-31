@@ -67,6 +67,14 @@ dev = [
     # a page that renders and is subtly wrong — the failure mode a floor exists
     # to prevent. Do not loosen it.
     "scitex_ui>=0.11.1",
+    # Same PS-210 reason as the web extras above, and caught by the same rule:
+    # the backend tests import psycopg UNGUARDED, so without it here a fresh
+    # `pip install -e .[dev]` collects them and errors rather than running the
+    # suite. Declaring the `postgres` extra without this made the capability
+    # installable but left the DEFAULT development install unable to exercise
+    # it -- which is the same "reachable in principle, unreachable in practice"
+    # gap the extra itself was added to close.
+    "psycopg[binary]>=3.1",
 ]
 docs = [
     "sphinx>=7.0",
@@ -89,6 +97,27 @@ mcp = [
     # this extra installed.
     "fastmcp>=2.0",
 ]
+postgres = [
+    # THE CAPABILITY ALREADY WORKS AND WAS NEVER DECLARED. `_backend_connect`
+    # reads a PostgreSQL store today -- verified against a real server
+    # (PostgreSQL 18.4, database scitex_cards): the same query string, with
+    # SQLite's `?` placeholders, returned the same 264 rows through both
+    # backends because `_store_url.to_paramstyle` translates in transit.
+    #
+    # It worked only because psycopg happened to be present in the
+    # environment where it was tried. Nothing in the package asked for it, so
+    # a fresh `pip install scitex-cards` produces an install where the
+    # PostgreSQL path raises ImportError -- a capability that is real, tested,
+    # and unreachable by anyone who installs the package normally.
+    #
+    # `[binary]` bundles libpq rather than requiring system client libraries,
+    # so this extra installs on a bare machine without a PostgreSQL install.
+    #
+    # SQLite remains the zero-config default and is NOT moved behind an extra:
+    # the canonical store is SQLite, and a store you cannot open without an
+    # optional dependency is not a default.
+    "psycopg[binary]>=3.1",
+]
 currency = [
     # CURRENCY gate (operator directive: stale or broken installs ERROR, not
     # warn). `scitex_cards._currency.check_currency()` imports
@@ -99,7 +128,11 @@ currency = [
     "scitex-dev>=0.34.0",
 ]
 all = [
-    "scitex-cards[dev,docs,mcp,web,currency]",
+    # `postgres` is included deliberately: CI installs `.[all,dev]`, so this is
+    # what lets the PostgreSQL backend be EXERCISED rather than merely compiled.
+    # A backend nothing in CI can reach is a backend whose regressions are found
+    # by users.
+    "scitex-cards[dev,docs,mcp,web,currency,postgres]",
 ]
 
 # BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy
