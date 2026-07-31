@@ -67,6 +67,14 @@ dev = [
     # a page that renders and is subtly wrong — the failure mode a floor exists
     # to prevent. Do not loosen it.
     "scitex_ui>=0.11.1",
+    # Same PS-210 reason as the web extras above, and caught by the same rule:
+    # the backend tests import psycopg UNGUARDED, so without it here a fresh
+    # `pip install -e .[dev]` collects them and errors rather than running the
+    # suite. Declaring the `postgres` extra without this made the capability
+    # installable but left the DEFAULT development install unable to exercise
+    # it -- which is the same "reachable in principle, unreachable in practice"
+    # gap the extra itself was added to close.
+    "psycopg[binary]>=3.1",
 ]
 docs = [
     "sphinx>=7.0",
