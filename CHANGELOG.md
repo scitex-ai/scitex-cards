@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+## [0.31.5] - 2026-08-02
+
+**Schema v8, and an instrument for the delivery lag that had the bug it was
+built to find.**
+
+`notifications` gains `msg_id`, `pushed_at` and `confirmed_at` — the three
+columns the SQLite sidecar gained and the store's own table never did. The table
+already existed on the fresh-create path with the right shape and index, and was
+vestigial (0 rows on the live store), so the notification rail can move *into*
+the store rather than into a parallel table. The columns live in one list used
+by both the fresh-create script and the migration, and a test asserts both paths
+produce identical shape — a fresh store disagreeing with a migrated one is this
+repo's own recorded v4 failure, and it stayed invisible because the stamp was
+right.
+
+The **`queued`** lamp on the DM gauge now computes. It rendered *"not observable
+yet (the notification carries no message id)"* while 205 of 1517 DM
+notifications carried one — the plumbing had landed and the reader was never
+updated, its docstring still citing the obsolete limitation. Computed from the
+exact `dm_messages.id → inbox.msg_id` join, and three-valued: `None` means the
+inbox could not be *read*, never "not queued". Collapsing those would render a
+dropped notification as delivered, which is the failure the gauge exists to
+detect.
+
+**Channel tick timing.** DMs reach an agent 13–25 s after they are written,
+against a 5 s interval. Nine candidates were eliminated by direct measurement —
+the wrong daemon, the mtime drain gate, the burst cap, PostgreSQL write latency,
+the drain work, an overridden interval, MCP transport backpressure (an *idle*
+session measured slower), SQLite write-lock contention, and PostgreSQL
+advisory-lock contention. Every component measured fast and the composite stayed
+slow, which is the shape outside observation cannot resolve. The loop now
+records `drain_s`, `gap_s` and `unexplained_s = gap − prev_drain − interval` —
+time spent neither working nor sleeping.
+
+The first version of that instrument subtracted the *current* tick's drain
+rather than the previous one. Invisible when drain times are equal; when they
+vary the residual absorbs the difference and still reads as an unowned wait.
+Measured, a slow tick followed by a fast one reported **0.302 s** of fiction
+where the truth was **0.001 s** — the same magnitude as the lag being hunted.
+Fixed before any reading was believed.
+
+The invariant it checks is the **sign**, not the identity: `gap == drain +
+interval + unexplained` is tautological and would be a gate that cannot fail. A
+loop cannot return before its own sleep, so a residual negative beyond clock
+jitter means a term is mismeasured. Reported at WARNING, never asserted — a bare
+assert in a long-lived delivery loop kills the task and stops the delivery it
+measures.
+
+Also documents the twelve SQLite→PostgreSQL hazards measured during the store
+migration, nine of which produced no error at all.
+
 ## [0.31.4] - 2026-08-02
 
 **The doctor names the engine on both rails, and fails when they differ.**
