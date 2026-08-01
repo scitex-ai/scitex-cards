@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.31.3] - 2026-08-02
+
+**The SQLite inbox used SQL that old SQLite cannot parse, so no notification
+was ever delivered on the host.**
+
+`_inbox_sqlite.enqueue` spelled its null-safe comparisons
+`IS NOT DISTINCT FROM` — standard SQL, and exactly what SQLite's `IS` means.
+SQLite only accepts that spelling from **3.39** (2022-06). The host runs
+**3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
+
+`_threads_mirror.dispatch_to_inbox` is deliberately fail-soft — the message is
+already committed, so a failed enqueue should cost a push, not a message. That
+turned a hard SQL error into silence: DMs landed in `dm_messages`, no
+notification row was ever written, and the board reported success. Measured on
+the live store — an operator DM sat in the store and never reached the agent's
+session.
+
+It stayed hidden because the failure is **environment-dependent**. Containers
+run SQLite 3.45.1 and parse the standard spelling happily, so agent-to-agent
+DMs delivered normally while board-originated ones vanished. CI ran a new
+SQLite too, so a behavioural test was green no matter which spelling the source
+used — it pinned the SQLite version, not the SQL.
+
+Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
+needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
+standard spelling, which is correct there.
+
+**This reverses a deliberate decision from 0.31.2**, and the reasoning behind
+that decision was sound apart from one premise. It chose the standard spelling
+so the module's SQL would survive a later move to PostgreSQL, and pinned
+SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+measured 3.37.2 — and it was never ours to enforce, since the package controls
+neither the CI images nor the host's system python. A requirement the package
+cannot enforce is a hope, not a floor. The premise does not hold either:
+`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
+backend module, exactly as the YAML and SQLite backends are separate today.
+
+What that decision got right is kept: rewriting the comparison to `=` parses on
+both engines and then silently stops deduplicating, because `actor = NULL` is
+never true. That trap is still pinned by a positive-control test.
+
+The regression test reads the statements the module actually hands to
+`execute()` via AST and fails on the non-portable spelling regardless of the
+local SQLite version. It deliberately does not scan the file for a substring:
+the module now discusses `IS NOT DISTINCT FROM` by name, and a substring scan
+would match that prose and fail forever.
+
 ## [0.31.2] - 2026-08-01
 
 **Completing a blocked card clears its gate.** (#723)

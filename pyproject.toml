@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # package is `scitex_cards`; `scitex_todo` ships as a deprecated re-export
 # shim for one transition window so un-cutover consumers keep working.
 name = "scitex-cards"
-version = "0.31.2"
+version = "0.31.3"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"

@@ -246,8 +246,21 @@ def enqueue(
 
     Builds ``{id, event_type, card_id, body, actor, ts, seen: False}`` and
     inserts it for ``recipient_id``. Dedups on ``(event_type, card_id, ts,
-    actor)`` (NULL-safe via ``IS NOT DISTINCT FROM`` so ``actor=None`` dedups
-    correctly). When ``supersede`` is set, every EXISTING UNSEEN row matching
+    actor)``, NULL-safe via SQLite's ``IS`` so ``actor=None`` dedups correctly.
+
+    ``IS`` — NOT the standard-SQL ``IS NOT DISTINCT FROM`` that means the same
+    thing. SQLite only learned that spelling in 3.39 (2022-06), so on any older
+    library EVERY enqueue here raises ``near "DISTINCT": syntax error`` and the
+    fail-soft caller swallows it: messages commit to the store and NO
+    notification is ever delivered. Measured on the live host (SQLite 3.37.2),
+    which is why the operator's DM reached ``dm_messages`` and never reached the
+    agent. CI ran a newer SQLite and parsed it happily, so the version floor —
+    not the SQL — was the thing under test. ``IS`` is null-safe in every SQLite
+    that ships this module, so it needs no floor at all. This file is the
+    SQLite backend; the PostgreSQL side (``_pg_triggers``) keeps the standard
+    spelling, which is correct THERE.
+
+    When ``supersede`` is set, every EXISTING UNSEEN row matching
     both ``event_type`` AND ``card_id`` is deleted BEFORE the dedup/insert, so
     at most one pending digest per recipient survives (SEEN history is kept).
     Returns the enqueued record, or ``None`` for a falsy recipient / a deduped
@@ -265,8 +278,8 @@ def enqueue(
         if supersede:
             conn.execute(
                 "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
-                "AND event_type IS NOT DISTINCT FROM ? "
-                "AND card_id IS NOT DISTINCT FROM ?",
+                "AND event_type IS ? "
+                "AND card_id IS ?",
                 (recipient_id, event_type, card_id),
             )
         if msg_id:
@@ -278,17 +291,16 @@ def enqueue(
             # never delivered. `msg_id` makes the key exact, which is a
             # correctness fix in its own right, not just plumbing.
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? "
-                "AND msg_id IS NOT DISTINCT FROM ? LIMIT 1",
+                "SELECT 1 FROM inbox WHERE recipient = ? AND msg_id IS ? LIMIT 1",
                 (recipient_id, msg_id),
             ).fetchone()
         else:
             dup = conn.execute(
                 "SELECT 1 FROM inbox WHERE recipient = ? "
-                "AND event_type IS NOT DISTINCT FROM ? "
-                "AND card_id IS NOT DISTINCT FROM ? "
-                "AND ts IS NOT DISTINCT FROM ? "
-                "AND actor IS NOT DISTINCT FROM ? LIMIT 1",
+                "AND event_type IS ? "
+                "AND card_id IS ? "
+                "AND ts IS ? "
+                "AND actor IS ? LIMIT 1",
                 (recipient_id, event_type, card_id, timestamp, actor),
             ).fetchone()
         if dup is not None:
