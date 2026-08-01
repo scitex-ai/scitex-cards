@@ -286,6 +286,34 @@ class TestATargetSupersetIsSuccess:
         assert result.complete
 
 
+#: Postgres spelling of the target table. The test CREATES IT rather than
+#: assuming it, because assuming was measurably wrong: this test passed locally
+#: against a store that already had the schema, and failed the moment CI ran it
+#: on a fresh postgres:16 with `relation "notifications" does not exist`. A test
+#: that depends on ambient state in a shared database is not testing the carry,
+#: it is testing whose database it happened to run against.
+#:
+#: Safe inside the rolled-back transaction below because PostgreSQL DDL is
+#: transactional: on a fresh server the table is created and then vanishes with
+#: the rollback; on a populated one IF NOT EXISTS makes it a no-op.
+_PG_NOTIFICATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    recipient_id TEXT,
+    event_type TEXT,
+    card_id TEXT,
+    body TEXT,
+    actor TEXT,
+    ts TEXT,
+    seen BIGINT,
+    record_json TEXT,
+    msg_id TEXT,
+    pushed_at TEXT,
+    confirmed_at TEXT
+)
+"""
+
+
 class TestAgainstRealPostgres:
     """The SQLite stand-in shares a dialect quirk with the real target or it
     does not -- and only the real server can settle that."""
@@ -300,12 +328,37 @@ class TestAgainstRealPostgres:
         # Act
         try:
             with pg_conn.transaction(force_rollback=True):
+                pg_conn.execute(_PG_NOTIFICATIONS_DDL)
                 written = carry_rows(rows, pg_conn, placeholder="%s")
         finally:
             src.close()
 
         # Assert
         assert written == 2
+
+    def test_the_carried_rows_are_readable_back_on_postgres(self, pg_conn):
+        """Writing without reading back proves the statement PARSED, not that it
+        stored anything a later drain could find."""
+        # Arrange
+        src = sqlite3.connect(":memory:")
+        src.execute(_INBOX_DDL)
+        _seed(src, 3, recipient="carry-test-agent")
+        rows = read_source_rows(src)
+
+        # Act
+        try:
+            with pg_conn.transaction(force_rollback=True):
+                pg_conn.execute(_PG_NOTIFICATIONS_DDL)
+                carry_rows(rows, pg_conn, placeholder="%s")
+                found = pg_conn.execute(
+                    "SELECT count(*) FROM notifications WHERE recipient_id = %s",
+                    ("carry-test-agent",),
+                ).fetchone()[0]
+        finally:
+            src.close()
+
+        # Assert
+        assert found == 3
 
 
 # EOF
