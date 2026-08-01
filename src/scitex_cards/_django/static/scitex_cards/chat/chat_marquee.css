@@ -1,0 +1,71 @@
+/* Drag-rectangle selection and the keyboard cursor.
+ *
+ * Its own file rather than more inline <style> in chat.html: the template is
+ * already the largest file in this feature and every other chat behaviour
+ * ships as a module under static/scitex_cards/chat/.
+ *
+ * Colours come from the page's existing custom properties, so this follows the
+ * theme instead of hard-coding a palette. Dark is the default here and the
+ * operator's eyes are sensitive, which is why the rectangle is a thin accent
+ * outline over a barely-there wash rather than a bright filled box.
+ */
+
+/* The rubber-band rectangle. position:fixed because it is painted in viewport
+ * coordinates; pointer-events:none so it can never swallow the pointerup that
+ * ends the very drag drawing it. */
+#marquee-box {
+  position: fixed;
+  display: none;
+  z-index: 30;
+  pointer-events: none;
+  border: 1px solid var(--accent-2, #7aa2f7);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-2, #7aa2f7) 12%, transparent);
+}
+
+#marquee-box.open {
+  display: block;
+}
+
+/* Only while a rectangle is actually being dragged. Outside this class the
+ * thread keeps normal text selection, which is the operator's requirement 2:
+ * a drag that STARTS on message text must still select that text. */
+#messages.marquee-dragging {
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#messages.marquee-dragging .bubble {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---- keyboard ---- */
+
+/* The thread is one tab stop, so it has to show when it holds focus —
+ * otherwise the arrow keys appear to do nothing for no visible reason. */
+#messages:focus-visible {
+  outline: 2px solid var(--accent, #7aa2f7);
+  outline-offset: -2px;
+}
+
+/* The keyboard cursor: where the arrows are, which is NOT the same as being
+ * selected. A dashed edge reads as "here" while the solid accent outline of
+ * .selected keeps meaning "taken", so the two can be shown at once without
+ * either being mistaken for the other. */
+#messages .msg.cursor .bubble {
+  outline: 2px dashed var(--accent, #7aa2f7);
+  outline-offset: 1px;
+}
+
+/* Selected AND under the cursor: selection wins the fill, the cursor keeps its
+ * dashed edge offset outside it so both remain legible. */
+#messages .msg.cursor.selected .bubble {
+  outline: 2px dashed var(--accent, #7aa2f7);
+  outline-offset: 3px;
+}
+
+/* Motion-reduced users get no animated affordances here by design — there is
+ * nothing to disable, and adding a transition would only create something to
+ * turn off. */

@@ -41,12 +41,27 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Optional
+
+#: Actor stamped on an UNATTENDED reconcile — a cron run with no ambient
+#: identity. This closes a card because a pull request merged, not because a
+#: person decided anything, so naming the reconciler is more truthful than
+#: borrowing whichever agent happened to export SCITEX_TODO_AGENT_ID.
+#:
+#: Measured 2026-08-01: the */15 cron entry runs with no identity in its
+#: environment, so every close raised "creator unresolved" and the job closed
+#: nothing. It had been failing earlier at store-open, which hid this.
+#:
+#: This does NOT weaken _store._resolve_creator_or_raise, which still refuses
+#: to invent an author for an ordinary caller. The reconciler is entitled to
+#: this default because it KNOWS who it is; an anonymous caller does not.
+SYSTEM_ACTOR: str = "reconcile-merged-prs"
 
 # Statuses we consider "open work that may have merged". A card outside
 # this set (done / deferred / failed / cancelled / goal) is never
@@ -263,7 +278,6 @@ def default_merge_state_fn(pr_url: str) -> str:
     parse / network / subprocess failure resolves to ``"unknown"`` — never a
     wrong "merged".
     """
-    import os
 
     ref = parse_pr_url(pr_url)
     if ref is None:
@@ -346,6 +360,15 @@ def reconcile_merged_prs(
     """
     from ._model import load_tasks
     from ._paths import resolve_tasks_path
+    from ._store import ENV_AGENT
+
+    # PRECEDENCE, widened only at the end: an explicit `by` wins, then an
+    # ambient $SCITEX_TODO_AGENT_ID, and only when NEITHER exists do we stamp
+    # the reconciler itself. Previously that last case raised, so an unattended
+    # cron run closed nothing; this adds a floor without changing either of the
+    # two cases that already worked.
+    if not by and not os.environ.get(ENV_AGENT):
+        by = SYSTEM_ACTOR
 
     resolved = resolve_tasks_path(store)
     result = ReconcileResult(applied=apply)

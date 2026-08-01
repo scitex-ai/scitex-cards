@@ -421,10 +421,26 @@ def test_schema_version_constant_is_at_least_the_payload_revision():
 # every index, exactly as v1 had them — and no dependency on any ALTER at all. The
 # fixture is a v1 DB because it was BUILT AS ONE, deterministically, on every SQLite.
 def _v1_schema_sql() -> str:
-    """Today's schema text, minus the single column v2 introduced."""
-    return _db._SCHEMA_SQL.replace(
-        "    row_order      INTEGER,\n    card_json      TEXT\n",
-        "    row_order      INTEGER\n",
+    """Today's schema text, minus every column added after v1.
+
+    Derived by DROPPING NAMED LINES rather than by matching a multi-line block
+    that happened to end the ``tasks`` table. The old form matched
+    ``row_order ...,\\n    card_json ...\\n`` — which silently stopped matching
+    the moment v6 appended ``revision`` after ``card_json``. The replace became
+    a no-op and the fixture quietly carried the very column it exists to omit,
+    so a test named "the v1 fixture omits the v2 column" was the thing that
+    caught it. A fixture coupled to which column happens to be LAST is a fixture
+    that breaks on every future column.
+    """
+    kept = [
+        line
+        for line in _db._SCHEMA_SQL.splitlines(keepends=True)
+        if not line.strip().startswith(("card_json", "revision"))
+    ]
+    sql = "".join(kept)
+    # Whatever column now ends the tasks table must not keep a trailing comma.
+    return sql.replace(
+        "    row_order      INTEGER,\n);", "    row_order      INTEGER\n);"
     )
 
 

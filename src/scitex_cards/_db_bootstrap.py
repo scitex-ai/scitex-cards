@@ -169,10 +169,33 @@ def _insert_tasks(
     """
     counts = {"tasks": 0, "comments": 0, "edges": 0, "roles": 0}
     placeholders = ", ".join("?" for _ in TASK_INSERT_COLS)
-    verb = "INSERT OR REPLACE" if replace else "INSERT"
-    insert_sql = (
-        f"{verb} INTO tasks ({', '.join(TASK_INSERT_COLS)}) VALUES ({placeholders})"
-    )
+    cols = ", ".join(TASK_INSERT_COLS)
+    if replace:
+        # ON CONFLICT DO UPDATE, not INSERT OR REPLACE. Three reasons, and the
+        # first is the one that changes behaviour:
+        #
+        # 1. REPLACE is DELETE + INSERT, so it fires DELETE and INSERT triggers
+        #    and NOT the AFTER UPDATE ones. v7's `tasks_bump_revision` is an
+        #    AFTER UPDATE trigger, which means the revision lock has been INERT
+        #    for every upsert taking this path. A true UPDATE fires it.
+        # 2. INSERT OR REPLACE is SQLite-only syntax; ON CONFLICT parses on both
+        #    engines, which is what lets this path reach PostgreSQL at all.
+        # 3. It should also be FASTER, not slower. The 42x measured against
+        #    REPLACE was the DELETE half dragging the whole ON DELETE CASCADE
+        #    machinery through `task_comments` / `task_edges` / `task_roles` for
+        #    every row. An UPDATE touches no child table.
+        #
+        # `id` is the conflict target because that is the invariant the
+        # de-duplication above already enforces: one row per card id.
+        updates = ", ".join(
+            f"{c} = excluded.{c}" for c in TASK_INSERT_COLS if c != "id"
+        )
+        insert_sql = (
+            f"INSERT INTO tasks ({cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT(id) DO UPDATE SET {updates}"
+        )
+    else:
+        insert_sql = f"INSERT INTO tasks ({cols}) VALUES ({placeholders})"
     for order, row in _dedupe_last_wins(tasks):
         values = [row.get(ykey) for _, ykey in _TASK_SCALAR_COLS]
         values.append(_json_or_none(row.get("deadlines")))
@@ -224,8 +247,12 @@ def _insert_edges(conn, task_id, row) -> int:
             if not (isinstance(dst, str) and dst):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO task_edges"
-                "(src_task_id, dst_task_id, edge_type) VALUES (?, ?, ?)",
+                # DO NOTHING: all three columns ARE the primary key, so a
+                # conflicting row is byte-identical and there is nothing to
+                # update. (REPLACE here was DELETE+INSERT of an identical row.)
+                "INSERT INTO task_edges"
+                "(src_task_id, dst_task_id, edge_type) VALUES (?, ?, ?)"
+                " ON CONFLICT DO NOTHING",
                 (task_id, dst, edge_type),
             )
             n += 1
@@ -242,8 +269,10 @@ def _insert_roles(conn, task_id, row) -> int:
             if not (isinstance(who, str) and who):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO task_roles(task_id, who, role) "
-                "VALUES (?, ?, ?)",
+                # Same shape as task_edges: the three columns are the whole
+                # primary key, so a conflict has nothing left to write.
+                "INSERT INTO task_roles(task_id, who, role) "
+                "VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                 (task_id, who, role),
             )
             n += 1

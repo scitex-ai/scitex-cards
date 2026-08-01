@@ -171,18 +171,41 @@ class TestCadence:
 
 
 class TestSweepIsFailSoft:
-    def test_malformed_store_is_swallowed_by_the_guard(self, tmp_path):
+    def test_a_clean_sweep_reports_no_fault(self, tmp_path):
         # Arrange
-        # REAL failure: the store is not parseable, so load_tasks
-        # raises inside the sweep. The guard must swallow it (the delivery
-        # pass follows), returning normally instead of propagating.
+        # the readable-store baseline. Without it the fault test
+        # below could pass on a sweep that reports a fault unconditionally.
         store = tmp_path / "tasks.yaml"
-        store.write_text("{{{ not yaml", encoding="utf-8")
         # Act
         outcome = _run_stale_nudge_sweep(store=store, now=T0)
         # Assert
-        # it returned rather than raising out of the loop's tick.
         assert outcome is None
+
+    def test_an_unreadable_store_is_swallowed_rather_than_raised(
+        self, tmp_path, monkeypatch
+    ):
+        # Arrange
+        # REAL failure: the canonical database does not exist, so
+        # `_read_canonical_db_or_raise` refuses and load_tasks raises inside
+        # the sweep. The guard must swallow it — the delivery pass follows.
+        monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+        # Act
+        outcome = _run_stale_nudge_sweep(store=tmp_path / "tasks.yaml", now=T0)
+        # Assert
+        # it RETURNED (did not propagate out of the loop's tick).
+        assert outcome is not None
+
+    def test_the_swallowed_fault_is_reported_back_for_counting(
+        self, tmp_path, monkeypatch
+    ):
+        # Arrange
+        # swallowing is right; swallowing SILENTLY is the 2026-07-28
+        # outage. The guard hands the fault back so the tick can count it.
+        monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+        # Act
+        outcome = _run_stale_nudge_sweep(store=tmp_path / "tasks.yaml", now=T0)
+        # Assert
+        assert outcome.startswith("liveness_sweep: ")
 
 
 class TestNotifydLoop:

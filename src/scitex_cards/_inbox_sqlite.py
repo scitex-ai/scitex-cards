@@ -99,6 +99,32 @@ def open_connection(path: Optional[Path] = None):
         conn.close()
 
 
+def _ensure_msg_id(conn: sqlite3.Connection) -> None:
+    """Add ``inbox.msg_id`` if this DB predates it. Idempotent + race-safe.
+
+    ~21 agents share one ``todo.db``, so two can reach the ``ALTER`` at the
+    same instant and the loser sees ``duplicate column name``. That is the
+    winner having done our job, not a failure — swallowing anything broader
+    would let a real schema fault masquerade as a race.
+
+    Nullable on purpose. A row enqueued before the id was carried has no
+    message id, and "no message id" is the true answer for it; a backfill
+    would have to invent one from the lossy ``(card_id, ts, actor)`` join that
+    ``_dm_receipt_state`` measured collapsing two distinct messages into one.
+    """
+    try:
+        have = {row[1] for row in conn.execute("PRAGMA table_info(inbox)")}
+    except sqlite3.Error:
+        return
+    if not have or "msg_id" in have:
+        return
+    try:
+        conn.execute("ALTER TABLE inbox ADD COLUMN msg_id TEXT")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the ``inbox`` table + its indexes idempotently.
 
@@ -119,10 +145,12 @@ def init_schema(conn: sqlite3.Connection) -> None:
             body TEXT,
             actor TEXT,
             ts TEXT,
-            seen INTEGER NOT NULL DEFAULT 0
+            seen INTEGER NOT NULL DEFAULT 0,
+            msg_id TEXT
         )
         """
     )
+    _ensure_msg_id(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_inbox_recipient_seen ON inbox(recipient, seen)"
     )
@@ -157,6 +185,10 @@ def _row_to_record(row: sqlite3.Row) -> dict:
         "actor": row["actor"],
         "ts": row["ts"],
         "seen": bool(row["seen"]),
+        # ALWAYS present, None when this row predates the column or carries no
+        # message (a card event, a digest). An absent key is how a consumer
+        # reads `undefined`, renders nothing, and looks like it worked.
+        "msg_id": row["msg_id"] if "msg_id" in row.keys() else None,
     }
 
 
@@ -207,14 +239,28 @@ def enqueue(
     actor: str | None,
     ts: str | None = None,
     supersede: bool = False,
+    msg_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """SQLite twin of :func:`scitex_cards._inbox.enqueue` — same contract.
 
     Builds ``{id, event_type, card_id, body, actor, ts, seen: False}`` and
     inserts it for ``recipient_id``. Dedups on ``(event_type, card_id, ts,
-    actor)`` (NULL-safe via the ``IS`` operator so ``actor=None`` dedups
-    correctly). When ``supersede`` is set, every EXISTING UNSEEN row matching
+    actor)``, NULL-safe via SQLite's ``IS`` so ``actor=None`` dedups correctly.
+
+    ``IS`` — NOT the standard-SQL ``IS NOT DISTINCT FROM`` that means the same
+    thing. SQLite only learned that spelling in 3.39 (2022-06), so on any older
+    library EVERY enqueue here raises ``near "DISTINCT": syntax error`` and the
+    fail-soft caller swallows it: messages commit to the store and NO
+    notification is ever delivered. Measured on the live host (SQLite 3.37.2),
+    which is why the operator's DM reached ``dm_messages`` and never reached the
+    agent. CI ran a newer SQLite and parsed it happily, so the version floor —
+    not the SQL — was the thing under test. ``IS`` is null-safe in every SQLite
+    that ships this module, so it needs no floor at all. This file is the
+    SQLite backend; the PostgreSQL side (``_pg_triggers``) keeps the standard
+    spelling, which is correct THERE.
+
+    When ``supersede`` is set, every EXISTING UNSEEN row matching
     both ``event_type`` AND ``card_id`` is deleted BEFORE the dedup/insert, so
     at most one pending digest per recipient survives (SEEN history is kept).
     Returns the enqueued record, or ``None`` for a falsy recipient / a deduped
@@ -232,14 +278,31 @@ def enqueue(
         if supersede:
             conn.execute(
                 "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
-                "AND event_type IS ? AND card_id IS ?",
+                "AND event_type IS ? "
+                "AND card_id IS ?",
                 (recipient_id, event_type, card_id),
             )
-        dup = conn.execute(
-            "SELECT 1 FROM inbox WHERE recipient = ? AND event_type IS ? "
-            "AND card_id IS ? AND ts IS ? AND actor IS ? LIMIT 1",
-            (recipient_id, event_type, card_id, timestamp, actor),
-        ).fetchone()
+        if msg_id:
+            # EXACT dedupe when the producer told us which message this is.
+            # The tuple below is the ONLY key available without it, and DM
+            # timestamps are second-resolution, so that key is many-to-one BY
+            # CONSTRUCTION — measured on the live store, two distinct durable
+            # messages collapsed onto one notification and the second was
+            # never delivered. `msg_id` makes the key exact, which is a
+            # correctness fix in its own right, not just plumbing.
+            dup = conn.execute(
+                "SELECT 1 FROM inbox WHERE recipient = ? AND msg_id IS ? LIMIT 1",
+                (recipient_id, msg_id),
+            ).fetchone()
+        else:
+            dup = conn.execute(
+                "SELECT 1 FROM inbox WHERE recipient = ? "
+                "AND event_type IS ? "
+                "AND card_id IS ? "
+                "AND ts IS ? "
+                "AND actor IS ? LIMIT 1",
+                (recipient_id, event_type, card_id, timestamp, actor),
+            ).fetchone()
         if dup is not None:
             conn.commit()  # persist a supersede-only pass even when deduped
             return None
@@ -251,10 +314,11 @@ def enqueue(
             "actor": actor,
             "ts": timestamp,
             "seen": False,
+            "msg_id": msg_id,
         }
         conn.execute(
             "INSERT INTO inbox(id, recipient, event_type, card_id, body, "
-            "actor, ts, seen) VALUES(?, ?, ?, ?, ?, ?, ?, 0)",
+            "actor, ts, seen, msg_id) VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?)",
             (
                 record["id"],
                 recipient_id,
@@ -263,6 +327,7 @@ def enqueue(
                 body,
                 actor,
                 timestamp,
+                msg_id,
             ),
         )
         conn.commit()
@@ -376,122 +441,21 @@ def ack(
 # --------------------------------------------------------------------------- #
 # Migration: legacy embedded inboxes: section -> SQLite                       #
 # --------------------------------------------------------------------------- #
-def gather_migratable_inboxes(store: str | Path | None) -> dict[str, list]:
-    """Read + merge every pre-existing file-backed inbox source, per recipient.
-
-    Two sources so a store carries over regardless of which one an operator
-    was using: the pre-cutover LEGACY embedded ``inboxes:`` section, and the
-    break-glass ``inboxes.json`` sidecar. Read-only. Shared by
-    :func:`_migrate_into_conn` and the CLI's ``--dry-run`` preview.
-    """
-    from ._inbox import (
-        _INBOXES_FILENAME,
-        _load_inboxes_section,
-        _read_legacy_embedded_inboxes,
-        _resolved_store,
-    )
-
-    path = _resolved_store(store)
-    inboxes: dict[str, list] = {}
-    for recipient_id, records in _read_legacy_embedded_inboxes(path).items():
-        inboxes.setdefault(recipient_id, []).extend(records)
-    breakglass_path = path.parent / _INBOXES_FILENAME
-    for recipient_id, records in _load_inboxes_section(breakglass_path).items():
-        inboxes.setdefault(recipient_id, []).extend(records)
-    return inboxes
-
-
-def _migrate_into_conn(conn: sqlite3.Connection, store: str | Path | None) -> dict:
-    """Copy pre-existing file-backed inbox records into ``conn``'s ``inbox`` table.
-
-    The shared body of :func:`migrate_to_sqlite` (explicit CLI verb) and the
-    lazy :func:`_ensure_ready` guard. Dedups on the notification ``id``
-    PRIMARY KEY (``INSERT OR IGNORE``) so it is idempotent, copies BOTH seen +
-    unseen for fidelity, and NEVER touches either source document
-    (reversible). Assumes the schema already exists (caller ran
-    :func:`init_schema`); does NOT commit — the caller owns the transaction.
-    Returns ``{recipients, records, inserted, skipped}``.
-    """
-    inboxes = gather_migratable_inboxes(store)
-    stats = {"recipients": 0, "records": 0, "inserted": 0, "skipped": 0}
-    for recipient_id, records in inboxes.items():
-        if not recipient_id or not isinstance(records, list):
-            continue
-        stats["recipients"] += 1
-        for rec in records:
-            if not isinstance(rec, dict):
-                continue
-            nid = rec.get("id")
-            if not nid:
-                # A record with no stable id cannot be deduped on re-run;
-                # skip it rather than risk a duplicate on the next pass.
-                logger.warning(
-                    "[scitex-todo._inbox_sqlite] skipping id-less inbox "
-                    "record for %r during migration",
-                    recipient_id,
-                )
-                stats["skipped"] += 1
-                continue
-            stats["records"] += 1
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO inbox(id, recipient, event_type, "
-                "card_id, body, actor, ts, seen) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    nid,
-                    recipient_id,
-                    rec.get("event_type"),
-                    rec.get("card_id"),
-                    rec.get("body"),
-                    rec.get("actor"),
-                    rec.get("ts"),
-                    1 if rec.get("seen") else 0,
-                ),
-            )
-            if cur.rowcount:
-                stats["inserted"] += 1
-            else:
-                stats["skipped"] += 1
-    return stats
-
-
-def migrate_to_sqlite(store: str | Path | None = None) -> dict:
-    """Copy the legacy embedded ``inboxes:`` records into the SQLite inbox DB.
-
-    Idempotent + reversible: dedups on notification ``id`` (``INSERT OR
-    IGNORE`` on the ``id`` PK) so a re-run inserts nothing new, and NEVER
-    touches the legacy document (a rollback keeps working). All records are
-    copied (seen + unseen) for fidelity. Returns a stats dict
-    ``{recipients, records, inserted, skipped}``; also sets the
-    ``migrated_from_yaml`` flag so a later lazy access treats the DB as
-    already migrated (this verb and the lazy guard share the same flag).
-    """
-    from ._inbox import _utc_now_iso
-
-    with open_connection(inbox_db_path(store)) as conn:
-        init_schema(conn)
-        stats = _migrate_into_conn(conn, store)
-        conn.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
-            (_MIGRATED_FLAG, _utc_now_iso()),
-        )
-        conn.commit()
-    return stats
-
-
-def info(store: str | Path | None = None) -> dict[str, Any]:
-    """Return a small status dict for the CLI (``inbox info``-style)."""
-    db = inbox_db_path(store)
-    if not db.exists():
-        return {"path": str(db), "exists": False, "rows": 0, "unseen": 0}
-    with open_connection(db) as conn:
-        init_schema(conn)
-        rows = conn.execute("SELECT COUNT(*) AS n FROM inbox").fetchone()["n"]
-        unseen = conn.execute(
-            "SELECT COUNT(*) AS n FROM inbox WHERE seen = 0"
-        ).fetchone()["n"]
-    return {"path": str(db), "exists": True, "rows": rows, "unseen": unseen}
-
+# EXTRACTED to _inbox_migrate.py (this module had reached its size budget and
+# the msg_id column had nowhere to go). Re-exported rather than moved-and-
+# forgotten: `_ensure_ready` above calls `_migrate_into_conn`, the CLI imports
+# `migrate_to_sqlite` / `gather_migratable_inboxes` / `info` from HERE, and the
+# YAML-path tests import `_migrate_into_conn` by that name. A rename would have
+# been a silent break in four places for no gain.
+#
+# The seam is real: everything over there runs ONCE per store, ever, while
+# everything here runs on every poll, enqueue and ack.
+from ._inbox_migrate import (  # noqa: E402,F401
+    _migrate_into_conn,
+    gather_migratable_inboxes,
+    info,
+    migrate_to_sqlite,
+)
 
 __all__ = [
     "ENV_INBOX_DB",

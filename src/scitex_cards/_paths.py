@@ -68,9 +68,64 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     Resolution: an explicit path wins outright; otherwise the container is the
     ``tasks.yaml`` beside the resolved database (``$SCITEX_CARDS_DB``'s dir), so
     there is no separate, YAML-named identity variable.
+
+    A SERVER STORE HAS NO DIRECTORY, and that is the whole reason this function
+    stopped deriving from the database unconditionally. ``$SCITEX_CARDS_DB`` may
+    now name a PostgreSQL server, and ``resolve_db_path`` RAISES on one rather
+    than coerce it (``Path("postgresql://h/db")`` silently collapses to the
+    relative ``postgresql:/h/db``). Every caller here — the users/groups sidecar,
+    pidfiles, the delivery ledger, reminder state — wants a LOCAL directory, and
+    wants one just as much when the cards live on a server. Deriving it from the
+    store identity welded the two together, so pointing the fleet at PostgreSQL
+    made the whole query side raise before it ever opened a connection.
+
+    Measured 2026-07-31, the failure this removes::
+
+        SCITEX_CARDS_DB=postgresql:///scitex_cards  scitex-cards list-tasks
+        StoreTargetIsNotAPath: names a PostgreSQL server, not a file path
+
+    Card DATA never needed this path: :func:`scitex_cards._model.load_doc` calls
+    ``_read_canonical_db_or_raise()`` with NO argument and interpolates the path
+    into an error message only. So the two axes are genuinely independent, and
+    are now resolved independently:
+
+    - store IDENTITY — ``$SCITEX_CARDS_DB``; a path OR a server URL
+    - local state DIR — always a real directory, whatever the backend
+
+    On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
+    aware), the same ambient default a fresh install uses.
     """
+    from ._store_url import is_postgres_url
+
     if explicit is not None:
+        # An EXPLICIT server store gets the same answer as an ambient one.
+        # Without this the two branches disagreed: ambient returned the local
+        # root, while explicit fell through to Path(), which does not reject a
+        # DSN — it COLLAPSES it to a relative path
+        # (``postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards``). Callers
+        # then created that tree under their own CWD and wrote there.
+        #
+        # The failure was a silent SUCCESS, which is why it survived. Measured
+        # 2026-08-02: enqueue(store=<DSN>) returned a notification id and left a
+        # phantom store at ``<CWD>/postgresql:/…/runtime/todo.db``. Nothing
+        # raised, so the fail-soft caller logged nothing, and the notification
+        # was unreachable because nobody polls a directory named after a DSN.
+        #
+        # Every caller of this function wants a LOCAL directory (pidfiles, the
+        # delivery ledger, reminder state, the inbox sidecar) and wants one just
+        # as much when the cards live on a server — that is this function's
+        # stated contract above. So a DSN resolves to the local root here too,
+        # rather than raising: raising would break the board, which legitimately
+        # threads its store through to the inbox rail.
+        if is_postgres_url(str(explicit)):
+            return _user_root() / "tasks.yaml"
         return Path(explicit).expanduser()
+
+    from ._store_target import resolve_store_target
+
+    if is_postgres_url(resolve_store_target(None)):
+        return _user_root() / "tasks.yaml"
+
     from ._db import resolve_db_path
 
     return resolve_db_path(None).parent / "tasks.yaml"
@@ -102,6 +157,18 @@ def refuse_ambient_store_creation(
         When ``resolved`` does not exist and nothing named it.
     """
     from ._db import ENV_DB
+    from ._store_url import is_postgres_url
+
+    # A SERVER TARGET CANNOT BE MANUFACTURED BY A WRITE, so the question this
+    # guard asks does not arise. The hazard it exists for is filesystem-shaped:
+    # an ambiently-resolved PATH that does not exist gets CREATED, and the empty
+    # store then looks real to everything that reads it. Connecting to a
+    # PostgreSQL server creates no database — the server either has it or the
+    # connection fails loudly. Returning early is therefore not a relaxation;
+    # asking `Path(dsn).exists()` would be, because it is False for every DSN
+    # and would make this refuse every server write unconditionally.
+    if is_postgres_url(resolved):
+        return
 
     path = Path(resolved)
     if path.exists() or explicit is not None or os.environ.get(ENV_DB):
@@ -116,7 +183,7 @@ def refuse_ambient_store_creation(
         f"wrong: set ${ENV_DB} to the real database, or pass the path "
         f"explicitly.\n"
         f"If you genuinely want a NEW empty board here, create it deliberately "
-        f"first: `scitex-cards init-store` (or `scitex-cards db import`)."
+        f"first: `scitex-cards init-store`."
     )
 
 

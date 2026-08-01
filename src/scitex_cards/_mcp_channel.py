@@ -68,6 +68,14 @@ from ._channel_guard import (
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
 from ._channel_log_sink import install_channel_log_sink
 
+# Loop self-measurement, extracted so this module keeps ONE responsibility (the
+# channel server) and the timing invariant lives beside the numbers it guards.
+from ._channel_tick_timing import TickTimer, format_inconsistency, format_spans
+
+# The cursor advance is a RECEIPT now, not a claim of delivery — see
+# `_inbox_receipt` for what the MCP transport can and cannot tell us.
+from ._inbox_receipt import record_push
+
 logger = logging.getLogger(__name__)
 
 #: Env var overriding ``meta.source`` (the ``<- stodo`` render name)
@@ -160,12 +168,25 @@ async def drain_once(
     The seam that makes the receive→push path testable without a live MCP
     session. Drains EVERY key in :func:`recipient_keys` (the raw agent name
     AND its resolved user-id) so it always finds what the producer enqueued.
-    Reads UNSEEN records (``mark_seen=False`` — we ack ONLY after a successful
-    push so a push failure is retried next drain), builds the channel params,
-    awaits ``send(params)``, and on success ack's the record on the SAME key.
+    Reads UNSEEN records (``mark_seen=False`` — we record ONLY after a
+    successful push so a push failure is retried next drain), builds the channel
+    params, awaits ``send(params)``, and on success writes a PUSH RECEIPT on the
+    SAME key via :func:`scitex_cards._inbox_receipt.record_push`.
+
+    THE RECEIPT IS THE HONEST PART. ``await send(params)`` returning proves only
+    that our own stdout writer took the bytes: the push is a JSON-RPC
+    NOTIFICATION, which by spec has no reply, and Claude Code silently DISCARDS
+    a push from a server missing from its launch-line allowlist. This drain used
+    to ack there and call it delivered — which destroyed weeks of operator DMs
+    with every health check green (2026-07-29). It now advances the cursor and
+    stamps ``pushed_at`` in ONE atomic write, leaving ``confirmed_at`` for the
+    recipient's own ``ack_notifications``, so an undelivered notification stays
+    VISIBLE to the ``delivery_confirmed`` health check instead of vanishing.
 
     Fail-soft per record: one bad push (``send`` raises) leaves THAT record
-    un-ack'd (retried next drain) and does not abort the rest of the batch.
+    un-ack'd (retried next drain) and does not abort the rest of the batch. A
+    receipt write that fails moves NEITHER the stamp nor the cursor, so that
+    record is likewise retried — the same bound the old ack-failure path had.
 
     Burst-guarded: at most ``MAX_PUSH_PER_DRAIN`` records are pushed per call,
     across ALL recipient keys combined; the rest stay unseen and drain on the
@@ -227,18 +248,29 @@ async def drain_once(
                     exc,
                 )
                 continue
-            # Ack ONLY after a successful send — a push failure stays unseen
-            # and is retried on the next drain. Ack on the SAME key it came
-            # from.
+            # Record the push ONLY after a successful send — a push failure
+            # stays unseen and is retried on the next drain. Recorded on the
+            # SAME key it came from.
+            #
+            # `record_push` is the old `_inbox.ack` plus the truth: it advances
+            # the cursor AND stamps `pushed_at` in one atomic UPDATE, so the row
+            # says "handed to the transport, confirmed by nobody" instead of
+            # silently claiming delivery. Confirmation is a separate stamp only
+            # the RECIPIENT can write (`ack_notifications`), because a JSON-RPC
+            # notification has no reply for us to wait on.
             rec_id = rec.get("id")
             if rec_id:
                 try:
                     await anyio.to_thread.run_sync(
-                        partial(_inbox.ack, key, [rec_id], store=store)
+                        partial(record_push, key, [rec_id], store=store)
                     )
-                except Exception as exc:  # noqa: BLE001 — ack failure shouldn't kill the loop
+                except Exception as exc:  # noqa: BLE001 — a receipt failure shouldn't kill the loop
                     logger.warning(
-                        "scitex-todo channel: ack of %s failed: %s", rec_id, exc
+                        "scitex-todo channel: recording the push of %s failed — "
+                        "the cursor did not move either, so it is retried next "
+                        "drain: %s",
+                        rec_id,
+                        exc,
                     )
             pushed += 1
     return pushed
@@ -270,11 +302,38 @@ async def _poll_loop(
     is long-lived and must survive transient store/IO errors.
     """
     state = _DrainState()
+    # TICK TIMING, because the outside view could not separate the causes.
+    #
+    # Measured 2026-08-02: DMs reach an agent 13-25s after they are written,
+    # against a 5s interval. SEVEN candidates were eliminated from outside —
+    # notifyd (wrong path), the mtime gate (fails safe, always drains), the
+    # burst cap, PostgreSQL write latency (0.4-0.6s), drain work (poll_inbox
+    # 0.02s), an overridden interval (the running code reads 5.0), and MCP
+    # transport backpressure (an idle session was SLOWER, 20s vs 13s). Every
+    # component measured fast and the composite stayed slow, which is precisely
+    # the shape that outside observation cannot resolve.
+    #
+    # So record the three spans the loop actually controls. `drain_s` is the
+    # work, `gap_s` is wall time since the previous tick STARTED — so
+    # `gap_s - drain_s - interval` is the time the loop spent neither working
+    # nor sleeping, which is the quantity none of the seven probes could see.
+    timer = TickTimer(interval)
     while True:
+        timer.start_tick()
         try:
             await gated_drain_once(agent_id, send, state, source=source)
         except Exception as exc:  # noqa: BLE001 — keep the long-lived loop alive
             logger.warning("scitex-todo channel: drain tick failed: %s", exc)
+        spans = timer.end_tick()
+        # REPORTED, NEVER RAISED — see _channel_tick_timing's docstring. A bare
+        # assert here raises OUTSIDE the try above and kills this long-lived
+        # task, stopping delivery outright.
+        if spans.is_inconsistent:
+            logger.warning("scitex-todo channel: %s", format_inconsistency(spans))
+        # DEBUG, not INFO: this fires every `interval` on every agent, so at
+        # INFO it would be ~17k lines a day per session for a diagnostic that
+        # is only wanted while something is wrong.
+        logger.debug("scitex-todo channel: %s", format_spans(spans))
         await asyncio.sleep(interval)
 
 
@@ -301,6 +360,15 @@ async def _serve(
     When omitted, a bare push-only server is created (the standalone
     ``mcp channel``). ``agent_id`` may be ``None`` (tools-only, no push) so the
     tools surface still works when no identity is configured.
+
+    The transport pair is wrapped by
+    :func:`scitex_cards._mcp_handshake_log.instrument_handshake` before the
+    session sees it, so WHEN ``initialize`` arrived and WHEN it was answered land
+    in an append-only sink that survives a restart. The wrap must sit here, at
+    the transport, because ``ServerSession`` answers ``initialize`` internally
+    and never yields it to the message loop below — and because a request that is
+    received and never answered has to be recorded on arrival to be recorded at
+    all. Disabled or unwritable, it hands the original streams straight back.
     """
     from contextlib import AsyncExitStack
 
@@ -320,8 +388,16 @@ async def _serve(
     from mcp.shared.message import SessionMessage
     from mcp.types import JSONRPCMessage, JSONRPCNotification
 
+    from ._mcp_handshake_log import instrument_handshake
+
     if server is None:
         server = Server(name=f"scitex-todo-channel-{agent_id}")
+
+    read_stream, write_stream, handshake_log = instrument_handshake(
+        read_stream,
+        write_stream,
+        extra={"agent_id": agent_id, "push": bool(agent_id)},
+    )
 
     async with AsyncExitStack() as stack:
         lifespan_context = await stack.enter_async_context(server.lifespan(server))
@@ -373,6 +449,12 @@ async def _serve(
         finally:
             if poll_task is not None:
                 poll_task.cancel()
+            # An orphan `initialize_received` with a `server_exit` after it says
+            # the process died mid-handshake; an orphan with NOTHING after it
+            # says it is still hanging. Distinguishing those two is why the exit
+            # is recorded at all.
+            handshake_log.record("server_exit")
+            handshake_log.close()
 
 
 async def _run(

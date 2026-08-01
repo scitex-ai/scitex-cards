@@ -287,12 +287,33 @@ def probe_install(
             f"metadata claims {dist} {probe.metadata_version}, but "
             f"`import {mod_name}` FAILED: {exc}"
         )
+        # DO NOT recommend `--force-reinstall` here. It does NOT clear this.
+        #
+        # MEASURED by scitex-storage 2026-07-28, on the third occurrence in one
+        # day: --force-reinstall removes only the files listed in the RECORD of
+        # the dist-info it replaces, so an ORPHANED sibling survives untouched.
+        # Their pass-by-pass numbers: one force-reinstall left 1 dist-info
+        # (still broken, but it LOOKS like the fix ran), a second pass reached
+        # 0, and only then did a plain install produce a clean tree.
+        #
+        # A hint that names a fix which does not clear the condition is worse
+        # than a hint that names none: the reader spends their time on it AND
+        # stops investigating, because the recommended action appeared to
+        # succeed. This is the same failure family as a guard that cannot fire.
         probe.hint = (
             f"ORPHANED INSTALL — the WORST case: a .dist-info claims "
             f"{dist} {probe.metadata_version} with NO importable code behind it, so "
-            f"every version check PASSES against a package that is not there. "
-            f"Reinstall: `pip install --force-reinstall --no-deps {dist}`, or delete "
-            f"the stale .dist-info directory from site-packages."
+            f"every version check PASSES against a package that is not there.\n"
+            f"    1. UNINSTALL REPEATEDLY until it reports nothing left to remove:\n"
+            f"         while pip uninstall -y {dist}; do :; done\n"
+            f"       ONE pass is NOT enough — each `pip uninstall` removes the "
+            f"files of ONE dist-info, so a second (or third) copy survives a "
+            f"single pass and the tree still looks broken afterwards.\n"
+            f"    2. Confirm ZERO remain before reinstalling:\n"
+            f"         ls -d <site-packages>/{dist.replace('-', '_')}-*.dist-info\n"
+            f"    3. THEN install once: `pip install {dist}`\n"
+            f"    Do NOT use `--force-reinstall`: it only removes files listed "
+            f"in the RECORD of the dist-info it replaces, so the orphan survives."
         )
         return probe
 
@@ -354,16 +375,36 @@ def probe_install(
                 f"{probe.metadata_version}, but that is a COIN TOSS — the version "
                 f"string cannot be trusted, and the code on disk may be any of them."
             )
+            # DO NOT NAME A SINGLE DIRECTORY TO DELETE. The previous wording did,
+            # picking `sorted(names)[0]`, and that is a LEXICOGRAPHIC sort over
+            # version strings — so with 0.17.9 and 0.17.10 side by side it names
+            # `...-0.17.10.dist-info` first, because "1" < "9". It told the reader
+            # to delete the NEWER directory. Measured 2026-07-28 against exactly
+            # those two versions, both released that day, so it was reachable in
+            # practice and not a hypothetical.
+            #
+            # The fix is not a smarter sort. It is to stop guessing which one is
+            # stale: remove them ALL and install once. That cannot pick wrong, and
+            # it is the same procedure the ORPHANED branch prescribes, so a reader
+            # who hits both does not have to reconcile two different rituals.
+            #
+            # `--force-reinstall` does NOT clear this either — it removes only the
+            # files in the RECORD of the dist-info it replaces, leaving siblings.
             probe.hint = (
-                f"pip left a stale .dist-info behind after an upgrade. The code is "
-                f"almost certainly the NEWEST one; the older directory is an "
-                f"orphaned fossil that will keep poisoning every version check on "
-                f"this box.\n"
+                f"pip left one or more stale .dist-info directories behind after "
+                f"an upgrade. Every version check on this box is now a coin toss.\n"
                 f"    1. Confirm WHICH code is really there with a symbol probe "
                 f"(the `features` argument) — never with the version.\n"
-                f"    2. Then delete the stale directory:\n"
-                f"       rm -rf <site-packages>/{sorted(p.name for p in dist_infos)[0]}\n"
-                f"    3. Re-probe; the version should now agree with the code."
+                f"    2. UNINSTALL REPEATEDLY until nothing is left to remove:\n"
+                f"         while pip uninstall -y {dist}; do :; done\n"
+                f"       ONE pass is NOT enough: each `pip uninstall` clears ONE "
+                f"dist-info, so with {len(dist_infos)} present a single pass leaves "
+                f"{len(dist_infos) - 1} behind and the tree still looks broken.\n"
+                f"    3. Confirm ZERO remain:\n"
+                f"         ls -d <site-packages>/{dist.replace('-', '_')}-*.dist-info\n"
+                f"    4. THEN install once: `pip install {dist}`\n"
+                f"    Do NOT use `--force-reinstall`, and do NOT hand-delete one "
+                f"directory hoping to guess the stale one."
             )
             return probe
 

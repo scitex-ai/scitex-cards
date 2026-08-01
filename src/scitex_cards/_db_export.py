@@ -25,6 +25,7 @@ import-time snapshot of those flags.
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +53,10 @@ def _record(row, table: str) -> dict[str, Any]:
     if blob is None:
         raise ExportRefused(
             f"{table} row {row['id']!r} has no record_json payload — this DB "
-            "predates schema v3 or was never re-imported. Run "
-            "`scitex-cards db import` first; exporting stripped "
-            "records is worse than exporting none."
+            "predates schema v3's payload columns and cannot be back-filled "
+            "(the importer was removed with the YAML tier); use a database "
+            "written by a current version. Exporting stripped records is worse "
+            "than exporting none."
         )
     rec = card_from_payload(blob)
     for col in _OVERLAYS[table]:
@@ -63,13 +65,41 @@ def _record(row, table: str) -> dict[str, Any]:
     return rec
 
 
-def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
+def export_doc(
+    db_path: str | Path | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[dict, dict]:
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
     Tasks come back in document order (``row_order``); inbox and thread
-    records in insertion (rowid) order — matching how the exported lists grew.
+    records in creation order (timestamp, then primary key as tie-breaker) —
+    matching how the exported lists grew, and expressible on either backend.
+
+    ``conn`` — READ THE EXPORT AND ITS VERIFICATION FROM ONE SNAPSHOT.
+    A caller that must cross-check this export against the database (see
+    :func:`scitex_cards._store._read_canonical_db_or_raise`) cannot re-count on
+    a SECOND connection: the store is WAL, so two connections take two
+    INDEPENDENT snapshots taken however long the export took apart, and any
+    concurrent writer in that window makes the two disagree with no card
+    missing at all. That false "INCOMPLETE" refusal blanked ``list_tasks``
+    fleet-wide (observed 2,374 exported vs 2,375 in-table while
+    ``scitex-cards db verify`` reported the DB perfectly healthy).
+
+    So the caller opens ONE connection, begins ONE read transaction, and hands
+    it here. When ``conn`` is supplied it is used as-is and NOT closed —
+    ownership stays with the caller, whose transaction defines the snapshot
+    both the export and the verifying ``COUNT(*)`` observe. ``db_path`` is
+    ignored in that case (the connection already names the database).
+
+    The connection MUST have been opened through :func:`scitex_cards._db.connect`
+    (directly or via :func:`open_db`), because that is where the
+    min-client-version gate lives. Hand-rolling a bare ``sqlite3.connect`` here
+    would silently delete that gate.
     """
-    conn = open_db(db_path)
+    owned = conn is None
+    if owned:
+        conn = open_db(db_path)
     try:
         tasks: list[dict] = []
         for r in conn.execute(
@@ -77,14 +107,30 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
         ).fetchall():
             if r["card_json"] is None:
                 raise ExportRefused(
-                    f"task {r['id']!r} has no card_json payload — run "
-                    "`scitex-cards db import` first."
+                    f"task {r['id']!r} has no card_json payload — this DB "
+                    "predates the payload columns; use one written by a "
+                    "current version."
                 )
             tasks.append(card_from_payload(r["card_json"]))
 
+        # ORDERED BY REAL COLUMNS, NOT ``rowid``. ``rowid`` is a SQLite
+        # implementation detail with no PostgreSQL equivalent, so these four
+        # queries were the export path's hard stop against a server backend --
+        # and they would have failed at CUTOVER, not at porting time.
+        #
+        # The replacement keeps the property that actually mattered. ``rowid``
+        # was never the goal; a STABLE, REPRODUCIBLE order was, so that an
+        # export of an unchanged store is byte-identical each time. A creation
+        # timestamp with the primary key as tie-breaker gives that on both
+        # engines, and on append-only tables it is the same order ``rowid``
+        # produced. The tie-break is not decorative: timestamps here have
+        # one-second resolution, so same-second rows would otherwise order
+        # arbitrarily and the export would differ run to run.
         users = [
             _record(r, "users")
-            for r in conn.execute("SELECT * FROM users ORDER BY rowid").fetchall()
+            for r in conn.execute(
+                "SELECT * FROM users ORDER BY created_at, id"
+            ).fetchall()
         ]
 
         # Seed from the recipients table first so a DRAINED inbox (a
@@ -92,19 +138,20 @@ def export_doc(db_path: str | Path | None = None) -> tuple[dict, dict]:
         inboxes: dict[str, list[dict]] = {
             r["recipient_id"]: []
             for r in conn.execute(
-                "SELECT recipient_id FROM inbox_recipients ORDER BY rowid"
+                "SELECT recipient_id FROM inbox_recipients ORDER BY recipient_id"
             ).fetchall()
         }
-        for r in conn.execute("SELECT * FROM notifications ORDER BY rowid").fetchall():
+        for r in conn.execute("SELECT * FROM notifications ORDER BY ts, id").fetchall():
             inboxes.setdefault(r["recipient_id"], []).append(
                 _record(r, "notifications")
             )
 
         threads: dict[str, list[dict]] = {}
-        for r in conn.execute("SELECT * FROM messages ORDER BY rowid").fetchall():
+        for r in conn.execute("SELECT * FROM messages ORDER BY ts, id").fetchall():
             threads.setdefault(r["thread_key"], []).append(_record(r, "messages"))
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
     doc: dict[str, Any] = {"tasks": tasks}
     if users:

@@ -81,6 +81,8 @@ def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
     from scitex_cards._diagram import build_mermaid
 
+    from ._comment_digest import comment_scalars, rescore_history
+
     ids = {t["id"] for t in board.tasks}
 
     nodes = [
@@ -97,9 +99,40 @@ def _build_graph(board) -> dict:
             # id the frontend treats this task as top-level (same lenient
             # stance as edges to unknown ids).
             "parent": t.get("parent"),
-            # Append-only comment thread (list of {ts, author, text}); always
-            # a list so the frontend can render / count without null-checks.
-            "comments": t.get("comments") or [],
+            # comments[] IS GONE FROM THIS PAYLOAD. Step 3 of 3, and the step
+            # the other two existed to make safe. It was 8.5 MB of a 19.8 MB
+            # response that the board refetched on nearly every 5 s /rev poll,
+            # because the store is written every ~4 s.
+            #
+            # A previous attempt removed it and added its replacements in ONE
+            # branch. That broke every consumer at once and sat unmergeable for
+            # twelve days until its owner stopped existing. So this time:
+            #   1. #634 emitted the summary scalars ALONGSIDE it (additive).
+            #   1b. #637 added rescore_history — the Matrix reads comment
+            #       CONTENT, so the scalars alone could not have replaced it.
+            #   2. #635/#638/#640 migrated every consumer, each keeping a
+            #      FALLBACK to comments[] so either payload shape works.
+            #   3. this deletion.
+            #
+            # The fallbacks are why this is a one-line change and not a flag
+            # day: they were deployed BEFORE the thing that needs them, so a
+            # consumer I missed degrades instead of breaking. Do not remove
+            # them in the same release as this — that ordering is the whole
+            # lesson of the twelve-day branch.
+            #
+            # The full thread is served by GET /chat/<card_id>, which preserves
+            # each comment's `kind` so the route-trace timeline still works,
+            # and the detail panel fetches it on open.
+            #
+            # List-view stand-ins follow.
+            **comment_scalars(t),
+            # The Matrix view is the one list surface that needs comment
+            # CONTENT rather than a summary: it reads the [old, new] axis
+            # pairs off `kind: "rescore"` comments to draw quadrant
+            # transitions. Serving just those keeps it working when
+            # comments[] goes. Measured 0.11% of comments[] (30 events on
+            # 2,864 cards) — see handlers/_comment_digest.py.
+            "rescore_history": rescore_history(t),
             # `kind` discriminator + compute metadata (north-star pillar #1,
             # validated by `_model._validate_tasks`). `kind: null` over the
             # wire = "task" (the default). FE renders compute affordances
@@ -196,11 +229,12 @@ def _build_graph(board) -> dict:
         "mermaid": build_mermaid(board.tasks),
         "store_path": str(board.store_path),
         "task_count": len(board.tasks),
-        # HONEST EMPTY STATE (hub card hub-cards-board-data-404): True when
-        # the resolved store-identity file did not exist at load time — a
-        # brand-new workspace's legitimate 0-card board, not an error. The
-        # frontend renders the normal zero-card board on this instead of the
-        # red load-error banner.
+        # HONEST EMPTY STATE: True when the store was READ and held no cards —
+        # a legitimate 0-card board, on which the frontend renders the normal
+        # empty board instead of the red load-error banner. It is NOT "the
+        # store file is missing": a store that cannot be read raises out of
+        # get_board and arrives here as a 500, never as this flag. See
+        # BoardState.empty_store for why that distinction is load-bearing.
         "empty_store": board.empty_store,
         # Fleet liveness — per-agent at-a-glance summary the operator can
         # scan from the board header to answer "who is alive + working on
@@ -280,9 +314,9 @@ def handle_tasks(request, board):
         {
             "tasks": list(board.tasks),
             "store_path": str(board.store_path),
-            # Same honest-empty-state flag as the /graph payload: a resolved
-            # store file that does not exist yet is a fresh workspace, not an
-            # error (see BoardState.empty_store).
+            # Same honest-empty-state flag as the /graph payload: the store
+            # was read and holds no cards (see BoardState.empty_store). An
+            # unreadable store never reaches here — it is a 500.
             "empty_store": board.empty_store,
         }
     )

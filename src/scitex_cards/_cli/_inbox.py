@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo inbox`` — inbox storage-backend lifecycle.
+"""CLI noun group ``scitex-cards inbox`` — inbox storage-backend lifecycle.
 
 Phase 1 of the store SQLite migration (incident card
 ``store-sqlite-migration-o1-writes-future-20260701``). The per-recipient
@@ -12,6 +12,12 @@ Verbs:
   * ``inbox migrate-to-sqlite`` — copy the YAML ``inboxes:`` records into
     SQLite (idempotent; does NOT delete the YAML section — reversible).
   * ``inbox info`` — read-side status of the SQLite inbox DB.
+  * ``inbox ack`` — confirm delivery of specific notification ids. The
+    STANDALONE surface onto :func:`scitex_cards._inbox_confirm.
+    confirm_notifications` (NOT a second ack path — the same one verb, reachable
+    without MCP). The Stop hook demands an ack, so an agent that has cards and
+    nothing else must have a way to give one; otherwise the hook would be
+    blocking where the actor cannot remediate.
 
 Enabling the SQLite backend at runtime is a SEPARATE, deliberate step: export
 ``SCITEX_TODO_INBOX_BACKEND=sqlite``. Until then the YAML path stays the
@@ -52,8 +58,8 @@ def inbox_group() -> None:
         "Idempotent (dedups on notification id) and reversible (never "
         "deletes the YAML section).\n\n"
         "Example:\n"
-        "  $ scitex-todo inbox migrate-to-sqlite --dry-run\n"
-        "  $ scitex-todo inbox migrate-to-sqlite -y"
+        "  $ scitex-cards inbox migrate-to-sqlite --dry-run\n"
+        "  $ scitex-cards inbox migrate-to-sqlite -y"
     ),
 )
 @click.option(
@@ -84,8 +90,8 @@ def inbox_migrate_cmd(
     """Copy YAML inbox records into SQLite.
 
     Example:
-      $ scitex-todo inbox migrate-to-sqlite --dry-run
-      $ scitex-todo inbox migrate-to-sqlite -y
+      $ scitex-cards inbox migrate-to-sqlite --dry-run
+      $ scitex-cards inbox migrate-to-sqlite -y
     """
     import json as _json
     import sys as _sys
@@ -148,8 +154,8 @@ def inbox_migrate_cmd(
         "Print status of the SQLite inbox DB (row count, unseen count, "
         "path).\n\n"
         "Example:\n"
-        "  $ scitex-todo inbox info\n"
-        "  $ scitex-todo inbox info --json"
+        "  $ scitex-cards inbox info\n"
+        "  $ scitex-cards inbox info --json"
     ),
 )
 @click.option(
@@ -162,8 +168,8 @@ def inbox_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite inbox DB.
 
     Example:
-      $ scitex-todo inbox info
-      $ scitex-todo inbox info --json
+      $ scitex-cards inbox info
+      $ scitex-cards inbox info --json
     """
     import json as _json
 
@@ -177,12 +183,64 @@ def inbox_info_cmd(as_json: bool) -> None:
         return
     if not payload["exists"]:
         click.echo(f"# inbox DB does not exist yet: {payload['path']}")
-        click.echo("# run `scitex-todo inbox migrate-to-sqlite -y` to populate.")
+        click.echo("# run `scitex-cards inbox migrate-to-sqlite -y` to populate.")
         return
     click.echo(
         f"# inbox DB: {payload['path']}\n"
         f"#   rows:   {payload['rows']}\n"
         f"#   unseen: {payload['unseen']}"
+    )
+
+
+@inbox_group.command(
+    "ack",
+    help=(
+        "CONFIRM delivery of specific notification ids (the only "
+        "cursor-advancing verb, reachable without MCP).\n\n"
+        "Idempotent: re-acking an id is a no-op, never an error. Anything you "
+        "do not ack stays unseen and is redelivered.\n\n"
+        "Example:\n"
+        "  $ scitex-cards inbox ack --agent scitex-cards n_abc n_def"
+    ),
+)
+@click.option(
+    "--agent",
+    default=None,
+    help="Whose inbox to confirm in (default: $SCITEX_TODO_AGENT_ID).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the confirmation payload as JSON.",
+)
+@click.argument("ids", nargs=-1)
+def inbox_ack_cmd(agent: str | None, as_json: bool, ids: tuple) -> None:
+    """Confirm notification ids for an agent.
+
+    Example:
+      $ scitex-cards inbox ack --agent scitex-cards n_abc n_def
+    """
+    import json as _json
+
+    from scitex_cards._inbox_confirm import confirm_notifications
+    from scitex_cards._store import _default_agent
+
+    if not ids:
+        raise click.ClickException(
+            "no notification ids given. Pass the `id` field of each record you "
+            "actually read, e.g. `scitex-cards inbox ack --agent <you> n_abc`."
+        )
+    result = confirm_notifications(_default_agent(agent), list(ids))
+    if as_json:
+        click.echo(_json.dumps(result))
+        return
+    click.echo(
+        f"# confirmed {len(result['confirmed'])} of {len(result['requested'])} "
+        f"for {result['recipient_id']}\n"
+        f"#   confirmed:         {', '.join(result['confirmed']) or '-'}\n"
+        f"#   already confirmed: {', '.join(result['already_confirmed']) or '-'}\n"
+        f"#   unknown:           {', '.join(result['unknown']) or '-'}"
     )
 
 

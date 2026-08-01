@@ -1,16 +1,16 @@
 ---
 description: |
   [TOPIC] CLI / MCP surface gap analysis for fleet adoption
-  [DETAILS] Audit of the scitex-todo CLI + MCP surface against the Task
+  [DETAILS] Audit of the scitex-cards CLI + MCP surface against the Task
   dataclass + the fleet adoption skill (40_for-consuming-agents.md). Lists
   the verbs and field-level flags that consuming agents need but the
   surface doesn't expose yet, plus the bridge (Python API / hand-roll)
   available today. Drives the next 1–3 PRs of CLI / MCP closure work.
 tags:
   [
-    scitex-todo-gaps,
-    scitex-todo-cli-roadmap,
-    scitex-todo-fleet-adoption,
+    scitex-cards-gaps,
+    scitex-cards-cli-roadmap,
+    scitex-cards-fleet-adoption,
   ]
 ---
 
@@ -27,7 +27,7 @@ MCP catches up.
 
 | Verb           | Why                                                                                | Status                                                              | PR slice               |
 | -------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------- |
-| `comment`      | Append to `comments[]` — the append-only fleet activity log; cross-lane patternA   | **SHIPPED** PR #144 — `scitex-todo comment TASK_ID TEXT [--author X] [--json] [--dry-run]` wraps `_store.comment_task` | done |
+| `comment`      | Append to `comments[]` — the append-only fleet activity log; cross-lane patternA   | **SHIPPED** PR #144 — `scitex-cards comment TASK_ID TEXT [--author X] [--json] [--dry-run]` wraps `_store.comment_task` | done |
 | `reopen`       | Undo a `done` / resolved row; HTTP `/reopen` exists (PR #61), no CLI parity        | `_store.update_task(p, id, status="pending")`                       | follow-up               |
 | `body init`    | Seed `tasks/<id>/README.md` + `adr.md` with the locked filenames + ADR template    | `mkdir + cat templates` by hand                                     | follow-up               |
 | `validate`     | Run `_validate_tasks` on demand (operator: "fail loud, fail fast") — without write | `_model._validate_tasks(load_tasks(p))`                             | follow-up               |
@@ -43,7 +43,7 @@ path the operator's SSoT directive (TG 9494) called for.
 
 ## B. Missing flags on existing verbs
 
-### `scitex-todo add`
+### `scitex-cards add`
 
 Has today: `--status` · `--scope` · `--assignee` · `--priority` · `--parent` · `--note` · `--depends-on` (rpt) · `--blocks` (rpt) · `--repo` · `--json` · `--dry-run` · `-y` · `--tasks`.
 
@@ -66,7 +66,7 @@ Missing (Task dataclass fields — operator-co-designed surface TG 9667):
 | `--started-at`      | ISO-8601                  | `kind: compute` metadata.                                                              |
 | `--finished-at`     | ISO-8601                  | `kind: compute` metadata.                                                              |
 
-### `scitex-todo update`
+### `scitex-cards update`
 
 Same field set as `add` (replace-or-clear semantics — pass `''` to
 clear). Plus: `--depends-on` / `--blocks` are missing from `update`
@@ -82,7 +82,7 @@ entirely (currently only on `add`). Update's `--depends-on` /
 Also: `--comments` is intentionally OMITTED from `update` (use the
 new `comment` verb; append-only contract is clearer that way).
 
-### `scitex-todo list-tasks`
+### `scitex-cards list-tasks`
 
 Has today: `--scope` · `--assignee` · `--status` (exact match each).
 
@@ -99,11 +99,11 @@ Missing filters:
 | `--id-prefix`       | Substring/prefix match on `id` (cheap "find my project's rows").                   |
 | `--agent`           | Forward-compat alias for `--assignee` once the dataclass migration completes. NOT a gap today — `--assignee` is already primary + works (lead empirical 2026-06-07). |
 
-### `scitex-todo done`
+### `scitex-cards done`
 
 Today: `--by`. No additions needed.
 
-### `scitex-todo summary`
+### `scitex-cards summary`
 
 Today: `--scope`, `--assignee`. Should mirror `list-tasks`' filter
 expansion (same flags) once `list-tasks` lands.
@@ -197,34 +197,34 @@ agents' spec.yaml.
 
 Once the skill is on develop + the lead green-lights:
 
-1. `scitex-todo skills install --claude-symlink` exposes the bundled
-   skills at `~/.claude/skills/scitex/scitex-todo/` (operator side).
+1. `scitex-cards skills install --claude-symlink` exposes the bundled
+   skills at `~/.claude/skills/scitex/scitex-cards/` (operator side).
 2. For container-side agents, the spec.yaml gains a
    `required_skills:` entry referencing the package-bundled path:
 
    ```yaml
    required_skills:
-     - "@scitex_cards:_skills/scitex-todo/40_for-consuming-agents.md"
+     - "@scitex_cards:_skills/scitex-cards/40_for-consuming-agents.md"
    ```
 
    (Confirm the spec.yaml `required_skills` grammar matches what the
    container glue actually consumes — this is the lead's domain, not
-   `scitex-todo`'s. If the grammar is different I'll align the doc.)
-3. New agents pip-install `scitex-todo>=N.M.K` so the bundled skill
+   `scitex-cards`'s. If the grammar is different I'll align the doc.)
+3. New agents pip-install `scitex-cards>=N.M.K` so the bundled skill
    is on their PYTHONPATH; the spec.yaml reference resolves at
    container boot.
-4. `scitex-todo skills install` is the back-fill for hosts that
-   already have older `scitex-todo`.
+4. `scitex-cards skills install` is the back-fill for hosts that
+   already have older `scitex-cards`.
 
 The skill itself is **version-pinned via the package** (`pip install
-scitex-todo==N.M.K`); editing one skill leaf does NOT propagate via
+scitex-cards==N.M.K`); editing one skill leaf does NOT propagate via
 spec.yaml until the consumer pip-bumps. That gives the lead a
 deterministic rollout: pin the version on one agent at a time, watch
 it adopt, broaden once stable.
 
 ---
 
-## Addendum — `kind: status` axis (board card `scitex-todo-relocate-q-status-tracking`)
+## Addendum — `kind: status` axis (board card `scitex-cards-relocate-q-status-tracking`)
 
 Per lead a2a `60a1a93d` (operator direction): the `q-*` family
 (~66 cards, one per fleet package: `q-gen` / `q-io` / `q-ml` / ...)

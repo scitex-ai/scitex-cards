@@ -8,6 +8,8 @@ every name below so ``from ._store import add_task`` keeps working:
     add_task            Append a new task (owner + creator FAIL-LOUD, WIP gate).
     update_task         Mutate fields of an existing task by id.
     _stamp_deferred_at  Stamp the backlog age clock on ENTRY into `deferred`.
+    _stamp_blocked_at   Stamp the blocked-check clock when the (status, blocker)
+                        PAIR moves — never on a passing comment.
     _wip_statuses       Back-compat re-export of ``_throughput.WIP_STATUSES``.
 
 Named ``_store_mutate`` rather than ``_store_write`` because ``_store_write``
@@ -36,6 +38,7 @@ from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creat
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
+from ._store_target import resolve_store_target
 
 
 def add_task(
@@ -93,7 +96,27 @@ def add_task(
     # nothing named the path — that is how a decoy board accumulates and then
     # gets imported over the real one. See the guard's docstring for the
     # measured 2026-07-20 chain. An explicit `store` is the opt-in.
-    _refuse_ambient_store_creation(resolved, store)
+    #
+    # The guard asks ONE question — "would this write MANUFACTURE a board?" —
+    # and answers it with `path.exists()`. So it must be handed the store's real
+    # LOCATION: the canonical SQLite database, which is what `save_tasks` writes
+    # and what `init-store` creates. `_resolved_store` returns a DISPLAY LABEL
+    # (`<db_dir>/tasks.yaml`) that the SQLite backend maps to that database —
+    # good enough to name a store in a message, never a thing on disk. The YAML
+    # tier was deleted (#512), so that label can NEVER exist, and passing it here
+    # made the guard refuse unconditionally: every `add` failed for any agent
+    # without $SCITEX_CARDS_DB while its own reads and updates succeeded, and the
+    # error told you to run `init-store` — which did not help, because the file
+    # it created was not the file being tested. Reported and reproduced by
+    # scitex-ui on 0.17.7. Guard the database, not the label.
+    # resolve_store_target, NOT resolve_db_path: the latter RAISES on a server
+    # target, and it raises while evaluating this ARGUMENT — so every write
+    # against PostgreSQL died here, before the guard it feeds ever ran. The
+    # guard itself is fine with a DSN (it returns early; a server store cannot
+    # be manufactured by a write). Handing it the target as written keeps the
+    # SQLite behaviour byte-identical and stops the coercion happening on the
+    # way in.
+    _refuse_ambient_store_creation(resolve_store_target(store), store)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     # FAIL-LOUD on a missing/blank OWNER (operator mandate 2026-06-26,
     # constitution rule 2 "no silent fallbacks"). The OWNER is `assignee`
@@ -123,6 +146,18 @@ def add_task(
     _stamp = _utc_now_iso()
     new["created_at"] = _stamp
     new["last_activity"] = _stamp
+    # A card BORN blocked starts its blocked-check clock now, stated rather than
+    # inferred. Without this the row carries no `blocked_at` and
+    # `_blocked_age_hours` falls back to `created_at` — which returns the RIGHT
+    # answer here, since for a card born blocked those two instants are the same.
+    # That is correct-by-luck, and the luck is spent the moment the fallback
+    # changes. Surfaced by grant 2026-07-30 while measuring why their blocker
+    # change produced no stamp; the fallback is load-bearing enough that a path
+    # relying on it silently should not exist.
+    if status == "blocked":
+        from ._stale_active_clocks import FIELD_BLOCKED_AT
+
+        new[FIELD_BLOCKED_AT] = _stamp
     # `created_by` — the creating USER, STRICTLY resolved above (never a
     # blank/"unknown" placeholder). Drives the board detail ROLES section +
     # ADR-0009's creator auto-subscribe. (hook-bypass: line-limit)
@@ -228,6 +263,33 @@ def _stamp_deferred_at(task: dict, prior_status: str | None) -> None:
     task[FIELD_DEFERRED_AT] = _utc_now_iso()
 
 
+def _stamp_blocked_at(
+    task: dict, prior_status: str | None, prior_blocker: str | None
+) -> None:
+    """Set ``blocked_at`` when the ``(status, blocker)`` PAIR moves, and only then.
+
+    The blocked-check's clock, exactly parallel to :func:`_stamp_deferred_at` but
+    keyed on the pair rather than the status alone — because re-blocking the same
+    card on a DIFFERENT blocker genuinely starts a new wait, while commenting on
+    it does not. A comment changes ``last_activity`` and neither element of the
+    pair, so it must leave this stamp alone: keying the sweep on a field every
+    mutation touches is what made the alarm silenceable by typing.
+
+    Cards already blocked before this shipped carry no stamp; they are left
+    untouched here rather than back-filled on a passing mutation, and
+    ``_blocked_age_hours`` reads their age from ``created_at`` instead. That
+    makes them read as maximally stale, so the alarm errs toward firing.
+    """
+    from ._stale_active_clocks import FIELD_BLOCKED_AT
+    from ._store import _utc_now_iso
+
+    if task.get("status") != "blocked":
+        return
+    if prior_status == "blocked" and task.get("blocker") == prior_blocker:
+        return  # Pair unchanged — not a new wait.
+    task[FIELD_BLOCKED_AT] = _utc_now_iso()
+
+
 def _wip_statuses() -> frozenset[str]:
     """Re-export from ``_throughput`` so the gate's predicate stays a single
     source of truth. WIP is work in flight — ``in_progress`` — not backlog.
@@ -303,6 +365,7 @@ def update_task(
             # silently resurrect it (2026-07-21 tombstone change).
             if task.get("id") == task_id and not _task._is_tombstoned(task):
                 prior_status = task.get("status")
+                prior_blocker = task.get("blocker")
                 for key, value in fields.items():
                     if value is None:
                         task.pop(key, None)
@@ -321,6 +384,9 @@ def update_task(
                 # would read as permanently young and could never expire. The
                 # rot would be real and invisible at the same time.
                 _stamp_deferred_at(task, prior_status)
+                # Same lesson, the blocked-check's clock: stamp when the
+                # (status, blocker) PAIR moves, never on a passing comment.
+                _stamp_blocked_at(task, prior_status, prior_blocker)
                 _save_doc_unlocked(doc, resolved, tasks=tasks)
                 result = dict(task)
                 transitioned_to_done = (
@@ -383,6 +449,7 @@ def update_task(
 
 __all__ = [
     "_stamp_deferred_at",
+    "_stamp_blocked_at",
     "_wip_statuses",
     "add_task",
     "update_task",

@@ -1,22 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Package-level HEALTH check for scitex-todo (the ``health`` doctor).
+"""Package-level HEALTH check for scitex-cards (the ``health`` doctor).
 
 One PURE function, :func:`health`, aggregates a fixed set of store / identity /
 delivery checks and returns a machine-readable report in the cross-package
 standard shape shared with sac/cct::
 
     {
-      "package": "scitex-todo",
-      "ok": <bool: true iff EVERY check ok>,
+      "package": "scitex-cards",
+      "ok": <bool: true iff NO check FAILED>,
       "checks": [ {"name", "ok", "detail", "hint"}, ... ],
       "summary": <str>,
     }
 
 Contract
 --------
-* Every FAILING check carries an ACTIONABLE ``hint`` (the exact next step). A
-  passing check may leave ``hint`` ``None``.
+* A check's ``ok`` is THREE-VALUED: ``True`` (pass), ``False`` (fail) or
+  ``None`` (UNKNOWN — the check could not measure). "nothing is wrong" and "I
+  cannot tell" are different answers and must not collapse into ``ok=true``;
+  ``None`` is the only honest report for a check whose evidence is missing.
+  The record keeps exactly the four standard fields — the third value rides in
+  ``ok`` as JSON ``null`` rather than in a fifth key sac/cct would not read.
+* An UNKNOWN does not fail the run (``report["ok"]`` counts only ``False``) but
+  it is NAMED in ``summary``, so it can never read as a silent pass.
+* Every FAILING **and** every UNKNOWN check carries an ACTIONABLE ``hint`` (the
+  exact next step — for an unknown, how to make it measurable). A passing check
+  may leave ``hint`` ``None``.
 * :func:`health` NEVER raises: a check that errors internally is reported as
   ``ok=false`` with the error captured in its ``hint`` — no silent pass, no
   vague error, no exception out of the function.
@@ -25,7 +34,7 @@ Why this exists (0.7.32 incident)
 ---------------------------------
 The unified ``mcp start`` server once starved its own ``initialize`` handshake
 when the inbox poll loop ran blocking store IO inline on the event loop — every
-fleet agent showed the ``scitex-todo`` server "not connected". The
+fleet agent showed the ``scitex-cards`` server "not connected". The
 ``channel_drain`` check below (large unseen backlog with ``seen==0``) turns that
 class of failure into a one-command diagnosis.
 
@@ -39,11 +48,16 @@ from env).
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Callable
 
 from . import _inbox
+from ._health_backend_mode import check_backend_mode
+from ._health_channel_reach import check_channel_reaches_session
+from ._health_delivery import check_delivery_confirmed
+from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
+    _check_store_identity_agrees,
+)
 from ._health_write_target import check_single_write_target
 from ._install_probe import check_install_honest
 from ._mcp_channel import recipient_keys, resolve_agent_id
@@ -55,7 +69,7 @@ UNSEEN_BACKLOG_THRESHOLD = 50
 
 #: The exact drain-stuck remediation (kept verbatim per the cross-package spec).
 _DRAIN_HINT = (
-    "channel not draining — ensure `scitex-todo mcp start` is running for this "
+    "channel not draining — ensure `scitex-cards mcp start` is running for this "
     "agent with SCITEX_TODO_AGENT_ID set (needs >=0.7.32 where the poll loop no "
     "longer starves the handshake)"
 )
@@ -64,181 +78,26 @@ _DRAIN_HINT = (
 # --------------------------------------------------------------------------- #
 # Individual checks — each returns {ok, detail, hint}; may raise (wrapped).    #
 # --------------------------------------------------------------------------- #
-def _is_sqlite_db(path: Path) -> bool:
-    """True when ``path`` begins with the SQLite file magic header."""
-    try:
-        with path.open("rb") as handle:
-            return handle.read(16) == b"SQLite format 3\x00"
-    except OSError:
-        return False
-
-
-def _verify_db_store(path: Path) -> dict[str, Any]:
-    """Confirm the canonical database opens and carries a ``tasks`` table."""
-    import sqlite3
-
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            n = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "detail": f"canonical database {path} did not open/read ({exc})",
-            "hint": (
-                f"rebuild the database: `scitex-cards db import` (or "
-                f"`scitex-cards init-store` for an empty one). {type(exc).__name__}: {exc}"
-            ),
-        }
-    return {
-        "ok": True,
-        "detail": f"canonical store {path} (SQLite, {n} cards, readable, writable)",
-        "hint": None,
-    }
-
-
-def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
-    """Resolve the task store and verify it is the canonical, healthy store.
-
-    The canonical store is the SQLite database ($SCITEX_CARDS_DB). ok when it
-    exists, opens, and carries a ``tasks`` table. An EXPLICIT file store (tests,
-    ``--tasks <file>``) is taken as the intended target and checked as a
-    serialized document with a top-level ``tasks`` key.
-    """
-    from ._db import resolve_db_path
-    from ._paths import resolve_tasks_path
-
-    db = Path(resolve_db_path(store))
-
-    # The canonical store IS the database — verify it directly.
-    if db.exists() and _is_sqlite_db(db):
-        return _verify_db_store(db)
-
-    # No database. An EXPLICIT file store (tests / `--tasks <file>`) is checked
-    # as a serialized document; otherwise the store is genuinely absent.
-    resolved = resolve_tasks_path(store)
-    if store is not None and resolved.exists():
-        if _is_sqlite_db(resolved):
-            return _verify_db_store(resolved)
-        if not os.access(resolved, os.R_OK):
-            return {
-                "ok": False,
-                "detail": f"store {resolved} is not readable",
-                "hint": f"fix permissions so {resolved} is readable (e.g. chmod u+r)",
-            }
-        if not os.access(resolved, os.W_OK):
-            return {
-                "ok": False,
-                "detail": f"store {resolved} is not writable",
-                "hint": f"fix permissions so {resolved} is writable (e.g. chmod u+w)",
-            }
-        from ._yaml import safe_load
-
-        try:
-            with resolved.open(encoding="utf-8") as handle:
-                data = safe_load(handle) or {}
-        except Exception as exc:  # noqa: BLE001 — a parse fail is a reportable state
-            return {
-                "ok": False,
-                "detail": f"store {resolved} did not parse ({exc})",
-                "hint": f"fix the document syntax in {resolved} ({type(exc).__name__}: {exc})",
-            }
-        if not isinstance(data, dict) or "tasks" not in data:
-            return {
-                "ok": False,
-                "detail": f"store {resolved} has no top-level 'tasks' key",
-                "hint": f"add a top-level `tasks:` list to {resolved}",
-            }
-        return {
-            "ok": True,
-            "detail": f"file store {resolved} (exists, readable, writable, parses)",
-            "hint": None,
-        }
-
-    return {
-        "ok": False,
-        "detail": f"no store: the database {db} is absent",
-        "hint": (
-            "bootstrap the DATABASE: `scitex-cards init-store` (empty) or "
-            "`scitex-cards db import` (seed from an export). Do NOT hand-write a "
-            "YAML store — a second store is how the board was destroyed on "
-            "2026-07-19."
-        ),
-    }
-
-
-def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
-    """Does the RESOLVED store match the identity the database is stamped with?
-
-    The database records WHICH STORE it is the database of (its provenance
-    stamp). When the store this process resolves disagrees with that stamp, the
-    ownership guard in ``_dual_write`` / ``_store_backend`` refuses EVERY write —
-    correctly, since writing one store's rows into another store's database is
-    how a board gets destroyed. But the symptom is a total write outage with no
-    monitor, so this check surfaces it.
-
-    On 2026-07-19 the MCP server resolved one store while the database was
-    stamped for another; every write through the surface OTHER agents use was
-    refused, and it went unnoticed because the maintainer's own writes used an
-    explicit path. So this check answers "can this process write at all?" rather
-    than the narrower "does a parseable store exist there?" that
-    ``store_canonical`` answers.
-    """
-    import sqlite3
-
-    from ._db import resolve_db_path
-    from ._db_freshness import stamped_store_path
-    from ._dual_write import _same_file
-
-    resolved = str(resolve_db_path(store))
-    db_path = Path(resolve_db_path(None))
-    if not db_path.exists():
-        return {
-            "ok": True,
-            "detail": f"no database at {db_path} yet — nothing to disagree with",
-            "hint": None,
-        }
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            stamped = stamped_store_path(conn)
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "detail": f"could not read the provenance stamp from {db_path} ({exc})",
-            "hint": f"check that {db_path} is readable and not corrupt",
-        }
-    if not stamped:
-        return {
-            "ok": True,
-            "detail": f"{db_path} carries no store stamp yet (fresh database)",
-            "hint": None,
-        }
-    if _same_file(stamped, resolved):
-        return {
-            "ok": True,
-            "detail": f"store and database agree: both are {resolved}",
-            "hint": None,
-        }
-    return {
-        "ok": False,
-        "detail": (
-            f"STORE IDENTITY MISMATCH — this process resolves {resolved} but "
-            f"{db_path} is stamped for {stamped}. EVERY WRITE IS BEING REFUSED "
-            f"by the ownership guard (correctly: writing one store into "
-            f"another's database is how a board gets destroyed)."
-        ),
-        "hint": (
-            f"decide which is right and make them agree. If {resolved} is the "
-            f"intended store, re-stamp the database against it (`scitex-cards db "
-            f"import`). If the database's {stamped} is right, point "
-            f"$SCITEX_CARDS_DB at that database."
-        ),
-    }
+# The STORE checks — "is this the right store, and can we use it?" — moved to
+# `_health_store` (this file reached the 512-line cap). THE IMPORT SURFACE DOES
+# NOT MOVE: every name is re-exported here, so
+# `from scitex_cards._health import _verify_db_store` is the SAME object it
+# always was, defined next door. Same rule as the `_health_cards` split below.
+#
+# `_check_store_identity_agrees` is NOT in this list. It is imported at the
+# top of the file from `_health_store_identity`, which is where the
+# UUID-AWARE version lives -- the one that asks the identity first and only
+# falls back to the path on ADOPT, mirroring the guard's own order. Taking
+# it from `_health_store` instead binds `health()` to the stale path-only
+# copy and leaves `_health_store_identity` imported by nothing, so the
+# doctor reports a verdict the guard does not share: it either names a
+# mismatch that is causing no refusals, or stays green through one that is.
+# Exactly ONE definition of the name exists in the package; see below.
+from ._health_store import (  # noqa: E402  (re-export)
+    _check_store_canonical,
+    _is_sqlite_db,  # noqa: F401
+    _verify_db_store,  # noqa: F401
+)
 
 
 def _check_agent_id(agent_id: str | None) -> dict[str, Any]:
@@ -282,6 +141,26 @@ def _check_notifyd_alive(store: str | Path | None) -> dict[str, Any]:
     return assess_liveness(pidfile_path(store))
 
 
+def _check_delivery_liveness(store: str | Path | None) -> dict[str, Any]:
+    """Is anything actually being DELIVERED? (``notifyd_alive`` is not enough.)
+
+    ``notifyd_alive`` above answers "is the process ticking" — and on
+    2026-07-28/29 it was GREEN for a full day while every one of 1196
+    consecutive ticks failed to read the store and delivered nothing. A
+    heartbeat only proves the loop spins, not that the loop's work happens.
+
+    This reads the daemon's persisted delivery record (last successful
+    delivery, consecutive failing ticks, the underlying reason) and is
+    THREE-VALUED: ``delivering`` / ``failing`` / ``unknown``. No record is
+    ``unknown`` and stays ``ok`` — ``notifyd_alive`` already owns "not running
+    at all", and manufacturing a second alarm from a measurement nobody took
+    is the same lie as reporting zero pending when the store would not open.
+    """
+    from ._delivery._liveness import assess_delivery
+
+    return assess_delivery(store)
+
+
 def _check_channel_drain(
     agent_id: str | None, store: str | Path | None, threshold: int
 ) -> dict[str, Any]:
@@ -320,7 +199,7 @@ def _check_channel_capable() -> dict[str, Any]:
             "ok": False,
             "detail": f"import scitex_cards._mcp_channel failed ({exc})",
             "hint": (
-                "upgrade to scitex-todo>=0.7.32: pip install -U 'scitex-todo[mcp]'"
+                "upgrade to scitex-cards>=0.7.32: pip install -U 'scitex-cards[mcp]'"
             ),
         }
     missing = [attr for attr in ("_serve", "_run") if not hasattr(channel, attr)]
@@ -329,8 +208,8 @@ def _check_channel_capable() -> dict[str, Any]:
             "ok": False,
             "detail": f"scitex_cards._mcp_channel missing {missing}",
             "hint": (
-                "upgrade to scitex-todo>=0.7.32 (the unified tools+channel "
-                "server): pip install -U 'scitex-todo[mcp]'"
+                "upgrade to scitex-cards>=0.7.32 (the unified tools+channel "
+                "server): pip install -U 'scitex-cards[mcp]'"
             ),
         }
     return {
@@ -368,21 +247,30 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
 def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     """Run one check, coercing its result to the standard record + never raising.
 
+    ``ok`` is preserved THREE-VALUED: a check that returns ``None`` means "I
+    cannot tell" and keeps ``None`` here. Coercing that to ``False`` would
+    manufacture an alarm out of a measurement nobody took; coercing it to
+    ``True`` would hide it, which is the failure mode this whole PR exists for.
+
     A check that raises is reported as ``ok=false`` with the error in ``hint``
-    (never propagated). A failing check with an empty hint gets a fallback hint
-    so the "every failing check carries an actionable hint" rule always holds.
+    (never propagated) — an exception is evidence of a fault, not an absence of
+    evidence. Any non-passing check with an empty hint gets a fallback hint so
+    the "every failing or unknown check carries an actionable hint" rule always
+    holds.
     """
     try:
         res = fn()
-        ok = bool(res.get("ok"))
+        raw = res.get("ok")
+        ok = None if raw is None else bool(raw)
         detail = str(res.get("detail", ""))
         hint = res.get("hint")
     except Exception as exc:  # noqa: BLE001 — health must NEVER raise out
         ok = False
         detail = f"{name} check errored: {type(exc).__name__}: {exc}"
         hint = f"internal error in the {name} check: {exc}"
-    if not ok and not hint:
-        hint = f"{name} failed: {detail}"
+    if ok is not True and not hint:
+        verdict = "could not be evaluated" if ok is None else "failed"
+        hint = f"{name} {verdict}: {detail}"
     return {"name": name, "ok": ok, "detail": detail, "hint": hint}
 
 
@@ -400,7 +288,7 @@ def health(
     agent_id: str | None = None,
     unseen_threshold: int = UNSEEN_BACKLOG_THRESHOLD,
 ) -> dict[str, Any]:
-    """Run every scitex-todo health check and return the standard report.
+    """Run every scitex-cards health check and return the standard report.
 
     Parameters
     ----------
@@ -428,13 +316,50 @@ def health(
         # mismatch. A check whose name implies coverage it does not have is how
         # that outage stayed invisible.
         _run_check("store_identity", lambda: _check_store_identity_agrees(store)),
+        # WHICH ENGINE, on BOTH rails? store_canonical names the card store's
+        # engine; nothing named the notification inbox's, and the two can
+        # differ — the inbox is a SQLite sidecar located from the store PATH, so
+        # pointing the store at a server does not move it. That split is what
+        # let a DM commit to the store on 2026-08-01 while no notification was
+        # ever created, with every card-side check green. Reported as a FAILURE
+        # rather than an info line, because a split is not a normal state.
+        _run_check("backend_mode", lambda: check_backend_mode(store)),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
         _run_check("notifyd_alive", lambda: _check_notifyd_alive(store)),
+        # Is anything actually being DELIVERED? notifyd_alive answers the
+        # narrower "is the process ticking", and it was green throughout the
+        # 2026-07-28 outage in which every tick failed to read the store and
+        # the operator's DMs went undelivered for a day. A liveness signal that
+        # only proves the loop is spinning is not a signal for what it exists
+        # to do.
+        _run_check("delivery_liveness", lambda: _check_delivery_liveness(store)),
         _run_check(
             "channel_drain",
             lambda: _check_channel_drain(soft_agent, store, unseen_threshold),
         ),
         _run_check("channel_capable", _check_channel_capable),
+        # Does the far end ACCEPT what we send? channel_capable (can we push?)
+        # and channel_drain (is the inbox consumed?) were both GREEN through the
+        # 2026-07-24 outage in which the whole fleet was deaf to the board: the
+        # scitex-cards -> scitex-cards rename left agent launch lines allowlisting
+        # the OLD server name, so every push was discarded on arrival while the
+        # drain kept marking records seen. Delivery here is fire-and-forget, so
+        # a name the client does not know does not delay a notification, it
+        # destroys it — silently. This is the only check that asks the far end.
+        _run_check("channel_reaches_session", check_channel_reaches_session),
+        # Did anything we pushed ever get CONFIRMED? channel_reaches_session
+        # reads the launch line, which only exists when a Claude launcher is in
+        # our ancestry — under a container runtime that supplies the allowlist
+        # some other way, it reports "not applicable" and the fleet is blind
+        # again. This one asks the inbox instead: rows stamped `pushed_at` with
+        # no `confirmed_at` are notifications we handed to a transport that
+        # never said they arrived. That is the residue of the 2026-07-29 outage
+        # (228 rows enqueued and consumed for this agent, ZERO unseen, weeks of
+        # operator DMs destroyed) and it is visible with no /proc and no config.
+        _run_check(
+            "delivery_confirmed",
+            lambda: check_delivery_confirmed(soft_agent, store),
+        ),
         # Is our own reported version actually TRUE? An orphaned/stale .dist-info
         # reports a version that outlived the code it describes — and the fleet's
         # drift detector reads exactly that string, so a fossil silently turns the
@@ -458,14 +383,21 @@ def health(
         ),
         _run_check("no_falsely_blocked", lambda: _check_no_falsely_blocked(store)),
     ]
-    ok = all(c["ok"] for c in checks)
-    n_ok = sum(1 for c in checks if c["ok"])
-    failing = [c["name"] for c in checks if not c["ok"]]
+    # THREE-VALUED aggregation. An UNKNOWN (`ok is None`) is not a fault, so it
+    # must not fail the run — but it is not a pass either, so it is counted out
+    # of `n_ok` and NAMED in the summary. Collapsing it either way is how a
+    # check that measured nothing gets read as a check that found nothing.
+    failing = [c["name"] for c in checks if c["ok"] is False]
+    unknown = [c["name"] for c in checks if c["ok"] is None]
+    ok = not failing
+    n_ok = sum(1 for c in checks if c["ok"] is True)
     summary = f"{n_ok}/{len(checks)} checks passed"
     if failing:
         summary += "; failing: " + ", ".join(failing)
+    if unknown:
+        summary += "; unknown: " + ", ".join(unknown)
     return {
-        "package": "scitex-todo",
+        "package": "scitex-cards",
         "ok": ok,
         "checks": checks,
         "summary": summary,

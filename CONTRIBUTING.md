@@ -1,4 +1,4 @@
-# Contributing to scitex-todo
+# Contributing to scitex-cards
 
 Thank you for your interest in contributing to SciTeX. This guide covers the
 process for reporting issues, suggesting features, and submitting code.
@@ -16,16 +16,16 @@ See [CLA.md](CLA.md) for full details.
 
 ## Reporting Issues
 
-- Search [existing issues](https://github.com/ywatanabe1989/scitex-todo/issues)
+- Search [existing issues](https://github.com/scitex-ai/scitex-cards/issues)
   before opening a new one.
 - Include a minimal reproducible example when reporting bugs.
-- Specify your Python version, OS, and `scitex-todo` version.
+- Specify your Python version, OS, and `scitex-cards` version.
 
 ## Development Setup
 
 ```bash
-git clone git@github.com:ywatanabe1989/scitex-todo.git
-cd scitex-todo
+git clone git@github.com:scitex-ai/scitex-cards.git
+cd scitex-cards
 pip install -e ".[dev]"
 ```
 

@@ -62,7 +62,7 @@ def test_report_names_the_package(tmp_path):
     report = _healthy_report(tmp_path)
 
     # Assert
-    assert report["package"] == "scitex-todo"
+    assert report["package"] == "scitex-cards"
 
 
 def test_report_ok_is_a_bool(tmp_path):
@@ -114,13 +114,29 @@ def test_every_check_name_is_a_non_empty_string(tmp_path):
     )
 
 
-def test_every_check_ok_is_a_bool(tmp_path):
-    # Arrange
+def test_every_check_ok_is_a_bool_or_none_when_it_cannot_measure(tmp_path):
+    # Arrange — `ok` is THREE-VALUED: True / False / None (UNKNOWN). A check
+    # with no evidence must not answer True; see `_health_delivery`.
     # Act
     report = _healthy_report(tmp_path)
 
     # Assert
-    assert all(isinstance(c["ok"], bool) for c in report["checks"]), report["checks"]
+    assert all(
+        isinstance(c["ok"], bool) or c["ok"] is None for c in report["checks"]
+    ), report["checks"]
+
+
+def test_a_check_that_cannot_measure_still_carries_a_hint(tmp_path):
+    # Arrange
+    report = _healthy_report(tmp_path)
+
+    # Act
+    unknown = [c for c in report["checks"] if c["ok"] is None]
+
+    # Assert — an unknown must say how to make itself measurable.
+    assert all(c["hint"] for c in unknown), [
+        c["name"] for c in unknown if not c["hint"]
+    ]
 
 
 def test_every_check_detail_is_a_string(tmp_path):
@@ -160,13 +176,25 @@ def test_expected_checks_present(tmp_path):
     assert expected <= {c["name"] for c in report["checks"]}
 
 
-def test_ok_is_true_iff_every_check_ok(tmp_path):
-    # Arrange
+def test_report_ok_is_true_iff_no_check_actually_failed(tmp_path):
+    # Arrange — an UNKNOWN check is not a fault and must not redden the run.
     # Act
     report = _healthy_report(tmp_path)
 
     # Assert
-    assert report["ok"] == all(c["ok"] for c in report["checks"])
+    assert report["ok"] == (not any(c["ok"] is False for c in report["checks"]))
+
+
+def test_an_unknown_check_is_named_in_the_summary(tmp_path):
+    # Arrange — an unknown that nobody can see is a silent pass with extra steps.
+    report = _healthy_report(tmp_path)
+    unknown = [c["name"] for c in report["checks"] if c["ok"] is None]
+
+    # Act
+    named = [name for name in unknown if name in report["summary"]]
+
+    # Assert
+    assert named == unknown, report["summary"]
 
 
 # The contract: no silent fail — a failing check ALWAYS has a real hint. A
@@ -611,7 +639,7 @@ def test_health_still_names_the_package_on_bad_inputs(tmp_path):
     report = _report_for_bad_inputs(tmp_path)
 
     # Assert
-    assert report["package"] == "scitex-todo"
+    assert report["package"] == "scitex-cards"
 
 
 def test_health_still_returns_a_bool_ok_on_bad_inputs(tmp_path):
