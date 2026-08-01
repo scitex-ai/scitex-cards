@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-01
+
+**The store target can now come from config, not only from an environment
+variable.** This closes the single gap behind every store-target failure of the
+PostgreSQL cutover.
+
+### An env var is a rule every caller must remember (#717)
+
+Until now the only way to point a client at a non-default store was
+`$SCITEX_CARDS_DB`, exported at every invocation site. Anything that did not
+export it fell through to a hardcoded local SQLite filename. That one gap
+produced, in different clothes each time:
+
+- **8 host-side writers** (4 systemd units, 3 cron entries, 1 hourly timer)
+  carrying no store env and silently writing the **old** store while the fleet
+  was believed migrated
+- **87 agent specs** each needing the variable pasted in individually
+- a crontab fix **reverted** by the hourly `copy_crontab` sync, dropping 3 cron
+  jobs back to the old default — then failing outright with `StoreRetired`
+- any **new** client on the host defaulting to a store that no longer accepts
+  writes
+
+`_config.py` already implemented a layered, fail-soft `config.json` across user
+and project scope, read at **call** time so a running daemon picks up an edit
+without a restart. It carried only `reminders:`. This adds a `store:` section
+and a new resolution tier:
+
+```
+explicit → $SCITEX_CARDS_DB → deprecated env → config store.target → default
+```
+
+**Below** the environment, so per-agent and per-test overrides still win and
+nothing that worked before changes. **Above** the hardcoded default — the tier
+that was silently wrong.
+
+Both resolvers get it, because `resolve_store_target`'s docstring promises it
+mirrors `resolve_db_path` exactly. In `resolve_db_path` the configured value
+goes through `_as_path`, so a DSN written into config produces the same loud
+refusal an env DSN does rather than being coerced into a mangled relative path
+that would create a second, empty store. A new tier must not open a new way in.
+
+The password is not in the config and must never be: the DSN carries none and
+libpq reads `$PGPASSFILE` itself.
+
+Measured on the live host with `$SCITEX_CARDS_DB` unset and the same config
+present — `0.30.3` resolved to the **retired** SQLite store, this release
+resolves to the PostgreSQL DSN.
+
 ## [0.30.3] - 2026-08-01
 
 **The schema is now asserted once per store, not once per open.** Required
