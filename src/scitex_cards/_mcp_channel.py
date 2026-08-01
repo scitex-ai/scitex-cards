@@ -51,6 +51,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Awaitable, Callable
 
 from . import _inbox
@@ -297,11 +298,42 @@ async def _poll_loop(
     is long-lived and must survive transient store/IO errors.
     """
     state = _DrainState()
+    # TICK TIMING, because the outside view could not separate the causes.
+    #
+    # Measured 2026-08-02: DMs reach an agent 13-25s after they are written,
+    # against a 5s interval. SEVEN candidates were eliminated from outside —
+    # notifyd (wrong path), the mtime gate (fails safe, always drains), the
+    # burst cap, PostgreSQL write latency (0.4-0.6s), drain work (poll_inbox
+    # 0.02s), an overridden interval (the running code reads 5.0), and MCP
+    # transport backpressure (an idle session was SLOWER, 20s vs 13s). Every
+    # component measured fast and the composite stayed slow, which is precisely
+    # the shape that outside observation cannot resolve.
+    #
+    # So record the three spans the loop actually controls. `drain_s` is the
+    # work, `gap_s` is wall time since the previous tick STARTED — so
+    # `gap_s - drain_s - interval` is the time the loop spent neither working
+    # nor sleeping, which is the quantity none of the seven probes could see.
+    previous_start: float | None = None
     while True:
+        tick_start = time.monotonic()
+        gap = None if previous_start is None else tick_start - previous_start
+        previous_start = tick_start
         try:
             await gated_drain_once(agent_id, send, state, source=source)
         except Exception as exc:  # noqa: BLE001 — keep the long-lived loop alive
             logger.warning("scitex-todo channel: drain tick failed: %s", exc)
+        drain_s = time.monotonic() - tick_start
+        # DEBUG, not INFO: this fires every `interval` on every agent, so at
+        # INFO it would be ~17k lines a day per session for a diagnostic that
+        # is only wanted while something is wrong.
+        logger.debug(
+            "scitex-todo channel: tick drain_s=%.3f gap_s=%s interval=%.1f "
+            "unexplained_s=%s",
+            drain_s,
+            "n/a" if gap is None else f"{gap:.3f}",
+            interval,
+            "n/a" if gap is None else f"{gap - drain_s - interval:.3f}",
+        )
         await asyncio.sleep(interval)
 
 
