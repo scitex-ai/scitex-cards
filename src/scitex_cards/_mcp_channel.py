@@ -374,21 +374,30 @@ async def _serve(
 
     import anyio
     from mcp.server.lowlevel import Server
-
-    # Attach the log sink FIRST, before anything worth logging happens. Both
-    # entry points (standalone ``mcp channel`` and unified ``mcp start``) reach
-    # the server through here, so this is the one place that covers both.
-    # No-op unless $SCITEX_CARDS_CHANNEL_LOG is set; raises if it is set and
-    # unwritable, because a server that silently discards its own diagnostics
-    # is what made the 0.31.5 tick instrument unreadable in production.
-    sink = install_channel_log_sink()
-    if sink is not None:
-        logger.info("scitex-todo channel: logging to %s", sink)
     from mcp.server.session import ServerSession
     from mcp.shared.message import SessionMessage
     from mcp.types import JSONRPCMessage, JSONRPCNotification
 
     from ._mcp_handshake_log import instrument_handshake
+
+    # Attach the log sink FIRST, before anything worth logging happens — and
+    # before instrument_handshake below, so records emitted during the
+    # handshake are captured too. Both entry points (standalone ``mcp channel``
+    # and unified ``mcp start``) reach the server through here, so this is the
+    # one place that covers both.
+    #
+    # Distinct from the handshake log, deliberately: that one appends STRUCTURED
+    # events to its own JSONL sink so a restart cannot empty them. This one
+    # makes ORDINARY logging readable at all — without it every logger.debug in
+    # the package is discarded, which is what left the 0.31.5 tick instrument
+    # computing drain_s every 5s into nowhere.
+    #
+    # No-op unless $SCITEX_CARDS_CHANNEL_LOG is set; raises if it is set and
+    # unwritable, because a server that silently discards its own diagnostics
+    # is the exact failure being removed here.
+    sink = install_channel_log_sink()
+    if sink is not None:
+        logger.info("scitex-todo channel: logging to %s", sink)
 
     if server is None:
         server = Server(name=f"scitex-todo-channel-{agent_id}")
