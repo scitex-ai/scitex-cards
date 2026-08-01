@@ -66,6 +66,7 @@ from ._channel_guard import (
 # under its line budget); re-exported below so
 # ``from scitex_cards._mcp_channel import resolve_agent_id`` keeps working.
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
+from ._channel_log_sink import install_channel_log_sink
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,9 @@ _DEFAULT_SOURCE = "stodo"
 # --------------------------------------------------------------------------- #
 # Pure logic (tested directly — no live MCP session needed)                   #
 # --------------------------------------------------------------------------- #
-def build_channel_params(rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE) -> dict[str, Any]:
+def build_channel_params(
+    rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE
+) -> dict[str, Any]:
     """Project an inbox record onto the Claude channel notification shape.
 
     Returns ``{"content": <body str>, "meta": {<all-string-values>}}``. EVERY
@@ -200,12 +203,16 @@ async def drain_once(
     import anyio
 
     pushed = 0
-    keys = await anyio.to_thread.run_sync(partial(recipient_keys, agent_id, store=store))
+    keys = await anyio.to_thread.run_sync(
+        partial(recipient_keys, agent_id, store=store)
+    )
     for key in keys:
         if pushed >= MAX_PUSH_PER_DRAIN:
             break  # burst cap reached — remaining keys drain next tick
         records = await anyio.to_thread.run_sync(
-            partial(_inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store)
+            partial(
+                _inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store
+            )
         )
         for rec in records:
             if pushed >= MAX_PUSH_PER_DRAIN:
@@ -299,6 +306,16 @@ async def _serve(
 
     import anyio
     from mcp.server.lowlevel import Server
+
+    # Attach the log sink FIRST, before anything worth logging happens. Both
+    # entry points (standalone ``mcp channel`` and unified ``mcp start``) reach
+    # the server through here, so this is the one place that covers both.
+    # No-op unless $SCITEX_CARDS_CHANNEL_LOG is set; raises if it is set and
+    # unwritable, because a server that silently discards its own diagnostics
+    # is what made the 0.31.5 tick instrument unreadable in production.
+    sink = install_channel_log_sink()
+    if sink is not None:
+        logger.info("scitex-todo channel: logging to %s", sink)
     from mcp.server.session import ServerSession
     from mcp.shared.message import SessionMessage
     from mcp.types import JSONRPCMessage, JSONRPCNotification
