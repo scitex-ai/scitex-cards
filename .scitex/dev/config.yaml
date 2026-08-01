@@ -105,3 +105,25 @@ audit:
           moved to a hosted runner because several self-hosted runners share one
           uv toolcache and lose the race; constitution section 4 makes hosted the
           default and cites this exact incident
+      # `postgres-backend::postgres-backend` — a THIRD distinct reason, and the
+      # only one of the three that is a hard capability limit rather than a
+      # policy or security choice.
+      #
+      # This job declares a `services: postgres:16` container. GitHub Actions
+      # service containers are started by the runner's DOCKER daemon; the
+      # registered Spartan machines are an HPC/apptainer pool with no Docker
+      # available to the runner, so the service simply cannot be brought up
+      # there. This is not "we prefer hosted" — the job is unrunnable on every
+      # currently registered destination, which is exactly the case the rule's
+      # own message says to exempt rather than re-point.
+      #
+      # It exists because PostgreSQL is the canonical store for this deployment
+      # and NO CI leg had ever connected to one (measured 2026-08-02: all 7
+      # workflow files, zero `services:` blocks). Re-pointing it at Spartan
+      # would not move the job, it would delete the coverage.
+      - path: .github/workflows/postgres-backend-on-ubuntu-latest.yml::postgres-backend
+        line: 0
+        reason: >-
+          needs a `services:` container, which requires a Docker-capable runner;
+          the registered Spartan pool is HPC/apptainer with no Docker, so this
+          job cannot run on any registered destination
