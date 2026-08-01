@@ -168,6 +168,10 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     (5, "table", "dm_thread_member_events", ""),
     (6, "column", "tasks", "revision"),
     (7, "trigger", "tasks_bump_revision", ""),
+    # v8 — the notification rail's columns. `msg_id` is the rung rather than
+    # `confirmed_at` only because it is the first of the three; all three land in
+    # one migration, so any of them would place the store equally well.
+    (8, "column", "notifications", "msg_id"),
 )
 
 #: The lowest version this module can justify from physical evidence.

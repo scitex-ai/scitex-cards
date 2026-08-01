@@ -144,7 +144,21 @@ CREATE TABLE IF NOT EXISTS notifications (
     actor        TEXT,
     ts           TEXT NOT NULL,
     seen         INTEGER NOT NULL DEFAULT 0,
-    record_json  TEXT
+    record_json  TEXT,
+    -- v8. The three columns the SQLite sidecar gained and this table never did,
+    -- added so the notification rail can move INTO the store instead of living
+    -- in runtime/todo.db beside it. `msg_id` makes DM dedup exact (the
+    -- (event_type, card_id, ts, actor) key is many-to-one by construction at
+    -- second resolution); `pushed_at` / `confirmed_at` are what let delivery be
+    -- proven by the RECIPIENT rather than by the sender's transport returning.
+    --
+    -- These MUST match _migrate_v7_to_v8 exactly. A fresh store and a migrated
+    -- store disagreeing on shape is this repo's own recorded failure: "whatever
+    -- v4 added went into _SCHEMA_SQL only ... so a v3 file upgraded straight to
+    -- v5 never received it, while its stamp said otherwise."
+    msg_id       TEXT,
+    pushed_at    TEXT,
+    confirmed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
     ON notifications(recipient_id, seen);

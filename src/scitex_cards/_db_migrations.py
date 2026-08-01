@@ -34,6 +34,8 @@ __all__ = [
     "_migrate_v2_to_v3",
     "_migrate_v5_to_v6",
     "_migrate_v6_to_v7",
+    "_migrate_v7_to_v8",
+    "NOTIFICATION_RAIL_COLUMNS",
     "REVISION_TRIGGER_SQL",
     "record_migration_provenance",
 ]
@@ -142,6 +144,51 @@ def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
     default someone may later flip.
     """
     execute_ddl(conn, REVISION_TRIGGER_SQL)
+
+
+#: The v8 columns on ``notifications``, in the order the fresh-create script
+#: declares them. ONE list, consulted by both paths, because a fresh store and a
+#: migrated store disagreeing on shape is this repo's own recorded failure.
+NOTIFICATION_RAIL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("msg_id", "TEXT"),
+    ("pushed_at", "TEXT"),
+    ("confirmed_at", "TEXT"),
+)
+
+
+def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+    """Give ``notifications`` the three columns the sidecar rail needs.
+
+    Idempotent, additive, no rewrite — each column is added only if absent, and
+    every existing row gets NULL, which is the honest value: these record facts
+    (which message this notification carries, when it was pushed, when the
+    RECIPIENT confirmed it) that were never observed for a pre-v8 row. Nothing
+    is invented, unlike a back-filled default would be.
+
+    WHY THIS TABLE AND NOT A NEW ONE. ``notifications`` already exists on the
+    fresh-create path with the right shape and the right ``(recipient_id, seen)``
+    index, and is currently VESTIGIAL — measured 0 rows on the live store, its
+    only writers being the derived-mirror rebuild. So the rail can move into it
+    rather than into a parallel table nobody else knows about.
+
+    WHAT THIS DOES NOT DO, stated because the gap is the dangerous part.
+    Installing the columns does NOT move the rail. ``_inbox_sqlite`` still writes
+    ``runtime/todo.db``, and ``_db_mirror`` still issues ``DELETE FROM
+    notifications`` as part of a mirror rebuild — harmless against a derived
+    empty table, and DATA LOSS the moment this one becomes the store of record.
+    That DELETE must be neutralised in the same change that flips the writers,
+    or the migration turns a dead mirror into a silent deletion trigger.
+
+    ``confirmed_at`` is the column that makes delivery provable at all. Today the
+    drain acks on ``send()`` returning, which establishes only that our own
+    writer accepted the bytes; the health check reports 53 notifications pushed
+    and never confirmed for exactly that reason. A recipient-written stamp is
+    what turns "dispatched" into "arrived".
+    """
+    present = table_columns(conn, "notifications")
+    for column, sql_type in NOTIFICATION_RAIL_COLUMNS:
+        if column not in present:
+            conn.execute(f"ALTER TABLE notifications ADD COLUMN {column} {sql_type}")
 
 
 def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
