@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+**An explicit server store no longer collapses into a phantom local store.**
+
+`resolve_tasks_path` has two branches and they disagreed. The ambient branch
+already asked `is_postgres_url` and returned the local root. The explicit branch
+fell straight through to `Path(explicit)`, which does not reject a DSN — it
+coerces it into a *relative* path:
+
+```
+Path("postgresql://scitex_cards@127.0.0.1:5432/scitex_cards")
+  -> PosixPath("postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards")
+```
+
+Everything derived from it then resolved against the writer's current
+directory, so `runtime_dir` yielded `postgresql:/…/runtime` and `inbox_db_path`
+put `todo.db` inside it.
+
+The failure was a silent **success**, which is why it survived: measured
+2026-08-02, `enqueue(store=<DSN>)` returned a notification id and created a
+phantom store under the caller's CWD. Nothing raised, so the fail-soft caller
+logged nothing, and the notification was unreachable because nobody polls a
+directory named after a DSN.
+
+An explicit DSN now resolves to the same local root the ambient branch already
+used, rather than raising. Every caller of this function wants a local
+directory — pidfiles, the delivery ledger, reminder state, the inbox sidecar —
+and wants one just as much when the cards live on a server. Raising would break
+the board, which legitimately threads its store through to the inbox rail.
+
 ## [0.31.3] - 2026-08-02
 
 **The SQLite inbox used SQL that old SQLite cannot parse, so no notification
