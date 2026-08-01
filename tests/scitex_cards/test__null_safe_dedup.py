@@ -53,6 +53,7 @@ import ast
 import inspect
 import os
 import sqlite3
+from contextlib import contextmanager
 
 import pytest
 
@@ -66,10 +67,19 @@ _REJECTED = " ".join(("DISTINCT", "FROM"))
 
 
 def _executed_sql(module) -> list[str]:
-    """Every string literal this module passes to a ``.execute(...)`` call.
+    """Every string LITERAL this module passes to a ``.execute(...)`` call.
 
     Adjacent string literals are folded into one ``Constant`` by the parser, so
     the multi-line implicit concatenations in the source arrive here whole.
+
+    LOWER BOUND, NOT A CENSUS. This reads only ``ast.Constant`` first-args, so
+    any statement composed at runtime -- an f-string, a ``.format``, a joined
+    fragment -- is INVISIBLE to it. That is not a hypothetical limitation: when
+    the dedup comparisons moved behind ``null_safe_eq_for`` (so they could
+    survive the move onto Postgres), six ``execute`` calls left this scan's
+    reach in one commit, and the suite stayed green while checking strictly
+    less. Use :func:`_recorded_sql` for anything that must actually be policed;
+    keep this one for the statements that genuinely are literals.
     """
     tree = ast.parse(inspect.getsource(module))
     found: list[str] = []
@@ -84,6 +94,64 @@ def _executed_sql(module) -> list[str]:
             if isinstance(value, str):
                 found.append(value)
     return found
+
+
+def _unreadable_execute_calls(module) -> int:
+    """How many ``.execute(...)`` calls :func:`_executed_sql` cannot see."""
+    tree = ast.parse(inspect.getsource(module))
+    blind = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "execute":
+            continue
+        first = node.args[0] if node.args else None
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            blind += 1
+    return blind
+
+
+def _recorded_sql(store) -> list[str]:
+    """SQL actually EXECUTED by a real ``enqueue``, composed strings included.
+
+    Wraps the connection the backend opens and records every statement it runs.
+    Strictly stronger than the source scan: it observes the string that reached
+    SQLite, so a comparison assembled at runtime is policed exactly like a
+    literal one.
+    """
+    seen: list[str] = []
+    real_open = _inbox_sqlite.open_connection
+
+    class _Recorder:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, *args, **kwargs):
+            seen.append(sql)
+            return self._conn.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    @contextmanager
+    def _wrapped(path=None):
+        with real_open(path) as conn:
+            yield _Recorder(conn)
+
+    _inbox_sqlite.open_connection = _wrapped
+    try:
+        _inbox_sqlite.enqueue(
+            "rec-agent",
+            event_type="commented",
+            card_id="card-1",
+            body="b",
+            actor=None,
+            store=store,
+        )
+    finally:
+        _inbox_sqlite.open_connection = real_open
+    return seen
 
 
 @pytest.fixture
@@ -137,6 +205,25 @@ class TestTheBackendSqlParsesOnThisSqlite:
         # Assert
         assert selects, "the AST guard found no SQL to check"
 
+    def test_the_source_scan_admits_what_it_cannot_see(self):
+        """The scan's blind spot must be VISIBLE, not merely true.
+
+        Six execute calls left this scan's reach the moment the dedup
+        comparisons moved behind ``null_safe_eq_for``, and the suite stayed
+        green while policing strictly less. A silent narrowing is the failure
+        mode; naming the number is the fix. If this count changes, someone has
+        moved SQL across the readable/composed line and should confirm the
+        runtime guard below still covers it.
+        """
+        # Arrange
+        module = _inbox_sqlite
+
+        # Act
+        blind = _unreadable_execute_calls(module)
+
+        # Assert -- not zero, and that is precisely the point
+        assert blind > 0
+
     def test_no_statement_uses_the_spelling_old_sqlite_rejects(self):
         # Arrange
         statements = _executed_sql(_inbox_sqlite)
@@ -148,6 +235,55 @@ class TestTheBackendSqlParsesOnThisSqlite:
         assert offenders == [], (
             f"SQLite < 3.39 cannot parse these: {offenders}. The production host "
             "measured 3.37.2. Use `IS ?`, null-safe in every SQLite."
+        )
+
+
+class TestTheRuntimeGuardSeesComposedSql:
+    """Policing what reached SQLite, not what a literal in the source says.
+
+    This class exists because the source scan above went blind to the dedup
+    comparisons the moment they were composed at runtime -- and went blind
+    SILENTLY, with every test still green. Recording the executed statements
+    restores the guarantee and cannot be defeated the same way: however the
+    string is assembled, it is observed after assembly.
+    """
+
+    def test_the_recorder_captures_statements(self, sqlite_inbox_store):
+        """Positive control -- zero captured statements must not read as a pass."""
+        # Arrange
+        expected_minimum = 1
+
+        # Act
+        recorded = _recorded_sql(sqlite_inbox_store)
+
+        # Assert
+        assert len(recorded) >= expected_minimum
+
+    def test_the_recorder_captures_the_dedup_comparison(self, sqlite_inbox_store):
+        """The specific statements the AST scan can no longer see."""
+        # Arrange
+        needle = " IS ?"
+
+        # Act
+        recorded = _recorded_sql(sqlite_inbox_store)
+
+        # Assert
+        assert any(needle in s for s in recorded)
+
+    def test_no_executed_statement_uses_the_spelling_old_sqlite_rejects(
+        self, sqlite_inbox_store
+    ):
+        """The guarantee that actually matters, on the composed strings."""
+        # Arrange
+        recorded = _recorded_sql(sqlite_inbox_store)
+
+        # Act
+        offenders = [s for s in recorded if _REJECTED in s.upper()]
+
+        # Assert
+        assert offenders == [], (
+            f"SQLite < 3.39 cannot parse these EXECUTED statements: {offenders}. "
+            "The production host measured 3.37.2."
         )
 
     def test_every_statement_parses_on_the_local_sqlite(self, sqlite_inbox_store):

@@ -46,6 +46,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
+from ._sql_null_safe import null_safe_eq_for
+
 logger = logging.getLogger(__name__)
 
 #: Env override for the inbox DB path (full path to the ``.db`` file). Default
@@ -246,19 +248,27 @@ def enqueue(
 
     Builds ``{id, event_type, card_id, body, actor, ts, seen: False}`` and
     inserts it for ``recipient_id``. Dedups on ``(event_type, card_id, ts,
-    actor)``, NULL-safe via SQLite's ``IS`` so ``actor=None`` dedups correctly.
+    actor)``, NULL-safe so ``actor=None`` dedups correctly.
 
-    ``IS`` — NOT the standard-SQL ``IS NOT DISTINCT FROM`` that means the same
-    thing. SQLite only learned that spelling in 3.39 (2022-06), so on any older
-    library EVERY enqueue here raises ``near "DISTINCT": syntax error`` and the
-    fail-soft caller swallows it: messages commit to the store and NO
-    notification is ever delivered. Measured on the live host (SQLite 3.37.2),
-    which is why the operator's DM reached ``dm_messages`` and never reached the
-    agent. CI ran a newer SQLite and parsed it happily, so the version floor —
-    not the SQL — was the thing under test. ``IS`` is null-safe in every SQLite
-    that ships this module, so it needs no floor at all. This file is the
-    SQLite backend; the PostgreSQL side (``_pg_triggers``) keeps the standard
-    spelling, which is correct THERE.
+    The null-safe operator is resolved per connection via
+    :func:`scitex_cards._sql_null_safe.null_safe_eq_for`, NOT hardcoded, because
+    THERE IS NO SPELLING THAT WORKS ON BOTH BACKENDS:
+
+    * SQLite's ``IS`` is null-safe in every version that ships this module, but
+      Postgres rejects ``IS $1`` outright.
+    * Standard-SQL ``IS NOT DISTINCT FROM`` works on Postgres, but SQLite only
+      learned it in 3.39 (2022-06).
+
+    That second half is not hypothetical. On the live host (SQLite 3.37.2) the
+    standard spelling made EVERY enqueue raise ``near "DISTINCT": syntax
+    error``, the fail-soft caller swallowed it, and messages committed to the
+    store while NO notification was ever delivered — for 36 hours. CI and every
+    container ran a newer SQLite and parsed it happily, so the version floor,
+    not the SQL, was the thing actually under test.
+
+    Resolving from the connection is what lets this module move onto
+    ``_db.connect()`` without either regressing that outage or breaking on
+    Postgres. On SQLite it emits exactly the ``IS`` that is here today.
 
     When ``supersede`` is set, every EXISTING UNSEEN row matching
     both ``event_type`` AND ``card_id`` is deleted BEFORE the dedup/insert, so
@@ -275,11 +285,18 @@ def enqueue(
     timestamp = ts if ts is not None else _utc_now_iso()
     with open_connection(inbox_db_path(store)) as conn:
         _ensure_ready(conn, store)
+        # The null-safe operator is resolved from the LIVE connection rather
+        # than hardcoded, so this SQL survives the move onto Postgres (where
+        # ``IS ?`` is a syntax error). Today every one of these resolves to
+        # SQLite's ``IS`` — byte-identical to what was here before — which is
+        # the point of doing this step separately from the backend switch.
+        ns_event_type = null_safe_eq_for(conn, "event_type")
+        ns_card_id = null_safe_eq_for(conn, "card_id")
         if supersede:
             conn.execute(
                 "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
-                "AND event_type IS ? "
-                "AND card_id IS ?",
+                f"AND {ns_event_type} "
+                f"AND {ns_card_id}",
                 (recipient_id, event_type, card_id),
             )
         if msg_id:
@@ -291,16 +308,17 @@ def enqueue(
             # never delivered. `msg_id` makes the key exact, which is a
             # correctness fix in its own right, not just plumbing.
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? AND msg_id IS ? LIMIT 1",
+                "SELECT 1 FROM inbox WHERE recipient = ? "
+                f"AND {null_safe_eq_for(conn, 'msg_id')} LIMIT 1",
                 (recipient_id, msg_id),
             ).fetchone()
         else:
             dup = conn.execute(
                 "SELECT 1 FROM inbox WHERE recipient = ? "
-                "AND event_type IS ? "
-                "AND card_id IS ? "
-                "AND ts IS ? "
-                "AND actor IS ? LIMIT 1",
+                f"AND {ns_event_type} "
+                f"AND {ns_card_id} "
+                f"AND {null_safe_eq_for(conn, 'ts')} "
+                f"AND {null_safe_eq_for(conn, 'actor')} LIMIT 1",
                 (recipient_id, event_type, card_id, timestamp, actor),
             ).fetchone()
         if dup is not None:
