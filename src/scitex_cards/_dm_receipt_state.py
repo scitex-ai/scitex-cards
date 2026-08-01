@@ -64,16 +64,16 @@ has none, and that -- not a missing receipt -- is what "cannot tell" means.
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
+from ._dm_read import CURRENT_MEMBERS_SQL, _open
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
 from ._schema_probe import _sole_value, row_values
-
-import sqlite3
-from pathlib import Path
-
-from ._dm_read import CURRENT_MEMBERS_SQL, _open
 
 #: Durable, and no recipient has confirmed it yet. The read dot stays hollow.
 STATE_PENDING = "pending"
@@ -143,14 +143,69 @@ def _readers_by_message(
     return out
 
 
-def receipt_state_for_conn(conn: sqlite3.Connection, thread_id: str) -> dict[str, dict]:
-    """``{message_id: {"state", "readers", "recipients"}}`` for one thread.
+def queued_message_ids(
+    message_ids: set[str], store: str | Path | None = None
+) -> set[str] | None:
+    """Which of ``message_ids`` have a notification row in the inbox.
+
+    Returns ``None`` — not an empty set — when the inbox cannot be read. The
+    middle lamp is three-valued and "I could not look" is a different answer
+    from "I looked and it is not there"; collapsing them would report a dropped
+    notification as a delivered one, which is the exact failure this gauge
+    exists to detect.
+
+    THE JOIN IS ON ``msg_id`` AND NOTHING ELSE. The tuple
+    ``(event_type, card_id, ts, actor)`` is the inbox's dedupe key and is
+    many-to-one by construction at second resolution — measured on the live
+    store, two distinct durable messages collapsed onto one notification. A
+    lossy join here would mark a message that was never delivered.
+
+    THE INBOX IS A DIFFERENT STORE, which is why it is passed rather than taken
+    from the caller's connection. Notifications live in a SQLite sidecar at
+    ``runtime/todo.db`` while the messages live in the card store, so this is a
+    cross-store question today. Schema v8 adds these columns to the store's own
+    ``notifications`` table; when the rail moves, this becomes one query and
+    this function collapses into the main one.
+    """
+    if not message_ids:
+        return set()
+    try:
+        from ._inbox_sqlite import inbox_db_path, open_connection
+
+        with open_connection(inbox_db_path(store)) as inbox:
+            rows = inbox.execute(
+                "SELECT DISTINCT msg_id FROM inbox WHERE msg_id IS NOT NULL"
+            ).fetchall()
+    except Exception:  # noqa: BLE001 — unreadable inbox is UNKNOWN, not empty
+        return None
+    present = {str(row_values(row)[0]) for row in rows}
+    return message_ids & present
+
+
+def receipt_state_for_conn(
+    conn: sqlite3.Connection,
+    thread_id: str,
+    store: str | Path | None = None,
+) -> dict[str, dict]:
+    """``{message_id: {"state", "queued", "readers", "recipients"}}``.
 
     Every live message of the thread appears, so a client can render a mark for
     each bubble without a second round trip and without guessing at a missing
     key. ``readers`` is the confirmed set INTERSECTED with the recipients, so a
     stray receipt from a non-member (or from the sender) is never displayed as
     a confirmation.
+
+    ``queued`` — a row exists in the recipient's inbox — IS now computed. This
+    module previously declined to, and said so: *"dispatch_to_inbox does not
+    carry the message id and the only available join is the lossy tuple above.
+    Carrying msg_id into _inbox.enqueue is what would make it honest."* That
+    became untrue when the id started flowing, and the note outlived the
+    limitation: measured 2026-08-02, 205 of 1517 DM notifications carry a
+    ``msg_id`` and every recent one does, while the gauge still rendered the
+    middle lamp indeterminate and explained itself with the obsolete reason.
+
+    It is ``True`` / ``False`` / ``None``, and ``None`` means the inbox could not
+    be read — never "not queued".
     """
     members = _current_members(conn, thread_id)
     readers = _readers_by_message(conn, thread_id)
@@ -158,6 +213,9 @@ def receipt_state_for_conn(conn: sqlite3.Connection, thread_id: str) -> dict[str
         "SELECT id, sender FROM dm_messages WHERE thread_id = ? AND deleted_at IS NULL",
         (thread_id,),
     ).fetchall()
+
+    live_ids = {str(row_values(row)[0]) for row in rows}
+    queued = queued_message_ids(live_ids, store)
 
     out: dict[str, dict] = {}
     for row in rows:
@@ -167,6 +225,7 @@ def receipt_state_for_conn(conn: sqlite3.Connection, thread_id: str) -> dict[str
         confirmed = readers.get(message_id, set()) & recipients
         out[message_id] = {
             "state": state_for(recipients, confirmed),
+            "queued": None if queued is None else (message_id in queued),
             "readers": sorted(confirmed),
             "recipients": sorted(recipients),
         }
@@ -182,7 +241,10 @@ def receipt_state_for_thread(
     """Public read: the per-message delivery state of ``thread_id``."""
     conn = _open(db, store)
     try:
-        return receipt_state_for_conn(conn, thread_id)
+        # `store` goes through as well as into `_open`: the inbox is a DIFFERENT
+        # database from the messages, so the queued lamp cannot be answered from
+        # this connection alone.
+        return receipt_state_for_conn(conn, thread_id, store)
     finally:
         conn.close()
 
@@ -191,6 +253,7 @@ __all__ = [
     "STATE_PENDING",
     "STATE_RECEIVED",
     "STATE_UNKNOWABLE",
+    "queued_message_ids",
     "receipt_state_for_conn",
     "receipt_state_for_thread",
     "recipients_of",
