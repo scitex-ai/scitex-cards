@@ -108,6 +108,24 @@ def complete_task(
                     # No unblock emit — re-completing changed nothing.
                     return dict(task)
                 task["status"] = "done"
+                # CLEAR THE GATE WITH THE STATUS, or the document we are about
+                # to save is INVALID and _validate_tasks refuses the whole save.
+                #
+                # A done card still naming an unresolved blocker is incoherent:
+                # either the gate was cleared, or the card is not done. The
+                # validator says exactly that, and `resolve_task` has always
+                # cleared the blocker for this reason. `complete_task` never
+                # learned it, so the two closing verbs disagreed and this one
+                # produced a document that could not be written back.
+                #
+                # Measured on the live */15 reconcile cron, 2026-08-01:
+                #   TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
+                #   has blocker 'operator-decision' but status is 'done'
+                # That card was legitimately blocked on an operator decision and
+                # its pull request merged anyway — real data, not corruption.
+                # Because validation covers the WHOLE document, that one card
+                # stopped the sweep from closing ANY card.
+                task.pop("blocker", None)
                 log_meta = task.get("_log_meta")
                 if not isinstance(log_meta, dict):
                     log_meta = {}
@@ -385,147 +403,11 @@ def reopen_task(
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
 
-def reassign_task(
-    store: str | Path | None = None,
-    task_id: str | None = None,
-    new_owner: str | None = None,
-    *,
-    by: str | None = None,
-    entry_points=None,  # hook-bypass: line-limit
-) -> dict:
-    """Atomically change a card's owner — the primitive the board lacked.
-
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
-
-      * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
-        in lock-step with the operator-co-designed ``agent`` so every
-        reader — old dict-style and new — agrees on the owner), AND
-      * set ``scope = "agent:<new_owner>"`` (the convention the fleet
-        slices on), AND
-      * append an audit comment ``"reassigned <old> -> <new> by <actor>"``.
-
-    THEN (post-persist, outside the lock, fail-soft) emit a canonical
-    ``reassigned`` card-event with ``extra={"from_owner", "to_owner"}``.
-    The EVENT is the notification path — there is intentionally NO bespoke
-    notify/delivery here (delivery is C4, a separate card; this primitive
-    EMITS, it does not deliver).
-
-    Idempotent: reassigning to the SAME current owner is a no-op — no
-    write, no audit comment, no spurious event — so a replayed/duplicate
-    reassign is harmless.
-
-    Parameters
-    ----------
-    task_id : str
-        The card to reassign (required).
-    new_owner : str
-        The new owning agent (required, non-empty).
-    by : str, optional
-        The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
-    entry_points : iterable, optional
-        In-process injection seam forwarded to the event emit (real fake
-        handler in tests); ``None`` uses real plugin discovery.
-
-    Returns
-    -------
-    dict
-        ``{"task_id", "from_owner", "to_owner", "actor", "changed", "task"}``
-        where ``changed`` is ``False`` on the same-owner no-op path.
-
-    Raises
-    ------
-    ValueError
-        If ``task_id`` or ``new_owner`` is missing/empty.
-    TaskNotFoundError
-        If no task matches ``task_id``.
-    """
-    from . import _model, _task  # hook-bypass: line-limit
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
-
-    if not task_id:
-        raise ValueError("reassign_task: 'task_id' is required")
-    if not new_owner or not str(new_owner).strip():
-        raise ValueError("reassign_task: 'new_owner' is required")
-    new_owner = str(new_owner)
-    actor = _default_agent(by)
-    tasks_path = _resolved_store(store)
-    changed = False
-    old_owner: str | None = None
-    result_task: dict | None = None
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        target = _task._find_live_task(tasks, task_id)
-        if target is None:
-            raise TaskNotFoundError(f"reassign_task: unknown id {task_id!r}")
-        # Current owner = `agent`, falling back to legacy `assignee`.
-        old_owner = target.get("agent") or target.get("assignee")
-        if old_owner == new_owner:
-            # Idempotent no-op: same owner → no write, no event. Return the
-            # current state with changed=False.
-            result_task = dict(target)
-        else:
-            target["agent"] = new_owner
-            target["assignee"] = new_owner
-            target["scope"] = f"agent:{new_owner}"
-            comments = target.setdefault("comments", [])
-            comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": (
-                        f"reassigned {old_owner or '(unassigned)'} -> "
-                        f"{new_owner} by {actor}"
-                    ),
-                }
-            )
-            # Delegation keeps responsibility (operator 2026-07-18,
-            # 「渡しました、で終わられると困る」/ constitution §2 "ownership
-            # never dangles"): the PREVIOUS owner and the card's creator stay
-            # subscribed through the handoff, so lateness on the delegate
-            # reaches the delegator. Dropping out is an explicit
-            # set_subscriber remove, never a side effect of handing off.
-            subs = list(target.get("subscribers") or [])
-            for keeper in (old_owner, target.get("created_by")):
-                if keeper and keeper != new_owner and keeper not in subs:
-                    subs.append(keeper)
-            if subs:
-                target["subscribers"] = subs
-            target["last_activity"] = _utc_now_iso()
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
-            result_task = dict(target)
-            changed = True
-    # C5: emit `reassigned` ONLY on a real owner change, AFTER the write is
-    # durable + the lock released (fail-soft). The event is the
-    # notification path; delivery is C4. (hook-bypass: line-limit)
-    if changed:
-        _emit_card_event(
-            "reassigned",
-            task_id,
-            actor=actor,
-            extra={"from_owner": old_owner, "to_owner": new_owner},
-            store=tasks_path,
-            entry_points=entry_points,
-        )
-    # Liveness (assignee-liveness feature): heartbeat the reassigning actor,
-    # and surface the NEW owner's liveness so the caller learns immediately
-    # if it just reassigned the card to a non-running agent. Both fail-soft.
-    from ._liveness import _assignee_liveness, _heartbeat
-
-    _heartbeat(actor, tasks_path)
-    out = {
-        "task_id": task_id,
-        "from_owner": old_owner,
-        "to_owner": new_owner,
-        "actor": actor,
-        "changed": changed,
-        "task": result_task,
-    }
-    _liveness = _assignee_liveness(new_owner, tasks_path)
-    if _liveness is not None:
-        out["assignee_liveness"] = _liveness
-    return out
-
+# reassign_task now lives in _store_reassign, beside the bulk reassign_all:
+# ownership is one responsibility and was split across two modules, with the
+# module named for it holding only half. Re-exported here so every existing
+# import path (notably _store) keeps resolving unchanged.
+from ._store_reassign import reassign_task  # noqa: E402,F401
 
 __all__ = [
     "complete_task",
