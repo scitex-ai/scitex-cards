@@ -135,6 +135,19 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
     recipient_id TEXT PRIMARY KEY
 );
 
+-- v8 adds msg_id / pushed_at / confirmed_at so the notification rail can move
+-- INTO the store instead of living in runtime/todo.db beside it. `msg_id` makes
+-- DM dedup exact -- the (event_type, card_id, ts, actor) key is many-to-one by
+-- construction at second resolution. `confirmed_at` is what lets delivery be
+-- proven by the RECIPIENT rather than by the sender's transport returning.
+--
+-- They MUST match _migrate_v7_to_v8 exactly; a fresh store and a migrated store
+-- disagreeing on shape is this repo's own recorded v4 failure.
+--
+-- COMMENTS STAY OUTSIDE THE STATEMENT. SQLite stores the original CREATE text
+-- in sqlite_master verbatim, so a comment inside the column list becomes part
+-- of the stored schema and test__ddl's round-trip against executescript fails.
+-- Measured: that test caught exactly this on the first push of v8.
 CREATE TABLE IF NOT EXISTS notifications (
     id           TEXT PRIMARY KEY,
     recipient_id TEXT NOT NULL,
@@ -144,7 +157,10 @@ CREATE TABLE IF NOT EXISTS notifications (
     actor        TEXT,
     ts           TEXT NOT NULL,
     seen         INTEGER NOT NULL DEFAULT 0,
-    record_json  TEXT
+    record_json  TEXT,
+    msg_id       TEXT,
+    pushed_at    TEXT,
+    confirmed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
     ON notifications(recipient_id, seen);
