@@ -22,6 +22,7 @@ literal, a cross test goes red and names the reason.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 
 import pytest
@@ -47,22 +48,51 @@ _needs_old_sqlite = pytest.mark.skipif(
 )
 
 
+#: When SET, Postgres is DECLARED available and an unreachable server is a
+#: FAILURE, not a skip. CI exports this alongside its postgres service, so a
+#: broken service goes red instead of quietly reducing the suite to the SQLite
+#: half. Unset (a dev box with no Postgres) still skips.
+_ENV_PG_DSN = "SCITEX_CARDS_TEST_PG_DSN"
+
+
 @pytest.fixture
 def pg_conn():
-    """A live Postgres connection, or skip.
+    """A live Postgres connection: skip if UNDECLARED, fail if DECLARED-but-broken.
 
-    A fixture rather than an inline guard so the skip reason is reported by
-    pytest instead of being invisible inside a test body -- a silently-absent
-    backend is how a portability bug survives a green suite.
+    The asymmetry is the point. A Postgres-only test does not fail without a
+    server, it SKIPS -- and a skipped test is indistinguishable from a passing
+    one in a green summary. So the moment someone declares a server by exporting
+    the DSN, absence stops being an excuse and becomes a failure.
+
+    Same rule as the channel log sink: unconfigured is fine, configured-but-
+    broken is loud. Without it, adding a CI service buys nothing -- the legs
+    would go green whether the service came up or not.
     """
+    declared = os.environ.get(_ENV_PG_DSN)
+    dsn = declared or _PG_DSN
+
     try:
         import psycopg
     except ImportError:
+        if declared:
+            pytest.fail(
+                f"{_ENV_PG_DSN} is set but psycopg is not installed -- the "
+                "Postgres tests would silently not run. Install the [postgres] "
+                "extra or unset the variable."
+            )
         pytest.skip("psycopg not installed")
+
     try:
-        conn = psycopg.connect(_PG_DSN, connect_timeout=5)
+        conn = psycopg.connect(dsn, connect_timeout=5)
     except Exception as exc:
+        if declared:
+            pytest.fail(
+                f"{_ENV_PG_DSN} declares a Postgres at {dsn!r} but connecting "
+                f"raised {type(exc).__name__}: {exc}. A declared backend that "
+                "cannot be reached must be loud, not skipped."
+            )
         pytest.skip(f"no live Postgres: {type(exc).__name__}")
+
     yield conn
     conn.close()
 

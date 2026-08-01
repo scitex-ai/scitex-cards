@@ -1,0 +1,107 @@
+name: postgres-backend
+# The canonical store for this deployment is PostgreSQL, and until this file
+# existed NO CI leg ever connected to one. Every Postgres-specific behaviour —
+# the null-safe operator split, paramstyle translation, plpgsql trigger
+# substitution, advisory-lock semantics, dict-like row access — was validated
+# only on developer machines.
+#
+# This is a REPO-LOCAL workflow on purpose. The pytest matrix is an org-level
+# reusable workflow (scitex-ai/.github) shared by every repository, so adding a
+# service container there would impose a Postgres on repos that do not want one.
+#
+# WHY IT IS NOT ENOUGH TO SIMPLY ADD A SERVICE: a Postgres-only test does not
+# FAIL without a server, it SKIPS, and a skipped test is indistinguishable from
+# a passing one in a green summary. So this job EXPORTS SCITEX_CARDS_TEST_PG_DSN,
+# which flips the fixtures from "skip if absent" to "fail if unreachable". Adding
+# the service without that switch would buy a green leg and no assurance.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: postgres-backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  postgres-backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scitex_cards
+          POSTGRES_PASSWORD: scitex_cards
+          POSTGRES_DB: scitex_cards
+        ports:
+          - 5432:5432
+        # Without a health check the steps race the server's startup and fail
+        # with a connection error that looks exactly like a real defect.
+        options: >-
+          --health-cmd "pg_isready -U scitex_cards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package with the postgres extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[postgres]" pytest
+
+      - name: Confirm psycopg is importable
+        # A missing driver would otherwise surface as a fixture failure whose
+        # message blames the connection. Naming it here keeps the later failure
+        # honest about what actually broke.
+        run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
+
+      - name: Run the Postgres-backed tests
+        env:
+          # Declaring the DSN is what makes an unreachable server a FAILURE
+          # rather than a skip. See the pg_conn fixture.
+          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+        run: |
+          python -m pytest tests/scitex_cards/test__sql_null_safe.py -v -rs
+
+      - name: Assert the Postgres tests did not all skip
+        # The guard on the guard. If every Postgres test skipped, this leg is
+        # green while proving nothing — the precise failure this workflow exists
+        # to remove. Counting them is cheap; trusting the colour is not.
+        env:
+          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+        run: |
+          # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
+          # pipeline only the LAST command's status survives. Without this the
+          # `| tee` below returns 0 even when pytest fails, and the step passes
+          # while the tests are red. (A command that never ran reporting success
+          # is the same class of defect this whole workflow exists to remove;
+          # credit to scitex-hpc, who measured it on three commands piped to
+          # `head` the same day this was written.)
+          set -o pipefail
+          python -m pytest tests/scitex_cards/test__sql_null_safe.py -q -rs \
+            | tee result.txt
+          if grep -qE '^[0-9]+ skipped' result.txt; then
+            echo "ERROR: every Postgres test skipped despite a declared DSN"
+            exit 1
+          fi
+          python - <<'PY'
+          import pathlib, re, sys
+          text = pathlib.Path("result.txt").read_text()
+          m = re.search(r"(\d+) passed", text)
+          passed = int(m.group(1)) if m else 0
+          print(f"passed={passed}")
+          # The file has 8 tests; on a machine WITH Postgres and a modern SQLite
+          # exactly one (the old-SQLite cross case) legitimately skips.
+          if passed < 7:
+              print(f"ERROR: expected >=7 passed, got {passed}")
+              sys.exit(1)
+          PY
