@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-08-01
+
+**An unattended reconcile names itself instead of failing.** (#720)
+
+The `*/15` cron entry runs with no `SCITEX_TODO_AGENT_ID`, so every close raised
+`creator unresolved` and the job closed nothing. It surfaced only once 0.31.0
+fixed the store-target failure that had been masking it — the job had been dying
+at store-open, so it never reached `complete_task`.
+
+`reconcile-merged-prs` closes a card because a **pull request merged**, not
+because a person decided anything. Borrowing whichever agent happened to export
+a variable is less truthful than naming the reconciler, and requiring one means
+an unattended run cannot work at all. Precedence is widened only at the end:
+
+```
+explicit by=  →  $SCITEX_TODO_AGENT_ID  →  SYSTEM_ACTOR
+```
+
+The two cases that already worked are untouched; the third previously raised.
+
+This does **not** weaken `_store._resolve_creator_or_raise`, which still refuses
+to invent an author for an ordinary caller — the reconciler may default because
+it *knows who it is*. It also does not extend 0.31.0's store-target config tier
+to identity: a store is a host-level fact every client shares, whereas identity
+is per-actor, and one config naming an agent would make every cron job on the
+host impersonate it.
+
 ## [0.31.0] - 2026-08-01
 
 **The store target can now come from config, not only from an environment
