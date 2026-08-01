@@ -66,6 +66,7 @@ from ._channel_guard import (
 # under its line budget); re-exported below so
 # ``from scitex_cards._mcp_channel import resolve_agent_id`` keeps working.
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
+from ._channel_log_sink import install_channel_log_sink
 
 # Loop self-measurement, extracted so this module keeps ONE responsibility (the
 # channel server) and the timing invariant lives beside the numbers it guards.
@@ -378,6 +379,25 @@ async def _serve(
     from mcp.types import JSONRPCMessage, JSONRPCNotification
 
     from ._mcp_handshake_log import instrument_handshake
+
+    # Attach the log sink FIRST, before anything worth logging happens — and
+    # before instrument_handshake below, so records emitted during the
+    # handshake are captured too. Both entry points (standalone ``mcp channel``
+    # and unified ``mcp start``) reach the server through here, so this is the
+    # one place that covers both.
+    #
+    # Distinct from the handshake log, deliberately: that one appends STRUCTURED
+    # events to its own JSONL sink so a restart cannot empty them. This one
+    # makes ORDINARY logging readable at all — without it every logger.debug in
+    # the package is discarded, which is what left the 0.31.5 tick instrument
+    # computing drain_s every 5s into nowhere.
+    #
+    # No-op unless $SCITEX_CARDS_CHANNEL_LOG is set; raises if it is set and
+    # unwritable, because a server that silently discards its own diagnostics
+    # is the exact failure being removed here.
+    sink = install_channel_log_sink()
+    if sink is not None:
+        logger.info("scitex-todo channel: logging to %s", sink)
 
     if server is None:
         server = Server(name=f"scitex-todo-channel-{agent_id}")
