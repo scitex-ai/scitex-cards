@@ -359,6 +359,15 @@ async def _serve(
     When omitted, a bare push-only server is created (the standalone
     ``mcp channel``). ``agent_id`` may be ``None`` (tools-only, no push) so the
     tools surface still works when no identity is configured.
+
+    The transport pair is wrapped by
+    :func:`scitex_cards._mcp_handshake_log.instrument_handshake` before the
+    session sees it, so WHEN ``initialize`` arrived and WHEN it was answered land
+    in an append-only sink that survives a restart. The wrap must sit here, at
+    the transport, because ``ServerSession`` answers ``initialize`` internally
+    and never yields it to the message loop below — and because a request that is
+    received and never answered has to be recorded on arrival to be recorded at
+    all. Disabled or unwritable, it hands the original streams straight back.
     """
     from contextlib import AsyncExitStack
 
@@ -368,8 +377,16 @@ async def _serve(
     from mcp.shared.message import SessionMessage
     from mcp.types import JSONRPCMessage, JSONRPCNotification
 
+    from ._mcp_handshake_log import instrument_handshake
+
     if server is None:
         server = Server(name=f"scitex-todo-channel-{agent_id}")
+
+    read_stream, write_stream, handshake_log = instrument_handshake(
+        read_stream,
+        write_stream,
+        extra={"agent_id": agent_id, "push": bool(agent_id)},
+    )
 
     async with AsyncExitStack() as stack:
         lifespan_context = await stack.enter_async_context(server.lifespan(server))
@@ -421,6 +438,12 @@ async def _serve(
         finally:
             if poll_task is not None:
                 poll_task.cancel()
+            # An orphan `initialize_received` with a `server_exit` after it says
+            # the process died mid-handshake; an orphan with NOTHING after it
+            # says it is still hanging. Distinguishing those two is why the exit
+            # is recorded at all.
+            handshake_log.record("server_exit")
+            handshake_log.close()
 
 
 async def _run(

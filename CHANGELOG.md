@@ -1195,6 +1195,51 @@ is the difference.
   `white-space: pre-wrap`, since blocks already express the line breaks the
   plain path needed it for.
 
+- **Every MCP `initialize` handshake is recorded to a sink that SURVIVES a
+  restart.** `scitex-cards mcp start` answers its first `initialize` 7-14
+  seconds after spawn — measured 2026-07-29 over five real starts: 6.67 / 7.04 /
+  7.19 / 8.49 / 9.76 s. The variance is as dangerous as the mean: against a
+  client with a fixed handshake timeout it is a coin flip, not a constant.
+  Clients that give up mark the server "not connected", and the peer agent
+  scitex-agent-container has repeatedly lost its card slice that way. It could
+  not produce the client-side evidence either, because its stderr sink is
+  TRUNCATED ON BOOT — a disconnect that precedes or causes a restart destroys
+  its own trace, prospectively as well as retroactively.
+
+  `scitex_cards._mcp_handshake_log` wraps the stdio transport inside
+  `_mcp_channel._serve` and appends four facts per run to
+  `<store_dir>/runtime/mcp-handshake.jsonl`: `server_start` (carrying
+  `startup_s`, the gap between the process being exec'd and the serve loop being
+  ready), `initialize_received`, `initialize_answered` (carrying `handshake_s`,
+  the delta) and `server_exit`. The sink is opened `O_APPEND | O_CREAT` and
+  NEVER `O_TRUNC`; past `MAX_BYTES` it rotates by RENAME. A log cleared on start
+  is structurally incapable of retaining evidence about anything that causes a
+  start, which is the whole reason the outage went undiagnosed.
+
+  **It records the handshake that is never answered.** `initialize_received` is
+  written the moment the session takes the request off the transport — before
+  the server has any chance to answer — so a process killed mid-handshake leaves
+  an orphan line behind, and that orphan IS the diagnosis. A sink that only held
+  COMPLETED handshakes would be silent on precisely the failure it exists to
+  catch. The observation sits at the TRANSPORT rather than in the message loop
+  because `ServerSession` answers `initialize` inside the SDK and never yields
+  it to the loop.
+
+  **What it proved on its first run.** Across five real starts the handshake
+  itself took 2.3-5.1 MILLISECONDS while `startup_s` was 4.36-8.80 s. The
+  "7-14 second handshake" is not a handshake at all — it is import cost sitting
+  in front of one, which is what
+  `cli-startup-costs-5s-before-any-work-20260719` has to move. No optimisation
+  is attempted here; this change is the measuring.
+
+  Fails open — an unwritable sink disables the recorder, never the server, since
+  diagnosing an availability problem must not create one. Measured cost:
+  0.75-2.0 ms of one-time setup (published by the recorder itself as `setup_ms`,
+  so its overhead appears in its own output), ~0.2 ms per recorded event, and
+  under 1 microsecond per transport message. `$SCITEX_CARDS_MCP_HANDSHAKE_LOG`
+  relocates the sink, or disables it with `off` — disabled hands the original
+  streams straight back, so the transport is not wrapped at all.
+
 - **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
   pending notifications itself, then requires the ack. Delivery had exactly ONE
   rail: the MCP channel push. An agent spec whitelisted `server:scitex-todo`
