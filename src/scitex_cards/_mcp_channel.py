@@ -51,7 +51,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from typing import Any, Awaitable, Callable
 
 from . import _inbox
@@ -67,6 +66,10 @@ from ._channel_guard import (
 # under its line budget); re-exported below so
 # ``from scitex_cards._mcp_channel import resolve_agent_id`` keeps working.
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
+
+# Loop self-measurement, extracted so this module keeps ONE responsibility (the
+# channel server) and the timing invariant lives beside the numbers it guards.
+from ._channel_tick_timing import TickTimer, format_inconsistency, format_spans
 
 # The cursor advance is a RECEIPT now, not a claim of delivery — see
 # `_inbox_receipt` for what the MCP transport can and cannot tell us.
@@ -313,27 +316,23 @@ async def _poll_loop(
     # work, `gap_s` is wall time since the previous tick STARTED — so
     # `gap_s - drain_s - interval` is the time the loop spent neither working
     # nor sleeping, which is the quantity none of the seven probes could see.
-    previous_start: float | None = None
+    timer = TickTimer(interval)
     while True:
-        tick_start = time.monotonic()
-        gap = None if previous_start is None else tick_start - previous_start
-        previous_start = tick_start
+        timer.start_tick()
         try:
             await gated_drain_once(agent_id, send, state, source=source)
         except Exception as exc:  # noqa: BLE001 — keep the long-lived loop alive
             logger.warning("scitex-todo channel: drain tick failed: %s", exc)
-        drain_s = time.monotonic() - tick_start
+        spans = timer.end_tick()
+        # REPORTED, NEVER RAISED — see _channel_tick_timing's docstring. A bare
+        # assert here raises OUTSIDE the try above and kills this long-lived
+        # task, stopping delivery outright.
+        if spans.is_inconsistent:
+            logger.warning("scitex-todo channel: %s", format_inconsistency(spans))
         # DEBUG, not INFO: this fires every `interval` on every agent, so at
         # INFO it would be ~17k lines a day per session for a diagnostic that
         # is only wanted while something is wrong.
-        logger.debug(
-            "scitex-todo channel: tick drain_s=%.3f gap_s=%s interval=%.1f "
-            "unexplained_s=%s",
-            drain_s,
-            "n/a" if gap is None else f"{gap:.3f}",
-            interval,
-            "n/a" if gap is None else f"{gap - drain_s - interval:.3f}",
-        )
+        logger.debug("scitex-todo channel: %s", format_spans(spans))
         await asyncio.sleep(interval)
 
 
