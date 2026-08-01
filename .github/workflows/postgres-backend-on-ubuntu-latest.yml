@@ -29,6 +29,19 @@ jobs:
   postgres-backend:
     runs-on: ubuntu-latest
 
+    env:
+      # Defined once at job level so the run step and the guard step below
+      # cannot drift apart. A guard that checks a different set of files than
+      # the one that actually ran is worse than no guard: it reports on a run
+      # that did not happen.
+      #
+      # ADD EVERY FILE WITH A POSTGRES-DEPENDENT TEST HERE. A test that needs a
+      # server and is not listed does not fail — it simply never runs in CI,
+      # which is this workflow's own failure mode reappearing one level up.
+      PG_TEST_FILES: >-
+        tests/scitex_cards/test__sql_null_safe.py
+        tests/scitex_cards/test__inbox_carry.py
+
     services:
       postgres:
         image: postgres:16
@@ -70,38 +83,43 @@ jobs:
           # rather than a skip. See the pg_conn fixture.
           SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
         run: |
-          python -m pytest tests/scitex_cards/test__sql_null_safe.py -v -rs
-
-      - name: Assert the Postgres tests did not all skip
-        # The guard on the guard. If every Postgres test skipped, this leg is
-        # green while proving nothing — the precise failure this workflow exists
-        # to remove. Counting them is cheap; trusting the colour is not.
-        env:
-          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
-        run: |
           # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
           # pipeline only the LAST command's status survives. Without this the
-          # `| tee` below returns 0 even when pytest fails, and the step passes
-          # while the tests are red. (A command that never ran reporting success
-          # is the same class of defect this whole workflow exists to remove;
+          # `| tee` below returns 0 even when the tests fail, and the step passes
+          # while they are red. (A command that never ran reporting success is
+          # the same class of defect this whole workflow exists to remove;
           # credit to scitex-hpc, who measured it on three commands piped to
           # `head` the same day this was written.)
           set -o pipefail
-          python -m pytest tests/scitex_cards/test__sql_null_safe.py -q -rs \
-            | tee result.txt
-          if grep -qE '^[0-9]+ skipped' result.txt; then
-            echo "ERROR: every Postgres test skipped despite a declared DSN"
-            exit 1
-          fi
+          python -m pytest $PG_TEST_FILES -v -rs | tee result.txt
+
+      - name: Assert the Postgres tests actually exercised Postgres
+        # The guard on the guard. A leg that is green because every Postgres
+        # test SKIPPED proves nothing, which is the precise failure this
+        # workflow exists to remove.
+        #
+        # Asserts an INVARIANT, not a count. An earlier version pinned
+        # `passed >= 7`, calibrated to one file's test total -- a number
+        # guaranteed to go stale the moment a test is added, which happened
+        # within the hour when the carry tests landed. The durable property is
+        # that NO test skipped for want of a Postgres, and that something ran.
+        run: |
           python - <<'PY'
           import pathlib, re, sys
           text = pathlib.Path("result.txt").read_text()
+
+          # A declared-but-broken DSN now FAILS in the fixture, so these strings
+          # should be impossible here. Checking anyway: if the fixture ever
+          # regresses to skipping, this leg must not stay green.
+          for marker in ("no live Postgres", "psycopg not installed"):
+              if marker in text:
+                  print(f"ERROR: a test skipped for want of Postgres: {marker!r}")
+                  sys.exit(1)
+
           m = re.search(r"(\d+) passed", text)
           passed = int(m.group(1)) if m else 0
           print(f"passed={passed}")
-          # The file has 8 tests; on a machine WITH Postgres and a modern SQLite
-          # exactly one (the old-SQLite cross case) legitimately skips.
-          if passed < 7:
-              print(f"ERROR: expected >=7 passed, got {passed}")
+          if passed < 1:
+              print("ERROR: no tests passed -- the suite did not run")
               sys.exit(1)
           PY
