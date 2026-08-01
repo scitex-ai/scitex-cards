@@ -205,6 +205,16 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
             ENV_DB,
         )
         return _as_path(legacy_val, f"${ENV_DB_DEPRECATED}")
+    # CONFIG TIER — kept in lockstep with resolve_store_target, whose docstring
+    # promises this function's precedence is mirrored exactly. Routed through
+    # _as_path deliberately: this function is typed `-> Path`, so a DSN written
+    # into the config must produce the same loud refusal an env DSN does rather
+    # than being coerced into a mangled relative path.
+    from ._config import store_config_target
+
+    configured = store_config_target()
+    if configured:
+        return _as_path(configured, "the configured store target")
     # Final tier — DELEGATE to the ecosystem user-canonical resolver.
     # Imported lazily so a caller passing an explicit / env path never
     # hard-requires scitex_config to be importable.

@@ -70,6 +70,22 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
         value = os.environ.get(env_name)
         if value:
             return value
+    # CONFIG TIER — below the environment, above the hardcoded default.
+    #
+    # Below env, so a per-agent or per-test override still wins and nothing that
+    # worked before changes. Above the default, because the default is a
+    # HARDCODED local filename: before this tier existed, every caller that did
+    # not export $SCITEX_CARDS_DB silently resolved to a private SQLite file.
+    # That is what let eight host-side writers keep using the old store through
+    # the 2026-08-01 cutover while the fleet was believed migrated.
+    #
+    # An env var is a rule each caller must remember; a config file is a fact
+    # the host states once.
+    from ._config import store_config_target
+
+    configured = store_config_target()
+    if configured:
+        return configured
     # Same final tier as _db.resolve_db_path, imported lazily for the same
     # reason: a caller with an explicit or env target must not hard-require
     # scitex_config to be importable.
