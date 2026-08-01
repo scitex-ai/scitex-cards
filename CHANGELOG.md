@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-08-01
+
+**Completing a blocked card clears its gate.** (#723)
+
+`complete_task` set `status=done` and left `blocker` in place, producing a
+document `_validate_tasks` refuses. A done card still naming an unresolved gate
+is incoherent — either the gate was cleared, or the card is not done — and
+`resolve_task` has always cleared it for that reason. The two closing verbs
+disagreed, and this one could not write back at all.
+
+Measured on the live `*/15` reconcile cron:
+
+```
+TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
+has blocker 'operator-decision' but status is 'done'
+```
+
+That card was legitimately blocked on an operator decision and its pull request
+merged anyway — real data, not corruption. Because validation covers the **whole
+document**, that single card stopped the sweep from closing *any* card.
+
+This is the third defect stacked in one code path, after the store target
+(0.31.0) and the actor identity (0.31.1), each hidden by the one below it.
+
+### `reassign_task` moves beside `reassign_all`
+
+Carried in the same change because the one-line fix was blocked:
+`_store_lifecycle.py` was already 45 lines over the 512-line limit, and its own
+`delete_task` carried the comment *"verb-module split still queued"*.
+
+Single-card and all-cards reassignment are one responsibility — changing a
+card's owner — and were split across two modules, with the one named for the job
+holding half of it. Ownership leaves *lifecycle*, which is about a card's state.
+
+| file | before | after |
+| --- | --- | --- |
+| `_store_lifecycle.py` | 539 | 421 |
+| `_store_reassign.py` | 170 | 312 |
+
+`_store_lifecycle` re-exports `reassign_task` and keeps it in `__all__`, so every
+existing import path resolves unchanged — verified that the lifecycle, reassign
+and `_store` paths all return the same object.
+
 ## [0.31.1] - 2026-08-01
 
 **An unattended reconcile names itself instead of failing.** (#720)
