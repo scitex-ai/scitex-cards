@@ -49,6 +49,46 @@ def _store_mode(store: str | Path | None) -> tuple[str, str]:
     return (POSTGRES if is_postgres_url(target) else SQLITE), target
 
 
+def _which_tier_won(store: str | Path | None, resolved: str) -> str:
+    """Name the tier that supplied ``resolved`` — the store target's SOURCE.
+
+    "I edited the config and nothing changed" is the single most confusing way
+    this resolution fails, because every tier is individually working: the
+    environment simply outranks the file. Naming the winner turns that into one
+    line of output instead of an investigation.
+
+    DETERMINED BY COMPARISON, NOT BY RE-IMPLEMENTING THE PRECEDENCE. A second
+    copy of the ordering here would be a second thing to keep in step with
+    :func:`scitex_cards._store_target.resolve_store_target`, and the two would
+    eventually disagree — at which point this line would confidently name the
+    wrong source. So it asks each tier what it holds and reports the
+    highest-ranked one whose value MATCHES what actually resolved. When two
+    tiers hold the same value the higher one is named, which is also what wins.
+    """
+    import os
+
+    if store is not None:
+        return "an explicit argument"
+
+    from ._db import ENV_DB
+
+    env_value = os.environ.get(ENV_DB)
+    if env_value and str(env_value) == resolved:
+        return f"the {ENV_DB} environment variable"
+
+    try:
+        from ._config import CONFIG_NAME, store_config_target
+
+        if store_config_target() == resolved:
+            return f"{CONFIG_NAME} (store.target)"
+    except Exception:  # noqa: BLE001 — a doctor must not crash the caller
+        pass
+
+    if env_value:
+        return f"the {ENV_DB} environment variable"
+    return "the built-in default"
+
+
 def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
     """Return ``(mode, location)`` for the NOTIFICATION inbox rail.
 
@@ -79,12 +119,14 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             "hint": "run `scitex-cards resolve-store` to see what the store resolves to",
         }
 
+    source = _which_tier_won(store, target)
+
     if store_mode == inbox_mode:
         return {
             "ok": True,
             "detail": (
-                f"both rails on {store_mode}: cards at {target}, "
-                f"notification inbox at {inbox_where}"
+                f"both rails on {store_mode}: cards at {target} "
+                f"(chosen by {source}), notification inbox at {inbox_where}"
             ),
             "hint": None,
         }
@@ -92,7 +134,8 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
     return {
         "ok": False,
         "detail": (
-            f"SPLIT BACKENDS — cards are on {store_mode} ({target}) but the "
+            f"SPLIT BACKENDS — cards are on {store_mode} ({target}, chosen by "
+            f"{source}) but the "
             f"notification inbox is on {inbox_mode} ({inbox_where}). The inbox "
             "rail is a file sidecar located from the store PATH, so pointing "
             "the store at a server does not move it. Card writes and "

@@ -129,6 +129,41 @@ class TestASplitIsReportedAsFailure:
         assert isinstance(result["ok"], bool)
 
 
+class TestItNamesWhichTierChoseTheTarget:
+    """ "I edited the config and nothing changed" must be one line, not a hunt."""
+
+    def test_an_explicit_argument_is_named(self, sqlite_store):
+        # Arrange
+        store = sqlite_store
+
+        # Act
+        detail = check_backend_mode(store)["detail"]
+
+        # Assert
+        assert "explicit argument" in detail
+
+    def test_the_environment_variable_is_named_when_it_wins(self, sqlite_store):
+        """The env var outranks the file -- that is the confusing case."""
+        # Arrange
+        os.environ["SCITEX_CARDS_DB"] = sqlite_store
+
+        # Act
+        detail = check_backend_mode(None)["detail"]
+
+        # Assert
+        assert "environment variable" in detail
+
+    def test_the_config_file_is_named_when_no_env_var_is_set(self, sqlite_store):
+        # Arrange
+        os.environ.pop("SCITEX_CARDS_DB", None)
+
+        # Act
+        detail = check_backend_mode(None)["detail"]
+
+        # Assert
+        assert "chosen by" in detail
+
+
 class TestTheWriteTargetNamesTheRealEngine:
     def test_it_no_longer_hardcodes_sqlite(self, sqlite_store):
         """Against a FILE store the honest answer really is sqlite."""
