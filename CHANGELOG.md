@@ -29,6 +29,21 @@ Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
 needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
 standard spelling, which is correct there.
 
+**This reverses a deliberate decision from 0.31.2**, and the reasoning behind
+that decision was sound apart from one premise. It chose the standard spelling
+so the module's SQL would survive a later move to PostgreSQL, and pinned
+SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+measured 3.37.2 — and it was never ours to enforce, since the package controls
+neither the CI images nor the host's system python. A requirement the package
+cannot enforce is a hope, not a floor. The premise does not hold either:
+`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
+backend module, exactly as the YAML and SQLite backends are separate today.
+
+What that decision got right is kept: rewriting the comparison to `=` parses on
+both engines and then silently stops deduplicating, because `actor = NULL` is
+never true. That trap is still pinned by a positive-control test.
+
 The regression test reads the statements the module actually hands to
 `execute()` via AST and fails on the non-portable spelling regardless of the
 local SQLite version. It deliberately does not scan the file for a substring:
