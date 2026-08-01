@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-08-02
+
+**The doctor names the engine on both rails, and fails when they differ.**
+
+`check_single_write_target` reported the literal string "SQLite"
+*unconditionally*. True when written; a lie from the day a store could be a
+PostgreSQL server. Measured on the live store: it printed `exactly one write
+target: SQLite` while every card write went to PostgreSQL. The one line that
+looks like it answers "which engine am I on" answered it wrongly, confidently,
+on every PostgreSQL deployment. It now resolves the engine instead of asserting
+it.
+
+Nothing reported the *notification* rail's engine at all. The inbox is a SQLite
+sidecar located from the store **path**, so pointing the store at a server does
+not move it — cards go to PostgreSQL and notifications stay on SQLite. That
+split is what let a DM commit to the store on 2026-08-01 while no notification
+was ever created, with every card-side check green.
+
+`check_backend_mode` reports both rails and **fails** when they disagree. A
+check that merely printed the two modes would report the split as normal, and
+normal is the wrong word for a state in which a green card-side doctor says
+nothing about whether notifications are delivered.
+
+It deliberately offers **no toggle** to disable the SQLite rail, and the hint
+says so: in postgres mode the sidecar is the only inbox implementation that
+exists, so a switch would let the split be *configured* rather than *fixed* — a
+fallback wearing a switch. The doctor goes green when the inbox moves into the
+store, not when someone sets a variable.
+
+It also names **which tier chose the store target** (explicit argument,
+`SCITEX_CARDS_DB`, `config.json`, or the built-in default). "I edited the config
+and nothing changed" is the most confusing way this resolution fails, because
+every tier is individually working — the environment simply outranks the file.
+Determined by comparison rather than by re-implementing the precedence, so it
+cannot drift out of step with `resolve_store_target` and start naming the wrong
+source.
+
 **An explicit server store no longer collapses into a phantom local store.**
 
 `resolve_tasks_path` has two branches and they disagreed. The ambient branch
