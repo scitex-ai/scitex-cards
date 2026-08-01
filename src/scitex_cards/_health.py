@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import _inbox
+from ._health_backend_mode import check_backend_mode
 from ._health_channel_reach import check_channel_reaches_session
 from ._health_delivery import check_delivery_confirmed
 from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
@@ -315,6 +316,14 @@ def health(
         # mismatch. A check whose name implies coverage it does not have is how
         # that outage stayed invisible.
         _run_check("store_identity", lambda: _check_store_identity_agrees(store)),
+        # WHICH ENGINE, on BOTH rails? store_canonical names the card store's
+        # engine; nothing named the notification inbox's, and the two can
+        # differ — the inbox is a SQLite sidecar located from the store PATH, so
+        # pointing the store at a server does not move it. That split is what
+        # let a DM commit to the store on 2026-08-01 while no notification was
+        # ever created, with every card-side check green. Reported as a FAILURE
+        # rather than an info line, because a split is not a normal state.
+        _run_check("backend_mode", lambda: check_backend_mode(store)),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
         _run_check("notifyd_alive", lambda: _check_notifyd_alive(store)),
         # Is anything actually being DELIVERED? notifyd_alive answers the

@@ -2,6 +2,119 @@
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-08-02
+
+**The doctor names the engine on both rails, and fails when they differ.**
+
+`check_single_write_target` reported the literal string "SQLite"
+*unconditionally*. True when written; a lie from the day a store could be a
+PostgreSQL server. Measured on the live store: it printed `exactly one write
+target: SQLite` while every card write went to PostgreSQL. The one line that
+looks like it answers "which engine am I on" answered it wrongly, confidently,
+on every PostgreSQL deployment. It now resolves the engine instead of asserting
+it.
+
+Nothing reported the *notification* rail's engine at all. The inbox is a SQLite
+sidecar located from the store **path**, so pointing the store at a server does
+not move it — cards go to PostgreSQL and notifications stay on SQLite. That
+split is what let a DM commit to the store on 2026-08-01 while no notification
+was ever created, with every card-side check green.
+
+`check_backend_mode` reports both rails and **fails** when they disagree. A
+check that merely printed the two modes would report the split as normal, and
+normal is the wrong word for a state in which a green card-side doctor says
+nothing about whether notifications are delivered.
+
+It deliberately offers **no toggle** to disable the SQLite rail, and the hint
+says so: in postgres mode the sidecar is the only inbox implementation that
+exists, so a switch would let the split be *configured* rather than *fixed* — a
+fallback wearing a switch. The doctor goes green when the inbox moves into the
+store, not when someone sets a variable.
+
+It also names **which tier chose the store target** (explicit argument,
+`SCITEX_CARDS_DB`, `config.json`, or the built-in default). "I edited the config
+and nothing changed" is the most confusing way this resolution fails, because
+every tier is individually working — the environment simply outranks the file.
+Determined by comparison rather than by re-implementing the precedence, so it
+cannot drift out of step with `resolve_store_target` and start naming the wrong
+source.
+
+**An explicit server store no longer collapses into a phantom local store.**
+
+`resolve_tasks_path` has two branches and they disagreed. The ambient branch
+already asked `is_postgres_url` and returned the local root. The explicit branch
+fell straight through to `Path(explicit)`, which does not reject a DSN — it
+coerces it into a *relative* path:
+
+```
+Path("postgresql://scitex_cards@127.0.0.1:5432/scitex_cards")
+  -> PosixPath("postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards")
+```
+
+Everything derived from it then resolved against the writer's current
+directory, so `runtime_dir` yielded `postgresql:/…/runtime` and `inbox_db_path`
+put `todo.db` inside it.
+
+The failure was a silent **success**, which is why it survived: measured
+2026-08-02, `enqueue(store=<DSN>)` returned a notification id and created a
+phantom store under the caller's CWD. Nothing raised, so the fail-soft caller
+logged nothing, and the notification was unreachable because nobody polls a
+directory named after a DSN.
+
+An explicit DSN now resolves to the same local root the ambient branch already
+used, rather than raising. Every caller of this function wants a local
+directory — pidfiles, the delivery ledger, reminder state, the inbox sidecar —
+and wants one just as much when the cards live on a server. Raising would break
+the board, which legitimately threads its store through to the inbox rail.
+
+## [0.31.3] - 2026-08-02
+
+**The SQLite inbox used SQL that old SQLite cannot parse, so no notification
+was ever delivered on the host.**
+
+`_inbox_sqlite.enqueue` spelled its null-safe comparisons
+`IS NOT DISTINCT FROM` — standard SQL, and exactly what SQLite's `IS` means.
+SQLite only accepts that spelling from **3.39** (2022-06). The host runs
+**3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
+
+`_threads_mirror.dispatch_to_inbox` is deliberately fail-soft — the message is
+already committed, so a failed enqueue should cost a push, not a message. That
+turned a hard SQL error into silence: DMs landed in `dm_messages`, no
+notification row was ever written, and the board reported success. Measured on
+the live store — an operator DM sat in the store and never reached the agent's
+session.
+
+It stayed hidden because the failure is **environment-dependent**. Containers
+run SQLite 3.45.1 and parse the standard spelling happily, so agent-to-agent
+DMs delivered normally while board-originated ones vanished. CI ran a new
+SQLite too, so a behavioural test was green no matter which spelling the source
+used — it pinned the SQLite version, not the SQL.
+
+Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
+needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
+standard spelling, which is correct there.
+
+**This reverses a deliberate decision from 0.31.2**, and the reasoning behind
+that decision was sound apart from one premise. It chose the standard spelling
+so the module's SQL would survive a later move to PostgreSQL, and pinned
+SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+measured 3.37.2 — and it was never ours to enforce, since the package controls
+neither the CI images nor the host's system python. A requirement the package
+cannot enforce is a hope, not a floor. The premise does not hold either:
+`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
+backend module, exactly as the YAML and SQLite backends are separate today.
+
+What that decision got right is kept: rewriting the comparison to `=` parses on
+both engines and then silently stops deduplicating, because `actor = NULL` is
+never true. That trap is still pinned by a positive-control test.
+
+The regression test reads the statements the module actually hands to
+`execute()` via AST and fails on the non-portable spelling regardless of the
+local SQLite version. It deliberately does not scan the file for a substring:
+the module now discusses `IS NOT DISTINCT FROM` by name, and a substring scan
+would match that prose and fail forever.
+
 ## [0.31.2] - 2026-08-01
 
 **Completing a blocked card clears its gate.** (#723)

@@ -95,11 +95,33 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
     aware), the same ambient default a fresh install uses.
     """
+    from ._store_url import is_postgres_url
+
     if explicit is not None:
+        # An EXPLICIT server store gets the same answer as an ambient one.
+        # Without this the two branches disagreed: ambient returned the local
+        # root, while explicit fell through to Path(), which does not reject a
+        # DSN — it COLLAPSES it to a relative path
+        # (``postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards``). Callers
+        # then created that tree under their own CWD and wrote there.
+        #
+        # The failure was a silent SUCCESS, which is why it survived. Measured
+        # 2026-08-02: enqueue(store=<DSN>) returned a notification id and left a
+        # phantom store at ``<CWD>/postgresql:/…/runtime/todo.db``. Nothing
+        # raised, so the fail-soft caller logged nothing, and the notification
+        # was unreachable because nobody polls a directory named after a DSN.
+        #
+        # Every caller of this function wants a LOCAL directory (pidfiles, the
+        # delivery ledger, reminder state, the inbox sidecar) and wants one just
+        # as much when the cards live on a server — that is this function's
+        # stated contract above. So a DSN resolves to the local root here too,
+        # rather than raising: raising would break the board, which legitimately
+        # threads its store through to the inbox rail.
+        if is_postgres_url(str(explicit)):
+            return _user_root() / "tasks.yaml"
         return Path(explicit).expanduser()
 
     from ._store_target import resolve_store_target
-    from ._store_url import is_postgres_url
 
     if is_postgres_url(resolve_store_target(None)):
         return _user_root() / "tasks.yaml"
