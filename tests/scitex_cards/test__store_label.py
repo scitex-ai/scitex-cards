@@ -164,7 +164,7 @@ class TestTheCliCaptionExecutesTheDefect:
         monkeypatch.setattr(_store, "list_tasks", lambda *a, **k: [])
 
         # Act
-        _admin.list_tasks_filtered(None, as_json=False)
+        _admin.list_tasks_filtered(None, None, None, False, None)
 
         # Assert
         assert PG_URL in capsys.readouterr().out
