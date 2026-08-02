@@ -35,7 +35,9 @@ __all__ = [
     "_migrate_v5_to_v6",
     "_migrate_v6_to_v7",
     "_migrate_v7_to_v8",
+    "_migrate_v8_to_v9",
     "NOTIFICATION_RAIL_COLUMNS",
+    "NOTIFICATION_ORDER_COLUMN",
     "REVISION_TRIGGER_SQL",
     "record_migration_provenance",
 ]
@@ -189,6 +191,78 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
     for column, sql_type in NOTIFICATION_RAIL_COLUMNS:
         if column not in present:
             conn.execute(f"ALTER TABLE notifications ADD COLUMN {column} {sql_type}")
+
+
+#: The v9 arrival-order column. Plain ``BIGINT`` because :func:`execute_ddl`
+#: translates ONLY ``CREATE TRIGGER`` — column types reach the backend verbatim,
+#: so ``BIGSERIAL`` would be a SQLite syntax error and ``AUTOINCREMENT`` a
+#: PostgreSQL one. The generator is attached per-backend in the migration below.
+NOTIFICATION_ORDER_COLUMN = ("seq", "BIGINT")
+
+#: PostgreSQL sequence backing ``notifications.seq``.
+_SEQ_NAME = "notifications_seq_seq"
+
+
+def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+    """Give ``notifications`` an ARRIVAL-ORDER column. Idempotent, additive.
+
+    WHY A COLUMN AND NOT AN ORDER BY. The SQLite inbox delivers and acks by
+    ``ORDER BY rowid`` — five call sites — and ``rowid`` has no PostgreSQL
+    equivalent. Moving the rail without replacing it would silently lose
+    delivery order: the SQL stays valid on both engines and the tests stay
+    green, which is the worst possible shape for a correctness regression.
+
+    WHY NOT ``ORDER BY ts, id``, which the export path already uses for this
+    very table and justifies as "on append-only tables it is the same order
+    rowid produced". MEASURED ON THE LIVE RAIL, 2026-08-02, and it is not:
+
+        3496 rows; 1256 positions differ from rowid order
+        1051 of those are same-second ties
+        8 are genuine TIMESTAMP INVERSIONS against insertion order
+        e.g. a row stamped 2026-08-02T00:00:00Z is followed by one
+             stamped 2026-08-01T18:07:41Z -- six hours earlier
+
+    The cause is in the signature: ``enqueue(ts=...)`` accepts a CALLER-SUPPLIED
+    timestamp, so ``ts`` is not an insert-time clock and nothing keeps it
+    monotonic. The export's assumption is safe for the export (which only needs
+    a REPRODUCIBLE order) and false for delivery (which needs the ARRIVAL one).
+    I nearly adopted it on the strength of the precedent; three minutes of
+    measuring the real table is what stopped me.
+
+    THE BACKFILL IS NOT DONE HERE, DELIBERATELY. Existing rows get NULL, which
+    is honest: their arrival order lives in the SQLite ``rowid`` of the OTHER
+    database and is only knowable while both are open -- i.e. during the carry
+    (:mod:`scitex_cards._inbox_carry`). Inventing values here, from ``ts`` or
+    from insertion order in this table, would manufacture an order that was
+    never observed and make the missing data unrecoverable by looking correct.
+    """
+    column, sql_type = NOTIFICATION_ORDER_COLUMN
+    if column not in table_columns(conn, "notifications"):
+        conn.execute(f"ALTER TABLE notifications ADD COLUMN {column} {sql_type}")
+
+    # PostgreSQL gets a real generator so future writers need not compute one.
+    # A writer-computed MAX(seq)+1 is portable and WRONG here: ~90 agents share
+    # this rail and two enqueues can read the same MAX, which defeats the total
+    # order the column exists to provide.
+    #
+    # SQLite keeps ``rowid`` as its generator; the column is still populated by
+    # the carry so a store migrated from SQLite carries its history's order.
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if not _is_postgres(conn):
+        return
+    conn.execute(f"CREATE SEQUENCE IF NOT EXISTS {_SEQ_NAME}")
+    conn.execute(
+        f"ALTER TABLE notifications ALTER COLUMN {column} "
+        f"SET DEFAULT nextval('{_SEQ_NAME}')"
+    )
+    # Start the sequence above anything the carry already wrote, so a carry that
+    # runs BEFORE this migration cannot collide with live enqueues after it.
+    # setval with is_called=false makes the NEXT nextval() return exactly this.
+    conn.execute(
+        f"SELECT setval('{_SEQ_NAME}', "
+        f"(SELECT COALESCE(MAX({column}), 0) + 1 FROM notifications), false)"
+    )
 
 
 def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
