@@ -26,21 +26,19 @@ the bug. The unresolved branch instead tells the agent how to DISCOVER its slice
 
 from __future__ import annotations
 
-#: Store-precedence sentence — identical in both branches of the instructions.
+#: Store-identity sentence — identical in both branches of the instructions.
 #:
-#: Every clause here was FALSE between the SQLite cutover (2026-07-16) and this
-#: fix: it advertised YAML as canonical, named the pre-rename ``~/.scitex/todo``
-#: path, and offered a "bundled example" tier that was DELETED in #512 (see
-#: :func:`scitex_cards._paths.bundled_example`, which now raises). Agents read
-#: this string at session start and act on it, so a stale sentence here is not a
-#: doc bug — it is the fleet being told to write to a store that does not exist.
+#: Agents read this string at session start and act on it, so it must describe
+#: the store as it actually is: the SQLite database at $SCITEX_CARDS_DB is the
+#: sole store identity (the pre-cutover YAML path and its "bundled example" tier
+#: are gone). A stale sentence here is the fleet being told to write to a store
+#: that does not exist.
 _STORE_LINE = (
-    "The canonical store is a SQLite DB at $SCITEX_CARDS_DB "
-    "(default ~/.scitex/cards/cards.db) when $SCITEX_CARDS_STORE_BACKEND=sqlite; "
-    "call resolve_store to see which store you actually resolved to. "
-    "The YAML path (legacy) resolves explicit > $SCITEX_CARDS_TASKS_YAML_SHARED > "
-    "user (~/.scitex/cards/tasks.yaml). There is NO bundled-example fallback: an "
-    "unresolvable store raises rather than silently handing you a packaged fixture."
+    "The canonical store is the SQLite database at $SCITEX_CARDS_DB "
+    "(default ~/.scitex/cards/cards.db) — that path is the SOLE store identity; "
+    "call resolve_store to see which store you actually resolved to. An "
+    "unresolvable/absent store raises rather than silently handing you an "
+    "empty board."
 )
 
 

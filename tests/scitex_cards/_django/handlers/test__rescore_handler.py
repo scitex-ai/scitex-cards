@@ -23,17 +23,36 @@ Pinned here the same three ways as the sibling crud/edge handlers:
 from __future__ import annotations
 
 import json
+import os
+import sys
+from pathlib import Path
 
 import pytest
-import yaml
 
 pytest.importorskip("django")
+
+# ``seed_db_from_doc`` lives in the SHARED tests/scitex_cards/conftest.py, but
+# this file sits under _django/, whose own conftest.py shadows the bare
+# ``conftest`` module name — ``from conftest import seed_db_from_doc`` binds that
+# sibling and is fragile. Load the shared conftest deterministically by path.
+import importlib.util as _ilu  # noqa: E402
 
 from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
 from scitex_cards._django.handlers import rescore  # noqa: E402
 from scitex_cards._django.services import _reset_cache, get_board  # noqa: E402
+from scitex_cards._model import load_tasks  # noqa: E402
+from scitex_cards._yaml import safe_load  # noqa: E402
+
+_shared_conftest = Path(__file__).resolve().parents[2] / "conftest.py"
+_spec = _ilu.spec_from_file_location("_scitex_cards_shared_conftest", _shared_conftest)
+_mod = _ilu.module_from_spec(_spec)
+# Register BEFORE exec: the shared conftest defines a @dataclass, and on py3.12
+# the dataclass machinery looks the module up in sys.modules while executing.
+sys.modules[_spec.name] = _mod
+_spec.loader.exec_module(_mod)
+seed_db_from_doc = _mod.seed_db_from_doc
 
 _STORE_TEXT = (
     "tasks:\n"
@@ -44,13 +63,21 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
+def store(env):
     # Hermetic: no per-project lane union from the real ~/proj tree.
-    monkeypatch.setenv("SCITEX_TODO_LANE_GLOBS", "")
-    path = tmp_path / "tasks.yaml"
-    path.write_text(_STORE_TEXT, encoding="utf-8")
+    env.set("SCITEX_TODO_LANE_GLOBS", "")
+    # SQLite store: seed the prior cards into the canonical DB, then hand the
+    # handler the PINNED store-identity path (never a tmp_path YAML — a write
+    # stamped with a tmp path fails the next read's ownership check). The DB is
+    # authoritative for content; the handler ignores the path except as a
+    # provenance label. The board/services layer (get_board -> load_groups)
+    # still stat()s the identity file, so it must EXIST even though its content
+    # is never read — an empty file is enough.
+    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_CARDS_DB"])
+    store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()
-    yield str(path)
+    yield store_path
     _reset_cache()
 
 
@@ -70,9 +97,8 @@ def _request(body):
 
 
 def _load(store_path):
-    with open(store_path, encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    return {t["id"]: t for t in data["tasks"]}
+    # Read back through the canonical store (SQLite); the path is a label only.
+    return {t["id"]: t for t in load_tasks(store_path)}
 
 
 def _stale_board(store_path):
@@ -95,29 +121,21 @@ def _land_concurrent_write(store_path):
     )
 
 
-# ── 1. lost-update survival (the #468 property, for the new handler) ───────
+def _rescore_over_a_concurrent_write(store_path):
+    """Rescore ``build`` through a board snapshot taken BEFORE a concurrent add.
 
-
-def test_rescore_survives_concurrent_write(store):
-    # Arrange — the handler holds a stale board; a concurrent write lands.
-    board = _stale_board(store)
-    _land_concurrent_write(store)
-    # Act
-    response = rescore.handle_rescore(
+    A handler-cache save would erase the concurrently-added card; the locked
+    verb must keep both writes.
+    """
+    board = _stale_board(store_path)
+    _land_concurrent_write(store_path)
+    return rescore.handle_rescore(
         _request({"id": "build", "urgency": 4, "importance": 5}), board
     )
-    # Assert — both writes survive; a handler-cache save would erase `concurrent`.
-    assert response.status_code == 200
-    tasks = _load(store)
-    assert tasks["build"]["urgency"] == 4
-    assert tasks["build"]["importance"] == 5
-    assert "concurrent" in tasks
 
 
-# ── 2. delegation — axes + actor forwarded verbatim, no client-set rank ───
-
-
-def test_rescore_delegates_to_rescore_task_verb(store, monkeypatch):
+def _install_rescore_spy(monkeypatch):
+    """Record every ``rescore_task`` call the handler makes; return the log."""
     calls = []
 
     def spy(store_arg, task_id, *, urgency, importance, by=None):
@@ -133,11 +151,72 @@ def test_rescore_delegates_to_rescore_task_verb(store, monkeypatch):
         return {"task": {"id": task_id}, "rank": 1, "of": 1}
 
     monkeypatch.setattr("scitex_cards._store.rescore_task", spy)
+    return calls
+
+
+def _audit_entry(store_path, task_id="build"):
+    return _load(store_path)[task_id]["comments"][-1]
+
+
+# ── 1. lost-update survival (the #468 property, for the new handler) ───────
+
+
+def test_rescore_over_a_concurrent_write_answers_200(store):
+    # Arrange
+    # The handler holds a stale board; a concurrent write lands behind it.
+    store_path = store
+    # Act
+    response = _rescore_over_a_concurrent_write(store_path)
+    # Assert
+    assert response.status_code == 200
+
+
+def test_rescore_over_a_concurrent_write_persists_the_urgency(store):
+    # Arrange
+    store_path = store
+    # Act
+    _rescore_over_a_concurrent_write(store_path)
+    # Assert
+    assert _load(store_path)["build"]["urgency"] == 4
+
+
+def test_rescore_over_a_concurrent_write_persists_the_importance(store):
+    # Arrange
+    store_path = store
+    # Act
+    _rescore_over_a_concurrent_write(store_path)
+    # Assert
+    assert _load(store_path)["build"]["importance"] == 5
+
+
+def test_rescore_over_a_concurrent_write_keeps_the_other_write(store):
+    # Arrange
+    store_path = store
+    # Act
+    _rescore_over_a_concurrent_write(store_path)
+    # Assert — a handler-cache save would have erased `concurrent`.
+    assert "concurrent" in _load(store_path)
+
+
+# ── 2. delegation — axes + actor forwarded verbatim, no client-set rank ───
+
+
+def test_rescore_delegating_to_the_verb_answers_200(store, monkeypatch):
+    # Arrange
+    _install_rescore_spy(monkeypatch)
     # Act
     response = _post(store, {"id": "build", "urgency": 2, "importance": 4})
+    # Assert
+    assert response.status_code == 200
+
+
+def test_rescore_forwards_axes_and_actor_to_the_verb(store, monkeypatch):
+    # Arrange
+    calls = _install_rescore_spy(monkeypatch)
+    # Act
+    _post(store, {"id": "build", "urgency": 2, "importance": 4})
     # Assert — the two axes and the operator actor reach the verb; the handler
     # never computes or forwards a rank.
-    assert response.status_code == 200
     assert calls == [
         {
             "store": store,
@@ -152,69 +231,168 @@ def test_rescore_delegates_to_rescore_task_verb(store, monkeypatch):
 # ── 3a. end-to-end through the real verb ──────────────────────────────────
 
 
-def test_rescore_sets_axes_ranks_and_audits(store):
-    # Act — drag `build` to (urgency 4, importance 5).
-    payload = json.loads(_post(store, {"id": "build", "urgency": 4, "importance": 5}).content)
-    # Assert — response contract.
+def test_rescore_response_carries_the_documented_key_set(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    payload = json.loads(_post(store, body).content)
+    # Assert
     assert set(payload) == {"task", "rank", "of", "store_path"}
+
+
+def test_rescore_response_reports_the_engine_computed_rank(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    payload = json.loads(_post(store, body).content)
+    # Assert
     assert payload["rank"] == 1 and payload["of"] == 1
-    # Persisted axes + engine rank.
+
+
+def test_rescore_persists_both_axes_on_the_dragged_card(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert
     build = _load(store)["build"]
     assert build["urgency"] == 4 and build["importance"] == 5
-    assert build["rank"] == 1
-    # The audit entry the occupancy PR (PR 3) replays: authored by the
-    # operator, kind=rescore, carrying the old->new machine payload.
-    audit = build["comments"][-1]
-    assert audit["author"] == "operator"
-    assert audit["kind"] == "rescore"
-    assert audit["rescore"]["urgency"] == [None, 4]
-    assert audit["rescore"]["importance"] == [None, 5]
 
 
-def test_rescore_terminal_card_holds_axes_but_no_rank(store):
-    # A done card is not in the queue: it keeps its axes, holds no rank.
-    payload = json.loads(
-        _post(store, {"id": "done-card", "urgency": 5, "importance": 5}).content
-    )
+def test_rescore_persists_the_engine_rank_on_the_card(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert
+    assert _load(store)["build"]["rank"] == 1
+
+
+def test_rescore_audit_entry_is_authored_by_the_operator(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert — the audit entry the occupancy PR (PR 3) replays.
+    assert _audit_entry(store)["author"] == "operator"
+
+
+def test_rescore_audit_entry_declares_the_rescore_kind(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert
+    assert _audit_entry(store)["kind"] == "rescore"
+
+
+def test_rescore_audit_entry_records_the_urgency_transition(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert — the old->new machine payload, not prose.
+    assert _audit_entry(store)["rescore"]["urgency"] == [None, 4]
+
+
+def test_rescore_audit_entry_records_the_importance_transition(store):
+    # Arrange
+    body = {"id": "build", "urgency": 4, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert
+    assert _audit_entry(store)["rescore"]["importance"] == [None, 5]
+
+
+def test_rescore_terminal_card_reports_no_rank(store):
+    # Arrange — a done card is not in the queue.
+    body = {"id": "done-card", "urgency": 5, "importance": 5}
+    # Act
+    payload = json.loads(_post(store, body).content)
+    # Assert
     assert payload["rank"] is None
+
+
+def test_rescore_terminal_card_still_holds_both_axes(store):
+    # Arrange
+    body = {"id": "done-card", "urgency": 5, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert
     done = _load(store)["done-card"]
     assert done["urgency"] == 5 and done["importance"] == 5
-    assert "rank" not in done
+
+
+def test_rescore_terminal_card_stores_no_rank_key(store):
+    # Arrange
+    body = {"id": "done-card", "urgency": 5, "importance": 5}
+    # Act
+    _post(store, body)
+    # Assert — finished work holds axes but no rank.
+    assert "rank" not in _load(store)["done-card"]
 
 
 # ── 3b. contract / error paths ────────────────────────────────────────────
 
 
 def test_rescore_axis_out_of_range_is_400(store):
-    response = _post(store, {"id": "build", "urgency": 6, "importance": 3})
+    # Arrange
+    body = {"id": "build", "urgency": 6, "importance": 3}
+    # Act
+    response = _post(store, body)
+    # Assert
     assert response.status_code == 400
-    # The store was not mutated.
+
+
+def test_rescore_axis_out_of_range_leaves_the_store_untouched(store):
+    # Arrange
+    body = {"id": "build", "urgency": 6, "importance": 3}
+    # Act
+    _post(store, body)
+    # Assert
     assert "urgency" not in _load(store)["build"]
 
 
 def test_rescore_non_int_axis_is_400(store):
-    # A "4"-string never reaches the verb — the handler shape-guard rejects it.
-    response = _post(store, {"id": "build", "urgency": "4", "importance": 3})
+    # Arrange — a "4"-string never reaches the verb.
+    body = {"id": "build", "urgency": "4", "importance": 3}
+    # Act
+    response = _post(store, body)
+    # Assert — the handler shape-guard rejects it.
     assert response.status_code == 400
 
 
 def test_rescore_bool_axis_is_400(store):
-    # bool IS an int in Python; the shape-guard rejects it explicitly.
-    response = _post(store, {"id": "build", "urgency": True, "importance": 3})
+    # Arrange — bool IS an int in Python.
+    body = {"id": "build", "urgency": True, "importance": 3}
+    # Act
+    response = _post(store, body)
+    # Assert — the shape-guard rejects it explicitly.
     assert response.status_code == 400
 
 
 def test_rescore_missing_axis_is_400(store):
-    response = _post(store, {"id": "build", "urgency": 4})
+    # Arrange
+    body = {"id": "build", "urgency": 4}
+    # Act
+    response = _post(store, body)
+    # Assert
     assert response.status_code == 400
 
 
 def test_rescore_unknown_id_is_404(store):
-    response = _post(store, {"id": "ghost", "urgency": 4, "importance": 5})
+    # Arrange
+    body = {"id": "ghost", "urgency": 4, "importance": 5}
+    # Act
+    response = _post(store, body)
+    # Assert
     assert response.status_code == 404
 
 
-def test_rescore_requires_post(store):
+def test_rescore_requires_a_post_request(store):
+    # Arrange
     request = RequestFactory().get(f"/rescore?store={store}")
+    # Act
     response = views.api_dispatch(request, "rescore")
+    # Assert
     assert response.status_code == 405

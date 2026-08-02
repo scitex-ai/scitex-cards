@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """scitex-todo wake-watcher — push side of the self-consuming board loop.
 
-Polls the YAML store on a fixed interval (default 30s, hard floor 10s —
+Polls the task store on a fixed interval (default 30s, hard floor 10s —
 raised from 2s after the 2026-07-08 death-spiral incident), diffs
 against the previous snapshot, and POSTs to the owning agent's local
 sac a2a ``/v1/turn`` endpoint when:
@@ -198,7 +198,7 @@ class WatcherState:
     last_wake_at: dict[str, float] = field(default_factory=dict)
     # Store mtime processed on the last tick. When it is unchanged the
     # next tick short-circuits BEFORE any parse — a quiet board costs a
-    # single stat() per tick, not a full ~9 MB YAML re-parse. This is the
+    # single stat() per tick, not a full ~9 MB store re-parse. This is the
     # structural cure for the every-interval unconditional-reload spiral.
     last_mtime: Optional[float] = None
 
@@ -413,7 +413,7 @@ def run_watcher_once(
       old path parsed the ~9 MB file twice per tick).
     """
     # Lazy import: keep watcher importable without the rest of the
-    # package's heavy YAML / Django modules in scope.
+    # package's heavy store / Django modules in scope.
     from scitex_cards._model import load_doc
 
     path = Path(path).expanduser()

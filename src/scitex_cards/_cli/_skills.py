@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """§1a ``skills`` group — list / get / install the bundled agent skills.
 
-Self-contained: walks the package's own ``_skills/scitex-todo/`` directory; no
+Self-contained: walks the package's own ``_skills/scitex-cards/`` directory; no
 scitex-dev runtime dependency.
 """
 
@@ -14,16 +14,33 @@ import click
 
 from ._compat import spec_command_kwargs, spec_group_kwargs
 
-_SKILLS_PKG = "scitex-todo"
+_SKILLS_PKG = "scitex-cards"
+
+#: The pre-rename directory name. This is an ON-DISK PATH that other packages
+#: resolve directly, so dropping it outright is a breaking change to something
+#: nobody declared — it is a MIGRATION, not a rename. Kept as a read fallback
+#: for the transition window: a checkout or wheel that still carries the old
+#: directory keeps working, and nothing new is written under it.
+_SKILLS_PKG_LEGACY = "scitex-todo"
 
 
 def _skills_root():
-    """Resolve the bundled ``_skills/scitex-todo/`` directory."""
+    """Resolve the bundled ``_skills/scitex-cards/`` directory.
+
+    Falls back to the legacy directory ONLY when the current one is absent, so
+    a half-migrated tree degrades to "still works" instead of "no skills found".
+    """
     from pathlib import Path
 
     import scitex_cards
 
-    return Path(scitex_cards.__file__).parent / "_skills" / _SKILLS_PKG
+    base = Path(scitex_cards.__file__).parent / "_skills"
+    root = base / _SKILLS_PKG
+    if not root.is_dir():
+        legacy = base / _SKILLS_PKG_LEGACY
+        if legacy.is_dir():
+            return legacy
+    return root
 
 
 def _list_skill_files(root):
@@ -37,11 +54,13 @@ def _list_skill_files(root):
     "skills",
     **spec_group_kwargs(
         summary="List / get / install the bundled agent skills.",
-        command_categories=[("Core", ["list", "get", "install", "manifest", "propagate"])],
+        command_categories=[
+            ("Core", ["list", "get", "install", "manifest", "propagate"])
+        ],
     ),
 )
 def skills_grp() -> None:
-    """Agent-facing skills bundled with scitex-todo (`_skills/scitex-todo/`)."""
+    """Agent-facing skills bundled with scitex-cards (`_skills/scitex-cards/`)."""
 
 
 @skills_grp.command(
@@ -102,13 +121,18 @@ def skills_get_cmd(name: str, as_json: bool) -> None:
 @skills_grp.command(
     "install",
     **spec_command_kwargs(
-        summary="Symlink the bundled skills into ~/.scitex/dev/skills/scitex-todo/.",
+        summary="Symlink the bundled skills into ~/.scitex/dev/skills/scitex-cards/.",
         description=(
             "Symlinks by default (--no-link copies instead). "
             "--claude-symlink also exposes the install at "
             "~/.claude/skills/scitex/ for Claude Code consumers.",
         ),
-        examples=(("{prog} skills install --claude-symlink", "Install + link for Claude Code."),),
+        examples=(
+            (
+                "{prog} skills install --claude-symlink",
+                "Install + link for Claude Code.",
+            ),
+        ),
     ),
 )
 @click.option(
@@ -158,9 +182,7 @@ def skills_install_cmd(
         raise SystemExit(1)
 
     base = (
-        Path(dest).expanduser()
-        if dest
-        else Path.home() / ".scitex" / "dev" / "skills"
+        Path(dest).expanduser() if dest else Path.home() / ".scitex" / "dev" / "skills"
     )
     target = base / _SKILLS_PKG
 
@@ -211,5 +233,6 @@ def register(group: click.Group) -> None:
     skills_grp.add_command(build_manifest_cmd())
     skills_grp.add_command(build_propagate_cmd())
     group.add_command(skills_grp)
+
 
 # EOF

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Layered ``config.yaml`` for scitex-todo knobs (nudge cadence, …).
+"""Layered ``config.json`` for scitex-cards knobs (nudge cadence, …).
 
 The board is fleet infra, so its behaviour must be a KNOB the operator can
 turn — not a constant baked into the code. Config lives in the same SciTeX
 local-state convention as the task store (:mod:`scitex_cards._paths`), in a
-``config.yaml`` resolved across two scopes and LAYERED:
+``config.json`` resolved across two scopes and LAYERED:
 
-    1. user scope:     ``$SCITEX_DIR/todo/config.yaml`` (default ``~/.scitex/todo``)
-    2. project scope:  ``<git-root>/.scitex/todo/config.yaml``
+    1. user scope:     ``$SCITEX_DIR/cards/config.json`` (default ``~/.scitex/cards``)
+    2. project scope:  ``<git-root>/.scitex/cards/config.json``
 
 The user file is the BASE; the project file OVERRIDES it key-by-key (a repo
 can tighten/loosen a knob without touching the user default). A missing /
@@ -39,8 +39,14 @@ from ._paths import PKG_SHORT, _find_git_root, _user_root
 
 logger = logging.getLogger(__name__)
 
-#: Config file name (sibling of ``tasks.yaml`` in each scope).
-CONFIG_NAME = "config.yaml"
+#: Config file name (in each scope's ``.scitex/cards`` dir).
+CONFIG_NAME = "config.json"
+
+#: The ``store:`` knobs — which store this host talks to.
+STORE_SECTION = "store"
+
+#: Key inside ``store:`` naming the canonical store: a path OR a URL.
+STORE_TARGET_KEY = "target"
 
 #: The ``reminders:`` knobs.
 REMINDERS_SECTION = "reminders"
@@ -67,10 +73,8 @@ def config_paths() -> list[Path]:
 
 
 def _read_one(path: Path) -> dict:
-    """Read one config file → mapping; missing/malformed → ``{}`` (fail-soft)."""
-    import yaml
-
-    from ._yaml import safe_load
+    """Read one JSON config file → mapping; missing/malformed → ``{}`` (fail-soft)."""
+    import json
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -80,8 +84,8 @@ def _read_one(path: Path) -> dict:
         logger.warning("config: cannot read %s: %s", path, exc)
         return {}
     try:
-        data = safe_load(text) or {}
-    except yaml.YAMLError as exc:
+        data = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError as exc:
         logger.warning("config: malformed %s: %s", path, exc)
         return {}
     return data if isinstance(data, dict) else {}
@@ -98,10 +102,7 @@ def load_config() -> dict:
     for path in config_paths():
         data = _read_one(path)
         for key, value in data.items():
-            if (
-                isinstance(value, dict)
-                and isinstance(merged.get(key), dict)
-            ):
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
                 merged[key] = {**merged[key], **value}
             else:
                 merged[key] = value
@@ -112,6 +113,47 @@ def reminders_config() -> dict:
     """The merged ``reminders:`` section (``{}`` when absent)."""
     section = load_config().get(REMINDERS_SECTION)
     return section if isinstance(section, dict) else {}
+
+
+def store_config_target() -> str | None:
+    """The configured store target, or ``None`` when the file does not set one.
+
+    WHY THIS EXISTS. Until this was added, the ONLY way to point a client at a
+    non-default store was ``$SCITEX_CARDS_DB``, set at every single invocation
+    site. Everything that forgot fell through to a hardcoded local SQLite
+    filename. During the 2026-08-01 PostgreSQL cutover that cost us eight
+    host-side writers (four systemd units, three cron entries, one hourly timer)
+    silently writing the OLD store while the fleet was believed migrated, and
+    then those same cron jobs failing outright once that store was retired.
+
+    An environment variable is a rule each caller has to remember. A config file
+    is a fact the host states once. This is the mechanism the constitution asks
+    for in place of a remembered rule.
+
+    Returns
+    -------
+    str or None
+        The target AS WRITTEN — a path or a URL, never coerced, for the same
+        reason :mod:`scitex_cards._store_target` does not coerce. ``None`` when
+        absent, empty, or not a string, so the caller falls through to its next
+        tier rather than being handed a malformed target.
+
+    Notes
+    -----
+    Fail-soft, like every other reader here: a missing or malformed config
+    contributes nothing rather than raising. A bad config must not be able to
+    take the board down.
+
+    THE PASSWORD IS NOT AND MUST NOT BE HERE. For PostgreSQL the target is a
+    DSN with no password in it; libpq reads ``$PGPASSFILE`` itself.
+    """
+    section = load_config().get(STORE_SECTION)
+    if not isinstance(section, dict):
+        return None
+    value = section.get(STORE_TARGET_KEY)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 def _positive_number(value: Any) -> float | None:

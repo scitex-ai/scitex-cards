@@ -87,37 +87,56 @@ def _write_tasks_yaml(tmp_path, body: str):
 
 
 def test_local_file_sync_load_returns_validated_tasks(tmp_path):
-    # Arrange
-    p = _write_tasks_yaml(
-        tmp_path,
-        "tasks:\n  - {id: a, title: A, status: pending}\n",
+    # Arrange — SQLite is the store; seed the canonical DB, then point the
+    # adapter at the pinned STORE identity path (reads ignore the path and
+    # read the DB; the STORE path is what the ownership stamp round-trips on).
+    import os
+
+    from conftest import seed_db_from_doc
+
+    seed_db_from_doc(
+        {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
+        os.environ["SCITEX_CARDS_DB"],
     )
-    sync = LocalFileSync(p)
+    sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
     # Act
     tasks = sync.load()
     # Assert
     assert tasks[0]["id"] == "a"
 
 
-def test_local_file_sync_save_round_trips_task_data(tmp_path):
-    # Contract CHANGE (fix/fast-store-write): the underlying save_tasks now
-    # uses a fast safe dump. Comments are intentionally dropped; the task
-    # DATA must round-trip through LocalFileSync unchanged.
-    # Arrange
-    p = _write_tasks_yaml(
-        tmp_path,
-        "# comment intentionally NOT preserved\n"
-        "tasks:\n  - {id: a, title: A, status: pending}\n",
+#: The task DATA must round-trip through LocalFileSync unchanged: a mutation
+#: made in memory, saved, and reloaded must survive. SQLite is the store now,
+#: so save() writes the canonical DB and load() reads it back — seed the DB,
+#: point the adapter at the pinned STORE identity path, then load → mutate →
+#: save → reload. (The companion "drops YAML comments" assertion is gone: it
+#: tested YAML-text serialization, which no longer exists — there is no file to
+#: carry or drop a comment.)
+@pytest.fixture()
+def local_file_sync_round_trip(tmp_path):
+    """Seed the DB, then load, mutate, save and reload through the adapter."""
+    import os
+
+    from conftest import seed_db_from_doc
+
+    seed_db_from_doc(
+        {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
+        os.environ["SCITEX_CARDS_DB"],
     )
-    sync = LocalFileSync(p)
+    sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
     tasks = sync.load()
     tasks[0]["status"] = "done"
-    # Act
     sync.save(tasks)
-    reloaded = sync.load()
-    # Assert — the mutation round-trips; the comment is gone (accepted).
+    return {"reloaded": sync.load()}
+
+
+def test_local_file_sync_save_round_trips_task_data(local_file_sync_round_trip):
+    # Arrange
+    scenario = local_file_sync_round_trip
+    # Act
+    reloaded = scenario["reloaded"]
+    # Assert — the mutation round-trips through save + load.
     assert reloaded[0]["status"] == "done"
-    assert "# comment intentionally NOT preserved" not in p.read_text()
 
 
 def test_local_file_sync_reload_detects_external_mutation(tmp_path):

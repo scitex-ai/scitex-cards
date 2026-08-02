@@ -1,0 +1,45 @@
+{% comment %}
+Shared page HEADER — the identity band rendered by BOTH top-level pages
+(board_v3.html and chat.html), from this one file.
+
+WHY IT IS A PARTIAL. Operator, 2026-07-29 (TG): the two pages' headers not
+lining up is uncomfortable. They did not line up because each page rolled its
+own header — the board's `.filterbar` was `padding: 8px 14px; min-height: 48px`
+while the DM page's `header` was `padding: 10px 14px` with no min-height, so
+the two bars were different heights and their contents sat on different
+baselines. Two numbers kept in sync by hand is HOW they drifted; the fix is
+structural, not a third number. This partial owns the band's markup and
+page-header.css owns its geometry, so there is nothing left to keep in sync.
+
+THE SWITCHER COMES FIRST — that is the operator's standing instruction
+(「スイッチャーは左にそろえてください」, restated 2026-07-29 after the board and
+the DM page had drifted to opposite sides). Its position is a property of THIS
+file now, so the two pages cannot disagree about it: there is only one file to
+read. Never give `.stx-cards-switcher` a `margin-left: auto` on a host page —
+that pushes it right while leaving this markup looking correct, which is the
+one way the instruction can silently come undone. `test__page_header_is_shared`
+fails on both the ordering and the auto margin.
+
+Callers pass the page they are on and the heading it wants:
+
+    {% templatetag openblock %} include "scitex_cards/_page_header.html" with active="board" page_title="SciTeX Cards" {% templatetag closeblock %}
+
+`api_base` and `scitex_cards_version` are inherited from the page context —
+both views already provide them, and `api_base` is what `_page_switcher.html`
+builds its mount-aware hrefs from (read its header before touching a link).
+
+The `<h1>` carries NO class on purpose, and each host page already styles `h1`
+inside its own header. NOTE both pages now pass the SAME `page_title` ("SciTeX
+Cards"): the band names the PRODUCT and the switcher names the page. That is the
+operator's 2026-07-30 instruction — a heading that changes between Board and DM
+reads as the page breaking. `test__dm_naming_is_consistent.py` pins the stable
+heading AND pins that the switcher still says DM, so the two pages cannot become
+indistinguishable. page-header.css styles it
+through `.stx-cards-header h1` so the typography is shared without the markup
+having to say so.
+{% endcomment %}
+<div class="stx-cards-header">
+  {% include "scitex_cards/_page_switcher.html" with active=active %}
+  <h1>{{ page_title }}</h1>
+  <span class="stx-cards-header__ver">v{{ scitex_cards_version|default:"?" }}</span>
+</div>

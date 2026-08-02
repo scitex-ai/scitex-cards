@@ -27,10 +27,10 @@ implemented as an UNCONDITIONAL overwrite, and that is a different thing: it
 means a malformed new-prefix value silently defeats a working old-prefix one.
 Measured on the live fleet, from the MCP server's own ``/proc/<pid>/environ``:
 
-    SCITEX_TODO_TASKS_YAML_SHARED  = ~/.scitex/todo/tasks.yaml    (2117 cards)
-    SCITEX_CARDS_TASKS_YAML_SHARED = ~/.scitex/cards/tasks.yaml   (5 cards)
-    SCITEX_TODO_AGENT_ID           = scitex-cards
-    SCITEX_CARDS_AGENT_ID          = ${SCITEX_CARDS_AGENT_ID}     <- literal
+    SCITEX_TODO_DB        = ~/.scitex/todo/cards.db    (2117 cards)
+    SCITEX_CARDS_DB       = ~/.scitex/cards/cards.db   (5 cards)
+    SCITEX_TODO_AGENT_ID  = scitex-cards
+    SCITEX_CARDS_AGENT_ID = ${SCITEX_CARDS_AGENT_ID}   <- literal
 
 Both overrides applied. The store silently FORKED: agents wrote into an empty
 store while the fleet's history sat untouched in the other one, and every card
@@ -50,6 +50,14 @@ somebody else's config bug into silent data loss IS ours. Hence two refusals:
 
 Both refuse LOUDLY and keep the old value. Refusing is safe (the pre-rename
 configuration keeps working); accepting is not (it strands writes).
+
+RETIRED VARIABLES ARE ANNOUNCED, NOT HONOURED (2026-07-29)
+-----------------------------------------------------------
+This module also owns the other half of "what the environment says about the
+store": :func:`warn_retired_vars` logs one ERROR per variable a live config
+still exports that NOTHING in the package reads. See ``_RETIRED_VARS`` for why
+an inert setting is worse than a missing one, and why the answer is never to
+make the flag work again.
 """
 
 from __future__ import annotations
@@ -75,8 +83,73 @@ _UNEXPANDED = re.compile(
 
 #: Suffixes of vars that name a MUTABLE DATA STORE. Relocating one of these
 #: does not change behaviour — it changes which data you are looking at, and a
-#: wrong answer here is indistinguishable from an empty board.
-_DATA_STORE_SUFFIXES = ("TASKS_YAML_SHARED", "TASKS_DB", "DB_PATH")
+#: wrong answer here is indistinguishable from an empty board. ``DB`` is the
+#: store identity ($SCITEX_CARDS_DB); the legacy ``…_TASKS_YAML_SHARED`` var was
+#: deleted with the SQLite cutover.
+_DATA_STORE_SUFFIXES = ("DB", "TASKS_DB", "DB_PATH")
+
+
+#: RETIRED variables: names a live config may still export that NOTHING in
+#: ``src/`` reads. Each maps to the sentence explaining what replaced it.
+#:
+#: A dead flag is not harmless, and this is the lesson of 2026-07-29: the
+#: board's systemd unit carried ``SCITEX_CARDS_READ_BACKEND=sqlite`` while the
+#: board served 0 cards from a database holding 2,654. The flag has ZERO
+#: references in the package. It did nothing — but it STATED a read policy, so
+#: everyone diagnosing the outage read that line, concluded the read target was
+#: configured and correct, and looked elsewhere. An inert setting that appears
+#: to answer the question is worse than no setting at all: it spends the
+#: diagnostician's trust.
+#:
+#: The repair is never to make the flag work again. A flag that can be flipped
+#: is a second target that merely happens to be switched one way today — the
+#: reasoning that DELETED the dual-write toggle on 2026-07-21 rather than
+#: defaulting it off. So these stay deleted, and a config that still names one
+#: says so out loud.
+_RETIRED_VARS: dict[str, str] = {
+    "READ_BACKEND": (
+        "there is no read-backend choice: the canonical SQLite database is the "
+        "ONLY read target, unconditionally "
+        "(scitex_cards._store._read_canonical_db_or_raise)"
+    ),
+    "DUAL_WRITE": (
+        "the dual-write mirror was DELETED 2026-07-21, not defaulted off: "
+        "SQLite is the ONLY write target "
+        "(scitex_cards._store_backend.write_doc_to_db)"
+    ),
+    "STORE_BACKEND": (
+        "there is no backend choice left to make: SQLite is the store "
+        "(the YAML store was retired at the cutover)"
+    ),
+}
+
+
+def warn_retired_vars(environ: MutableMapping[str, str] = os.environ) -> list[str]:
+    """Log one ERROR per RETIRED variable still set. Returns the names found.
+
+    Deliberately a LOG and not a raise. This runs at import time, so raising
+    would make ``import scitex_cards`` fail fleet-wide over a setting that, by
+    construction, changes nothing — trading a cosmetic config problem for a
+    total outage. ERROR is the right volume: it reaches the board unit's
+    journal, which is exactly where someone restarting the board is looking.
+    """
+    found: list[str] = []
+    for prefix in (NEW_PREFIX, OLD_PREFIX):
+        for suffix, why in _RETIRED_VARS.items():
+            name = prefix + suffix
+            if not environ.get(name):
+                continue
+            found.append(name)
+            logger.error(
+                "%s=%r is set, but NOTHING READS IT — %s. This setting does not "
+                "change behaviour; it only makes a stale config LOOK like it "
+                "states a policy, which is how the last outage stayed "
+                "misdiagnosed. Unset it.",
+                name,
+                environ[name],
+                why,
+            )
+    return found
 
 
 def _is_unexpanded(value: str) -> bool:
@@ -189,5 +262,6 @@ def mirror_env(environ: MutableMapping[str, str] = os.environ) -> None:
 
 
 mirror_env()
+warn_retired_vars()
 
 # EOF

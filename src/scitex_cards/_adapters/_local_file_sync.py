@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Default :class:`TaskSyncPort` — atomic local YAML file with mtime fingerprinting.
+"""Default :class:`TaskSyncPort` — delegates to the database-backed store.
 
 No cross-host awareness. The fleet's git-backed sync adapter (out of
 package) replaces this. Standalone installs get a working board with
@@ -16,22 +16,23 @@ from .._model import load_tasks, save_tasks
 
 
 class LocalFileSync:
-    """Read + write the task store as a local YAML file.
+    """Read + write the task store via :mod:`scitex_cards._model`.
 
-    Atomic via :func:`scitex_cards._model.save_tasks` (fast safe-dump write +
-    advisory ``fcntl.flock`` on a sibling ``.lock`` sentinel). Change
-    detection via the file's mtime (cheap, polling-friendly).
+    Delegates to :func:`scitex_cards._model.load_tasks` /
+    :func:`~scitex_cards._model.save_tasks`, which read/write the SQLite
+    database; ``path`` names the logical store for error text and mtime
+    fingerprinting.
 
     Implements :class:`scitex_cards._ports.TaskSyncPort`.
 
     Parameters
     ----------
     path : str or :class:`pathlib.Path`
-        Path to the YAML task store.
+        Logical store identifier (see :func:`scitex_cards._model.load_doc`).
 
     Examples
     --------
-    >>> sync = LocalFileSync("~/.scitex/todo/tasks.yaml")  # doctest: +SKIP
+    >>> sync = LocalFileSync("~/.scitex/cards/cards.db")  # doctest: +SKIP
     >>> tasks = sync.load()                                  # doctest: +SKIP
     >>> sync.reload_if_changed()  # False unless someone else wrote     # doctest: +SKIP
     False

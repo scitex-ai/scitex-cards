@@ -30,10 +30,10 @@ Design constraints
 ------------------
 - **Generic** (Req 8): scope/assignee/status are free-form strings. The
   helpers don't know what an "agent" is.
-- **Centralized** (Req 3): the default store is whatever
-  :func:`_paths.resolve_tasks_path` returns; callers can override with an
+- **Centralized** (Req 3): the default store is the SQLite database
+  resolved by ``$SCITEX_CARDS_DB``; callers can override with an
   explicit ``store=`` path. The user-scope default
-  (``~/.scitex/todo/tasks.yaml``) covers Req 7.
+  (``~/.scitex/cards/cards.db``) covers Req 7.
 - **Shared with scopes** (Req 1): ``$SCITEX_TODO_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
@@ -76,6 +76,7 @@ from pathlib import Path
 
 from ._model import (  # noqa: F401  (see the re-export note below)
     VALID_STATUSES,
+    StoreShrinkRefusedError,
     TaskValidationError,
     _save_doc_unlocked,
     _save_tasks_unlocked,
@@ -196,91 +197,15 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     return resolved
 
 
-def _read_canonical_db_or_raise() -> dict:
-    """Read the whole store from SQLite for a read-modify-write. FAILS LOUD.
-
-    THE BUG THIS REPLACES turned a READ error into TOTAL DATA LOSS, three times
-    on 2026-07-19. The old line was::
-
-        doc = export_doc(None)[0] or {}
-
-    Read-modify-write means whatever this returns is what gets WRITTEN BACK as
-    the canonical store. So ``or {}`` does not mean "no cards found" — it means
-    "delete every card", and it says so to nobody. Any reason the export came
-    back empty (a stamp naming another store, an unreadable DB, a resolution
-    that landed on the wrong path) is silently promoted from a failed read into
-    an authoritative empty board. Measured: 2,138 cards -> 3, from one
-    ``comment_task`` call.
-
-    #507's own commit message predicted this exact shape ("2065 cards down to
-    1") for ``load_doc`` and guarded that one. The identical hazard sat in the
-    sibling expression and was not — which is the same lesson as the two write
-    doors: fixing one instance of a pattern is not fixing the pattern.
-
-    A store with genuinely zero cards is legitimate ONLY when the DB has no
-    tasks table content to begin with; that case returns an empty doc honestly.
-    Every other emptiness is a failed read and raises, because refusing to
-    write is always recoverable and writing nothing over everything is not.
-    """
-    import sqlite3
-
-    from ._db import resolve_db_path
-    from ._db_export import export_doc
-
-    db_path = Path(resolve_db_path(None))
-
-    # A MISSING DB IS NOT AN EMPTY STORE. `export_doc` answers a nonexistent
-    # file with a perfectly well-formed ``{"tasks": []}``, which is why merely
-    # type-checking the result does not help — that value is indistinguishable
-    # from a real empty board and is exactly what got written back over 2,138
-    # cards. Ask the file system, not the exporter.
-    if not db_path.exists():
-        raise RuntimeError(
-            f"canonical store {db_path} does not exist. REFUSING to continue: "
-            f"the exporter answers a missing database with an empty document, "
-            f"and this value is written back as the WHOLE store — every card "
-            f"replaced by nothing. Point $SCITEX_CARDS_DB at the real database, "
-            f"or bootstrap one with `scitex-cards db import --from-yaml`."
-        )
-
-    doc = export_doc(None)[0]
-    if not isinstance(doc, dict) or not isinstance(doc.get("tasks"), list):
-        raise RuntimeError(
-            f"canonical read of {db_path} returned no usable document "
-            f"(got {type(doc).__name__}). REFUSING to continue: this value "
-            f"would be written back as the whole store."
-        )
-
-    # CROSS-CHECK the export against the table itself. These can only disagree
-    # when the read half failed in a way it did not report — a stamp naming a
-    # different store, a partial read, a schema the exporter could not walk.
-    # An export that silently under-reports is the total-loss case, because the
-    # difference is deleted on write-back. Zero-vs-zero agrees and is allowed
-    # through: a genuinely empty database is a legitimate store.
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            in_table = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        raise RuntimeError(
-            f"cannot read {db_path} to verify the canonical read ({exc}). "
-            f"REFUSING to continue rather than writing an unverified document "
-            f"back over the store."
-        ) from exc
-
-    exported = len(doc["tasks"])
-    if exported != in_table:
-        raise RuntimeError(
-            f"canonical read of {db_path} is INCOMPLETE: the exporter returned "
-            f"{exported} cards but the tasks table holds {in_table}. REFUSING "
-            f"to continue — this document is written back as the whole store, "
-            f"so the {in_table - exported} missing cards would be DELETED. "
-            f"Verify with `scitex-cards db verify`; re-bootstrap with "
-            f"`scitex-cards db import --from-yaml`."
-        )
-    return doc
+# THE ONE FAIL-LOUD READER now lives in its own module — the guard, the
+# incident history behind each of its checks, and its tests belong
+# together rather than buried among the mutation helpers. Re-exported
+# here so every historical `from ._store import _read_canonical_db_or_raise`
+# keeps working, and so there is still exactly ONE reader shared by the
+# read door, the write door and `_model.load_doc`.
+from ._store_canonical_read import (  # noqa: F401  (re-export)
+    _read_canonical_db_or_raise,
+)
 
 
 def _utc_now_iso() -> str:
@@ -301,61 +226,35 @@ def _utc_now_iso() -> str:
 # --------------------------------------------------------------------------- #
 # Read-modify-write helper                                                     #
 # --------------------------------------------------------------------------- #
-def _read_write_doc(path: str | Path, *, missing_ok: bool = False) -> tuple[dict, list]:
+def _read_write_doc(path: str | Path) -> tuple[dict, list]:
     """Load the FULL store doc ONCE for a locked read-modify-write cycle.
 
     Returns ``(doc, tasks)`` where ``tasks is doc["tasks"]`` (always a list).
     Callers mutate ``tasks`` (or rebind it) then persist via
-    ``_save_doc_unlocked(doc, path, tasks=tasks)`` — so the ONE parse done
-    here serves BOTH the mutated ``tasks`` payload AND the non-``tasks``
-    sections (``users:`` etc.) that must survive the rewrite, eliminating the
-    second ``safe_load`` the old ``_save_tasks_unlocked`` re-read performed.
+    ``_save_doc_unlocked(doc, path, tasks=tasks)``, so this one read serves
+    BOTH the mutated ``tasks`` payload AND the non-``tasks`` sections
+    (``users:`` etc.) that must survive the rewrite.
 
-    Mirrors the two historical read shapes:
-    - ``missing_ok=False`` (default) → ``load_tasks(p)`` semantics: raises
-      ``FileNotFoundError`` if the store is absent; also re-validates on read.
-    - ``missing_ok=True`` → ``load_tasks(p) if p.exists() else []`` semantics:
-      an absent store yields an empty doc instead of raising.
+    THE ``missing_ok`` PARAMETER IS GONE, and its removal is the safety
+    property rather than a tidy-up. It used to mean "an absent store yields an
+    empty doc instead of raising", which was reasonable when the store was a
+    file that a fresh install legitimately lacked. Against a database it is a
+    loaded gun: an empty doc flows into a read-modify-write, the caller appends
+    its one new card, and ``mirror_doc_incremental`` diffs that one-card
+    document against the DB and DELETES every card missing from it.
+
+    Measured on a scratch store during this cutover: five sequential writes
+    left exactly ONE row each time. On the live board that is 2065 cards down
+    to 1, silently, with nothing raised anywhere in the stack. Found by
+    round-tripping real writes, not by reading the diff — the write path looked
+    correct in isolation and only end-to-end exercise showed the loss.
+
+    So there is no "absent store" case to be tolerant about: a missing database
+    is a configuration error and :func:`_read_canonical_db_or_raise` says so.
+    Emptiness must never be inferred; it must be read.
     """
-    p = Path(path)
-
-    # DB-CANONICAL: source the doc from SQLite. THIS MUST COME BEFORE the
-    # `missing_ok and not exists` branch below, and that ordering is the
-    # difference between a working cutover and an erased board.
-    #
-    # In canonical mode the YAML is archived and never written, so
-    # `p.exists()` is False FOREVER. Falling into that branch returns an EMPTY
-    # doc, the caller appends its one new card, and `_save_doc_unlocked` hands
-    # a one-card document to `mirror_doc_incremental` — which diffs against the
-    # DB and DELETES every card not present. Measured on a scratch store during
-    # this cutover: five sequential writes left exactly ONE row each time. On
-    # the live board that is 2065 cards down to 1, silently, with no error
-    # raised anywhere in the stack.
-    #
-    # Found by round-tripping real writes rather than by reading the diff. The
-    # write path looked correct in isolation; only exercising read-modify-write
-    # end to end showed the loss.
-    try:
-        from ._store_backend import db_is_canonical
-    except Exception:  # noqa: BLE001 — undecidable means "not canonical"
-        db_is_canonical = None
-    if db_is_canonical is not None and db_is_canonical():
-        from ._db_export import export_doc
-
-        doc = _read_canonical_db_or_raise()
-        tasks = doc["tasks"]
-        return doc, tasks
-
-    if missing_ok and not p.exists():
-        return {"tasks": []}, []
-    doc = load_doc(p, validate=True)  # raises FileNotFoundError if absent
-    if not isinstance(doc, dict):
-        doc = {"tasks": []}
-    tasks = doc.get("tasks")
-    if not isinstance(tasks, list):
-        tasks = []
-        doc["tasks"] = tasks
-    return doc, tasks
+    doc = _read_canonical_db_or_raise()
+    return doc, doc["tasks"]
 
 
 # --------------------------------------------------------------------------- #
@@ -371,32 +270,66 @@ def resolve_store(store: str | Path | None = None) -> dict:
     Output shape::
 
         {
-          "resolved":         "/abs/path/to/tasks.yaml",
+          "resolved":         "/abs/path/to/cards.db",
           "explicit":         <the `store` arg you passed, or None>,
-          "env_tasks":        <value of $SCITEX_TODO_TASKS_YAML_SHARED, or None>,
-          "user_store":       "/abs/path/to/~/.scitex/todo/tasks.yaml",
-          "pkg_short":        "scitex_cards",
+          "db_env":           <value of $SCITEX_CARDS_DB, or None>,
+          "user_store":       "/abs/path/to/~/.scitex/cards/cards.db",
+          "pkg_short":        "cards",
           "exists":           bool,
+          "store_uuid":       <the database's own identity, or None>,
+          "expected_uuid":    <$SCITEX_CARDS_STORE_UUID, or None>,
         }
+
+    ``store_uuid`` is contract point 8, machine-readable half (design §11). The
+    identity is what a host registry must record next to this board's endpoint,
+    and "open the database and run a SQL query" is archaeology. This function
+    already answers "WHICH store did I actually resolve"; it answers "and WHAT
+    IS IT" in the same breath. ``None`` means the database is absent or carries
+    no identity yet — bind it with ``scitex-cards store adopt-uuid``.
+
+    ``expected_uuid`` is reported beside it deliberately: the two most useful
+    facts about an identity mismatch are the value the database carries and the
+    value this process was told to expect, and reading them from two different
+    surfaces is how a mismatch stays undiagnosed.
+
+    THIS FUNCTION IS PURE REPORTING. Reading the identity here never mints one,
+    never stamps one, and never changes what resolves.
     """
     import os
 
-    from ._paths import (
-        ENV_TASKS,
-        PKG_SHORT,
-        _user_root,
-    )
+    from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
+    from ._paths import PKG_SHORT, _user_root
+    from ._store_target import resolve_store_target
+    from ._store_url import backend_of, is_postgres_url
+    from ._store_uuid import expected_store_uuid, store_uuid_at
 
-    resolved = resolve_tasks_path(
-        store if isinstance(store, (str, type(None))) else str(store)
-    )
+    # The resolved store is the DATABASE — the sole store identity. It may be a
+    # PATH or a SERVER URL, so it is resolved WITHOUT coercion: this verb exists
+    # to answer "which store am I on?", and it was the one verb that CRASHED the
+    # moment the answer stopped being a path (measured 2026-07-31, mid-cutover —
+    # `resolve-store` raised StoreTargetIsNotAPath against PostgreSQL while
+    # `list-tasks` served 2973 cards). A diagnostic that dies on the case you are
+    # diagnosing is worse than no diagnostic: it reads as "the store is broken".
+    _arg = store if isinstance(store, (str, type(None))) else str(store)
+    target = resolve_store_target(_arg)
+    on_server = is_postgres_url(target)
+    resolved = target if on_server else str(resolve_db_path(_arg))
     return {
-        "resolved": str(resolved),
+        "resolved": resolved,
         "explicit": str(store) if store is not None else None,
-        "env_tasks": os.environ.get(ENV_TASKS),
-        "user_store": str(_user_root() / "tasks.yaml"),
+        "db_env": os.environ.get(ENV_DB),
+        "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
-        "exists": Path(resolved).exists(),
+        "backend": backend_of(target),
+        # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
+        # answer for a server, and BOTH poles actively mislead: False reads as
+        # "your store is missing" to every operator staring at a cutover, True
+        # would assert a reachability this function is forbidden to test (it is
+        # pure reporting — it never opens anything). Read `backend` to know
+        # which question was asked.
+        "exists": None if on_server else Path(resolved).exists(),
+        "store_uuid": store_uuid_at(resolved),
+        "expected_uuid": expected_store_uuid(),
     }
 
 
@@ -410,8 +343,13 @@ def get_task(
     natural "read one" verb every CRUD surface expects but the Python
     API was missing (PR #56 audit gap). The MCP wrapper exposes this as
     ``get_task`` per Convention A.
+
+    A TOMBSTONED row (see :func:`scitex_cards._task._is_tombstoned`) is
+    treated as NOT FOUND — the 2026-07-21 tombstone change keeps a
+    deleted card's row on disk forever, but this read must behave exactly
+    as it did when ``delete_task`` physically removed it.
     """
-    from . import _model
+    from . import _model, _task
 
     tasks_path = _resolved_store(store)
     if not task_id:
@@ -419,7 +357,7 @@ def get_task(
     with _model._store_lock(tasks_path):
         tasks = _model.load_tasks(tasks_path)
         for t in tasks:
-            if t.get("id") == task_id:
+            if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
     raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
 
@@ -464,6 +402,7 @@ from ._store_rescore import rescore_task  # noqa: E402,F401  (re-export)
 __all__ = [
     "ENV_AGENT",
     "ENV_SCOPE",
+    "StoreShrinkRefusedError",
     "TaskNotFoundError",
     "TaskValidationError",
     "add_task",

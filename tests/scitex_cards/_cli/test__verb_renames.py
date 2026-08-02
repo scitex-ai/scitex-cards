@@ -16,12 +16,16 @@ Covers the CLI-standardization doctrine (scitex-dev general/03_interface/
 * §1d terminal verbs — `done` (success) and `close --reason`
   (non-success) stay canonical.
 
-No mocks; CliRunner + tmp_path stores only (the live shared store at
-~/.scitex/todo/tasks.yaml is NEVER touched — every invocation passes an
-explicit --tasks path or a tmp HOME / XDG_RUNTIME_DIR).
+No mocks; CliRunner only. The live shared store is NEVER touched:
+``tests/conftest.py`` bootstraps an empty per-test store and pins every
+store-selecting env var at it, so the CLI resolves the throwaway store
+without any test having to name it (the alias/CI tests additionally pin a
+tmp HOME / XDG_RUNTIME_DIR).
 """
 
 from __future__ import annotations
+
+import os
 
 import pytest
 from click.testing import CliRunner
@@ -42,17 +46,29 @@ def runner():
 
 
 @pytest.fixture
-def store(tmp_path):
-    """Small valid tmp tasks.yaml — never the live shared store."""
-    path = tmp_path / "tasks.yaml"
-    path.write_text(
-        "tasks:\n"
-        "  - {id: design, title: Design the thing, status: deferred, "
-        "repo: owner/repo}\n"
-        "  - {id: build, title: Build the thing, status: deferred}\n",
-        encoding="utf-8",
-    )
-    return str(path)
+def store():
+    """Seed two small cards into the harness store — never the live one.
+
+    Seed RAW cards (no ``created_at`` / ``last_activity``) straight into the
+    canonical DB, exactly as the old raw-YAML fixture did. The ``list-stale``
+    criteria flag a deferred card with no timestamps, so the seed MUST leave
+    the stamps unset; ``add_task`` would auto-stamp both (ADR-0008 D11) and
+    defeat that premise, so seed via the doc instead.
+    """
+    from conftest import seed_db_from_doc
+
+    doc = {
+        "tasks": [
+            {
+                "id": "design",
+                "title": "Design the thing",
+                "status": "deferred",
+                "repo": "owner/repo",
+            },
+            {"id": "build", "title": "Build the thing", "status": "deferred"},
+        ]
+    }
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
 
 
 @pytest.fixture
@@ -81,7 +97,7 @@ def ci_env(env, tmp_path):
 
 @pytest.fixture
 def list_stale_result(runner, store):
-    return runner.invoke(main, ["list-stale", "--tasks", store])
+    return runner.invoke(main, ["list-stale"])
 
 
 def test_list_stale_canonical_exits_zero(list_stale_result):
@@ -102,9 +118,7 @@ def test_list_stale_canonical_reports_stale_deferred_card(list_stale_result):
 
 @pytest.fixture
 def find_card_result(runner, store):
-    return runner.invoke(
-        main, ["find-card", "--repo", "owner/repo", "--tasks", store]
-    )
+    return runner.invoke(main, ["find-card", "--repo", "owner/repo"])
 
 
 def test_find_card_canonical_exits_zero(find_card_result):
@@ -149,7 +163,7 @@ def test_watch_ci_canonical_reports_sweep_summary(watch_ci_result):
 
 @pytest.fixture
 def stale_list_alias_result(runner, store, warn_markers_isolated):
-    return runner.invoke(main, ["stale-list", "--tasks", store])
+    return runner.invoke(main, ["stale-list"])
 
 
 def test_stale_list_alias_exits_zero(stale_list_alias_result):
@@ -181,9 +195,7 @@ def test_stale_list_alias_warns_deprecated_on_stderr(stale_list_alias_result):
 
 @pytest.fixture
 def resolve_card_alias_result(runner, store, warn_markers_isolated):
-    return runner.invoke(
-        main, ["resolve-card", "--repo", "owner/repo", "--tasks", store]
-    )
+    return runner.invoke(main, ["resolve-card", "--repo", "owner/repo"])
 
 
 def test_resolve_card_alias_exits_zero(resolve_card_alias_result):
@@ -245,8 +257,8 @@ def test_ci_watch_alias_warns_deprecated_on_stderr(ci_watch_alias_result):
 @pytest.fixture
 def second_alias_result(runner, store, warn_markers_isolated):
     """Invoke the same alias twice within one (PPID-keyed) session."""
-    runner.invoke(main, ["stale-list", "--tasks", store])
-    return runner.invoke(main, ["stale-list", "--tasks", store])
+    runner.invoke(main, ["stale-list"])
+    return runner.invoke(main, ["stale-list"])
 
 
 def test_alias_warns_only_once_per_shell_session(second_alias_result):
@@ -288,8 +300,12 @@ def root_help_result(runner):
 def test_root_help_renders_category_headers_in_canonical_order(root_help_result):
     # Arrange
     headers = (
-        "Core:", "Data & Sync:", "Service:", "Diagnostics:",
-        "Introspection:", "Shell:",
+        "Core:",
+        "Data & Sync:",
+        "Service:",
+        "Diagnostics:",
+        "Introspection:",
+        "Shell:",
     )
     # Act
     positions = [root_help_result.output.index(h) for h in headers]
@@ -326,7 +342,7 @@ def test_root_help_hides_deprecated_aliases(root_help_result):
 
 def test_done_marks_task_done_in_tmp_store(runner, store):
     # Arrange
-    args = ["done", "build", "--tasks", store]
+    args = ["done", "build"]
     # Act
     result = runner.invoke(main, args)
     # Assert
@@ -335,7 +351,7 @@ def test_done_marks_task_done_in_tmp_store(runner, store):
 
 def test_close_with_reason_defers_task(runner, store):
     # Arrange
-    args = ["close", "build", "--reason", "superseded", "--tasks", store]
+    args = ["close", "build", "--reason", "superseded"]
     # Act
     result = runner.invoke(main, args)
     # Assert
@@ -344,7 +360,7 @@ def test_close_with_reason_defers_task(runner, store):
 
 def test_close_without_reason_is_usage_error(runner, store):
     # Arrange
-    args = ["close", "design", "--tasks", store]
+    args = ["close", "design"]
     # Act
     result = runner.invoke(main, args)
     # Assert

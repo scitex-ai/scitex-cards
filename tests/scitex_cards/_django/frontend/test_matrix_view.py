@@ -28,11 +28,14 @@ store by ``?store=`` (same shape as ``handlers/test_priority.py``); the
 template assertions just open the source. Lane-glob isolation comes from
 the autouse ``_isolate_host_lane_globs`` fixture in
 ``tests/scitex_cards/conftest.py`` — do NOT re-set it here.
+
+One assertion per test (STX-TQ007).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -44,7 +47,6 @@ from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
 from scitex_cards._django.services import _reset_cache  # noqa: E402
-
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -83,12 +85,26 @@ _STORE_TEXT = (
 
 
 @pytest.fixture
-def store(tmp_path):
-    """Write a real tmp task store and reset the board cache around the test."""
-    path = tmp_path / "tasks.yaml"
-    path.write_text(_STORE_TEXT, encoding="utf-8")
+def store():
+    """Seed the canonical DB from the fixture doc; reset the board cache around it.
+
+    The store is SQLite now: ``load_tasks`` / the ``/graph`` handler read and
+    write the canonical DB and ignore the store path (it survives only as a
+    provenance label). So parse the readable YAML fixture text into the doc the
+    YAML used to hold, seed the canonical DB from it, and yield the PINNED store
+    identity path (``SCITEX_CARDS_TASKS_YAML_SHARED``, == ``resolve_tasks_path(None)``)
+    — never a tmp yaml, which would trip the "stamped for a DIFFERENT store"
+    refusal. urgency/importance/rank ride through the ``card_json`` payload
+    verbatim, so every axis assertion below round-trips unchanged.
+    """
+    from conftest import seed_db_from_doc
+
+    from scitex_cards._yaml import safe_load
+
+    doc = safe_load(_STORE_TEXT) or {}
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
     _reset_cache()
-    yield str(path)
+    yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()
 
 
@@ -96,114 +112,209 @@ def _graph_nodes(store_path):
     """Drive views.api_dispatch for GET /graph and return {id: node}."""
     request = RequestFactory().get(f"/graph?store={store_path}")
     response = views.api_dispatch(request, "graph")
-    assert response.status_code == 200, response.content
+    if response.status_code != 200:
+        raise AssertionError(f"GET /graph failed: {response.content!r}")
     payload = json.loads(response.content)
     return {n["id"]: n for n in payload["nodes"]}
+
+
+def _hardcoded_colour(decl: str) -> bool:
+    """True when a CSS declaration burns in a literal colour."""
+    return bool(
+        re.search(r"#[0-9a-fA-F]{3,8}\b", decl)
+        or re.search(r"\b(?:white|black)\b", decl)
+    )
+
+
+def _matrix_css_colour_declarations() -> list[str]:
+    css = _MATRIX_CSS.read_text(encoding="utf-8")
+    return re.findall(
+        r"^\s*(?:background|color|border[a-z-]*)\s*:\s*([^;]+);", css, re.M
+    )
 
 
 # ── 1. The wire format ────────────────────────────────────────────────────
 
 
-def test_graph_forwards_the_axes_and_rank(store):
-    """The matrix's three fields reach the frontend verbatim."""
+def test_graph_forwards_the_urgency_axis(store):
+    # Arrange
+    # Act
     nodes = _graph_nodes(store)
-
+    # Assert
     assert nodes["scored"]["urgency"] == 4
+
+
+def test_graph_forwards_the_importance_axis(store):
+    # Arrange
+    # Act
+    nodes = _graph_nodes(store)
+    # Assert
     assert nodes["scored"]["importance"] == 5
+
+
+def test_graph_forwards_the_engine_rank(store):
+    # Arrange
+    # Act
+    nodes = _graph_nodes(store)
+    # Assert
     assert nodes["scored"]["rank"] == 1
 
 
-def test_graph_emits_none_not_a_default_for_an_unscored_card(store):
-    """An unscored card carries None on every axis — never a coerced value.
-
-    The regression this guards: defaulting a missing axis to 0 (or to the
-    scale midpoint) would place the card at a coordinate nobody chose and
-    render it as an operator judgement that was never made. 14-matrix.js
-    treats None as UNSCORED and puts the card in its tray instead.
-    """
+def test_unscored_card_emits_none_for_urgency(store):
+    # Arrange
+    # defaulting a missing axis to 0 (or the scale midpoint) would
+    # place the card at a coordinate nobody chose and render it as an
+    # operator judgement that was never made. 14-matrix.js treats None as
+    # UNSCORED and puts the card in its tray instead.
+    # Act
     nodes = _graph_nodes(store)
-
+    # Assert
     assert nodes["bare"]["urgency"] is None
+
+
+def test_unscored_card_emits_none_for_importance(store):
+    # Arrange
+    # Act
+    nodes = _graph_nodes(store)
+    # Assert
     assert nodes["bare"]["importance"] is None
+
+
+def test_unscored_card_emits_none_for_rank(store):
+    # Arrange
+    # Act
+    nodes = _graph_nodes(store)
+    # Assert
     assert nodes["bare"]["rank"] is None
 
 
-def test_the_axes_survive_the_store_before_schema_v5_lands(store):
-    """Axis keys round-trip TODAY, ahead of the v5 dataclass fields.
-
-    ``load_tasks`` returns the raw YAML mappings (not Task round-trips) and
-    the validator rejects no unknown keys, so ``urgency``/``importance``
-    reach the handler already. That is precisely what lets this read-only
-    PR ship before the rank engine — and if a future strict-schema change
-    starts dropping unknown keys, this test fails LOUDLY here instead of
-    the matrix silently rendering every card as unscored.
-    """
+def test_urgency_survives_the_store_before_schema_v5(store):
+    # Arrange
+    # ``load_tasks`` returns the raw YAML mappings (not Task
+    # round-trips) and the validator rejects no unknown keys, so the axes
+    # reach the handler already. If a future strict-schema change starts
+    # dropping unknown keys, this fails LOUDLY here instead of the matrix
+    # silently rendering every card as unscored.
     from scitex_cards._model import load_tasks
 
+    # Act
     tasks = {t["id"]: t for t in load_tasks(store)}
-
+    # Assert
     assert tasks["scored"]["urgency"] == 4
+
+
+def test_importance_survives_the_store_before_schema_v5(store):
+    # Arrange
+    from scitex_cards._model import load_tasks
+
+    # Act
+    tasks = {t["id"]: t for t in load_tasks(store)}
+    # Assert
     assert tasks["scored"]["importance"] == 5
+
+
+def test_unscored_card_has_no_axis_key_in_the_store(store):
+    # Arrange
+    from scitex_cards._model import load_tasks
+
+    # Act
+    tasks = {t["id"]: t for t in load_tasks(store)}
+    # Assert
+    # absent, never coerced to a value.
     assert "urgency" not in tasks["bare"]
 
 
 # ── 2. The template wiring ────────────────────────────────────────────────
 
 
-def test_the_matrix_is_a_valid_layout_with_a_toggle():
+def test_matrix_is_registered_as_a_valid_layout():
+    # Arrange
+    # Act
     src = _TEMPLATE.read_text(encoding="utf-8")
-
+    # Assert
     assert 'VALID_LAYOUTS = ["timeline", "wall", "graph", "matrix"]' in src
+
+
+def test_matrix_layout_has_a_toggle_control():
+    # Arrange
+    # Act
+    src = _TEMPLATE.read_text(encoding="utf-8")
+    # Assert
     assert 'id="f-layout-matrix"' in src
+
+
+def test_matrix_toggle_switches_the_layout():
+    # Arrange
+    # Act
+    src = _TEMPLATE.read_text(encoding="utf-8")
+    # Assert
     assert "onLayoutChange('matrix')" in src
 
 
-def test_the_template_loads_the_matrix_assets():
+def test_the_template_loads_the_matrix_script():
+    # Arrange
+    # Act
     src = _TEMPLATE.read_text(encoding="utf-8")
-
+    # Assert
     assert "board_v3/14-matrix.js" in src
+
+
+def test_the_template_loads_the_matrix_stylesheet():
+    # Arrange
+    # Act
+    src = _TEMPLATE.read_text(encoding="utf-8")
+    # Assert
     assert "board_v3/14-matrix.css" in src
 
 
 def test_the_matrix_render_falls_back_when_the_module_is_absent():
-    """Same stance as Wall: a deferred script that hasn't executed must not
-    blank the GUI — the dispatch guards on window.STX.matrix."""
+    # Arrange
+    # same stance as Wall: a deferred script that hasn't executed
+    # must not blank the GUI, so the dispatch guards on window.STX.matrix.
+    # Act
     src = _TEMPLATE.read_text(encoding="utf-8")
-
+    # Assert
     assert 'layout === "matrix" && window.STX && window.STX.matrix' in src
 
 
 # ── 3. The theme + lane contracts ─────────────────────────────────────────
 
 
-def test_matrix_css_uses_theme_tokens_not_hardcoded_colors():
-    """Dark/light rides entirely on the scitex-ui var(--…) tokens.
-
-    Dark mode is the default the operator reads in; a hardcoded literal
-    would burn a light-mode colour into their view.
-    """
-    css = _MATRIX_CSS.read_text(encoding="utf-8")
-    decls = re.findall(
-        r"^\s*(?:background|color|border[a-z-]*)\s*:\s*([^;]+);", css, re.M
-    )
-
+def test_matrix_css_declares_colours_worth_checking():
+    # Arrange
+    # Act
+    decls = _matrix_css_colour_declarations()
+    # Assert
+    # guards the scan below from silently passing on an empty match.
     assert decls, "expected colour declarations to check"
-    for decl in decls:
-        if re.search(r"#[0-9a-fA-F]{3,8}\b", decl) or re.search(
-            r"\b(?:white|black)\b", decl
-        ):
-            pytest.fail(f"hardcoded colour in 14-matrix.css: {decl!r}")
 
 
-def test_the_matrix_module_does_not_implement_the_rank_engine():
-    """The lane boundary, pinned in Python too.
+def test_matrix_css_uses_theme_tokens_not_hardcoded_colors():
+    # Arrange
+    # dark mode is the default the operator reads in; a hardcoded
+    # literal would burn a light-mode colour into their view.
+    decls = _matrix_css_colour_declarations()
+    # Act
+    offenders = [decl for decl in decls if _hardcoded_colour(decl)]
+    # Assert
+    assert offenders == [], f"hardcoded colours in 14-matrix.css: {offenders!r}"
 
-    ADR-0011 §1: rank is COMPUTED by the engine (scitex-cards' package
-    lane), never asserted and never recomputed in the GUI. The equivalent
-    JS-side guard lives in test__matrix.js; this one makes the boundary
-    visible to a Python-only test run.
-    """
+
+def test_the_matrix_module_does_not_weight_importance():
+    # Arrange
+    # ADR-0011 §1: rank is COMPUTED by the engine (scitex-cards'
+    # package lane), never asserted and never recomputed in the GUI. The
+    # equivalent JS-side guard lives in test__matrix.js; this one makes the
+    # boundary visible to a Python-only test run.
+    # Act
     src = _MATRIX_JS.read_text(encoding="utf-8")
-
+    # Assert
     assert "w_i" not in src
+
+
+def test_the_matrix_module_does_not_weight_urgency():
+    # Arrange
+    # Act
+    src = _MATRIX_JS.read_text(encoding="utf-8")
+    # Assert
     assert "w_u" not in src

@@ -77,12 +77,8 @@ async def add_task(
     deadlines: list[str] | None = None,
     scheduled: str | None = None,
     created_by: str | None = None,  # creating USER; hook-bypass: line-limit
-    tasks_path: str | None = None,
 ) -> str:
     """Append a new task to the store. Returns the inserted task as JSON.
-
-    ``tasks_path`` overrides the default resolution chain; pass ``None`` to
-    use the resolved default (project → user → bundled).
 
     Closed-enum fields (``status`` / ``kind`` / ``blocker``) are gated by
     the writer's validator — typos raise ``TaskValidationError`` with the
@@ -126,7 +122,7 @@ async def add_task(
     """
     _call = functools.partial(
         get_backend().add_task,
-        tasks_path,
+        None,
         id=id,
         title=title,
         status=status,
@@ -198,7 +194,6 @@ async def update_task(
     deadline: str | None = None,
     deadlines: list[str] | None = None,
     scheduled: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Mutate fields of an existing task. Returns the merged task as JSON.
 
@@ -312,7 +307,7 @@ async def update_task(
     if deadlines is not None:
         fields["deadlines"] = list(deadlines) if deadlines else None
     merged = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().update_task, tasks_path, task_id, **fields)
+        functools.partial(get_backend().update_task, None, task_id, **fields)
     )
     return json.dumps(merged)
 

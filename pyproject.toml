@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # package is `scitex_cards`; `scitex_todo` ships as a deprecated re-export
 # shim for one transition window so un-cutover consumers keep working.
 name = "scitex-cards"
-version = "0.17.1"
+version = "0.31.6"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -47,11 +47,34 @@ dev = [
     # suite rather than silently skipping the board tests (PS-210).
     "django>=4.2",
     "scitex_app",
-    # >=0.7.1 for the shell template's DEFAULT favicon. We used to declare our
-    # own <link rel="icon"> in every template; that is now scitex-ui's job and
-    # ours are gone, so an older shell renders NO icon at all. This is a real
-    # dependency, not a preference — do not loosen it.
-    "scitex_ui>=0.7.1",
+    # >=0.11.1, and the number is MEASURED rather than aspirational:
+    #
+    #   0.7.1  — the shell template's DEFAULT favicon. Our templates declare no
+    #            <link rel="icon"> of their own any more, so an older shell
+    #            renders NO icon at all.
+    #   0.11.1 — `font-family: inherit` on `.stx-app-context-menu__item`. The
+    #            chat page's right-click menu consumes base's context-menu.css
+    #            and its items are <button>; buttons do not inherit the page
+    #            font and base ships no global button reset, so below 0.11.1 the
+    #            menu renders in the UA button font. `context-menu.css` EXISTS
+    #            at 0.7.1 (verified by `git show v0.7.1:...`) without that rule
+    #            — presence is not currency, which is exactly why a file-exists
+    #            check could not have caught this and a floor has to.
+    #
+    # chat.html has documented the 0.11.1 requirement since #581 and said "the
+    # upgrade ships alongside this"; it never did, so the declaration sat two
+    # minor versions under what the code needs. A resolver honouring 0.7.1 gets
+    # a page that renders and is subtly wrong — the failure mode a floor exists
+    # to prevent. Do not loosen it.
+    "scitex_ui>=0.11.1",
+    # Same PS-210 reason as the web extras above, and caught by the same rule:
+    # the backend tests import psycopg UNGUARDED, so without it here a fresh
+    # `pip install -e .[dev]` collects them and errors rather than running the
+    # suite. Declaring the `postgres` extra without this made the capability
+    # installable but left the DEFAULT development install unable to exercise
+    # it -- which is the same "reachable in principle, unreachable in practice"
+    # gap the extra itself was added to close.
+    "psycopg[binary]>=3.1",
 ]
 docs = [
     "sphinx>=7.0",
@@ -63,9 +86,9 @@ docs = [
 web = [
     "django>=4.2",
     "scitex-app",
-    # >=0.7.1: the shell supplies the default favicon our templates no longer
-    # declare. See the matching note in the dev extra.
-    "scitex-ui>=0.7.1",
+    # >=0.11.1: default favicon (0.7.1) plus the context-menu font-family rule
+    # the chat page needs (0.11.1). See the measured note in the dev extra.
+    "scitex-ui>=0.11.1",
 ]
 mcp = [
     # FastMCP is the canonical SciTeX MCP SDK (general skill §1). The MCP
@@ -74,8 +97,42 @@ mcp = [
     # this extra installed.
     "fastmcp>=2.0",
 ]
+postgres = [
+    # THE CAPABILITY ALREADY WORKS AND WAS NEVER DECLARED. `_backend_connect`
+    # reads a PostgreSQL store today -- verified against a real server
+    # (PostgreSQL 18.4, database scitex_cards): the same query string, with
+    # SQLite's `?` placeholders, returned the same 264 rows through both
+    # backends because `_store_url.to_paramstyle` translates in transit.
+    #
+    # It worked only because psycopg happened to be present in the
+    # environment where it was tried. Nothing in the package asked for it, so
+    # a fresh `pip install scitex-cards` produces an install where the
+    # PostgreSQL path raises ImportError -- a capability that is real, tested,
+    # and unreachable by anyone who installs the package normally.
+    #
+    # `[binary]` bundles libpq rather than requiring system client libraries,
+    # so this extra installs on a bare machine without a PostgreSQL install.
+    #
+    # SQLite remains the zero-config default and is NOT moved behind an extra:
+    # the canonical store is SQLite, and a store you cannot open without an
+    # optional dependency is not a default.
+    "psycopg[binary]>=3.1",
+]
+currency = [
+    # CURRENCY gate (operator directive: stale or broken installs ERROR, not
+    # warn). `scitex_cards._currency.check_currency()` imports
+    # `scitex_dev.staleness.ensure_current` — >=0.34.0 is the first release
+    # that ships it. OPTIONAL, not a hard dependency: `check_currency()` is
+    # a no-op when scitex-dev is absent, so a standalone scitex-cards install
+    # keeps working without this extra (decoupling rule).
+    "scitex-dev>=0.34.0",
+]
 all = [
-    "scitex-cards[dev,docs,mcp,web]",
+    # `postgres` is included deliberately: CI installs `.[all,dev]`, so this is
+    # what lets the PostgreSQL backend be EXERCISED rather than merely compiled.
+    # A backend nothing in CI can reach is a backend whose regressions are found
+    # by users.
+    "scitex-cards[dev,docs,mcp,web,currency,postgres]",
 ]
 
 # BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy
@@ -151,12 +208,8 @@ artifacts = [
     "src/scitex_cards/_django/manifest.json",
     "src/scitex_cards/_django/templates/**/*",
     "src/scitex_cards/_django/static/**/*",
-    # Agent-facing skills + bundled example store — read at runtime by
-    # `scitex-todo skills get/install` and `bundled_example()`.
+    # Agent-facing skills — read at runtime by `scitex-cards skills get/install`.
     "src/scitex_cards/_skills/**/*",
-    # Pre-built Sphinx HTML served in-wheel by scitex-cloud (PS-121);
-    # refreshed by the docs workflow on main/develop pushes.
-    "src/scitex_cards/_sphinx_html/**/*",
 ]
 
 [tool.pytest.ini_options]

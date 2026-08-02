@@ -3,44 +3,71 @@
 """Tests for the POST /priority handler -- drag-reorder persistence.
 
 Mirrors ``src/scitex_cards/_django/handlers/priority.py``. Drives
-``views.api_dispatch`` with a real ``RequestFactory`` POST against a tmp
-``tasks.yaml`` (no mocks, STX-NM / PA-306), and verifies both the JSON
-response and the YAML written by ``save_tasks``.
+``views.api_dispatch`` with a real ``RequestFactory`` POST; no mocks
+(STX-NM / PA-306).
+
+SQLite cutover: card DATA lives in the canonical DB (a path-independent read),
+so the baseline cards are seeded THERE via ``seed_db_from_doc``; the handler is
+handed the PINNED store-identity path (never a tmp_path YAML — a write stamped
+with a tmp path fails the next read's ownership check). The reorder is read
+back through ``load_tasks`` (the DB), not off a YAML file. The board/services
+layer still stat()s the identity file, so it must EXIST even though its content
+is never read — an empty file is enough.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
-import yaml
 
 pytest.importorskip("django")
 
+from conftest import seed_db_from_doc  # noqa: E402
 from django.test import RequestFactory  # noqa: E402
 
 from scitex_cards._django import views  # noqa: E402
+from scitex_cards._django.handlers import graph as _graph_mod  # noqa: E402
 from scitex_cards._django.services import _reset_cache  # noqa: E402
+from scitex_cards._model import load_tasks  # noqa: E402
 
 # Three connected tasks with a deterministic baseline priority layout.
 # `gate` blocks `build`, and `north` depends on `build`. All three start with
 # priorities 5/6/7 so we can prove the handler actually overwrites them.
-_STORE_TEXT = (
-    "tasks:\n"
-    "  - {id: north, title: North Star, status: goal, depends_on: [build], priority: 5}\n"
-    "  - {id: build, title: Build It, status: in_progress, priority: 6}\n"
-    "  - {id: gate, title: Gate, status: blocked, blocks: [build], priority: 7}\n"
-)
+_STORE_DOC = {
+    "tasks": [
+        {
+            "id": "north",
+            "title": "North Star",
+            "status": "goal",
+            "depends_on": ["build"],
+            "priority": 5,
+        },
+        {"id": "build", "title": "Build It", "status": "in_progress", "priority": 6},
+        {
+            "id": "gate",
+            "title": "Gate",
+            "status": "blocked",
+            "blocks": ["build"],
+            "priority": 7,
+        },
+    ]
+}
 
 
 @pytest.fixture
-def store(tmp_path):
-    """Write a real tmp task store and reset the board cache around the test."""
-    path = tmp_path / "tasks.yaml"
-    path.write_text(_STORE_TEXT, encoding="utf-8")
+def store():
+    """Seed the canonical DB and hand the handler the pinned store-identity path."""
+    seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_CARDS_DB"])
+    store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()
-    yield str(path)
+    _graph_mod._graph_cache_reset()
+    yield store_path
     _reset_cache()
+    _graph_mod._graph_cache_reset()
 
 
 def _post_priority(store_path, body):
@@ -54,10 +81,8 @@ def _post_priority(store_path, body):
 
 
 def _load_priorities(store_path):
-    """Read the YAML store and return {id: priority} for inspection."""
-    with open(store_path, encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    return {t["id"]: t.get("priority") for t in data["tasks"]}
+    """Read the canonical store (SQLite) and return {id: priority}."""
+    return {t["id"]: t.get("priority") for t in load_tasks(store_path)}
 
 
 def test_priority_endpoint_returns_ok_on_post(store):
@@ -74,7 +99,7 @@ def test_priority_endpoint_assigns_sequential_priorities(store):
     body = {"order": ["build", "gate", "north"]}
     # Act
     _post_priority(store, body)
-    # Assert — YAML on disk now reflects the new priorities.
+    # Assert — the canonical store now reflects the new priorities.
     priorities = _load_priorities(store)
     assert priorities == {"build": 1, "gate": 2, "north": 3}
 
@@ -213,56 +238,53 @@ def test_priority_endpoint_rejects_non_string_ids_with_400(store):
 
 
 @pytest.fixture
-def commented_store_after_reorder(tmp_path):
-    """Write a store with a hand-written comment, reorder it, and return the
-    (raw text, {id: priority}) tuple so the fast safe-dump write can be
-    inspected."""
-    path = tmp_path / "commented.yaml"
-    path.write_text(
-        "# top-of-file comment about the task store\n"
-        "tasks:\n"
-        "  - id: alpha\n"
-        "    title: First\n"
-        "    status: pending\n"
-        "  - id: beta\n"
-        "    title: Second\n"
-        "    status: pending\n",
-        encoding="utf-8",
+def two_card_store_after_reorder():
+    """Seed a two-card store (alpha/beta), reorder [beta, alpha], and return
+    the {id: priority} read back through the canonical store.
+
+    (Under the SQLite cutover the old ``commented.yaml`` variant has no
+    subject: the handler writes the DB, never a YAML file, so there is no
+    hand-written comment to preserve or drop — that assertion tested a
+    YAML round-trip that no longer exists and is retired. The priorities-are-
+    applied assertion below survives verbatim.)"""
+    seed_db_from_doc(
+        {
+            "tasks": [
+                {"id": "alpha", "title": "First", "status": "pending"},
+                {"id": "beta", "title": "Second", "status": "pending"},
+            ]
+        },
+        os.environ["SCITEX_CARDS_DB"],
     )
+    store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()
-    _post_priority(str(path), {"order": ["beta", "alpha"]})
-    text = path.read_text(encoding="utf-8")
-    priorities = _load_priorities(str(path))
+    _post_priority(store_path, {"order": ["beta", "alpha"]})
+    priorities = _load_priorities(store_path)
     _reset_cache()
-    return text, priorities
+    return priorities
 
 
-def test_priority_endpoint_drops_yaml_comment(commented_store_after_reorder):
-    # Contract CHANGE (fix/fast-store-write): the write path swapped the
-    # ruamel round-trip for a fast safe dump, which does NOT keep comments.
-    # Arrange
-    text, _priorities = commented_store_after_reorder
-    # Act
-    comment_survived = "top-of-file comment" in text
-    # Assert — the hand-written comment is dropped (accepted trade-off).
-    assert not comment_survived
-
-
-def test_priority_endpoint_applies_priorities_to_commented_store(
-    commented_store_after_reorder,
+def test_priority_endpoint_applies_priorities_to_two_card_store(
+    two_card_store_after_reorder,
 ):
     # Arrange
-    _text, priorities = commented_store_after_reorder
+    priorities = two_card_store_after_reorder
     # Act
     result = priorities
-    # Assert — priorities are applied even for a comment-bearing store.
+    # Assert — priorities follow the posted order.
     assert result == {"beta": 1, "alpha": 2}
 
 
 @pytest.fixture
 def graph_after_reorder(store):
-    """Prime the board cache via /graph, mutate via POST /priority, then
-    return the post-write {id: node} map from a follow-up /graph."""
+    """Prime the board+graph cache via /graph, mutate via POST /priority, then
+    return the post-write {id: node} map from a follow-up /graph.
+
+    Pins the read-your-own-writes fix (TASK 2): the /graph payload cache keys
+    on ``board.sig`` (the DB content version), so the follow-up GET rebuilds
+    from the reordered DB instead of returning the stale first payload — even
+    though the priority write never moves the identity file's mtime."""
     request = RequestFactory().get(f"/graph?store={store}")
     views.api_dispatch(request, "graph")
     _post_priority(store, {"order": ["gate", "build", "north"]})
@@ -276,7 +298,7 @@ def test_priority_endpoint_invalidates_cache_for_first_node(graph_after_reorder)
     by_id = graph_after_reorder
     # Act
     gate_rank = by_id["gate"]["priority"]
-    # Assert — follow-up GET re-reads disk, so `gate` ranks 1, not the cached value.
+    # Assert — follow-up GET re-reads the store, so `gate` ranks 1, not cached.
     assert gate_rank == 1
 
 

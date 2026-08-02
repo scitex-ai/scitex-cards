@@ -20,6 +20,7 @@ from click.testing import CliRunner
 
 from scitex_cards import _model, _store
 from scitex_cards._cli import main
+from scitex_cards._paths import PKG_SHORT
 
 
 def _store_path(tmp_path) -> str:
@@ -33,12 +34,20 @@ def _store_path(tmp_path) -> str:
 def test_add_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
     result = runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "design", "Design phase", "--tasks", store,
-         "--scope", "agent:test", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "design",
+            "Design phase",
+            "--scope",
+            "agent:test",
+            "--priority",
+            "1",
+        ],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -47,12 +56,20 @@ def test_add_exits_zero(tmp_path):
 def test_add_output_mentions_id(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
     result = runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "design", "Design phase", "--tasks", store,
-         "--scope", "agent:test", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "design",
+            "Design phase",
+            "--scope",
+            "agent:test",
+            "--priority",
+            "1",
+        ],
     )
     # Assert
     assert "added design" in result.output
@@ -64,8 +81,17 @@ def test_add_persists_id(tmp_path):
     store = _store_path(tmp_path)
     runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "design", "Design phase", "--tasks", store,
-         "--scope", "agent:test", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "design",
+            "Design phase",
+            "--scope",
+            "agent:test",
+            "--priority",
+            "1",
+        ],
     )
     # Act
     tasks = _model.load_tasks(store)
@@ -79,8 +105,17 @@ def test_add_persists_scope(tmp_path):
     store = _store_path(tmp_path)
     runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "design", "Design phase", "--tasks", store,
-         "--scope", "agent:test", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "design",
+            "Design phase",
+            "--scope",
+            "agent:test",
+            "--priority",
+            "1",
+        ],
     )
     # Act
     tasks = _model.load_tasks(store)
@@ -94,8 +129,17 @@ def test_add_persists_priority(tmp_path):
     store = _store_path(tmp_path)
     runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "design", "Design phase", "--tasks", store,
-         "--scope", "agent:test", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "design",
+            "Design phase",
+            "--scope",
+            "agent:test",
+            "--priority",
+            "1",
+        ],
     )
     # Act
     tasks = _model.load_tasks(store)
@@ -106,9 +150,11 @@ def test_add_persists_priority(tmp_path):
 def test_add_json_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
-    result = runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--json"])
+    result = runner.invoke(
+        main,
+        ["add", "--assignee", "agent:test-suite", "a", "A", "--json"],
+    )
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -116,8 +162,10 @@ def test_add_json_exits_zero(tmp_path):
 def test_add_json_emits_id(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    result = runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--json"])
+    result = runner.invoke(
+        main,
+        ["add", "--assignee", "agent:test-suite", "a", "A", "--json"],
+    )
     # Act
     payload = json.loads(result.output.strip())
     # Assert
@@ -127,8 +175,10 @@ def test_add_json_emits_id(tmp_path):
 def test_add_json_emits_status(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    result = runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--json"])
+    result = runner.invoke(
+        main,
+        ["add", "--assignee", "agent:test-suite", "a", "A", "--json"],
+    )
     # Act
     payload = json.loads(result.output.strip())
     # Assert — add's default status is `deferred` since pending was abolished.
@@ -138,10 +188,12 @@ def test_add_json_emits_status(tmp_path):
 def test_add_duplicate_id_exits_nonzero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A again", "--tasks", store])
+    result = runner.invoke(
+        main,
+        ["add", "--assignee", "agent:test-suite", "a", "A again"],
+    )
     # Assert
     assert result.exit_code != 0
 
@@ -149,10 +201,12 @@ def test_add_duplicate_id_exits_nonzero(tmp_path):
 def test_add_duplicate_id_mentions_duplicate(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A again", "--tasks", store])
+    result = runner.invoke(
+        main,
+        ["add", "--assignee", "agent:test-suite", "a", "A again"],
+    )
     # Assert
     assert "duplicate" in result.output.lower()
 
@@ -163,12 +217,22 @@ def test_add_duplicate_id_mentions_duplicate(tmp_path):
 def test_update_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--priority", "10"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--priority",
+            "10",
+        ],
+    )
     # Act
     result = runner.invoke(
         main,
-        ["update", "a", "--tasks", store, "--status", "in_progress", "--priority", "1"],
+        ["update", "a", "--status", "in_progress", "--priority", "1"],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -178,10 +242,21 @@ def test_update_persists_status(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--priority", "10"])
     runner.invoke(
         main,
-        ["update", "a", "--tasks", store, "--status", "in_progress", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--priority",
+            "10",
+        ],
+    )
+    runner.invoke(
+        main,
+        ["update", "a", "--status", "in_progress", "--priority", "1"],
     )
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -193,10 +268,21 @@ def test_update_persists_priority(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--priority", "10"])
     runner.invoke(
         main,
-        ["update", "a", "--tasks", store, "--status", "in_progress", "--priority", "1"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--priority",
+            "10",
+        ],
+    )
+    runner.invoke(
+        main,
+        ["update", "a", "--status", "in_progress", "--priority", "1"],
     )
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -207,12 +293,20 @@ def test_update_persists_priority(tmp_path):
 def test_update_empty_scope_clears_field_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--scope", "agent:initial"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--scope",
+            "agent:initial",
+        ],
     )
     # Act
-    result = runner.invoke(main, ["update", "a", "--tasks", store, "--scope", ""])
+    result = runner.invoke(main, ["update", "a", "--scope", ""])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -222,9 +316,18 @@ def test_update_empty_scope_clears_field_on_disk(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--scope", "agent:initial"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--scope",
+            "agent:initial",
+        ],
     )
-    runner.invoke(main, ["update", "a", "--tasks", store, "--scope", ""])
+    runner.invoke(main, ["update", "a", "--scope", ""])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -234,10 +337,9 @@ def test_update_empty_scope_clears_field_on_disk(tmp_path):
 def test_update_no_fields_exits_nonzero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(main, ["update", "a", "--tasks", store])
+    result = runner.invoke(main, ["update", "a"])
     # Assert
     assert result.exit_code != 0
 
@@ -245,10 +347,9 @@ def test_update_no_fields_exits_nonzero(tmp_path):
 def test_update_no_fields_mentions_no_fields(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(main, ["update", "a", "--tasks", store])
+    result = runner.invoke(main, ["update", "a"])
     # Assert
     assert "no fields" in result.output.lower()
 
@@ -256,12 +357,9 @@ def test_update_no_fields_mentions_no_fields(tmp_path):
 def test_update_missing_id_exits_nonzero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(
-        main, ["update", "nope", "--tasks", store, "--status", "done"]
-    )
+    result = runner.invoke(main, ["update", "nope", "--status", "done"])
     # Assert
     assert result.exit_code != 0
 
@@ -269,12 +367,9 @@ def test_update_missing_id_exits_nonzero(tmp_path):
 def test_update_missing_id_mentions_not_found(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(
-        main, ["update", "nope", "--tasks", store, "--status", "done"]
-    )
+    result = runner.invoke(main, ["update", "nope", "--status", "done"])
     # Assert
     assert "not found" in result.output.lower()
 
@@ -287,9 +382,7 @@ def test_add_agent_flag_persists(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     # Act
-    runner.invoke(
-        main, ["add", "a", "A", "--tasks", store, "--agent", "proj-scitex-todo"]
-    )
+    runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-todo"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
     assert on_disk["agent"] == "proj-scitex-todo"
@@ -301,7 +394,16 @@ def test_add_project_flag_persists(tmp_path):
     store = _store_path(tmp_path)
     # Act
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--project", "scitex-todo"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--project",
+            "scitex-todo",
+        ],
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -314,7 +416,18 @@ def test_add_pr_url_flag_persists(tmp_path):
     store = _store_path(tmp_path)
     url = "https://github.com/ywatanabe1989/scitex-todo/pull/65"
     # Act
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--pr-url", url])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--pr-url",
+            url,
+        ],
+    )
     on_disk = _model.load_tasks(store)[0]
     # Assert
     assert on_disk["pr_url"] == url
@@ -328,9 +441,17 @@ def test_add_kind_compute_persists(tmp_path):
     runner.invoke(
         main,
         [
-            "add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store,
-            "--kind", "compute", "--job-id", "25754194",
-            "--command", "srun -p gpu my.py",
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--kind",
+            "compute",
+            "--job-id",
+            "25754194",
+            "--command",
+            "srun -p gpu my.py",
         ],
     )
     on_disk = _model.load_tasks(store)[0]
@@ -341,10 +462,18 @@ def test_add_kind_compute_persists(tmp_path):
 def test_add_invalid_status_rejected_by_click(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
     result = runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--status", "bogus"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--status",
+            "bogus",
+        ],
     )
     # Assert
     assert result.exit_code != 0
@@ -353,10 +482,18 @@ def test_add_invalid_status_rejected_by_click(tmp_path):
 def test_add_invalid_kind_rejected_by_click(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
     result = runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--kind", "bogus"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--kind",
+            "bogus",
+        ],
     )
     # Assert
     assert result.exit_code != 0
@@ -365,11 +502,20 @@ def test_add_invalid_kind_rejected_by_click(tmp_path):
 def test_add_invalid_blocker_rejected_by_click(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
     # Act
     result = runner.invoke(
         main,
-        ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--status", "blocked", "--blocker", "bogus"],
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--status",
+            "blocked",
+            "--blocker",
+            "bogus",
+        ],
     )
     # Assert
     assert result.exit_code != 0
@@ -382,11 +528,9 @@ def test_update_agent_persists(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    runner.invoke(
-        main, ["update", "a", "--tasks", store, "--agent", "proj-scitex-todo"]
-    )
+    runner.invoke(main, ["update", "a", "--agent", "proj-scitex-todo"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
     assert on_disk["agent"] == "proj-scitex-todo"
@@ -397,12 +541,21 @@ def test_update_depends_on_replaces_list(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--depends-on", "x"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--depends-on",
+            "x",
+        ],
     )
     # Act — repeat --depends-on per id
     runner.invoke(
         main,
-        ["update", "a", "--tasks", store, "--depends-on", "y", "--depends-on", "z"],
+        ["update", "a", "--depends-on", "y", "--depends-on", "z"],
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -414,12 +567,19 @@ def test_update_depends_on_empty_clears_list(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--depends-on", "x"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--depends-on",
+            "x",
+        ],
     )
     # Act — single --depends-on '' clears
-    runner.invoke(
-        main, ["update", "a", "--tasks", store, "--depends-on", ""]
-    )
+    runner.invoke(main, ["update", "a", "--depends-on", ""])
     on_disk = _model.load_tasks(store)[0]
     # Assert
     assert "depends_on" not in on_disk
@@ -428,12 +588,9 @@ def test_update_depends_on_empty_clears_list(tmp_path):
 def test_update_invalid_blocker_rejected_by_click(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    result = runner.invoke(
-        main, ["update", "a", "--tasks", store, "--blocker", "bogus"]
-    )
+    result = runner.invoke(main, ["update", "a", "--blocker", "bogus"])
     # Assert
     assert result.exit_code != 0
 
@@ -444,11 +601,10 @@ def test_update_invalid_blocker_rejected_by_click(tmp_path):
 def test_done_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
-    result = runner.invoke(main, ["done", "a", "--tasks", store])
+    result = runner.invoke(main, ["done", "a"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -456,11 +612,10 @@ def test_done_exits_zero(tmp_path, env):
 def test_done_output_mentions_id(tmp_path, env):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
     # Act
-    result = runner.invoke(main, ["done", "a", "--tasks", store])
+    result = runner.invoke(main, ["done", "a"])
     # Assert
     assert "done a" in result.output
 
@@ -469,9 +624,9 @@ def test_done_persists_status(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
-    runner.invoke(main, ["done", "a", "--tasks", store])
+    runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -482,9 +637,9 @@ def test_done_persists_completed_by(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
-    runner.invoke(main, ["done", "a", "--tasks", store])
+    runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -495,9 +650,9 @@ def test_done_persists_completed_at_z_suffix(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
-    runner.invoke(main, ["done", "a", "--tasks", store])
+    runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -507,13 +662,10 @@ def test_done_persists_completed_at_z_suffix(tmp_path, env):
 def test_done_by_overrides_env_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:env")
     # Act
-    result = runner.invoke(
-        main, ["done", "a", "--tasks", store, "--by", "agent:explicit"]
-    )
+    result = runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -522,9 +674,9 @@ def test_done_by_overrides_env_on_disk(tmp_path, env):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     env.set("SCITEX_TODO_AGENT_ID", "agent:env")
-    runner.invoke(main, ["done", "a", "--tasks", store, "--by", "agent:explicit"])
+    runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -537,15 +689,34 @@ def test_done_by_overrides_env_on_disk(tmp_path, env):
 def test_list_filters_by_scope_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--scope", "agent:lead"])
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--scope", "agent:proj-scitex-todo"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--scope",
+            "agent:lead",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--scope",
+            "agent:proj-scitex-todo",
+        ],
     )
     # Act
     result = runner.invoke(
         main,
-        ["list-tasks", "--tasks", store, "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -554,14 +725,33 @@ def test_list_filters_by_scope_exits_zero(tmp_path):
 def test_list_filters_by_scope_returns_matching(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--scope", "agent:lead"])
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--scope", "agent:proj-scitex-todo"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--scope",
+            "agent:lead",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--scope",
+            "agent:proj-scitex-todo",
+        ],
     )
     result = runner.invoke(
         main,
-        ["list-tasks", "--tasks", store, "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
     )
     # Act
     rows = json.loads(result.output.strip())
@@ -572,12 +762,33 @@ def test_list_filters_by_scope_returns_matching(tmp_path):
 def test_list_env_scope_default(tmp_path, env):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store, "--scope", "agent:lead"])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--scope", "agent:other"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "a",
+            "A",
+            "--scope",
+            "agent:lead",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--scope",
+            "agent:other",
+        ],
+    )
     env.set("SCITEX_TODO_SCOPE", "agent:lead")
     # Act — no --scope here so $SCITEX_TODO_SCOPE='agent:lead' applies via the filter path.
-    result = runner.invoke(main, ["list-tasks", "--tasks", store, "--json", "--status", "deferred"])
+    result = runner.invoke(main, ["list-tasks", "--json", "--status", "deferred"])
     rows = json.loads(result.output.strip())
     # Assert
     assert {r["id"] for r in rows} == {"a"}
@@ -587,24 +798,33 @@ def test_list_env_scope_default(tmp_path, env):
 # list-tasks — PR #66 filter expansion (agent / project / host / blocker /    #
 # kind / id-prefix / blocking-me + multi-status)                              #
 # --------------------------------------------------------------------------- #
-def _seed_for_pr66(runner, store):
+def _seed_for_pr66(runner):
     """Seed the extended-filter test store."""
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "px1", "X1", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "px2", "X2", "--tasks", store,
-                         "--status", "in_progress"])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "py1", "Y1", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "py2", "Y2", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "px1", "X1"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "px2",
+            "X2",
+            "--status",
+            "in_progress",
+        ],
+    )
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "py1", "Y1"])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "py2", "Y2"])
 
 
 def test_list_filter_by_id_prefix(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    _seed_for_pr66(runner, store)
+    _seed_for_pr66(runner)
     # Act
     result = runner.invoke(
         main,
-        ["list-tasks", "--tasks", store, "--json", "--id-prefix", "py"],
+        ["list-tasks", "--json", "--id-prefix", "py"],
     )
     rows = json.loads(result.output.strip())
     # Assert
@@ -614,12 +834,9 @@ def test_list_filter_by_id_prefix(tmp_path):
 def test_list_filter_by_blocker_none_token(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    _seed_for_pr66(runner, store)
+    _seed_for_pr66(runner)
     # Act — all four seeded rows have NO blocker field
-    result = runner.invoke(
-        main, ["list-tasks", "--tasks", store, "--json", "--blocker", "__none"]
-    )
+    result = runner.invoke(main, ["list-tasks", "--json", "--blocker", "__none"])
     rows = json.loads(result.output.strip())
     # Assert
     assert {r["id"] for r in rows} == {"px1", "px2", "py1", "py2"}
@@ -628,14 +845,17 @@ def test_list_filter_by_blocker_none_token(tmp_path):
 def test_list_filter_multi_status_unions(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    _seed_for_pr66(runner, store)
+    _seed_for_pr66(runner)
     # Act — deferred (px1, py1, py2) + in_progress (px2) = all 4
     result = runner.invoke(
         main,
         [
-            "list-tasks", "--tasks", store, "--json",
-            "--status", "deferred", "--status", "in_progress",
+            "list-tasks",
+            "--json",
+            "--status",
+            "deferred",
+            "--status",
+            "in_progress",
         ],
     )
     rows = json.loads(result.output.strip())
@@ -648,20 +868,37 @@ def test_list_filter_blocking_me_flag(tmp_path):
     # field (the CLI --blocker flag lands in a sibling PR; this PR's
     # filter logic doesn't need the CLI surface to test the predicate).
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--status", "blocked"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--status",
+            "blocked",
+        ],
     )
-    _store.update_task(store, "b", blocker="operator-decision")
+    _store.update_task(None, "b", blocker="operator-decision")
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "c", "C", "--tasks", store, "--status", "blocked"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "c",
+            "C",
+            "--status",
+            "blocked",
+        ],
     )
-    _store.update_task(store, "c", blocker="dependency")
+    _store.update_task(None, "c", blocker="dependency")
     # Act
     result = runner.invoke(
         main,
-        ["list-tasks", "--tasks", store, "--json", "--blocking-me"],
+        ["list-tasks", "--json", "--blocking-me"],
     )
     rows = json.loads(result.output.strip())
     # Assert
@@ -674,11 +911,21 @@ def test_list_filter_blocking_me_flag(tmp_path):
 def test_summary_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--status", "done"])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--status",
+            "done",
+        ],
+    )
     # Act
-    result = runner.invoke(main, ["summary", "--tasks", store, "--json"])
+    result = runner.invoke(main, ["summary", "--json"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -686,10 +933,20 @@ def test_summary_exits_zero(tmp_path):
 def test_summary_emits_total(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--status", "done"])
-    result = runner.invoke(main, ["summary", "--tasks", store, "--json"])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--status",
+            "done",
+        ],
+    )
+    result = runner.invoke(main, ["summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -699,10 +956,20 @@ def test_summary_emits_total(tmp_path):
 def test_summary_emits_done_count(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--status", "done"])
-    result = runner.invoke(main, ["summary", "--tasks", store, "--json"])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--status",
+            "done",
+        ],
+    )
+    result = runner.invoke(main, ["summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -712,10 +979,20 @@ def test_summary_emits_done_count(tmp_path):
 def test_summary_emits_deferred_count(tmp_path):
     # Arrange — add's default status is `deferred` since pending was abolished.
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A", "--tasks", store])
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "b", "B", "--tasks", store, "--status", "done"])
-    result = runner.invoke(main, ["summary", "--tasks", store, "--json"])
+    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "b",
+            "B",
+            "--status",
+            "done",
+        ],
+    )
+    result = runner.invoke(main, ["summary", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -730,33 +1007,36 @@ def test_where_exits_zero(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     Path(store).write_text("tasks: []\n", encoding="utf-8")
-    env.delete("SCITEX_TODO_TASKS_YAML_SHARED")
+    env.set("SCITEX_TODO_TASKS_YAML_SHARED", store)
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", store)
     # Act
-    result = runner.invoke(main, ["resolve-store", "--tasks", store, "--json"])
+    result = runner.invoke(main, ["resolve-store", "--json"])
     # Assert
     assert result.exit_code == 0, result.output
 
 
 def test_where_resolved_path(tmp_path, env):
-    # Arrange
+    # Arrange — the store identity is the database path ($SCITEX_CARDS_DB).
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    Path(store).write_text("tasks: []\n", encoding="utf-8")
-    env.delete("SCITEX_TODO_TASKS_YAML_SHARED")
-    result = runner.invoke(main, ["resolve-store", "--tasks", store, "--json"])
+    db = str(tmp_path / "cards.db")
+    Path(db).write_text("", encoding="utf-8")
+    env.set("SCITEX_CARDS_DB", db)
+    env.set("SCITEX_TODO_DB", db)
+    result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
-    assert info["resolved"] == store
+    assert info["resolved"] == db
 
 
 def test_where_exists_true(tmp_path, env):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    Path(store).write_text("tasks: []\n", encoding="utf-8")
-    env.delete("SCITEX_TODO_TASKS_YAML_SHARED")
-    result = runner.invoke(main, ["resolve-store", "--tasks", store, "--json"])
+    db = str(tmp_path / "cards.db")
+    Path(db).write_text("", encoding="utf-8")
+    env.set("SCITEX_CARDS_DB", db)
+    env.set("SCITEX_TODO_DB", db)
+    result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
     # Assert
@@ -777,34 +1057,41 @@ def test_init_shared_exits_zero(tmp_path, env):
 
 
 def test_init_shared_output_mentions_created(tmp_path, env):
-    # Arrange
+    # Arrange — redirect to a fresh store so init-store CREATES (not no-op).
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
+    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_TODO_DB")
     # Act
     result = runner.invoke(main, ["init-store", "--shared"])
     # Assert
     assert "created" in result.output
 
 
-def test_init_shared_creates_file(tmp_path, env):
-    # Arrange
+def test_init_shared_creates_the_db(tmp_path, env):
+    # Arrange — redirect the store to a fresh location (unset the harness pin so
+    # SCITEX_DIR takes effect), so init-store has a store to CREATE.
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
+    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_TODO_DB")
+    from scitex_cards._db import resolve_db_path
+
     runner.invoke(main, ["init-store", "--shared"])
-    # Act
-    expected = tmp_path / "fake-home" / "todo" / "tasks.yaml"
-    # Assert
-    assert expected.exists()
+    # Act / Assert — the store is the canonical DB now, not a YAML file.
+    assert resolve_db_path(None).exists()
 
 
 def test_init_shared_is_idempotent(tmp_path, env):
     # Arrange
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
+    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_TODO_DB")
     runner.invoke(main, ["init-store", "--shared"])
     # Act
     again = runner.invoke(main, ["init-store", "--shared"])
-    # Assert
+    # Assert — second run finds the DB already there.
     assert "no-op" in again.output
 
 
@@ -909,7 +1196,7 @@ def test_mcp_install_payload_has_scitex_cards():
     # Act
     payload = json.loads(result.output)
     # Assert
-    assert "scitex-todo" in payload["mcpServers"]
+    assert "scitex-cards" in payload["mcpServers"]
 
 
 def _mcp_doctor_info():
@@ -926,7 +1213,9 @@ def _mcp_doctor_info():
 _FASTMCP_AVAILABLE = importlib.util.find_spec("fastmcp") is not None
 
 
-@pytest.mark.skipif(_FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable")
+@pytest.mark.skipif(
+    _FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable"
+)
 def test_mcp_doctor_critical_when_fastmcp_missing():
     """Without fastmcp, doctor reports `critical`."""
     # Arrange
@@ -937,7 +1226,9 @@ def test_mcp_doctor_critical_when_fastmcp_missing():
     assert status == "critical"
 
 
-@pytest.mark.skipif(_FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable")
+@pytest.mark.skipif(
+    _FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable"
+)
 def test_mcp_doctor_hint_when_fastmcp_missing():
     """Without fastmcp, doctor hint mentions the mcp extra."""
     # Arrange
@@ -948,7 +1239,9 @@ def test_mcp_doctor_hint_when_fastmcp_missing():
     assert "mcp" in hint
 
 
-@pytest.mark.skipif(_FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable")
+@pytest.mark.skipif(
+    _FASTMCP_AVAILABLE, reason="fastmcp installed — critical-path test not applicable"
+)
 def test_mcp_doctor_exit_code_when_fastmcp_missing():
     """Without fastmcp, doctor exits with code 2."""
     # Arrange
@@ -959,7 +1252,9 @@ def test_mcp_doctor_exit_code_when_fastmcp_missing():
     assert code == 2
 
 
-@pytest.mark.skipif(not _FASTMCP_AVAILABLE, reason="fastmcp not installed — ok-path test not applicable")
+@pytest.mark.skipif(
+    not _FASTMCP_AVAILABLE, reason="fastmcp not installed — ok-path test not applicable"
+)
 def test_mcp_doctor_status_ok_when_fastmcp_installed():
     """With fastmcp, doctor reports ok (or degraded if 0 tools)."""
     # Arrange
@@ -970,7 +1265,10 @@ def test_mcp_doctor_status_ok_when_fastmcp_installed():
     assert status in ("ok", "degraded")
 
 
-@pytest.mark.skipif(not _FASTMCP_AVAILABLE, reason="fastmcp not installed — tool-count test not applicable")
+@pytest.mark.skipif(
+    not _FASTMCP_AVAILABLE,
+    reason="fastmcp not installed — tool-count test not applicable",
+)
 def test_mcp_doctor_tool_count_when_fastmcp_installed():
     """With fastmcp, doctor tool count matches TOOL_NAMES."""
     # Arrange
@@ -992,12 +1290,18 @@ def test_mcp_doctor_tool_count_when_fastmcp_installed():
 def test_update_kind_status_exits_zero(tmp_path):
     # Arrange
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "q-gen", "q-gen quality status", "--tasks", store])
-    # Act
-    result = runner.invoke(
-        main, ["update", "q-gen", "--tasks", store, "--kind", "status"]
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "q-gen",
+            "q-gen quality status",
+        ],
     )
+    # Act
+    result = runner.invoke(main, ["update", "q-gen", "--kind", "status"])
     # Assert
     assert result.exit_code == 0, result.output
 
@@ -1006,10 +1310,17 @@ def test_update_kind_status_persists(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "q-io", "q-io quality status", "--tasks", store])
     runner.invoke(
-        main, ["update", "q-io", "--tasks", store, "--kind", "status"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "q-io",
+            "q-io quality status",
+        ],
     )
+    runner.invoke(main, ["update", "q-io", "--kind", "status"])
     # Act
     on_disk = _model.load_tasks(store)[0]
     # Assert
@@ -1019,15 +1330,30 @@ def test_update_kind_status_persists(tmp_path):
 def test_list_filter_by_kind_status_returns_only_status_rows(tmp_path):
     # Arrange — two rows, only one tagged kind=status.
     runner = CliRunner()
-    store = _store_path(tmp_path)
-    runner.invoke(main, ["add", "--assignee", "agent:test-suite", "real-task", "Real work", "--tasks", store])
     runner.invoke(
-        main, ["add", "--assignee", "agent:test-suite", "q-ml", "q-ml status", "--tasks", store, "--kind", "status"]
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "real-task",
+            "Real work",
+        ],
+    )
+    runner.invoke(
+        main,
+        [
+            "add",
+            "--assignee",
+            "agent:test-suite",
+            "q-ml",
+            "q-ml status",
+            "--kind",
+            "status",
+        ],
     )
     # Act
-    result = runner.invoke(
-        main, ["list-tasks", "--tasks", store, "--json", "--kind", "status"]
-    )
+    result = runner.invoke(main, ["list-tasks", "--json", "--kind", "status"])
     rows = json.loads(result.output.strip())
     # Assert
     assert {r["id"] for r in rows} == {"q-ml"}
@@ -1050,4 +1376,13 @@ def test_update_help_renders(tmp_path):
     result = runner.invoke(main, ["update", "--help"])
     # Assert
     assert result.exit_code == 0, result.output
+
+
+def test_update_help_documents_the_blocker_option(tmp_path):
+    """The update syntax must stay discoverable from `--help`."""
+    # Arrange
+    runner = CliRunner()
+    # Act
+    result = runner.invoke(main, ["update", "--help"])
+    # Assert
     assert "--blocker" in result.output

@@ -26,15 +26,17 @@ upsert instead of five thousand statements.
 
 CORRECTNESS NOTES — the two ways this could quietly corrupt the mirror:
 
-1. ``messages`` is NOT ours. It is derived from the threads.yaml SIDECAR, not from
+1. ``messages`` is NOT ours. It is derived from the threads.json SIDECAR, not from
    the doc. S1 nearly deleted every DM thread on every card write by rebuilding it;
    :data:`_db_bootstrap._DOC_CLEAR_ORDER` excludes it and so must we. A table must
    be owned by exactly the file that produces it.
 
-2. A card that DISAPPEARS from the doc must disappear from the mirror. An
-   upsert-only mirror silently keeps deleted cards forever, and the DB drifts in a
-   direction no equivalence check on *present* cards would ever notice. Removals
-   are handled explicitly.
+2. A card leaves the mirror ONLY when a caller NAMES it (the explicit
+   ``deleted_ids`` handed down from ``delete_task``) — NEVER by inferring deletion
+   from a card's mere absence in the doc. Inference-from-absence is precisely what
+   let a stale document wipe live cards on 2026-07-20; it is deleted, not guarded
+   (see the reconcile loop below). The explicit path is a deliberate single-card
+   verb with ``restore_task`` as its Undo, so it cannot mass-wipe from a stale read.
 
 The hashes live in their own table (``mirror_hashes``), created on demand. If it
 is missing or empty — a fresh DB, or one bootstrapped by the old full-rebuild
@@ -55,7 +57,13 @@ from ._db_bootstrap import (
     _insert_users,
     _rebuild_from_doc,
 )
-from ._db_freshness import stamp_yaml_provenance
+from ._db_freshness import stamp_store_provenance
+
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value, row_values
 
 #: Per-card content hashes, so a write can tell what actually changed.
 HASH_TABLE = "mirror_hashes"
@@ -87,7 +95,12 @@ def _section_hash(value) -> str:
 def _existing_hashes(conn: sqlite3.Connection) -> dict[str, str]:
     conn.execute(_HASH_DDL)
     rows = conn.execute(f"SELECT task_id, hash FROM {HASH_TABLE}").fetchall()
-    return {r[0]: r[1] for r in rows}
+    # row_values, NOT r[0]/r[1]: the annotation says sqlite3.Connection, but an
+    # annotation is a claim, not a guarantee -- this takes the CALLER's
+    # connection, and since #693 that caller can be holding a psycopg one, whose
+    # dict_row raises KeyError on a positional index.
+
+    return {v[0]: v[1] for v in (row_values(r) for r in rows)}
 
 
 def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
@@ -138,6 +151,7 @@ def mirror_doc_incremental(
     *,
     conn: sqlite3.Connection | None = None,
     store_path: str | Path | None = None,
+    deleted_ids: list[str] | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
@@ -151,6 +165,12 @@ def mirror_doc_incremental(
     from" can never disagree. WITHOUT it the mirror is unstamped, and the S2 read
     guard REFUSES an unstamped DB rather than assume it is current: a mirror that
     cannot say which store it reflects is a photograph with no date on it.
+
+    ``deleted_ids`` are ids a caller (``delete_task``) INTENTIONALLY removed and
+    wants gone from the mirror. Reconcile never infers a delete from a card's
+    absence — that inference is the wipe class this module refuses (see the loop
+    below) — so an explicit single-card verb names what it removed and the mirror
+    drops exactly those rows. ``None``/empty on every ordinary write.
 
     Raises deliberately, like :func:`_db_bootstrap.mirror_doc` — the POLICY for a
     failed mirror (never break the user's write, never be silent) lives in
@@ -170,17 +190,15 @@ def mirror_doc_incremental(
 
     try:
         tasks = doc.get("tasks") if isinstance(doc, dict) else None
-        raw_count = len(tasks) if isinstance(tasks, list) else 0
         cards = [c for c in (tasks or []) if isinstance(c, dict) and c.get("id")]
 
         def _stamp() -> None:
-            # The doc's RAW card count — not len(cards). Cards with no id are
-            # dropped just above, and duplicate ids collapse in _insert_tasks; both
-            # are LOSSY. Stamping the raw count is what lets the read guard notice
-            # (db_rows != stamped) and refuse, instead of a SQLite read quietly
-            # returning fewer cards than the YAML has.
+            # Record WHICH STORE this database is the database of, in the same
+            # transaction as the rows. The identity is the store's resolved path
+            # (post-cutover, the database's own $SCITEX_CARDS_DB path); the
+            # ownership guard compares it before every write.
             if store_path is not None:
-                stamp_yaml_provenance(conn, store_path, raw_count)
+                stamp_store_provenance(conn, store_path)
 
         prior = _existing_hashes(conn)
 
@@ -190,7 +208,8 @@ def mirror_doc_incremental(
         if not prior:
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(str(c["id"]), _card_hash(c)) for c in cards],
             )
             _remember_sections(conn, doc)
@@ -205,18 +224,59 @@ def mirror_doc_incremental(
         by_id = {str(c["id"]): c for c in cards}
 
         changed = [i for i, h in now_hashes.items() if prior.get(i) != h]
-        removed = [i for i in prior if i not in now_hashes]
 
+        # RECONCILE INSERTS AND UPDATES. IT NEVER *INFERS* A DELETE FROM ABSENCE.
+        # (Explicit, caller-named deletes are a separate, deliberate path — see
+        # the `deleted_ids` loop after the changed-writes below.)
+        #
+        # This loop used to end with:
+        #
+        #     removed = [i for i in prior if i not in now_hashes]
+        #     for tid in removed:
+        #         _delete_card(conn, tid)
+        #
+        # A document that merely LACKED a card therefore destroyed it. That is
+        # not a hypothetical reading of the code — it is the mechanism that
+        # removed the same 16 cards twice on 2026-07-20, twenty minutes apart:
+        # every card created that day and nothing older, because a writer
+        # holding a document read BEFORE they existed wrote it back, and the
+        # diff called them "removed". Restoring only fed the loop; the second
+        # loss happened with no test suite running at all.
+        #
+        # Operator ruling: 「一度データベースに入ったものって消さないほうがいい
+        # んじゃないですか」 — once something has entered the database, better
+        # never to delete it.
+        #
+        # DELETED RATHER THAN GUARDED, deliberately. A guarded delete is one
+        # bug away from firing again, and this store has now been destroyed by
+        # three different callers reaching the same delete. Guarding the door
+        # teaches the next caller nothing; removing it ends the class. Absence
+        # from a document is not evidence of deletion — it is far more often
+        # evidence of a stale read.
+        #
+        # Deliberate consequence: a card genuinely deleted elsewhere is no
+        # longer propagated here, so rows accumulate. That is the trade the
+        # ruling makes, and it is the right one — unbounded growth is a
+        # storage cost, and this was data loss.
         for tid in changed:
             _write_card(conn, by_id[tid])
-        for tid in removed:
-            _delete_card(conn, tid)
 
         if changed:
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(tid, now_hashes[tid]) for tid in changed],
             )
+
+        # EXPLICIT, CALLER-NAMED deletes — the ONE way a row leaves the mirror.
+        # `delete_task` passes the id it intentionally removed and the mirror
+        # drops exactly that row. This is categorically NOT the absence-inference
+        # the ruling above forbids: the id is named by a deliberate single-card
+        # verb (Undo = restore_task), not guessed from a document that merely
+        # lacks it, so it cannot mass-wipe from a stale read.
+        removed = [tid for tid in (deleted_ids or []) if tid in prior]
+        for tid in deleted_ids or []:
+            _delete_card(conn, tid)
 
         # Non-card sections: one hash each, rebuilt only when they actually move.
         _sync_sections(conn, doc)
@@ -230,6 +290,8 @@ def mirror_doc_incremental(
         conn.commit()
         return {
             "changed": len(changed),
+            # Reconcile still never INFERS a delete; this counts only the
+            # explicit, caller-named removals (0 on an ordinary write).
             "removed": len(removed),
             "unchanged": len(cards) - len(changed),
             "full": False,
@@ -248,11 +310,9 @@ def _section_key(name: str) -> str:
 
 def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
     conn.executemany(
-        f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
-        [
-            (_section_key(k), _section_hash(doc.get(k)))
-            for k in _SECTION_KEYS
-        ],
+        f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+        f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
+        [(_section_key(k), _section_hash(doc.get(k))) for k in _SECTION_KEYS],
     )
 
 
@@ -268,7 +328,7 @@ def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
         row = conn.execute(
             f"SELECT hash FROM {HASH_TABLE} WHERE task_id = ?", (_section_key(key),)
         ).fetchone()
-        if row and row[0] == want:
+        if row and _sole_value(row) == want:
             continue
         if key == "users":
             conn.execute("DELETE FROM user_names")
@@ -278,7 +338,8 @@ def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
             conn.execute("DELETE FROM notifications")
             _insert_notifications(conn, doc.get("inboxes"))
         conn.execute(
-            f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+            f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+            f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
             (_section_key(key), want),
         )
 

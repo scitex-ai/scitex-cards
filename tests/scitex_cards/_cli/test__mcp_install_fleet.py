@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo mcp install-fleet`` — fleet-wide MCP wire-up.
+"""``scitex-cards mcp install-fleet`` — fleet-wide MCP wire-up.
 
 Lead a2a `1ab212f3`, 2026-06-14 — closes the missing-MCP gap that
 ripple-wm hit (had to a2a-relay through me for card creation because
-their container's `.mcp.json` doesn't have the scitex-todo entry).
+their container's `.mcp.json` doesn't have the scitex-cards entry).
 One invocation bakes the entry into every agent's `to_home/.mcp.json`.
 
 No mocks (STX-NM/PA-306). Click CliRunner against a tmp directory
@@ -78,8 +78,8 @@ def test_install_fleet_writes_scitex_cards_entry_per_agent(tmp_path):
     a = _read_json(agents / "agent-a" / "to_home" / ".mcp.json")
     b = _read_json(agents / "agent-b" / "to_home" / ".mcp.json")
     assert (
-        "scitex-todo" in a.get("mcpServers", {})
-        and "scitex-todo" in b.get("mcpServers", {})
+        "scitex-cards" in a.get("mcpServers", {})
+        and "scitex-cards" in b.get("mcpServers", {})
     )
 
 
@@ -88,7 +88,7 @@ def test_install_fleet_pins_env_tasks_path(tmp_path):
     agents = tmp_path / "agents"
     _make_agents(agents, "agent-a")
     runner = CliRunner()
-    pinned = "/home/agent/.scitex/todo/tasks.yaml"
+    pinned = "/home/agent/.scitex/cards/cards.db"
     # Act
     runner.invoke(
         main,
@@ -96,8 +96,8 @@ def test_install_fleet_pins_env_tasks_path(tmp_path):
          "--env-tasks-path", pinned, "-y"],
     )
     # Assert
-    entry = _read_json(agents / "agent-a" / "to_home" / ".mcp.json")["mcpServers"]["scitex-todo"]
-    assert entry.get("env") == {"SCITEX_TODO_TASKS_YAML_SHARED": pinned}
+    entry = _read_json(agents / "agent-a" / "to_home" / ".mcp.json")["mcpServers"]["scitex-cards"]
+    assert entry.get("env") == {"SCITEX_CARDS_DB": pinned}
 
 
 def test_install_fleet_preserves_sibling_mcp_servers(tmp_path):
@@ -115,7 +115,7 @@ def test_install_fleet_preserves_sibling_mcp_servers(tmp_path):
     )
     # Assert — sibling preserved.
     servers = _read_json(seed)["mcpServers"]
-    assert "other-server" in servers and "scitex-todo" in servers
+    assert "other-server" in servers and "scitex-cards" in servers
 
 
 def test_install_fleet_idempotent_on_second_run(tmp_path):
@@ -206,4 +206,4 @@ def test_install_fleet_handles_corrupt_mcp_json_per_agent(tmp_path):
         main, ["mcp", "install-fleet", "--agents-dir", str(agents), "-y"],
     )
     # Assert — agent-b still got the entry.
-    assert "scitex-todo" in _read_json(agents / "agent-b" / "to_home" / ".mcp.json").get("mcpServers", {})
+    assert "scitex-cards" in _read_json(agents / "agent-b" / "to_home" / ".mcp.json").get("mcpServers", {})

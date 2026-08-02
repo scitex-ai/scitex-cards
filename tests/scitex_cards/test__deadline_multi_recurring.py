@@ -16,7 +16,6 @@ assertion per logical concept.
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path
 
 import pytest
 
@@ -24,16 +23,9 @@ from scitex_cards import TaskValidationError
 from scitex_cards._model import (
     Repeater,
     _parse_deadline_or_raise,
-    load_tasks,
     next_deadline_for_task,
 )
-
-
-def _write(tmp_path, text):
-    path = tmp_path / "tasks.yaml"
-    path.write_text(text, encoding="utf-8")
-    return path
-
+from scitex_cards._validate import _validate_tasks
 
 # === Repeater parser ====================================================
 
@@ -164,46 +156,48 @@ class TestNextOccurrenceFutureBaseReturnsBase:
 
 
 class TestMutualExclusion:
-    def test_rejects_both_set(self, tmp_path):
+    def test_rejects_both_set(self):
         # Arrange
-        store = _write(
-            tmp_path,
-            "tasks:\n"
-            "  - {id: a, title: A, status: pending,"
-            " deadline: '2026-06-15', deadlines: ['2026-06-15']}\n",
-        )
+        tasks = [
+            {
+                "id": "a",
+                "title": "A",
+                "status": "pending",
+                "deadline": "2026-06-15",
+                "deadlines": ["2026-06-15"],
+            }
+        ]
         # Act
         # Assert
         with pytest.raises(TaskValidationError, match="BOTH deadline and deadlines"):
-            load_tasks(store)
+            _validate_tasks(tasks, source="<t>", strict=False)
 
 
 class TestDeadlinesEmptyListRejected:
-    def test_raises_on_empty_deadline_list(self, tmp_path):
+    def test_raises_on_empty_deadline_list(self):
         # Arrange
-        store = _write(
-            tmp_path,
-            "tasks:\n" "  - {id: a, title: A, status: pending, deadlines: []}\n",
-        )
+        tasks = [{"id": "a", "title": "A", "status": "pending", "deadlines": []}]
         # Act
         # Assert
         with pytest.raises(TaskValidationError, match="empty deadlines list"):
-            load_tasks(store)
+            _validate_tasks(tasks, source="<t>", strict=False)
 
 
 class TestDeadlinesPerEntryValidated:
-    def test_garbage_entry_rejected(self, tmp_path):
+    def test_garbage_entry_rejected(self):
         # Arrange
-        store = _write(
-            tmp_path,
-            "tasks:\n"
-            "  - {id: a, title: A, status: pending,"
-            " deadlines: ['2026-06-15', 'nope']}\n",
-        )
+        tasks = [
+            {
+                "id": "a",
+                "title": "A",
+                "status": "pending",
+                "deadlines": ["2026-06-15", "nope"],
+            }
+        ]
         # Act
         # Assert
         with pytest.raises(TaskValidationError, match="deadlines\\[1\\]"):
-            load_tasks(store)
+            _validate_tasks(tasks, source="<t>", strict=False)
 
 
 # === next_deadline_for_task (graph wire field) ==========================

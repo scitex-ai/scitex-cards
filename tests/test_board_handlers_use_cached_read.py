@@ -30,35 +30,82 @@ def _src(fn) -> str:
     return inspect.getsource(fn)
 
 
+#: The cache entry point every read handler must route through, and the bare
+#: re-parse none of them may reintroduce. Named once so each test below reads
+#: as "this handler, that property" rather than repeating the literals.
+CACHED_READ = "get_board"
+BARE_LOAD = "tasks = load_tasks("
+
+
 def test_timeline_reads_through_the_cache():
-    assert "get_board" in _src(timeline.timeline_view)
+    # Arrange
+    view = timeline.timeline_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert CACHED_READ in src
 
 
 def test_timeline_does_not_call_load_tasks_directly():
     """A bare load_tasks here re-parses 5 MB on every 30 s poll."""
-    assert "tasks = load_tasks(" not in _src(timeline.timeline_view)
+    # Arrange
+    view = timeline.timeline_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert BARE_LOAD not in src
 
 
 def test_runnable_reads_through_the_cache():
-    assert "get_board" in _src(runnable.runnable_view)
+    # Arrange
+    view = runnable.runnable_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert CACHED_READ in src
 
 
 def test_runnable_does_not_call_load_tasks_directly():
-    assert "tasks = load_tasks(" not in _src(runnable.runnable_view)
+    # Arrange
+    view = runnable.runnable_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert BARE_LOAD not in src
 
 
 def test_blocked_batch_reads_through_the_cache():
-    assert "get_board" in _src(runnable.blocked_batch_view)
+    # Arrange
+    view = runnable.blocked_batch_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert CACHED_READ in src
 
 
 def test_chat_reads_through_the_cache():
-    assert "get_board" in _src(chat.chat_view)
+    # Arrange
+    view = chat.chat_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert CACHED_READ in src
 
 
 def test_fleet_timing_reads_through_the_cache():
-    assert "get_board" in _src(timing_view.fleet_timing_view)
+    # Arrange
+    view = timing_view.fleet_timing_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert CACHED_READ in src
 
 
 def test_timeline_still_reports_a_store_path():
     """The payload contract keeps store_path — the FE footer shows it."""
-    assert "store_path" in _src(timeline.timeline_view)
+    # Arrange
+    view = timeline.timeline_view
+    # Act
+    src = _src(view)
+    # Assert
+    assert "store_path" in src

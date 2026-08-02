@@ -1,25 +1,137 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo db`` — shadow-SQLite operability verbs (S0).
+"""CLI noun group ``scitex-cards db`` — SQLite operability verbs.
 
-STAGE S0 (RFC #348): the SQLite DB is a SHADOW bootstrapped from the canonical
-YAML store; nothing reads it as truth yet. These verbs are the operability
-surface:
+SQLite is the store. These verbs are its operability surface:
 
-  * ``db path``            — print the resolved shadow-DB path.
-  * ``db verify``          — open the DB, check user_version + table counts.
-  * ``db import --from-yaml`` — (re)bootstrap the DB from ``tasks.yaml``.
+  * ``db path``     — print the resolved database path.
+  * ``db verify``   — open the DB, check user_version + table counts.
+  * ``db export``   — write the store out as JSON text (a backup, never a source).
+  * ``db snapshot`` — export + git-commit the export off-site.
+
+The legacy-sidecar-import verbs (``db import --from-yaml``, ``db rehearse``,
+and ``db snapshot --refresh``) are DELETED: there is no external sidecar to
+import from any more, and an importer built on the DB read path rebuilt the
+database from itself.
 
 The group token is a NOUN per the SciTeX noun-verb CLI convention. Attached to
-the root group via :func:`register`, mirroring the sibling ``migration`` /
-``health`` modules so the over-budget ``_main.py`` stays untouched.
+the root group via :func:`register`.
 """
 
 from __future__ import annotations
 
 import json
+import re
 
 import click
+
+#: A snapshot holding less than this FRACTION of the previous one's cards is
+#: treated as a catastrophe rather than churn, and refused. Cards are deleted
+#: routinely; HALF of them vanishing between two hourly fires is not deletion,
+#: it is damage. Deliberately generous — the goal is to catch a wipe, not to
+#: police normal cleanup, and `--allow-shrink` covers the real bulk-delete case.
+_SHRINK_REFUSAL_RATIO = 0.5
+
+#: The rail's own commit subject, e.g. ``snapshot: 2138 tasks``. Parsed back to
+#: recover the previous count, so the check needs no state of its own — the
+#: history IS the record.
+_SNAPSHOT_SUBJECT_RE = re.compile(r"snapshot:\s*(\d+)\s+tasks")
+
+
+def _live_task_fingerprint(db_path: str | None) -> tuple[int, str | None]:
+    """``(row count, newest last_activity)`` read from the DB's TYPED columns.
+
+    Deliberately bypasses ``card_json`` — the export (``_db_export.export_json``)
+    reconstructs every task EXCLUSIVELY from the verbatim ``card_json`` payload
+    (the S2 exactness contract), never from the typed columns. Every healthy
+    write populates both from the same call, so in a healthy DB this and the
+    export's own report always agree; a live probe of the typed columns is
+    therefore an INDEPENDENT ground truth to check the export against.
+    """
+    from .._db import open_db
+
+    conn = open_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(last_activity) AS newest FROM tasks"
+        ).fetchone()
+        # POSITIONAL INDEXING IS NOT PORTABLE HERE. sqlite3.Row supports both
+        # row[0] and row["n"]; the PostgreSQL wrapper yields a DICT-LIKE row
+        # where row[0] raises `KeyError: 0`. Measured 2026-08-02 — this line
+        # was the SECOND thing to break the off-site snapshot on Postgres,
+        # surfacing only once the resolve-path fix let execution reach it.
+        #
+        # A KeyError here is also easy to misread as "the tasks table is
+        # missing", which is why the columns are named and read BY NAME: the
+        # spelling that works on both backends, and the one whose failure says
+        # what it means.
+        return int(row["n"]), row["newest"]
+    finally:
+        conn.close()
+
+
+def _assert_export_reflects_live_db(db_path: str | None, report: dict) -> None:
+    """RAISE if the export just produced does not match the DB's LIVE state.
+
+    THE 2026-07-21 FALSE-GREEN INCIDENT this exists to catch: the hourly
+    snapshot timer exported, committed "snapshot: 2168 tasks", and pushed
+    off-site — every signal green — while the exported CONTENT was stale.
+    Proof at the time: the 11:00 export showed a card as ``deferred`` that
+    the DB had already marked ``done`` at 10:47, and a card created at 10:47
+    was absent entirely. The shrink-refusal guard below does not catch this
+    shape: the card COUNT can match while the CONTENT lags — shrink and
+    staleness are separate failure modes.
+
+    This probes the DB's typed ``last_activity`` / row-count directly
+    (:func:`_live_task_fingerprint`, bypassing ``card_json`` — the export's
+    own source) and compares against what the export actually reported. Any
+    disagreement means the export does not reflect the DB's current state —
+    whatever the cause (a lagging mirror, a wrong resolved path, a partial
+    write) — and the snapshot must not be committed or pushed as if current.
+    """
+    live_count, live_newest = _live_task_fingerprint(db_path)
+    exported_count = int(report.get("tasks") or 0)
+    exported_newest = report.get("newest_last_activity")
+
+    if live_count != exported_count:
+        raise click.ClickException(
+            f"REFUSING to snapshot: STALE EXPORT. The DB's tasks table has "
+            f"{live_count} rows right now, but the export just produced "
+            f"{exported_count}. The export does not reflect the DB's current "
+            f"state — do not trust or push this snapshot.\n"
+            f"Re-run `db snapshot`. If this keeps happening, the export is "
+            f"reading the wrong database (check --db / $SCITEX_CARDS_DB) or "
+            f"is racing against concurrent writes."
+        )
+    if exported_newest != live_newest:
+        raise click.ClickException(
+            f"REFUSING to snapshot: STALE EXPORT. The DB's newest "
+            f"last_activity (typed column, live) is {live_newest!r}, but the "
+            f"export's newest last_activity (from card_json) is "
+            f"{exported_newest!r} — they disagree, so the export does not "
+            f"reflect the DB's current state. Do not trust or push this "
+            f"snapshot.\n"
+            f"This is the shape of the 2026-07-21 false-green incident (an "
+            f"11:00 export showed a card still `deferred` that the DB had "
+            f"marked `done` 13 minutes earlier). Investigate why card_json "
+            f"and the typed columns disagree — a partial write, a stale "
+            f"mirror, or the wrong resolved DB — before re-running."
+        )
+
+
+def _previous_snapshot_count(git) -> int | None:
+    """Cards recorded by the most recent snapshot commit, or ``None``.
+
+    ``None`` means "no basis to compare" — a fresh repo, an unreadable log, or
+    a subject line that does not parse. Every one of those is a reason to allow
+    the snapshot, not to block it: a backup rail must never refuse because its
+    own bookkeeping is unfamiliar.
+    """
+    log = git("log", "-1", "--format=%s")
+    if log.returncode != 0:
+        return None
+    match = _SNAPSHOT_SUBJECT_RE.search(log.stdout or "")
+    return int(match.group(1)) if match else None
 
 
 def register(main: click.Group) -> None:
@@ -30,12 +142,11 @@ def register(main: click.Group) -> None:
 @click.group(
     "db",
     help=(
-        "Shadow-SQLite store verbs (SQLite migration S0, RFC #348).\n\n"
-        "The DB is a SHADOW bootstrapped from the canonical tasks.yaml; the "
-        "YAML stays the source of truth and no read/write path uses the DB "
-        "yet. `db path` prints the resolved DB location, `db verify` checks "
-        "schema health, and `db import --from-yaml` (re)builds the DB from "
-        "the YAML (idempotent, never modifies the YAML)."
+        "SQLite store verbs. SQLite is the store.\n\n"
+        "`db path` prints the resolved database location, `db verify` checks "
+        "schema health, `db export` writes the store out as YAML text (a "
+        "backup, never a source), and `db snapshot` commits that export "
+        "off-site."
     ),
 )
 def db_group() -> None:
@@ -78,8 +189,8 @@ def db_path_cmd(db_path: str | None) -> None:
         "every expected table (with row counts), and PRAGMA quick_check. "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
-        "  scitex-todo db verify\n"
-        "  scitex-todo db verify --json"
+        "  scitex-cards db verify\n"
+        "  scitex-cards db verify --json"
     ),
 )
 @_DB_OPTION
@@ -94,9 +205,9 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-todo db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards db verify: {status} — {report['path']}")
     if not report["exists"]:
-        click.echo("[FAIL] db does not exist yet (run `db import --from-yaml`)")
+        click.echo("[FAIL] db does not exist yet (run `init-store`)")
         raise SystemExit(1)
     click.echo(
         f"  user_version={report['user_version']} "
@@ -108,84 +219,14 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
     raise SystemExit(0 if report["ok"] else 1)
 
 
-@db_group.command(
-    "import",
-    help=(
-        "Bootstrap the shadow DB from the canonical YAML store.\n\n"
-        "Reads tasks.yaml (tasks + users + inboxes) and the threads.yaml "
-        "sidecar and rebuilds every DB table in one transaction. Idempotent "
-        "(re-run = same state). The YAML is opened READ-ONLY and never "
-        "modified. Requires --from-yaml (the only S0 source).\n\n"
-        "Example:\n"
-        "  scitex-todo db import --from-yaml\n"
-        "  scitex-todo db import --from-yaml --tasks /path/to/tasks.yaml --json"
-    ),
-)
-@click.option(
-    "--from-yaml",
-    "from_yaml",
-    is_flag=True,
-    help="Import from the YAML store (the only source in S0). Required.",
-)
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: user store / $SCITEX_TODO_TASKS_YAML_SHARED).",
-)
-@click.option(
-    "--as-store",
-    "as_store",
-    default=None,
-    help=(
-        "Stamp the DB as the store for THIS path instead of the imported file. "
-        "Use when restoring from a backup/snapshot: the source file is where the "
-        "DATA came from, not what the DB IS."
-    ),
-)
-@_DB_OPTION
-@click.option(
-    "--json", "as_json", is_flag=True, help="Emit the import summary as JSON."
-)
-def db_import_cmd(
-    from_yaml: bool,
-    tasks_path: str | None,
-    as_store: str | None,
-    db_path: str | None,
-    as_json: bool,
-) -> None:
-    """(Re)bootstrap the shadow DB from the YAML store."""
-    if not from_yaml:
-        raise click.ClickException(
-            "`db import` requires --from-yaml (the only source in S0)."
-        )
-    from .._db_bootstrap import import_from_yaml
-
-    summary = import_from_yaml(
-        tasks_path=tasks_path, db_path=db_path, as_store=as_store
-    )
-    if as_json:
-        click.echo(json.dumps(summary))
-        return
-    click.echo(
-        f"# imported YAML -> shadow DB\n"
-        f"  yaml: {summary['yaml_path']}\n"
-        f"  db:   {summary['db_path']}\n"
-        f"  tasks={summary['tasks']} comments={summary['comments']} "
-        f"edges={summary['edges']} roles={summary['roles']}\n"
-        f"  users={summary['users']} user_names={summary['user_names']} "
-        f"notifications={summary['notifications']} messages={summary['messages']}"
-    )
-
-
 def _echo_export_report(report: dict) -> None:
     """Print an export's counts — a silent bulk export leaves no audit trace."""
     click.echo(
-        f"# exported DB -> YAML\n"
+        f"# exported DB -> JSON\n"
         f"  db:      {report['db']}\n"
-        f"  tasks:   {report['tasks_yaml']}  ({report['tasks']} tasks, "
+        f"  tasks:   {report['tasks_json']}  ({report['tasks']} tasks, "
         f"{report['users']} users, {report['notifications']} notifications)\n"
-        f"  threads: {report['threads_yaml']}  ({report['threads']} threads, "
+        f"  threads: {report['threads_json']}  ({report['threads']} threads, "
         f"{report['messages']} messages)"
     )
 
@@ -193,14 +234,14 @@ def _echo_export_report(report: dict) -> None:
 @db_group.command(
     "export",
     help=(
-        "Export the DB to YAML text (ADR-0010 backup/audit rail).\n\n"
+        "Export the DB to JSON text (ADR-0010 backup/audit rail).\n\n"
         "Every record is reconstructed from its VERBATIM json payload "
         "(card_json / record_json) — never from typed columns — so the "
         "export is exact by construction. REFUSES loudly if any row has no "
-        "payload (a pre-v3 DB: re-run `db import --from-yaml` first).\n\n"
+        "payload.\n\n"
         "Example:\n"
         "  scitex-cards db export\n"
-        "  scitex-cards db export --out /tmp/tasks.yaml --json"
+        "  scitex-cards db export --out /tmp/tasks.json --json"
     ),
 )
 @_DB_OPTION
@@ -208,13 +249,13 @@ def _echo_export_report(report: dict) -> None:
     "--out",
     "out_path",
     default=None,
-    help="tasks.yaml output path (default: <db_dir>/export/tasks.yaml).",
+    help="tasks.json output path (default: <db_dir>/export/tasks.json).",
 )
 @click.option(
     "--threads-out",
     "threads_out",
     default=None,
-    help="threads.yaml output path (default: beside --out).",
+    help="threads.json output path (default: beside --out).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the export report as JSON.")
 def db_export_cmd(
@@ -223,10 +264,10 @@ def db_export_cmd(
     threads_out: str | None,
     as_json: bool,
 ) -> None:
-    """Export the DB to YAML snapshot files."""
-    from .._db_export import export_yaml
+    """Export the DB to JSON snapshot files."""
+    from .._db_export import export_json
 
-    report = export_yaml(db_path=db_path, out=out_path, threads_out=threads_out)
+    report = export_json(db_path=db_path, out=out_path, threads_out=threads_out)
     if as_json:
         click.echo(json.dumps(report))
         return
@@ -253,15 +294,6 @@ def db_export_cmd(
     help="Snapshot directory (default: <db_dir>/snapshots; its own git repo).",
 )
 @click.option(
-    "--refresh",
-    is_flag=True,
-    help=(
-        "Rebuild the DB from the canonical YAML first (import), then "
-        "snapshot. The honest pre-cutover cadence: import IS the freshness "
-        "step while the yaml is still canonical; after the flip, drop it."
-    ),
-)
-@click.option(
     "--push",
     is_flag=True,
     help=(
@@ -272,44 +304,70 @@ def db_export_cmd(
     ),
 )
 @click.option(
+    "--allow-shrink",
+    is_flag=True,
+    help=(
+        "Snapshot even if the card count collapsed vs the previous snapshot. "
+        "Needed for a genuine bulk delete or a deliberately fresh store; "
+        "WITHOUT it a large drop is refused, because a backup that silently "
+        "records a wipe buys confidence in a destroyed board."
+    ),
+)
+@click.option(
     "--json", "as_json", is_flag=True, help="Emit the snapshot report as JSON."
 )
 def db_snapshot_cmd(
     db_path: str | None,
     snap_dir: str | None,
-    refresh: bool,
     push: bool,
+    allow_shrink: bool,
     as_json: bool,
 ) -> None:
     """Export to the snapshot dir and commit the export in its own git repo."""
     import subprocess
     from pathlib import Path
 
-    from .._db import resolve_db_path
-    from .._db_export import export_yaml
+    from .._db_export import export_json
+    from .._paths import resolve_tasks_path
 
-    if refresh:
-        from .._db_bootstrap import import_from_yaml
-
-        summary = import_from_yaml(db_path=db_path)
-        if not as_json:
-            click.echo(
-                f"# refreshed DB from YAML: {summary['yaml_path']} -> "
-                f"{summary['db_path']} ({summary['tasks']} tasks)"
-            )
-
+    # THE SNAPSHOT DIR IS A LOCAL STATE DIR, NOT THE STORE'S IDENTITY.
+    #
+    # This used to be `resolve_db_path(db_path).parent / "snapshots"`, which
+    # derives a filesystem location from the STORE TARGET. That is fine while
+    # the target is a file and raises outright once it is a DSN — measured
+    # 2026-08-02, and it took the off-site backup down for ~31 hours: every
+    # hourly run died on `$SCITEX_CARDS_DB names a PostgreSQL server, not a
+    # file path`, with the traceback going to a log file nobody reads.
+    #
+    # The guard was right; the caller was wrong. Store identity (which may be a
+    # DSN) and local state dir (always a real directory) are INDEPENDENT AXES,
+    # and a backup needs the second one. `resolve_tasks_path` is the local
+    # axis: it returns the real path for a file store and the user root for a
+    # DSN, so the snapshot lands beside the store when there is one and in
+    # ~/.scitex/cards otherwise. File-store behaviour is unchanged.
     root = (
         Path(snap_dir).expanduser()
         if snap_dir
-        else resolve_db_path(db_path).parent / "snapshots"
+        else resolve_tasks_path(db_path).parent / "snapshots"
     )
     root.mkdir(parents=True, exist_ok=True)
 
-    report = export_yaml(
+    report = export_json(
         db_path=db_path,
-        out=root / "tasks.yaml",
-        threads_out=root / "threads.yaml",
+        out=root / "tasks.json",
+        threads_out=root / "threads.json",
     )
+
+    # A BACKUP MUST NOT RECORD A LIE, EITHER.
+    #
+    # The shrink guard further below catches a collapsed CARD COUNT
+    # (2026-07-19). It does not catch a snapshot whose count matches but
+    # whose CONTENT lags — the 2026-07-21 false-green: "snapshot: 2168
+    # tasks" committed and pushed clean, while the export showed a card as
+    # `deferred` that the DB had marked `done` 13 minutes earlier, and was
+    # missing a card created in that same window. Shrink and staleness are
+    # separate failure modes; this checks the one the other cannot see.
+    _assert_export_reflects_live_db(db_path, report)
 
     def _git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -323,6 +381,36 @@ def db_snapshot_cmd(
         _git("init", "-q")
         _git("config", "user.name", "scitex-cards")
         _git("config", "user.email", "cards@scitex.ai")
+    # A BACKUP MUST NOT RECORD A CATASTROPHE WITHOUT SAYING SO.
+    #
+    # On 2026-07-19 the live DB was destroyed (2,138 cards -> 53) and the rail
+    # did exactly what it was told: it snapshotted the wreck and committed
+    # "snapshot: 53 tasks" as HEAD, one commit after "snapshot: 2138 tasks",
+    # silently. The rail was WORKING — that is the point. A backup that
+    # faithfully records a wipe with no alarm stops being a safety net and
+    # becomes a propagation mechanism: anyone restoring from HEAD afterwards
+    # gets the destroyed board, and retention eventually ages out the good one.
+    #
+    # Git history saved the recovery that day. History is not a plan.
+    previous = _previous_snapshot_count(_git)
+    now = int(report.get("tasks") or 0)
+    if (
+        not allow_shrink
+        and previous is not None
+        and previous > 0
+        and now < previous * _SHRINK_REFUSAL_RATIO
+    ):
+        raise click.ClickException(
+            f"REFUSING to snapshot: the card count collapsed from {previous} to "
+            f"{now} ({now * 100 // previous}% of the previous snapshot). A backup "
+            f"that records a wipe without comment is worse than no backup — it "
+            f"buys confidence in a destroyed board.\n"
+            f"If the store really did shrink this much (a bulk delete, a fresh "
+            f"store), re-run with --allow-shrink. If it did NOT, the live store "
+            f"is damaged: recover it BEFORE snapshotting, or this commit becomes "
+            f"the newest 'good' state."
+        )
+
     _git("add", "-A")
     committed = _git("commit", "-q", "-m", f"snapshot: {report['tasks']} tasks")
     # exit 1 with nothing staged = no changes since the last snapshot — a
@@ -363,58 +451,6 @@ def db_snapshot_cmd(
     _echo_export_report(report)
     state = "committed" if report["committed"] else "no changes since last snapshot"
     click.echo(f"  snapshot: {root} ({state})")
-
-
-@db_group.command(
-    "rehearse",
-    help=(
-        "Cutover rehearsal: prove yaml -> cards.db -> yaml is exact.\n\n"
-        "Freezes (copies) the store + threads sidecar, imports into a "
-        "throwaway DB, exports, and deep-compares every section. "
-        "READ-ONLY on the live store. Exit 0 iff ALL sections equal; "
-        "a failing rehearsal keeps its workdir as evidence.\n\n"
-        "Example:\n"
-        "  scitex-cards db rehearse\n"
-        "  scitex-cards db rehearse --json"
-    ),
-)
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Store to rehearse against (default: resolved store).",
-)
-@click.option(
-    "--workdir", default=None, help="Rehearsal dir (default: fresh temp dir)."
-)
-@click.option(
-    "--keep", is_flag=True, help="Keep the workdir even when the rehearsal passes."
-)
-@click.option(
-    "--json", "as_json", is_flag=True, help="Emit the verdict report as JSON."
-)
-def db_rehearse_cmd(tasks_path, workdir, keep, as_json):
-    """Run the frozen-copy equivalence rehearsal (the R4 cutover gate)."""
-    from .._db_rehearse import rehearse
-
-    report = rehearse(tasks_path=tasks_path, workdir=workdir, keep=keep)
-    if as_json:
-        click.echo(json.dumps(report))
-        raise SystemExit(0 if report["equal"] else 1)
-    verdict = "EQUAL" if report["equal"] else "NOT EQUAL"
-    click.echo(f"# db rehearse: {verdict} — {report['store']}")
-    for name, ok in report["sections"].items():
-        click.echo(f"  {name}: {'ok' if ok else 'MISMATCH'}")
-    click.echo(
-        f"  tasks={report['tasks']} users={report['users']} "
-        f"inbox_recipients={report['inbox_recipients']} threads={report['threads']} "
-        f"(import {report['import_s']}s / export {report['export_s']}s)"
-    )
-    if not report["equal"]:
-        click.echo(f"  evidence kept in: {report['workdir']}")
-        if report["mismatch_sample"]:
-            click.echo(f"  mismatched task ids: {report['mismatch_sample']}")
-    raise SystemExit(0 if report["equal"] else 1)
 
 
 # EOF

@@ -36,11 +36,15 @@ def _registered_names() -> set[str]:
 
 def test_every_declared_tool_is_registered():
     """TOOL_NAMES is the contract; the registry must satisfy it exactly."""
+    # Arrange
     from scitex_cards._mcp_server import TOOL_NAMES
 
-    registered = _registered_names()
     declared = set(TOOL_NAMES)
 
+    # Act
+    registered = _registered_names()
+
+    # Assert
     missing = sorted(declared - registered)
     assert not missing, (
         f"declared in TOOL_NAMES but NOT registered with the MCP server: {missing}. "
@@ -51,9 +55,16 @@ def test_every_declared_tool_is_registered():
 
 def test_no_tool_is_registered_without_being_declared():
     """The reverse drift: a tool the introspection surfaces do not know about."""
+    # Arrange
     from scitex_cards._mcp_server import TOOL_NAMES
 
-    undeclared = sorted(_registered_names() - set(TOOL_NAMES))
+    declared = set(TOOL_NAMES)
+
+    # Act
+    registered = _registered_names()
+
+    # Assert
+    undeclared = sorted(registered - declared)
     assert not undeclared, (
         f"registered but missing from TOOL_NAMES: {undeclared}. TOOL_NAMES exists so "
         "`mcp list-tools` need not introspect FastMCP's drifting internals — add it."
@@ -68,4 +79,11 @@ def test_the_write_tools_specifically_survived_the_leaf_split(name):
     Named explicitly, not just covered by the contract test above, because these
     are the ones a bad fix actually drops.
     """
-    assert name in _registered_names()
+    # Arrange
+    expected = name
+
+    # Act
+    registered = _registered_names()
+
+    # Assert
+    assert expected in registered

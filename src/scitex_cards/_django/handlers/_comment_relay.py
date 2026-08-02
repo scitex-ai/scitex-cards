@@ -55,9 +55,9 @@ def _recipient_names(task: dict, author: str, *, store=None) -> list[str]:
     ``store`` MUST be the board's store path — the SAME store the comment was
     written to and the C4 dispatcher enqueued against. Passing ``None`` would
     resolve users against the default-precedence store (the large canonical
-    tasks.yaml), which is both WRONG (different user/notify-prefs set) and SLOW
-    (parsing a 100s-of-card YAML on the comment's critical path — the cause of
-    the multi-second board-comment stall).
+    store), which is both WRONG (different user/notify-prefs set) and SLOW
+    (re-resolving a 100s-of-card store on the comment's critical path — the
+    cause of the multi-second board-comment stall).
     """
     from ..._notify import resolve_recipients
     from ..._users import get_user, resolve_user

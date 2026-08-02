@@ -83,7 +83,7 @@ def set_edge(
     mechanism on their OWN card sees nothing and concludes it is broken. That
     suppression is correct — it just needs saying.
     """
-    from . import _model
+    from . import _model, _task
     from ._store import TaskNotFoundError, _read_write_doc
 
     if action not in ("add", "remove"):
@@ -98,8 +98,11 @@ def set_edge(
     subscribed: str | None = None
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        src_task = next((t for t in tasks if t.get("id") == source), None)
-        tgt_task = next((t for t in tasks if t.get("id") == target), None)
+        # A tombstoned row (`_task._is_tombstoned`) is retained forever but
+        # must behave as ABSENT — edging onto a deleted card would silently
+        # resurrect it (2026-07-21 tombstone change).
+        src_task = _task._find_live_task(tasks, source)
+        tgt_task = _task._find_live_task(tasks, target)
         if src_task is None:
             raise TaskNotFoundError(f"set_edge: unknown source id {source!r}")
         if tgt_task is None:
@@ -155,12 +158,15 @@ def _set_list_member(
     list becomes empty (same convention as :func:`set_edge` on edges, so
     the YAML stays sparse). Stamps ``last_activity``. Returns the task.
     """
+    from . import _task
     from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
 
     with _store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
         for task in tasks:
-            if task.get("id") == task_id:
+            # See `_task._is_tombstoned`: a deleted card's row is retained
+            # forever but must behave as ABSENT here.
+            if task.get("id") == task_id and not _task._is_tombstoned(task):
                 members = [m for m in (task.get(field) or []) if m != who]
                 if action == "add":
                     members.append(who)

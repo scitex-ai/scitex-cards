@@ -9,7 +9,7 @@ the row, losing context; the closed-enum ``VALID_STATUSES`` has no
 board / docs. So the ergonomic gap is filled here:
 
   scitex-todo close TASK_ID --reason TEXT [--by AUTHOR] [--json] \\
-      [--dry-run] [-y] [--tasks PATH]
+      [--dry-run] [-y]
 
 Semantics (composition over invention):
 
@@ -36,7 +36,7 @@ import click
 
 from .. import _store
 from ._compat import spec_command_kwargs
-from ._write import _TASKS_OPTION, _emit
+from ._write import _emit
 
 
 @click.command(
@@ -52,7 +52,7 @@ from ._write import _TASKS_OPTION, _emit
         examples=(
             (
                 "{prog} close stale-card --reason 'superseded by PR #142' "
-                "--by \"$SCITEX_TODO_AGENT_ID\"",
+                '--by "$SCITEX_TODO_AGENT_ID"',
                 "",
             ),
         ),
@@ -81,8 +81,7 @@ from ._write import _TASKS_OPTION, _emit
     is_flag=True,
     help="Skip confirmation (no-op today — close is non-interactive; reserved for §2).",
 )
-@_TASKS_OPTION
-def close_cmd(task_id, reason, by, as_json, dry_run, yes, tasks_path) -> None:
+def close_cmd(task_id, reason, by, as_json, dry_run, yes) -> None:
     """Close ``task_id`` with ``reason`` recorded in ``comments[]``."""
     _ = yes  # accepted for §2 compliance
     if reason is None or not str(reason).strip():
@@ -99,18 +98,16 @@ def close_cmd(task_id, reason, by, as_json, dry_run, yes, tasks_path) -> None:
         return
 
     try:
-        comment_payload = _store.comment_task(
-            tasks_path, task_id, comment_text, by=by
-        )
+        comment_payload = _store.comment_task(None, task_id, comment_text, by=by)
         # The comment carries the canonical UTC timestamp + resolved author
         # chain we used; reuse them so the close stamp is consistent.
         entry = comment_payload["comment"]
-        existing = _store.get_task(tasks_path, task_id)
+        existing = _store.get_task(None, task_id)
         log_meta = dict(existing.get("_log_meta") or {})
         log_meta["closed_at"] = entry["ts"]
         log_meta["closed_by"] = entry["author"]
         merged = _store.update_task(
-            tasks_path,
+            None,
             task_id,
             status="cancelled",
             _log_meta=log_meta,

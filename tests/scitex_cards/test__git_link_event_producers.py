@@ -19,13 +19,14 @@ mocks, no monkeypatch (STX-NM / PA-306). AAA pattern.
 
 from __future__ import annotations
 
-import textwrap
+import os
 from pathlib import Path
+
+from conftest import seed_db_from_doc
 
 from scitex_cards._hooks import dispatch_event, event_validate
 from scitex_cards._reconcile_prs import MERGED, UNKNOWN, reconcile_merged_prs
 from scitex_cards._store import add_task
-
 
 # === In-process injection seam (real fake handler, no mocks) ===============
 
@@ -56,10 +57,13 @@ def _card_events(sink: _Capturing) -> list[dict]:
     return [e for e in sink.events if e.get("kind") == "card-event"]
 
 
-def _store_with(tmp_path: Path) -> Path:
-    store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="card-1", title="x", assignee="agent:test-suite")
-    return store
+def _store_with(tmp_path: Path) -> str:
+    # SQLite store: `add_task` writes the canonical DB (the pinned test store);
+    # the path arg is a label only, so drop it and let the pinned store resolve.
+    # Return the pinned STORE-identity path (NOT the DB path — see the store-path
+    # rule) so callers keep addressing the same store.
+    add_task(id="card-1", title="x", assignee="agent:test-suite")
+    return os.environ["SCITEX_TODO_TASKS_YAML_SHARED"]
 
 
 # === push handler — commit trigger emits `committed` =======================
@@ -226,24 +230,28 @@ def test_unknown_card_id_emits_no_event(tmp_path: Path, env):
 # === reconcile — newly-merged pr emits `merged` ============================
 
 
-def _reconcile_store(tmp_path: Path) -> Path:
-    path = tmp_path / "tasks.yaml"
-    path.write_text(
-        textwrap.dedent(
-            """\
-            tasks:
-              - id: merged-open-card
-                title: work that merged
-                status: in_progress
-                pr_url: https://github.com/o/r/pull/1
-              - id: open-pr-card
-                title: still in review
-                status: blocked
-                pr_url: https://github.com/o/r/pull/2
-            """
-        )
-    )
-    return path
+def _reconcile_store(tmp_path: Path) -> str:
+    # SQLite store: seed the canonical DB from the in-memory doc the YAML held,
+    # then hand back the pinned STORE-identity path so `reconcile_merged_prs`
+    # resolves the same store it reads/writes (see the store-path rule).
+    doc = {
+        "tasks": [
+            {
+                "id": "merged-open-card",
+                "title": "work that merged",
+                "status": "in_progress",
+                "pr_url": "https://github.com/o/r/pull/1",
+            },
+            {
+                "id": "open-pr-card",
+                "title": "still in review",
+                "status": "blocked",
+                "pr_url": "https://github.com/o/r/pull/2",
+            },
+        ]
+    }
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    return os.environ["SCITEX_TODO_TASKS_YAML_SHARED"]
 
 
 def _fake_seam(mapping):

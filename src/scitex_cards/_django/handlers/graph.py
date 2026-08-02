@@ -12,6 +12,16 @@ from pathlib import Path
 
 from django.http import JsonResponse
 
+# Fleet-liveness builder — extracted to graph_fleet.py (line-limit split).
+# `_build_fleet` feeds the payload's "fleet" key below; the private helpers
+# are re-exported so any dotted reference through handlers.graph resolves.
+from .graph_fleet import (  # noqa: F401
+    _LIVENESS_NONRUNNABLE,
+    _build_fleet,
+    _last_activity_key,
+    _priority_key,
+)
+
 #: The board's HTML templates live here (board_v3.html + any partials). Their
 #: max mtime is a cheap fingerprint for "the GUI code changed" — see
 #: :func:`_board_asset_rev`.
@@ -71,6 +81,8 @@ def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
     from scitex_cards._diagram import build_mermaid
 
+    from ._comment_digest import comment_scalars, rescore_history
+
     ids = {t["id"] for t in board.tasks}
 
     nodes = [
@@ -87,9 +99,40 @@ def _build_graph(board) -> dict:
             # id the frontend treats this task as top-level (same lenient
             # stance as edges to unknown ids).
             "parent": t.get("parent"),
-            # Append-only comment thread (list of {ts, author, text}); always
-            # a list so the frontend can render / count without null-checks.
-            "comments": t.get("comments") or [],
+            # comments[] IS GONE FROM THIS PAYLOAD. Step 3 of 3, and the step
+            # the other two existed to make safe. It was 8.5 MB of a 19.8 MB
+            # response that the board refetched on nearly every 5 s /rev poll,
+            # because the store is written every ~4 s.
+            #
+            # A previous attempt removed it and added its replacements in ONE
+            # branch. That broke every consumer at once and sat unmergeable for
+            # twelve days until its owner stopped existing. So this time:
+            #   1. #634 emitted the summary scalars ALONGSIDE it (additive).
+            #   1b. #637 added rescore_history — the Matrix reads comment
+            #       CONTENT, so the scalars alone could not have replaced it.
+            #   2. #635/#638/#640 migrated every consumer, each keeping a
+            #      FALLBACK to comments[] so either payload shape works.
+            #   3. this deletion.
+            #
+            # The fallbacks are why this is a one-line change and not a flag
+            # day: they were deployed BEFORE the thing that needs them, so a
+            # consumer I missed degrades instead of breaking. Do not remove
+            # them in the same release as this — that ordering is the whole
+            # lesson of the twelve-day branch.
+            #
+            # The full thread is served by GET /chat/<card_id>, which preserves
+            # each comment's `kind` so the route-trace timeline still works,
+            # and the detail panel fetches it on open.
+            #
+            # List-view stand-ins follow.
+            **comment_scalars(t),
+            # The Matrix view is the one list surface that needs comment
+            # CONTENT rather than a summary: it reads the [old, new] axis
+            # pairs off `kind: "rescore"` comments to draw quadrant
+            # transitions. Serving just those keeps it working when
+            # comments[] goes. Measured 0.11% of comments[] (30 events on
+            # 2,864 cards) — see handlers/_comment_digest.py.
+            "rescore_history": rescore_history(t),
             # `kind` discriminator + compute metadata (north-star pillar #1,
             # validated by `_model._validate_tasks`). `kind: null` over the
             # wire = "task" (the default). FE renders compute affordances
@@ -186,12 +229,19 @@ def _build_graph(board) -> dict:
         "mermaid": build_mermaid(board.tasks),
         "store_path": str(board.store_path),
         "task_count": len(board.tasks),
+        # HONEST EMPTY STATE: True when the store was READ and held no cards —
+        # a legitimate 0-card board, on which the frontend renders the normal
+        # empty board instead of the red load-error banner. It is NOT "the
+        # store file is missing": a store that cannot be read raises out of
+        # get_board and arrives here as a 500, never as this flag. See
+        # BoardState.empty_store for why that distinction is load-bearing.
+        "empty_store": board.empty_store,
         # Fleet liveness — per-agent at-a-glance summary the operator can
         # scan from the board header to answer "who is alive + working on
         # what + blocked on me" without leaving the board (ADR-0008 design,
         # ticket `proj-scitex-todo-fleet-liveness`, operator TG 9576 acute
         # pain: 返事が来ない＝私にとって死んだのと同じ). FIRST SLICE — derived
-        # from already-loaded tasks.yaml; the sidecar daemon + cross-host
+        # from the already-loaded board tasks; the sidecar daemon + cross-host
         # roll-up land in follow-up PRs (no schema change today).
         "fleet": _build_fleet(board.tasks),
         # P10 (lead a2a 2026-06-12) — user-defined project clusters from
@@ -202,235 +252,13 @@ def _build_graph(board) -> dict:
     }
 
 
-# Statuses that exclude a task from the "runnable" count for liveness.
-# Mirrors the task-harvest skill's non-runnable set (40_task-harvest.md):
-# blocked / done / deferred / failed / cancelled are not "could be
-# progressed now"; `goal` rows are umbrella nodes the harvest doesn't
-# escalate either. ``cancelled`` (closed as not planned) is terminal, so
-# it never counts toward runnable liveness — same as done/failed.
-_LIVENESS_NONRUNNABLE: frozenset[str] = frozenset(
-    {"blocked", "done", "deferred", "failed", "cancelled", "goal"}
-)
-
-
-def _priority_key(t: dict) -> tuple[int, str]:
-    """Sort key: priority (lower = earlier; None sinks to the end), then id.
-
-    Tasks without an explicit `priority` should rank LAST so the
-    "current_task" derivation prefers explicitly-prioritized rows.
-    """
-    p = t.get("priority")
-    return (10_000_000 if p is None else int(p), str(t.get("id") or ""))
-
-
-def _last_activity_key(t: dict) -> str:
-    """Sort key for "most recent activity": ISO-8601 strings sort lexically.
-
-    Tasks without `last_activity` rank LAST (empty string sorts before any
-    real ISO timestamp, so we negate by returning empty when present; the
-    consumer reverses ordering). Returns the timestamp str verbatim — the
-    `max()` caller uses it as a comparison key, not a parsed datetime.
-    """
-    return str(t.get("last_activity") or "")
-
-
-def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
-    """Return a list of {agent, status, current_task, ...} summaries.
-
-    Grouping field: `agent` (fall back to `assignee` for older rows that
-    pre-date the operator-co-designed field rename — both are forwarded
-    to the FE on every node payload too). Tasks WITHOUT an agent are
-    excluded so the dot-strip stays small + readable.
-
-    Status precedence (most attention-demanding first), per the
-    task-harvest skill's 4-value blocker enum + the operator's
-    "blocking-me" lens, plus the **working-status decay** rule
-    (operator TG12739, lead a2a ``f556b755``, 2026-06-13):
-
-      1. ``blocking-operator``  any task is blocker=operator-decision
-      2. ``working``            any task is status=in_progress *AND* the
-                                agent's most-recent ``last_activity`` is
-                                within ``SCITEX_TODO_FLEET_WORKING_MIN``
-                                minutes (default 10). Without the
-                                freshness gate, agents that forgot to
-                                flip in_progress→pending stay "working"
-                                forever and the UI lies.
-      3. ``stale``              any task is status=in_progress but the
-                                agent's most-recent ``last_activity`` is
-                                older than the working window (or absent).
-                                This is the **decay** state — surfaces
-                                the "forgot-to-flip" case as a distinct
-                                signal so the operator can prune it.
-      4. ``active``             no in_progress task, but the agent's
-                                most-recent ``last_activity`` is within
-                                ``SCITEX_TODO_FLEET_ACTIVE_MIN`` minutes
-                                (default 60). Activity badge derived
-                                from FRESHNESS, not manual status.
-      5. ``idle``               otherwise.
-
-    The two windows are env-configurable so the operator can tune
-    "what counts as live" without a code change. They default
-    ``working_min`` < ``active_min`` so the badges read as
-    nested-confidence intervals: tight green-light "working", looser
-    yellow-light "active", everything else "idle".
-
-    Per-agent fields:
-      name                    the agent's id (e.g. scitex-clew)
-      status                  one of the five above
-      current_task            title of the agent's most-urgent task
-      current_task_id         id of the same
-      last_activity           max(last_activity) across the agent's tasks
-      task_count              total tasks owned
-      runnable_count          tasks NOT in the non-runnable set (a proxy
-                              for "what's queued waiting to be picked up";
-                              feeds the task-harvest sweep's ESCALATE list)
-      blocked_count           tasks with status=blocked
-      blocking_operator_count count of the "waiting-on-operator" queue:
-                              cards matching the board's BLOCKING-YOU
-                              predicate (status=blocked AND
-                              blocker=operator-decision), the "stuck on
-                              YOU" subset the operator needs to see jump
-                              out. Derived from the SAME predicate as
-                              ``list_tasks(blocking_me=True)`` (the
-                              ``_match(..., blocking_me=True)`` SSOT) — NOT
-                              a re-implemented check.
-      blocking_operator_ids   the ids of those same cards, so the FE can
-                              link straight to the queue without re-walking
-                              the store.
-    """
-    import datetime as _dt
-    import os
-
-    def _env_minutes(key: str, default: int) -> float:
-        try:
-            return float(os.environ.get(key, str(default)))
-        except (TypeError, ValueError):
-            return float(default)
-
-    working_window_s = _env_minutes("SCITEX_TODO_FLEET_WORKING_MIN", 10) * 60.0
-    active_window_s = _env_minutes("SCITEX_TODO_FLEET_ACTIVE_MIN", 60) * 60.0
-    cur = now or _dt.datetime.now(tz=_dt.timezone.utc)
-
-    def _seconds_since(ts: str) -> float | None:
-        if not ts:
-            return None
-        try:
-            parsed = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=_dt.timezone.utc)
-        return (cur - parsed).total_seconds()
-
-    from ..._owner import card_owner
-
-    by_agent: dict[str, list[dict]] = {}
-    for t in tasks:
-        # Owner SSOT (agent||assignee). Owner-less rows are excluded from the
-        # liveness dot-strip by design (keeps it small/readable); add_task now
-        # REJECTS owner-less cards at creation, so this only ever skips legacy
-        # rows pending re-home.
-        a = card_owner(t)
-        if not a:
-            continue
-        by_agent.setdefault(str(a), []).append(t)
-
-    out: list[dict] = []
-    for agent, items in sorted(by_agent.items()):
-        # Status precedence.
-        has_blocking_operator = any(
-            t.get("blocker") == "operator-decision" for t in items
-        )
-        has_in_progress = any(t.get("status") == "in_progress" for t in items)
-        last_activity = max(
-            (str(t.get("last_activity") or "") for t in items),
-            default="",
-        )
-        age_s = _seconds_since(last_activity)
-        fresh_working = age_s is not None and age_s <= working_window_s
-        fresh_active = age_s is not None and age_s <= active_window_s
-        if has_blocking_operator:
-            status = "blocking-operator"
-        elif has_in_progress and fresh_working:
-            status = "working"
-        elif has_in_progress:
-            # decay: in_progress but quiet for > working window → stale.
-            status = "stale"
-        elif fresh_active:
-            status = "active"
-        else:
-            status = "idle"
-
-        # current_task — prefer in_progress, then most-recent activity, then
-        # highest-priority pending. Lets the dot-strip's tooltip answer
-        # "what are they on right now" with the most-relevant single row.
-        in_progress = [t for t in items if t.get("status") == "in_progress"]
-        if in_progress:
-            current = sorted(in_progress, key=_priority_key)[0]
-        else:
-            with_activity = [t for t in items if t.get("last_activity")]
-            if with_activity:
-                current = max(with_activity, key=_last_activity_key)
-            else:
-                pending = [t for t in items if t.get("status") == "pending"]
-                pool = pending or items
-                current = sorted(pool, key=_priority_key)[0]
-
-        # `overdue_count` = tasks past their next deadline AND not in a
-        # terminal state. Feeds the operator UX (todo-p6-overdue-ui):
-        # "attended an overdue task but no suitable UI to act" — the
-        # fleet strip + filter bar can now surface a per-agent overdue
-        # tally without re-walking the store on the client side.
-        from scitex_cards._model import is_overdue as _is_overdue
-
-        # "Waiting-on-operator" queue (operator P1
-        # todo-operator-blocking-queue-view): cards stuck on a
-        # human decision. SSOT — reuse the board's BLOCKING-YOU
-        # predicate (``_match(..., blocking_me=True)`` == the same
-        # filter ``list_tasks(blocking_me=True)`` uses) so the count
-        # and id list never drift from the canonical
-        # ``status==blocked AND blocker==operator-decision`` rule.
-        from ..._store import _match
-
-        blocking_operator_ids = [
-            str(t.get("id"))
-            for t in items
-            if _match(t, blocking_me=True) and t.get("id") is not None
-        ]
-
-        out.append(
-            {
-                "name": agent,
-                "status": status,
-                "current_task": current.get("task") or current.get("title"),
-                "current_task_id": current.get("id"),
-                "last_activity": last_activity or None,
-                "task_count": len(items),
-                "runnable_count": sum(
-                    1
-                    for t in items
-                    if str(t.get("status") or "") not in _LIVENESS_NONRUNNABLE
-                ),
-                "blocked_count": sum(1 for t in items if t.get("status") == "blocked"),
-                "blocking_operator_count": len(blocking_operator_ids),
-                "blocking_operator_ids": blocking_operator_ids,
-                "overdue_count": sum(1 for t in items if _is_overdue(t, now=cur)),
-            }
-        )
-    return out
-
-
 #: In-process cache of the BUILT graph payload, keyed on
-#: ``(store_path_str, mtime)``. ``get_board`` already mtime-caches the
-#: parsed task list; this cache piggybacks on the same key to skip the
-#: per-request ``_build_graph`` rebuild (mermaid + nodes + edges +
-#: fleet + groups) when the store hasn't changed. ~50-100 ms savings
-#: per /graph for a 500-task store — directly addresses operator
-#: TG12911 ("the board UI is slow") and is the Stage-1 perf half of
-#: lead a2a `aa02fb0e` + `e5243003`.
-#:
-#: NEVER authoritative: any change to ``board.mtime`` invalidates the
-#: entry; entries are dropped on TTL via :func:`_graph_cache_gc`.
+#: ``(store_path_str, board.mtime, board.sig)``. Skips the per-request
+#: ``_build_graph`` rebuild when the store hasn't changed (operator TG12911).
+#: The key INCLUDES ``board.sig`` (the DB's read-stable content version), NOT
+#: ``board.mtime`` alone: a DB write never moves the identity file's mtime, so
+#: an mtime-only key served the STALE graph after a reorder. ``board.sig``
+#: moves on any DB change, so the graph self-invalidates with the board.
 _GRAPH_PAYLOAD_CACHE: dict = {}
 _GRAPH_PAYLOAD_CACHE_TTL_S = 3_600.0  # 1h, mirrors BoardState's TTL.
 
@@ -438,9 +266,11 @@ _GRAPH_PAYLOAD_CACHE_TTL_S = 3_600.0  # 1h, mirrors BoardState's TTL.
 def _graph_cache_gc() -> None:
     """Drop stale entries from :data:`_GRAPH_PAYLOAD_CACHE`."""
     import time
+
     now = time.time()
     stale = [
-        k for k, (_, ts) in _GRAPH_PAYLOAD_CACHE.items()
+        k
+        for k, (_, ts) in _GRAPH_PAYLOAD_CACHE.items()
         if now - ts > _GRAPH_PAYLOAD_CACHE_TTL_S
     ]
     for k in stale:
@@ -455,16 +285,18 @@ def _graph_cache_reset() -> None:
 def handle_graph(request, board):
     """GET graph -> structured nodes + edges + status colors (+ mermaid).
 
-    Cached by ``(store_path, mtime)``; on hit, returns the prior payload
-    directly. Cache is invalidated when the YAML's mtime changes (i.e.
-    any agent or operator write rolls the cache forward by one rebuild).
-    The auto-update SSE wire (PR-C in the lead-approved Stage 2 plan)
-    will additionally PUSH the new payload — this cache is the same
+    Cached by ``(store_path, board.mtime, board.sig)``; on hit, returns the
+    prior payload directly. ``board.sig`` is the DB's read-stable content
+    version, so any write rolls the cache forward by one rebuild — including a
+    DB write that never touches the identity file's mtime, which an mtime-only
+    key missed. The auto-update SSE wire (PR-C in the lead-approved Stage 2
+    plan) will additionally PUSH the new payload — this cache is the same
     derivation, just stored.
     """
     import time
+
     _graph_cache_gc()
-    key = (str(board.store_path), board.mtime)
+    key = (str(board.store_path), board.mtime, board.sig)
     hit = _GRAPH_PAYLOAD_CACHE.get(key)
     if hit is not None:
         payload, _ = hit
@@ -479,7 +311,14 @@ def handle_graph(request, board):
 def handle_tasks(request, board):
     """GET tasks -> the raw validated task list (for grids / debugging)."""
     return JsonResponse(
-        {"tasks": list(board.tasks), "store_path": str(board.store_path)}
+        {
+            "tasks": list(board.tasks),
+            "store_path": str(board.store_path),
+            # Same honest-empty-state flag as the /graph payload: the store
+            # was read and holds no cards (see BoardState.empty_store). An
+            # unreadable store never reaches here — it is a 500.
+            "empty_store": board.empty_store,
+        }
     )
 
 

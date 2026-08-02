@@ -29,17 +29,11 @@ from .._may_stop import may_stop
     default=None,
     help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_TODO_AGENT_ID).",
 )
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Store override (default: the resolved store).",
-)
-def may_stop_cmd(agent, tasks_path):
+def may_stop_cmd(agent):
     """Exit 0 iff the agent has NO runnable work; else exit 2 + hints."""
     from .._store import _default_agent
 
-    verdict = may_stop(_default_agent(agent), tasks_path)
+    verdict = may_stop(_default_agent(agent), None)
     click.echo(json.dumps(verdict))
     if not verdict["runnable"]:
         return

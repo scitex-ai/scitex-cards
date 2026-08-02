@@ -51,7 +51,7 @@ def comment_task(
     in-process consumers and by no-mock tests (PA-306-compliant) that
     observe the emitted event via a real fake handler.
     """
-    from . import _model
+    from . import _model, _task
     from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
 
     tasks_path = _resolved_store(store)
@@ -69,11 +69,9 @@ def comment_task(
         entry["kind"] = str(kind)
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        target = None
-        for t in tasks:
-            if t.get("id") == task_id:
-                target = t
-                break
+        # See `_task._is_tombstoned`: a deleted card's row is retained
+        # forever but must behave as ABSENT here.
+        target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
         comments = target.setdefault("comments", [])

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Tests for the bundled PreToolUse hook that redirects Claude's built-in
-``TaskCreate`` / ``TaskUpdate`` / ``TaskList`` tools to scitex-todo
+``TaskCreate`` / ``TaskUpdate`` / ``TaskList`` tools to scitex-cards
 (op-12038 single-shared-store doctrine).
 
 No mocks (STX-NM / PA-306): invoke the real script under bash via
@@ -15,12 +15,13 @@ import os
 import subprocess
 from pathlib import Path
 
-import scitex_cards
+from scitex_cards._cli._skills import _skills_root
 
+#: Derived, never spelled: the bundled skills directory was renamed
+#: ``scitex-todo`` -> ``scitex-cards`` on 2026-07-20 and every hardcoded copy of
+#: the path broke at once. ``_skills_root`` is the one resolver.
 HOOK_PATH = (
-    Path(scitex_cards.__file__).parent
-    / "_skills"
-    / "scitex-todo"
+    _skills_root()
     / "hooks"
     / "pre-tool-use"
     / "redirect_claude_tasklist_to_scitex_cards.sh"
@@ -104,7 +105,7 @@ def test_block_stderr_names_scitex_cards_so_operator_can_confirm_copy():
     # Act
     result = _run(payload)
     # Assert
-    assert "scitex-todo" in result.stderr
+    assert "scitex-cards" in result.stderr
 
 
 def test_opt_out_env_var_lets_taskcreate_through():

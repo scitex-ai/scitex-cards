@@ -35,7 +35,6 @@ async def set_edge(
     kind: str,
     source: str,
     target: str,
-    tasks_path: str | None = None,
 ) -> str:
     """Add or remove a depends_on / blocks edge between two tasks.
 
@@ -47,7 +46,7 @@ async def set_edge(
     result = await anyio.to_thread.run_sync(
         functools.partial(
             get_backend().set_edge,
-            tasks_path,
+            None,
             action=action,
             kind=kind,
             source=source,
@@ -62,7 +61,6 @@ async def set_collaborator(
     task_id: str,
     who: str,
     action: str = "add",
-    tasks_path: str | None = None,
 ) -> str:
     """Add or remove a collaborator on a card (ADR-0009 roles).
 
@@ -79,7 +77,7 @@ async def set_collaborator(
     result = await anyio.to_thread.run_sync(
         functools.partial(
             get_backend().set_collaborator,
-            tasks_path,
+            None,
             task_id=task_id,
             who=who,
             action=action,
@@ -93,7 +91,6 @@ async def set_subscriber(
     task_id: str,
     who: str,
     action: str = "add",
-    tasks_path: str | None = None,
 ) -> str:
     """Subscribe or unsubscribe an agent/human on a card's notify list
     (ADR-0009 roles).
@@ -109,7 +106,7 @@ async def set_subscriber(
     result = await anyio.to_thread.run_sync(
         functools.partial(
             get_backend().set_subscriber,
-            tasks_path,
+            None,
             task_id=task_id,
             who=who,
             action=action,
@@ -124,7 +121,6 @@ async def rescore_task(
     urgency: int,
     importance: int,
     by: str | None = None,
-    tasks_path: str | None = None,
 ) -> str:
     """Set a card's urgency+importance (1-5 each) and recompute the RANK
     total order (ADR-0011 §1/§8 — the matrix drag's write path).
@@ -141,7 +137,7 @@ async def rescore_task(
     result = await anyio.to_thread.run_sync(
         functools.partial(
             get_backend().rescore_task,
-            tasks_path,
+            None,
             task_id,
             urgency=urgency,
             importance=importance,

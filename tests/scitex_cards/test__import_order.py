@@ -75,7 +75,11 @@ def _import_first(statement: str) -> subprocess.CompletedProcess:
 @pytest.mark.parametrize("module", MODULES)
 def test_module_can_be_imported_first(module):
     """Importing any module first must not raise. No module may require a warm-up."""
-    result = _import_first(f"import {module}")
+    # Arrange
+    statement = f"import {module}"
+    # Act
+    result = _import_first(statement)
+    # Assert
     assert result.returncode == 0, (
         f"`import {module}` FAILS as the first scitex_cards import:\n"
         f"{result.stderr}\n"
@@ -87,10 +91,14 @@ def test_module_can_be_imported_first(module):
 
 def test_the_exact_regression_from_the_data_repair_script():
     """The real caller that broke: a from-import of a store verb, cold."""
-    result = _import_first(
+    # Arrange
+    statement = (
         "from scitex_cards._store_write import edit_tasks, save_tasks; "
         "assert callable(edit_tasks) and callable(save_tasks)"
     )
+    # Act
+    result = _import_first(statement)
+    # Assert
     assert result.returncode == 0, result.stderr
 
 
@@ -101,31 +109,71 @@ def test_lazy_reexports_are_still_reachable_through_model():
     PEP 562 __getattr__ keeps that working -- `from X import Y` falls back to
     X.__getattr__ -- but only if the names actually resolve. Pin that.
     """
+    # Arrange
     from scitex_cards._model import _STORE_WRITE_EXPORTS
 
-    for name in sorted(_STORE_WRITE_EXPORTS):
-        result = _import_first(
+    names = sorted(_STORE_WRITE_EXPORTS)
+    # Act
+    results = {
+        name: _import_first(
             f"from scitex_cards._model import {name}; assert {name} is not None"
         )
-        assert result.returncode == 0, (
-            f"`from scitex_cards._model import {name}` broke -- the lazy re-export "
-            f"dropped a name the eager one provided.\n{result.stderr}"
-        )
+        for name in names
+    }
+    failures = {n: r.stderr for n, r in results.items() if r.returncode != 0}
+    # Assert — every name the eager re-export provided must still resolve.
+    assert failures == {}, (
+        "`from scitex_cards._model import <name>` broke -- the lazy re-export "
+        "dropped names the eager one provided:\n"
+        + "\n".join(f"{n}: {err}" for n, err in failures.items())
+    )
 
 
-def test_reexported_object_is_the_same_object():
-    """A re-export must be an ALIAS, not a copy. Identity, not just presence."""
+#: WHY the three `*_reexport_is_the_same_object` tests below are split but share
+#: one rationale: a re-export must be an ALIAS, not a copy. Identity, not just
+#: presence — a name that resolves to a DIFFERENT object silently forks the
+#: module-level store lock and the write verbs that depend on it.
+
+
+def test_save_tasks_reexport_is_the_same_object():
+    # Arrange
     import scitex_cards._model as model
     import scitex_cards._store_write as store_write
 
-    assert model.save_tasks is store_write.save_tasks
-    assert model.edit_tasks is store_write.edit_tasks
-    assert model._store_lock is store_write._store_lock
+    # Act
+    reexported = model.save_tasks
+    # Assert
+    assert reexported is store_write.save_tasks
+
+
+def test_edit_tasks_reexport_is_the_same_object():
+    # Arrange
+    import scitex_cards._model as model
+    import scitex_cards._store_write as store_write
+
+    # Act
+    reexported = model.edit_tasks
+    # Assert
+    assert reexported is store_write.edit_tasks
+
+
+def test_store_lock_reexport_is_the_same_object():
+    # Arrange
+    import scitex_cards._model as model
+    import scitex_cards._store_write as store_write
+
+    # Act
+    reexported = model._store_lock
+    # Assert — two lock objects would mean two writers believing they hold it.
+    assert reexported is store_write._store_lock
 
 
 def test_unknown_attribute_still_raises_attribute_error():
     """__getattr__ must not swallow typos into an ImportError or None."""
+    # Arrange
     import scitex_cards._model as model
 
+    # Act
+    # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(AttributeError):
         model.no_such_name_exists

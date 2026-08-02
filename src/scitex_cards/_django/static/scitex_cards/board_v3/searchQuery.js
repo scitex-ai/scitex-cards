@@ -13,7 +13,7 @@
  * date) is untouched. Pure-fn shape also makes the parser unit-testable
  * via `node --test` (see ``tests/scitex_cards/test__search_query.js``).
  *
- * Supported qualifiers (mapped to the tasks.yaml field of the same name,
+ * Supported qualifiers (mapped to the task store field of the same name,
  * plus a few aliases for the operator's mental model):
  *
  *   project: | repo:        →  task.project (with task.repo fallback)

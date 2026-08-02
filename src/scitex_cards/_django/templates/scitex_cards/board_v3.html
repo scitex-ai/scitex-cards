@@ -39,6 +39,7 @@
      to. Lead a2a 510a58d4 (2026-06-14) operator complaint. -->
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/00-theme-scrollbar-select.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/01-filterbar.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">{# page-header.css: geometry of the header bar SHARED with chat.html — the single place its height/padding/gap are stated. Linked AFTER 01-filterbar.css (so the shared h1 rule wins the desktop baseline) and BEFORE 05-responsive.css (so the phone overrides still win). (hook-bypass: line-limit — pre-existing over-cap template.) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/02-card.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03-right-and-modal.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/03b-card-actions.css' %}">
@@ -50,6 +51,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator TODO 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/combobox.css' %}">
 <script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
@@ -73,6 +75,15 @@
   #f-search input. Exposes window.STX.searchSuggest. Operator TG 12318.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/searchSuggest.js' %}"></script>
+{% comment %}
+  searchDebounce.js — when to rebuild the board while the operator types.
+  Pure module (timers only). render() used to run synchronously from
+  `oninput`, which is dispatched BEFORE paint, so a full-layout rebuild sat
+  on the critical path of showing the character just typed — the caret
+  lagged the keyboard. Exposes window.STX.searchDebounce. Operator
+  2026-07-30.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/searchDebounce.js' %}"></script>
 {% comment %}
   timelinePack.js — pure beeswarm sub-row packer for the Timeline raster.
   MUST load BEFORE timeline.js: it publishes window.STX.timelinePack, which
@@ -225,10 +236,30 @@
     Active-filter chips + qualifier hint pills move to a second row
     `<div class="filterbar-chips">` shown only when populated.
   {% endcomment %}
-  <div class="filterbar">
+  <div class="filterbar stx-cards-headerbar">
     <div class="fb-left">
-      <h1>SciTeX Cards
-        <span class="small">v{{ scitex_cards_version|default:"?" }}</span></h1>
+      {% comment %}
+        Identity band — switcher, heading, version — from the SHARED partial
+        the DM page renders too, so the two headers cannot drift into two
+        different heights or two different switcher sides again (operator,
+        2026-07-29: 「ヘッダーがそろっていないのが気持ち悪い」). Geometry lives in
+        page-header.css; `.filterbar`'s own box metrics were removed rather
+        than left as a shadow copy. `.stx-cards-headerbar` above is what
+        makes this bar the same 48px as the DM page's.
+
+        The switcher stays FIRST inside that partial, and its position is
+        load-bearing rather than taste: 05-responsive.css gives .filterbar
+        `overflow-x: auto` on phones, so anything placed after the heading +
+        LIVE chip starts off-screen on a 375pt iPhone — which is the exact
+        problem this switcher exists to fix (operator 2026-07-28: chat was
+        「隠し URL みたい」). Leftmost = always on screen.
+
+        (hook-bypass: line-limit — this template was already 3512 lines,
+        far over the 1024 cap, before this change; splitting it is tracked
+        separately rather than smuggled into the header PR. Same call the
+        matrix-layout toggle above made.)
+      {% endcomment %}
+      {% include "scitex_cards/_page_header.html" with active="board" page_title="SciTeX Cards" %}
       <span class="small"><span class="live-dot"></span>LIVE</span>
     </div>
 
@@ -710,6 +741,18 @@
 {% block extra_js %}
   <script>
 
+    // === Mount-aware API base (SSOT for every board fetch) ================
+    // The hub mounts this board under a sub-path (e.g. /apps/cards/), where
+    // root-absolute fetches 404 (scitex.ai/graph → 404 vs
+    // scitex.ai/apps/cards/graph → 200). `api_base` is the include root the
+    // view derived from request.path ("/" at a root mount). Trailing slashes
+    // are stripped so a root mount renders "" and every call below stays
+    // "/graph"-shaped. Mirrored onto window for the external board scripts
+    // (timeline.js) that fetch too.
+    // (hook-bypass: line-limit — pre-existing 3473-line template; split queued.)
+    const API_BASE = "{{ api_base|escapejs }}".replace(/\/+$/, "");
+    window.API_BASE = API_BASE;
+
     // === LAYOUT whitelist (SSOT) ==========================================
     // The only layouts that exist. Column + Table were removed 2026-07-13
     // (operator), Stale on 2026-07-10. `const` declarations are NOT hoisted
@@ -836,11 +879,49 @@
       }
     }
 
+    // === Load-failure UI states (hub-mount integration) ===================
+    // A failed /graph is not always an ERROR — on the hub it can be a STATE:
+    // signed-out (auth middleware 401s with {"error":"signed-out","login_url"})
+    // or no-active-project (tenancy middleware 404s with an {"error", "hint"}
+    // payload). Read the body BEFORE giving up so the server's named reason
+    // drives a helpful panel; anything unrecognized keeps the loud red error
+    // (the catch below), now carrying the server's `error` field + the HTTP
+    // status. The empty-store case never reaches here: the server answers 200
+    // with `empty_store: true` + 0 nodes → the normal zero-card board renders.
+    // (hook-bypass: line-limit — pre-existing oversized template; split queued.)
+    async function _readJsonBody(r) {
+      try { return await r.json(); } catch (_e) { return null; }
+    }
+    // Render a recognized non-OK state; false → caller escalates loudly.
+    function renderLoadState(status, payload) {
+      if (status === 401 && payload && payload.error === "signed-out" && payload.login_url) {
+        document.getElementById("columns").innerHTML =
+          `<div class="loading board-state board-state--signed-out">` +
+          `<p>Signed out — the board needs a session.</p>` +
+          `<p><a href="${escapeHtml(payload.login_url)}">Sign in to continue</a></p></div>`;
+        return true;
+      }
+      const err = payload && payload.error ? String(payload.error) : "";
+      if (status === 404 && payload && payload.hint && /^no active project/i.test(err)) {
+        document.getElementById("columns").innerHTML =
+          `<div class="loading board-state board-state--no-project">` +
+          `<p>No active project — the board shows your project&#39;s cards.</p>` +
+          `<p><a href="${escapeHtml(payload.hint)}">Create or open a project</a></p></div>`;
+        return true;
+      }
+      return false;
+    }
+
     async function loadGraph(opts) {
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
       try {
-        const r = await fetch("/graph");
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const r = await fetch(API_BASE + "/graph"); // (hook-bypass: line-limit)
+        if (!r.ok) {
+          const payload = await _readJsonBody(r);
+          if (renderLoadState(r.status, payload)) return;
+          const err = payload && payload.error ? String(payload.error) : "";
+          throw new Error(`HTTP ${r.status}` + (err ? ` — ${escapeHtml(err)}` : ""));
+        }
         STATE.graph = await r.json();
         // Change-detection: if the fresh payload is byte-identical to the
         // last graph we rendered, skip the whole re-render (no flash, no
@@ -993,6 +1074,26 @@
       wrap.innerHTML = pills.join("");
     }
 
+    // Rebuild the board AFTER typing settles, never during it — see
+    // static/scitex_cards/board_v3/searchDebounce.js for the full reasoning.
+    // Short version: `oninput` is dispatched BEFORE the browser paints, so
+    // calling render() here put a full-layout rebuild over every node on the
+    // critical path of displaying the character just typed. That is why the
+    // CARET lagged the keyboard, not just the results lagging the caret
+    // (operator, 2026-07-30).
+    //
+    // Falls back to calling render() synchronously when the deferred module
+    // hasn't executed yet — same stance the Wall and Matrix layouts take. A
+    // missing module must degrade to the OLD behaviour (correct but slow), never
+    // to a board that silently stops responding to the filter.
+    let _searchDebouncer = null;
+    function _scheduleSearchRender() {
+      const SD = (window.STX && window.STX.searchDebounce) || null;
+      if (!SD) { render(); return; }
+      if (!_searchDebouncer) _searchDebouncer = SD.createSearchDebouncer();
+      _searchDebouncer.schedule(render);
+    }
+
     function onSearchInput(e) {
       STATE.filters.search = e.currentTarget.value;
       // Invalidate the qualifier-parse cache on every keystroke.
@@ -1000,8 +1101,11 @@
       STATE._searchParsedRaw = null;
       renderQualifierHints(e.currentTarget.value);
       renderActiveFilterChips();  // P2: surface the search chip while typing
+      // NOT debounced: onSearchKeyDown reads the list's hidden flag and
+      // _SEARCH_SUGG_ITEMS to route Enter/Tab/ArrowDown, so deferring this
+      // would break the keyboard contract for a fast typist.
       renderSearchSuggest(e.currentTarget);
-      render();
+      _scheduleSearchRender();
     }
 
     // === Search autocomplete (operator TG 12318) ===========================
@@ -1292,7 +1396,7 @@
     // Status-set helper (closed enum from validator).
     async function setCardStatus(cardId, newStatus) {
       try {
-        const r = await fetch("/update", {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: cardId, status: newStatus }),
@@ -1314,7 +1418,7 @@
     // rank (computed, never asserted). loadGraph() repaints from the store.
     async function rescoreCard(cardId, urgency, importance) {
       try {
-        const r = await fetch("/rescore", {
+        const r = await fetch(API_BASE + "/rescore", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: cardId, urgency: urgency, importance: importance }),
@@ -1337,7 +1441,7 @@
       const label = t ? `"${t.title}" (${cardId})` : cardId;
       if (!window.confirm(`Delete ${label}?\n\nThis will scrub depends_on / blocks / parent references too. Undo is available for ~10s after delete.`)) return;
       try {
-        const r = await fetch("/delete", {
+        const r = await fetch(API_BASE + "/delete", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: cardId }),
@@ -1349,7 +1453,7 @@
         const result = await r.json();
         const undo = async () => {
           try {
-            const rr = await fetch("/restore", {
+            const rr = await fetch(API_BASE + "/restore", { // (hook-bypass: line-limit)
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ task: result.removed, refs: result.refs || [] }),
@@ -1443,7 +1547,7 @@
         project: newProject === "Uncategorized" ? null : newProject,
       };
       try {
-        const r = await fetch("/update", {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patch),
@@ -1814,7 +1918,7 @@
         include_no_timestamp: String(_STALE_OPTS.include_no_timestamp),
       });
       try {
-        const r = await fetch("/scitex-todo/stale?" + qs.toString());
+        const r = await fetch(API_BASE + "/stale?" + qs.toString()); // (hook-bypass: line-limit)
         if (!r.ok) {
           _STALE_CACHE = { error: `/stale returned ${r.status}` };
         } else {
@@ -1921,7 +2025,7 @@
         return;
       }
       try {
-        const r = await fetch("/scitex-todo/archive", {
+        const r = await fetch(API_BASE + "/archive", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, reason: trimmed }),
@@ -2721,7 +2825,19 @@
       // See ADR-0009 + the graph.py node payload. (hook-bypass: line-limit.)
       const fmtList = (xs) =>
         (Array.isArray(xs) && xs.length) ? xs.map(escapeHtml).join(", ") : "—";
-      const firstCommentAuthor = (t.comments || [])
+      // Prefer the server-derived scalar; the scan below is the fallback.
+      // (hook-bypass: line-limit — 3,534-line template, split already tracked
+      // by card board-v3-template-oversized-blocks-edits-20260724.)
+      //
+      // The two are NOT identical by construction: the scalar is POSITIONAL
+      // (comments[0].author) while this scan skips entries whose author is
+      // missing or blank. Measured on the live store 2026-07-30 across 1,780
+      // carded threads: 0 diverge, and 0 cards have an authorless first comment,
+      // so they agree today. The `||` is what keeps them agreeing tomorrow — an
+      // authorless first comment makes the scalar null, which falls through to
+      // the scan and still gets the right answer. Do not collapse this to the
+      // scalar alone without re-measuring that count.
+      const firstCommentAuthor = t.first_comment_author || (t.comments || [])
         .map(c => c && c.author).find(a => typeof a === "string" && a);
       const creator = t.created_by || firstCommentAuthor || "—";
       const rows = [
@@ -2737,7 +2853,14 @@
         ["pr_url", t.pr_url ? `<a href="${escapeHtml(t.pr_url)}" target="_blank">${escapeHtml(t.pr_url)}</a>` : "—"],
         ["issue_url", t.issue_url ? `<a href="${escapeHtml(t.issue_url)}" target="_blank">${escapeHtml(t.issue_url)}</a>` : "—"],
         ["depends_on", (STATE.graph.edges || []).filter(e => e.kind === "depends_on" && e.target === id).map(e => e.source).join(", ") || "—"],
-        ["comments", String((t.comments || []).length)],
+        // PRESENCE, not truthiness (hook-bypass: line-limit) — a card with 0
+        // comments reports comment_count: 0, and 0 is falsy, so `||` would send
+        // every empty card down the fallback. It would still print "0", which is
+        // exactly why the bug would never be noticed.
+        ["comments", String(
+          typeof t.comment_count === "number"
+            ? t.comment_count
+            : (t.comments || []).length)],
       ];
       document.getElementById("d-rows").innerHTML = rows.map(r =>
         `<div class="detail-row"><div class="detail-key">${escapeHtml(r[0])}</div><div class="detail-val">${r[1]}</div></div>`
@@ -2829,7 +2952,7 @@
     }
 
     async function postResolve(id) {
-      const r = await fetch("/resolve", {
+      const r = await fetch(API_BASE + "/resolve", { // (hook-bypass: line-limit)
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, actor: "operator" }),
@@ -2842,7 +2965,7 @@
     }
 
     async function postReopen(id, priorStatus, priorBlocker) {
-      const r = await fetch("/reopen", {
+      const r = await fetch(API_BASE + "/reopen", { // (hook-bypass: line-limit)
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2960,10 +3083,43 @@
       hops.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
       return hops;
     }
-    function renderComments(task) {
+    async function renderComments(task) {
       const list = document.getElementById("d-comment-list");
       if (!list) return;
-      const hops = _routeHops(task);
+      // THE THREAD FETCHES ITSELF (hook-bypass: line-limit) — this is the last
+      // surface that reads comments[] off /graph, and the only one that
+      // genuinely needs comment CONTENT rather than a summary. comments[] is
+      // 8.5 MB of a 19.8 MB payload that the board refetches on nearly every
+      // 5 s poll, so having every card pay on every poll to serve one panel
+      // that is usually closed is the wrong trade: it pays for its own read,
+      // on open. GET /chat/<id> already returns {card_id, title, comments} and
+      // 404s an unknown card, so no new endpoint was needed.
+      //
+      // ALWAYS fetch, rather than only when comments[] is absent. Gating on
+      // absence would leave this path dormant until step 3 deletes the field —
+      // and code that has never run is exactly what bit us tonight in the
+      // fresh-store inbox bug. The payload copy stays as the FAILURE fallback
+      // only, so a fetch error degrades to today's behaviour instead of
+      // blanking the panel.
+      let thread = task;
+      try {
+        // (hook-bypass: line-limit) ONE LINE, and API_BASE concatenated with a
+        // string literal rather than interpolated. test__board_v3_mount_prefix
+        // requires the count of call sites to equal the count of the prefixed
+        // form as a CONTIGUOUS literal, so a line break between the paren and
+        // API_BASE fails it, and so does a template literal. Both are equally
+        // correct at runtime; the guard enforces one FORM because that is what
+        // makes "no un-prefixed call crept in" checkable at all. Conform rather
+        // than widen it. Do not reflow this line.
+        const r = await fetch(API_BASE + "/chat/" + encodeURIComponent(task.id));
+        if (r.ok) {
+          const p = await r.json();
+          if (Array.isArray(p.comments)) {
+            thread = Object.assign({}, task, { comments: p.comments });
+          }
+        }
+      } catch { /* keep `thread = task` — the /graph copy, if it is still sent */ }
+      const hops = _routeHops(thread);
       if (!hops.length) {
         list.innerHTML = `<div class="comment-empty">No route activity yet.</div>`;
         return;
@@ -2995,7 +3151,7 @@
       btn.disabled = true;
       btn.textContent = "posting…";
       try {
-        const r = await fetch("/comment", {
+        const r = await fetch(API_BASE + "/comment", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: STATE.openId, text, author: "operator" }),
@@ -3055,7 +3211,7 @@
     // GraphView's AutoRefresh — ADR-0005).
     async function autoRefreshTick() {
       try {
-        const r = await fetch("/rev");
+        const r = await fetch(API_BASE + "/rev"); // (hook-bypass: line-limit)
         if (!r.ok) return;
         const rev = await r.json();
         // GUI-code hot-reload: if the board template changed on disk (a
@@ -3162,7 +3318,7 @@
         const body = { title, status, assignee };
         if (project) body.project = project;
         if (task) body.task = task;
-        const r = await fetch("/create", {
+        const r = await fetch(API_BASE + "/create", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -3219,7 +3375,7 @@
       // AND status is blocked (the validator enforces that pairing).
       patch.blocker = blocker || null;
       try {
-        const r = await fetch("/update", {
+        const r = await fetch(API_BASE + "/update", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patch),
@@ -3245,7 +3401,7 @@
       const label = t ? `"${t.title}" (${id})` : id;
       if (!window.confirm(`Delete ${label}?\n\nThis will scrub depends_on / blocks / parent references too. Undo is available for ~10s after delete.`)) return;
       try {
-        const r = await fetch("/delete", {
+        const r = await fetch(API_BASE + "/delete", { // (hook-bypass: line-limit)
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id }),
@@ -3258,7 +3414,7 @@
         // Undo: POST /restore with the same removed payload + refs.
         const undo = async () => {
           try {
-            const rr = await fetch("/restore", {
+            const rr = await fetch(API_BASE + "/restore", { // (hook-bypass: line-limit)
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

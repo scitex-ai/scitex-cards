@@ -72,7 +72,13 @@ def handle_delete(request, board):
                 scrubbed_refs.append({"id": t["id"], "field": "parent"})
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=remaining)
+            # Name the id we intentionally removed: SQLite is upsert-only and the
+            # mirror never INFERS a delete from absence (the board-wipe fix), so an
+            # explicit single-card removal must say what it removed or the row
+            # survives. `remaining` omitting it is not enough on its own.
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=remaining, deleted_ids=[task_id]
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()

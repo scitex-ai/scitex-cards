@@ -1,5 +1,2442 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.31.6] - 2026-08-02
+
+**A public hostname can no longer be bound by a board that cannot authenticate
+its callers, and the notification rail stops opening its own database.**
+
+`SCITEX_CARDS_PUBLIC_HOST` used to add a hostname to `ALLOWED_HOSTS` while
+asserting only that `DJANGO_SECRET_KEY` was set. That check is real but measures
+a **different property**: it makes session and CSRF signatures unforgeable and
+says nothing about who may send a request. A board behind an enforcing Cloudflare
+Access policy and a board behind nothing produced byte-identical settings — two
+states with one representation, the unsafe one rendering as the safe one exactly
+when it mattered. Its LAN twin `SCITEX_CARDS_ALLOWED_HOSTS` had refused without a
+password since it was written; the path that reaches the internet had not.
+
+A security-shaped check on that branch made it worse rather than better, because
+it reads to the next maintainer as "this path is guarded" and ends the question.
+
+**The board now always authenticates its own callers — a key or a password, the
+way `sshd` chooses, never neither.** A proxy in front (Cloudflare Access, a hub's
+own login) is a *second layer*, never the boundary. An interim revision also
+accepted a written claim that something in front authenticated; that was the only
+path to an origin with no login, and this process cannot observe whether such a
+proxy is enforcing, so it is gone. A test pins the gate's signature at exactly
+`(public_host, password)` so the escape cannot return quietly. Consequences: a
+misconfigured Access policy stops being a breach, and standalone stays honest
+because it is the same code path with no proxy at all.
+
+**The notification rail no longer hand-rolls `sqlite3.connect`.** It was the only
+part of the package opening its own database, and therefore the only part that
+could not be handed a PostgreSQL target — where the failure is not a clean error:
+a DSN reaching `Path(...)` does not raise, it yields a plausible relative path,
+and `mkdir` + `sqlite3.connect` then *manufacture* a SQLite file named after the
+DSN that accepts writes while the real server sits untouched. It now opens
+through `_db.connect`, which dispatches on the target before any path handling.
+No rows move: same file, same contents, measured at 56 emitted statements
+byte-for-byte identical either side. The S0 PRAGMAs come along, notably
+`busy_timeout=300000`.
+
+Supporting that move: a per-backend shape seam so every rail query reads its
+table, recipient column and ordering from one place (`rowid` → `seq` is a
+replacement, not a rename, and a pure rename would produce SQL valid on both
+engines that silently loses delivery order); the null-safe comparison resolved
+per connection, because no literal spelling parses on both SQLite 3.37 and
+PostgreSQL; schema **v9** giving `notifications` a server-assigned arrival-order
+column; row-carry verified by id rather than by count; and a PostgreSQL CI leg so
+the canonical backend has regression coverage and its absence is loud.
+
+Also: the off-site backup survives a PostgreSQL store target (it had been dead
+31 hours behind a `resolve_db_path(...).parent` that raises on a DSN), and the
+channel's own diagnostics are readable in production via an opt-in file sink.
+
+## [0.31.5] - 2026-08-02
+
+**Schema v8, and an instrument for the delivery lag that had the bug it was
+built to find.**
+
+`notifications` gains `msg_id`, `pushed_at` and `confirmed_at` — the three
+columns the SQLite sidecar gained and the store's own table never did. The table
+already existed on the fresh-create path with the right shape and index, and was
+vestigial (0 rows on the live store), so the notification rail can move *into*
+the store rather than into a parallel table. The columns live in one list used
+by both the fresh-create script and the migration, and a test asserts both paths
+produce identical shape — a fresh store disagreeing with a migrated one is this
+repo's own recorded v4 failure, and it stayed invisible because the stamp was
+right.
+
+The **`queued`** lamp on the DM gauge now computes. It rendered *"not observable
+yet (the notification carries no message id)"* while 205 of 1517 DM
+notifications carried one — the plumbing had landed and the reader was never
+updated, its docstring still citing the obsolete limitation. Computed from the
+exact `dm_messages.id → inbox.msg_id` join, and three-valued: `None` means the
+inbox could not be *read*, never "not queued". Collapsing those would render a
+dropped notification as delivered, which is the failure the gauge exists to
+detect.
+
+**Channel tick timing.** DMs reach an agent 13–25 s after they are written,
+against a 5 s interval. Nine candidates were eliminated by direct measurement —
+the wrong daemon, the mtime drain gate, the burst cap, PostgreSQL write latency,
+the drain work, an overridden interval, MCP transport backpressure (an *idle*
+session measured slower), SQLite write-lock contention, and PostgreSQL
+advisory-lock contention. Every component measured fast and the composite stayed
+slow, which is the shape outside observation cannot resolve. The loop now
+records `drain_s`, `gap_s` and `unexplained_s = gap − prev_drain − interval` —
+time spent neither working nor sleeping.
+
+The first version of that instrument subtracted the *current* tick's drain
+rather than the previous one. Invisible when drain times are equal; when they
+vary the residual absorbs the difference and still reads as an unowned wait.
+Measured, a slow tick followed by a fast one reported **0.302 s** of fiction
+where the truth was **0.001 s** — the same magnitude as the lag being hunted.
+Fixed before any reading was believed.
+
+The invariant it checks is the **sign**, not the identity: `gap == drain +
+interval + unexplained` is tautological and would be a gate that cannot fail. A
+loop cannot return before its own sleep, so a residual negative beyond clock
+jitter means a term is mismeasured. Reported at WARNING, never asserted — a bare
+assert in a long-lived delivery loop kills the task and stops the delivery it
+measures.
+
+Also documents the twelve SQLite→PostgreSQL hazards measured during the store
+migration, nine of which produced no error at all.
+
+## [0.31.4] - 2026-08-02
+
+**The doctor names the engine on both rails, and fails when they differ.**
+
+`check_single_write_target` reported the literal string "SQLite"
+*unconditionally*. True when written; a lie from the day a store could be a
+PostgreSQL server. Measured on the live store: it printed `exactly one write
+target: SQLite` while every card write went to PostgreSQL. The one line that
+looks like it answers "which engine am I on" answered it wrongly, confidently,
+on every PostgreSQL deployment. It now resolves the engine instead of asserting
+it.
+
+Nothing reported the *notification* rail's engine at all. The inbox is a SQLite
+sidecar located from the store **path**, so pointing the store at a server does
+not move it — cards go to PostgreSQL and notifications stay on SQLite. That
+split is what let a DM commit to the store on 2026-08-01 while no notification
+was ever created, with every card-side check green.
+
+`check_backend_mode` reports both rails and **fails** when they disagree. A
+check that merely printed the two modes would report the split as normal, and
+normal is the wrong word for a state in which a green card-side doctor says
+nothing about whether notifications are delivered.
+
+It deliberately offers **no toggle** to disable the SQLite rail, and the hint
+says so: in postgres mode the sidecar is the only inbox implementation that
+exists, so a switch would let the split be *configured* rather than *fixed* — a
+fallback wearing a switch. The doctor goes green when the inbox moves into the
+store, not when someone sets a variable.
+
+It also names **which tier chose the store target** (explicit argument,
+`SCITEX_CARDS_DB`, `config.json`, or the built-in default). "I edited the config
+and nothing changed" is the most confusing way this resolution fails, because
+every tier is individually working — the environment simply outranks the file.
+Determined by comparison rather than by re-implementing the precedence, so it
+cannot drift out of step with `resolve_store_target` and start naming the wrong
+source.
+
+**An explicit server store no longer collapses into a phantom local store.**
+
+`resolve_tasks_path` has two branches and they disagreed. The ambient branch
+already asked `is_postgres_url` and returned the local root. The explicit branch
+fell straight through to `Path(explicit)`, which does not reject a DSN — it
+coerces it into a *relative* path:
+
+```
+Path("postgresql://scitex_cards@127.0.0.1:5432/scitex_cards")
+  -> PosixPath("postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards")
+```
+
+Everything derived from it then resolved against the writer's current
+directory, so `runtime_dir` yielded `postgresql:/…/runtime` and `inbox_db_path`
+put `todo.db` inside it.
+
+The failure was a silent **success**, which is why it survived: measured
+2026-08-02, `enqueue(store=<DSN>)` returned a notification id and created a
+phantom store under the caller's CWD. Nothing raised, so the fail-soft caller
+logged nothing, and the notification was unreachable because nobody polls a
+directory named after a DSN.
+
+An explicit DSN now resolves to the same local root the ambient branch already
+used, rather than raising. Every caller of this function wants a local
+directory — pidfiles, the delivery ledger, reminder state, the inbox sidecar —
+and wants one just as much when the cards live on a server. Raising would break
+the board, which legitimately threads its store through to the inbox rail.
+
+## [0.31.3] - 2026-08-02
+
+**The SQLite inbox used SQL that old SQLite cannot parse, so no notification
+was ever delivered on the host.**
+
+`_inbox_sqlite.enqueue` spelled its null-safe comparisons
+`IS NOT DISTINCT FROM` — standard SQL, and exactly what SQLite's `IS` means.
+SQLite only accepts that spelling from **3.39** (2022-06). The host runs
+**3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
+
+`_threads_mirror.dispatch_to_inbox` is deliberately fail-soft — the message is
+already committed, so a failed enqueue should cost a push, not a message. That
+turned a hard SQL error into silence: DMs landed in `dm_messages`, no
+notification row was ever written, and the board reported success. Measured on
+the live store — an operator DM sat in the store and never reached the agent's
+session.
+
+It stayed hidden because the failure is **environment-dependent**. Containers
+run SQLite 3.45.1 and parse the standard spelling happily, so agent-to-agent
+DMs delivered normally while board-originated ones vanished. CI ran a new
+SQLite too, so a behavioural test was green no matter which spelling the source
+used — it pinned the SQLite version, not the SQL.
+
+Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
+needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
+standard spelling, which is correct there.
+
+**This reverses a deliberate decision from 0.31.2**, and the reasoning behind
+that decision was sound apart from one premise. It chose the standard spelling
+so the module's SQL would survive a later move to PostgreSQL, and pinned
+SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+measured 3.37.2 — and it was never ours to enforce, since the package controls
+neither the CI images nor the host's system python. A requirement the package
+cannot enforce is a hope, not a floor. The premise does not hold either:
+`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
+backend module, exactly as the YAML and SQLite backends are separate today.
+
+What that decision got right is kept: rewriting the comparison to `=` parses on
+both engines and then silently stops deduplicating, because `actor = NULL` is
+never true. That trap is still pinned by a positive-control test.
+
+The regression test reads the statements the module actually hands to
+`execute()` via AST and fails on the non-portable spelling regardless of the
+local SQLite version. It deliberately does not scan the file for a substring:
+the module now discusses `IS NOT DISTINCT FROM` by name, and a substring scan
+would match that prose and fail forever.
+
+## [0.31.2] - 2026-08-01
+
+**Completing a blocked card clears its gate.** (#723)
+
+`complete_task` set `status=done` and left `blocker` in place, producing a
+document `_validate_tasks` refuses. A done card still naming an unresolved gate
+is incoherent — either the gate was cleared, or the card is not done — and
+`resolve_task` has always cleared it for that reason. The two closing verbs
+disagreed, and this one could not write back at all.
+
+Measured on the live `*/15` reconcile cron:
+
+```
+TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
+has blocker 'operator-decision' but status is 'done'
+```
+
+That card was legitimately blocked on an operator decision and its pull request
+merged anyway — real data, not corruption. Because validation covers the **whole
+document**, that single card stopped the sweep from closing *any* card.
+
+This is the third defect stacked in one code path, after the store target
+(0.31.0) and the actor identity (0.31.1), each hidden by the one below it.
+
+### `reassign_task` moves beside `reassign_all`
+
+Carried in the same change because the one-line fix was blocked:
+`_store_lifecycle.py` was already 45 lines over the 512-line limit, and its own
+`delete_task` carried the comment *"verb-module split still queued"*.
+
+Single-card and all-cards reassignment are one responsibility — changing a
+card's owner — and were split across two modules, with the one named for the job
+holding half of it. Ownership leaves *lifecycle*, which is about a card's state.
+
+| file | before | after |
+| --- | --- | --- |
+| `_store_lifecycle.py` | 539 | 421 |
+| `_store_reassign.py` | 170 | 312 |
+
+`_store_lifecycle` re-exports `reassign_task` and keeps it in `__all__`, so every
+existing import path resolves unchanged — verified that the lifecycle, reassign
+and `_store` paths all return the same object.
+
+## [0.31.1] - 2026-08-01
+
+**An unattended reconcile names itself instead of failing.** (#720)
+
+The `*/15` cron entry runs with no `SCITEX_TODO_AGENT_ID`, so every close raised
+`creator unresolved` and the job closed nothing. It surfaced only once 0.31.0
+fixed the store-target failure that had been masking it — the job had been dying
+at store-open, so it never reached `complete_task`.
+
+`reconcile-merged-prs` closes a card because a **pull request merged**, not
+because a person decided anything. Borrowing whichever agent happened to export
+a variable is less truthful than naming the reconciler, and requiring one means
+an unattended run cannot work at all. Precedence is widened only at the end:
+
+```
+explicit by=  →  $SCITEX_TODO_AGENT_ID  →  SYSTEM_ACTOR
+```
+
+The two cases that already worked are untouched; the third previously raised.
+
+This does **not** weaken `_store._resolve_creator_or_raise`, which still refuses
+to invent an author for an ordinary caller — the reconciler may default because
+it *knows who it is*. It also does not extend 0.31.0's store-target config tier
+to identity: a store is a host-level fact every client shares, whereas identity
+is per-actor, and one config naming an agent would make every cron job on the
+host impersonate it.
+
+## [0.31.0] - 2026-08-01
+
+**The store target can now come from config, not only from an environment
+variable.** This closes the single gap behind every store-target failure of the
+PostgreSQL cutover.
+
+### An env var is a rule every caller must remember (#717)
+
+Until now the only way to point a client at a non-default store was
+`$SCITEX_CARDS_DB`, exported at every invocation site. Anything that did not
+export it fell through to a hardcoded local SQLite filename. That one gap
+produced, in different clothes each time:
+
+- **8 host-side writers** (4 systemd units, 3 cron entries, 1 hourly timer)
+  carrying no store env and silently writing the **old** store while the fleet
+  was believed migrated
+- **87 agent specs** each needing the variable pasted in individually
+- a crontab fix **reverted** by the hourly `copy_crontab` sync, dropping 3 cron
+  jobs back to the old default — then failing outright with `StoreRetired`
+- any **new** client on the host defaulting to a store that no longer accepts
+  writes
+
+`_config.py` already implemented a layered, fail-soft `config.json` across user
+and project scope, read at **call** time so a running daemon picks up an edit
+without a restart. It carried only `reminders:`. This adds a `store:` section
+and a new resolution tier:
+
+```
+explicit → $SCITEX_CARDS_DB → deprecated env → config store.target → default
+```
+
+**Below** the environment, so per-agent and per-test overrides still win and
+nothing that worked before changes. **Above** the hardcoded default — the tier
+that was silently wrong.
+
+Both resolvers get it, because `resolve_store_target`'s docstring promises it
+mirrors `resolve_db_path` exactly. In `resolve_db_path` the configured value
+goes through `_as_path`, so a DSN written into config produces the same loud
+refusal an env DSN does rather than being coerced into a mangled relative path
+that would create a second, empty store. A new tier must not open a new way in.
+
+The password is not in the config and must never be: the DSN carries none and
+libpq reads `$PGPASSFILE` itself.
+
+Measured on the live host with `$SCITEX_CARDS_DB` unset and the same config
+present — `0.30.3` resolved to the **retired** SQLite store, this release
+resolves to the PostgreSQL DSN.
+
+## [0.30.3] - 2026-08-01
+
+**The schema is now asserted once per store, not once per open.** Required
+before a fleet of ~90 agents can share one PostgreSQL store: at that width the
+old behaviour is not a slow path, it is a broken one.
+
+### Concurrent opens were deadlocking on the system catalogue (#714)
+
+`init_schema` ran its full DDL on **every connection**. On SQLite that was very
+nearly free. Against a shared PostgreSQL server it is DDL against the system
+catalogues, and `CREATE OR REPLACE FUNCTION` rewrites the `pg_proc` row every
+time — it is *not* a no-op when the definition already matches.
+
+Measured on the live store with the entire fleet **stopped** and only four host
+daemons connected — `pg_proc.xmin` sampled every 10s while idle:
+
+```
+t+10  all 9 trigger functions  5069 -> 5075
+t+20  all 9 trigger functions  5075 -> 5082
+t+30  all 9 trigger functions  5082 -> 5087
+```
+
+and concurrency did not survive it:
+
+```
+ 4 simultaneous open_db  ->  at least 1 deadlock
+12 simultaneous open_db  ->  11 of 12 FAILED, DeadlockDetected on pg_proc
+```
+
+Two clients replacing the same function at once contend on the catalogue and
+PostgreSQL resolves it by killing one. `init_schema`'s own comment already noted
+that "~90 containers call init_schema on every connection".
+
+The new gate in `_schema_current` skips the DDL when the store already has the
+shape this client would assert. **Conservative by construction:** every
+uncertain answer falls through to the full DDL, so the worst case is exactly the
+previous behaviour. The version must match, the physical rungs and the stamp
+must agree, and an unreadable catalogue is not a current schema.
+
+**The guard triggers are verified, not assumed.** They are the retirement
+enforcement *and* the proof-of-currency mechanism, so a client that skipped the
+DDL without confirming their presence could leave a store unguarded while
+believing it had guarded it. Presence is read from the catalogue on every open;
+only the *write* is skipped.
+
+| check | before | after |
+| --- | --- | --- |
+| fresh store gets all 9 guards | — | all 9 present |
+| functions rewritten per `open_db` | 9 of 9 | 0 of 9 |
+| 12 simultaneous `open_db` | 11 failed | 0 failed |
+| 24 simultaneous `open_db` | — | 0 failed |
+
+The fresh-store row is the positive control: it proves the gate does not skip
+*creation*, which is the dangerous direction.
+
+## [0.30.2] - 2026-08-01
+
+**The board could not read a PostgreSQL store at all, and every DM write died
+before it began.** Both defects were found by exercising the real path after the
+fleet cutover, and both were invisible to every cheaper check.
+
+### The board answered 500 to every data request (#712)
+
+Two calls on `get_board`'s read path coerced the store target to a filesystem
+`Path`, and `resolve_db_path` **refuses** a DSN rather than coercing it:
+`_django/services.py` for the `/rev` mtime, and `_store_write.store_generation`'s
+file-existence gate.
+
+The refusal is correct and load-bearing. Coercing a DSN would have created an
+empty SQLite store at a mangled path and served 0 cards **while reporting
+healthy** — the exact failure `services.py` already carries a post-mortem for.
+The guard worked; the server branch behind it was missing.
+
+`store_generation` now gates on the file only when the target *is* a file — a
+server's existence is established by connecting, which `load_doc` does and which
+raises when it cannot. `"absent"` stays reserved for a genuinely missing local
+file, because it disables the optimistic-concurrency guard.
+
+The `/rev` stamp moves to `_django/_revision.store_change_stamp`. On a file store
+it is the database mtime; on a server it is a content fingerprint derived from
+the generation hash already computed on that path. `/rev`'s `mtime` is typed
+float but consumed only as an equality key, and was already documented as
+REPORTED, not trusted. The server value sits far outside epoch range so anything
+treating it as a time is obviously wrong rather than subtly skewed.
+
+### Every DM write died on `BEGIN IMMEDIATE` (#712)
+
+`syntax error at or near "IMMEDIATE"` — SQLite-only spelling, reported by
+scitex-db with a live reproduction. It failed before writing anything, so no data
+was harmed, but DM is the operator's channel to the fleet.
+
+A gap in the 0.30.0 port: the statements *inside* the transaction were made
+portable and the statement that *opens* it was not.
+
+**A plain `BEGIN` would have been worse than the syntax error.** `IMMEDIATE` is
+not decoration — SQLite takes the write lock at BEGIN so two appenders serialise,
+and the DM append reads `max(seq)` then inserts `seq + 1`. PostgreSQL defaults to
+READ COMMITTED, under which both appenders read the same `max(seq)` and both
+insert. That parses, runs, passes a smoke test, and silently reintroduces the
+exact race `IMMEDIATE` exists to prevent. SERIALIZABLE detects it but by aborting
+one side, which every call site would have to retry.
+
+New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on SQLite and
+`BEGIN` plus `pg_advisory_xact_lock` on PostgreSQL — blocking, not aborting, and
+released on commit or rollback alike. It replaces all 7 executable sites
+(`_dm_write` ×4, `_dm_migrate` ×2, `_store_uuid` ×1). The lock is store-wide,
+matching SQLite where the write lock covers the whole file: this is a
+compatibility seam, not a concurrency rewrite.
+
+### Verified against the live server, not a fixture
+
+`get_board` returns 2980 cards with `empty_store` false and the discriminators
+land both ways; `begin_write_transaction` opens a write transaction; a real
+`append_pair` landed a message at seq 2.
+
+## [0.30.1] - 2026-08-01
+
+**DM writes work on PostgreSQL, and retirement now stops them.** 0.30.0 carries
+both defects: DMs could not be written to a server store at all, and a retired
+store accepted them.
+
+### DM writes died on a server store while cards worked (#710)
+
+`resolve_dm_db` fell through to `resolve_db_path` for its ambient tier, and that
+**raises** on a DSN. With `$SCITEX_CARDS_DB` pointing at PostgreSQL:
+
+```
+READ  list_tasks   2971 cards            ok
+WRITE dm funnel    StoreTargetIsNotAPath
+```
+
+Card reads and card writes were unaffected — only DMs, which agents send
+constantly. The two tiers above stay paths deliberately: an explicit `db` or
+`store` names a file, and deriving the DM database from `store.parent` is what
+stops a test with a tmp store writing its DMs into the live fleet database. Only
+the **ambient** tier can be a server.
+
+Found by booting the rebuilt image the way an agent does and attempting a write.
+Every cheaper check passed on the broken build — right version, driver present,
+`backend: postgresql`, correct uuid, 2971 cards readable.
+
+### Retirement now stops DM writes (#708)
+
+Required before any store is retired.
+
+Card writes reached the guard only *incidentally* — they are read-modify-write,
+so they pass through the canonical read, which checks. DM writes had their own
+path and checked nothing. Measured during the PostgreSQL cutover:
+
+```
+14:16  a card write   REFUSED   (correct)
+14:26  a DM write     LANDED    in the retired store
+```
+
+So retirement was a fence for one path and a signpost for the other, and
+"stragglers fail loudly" held only for readers.
+
+The refusal lives in `_dm_write_rows._open`, the DM **write funnel** — all five
+mutating verbs open through it and nothing else does. Deliberately **not** in
+`open_db`: the canonical read and the export/snapshot paths open through that
+too, and a retired store must stay **readable**, because recovering from a
+retirement means reading the store you retired.
+
+Reuses the existing `_refuse_if_retired_on` rather than adding a second
+definition of "is this store retired" — per that helper's own docstring,
+duplicating it per caller is how the two answers drift.
+
+Two of the new tests assert the store stays **readable** after retirement,
+specifically so a later "fix" that moves the guard into `open_db` goes red.
+Negative control, run against unfixed 0.30.0 source: the retired store opens for
+a DM write and the test fails (`- refused / + opened`).
+
+## [0.30.0] - 2026-08-01
+
+**The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
+still died, because the write side had never been ported. SQLite remains the
+DEFAULT and PostgreSQL stays OPT-IN via `$SCITEX_CARDS_DB`.
+
+### The read path stopped taking the query side down (#704)
+
+Pointing `$SCITEX_CARDS_DB` at PostgreSQL made the whole query side raise
+*before opening a connection* — `list-tasks` died in path resolution while the
+write and canonical-read paths were already DSN-aware. One resolver conflated
+two things, and a server store has no directory:
+
+- store **identity** — `$SCITEX_CARDS_DB`; a path OR a server URL
+- local state **dir** — pidfiles, delivery ledger, reminder state, the
+  users/groups sidecar; always a real directory, whatever the backend
+
+Card data never needed that path: `load_doc` opens the store with no argument
+and interpolates the path into an error string only.
+
+Two diagnostics that lied are fixed with it. `resolve-store` — the verb whose
+whole job is *which store am I on?* — crashed on the answer; it now reports the
+target uncoerced plus a `backend` field, with `exists` three-valued (`None` on
+a server, because `False` reads as "your store is missing"). And `store_uuid_at`
+was path-only, so `Path("postgresql://…").exists()` was `False` and it returned
+`None` **without raising** — a PostgreSQL store reported "no identity",
+indistinguishable from having none, which silently disarmed `expected_uuid`.
+
+### The write path is ported (#705)
+
+Every store-path statement now uses ONE form both engines understand, rather
+than a dialect-translation layer:
+
+```
+INSERT OR IGNORE   ->  INSERT ... ON CONFLICT DO NOTHING
+INSERT OR REPLACE  ->  INSERT ... ON CONFLICT(<key>) DO UPDATE SET ...
+```
+
+**This also fixes the v7 optimistic-lock counter, which had never once fired.**
+`INSERT OR REPLACE` is DELETE+INSERT, so `AFTER UPDATE ON tasks` was never
+reached and `revision` read `0` on all 2957 live rows. Measured after: a card
+update advances the counter (`1 -> 2`), and the live distribution now carries
+non-zero revisions.
+
+Two hazards were measured before converting, not after:
+
+- `REPLACE` resets columns the statement does not name; `DO UPDATE` preserves
+  them. Every `REPLACE` site names **every** column of its table, so the forms
+  are equivalent here.
+- The append-only guards are `BEFORE DELETE … RAISE(ABORT)`, so conversion
+  could have silently *removed* a refusal. The intersection is **empty**: every
+  delete-guarded table is written with the non-deleting `IGNORE` form. That is
+  a design property, not a coincidence — which is why all four `_dm_write`
+  conversions are `DO NOTHING`, preserving "skip, never overwrite".
+
+Also: positional `r[0]` under psycopg's `dict_row` raised `KeyError: 0` inside
+the shrink guard, and the ambient-store guard coerced the DSN while evaluating
+an *argument*, so it raised before the guard it feeds ever ran.
+
+`_dm_write.py` was 515 lines against a 512 cap; row primitives moved to
+`_dm_write_rows.py` and every name is re-exported, so the public import surface
+does not move.
+
+## [0.29.0] - 2026-07-31
+
+**The store layer now REACHES PostgreSQL.** 0.28.0 made a PostgreSQL store
+buildable; this release makes the package actually read one. Measured against
+the live server: `2962` cards and `6171` comments at `schema_version 7`, not the
+`0` a broken path returns. SQLite remains the DEFAULT and PostgreSQL is OPT-IN
+via `$SCITEX_CARDS_DB`; the SQLite path is byte-identical to 0.28.0.
+
+**The blocker was one line, and it explains why the seam sat unused.**
+`open_db` — the one-call entry point the canonical read path uses — resolved
+through `resolve_db_path`, which is typed `-> Path` and refuses a DSN. So no
+call site could reach PostgreSQL however well `connect()` dispatched, which is
+exactly what `_store_target.py`'s docstring meant by "NOTHING in the package
+imports them". It now resolves the TARGET (#693).
+
+**A PostgreSQL DSN is refused, never coerced (#692).** `Path("postgresql://h/db")`
+collapses to the RELATIVE path `postgresql:/h/db`, which manufactures an empty
+SQLite file and then serves 0 cards while reporting `exists: True`. Two stores,
+both looking healthy, is a failure this package has scar tissue from.
+
+**Schema init is portable (#693).** `PRAGMA` is SQLite-only and PostgreSQL
+rejects it outright, so the version stamp and the column probe are now
+dialect-aware. On PostgreSQL the trigger-protected `schema_meta` row IS the
+stamp — the direction `stamp_schema_version` already argued for, since a PRAGMA
+structurally cannot carry a trigger.
+
+**Canonical read reaches PostgreSQL with its guards intact (#694).** Existence,
+ownership and retirement are re-expressed for a server rather than a file,
+because each asks a question whose MEANING differs by backend: existence is a
+catalogue question, not a `stat()` call. Every failure raises — this is
+read-modify-write, and returning an empty document here is written back as the
+whole store.
+
+**The v7 revision lock was INERT and now fires (#695).** `INSERT OR REPLACE` is
+`DELETE` + `INSERT`, so it never fired the `AFTER UPDATE` trigger that bumps
+`revision`. The lock was installed, present, and doing nothing. `ON CONFLICT DO
+UPDATE` makes it real, parses on both engines, and drops the `ON DELETE CASCADE`
+work this codebase measured at 42x. BREAKING: an upsert through the mirror now
+bumps `revision` where it previously did not.
+
+**The PostgreSQL cross-check is snapshot-consistent (#696).** PostgreSQL's
+default isolation is READ COMMITTED, under which every statement takes a fresh
+snapshot EVEN INSIDE A TRANSACTION — so holding one connection was never enough.
+The export and its verifying `COUNT(*)` now run in `REPEATABLE READ`. Without
+it the guard compares two different database states and reports success.
+
+**Three defects in this release were found only by running the real server, and
+two of those only by the NEGATIVE control.** A static scan of the obvious
+init-path modules missed the `PRAGMA` inside `init_schema` itself. An existence
+guard placed after `open_db()` could never fire, because `init_schema` CREATES
+the tables — pointed at an empty database it built the whole schema and returned
+0 tasks instead of refusing. A guard defeated by the act of opening is not a
+guard, and the positive control passed in every one of those cases.
+
+## [0.28.0] - 2026-07-31
+
+**A PostgreSQL store can now be built and reached — not just described.** 0.27.0
+made the backend seam importable; this release makes it usable. `_db.connect()`
+accepts a PostgreSQL target, the schema script creates a working store on
+PostgreSQL including every guard, and the export path no longer speaks SQLite.
+Nothing writes to PostgreSQL yet: the canonical store is still SQLite, and the
+cutover switches are deliberately not in this release.
+
+**A theme, and it is the reason for the test style below: on this port, the
+dangerous failures pass at DDL time and fail at runtime.** `AUTOINCREMENT` has
+no portable spelling, and the obvious substitute — a plain `INTEGER PRIMARY KEY`
+— *parses on both engines* and only fails when you INSERT, because PostgreSQL
+does not auto-assign it the way SQLite's rowid alias does. So the tests here
+insert a row and read the generated id back; asserting `CREATE TABLE` succeeded
+would have certified the broken choice.
+
+### Added
+- `_db.connect()` dispatches a PostgreSQL URL or a libpq keyword/value conninfo
+  to the backend seam. The dispatch is the **first** statement in the function:
+  `Path(dsn)` on a conninfo does not raise, it manufactures a SQLite file named
+  after the DSN that accepts writes while the real server sits untouched. That
+  file was created and observed during development, so the test asserts **no
+  file appears** (#685).
+- `_pg_triggers` — PostgreSQL equivalents of all nine guard triggers, and
+  `execute_ddl` now **substitutes** them when it meets a SQLite `CREATE TRIGGER`.
+  An unrecognised trigger name **raises**. Skipping what a backend cannot run is
+  the tempting move and it is silently wrong: the tables come up, the store
+  passes every smoke test, and an append-only table quietly accepts `DELETE`
+  because its guard was never installed (#687).
+- A DDL dialect step translating `AUTOINCREMENT` at execution time, so the
+  schema constants stay written in the dialect the production store speaks
+  today (#686).
+- `_db_schema_sql` — the core schema DDL extracted from `_db`, joining
+  `_db_dm_schema` / `_store_retirement` / `_schema_shape` so every piece of DDL
+  now lives in a module named for what it creates (#685).
+
+### Fixed
+- The min-client-version gate no longer assumes SQLite. It recognised a missing
+  `schema_meta` by catching `sqlite3.OperationalError`; PostgreSQL raises
+  `UndefinedTable`, so opening a **brand-new** PostgreSQL store raised out of a
+  function whose contract is "no floor stamped, this is a no-op". It also read
+  `row[0]` positionally, which `dict_row` refuses (#684).
+- `_schema_probe` built its result set positionally too, so `has_table` raised
+  `KeyError: 0` on exactly the by-name connection PostgreSQL requires (#684).
+- The canonical export ordered four result sets by `rowid`, which PostgreSQL
+  does not have — this would have failed **at cutover**, inside the code that
+  writes the YAML the whole fleet reads. Now ordered by creation timestamp with
+  the primary key as tie-breaker; the tie-breaker is load-bearing, because these
+  timestamps have one-second resolution and same-second rows would otherwise
+  order arbitrarily, making the export differ run to run (#688).
+- `StoreConnection` gained `executemany` / `executescript` / `commit` /
+  `rollback` and opt-in by-name rows, which is what the write path needed
+  before anything could adopt the seam (#682).
+
+### Notes
+- The nine PostgreSQL guards are **generated** from a running server via
+  `pg_get_triggerdef` / `pg_get_functiondef`, not hand-written. A retyped
+  plpgsql guard that reads correctly and permits what it forbids is precisely
+  the failure this avoids.
+- Guard tests attempt the forbidden operation rather than counting triggers, and
+  include a positive control (a legal `7 -> 8` upgrade must still succeed) so a
+  guard cannot pass by refusing everything.
+
+## [0.27.0] - 2026-07-31
+
+**The backend seam becomes reachable.** Until this release `_backend_connect`
+and `_store_url` were implemented, tested, and imported by nothing — every read
+and write called `sqlite3` directly, so a PostgreSQL store could receive no
+tables and, more importantly, **no guards**. A store with no retirement guard
+reports itself current and authoritative, which is the failure that took this
+board from 2170 rows to 18.
+
+A recurring lesson runs through the SQL fixes below: **both looked like they
+needed a dialect branch and neither did.** `GREATEST` is PostgreSQL-only and
+two-argument `MAX` is SQLite-only, but the standard-SQL spelling works on both.
+Try standard SQL against both engines before adding a translation layer — every
+branch is a place the two backends can drift.
+
+### Added
+- **A DDL runner that works on both backends (#675).**
+  `sqlite3.Connection.executescript` is pysqlite-only and was how *every* schema
+  object here got installed, all nine triggers included. The difficulty is one
+  character: a trigger body is `BEGIN <stmt>; <stmt>; END`, so its semicolons are
+  internal and a naive `split(';')` severs it — and the first fragment can still
+  parse as a complete `CREATE TRIGGER`, installing a **truncated guard** that
+  every by-name presence probe then reports as present. `split_sql_script`
+  tracks nesting instead. `execute_ddl` returns a **count**, because
+  `executescript` returned a cursor nobody read and "installed nothing" looked
+  exactly like "installed nine triggers".
+
+- **`resolve_store_target` — the store target without assuming it is a path
+  (#674).** `resolve_db_path` is typed `-> Path`, so a URL cannot be
+  represented; it was coerced instead:
+  `postgresql://user@host:5432/db` → `Path('postgresql:/user@host:5432/db')`, a
+  **relative** path, silently, one slash lost. The caller then creates an empty
+  SQLite file at that name and reports a healthy empty board.
+
+### Fixed
+- **Guards are read from the right catalogue (#676, #678).** Four sites asked
+  `sqlite_master` which guards a store carries — a table PostgreSQL does not
+  have. The quiet failure is the dangerous one: the query returns nothing, the
+  store looks unguarded, and it is reported healthy and current. A store that
+  can prove nothing must not answer yes. The PostgreSQL query excludes
+  `tgisinternal`, since every FK constraint installs internal triggers and
+  counting them would report a guard-free store as richly guarded.
+
+- **Every DDL install routes through the runner (#677).** Verified by building
+  the same database twice, one process per branch: 44 objects vs 44 objects,
+  identical `sqlite_master`, `user_version` 7, 9 triggers. The transaction
+  boundary was the risk rather than the SQL — `executescript` issues an implicit
+  COMMIT before running — so only building both databases establishes the result
+  is the same.
+
+- **NULL-safe comparison both engines accept (#679).** The inbox dedups on four
+  nullable columns. SQLite spells it `x IS ?`; PostgreSQL rejects that outright.
+  The tempting fix, `=`, **parses on both and silently stops deduplicating** —
+  `actor = NULL` is UNKNOWN, never true — producing a notification storm and
+  quietly killing the "at most one pending digest per recipient" invariant.
+  Measured against a NULL column: `IS ?` → 1 row, `IS NOT DISTINCT FROM ?` → 1
+  row, `= ?` → **0 rows**. That last line is now a test.
+
+- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on SQLite and
+  an **aggregate only** on PostgreSQL — `function max(integer, integer) does not
+  exist`, measured live. Spelt as `CASE`, which is standard SQL.
+
+
+## [0.26.1] - 2026-07-31
+
+### Fixed
+- **The migration decision now floors on the physical shape, not the PRAGMA
+  (#671).** A PRAGMA cannot carry a trigger, so 0.26.0's engine-level floor
+  protects `schema_meta` and *structurally cannot* protect `user_version` — and
+  `init_schema` reads exactly that PRAGMA to decide whether it is migrating.
+
+  Observed on the live store, from its own stamps:
+
+  ```
+  schema_migrated_at   02:45:01Z -> 02:45:47Z -> 03:00:03Z -> 03:00:47Z
+  schema_migrated_from 5, then 6, then 5
+  schema_migrated_by   0.25.0
+  ```
+
+  while v6's `tasks.revision` and v7's `tasks_bump_revision` were physically
+  present throughout. `record_migration()` returns early when `prior == new`, so
+  that advancing timestamp is not noise — it is proof the PRAGMA kept reading
+  back as 5. A current client was re-migrating a store that had never been
+  behind, every ~45 seconds, rewriting the migration record each time. The one
+  field that could say when the store was last really migrated was being
+  destroyed by the loop it exists to document.
+
+  Applied schema is additive, so the physical shape cannot go backwards — it is
+  the one floor a stale stamp cannot lower. `_prior_version` now takes
+  `max(user_version, observed_version(conn).observed)`. This is what
+  `_schema_shape` was built for in 0.26.0 and was not yet wired into the
+  decision it exists to inform.
+
+  **This does not stop the writer**, which remains unidentified. It stops
+  current clients from being misled by it. Fresh databases are unaffected:
+  `observed` is None with no rung present, preserving the CREATE-not-migrate
+  branch.
+
+
+## [0.26.0] - 2026-07-31
+
+**Three safeguards that existed in code and did not hold in practice.** A
+version floor only the clients carrying it obeyed; an enforcement probe that
+could pass without testing anything; a working PostgreSQL backend whose driver
+the package never asked for. In each case the artifact was real and the
+protection was not.
+
+### Fixed
+- **The schema version stamp is floored in the ENGINE, not in the client
+  (#667).** Measured on the live fleet store, with nothing of this agent's
+  writing to it and no tests running:
+
+  ```
+  t=02:45:25  schema_version='5'
+  t=02:45:50  schema_version='7'
+  t=02:46:15  schema_version='5'
+  ```
+
+  and, settled minutes later: `tasks.revision` column present, the
+  `tasks_bump_revision` trigger present — both installed by the v5→v6 and
+  v6→v7 migrations — while the stamp read `5`. **The store WAS v7 and SAID
+  v5**, which is the unsafe direction: a reader gating on the stamp concludes
+  `tasks.revision` is absent while it is physically there, and writes
+  accordingly.
+
+  0.25.0 already took `max(prior, SCHEMA_VERSION)` when stamping. That fix was
+  real, and it was the "remember to apply it" kind — it binds only the clients
+  that have it, and any client still executing a bare
+  `PRAGMA user_version={SCHEMA_VERSION}` overwrote the store regardless. The
+  floor now lives in a SQLite trigger on `schema_meta`, so it applies to every
+  writer whether or not that writer knows it exists.
+
+  It ASSIGNS rather than REJECTS, deliberately: `RAISE(ABORT)` would fail every
+  old writer's connection outright on a mixed-version fleet. A refused
+  downgrade is recorded (`schema_version_downgrades_refused` plus the timestamp
+  and the attempted transition), so the condition is counted instead of merely
+  prevented — on the live store that counter is now in the thousands, all
+  `7 → 5`, and the store has held at 7 throughout.
+
+  Adds `_schema_shape.py`, which reads the store's PHYSICAL shape (which
+  tables, columns and triggers actually exist) and reports agreement with the
+  stamp as a three-valued answer rather than trusting either alone.
+
+### Added
+- **A vacuous enforcement probe is now unconstructible (#666).** The same trap
+  caught two agents independently, hours apart, both of whom knew the
+  principle:
+
+  - a guard tested with `DELETE ... WHERE id = 'nonexistent-id'` was reported
+    NOT ENFORCED, against a guard that demonstrably refuses — a `BEFORE DELETE`
+    trigger fires PER ROW, so deleting zero rows succeeds;
+  - a cutover pre-check specified as "flip `store_status` retired → current,
+    expect ABORT" would, on a store with no `store_status` row, match nothing,
+    succeed, and halt the cutover by declaring a working guard dead.
+
+  Same shape both times: **a statement that touches nothing cannot be refused,
+  and "was not refused" reads identically to "is not guarded."**
+
+  `probe_enforcement()` counts the rows the forbidden statement would touch
+  BEFORE attempting it and raises `VacuousProbe` on zero, naming the remedy
+  (manufacture the precondition inside a transaction, probe, roll back).
+  `EnforcementVerdict` re-checks the same rule in `__post_init__`, so a vacuous
+  verdict cannot be smuggled past by constructing one directly.
+  `expect_refusal_containing` is REQUIRED and must be non-empty, because a
+  read-only connection, a typo and a lock all raise, and a probe that catches
+  any exception reads all three as proof of enforcement.
+
+- **The `postgres` extra, so the PostgreSQL path is reachable by install
+  (#668).** `_backend_connect` reads a PostgreSQL store today: the same query
+  string, written with SQLite's `?` placeholders and never rewritten by the
+  caller, returned the same row count through both backends against PostgreSQL
+  18.4, because `to_paramstyle` translates in transit. 39 tests cover it and it
+  was independently reproduced.
+
+  It worked because psycopg *happened* to be installed where it was tried.
+  Measured in a normal environment: `psycopg available: False`. The capability
+  was real, tested, and unreachable by anyone installing the package normally —
+  including its author. **A capability with no declared dependency is not
+  shipped, it is merely written.**
+
+  psycopg is declared in `postgres`, in `all` so CI exercises the backend
+  rather than merely compiling it, and in `dev` so a fresh
+  `pip install -e .[dev]` runs the backend tests instead of erroring on their
+  unguarded import. Guarding those imports with `importorskip` was rejected: a
+  skipped test for a capability about to be cut over to reads green while
+  measuring nothing.
+
+
+## [0.25.0] - 2026-07-30
+
+The PostgreSQL migration became possible, and a byte that could have made it
+impossible was stopped at the door. Nothing here switches the store — this is
+the capability plus the guard, not the cutover.
+
+### A byte no backend can store (#663)
+
+A NUL is legal in SQLite TEXT and illegal in PostgreSQL TEXT, so a body SQLite
+accepted silently made the whole store unmigratable. Two rows in `messages`
+blocked the preflight; within ~2 minutes of clearing them a third arrived in
+`dm_messages`, written by an agent actively trying not to write one, in a
+message ANNOUNCING the fix. Prose about the byte is how the byte spreads.
+
+`dm_messages` is append-only and immutable except its tombstone columns, so that
+third row cannot be corrected in place. Write time is not the convenient place
+to catch this, it is the only place.
+
+Sanitised rather than rejected — rejecting would discard a legitimate 4 KB
+technical message whose only sin was quoting the byte it was about. The
+`record_json` already holds the body with the byte JSON-escaped, byte-identical
+to the column, so the original survives in the row. The marker is U+2400, not a
+backslash escape: one live body already contained `\x00` as prose, so a naive
+un-escape produced three NULs where the original had one. A marker a human can
+type by accident cannot be distinguished from content.
+
+The constant is `chr(0)`, never a literal. The first draft of the guard put a
+real NUL on line 53 and git classified the module as binary — precisely the
+defect the rows that started this were discussing. A test pins the source as
+plain text.
+
+### Reading either backend (#663)
+
+140 `execute()` sites write SQLite's `?` paramstyle. Porting each is 140 chances
+to miss one, so the translation is bound to the CONNECTION: code keeps writing
+`?` and forgetting is not expressible. A `?` inside a string literal is NOT a
+placeholder — card titles and message bodies contain them constantly, and a
+naive replace corrupts those literals silently, producing wrong data rather than
+an error.
+
+Read-only. The 52 upserts, 32 PRAGMA sites and 10 `BEGIN IMMEDIATE` blocks are
+not ported and no claim is made about writes. Verified against a real PostgreSQL
+18.4 holding a verified copy of the live store — the same query string returning
+the same answer from both backends, with the caller unaware which replied.
+
+### Store retirement, one-way and engine-enforced (#663)
+
+After a verified copy there are TWO stores with the same identity. Identity
+cannot say which is authoritative; only a statement of which is CURRENT can, and
+the cutover is the act of moving that statement into the OLD store so a
+straggler fails loudly instead of serving yesterday's board.
+
+Enforced by triggers, not client code: `schema_version` was measured oscillating
+7 → 5 → 6 within an hour because an older client stamps its own version
+unconditionally. A rule only the current client honours is not a rule.
+
+The guard has three states, and the third is deferred behind a REQUIRED
+`unguarded_store` keyword with no default. Wiring it as an immediate refusal
+would have blacked out every board on release day: the guards install via
+`init_schema` on a WRITE open, readers open `mode=ro`, and a read-only
+connection cannot create a trigger. The retirement branch itself is NOT
+deferred — a retired store is refused in either era.
+
+### Static assets carry the release (#663)
+
+The operator reported right-click no longer opening the DM context menu. It was
+unreproducible — and being unreproducible was the diagnosis, since a fresh
+browser cannot hold a stale file. A hard reload fixed it. Applied at the storage
+backend rather than at the 61 `{% static %}` call sites, so it cannot be
+forgotten and new templates inherit it.
+
+
+## [0.24.0] - 2026-07-30
+
+The DM thread is readable on a phone, and the board can be reached from one
+without being open to the network. Both requested repeatedly by the operator;
+0.23.0's attempt at the first one was reverted within minutes of shipping.
+
+### The DM render window (#656)
+
+0.23.0 used `content-visibility: auto` with a `contain-intrinsic-size` estimate.
+Typing got fast and the thread became unreadable: an off-screen message
+contributed an ESTIMATED height, scrolling replaced estimates with measurements,
+and total scroll height grew underneath the reader, so the bottom receded.
+Reverted in #655. The operator's words were 「一番下にたどり着けないの地獄すぎる」.
+
+Two things about that failure, recorded because they were avoidable:
+
+* The measurement needed to size the estimate (883 B/msg, so 250px+, not the
+  64px guessed) was already in my own notes on the card.
+* Guessing too small is the UNRECOVERABLE direction — it strands the reader at a
+  bottom that keeps moving. There was no reason to guess at all.
+
+This renders the newest 60 messages and builds no nodes for the rest, so a
+message either has real nodes or contributes no height; the 0.23.0 failure mode
+is unavailable rather than mitigated. Scrolling near the top reveals 60 more,
+which the operator preferred to a button.
+
+The load-bearing part is the correction, not the windowing. Prepending older
+messages pushes the view down, so `scrollTop` is adjusted by the height the pane
+actually gained, measured from the real pane after the repaint:
+
+    newTop = topBefore + (heightAfter - heightBefore)
+
+`createScrollUpLoader` keeps that arithmetic and the repaint in ONE unit. In
+0.23.0 they lived in separate files and nothing exercised the pair, so the
+combination shipped untested while both halves looked correct. The regression
+test drives the loader against a container whose `scrollHeight` grows with its
+node count: 60 messages at 250px, reader 100px from the top, grow to 120,
+`scrollTop` must become 15100. A test asserting "fewer nodes rendered" would have
+passed on the broken version, which is why that is not the test.
+
+* `chat_window.js` — window policy plus the loader, pure, 15 tests
+* `chat_avatar.js` — extracted en route, previously untested
+* The DM-only header colour overrides are gone. An earlier fix matched the header
+  TEXT across board and DM and left DM feeding `--accent-2`, so the heading still
+  differed between pages along an axis the first fix did not touch. Removed
+  rather than set to a matching value, which would agree today and drift later.
+
+### A password on the board (#657)
+
+The board had no authentication of any kind — no `django.contrib.auth`, no
+sessions, no login. That was survivable only on 127.0.0.1, where the operating
+system is the access control. Reaching it from a phone means binding the LAN,
+which removes the only gate it had.
+
+`SCITEX_CARDS_ALLOWED_HOSTS` now REQUIRES `SCITEX_CARDS_PASSWORD` and raises
+without it, so exposure-without-auth is unreachable instead of discouraged. The
+knob's previous comment said "the standalone board has no auth, so only open it
+on a trusted network" — advice, which is what you write when the code will still
+let you do the unsafe thing.
+
+* `_board_exposure.py` — the rule, importing nothing, because settings.py calls
+  it during Django's settings import
+* `_board_auth.py` — HTTP Basic, constant-time comparison, and
+  `MiddlewareNotUsed` so the loopback default pays nothing
+* Whitespace-only passwords are refused; a stray space in a shell export would
+  otherwise silently open the board
+* Nothing is exempt, including static files: an exemption list is a second place
+  for the gate's shape to be wrong
+
+Verified by mutation rather than by a green run: replacing the guard with
+`if False:` turns the refusal test red with its own message.
+
+LIMITS, stated because a password invites more trust than this one earns. Basic
+over `http://` is base64 — encoding, not encryption — so anyone who can watch the
+network sees it; this is for a trusted LAN. It is therefore deliberately NOT
+treated as sufficient for public exposure: `SCITEX_CARDS_PUBLIC_HOST` still
+requires the tunnel's own authenticator in front, because a tunnel carries no
+auth of its own.
+
+### Store internals
+
+* `tasks.revision` is now incremented by a DB trigger (schema v7, #654), so the
+  counter moves on every UPDATE regardless of the writing client's version. This
+  makes `revision` trustworthy; it is NOT yet a lock, because no caller passes a
+  `WHERE ... AND revision = ?` predicate. The lost-update hole is still open.
+
+## [0.23.0] - 2026-07-30
+
+Two DM-page fixes, both reported by the operator and both cases where they
+located the problem better than my code reading did.
+
+### Typing lag in the DM composer (#651)
+
+Distinct from 0.22.0's board search-box debounce, which was a real defect in the
+wrong place: the operator's lag was on `/dm`. They then ran the controlled
+experiment — typing lags in a heavy thread, is comfortable in a light one — which
+located it in thread weight rather than in any handler.
+
+    dm:operator::scitex-cards   222 msgs   86,859 B   lags
+    dm:operator::scitex-hpc      51 msgs   18,761 B   comfortable
+
+The pane keeps every message in the DOM (`chat_diff.js` appends incrementally,
+so re-rendering was never the cost — the tree size is). Each keystroke pays
+style+layout across it, and `chat_compose.js` auto-sizes the textarea by reading
+`scrollHeight`, forcing that layout synchronously.
+
+* `content-visibility: auto` on `.msg` — the browser skips layout and paint for
+  off-screen messages. No cap, no "load older" affordance, and no change to the
+  diff logic, so it cannot alter which messages appear.
+* `contain-intrinsic-size: auto 64px` — the `auto` keyword makes the browser
+  remember each bubble's real height after first render, so the scrollbar
+  settles. Bubbles differ ~6x in this thread, so a fixed estimate would leave it
+  visibly wrong.
+
+No per-keystroke timing is claimed: the build container has no browser, so the
+mechanism is established from source and the magnitude is not measured.
+
+### The header text changed between Board and DM (#651)
+
+Operator: they sent the board's header element and asked for it verbatim on DM,
+then 「header が変わると変です」. The `<h1>` was swapping "SciTeX Cards" for
+"Direct messages", which reads as the page breaking rather than as navigation.
+
+Both pages now pass the same `page_title`: the band names the PRODUCT, the
+switcher names the PAGE. This supersedes a 2026-07-29 decision (DM wording over
+"chat") that had been implemented partly as this heading and pinned by a test —
+the DM wording survives in the switcher item, its tooltip and the browser tab,
+each already covered by its own test. A new test pins that the switcher still
+says DM, since it is now the only visible thing distinguishing the two pages.
+
+
+## [0.22.0] - 2026-07-30
+
+Two alarm/latency fixes, both reported from outside and both cases where the
+obvious measurement would have confirmed the wrong thing.
+
+### The blocked-check was silenceable by TYPING (#646)
+
+`detect_blocked_external` asks "has your blocker cleared?" but measured
+`last_activity` — "when was this touched". A comment moves `last_activity` and
+clears nothing, so annotating a stuck card hid it for another 24 h. Reported by
+grant across three consecutive sweeps: of five cards that dropped off, three had
+genuinely been reclassified and TWO had merely been commented on. That inverted
+the incentive — recording evidence on a stuck card is the behaviour we want, and
+doing it hid the card — so they had stopped commenting on seven genuine waits to
+keep them visible.
+
+Not a narrowed set: every card was inspected and answered. The clock measured a
+DIFFERENT QUANTITY than the question asked, which is why no filter fix would
+have touched it.
+
+* `blocked_at`, stamped by `_stamp_blocked_at` when the `(status, blocker)` PAIR
+  moves. A different blocker restarts the clock (a genuinely new wait); a comment
+  does not.
+* `_blocked_age_hours` falls back to `created_at` and NEVER to `last_activity` —
+  the 394 already-blocked cards carry no stamp, so a `last_activity` fallback
+  would have silenced the very cards that motivated the fix. `created_at` makes
+  an unstamped card read as maximally stale, so the alarm errs toward FIRING: a
+  spurious re-check costs a glance, a suppressed one costs a card.
+* `_detect_owned_untouched` takes a `clock`, defaulting to `_age_hours`, so
+  stale-active is unchanged — there a comment legitimately IS acting.
+
+Rollout measured with the real function against the live 394 blocked rows rather
+than a reimplemented predicate: 46 messages where 42 already went out daily, so
+4 owners newly nudged and 0 losing coverage. No backfill: there is no event log
+to reconstruct a stamp from (`task_comments.kind` is NULL on 5908/5967 rows).
+
+`_stale_active.py` split into `_stale_active_thresholds` (how long is too long)
+and `_stale_active_clocks` (which quantity each sweep measures). Both clocks now
+sit side by side, because picking the wrong one is the defect. Public API
+unchanged — all 23 `__all__` names still resolve.
+
+### The caret lagged the keyboard on the board (#647)
+
+Distinct from 0.21.0's payload work, and not fixable by it: that cut LOAD cost
+(21.0 MB → 11.9 MB), this is INTERACTION cost. `board_v3.html` called `render()`
+synchronously from `oninput`, which is dispatched BEFORE the browser paints — so
+a full-layout rebuild over 2885 cards sat on the critical path of displaying the
+character just typed. Hence the CARET lagging rather than results lagging the
+caret; only one of those complaints points at the input handler.
+
+New pure `board_v3/searchDebounce.js` (timers only, no DOM/STATE) providing a
+trailing-edge 120 ms debouncer, unit-tested under `node --test` like its 14
+siblings. A missing module degrades to the OLD synchronous `render()` — correct
+but slow — never to a board that stops responding to the filter.
+
+`renderSearchSuggest` is deliberately NOT debounced: it populates the state
+`onSearchKeyDown` reads to route Enter / Tab / ArrowDown, so deferring it would
+trade a working keyboard contract for a smaller saving.
+
+No per-keystroke timing is claimed — there is no browser in the build container,
+so the mechanism is established from source and the magnitude is not measured.
+
+## [0.21.0] - 2026-07-30
+comments[] is GONE from the /graph payload. Step 3 of 3, and the step the
+other two existed to make safe.
+
+MEASURED ON THE LIVE STORE at 2,881 cards, not inherited from the estimate
+this had carried since 2026-07-17:
+
+    comments[]        9,015,360 B   REMOVED
+    comment_scalars     707,195 B   kept (0.19.0)
+    rescore_history      15,343 B   kept (0.20.0)
+    NET REMOVED       8,292,822 B   = 7.9 MiB
+
+The replacements cost 8.0% of what they replace. The field had grown past
+the 8.5 MB figure quoted earlier the same evening, which is why it was
+re-measured rather than reused.
+
+Why it mattered: the board polls /rev every 5000 ms and refetches the whole
+response on any change, while the store is written every ~4 s (15.5
+row-deltas/min of ordinary fleet traffic). So it refetched this on very
+nearly every tick, and `skipIfUnchanged` only skips the REDRAW - the
+download had already happened.
+
+WHY THIS IS ONE LINE AND NOT A FLAG DAY. A previous attempt removed the
+field and added its replacements in a single branch; that broke every
+consumer at once and sat unmergeable for twelve days. This time the
+replacements AND the per-consumer fallbacks shipped first, in 0.19.0 and
+0.20.0, so a consumer missed here degrades to its fallback instead of
+breaking. Do NOT remove those fallbacks in the same release as this.
+
+NEW GUARD, because nothing pinned the field's ABSENCE. Re-adding it would
+have been silent AND would have looked fine: every consumer still has a
+comments[] fallback, so the board would keep working while the payload
+quietly tripled. The guard asserts the thread is gone, the three
+replacements are present, and - as a PROPERTY rather than a key name - that
+no comment prose survives anywhere in the serialized node, so
+reintroducing the thread under a different name also fails.
+
+The full thread is still served by GET /chat/<card_id>.
+
+## [0.20.0] - 2026-07-30
+Cut so five merged PRs actually reach a running process. 0.19.0 was live on
+the operator's board and none of tonight's work was in it — the same
+merged-is-not-deployed gap 0.19.0 itself was cut to close, one turn later.
+
+DM READ RECEIPTS FIRE AT ALL (#639). The operator reported a DM arriving
+with the sent/queued/read lamps dead. Measured on the live store: every
+operator -> agent message had ZERO receipts while every agent -> operator
+message had one, and across the whole `dm_receipts` table only THREE
+readers had ever written a row. A receipt was only written by
+`dm_list(ack=True)`, which an agent receiving DM bodies over the channel
+push never calls — so "the agent has not read this" was indistinguishable
+from "the agent is dead", the one distinction the feature exists to make.
+
+`_inbox.enqueue` now carries `msg_id`, which is the fix
+`_dm_receipt_state.py` had already specified in prose, and receipts are
+written at CONFIRM. Not at push: a returning `send()` proves only that the
+stdout writer took the bytes, and treating that as delivery is what
+destroyed weeks of operator DMs on 2026-07-29.
+
+Two bugs fell out of that change:
+- `msg_id` becomes the dedupe key. The old key was
+  `(event_type, card_id, ts, actor)`; DM timestamps are second-resolution,
+  so it was many-to-one BY CONSTRUCTION, and two distinct durable messages
+  were measured collapsing onto one notification — the second never
+  delivered.
+- A FRESH STORE COULD NOT INITIALISE ITS INBOX. The legacy-YAML reader
+  promised "malformed -> {}" but did not catch malformed-because-BINARY, so
+  it raised on a SQLite store. Existing stores escape only because their
+  migration flag predates the cutover. A NEW HOST IS THE FRESH-STORE CASE,
+  so this sat directly on the multi-host path.
+
+/graph PAYLOAD: EVERY CONSUMER MIGRATED (#637, #638, #640). comments[] is
+8.5 MB of a 19.8 MB payload, and the board refetches it on nearly every
+5 s poll because the store is written every ~4 s. Nothing in the board
+requires it any more: the Matrix reads a new `rescore_history` field
+(9,307 B — 0.11% of what it replaces), the detail panel reads the summary
+scalars, the timeline footer reads `last_comment`, and the detail thread
+fetches `GET /chat/<id>` on open. Every one keeps a fallback, so the field
+can be deleted without a flag day — which is the point of doing it in six
+pieces rather than one. The deletion itself is NOT in this release.
+
+ADR-0016 amended (#636): the operator revisited the 2026-07-20
+single-backend ruling, so storage plurality is permitted. Records the shape
+it is permitted in, and scitex-db's correction that the board wipes were
+caused by reconciling PEER stores where absence reads as deletion — not by
+two backends existing.
+
+## [0.19.0] - 2026-07-30
+Cut because 0.18.0 had been published while develop kept accumulating — 59
+commits, including four merged PRs that were reported as done and were not
+live anywhere. The installed 0.18.0 still carried the cross-tenant store
+fallback that #628 removed, and I cited #628 to scitex-hub as a reason to
+open writes under their public mount. Merged is not deployed; this release
+is the difference.
+
+### Added
+
+- **DM bodies render as markdown** (#629) — headings, lists, tables, fenced
+  and inline code, blockquotes, bold/italic and links, built as DOM nodes
+  rather than an HTML string. `chat_markdown.js` never produces markup for
+  a parser to trust, so a hostile body cannot inject an element; only
+  `https:`, `http:` and `mailto:` become anchors. The rendered path drops
+  `white-space: pre-wrap`, since blocks already express the line breaks the
+  plain path needed it for.
+
+- **Every MCP `initialize` handshake is recorded to a sink that SURVIVES a
+  restart.** `scitex-cards mcp start` answers its first `initialize` 7-14
+  seconds after spawn — measured 2026-07-29 over five real starts: 6.67 / 7.04 /
+  7.19 / 8.49 / 9.76 s. The variance is as dangerous as the mean: against a
+  client with a fixed handshake timeout it is a coin flip, not a constant.
+  Clients that give up mark the server "not connected", and the peer agent
+  scitex-agent-container has repeatedly lost its card slice that way. It could
+  not produce the client-side evidence either, because its stderr sink is
+  TRUNCATED ON BOOT — a disconnect that precedes or causes a restart destroys
+  its own trace, prospectively as well as retroactively.
+
+  `scitex_cards._mcp_handshake_log` wraps the stdio transport inside
+  `_mcp_channel._serve` and appends four facts per run to
+  `<store_dir>/runtime/mcp-handshake.jsonl`: `server_start` (carrying
+  `startup_s`, the gap between the process being exec'd and the serve loop being
+  ready), `initialize_received`, `initialize_answered` (carrying `handshake_s`,
+  the delta) and `server_exit`. The sink is opened `O_APPEND | O_CREAT` and
+  NEVER `O_TRUNC`; past `MAX_BYTES` it rotates by RENAME. A log cleared on start
+  is structurally incapable of retaining evidence about anything that causes a
+  start, which is the whole reason the outage went undiagnosed.
+
+  **It records the handshake that is never answered.** `initialize_received` is
+  written the moment the session takes the request off the transport — before
+  the server has any chance to answer — so a process killed mid-handshake leaves
+  an orphan line behind, and that orphan IS the diagnosis. A sink that only held
+  COMPLETED handshakes would be silent on precisely the failure it exists to
+  catch. The observation sits at the TRANSPORT rather than in the message loop
+  because `ServerSession` answers `initialize` inside the SDK and never yields
+  it to the loop.
+
+  **What it proved on its first run.** Across five real starts the handshake
+  itself took 2.3-5.1 MILLISECONDS while `startup_s` was 4.36-8.80 s. The
+  "7-14 second handshake" is not a handshake at all — it is import cost sitting
+  in front of one, which is what
+  `cli-startup-costs-5s-before-any-work-20260719` has to move. No optimisation
+  is attempted here; this change is the measuring.
+
+  Fails open — an unwritable sink disables the recorder, never the server, since
+  diagnosing an availability problem must not create one. Measured cost:
+  0.75-2.0 ms of one-time setup (published by the recorder itself as `setup_ms`,
+  so its overhead appears in its own output), ~0.2 ms per recorded event, and
+  under 1 microsecond per transport message. `$SCITEX_CARDS_MCP_HANDSHAKE_LOG`
+  relocates the sink, or disables it with `off` — disabled hands the original
+  streams straight back, so the transport is not wrapped at all.
+
+- **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
+  pending notifications itself, then requires the ack. Delivery had exactly ONE
+  rail: the MCP channel push. An agent spec whitelisted `server:scitex-todo`
+  while `.mcp.json` registered the server as `scitex-cards` (renamed during the
+  migration), so Claude Code SILENTLY DISCARDED every push — `send()` returned
+  normally, the drain acked on that success, and roughly three weeks of operator
+  DMs were gone. Measured on the affected agent: **228 inbox rows, ZERO unseen**.
+  sac found the same hazard armed on ~96 spec entries fleet-wide. Fixing that one
+  spec is not a fix for the class: a single rail with nothing independent
+  checking it fails again, silently, because *the transport returned* is not
+  *the recipient received*.
+
+  `scitex-cards stop-hook` now reads the store directly at turn end and puts the
+  message text in the `reason` it hands back. No push involved, so a channel
+  registration mistake cannot silence it.
+
+  **The order of operations is the safety property.** PULL (a pure read, cursor
+  untouched) → PRESENT (the reason IS the delivery) → only then REQUIRE the ack.
+  A hook that merely blocked on unacked messages would have DEADLOCKED every
+  agent on the morning of the outage: nothing had been shown, so nothing COULD
+  have been acked. That is enforced structurally rather than by care — the new
+  `scitex_cards._inbox_present.present()` returns `(text, presented_ids)` where
+  `presented_ids` is exactly the ids whose content is in `text`, and the hook
+  demands acks for those and no others. Overflow is counted out loud, left
+  unconfirmed, and redelivered next turn.
+
+  **Bounded**, because a hook that can refuse forever is a new outage: an
+  unreadable store, an unresolvable agent id or any rail exception ALLOWS the
+  stop and explains itself on stderr (each rail fails open independently); the
+  same message stops being demanded after 3 unacked presentations in a session
+  and the record is left unseen in the store; when the retry counter cannot be
+  persisted the harness's own `stop_hook_active` becomes the bound; a reason
+  that would be empty never blocks. Full table in
+  `_skills/scitex-cards/23_stop-hook-second-delivery-rail.md`.
+
+  Rides on `_inbox_confirm.confirm_notifications` — no second ack path. The hook
+  reads across BOTH inbox keys (raw name and resolved `u_*` id) via
+  `recipient_keys`, closing the same silent-miss shape as the outage itself:
+  `_may_stop` read only the raw name.
+
+- **`scitex-cards inbox ack --agent <a> <ids...>`** — the standalone surface onto
+  the one existing ack verb. The Stop hook demands an ack, so an agent that
+  installed scitex-cards and nothing else must be able to give one; without this
+  the hook would block where the actor cannot remediate. No new ack path: it
+  calls `confirm_notifications` like every other surface.
+
+### Changed
+
+- **`import scitex_cards` costs ~137 ms, down from ~425 ms** (#630) —
+  `importlib.metadata` was imported at module scope purely to compute
+  `__version__`, and reading package metadata drags in `email.message`,
+  `email.utils` and `zipfile` behind it: 223 ms of the 425 ms total. That
+  block sat three lines above the comment explaining that the PEP 562
+  machinery exists to keep cold start under the audit §10 budget of 500 ms.
+  `__version__` now resolves through the `__getattr__` that was already
+  there. Measured interleaved on one interpreter, 5 rounds: before
+  325–763 ms, after 108–168 ms — the distributions do not overlap.
+
+  The public surface is unchanged: `scitex_cards.__version__` still answers,
+  still prefers the `scitex-cards` dist, still falls back to `scitex-todo`
+  for un-cutover editable installs, and `dir()` still lists it.
+  `from scitex_cards import __version__` is covered separately because it
+  takes a different path than attribute access.
+
+- **`health()` check records are now THREE-VALUED.** A check's `ok` may be
+  `True`, `False` or `null` (UNKNOWN — the check could not measure). "nothing
+  is wrong" and "I cannot tell" are different answers and no longer collapse
+  into a pass. `report["ok"]` counts only real failures, so an unknown does not
+  redden a run, but every unknown is NAMED in `summary` and rendered `[????]`
+  by `scitex-cards health`. The record keeps exactly its four standard fields.
+
+### Fixed
+
+- **Consecutive messages send again** (#627) — the double-send guard set a
+  `sending` flag and released only the button, so one message per page load
+  got through and the operator was reloading with Ctrl+Shift+R every time.
+  Both halves of the guard now clear in the handler that runs on every path,
+  including failure, and a failed send restores the optimistically-cleared
+  text instead of eating it. Extracted to `chat_send.js` because `chat.js`
+  had passed its size cap and could not be edited at all.
+
+- **The board no longer falls back to the host store** (#628) — `dm.py`
+  resolved the store as `getattr(request, STORE_REQUEST_ATTR, None) or
+  _store_of(request)`. Under a multi-tenant mount, a request that arrived
+  without the injected attribute silently read and wrote the HOST store —
+  one user's writes landing in another's board. It now honours the request
+  attribute only, and fails rather than guessing.
+
+- **A fail-open test that never failed.** `test__stop_hook.py` arranged its
+  "detector failure" as `SCITEX_CARDS_DB=/nonexistent/scitex-cards/none.db`,
+  which was MEASURED (2026-07-29) not to raise at all — it reads as an EMPTY
+  BOARD. Both fail-open tests passed for the wrong reason and proved nothing.
+  The arrangement now uses a path that cannot be created
+  (`/proc/1/.../cards.db`), which does raise.
+
+- **A notification the client discards is now VISIBLE instead of gone.** The
+  channel drain ack'd a record the instant `await send(params)` returned. That
+  proves only that our own stdout writer took the bytes: a
+  `notifications/claude/channel` push is a JSON-RPC NOTIFICATION, which by spec
+  has no reply, and Claude Code silently DISCARDS a push from a server missing
+  from its launch-line allowlist. So the drain was storing "the transport call
+  returned" as "the recipient received it". Measured 2026-07-29: one agent's
+  spec allowlisted `server:scitex-todo` while `.mcp.json` registers the server
+  as `scitex-cards` (renamed during the migration) — 228 rows enqueued for that
+  agent, ZERO unseen, weeks of operator DMs destroyed, every check green.
+
+  The drain now writes a RECEIPT: `record_push` advances the cursor and stamps
+  `pushed_at` in one atomic write, leaving `confirmed_at` for the recipient's
+  own `ack_notifications`. Each record is still pushed exactly once (no
+  redelivery); a receipt write that fails moves neither the stamp nor the
+  cursor, so that record retries on the next tick, bounded as before by
+  `MAX_PUSH_PER_DRAIN` (50 per tick).
+
+  New health check `delivery_confirmed` reports notifications pushed and never
+  confirmed past a 15-minute grace window, and its hint names both possible
+  causes — the agent's `channels:` list not naming the MCP server that is
+  actually registered, or a consumer that never confirms — plus how to tell
+  them apart and that a restart is required.
+
+## [0.18.0] - 2026-07-29
+
+MINOR, not a patch. This cut ADDS two published URLs (`/board` and `/dm`) and a
+new notification verb (`ack_notifications`), and DEPRECATES the ack-on-read
+shape of `poll_notifications`. New surface plus a deprecation is a minor bump,
+and calling it a patch would misreport what consumers are being handed.
+
+The store-identity UUID fix associated with this window is NOT in this release:
+it shipped in **0.17.13**, which is tagged and on PyPI. What is genuinely new
+since that tag is #615, #616 and #617 — nothing else.
+
+Two of those three reached `develop` with NO changelog entry at all. #615 and
+#616 merged without touching this file, so the section below described only
+#617, and a reader of the release notes would never have met either
+user-visible change. Both are written up below for the first time, from their
+commit messages. (Nothing was moved out of an older version's section this
+time; the `0.17.10 / 0.17.11 — entries filed late` heading further down is a
+PRIOR repair, already retired and documented, and is left untouched.)
+
+### Added
+
+- **`/board` and `/dm` are real routes** (#616). Both URLs 404'd. Not because
+  they collided with the `dm/*` JSON API — `path()` matches exact strings, so
+  `dm`, `dm/threads` and `dm/thread/<peer>` cannot shadow one another — but
+  because the catch-all `<path:endpoint>` at the bottom of the urlconf
+  swallowed both names into `api_dispatch`. The pages are now registered
+  BEFORE the catch-all. `/` and `/chat` (and `/chat/`) are KEPT: this is an
+  addition, not a rename, because a published URL is a migration and the
+  operator has both bookmarked. `views._include_root` knows the new aliases,
+  so the pages stay mount-aware under the hub sub-path, and its strip is
+  anchored to a whole path segment — a naive `endswith()` would have rewritten
+  an `/apps/scoreboard/` mount to `/apps/score`.
+
+  The guard `test_no_dm_page_route_was_invented` is SUPERSEDED, not deleted.
+  It was written against a label change and was right for that; the operator
+  then asked for `/board` and `/dm` directly. Deleting a guard because it went
+  red is how a rule gets lost, so the concern underneath it is restated: the
+  replacement asserts the half that still matters — `/chat` and `/dm` resolve
+  to one and the SAME view.
+
+### Changed
+
+- **One header, shared by both pages** (#616). The board rendered the page
+  switcher on the left, the DM page on the right via `margin-left:auto`. The
+  board bar was 8px/14px padding with a 48px floor, the DM header 10px/14px
+  with none — two heights, two baselines. Both pages now render one partial,
+  `_page_header.html`, with geometry in `page-header.css` and the switcher
+  LEFT on both. Each page's own header rule was stripped of those metrics
+  rather than left as a shadow copy, and keeps only its palette, fed in
+  through two `--stx-cards-header-*` variables. The tests pin that the two
+  pages AGREE, rather than pinning two positions that can drift apart.
+
+### Fixed
+
+- **The DESKTOP agent sidebar was blanked by the drawer logic** (#615).
+  `chat.js` passes `#agents` as the drawer panel, but above the 720px
+  breakpoint `#agents` is not a drawer — it is the permanently visible agent
+  sidebar. `render()` set `panel.inert` and an inline `visibility:hidden`
+  unconditionally from the open flag, and "closed" is the state at mount, so
+  merely loading the module blanked the sidebar on desktop. An inline style
+  beats the stylesheet, so no CSS could win it back. The operator saw
+  "No agent selected." beside an EMPTY sidebar while `/dm/threads` returned 15
+  agents and the tab title counted unread correctly. Reported twice. The API
+  was healthy throughout, which is exactly why checking the API instead of the
+  page missed it.
+
+  `render()` now asks which mode the page is in instead of assuming. The
+  COMPUTED display of `#menu-btn` already answers the question, so no
+  breakpoint number is duplicated in JS to drift from the CSS. On desktop BOTH
+  properties are cleared and the stylesheet decides: `inert` stops the keyboard
+  and assistive tech, `visibility` stops the pointer, neither implies the
+  other, and clearing only `visibility` leaves a sidebar that looks correct and
+  cannot be reached by keyboard. Drawer mode is unchanged.
+
+  This fix had already run live as a patch applied straight to the installed
+  file on the operator box, where the next `pip install` erased it an hour
+  after it worked. Shipping it in a release is what makes it survive.
+
+  The older `test__chat_drawer_is_inert_when_closed.py` scans source TEXT, and
+  every one of its assertions stayed green for the entire life of this defect:
+  the lines it looks for were present and correct, the condition around them
+  was missing, and a scan cannot see a missing condition. The new
+  `test_chat_drawer.py` RUNS the shipped module under node and reads back the
+  properties it actually wrote.
+
+- **DM delivery is now LOSSLESS: handover is no longer confirmation.**
+  `poll_notifications` marked notifications SEEN at the moment it handed them
+  over, so a consumer that read with `ack=True` and then failed to deliver had
+  PERMANENTLY DESTROYED the message — it left the unseen set and no retry could
+  find it. We turned a transient delivery failure into permanent loss, and we
+  made that the easiest call in the API to write. Measured on the live store
+  2026-07-29: five operator DMs enqueued correctly, four marked SEEN, the agent
+  saw none of them; the operator asked twice, eleven minutes apart, because
+  nothing came back.
+
+  New verb `ack_notifications(agent, ids)` (MCP tool, backend verb, and
+  `POST /v1/rpc/ack_notifications`) is now the ONLY thing that advances the
+  cursor, and it advances it per id. Reading never does. Anything left
+  unconfirmed is redelivered on the next poll, so a consumer that dies between
+  read and confirm loses nothing. Confirming twice is a no-op, never an error.
+  `poll_notifications` additionally reports `unconfirmed` (the ids still
+  awaiting confirmation) and `confirm_with`, so the safe loop is the obvious
+  one to write.
+
+### Deprecated
+
+- `poll_notifications(ack=True)` — the ack-on-read shape above. Behaviour is
+  DELIBERATELY UNCHANGED (sac reads this path today and a surprise change to
+  their read path would be its own outage); it now announces itself on three
+  surfaces instead: a `DeprecationWarning`, one WARNING log line per process,
+  and an `ack_on_read_deprecated` field in the returned payload so the
+  consuming agent reads it too. Use `ack=False` + `ack_notifications`.
+
+## [0.17.13] - 2026-07-29
+
+**0.17.12 was cut but never published, and the moving version string hid it.**
+There is no `v0.17.12` tag, no GitHub release, nothing on PyPI, and `main` still
+sits on the 0.17.11 merge: the newest thing anyone can install is 0.17.11. So
+everything 0.17.12 claimed — the board that reads the database, and the HTTP 500
+it was cut to end — reaches an installed package for the FIRST TIME here.
+Bumping a number on a branch delivers nothing. Merged is not deployed, and
+neither is bumped.
+
+Cut now because SIX AGENTS ARE WAITING ON IT. sac cannot scrub the six container
+overlays that our own error message dirtied until the fix that stops the SEVENTH
+is on PyPI and content-verified. That fix is the currency-gate entry below. It
+has moved up out of the 0.17.12 section, where it had been filed by mistake:
+#609 merged AFTER that cut and has never been in any released version.
+
+### Fixed
+
+- **Store identity is a UUID, not a path — the ROOT FIX for the board's HTTP
+  500.** Ownership of a database was decided by comparing PATHS, and one
+  bind-mounted `cards.db` has three names here:
+  `/home/agent/.scitex/cards/cards.db` (container only — the host cannot
+  `stat` it), `/home/ywatanabe/.scitex/cards/cards.db` (both), and
+  `/home/ywatanabe/.dotfiles/src/.scitex/cards/cards.db` (the realpath). One
+  inode, three spellings.
+
+  `stamp_store_provenance` rewrote the stamp with the WRITER'S OWN spelling on
+  every write (`ON CONFLICT DO UPDATE SET value=excluded.value`), so the name
+  FLIPPED each time the other namespace wrote a card. Whenever it landed on the
+  container-only name the host could not resolve it, `_same_file` fell through
+  to a realpath STRING compare that can never match across that boundary, the
+  ownership guard said "different store", and the board answered `GET /tasks`
+  with HTTP 500. It was repaired three times on 2026-07-28 and broken three
+  times again by nothing more than writing the next card from the other side.
+
+  A path cannot be identity when two namespaces both write. So:
+
+  - NEW `scitex_cards._store_uuid`. `identity_verdict(db_uuid, expected)` is a
+    PURE function of two optional strings — no path, no connection, no
+    environment — so no mount namespace can change the answer. Identities are
+    minted as bare lowercase uuid4 and NEVER derived from a path, hostname or
+    timestamp (a deterministic hash would reintroduce exactly the
+    view-dependence being removed).
+  - `_dual_write._db_mirrors_this_store` is uuid-first. On `ACCEPT`/`REFUSE`
+    THE PATH IS NOT CONSULTED AT ALL. The legacy path compare survives only on
+    `ADOPT` — no identity AND no expectation, which is every database today.
+  - An unstamped database stays ADOPTABLE, so nothing existing breaks. A
+    database with no identity facing a caller that NAMES one is REFUSED:
+    adopting there would MINT the expected uuid into a database that never
+    earned it, making a misresolution permanent, self-certifying identity.
+  - The realpath STRING fallback in `_same_file` is REMOVED. It fired precisely
+    when a path could not be `stat`-ed — i.e. across a namespace boundary,
+    where it was least entitled to an opinion — and answered with the more
+    destructive of the two options. That case now says CANNOT TELL honestly
+    instead of claiming "stamped for a DIFFERENT store".
+  - The path stamp is no longer rewritten when it already names the SAME FILE.
+    It is diagnostic now, not authoritative, and rewriting it on every write was
+    the flip mechanism itself.
+  - IDENTITY AND RESOLUTION STAY TWO SEPARATE RULES. Nothing here bypasses
+    `_paths.refuse_ambient_store_creation`; merging them would silently turn
+    "no expectation is not evidence of a foreign store" into "use whatever you
+    were pointed at".
+
+- **The currency gate was MANUFACTURING the fault it detects.** Reported by the
+  sac agent with a live reproduction inside their own container (scitex-ui,
+  2026-07-29). The chain:
+
+  1. the base image ships scitex-cards N; PyPI moves to N+1
+  2. our gate REFUSES to run the CLI and prints `run: pip install -U scitex-cards`
+  3. the agent does exactly that — inside a container that installs into the
+     AGENT'S OVERLAY, not into the read-only base
+  4. overlay N+1 alongside base N = TWO dist-info directories = ambiguous
+     metadata
+  5. which is precisely the integrity failure this gate exists to detect
+
+  The remedy was the disease's vector, and sac was about to scrub six agents'
+  overlays that our own error message could re-dirty the moment any of them
+  fell back to the CLI.
+
+  **The gate now BLOCKS WHERE THE ACTOR CAN REMEDIATE AND WARNS WHERE THEY
+  CANNOT**, and that sentence is in the code as the rule rather than as a
+  comment on one branch. On a BARE HOST an in-place upgrade genuinely repairs,
+  so refusing is correct and that path is untouched: it still RAISES, and its
+  message still carries scitex-dev's upgrade command verbatim, because there
+  that command IS the repair. IN AN OVERLAY the agent cannot repair anything —
+  the package comes from a read-only base they do not control, the only real fix
+  is an operator REBAKE — so the gate logs a warning and RETURNS. Blocking there
+  left an agent with no working rail AND a harmful instruction. A gate that
+  cannot be satisfied is a trap, not a gate.
+
+  **No in-place install command survives anywhere in the overlay output, from
+  any source.** This is the correction of 0.17.11, which appended a do-NOT block
+  AFTER scitex-dev's verbatim message and assumed that was enough — it is not,
+  and assuming it was is the mistake being fixed. An agent scanning for an
+  actionable command takes the FIRST one, and the first one harms. The verbatim
+  passthrough is now SCRUBBED: `scrub_install_commands()` removes the command
+  and keeps the facts, so the reader still learns which version is installed and
+  which is current (exactly what the operator needs in the rebake request) with
+  nothing runnable left in the text. The remover is narrow and its detector is
+  broad; when they disagree the quote is WITHHELD rather than printed, because
+  losing an upstream message costs a reader context while printing that command
+  costs them the container.
+
+  The overlay message states plainly that this container's package comes from a
+  READ-ONLY BASE IMAGE, that installing here creates a DUPLICATE INSTALL which
+  BREAKS METADATA RESOLUTION, and that the repair is an operator REBAKE OF THE
+  BASE IMAGE. It names the escape hatch outright —
+  `SCITEX_DEV_CURRENCY_SEVERITY=silent`, read off the installed scitex-dev
+  (`staleness._ENV_SEVERITY`) rather than invented — so nobody has to guess it,
+  and says why to prefer it over `SCITEX_DEV_NO_CURRENCY_GATE=1` (which prints a
+  bypass banner on stdout and corrupts `--json` output).
+
+  The barrier is MECHANICAL, not a docstring warning: a rule that must be
+  remembered is forgotten exactly when it matters, which is what 0.17.11 proved.
+  `test_the_overlay_text_carries_no_in_place_install_command_from_any_source`
+  scans the ENTIRE emitted text — passthrough included — against an
+  independently authored pattern list that is deliberately NOT imported from the
+  implementation, and a positive control proves that list can actually see a
+  command. Mutation-checked in two steps (probe confirmed present in the module
+  the interpreter actually loaded via `inspect.getsource`, then the test run):
+  making the scrubber a passthrough reddens that barrier; making the overlay
+  branch raise reddens `test_the_overlay_case_does_not_raise`; making the
+  bare-host branch warn reddens
+  `test_a_bare_host_install_still_fails_the_currency_gate`.
+
+- **A notifyd tick that could not read the store printed the same line as a
+  healthy idle one.** Measured on the host: the daemon failed its store read on
+  1196 consecutive ticks over roughly a day, and the only line anyone reads
+  said `notifyd tick 1196: sent=0 failed=0 skipped=0 failed_terminal=0
+  (0 recorded)` — character-for-character what a daemon with nothing to do
+  prints. The exception WAS logged ("notifyd reminder sweep raised; continuing
+  to delivery") but never COUNTED, so the summary stayed clean. The operator's
+  DMs, including the answer an agent was blocked on, went undelivered; they
+  asked "are you making progress?" twice, eleven minutes apart, because nothing
+  came back. Their inbox held 196 notifications, all marked seen, none
+  delivered.
+
+  The defect fixed here is the COUNTER, not that particular outage (the store
+  bug is its own change). The next delivery outage will have a different cause
+  and must not be silent:
+
+  - **A swallowed exception is a FAILED tick.** Every guard inside the tick —
+    the reminder sweep, the liveness sweep, the heartbeat stamp, each
+    recipient's inbox read, the clock, and the tick body itself — now RETURNS
+    what it swallowed instead of discarding it. Guarding the loop against a bad
+    sweep was always right; letting the guard also hide the failure is what made
+    a day of silence look like a day of quiet. `sent=0` WITH a fault is a
+    failure, and there is no longer a way to log one without the summary showing
+    it.
+  - **`pending` is THREE-VALUED.** "nothing pending" is `pending=0`; "could not
+    determine what is pending" is `pending=unknown`. Any recipient whose inbox
+    cannot be read poisons the whole count rather than contributing zero to it —
+    a partial count presented as a total is a lie with a number on it.
+  - **Consecutive failures ESCALATE**, getting louder rather than quieter: INFO
+    while healthy, WARNING on a failing tick, ERROR once the streak reaches the
+    threshold, carrying the count, how long it has been failing, and the
+    underlying reason. The streak is persisted, so a systemd bounce does not
+    reset the alarm to zero.
+  - **A healthy idle tick stays at INFO and stays terse.** Making an idle daemon
+    noisy is how alarms get ignored, which would reproduce this same outage by a
+    different route.
+  - **`scitex-cards health` gained a `delivery_liveness` check** reading
+    `<store_dir>/runtime/notifyd-liveness.json` (last successful delivery, last
+    ok tick, consecutive failures, reason). `notifyd_alive` only answers "is the
+    process ticking" — it was GREEN throughout the outage, because the loop was
+    spinning perfectly while doing nothing. The new check is three-valued too:
+    no record reads `unknown`, never "healthy" and never "failing", because
+    inventing a verdict from a measurement nobody took is the same class of lie.
+
+  Shape: `TickReport` (`_delivery/_tick.py`) is a frozen dataclass with a
+  validator that refuses an unexplained `pending=None` and a fault count that
+  disagrees with the failure bookkeeping — malformed answers fail where they are
+  built. `DeliveryLiveness` (`_delivery/_liveness.py`) folds one tick's outcome
+  into the persisted streak. `deliver_pending` additionally returns `pending`
+  and `faults`. Terminal-comm-miss reporting moved to `_delivery/_terminal.py`
+  and the store checks to `_health_store.py` (both re-exported unchanged) to
+  stay under the file-size budget.
+
+- **The path stamp was claimed, then re-claimed, by whoever wrote last.**
+  `stamp_store_provenance` described itself as idempotent — "a re-stamp with the
+  same store is a no-op" — which is true only for a store with ONE name. This
+  one has three for a single inode, so the no-op was a FLIP, and the repair lost
+  a race to the next write that every container write wins. Measured live on
+  2026-07-28/29: stamping a host-visible name took `GET /tasks` from 500 to 200
+  serving 2,684 cards, and the next container-side card write put it back to 500.
+  The stamp now answers WHICH STORE THIS IS, not WHO WROTE LAST — an unstamped
+  database is claimed by the first write, a stamp already naming the same file is
+  left alone however this writer spells it, and a genuinely different file is
+  still refused upstream by the ownership guard. Sameness is asked of the SAME
+  `_same_file` predicate that guard uses, so the stamper cannot disagree with the
+  guard that reads its stamp. This shipped as a MITIGATION and says so in its own
+  docstring: path identity cannot be made correct across namespaces, only stable.
+  The uuid above is the real repair; this is what stopped the bleeding while it
+  was being built.
+
+### Added
+
+- `scitex-cards store adopt-uuid [--uuid X]` — binds the resolved database to
+  an identity, once, deliberately. Writes ONE `schema_meta` row and prints it;
+  does not touch `store_path`, does not touch any card row, does not change
+  what any resolver resolves. Idempotent.
+- `resolve_store()` reports `store_uuid` and `expected_uuid`, and the `health`
+  doctor's `store_identity` check NAMES the identity in its detail — on the
+  passing branches too, so a registry can be populated from a healthy board.
+
+  Design: `docs/design/store-identity-is-a-uuid.md`. The 16
+  `xfail(strict=True)` spec tests written before the implementation now pass
+  with their markers deleted and not one assertion edited.
+
+- **The chat page's agent list has a fuzzy filter, and the matcher is
+  scitex-ui's.** Operator standing request, repeated: 「普通にあいまい検索でフィ
+  ルタはいつも入れてください；scitex-ui にもなければいけない話です」. The board
+  already honoured it — its six filter `<select>`s are wrapped by scitex-ui's
+  Combobox — but the chat page's agent list did not, and it is the list that
+  grows without bound: every agent the fleet has ever registered, one flat
+  column, findable only by scrolling. The filter consumes
+  `STX.Combobox.fuzzyMatch`, the static scitex-ui exports beside the Combobox
+  class for consumers that want a list narrowed rather than a `<select>`
+  replaced. Writing a second subsequence matcher here would have meant two
+  different search behaviours in one app, so a test asserts the module CALLS
+  base's rather than reimplementing it; the substring fallback for an old
+  scitex-ui is deliberately dumber, and a test pins that too, so a page running
+  degraded is visibly rather than silently degraded.
+
+  Two structural details are load-bearing. `renderAgents` clears its container
+  every 5s, so the input lives OUTSIDE the rebuilt element (`#agent-list` exists
+  to be the wiped part) — inside it, the operator's query would vanish four
+  seconds after they typed it, which no screenshot taken right after typing can
+  show. And because rows are hidden after render, that same rebuild un-hides
+  everything, so a MutationObserver re-applies the filter; without it the filter
+  quietly stops working and keeps looking correct until you glance away.
+  Verified under jsdom against the rendered page, not asserted: typing `dvhlp`
+  (a subsequence of `dev-helper`, a substring of nothing) leaves one row, `wtg`
+  leaves both `worker-telegrammer-*`, a non-matching query says which word
+  emptied the list rather than showing a blank column, and a forced repaint
+  leaves the filtered set unchanged.
+
+- **A guard that everything we load from scitex-ui actually arrives.** Both
+  pages consume base through `if (window.STX && window.STX.Combobox) {…}`, which
+  is the right shape — a missing component must not take the page down — and
+  which also means a missing asset produces no error, no warning and no visual
+  cue: the page keeps working in its degraded branch indefinitely. The new test
+  resolves every `{% static 'scitex_ui/…' %}` path our templates reference
+  through the real finders, and then executes the bundle we feature-detect to
+  confirm it still attaches `window.STX.Combobox`. The second half is not
+  hypothetical: on 2026-07-29 scitex-ui regenerated that bundle with
+  `esbuild --format=esm`, producing valid JavaScript at the same path that
+  passed every exists() check and set NO global — which would have pinned every
+  consumer to its fallback permanently, with nothing failing anywhere.
+
+- **The Python rail now tells you when the CLI rail is dead.** Measured by
+  agent `grant` inside their own container: `scitex-cards --version` answered
+  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
+  0.17.9". Their card rail had been dead for HOURS with no way to know it. They
+  reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
+  does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
+  nothing ever prompted them to suspect cards was broken. One rail dead, one
+  rail alive, and they were watching the live one.
+
+  The fix is deliberately NOT "add the same gate to Python": that would take
+  the LAST WORKING RAIL from an agent whose CLI is already refusing, which is
+  strictly worse than the bug it fixes. `check_currency()` is unchanged and
+  still ERRORS at the CLI and MCP entry points. What Python gets instead is a
+  non-raising sibling: `currency_verdict()` answers in a fixed
+  `CurrencyVerdict(state, detail, checked)` shape whose `state` is
+  THREE-valued — `"current"` / `"stale"` / `"unknown"` — because scitex-dev is
+  an optional dependency and ABSENT TOOLING IS NOT EVIDENCE OF CURRENCY.
+  `warn_if_stale_once()` wraps it and logs ONE warning per process that names
+  the sibling rail explicitly — "this Python call SUCCEEDED, but the CLI/MCP
+  rail for this same package is currently REFUSING" — quotes scitex-dev's
+  message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
+  console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
+  alias `scitex-todo list-tasks`, because the latter is what actually refused
+  in the incident and is still what much of the fleet types; a reader must
+  recognise the command they are running.
+
+  A FAILING CURRENCY CHECK CANNOT TAKE THE PYTHON RAIL DOWN — and the guard
+  states its limit rather than claiming a false absolute. It swallows every
+  `Exception` **and `SystemExit`**, degrading all of it to `"unknown"`.
+  `SystemExit` is deliberate and was a real hole: it derives from
+  `BaseException`, not `Exception`, so a `sys.exit()` anywhere on the currency
+  path used to propagate straight out of `dm_send` — measured, with the store
+  never touched and the DM never sent, on the one rail this feature exists to
+  keep alive. scitex-dev is optional and independently versioned and its API is
+  deliberately not pinned, so "present but changed" is exactly the case covered;
+  a library calling `sys.exit()` inside a diagnostic helper is a LIBRARY BUG and
+  absorbing it is correct. The guard is NOT `BaseException`, and a test pins
+  that: `KeyboardInterrupt` (and `GeneratorExit`, `asyncio.CancelledError`) must
+  still propagate, because Ctrl-C is the operator's INTENT and swallowing it
+  would trade one usability bug for another. Swallow library misbehaviour,
+  propagate "stop now".
+
+  The remedy is a base rebake and never an in-place `pip` upgrade, and a test
+  pins that: inside an apptainer overlay an in-place upgrade leaves a whiteout
+  masking exactly ONE dist-info name; on the next base rebake that whiteout
+  covers a name that no longer exists, the new base copy is masked by nothing,
+  TWO dist-info directories appear, and the rail is dead AT BOOT. (Measured:
+  two agents, same version, same base, both healthy, OPPOSITE restart-safety,
+  differing only in WHEN they upgraded.)
+
+  Wired into the backend seam's messaging verbs — `LocalBackend.dm_send`
+  (the confirmed entry point from the incident), `dm_list` and
+  `poll_notifications` — and deliberately NOT into `_cli/_main.py` or
+  `_cli/_mcp.py`, which already call `check_currency()`.
+
+## [0.17.12] - 2026-07-29
+
+Cut to DELIVER the board fix, not because the code needed a version. The
+operator's board has been unusable for over a day — first serving a clean,
+zero-card page while 2654 cards sat in the canonical database, then a bare
+HTTP 500. The host runs a NON-EDITABLE wheel, so the fix reaches them the
+moment it reaches PyPI and not one minute before. Merged is not deployed.
+
+### Fixed
+
+- **The board decided whether the store existed by looking for a file the store
+  does not use.** `get_board` gated the CARD read on the existence of the
+  `tasks.yaml` SIDECAR beside the database:
+
+  ```python
+  store_exists = resolved.exists()
+  tasks = _load_global_tasks(resolved) if store_exists else []
+  ```
+
+  `resolve_tasks_path`'s own docstring says that path is "the non-task YAML
+  CONTAINER path — NOT the store identity"; card data lives in the database.
+  Under SQLite nothing creates that sidecar, so the gate was permanently shut
+  and the board took the literal `else []`. The card read was never ATTEMPTED,
+  which is why no guard anywhere had an opinion — the fail-loud reader in
+  `_read_canonical_db_or_raise` was never reached. Worse, the same branch set
+  `empty_store=True`, which tells the frontend to render a clean zero-card board
+  instead of an error banner. That is the visual signature of a WIPE, shown for
+  a store holding 2654 cards.
+
+  `get_board` now reads the cards unconditionally: no `else []`, no empty
+  fallback, no second read target. Every unreadable-store shape — absent
+  database, foreign identity stamp, an export disagreeing with its own
+  `COUNT(*)` — RAISES. `empty_store` is DERIVED FROM the read: true iff the
+  store was read and held no cards. Emptiness must be read, never inferred. The
+  sidecar now gates only what actually lives in it (`groups:`), through a named
+  `_load_sidecar_groups`, so the two reads cannot be conflated again by moving
+  one line. `_kick_board_refresh` carried the identical gate and could cache an
+  empty board that its deliberate except-keeps-previous branch would then serve
+  silently and indefinitely on `/graph` and `/timeline`; it is removed.
+
+  This is the same defect as the deleted `_store_read_sqlite` accelerator
+  (2026-07-21), whose post-mortem sits forty lines above the bug: a guard
+  comparing against a YAML file that stopped existing at the cutover, silently
+  degrading to an empty board. Fixing one instance of a pattern is not fixing
+  the pattern.
+
+- **The outage had no failing test because a fixture manufactured the missing
+  file.** The `_django` conftest carried an autouse fixture that CREATED the
+  `tasks.yaml` sidecar before every test in the package — precisely the file
+  production does not have. Every test in the package therefore ran in a world
+  where the gate was open, so the entire suite was green against a store shape
+  that has not existed since the SQLite cutover. The fixture is deleted. The one
+  test that genuinely needs a marker file — `test__board_stale_while_revalidate`,
+  which exercises the stat half of the cache key — now creates it in its own
+  fixture. The file is that test's subject, so that test owns it, and no other
+  test is handed a precondition production never provides.
+
+- **An unreadable store answered with an error page the board cannot parse.**
+  `api_dispatch` swallowed `FileNotFoundError` into a fixed 400 "No task store
+  found.", and every other load failure escaped the function entirely as an HTML
+  error page — which the board's `fetch` cannot read. That is why the operator
+  saw a bare HTTP 500 with no cause stated anywhere. It now answers an
+  unreadable store with a JSON 500 carrying the store's own reason.
+
+- **`/rev` reported the mtime of a file that does not exist, so an open board
+  stopped refreshing.** The reported store mtime was the SIDECAR's; under SQLite
+  that file is absent, so on any real deployment mtime was permanently `0.0`.
+  The board's AutoRefresh keys on `f"{mtime}:{count}"`, so with mtime frozen the
+  operator's open pane only refreshed when the card COUNT changed — a status
+  flip, a reorder, a reassignment or an edited title never reached the screen.
+  The store is the database, so the reported mtime is now the database's. WAL
+  can move it without a card change, which costs exactly one extra `/graph`
+  fetch: the frontend's `skipIfUnchanged` compares the fresh payload against the
+  last rendered one and returns before re-rendering. A spurious refresh is
+  invisible. A refresh that never happens is not.
+
+- **A retired environment variable was believed as policy during triage.**
+  `_env_compat.warn_retired_vars` now logs one ERROR per retired variable a live
+  config still exports. The board unit carries `SCITEX_CARDS_READ_BACKEND`,
+  which has zero references in `src`. It changed nothing, but it appeared to
+  state the read policy, so it was trusted while the board was down and sent
+  readers looking in the wrong place. The answer is never to make such a flag
+  work again — a flag that can be flipped is a second target that merely happens
+  to be switched the right way today.
+
+- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
+  package was renamed to `scitex-cards`, but what agents and humans actually
+  READ still said the old name: the `.mcp.json` key the install snippet emits
+  (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
+  every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
+  and `health` payloads, and the shipped skills. Two of these were not merely
+  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
+  dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
+  the `mcp__scitex-todo__*` tool namespace that no longer exists.
+
+  Renaming the emitted `.mcp.json` key would, on its own, have left configs
+  holding BOTH keys pointing at the same server — every tool loaded twice, both
+  copies writing one store. So `mcp install --apply` now RETIRES our stale
+  `scitex-todo` entry as part of writing the new one. Only our entry, matched on
+  console-script basename plus the `mcp` verb: an unrelated server that merely
+  shares the old key is left as found.
+
+  What the package PUBLISHES is unchanged, because that is a migration and not
+  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
+  variables, the `scitex_todo.*` legacy entry-point groups, the
+  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
+  all still work. Breaking any of them would have stopped the operator's running
+  units — one of which serves the board, and another of which is the live
+  systemd dashboard that execs the legacy console script.
+
+### Added
+
+- **The unread count now shows in the browser tab** — `(3) DM — SciTeX Cards
+  v0.17.12`. Operator, 2026-07-29: 「新着がある場合、ページタイトルに新着
+  メッセージ数（未読メッセージ数）を出してください。多少点滅などエフェクトが
+  あっても良いかもです。」 They are migrating off Telegram onto this page, and a
+  backgrounded tab looked identical whether or not an agent had written — the
+  one thing Telegram did for them that this page did not.
+
+  The count is NOT a new number. `/dm/threads` already returns per-peer
+  `unread` and the drawer already paints it as a badge beside each peer; the
+  title is handed that same array from that same 10s poll and sums it, so the
+  tab and the badges cannot disagree. `chat_title.js` has no fetch of its own,
+  and a test asserts it never grows one — a second reader of "how many unread?"
+  is a second answer waiting for `mark_read` to land between them.
+
+  The blink is BOUNDED and it is SILENT under `prefers-reduced-motion: reduce`.
+  A title that flashes until you look is hostile and unreadable in the tab
+  strip, so the alternation runs a fixed four half-steps at 700ms and then
+  settles on the count permanently; it also fires only when the count RISES,
+  because re-announcing a standing unread every poll is the forever-blink by
+  another route. Under reduced motion the count still appears — suppressing the
+  motion must not suppress the information.
+
+  `chat.js` was at its 512-line budget, so attachment RENDERING moved into
+  `chat_attach.js` — which already owned the upload that produces the url —
+  rather than the budget being exceeded. The url shape is one decision; the
+  code that writes it and the code that reads it now sit in one file. (The
+  peer-list rendering was the other extraction candidate and was deliberately
+  left alone: PR #604 is rewriting `renderAgents` in place, and moving a
+  function out from under an open PR is a merge conflict chosen for style.)
+
+### Changed
+
+- **The DM surface is called "DM" everywhere the operator reads it.** Operator,
+  2026-07-29: 「あと、"chat" となってますが、"DM" でそろえると良いと思います。」
+  The switcher, the heading and the browser tab now all say DM (the longer form
+  reads "Direct messages", their own preferred wording); the tab title was the
+  last holdout, still rendering `Chat — SciTeX Cards v…` in the screenshot they
+  sent. Tooltip and the switcher's `aria-label` moved with the label, because a
+  screen reader announcing "Board or Chat" over a control labelled DM is the
+  same inconsistency one layer down.
+
+  **The route is still `/chat` and deliberately stays there.** Renaming a
+  published URL is a MIGRATION, not a rename: the operator has it bookmarked,
+  agents reference it, and both spellings are pinned by tests. The same
+  reasoning leaves the JS module filenames (`chat_*.js`), the CSS classes and
+  the template filenames alone — none of them is a string the operator reads.
+  Tests hold both halves at once: visible text says DM, the URL still resolves
+  to `chat_page`.
+
+## [0.17.11] - 2026-07-28
+
+### Added
+
+- **Agents can attach files to a DM.** `dm_send_document(to, file_path,
+  caption)` — mirrors claude-code-telegrammer's `send_document`
+  argument-for-argument, so an agent that can send the operator a file over
+  Telegram makes the structurally identical call here. Until now there was NO
+  such API at any version: an agent asked which one to use and the honest
+  answer was "none exists", so a PDF arrived as prose describing a PDF. That
+  blocked the operator's migration off Telegram, because deliverables could not
+  reach them at all. Bytes are COPIED into the existing attachment store (the
+  source path is never recorded and never served from), reusing the same
+  storage and URL scheme as operator-side uploads so one renderer serves both.
+  The verb is deliberately absent from the HTTP backend surface — a path-taking
+  verb there would be an arbitrary-file read.
+
+### Fixed
+
+- **A closed mobile drawer was still in the tab order.** It is hidden with
+  `transform: translateX(-105%)`, and a transform moves PIXELS — it does not
+  remove an element from the tab order or the accessibility tree. At phone
+  width with the drawer shut, Tab put focus into the invisible agent list with
+  no visible focus ring, and the next Enter opened a thread the operator could
+  not see: the page appeared to jump on its own. Now `inert` (keyboard and
+  assistive tech) AND `visibility: hidden` (pointer) — neither implies the
+  other, so both are set and both are asserted separately.
+- **The drawer and its scrim could desync and strand the operator.** Two bare
+  `classList.toggle("open")` calls; `toggle()` flips whatever is there, so any
+  path clearing one without the other diverged them — and `close()` is called
+  from the thread-open handler. Once diverged, one tap put them in opposite
+  states, the bad half being a scrim with no drawer: greyed screen, nothing to
+  dismiss it, menu button behind it, force-reload the only exit. One boolean
+  now owns the state; a test rejects bare toggles so the pattern cannot return.
+  Escape closes it, and `aria-expanded` is maintained.
+
+Both drawer defects were found by scitex-ui while harvesting the component, and
+both were invisible to a screenshot, which is why they survived review.
+
+## [0.17.10] - 2026-07-28
+
+Cut to DELIVER the chat work, not because the code needed a version. The
+operator is migrating off Telegram onto the cards chat TODAY and every fix
+below was invisible to them while it sat on `develop`: they run an installed
+package, not a checkout. Merged is not deployed.
+
+Everything under the retired heading below was cut here or in 0.17.11.
+
+### Fixed
+
+- **The right-click menu rendered as unreadable grey.** Consuming scitex-ui
+  0.12.0 exposed a latent defect: its context-menu stylesheet reads
+  `--text-secondary` from `theme.css` but `--bg-secondary` from
+  `primitives/colors.css`, and this page linked only the former. One token
+  followed the theme, the other could never — dark grey text on a permanently
+  dark fill. The items were LIVE and merely looked disabled, which is worse
+  than broken because nobody files a bug against something that looks
+  deliberate. Fixed by activating base's dark theme (`<html data-theme="dark">`)
+  and taking every colour from scitex-ui: the page's local names are now
+  aliases onto base tokens and ZERO hex literals remain in its own CSS. A test
+  enforces that, because a written rule about not hardcoding colours is exactly
+  what gets forgotten. (Operator directive: 「最適 ui を常に使ってください」.)
+
+## [0.17.10 / 0.17.11] — entries filed late
+
+The 0.17.10 cut left a live `## [Unreleased]` heading HERE, below its own
+section, and later PRs appended to it — a search for "Unreleased" finds this one
+as readily as the one at the top of the file. #611's notifyd entry landed here,
+which would have shipped a day-long delivery outage documented below the 0.17.9
+heading where no reader of the release notes would ever meet it. Those entries
+have been moved up to 0.17.13. What remains below belongs to 0.17.10 and
+0.17.11, both already published. The heading is retired so nothing lands here
+again.
+
+### Changed
+
+- **Agents can attach a file to a DM** (`dm_send_document`). `dm_send` took
+  `to` and `body` and nothing else, so there was no API for sending a file at
+  all — an agent asked which one to use for a PDF and the honest answer was
+  "none exists". The PDF arrived as prose describing a PDF. With the operator's
+  conversation now largely moved onto cards DMs, that made real deliverables
+  undeliverable: three SOHO application documents and a loan contract in a
+  single day, all summarised instead of sent. The receiving half already
+  worked, so this is the missing sending half and nothing more.
+  `dm_send_document(to, file_path, caption)` mirrors
+  claude-code-telegrammer's `send_document` argument-for-argument, so an agent
+  that can hand the operator a file over Telegram makes the same call here.
+  The bytes are **copied** into the existing attachment store and get the
+  existing `attachments/<YYYY-MM>/<uuid>/<name>` url, so the chat pane's
+  current renderer serves agent-sent and operator-uploaded files identically —
+  no second storage layout, and therefore no second renderer. Storage layout,
+  the `MAX_UPLOAD_BYTES` ceiling and the root-containment check move into
+  `scitex_cards._attachments` as the single source for both entry points.
+  The original path is never recorded and never served from (a file the agent
+  later deletes still reaches the operator), and the verb is deliberately kept
+  out of `BACKEND_VERBS` — `_server.py` dispatches that tuple over HTTP, where
+  a path-taking verb would be an arbitrary-file read.
+
+- **DMs live in `cards.db` (schema v5)**. Direct messages were the one piece of
+  fleet data the canonical store's protections did not cover: they sat in a
+  `threads.json` sidecar, so WAL, store-identity stamping, tombstones, the
+  no-shrink guard, export and snapshot all applied to cards and to nothing the
+  operator actually talks through. Appending one message rewrote the entire
+  document — the same whole-document read-modify-write shape behind the
+  2026-07 board wipes. Four append-only tables (`dm_threads`,
+  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus SQLite triggers
+  that make `DELETE` and post-hoc edits unreachable at the ENGINE, not merely
+  guarded in Python. `append_message` now writes the database FIRST and raises
+  on failure; the sidecar is mirrored best-effort and kept complete as the
+  rollback state. Backfill (`scitex-cards dm backfill`, **dry-run by default**),
+  the A/B gate (`dm verify`) and an append-only cross-host union
+  (`dm export` / `dm merge`) ship with it. Rehearsed on a copy of the live
+  store: 165 threads / 2352 messages carried with the sidecar byte-identical
+  afterwards, a re-run inserting 0, and `verify` clean.
+
+  Two things the schema deliberately does NOT copy from the superseded
+  `messages` table. There is no `recipient` column — recipients are derived
+  from thread membership, which is the schema-level reason group DM was
+  impossible and now is not. And read state is a per-reader receipts table
+  rather than a boolean, because a scalar cannot say "Bob read it, Carol did
+  not" — which also leaves `dm_messages` immutable, making a cross-host merge a
+  pure union with no arbitration. The old `messages` table is left in place
+  untouched forever: dropping a table holding real rows is a count decrease,
+  the exact bug class this change exists to avoid.
+
+### Fixed
+
+- **The declared scitex-ui floor was two minor versions under what the code
+  needs.** `pyproject.toml` asked for `>=0.7.1`; `chat.html` has documented
+  `>=0.11.1` since #581 and said "the upgrade ships alongside this". It never
+  did. 0.11.1 is where `.stx-app-context-menu__item` gets `font-family:
+  inherit`, and the items are `<button>`s — buttons do not inherit the page font
+  and base ships no global button reset, so a resolver honouring 0.7.1 gets a
+  right-click menu rendered in the UA button font. `context-menu.css` EXISTS at
+  0.7.1 without that rule, which is why no file-level check could have caught
+  it: presence is not currency, and a floor is the only thing that expresses the
+  difference. Measured against the scitex-ui tags rather than inferred.
+
+  Worth recording what this was NOT: the board's Combobox was investigated on
+  the belief it had been inert behind this same too-low floor. It had not been.
+  The Combobox bundle first shipped in scitex-ui **0.6.0**, below even the old
+  0.7.1 declaration, and a jsdom run of the rendered board confirms all six
+  filter `<select>`s are hidden and replaced by live comboboxes with working
+  subsequence matching. Nothing about the board's fuzzy filtering was broken —
+  the floor bug is real and adjacent, not the same bug.
+
+- **`threads_path()` no longer writes a file** (design part 2 §7.3). A PATH
+  QUERY materialised the sidecar from a legacy `threads.yaml` as a side effect
+  of being asked where the sidecar would be — a landmine that would re-create
+  the retired file behind the migration's back, and the last YAML reader on
+  this path. `attachments_root()` stops locating the attachments directory
+  through that function and resolves from the store instead (same directory, no
+  attachment moves). That decoupling is preserved where the layout now lives,
+  `scitex_cards._attachments.attachments_root()`.
+
+- **Board | Chat switcher on both pages** (#586). `/chat/` was reachable only by
+  typing the URL — operator, 2026-07-28: 「今だと chat が隠し URL みたいに
+  なってしまっているので、ホームに Board | Chat のスイッチャーを付けて欲しい
+  です。」 With the migration off Telegram onto this chat under way, an
+  undiscoverable chat page is a migration blocker, not a polish item. One
+  partial (`templates/scitex_cards/_page_switcher.html`) renders on the board
+  home and on the DM page, so the two cannot drift; every href is built from
+  the view's `api_base` include root, the same mount-aware mechanism the
+  board's `API_BASE` const and the chat page's `<body data-api-base>` already
+  use — a hardcoded `/chat` is the bug class of #556 / #557 and is now linted
+  against. The chat header's old one-way "← board" link is replaced by the
+  switcher (the reverse trip was the missing half). Styling reuses the
+  segmented-control shape the board's Layout axis already uses; it reads the
+  host page's palette through six `--sw-*` variables and gets phone-sized tap
+  targets under the board's own 768px breakpoint.
+
+## [0.17.9] - 2026-07-28
+
+Everything below already existed on `develop` and on the host — but under the
+version string `0.17.8`, which was **already published**. Agents run their own
+`/opt/venv-sac` inside a container image, so they saw `0.17.8` and got the OLD
+code. sac measured it: same version string, `_may_stop.py` still on the bare
+count, the new renderer absent. This release exists so the fixes can actually
+reach a container, and it is the correction of a mistake — installing changed
+code onto a host without bumping the version manufactured two different
+codebases sharing one number, which is the exact "a version string is not
+evidence of the code that runs" trap this project has hit repeatedly.
+
+### Fixed
+
+- **The unread-inbox signal names its sender** (#582). `may_stop` collapsed the
+  inbox to `"N unread notification(s)"`, discarding the `actor` and `body` the
+  records already carried. A bare count is unactionable by construction — it
+  cannot distinguish the operator asking a direct question from a card-status
+  echo, so deferring it is rational. On 2026-07-28 the operator asked an agent
+  for its top-5 tasks twice, and told it they were migrating off Telegram, and
+  all three arrived as the number `4` and went unread for two hours. This
+  blocks the Telegram→cards migration rather than merely annoying. Note the
+  consumer forwards this `reason` verbatim by design, so the wording here is
+  the entire user-visible signal.
+
+### Added
+
+- **Chat attachments** (#580). `POST /dm/upload` (25 MB cap, store resolved
+  server-side), files under `attachments/<YYYY-MM>/<uuid>/<name>` so identical
+  filenames cannot collide, and a serve route that validates every path
+  component *and* re-checks the resolved path is still inside the attachments
+  root. Composer gains a paperclip button, clipboard paste and drag-drop;
+  images render inline, other files as a download chip.
+- **Right-click menu on messages** (#581), consuming scitex-ui's
+  `.stx-app-context-menu` rather than shipping a private one — zero private
+  menu CSS, asserted by test. Requires scitex-ui >= 0.11.1 (0.11.1 adds
+  `font-family: inherit`, and the items are `<button>`). Reply prefills a
+  quote; Copy copies the text.
+
+## [0.17.8] - 2026-07-28
+
+Card creation was broken fleet-wide, and the check that should have caught it
+was the reason nobody saw it. Both are fixed here.
+
+### Fixed
+
+- **Card CREATE guards the resolved database, not a synthetic YAML label**
+  (#574). `add_task` passed the ambient-creation guard a display label
+  (`<db_dir>/tasks.yaml`) rather than the store's real location, and the guard
+  answers "would this write MANUFACTURE a board?" with a literal
+  `path.exists()`. The YAML tier was deleted (#512), so that label can never
+  exist and the guard refused unconditionally: **every `add` failed for any
+  agent whose environment lacked `$SCITEX_CARDS_DB`**, while reads and updates
+  on the same store succeeded. The error even advised running `init-store`,
+  which did not help, because the file it created was not the file being
+  tested. The guard now receives `resolve_db_path(store)` — the same location
+  `save_tasks` writes and `init-store` creates — so CREATE agrees with
+  read/update. `_resolved_store` is unchanged, so the read surface is
+  untouched. Reported and reproduced by scitex-ui on 0.17.7.
+
+- **`health` measures store writability instead of asserting it** (#575).
+  `_verify_db_store` opens the database `mode=ro`, learns nothing about
+  writing, and then reported the store "readable, writable" — that word was a
+  hardcoded literal, so it could never be false. This is why the create-path
+  outage above stayed invisible: `add` refused every card while `health` called
+  the same store writable. Writability is now measured with `os.access`,
+  matching the sibling file-store branch that already did so. The store's
+  **directory** is checked too, because SQLite creates `-wal` / `-journal`
+  siblings — a writable file in a read-only directory still fails every write.
+  Both failures name the offending path and say what to do.
+
+### Notes
+
+- The pre-existing decoy-board regression test previously passed for the wrong
+  reason (it refused because the synthetic label never exists, not because the
+  database was absent). It now passes for the right one.
+
+## [0.17.7] - 2026-07-24
+
+Delivery that admits when it is not working, and a chat page that is readable.
+
+### Added
+
+- **`channel_reaches_session` health check** (#566). The client surfaces a
+  `notifications/claude/channel` push only from a server named on its launch
+  line (`--dangerously-load-development-channels server:<name>`), matched
+  against the key that server is registered under in the MCP config. A name the
+  client does not know is discarded on arrival — and because a channel
+  notification is fire-and-forget, the drain marks the record `seen` whether or
+  not the push was accepted, so a mismatch does not delay delivery, it destroys
+  it. Measured 2026-07-24: the scitex-todo → scitex-cards rename re-registered
+  this server as `scitex-cards` while agent launch lines still allowlisted the
+  pre-rename `scitex-todo`, and the fleet had been deaf to the board ever since.
+  A self-test notification was consumed and marked seen within six seconds and
+  never reached any session. `channel_capable` and `channel_drain` were green
+  throughout; neither asks whether the far end accepts what we send. The check
+  fails loudly, names both the registered and the allowlisted names, and prints
+  the exact flag to add plus the fact that a restart is required. It identifies
+  our server by program token, never by a substring of the command line — a
+  substring match claims sac's `sac mcp channel --name scitex-cards` entry as
+  ours and reports the channel healthy.
+
+### Fixed
+
+- **The chat thread renders in a readable centre column** (#567). Messages
+  spanned the full pane (measured at 1820px), putting a bubble at ~1420px. The
+  thread is now capped at 860px and centred, the compose box is capped and
+  centred to match, and the input starts at three rows instead of one.
+- **`/chat/` serves the DM page instead of 404ing** (#568). The page was
+  registered only as `chat`; `/chat/` matched neither that nor
+  `chat/<str:card_id>` (a str converter will not match an empty segment), fell
+  through to the catch-all and answered `{"error": "Unknown endpoint: chat/"}`.
+  Now dual-registered exactly as `legacy/` and `board-v3/` already were.
+- **Chat timestamps render on the viewer's clock** (#569). `shortTs`
+  string-sliced the ISO stamp and printed UTC digits under a local label, so a
+  message stored at `20:39Z` displayed as "20:39" to a reader whose clock said
+  05:39 the next morning. Now parsed and rendered at the viewer's own offset, so
+  the date rolls correctly; a stamp carrying no zone is pinned to UTC before
+  parsing (the store writes UTC), and an unparseable value is shown verbatim
+  rather than as a confidently wrong time.
+
+## [0.17.6] - 2026-07-24
+
+Overdue-alarm correctness and store-export integrity, plus the hub-mount
+integration follow-ups to #556.
+
+### Fixed
+
+- **`overdue=True` honours the time-of-day in datetime deadlines** (#563).
+  `is_overdue` flattened every deadline to a bare date before comparing, so a
+  deadline carrying a time (`2026-07-23T09:00`) was not overdue until its whole
+  day had passed — and that filter is the only thing that surfaces an overdue
+  card, so a timed deadline was a silent no-op alarm. A timed deadline is now
+  overdue the moment its timestamp passes (aware-normalised, so naive-vs-aware
+  never raises); a date-only deadline keeps its whole-day semantics; a recurring
+  deadline stays never-overdue; the board date-pill is unchanged. A stored
+  deadline the parser cannot read now logs loudly instead of silently reading
+  as "not overdue".
+- **Store export + verify-count come from ONE snapshot** (#562), killing a
+  TOCTOU that could report a false `INCOMPLETE`.
+- **The chat page is mount-aware.** `chat.js` fetched root-absolute `/dm/*`
+  paths, so the DM page's data calls escaped a sub-path mount (the hub's
+  `/apps/cards/`) exactly like the board's did before #556. `chat_page` now
+  derives the include root from `request.path`, `chat.html` always renders it
+  on `<body data-api-base>` (plus the "← board" header link now targets the
+  include root, not the site root), and `chat.js` reads the marker — throwing
+  loudly when it is absent, never silently guessing a root mount. Regression
+  lint extended to `static/scitex_cards/chat/*.js`.
+- **Honest empty state — an absent store renders 0 cards, not an error
+  banner** (adapted from unpushed `9db9146b` to the SQLite-era `get_board`).
+  A fresh workspace resolves to a store-identity path that does not exist
+  yet; `load_groups` on that absent file was the one leftover raise that
+  turned the new tenant's board into a 400 "No task store found." (and
+  `/timeline` into a 500). Reads now return 200 with 0 rows and an
+  `empty_store: true` flag on the `/graph`, `/tasks` and `/timeline`
+  payloads; loud paths (unknown endpoint 404, handler exceptions 500, the
+  FileNotFoundError → 400 backstop for mid-load raises) are unchanged.
+
+### Added
+
+- **Load-failure UI states on board_v3.** A failed `/graph` now reads the
+  response body before giving up: the hub's signed-out 401
+  (`{"error": "signed-out", "login_url"}`) renders a sign-in panel, the hub
+  tenancy middleware's no-active-project 404 (`{"error", "hint"}`) renders a
+  "No active project" panel linking the hint, `empty_store: true` renders the
+  normal zero-card board, and anything unrecognized keeps the loud red error
+  — now carrying the server's `error` field and the HTTP status.
+
+### Changed
+
+- `handlers/graph.py` line-limit split: the fleet-liveness builder
+  (`_build_fleet` + helpers) moved verbatim to `handlers/graph_fleet.py`
+  (its mirrored test file already existed under that name); `handlers.graph`
+  re-exports, so dotted references keep resolving.
+
+## [0.17.5] - 2026-07-21
+
+One write target, one read path, loud failure everywhere else. Closes the
+silent-wrong-board class found in production on 2026-07-21.
+
+### Removed
+
+- **The dual-write mirror is deleted as a feature** (#545). A stale provenance
+  stamp plus the mirror env flag had routed a session's writes into a side file
+  while every call reported success. SQLite is the only write target; a write
+  that cannot reach the canonical DB raises. A sentinel test fails if the
+  toggle is ever reintroduced.
+- **The S2 read accelerator is deleted** (#547). On containers with the
+  deprecated read-backend env set, it refused the unstamped DB and fell through
+  to an empty bundled-example board while claiming reads were correct. The DB
+  is canonical unconditionally; the backend env knobs are gone; an
+  unresolvable store raises.
+- **The dead legacy-sidecar import module is deleted** (#546), and CLI headers
+  now name the real store instead of a legacy path.
+
+- **The bundled-example resolver is deleted** (#554). No code path can resolve
+  a packaged fixture as the store; an unresolvable store raises. (An
+  env-lost agent resolving the example was the vector of the fourth wipe.)
+
+### Added
+
+- **`min_client_version` floor** (#548). The store can carry a minimum client
+  version; an older client errors at DB-open — reads and writes both — with
+  the exact upgrade command. Set only via the deliberate
+  `db set-min-client-version` verb, which refuses a floor above its own
+  version. Complemented by scitex-dev's currency gate.
+- **The append-only invariant** (#552). A written card never physically
+  disappears: the write chokepoint refuses any net row decrease,
+  `delete_task` tombstones instead of deleting, and no flag opts out.
+  (Operator ruling after the third wipe.)
+- **The CURRENCY gate** (#550). Invoking the CLI or starting the MCP server
+  on a stale or payload-broken install errors with the exact upgrade command
+  (via `scitex_dev.staleness.ensure_current`, `scitex-dev>=0.34.0` as an
+  optional extra; a no-op when scitex-dev is absent). Imports stay
+  side-effect-free — the gate runs at invocation, never at import.
+- **Forced test isolation** (#551). The test suite pins every
+  store-influencing variable (including `SCITEX_DIR`, the leak that wiped the
+  board) to a tmp store, and an end-of-session assert fails the run loudly if
+  the real board's mtime changed. Full-suite runs mechanically cannot touch a
+  live board.
+- **Snapshot staleness guard** (#544). The hourly snapshot refuses to commit
+  an export that does not reflect the DB's live state (count + newest
+  last_activity), closing the false-green backup found the same day. Sits
+  beside the existing shrink-refusal guard.
+
+## [0.17.4] - 2026-07-21
+
+The YAML-to-SQLite cutover release. SQLite is the store; YAML is gone from the
+task path.
+
+### Changed
+
+- **`$SCITEX_CARDS_DB` is the sole store identity** (#540). The store is no
+  longer identified by a resolved `tasks.yaml` path, ending the class of
+  read-only / data-loss recurrences in which a YAML-path resolver re-stamped
+  the database to a foreign store and locked writers out.
+- **YAML sidecars migrated to JSON** (#541). The inbox, threads, notify,
+  recipients, and delivery-ledger sidecars now persist as JSON via one-time
+  migrate-and-drop; `db export` emits JSON. Functional YAML is eliminated from
+  the task path. A documented residual (the high-risk users-registry heartbeat
+  path, line-cap-blocked modules, and genuinely external formats such as
+  agent-container `spec.yaml` and skill frontmatter) is deferred to 0.17.5.
+
+## [0.17.3] - 2026-07-20
+
+The store-safety release. Five fixes, each closing a path by which the fleet's
+one board could be destroyed or the fleet could fail to boot.
+
+### Fixed
+
+- **`db import` could wipe the live board, and could not restore it** (#531).
+  The importer resolved its destination from the ambient environment, so an
+  import against any store could rebuild the one globally-resolved database.
+  Store identity is now compared by inode, dissolving the class where two
+  spellings of one file (`~/.scitex/cards` vs `~/.scitex/todo`) each re-stamped
+  the other and locked writers out.
+- **A write no longer manufactures a board nobody asked for** (#533). A write
+  to a store that did not exist silently created it, which is how a packaged
+  fixture came to be read as the board. The write now refuses.
+- **The hourly snapshot no longer declares a YAML import** (#534). The cadence
+  job declared `db snapshot --refresh`, which rebuilds the database *from* a
+  YAML document — a data-loss engine on a timer once the database is the store.
+  Removed at the declaration, with a test that fails if any scheduled job
+  declares `--refresh` or `--from-yaml`. `--push` (the off-site backup) is
+  kept.
+- **Reconcile inserts and updates; it never deletes** (#536). A document that
+  merely *lacked* a card destroyed it — the mechanism that removed the same 16
+  cards twice in one day, because a writer holding a document read before those
+  cards existed wrote it back and the diff called them "removed". The delete is
+  removed from the reconcile path, not guarded: absence from a document is not
+  evidence of deletion, it is evidence of a stale read. The explicit delete
+  verb is unaffected.
+- **The bundled skills directory is named for this package** (#532).
+  `_skills/scitex-todo` → `_skills/scitex-cards`, with an in-repo compat symlink
+  so the fleet's staging links do not dangle mid-migration (the failure that
+  made every agent unstartable on 2026-07-16).
+
 ## [0.17.1] - 2026-07-19
 
 ### Fixed

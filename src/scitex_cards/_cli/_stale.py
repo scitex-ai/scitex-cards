@@ -37,8 +37,7 @@ from .._backlog_triage import BACKLOG_STATUS
 from .._paths import resolve_tasks_path
 from .._store import load_tasks
 from ._compat import deprecated_alias, spec_command_kwargs
-from ._write import _TASKS_OPTION, _emit
-
+from ._write import _emit
 
 _DEFAULT_DAYS = 14
 
@@ -140,14 +139,11 @@ def _age_days(task: dict, now):
     is_flag=True,
     help="Emit the result as a JSON array (machine-readable).",
 )
-@_TASKS_OPTION
-def list_stale_cmd(
-    days, include_no_timestamp, project, assignee, as_json, tasks_path
-) -> None:
+def list_stale_cmd(days, include_no_timestamp, project, assignee, as_json) -> None:
     if days < 0:
         raise click.UsageError("--days must be non-negative")
 
-    resolved = resolve_tasks_path(tasks_path)
+    resolved = resolve_tasks_path(None)
     tasks = load_tasks(resolved)
 
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -161,7 +157,10 @@ def list_stale_cmd(
             continue
         if project is not None and (t.get("project") or "") != project:
             continue
-        if assignee is not None and (t.get("assignee") or t.get("agent") or "") != assignee:
+        if (
+            assignee is not None
+            and (t.get("assignee") or t.get("agent") or "") != assignee
+        ):
             continue
         reasons = _stale_reasons(t, now, cut)
         if not reasons:
@@ -202,9 +201,7 @@ def list_stale_cmd(
     for r in rows:
         age = "—" if r["age_days"] is None else f"{r['age_days']}d"
         reason_str = "; ".join(r["reasons"])
-        click.echo(
-            f"  {r['id']:55} | {r['project']:20} | {age:>6} | {reason_str}"
-        )
+        click.echo(f"  {r['id']:55} | {r['project']:20} | {age:>6} | {reason_str}")
 
 
 def register(main: click.Group) -> None:

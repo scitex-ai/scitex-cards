@@ -9,20 +9,23 @@ surface. They share nothing but a store path, and the read surface is the half t
 the fleet hits on every poll. ``_store`` re-exports every name defined here, so no
 caller had to move.
 
-WHERE THE FLEET'S TIME ACTUALLY GOES (live board, 1,452 cards / 5.81 MB, in-process,
-median of 7, CPython 3.12.3, 2026-07-13)::
+SQLite IS the store (see :mod:`scitex_cards._store_backend`) — there is no other
+backend and no way to select one. :func:`list_tasks` always reads through
+:func:`scitex_cards._model.load_tasks`, which reads the canonical database via
+:func:`scitex_cards._store._read_canonical_db_or_raise`. An unresolvable or
+unreadable store RAISES with an actionable message; there is no YAML chain and no
+bundled example left to fall back to (both were deleted 2026-07-19/21).
 
-    list_tasks()                           1217 ms   <- 1,452 cards
-    list_tasks(assignee="scitex-todo")      991 ms   <-   152 cards
-    list_tasks(scope="agent:scitex-todo")   976 ms   <-    79 cards
-
-Asking for 79 cards costs what asking for all 1,452 costs, because :func:`list_tasks`
-parses the WHOLE YAML document and only THEN filters in Python. **The cost is the
-parse, not the query** — which is why "just ask for less" was never going to help,
-and why an INDEX is the only lever. That is the entire case for the SQLite read
-backend dispatched below (:mod:`scitex_cards._store_read_sqlite`, which serves those
-same three queries in 420 / 24 / 10 ms), and it is why S2 targets the READ path even
-though the WRITE path is the one that produced the dramatic 135-second number.
+This module used to also dispatch to a second, SQLite-indexed read path
+(``_store_read_sqlite`` — S2) when a set of runtime checks passed, and fell back to
+this Python-predicate path otherwise. That accelerator is DELETED (2026-07-21
+incident): now that SQLite is canonical rather than a mirror, its freshness guard
+compared the DB's provenance stamp against a YAML file that no longer exists, so it
+refused to serve and fell back — and that fallback resolved to an empty bundled
+example, silently serving a blank board while claiming reads were merely slow. A
+mirror that can never again pass its own freshness check is not a slow path, it is
+dead code that fails dangerous. One read path, always exercised, always through the
+same ownership-guarded reader.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from pathlib import Path
 
 from ._model import VALID_STATUSES, load_tasks
 from ._paths import resolve_tasks_path
+from ._task import _is_tombstoned
 
 #: Env var an agent sets to scope its default `list_tasks` / `summary` view. The
 #: CLI's `--scope` flag overrides this; pass `scope=""` in the Python API to see
@@ -99,13 +103,15 @@ def _match(
       - ``blocking_me`` is the BLOCKING-YOU predicate (board-v3 panel):
         ``status == "blocked" AND blocker == "operator-decision"``.
         Composes with the other filters via AND.
+      - a TOMBSTONED row (see :func:`scitex_cards._task._is_tombstoned`)
+        never matches, regardless of any other filter — see the 2026-07-21
+        tombstone change: ``delete_task`` keeps the row on disk forever, so
+        board reads must keep excluding it exactly as when it was
+        physically removed.
 
-    THIS IS THE SPEC the SQLite read path must reproduce exactly. Every clause
-    below has a counterpart in :func:`scitex_cards._store_read_sqlite._where`, and
-    `tests/test_store_read_sqlite.py` proves the two agree card-for-card across a
-    matrix of filter combinations. Change one, change both — or the two backends
-    quietly answer different questions.
     """
+    if _is_tombstoned(task):
+        return False
     if scope is not None and task.get("scope") != scope:
         return False
     if assignee is not None and task.get("assignee") != assignee:
@@ -196,39 +202,13 @@ def list_tasks(
     The returned list contains fresh dicts, safe to mutate without
     affecting the on-disk store (no save here).
 
-    READ BACKEND (S2). The YAML path below costs ~1.2 s on the live 1,452-card /
-    5.81 MB store — and a FILTERED call costs the same, because the whole document is
-    parsed and only then filtered. The cost is the PARSE, not the query. When
-    ``SCITEX_TODO_READ_BACKEND=sqlite`` is set AND the mirror passes every runtime
-    check in :func:`scitex_cards._store_read_sqlite.enabled` (present, complete,
-    FRESH, and written by code that can actually populate it), the identical query is
-    served from the indexed mirror instead. Default OFF; any doubt at all falls back
-    to this YAML path, loudly. The two paths are proven to return identical results,
-    card-for-card, across a filter matrix — ``tests/test_store_read_sqlite.py``.
+    Reads always go through :func:`scitex_cards._model.load_tasks`, which reads the
+    ONE canonical SQLite database and raises rather than returning an empty or
+    stale document when the store cannot be resolved (see the module docstring —
+    the S2 SQLite-indexed accelerator that used to dispatch here is deleted).
     """
     resolved = _resolved_store(store)
     scope_eff = _default_scope(scope)
-
-    from . import _store_read_sqlite as _sqlite_read
-
-    if _sqlite_read.enabled(resolved):
-        return _sqlite_read.list_tasks_sqlite(
-            resolved,
-            scope=scope_eff,
-            assignee=assignee,
-            status=status,
-            statuses=statuses,
-            agent=agent,
-            project=project,
-            host=host,
-            repo=repo,
-            blocker=blocker,
-            kind=kind,
-            id_prefix=id_prefix,
-            blocking_me=blocking_me,
-            overdue=overdue,
-        )
-
     tasks = load_tasks(resolved)
     return [
         dict(t)
@@ -265,7 +245,7 @@ def summarize_tasks(
     ::
 
         {
-          "store": "/abs/path/to/tasks.yaml",
+          "store": "/abs/path/to/cards.db",
           "total": int,
           "by_status": {<status>: int, ...},  # one key per VALID_STATUSES
           "by_scope": {<scope|"">: int, ...},

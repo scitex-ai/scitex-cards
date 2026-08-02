@@ -29,7 +29,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from scitex_cards._paths import ENV_TASKS
+from scitex_cards._db import ENV_DB
 from scitex_cards._push import (
     DEFAULT_TIMEOUT_S,
     ENV_DRY_RUN,
@@ -42,7 +42,6 @@ from scitex_cards._push import (
     turn_url_for,
 )
 from scitex_cards._users import register_user
-
 
 # --------------------------------------------------------------------------- #
 # Isolation — pin the DEFAULT task store to an empty per-test file            #
@@ -64,10 +63,17 @@ def _hermetic_resolution(tmp_path):
         populated ``tmp_path`` store.
     PA-306-compliant: plain os.environ save/restore, no monkeypatch.
     """
-    store = tmp_path / "_empty_push_store.yaml"
-    store.write_text("tasks: []\n", encoding="utf-8")
-    saved = {k: os.environ.get(k) for k in (ENV_TASKS,)}
-    os.environ[ENV_TASKS] = str(store)
+    from scitex_cards._db import connect, init_schema
+
+    store = tmp_path / "_empty_push_store.db"
+    conn = connect(str(store))
+    try:
+        init_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    saved = {k: os.environ.get(k) for k in (ENV_DB,)}
+    os.environ[ENV_DB] = str(store)
     try:
         yield
     finally:
@@ -189,7 +195,6 @@ class TestUserRegistryResolution:
 
         So the user registry is the only resolution path that can win.
         """
-        env.set(ENV_TASKS, str(store))
         env.delete(ENV_MAP)
         for k in list(os.environ):
             if k.startswith(PER_AGENT_PREFIX):
@@ -252,7 +257,6 @@ class TestUserRegistryResolution:
             turn_url="https://registry/turn",
             store=store,
         )
-        env.set(ENV_TASKS, str(store))
         env.set(ENV_MAP, json.dumps({"proj-both": "https://env-map/turn"}))
         # Act
         url = turn_url_for("proj-both")
@@ -264,7 +268,6 @@ class TestUserRegistryResolution:
         # resolution falls through to the env map (step 1).
         store = tmp_path / "tasks.yaml"
         register_user(kind="agent", names=["proj-noep"], store=store)
-        env.set(ENV_TASKS, str(store))
         env.set(ENV_MAP, json.dumps({"proj-noep": "https://env-fallback/turn"}))
         # Act
         url = turn_url_for("proj-noep")
@@ -511,8 +514,11 @@ class TestDeliver:
 
             t0 = _t.monotonic()
             r = deliver(
-                "alpha", "ping", kind="comment-relay",
-                timeout=0.5, dispatched_is_ok=False,
+                "alpha",
+                "ping",
+                kind="comment-relay",
+                timeout=0.5,
+                dispatched_is_ok=False,
             )
             elapsed = _t.monotonic() - t0
         finally:

@@ -11,9 +11,10 @@ up the host's `~/proj/*` lanes.
 Covers:
 
   - `init_schema` creates the four expected tables
-  - `rebuild_index` populates from the global store alone
-  - `rebuild_index` overlays per-project lanes on top of global
-  - lane wins on id collision (matches PR #137's union policy)
+  - `rebuild_index` populates from the canonical store
+  - a rebuild indexes every card the store holds (the per-file lane
+    UNION is no longer expressible now the store is a single SQLite DB
+    that `load_tasks` reads regardless of the path handed to it)
   - `info` reports row count + schema version + last_index_at
   - `query_tasks` filters by project / agent / status
   - `index_path` honors the env override
@@ -23,6 +24,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -30,9 +32,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from scitex_cards._cli import main
 from scitex_cards import _index as _idx
-
+from scitex_cards._cli import main
 
 # === Fixtures ===============================================================
 
@@ -47,8 +48,26 @@ def index_target(env, tmp_path):
 
 
 def _write_store(path: Path, body: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
+    """Seed the canonical SQLite store from a YAML-text fixture.
+
+    The store is SQLite now: ``load_tasks`` (which ``rebuild_index`` uses)
+    reads the canonical database and IGNORES the path it is handed. So the
+    fixture text is parsed into a doc and seeded into the pinned canonical
+    DB (``SCITEX_CARDS_DB``). The file is still written on disk -- at BOTH
+    the caller-passed ``path`` and the pinned store identity -- so
+    ``rebuild_index``'s ``global_path.exists()`` gate is satisfied whichever
+    path the caller (a direct ``tmp_path`` arg, or the CLI-resolved store)
+    hands it. Each call re-seeds; no test seeds twice.
+    """
+    from conftest import seed_db_from_doc
+
+    from scitex_cards._yaml import safe_load
+
+    doc = safe_load(body) or {}
+    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    for target in (path, Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
 
 
 # === init_schema ===========================================================
@@ -63,7 +82,7 @@ class TestInitSchema:
         with _idx.open_connection(index_target) as c:
             _idx.init_schema(c)
             rows = c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' " "AND name='tasks'",
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'",
             ).fetchall()
         # Assert
         assert len(rows) == 1
@@ -74,7 +93,7 @@ class TestInitSchema:
         with _idx.open_connection(index_target) as c:
             _idx.init_schema(c)
             rows = c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' " "AND name='tags'",
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='tags'",
             ).fetchall()
         # Assert
         assert len(rows) == 1
@@ -85,7 +104,7 @@ class TestInitSchema:
         with _idx.open_connection(index_target) as c:
             _idx.init_schema(c)
             rows = c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' " "AND name='meta'",
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='meta'",
             ).fetchall()
         # Assert
         assert len(rows) == 1
@@ -125,45 +144,36 @@ class TestRebuildGlobalOnly:
         assert row["value"] == str(_idx.SCHEMA_VERSION)
 
 
-# === rebuild_index — lane union ============================================
+# === rebuild_index — index reflects the whole store ========================
 
 
 class TestRebuildWithLanes:
-    """Per-project lanes overlay on top of the global store."""
+    """The rebuilt index carries every card the store holds.
+
+    The old per-project lane UNION (global file + lane file, lane wins on
+    id collision) is no longer expressible: the store is SQLite and
+    ``load_tasks`` ignores the path it is handed, so ``rebuild_index``'s
+    "global" and "lane" reads BOTH return the one canonical DB (one row per
+    id). What survives -- and is what this class now asserts -- is that a
+    rebuild indexes every card present in the store. The distinct-source
+    collision test was deleted with this migration (subject gone).
+    """
 
     def test_lane_card_appears_in_index(self, index_target, tmp_path):
-        # Arrange
-        global_store = tmp_path / "global.yaml"
-        _write_store(global_store, "tasks:\n  - {id: g1, title: G1, status: pending}\n")
-        lane = tmp_path / "lane" / "tasks.yaml"
-        _write_store(lane, "tasks:\n  - {id: lan1, title: LAN1, status: pending}\n")
+        # Arrange — seed the canonical store with two distinct cards.
+        store = tmp_path / "global.yaml"
+        _write_store(
+            store,
+            "tasks:\n"
+            "  - {id: g1, title: G1, status: pending}\n"
+            "  - {id: lan1, title: LAN1, status: pending}\n",
+        )
         # Act
-        _idx.rebuild_index(global_store, [lane])
-        # Assert
+        _idx.rebuild_index(store, [])
+        # Assert — the rebuilt index carries both store cards.
         with _idx.open_connection(index_target) as c:
             rows = {r["id"] for r in c.execute("SELECT id FROM tasks")}
         assert rows == {"g1", "lan1"}
-
-    def test_lane_overrides_global_on_collision(
-        self,
-        index_target,
-        tmp_path,
-    ):
-        # Arrange — both have an id=x row with different titles.
-        global_store = tmp_path / "global.yaml"
-        _write_store(
-            global_store, "tasks:\n  - {id: x, title: GLOBAL, status: pending}\n"
-        )
-        lane = tmp_path / "lane" / "tasks.yaml"
-        _write_store(lane, "tasks:\n  - {id: x, title: LANE, status: pending}\n")
-        # Act
-        _idx.rebuild_index(global_store, [lane])
-        # Assert
-        with _idx.open_connection(index_target) as c:
-            row = c.execute(
-                "SELECT title FROM tasks WHERE id='x'",
-            ).fetchone()
-        assert row["title"] == "LANE"
 
 
 # === info ===================================================================
@@ -246,15 +256,16 @@ class TestCliRebuildAndInfo:
         self,
         index_target,
         tmp_path,
-        env,
     ):
-        # Arrange — point the global store at a tmp YAML; empty lane glob.
+        # Arrange — seed the pinned canonical store; empty lane glob.
+        # (The CLI resolves the pinned store itself; repointing the store
+        # env at a tmp path is the STORE-PATH anti-pattern -- it would
+        # desync from the seeded DB and read back empty.)
         store = tmp_path / "global.yaml"
         _write_store(
             store,
             "tasks:\n  - {id: a, title: A, status: pending}\n",
         )
-        env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
         # The autouse fixture already sets SCITEX_TODO_LANE_GLOBS="".
         runner = CliRunner()
         # Act
@@ -268,12 +279,10 @@ class TestCliRebuildAndInfo:
         self,
         index_target,
         tmp_path,
-        env,
     ):
         # Arrange
         store = tmp_path / "global.yaml"
         _write_store(store, "tasks: []\n")
-        env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
         runner = CliRunner()
         # Act
         rb = runner.invoke(main, ["index", "rebuild", "--dry-run"])

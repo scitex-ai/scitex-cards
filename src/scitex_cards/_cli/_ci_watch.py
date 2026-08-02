@@ -18,7 +18,7 @@ This module is todo's lane.
 ## What it does
 
 For each repo configured in
-``~/.scitex/todo/dashboard.yaml`` (``fleet.ci_status.repos``) — or
+``~/.scitex/cards/dashboard.json`` (``fleet.ci_status.repos``) — or
 the env override ``SCITEX_TODO_FLEET_CI_REPOS=owner/name,...``:
 
 1. Call the existing
@@ -193,15 +193,20 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
     ),
 )
 @click.option(
-    "--once", is_flag=True,
+    "--once",
+    is_flag=True,
     help="Run ONE sweep then exit 0 (cron mode). Skip the loop.",
 )
 @click.option(
-    "--interval", type=int, default=300, show_default=True,
+    "--interval",
+    type=int,
+    default=300,
+    show_default=True,
     help="Loop interval in seconds. Ignored when --once is set.",
 )
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Print the planned per-repo transition + summary without writing the state cache.",
 )
 def watch_ci_cmd(once: bool, interval: int, dry_run: bool) -> None:

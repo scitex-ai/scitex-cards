@@ -97,7 +97,12 @@ def help_wait(
     # observe "no card" and double-insert. Doing the existence decision under
     # one lock makes the upsert atomic.
     with _store_lock(resolved):
-        tasks = load_tasks(resolved) if resolved.exists() else []
+        # Read the canonical DB unconditionally. The old `if resolved.exists()
+        # else []` gated on the YAML store PATH (never a real file under
+        # SQLite), so this always read [] — re-inserting (regenerating
+        # created_at) instead of upserting, AND writing back only the new card,
+        # which diff-deleted every OTHER agent's cards. load_tasks reads the DB.
+        tasks = load_tasks(resolved)
         existing = next((t for t in tasks if t.get("id") == card_id), None)
         if existing is not None:
             existing["title"] = title
@@ -146,8 +151,10 @@ def help_clear(
         raise ValueError("help_clear: 'agent' is required and must be non-empty")
     card_id = help_card_id(agent)
     resolved = _resolved_store(store)
-    if not resolved.exists():
-        return {"task_id": card_id, "cleared": False}
+    # No YAML-file existence gate: the store is the canonical DB. load_tasks
+    # reads it; an absent card still yields cleared=False below (target None).
+    # The old `if not resolved.exists()` made help_clear a permanent no-op
+    # under SQLite (the store path is never a real file).
     with _store_lock(resolved):
         tasks = load_tasks(resolved)
         target = next((t for t in tasks if t.get("id") == card_id), None)

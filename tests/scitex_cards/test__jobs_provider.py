@@ -37,6 +37,10 @@ def _board() -> object:
     return next(j for j in provide_jobs() if j.name == "scitex-todo.dashboard")
 
 
+def _snapshot() -> object:
+    return next(j for j in provide_jobs() if j.name == "scitex-cards.snapshot")
+
+
 def test_board_kind_is_service():
     # Arrange
     # Act
@@ -101,18 +105,60 @@ def test_board_description_mentions_the_canonical_url():
     assert "8051" in job.description
 
 
-# EOF
+#: WHY the three `snapshot` tests below are split but share one rationale:
+#: the ADR-0010 backup rail runs on a TIMER, not on somebody remembering. A
+#: typo in the kind or the command silently disarms the whole backup rail, so
+#: the kind and the exact command are each pinned on their own.
+#:
+#: THE THIRD TEST INVERTED, 2026-07-20. It used to assert that `--refresh` was
+#: PRESENT, describing it as "load-bearing pre-cutover: import IS the freshness
+#: step". That was true while YAML was canonical and the database was a mirror
+#: of it. The cutover made the database the store, and the same flag inverted
+#: into a data-loss engine on a timer: it rebuilds cards.db FROM a YAML file, so
+#: every hour it would overwrite the DB — including every card written in the
+#: preceding hour — while logging a successful refresh and a successful push.
+#:
+#: The test now asserts the flag is ABSENT. Note the old assertion was not
+#: wrong when written and did not become wrong quietly: it stated its own
+#: expiry condition ("pre-cutover") in the comment beside it, which is why this
+#: change is a two-line inversion rather than an archaeology exercise.
 
 
 def test_provide_jobs_includes_the_snapshot_cadence():
-    """The ADR-0010 backup rail runs on a timer, not on somebody remembering."""
     # Arrange
-    from scitex_cards._jobs_provider import provide_jobs
+    # Act
+    job = _snapshot()
+    # Assert — cron kind = a timer, not a service somebody has to start.
+    assert job.kind == "cron"
 
-    jobs = {j.name: j for j in provide_jobs()}
+
+def test_snapshot_command_is_the_db_snapshot_verb():
+    # Arrange
+    # Act
+    job = _snapshot()
     # Assert
-    snap = jobs["scitex-cards.snapshot"]
-    assert snap.kind == "cron"
-    assert snap.command == "scitex-cards db snapshot --refresh --push"
-    # --refresh is load-bearing pre-cutover: import IS the freshness step.
-    assert "--refresh" in snap.command
+    assert job.command == "scitex-cards db snapshot --push"
+
+
+def test_snapshot_command_does_not_import_yaml_over_the_database():
+    # Arrange
+    # Act
+    job = _snapshot()
+    # Assert — `--refresh` imports a YAML document over the store. On an
+    # unattended hourly timer that is a wipe with a success log. On
+    # 2026-07-20 the live board went 2,165 cards -> 5 by exactly this route.
+    assert "--refresh" not in job.command
+
+
+def test_snapshot_command_still_pushes_off_site():
+    # Arrange
+    # Act
+    job = _snapshot()
+    # Assert — removing the import must not quietly remove the BACKUP too.
+    # The export is the operator's stated fallback, and dropping it while the
+    # database becomes the only store would delete the safety net at the
+    # moment it matters most.
+    assert "--push" in job.command
+
+
+# EOF

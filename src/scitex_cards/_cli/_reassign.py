@@ -13,7 +13,6 @@ surface shape of the sibling mutation verbs in ``_write.py`` (``add`` /
     actor, changed, task}`` payload
   * ``--dry-run`` prints the intended mutation and exits 0
   * ``-y`` / ``--yes`` accepted as a §2 forward-compat no-op
-  * ``--tasks`` honors the standard store-resolution precedence
 
 Lives in its own module (rather than ``_write.py``) because that module
 is already at its line budget; ``_comment.py`` set the one-verb-per-file
@@ -25,7 +24,7 @@ from __future__ import annotations
 import click
 
 from .. import _store
-from ._write import _TASKS_OPTION, _emit
+from ._write import _emit
 
 
 @click.command(
@@ -38,7 +37,7 @@ from ._write import _TASKS_OPTION, _emit
         "is a separate concern). Idempotent: reassigning to the SAME current\n"
         "owner is a no-op (no write, no event).\n\n"
         "Example:\n"
-        "  scitex-todo reassign my-task <new-owner-agent-id> --by operator"
+        "  scitex-cards reassign my-task <new-owner-agent-id> --by operator"
     ),
 )
 @click.argument("task_id")
@@ -48,7 +47,9 @@ from ._write import _TASKS_OPTION, _emit
     default=None,
     help="Override the actor (default: $SCITEX_TODO_AGENT_ID, then $USER).",
 )
-@click.option("--json", "as_json", is_flag=True, help="Emit the result payload as JSON.")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit the result payload as JSON."
+)
 @click.option(
     "--dry-run",
     is_flag=True,
@@ -60,8 +61,7 @@ from ._write import _TASKS_OPTION, _emit
     is_flag=True,
     help="Skip confirmation (no-op today — reassign is non-interactive; reserved for §2).",
 )
-@_TASKS_OPTION
-def reassign_cmd(task_id, new_owner, by, as_json, dry_run, yes, tasks_path) -> None:
+def reassign_cmd(task_id, new_owner, by, as_json, dry_run, yes) -> None:
     """Atomically reassign ``task_id`` to ``new_owner`` via ``_store.reassign_task``."""
     _ = yes  # accepted for §2 compliance
     if dry_run:
@@ -70,7 +70,7 @@ def reassign_cmd(task_id, new_owner, by, as_json, dry_run, yes, tasks_path) -> N
         )
         return
     try:
-        payload = _store.reassign_task(tasks_path, task_id, new_owner, by=by)
+        payload = _store.reassign_task(None, task_id, new_owner, by=by)
     except _store.TaskNotFoundError as exc:
         raise click.ClickException(str(exc)) from None
     except (_store.TaskValidationError, ValueError) as exc:

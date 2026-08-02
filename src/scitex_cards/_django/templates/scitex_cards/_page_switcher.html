@@ -1,0 +1,60 @@
+{% comment %}
+Board | DM page switcher — rendered on BOTH top-level pages so neither one is
+reachable only by typing its URL.
+
+THE LABEL AND THE LINK BOTH READ DM NOW — and the ORDER that happened in is the
+whole point. Operator, 2026-07-29 (TG): 「あと、"chat" となってますが、"DM" で
+そろえると良いと思います。」 relabelled every USER-VISIBLE string on both pages
+(this label, its tooltip, the nav's aria-label, and chat.html's <title>). This
+comment then argued that the hrefs must NOT follow, and that argument was right:
+a published URL is a MIGRATION, not a label. The operator had /chat bookmarked,
+agents referenced it, and both spellings (`chat`, `chat/`) were pinned by tests
+— renaming the route to chase a word would have broken all of them.
+
+THAT RULE IS NOT OVERRIDDEN HERE; IT IS SATISFIED. #616 PUBLISHED `/board` and
+`/dm` as ADDITIONAL routes onto the very same two views, so `/`, `/chat` and
+`/chat/` all keep serving — every bookmark, agent reference and pinned test
+still works. With the old doors held open, moving the links to the new names is
+precisely the alias-first-then-switch step the rule demanded, and it is what the
+operator asked for next, verbatim: 「url も http://127.0.0.1:8051/board
+http://127.0.0.1:8051/dm とした方が良いと思いますけどね」. The alias guarantee is
+what makes this safe, so it is PINNED, not remembered: the old routes are
+asserted to still SERVE in test__board_chat_switcher.py, and to still resolve in
+test__board_and_dm_routes.py. Delete either at your peril — without them this
+comment is describing a migration nobody is checking.
+
+The JS module filenames, the CSS classes and the template filenames still say
+chat, and still should: none of them is a string the operator reads, so none of
+them is worth a migration.
+
+Operator, 2026-07-28 (TG): 「http://127.0.0.1:8051/chat/ 今だと chat が隠し URL
+みたいになってしまっているので、ホームに Board | Chat のスイッチャーを付けて
+欲しいです。」 They are migrating off Telegram onto this chat, so an
+undiscoverable chat page is a migration blocker, not a polish item.
+
+MOUNT AWARENESS — read before touching an href here. The hub mounts this app
+under a sub-path (e.g. /apps/cards/), where a hardcoded "/board" lands on the
+hub's own 404 and a hardcoded "/dm" 404s too. Both prior bugs of this class
+(#556, #557) were exactly that. Every href is therefore built from `api_base`
+— the include root each view derives from `request.path` — which is the SAME
+mechanism board_v3.html's `API_BASE` const and chat.html's `<body
+data-api-base>` already use, and it is always "…/"-terminated.
+
+`{% templatetag openblock %} url {% templatetag closeblock %}` is deliberately
+NOT used: this urlconf is served both as its own ROOT_URLCONF (standalone
+`scitex-cards board`, where the `app_name` application namespace is never
+registered) and via `include()` on the hub — one reverse() spelling cannot
+serve both, whereas `api_base` is correct in either.
+
+Callers pass the page they are on:
+
+    {% templatetag openblock %} include "scitex_cards/_page_switcher.html" with active="board" {% templatetag closeblock %}
+
+`api_base` is inherited from the page context — both views already provide it.
+Styling lives in static/scitex_cards/page-switcher.css; each host page feeds
+its own palette into that component's `--sw-*` tokens.
+{% endcomment %}
+<nav class="stx-cards-switcher" aria-label="Board or DM">
+  <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}board" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
+  <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}dm" {% if active == 'chat' %}aria-current="page" {% endif %}title="Direct messages with the agents">DM</a>
+</nav>

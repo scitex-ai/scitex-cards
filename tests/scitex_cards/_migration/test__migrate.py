@@ -9,14 +9,16 @@ pure-data — easy to fixture, no FS writes beyond the fixture itself.
 from __future__ import annotations
 
 import json
+import os
 import textwrap
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from conftest import seed_db_from_doc
 
-from scitex_cards._cli import main
 from scitex_cards import _migration as _mig
+from scitex_cards._cli import main
 
 
 def _write_lane(lane: Path, body: str) -> None:
@@ -56,8 +58,12 @@ class TestClassify:
         lane = tmp_path / "tasks.yaml"
         _write_lane(lane, "tasks: []\n")
         _mk_dir_card(lane, "a")
-        row = {"id": "a", "title": "A", "status": "pending",
-               "note": "This is a long body that lives in yaml today."}
+        row = {
+            "id": "a",
+            "title": "A",
+            "status": "pending",
+            "note": "This is a long body that lives in yaml today.",
+        }
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -81,8 +87,12 @@ class TestClassify:
         _write_lane(lane, "tasks: []\n")
         _mk_dir_card(lane, "a")
         long_text = "y" * (_mig.MAX_COMMENT_CHARS + 1)
-        row = {"id": "a", "title": "A", "status": "pending",
-               "comments": [{"ts": "x", "author": "z", "text": long_text}]}
+        row = {
+            "id": "a",
+            "title": "A",
+            "status": "pending",
+            "comments": [{"ts": "x", "author": "z", "text": long_text}],
+        }
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
@@ -113,14 +123,17 @@ class TestClassify:
         _write_lane(lane, "tasks: []\n")
         long_title = "Z" * (_mig.MAX_TITLE_CHARS + 1)
         row = {
-            "id": "multi", "title": long_title, "status": "pending",
+            "id": "multi",
+            "title": long_title,
+            "status": "pending",
             "note": "body content",
         }
         # Act
         plan = _mig.classify_row(row, lane)
         # Assert
-        assert {"NEEDS_DIR", "NEEDS_NOTE_MIGRATE", "NEEDS_TITLE_TRIM"} \
-            .issubset(set(plan.classifications))
+        assert {"NEEDS_DIR", "NEEDS_NOTE_MIGRATE", "NEEDS_TITLE_TRIM"}.issubset(
+            set(plan.classifications)
+        )
 
 
 # === scan_lane / scan_all_lanes ============================================
@@ -130,27 +143,45 @@ class TestScanLane:
     """`scan_lane` aggregates per-row plans + per-kind counts."""
 
     def test_scan_lane_counts_total_and_canonical(self, tmp_path):
-        # Arrange — one canonical, one needs-migrate.
+        # Arrange — one canonical, one needs-migrate. scan_lane loads via
+        # load_tasks, which now reads the canonical DB (the lane path no
+        # longer selects the store), so SEED the rows into the DB; the lane
+        # path still anchors each row's tasks/<id>/ directory probe.
         lane = tmp_path / "tasks.yaml"
-        _write_lane(
-            lane,
-            "tasks:\n"
-            "  - {id: ok, title: OK, status: pending}\n"
-            "  - {id: bad, title: BAD, status: pending, "
-            "note: 'has body'}\n",
+        seed_db_from_doc(
+            {
+                "tasks": [
+                    {"id": "ok", "title": "OK", "status": "deferred"},
+                    {
+                        "id": "bad",
+                        "title": "BAD",
+                        "status": "deferred",
+                        "note": "has body",
+                    },
+                ]
+            },
+            os.environ["SCITEX_CARDS_DB"],
         )
         _mk_dir_card(lane, "ok")
         _mk_dir_card(lane, "bad")
         # Act
         plan = _mig.scan_lane(lane)
         # Assert
-        assert (plan.total, plan.canonical_count,
-                plan.needs_migration_count) == (2, 1, 1)
+        assert (plan.total, plan.canonical_count, plan.needs_migration_count) == (
+            2,
+            1,
+            1,
+        )
 
-    def test_malformed_lane_returns_empty_plan(self, tmp_path, caplog):
-        # Arrange — bad YAML.
+    def test_unloadable_lane_returns_empty_plan(self, tmp_path, caplog, env):
+        # Arrange — scan_lane loads via load_tasks, which now reads the
+        # canonical DB, not the lane's YAML text (so a malformed YAML lane
+        # is no longer a reachable subject). Point the DB env at a path that
+        # does not exist so the read RAISES; scan_lane must still swallow it
+        # into an empty plan + a WARNING — the swallow-and-warn contract is
+        # unique to the scanner and survives the store cutover.
         lane = tmp_path / "tasks.yaml"
-        _write_lane(lane, "tasks: [\n  bad: yaml: here\n")
+        env.set("SCITEX_CARDS_DB", str(tmp_path / "does-not-exist.db"))
         # Act
         with caplog.at_level("WARNING", logger="scitex_cards._migration._migrate"):
             plan = _mig.scan_lane(lane)
@@ -164,21 +195,28 @@ class TestScanAllLanes:
     """`scan_all_lanes` rolls up across multiple lanes."""
 
     def test_scan_all_aggregates_lane_plans(self, tmp_path):
-        # Arrange — two tmp lanes.
-        lane_a = tmp_path / "a" / "tasks.yaml"
-        _write_lane(
-            lane_a, "tasks:\n  - {id: ax, title: AX, status: pending}\n",
+        # Arrange — two tmp lanes over ONE canonical DB. scan_lane reads the
+        # DB (not per-lane YAML), so every lane reports the full seeded set;
+        # the roll-up therefore sums 2 lanes x 2 rows = 4. len == 2 still
+        # proves both lanes were scanned; total == 4 proves the fleet summed
+        # both LanePlans (the aggregation this test exists to cover).
+        seed_db_from_doc(
+            {
+                "tasks": [
+                    {"id": "ax", "title": "AX", "status": "deferred"},
+                    {"id": "bx", "title": "BX", "status": "deferred"},
+                ]
+            },
+            os.environ["SCITEX_CARDS_DB"],
         )
+        lane_a = tmp_path / "a" / "tasks.yaml"
         _mk_dir_card(lane_a, "ax")
         lane_b = tmp_path / "b" / "tasks.yaml"
-        _write_lane(
-            lane_b, "tasks:\n  - {id: bx, title: BX, status: pending}\n",
-        )
         _mk_dir_card(lane_b, "bx")
         # Act
         fleet = _mig.scan_all_lanes([lane_a, lane_b])
         # Assert
-        assert (len(fleet.lanes), fleet.to_dict()["total_rows"]) == (2, 2)
+        assert (len(fleet.lanes), fleet.to_dict()["total_rows"]) == (2, 4)
 
 
 # === Markdown rendering ====================================================
@@ -189,20 +227,18 @@ class TestRenderMarkdown:
     classifications so they can be eyeballed."""
 
     def test_markdown_includes_lane_count_and_totals(self, tmp_path):
-        # Arrange
+        # Arrange — scan_all_lanes reads the canonical DB; seed one row.
         lane = tmp_path / "tasks.yaml"
-        _write_lane(
-            lane,
-            "tasks:\n"
-            "  - {id: ok, title: OK, status: pending}\n",
+        seed_db_from_doc(
+            {"tasks": [{"id": "ok", "title": "OK", "status": "deferred"}]},
+            os.environ["SCITEX_CARDS_DB"],
         )
         _mk_dir_card(lane, "ok")
         fleet = _mig.scan_all_lanes([lane])
         # Act
         md = _mig.render_markdown(fleet)
         # Assert
-        assert "Directory-card migration plan" in md and \
-               "Total rows: **1**" in md
+        assert "Directory-card migration plan" in md and "Total rows: **1**" in md
 
 
 # === CLI verb ==============================================================
@@ -221,8 +257,11 @@ class TestCliPlan:
         # Assert — JSON-decodable + has the expected top-level keys.
         payload = json.loads(result.output)
         assert {
-            "lane_count", "total_rows", "canonical_rows",
-            "needs_migration_rows", "lanes",
+            "lane_count",
+            "total_rows",
+            "canonical_rows",
+            "needs_migration_rows",
+            "lanes",
         } <= set(payload.keys())
 
     def test_cli_plan_markdown_includes_summary(self, env, tmp_path):

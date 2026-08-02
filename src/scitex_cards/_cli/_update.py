@@ -5,8 +5,7 @@
 Extracted from ``_write.py`` (pure move; the one-verb-per-file precedent
 of ``_comment.py`` / ``_close.py`` / ``_reassign.py``) to bring that
 module back under the file-size cap. Shares the option plumbing
-(``_TASKS_OPTION`` / closed-enum choices / ``_emit``) with its siblings
-via ``._write``.
+(closed-enum choices / ``_emit``) with its siblings via ``._write``.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from ._write import (
     _BLOCKER_OR_CLEAR,
     _KIND_OR_CLEAR,
     _STATUS_CHOICE,
-    _TASKS_OPTION,
     _emit,
 )
 
@@ -134,7 +132,6 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
     is_flag=True,
     help="Skip confirmation (no-op today — update is non-interactive; reserved for §2).",
 )
-@_TASKS_OPTION
 def update_cmd(
     task_id,
     title,
@@ -166,7 +163,6 @@ def update_cmd(
     as_json,
     dry_run,
     yes,
-    tasks_path,
 ) -> None:
     """Apply each provided field to the matching task."""
     _ = yes  # accepted for §2 compliance
@@ -237,7 +233,7 @@ def update_cmd(
         click.echo(f"# dry-run: would update task_id={task_id!r} fields={fields!r}")
         return
     try:
-        merged = _store.update_task(tasks_path, task_id, **fields)
+        merged = _store.update_task(None, task_id, **fields)
     except _store.TaskNotFoundError as exc:
         raise click.ClickException(str(exc)) from None
     except _store.TaskValidationError as exc:

@@ -1,0 +1,82 @@
+/* Shared page HEADER BAR — geometry for the header both top-level pages
+ * render (board_v3.html and chat.html, through
+ * templates/scitex_cards/_page_header.html).
+ *
+ * WHY THIS FILE EXISTS. Operator, 2026-07-29 (TG): the two pages' headers not
+ * lining up is uncomfortable. They did not line up because each page rolled
+ * its own bar — the board's `.filterbar` was `padding: 8px 14px;
+ * min-height: 48px` while chat's `header` was `padding: 10px 14px` with no
+ * min-height and a 10px gap. Different height, different baseline, different
+ * left edge. Those numbers were kept in sync by hand, which is exactly how
+ * they drifted; they are stated ONCE here now, and each page's own header
+ * rule was stripped of them rather than left as a shadow copy.
+ *
+ * DIVISION OF LABOUR. This file owns BOX METRICS only — display, gap,
+ * padding, min-height. Every page keeps its own PALETTE (background, border,
+ * text colour), because the two pages deliberately ship different `:root`
+ * blocks; they feed theirs in through the two `--stx-cards-header-*`
+ * variables below. Same contract page-switcher.css already uses for `--sw-*`,
+ * for the same reason.
+ *
+ * LOAD ORDER (board_v3.html): linked right after 01-filterbar.css and BEFORE
+ * 05-responsive.css. After, so `.stx-cards-header h1` wins over
+ * `.filterbar h1` on the desktop baseline; before, so the phone overrides in
+ * 05-responsive.css still win over the metrics here. Moving this link below
+ * the responsive sheet would silently restore the desktop padding on a phone.
+ */
+
+/* The BAR: the full-width strip at the top of the page. On the board this is
+ * `.filterbar` (which also holds search + the operations group); on the DM
+ * page it is `<header>`. Both carry this class, and it is what makes the two
+ * the same height. */
+.stx-cards-headerbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  min-height: 48px;
+  /* The padding is INSIDE the 48px — without this the DM page (whose header
+   * is a flex item in a column body) and the board (whose bar is in normal
+   * flow) round to different heights. */
+  box-sizing: border-box;
+  /* chat.html's <body> is a flex column and its header must not stretch or
+   * shrink; harmless on the board, where the bar is not a flex item. */
+  flex: 0 0 auto;
+}
+
+/* The IDENTITY BAND inside the bar: switcher, heading, version. Its content
+ * and ORDER come from _page_header.html — read that file's header before
+ * changing anything here. */
+.stx-cards-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* THE SWITCHER SITS AT THE LEFT EDGE OF THE HEADER, on both pages (operator's
+ * standing instruction). It is first in the partial's markup, so this rule
+ * only has to make sure nothing pushes it away: `margin-left: auto` on the
+ * DM page was the whole reason the two pages disagreed, and it looked correct
+ * in the template while doing it. Stated here so a host page that re-adds it
+ * is overridden rather than obeyed — the guard is the CSS, the alarm is
+ * test__page_header_is_shared.py. */
+.stx-cards-header .stx-cards-switcher {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.stx-cards-header h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--stx-cards-header-fg, #fff);
+}
+
+.stx-cards-header__ver {
+  font-size: 0.72rem;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--stx-cards-header-dim, #8a96a8);
+}

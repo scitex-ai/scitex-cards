@@ -88,6 +88,7 @@ def complete_task(
     TaskNotFoundError
         If no task matches ``task_id``.
     """
+    from . import _task  # hook-bypass: line-limit — verb-module split still queued
     from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
 
     if not task_id:
@@ -97,13 +98,34 @@ def complete_task(
     transitioned = False
     with _store_lock(resolved):
         doc, tasks = _read_write_doc(resolved)
+        # `not _task._is_tombstoned(task)`: a tombstoned row is retained on
+        # disk forever but must behave as ABSENT — completing a deleted
+        # card would silently resurrect it.
         for task in tasks:
-            if task.get("id") == task_id:
+            if task.get("id") == task_id and not _task._is_tombstoned(task):
                 if task.get("status") == "done":
                     # Idempotent: don't refresh the stamp, just return.
                     # No unblock emit — re-completing changed nothing.
                     return dict(task)
                 task["status"] = "done"
+                # CLEAR THE GATE WITH THE STATUS, or the document we are about
+                # to save is INVALID and _validate_tasks refuses the whole save.
+                #
+                # A done card still naming an unresolved blocker is incoherent:
+                # either the gate was cleared, or the card is not done. The
+                # validator says exactly that, and `resolve_task` has always
+                # cleared the blocker for this reason. `complete_task` never
+                # learned it, so the two closing verbs disagreed and this one
+                # produced a document that could not be written back.
+                #
+                # Measured on the live */15 reconcile cron, 2026-08-01:
+                #   TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
+                #   has blocker 'operator-decision' but status is 'done'
+                # That card was legitimately blocked on an operator decision and
+                # its pull request merged anyway — real data, not corruption.
+                # Because validation covers the WHOLE document, that one card
+                # stopped the sweep from closing ANY card.
+                task.pop("blocker", None)
                 log_meta = task.get("_log_meta")
                 if not isinstance(log_meta, dict):
                     log_meta = {}
@@ -137,41 +159,49 @@ def complete_task(
     return result
 
 
-def delete_task(
+def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     store: str | Path | None = None,
     task_id: str | None = None,
 ) -> dict:
-    """Remove a task + scrub references to it. Returns the lossless
+    """TOMBSTONE a task + scrub references to it. Returns the lossless
     payload the client can pass to ``restore_task`` for Undo.
+
+    2026-07-21 P0 (third board wipe) — operator ruling 一度書いたものは
+    消えない, "a written card never disappears": this NO LONGER physically
+    removes the row. It marks it in place — ``status`` flips to
+    ``cancelled``, ``_log_meta.deleted_at`` (+ ``deleted_by``) records when
+    and who — and the row is retained forever (see
+    :func:`_task._is_tombstoned`). Physical removal is IMPOSSIBLE through
+    this, the normal API; a genuine purge is a deliberate admin verb, not
+    this one.
 
     The board v3 Delete-with-Undo flow uses this via ``handlers/crud.py``;
     exposing the same operation here lets MCP agents do the same delete +
-    later undo without round-tripping HTTP.
+    later undo without round-tripping HTTP. Reads (``list_tasks`` /
+    ``get_task`` / ``set_edge`` / every other lookup) treat a tombstoned
+    row as ABSENT by default, so board behaviour is unchanged.
 
-    Returns ``{"removed": <full task dict>, "refs": [<refs scrubbed>]}``
-    where each ref is the id of another task whose depends_on / blocks /
-    parent pointed at the deleted task (the client passes this back to
-    restore_task to lossless-revert).
+    Returns ``{"removed": <full pre-tombstone task dict>, "refs": [<refs
+    scrubbed>]}`` where each ref is the id of another task whose
+    depends_on / blocks / parent pointed at the deleted task (the client
+    passes ``removed`` back to ``restore_task`` to lossless-revert).
     """
-    from . import _model
-    from ._store import TaskNotFoundError, _read_write_doc
+    from . import _model, _task
+    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
 
     tasks_path = _resolved_store(store)
     if not task_id:
         raise ValueError("delete_task: 'task_id' is required")
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        target = None
-        keep: list = []
-        for t in tasks:
-            if t.get("id") == task_id:
-                target = dict(t)
-            else:
-                keep.append(t)
+        target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+        original = dict(target)  # pre-tombstone snapshot: the Undo payload
         refs: list[str] = []
-        for t in keep:
+        for t in tasks:
+            if t is target:
+                continue
             mutated = False
             if isinstance(t.get("depends_on"), list) and task_id in t["depends_on"]:
                 t["depends_on"] = [d for d in t["depends_on"] if d != task_id]
@@ -188,8 +218,34 @@ def delete_task(
                 mutated = True
             if mutated:
                 refs.append(t.get("id"))
-        _model._save_doc_unlocked(doc, tasks_path, tasks=keep)
-    return {"removed": target, "refs": refs}
+        # TOMBSTONE in place — never a physical removal. `tasks` still
+        # contains `target`, so this is an ordinary upsert-by-id write, not
+        # the `deleted_ids` path (that path stays reserved for a future,
+        # deliberate admin purge; see `_db_mirror`).
+        actor = _default_agent(None)
+        now = _utc_now_iso()
+        target["status"] = "cancelled"
+        log_meta = target.get("_log_meta")
+        if not isinstance(log_meta, dict):
+            log_meta = {}
+            target["_log_meta"] = log_meta
+        log_meta["deleted_at"] = now
+        log_meta["deleted_by"] = actor
+        comments = target.setdefault("comments", [])
+        comments.append(
+            {
+                "author": actor,
+                "ts": now,
+                "text": (
+                    "[TOMBSTONED via delete_task] status -> cancelled, "
+                    "_log_meta.deleted_at stamped. Row retained (never "
+                    "physically removed); restore_task is the Undo."
+                ),
+            }
+        )
+        target["last_activity"] = now
+        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+    return {"removed": original, "refs": refs}
 
 
 def restore_task(
@@ -197,13 +253,16 @@ def restore_task(
     task: dict | None = None,
     refs: list[str] | None = None,
 ) -> dict:
-    """Undo a ``delete_task``: re-insert the task at its original id.
+    """Undo a ``delete_task``: UN-TOMBSTONE the row back to its pre-delete
+    state (or, for a row with no tombstone at all — legacy/never-deleted
+    — re-insert it, the original pre-tombstone-era behaviour).
 
-    Idempotent on duplicate id — raises ``ValueError`` if the id is
-    already present (use ``update_task`` to mutate; this verb is the
-    Delete-Undo partner only).
+    Idempotent on a duplicate id that is NOT a tombstone — raises
+    ``ValueError`` (use ``update_task`` to mutate; this verb is the
+    Delete-Undo partner only). A tombstoned row is exactly what this verb
+    expects to find and reverses in place.
     """
-    from . import _model
+    from . import _model, _task
     from ._store import _read_write_doc
 
     tasks_path = _resolved_store(store)
@@ -212,9 +271,17 @@ def restore_task(
     tid = task["id"]
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        if any(t.get("id") == tid for t in tasks):
-            raise ValueError(f"restore_task: id {tid!r} already present")
-        tasks.append(dict(task))
+        existing = next((t for t in tasks if t.get("id") == tid), None)
+        if existing is not None:
+            if not _task._is_tombstoned(existing):
+                raise ValueError(f"restore_task: id {tid!r} already present")
+            # UN-TOMBSTONE in place: replace with the caller's pre-delete
+            # snapshot, at the SAME list position (an ordinary upsert).
+            tasks[tasks.index(existing)] = dict(task)
+        else:
+            # No row at all — a legacy pre-tombstone-era delete, or an
+            # admin purge. Fall back to the original append behaviour.
+            tasks.append(dict(task))
         _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
     # refs are descriptive (the client passes them through so callers can
     # see which tasks had been mutated; we don't reverse-apply them since
@@ -236,7 +303,7 @@ def resolve_task(
     Idempotent on already-resolved tasks (re-resolves are no-ops, just
     log a "noop" comment).
     """
-    from . import _model
+    from . import _model, _task  # hook-bypass: line-limit
     from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
 
     if not task_id:
@@ -245,7 +312,7 @@ def resolve_task(
     tasks_path = _resolved_store(store)
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        target = next((t for t in tasks if t.get("id") == task_id), None)
+        target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise TaskNotFoundError(f"resolve_task: unknown id {task_id!r}")
         was_done = target.get("status") == "done"
@@ -260,7 +327,7 @@ def resolve_task(
                 "text": (
                     "[resolve (noop — already done)]"
                     if was_done
-                    else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."
+                    else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
                 ),
             }
         )
@@ -309,7 +376,7 @@ def reopen_task(
     the false completion survived the correction. A lie outlives its
     retraction if it is written in two places and you only fix one.)
     """
-    from . import _model
+    from . import _model, _task  # hook-bypass: line-limit
     from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
 
     if not task_id:
@@ -318,7 +385,7 @@ def reopen_task(
     tasks_path = _resolved_store(store)
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        target = next((t for t in tasks if t.get("id") == task_id), None)
+        target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise TaskNotFoundError(f"reopen_task: unknown id {task_id!r}")
         target["status"] = "blocked"
@@ -330,153 +397,17 @@ def reopen_task(
             "blocker=operator-decision restored."
         )
         if cleared:
-            text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."
+            text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
         comments.append({"author": who, "ts": _utc_now_iso(), "text": text})
         _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
 
-def reassign_task(
-    store: str | Path | None = None,
-    task_id: str | None = None,
-    new_owner: str | None = None,
-    *,
-    by: str | None = None,
-    entry_points=None,  # hook-bypass: line-limit
-) -> dict:
-    """Atomically change a card's owner — the primitive the board lacked.
-
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
-
-      * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
-        in lock-step with the operator-co-designed ``agent`` so every
-        reader — old dict-style and new — agrees on the owner), AND
-      * set ``scope = "agent:<new_owner>"`` (the convention the fleet
-        slices on), AND
-      * append an audit comment ``"reassigned <old> -> <new> by <actor>"``.
-
-    THEN (post-persist, outside the lock, fail-soft) emit a canonical
-    ``reassigned`` card-event with ``extra={"from_owner", "to_owner"}``.
-    The EVENT is the notification path — there is intentionally NO bespoke
-    notify/delivery here (delivery is C4, a separate card; this primitive
-    EMITS, it does not deliver).
-
-    Idempotent: reassigning to the SAME current owner is a no-op — no
-    write, no audit comment, no spurious event — so a replayed/duplicate
-    reassign is harmless.
-
-    Parameters
-    ----------
-    task_id : str
-        The card to reassign (required).
-    new_owner : str
-        The new owning agent (required, non-empty).
-    by : str, optional
-        The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
-    entry_points : iterable, optional
-        In-process injection seam forwarded to the event emit (real fake
-        handler in tests); ``None`` uses real plugin discovery.
-
-    Returns
-    -------
-    dict
-        ``{"task_id", "from_owner", "to_owner", "actor", "changed", "task"}``
-        where ``changed`` is ``False`` on the same-owner no-op path.
-
-    Raises
-    ------
-    ValueError
-        If ``task_id`` or ``new_owner`` is missing/empty.
-    TaskNotFoundError
-        If no task matches ``task_id``.
-    """
-    from . import _model
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
-
-    if not task_id:
-        raise ValueError("reassign_task: 'task_id' is required")
-    if not new_owner or not str(new_owner).strip():
-        raise ValueError("reassign_task: 'new_owner' is required")
-    new_owner = str(new_owner)
-    actor = _default_agent(by)
-    tasks_path = _resolved_store(store)
-    changed = False
-    old_owner: str | None = None
-    result_task: dict | None = None
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        target = next((t for t in tasks if t.get("id") == task_id), None)
-        if target is None:
-            raise TaskNotFoundError(f"reassign_task: unknown id {task_id!r}")
-        # Current owner = `agent`, falling back to legacy `assignee`.
-        old_owner = target.get("agent") or target.get("assignee")
-        if old_owner == new_owner:
-            # Idempotent no-op: same owner → no write, no event. Return the
-            # current state with changed=False.
-            result_task = dict(target)
-        else:
-            target["agent"] = new_owner
-            target["assignee"] = new_owner
-            target["scope"] = f"agent:{new_owner}"
-            comments = target.setdefault("comments", [])
-            comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": (
-                        f"reassigned {old_owner or '(unassigned)'} -> "
-                        f"{new_owner} by {actor}"
-                    ),
-                }
-            )
-            # Delegation keeps responsibility (operator 2026-07-18,
-            # 「渡しました、で終わられると困る」/ constitution §2 "ownership
-            # never dangles"): the PREVIOUS owner and the card's creator stay
-            # subscribed through the handoff, so lateness on the delegate
-            # reaches the delegator. Dropping out is an explicit
-            # set_subscriber remove, never a side effect of handing off.
-            subs = list(target.get("subscribers") or [])
-            for keeper in (old_owner, target.get("created_by")):
-                if keeper and keeper != new_owner and keeper not in subs:
-                    subs.append(keeper)
-            if subs:
-                target["subscribers"] = subs
-            target["last_activity"] = _utc_now_iso()
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
-            result_task = dict(target)
-            changed = True
-    # C5: emit `reassigned` ONLY on a real owner change, AFTER the write is
-    # durable + the lock released (fail-soft). The event is the
-    # notification path; delivery is C4. (hook-bypass: line-limit)
-    if changed:
-        _emit_card_event(
-            "reassigned",
-            task_id,
-            actor=actor,
-            extra={"from_owner": old_owner, "to_owner": new_owner},
-            store=tasks_path,
-            entry_points=entry_points,
-        )
-    # Liveness (assignee-liveness feature): heartbeat the reassigning actor,
-    # and surface the NEW owner's liveness so the caller learns immediately
-    # if it just reassigned the card to a non-running agent. Both fail-soft.
-    from ._liveness import _assignee_liveness, _heartbeat
-
-    _heartbeat(actor, tasks_path)
-    out = {
-        "task_id": task_id,
-        "from_owner": old_owner,
-        "to_owner": new_owner,
-        "actor": actor,
-        "changed": changed,
-        "task": result_task,
-    }
-    _liveness = _assignee_liveness(new_owner, tasks_path)
-    if _liveness is not None:
-        out["assignee_liveness"] = _liveness
-    return out
-
+# reassign_task now lives in _store_reassign, beside the bulk reassign_all:
+# ownership is one responsibility and was split across two modules, with the
+# module named for it holding only half. Re-exported here so every existing
+# import path (notably _store) keeps resolving unchanged.
+from ._store_reassign import reassign_task  # noqa: E402,F401
 
 __all__ = [
     "complete_task",

@@ -11,9 +11,9 @@ The ownership rule that governs this file, and that S1 nearly broke:
 
     A TABLE IS OWNED BY EXACTLY THE FILE THAT PRODUCES IT.
 
-``users`` and ``notifications`` come from the ``tasks.yaml`` doc (its ``users:``
-and ``inboxes:`` sections). ``messages`` does NOT — it is derived from the
-``threads.yaml`` SIDECAR. A doc-write path that rebuilt ``messages`` would delete
+``users`` and ``notifications`` come from the legacy task-store doc (its
+``users:`` and ``inboxes:`` sections). ``messages`` does NOT — it is derived
+from the ``threads.json`` SIDECAR. A doc-write path that rebuilt ``messages`` would delete
 every DM thread on every card write, which is why
 :data:`_db_bootstrap._DOC_CLEAR_ORDER` excludes it.
 """
@@ -42,10 +42,19 @@ def _insert_users(conn, users: list) -> dict[str, int]:
         if not (isinstance(uid, str) and uid):
             continue
         conn.execute(
-            "INSERT OR REPLACE INTO users"
+            "INSERT INTO users"
             "(id, kind, host_at_name, notify_json, turn_url, a2a_port, "
             " created_at, last_seen, record_json)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " kind = excluded.kind,"
+            " host_at_name = excluded.host_at_name,"
+            " notify_json = excluded.notify_json,"
+            " turn_url = excluded.turn_url,"
+            " a2a_port = excluded.a2a_port,"
+            " created_at = excluded.created_at,"
+            " last_seen = excluded.last_seen,"
+            " record_json = excluded.record_json",
             (
                 uid,
                 u.get("kind"),
@@ -56,7 +65,7 @@ def _insert_users(conn, users: list) -> dict[str, int]:
                 u.get("created_at"),
                 u.get("last_seen"),
                 # Verbatim payload (v3): the columns are the index, this is
-                # the record — the yaml exporter reproduces it exactly.
+                # the record — the JSON exporter reproduces it exactly.
                 # STRICT encoder (key order kept, no coercion, NULL on
                 # non-round-trippable) — same policy as tasks.card_json.
                 _record_json(u),
@@ -69,8 +78,9 @@ def _insert_users(conn, users: list) -> dict[str, int]:
                 if not (isinstance(name, str) and name):
                     continue
                 conn.execute(
-                    "INSERT OR REPLACE INTO user_names(name, user_id) "
-                    "VALUES (?, ?)",
+                    "INSERT INTO user_names(name, user_id) VALUES (?, ?)"
+                    " ON CONFLICT(name) DO UPDATE SET"
+                    " user_id = excluded.user_id",
                     (name, uid),
                 )
                 counts["user_names"] += 1
@@ -90,18 +100,29 @@ def _insert_notifications(conn, inboxes) -> int:
         # the round-trip, and zero notification rows cannot carry the
         # key (schema v4).
         conn.execute(
-            "INSERT OR REPLACE INTO inbox_recipients(recipient_id) "
-            "VALUES (?)",
+            # DO NOTHING, not DO UPDATE: the only column IS the conflict key,
+            # so there is nothing left to write on a conflict.
+            "INSERT INTO inbox_recipients(recipient_id) VALUES (?)"
+            " ON CONFLICT DO NOTHING",
             (recipient_id,),
         )
         for r in records:
             if not isinstance(r, dict):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO notifications"
+                "INSERT INTO notifications"
                 "(id, recipient_id, event_type, card_id, body, actor, ts, "
                 " seen, record_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " recipient_id = excluded.recipient_id,"
+                " event_type = excluded.event_type,"
+                " card_id = excluded.card_id,"
+                " body = excluded.body,"
+                " actor = excluded.actor,"
+                " ts = excluded.ts,"
+                " seen = excluded.seen,"
+                " record_json = excluded.record_json",
                 (
                     r.get("id") or _gen_id("n_"),
                     recipient_id,
@@ -131,10 +152,18 @@ def _insert_messages(conn, threads) -> int:
             if not isinstance(r, dict):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO messages"
+                "INSERT INTO messages"
                 "(id, thread_key, sender, recipient, body, ts, read, "
                 " record_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " thread_key = excluded.thread_key,"
+                " sender = excluded.sender,"
+                " recipient = excluded.recipient,"
+                " body = excluded.body,"
+                " ts = excluded.ts,"
+                " read = excluded.read,"
+                " record_json = excluded.record_json",
                 (
                     r.get("id") or _gen_id("m_"),
                     thread_key,

@@ -37,8 +37,12 @@ NAIVE_BASE = dt.datetime(2026, 7, 1)
 
 def test_next_occurrence_naive_base_aware_now_does_not_raise():
     """THE crash, verbatim: naive seed vs tz-aware now."""
-    r = Repeater(n=1, unit="w", catchup=False)
-    assert r.next_occurrence(NAIVE_BASE, now=AWARE) is not None
+    # Arrange
+    repeater = Repeater(n=1, unit="w", catchup=False)
+    # Act
+    occurrence = repeater.next_occurrence(NAIVE_BASE, now=AWARE)
+    # Assert — reaching this line at all is the regression cover.
+    assert occurrence is not None
 
 
 def _aware(d):
@@ -53,51 +57,83 @@ def _aware(d):
 
 
 def test_next_occurrence_returns_a_future_occurrence():
-    r = Repeater(n=1, unit="w", catchup=False)
-    assert _aware(r.next_occurrence(NAIVE_BASE, now=AWARE)) >= AWARE
+    # Arrange
+    repeater = Repeater(n=1, unit="w", catchup=False)
+    # Act
+    occurrence = _aware(repeater.next_occurrence(NAIVE_BASE, now=AWARE))
+    # Assert
+    assert occurrence >= AWARE
 
 
 def test_next_occurrence_preserves_the_naive_return_contract():
     """Naive in, naive out. Silently returning tz-aware values would be a
     contract change for every existing caller, dressed up as a bug fix."""
-    r = Repeater(n=1, unit="w", catchup=False)
-    assert r.next_occurrence(NAIVE_BASE, now=AWARE).tzinfo is None
+    # Arrange
+    repeater = Repeater(n=1, unit="w", catchup=False)
+    # Act
+    occurrence = repeater.next_occurrence(NAIVE_BASE, now=AWARE)
+    # Assert
+    assert occurrence.tzinfo is None
 
 
 def test_is_overdue_with_aware_now_does_not_raise():
     """The /graph -> overdue_count path that 500'd."""
+    # Arrange
     card = {"id": "x", "status": "in_progress", "deadline": "2026-07-01 +1w"}
-    assert is_overdue(card, now=AWARE) is False
+    # Act
+    overdue = is_overdue(card, now=AWARE)
+    # Assert
+    assert overdue is False
 
 
 def test_mixed_recurring_and_bare_deadlines_do_not_raise():
     """The SECOND instance: min() over naive + aware candidates."""
+    # Arrange
     card = {
         "id": "y",
         "status": "in_progress",
         "deadlines": ["2026-07-01 +1w", "2026-08-20"],
     }
-    assert next_deadline_for_task(card, now=AWARE) is not None
+    # Act
+    deadline = next_deadline_for_task(card, now=AWARE)
+    # Assert — reaching this line at all is the regression cover.
+    assert deadline is not None
 
 
 def test_naive_now_still_works():
     """No regression for callers that pass no `now` at all."""
+    # Arrange
     card = {"id": "x", "status": "in_progress", "deadline": "2026-07-01 +1w"}
-    assert is_overdue(card) is False
+    # Act
+    overdue = is_overdue(card)
+    # Assert
+    assert overdue is False
 
 
 def test_a_past_deadline_is_still_overdue():
     """The fix must not make everything 'not overdue' — that would be silent."""
+    # Arrange
     card = {"id": "z", "status": "in_progress", "deadline": "2020-01-01"}
-    assert is_overdue(card, now=AWARE) is True
+    # Act
+    overdue = is_overdue(card, now=AWARE)
+    # Assert
+    assert overdue is True
 
 
 def test_a_done_card_is_never_overdue():
+    # Arrange
     card = {"id": "z", "status": "done", "deadline": "2020-01-01"}
-    assert is_overdue(card, now=AWARE) is False
+    # Act
+    overdue = is_overdue(card, now=AWARE)
+    # Assert
+    assert overdue is False
 
 
 @pytest.mark.parametrize("unit", ["d", "w", "m", "y"])
 def test_every_repeater_unit_survives_an_aware_now(unit):
-    r = Repeater(n=1, unit=unit, catchup=False)
-    assert _aware(r.next_occurrence(NAIVE_BASE, now=AWARE)) >= AWARE
+    # Arrange
+    repeater = Repeater(n=1, unit=unit, catchup=False)
+    # Act
+    occurrence = _aware(repeater.next_occurrence(NAIVE_BASE, now=AWARE))
+    # Assert
+    assert occurrence >= AWARE

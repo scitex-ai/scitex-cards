@@ -12,7 +12,7 @@ lines by tangling two unrelated responsibilities:
 The separation is not cosmetic. Every store incident of the past two weeks lived
 in THIS code and nowhere else:
 
-* the ~20 s ruamel round-trip write (O(whole-store) on every single card change);
+* the ~20 s whole-document round-trip write, O(whole-store) on every card change;
 * the 2026-06-13 mid-string corruption, recovered by hand — now prevented by the
   tmp + fsync + ``os.replace`` dance and the post-dump reparse check below;
 * the 2026-06-08 autoassign-parallel-run data loss (no atomic replace);
@@ -45,8 +45,6 @@ from ._model import (
     _validate_tasks,
     load_doc,
 )
-from ._store_verify import _verify_dumped_tmp
-from ._yaml import safe_dump, safe_load
 
 
 @contextlib.contextmanager
@@ -54,11 +52,11 @@ def _store_lock(path: Path):
     """Hold an exclusive `fcntl.flock` on a sibling `.<name>.lock` file.
 
     Phase 1 prerequisite for the cross-host sync substrate (Req 2): two
-    concurrent writers — say a CLI verb and the board's `/priority` POST
-    handler — must serialize so the YAML payload they write is atomic at
-    the task-list granularity. We hold the lock on a separate `.lock`
-    sentinel file rather than on the store itself so we don't fight the
-    ruamel YAML reader/writer that re-opens the path.
+    concurrent writers — say a CLI verb and the GUI's `/priority` POST
+    handler — must serialize so the payload they write is atomic at the
+    task-list granularity. We hold the lock on a separate `.lock` sentinel
+    file rather than on the store itself so we don't fight a reader/writer
+    that re-opens the path.
 
     The lock file is created if missing, never removed (next caller reuses
     it). Empty mode is fine — only the lockf state matters.
@@ -66,8 +64,8 @@ def _store_lock(path: Path):
     Parameters
     ----------
     path : Path
-        The store path (e.g. ``~/.scitex/todo/tasks.yaml``). The lock
-        sentinel sits next to it as ``.tasks.yaml.lock``.
+        The store path (e.g. a legacy sidecar file). The lock sentinel
+        sits next to it as ``.<name>.lock``.
 
     Yields
     ------
@@ -97,12 +95,10 @@ def save_tasks(
     *,
     expected_generation: str | None = None,
 ) -> None:
-    """Validate then write a task list back to a YAML store, preserving comments.
+    """Validate then write a task list back to the store.
 
     Re-runs the same validation gate as :func:`load_tasks` *before* touching
-    disk, so a malformed mutation can never corrupt the store. Uses
-    ``ruamel.yaml`` round-trip mode so hand-written comments and key layout in
-    the existing store survive the rewrite.
+    the store, so a malformed mutation can never corrupt it.
 
     Parameters
     ----------
@@ -120,9 +116,9 @@ def save_tasks(
 
     Examples
     --------
-    >>> tasks = load_tasks("tasks.yaml")          # doctest: +SKIP
+    >>> tasks = load_tasks("cards.db")             # doctest: +SKIP
     >>> tasks[0]["priority"] = 1                    # doctest: +SKIP
-    >>> save_tasks(tasks, "tasks.yaml")            # doctest: +SKIP
+    >>> save_tasks(tasks, "cards.db")               # doctest: +SKIP
     """
     path = Path(path).expanduser()
     # The lock covers only THIS write. It cannot cover the caller's earlier
@@ -154,11 +150,45 @@ def store_generation(path: str | Path) -> str:
     mtime-based: mtime has coarse granularity on some filesystems and lies
     across clock skew, and this store is shared over network mounts.
     """
-    p = Path(path).expanduser()
-    if not p.exists():
-        return "absent"
+    # Read-STABLE content hash of the canonical store. The token is the LOGICAL
+    # content (load_doc's output), NOT the DB file's bytes and NOT the `path`
+    # argument's file. Two traps this avoids:
+    #   - the store-identity path (the legacy sidecar name) is never a real
+    #     file under SQLite, so hashing it always returned "absent" and
+    #     silently disabled the optimistic-concurrency guard (a stale write
+    #     was never refused);
+    #   - SQLite in WAL mode rewrites cards.db on a plain READ (it creates
+    #     -wal/-shm), so hashing the DB FILE returned a new token after an
+    #     un-contended read and falsely refused a fresh guarded write.
+    # Hashing the logical doc is stable across reads and changes only when the
+    # cards/users actually change. Missing DB -> "absent".
+    import json
 
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    from ._db import resolve_db_path
+    from ._store_target import resolve_store_target
+    from ._store_url import is_postgres_url
+
+    # THE EXISTENCE GATE IS A *FILE* GATE, AND A SERVER STORE HAS NO FILE.
+    # ``resolve_db_path`` REFUSES a DSN rather than coercing it — coercion would
+    # manufacture an empty SQLite store at a mangled path and serve 0 cards
+    # while reporting healthy — so calling it unconditionally raised on every
+    # PostgreSQL deployment. That took the board down with it, because
+    # ``get_board`` computes this generation on its read path.
+    #
+    # A server's existence is established by CONNECTING, which ``load_doc``
+    # does below and which raises when it cannot. So on a server there is
+    # nothing to pre-check and we fall straight through to the hash. Note the
+    # asymmetry is deliberate: "absent" disables the optimistic-concurrency
+    # guard, so it is reserved for the one case that genuinely means "no store
+    # yet" — a missing local file.
+    if not is_postgres_url(resolve_store_target(None)):
+        db = Path(resolve_db_path(None)).expanduser()
+        if not db.exists():
+            return "absent"
+    doc = load_doc(path, validate=False)
+    return hashlib.sha256(
+        json.dumps(doc, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 @contextlib.contextmanager
@@ -175,7 +205,7 @@ def edit_tasks(path: str | Path):
 
     Examples
     --------
-    >>> with edit_tasks("tasks.yaml") as tasks:     # doctest: +SKIP
+    >>> with edit_tasks("cards.db") as tasks:        # doctest: +SKIP
     ...     for t in tasks:
     ...         if t.get("status") == "pending":
     ...             t["status"] = "deferred"
@@ -183,7 +213,11 @@ def edit_tasks(path: str | Path):
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     with _store_lock(path):
-        doc = load_doc(path, validate=True) if path.exists() else {}
+        # SQLite is the store: load_doc reads the canonical DB (and fail-louds
+        # if it is missing). The old `if path.exists() else {}` gated on the
+        # YAML store PATH, which is NEVER a real file under SQLite, so it
+        # silently yielded an empty doc and the write below wiped the store.
+        doc = load_doc(path, validate=True)
         if not isinstance(doc, dict):
             raise TaskValidationError(f"{path}: top level is not a mapping")
         tasks = doc.get("tasks") or []
@@ -195,13 +229,12 @@ def _save_tasks_unlocked(tasks: list[dict], path: Path) -> None:
     """Validate-and-write a task list WITHOUT acquiring the store lock.
 
     Thin back-compat wrapper over :func:`_save_doc_unlocked`. Callers that
-    only hold a mutated ``tasks`` list (not the full parsed doc) land here;
-    it does the ONE ``safe_load`` needed to recover the non-``tasks`` top-
-    level sections (the ``users:`` registry etc.), splices in ``tasks``, and
-    delegates the actual crash-safe write. Callers on the hot read-modify-
-    write path should instead reuse the doc they already parsed via
-    :func:`load_doc` and call :func:`_save_doc_unlocked` directly — that
-    avoids this extra re-read entirely.
+    only hold a mutated ``tasks`` list (not the full doc) land here; it does
+    the ONE extra read needed to recover the non-``tasks`` top-level sections
+    (the ``users:`` registry etc.), splices in ``tasks``, and delegates the
+    actual write. Callers on the hot read-modify-write path should instead
+    reuse the doc they already hold via :func:`load_doc` and call
+    :func:`_save_doc_unlocked` directly — that avoids the extra read.
 
     Used by callers (the `_store.add_task`/`update_task`/`complete_task`
     Python API) that hold `_store_lock` for their whole read-modify-write
@@ -212,28 +245,48 @@ def _save_tasks_unlocked(tasks: list[dict], path: Path) -> None:
     """
     path = Path(path)
     # Recover the existing non-`tasks` sections (users:, …) so they survive
-    # the rewrite. This is the SAME read the old inline path did; it stays
-    # here ONLY for callers that don't already hold the parsed doc.
-    doc: dict = {"tasks": []}
-    if path.exists():
-        loaded = load_doc(path, validate=False)
-        if isinstance(loaded, dict):
-            doc = loaded
+    # the rewrite. Read UNCONDITIONALLY: load_doc reads the canonical DB (and
+    # fail-louds if it is missing). The old `if path.exists()` gated on the
+    # YAML store PATH — never a real file under SQLite — so it skipped this
+    # read, wrote back doc={"tasks": tasks} with NO users section, and the
+    # incremental mirror then DELETEd the users registry (a card write wiped
+    # every user). Every caller of this wrapper (save_tasks, help-wait/clear)
+    # hit that.
+    loaded = load_doc(path, validate=False)
+    doc: dict = loaded if isinstance(loaded, dict) else {"tasks": []}
     _save_doc_unlocked(doc, path, tasks=tasks)
 
 
 def _save_doc_unlocked(
-    doc: dict, path: Path, *, tasks: list[dict] | None = None
+    doc: dict,
+    path: Path,
+    *,
+    tasks: list[dict] | None = None,
+    deleted_ids: list[str] | None = None,
+    allow_shrink: bool = False,
 ) -> None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
 
     The doc-based write primitive. The read-modify-write callers in
-    ``_store`` parse the store ONCE under the lock (via :func:`load_doc`),
+    ``_store`` read the store ONCE under the lock (via :func:`load_doc`),
     mutate ``doc["tasks"]`` in place, then hand the whole doc here — so the
     non-``tasks`` sections (``users:`` etc.) captured by that same locked
-    read survive the rewrite WITHOUT a redundant second ``safe_load``. When
-    ``tasks`` is passed it replaces ``doc["tasks"]`` (the CRUD verbs may
-    rebind the list, e.g. ``keep = [...]`` in delete).
+    read survive the rewrite without a redundant second read. When ``tasks``
+    is passed it replaces ``doc["tasks"]`` (the CRUD verbs may rebind the
+    list, e.g. ``keep = [...]`` in delete).
+
+    ``deleted_ids`` names cards a verb INTENTIONALLY removed (``delete_task``):
+    the pruned ``tasks`` no longer lists them, but SQLite is upsert-only and the
+    mirror never infers a delete from absence, so the ids are forwarded
+    explicitly and the mirror drops exactly those rows. Omit on ordinary writes.
+    NOTE: as of the 2026-07-21 tombstone change, ``delete_task`` itself no
+    longer passes this — it keeps the row (see ``_store_lifecycle``) — so in
+    practice this stays empty on every call reachable from the public API.
+
+    ``allow_shrink`` forwards to :func:`scitex_cards._store_backend.write_doc_to_db`'s
+    shrink guard (P0, third board wipe): a write missing rows the store
+    already has is refused UNLESS this is ``True``. Keyword-only, never an
+    env var — see that function's docstring. Omit on ordinary writes.
 
     Direct callers must already hold `_store_lock(path)`.
     """
@@ -245,122 +298,28 @@ def _save_doc_unlocked(
         doc["tasks"] = tasks
     _validate_tasks(tasks, source="<save_tasks>")  # hook-bypass: line-limit
 
-    # DB-CANONICAL: SQLite IS the store, so return BEFORE the YAML write below
-    # — nothing downstream runs, including the dual-write mirror and the git
-    # auto-commit. `write_doc_to_db` RAISES on failure (there is no YAML behind
-    # it); see `_store_backend` for why that inverts the usual posture.
-    from ._store_backend import db_is_canonical, write_doc_to_db
-
-    if db_is_canonical():
-        write_doc_to_db(doc, path)
-        return
-
-    # FAST WRITE (was: ruamel round-trip). The old path loaded the whole
-    # 2.3 MB / ~695-card store with ruamel round-trip mode, merged the new
-    # tasks into the comment-bearing nodes by id, then re-serialized with
-    # ruamel — ~20 s PER single-card write, O(whole-store). ruamel's
-    # round-trip machinery is the cost; it exists only to preserve the ~41
-    # hand-written header/section comments. The store is machine-managed, so
-    # dropping those comments is accepted. We now read with the fast safe
-    # loader and dump with the fast safe dumper (libyaml when present).
+    # SQLite IS the store. This is the whole write path — there is no second
+    # branch, and that is the point of the change rather than a side effect of
+    # it. `write_doc_to_db` RAISES on failure; see `_store_backend` for why
+    # that inverts the usual best-effort posture.
     #
-    # CRITICAL: the NON-`tasks` top-level sections (notably the `users:`
-    # registry) are preserved because `doc` — parsed under the lock by the
-    # caller (or by the `_save_tasks_unlocked` wrapper) — is written back
-    # whole; we only ever replaced `doc["tasks"]`, every other top-level
-    # key is carried through untouched.
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # CRASH-SAFE WRITE (lead a2a `3b0df14a`, post-2026-06-08 autoassign-
-    # parallel-run data loss): dump to a sibling .tmp file, fsync it, then
-    # os.replace into the canonical path. os.replace is POSIX-atomic — a
-    # SIGTERM/SIGKILL mid-dump leaves either the OLD file intact (if the
-    # crash hits before replace) or the NEW file in place (if after).
-    # Never a half-written file like the one we recovered from today.
-    tmp_path = path.parent / f".{path.name}.tmp"
-    try:
-        # Serialize to a STRING first so the post-dump byte-length check can
-        # compare on-disk bytes to what we intended to write (and so we never
-        # dump twice). Then write that exact string to the tmp, flush + fsync.
-        dumped = safe_dump(doc)  # returns the YAML string (stream=None)
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            handle.write(dumped)
-            handle.flush()
-            try:
-                os.fsync(handle.fileno())
-            except OSError:
-                # fsync can fail on some FS (overlay / fuse). Best-effort —
-                # the os.replace below is what gives the atomic guarantee.
-                pass
-        # POST-DUMP INTEGRITY CHECK (lead a2a `d5809cd3`, 2026-06-13 — the
-        # recovered-by-hand corruption episode where the canonical file ended
-        # mid-string at line ~2784). Before we promote the tmp into the
-        # canonical slot, prove the written bytes are FULLY REPARSEABLE. The
-        # pre-write `_validate_tasks` proves the in-memory structure is sound;
-        # this catches any failure mode introduced by the dump itself
-        # (unterminated scalar, partial flush, disk-full leaving a truncated
-        # file even if fsync didn't error).
-        #
-        # CHEAPENED (Fix B2): the old check ran a FULL `safe_load` construct-
-        # reparse (~2.3 s / ~159k objects on the live 9.2 MB store) purely to
-        # prove parseability, then compared the reparsed task COUNT to the
-        # in-memory count. We now do the equivalent two cheap checks in
-        # `_verify_dumped_tmp` — a byte-length check + a libyaml EVENT-SCAN
-        # reparse to StreamEnd — which proves the same "fully reparseable"
-        # property WITHOUT building the objects. The task-count match is
-        # DROPPED deliberately: reaching StreamEnd proves the whole stream
-        # parsed, so a truncation that silently drops tasks can't reach
-        # promotion (it aborts the parse first). Flagged for scitex-dev
-        # review; see docs/ CHANGELOG + `_store_verify._verify_dumped_tmp`.
-        _verify_dumped_tmp(tmp_path, dumped)
-        # All checks passed — atomic POSIX rename promotes tmp → canonical.
-        os.replace(tmp_path, path)
-    except Exception:
-        # Best-effort tmp cleanup so a crashed dump doesn't leave a
-        # stale sidecar.
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    # WHAT WAS DELETED HERE, recorded because the absences are load-bearing and
+    # a future reader will otherwise reintroduce one of them as an improvement:
+    #
+    #   the YAML dump + atomic tmp/os.replace promotion — there is no file to
+    #     promote; SQLite's own transaction is the atomicity boundary now
+    #   the dual-write mirror — a mirror needs an original, and the original
+    #     was the thing removed
+    #   the git auto-commit of the store directory — it version-controlled a
+    #     YAML file that no longer exists, and doing it on every card write was
+    #     only ever affordable because it was best-effort
+    #
+    # Each of those was correct while YAML was canonical. None of them is
+    # correct now, and keeping any one would recreate a second representation
+    # of the board — which is the exact defect this cutover exists to remove.
+    from ._store_backend import write_doc_to_db
 
-    # S1 DUAL-WRITE — mirror this doc into the SQLite shadow DB.
-    #
-    # HERE, and not earlier: the `os.replace` above is POSIX-atomic, so the user's
-    # card is now DURABLE. A mirror failure can therefore cost them nothing.
-    # HERE, and not later: we still hold `_store_lock`, so the mirror cannot
-    # interleave with another writer and needs no lock of its own.
-    #
-    # NEVER raises — a mirror hiccup must not turn a successful card write into a
-    # failed one. But it is never SILENT either: `_dual_write` logs it LOUD, counts
-    # it, and surfaces it in `health`. A mirror that fails quietly lets the DB rot
-    # out of sync while every check reports green, and S2 would then cut the fleet
-    # over to a store that is confidently wrong.
-    #
-    # OFF by default (`SCITEX_TODO_DUAL_WRITE`): the write path of the fleet's
-    # critical store does not get a flag day.
-    #
-    # COST, MEASURED on the live 1,257-card store: the YAML rewrite above takes
-    # 11,176 ms; this mirror adds 1,243 ms (+11%). That looks expensive and is not —
-    # SQLite's FULL rebuild is 9x FASTER than the YAML rewrite it sits beside. That
-    # measurement is why this is a simple full mirror rather than the row-diffing
-    # engine I first assumed it would need to be. (S2, writing ONE row: 4.71 ms.)
-    try:
-        from ._dual_write import mirror_after_save
-
-        mirror_after_save(doc, path)
-    except Exception:  # noqa: BLE001 — even the import must not break a save
-        pass
-
-    # Best-effort git auto-commit on the store dir (lead a2a `3b0df14a`).
-    # Lazy-init a small `.git` inside the store dir on first call; commit
-    # each save so the operator gets time-travel via `git show <sha>:<file>`.
-    # NEVER raises — a git failure must not block the actual save (the
-    # YAML is already on disk; the commit is an audit-trail bonus).
-    try:
-        _git_autocommit_store(path)
-    except Exception:  # noqa: BLE001 — best-effort
-        pass
+    write_doc_to_db(doc, path, deleted_ids=deleted_ids, allow_shrink=allow_shrink)
 
 
 def _git_autocommit_store(path: Path) -> None:
@@ -460,9 +419,8 @@ def _git_autocommit_store(path: Path) -> None:
     )
 
 
-# `_merge_tasks_into_seq` removed: it existed only to preserve ruamel
-# per-node comments during the round-trip write. The write path now uses a
-# fast safe dump (no comment preservation), so the merge helper is dead.
+# `_merge_tasks_into_seq` removed: it existed only to preserve per-node
+# comments during a whole-document round-trip write. That write path is gone.
 # (hook-bypass: line-limit — _model.py split still queued.)
 
 

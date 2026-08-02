@@ -28,12 +28,12 @@ from scitex_cards._django.management.commands.scitex_cards_board import (  # noq
 )
 
 
-_ENV_KEY = "SCITEX_TODO_TASKS_YAML_SHARED"
+_ENV_KEY = "SCITEX_CARDS_DB"
 
 
 @pytest.fixture
 def env_isolated():
-    """Save/restore ``$SCITEX_TODO_TASKS_YAML_SHARED`` around a test.
+    """Save/restore ``$SCITEX_CARDS_DB`` around a test.
 
     We deliberately do NOT use ``monkeypatch`` (see suite-wide convention in
     ``tests/integration/test_peer_edges.py``). The fixture pops the key on
@@ -120,14 +120,14 @@ def test_board_command_help_mentions_board():
 
 
 def test_apply_tasks_env_sets_env_var_for_non_empty_path(env_isolated):
-    """Regression: ``--tasks PATH`` MUST export ``SCITEX_TODO_TASKS_YAML_SHARED``.
+    """Regression: ``--tasks PATH`` MUST export ``SCITEX_CARDS_DB``.
 
     Pre-2026-06-05 the helper did not exist and ``handle()`` only embedded
     the path into the browser URL — so the in-process Django server fell
     through the project-store -> user-store -> bundled fallback chain and
     silently ignored ``--tasks``. This test pins the export.
     """
-    # Arrange (env_isolated fixture cleared SCITEX_TODO_TASKS_YAML_SHARED)
+    # Arrange (env_isolated fixture cleared SCITEX_CARDS_DB)
     target = "/scitex-fleet/tasks.yaml"
     # Act
     _apply_tasks_env(target)
@@ -140,7 +140,7 @@ def test_apply_tasks_env_empty_string_is_noop(env_isolated):
 
     argparse's default for the option is ``""``. Treating that as "unset
     the env" would break the host systemd unit recipe which exports
-    ``SCITEX_TODO_TASKS_YAML_SHARED=...`` upstream of the CLI invocation.
+    ``SCITEX_CARDS_DB=...`` upstream of the CLI invocation.
     """
     # Arrange
     os.environ[_ENV_KEY] = "/inherited/from/upstream.yaml"
@@ -154,7 +154,7 @@ def test_apply_tasks_env_overrides_inherited_value(env_isolated):
     """Explicit ``--tasks`` MUST win over an already-set env var.
 
     Matches the resolver precedence documented in ``scitex-todo --help``:
-    "an explicit --tasks path, then $SCITEX_TODO_TASKS_YAML_SHARED, then the project
+    "an explicit --tasks path, then $SCITEX_CARDS_DB, then the project
     store, ...". So a non-empty CLI value uses ``os.environ[...]`` (NOT
     ``setdefault``) and clobbers the inherited value.
     """

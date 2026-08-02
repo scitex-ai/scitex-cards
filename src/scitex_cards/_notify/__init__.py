@@ -22,8 +22,8 @@ It builds on the merged foundation:
   ``agent`` (owner), ``assignee``, ``collaborators`` (list),
   ``subscribers`` (list).
 * :mod:`scitex_cards._paths` — :func:`~scitex_cards._paths.resolve_tasks_path`
-  locates the store; the optional ``notify.yaml`` sidecar lives next to
-  ``tasks.yaml``.
+  locates the store; the optional ``notify.json`` sidecar lives next to
+  it.
 
 ## The three config layers (precedence: GLOBAL ← PER-USER ← PER-CARD)
 
@@ -31,7 +31,7 @@ Most-specific wins. The resolver composes three layers:
 
 1. **GLOBAL defaults** — :data:`DEFAULT_NOTIFY_RULES`, a built-in
    ``{event_type: [role, ...]}`` map (the SSOT default). An optional
-   ``notify.yaml`` sidecar (a sibling of ``tasks.yaml``, kept SoC-separate
+   ``notify.json`` sidecar (a sibling of the task store, kept SoC-separate
    from the task payload) can OVERRIDE / extend it. :func:`load_notify_config`
    returns the built-ins merged with the sidecar; with zero config it
    returns the built-ins unchanged.
@@ -51,7 +51,7 @@ Most-specific wins. The resolver composes three layers:
 
 * :mod:`._rules`    — schema: roles, :data:`DEFAULT_NOTIFY_RULES`,
   :class:`NotifyConfig`, :class:`NotifyConfigError`.
-* :mod:`._config`   — loading: validation helpers, ``notify.yaml`` sidecar,
+* :mod:`._config`   — loading: validation helpers, ``notify.json`` sidecar,
   :func:`load_notify_config`.
 * :mod:`._resolver` — :func:`card_role_members` + the deliverable
   :func:`resolve_recipients`.

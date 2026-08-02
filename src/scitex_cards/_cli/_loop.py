@@ -51,23 +51,24 @@ def register(main: click.Group) -> None:
     ),
 )
 @click.option(
-    "--tasks", "tasks_path", default=None,
-    help="Path to tasks.yaml (default: resolver chain).",
-)
-@click.option(
-    "--assignee", default=None,
+    "--assignee",
+    default=None,
     help="Agent name to filter on. Mutually exclusive with --mine.",
 )
 @click.option(
-    "--mine", "use_mine", is_flag=True,
+    "--mine",
+    "use_mine",
+    is_flag=True,
     help="Filter on SCITEX_TODO_AGENT_ID env var.",
 )
 @click.option(
-    "--project", default=None,
+    "--project",
+    default=None,
     help="Scope to one project.",
 )
 @click.option(
-    "--auto-claim", is_flag=True,
+    "--auto-claim",
+    is_flag=True,
     help=(
         "ATOMIC: also flip status to 'in_progress' + stamp a "
         "'starting (auto-claim)' comment in one write. Race-free for "
@@ -75,11 +76,12 @@ def register(main: click.Group) -> None:
     ),
 )
 @click.option(
-    "--json", "as_json", is_flag=True,
+    "--json",
+    "as_json",
+    is_flag=True,
     help="Emit the full task dict as JSON (machine consumption).",
 )
 def next_cmd(
-    tasks_path: str | None,
     assignee: str | None,
     use_mine: bool,
     project: str | None,
@@ -87,14 +89,12 @@ def next_cmd(
     as_json: bool,
 ) -> None:
     """Print the next runnable task for an agent."""
+    from .._model import load_tasks
     from .._next import next_task
     from .._paths import resolve_tasks_path
-    from .._model import load_tasks
 
     if assignee and use_mine:
-        raise click.ClickException(
-            "Pass --assignee OR --mine, not both."
-        )
+        raise click.ClickException("Pass --assignee OR --mine, not both.")
     if use_mine:
         env = os.environ.get("SCITEX_TODO_AGENT_ID")
         if not env:
@@ -103,7 +103,7 @@ def next_cmd(
             )
         assignee = env
 
-    path = resolve_tasks_path(tasks_path)
+    path = resolve_tasks_path(None)
     tasks = load_tasks(path)
 
     pick = next_task(tasks, assignee=assignee, project=project)
@@ -129,7 +129,7 @@ def next_cmd(
         deadline = pick.task.get("deadline") or "—"
         click.echo(
             f"{pick.task['id']} | {prio_str} | "
-            f"{pick.task.get('title','')} | {deadline}"
+            f"{pick.task.get('title', '')} | {deadline}"
         )
 
 
@@ -145,7 +145,9 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
     tasks = load_tasks(path)
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     stamp = {
-        "ts": now, "author": assignee, "text": f"starting (auto-claim by {assignee})",
+        "ts": now,
+        "author": assignee,
+        "text": f"starting (auto-claim by {assignee})",
     }
     for t in tasks:
         if t.get("id") == task_id:
@@ -161,29 +163,33 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
 @click.command(
     "watch",
     **spec_command_kwargs(
-        summary="Watch tasks.yaml and POST /v1/turn to the owning agent on change.",
+        summary="Watch the task store and POST /v1/turn to the owning agent on change.",
         description=(
             "Wakes on new/commented/status-changed tasks (the push side "
             "of the self-consuming board loop). Pairs with `next` (the "
             "pull side) — see the 'agent self-consumption loop' "
             "sub-skill (32).",
         ),
-        examples=(("{prog} watch --push --interval 2", "Poll every 2s and push wakes."),),
+        examples=(
+            ("{prog} watch --push --interval 2", "Poll every 2s and push wakes."),
+        ),
     ),
 )
 @click.option(
-    "--push", is_flag=True, default=True,
+    "--push",
+    is_flag=True,
+    default=True,
     help=(
         "Forward wakes to each owning agent's a2a /v1/turn. (Reserved "
         "off-by-default mode is planned for dry-run / logging-only.)"
     ),
 )
 @click.option(
-    "--tasks", "tasks_path", default=None,
-    help="Path to tasks.yaml (default: resolver chain).",
-)
-@click.option(
-    "--interval", "interval_s", type=float, default=30.0, show_default=True,
+    "--interval",
+    "interval_s",
+    type=float,
+    default=30.0,
+    show_default=True,
     help=(
         "Polling interval in seconds. Clamped up to a 10s hard floor — a "
         "sub-floor value (e.g. --interval 2) death-spiraled the fleet on "
@@ -191,17 +197,20 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
     ),
 )
 @click.option(
-    "--min-wake-interval", "min_wake_interval_s",
-    type=float, default=30.0, show_default=True,
+    "--min-wake-interval",
+    "min_wake_interval_s",
+    type=float,
+    default=30.0,
+    show_default=True,
     help="Per-agent debounce window in seconds.",
 )
 @click.option(
-    "--once", is_flag=True,
+    "--once",
+    is_flag=True,
     help="Run a single diff tick and exit (handy for tests).",
 )
 def watch_cmd(
     push: bool,
-    tasks_path: str | None,
     interval_s: float,
     min_wake_interval_s: float,
     once: bool,
@@ -219,20 +228,19 @@ def watch_cmd(
     # warning fires for an interactive operator, not only inside the loop.
     interval_s = clamp_interval(interval_s)
 
-    path = resolve_tasks_path(tasks_path)
+    path = resolve_tasks_path(None)
     if once:
         state = WatcherState()
         # First tick seeds; second tick reports any changes that landed
         # in between (rare in --once mode; useful for the test path).
         wakes = run_watcher_once(
-            path, state,
+            path,
+            state,
             min_wake_interval_s=min_wake_interval_s,
             post=push,
         )
         for w in wakes:
-            click.echo(
-                f"WAKE {w.agent} {w.trigger_kind} {w.task_id} :: {w.summary}"
-            )
+            click.echo(f"WAKE {w.agent} {w.trigger_kind} {w.task_id} :: {w.summary}")
         return
     click.echo(
         f"[scitex-todo] watch --push tracking {path} "

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo index`` — SQLite derived-index lifecycle.
+"""CLI noun group ``scitex-cards index`` — SQLite derived-index lifecycle.
 
 PR-B of Stage 2 plan (lead a2a ``aa02fb0e``). YAML stays authoritative;
 the SQLite index (~/.scitex/todo/.tasks.index.sqlite) is a rebuildable read
@@ -68,7 +68,7 @@ def index_rebuild_cmd(dry_run: bool, assume_yes: bool) -> None:
     """Drop + repopulate the SQLite index from the YAML source(s).
 
     Example:
-      $ scitex-todo index rebuild -y
+      $ scitex-cards index rebuild -y
     """
     import sys as _sys
 
@@ -123,8 +123,8 @@ def index_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite index.
 
     Example:
-      $ scitex-todo index info
-      $ scitex-todo index info --json
+      $ scitex-cards index info
+      $ scitex-cards index info --json
     """
     import json as _json
 
@@ -136,14 +136,14 @@ def index_info_cmd(as_json: bool) -> None:
         return
     if not payload["exists"]:
         click.echo(f"# index does not exist yet: {payload['path']}")
-        click.echo("# run `scitex-todo index rebuild -y` to populate.")
+        click.echo("# run `scitex-cards index rebuild -y` to populate.")
         return
     click.echo(
         f"# index: {payload['path']}\n"
         f"#   rows: {payload['rows']}\n"
         f"#   schema version: {payload['index_version']}\n"
         f"#   last index at: {payload['last_index_at']}\n"
-        f"#   yaml mtime: {payload['yaml_mtime']}\n"
+        f"#   store mtime: {payload['store_mtime']}\n"
         f"#   lane count: {payload['lane_count']}"
     )
 

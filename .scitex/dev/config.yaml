@@ -4,12 +4,23 @@
 project-type:
   - pip
 
-# Pre-approved rule skips (lead a2a `fb413fb038da49d1b18262b237385c33`,
-# 2026-06-12, PR #110 fix-forward). Each entry is a scitex-dev audit rule
-# code we accept as drift while a focused cleanup PR is queued. The
-# schema (`audit.skip`) is read by
-# scitex_dev/_cli/audit/_config/_loader.py::load_config.
 audit:
+  # PS-103 root-whitelist. `stub/` is not junk and not scratch: it holds the
+  # `scitex-todo` DEPRECATION STUB, a SEPARATE distribution published to PyPI
+  # from the same tag as this package (see tests/test_stub_version_sync.py,
+  # which pins the two versions together). The rule offers three remedies —
+  # move into ./src/<pkg>/ (wrong: it is its own wheel, not part of ours),
+  # move into ./.dev/ (wrong: it ships), or whitelist here. Whitelisting is
+  # the correct one, and it is reviewed rather than blanket-suppressed.
+  root-whitelist:
+    dirs:
+      - stub
+
+  # Pre-approved rule skips (lead a2a `fb413fb038da49d1b18262b237385c33`,
+  # 2026-06-12, PR #110 fix-forward). Each entry is a scitex-dev audit rule
+  # code we accept as drift while a focused cleanup PR is queued. The
+  # schema (`audit.skip`) is read by
+  # scitex_dev/_cli/audit/_config/_loader.py::load_config.
   skip:
     # PS-204 — `orphan-test-file`. Six tests in tests/scitex_todo/ are
     # tied to non-Python surfaces (board_v3.html template signatures,
@@ -22,9 +33,97 @@ audit:
     # tests/integration/test_cross_package_imports.py gate file lists
     # an older import set; needs a regeneration sweep.
     - PS-140
+    # PS-169 — `hosted-runner-forbidden`. Unlike PS-224 next to it, this rule
+    # offers NO exemption path: its own message says "forbidden without
+    # exception" and the only remedy it names is the self-hosted pool. So a
+    # per-rule skip WITH A WRITTEN REASON is the sole lever available, and it is
+    # the one the constitution section 2 prescribes ("one at a time, in a config
+    # file, each with a written reason") — the thing it forbids is a blanket
+    # FLAG that silences the whole run, which this is not.
+    #
+    # The rule's premise is superseded. It cites an operator mandate of
+    # 2026-07-14; two CURRENT documents say the opposite:
+    #   constitution section 4 — "CI defaults to GitHub-hosted runners" — and it
+    #     cites THIS repo, 2026-07-31: four runners sharing one uv toolcache,
+    #     seven failures across five PRs in an afternoon, the 14-30s vs 62-66s
+    #     duration tell.
+    #   the operator's mantra glossary, さいしーあいとういつ — same policy, same
+    #     incident, same instruction to isolate toolcache per runner.
+    #
+    # Reported as dev-ps169-forbids-hosted-runners-policy-superseded-20260731 so
+    # the RULE gets fixed; this entry is the bridge and should be deleted the
+    # moment scitex-dev lands that. Repo-wide is narrower here than it sounds:
+    # this is the only workflow in the repo that names a runner in-file
+    # (pytest-matrix delegates to a reusable workflow, cla.yml is exempted
+    # above), so it silences exactly the job it is meant to.
+    - PS-169
     # PS-168 — `secret-env-prefix-missing`. cla.yml uses
     # `GH_PERSONAL_ACCESS_TOKEN` without the SCITEX_TODO_ per-package
     # prefix. The rule was codified after cla.yml shipped and the
     # secret is shared across the fleet — renaming requires cross-repo
     # rotation.
     - PS-168
+
+  # PER-SITE exemptions (`audit.exemptions`, {rule: [{path, line, reason}]}).
+  # Deliberately NOT `skip:` above: skip silences a rule REPO-WIDE, which for
+  # PS-224 would stop detecting ANY workflow aimed at a runner no machine
+  # serves — and that rule's whole value is catching the green-by-absence case
+  # where a job never runs and therefore never fails. Silencing it fleet-wide
+  # to excuse one deliberate exception is "a gate that cannot fail is not a
+  # gate" (constitution §2). One site, one reason, still enforced everywhere
+  # else.
+  exemptions:
+    PS-224:
+      # `runner-destination-unregistered` — cla.yml::CLAssistant targets
+      # ubuntu-latest, which no registered machine serves.
+      #
+      # This is NOT drift and must NOT be "fixed" by pointing the job at
+      # Spartan. It is a deliberate SECURITY decision, made in a090c283
+      # ("harden CLA — SHA-pin the third-party action + move it off the
+      # credential-holding runner", #496) which intentionally REVERSED the
+      # earlier blanket move to Spartan (7083b18c). CLAssistant runs a
+      # third-party action; our self-hosted Spartan runners hold fleet
+      # credentials, so running untrusted third-party code there trades a
+      # CI-hygiene rule for a credential-exposure risk. Repointing it would
+      # silently undo a security fix.
+      #
+      # Every other workflow in this repo is on self-hosted Spartan
+      # (pypi-publish, rtd-sphinx, quality-audit) — this is the sole
+      # exception, and it is bounded to this one job rather than the file.
+      - path: .github/workflows/cla.yml::CLAssistant
+        line: 0
+        reason: >-
+          third-party action, deliberately kept off the credential-holding
+          self-hosted runner by a090c283 (#496); repointing it at Spartan
+          would reverse that security hardening
+      # `quality-audit::audit` targets ubuntu-latest for the same class of
+      # reason, but a different one: RUNNER RELIABILITY, not credentials.
+      # See the PS-169 entry below for the measurement.
+      - path: .github/workflows/scitex-todo-quality-audit-on-ubuntu-latest.yml::audit
+        line: 0
+        reason: >-
+          moved to a hosted runner because several self-hosted runners share one
+          uv toolcache and lose the race; constitution section 4 makes hosted the
+          default and cites this exact incident
+      # `postgres-backend::postgres-backend` — a THIRD distinct reason, and the
+      # only one of the three that is a hard capability limit rather than a
+      # policy or security choice.
+      #
+      # This job declares a `services: postgres:16` container. GitHub Actions
+      # service containers are started by the runner's DOCKER daemon; the
+      # registered Spartan machines are an HPC/apptainer pool with no Docker
+      # available to the runner, so the service simply cannot be brought up
+      # there. This is not "we prefer hosted" — the job is unrunnable on every
+      # currently registered destination, which is exactly the case the rule's
+      # own message says to exempt rather than re-point.
+      #
+      # It exists because PostgreSQL is the canonical store for this deployment
+      # and NO CI leg had ever connected to one (measured 2026-08-02: all 7
+      # workflow files, zero `services:` blocks). Re-pointing it at Spartan
+      # would not move the job, it would delete the coverage.
+      - path: .github/workflows/postgres-backend-on-ubuntu-latest.yml::postgres-backend
+        line: 0
+        reason: >-
+          needs a `services:` container, which requires a Docker-capable runner;
+          the registered Spartan pool is HPC/apptainer with no Docker, so this
+          job cannot run on any registered destination

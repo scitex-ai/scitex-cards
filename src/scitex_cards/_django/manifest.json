@@ -6,16 +6,16 @@
   "icon": "fas fa-diagram-project",
   "subtitle": "Dependency-graph view of the scitex-todo task store",
   "about": "View the scitex-todo task dependency graph in a browser. Nodes are colored by status; edges show depends_on and blocks relationships.",
-  "description": "scitex-todo board is a read-only browser view of the canonical YAML task store. It renders the task dependency DAG with React Flow: nodes colored by status (goal, pending, in_progress, blocked, done, deferred, failed), depends_on arrows, and blocks inhibition edges.",
+  "description": "scitex-todo board is a read-only browser view of the canonical SQLite task store. It renders the task dependency DAG with React Flow: nodes colored by status (goal, pending, in_progress, blocked, done, deferred, failed), depends_on arrows, and blocks inhibition edges.",
   "author": "ywatanabe",
   "license": "AGPL-3.0",
   "capabilities": [
     "Render the task dependency graph (DAG) in the browser",
     "Color nodes by task status",
     "Show depends_on and blocks edges",
-    "Resolve the task store via the project -> user -> bundled chain"
+    "Resolve the task store via $SCITEX_CARDS_DB"
   ],
-  "allowed_extensions": [".yaml", ".yml"],
+  "allowed_extensions": [".db", ".sqlite"],
   "wip": false,
   "standalone": true,
   "standalone_command": "scitex-todo board",

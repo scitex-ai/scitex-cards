@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo notifyd`` — the always-on delivery daemon (slice 2).
+"""CLI verb ``scitex-cards notifyd`` — the always-on delivery daemon (slice 2).
 
 Foreground run = what the systemd ``ExecStart`` calls: it ticks
 :func:`scitex_cards._delivery.deliver_pending` every ``--interval`` seconds
 until SIGTERM/SIGINT, holding a single-instance lock so two daemons never run
 concurrently.
 
-* ``scitex-todo notifyd`` — run the daemon in the foreground (blocking).
-* ``scitex-todo notifyd --once`` — a single delivery pass then exit (cron/
-  testing convenience; same as ``scitex-todo deliver`` but on the daemon verb).
-* ``scitex-todo notifyd install-unit [--force]`` — WRITE the systemd user-unit
+* ``scitex-cards notifyd`` — run the daemon in the foreground (blocking).
+* ``scitex-cards notifyd --once`` — a single delivery pass then exit (cron/
+  testing convenience; same as ``scitex-cards deliver`` but on the daemon verb).
+* ``scitex-cards notifyd install-unit [--force]`` — WRITE the systemd user-unit
   TEMPLATE to ``~/.config/systemd/user/`` and PRINT the exact ``systemctl
   --user`` enable commands. Operator-gated: it never runs systemctl.
 
@@ -37,7 +37,7 @@ def register(main: click.Group) -> None:
     invoke_without_command=True,
     help=(
         "Run the always-on notification-delivery daemon (foreground).\n\n"
-        "Bare `scitex-todo notifyd` runs the loop in the foreground — what "
+        "Bare `scitex-cards notifyd` runs the loop in the foreground — what "
         "the systemd unit's ExecStart calls. It ticks the delivery pass every "
         "--interval seconds, holding a single-instance lock so two daemons "
         "never run at once, until SIGTERM/SIGINT.\n\n"
@@ -45,19 +45,11 @@ def register(main: click.Group) -> None:
         "  install-unit      Write the systemd user-unit template (operator-gated)\n"
         "  collapse-digests  Collapse each recipient's unseen digest backlog\n\n"
         "Examples:\n"
-        "  scitex-todo notifyd --interval 120\n"
-        "  scitex-todo notifyd --once          # single pass then exit\n"
-        "  scitex-todo notifyd install-unit\n"
-        "  scitex-todo notifyd collapse-digests"
+        "  scitex-cards notifyd --interval 120\n"
+        "  scitex-cards notifyd --once          # single pass then exit\n"
+        "  scitex-cards notifyd install-unit\n"
+        "  scitex-cards notifyd collapse-digests"
     ),
-)
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: project -> user -> bundled example, "
-    "or $SCITEX_TODO_TASKS_YAML_SHARED). Resolves the inbox + ledger + recipients + "
-    "pidfile dir.",
 )
 @click.option(
     "--interval",
@@ -91,7 +83,6 @@ def register(main: click.Group) -> None:
 @click.pass_context
 def notifyd_group(
     ctx: click.Context,
-    tasks_path: str | None,
     interval: float,
     run_once: bool,
     terminal_report_every: int,
@@ -99,7 +90,7 @@ def notifyd_group(
 ) -> None:
     """The ``notifyd`` group — bare invocation runs the daemon foreground."""
     if ctx.invoked_subcommand is not None:
-        # `scitex-todo notifyd install-unit` — let Click route to the verb.
+        # `scitex-cards notifyd install-unit` — let Click route to the verb.
         return
 
     # Foreground run (or a single pass with --once).
@@ -111,7 +102,7 @@ def notifyd_group(
     if run_once:
         from .._delivery import deliver_pending
 
-        summary = deliver_pending(store=tasks_path)
+        summary = deliver_pending(store=None)
         click.echo(
             f"# notifyd --once: sent={summary['sent']} "
             f"failed={summary['failed']} "
@@ -121,20 +112,20 @@ def notifyd_group(
         )
         return
 
+    import os as _os
+
     from .._delivery._daemon import DaemonAlreadyRunning, pidfile_path, run_notifyd
     from .._inbox import _resolved_store
 
-    import os as _os
-
     click.echo(
-        f"# scitex-todo notifyd starting: pid={_os.getpid()} "
-        f"store={_resolved_store(tasks_path)} "
+        f"# scitex-cards notifyd starting: pid={_os.getpid()} "
+        f"store={_resolved_store(None)} "
         f"interval={interval}s "
-        f"pidfile={pidfile_path(tasks_path)}"
+        f"pidfile={pidfile_path(None)}"
     )
     try:
         result = run_notifyd(
-            store=tasks_path,
+            store=None,
             interval=interval,
             terminal_report_every=terminal_report_every,
             nudge_sweep_minutes=nudge_sweep_minutes,
@@ -155,8 +146,8 @@ def notifyd_group(
         "to run. OPERATOR-GATED: this NEVER runs systemctl / enables / starts "
         "the service.\n\n"
         "Example:\n"
-        "  scitex-todo notifyd install-unit\n"
-        "  scitex-todo notifyd install-unit --force   # overwrite existing"
+        "  scitex-cards notifyd install-unit\n"
+        "  scitex-cards notifyd install-unit --force   # overwrite existing"
     ),
 )
 @click.option(
@@ -196,23 +187,16 @@ def install_unit_cmd(force: bool) -> None:
         "pass. The durable fix (supersede-on-enqueue) already prevents new "
         "backlog; this cleans up what accumulated before it landed.\n\n"
         "Example:\n"
-        "  scitex-todo notifyd collapse-digests\n"
-        "  scitex-todo notifyd collapse-digests --json"
+        "  scitex-cards notifyd collapse-digests\n"
+        "  scitex-cards notifyd collapse-digests --json"
     ),
 )
-@click.option(
-    "--tasks",
-    "tasks_path",
-    default=None,
-    help="Path to tasks.yaml (default: project -> user -> bundled example, "
-    "or $SCITEX_TODO_TASKS_YAML_SHARED).",
-)
 @click.option("--json", "as_json", is_flag=True, help="Emit the summary as JSON.")
-def collapse_digests_cmd(tasks_path: str | None, as_json: bool) -> None:
+def collapse_digests_cmd(as_json: bool) -> None:
     """Collapse the unseen digest backlog per recipient (maintenance verb)."""
     from .._inbox_maint import collapse_digests
 
-    summary = collapse_digests(store=tasks_path)
+    summary = collapse_digests(store=None)
     if as_json:
         import json
 

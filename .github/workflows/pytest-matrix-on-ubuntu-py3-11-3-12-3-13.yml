@@ -28,3 +28,40 @@ jobs:
   pytest-matrix:
     uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
     secrets: inherit
+    with:
+      # GITHUB-HOSTED, not the Spartan pool. Operator ruling 2026-07-31: hosted
+      # is the default choice now — this repository is public, so the minutes
+      # are free, and our own machines are not faster for a pure-Python test
+      # matrix that finishes in about a minute.
+      #
+      # The immediate reason is the shared tool cache. Every runner on the
+      # Spartan lease inherits one mutable ~/.runner-toolcache on GPFS, so
+      # runners contend for a single directory and jobs fail BOTH reading it
+      # (`uv: No such file` -> exit 127) and writing it (ENOENT during copy).
+      # Measured here 2026-07-31: seven failures across five pull requests in
+      # one afternoon, four differently-named runners, every one cleared by a
+      # plain rerun.
+      #
+      # DIAGNOSING ONE — USE THE EXIT CODE, NOT THE DURATION:
+      #   exit 127 -> the toolcache race; uv died before anything ran
+      #   exit 1   -> something ran and genuinely failed. Read the log.
+      #
+      # This file previously taught "failures finish in 14-30s where passing
+      # legs take 62-66s". That tell is a PER-REPO CALIBRATION, not a fleet
+      # constant, and it cost scitex-hpc a wrong call on 2026-08-02: on a repo
+      # whose suite is ~9s, green runs measure 17/31/25/26s and red runs
+      # 17/32/26/27s — indistinguishable. Only one direction is mechanism-level
+      # and safe to reuse: a LONG run cannot be the toolcache race, because a
+      # uv that never installed cannot produce 300s of work.
+      #
+      # Worse, the duration tell cannot accumulate evidence about itself. Its
+      # prescribed action is `rerun`, and `gh run list` reports only the LATEST
+      # attempt — so the rerun deletes the failure you would need to check
+      # whether the rule was ever right. Verified here 2026-08-02: a release
+      # failure watched live now reads `attempt=2, conclusion=success`, with
+      # 25/25 recent runs green and the failure nowhere in the list.
+      #
+      # Revert this to inherit the default once each runner has its own
+      # AGENT_TOOLSDIRECTORY; the shared workflow's `runs_on` input documents
+      # that fix and why it has not fired yet.
+      runs_on: '["ubuntu-latest"]'

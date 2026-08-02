@@ -136,7 +136,7 @@ def rescore_task(
     card's new rank (``None`` when the card is terminal) and ``N`` the
     scored-set size.
     """
-    from . import _model
+    from . import _model, _task
     from ._store import (
         TaskNotFoundError,
         _default_agent,
@@ -153,11 +153,9 @@ def rescore_task(
 
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
-        target = None
-        for t in tasks:
-            if t.get("id") == task_id:
-                target = t
-                break
+        # See `_task._is_tombstoned`: a deleted card's row is retained
+        # forever but must behave as ABSENT here.
+        target = _task._find_live_task(tasks, task_id)
         if target is None:
             raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
 

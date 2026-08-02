@@ -20,9 +20,9 @@ appear in multiple groups).
 
 Storage
 -------
-The group list lives at the YAML top level next to ``tasks:``:
+The group list lives at the legacy store's top level next to ``tasks:``:
 
-.. code-block:: yaml
+.. code-block:: text
 
     groups:
       - id: collab-clew-ac
@@ -183,9 +183,7 @@ def _validate_groups(
                 f"{source}: groups[{idx}].id must be a non-empty string"
             )
         if gid in seen_ids:
-            raise TaskValidationError(
-                f"{source}: duplicate group id {gid!r}"
-            )
+            raise TaskValidationError(f"{source}: duplicate group id {gid!r}")
         if task_ids and gid in task_ids:
             raise TaskValidationError(
                 f"{source}: group id {gid!r} collides with a task id "

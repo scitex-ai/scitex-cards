@@ -51,11 +51,35 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ._throughput import _now_utc, _parse_iso
+from ._stale_active_clocks import (
+    FIELD_BLOCKED_AT,
+    _age_hours,
+    _blocked_age_hours,
+    _owner_of,
+)
+from ._stale_active_thresholds import (
+    DEFAULT_BACKLOG_NUDGE_HOURS,
+    DEFAULT_BLOCKED_NUDGE_HOURS,
+    DEFAULT_PENDING_NUDGE_HOURS,
+    DEFAULT_STALE_ACTIVE_HOURS,
+    ENV_BACKLOG_NUDGE_HOURS,
+    ENV_BLOCKED_NUDGE_HOURS,
+    ENV_PENDING_NUDGE_HOURS,
+    ENV_STALE_ACTIVE_HOURS,
+    _blocked_nudge_hours,
+    _pending_nudge_hours,
+    _resolve_hours,
+    _stale_active_hours,
+)
+from ._throughput import _now_utc
 
 #: An extra row filter applied on top of the status filter — see
 #: ``_detect_owned_untouched``'s ``where`` parameter.
 _Predicate = Callable[[dict], bool]
+
+#: Which quantity a sweep measures — see ``_detect_owned_untouched``'s ``clock``
+#: parameter and :mod:`scitex_cards._stale_active_clocks`.
+_Clock = Callable[[dict, _dt.datetime], float | None]
 
 #: Statuses that count as "active" — the owner is claiming live work.
 STALE_ACTIVE_STATUSES = frozenset({"in_progress", "blocked"})
@@ -85,23 +109,6 @@ EXTERNAL_BLOCKERS = frozenset(
     {"compute", "dependency", "dep", "operator-decision", "agent-wait"}
 )
 
-#: Env override + default for the staleness threshold (hours). 2 h is
-#: tight on purpose: an in_progress/blocked card untouched for >2 h is
-#: very likely forgotten, not mid-keystroke.
-ENV_STALE_ACTIVE_HOURS = "SCITEX_TODO_STALE_ACTIVE_HOURS"
-DEFAULT_STALE_ACTIVE_HOURS = 2.0
-
-#: Env override + default for the EXTERNALLY-BLOCKED re-check (hours).
-#:
-#: Deliberately as lenient as the backlog clock: the owner is legitimately
-#: waiting, so the only thing worth asking is a periodic "is your blocker
-#: still real?" — blockers DO go stale silently (the dependency shipped, the
-#: compute job died, the operator answered elsewhere), and a card can rot for
-#: weeks behind a blocker that cleared long ago. A daily check catches that
-#: rot without the alert fatigue of the 2 h clock.
-ENV_BLOCKED_NUDGE_HOURS = "SCITEX_TODO_BLOCKED_NUDGE_HOURS"
-DEFAULT_BLOCKED_NUDGE_HOURS = 24.0
-
 #: Statuses that count as BACKLOG — accepted but not yet started.
 #:
 #: ``deferred`` is the backlog state since ``pending`` was abolished
@@ -113,91 +120,6 @@ BACKLOG_STATUSES = frozenset({"deferred"})
 
 #: Deprecated alias, kept for out-of-tree importers.
 PENDING_STATUSES = BACKLOG_STATUSES
-
-#: Env override + default for the BACKLOG threshold (hours). 24 h is
-#: deliberately MUCH more lenient than the 2 h stale-active clock: a deferred
-#: card is work the owner consciously has not begun, so a forgotten one only
-#: becomes worth a nudge after a full day of no triage / no start.
-ENV_BACKLOG_NUDGE_HOURS = "SCITEX_TODO_BACKLOG_NUDGE_HOURS"
-#: Deprecated alias for the env knob. Both names are honoured (see
-#: ``_backlog_nudge_hours``) so existing crontabs keep working.
-ENV_PENDING_NUDGE_HOURS = "SCITEX_TODO_PENDING_NUDGE_HOURS"
-DEFAULT_PENDING_NUDGE_HOURS = 24.0
-DEFAULT_BACKLOG_NUDGE_HOURS = DEFAULT_PENDING_NUDGE_HOURS
-
-def _resolve_hours(
-    explicit: float | None, env_name: str, default: float
-) -> float:
-    """Resolve a threshold: explicit arg > env override > default.
-
-    The env override is read at CALL time (not import time) so a test or
-    cron can flip it per-invocation. A non-numeric env value falls back
-    to the default rather than raising into the sweep.
-    """
-    if explicit is not None:
-        return explicit
-    raw = os.environ.get(env_name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _stale_active_hours(stale_hours: float | None) -> float:
-    """Resolve the stale-active threshold, honoring the env override."""
-    return _resolve_hours(
-        stale_hours, ENV_STALE_ACTIVE_HOURS, DEFAULT_STALE_ACTIVE_HOURS
-    )
-
-
-def _pending_nudge_hours(pending_hours: float | None) -> float:
-    """Resolve the backlog threshold, honoring either env override.
-
-    ``SCITEX_TODO_BACKLOG_NUDGE_HOURS`` is the current name;
-    ``SCITEX_TODO_PENDING_NUDGE_HOURS`` still works so live crontabs written
-    against the old name do not silently revert to the 24 h default.
-    """
-    if pending_hours is not None:
-        return pending_hours
-    if os.environ.get(ENV_BACKLOG_NUDGE_HOURS) is not None:
-        return _resolve_hours(None, ENV_BACKLOG_NUDGE_HOURS, DEFAULT_BACKLOG_NUDGE_HOURS)
-    return _resolve_hours(None, ENV_PENDING_NUDGE_HOURS, DEFAULT_BACKLOG_NUDGE_HOURS)
-
-
-def _blocked_nudge_hours(blocked_hours: float | None) -> float:
-    """Resolve the externally-blocked re-check threshold (env-overridable)."""
-    return _resolve_hours(
-        blocked_hours, ENV_BLOCKED_NUDGE_HOURS, DEFAULT_BLOCKED_NUDGE_HOURS
-    )
-
-
-def _owner_of(task: dict) -> str:
-    """The card's owner = the USER the nudge is addressed to.
-
-    ``agent`` is the canonical owner field; ``assignee`` is the
-    fallback for cards that predate the ``agent`` rename. Empty owner
-    surfaces as ``"(unassigned)"`` so the gap is visible, never
-    silently dropped (mirrors ``_throughput.aggregate``).
-    """
-    owner = (task.get("agent") or task.get("assignee") or "").strip()
-    return owner or "(unassigned)"
-
-
-def _age_hours(task: dict, now: _dt.datetime) -> float | None:
-    """Hours since the card was last touched.
-
-    ``last_activity`` is authoritative; ``created_at`` is the fallback
-    for cards that have never been touched since creation. Returns
-    ``None`` only when BOTH are missing/unparseable — such a card is
-    treated as stale (we can't prove it's fresh).
-    """
-    ts = task.get("last_activity") or task.get("created_at")
-    parsed = _parse_iso(ts)
-    if parsed is None:
-        return None
-    return (now - parsed).total_seconds() / 3600.0
 
 
 def is_externally_blocked(task: dict) -> bool:
@@ -280,6 +202,7 @@ def _detect_owned_untouched(
     threshold_hours: float,
     now: _dt.datetime | None = None,
     where: _Predicate | None = None,
+    clock: _Clock = _age_hours,
 ) -> dict[str, list[StaleCard]]:
     """Generic core: owned cards in ``statuses`` untouched > threshold.
 
@@ -292,6 +215,14 @@ def _detect_owned_untouched(
     filter — used to split ``blocked`` rows between the tight
     owner-actionable sweep and the lenient externally-blocked one, so the
     two never double-report the same card.
+
+    ``clock`` is WHICH QUANTITY this sweep measures, and it is a real choice,
+    not a knob: :func:`_age_hours` ("when was this touched") is right for the
+    sweeps that ask "why haven't you acted", because a comment IS acting;
+    :func:`_blocked_age_hours` ("how long has the blocker been uncleared") is
+    right for the blocked-check, because a comment does not clear a blocker.
+    It defaults to ``_age_hours`` so only the sweep that needs the other clock
+    changes behaviour. See :mod:`scitex_cards._stale_active_clocks`.
 
     :func:`detect_stale_active`, :func:`detect_blocked_external` and
     :func:`detect_pending_backlog` are thin wrappers over this so
@@ -307,7 +238,7 @@ def _detect_owned_untouched(
             continue
         if where is not None and not where(t):
             continue
-        age = _age_hours(t, cur)
+        age = clock(t, cur)
         if age is not None and age <= threshold_hours:
             continue  # fresh
         owner = _owner_of(t)
@@ -317,7 +248,9 @@ def _detect_owned_untouched(
                 title=str(t.get("title") or "(untitled)"),
                 status=str(t.get("status") or "?"),
                 age_hours=age,
-                priority=t.get("priority") if isinstance(t.get("priority"), int) else None,
+                priority=t.get("priority")
+                if isinstance(t.get("priority"), int)
+                else None,
             )
         )
     for cards in out.values():
@@ -366,14 +299,20 @@ def detect_blocked_external(
     """Group long-externally-blocked cards by OWNER (the lenient sweep).
 
     The complement of :func:`detect_stale_active` over the ``blocked``
-    rows: cards whose blocker is real and external, untouched for longer
-    than the lenient threshold (default 24 h).
+    rows: cards whose blocker is real and external and whose ``(status,
+    blocker)`` pair has stood longer than the lenient threshold (default 24 h).
 
     The question this sweep asks is NOT "why have you abandoned this?"
     but "has your blocker cleared?" — blockers go stale silently (the
     dependency shipped, the compute job died, the operator answered
     somewhere else), and a card can rot for weeks behind one that lifted
     long ago. Nobody re-checks a blocker they set and forgot.
+
+    Because that is the question, this sweep measures the age of the PAIR
+    (:func:`_blocked_age_hours`) and NOT the last touch. Keying it on
+    ``last_activity`` made the alarm silenceable by typing: a comment reset the
+    clock without clearing anything, so annotating a stuck card hid it for
+    another day. The card being annotated is the card most likely to be stuck.
 
     Pure: no env reads beyond the threshold resolution, no network.
     """
@@ -383,6 +322,7 @@ def detect_blocked_external(
         threshold_hours=_blocked_nudge_hours(blocked_hours),
         now=now,
         where=is_externally_blocked,
+        clock=_blocked_age_hours,
     )
 
 
