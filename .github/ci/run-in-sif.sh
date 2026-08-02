@@ -83,7 +83,7 @@ echo "py=$("$VENV/bin/python" -V) target=$TMPDIR/site"
 # pip is NOT a --group fallback: PEP 735 support landed in pip 25.1 and the
 # runner's pip may predate it, so the pip rung deliberately installs the
 # runtime set only rather than appearing to install a toolchain it cannot.
-uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all]" --group dev ||
+uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all,dev]" ||
     uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all]" ||
     uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e "." ||
     pip install --target="$TMPDIR/site" -e ".[all]"

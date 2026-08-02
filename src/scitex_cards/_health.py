@@ -219,6 +219,55 @@ def _check_channel_capable() -> dict[str, Any]:
     }
 
 
+def _check_dev_group_installed() -> dict[str, Any]:
+    """ok when the dev toolchain is present, and NAMES the group when it is not.
+
+    THIS CHECK EXISTS BECAUSE THE INSTALLER'S MESSAGE IS NOT ACTIONABLE. After
+    ADR-0005 moved ``dev`` to a PEP 735 dependency group, the old spelling does
+    this::
+
+        $ uv pip install -e ".[dev]"
+        warning: The package ... does not have an extra named `dev`
+
+    A WARNING, not an error — so the install SUCCEEDS and produces an
+    environment with no toolchain, which is the silent under-install ADR-0005
+    exists to prevent. The operator put it exactly right: it should say "no such
+    extra; `--group dev` is what you want".
+
+    I cannot change uv's or pip's text. This is the nearest place I control that
+    a developer actually reaches, so the hint lives here: the next person to run
+    `scitex-cards health` in a toolchain-less checkout gets the command instead
+    of the puzzle.
+
+    Deliberately NOT ok=False. A missing dev toolchain is perfectly correct in a
+    RUNTIME install — a container serving the board has no business carrying
+    pytest. Reporting it as a failure there would train people to ignore the
+    check, which is how a gate dies. It reports ok=True with the hint attached,
+    so it informs without crying wolf.
+    """
+    import importlib.util  # noqa: PLC0415 -- only needed for this probe
+
+    missing = [
+        name
+        for name in ("pytest", "pytest_cov")
+        if importlib.util.find_spec(name) is None
+    ]
+    if not missing:
+        return {"ok": True, "detail": "dev toolchain present", "hint": None}
+    return {
+        "ok": True,
+        "detail": (
+            f"dev toolchain absent ({', '.join(missing)}) — expected in a "
+            "runtime install, unexpected in a checkout you intend to test"
+        ),
+        "hint": (
+            "`dev` is a PEP 735 dependency GROUP, not an extra (ADR-0005), so "
+            "`pip install -e '.[dev]'` does NOT work and only warns. Use: "
+            "uv pip install -e '.[all]' --group dev   (uv >= 0.6, pip >= 25.1)"
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Card-data invariants — MOVED to `_health_cards` (this file hit the 512 cap).
 #

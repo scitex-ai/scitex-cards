@@ -161,10 +161,42 @@ class BoardPasswordMiddleware:
             raise MiddlewareNotUsed
 
     def __call__(self, request):
+        from ._board_login import (  # noqa: PLC0415 -- keeps this module import-light
+            cookie_is_valid,
+            issue_cookie,
+            login_page,
+            password_matches,
+            wants_html,
+        )
+
         header = request.META.get("HTTP_AUTHORIZATION")
-        if not is_authorised(header, self.password):
+        if is_authorised(header, self.password) or cookie_is_valid(request):
+            return self.get_response(request)
+
+        # A BROWSER GETS A PAGE; A TOOL GETS THE 401. Not a fallback either way —
+        # two audiences that RENDER differently, so the mechanism follows the
+        # audience.
+        #
+        # Measured 2026-08-02: Chrome's Basic dialog shows only "Sign in" and the
+        # origin. It does NOT print the realm, so the 401 below — which names
+        # SCITEX_CARDS_PASSWORD correctly, and which curl displays in full —
+        # reached the operator as a bare unlabelled password box on his own
+        # board. The header was right and invisible to the only person using it.
+        if not wants_html(request):
             return challenge()
-        return self.get_response(request)
+
+        if request.method == "POST":
+            if password_matches(request.POST.get("password"), self.password):
+                # 303 so the browser re-requests with GET: a refresh after login
+                # must not re-POST the password.
+                response = HttpResponse(status=303)
+                response["Location"] = request.get_full_path()
+                return issue_cookie(response, secure=request.is_secure())
+            # Deliberately does NOT say whether a password was even configured,
+            # and does not echo what was typed.
+            return login_page(env_var=_ENV_VAR, error="That password did not match.")
+
+        return login_page(env_var=_ENV_VAR)
 
 
 # EOF

@@ -127,3 +127,52 @@ audit:
           needs a `services:` container, which requires a Docker-capable runner;
           the registered Spartan pool is HPC/apptainer with no Docker, so this
           job cannot run on any registered destination
+
+  # EXTRAS BEYOND {all, dev, docs} — ADR-0005's allowlist, one per entry, each
+  # with a written reason. Same doctrine as `exemptions:` above and the same
+  # mechanism PS-220 established; the schema is provisional until scitex-dev
+  # ships the rule, and this section is expected to be re-keyed to match.
+  #
+  # WHY EVERY ENTRY IS "KEEPS AN EXISTING PIN WHOLE" RATHER THAN "SOMEONE SHOULD
+  # SELECT THIS", which is the whole point of the section. Measured by
+  # scitex-dev, 2026-08-02:
+  #
+  #     uv pip install --dry-run 'pkg[doesnotexist]'
+  #       -> warning: does not have an extra named `doesnotexist`
+  #       -> EXIT=0, install proceeds
+  #
+  # An unknown extra is a WARNING, not an error. So DELETING one of these does
+  # not break its pins loudly — it makes them silently install LESS, which is
+  # precisely the failure that took the fleet's board down on 2026-08-02
+  # (`scitex-cards[mcp]` in three container def sites, no psycopg, and an error
+  # message that blamed the database).
+  #
+  # So these are aliases keeping already-deployed pins whole until pin detection
+  # has swept them. Do NOT tidy them by deletion. The tidy-up is: fix the pins,
+  # confirm by search that none remain, THEN remove the alias.
+  extras:
+    allow:
+      - name: postgres
+        reason: >-
+          Pinned outside this repo — postgres-backend-on-ubuntu-latest.yml and
+          the agent-container def files carry `scitex-cards[postgres]`. psycopg
+          became a HARD dependency on 2026-08-02 so this extra now adds nothing;
+          kept as an empty alias solely so those pins keep resolving.
+      - name: mcp
+        reason: >-
+          The extra the outage was pinned to. `scitex-cards[mcp]>=0.19.0` sits in
+          three agent-container def sites and was, until today, in this package's
+          own fleet-facing rollout skill. Kept until pin detection confirms every
+          site moved to [all]; deleting it now would turn those pins from
+          "installs the wrong set" into "silently installs even less".
+      - name: web
+        reason: >-
+          Django board dependencies, named in this repo's own README install
+          instructions and plausibly in downstream notes. Kept for the same
+          pin-safety reason until a sweep confirms otherwise.
+      - name: currency
+        reason: >-
+          The scitex-dev staleness gate, deliberately optional so a standalone
+          scitex-cards install works without scitex-dev present (the decoupling
+          rule). This one is a genuine capability boundary rather than a pin
+          alias, and would survive a clean sweep.

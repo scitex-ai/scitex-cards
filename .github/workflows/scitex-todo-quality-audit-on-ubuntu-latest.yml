@@ -89,7 +89,7 @@ jobs:
           # runtime capability; --group dev adds the toolchain. The fallbacks
           # degrade to less, never to something that silently omits a runtime
           # capability, which is the failure this ADR exists to prevent.
-          uv pip install --python .venv/bin/python -e ".[all]" --group dev \
+          uv pip install --python .venv/bin/python -e ".[all,dev]" \
             || uv pip install --python .venv/bin/python -e ".[all]" \
             || uv pip install --python .venv/bin/python -e .
           # ASSERT THE OUTCOME, DO NOT TRUST THE CHAIN. The last rung above always
