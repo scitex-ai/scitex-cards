@@ -172,10 +172,30 @@ its unfiltered read. One membership model covers one person and a paying group.
 Adding a credential type is one module. A project boundary costs a store, not a
 feature.
 
-**Costs, accepted.** Cross-tenant queries become impossible by construction —
-correct for a SaaS, and a genuine loss for fleet-wide reporting, which will need
-a separate aggregation path. Duplicate attachment bytes across stores. A mediator
-process becomes a required component in shape 3, where today there is none.
+**Costs, accepted.** Duplicate attachment bytes across stores. A mediator process
+becomes a required component in shape 3, where today there is none.
+
+**Cross-tenant reads: designed, not discovered.** "Impossible by construction" is
+the right isolation property and the wrong stopping point, because **two
+cross-tenant readers already exist and both are the operator's** (raised by
+scitex-hub, and the first one was confirmed in production the same day):
+
+1. **The operator's own board view** spans every project and every agent. That is
+   exactly what got exposed at `cards.scitex.ai` for phone access — so this is
+   not a hypothetical that tenancy might inconvenience later, it is a shipped
+   surface that one-store-per-group would break on the day it lands.
+2. **Billing.** Storage + compute aggregated *across* groups to produce one
+   invoice is a cross-tenant read by definition. There is no invoice without it.
+
+So admin aggregation is an explicit **fan-out over the stores whose handles the
+caller already holds** — never a query, never a privileged cross-store view. The
+distinction is the whole isolation property: zero handles still means zero
+visibility, and an aggregate is a client-side union of things you could each have
+read anyway, not a new authority.
+
+Writing it down here is the point. A tenant-isolation model acquires its bypass
+by meeting a legitimate need it did not plan for; naming the two known ones now is
+what stops the bypass being invented under deadline later.
 
 **Not solved here.** §7 of the working notes lists the rest; the two that matter
 most are recorded as cards rather than buried in prose.
