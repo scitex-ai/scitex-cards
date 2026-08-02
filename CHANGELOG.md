@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+## [0.31.6] - 2026-08-02
+
+**A public hostname can no longer be bound by a board that cannot authenticate
+its callers, and the notification rail stops opening its own database.**
+
+`SCITEX_CARDS_PUBLIC_HOST` used to add a hostname to `ALLOWED_HOSTS` while
+asserting only that `DJANGO_SECRET_KEY` was set. That check is real but measures
+a **different property**: it makes session and CSRF signatures unforgeable and
+says nothing about who may send a request. A board behind an enforcing Cloudflare
+Access policy and a board behind nothing produced byte-identical settings — two
+states with one representation, the unsafe one rendering as the safe one exactly
+when it mattered. Its LAN twin `SCITEX_CARDS_ALLOWED_HOSTS` had refused without a
+password since it was written; the path that reaches the internet had not.
+
+A security-shaped check on that branch made it worse rather than better, because
+it reads to the next maintainer as "this path is guarded" and ends the question.
+
+**The board now always authenticates its own callers — a key or a password, the
+way `sshd` chooses, never neither.** A proxy in front (Cloudflare Access, a hub's
+own login) is a *second layer*, never the boundary. An interim revision also
+accepted a written claim that something in front authenticated; that was the only
+path to an origin with no login, and this process cannot observe whether such a
+proxy is enforcing, so it is gone. A test pins the gate's signature at exactly
+`(public_host, password)` so the escape cannot return quietly. Consequences: a
+misconfigured Access policy stops being a breach, and standalone stays honest
+because it is the same code path with no proxy at all.
+
+**The notification rail no longer hand-rolls `sqlite3.connect`.** It was the only
+part of the package opening its own database, and therefore the only part that
+could not be handed a PostgreSQL target — where the failure is not a clean error:
+a DSN reaching `Path(...)` does not raise, it yields a plausible relative path,
+and `mkdir` + `sqlite3.connect` then *manufacture* a SQLite file named after the
+DSN that accepts writes while the real server sits untouched. It now opens
+through `_db.connect`, which dispatches on the target before any path handling.
+No rows move: same file, same contents, measured at 56 emitted statements
+byte-for-byte identical either side. The S0 PRAGMAs come along, notably
+`busy_timeout=300000`.
+
+Supporting that move: a per-backend shape seam so every rail query reads its
+table, recipient column and ordering from one place (`rowid` → `seq` is a
+replacement, not a rename, and a pure rename would produce SQL valid on both
+engines that silently loses delivery order); the null-safe comparison resolved
+per connection, because no literal spelling parses on both SQLite 3.37 and
+PostgreSQL; schema **v9** giving `notifications` a server-assigned arrival-order
+column; row-carry verified by id rather than by count; and a PostgreSQL CI leg so
+the canonical backend has regression coverage and its absence is loud.
+
+Also: the off-site backup survives a PostgreSQL store target (it had been dead
+31 hours behind a `resolve_db_path(...).parent` that raises on a DSN), and the
+channel's own diagnostics are readable in production via an opt-in file sink.
+
 ## [0.31.5] - 2026-08-02
 
 **Schema v8, and an instrument for the delivery lag that had the bug it was

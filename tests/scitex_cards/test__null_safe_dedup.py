@@ -32,12 +32,16 @@ package controls`` was the original note, and neither is the host's system
 python. A requirement the package cannot enforce is not a floor, it is a hope.
 
 So the SQLite backend now uses SQLite's own null-safe ``IS ?``, which every
-SQLite that ships this module accepts and which needs no floor at all. The
-premise that this module would later run against PostgreSQL does not hold:
-``_inbox_sqlite`` resolves ``inbox_db_path(store)`` and opens a FILE, so it can
-never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
-backend module, exactly as the YAML and SQLite backends are separate today, and
-the standard spelling belongs THERE (``_pg_triggers`` already uses it correctly).
+SQLite that ships this module accepts and which needs no floor at all.
+
+A PARAGRAPH HERE USED TO ARGUE that this module could never be handed a
+PostgreSQL connection, because it resolved ``inbox_db_path(store)`` and opened a
+FILE -- so the standard spelling belonged in a separate PostgreSQL rail. True
+when written, false now: ``open_connection`` goes through
+:func:`scitex_cards._db.connect`, which dispatches a DSN to the PostgreSQL
+backend and returns a ``StoreConnection``. There is no separate rail; it is this
+one, pointed elsewhere. Which is exactly why the spelling is resolved per
+connection by ``null_safe_eq_for`` rather than hardcoded either way.
 
 The guard below reads the statements the module actually hands to ``execute()``
 via AST, then asks the LOCAL SQLite to parse each one. That is version
@@ -57,7 +61,15 @@ from contextlib import contextmanager
 
 import pytest
 
-from scitex_cards import _inbox_sqlite
+from scitex_cards import _inbox_sqlite, _inbox_sqlite_schema
+
+#: The rail's SQL lives in TWO modules, so the scan has to follow it. The DDL
+#: half moved to ``_inbox_sqlite_schema`` when the rail stopped hand-rolling
+#: ``sqlite3.connect``; scanning only ``_inbox_sqlite`` afterwards left this
+#: guard policing the query half alone. Its positive control went RED rather
+#: than quietly passing over a narrower surface -- which is the whole reason
+#: that control exists.
+RAIL_MODULES = (_inbox_sqlite, _inbox_sqlite_schema)
 
 _MANAGED = ("SCITEX_TODO_AGENT_ID", "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
 
@@ -197,7 +209,7 @@ class TestTheBackendSqlParsesOnThisSqlite:
     def test_the_guard_finds_the_executed_statements(self):
         """Positive control -- an empty scan must not read as a pass."""
         # Arrange
-        statements = _executed_sql(_inbox_sqlite)
+        statements = [s for m in RAIL_MODULES for s in _executed_sql(m)]
 
         # Act
         selects = [s for s in statements if "SELECT" in s.upper()]
@@ -216,17 +228,17 @@ class TestTheBackendSqlParsesOnThisSqlite:
         runtime guard below still covers it.
         """
         # Arrange
-        module = _inbox_sqlite
+        modules = RAIL_MODULES
 
         # Act
-        blind = _unreadable_execute_calls(module)
+        blind = sum(_unreadable_execute_calls(m) for m in modules)
 
         # Assert -- not zero, and that is precisely the point
         assert blind > 0
 
     def test_no_statement_uses_the_spelling_old_sqlite_rejects(self):
         # Arrange
-        statements = _executed_sql(_inbox_sqlite)
+        statements = [s for m in RAIL_MODULES for s in _executed_sql(m)]
 
         # Act
         offenders = [s for s in statements if _REJECTED in s.upper()]
@@ -308,7 +320,7 @@ class TestTheRuntimeGuardSeesComposedSql:
         unparsable = []
 
         # Act
-        for statement in _executed_sql(_inbox_sqlite):
+        for statement in [s for m in RAIL_MODULES for s in _executed_sql(m)]:
             try:
                 conn.execute("EXPLAIN " + statement, (None,) * statement.count("?"))
             except sqlite3.OperationalError as exc:
