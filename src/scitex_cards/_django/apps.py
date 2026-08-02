@@ -4,7 +4,7 @@
 
 Inherits ``scitex_app._django.ScitexAppConfig`` when scitex-app is installed
 (so the board can register as a scitex-hub module), and falls back to Django's
-plain ``AppConfig`` otherwise — keeping ``pip install scitex-todo[web]``
+plain ``AppConfig`` otherwise — keeping ``pip install scitex-cards[all]``
 functional without a hard scitex-app dependency.
 """
 

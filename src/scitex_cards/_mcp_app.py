@@ -43,7 +43,7 @@ try:
 except ImportError as _exc:  # pragma: no cover — exercised in the doctor test
     raise ImportError(
         "scitex-cards MCP tools require the [mcp] extra. Install with:\n"
-        "  pip install 'scitex-cards[mcp]'"
+        "  pip install 'scitex-cards[all]'"
     ) from _exc
 
 from ._channel_identity import resolve_agent_id_optional

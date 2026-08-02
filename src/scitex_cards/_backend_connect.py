@@ -197,7 +197,7 @@ def connect(
             "PostgreSQL support needs the psycopg driver, which is NOT "
             "installed here. It ships in an optional extra that 'mcp' does not "
             "include, so a default install has no driver:\n"
-            "    pip install 'scitex-cards[postgres]'\n"
+            "    pip install 'scitex-cards[all]'\n"
             "    (or add psycopg[binary]>=3.1 to whatever installs this env)\n"
             f"target was: {target!r}"
         ) from exc

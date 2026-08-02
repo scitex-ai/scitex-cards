@@ -22,7 +22,7 @@ own slice via the `scope` and `assignee` fields.
 
 ```bash
 # 1.1 Install
-pip install 'scitex-todo[mcp]'   # [mcp] extra is needed for the MCP server
+pip install 'scitex-cards[all]'   # [mcp] extra is needed for the MCP server
 
 # 1.2 Where do your tasks live? (read-only — won't create files)
 scitex-todo resolve-store                # ✅ LIVE — prints resolved path + precedence chain
@@ -175,7 +175,7 @@ scitex-todo mcp install          # 🟡 PHASE-1 — wire into local MCP config
 ```
 
 **Install hint.** If `import scitex_cards._mcp_server` raises ImportError,
-you didn't install the `[mcp]` extra. `pip install 'scitex-todo[mcp]'`.
+you didn't install the `[mcp]` extra. `pip install 'scitex-cards[all]'`.
 
 ---
 
@@ -406,7 +406,7 @@ the backlog sweep does the same for untouched `deferred` cards.
 
 | Symptom                                   | Fix                                                |
 | ----------------------------------------- | -------------------------------------------------- |
-| `scitex-todo` not found                   | `pip install 'scitex-todo[mcp]'`                   |
+| `scitex-todo` not found                   | `pip install 'scitex-cards[all]'`                   |
 | `import scitex_cards._mcp_server` fails    | You didn't install the `[mcp]` extra              |
 | `list` returns nothing                    | `$SCITEX_TODO_SCOPE` is filtering you out; try `--scope ''` |
 | Concurrent writers seem to lose data      | `fcntl.flock` should serialize them; check that all writers go through `_store.py` / `save_tasks` (NOT raw YAML writes) |
