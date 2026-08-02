@@ -44,12 +44,6 @@ PUBLIC_HOST = os.environ.get("SCITEX_CARDS_PUBLIC_HOST", "").strip()
 # makes it mandatory rather than advisory.
 BOARD_PASSWORD = os.environ.get("SCITEX_CARDS_PASSWORD", "").strip()
 
-# Names the system in front that authenticates every request, when the board
-# does not authenticate its own. This process cannot verify such a claim, which
-# is exactly why it must be WRITTEN rather than inferred from silence. See
-# _board_exposure.assert_public_exposure_is_authenticated.
-EXTERNAL_AUTH = os.environ.get("SCITEX_CARDS_EXTERNAL_AUTH", "").strip()
-
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
@@ -67,11 +61,11 @@ if PUBLIC_HOST:
     # The key check above guarantees signatures are unforgeable. It says nothing
     # about who may send a request, and it used to be the ONLY thing standing on
     # this branch -- so an Access-protected board and a naked one were
-    # indistinguishable from inside the process. This refuses unless the board
-    # authenticates its own callers or someone NAMES the system that does.
+    # indistinguishable from inside the process. The board authenticates its own
+    # callers, sshd-style; a proxy in front is a second layer, never the only one.
     from ._board_exposure import assert_public_exposure_is_authenticated
 
-    assert_public_exposure_is_authenticated(PUBLIC_HOST, BOARD_PASSWORD, EXTERNAL_AUTH)
+    assert_public_exposure_is_authenticated(PUBLIC_HOST, BOARD_PASSWORD)
 
     ALLOWED_HOSTS = ALLOWED_HOSTS + [PUBLIC_HOST]
 

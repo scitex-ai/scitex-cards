@@ -20,7 +20,6 @@ machinery.
 from __future__ import annotations
 
 __all__ = [
-    "EXTERNAL_ENFORCERS",
     "ExposureWithoutPasswordError",
     "PublicExposureWithoutAuthError",
     "assert_exposure_is_authenticated",
@@ -33,17 +32,7 @@ class ExposureWithoutPasswordError(RuntimeError):
 
 
 class PublicExposureWithoutAuthError(RuntimeError):
-    """Raised when a public hostname would be bound with nothing asserting auth."""
-
-
-#: External systems this board will accept AS its authentication boundary.
-#:
-#: A CLOSED SET on purpose. If any non-empty string counted, then a typo, a
-#: leftover export, or a value copied from an unrelated example would disarm the
-#: refusal silently -- and the whole point of this gate is that the unsafe state
-#: cannot be reached by accident. A member of this set is a claim someone wrote
-#: down, in a name that means something, and can be held to.
-EXTERNAL_ENFORCERS = frozenset({"cloudflare-access"})
+    """Raised when a public hostname would be bound with no way to authenticate."""
 
 
 _MESSAGE = (
@@ -77,38 +66,24 @@ def assert_exposure_is_authenticated(extra_hosts: str, password: str) -> None:
 
 _PUBLIC_MESSAGE = (
     "SCITEX_CARDS_PUBLIC_HOST is set ({host!r}), so this board would answer "
-    "requests from the internet -- but nothing here asserts that anything "
-    "authenticates them.\n\n"
-    "DJANGO_SECRET_KEY is already required on this path and is NOT that "
-    "assertion: it makes session and CSRF signatures unforgeable, which is a "
-    "different property. A board with a perfect secret key and no login is a "
+    "requests from the internet -- but it has no way to authenticate them.\n\n"
+    "DJANGO_SECRET_KEY is already required on this path and is NOT "
+    "authentication: it makes session and CSRF signatures unforgeable, which is "
+    "a different property. A board with a perfect secret key and no login is a "
     "board anyone can read and write.\n\n"
-    "Choose one, explicitly:\n"
+    "The board authenticates its own callers, the way sshd does -- a key or a "
+    "password, never neither. Today that means:\n"
     "  export SCITEX_CARDS_PASSWORD=\"$(python -c 'import secrets; "
-    "print(secrets.token_urlsafe(12))')\"\n"
-    "    -- the board authenticates its own callers, and a proxy in front "
-    "becomes defence in depth.\n"
-    "  export SCITEX_CARDS_EXTERNAL_AUTH=cloudflare-access\n"
-    "    -- you are stating that something in front authenticates every "
-    "request before it arrives. This process CANNOT verify that, so it is "
-    "recorded as your claim. Verify it yourself: an unauthenticated GET to "
-    "https://{host} must return a challenge, never a 200.\n\n"
-    "Known external enforcers: {known}"
-)
-
-_UNKNOWN_ENFORCER_MESSAGE = (
-    "SCITEX_CARDS_EXTERNAL_AUTH is {value!r}, which names no enforcer this "
-    "board knows about, so it asserts nothing. Known values: {known}. If a new "
-    "one belongs here, add it to EXTERNAL_ENFORCERS deliberately -- an "
-    "unrecognised value must not be able to open the board by looking like it "
-    "meant something."
+    "print(secrets.token_urlsafe(12))')\"\n\n"
+    "A proxy in front (Cloudflare Access, the hub's own login) is a SECOND "
+    "layer, never the only one. This process cannot see whether such a proxy is "
+    "enforcing, so a board that relied on it alone would be indistinguishable "
+    "from a board with nothing in front at all."
 )
 
 
-def assert_public_exposure_is_authenticated(
-    public_host: str, password: str, external_auth: str
-) -> None:
-    """Raise unless binding a PUBLIC hostname comes with a named auth boundary.
+def assert_public_exposure_is_authenticated(public_host: str, password: str) -> None:
+    """Raise unless a board bound to a PUBLIC hostname can authenticate callers.
 
     THE FAILURE THIS EXISTS FOR: ``SCITEX_CARDS_PUBLIC_HOST`` used to bind a
     public hostname while asserting only that ``DJANGO_SECRET_KEY`` was set.
@@ -120,12 +95,18 @@ def assert_public_exposure_is_authenticated(
     reads to the next maintainer as "this path is guarded", which ends the
     question instead of raising it.
 
-    So the rule is not "a public board must have a password" -- Access-only IS a
-    legitimate deployment, and the process genuinely cannot see whether Access
-    is enforcing. The rule is that SILENCE IS NOT THE PERMISSIVE CASE. Either
-    the board authenticates its own callers, or someone names the system that
-    does, in a value that is auditable and that they can be held to. Omission
-    reaches neither, so omission refuses.
+    THE BOARD ALWAYS AUTHENTICATES. That is the operator's ruling and it is the
+    simpler rule: a key or a password, chosen the way sshd chooses, never
+    neither. An earlier version of this gate also accepted "something in front
+    authenticates for me" as a written claim. That was a third concept nobody
+    asked for, and it was the only way to reach a naked origin -- so it is gone.
+    A proxy is a second layer now, never the boundary.
+
+    Which matters most for the deployment that is coming: a board reached
+    through a Cloudflare Tunnel is protected by Access AND by its own login, and
+    a misconfigured Access policy stops being a breach. It also keeps the
+    standalone case honest, since standalone is the same code path with no proxy
+    at all.
 
     ``public_host`` empty (or whitespace-only) means no public binding, which
     needs nothing -- the loopback default is the access control there. Whitespace
@@ -137,16 +118,8 @@ def assert_public_exposure_is_authenticated(
         return
     if password.strip():
         return
-    claimed = external_auth.strip()
-    known = ", ".join(sorted(EXTERNAL_ENFORCERS))
-    if claimed and claimed not in EXTERNAL_ENFORCERS:
-        raise PublicExposureWithoutAuthError(
-            _UNKNOWN_ENFORCER_MESSAGE.format(value=external_auth, known=known)
-        )
-    if claimed:
-        return
     raise PublicExposureWithoutAuthError(
-        _PUBLIC_MESSAGE.format(host=public_host.strip(), known=known)
+        _PUBLIC_MESSAGE.format(host=public_host.strip())
     )
 
 

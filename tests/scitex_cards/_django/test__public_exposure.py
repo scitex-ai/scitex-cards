@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Binding a public hostname refuses unless something names the auth boundary.
+"""A board bound to a public hostname must be able to authenticate its callers.
 
 THE DEFECT THIS FILE EXISTS FOR, stated so it cannot be re-introduced by someone
 who reads the branch and concludes it is guarded.
@@ -16,15 +16,16 @@ rendering as the safe one at exactly the moment it mattered.
 A security-shaped check sitting on that branch made it worse rather than better,
 because it reads as "this path is guarded" and terminates the question.
 
-THE RULE IS NOT "a public board must have a password". Access-only is a
-legitimate deployment, and this process genuinely cannot observe whether Access
-is enforcing. The rule is that **silence is not the permissive case**: either the
-board authenticates its own callers, or someone names the system that does, in a
-value that is auditable and that they can be held to. Omission reaches neither,
-so omission refuses.
+THE RULE: the board authenticates its own callers, the way sshd does -- a key or
+a password, never neither. A proxy in front is a SECOND layer, never the
+boundary.
 
-The enforcer set is closed for the same reason. If any non-empty string counted,
-a typo or a leftover export would disarm the refusal while looking deliberate.
+An earlier version of this gate also accepted "something in front authenticates
+for me" as a written, auditable claim. That was a third concept nobody asked
+for, and it was the only path to a naked origin. The operator's ruling replaced
+it with the simpler rule, which is also the stronger one: a misconfigured Access
+policy stops being a breach, and the standalone case -- the same code path with
+no proxy at all -- stays honest.
 
 WHY THESE TESTS USE try/except RATHER THAN ``pytest.raises``: the AAA markers
 this repo requires cannot be placed around a ``with pytest.raises(...)`` block
@@ -36,50 +37,39 @@ is for.
 from __future__ import annotations
 
 from scitex_cards._django._board_exposure import (
-    EXTERNAL_ENFORCERS,
     PublicExposureWithoutAuthError,
     assert_public_exposure_is_authenticated,
 )
 
 
-def _refusal(host: str, password: str, external: str):
+def _refusal(host: str, password: str):
     """Call the gate and hand back the refusal it raised, or ``None``."""
     try:
-        assert_public_exposure_is_authenticated(host, password, external)
+        assert_public_exposure_is_authenticated(host, password)
     except PublicExposureWithoutAuthError as error:
         return error
     return None
 
 
-class TestSilenceRefuses:
-    """Omission must not be the permissive case."""
+class TestABoardWithNoLoginCannotGoPublic:
+    """The unsafe state is unreachable rather than discouraged."""
 
-    def test_public_host_with_neither_password_nor_enforcer_is_refused(self):
+    def test_public_host_without_a_password_is_refused(self):
         # Arrange
-        host, password, external = "cards.example.org", "", ""
+        host, password = "cards.example.org", ""
 
         # Act
-        refusal = _refusal(host, password, external)
+        refusal = _refusal(host, password)
 
         # Assert
         assert refusal is not None
 
     def test_whitespace_password_does_not_count_as_a_password(self):
         # Arrange -- a stray space in a shell export must not open the board.
-        host, password, external = "cards.example.org", "   ", ""
+        host, password = "cards.example.org", "   "
 
         # Act
-        refusal = _refusal(host, password, external)
-
-        # Assert
-        assert refusal is not None
-
-    def test_whitespace_enforcer_does_not_count_as_a_claim(self):
-        # Arrange
-        host, password, external = "cards.example.org", "", "  "
-
-        # Act
-        refusal = _refusal(host, password, external)
+        refusal = _refusal(host, password)
 
         # Assert
         assert refusal is not None
@@ -90,113 +80,82 @@ class TestSilenceRefuses:
         host = "cards.example.org"
 
         # Act
-        refusal = _refusal(host, "", "")
+        refusal = _refusal(host, "")
 
         # Assert
         assert "DJANGO_SECRET_KEY" in str(refusal)
 
-
-class TestAnUnrecognisedEnforcerIsNotAClaim:
-    """A closed set, so a typo cannot disarm the refusal by looking deliberate."""
-
-    def test_misspelled_enforcer_name_is_refused(self):
-        # Arrange
-        host, external = "cards.example.org", "clouflare-access"
-
-        # Act
-        refusal = _refusal(host, "", external)
-
-        # Assert
-        assert refusal is not None
-
-    def test_arbitrary_truthy_value_is_refused(self):
-        # Arrange -- "yes" is what someone reaches for when guessing.
-        host, external = "cards.example.org", "yes"
-
-        # Act
-        refusal = _refusal(host, "", external)
-
-        # Assert
-        assert refusal is not None
-
-    def test_unknown_enforcer_refusal_lists_the_known_ones(self):
-        # Arrange
+    def test_refusal_names_the_remedy(self):
+        # Arrange -- an error that does not say how to fix it costs a search.
         host = "cards.example.org"
 
         # Act
-        refusal = _refusal(host, "", "nope")
+        refusal = _refusal(host, "")
 
         # Assert
-        assert "cloudflare-access" in str(refusal)
+        assert "SCITEX_CARDS_PASSWORD" in str(refusal)
+
+    def test_refusal_says_a_proxy_is_a_second_layer_not_the_boundary(self):
+        # Arrange -- someone deploying behind Cloudflare Access will otherwise
+        # read this refusal as "the tunnel should have been enough".
+        host = "cards.example.org"
+
+        # Act
+        refusal = _refusal(host, "")
+
+        # Assert
+        assert "second layer" in str(refusal).lower()
 
 
-class TestTheTwoLegitimatePaths:
-    """Both ways of answering the question are accepted, and only those two."""
+class TestTheAcceptedConfigurations:
+    """Exactly two states load: authenticated, or not public at all."""
 
-    def test_a_board_password_is_sufficient(self):
+    def test_a_board_password_permits_the_public_binding(self):
         # Arrange
         host, password = "cards.example.org", "s3cret"
 
         # Act
-        refusal = _refusal(host, password, "")
+        refusal = _refusal(host, password)
 
         # Assert
         assert refusal is None
 
-    def test_a_named_external_enforcer_is_sufficient(self):
-        # Arrange
-        host, external = "cards.example.org", "cloudflare-access"
-
-        # Act
-        refusal = _refusal(host, "", external)
-
-        # Assert
-        assert refusal is None
-
-    def test_no_public_host_needs_nothing(self):
+    def test_no_public_host_needs_no_password(self):
         # Arrange -- loopback only; the operating system is the access control.
-        host, password, external = "", "", ""
+        host, password = "", ""
 
         # Act
-        refusal = _refusal(host, password, external)
+        refusal = _refusal(host, password)
 
         # Assert
         assert refusal is None
 
     def test_whitespace_only_host_is_not_a_public_binding(self):
         # Arrange
-        host, password, external = "   ", "", ""
+        host, password = "   ", ""
 
         # Act
-        refusal = _refusal(host, password, external)
+        refusal = _refusal(host, password)
 
         # Assert
         assert refusal is None
 
 
-class TestTheEnforcerSetIsClosed:
-    """The set itself is the security-relevant constant, so pin its shape."""
+class TestThereIsNoThirdOption:
+    """The gate takes a password or nothing -- no delegation parameter."""
 
-    def test_cloudflare_access_is_a_known_enforcer(self):
-        # Arrange
-        enforcers = EXTERNAL_ENFORCERS
+    def test_the_gate_accepts_exactly_two_arguments(self):
+        # Arrange -- a third parameter would be somewhere to put "a proxy
+        # authenticates for me", which is the escape that was removed.
+        import inspect
 
-        # Act
-        known = "cloudflare-access" in enforcers
-
-        # Assert
-        assert known is True
-
-    def test_the_empty_string_is_not_a_known_enforcer(self):
-        # Arrange -- were "" ever a member, omission would become permissive
-        # again through the back door.
-        enforcers = EXTERNAL_ENFORCERS
+        signature = inspect.signature(assert_public_exposure_is_authenticated)
 
         # Act
-        known = "" in enforcers
+        parameters = list(signature.parameters)
 
         # Assert
-        assert known is False
+        assert parameters == ["public_host", "password"]
 
 
 # EOF
