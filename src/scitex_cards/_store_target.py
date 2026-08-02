@@ -40,6 +40,7 @@ __all__ = [
     "resolve_store_target",
     "resolve_store_backend",
     "require_db_path",
+    "store_label",
 ]
 
 
@@ -116,6 +117,43 @@ def require_db_path(explicit: str | Path | None = None) -> Path:
             "silently creates a different, empty store."
         )
     return Path(target).expanduser()
+
+
+def store_label(explicit: str | Path | None = None) -> str:
+    """The resolved store rendered FOR HUMANS -- safe to print, never a ``Path``.
+
+    Exists because naming the store is not the same operation as opening it, and
+    conflating the two broke working verbs. ``scitex-cards list-tasks`` read 301
+    rows from PostgreSQL and then raised ``StoreTargetIsNotAPath`` -- not on the
+    read, which had already succeeded, but on the header line above it, which
+    called ``resolve_db_path`` purely to name where the rows came from. A label
+    is a caption; it must not be able to fail the command it captions.
+
+    Two properties this guarantees that ``str(resolve_store_target())`` does not:
+
+    1. NO CREDENTIALS. A DSN may carry a password in its userinfo and secrets in
+       its query string, and this string is printed to stdout and into logs. Both
+       are stripped. The rest of the DSN is kept verbatim, because "which store
+       am I looking at" is the entire question the label exists to answer, and a
+       fully-masked label answers it no better than no label at all.
+    2. NO ``Path``. ``Path`` collapses ``//`` to ``/``, turning
+       ``postgresql://host/db`` into ``postgresql:/host/db`` -- a mangled string
+       that has already sent two agents hunting a malformed-URL bug in a config
+       that was correct, and that a stale client turned into a real directory
+       tree on disk.
+    """
+    target = str(resolve_store_target(explicit))
+    if not is_postgres_url(target):
+        return target
+    target = target.split("?", 1)[0]
+    # Strip userinfo: scheme://user:secret@host -> scheme://user@host. Split on
+    # the LAST '@' before the host, since a password may itself contain one.
+    scheme, sep, rest = target.partition("://")
+    if sep and "@" in rest:
+        userinfo, _, hostpart = rest.rpartition("@")
+        user = userinfo.split(":", 1)[0]
+        rest = f"{user}@{hostpart}" if user else hostpart
+    return f"{scheme}{sep}{rest}"
 
 
 def _assert_sqlite_default() -> str:

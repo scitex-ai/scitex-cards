@@ -25,6 +25,7 @@ import json
 import click
 
 from .._db import resolve_db_path
+from .._store_target import store_label
 from ._compat import spec_command_kwargs, spec_group_kwargs
 
 
@@ -80,7 +81,7 @@ def list_tasks_filtered(
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_db_path(tasks_path)
+    resolved = store_label(tasks_path)
     click.echo(f"# {resolved}  ({len(rows)} tasks)")
     for task in rows:
         sc = task.get("scope") or "-"
@@ -104,7 +105,7 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_db_path(tasks_path)
+    resolved = store_label(tasks_path)
     if not rows:
         click.echo("✓ Nothing is waiting on the operator (0 operator-decision blocks).")
         click.echo(f"# {resolved}")
