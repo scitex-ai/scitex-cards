@@ -1,0 +1,126 @@
+name: postgres-backend
+# The canonical store for this deployment is PostgreSQL, and until this file
+# existed NO CI leg ever connected to one. Every Postgres-specific behaviour —
+# the null-safe operator split, paramstyle translation, plpgsql trigger
+# substitution, advisory-lock semantics, dict-like row access — was validated
+# only on developer machines.
+#
+# This is a REPO-LOCAL workflow on purpose. The pytest matrix is an org-level
+# reusable workflow (scitex-ai/.github) shared by every repository, so adding a
+# service container there would impose a Postgres on repos that do not want one.
+#
+# WHY IT IS NOT ENOUGH TO SIMPLY ADD A SERVICE: a Postgres-only test does not
+# FAIL without a server, it SKIPS, and a skipped test is indistinguishable from
+# a passing one in a green summary. So this job EXPORTS SCITEX_CARDS_TEST_PG_DSN,
+# which flips the fixtures from "skip if absent" to "fail if unreachable". Adding
+# the service without that switch would buy a green leg and no assurance.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: postgres-backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  postgres-backend:
+    runs-on: ubuntu-latest
+
+    env:
+      # Defined once at job level so the run step and the guard step below
+      # cannot drift apart. A guard that checks a different set of files than
+      # the one that actually ran is worse than no guard: it reports on a run
+      # that did not happen.
+      #
+      # ADD EVERY FILE WITH A POSTGRES-DEPENDENT TEST HERE. A test that needs a
+      # server and is not listed does not fail — it simply never runs in CI,
+      # which is this workflow's own failure mode reappearing one level up.
+      PG_TEST_FILES: >-
+        tests/scitex_cards/test__sql_null_safe.py
+        tests/scitex_cards/test__inbox_carry.py
+        tests/scitex_cards/test__schema_v9_arrival_order.py
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scitex_cards
+          POSTGRES_PASSWORD: scitex_cards
+          POSTGRES_DB: scitex_cards
+        ports:
+          - 5432:5432
+        # Without a health check the steps race the server's startup and fail
+        # with a connection error that looks exactly like a real defect.
+        options: >-
+          --health-cmd "pg_isready -U scitex_cards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package with the postgres extra
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[postgres]" pytest
+
+      - name: Confirm psycopg is importable
+        # A missing driver would otherwise surface as a fixture failure whose
+        # message blames the connection. Naming it here keeps the later failure
+        # honest about what actually broke.
+        run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
+
+      - name: Run the Postgres-backed tests
+        env:
+          # Declaring the DSN is what makes an unreachable server a FAILURE
+          # rather than a skip. See the pg_conn fixture.
+          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+        run: |
+          # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
+          # pipeline only the LAST command's status survives. Without this the
+          # `| tee` below returns 0 even when the tests fail, and the step passes
+          # while they are red. (A command that never ran reporting success is
+          # the same class of defect this whole workflow exists to remove;
+          # credit to scitex-hpc, who measured it on three commands piped to
+          # `head` the same day this was written.)
+          set -o pipefail
+          python -m pytest $PG_TEST_FILES -v -rs | tee result.txt
+
+      - name: Assert the Postgres tests actually exercised Postgres
+        # The guard on the guard. A leg that is green because every Postgres
+        # test SKIPPED proves nothing, which is the precise failure this
+        # workflow exists to remove.
+        #
+        # Asserts an INVARIANT, not a count. An earlier version pinned
+        # `passed >= 7`, calibrated to one file's test total -- a number
+        # guaranteed to go stale the moment a test is added, which happened
+        # within the hour when the carry tests landed. The durable property is
+        # that NO test skipped for want of a Postgres, and that something ran.
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          text = pathlib.Path("result.txt").read_text()
+
+          # A declared-but-broken DSN now FAILS in the fixture, so these strings
+          # should be impossible here. Checking anyway: if the fixture ever
+          # regresses to skipping, this leg must not stay green.
+          for marker in ("no live Postgres", "psycopg not installed"):
+              if marker in text:
+                  print(f"ERROR: a test skipped for want of Postgres: {marker!r}")
+                  sys.exit(1)
+
+          m = re.search(r"(\d+) passed", text)
+          passed = int(m.group(1)) if m else 0
+          print(f"passed={passed}")
+          if passed < 1:
+              print("ERROR: no tests passed -- the suite did not run")
+              sys.exit(1)
+          PY

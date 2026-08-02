@@ -19,11 +19,20 @@ machinery.
 
 from __future__ import annotations
 
-__all__ = ["ExposureWithoutPasswordError", "assert_exposure_is_authenticated"]
+__all__ = [
+    "ExposureWithoutPasswordError",
+    "PublicExposureWithoutAuthError",
+    "assert_exposure_is_authenticated",
+    "assert_public_exposure_is_authenticated",
+]
 
 
 class ExposureWithoutPasswordError(RuntimeError):
     """Raised when the board would answer off-box requests with no password."""
+
+
+class PublicExposureWithoutAuthError(RuntimeError):
+    """Raised when a public hostname would be bound with no way to authenticate."""
 
 
 _MESSAGE = (
@@ -53,6 +62,65 @@ def assert_exposure_is_authenticated(extra_hosts: str, password: str) -> None:
     if password.strip():
         return
     raise ExposureWithoutPasswordError(_MESSAGE.format(hosts=extra_hosts))
+
+
+_PUBLIC_MESSAGE = (
+    "SCITEX_CARDS_PUBLIC_HOST is set ({host!r}), so this board would answer "
+    "requests from the internet -- but it has no way to authenticate them.\n\n"
+    "DJANGO_SECRET_KEY is already required on this path and is NOT "
+    "authentication: it makes session and CSRF signatures unforgeable, which is "
+    "a different property. A board with a perfect secret key and no login is a "
+    "board anyone can read and write.\n\n"
+    "The board authenticates its own callers, the way sshd does -- a key or a "
+    "password, never neither. Today that means:\n"
+    "  export SCITEX_CARDS_PASSWORD=\"$(python -c 'import secrets; "
+    "print(secrets.token_urlsafe(12))')\"\n\n"
+    "A proxy in front (Cloudflare Access, the hub's own login) is a SECOND "
+    "layer, never the only one. This process cannot see whether such a proxy is "
+    "enforcing, so a board that relied on it alone would be indistinguishable "
+    "from a board with nothing in front at all."
+)
+
+
+def assert_public_exposure_is_authenticated(public_host: str, password: str) -> None:
+    """Raise unless a board bound to a PUBLIC hostname can authenticate callers.
+
+    THE FAILURE THIS EXISTS FOR: ``SCITEX_CARDS_PUBLIC_HOST`` used to bind a
+    public hostname while asserting only that ``DJANGO_SECRET_KEY`` was set.
+    That check measures a DIFFERENT property -- signature integrity -- so a
+    deployment behind an enforcing Cloudflare Access policy and a deployment
+    behind nothing at all produced byte-identical settings. Two states, one
+    representation, and the unsafe one rendered as the safe one at exactly the
+    moment it mattered. Worse, a security-shaped check sitting on that branch
+    reads to the next maintainer as "this path is guarded", which ends the
+    question instead of raising it.
+
+    THE BOARD ALWAYS AUTHENTICATES. That is the operator's ruling and it is the
+    simpler rule: a key or a password, chosen the way sshd chooses, never
+    neither. An earlier version of this gate also accepted "something in front
+    authenticates for me" as a written claim. That was a third concept nobody
+    asked for, and it was the only way to reach a naked origin -- so it is gone.
+    A proxy is a second layer now, never the boundary.
+
+    Which matters most for the deployment that is coming: a board reached
+    through a Cloudflare Tunnel is protected by Access AND by its own login, and
+    a misconfigured Access policy stops being a breach. It also keeps the
+    standalone case honest, since standalone is the same code path with no proxy
+    at all.
+
+    ``public_host`` empty (or whitespace-only) means no public binding, which
+    needs nothing -- the loopback default is the access control there. Whitespace
+    is stripped on every input for the reason the LAN twin documents: a value of
+    " " is not a value, and treating it as one would let a stray space in a shell
+    export silently open the board.
+    """
+    if not public_host.strip():
+        return
+    if password.strip():
+        return
+    raise PublicExposureWithoutAuthError(
+        _PUBLIC_MESSAGE.format(host=public_host.strip())
+    )
 
 
 # EOF

@@ -172,6 +172,7 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     # `confirmed_at` only because it is the first of the three; all three land in
     # one migration, so any of them would place the store equally well.
     (8, "column", "notifications", "msg_id"),
+    (9, "column", "notifications", "seq"),
 )
 
 #: The lowest version this module can justify from physical evidence.

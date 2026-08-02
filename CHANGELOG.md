@@ -2,6 +2,108 @@
 
 ## [Unreleased]
 
+## [0.31.6] - 2026-08-02
+
+**A public hostname can no longer be bound by a board that cannot authenticate
+its callers, and the notification rail stops opening its own database.**
+
+`SCITEX_CARDS_PUBLIC_HOST` used to add a hostname to `ALLOWED_HOSTS` while
+asserting only that `DJANGO_SECRET_KEY` was set. That check is real but measures
+a **different property**: it makes session and CSRF signatures unforgeable and
+says nothing about who may send a request. A board behind an enforcing Cloudflare
+Access policy and a board behind nothing produced byte-identical settings — two
+states with one representation, the unsafe one rendering as the safe one exactly
+when it mattered. Its LAN twin `SCITEX_CARDS_ALLOWED_HOSTS` had refused without a
+password since it was written; the path that reaches the internet had not.
+
+A security-shaped check on that branch made it worse rather than better, because
+it reads to the next maintainer as "this path is guarded" and ends the question.
+
+**The board now always authenticates its own callers — a key or a password, the
+way `sshd` chooses, never neither.** A proxy in front (Cloudflare Access, a hub's
+own login) is a *second layer*, never the boundary. An interim revision also
+accepted a written claim that something in front authenticated; that was the only
+path to an origin with no login, and this process cannot observe whether such a
+proxy is enforcing, so it is gone. A test pins the gate's signature at exactly
+`(public_host, password)` so the escape cannot return quietly. Consequences: a
+misconfigured Access policy stops being a breach, and standalone stays honest
+because it is the same code path with no proxy at all.
+
+**The notification rail no longer hand-rolls `sqlite3.connect`.** It was the only
+part of the package opening its own database, and therefore the only part that
+could not be handed a PostgreSQL target — where the failure is not a clean error:
+a DSN reaching `Path(...)` does not raise, it yields a plausible relative path,
+and `mkdir` + `sqlite3.connect` then *manufacture* a SQLite file named after the
+DSN that accepts writes while the real server sits untouched. It now opens
+through `_db.connect`, which dispatches on the target before any path handling.
+No rows move: same file, same contents, measured at 56 emitted statements
+byte-for-byte identical either side. The S0 PRAGMAs come along, notably
+`busy_timeout=300000`.
+
+Supporting that move: a per-backend shape seam so every rail query reads its
+table, recipient column and ordering from one place (`rowid` → `seq` is a
+replacement, not a rename, and a pure rename would produce SQL valid on both
+engines that silently loses delivery order); the null-safe comparison resolved
+per connection, because no literal spelling parses on both SQLite 3.37 and
+PostgreSQL; schema **v9** giving `notifications` a server-assigned arrival-order
+column; row-carry verified by id rather than by count; and a PostgreSQL CI leg so
+the canonical backend has regression coverage and its absence is loud.
+
+Also: the off-site backup survives a PostgreSQL store target (it had been dead
+31 hours behind a `resolve_db_path(...).parent` that raises on a DSN), and the
+channel's own diagnostics are readable in production via an opt-in file sink.
+
+## [0.31.5] - 2026-08-02
+
+**Schema v8, and an instrument for the delivery lag that had the bug it was
+built to find.**
+
+`notifications` gains `msg_id`, `pushed_at` and `confirmed_at` — the three
+columns the SQLite sidecar gained and the store's own table never did. The table
+already existed on the fresh-create path with the right shape and index, and was
+vestigial (0 rows on the live store), so the notification rail can move *into*
+the store rather than into a parallel table. The columns live in one list used
+by both the fresh-create script and the migration, and a test asserts both paths
+produce identical shape — a fresh store disagreeing with a migrated one is this
+repo's own recorded v4 failure, and it stayed invisible because the stamp was
+right.
+
+The **`queued`** lamp on the DM gauge now computes. It rendered *"not observable
+yet (the notification carries no message id)"* while 205 of 1517 DM
+notifications carried one — the plumbing had landed and the reader was never
+updated, its docstring still citing the obsolete limitation. Computed from the
+exact `dm_messages.id → inbox.msg_id` join, and three-valued: `None` means the
+inbox could not be *read*, never "not queued". Collapsing those would render a
+dropped notification as delivered, which is the failure the gauge exists to
+detect.
+
+**Channel tick timing.** DMs reach an agent 13–25 s after they are written,
+against a 5 s interval. Nine candidates were eliminated by direct measurement —
+the wrong daemon, the mtime drain gate, the burst cap, PostgreSQL write latency,
+the drain work, an overridden interval, MCP transport backpressure (an *idle*
+session measured slower), SQLite write-lock contention, and PostgreSQL
+advisory-lock contention. Every component measured fast and the composite stayed
+slow, which is the shape outside observation cannot resolve. The loop now
+records `drain_s`, `gap_s` and `unexplained_s = gap − prev_drain − interval` —
+time spent neither working nor sleeping.
+
+The first version of that instrument subtracted the *current* tick's drain
+rather than the previous one. Invisible when drain times are equal; when they
+vary the residual absorbs the difference and still reads as an unowned wait.
+Measured, a slow tick followed by a fast one reported **0.302 s** of fiction
+where the truth was **0.001 s** — the same magnitude as the lag being hunted.
+Fixed before any reading was believed.
+
+The invariant it checks is the **sign**, not the identity: `gap == drain +
+interval + unexplained` is tautological and would be a gate that cannot fail. A
+loop cannot return before its own sleep, so a residual negative beyond clock
+jitter means a term is mismeasured. Reported at WARNING, never asserted — a bare
+assert in a long-lived delivery loop kills the task and stops the delivery it
+measures.
+
+Also documents the twelve SQLite→PostgreSQL hazards measured during the store
+migration, nine of which produced no error at all.
+
 ## [0.31.4] - 2026-08-02
 
 **The doctor names the engine on both rails, and fails when they differ.**
@@ -1143,6 +1245,51 @@ is the difference.
   `https:`, `http:` and `mailto:` become anchors. The rendered path drops
   `white-space: pre-wrap`, since blocks already express the line breaks the
   plain path needed it for.
+
+- **Every MCP `initialize` handshake is recorded to a sink that SURVIVES a
+  restart.** `scitex-cards mcp start` answers its first `initialize` 7-14
+  seconds after spawn — measured 2026-07-29 over five real starts: 6.67 / 7.04 /
+  7.19 / 8.49 / 9.76 s. The variance is as dangerous as the mean: against a
+  client with a fixed handshake timeout it is a coin flip, not a constant.
+  Clients that give up mark the server "not connected", and the peer agent
+  scitex-agent-container has repeatedly lost its card slice that way. It could
+  not produce the client-side evidence either, because its stderr sink is
+  TRUNCATED ON BOOT — a disconnect that precedes or causes a restart destroys
+  its own trace, prospectively as well as retroactively.
+
+  `scitex_cards._mcp_handshake_log` wraps the stdio transport inside
+  `_mcp_channel._serve` and appends four facts per run to
+  `<store_dir>/runtime/mcp-handshake.jsonl`: `server_start` (carrying
+  `startup_s`, the gap between the process being exec'd and the serve loop being
+  ready), `initialize_received`, `initialize_answered` (carrying `handshake_s`,
+  the delta) and `server_exit`. The sink is opened `O_APPEND | O_CREAT` and
+  NEVER `O_TRUNC`; past `MAX_BYTES` it rotates by RENAME. A log cleared on start
+  is structurally incapable of retaining evidence about anything that causes a
+  start, which is the whole reason the outage went undiagnosed.
+
+  **It records the handshake that is never answered.** `initialize_received` is
+  written the moment the session takes the request off the transport — before
+  the server has any chance to answer — so a process killed mid-handshake leaves
+  an orphan line behind, and that orphan IS the diagnosis. A sink that only held
+  COMPLETED handshakes would be silent on precisely the failure it exists to
+  catch. The observation sits at the TRANSPORT rather than in the message loop
+  because `ServerSession` answers `initialize` inside the SDK and never yields
+  it to the loop.
+
+  **What it proved on its first run.** Across five real starts the handshake
+  itself took 2.3-5.1 MILLISECONDS while `startup_s` was 4.36-8.80 s. The
+  "7-14 second handshake" is not a handshake at all — it is import cost sitting
+  in front of one, which is what
+  `cli-startup-costs-5s-before-any-work-20260719` has to move. No optimisation
+  is attempted here; this change is the measuring.
+
+  Fails open — an unwritable sink disables the recorder, never the server, since
+  diagnosing an availability problem must not create one. Measured cost:
+  0.75-2.0 ms of one-time setup (published by the recorder itself as `setup_ms`,
+  so its overhead appears in its own output), ~0.2 ms per recorded event, and
+  under 1 microsecond per transport message. `$SCITEX_CARDS_MCP_HANDSHAKE_LOG`
+  relocates the sink, or disables it with `off` — disabled hands the original
+  streams straight back, so the transport is not wrapped at all.
 
 - **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
   pending notifications itself, then requires the ack. Delivery had exactly ONE

@@ -201,12 +201,24 @@ def export_json(
     """
     import json
 
-    from ._db import resolve_db_path
+    from ._paths import resolve_tasks_path
+    from ._store_target import resolve_store_target
 
     doc, threads = export_doc(db_path)
 
-    db = resolve_db_path(db_path)
-    out_path = Path(out).expanduser() if out else db.parent / "export" / "tasks.json"
+    # TWO AXES, RESOLVED SEPARATELY — this was one call and it broke on a DSN.
+    #
+    # `db` is the store's IDENTITY, which may legitimately be a PostgreSQL URL,
+    # and is only used as a label in the returned report. `out_path` is a LOCAL
+    # STATE path, which is always a real directory. Deriving both from
+    # `resolve_db_path` meant a DSN raised before either was needed, which is
+    # what killed the hourly off-site snapshot for ~31 hours (2026-08-02).
+    db = resolve_store_target(db_path)
+    out_path = (
+        Path(out).expanduser()
+        if out
+        else resolve_tasks_path(db_path).parent / "export" / "tasks.json"
+    )
     threads_path = (
         Path(threads_out).expanduser()
         if threads_out

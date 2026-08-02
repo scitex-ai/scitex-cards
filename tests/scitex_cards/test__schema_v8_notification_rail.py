@@ -175,12 +175,27 @@ class TestFreshAndMigratedAgree:
     this disagreement, and it stayed invisible because the stamp was right."""
 
     def test_the_two_paths_produce_the_same_columns(self, env):
+        """Runs the FULL chain, not one step.
+
+        This asserted `_migrate_v7_to_v8` alone against the CURRENT fresh
+        schema, which is a proxy that breaks on every new version rather than a
+        statement about the invariant. It went red the moment v9 added
+        `notifications.seq`: the fresh path had the column, the single migration
+        step did not, and nothing was actually wrong -- a real v7 store reaches
+        v9 because `init_schema` runs the WHOLE chain.
+
+        `init_schema` is what production calls, is idempotent by design (~90
+        agents invoke it on every open), and applies every migration. Asserting
+        through it makes this version-independent: v10 will not need to touch
+        this test, and it still catches the failure it was written for -- a
+        migration that forgets a column the fresh path declares.
+        """
         # Arrange
         fresh = _fresh_store(env / "a.db")
         migrated = _pre_v8_store(env / "b.db")
-        _migrate_v7_to_v8(migrated)
 
         # Act
+        init_schema(migrated)
         fresh_cols = table_columns(fresh, "notifications")
         migrated_cols = table_columns(migrated, "notifications")
 

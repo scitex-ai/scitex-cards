@@ -160,7 +160,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     record_json  TEXT,
     msg_id       TEXT,
     pushed_at    TEXT,
-    confirmed_at TEXT
+    confirmed_at TEXT,
+    seq          BIGINT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
     ON notifications(recipient_id, seen);
