@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-08-03
+
+**The runtime install is bare, so there is nothing left to pick wrong.**
+
+MINOR rather than patch because the install SHAPE changes. `django`,
+`scitex-app`, `scitex-ui` and `fastmcp` move from the `web` and `mcp` extras
+into core, joining `psycopg`. `pip install scitex-cards` — no extras — now
+produces a complete client.
+
+That is the fix, not a consequence of it. Every hand-pickable subset was a
+chance to pick the wrong one, and the 2026-08-01 fleet outage was exactly
+that: `scitex-cards[mcp]` resolved cleanly and produced a client that could
+not open the canonical store, while the error blamed the database. Removing
+the choice removes the failure, which is the only kind of fix that survives
+someone with a plausible local reason for the partial set.
+
+The board and the MCP server are not optional capabilities in any sense a
+user would recognise: the board is how the operator reads the store, and the
+MCP server is how every agent writes to it.
+
+`web`, `mcp`, `postgres` and `currency` remain as redundant aliases so the
+pins outside this repo keep resolving — and they RESTATE their requirements
+rather than being emptied, because an empty extra is worse than a missing
+one. A missing extra warns; an empty one resolves silently and installs
+nothing, so whoever was told to run it stays broken and believes they already
+tried the fix (PS-214). Their removal is sequenced behind the three
+`scitex-agent-container` build sites that name them.
+
+`currency` is deliberately NOT promoted. It fails the test the others passed:
+`check_currency()` is a no-op when scitex-dev is absent, so its absence names
+itself, and promoting it would make a development toolchain a hard dependency
+of every runtime install.
+
+**A label must not fail the command it captions.** `scitex-cards list-tasks`
+and `summary` crashed against the canonical PostgreSQL store — not on the
+read, which had already returned 301 cards, but on the header line naming
+where they came from, which called a resolver typed to return a filesystem
+path. The refusal was correct; the call site was not. Naming a store is not
+the same operation as opening one. `store_label()` renders the target with
+credentials and query string stripped, and never through `Path`.
+
 ## [0.31.8] - 2026-08-02
 
 **A login page, because the browser will not show what the header says.**
