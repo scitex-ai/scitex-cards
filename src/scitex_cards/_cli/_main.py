@@ -15,10 +15,10 @@ import click
 
 from .. import __version__
 from .._currency import check_currency
-from .._db import resolve_db_path
 from .._diagram import build_mermaid, render
 from .._model import load_tasks
 from .._paths import resolve_tasks_path
+from .._store_target import store_label
 from ._compat import spec_command_kwargs, spec_group_kwargs
 
 _STORE_RESOLUTION = (
@@ -210,7 +210,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         return
 
     engine = render(mermaid_src, output)
-    click.echo(f"{output}  (rendered via {engine}; source: {resolve_db_path(None)})")
+    click.echo(f"{output}  (rendered via {engine}; source: {store_label(None)})")
 
 
 # --------------------------------------------------------------------------- #
@@ -393,7 +393,7 @@ def list_tasks_cmd(
     # the non-task sidecar container `load_tasks` takes only for naming in
     # error text (see `_paths.resolve_tasks_path`). Printing that sidecar
     # here mislabeled the header with a path the data never lived at.
-    click.echo(f"# {resolve_db_path(None)}  ({len(tasks)} tasks)")
+    click.echo(f"# {store_label(None)}  ({len(tasks)} tasks)")
     for task in tasks:
         click.echo(f"{task['id']:<24} {task['status']:<12} {task['title']}")
 
