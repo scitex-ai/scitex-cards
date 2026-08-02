@@ -7,10 +7,22 @@ The board's defaults are correct for 127.0.0.1 and catastrophic in public:
 the fallback `SECRET_KEY` is a literal in a public repository, so session and
 CSRF signatures are forgeable by anyone who reads it.
 
-The two load-bearing tests here are `test_debug_is_forced_off_...` and
-`test_missing_secret_key_refuses_to_start`. They assert that the unsafe
-combination is *unreachable* rather than merely discouraged — someone setting
-up a tunnel is thinking about the tunnel, not about `DJANGO_DEBUG`.
+The three load-bearing tests here are `test_debug_is_forced_off_...`,
+`test_missing_secret_key_refuses_to_start`, and
+`test_public_host_without_any_auth_answer_refuses_to_start`. They assert that
+the unsafe combination is *unreachable* rather than merely discouraged — someone
+setting up a tunnel is thinking about the tunnel, not about `DJANGO_DEBUG`.
+
+WHY THE EXPOSED CASES BELOW NOW CARRY `SCITEX_CARDS_PASSWORD`. They used to set
+only a hostname and a secret key, which is what the settings module used to
+accept — and that acceptance was the defect. `DJANGO_SECRET_KEY` makes signatures
+unforgeable; it says nothing about who may send a request, so a board behind an
+enforcing Cloudflare Access policy and a board behind nothing produced identical
+settings. The board now authenticates its own callers the way sshd does — a key
+or a password, never neither — so an exposed case has to supply one.
+
+A proxy in front (Cloudflare Access, the hub's own login) is a SECOND layer, not
+a substitute; `test_a_proxy_in_front_does_not_substitute_...` pins that.
 
 Each case runs in a fresh interpreter because Django settings are read once at
 import; reloading in-process would leak state between cases.
@@ -34,10 +46,16 @@ def _probe(env_overrides: dict, expr: str):
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    # Every variable the exposure decision reads is cleared first, so a case
+    # states its whole world. SCITEX_CARDS_PASSWORD in particular: leaving it
+    # inherited would let a runner that happens to export one satisfy the auth
+    # refusal, and the refusal tests would pass without ever exercising it.
     for key in (
         "SCITEX_CARDS_PUBLIC_HOST",
         "DJANGO_SECRET_KEY",
         "DJANGO_DEBUG",
+        "SCITEX_CARDS_PASSWORD",
+        "SCITEX_CARDS_EXTERNAL_AUTH",
     ):
         env.pop(key, None)
     env.update({k: v for k, v in env_overrides.items() if v is not None})
@@ -113,6 +131,7 @@ def test_public_host_is_added_to_allowed_hosts():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
     }
 
     # Act
@@ -128,6 +147,7 @@ def test_public_host_sets_csrf_trusted_origin_over_https():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
     }
 
     # Act
@@ -143,6 +163,7 @@ def test_public_host_trusts_the_proxy_forwarded_proto():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
     }
 
     # Act
@@ -158,6 +179,7 @@ def test_public_host_marks_session_cookie_secure():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
     }
 
     # Act
@@ -173,6 +195,7 @@ def test_public_host_marks_csrf_cookie_secure():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
     }
 
     # Act
@@ -183,7 +206,7 @@ def test_public_host_marks_csrf_cookie_secure():
 
 
 # --------------------------------------------------------------------------
-# The two that matter: unsafe combinations must be UNREACHABLE
+# The three that matter: unsafe combinations must be UNREACHABLE
 # --------------------------------------------------------------------------
 
 
@@ -198,6 +221,7 @@ def test_debug_is_forced_off_even_when_explicitly_requested():
     env = {
         "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
         "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_PASSWORD": "a-real-password",
         "DJANGO_DEBUG": "true",
     }
 
@@ -233,6 +257,67 @@ def test_the_refusal_names_the_remedy():
 
     # Assert
     assert "token_urlsafe" in result["error"]
+
+
+def test_public_host_without_any_auth_answer_refuses_to_start():
+    """A secret key alone must NOT be enough to bind a public hostname.
+
+    This is the defect this whole file grew a third section for. Every case
+    above used to pass with exactly this environment, because the module asked
+    only whether DJANGO_SECRET_KEY existed -- a check of signature integrity,
+    not of who may send a request. A board behind an enforcing Access policy
+    and a board behind nothing produced identical settings, so the unsafe state
+    rendered as the safe one.
+    """
+    # Arrange
+    env = {
+        "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
+        "DJANGO_SECRET_KEY": "a-real-key",
+    }
+
+    # Act
+    result = _probe(env, "s.ALLOWED_HOSTS")
+
+    # Assert
+    assert result["ok"] is False
+
+
+def test_the_auth_refusal_says_the_secret_key_is_a_different_property():
+    """Otherwise the next reader concludes the key check already covered it."""
+    # Arrange
+    env = {
+        "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
+        "DJANGO_SECRET_KEY": "a-real-key",
+    }
+
+    # Act
+    result = _probe(env, "s.ALLOWED_HOSTS")
+
+    # Assert
+    assert "DJANGO_SECRET_KEY" in result["error"]
+
+
+def test_a_proxy_in_front_does_not_substitute_for_the_boards_own_login():
+    """There is no "something else authenticates for me" escape.
+
+    An earlier version of this gate accepted a written claim that a proxy
+    authenticated every request. That was the only way to reach a naked origin,
+    and the process cannot verify such a claim anyway -- so the board always
+    authenticates, sshd-style, and the proxy is a second layer. This pins that
+    the escape is gone: naming one changes nothing.
+    """
+    # Arrange
+    env = {
+        "SCITEX_CARDS_PUBLIC_HOST": "cards.example.com",
+        "DJANGO_SECRET_KEY": "a-real-key",
+        "SCITEX_CARDS_EXTERNAL_AUTH": "cloudflare-access",
+    }
+
+    # Act
+    result = _probe(env, "s.ALLOWED_HOSTS")
+
+    # Assert
+    assert result["ok"] is False
 
 
 # EOF

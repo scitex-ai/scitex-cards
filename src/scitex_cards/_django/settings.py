@@ -58,6 +58,15 @@ if PUBLIC_HOST:
             "python -c 'import secrets; print(secrets.token_urlsafe(64))'"
         )
 
+    # The key check above guarantees signatures are unforgeable. It says nothing
+    # about who may send a request, and it used to be the ONLY thing standing on
+    # this branch -- so an Access-protected board and a naked one were
+    # indistinguishable from inside the process. The board authenticates its own
+    # callers, sshd-style; a proxy in front is a second layer, never the only one.
+    from ._board_exposure import assert_public_exposure_is_authenticated
+
+    assert_public_exposure_is_authenticated(PUBLIC_HOST, BOARD_PASSWORD)
+
     ALLOWED_HOSTS = ALLOWED_HOSTS + [PUBLIC_HOST]
 
     # A POST must survive the proxy or the board is read-only in practice —
