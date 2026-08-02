@@ -185,7 +185,7 @@ task state.
 Every fleet agent uses the same surface. The CLI works without the
 `[mcp]` extra; the MCP surface (`add_task` / `update_task` /
 `comment_task` / `list_tasks`) ships as `pip install
-'scitex-cards[mcp]>=0.5.2'` per the P3a dotfiles wave. Pick whichever
+'scitex-cards[all]>=0.5.2'` per the P3a dotfiles wave. Pick whichever
 is more ergonomic — the wire is identical.
 
 ```bash

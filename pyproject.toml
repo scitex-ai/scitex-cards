@@ -111,115 +111,28 @@ docs = [
     "sphinx-copybutton>=0.5",
     "sphinx-autodoc-typehints>=1.25",
 ]
-web = [
+all = [
+    # STRICT ALLOWLIST (ADR-0005, operator ruling 2026-08-02): the only extras
+    # this project may declare are `all`, `dev` and `docs`. mcp, web, currency
+    # and postgres used to be separate extras; their contents are inlined here.
+    #
+    # The operator's reasoning, which removed the objection I had been carrying:
+    #   「torch, browser, slurm のインストールを嫌がる人っています？そんな人は
+    #     自分でどうやって省くかわかるので考えなくて良いと思いますよ。
+    #     all or nothing で」
+    #
+    # I had argued a strict set forces heavy optional dependencies onto every
+    # install. It does not: THE OPT-OUT ALREADY EXISTS AND IT IS THE BARE
+    # INSTALL — core deps only, no [all]. What the strict rule removes is the
+    # MIDDLE, "I want mcp but not X", and that granularity is precisely what
+    # produced the outage. An exemption mechanism would have re-legalised the
+    # construct this rule exists to delete, one written reason at a time.
+    "fastmcp>=2.0",
     "django>=4.2",
     "scitex-app",
-    # >=0.11.1: default favicon (0.7.1) plus the context-menu font-family rule
-    # the chat page needs (0.11.1). See the measured note in the dev extra.
     "scitex-ui>=0.11.1",
-]
-mcp = [
-    # FastMCP is the canonical SciTeX MCP SDK (general skill §1). The MCP
-    # tools live in `scitex_cards._mcp_server`; the CLI `mcp` subgroup
-    # guards the import so the rest of the package keeps working without
-    # this extra installed.
-    "fastmcp>=2.0",
-]
-postgres = [
-    # KEPT DELIBERATELY, THOUGH IT IS NOW REDUNDANT: psycopg was promoted to a
-    # hard dependency (see `dependencies`), so this extra adds nothing.
-    #
-    # It stays because `scitex-cards[postgres]` is PINNED IN THINGS I DO NOT
-    # CONTROL -- .github/workflows/postgres-backend-on-ubuntu-latest.yml, the
-    # agent-container def files, and whatever else in the fleet copied that
-    # string. Deleting an extra does not fail loudly; pip warns and continues,
-    # so the breakage would be silent and would land on someone else. An empty
-    # alias costs one line and keeps every existing pin resolving.
-    #
-    # Do not "clean this up" without first checking who still names it.
-    #
-    # ---- history, kept because it explains why the extra existed ----
-    # THE CAPABILITY ALREADY WORKS AND WAS NEVER DECLARED. `_backend_connect`
-    # reads a PostgreSQL store today -- verified against a real server
-    # (PostgreSQL 18.4, database scitex_cards): the same query string, with
-    # SQLite's `?` placeholders, returned the same 264 rows through both
-    # backends because `_store_url.to_paramstyle` translates in transit.
-    #
-    # It worked only because psycopg happened to be present in the
-    # environment where it was tried. Nothing in the package asked for it, so
-    # a fresh `pip install scitex-cards` produces an install where the
-    # PostgreSQL path raises ImportError -- a capability that is real, tested,
-    # and unreachable by anyone who installs the package normally.
-    #
-    # `[binary]` bundles libpq rather than requiring system client libraries,
-    # so this extra installs on a bare machine without a PostgreSQL install.
-    #
-    # SQLite remains the zero-config default and is NOT moved behind an extra:
-    # the canonical store is SQLite, and a store you cannot open without an
-    # optional dependency is not a default.
-    "psycopg[binary]>=3.1",
-]
-currency = [
-    # CURRENCY gate (operator directive: stale or broken installs ERROR, not
-    # warn). `scitex_cards._currency.check_currency()` imports
-    # `scitex_dev.staleness.ensure_current` — >=0.34.0 is the first release
-    # that ships it. OPTIONAL, not a hard dependency: `check_currency()` is
-    # a no-op when scitex-dev is absent, so a standalone scitex-cards install
-    # keeps working without this extra (decoupling rule).
     "scitex-dev>=0.34.0",
-]
-all = [
-    # EVERY RUNTIME EXTRA, AND NOTHING THAT NEVER SHIPS TO A RUNTIME.
-    #
-    # `dev` and `docs` were in here until 2026-08-02 and that single line caused
-    # a fleet outage, by a route worth spelling out because it is not obvious.
-    #
-    # With pytest and sphinx folded into `all`, `[all]` looked expensive for a
-    # container image. So the agent-container defs pinned a hand-picked subset
-    # instead -- `scitex-cards[mcp]` -- which does not pull psycopg. Every agent
-    # container then lost the store when it moved to PostgreSQL, and the error
-    # blamed the database rather than the missing driver. Two agents spent a
-    # round each in the wrong layer.
-    #
-    # Nobody chose a partial set because they wanted one. They chose it because
-    # the safe option had been made costly HERE. Fixing this line removes the
-    # motive rather than arguing against the choice, which is the only kind of
-    # fix that survives someone with a plausible local reason -- and I am that
-    # someone: I recommended `[mcp,postgres]` on size grounds one hour after
-    # diagnosing this exact failure.
-    #
-    # Measured across the ecosystem (scitex-dev, 83 pyprojects): 51 packages
-    # already exclude dev/docs from `all`, 28 include them. This package was in
-    # the minority, so `[all]` being expensive was never a fact about `[all]` --
-    # only about ours.
-    #
-    # CI is unaffected: both workflows that need the toolchain already ask for
-    # it explicitly as `.[all,dev]` (quality-audit and pypi-publish), so the
-    # PostgreSQL backend is still EXERCISED in CI rather than merely compiled.
-    # dev/docs are BACK IN, and the reason is a live conflict rather than a
-    # change of mind. I removed them, and scitex-dev's own shipped audit rule
-    # rejected it:
-    #
-    #   [E] PS-221 §3 public-extra-not-closed-under-all: requirement `pytest` in
-    #   PUBLIC extra `[dev]` is MISSING from the `all` extra. Policy: every
-    #   public extra must be a SUBSET of `all` ... a public requirement absent
-    #   from `all` silently under-installs.
-    #
-    # That is the exact opposite of the rule scitex-dev specified to me an hour
-    # earlier ("`all` must NOT contain dev or docs"). Both rules are theirs, one
-    # is enforced today, and I am not going to satisfy the unshipped one by
-    # suppressing the shipped one -- a gate you route around stops being a gate.
-    #
-    # The conflict is real and the resolution is probably PEP 735 dependency
-    # groups: dev/docs stop being EXTRAS at all, so PS-221 no longer reaches
-    # them and `all` becomes runtime-only without contradicting anything. That
-    # is also the mechanism the operator was reaching for when he asked for
-    # underscore-prefixed groups -- PEP 508 forbids that spelling, PEP 735
-    # provides the concept. Raised with scitex-dev; not decided here.
-    #
-    # So `all` keeps its current membership and this PR ships only the psycopg
-    # promotion, which is the half that actually fixes the outage.
-    "scitex-cards[mcp,web,currency,postgres]",
+    "psycopg[binary]>=3.1",
 ]
 
 # BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy

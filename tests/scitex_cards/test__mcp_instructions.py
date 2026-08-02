@@ -99,7 +99,7 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
 def test_live_server_instructions_carry_the_env_identity():
     """The REAL server string, built at import, names $SCITEX_TODO_AGENT_ID."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="fastmcp not installed; install scitex-cards[all]")
     # Act
     text = _server_instructions_under("test-agent-xyz")
     # Assert
@@ -109,7 +109,7 @@ def test_live_server_instructions_carry_the_env_identity():
 def test_live_server_instructions_name_no_scope_without_an_identity():
     """With the identity unset the REAL server fabricates no `agent:` example."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="fastmcp not installed; install scitex-cards[all]")
     # Act
     text = _server_instructions_under(None)
     # Assert
@@ -204,7 +204,7 @@ def test_no_dead_prefix_anywhere_in_the_mcp_surface():
     list. One dead identity in there mis-teaches the whole fleet.
     """
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="fastmcp not installed; install scitex-cards[all]")
     from scitex_cards._mcp_server import mcp  # noqa: PLC0415
 
     # Act

@@ -70,7 +70,11 @@ jobs:
       - name: Install the package with the postgres extra
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[postgres]" pytest
+          # ADR-0005 strict allowlist: the only extras are all/dev/docs, so
+          # `.[postgres]` no longer resolves — and an unknown extra is a
+          # WARNING with exit 0, so leaving it would silently install no
+          # psycopg and this job would test the wrong thing while passing.
+          python -m pip install -e ".[all]" pytest
 
       - name: Confirm psycopg is importable
         # A missing driver would otherwise surface as a fixture failure whose
