@@ -121,10 +121,49 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
     if validate:
         _validate_tasks(
             data.get("tasks"),
-            source=f"<sqlite:{path}>",
+            source=_canonical_source_label(),
             strict=False,
         )
     return data
+
+
+def _canonical_source_label() -> str:
+    """Name the store the rows ACTUALLY came from.
+
+    This label was ``f"<sqlite:{path}>"`` until 2026-08-02, and it was wrong in
+    two independent ways at once:
+
+    1. ``sqlite:`` was HARDCODED, so every tolerated-validation warning claimed
+       SQLite even when the canonical store was PostgreSQL.
+    2. ``path`` is the YAML argument — and the comment block a few lines above
+       states in its own words that the doc is read "not from a file that no
+       longer exists". So the label pointed at a file this very function
+       documents as absent.
+
+    The rows come from :func:`_read_canonical_db_or_raise`, i.e. from the
+    canonical store. Naming anything else is not a cosmetic slip: during an
+    incident it sends the reader to a backend and a location that have nothing
+    to do with the failure, and they will spend real time there before
+    suspecting the label. Reported by scitex-app, who hit exactly that.
+
+    A DSN is rendered WITHOUT its query string and never through ``Path``.
+    ``Path`` collapses ``//`` to ``/``, which is what turned
+    ``postgresql://host/db`` into ``postgresql:/host/db`` elsewhere in this
+    package and had two agents reporting a malformed-URL bug against a config
+    that was correct.
+    """
+    from ._store_target import resolve_store_target  # noqa: PLC0415
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    try:
+        target = resolve_store_target(None)
+    except Exception:  # noqa: BLE001 -- a label must never break the read
+        return "<store:unresolved>"
+    if is_postgres_url(target):
+        # Strip any query string: DSNs carry credentials there, and this label
+        # is written into warnings that land in logs.
+        return f"<postgres:{str(target).split('?', 1)[0]}>"
+    return f"<sqlite:{target}>"
 
 
 # ---------------------------------------------------------------------------

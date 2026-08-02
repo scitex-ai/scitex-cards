@@ -1373,4 +1373,98 @@ def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
     assert reloaded["kind"] == "status"
 
 
+# ---------------------------------------------------------------------------
+# The canonical-store LABEL on tolerated-validation warnings.
+#
+# It said `<sqlite:{path}>` until 2026-08-02 -- a hardcoded backend, and a path
+# to the YAML file the surrounding code documents as no longer existing. On a
+# PostgreSQL store that names a backend AND a location the rows did not come
+# from, which during an incident sends the reader somewhere irrelevant. Found
+# by scitex-app, who hit exactly that.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cards_db_env():
+    """Set/restore SCITEX_CARDS_DB around a test.
+
+    Real env manipulation, restored on teardown -- the label reads the resolved
+    target, so faking the resolver would only prove the fake.
+    """
+    saved = os.environ.get("SCITEX_CARDS_DB")
+
+    def _set(value):
+        if value is None:
+            os.environ.pop("SCITEX_CARDS_DB", None)
+        else:
+            os.environ["SCITEX_CARDS_DB"] = str(value)
+
+    try:
+        yield _set
+    finally:
+        if saved is None:
+            os.environ.pop("SCITEX_CARDS_DB", None)
+        else:
+            os.environ["SCITEX_CARDS_DB"] = saved
+
+
+def test_label_names_postgres_when_the_store_is_postgres(cards_db_env):
+    # Arrange
+    from scitex_cards._model import _canonical_source_label
+
+    cards_db_env("postgresql://user@127.0.0.1:5432/cards")
+    # Act
+    label = _canonical_source_label()
+    # Assert
+    assert label.startswith("<postgres:")
+
+
+def test_label_does_not_claim_sqlite_on_a_postgres_store(cards_db_env):
+    # Arrange
+    from scitex_cards._model import _canonical_source_label
+
+    cards_db_env("postgresql://user@127.0.0.1:5432/cards")
+    # Act
+    label = _canonical_source_label()
+    # Assert
+    assert "sqlite" not in label
+
+
+def test_label_keeps_both_slashes_in_a_dsn(cards_db_env):
+    # Arrange
+    # Path() collapses "//" to "/", which turned postgresql://host/db into
+    # postgresql:/host/db elsewhere and had two agents reporting a
+    # malformed-URL bug against a config that was correct.
+    from scitex_cards._model import _canonical_source_label
+
+    cards_db_env("postgresql://user@127.0.0.1:5432/cards")
+    # Act
+    label = _canonical_source_label()
+    # Assert
+    assert "postgresql://" in label
+
+
+def test_label_omits_a_dsn_query_string(cards_db_env):
+    # Arrange
+    # DSNs carry credentials in the query string, and this label lands in logs.
+    from scitex_cards._model import _canonical_source_label
+
+    cards_db_env("postgresql://user@127.0.0.1:5432/cards?password=hunter2")
+    # Act
+    label = _canonical_source_label()
+    # Assert
+    assert "hunter2" not in label
+
+
+def test_label_names_sqlite_when_the_store_is_a_file(cards_db_env, tmp_path):
+    # Arrange
+    from scitex_cards._model import _canonical_source_label
+
+    cards_db_env(tmp_path / "cards.db")
+    # Act
+    label = _canonical_source_label()
+    # Assert
+    assert label.startswith("<sqlite:")
+
+
 # EOF
