@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-08-03
+
+**A merge must not overrule a deliberate blocker.**
+
+`reconcile-merged-prs` treated a merged PR as evidence that the CARD was
+finished. A merge is evidence about a **pull request**; reading it as evidence
+about the card holds only where the card's scope is strictly its diff. Where
+the card also carries verification or rollout, it closed live work — and closed
+it with the confident shape, `done`, rather than surfacing a question.
+
+Measured by scitex-hub: at 19:08Z they set a card to `blocked=dependency` whose
+note opened "STATUS blocked=dependency, NOT done". At 19:30Z the reconciler set
+it to `done`. Twenty-two minutes, with the note explaining why a merge is not
+completion sitting unchanged in the card body. It was not merely early — the
+card's closing condition was an authenticated request from the operator's phone
+succeeding, and production was five commits behind including that PR, so the
+route did not exist.
+
+`blocked` leaves `OPEN_STATUSES`. Auto-closing an `in_progress` card is a
+defensible heuristic; overruling a blocker is not. A blocker is the record that
+someone ALREADY considered the question and decided the work cannot complete —
+encoding "do not assume" is the entire job of the status. The reasoning was
+already in that file, written for `deferred`, and had simply never been
+extended to the status it applies to more strongly.
+
+The quiet part, and why this is worth a patch release rather than waiting: a
+closed card leaves the board, so no sweep nudges it again and the mistake is
+invisible to anyone hunting for it. It also fires unattended, so it was the one
+defect of its family still producing wrong states overnight.
+
+**This release exists because the fix was merged and not running.** The
+reconciler executes from the installed distribution, so #764 changed nothing
+until it shipped — and it auto-closed the same card a second time at 19:45,
+after the fix had merged. Merged is not deployed, demonstrated on the very
+change that says so.
+
 ## [0.32.0] - 2026-08-03
 
 **The runtime install is bare, so there is nothing left to pick wrong.**
