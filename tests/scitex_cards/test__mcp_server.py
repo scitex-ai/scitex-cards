@@ -35,8 +35,8 @@ import pytest
 fastmcp = pytest.importorskip(
     "fastmcp",
     reason=(
-        "fastmcp not installed — `scitex-todo[mcp]` extra not present. "
-        "Install with `pip install scitex-todo[mcp]` to run the MCP tests."
+        "fastmcp not installed. "
+        "Install with `pip install scitex-cards[all]` to run the MCP tests."
     ),
 )
 

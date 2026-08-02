@@ -67,7 +67,7 @@ def _board_run_server(
     except ImportError:
         raise click.ClickException(
             "The board needs the web extra. Install it with:\n"
-            "  pip install scitex-cards[web]"
+            "  pip install scitex-cards[all]"
         ) from None
 
     _os.environ.setdefault(
@@ -156,7 +156,7 @@ def board_group(ctx: click.Context) -> None:
         description=(
             "Writes a pidfile at ~/.scitex/todo/board.pid so other "
             "terminals can `board stop` / `board restart`. Requires the "
-            "web extra: pip install scitex-cards[web]."
+            "web extra: pip install scitex-cards[all]."
         ),
         examples=(("{prog} board start --port 8051", "Serve on port 8051."),),
     ),

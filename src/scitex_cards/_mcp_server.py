@@ -22,7 +22,7 @@ list the Python API returns.
 
 Import semantics
 ----------------
-``fastmcp`` is an OPTIONAL dependency (``pip install scitex-todo[mcp]``).
+``fastmcp`` is an OPTIONAL dependency (``pip install scitex-cards[all]``).
 Importing this module without fastmcp installed raises :class:`ImportError`
 with a clear install hint — it does NOT raise at ``import scitex_cards``
 time (the CLI guards the import; the MCP `start` verb surfaces the same

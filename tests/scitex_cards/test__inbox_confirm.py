@@ -245,7 +245,7 @@ except ImportError:  # pragma: no cover — exercised only without the extra
 
 _skip_no_mcp = pytest.mark.skipif(
     not _HAS_FASTMCP,
-    reason="fastmcp not installed — `scitex-todo[mcp]` extra absent.",
+    reason="fastmcp not installed. Install with scitex-cards[all].",
 )
 
 

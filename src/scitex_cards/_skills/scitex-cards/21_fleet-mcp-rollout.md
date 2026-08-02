@@ -69,7 +69,7 @@ rollout, into `agent-container/to_home/_base/.mcp.json`):
 ```
 
 That's the entire wire. The `scitex-cards` CLI ships in the
-`scitex-cards[mcp]` extra (see [01_installation.md](./01_installation.md));
+`scitex-cards[all]` extra (see [01_installation.md](./01_installation.md));
 `mcp start` launches the FastMCP stdio server the Claude-Code harness
 talks to.
 
@@ -124,10 +124,10 @@ scitex-cards mcp list-tools --json | jq '.[].name'
 
 ```bash
 # Recommended (uv resolver, fast):
-uv pip install -U 'scitex-cards[mcp]>=0.7.1'
+uv pip install -U 'scitex-cards[all]>=0.7.1'
 
 # Plain pip equivalent:
-pip install -U 'scitex-cards[mcp]>=0.7.1'
+pip install -U 'scitex-cards[all]>=0.7.1'
 ```
 
 Version pin: **≥ 0.7.1** is the PR #115 floor — that's the release that
@@ -166,7 +166,7 @@ full stderr to your lead via a2a, then stop. Do NOT retry-loop.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `mcp doctor` → "fastmcp: MISSING" | `[mcp]` extra not installed | `pip install -U 'scitex-cards[mcp]>=0.7.1'` |
+| `mcp doctor` → "fastmcp: MISSING" | `[mcp]` extra not installed | `pip install -U 'scitex-cards[all]>=0.7.1'` |
 | Writes land but `_log_meta.created_by` is unset / wrong | `SCITEX_TODO_AGENT_ID` missing or stale in the agent's env | Set it BEFORE the MCP server boots; restart the harness. |
 | `mcp doctor` → "tools: 0" | FastMCP version skew | Bump fastmcp to ≥ 3.0; rebuild the venv. |
 | `list_tasks` returns the whole store, not your slice | `SCITEX_TODO_SCOPE` unset | Export `SCITEX_TODO_SCOPE=agent:<you>`. |

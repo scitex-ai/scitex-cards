@@ -13,7 +13,7 @@ Verbs:
 We prefer ``scitex_dev._mcp_cli.attach_mcp_subcommands`` when available
 (keeps every scitex package's `mcp` group identical) and fall back to a
 hand-rolled group when scitex-dev isn't installed (so a fresh
-``pip install scitex-cards[mcp]`` still works). The ``channel`` verb is
+``pip install scitex-cards[all]`` still works). The ``channel`` verb is
 scitex-cards' OWN feature (no scitex-dev parallel) and is wired onto the
 group in BOTH paths.
 
@@ -55,7 +55,7 @@ _SERVER_PATH = "scitex_cards._mcp_server:mcp"
 _CLI_NAME = "scitex-cards"
 
 _INSTALL_HINT = (
-    "scitex-cards MCP tools require the [mcp] extra:\n  pip install 'scitex-cards[mcp]'"
+    "scitex-cards MCP tools require the [mcp] extra:\n  pip install 'scitex-cards[all]'"
 )
 
 

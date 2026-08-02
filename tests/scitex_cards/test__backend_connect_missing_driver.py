@@ -84,7 +84,7 @@ def test_the_error_names_the_install_command(psycopg_hidden):
         message = str(exc)
 
     # Assert
-    assert "pip install 'scitex-cards[postgres]'" in message
+    assert "pip install 'scitex-cards[all]'" in message
 
 
 def test_the_error_explains_why_a_default_install_lacks_it(psycopg_hidden):

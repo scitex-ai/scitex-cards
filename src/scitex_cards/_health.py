@@ -199,7 +199,7 @@ def _check_channel_capable() -> dict[str, Any]:
             "ok": False,
             "detail": f"import scitex_cards._mcp_channel failed ({exc})",
             "hint": (
-                "upgrade to scitex-cards>=0.7.32: pip install -U 'scitex-cards[mcp]'"
+                "upgrade to scitex-cards>=0.7.32: pip install -U 'scitex-cards[all]'"
             ),
         }
     missing = [attr for attr in ("_serve", "_run") if not hasattr(channel, attr)]
@@ -209,7 +209,7 @@ def _check_channel_capable() -> dict[str, Any]:
             "detail": f"scitex_cards._mcp_channel missing {missing}",
             "hint": (
                 "upgrade to scitex-cards>=0.7.32 (the unified tools+channel "
-                "server): pip install -U 'scitex-cards[mcp]'"
+                "server): pip install -U 'scitex-cards[all]'"
             ),
         }
     return {

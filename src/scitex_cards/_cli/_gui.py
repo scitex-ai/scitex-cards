@@ -88,7 +88,7 @@ def gui_group(ctx: click.Context) -> None:
             "headless by design: it does NOT open a browser (use `gui open` "
             "for that), so it is safe to background with `&` in a loop over "
             "every SciTeX tool. Requires the web extra: "
-            "pip install scitex-cards[web]."
+            "pip install scitex-cards[all]."
         ),
         examples=(
             ("{prog} gui serve", "Serve on 127.0.0.1:8051 (blocking)."),
