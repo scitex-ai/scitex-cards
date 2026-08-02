@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+## [0.31.7] - 2026-08-02
+
+**The password prompt says where its answer lives.**
+
+0.31.6 let the board demand a password before binding a public hostname. It did
+not say where that password came from. The realm read `SciTeX Cards` and the
+body read *"This board is password protected."* — restating the fact the user
+could already see, while withholding the only thing they needed.
+
+The operator met the consequence on their own machine: a credential dialog on
+loopback, for a password they had not set, with no path from the dialog to the
+secret — *"no idea what password this is, and I don't know the username either."*
+
+**This is a security defect, not a cosmetic one.** An anonymous credential
+prompt is indistinguishable from a phishing one, and a user who cannot tell them
+apart is being trained to type secrets into whichever dialog appears. So the fix
+is not a friendlier message, it is a **refusable** one: the challenge now names
+its source, so a reader can check whether that source is theirs and decline when
+it is not.
+
+Both halves carry it — the realm the browser prints inside its dialog, and the
+body it renders when the dialog is cancelled. The body additionally states the
+two things the dialog cannot: that the username is **discarded entirely**
+(`is_authorised` splits on the first colon and compares only the password), and
+what to run to read the value. And it tells a reader who did not set the
+password not to answer.
+
+The realm is kept under 80 characters because browsers truncate long ones — a
+truncated realm would silently drop the hint this change exists to deliver — and
+free of quote and backslash, since a realm is an HTTP quoted-string and neither
+escapes portably. Tests pin those transport facts, and pin what the message must
+*say* rather than how it says it.
+
+**Not fixed by exempting loopback**, which was the tempting shortcut and would
+have been wrong twice: it weakens the gate, and `cloudflared` forwards to
+`127.0.0.1`, so tunnel traffic also arrives from loopback — the exemption would
+have opened the public path it was meant to leave alone.
+
+Interim. The durable fix is credential locations a user can find unaided —
+`~/.scitex/cards/authorized_keys` and `~/.scitex/cards/auth.yaml`, sshd-shaped,
+password hashed, the plaintext environment variable retired.
+
 ## [0.31.6] - 2026-08-02
 
 **A public hostname can no longer be bound by a board that cannot authenticate
