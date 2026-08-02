@@ -196,7 +196,30 @@ all = [
     # CI is unaffected: both workflows that need the toolchain already ask for
     # it explicitly as `.[all,dev]` (quality-audit and pypi-publish), so the
     # PostgreSQL backend is still EXERCISED in CI rather than merely compiled.
-    "scitex-cards[mcp,web,currency,postgres]",
+    # dev/docs are BACK IN, and the reason is a live conflict rather than a
+    # change of mind. I removed them, and scitex-dev's own shipped audit rule
+    # rejected it:
+    #
+    #   [E] PS-221 §3 public-extra-not-closed-under-all: requirement `pytest` in
+    #   PUBLIC extra `[dev]` is MISSING from the `all` extra. Policy: every
+    #   public extra must be a SUBSET of `all` ... a public requirement absent
+    #   from `all` silently under-installs.
+    #
+    # That is the exact opposite of the rule scitex-dev specified to me an hour
+    # earlier ("`all` must NOT contain dev or docs"). Both rules are theirs, one
+    # is enforced today, and I am not going to satisfy the unshipped one by
+    # suppressing the shipped one -- a gate you route around stops being a gate.
+    #
+    # The conflict is real and the resolution is probably PEP 735 dependency
+    # groups: dev/docs stop being EXTRAS at all, so PS-221 no longer reaches
+    # them and `all` becomes runtime-only without contradicting anything. That
+    # is also the mechanism the operator was reaching for when he asked for
+    # underscore-prefixed groups -- PEP 508 forbids that spelling, PEP 735
+    # provides the concept. Raised with scitex-dev; not decided here.
+    #
+    # So `all` keeps its current membership and this PR ships only the psycopg
+    # promotion, which is the half that actually fixes the outage.
+    "scitex-cards[dev,docs,mcp,web,currency,postgres]",
 ]
 
 # BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy
