@@ -92,6 +92,15 @@ jobs:
           uv pip install --python .venv/bin/python -e ".[all]" --group dev \
             || uv pip install --python .venv/bin/python -e ".[all]" \
             || uv pip install --python .venv/bin/python -e .
+          # ASSERT THE OUTCOME, DO NOT TRUST THE CHAIN. The last rung above always
+          # succeeds, so a missing toolchain would surface one step later as a
+          # pytest argument error that reads like a config problem. Measured on
+          # #757: three legs died on `unrecognized arguments: --cov=...`.
+          .venv/bin/python -c "import pytest, pytest_cov" || {
+            echo "TOOLCHAIN INCOMPLETE after install: pytest and pytest-cov must both import." >&2
+            echo "  dev is a PEP 735 group (ADR-0005): add --group dev" >&2
+            exit 1
+          }
           uv pip install --python .venv/bin/python "scitex-dev[cli-audit]>=0.17.14"
 
       - name: Run scitex-dev ecosystem audit-all (net-new only)

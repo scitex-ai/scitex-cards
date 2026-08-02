@@ -88,6 +88,23 @@ uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all]" -
     uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e "." ||
     pip install --target="$TMPDIR/site" -e ".[all]"
 
+# ASSERT THE OUTCOME, DO NOT TRUST THE CHAIN. scitex-dev, 2026-08-02:
+# "A fallback whose final step cannot fail is a gate that cannot fail" —
+# constitution §2. Every rung above can degrade, and the LAST one always
+# succeeds, so a missing toolchain reaches pytest as an argument error one step
+# later and reads like a pytest-config problem. Measured on scitex-cards #757:
+# three matrix legs died on `unrecognized arguments: --cov=...` because
+# pytest-cov was absent, and the install step was green.
+#
+# This also removes the uv>=0.6 / pip>=25.1 question. A version gate answers
+# "is the tool new enough"; this answers "did the toolchain land", which is the
+# actual question. An old uv fails --group, degrades, and is NAMED here.
+PYTHONPATH="$TMPDIR/site" "$VENV/bin/python" -c "import pytest, pytest_cov" || {
+    echo "TOOLCHAIN INCOMPLETE after install: pytest and pytest-cov must both import." >&2
+    echo "  dev is a PEP 735 group (ADR-0005): uv pip install -e '.[all]' --group dev" >&2
+    exit 1
+}
+
 export PYTHONPATH="$TMPDIR/site:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # Run SINGLE-PROCESS — deliberately NO pytest-xdist here. This mirrors the
