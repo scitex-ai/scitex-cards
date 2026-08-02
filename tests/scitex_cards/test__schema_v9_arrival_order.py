@@ -193,6 +193,29 @@ def pg_conn():
     conn.close()
 
 
+#: The v8 shape, spelled for PostgreSQL. The tests below CREATE IT rather than
+#: assume it: CI runs a fresh postgres:16 with nothing in it, and assuming the
+#: table is how the carry test passed locally and failed in CI an hour before
+#: this file was written. Safe inside the rolled-back transactions because
+#: PostgreSQL DDL is transactional -- created and gone with the rollback.
+_PG_V8_NOTIFICATIONS = """
+CREATE TABLE IF NOT EXISTS notifications (
+    id           TEXT PRIMARY KEY,
+    recipient_id TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    card_id      TEXT,
+    body         TEXT,
+    actor        TEXT,
+    ts           TEXT NOT NULL,
+    seen         BIGINT NOT NULL DEFAULT 0,
+    record_json  TEXT,
+    msg_id       TEXT,
+    pushed_at    TEXT,
+    confirmed_at TEXT
+)
+"""
+
+
 class TestThePostgresGeneratorIsRealAndMonotonic:
     """The half SQLite tests structurally cannot reach.
 
@@ -208,6 +231,7 @@ class TestThePostgresGeneratorIsRealAndMonotonic:
 
         # Act
         with pg_conn.transaction(force_rollback=True):
+            pg_conn.execute(_PG_V8_NOTIFICATIONS)
             _migrate_v8_to_v9(pg_conn)
             present = table_columns(pg_conn, table)
 
@@ -223,6 +247,7 @@ class TestThePostgresGeneratorIsRealAndMonotonic:
 
         # Act
         with pg_conn.transaction(force_rollback=True):
+            pg_conn.execute(_PG_V8_NOTIFICATIONS)
             _migrate_v8_to_v9(pg_conn)
             pg_conn.execute(
                 "INSERT INTO notifications (id, recipient_id, event_type, ts) "
@@ -246,6 +271,7 @@ class TestThePostgresGeneratorIsRealAndMonotonic:
 
         # Act
         with pg_conn.transaction(force_rollback=True):
+            pg_conn.execute(_PG_V8_NOTIFICATIONS)
             _migrate_v8_to_v9(pg_conn)
             for ident in idents:
                 pg_conn.execute(
@@ -268,6 +294,7 @@ class TestThePostgresGeneratorIsRealAndMonotonic:
         # Act
         try:
             with pg_conn.transaction(force_rollback=True):
+                pg_conn.execute(_PG_V8_NOTIFICATIONS)
                 for _ in range(runs):
                     _migrate_v8_to_v9(pg_conn)
             raised = None
