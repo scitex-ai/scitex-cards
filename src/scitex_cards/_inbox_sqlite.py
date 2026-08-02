@@ -46,6 +46,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
+from ._inbox_shape import shape_for
 from ._sql_null_safe import null_safe_eq_for
 
 logger = logging.getLogger(__name__)
@@ -292,9 +293,13 @@ def enqueue(
         # the point of doing this step separately from the backend switch.
         ns_event_type = null_safe_eq_for(conn, "event_type")
         ns_card_id = null_safe_eq_for(conn, "card_id")
+        # Same reasoning for WHERE the rows live: table and recipient column are
+        # read from the live connection, not assumed. On SQLite this spells
+        # exactly what was hardcoded here before.
+        shape = shape_for(conn)
         if supersede:
             conn.execute(
-                "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
+                f"DELETE FROM {shape.table} WHERE {shape.recipient} = ? AND seen = 0 "
                 f"AND {ns_event_type} "
                 f"AND {ns_card_id}",
                 (recipient_id, event_type, card_id),
@@ -308,13 +313,13 @@ def enqueue(
             # never delivered. `msg_id` makes the key exact, which is a
             # correctness fix in its own right, not just plumbing.
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? "
+                f"SELECT 1 FROM {shape.table} WHERE {shape.recipient} = ? "
                 f"AND {null_safe_eq_for(conn, 'msg_id')} LIMIT 1",
                 (recipient_id, msg_id),
             ).fetchone()
         else:
             dup = conn.execute(
-                "SELECT 1 FROM inbox WHERE recipient = ? "
+                f"SELECT 1 FROM {shape.table} WHERE {shape.recipient} = ? "
                 f"AND {ns_event_type} "
                 f"AND {ns_card_id} "
                 f"AND {null_safe_eq_for(conn, 'ts')} "
@@ -335,8 +340,9 @@ def enqueue(
             "msg_id": msg_id,
         }
         conn.execute(
-            "INSERT INTO inbox(id, recipient, event_type, card_id, body, "
-            "actor, ts, seen, msg_id) VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?)",
+            f"INSERT INTO {shape.table}(id, {shape.recipient}, event_type, "
+            "card_id, body, actor, ts, seen, msg_id) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?)",
             (
                 record["id"],
                 recipient_id,
@@ -374,29 +380,34 @@ def poll_inbox(
         # cheap indexed meta-flag probe once migrated (no YAML, no writes).
         with open_connection(db) as conn:
             _ensure_ready(conn, store)
+            shape = shape_for(conn)
             if unseen_only:
                 rows = conn.execute(
-                    "SELECT * FROM inbox WHERE recipient = ? AND seen = 0 "
-                    "ORDER BY rowid",
+                    f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                    f"AND seen = 0 {shape.order()}",
                     (recipient_id,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM inbox WHERE recipient = ? ORDER BY rowid",
+                    f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                    f"{shape.order()}",
                     (recipient_id,),
                 ).fetchall()
             return [_row_to_record(r) for r in rows]
     # mark_seen -> read-modify-write.
     with open_connection(db) as conn:
         _ensure_ready(conn, store)
+        shape = shape_for(conn)
         if unseen_only:
             rows = conn.execute(
-                "SELECT * FROM inbox WHERE recipient = ? AND seen = 0 ORDER BY rowid",
+                f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"AND seen = 0 {shape.order()}",
                 (recipient_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM inbox WHERE recipient = ? ORDER BY rowid",
+                f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"{shape.order()}",
                 (recipient_id,),
             ).fetchall()
         if not rows:
@@ -404,7 +415,8 @@ def poll_inbox(
         ids = [r["id"] for r in rows]
         placeholders = ",".join("?" for _ in ids)
         conn.execute(
-            f"UPDATE inbox SET seen = 1 WHERE recipient = ? AND id IN ({placeholders})",
+            f"UPDATE {shape.table} SET seen = 1 "
+            f"WHERE {shape.recipient} = ? AND id IN ({placeholders})",
             (recipient_id, *ids),
         )
         conn.commit()
@@ -437,18 +449,19 @@ def ack(
     placeholders = ",".join("?" for _ in wanted)
     with open_connection(db) as conn:
         _ensure_ready(conn, store)
+        shape = shape_for(conn)
         # The ids that are currently UNSEEN among the wanted set — those are
-        # the ones this call flips. Preserve append order (rowid).
+        # the ones this call flips. Preserve arrival order.
         rows = conn.execute(
-            f"SELECT id FROM inbox WHERE recipient = ? AND seen = 0 "
-            f"AND id IN ({placeholders}) ORDER BY rowid",
+            f"SELECT id FROM {shape.table} WHERE {shape.recipient} = ? "
+            f"AND seen = 0 AND id IN ({placeholders}) {shape.order()}",
             (recipient_id, *wanted),
         ).fetchall()
         flipped = [r["id"] for r in rows]
         if flipped:
             flip_placeholders = ",".join("?" for _ in flipped)
             conn.execute(
-                f"UPDATE inbox SET seen = 1 WHERE recipient = ? "
+                f"UPDATE {shape.table} SET seen = 1 WHERE {shape.recipient} = ? "
                 f"AND id IN ({flip_placeholders})",
                 (recipient_id, *flipped),
             )
