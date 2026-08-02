@@ -68,14 +68,25 @@ export PATH="$VENV/bin:$PATH"
 
 echo "py=$("$VENV/bin/python" -V) target=$TMPDIR/site"
 
-# Install scitex-todo + its [all,dev] extras WITH deps into the writable target.
-# Fallback chain mirrors scitex-todo's historical bare-uv/pip workflow so a
-# packaging hiccup in an optional extra doesn't strand CI: [all,dev] → [dev] →
-# bare. uv first (fast resolver), pip as a final safety net.
-uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all,dev]" ||
-    uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[dev]" ||
+# Install scitex-cards + every runtime extra + the dev toolchain into the
+# writable target.
+#
+# ADR-0005: `dev` is a PEP 735 dependency GROUP, not an extra, so it is
+# requested with --group. `.[dev]` NO LONGER RESOLVES and would fail here.
+#
+# The fallback chain degrades to LESS TOOLING, never to fewer runtime
+# capabilities — `.[all]` is present in every rung that installs extras at all.
+# That direction is the point: this repo's outage came from an install that
+# silently omitted a runtime capability, so a chain that could fall back to a
+# partial runtime set would reintroduce it.
+#
+# pip is NOT a --group fallback: PEP 735 support landed in pip 25.1 and the
+# runner's pip may predate it, so the pip rung deliberately installs the
+# runtime set only rather than appearing to install a toolchain it cannot.
+uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all]" --group dev ||
+    uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all]" ||
     uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e "." ||
-    pip install --target="$TMPDIR/site" -e ".[dev]"
+    pip install --target="$TMPDIR/site" -e ".[all]"
 
 export PYTHONPATH="$TMPDIR/site:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 

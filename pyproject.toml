@@ -63,54 +63,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    # >=0.17.11 for the JobSpec service|timer|cron taxonomy + new
-    # restart_policy field used by _jobs_provider.provide_jobs(). Older
-    # versions don't have the kwarg and the leaf TypeErrors on import.
-    "scitex-dev>=0.17.11",
-    # Web-extra deps are imported (guarded) by the Django board source and its
-    # tests; include them so a fresh `pip install -e .[dev]` runs the full
-    # suite rather than silently skipping the board tests (PS-210).
-    "django>=4.2",
-    "scitex_app",
-    # >=0.11.1, and the number is MEASURED rather than aspirational:
-    #
-    #   0.7.1  — the shell template's DEFAULT favicon. Our templates declare no
-    #            <link rel="icon"> of their own any more, so an older shell
-    #            renders NO icon at all.
-    #   0.11.1 — `font-family: inherit` on `.stx-app-context-menu__item`. The
-    #            chat page's right-click menu consumes base's context-menu.css
-    #            and its items are <button>; buttons do not inherit the page
-    #            font and base ships no global button reset, so below 0.11.1 the
-    #            menu renders in the UA button font. `context-menu.css` EXISTS
-    #            at 0.7.1 (verified by `git show v0.7.1:...`) without that rule
-    #            — presence is not currency, which is exactly why a file-exists
-    #            check could not have caught this and a floor has to.
-    #
-    # chat.html has documented the 0.11.1 requirement since #581 and said "the
-    # upgrade ships alongside this"; it never did, so the declaration sat two
-    # minor versions under what the code needs. A resolver honouring 0.7.1 gets
-    # a page that renders and is subtly wrong — the failure mode a floor exists
-    # to prevent. Do not loosen it.
-    "scitex_ui>=0.11.1",
-    # Same PS-210 reason as the web extras above, and caught by the same rule:
-    # the backend tests import psycopg UNGUARDED, so without it here a fresh
-    # `pip install -e .[dev]` collects them and errors rather than running the
-    # suite. Declaring the `postgres` extra without this made the capability
-    # installable but left the DEFAULT development install unable to exercise
-    # it -- which is the same "reachable in principle, unreachable in practice"
-    # gap the extra itself was added to close.
-    "psycopg[binary]>=3.1",
-]
-docs = [
-    "sphinx>=7.0",
-    "sphinx-rtd-theme>=2.0",
-    "myst-parser>=2.0",
-    "sphinx-copybutton>=0.5",
-    "sphinx-autodoc-typehints>=1.25",
-]
 web = [
     "django>=4.2",
     "scitex-app",
@@ -219,7 +171,89 @@ all = [
     #
     # So `all` keeps its current membership and this PR ships only the psycopg
     # promotion, which is the half that actually fixes the outage.
-    "scitex-cards[dev,docs,mcp,web,currency,postgres]",
+    "scitex-cards[mcp,web,currency,postgres]",
+]
+
+# ADR-0005: dev and docs are DEPENDENCY GROUPS, not extras.
+#
+# They were public extras until 2026-08-02, and that single fact caused a fleet
+# outage by a route worth spelling out. With pytest and sphinx inside `all`,
+# `[all]` looked expensive for a runtime image -- so the agent-container defs
+# pinned a hand-picked subset, `scitex-cards[mcp]`, which does not pull psycopg.
+# Every container then lost the store at the PostgreSQL cutover, and the error
+# blamed the database rather than the missing driver.
+#
+# Nobody chose a partial set because they wanted one. They chose it because the
+# safe option had been made costly HERE. This removes the motive rather than
+# arguing against the choice -- the only kind of fix that survives someone with
+# a plausible local reason, and I was that someone: I recommended
+# `[mcp,postgres]` on size grounds an hour after diagnosing this exact failure.
+#
+# WHY GROUPS RATHER THAN JUST REMOVING THEM FROM `all`: scitex-dev's SHIPPED
+# audit rule PS-221 requires every PUBLIC extra to be a subset of `all`, so
+# dropping dev/docs from `all` while they remained extras failed CI. Groups are
+# not `[project.optional-dependencies]`, so PS-221 never sees them and keeps its
+# full force over everything it was written for. The rule needs no amendment.
+#
+# This is also the mechanism the operator was reaching for when he asked for
+# underscore-prefixed extras. PEP 508 forbids that spelling -- `pkg[_mcp]` is an
+# InvalidRequirement, and the advice was given fleet-wide in 2026-07, broke five
+# repositories, and was reverted. PEP 735 provides the concept the spelling
+# could not.
+#
+# CONSEQUENCE FOR INSTALLERS: groups live in pyproject.toml and are NOT wheel
+# metadata, so they work only from a source tree. Verified before adopting:
+# nothing in the fleet installs a sibling's published `[dev]`, so the limitation
+# costs nothing. Install with `uv pip install -e . --group dev` (uv >= 0.6,
+# pip >= 25.1); `uv pip install -e .[dev]` no longer resolves.
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    # >=0.17.11 for the JobSpec service|timer|cron taxonomy + new
+    # restart_policy field used by _jobs_provider.provide_jobs(). Older
+    # versions don't have the kwarg and the leaf TypeErrors on import.
+    "scitex-dev>=0.17.11",
+    # Web-extra deps are imported (guarded) by the Django board source and its
+    # tests; include them so a fresh `pip install -e .[dev]` runs the full
+    # suite rather than silently skipping the board tests (PS-210).
+    "django>=4.2",
+    "scitex_app",
+    # >=0.11.1, and the number is MEASURED rather than aspirational:
+    #
+    #   0.7.1  — the shell template's DEFAULT favicon. Our templates declare no
+    #            <link rel="icon"> of their own any more, so an older shell
+    #            renders NO icon at all.
+    #   0.11.1 — `font-family: inherit` on `.stx-app-context-menu__item`. The
+    #            chat page's right-click menu consumes base's context-menu.css
+    #            and its items are <button>; buttons do not inherit the page
+    #            font and base ships no global button reset, so below 0.11.1 the
+    #            menu renders in the UA button font. `context-menu.css` EXISTS
+    #            at 0.7.1 (verified by `git show v0.7.1:...`) without that rule
+    #            — presence is not currency, which is exactly why a file-exists
+    #            check could not have caught this and a floor has to.
+    #
+    # chat.html has documented the 0.11.1 requirement since #581 and said "the
+    # upgrade ships alongside this"; it never did, so the declaration sat two
+    # minor versions under what the code needs. A resolver honouring 0.7.1 gets
+    # a page that renders and is subtly wrong — the failure mode a floor exists
+    # to prevent. Do not loosen it.
+    "scitex_ui>=0.11.1",
+    # Same PS-210 reason as the web extras above, and caught by the same rule:
+    # the backend tests import psycopg UNGUARDED, so without it here a fresh
+    # `pip install -e .[dev]` collects them and errors rather than running the
+    # suite. Declaring the `postgres` extra without this made the capability
+    # installable but left the DEFAULT development install unable to exercise
+    # it -- which is the same "reachable in principle, unreachable in practice"
+    # gap the extra itself was added to close.
+    "psycopg[binary]>=3.1",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "myst-parser>=2.0",
+    "sphinx-copybutton>=0.5",
+    "sphinx-autodoc-typehints>=1.25",
 ]
 
 # BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy

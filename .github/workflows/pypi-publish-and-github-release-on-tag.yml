@@ -96,8 +96,13 @@ jobs:
         run: |
           set -euo pipefail
           uv venv --python ${{ matrix.python-version }} .venv
-          uv pip install --python .venv/bin/python -e ".[all,dev]" \
-            || uv pip install --python .venv/bin/python -e ".[dev]" \
+          # ADR-0005: dev is a PEP 735 dependency GROUP, not an extra, so it is
+          # requested with --group rather than with a bracket. `.[all]` is every
+          # runtime capability; --group dev adds the toolchain. The fallbacks
+          # degrade to less, never to something that silently omits a runtime
+          # capability, which is the failure this ADR exists to prevent.
+          uv pip install --python .venv/bin/python -e ".[all]" --group dev \
+            || uv pip install --python .venv/bin/python -e ".[all]" \
             || uv pip install --python .venv/bin/python -e .
           PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
           .venv/bin/python -m pytest tests/ --cov="src/$PKG" --cov-report=xml --cov-report=term
