@@ -219,4 +219,19 @@ def settings_configured():
     return settings
 
 
+def test_a_request_object_with_no_cookie_jar_at_all_is_not_valid():
+    # Arrange
+    # The minimal stub the existing _board_auth suite builds:
+    #     type("R", (), {"META": {}})()
+    # It has no COOKIES attribute, and it was RIGHT — the read was too narrow.
+    # A request carrying no cookie jar has no cookie, so False is the correct
+    # answer rather than an AttributeError. This is the regression that broke
+    # 3 matrix legs.
+    request = type("R", (), {"META": {}})()
+    # Act
+    result = cookie_is_valid(request)
+    # Assert
+    assert result is False
+
+
 # EOF

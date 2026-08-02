@@ -81,8 +81,21 @@ def wants_html(request) -> bool:
 
 
 def cookie_is_valid(request) -> bool:
-    """True when the request carries a session cookie we signed and it is fresh."""
-    raw = request.COOKIES.get(COOKIE_NAME)
+    """True when the request carries a session cookie we signed and it is fresh.
+
+    ``getattr`` rather than ``request.COOKIES`` directly, and this is a semantic
+    choice rather than defensive padding: a request object carrying no cookie
+    jar HAS no cookie, so ``False`` is the correct answer and not a swallowed
+    error. Raising here would make "no cookies" indistinguishable from "the
+    cookie is bad", and only one of those is an exceptional condition — neither
+    is.
+
+    Caught by an existing test, which builds a minimal request as
+    ``type("R", (), {"META": {}})()``. Adding COOKIES to that stub would have
+    fixed the symptom by making the test model this function's needs; the stub
+    was right and the read was too narrow.
+    """
+    raw = (getattr(request, "COOKIES", None) or {}).get(COOKIE_NAME)
     if not raw:
         return False
     try:
