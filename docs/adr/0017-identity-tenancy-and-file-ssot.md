@@ -99,7 +99,7 @@ Per-app and per-project scoping is not another axis. It is D0 read forwards: if
 the boundary is the store, then giving a project its own store gives it its own
 boundary, its own membership, and its own backup — with no new mechanism.
 
-### D3 — Two credential types, one principal
+### D3 — Two credential types, one principal, and no third option
 
 `scitex_app.identity` exports a `Principal` value object and a provider protocol.
 Two providers ship:
@@ -114,6 +114,28 @@ adding a third (an OIDC provider for hub SSO) touches one module.
 The application never reads a header, a cookie, or an environment variable to
 learn who is calling. That rule is what makes the hub-plugin and standalone paths
 the same code.
+
+**The app always authenticates. A proxy in front is a second layer, never the
+boundary.** This was tested against reality the day the ADR was written: the
+first version of the public-exposure gate accepted, as a third option, a written
+claim that something in front authenticated every request. It was rejected — auth
+stops being legible once it is made fine-grained, and key-or-password like `ssh`
+is the whole model. The security argument turned out to be the stronger one: that
+third option was the *only* path to an origin with no login, and the process
+cannot observe whether the thing in front is enforcing. A misconfigured proxy
+must not be a breach.
+
+**Two shaping constraints, both making a missing state unrepresentable rather
+than detected:**
+
+- **No provider configured is a refusal, never an anonymous `Principal`.** If the
+  protocol can return `None` or an "anonymous" subject, a misconfigured
+  deployment produces a caller who is not authenticated but *is* represented, and
+  every downstream check then evaluates a valid-looking subject. The type is
+  non-optional: either you hold a `Principal` or the call raised. (scitex-dev.)
+- **Silence is not the permissive case.** Omission must reach the refusal, not the
+  permission. A configuration that says nothing about authentication is not a
+  configuration that opted out of it.
 
 ### D4 — Direct-DB access is attribution, not authentication
 
@@ -167,12 +189,19 @@ most are recorded as cards rather than buried in prose.
    Tunnel path, which is the one phone access would use — adds the hostname to
    `ALLOWED_HOSTS` and asserts only that `DJANGO_SECRET_KEY` exists.
 
-   This is not automatically a hole: with Cloudflare Access enforcing in front,
-   the origin needs no password. The gap is that **nothing verifies that**.
+   The gap was that **nothing verified** whether a proxy was enforcing in front.
    Access being configured is a Cloudflare-side fact this process cannot see, so
-   a correct deployment and an open board look identical from inside.
-   Card: `cards-public-host-exposure-has-no-password-assertion-20260802`.
-   No hostname gets published until this resolves.
+   a correct deployment and an open board looked identical from inside.
+
+   **Fixed in #747, per D3**: the board authenticates its own callers, so the
+   question no longer arises — Access becomes defence in depth rather than the
+   boundary, and a misconfigured policy is no longer a breach. Card:
+   `cards-public-host-exposure-has-no-password-assertion-20260802`.
+
+   What remains open is not code: the Cloudflare route and its Access policy
+   still have to be created, and the control on that side is that an
+   unauthenticated GET must return a challenge rather than a 200. That sits with
+   scitex-hub on `hub-cards-phone-access-cloudflare-route-20260802`.
 
 2. **The user registry contradicts itself.** `_users/_store_read.py` reads users
    from `resolve_tasks_path` — a per-host file — while `_db_mirror.py` deletes and
