@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.31.8] - 2026-08-02
+
+**A login page, because the browser will not show what the header says.**
+
+0.31.7 made the 401 name its own source — realm and body both — and `curl`
+prints both. Chrome prints neither: its Basic dialog shows only "Sign in" and
+the origin, the realm having been removed years ago because an
+attacker-controlled realm is a phishing surface.
+
+So the operator met a bare, unlabelled password box on his own board and could
+not get in. The header was correct and invisible to the only person using it,
+and it was verified with the tool that displays the realm rather than the
+browser that discards it.
+
+A browser now gets a PAGE, where the instructions can simply be on it: what the
+password is, the command that reads it, that there is no username today and why,
+and the warning that a prompt which cannot say where its answer lives has the
+shape of a phishing prompt. Anything that is not a browser still gets the Basic
+401 unchanged — two audiences with different renderers, so the mechanism follows
+the audience rather than the reverse.
+
+Status is 200 rather than 401 deliberately: a 401 carrying HTML makes the browser
+open its native dialog ON TOP of the page, hiding the explanation behind the very
+prompt it replaces. The session cookie is signed, HttpOnly and SameSite=Lax.
+
+Verified end to end in a real browser — navigate, type, land on the board — not
+only at the protocol level.
+
+The username field is REMOVED and that is a stopgap, not the design. This board
+has one shared password today and genuinely discards the username, so a field
+that is ignored is a lie. It returns wired to per-user credentials, because
+several people on one card need per-person attribution.
+
+Also in this release: validation warnings name the store the rows actually came
+from (#756), a client behind the store no longer re-runs its DDL on every
+connection (#755), and psycopg is a hard dependency rather than an extra (#754).
+
 ## [0.31.7] - 2026-08-02
 
 **The password prompt says where its answer lives.**
