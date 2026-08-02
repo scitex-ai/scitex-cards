@@ -47,130 +47,20 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._inbox_shape import shape_for
+from ._inbox_sqlite_schema import (
+    ENV_INBOX_DB,
+    SCHEMA_VERSION,
+    _ensure_msg_id,
+    _ensure_ready,
+    _is_migrated,
+    _MIGRATED_FLAG,
+    inbox_db_path,
+    init_schema,
+    open_connection,
+)
 from ._sql_null_safe import null_safe_eq_for
 
 logger = logging.getLogger(__name__)
-
-#: Env override for the inbox DB path (full path to the ``.db`` file). Default
-#: is ``<store_dir>/runtime/todo.db`` (see :func:`inbox_db_path`). Mirrors the
-#: ``SCITEX_TODO_INDEX_PATH`` override on :mod:`scitex_cards._index`.
-ENV_INBOX_DB = "SCITEX_TODO_INBOX_DB"
-
-#: Runtime-DB filename. ``todo`` is this package's short name (constitution:
-#: ``<proj-root>/.scitex/<pkg-short>/runtime/<pkg-short>.db``).
-_DB_FILENAME = "todo.db"
-
-#: Schema version. Bump when the column set / indexes change.
-SCHEMA_VERSION = 1
-
-#: ``meta`` key set ONCE after the YAML ``inboxes:`` records have been copied
-#: into this DB (the lazy auto-migration guard). Its presence is the cheap,
-#: indexed PK read that lets the steady-state hot poll path skip YAML entirely.
-_MIGRATED_FLAG = "migrated_from_yaml"
-
-
-def inbox_db_path(store: str | Path | None = None) -> Path:
-    """Resolved on-disk path for the inbox SQLite DB.
-
-    ``SCITEX_TODO_INBOX_DB`` wins outright; otherwise the DB lives at
-    ``runtime_dir(store)/todo.db`` — the runtime dir tracks whichever scope the
-    task store resolved to, so a per-test ``store=`` isolates its own DB.
-    """
-    override = os.environ.get(ENV_INBOX_DB)
-    if override:
-        return Path(override).expanduser()
-    from ._paths import runtime_dir
-
-    return runtime_dir(store, create=True) / _DB_FILENAME
-
-
-@contextmanager
-def open_connection(path: Optional[Path] = None):
-    """Open the inbox DB (WAL, autocommit isolation, ``Row`` factory).
-
-    Caller-managed: closes on context exit. Creates the parent dir if missing
-    (first-run friendly). Mirrors :func:`scitex_cards._index.open_connection`.
-    """
-    target = Path(path) if path is not None else inbox_db_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(target))
-    try:
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.row_factory = sqlite3.Row
-        yield conn
-    finally:
-        conn.close()
-
-
-def _ensure_msg_id(conn: sqlite3.Connection) -> None:
-    """Add ``inbox.msg_id`` if this DB predates it. Idempotent + race-safe.
-
-    ~21 agents share one ``todo.db``, so two can reach the ``ALTER`` at the
-    same instant and the loser sees ``duplicate column name``. That is the
-    winner having done our job, not a failure — swallowing anything broader
-    would let a real schema fault masquerade as a race.
-
-    Nullable on purpose. A row enqueued before the id was carried has no
-    message id, and "no message id" is the true answer for it; a backfill
-    would have to invent one from the lossy ``(card_id, ts, actor)`` join that
-    ``_dm_receipt_state`` measured collapsing two distinct messages into one.
-    """
-    try:
-        have = {row[1] for row in conn.execute("PRAGMA table_info(inbox)")}
-    except sqlite3.Error:
-        return
-    if not have or "msg_id" in have:
-        return
-    try:
-        conn.execute("ALTER TABLE inbox ADD COLUMN msg_id TEXT")
-    except sqlite3.OperationalError as exc:
-        if "duplicate column" not in str(exc).lower():
-            raise
-
-
-def init_schema(conn: sqlite3.Connection) -> None:
-    """Create the ``inbox`` table + its indexes idempotently.
-
-    Columns mirror the record dict the YAML path stores
-    (``id / event_type / card_id / body / actor / ts / seen``) plus the
-    ``recipient`` inbox key. ``rowid`` (implicit) preserves append order — a
-    poll returns oldest-first by ``ORDER BY rowid``. The composite index on
-    ``(recipient, seen)`` makes a single recipient's UNSEEN lookup — the hot
-    poll path — an indexed scan rather than a full-table read.
-    """
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS inbox (
-            id TEXT PRIMARY KEY,
-            recipient TEXT NOT NULL,
-            event_type TEXT,
-            card_id TEXT,
-            body TEXT,
-            actor TEXT,
-            ts TEXT,
-            seen INTEGER NOT NULL DEFAULT 0,
-            msg_id TEXT
-        )
-        """
-    )
-    _ensure_msg_id(conn)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inbox_recipient_seen ON inbox(recipient, seen)"
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-        """
-    )
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
-    )
-    conn.commit()
 
 
 def _row_to_record(row: sqlite3.Row) -> dict:
@@ -193,41 +83,6 @@ def _row_to_record(row: sqlite3.Row) -> dict:
         # reads `undefined`, renders nothing, and looks like it worked.
         "msg_id": row["msg_id"] if "msg_id" in row.keys() else None,
     }
-
-
-def _is_migrated(conn: sqlite3.Connection) -> bool:
-    """True once the YAML ``inboxes:`` records have been copied into this DB.
-
-    A single indexed PRIMARY-KEY probe of the ``meta`` table — the cheap check
-    that lets the steady-state hot poll path skip the YAML read entirely.
-    """
-    row = conn.execute(
-        "SELECT 1 FROM meta WHERE key = ? LIMIT 1", (_MIGRATED_FLAG,)
-    ).fetchone()
-    return row is not None
-
-
-def _ensure_ready(conn: sqlite3.Connection, store: str | Path | None) -> None:
-    """Per-connection readiness: ensure the schema, then lazily migrate
-    pre-existing file-backed inbox records into SQLite EXACTLY ONCE.
-
-    Guarded by the ``migrated_from_yaml`` meta flag: the first access on a
-    fresh DB performs the one-time copy + sets the flag; every later access
-    is a cheap flag probe. Concurrency-safe across the ~21 agents sharing one
-    ``todo.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
-    flag is set even when there's nothing to copy, so a fresh store converges.
-    """
-    init_schema(conn)
-    if _is_migrated(conn):
-        return
-    from ._inbox import _utc_now_iso
-
-    _migrate_into_conn(conn, store)
-    conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
-        (_MIGRATED_FLAG, _utc_now_iso()),
-    )
-    conn.commit()
 
 
 # --------------------------------------------------------------------------- #
