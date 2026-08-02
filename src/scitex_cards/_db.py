@@ -49,6 +49,7 @@ from ._db_migrations import (
     _migrate_v5_to_v6,
     _migrate_v6_to_v7,
     _migrate_v7_to_v8,
+    _migrate_v8_to_v9,
     record_migration_provenance,
     table_columns,
 )
@@ -132,7 +133,7 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: and that condition is not establishable — measured 2026-07-30, the fleet was
 #: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
 #: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -404,6 +405,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v5_to_v6(conn)
     _migrate_v6_to_v7(conn)
     _migrate_v7_to_v8(conn)
+    _migrate_v8_to_v9(conn)
     # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT. Both halves of that rule now
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.
