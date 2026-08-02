@@ -138,6 +138,13 @@ web = [
     # django/scitex-app/scitex-ui are hard dependencies now (see `dependencies`),
     # so this extra adds nothing and `scitex-cards[web]` still resolves.
     #
+    # IT RESTATES ITS REQUIREMENTS RATHER THAN BEING EMPTY, and that is PS-214,
+    # not tidiness. An empty extra is a remedy that installs ZERO packages, so
+    # anyone told "pip install scitex-cards[web]" runs it, stays exactly as
+    # broken, and now believes they already tried the fix. `postgres` below has
+    # restated psycopg for the same reason since the promotion. Listing a
+    # requirement in both places is free -- pip resolves it once.
+    #
     # THE REMOVAL IS SEQUENCED, NOT FORGOTTEN. The operator's ruling is a strict
     # {all, dev, docs} allowlist and this alias is not in it. It stays until the
     # pins outside this repo are updated -- measured 2026-08-03, three build
@@ -150,6 +157,9 @@ web = [
     # WARNING with exit 0. It would just start printing a warning in someone
     # else's build for a change of mine. Ordering it the other way costs nothing
     # and lands the noise on nobody.
+    "django>=4.2",
+    "scitex-app",
+    "scitex-ui>=0.11.1",
 ]
 mcp = [
     # Same redundant-alias contract as `web` above. FastMCP is the canonical
@@ -159,6 +169,9 @@ mcp = [
     #
     # This is the alias the 2026-08-01 outage was pinned to. Keeping it
     # resolving, and now resolving to a COMPLETE install, is the point.
+    #
+    # Restated rather than left empty, per PS-214 -- see the `web` note above.
+    "fastmcp>=2.0",
 ]
 postgres = [
     # KEPT DELIBERATELY, THOUGH IT IS NOW REDUNDANT: psycopg was promoted to a
