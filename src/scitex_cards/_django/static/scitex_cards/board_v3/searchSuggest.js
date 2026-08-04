@@ -46,7 +46,13 @@
 
 let _SQ;
 try {
-  /* eslint-disable @typescript-eslint/no-var-requires */
+  // Dual-mode: this file is a browser <script> AND is require()d by the Node
+  // tests, hence the guarded require. The directive that used to sit here
+  // disabled `@typescript-eslint/no-var-requires` — a TypeScript PLUGIN rule,
+  // in a plain browser script, for a plugin this repo does not install. ESLint
+  // errors on an unknown rule in a disable directive, so it was the single
+  // hard error across all of static/. It survived unnoticed because no config
+  // reached these files, so eslint never ran on them at all.
   _SQ = require("./searchQuery.js");
 } catch (_e) {
   _SQ = null;
