@@ -65,7 +65,7 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
         except ImportError as exc:  # pragma: no cover — mcp SDK missing
             raise click.ClickException(
                 "scitex-cards mcp channel needs the MCP SDK: "
-                f"pip install 'scitex-cards[mcp]' ({exc})"
+                f"pip install 'scitex-cards[all]' ({exc})"
             ) from None
         try:
             channel_main(name=name, interval=interval, agent=agent)

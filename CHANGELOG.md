@@ -2,6 +2,290 @@
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-08-06
+
+**An `agent:<id>` scope names an OWNER, not a lens — and the instruction that
+said otherwise shipped in every agent's system prompt.**
+
+`list_tasks` compared scope by exact string, while this package's own MCP
+instructions told every agent to *"call list_tasks with `scope='agent:<id>'`
+**to see only your slice**"*. That phrasing does not suggest a query; it asserts
+an equivalence, with tool authority, on first contact. It was false. A card a
+**peer** filed against you under `fleet`, `ecosystem`, or no scope at all — which
+is what most filings do — was excluded from "your slice".
+
+Measured on the canonical store: **441 open cards** owned by an agent were
+invisible to that agent's own scoped query, across **39 owners**, **398** of them
+for the single reason that nobody set a scope when filing. The `lead` agent had
+12 hidden and **0 visible** — an empty board while it held work.
+
+Reported independently by **scitex-agent-container** (69), **scitex-ui** (3, all
+blocked on an operator decision) and **scitex-app** (4). None were looking for
+it; two found it only after hearing about the first, which makes the discovery
+mechanism gossip rather than tooling. The failure is silent by construction — a
+filter returning fewer rows is indistinguishable from a board holding fewer
+cards.
+
+`_in_scope` now reads `agent:<id>` as an owner: a card assigned to `<id>`, or
+carrying it in `agent`, is that agent's work whatever lens someone else filed it
+under. `fleet`, `ecosystem` and project scopes are genuine views and still match
+exactly.
+
+Validated against the canonical store by importing the real predicate rather
+than reimplementing it: **461** open cards newly reach their owner, **0** become
+visible to a non-owner, **0** previously-visible cards are lost, **0** change to
+lens membership. The three zeros are what separate this from the broader
+proposal — surface every unscoped card to everyone — which would have made the
+first two non-zero by design and buried each agent under other people's work.
+
+Both halves changed together, in that order. The instruction now says the scope
+names *you* and points at `list_tasks(assignee=…)` as the direct question the
+two should agree on — a sentence that is only true because the filter changed
+first. Changing the wording alone would have moved the failure into the
+tool-result size cap, which two of the reporters had already hit that same
+session; an agent that hits the cap narrows its query, which is this bug again.
+
+**The instructions no longer name a storage backend or a default store path,**
+and a test now refuses any that do.
+
+Found while verifying the fix above by *reading the rendered string* rather than
+the diff. The same instructions carried a second false claim, untouched by the
+scope work: *"The canonical store is the SQLite database at `$SCITEX_CARDS_DB`
+(default `~/.scitex/cards/cards.db`) — that path is the SOLE store identity."*
+After the PostgreSQL cutover both halves were false at once, and the named path
+is the **abandoned** pre-migration file — still on disk, still holding thousands
+of real cards.
+
+That sentence is what misled this package's own maintainer earlier the same day:
+the first round of the figures above was measured against that file, and reached
+three docstrings, a pull-request body and a card comment before a positive
+control caught it — looking up a card created in the same session, which came
+back NOT FOUND, proving the reader wrong rather than the data. The stale file
+answered plausibly and reproduced a reporter's own count exactly, which is
+precisely what stopped the checking. A store that answers plausibly is the
+dangerous kind of wrong.
+
+The sentence had rotted twice (YAML → SQLite → PostgreSQL) because it
+**restates** what `resolve_store` already answers correctly, and nothing
+asserted it. It now names only the question and the verb that answers it, and
+`test__mcp_instructions_names_no_backend.py` fails the build on any backend name
+or default path in either branch of the renderer — while separately requiring
+that `resolve_store` stay named, so the guard cannot be satisfied by deleting
+the sentence and leaving an agent no way to learn which store it is on.
+
+That test earned its place immediately: the first replacement sentence said "a
+SQLite path or a PostgreSQL URL, depending on the deployment" — naming both
+backends inside the sentence that says not to — and the guard caught it before
+it was committed.
+
+The identical claim still ships in `scitex-cards --help` and in `_db.py`. Both
+are carded rather than fixed here: `_cli/_main.py` is already 520 lines against
+a 512-line cap, so the repo's line-limit hook refuses any edit to it until it is
+split, and a module refactor does not belong in a release.
+
+## [0.32.2] - 2026-08-06
+
+**A board READ honours the trusted store attribute, and one module now owns
+the decision.**
+
+The write path stopped trusting `?store=` on 2026-07-28, after scitex-hub found
+in design review that a request parameter was choosing which file got written.
+The read path kept trusting it alone for nine more days — in the function
+immediately above it — because the same two `request.GET.get("store")` lines
+had been hand-copied into `views.py` and `handlers/dm.py`, and only one was
+ever revisited.
+
+That asymmetry was not merely untidy: it forced a neighbouring package into a
+worse design. Since reads consulted the query *only*, scitex-hub's tenancy
+middleware could not simply set `request.scitex_store` — it had to keep
+**overwriting** `request.GET["store"]`, which, as its own comment says, put a
+security-critical value "in the exact namespace the attacker controls", making
+their injected store and a hostile one "byte-identical, indistinguishable by
+construction" downstream. They were right, and the indistinguishability was
+ours: the two values *are* distinguishable where one arrives as an attribute
+and the other as a query parameter.
+
+`_django/_request_store.py` now decides for the whole layer. `write_store`
+accepts only the trusted attribute; `read_store` **prefers** it and falls back
+to the query. The preference is the fix — once the attribute wins, a
+caller-supplied `?store=` is inert wherever a tenancy middleware runs, defended
+by construction rather than by a neighbour remembering to overwrite it.
+
+The **value** does not change, only the channel. hub sets the attribute to a
+`Path` while it injected the query as `str(store)`, so the attribute is
+normalised to `str` and a test pins that both channels resolve identically — a
+silent type change riding along with a security fix is how the next incident
+starts.
+
+The query fallback **stays**, deliberately: the standalone loopback board and
+the Django suite both select a store through it, and removing it before hub
+deletes its injection would drop tenancy for a release window and fall the
+board back to one ambient store for every tenant. Alias first, then remove.
+
+A build-failing AST guard refuses any `store` key taken off `request.GET` **or**
+`request.POST` outside the owning module. `POST` is included though no handler
+reads one — the cheapest moment to refuse a channel is before it exists. It
+matches on syntax rather than on the word "store", because every docstring here
+contains that word and a text check would match its own prose; and it carries a
+positive control, because a matcher that has silently stopped matching and a
+tree that is genuinely clean produce the identical empty result.
+
+## [0.32.1] - 2026-08-03
+
+**A merge must not overrule a deliberate blocker.**
+
+`reconcile-merged-prs` treated a merged PR as evidence that the CARD was
+finished. A merge is evidence about a **pull request**; reading it as evidence
+about the card holds only where the card's scope is strictly its diff. Where
+the card also carries verification or rollout, it closed live work — and closed
+it with the confident shape, `done`, rather than surfacing a question.
+
+Measured by scitex-hub: at 19:08Z they set a card to `blocked=dependency` whose
+note opened "STATUS blocked=dependency, NOT done". At 19:30Z the reconciler set
+it to `done`. Twenty-two minutes, with the note explaining why a merge is not
+completion sitting unchanged in the card body. It was not merely early — the
+card's closing condition was an authenticated request from the operator's phone
+succeeding, and production was five commits behind including that PR, so the
+route did not exist.
+
+`blocked` leaves `OPEN_STATUSES`. Auto-closing an `in_progress` card is a
+defensible heuristic; overruling a blocker is not. A blocker is the record that
+someone ALREADY considered the question and decided the work cannot complete —
+encoding "do not assume" is the entire job of the status. The reasoning was
+already in that file, written for `deferred`, and had simply never been
+extended to the status it applies to more strongly.
+
+The quiet part, and why this is worth a patch release rather than waiting: a
+closed card leaves the board, so no sweep nudges it again and the mistake is
+invisible to anyone hunting for it. It also fires unattended, so it was the one
+defect of its family still producing wrong states overnight.
+
+**This release exists because the fix was merged and not running.** The
+reconciler executes from the installed distribution, so #764 changed nothing
+until it shipped — and it auto-closed the same card a second time at 19:45,
+after the fix had merged. Merged is not deployed, demonstrated on the very
+change that says so.
+
+## [0.32.0] - 2026-08-03
+
+**The runtime install is bare, so there is nothing left to pick wrong.**
+
+MINOR rather than patch because the install SHAPE changes. `django`,
+`scitex-app`, `scitex-ui` and `fastmcp` move from the `web` and `mcp` extras
+into core, joining `psycopg`. `pip install scitex-cards` — no extras — now
+produces a complete client.
+
+That is the fix, not a consequence of it. Every hand-pickable subset was a
+chance to pick the wrong one, and the 2026-08-01 fleet outage was exactly
+that: `scitex-cards[mcp]` resolved cleanly and produced a client that could
+not open the canonical store, while the error blamed the database. Removing
+the choice removes the failure, which is the only kind of fix that survives
+someone with a plausible local reason for the partial set.
+
+The board and the MCP server are not optional capabilities in any sense a
+user would recognise: the board is how the operator reads the store, and the
+MCP server is how every agent writes to it.
+
+`web`, `mcp`, `postgres` and `currency` remain as redundant aliases so the
+pins outside this repo keep resolving — and they RESTATE their requirements
+rather than being emptied, because an empty extra is worse than a missing
+one. A missing extra warns; an empty one resolves silently and installs
+nothing, so whoever was told to run it stays broken and believes they already
+tried the fix (PS-214). Their removal is sequenced behind the three
+`scitex-agent-container` build sites that name them.
+
+`currency` is deliberately NOT promoted. It fails the test the others passed:
+`check_currency()` is a no-op when scitex-dev is absent, so its absence names
+itself, and promoting it would make a development toolchain a hard dependency
+of every runtime install.
+
+**A label must not fail the command it captions.** `scitex-cards list-tasks`
+and `summary` crashed against the canonical PostgreSQL store — not on the
+read, which had already returned 301 cards, but on the header line naming
+where they came from, which called a resolver typed to return a filesystem
+path. The refusal was correct; the call site was not. Naming a store is not
+the same operation as opening one. `store_label()` renders the target with
+credentials and query string stripped, and never through `Path`.
+
+## [0.31.8] - 2026-08-02
+
+**A login page, because the browser will not show what the header says.**
+
+0.31.7 made the 401 name its own source — realm and body both — and `curl`
+prints both. Chrome prints neither: its Basic dialog shows only "Sign in" and
+the origin, the realm having been removed years ago because an
+attacker-controlled realm is a phishing surface.
+
+So the operator met a bare, unlabelled password box on his own board and could
+not get in. The header was correct and invisible to the only person using it,
+and it was verified with the tool that displays the realm rather than the
+browser that discards it.
+
+A browser now gets a PAGE, where the instructions can simply be on it: what the
+password is, the command that reads it, that there is no username today and why,
+and the warning that a prompt which cannot say where its answer lives has the
+shape of a phishing prompt. Anything that is not a browser still gets the Basic
+401 unchanged — two audiences with different renderers, so the mechanism follows
+the audience rather than the reverse.
+
+Status is 200 rather than 401 deliberately: a 401 carrying HTML makes the browser
+open its native dialog ON TOP of the page, hiding the explanation behind the very
+prompt it replaces. The session cookie is signed, HttpOnly and SameSite=Lax.
+
+Verified end to end in a real browser — navigate, type, land on the board — not
+only at the protocol level.
+
+The username field is REMOVED and that is a stopgap, not the design. This board
+has one shared password today and genuinely discards the username, so a field
+that is ignored is a lie. It returns wired to per-user credentials, because
+several people on one card need per-person attribution.
+
+Also in this release: validation warnings name the store the rows actually came
+from (#756), a client behind the store no longer re-runs its DDL on every
+connection (#755), and psycopg is a hard dependency rather than an extra (#754).
+
+## [0.31.7] - 2026-08-02
+
+**The password prompt says where its answer lives.**
+
+0.31.6 let the board demand a password before binding a public hostname. It did
+not say where that password came from. The realm read `SciTeX Cards` and the
+body read *"This board is password protected."* — restating the fact the user
+could already see, while withholding the only thing they needed.
+
+The operator met the consequence on their own machine: a credential dialog on
+loopback, for a password they had not set, with no path from the dialog to the
+secret — *"no idea what password this is, and I don't know the username either."*
+
+**This is a security defect, not a cosmetic one.** An anonymous credential
+prompt is indistinguishable from a phishing one, and a user who cannot tell them
+apart is being trained to type secrets into whichever dialog appears. So the fix
+is not a friendlier message, it is a **refusable** one: the challenge now names
+its source, so a reader can check whether that source is theirs and decline when
+it is not.
+
+Both halves carry it — the realm the browser prints inside its dialog, and the
+body it renders when the dialog is cancelled. The body additionally states the
+two things the dialog cannot: that the username is **discarded entirely**
+(`is_authorised` splits on the first colon and compares only the password), and
+what to run to read the value. And it tells a reader who did not set the
+password not to answer.
+
+The realm is kept under 80 characters because browsers truncate long ones — a
+truncated realm would silently drop the hint this change exists to deliver — and
+free of quote and backslash, since a realm is an HTTP quoted-string and neither
+escapes portably. Tests pin those transport facts, and pin what the message must
+*say* rather than how it says it.
+
+**Not fixed by exempting loopback**, which was the tempting shortcut and would
+have been wrong twice: it weakens the gate, and `cloudflared` forwards to
+`127.0.0.1`, so tunnel traffic also arrives from loopback — the exemption would
+have opened the public path it was meant to leave alone.
+
+Interim. The durable fix is credential locations a user can find unaided —
+`~/.scitex/cards/authorized_keys` and `~/.scitex/cards/auth.yaml`, sshd-shaped,
+password hashed, the plaintext environment variable retired.
+
 ## [0.31.6] - 2026-08-02
 
 **A public hostname can no longer be bound by a board that cannot authenticate
