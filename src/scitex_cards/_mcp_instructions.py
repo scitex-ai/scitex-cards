@@ -58,16 +58,35 @@ from __future__ import annotations
 #: Store-identity sentence — identical in both branches of the instructions.
 #:
 #: Agents read this string at session start and act on it, so it must describe
-#: the store as it actually is: the SQLite database at $SCITEX_CARDS_DB is the
-#: sole store identity (the pre-cutover YAML path and its "bundled example" tier
-#: are gone). A stale sentence here is the fleet being told to write to a store
-#: that does not exist.
+#: the store as it actually is. IT MUST NOT NAME A BACKEND OR A DEFAULT PATH.
+#:
+#: It used to say "the canonical store is the SQLite database at
+#: $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db)". After the PostgreSQL
+#: cutover that sentence was FALSE in both halves at once: the backend is
+#: postgres on this fleet, and ``~/.scitex/cards/cards.db`` is the abandoned
+#: pre-migration file, still on disk, still holding thousands of real cards.
+#:
+#: On 2026-08-06 it misled the maintainer of this very package. Measuring a
+#: fleet-wide defect, I read that path directly — because my own instructions
+#: named it — and produced a full set of numbers from a four-day-old snapshot,
+#: which reached three docstrings, a pull-request body and a card comment to the
+#: agent who reported the bug before a positive control caught it. The file is
+#: not obviously stale: it answered plausibly and reproduced the reporter's own
+#: count exactly, which is what stopped me checking.
+#:
+#: So the sentence now names only the QUESTION and the verb that answers it.
+#: ``resolve_store`` reports the resolved target and its backend; anything this
+#: string asserted about either would be a second thing to keep in step, and
+#: this is the second time it has fallen out of step (YAML -> SQLite, then
+#: SQLite -> PostgreSQL).
 _STORE_LINE = (
-    "The canonical store is the SQLite database at $SCITEX_CARDS_DB "
-    "(default ~/.scitex/cards/cards.db) — that path is the SOLE store identity; "
-    "call resolve_store to see which store you actually resolved to. An "
-    "unresolvable/absent store raises rather than silently handing you an "
-    "empty board."
+    "The store is whatever $SCITEX_CARDS_DB resolves to, and that resolved "
+    "target is the SOLE store identity. Do NOT assume a backend or a default "
+    "path — the deployment decides both. Call resolve_store, which reports the "
+    "target you actually resolved to, and read the store ONLY through this "
+    "package's verbs: opening a store file directly is how an abandoned one "
+    "gets mistaken for the live board. An unresolvable/absent store raises "
+    "rather than silently handing you an empty board."
 )
 
 
