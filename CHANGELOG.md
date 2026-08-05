@@ -45,14 +45,43 @@ first. Changing the wording alone would have moved the failure into the
 tool-result size cap, which two of the reporters had already hit that same
 session; an agent that hits the cap narrows its query, which is this bug again.
 
-One note on method, since it nearly cost the report its credibility: the first
-round of these figures was measured against `~/.scitex/cards/cards.db`, the
-**pre-migration SQLite store**, not the canonical PostgreSQL one. It was caught
-by a positive control — looking up a card created in the same session, which
-came back NOT FOUND, proving the reader wrong rather than the data. The stale
-file held 2,985 real cards and reproduced a reporter's own count exactly, which
-is precisely what stopped the checking. A store that answers plausibly is the
+**The instructions no longer name a storage backend or a default store path,**
+and a test now refuses any that do.
+
+Found while verifying the fix above by *reading the rendered string* rather than
+the diff. The same instructions carried a second false claim, untouched by the
+scope work: *"The canonical store is the SQLite database at `$SCITEX_CARDS_DB`
+(default `~/.scitex/cards/cards.db`) — that path is the SOLE store identity."*
+After the PostgreSQL cutover both halves were false at once, and the named path
+is the **abandoned** pre-migration file — still on disk, still holding thousands
+of real cards.
+
+That sentence is what misled this package's own maintainer earlier the same day:
+the first round of the figures above was measured against that file, and reached
+three docstrings, a pull-request body and a card comment before a positive
+control caught it — looking up a card created in the same session, which came
+back NOT FOUND, proving the reader wrong rather than the data. The stale file
+answered plausibly and reproduced a reporter's own count exactly, which is
+precisely what stopped the checking. A store that answers plausibly is the
 dangerous kind of wrong.
+
+The sentence had rotted twice (YAML → SQLite → PostgreSQL) because it
+**restates** what `resolve_store` already answers correctly, and nothing
+asserted it. It now names only the question and the verb that answers it, and
+`test__mcp_instructions_names_no_backend.py` fails the build on any backend name
+or default path in either branch of the renderer — while separately requiring
+that `resolve_store` stay named, so the guard cannot be satisfied by deleting
+the sentence and leaving an agent no way to learn which store it is on.
+
+That test earned its place immediately: the first replacement sentence said "a
+SQLite path or a PostgreSQL URL, depending on the deployment" — naming both
+backends inside the sentence that says not to — and the guard caught it before
+it was committed.
+
+The identical claim still ships in `scitex-cards --help` and in `_db.py`. Both
+are carded rather than fixed here: `_cli/_main.py` is already 520 lines against
+a 512-line cap, so the repo's line-limit hook refuses any edit to it until it is
+split, and a module refactor does not belong in a release.
 
 ## [0.32.2] - 2026-08-06
 
