@@ -22,6 +22,35 @@ existing :func:`scitex_cards._channel_identity.resolve_agent_id_optional`
 (``$SCITEX_TODO_AGENT_ID``) — and when that identity is UNRESOLVABLE we name NO
 scope at all. A silently-wrong example is worse than an honest absence: that IS
 the bug. The unresolved branch instead tells the agent how to DISCOVER its slice.
+
+Why "your slice" stopped being a false claim
+--------------------------------------------
+This string used to end ``to see only your slice``, which does not suggest a
+query — it asserts an EQUIVALENCE between a scope filter and an agent's work,
+with tool authority, on first contact. It was false: ``list_tasks`` compared
+scope by exact string, so a card filed against you under ``fleet``,
+``ecosystem`` or no scope was excluded from "your slice".
+
+Measured on the CANONICAL store 2026-08-06: **441 open cards** owned by an agent
+were invisible to that agent's own scoped query, across **39 owners**; 398 of
+them only because nobody set a scope when filing. The ``lead`` agent had 12
+hidden and 0 visible — an empty board while holding work. Reported independently by
+scitex-agent-container (69), scitex-ui (3, all P1/P2 blocked on an operator
+decision) and scitex-app (4), none of whom were looking for it. As scitex-app
+put it, disbelieving this sentence would have required suspecting the tool's own
+documentation.
+
+BOTH HALVES WERE FIXED, and the order mattered: :func:`scitex_cards._store_list._in_scope`
+now treats ``agent:<id>`` as an OWNER rather than a lens, so the sentence is
+TRUE before it is repeated. Changing only the wording — telling agents to query
+by ``assignee`` instead — would have moved the failure into the tool-result size
+cap, which both reporters had already hit that same session, and an agent that
+hits the cap narrows its query, which is this bug again in different clothes.
+
+One thing this module got right and put where it could not act: the
+UNRESOLVED branch below has always warned that "a wrong ``scope`` silently hides
+your own cards". The branch every agent actually receives asserted the opposite.
+A correct insight in the path that almost never runs is not a safeguard.
 """
 
 from __future__ import annotations
@@ -63,8 +92,11 @@ def build_instructions(agent_id: str | None) -> str:
     if agent_id:
         slice_line = (
             f"You are `{agent_id}` (from $SCITEX_TODO_AGENT_ID): call list_tasks "
-            f"with scope='agent:{agent_id}' to see only your slice, and stamp "
-            "your writes with that same id."
+            f"with scope='agent:{agent_id}' for your slice — that scope names YOU, "
+            "so it returns cards assigned to you even when a peer filed them under "
+            "`fleet`, `ecosystem` or no scope at all. If you need certainty, "
+            f"list_tasks(assignee='{agent_id}') is the direct question and the two "
+            "should agree. Stamp your writes with that same id."
         )
     else:
         slice_line = (

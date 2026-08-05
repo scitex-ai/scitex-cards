@@ -42,6 +42,73 @@ from ._task import _is_tombstoned
 #: the unfiltered store.
 ENV_SCOPE = "SCITEX_TODO_SCOPE"
 
+#: The one scope spelling that names an OWNER rather than a lens. Written by
+#: ``reassign_task`` and the help-card writer as ``f"agent:{who}"``; read here.
+AGENT_SCOPE_PREFIX = "agent:"
+
+
+def agent_scope(agent_id: str) -> str:
+    """The canonical scope string naming ``agent_id``'s own slice."""
+    return f"{AGENT_SCOPE_PREFIX}{agent_id}"
+
+
+def _owner_named_by(scope: str) -> str | None:
+    """The agent a scope names, or ``None`` when the scope is a LENS.
+
+    ``agent:scitex-ui`` -> ``scitex-ui``; ``fleet`` / ``ecosystem`` /
+    ``project:x`` -> ``None``.
+    """
+    if not scope.startswith(AGENT_SCOPE_PREFIX):
+        return None
+    return scope[len(AGENT_SCOPE_PREFIX) :] or None
+
+
+def _in_scope(task: dict, scope: str) -> bool:
+    """Does this card belong in the view named by ``scope``?
+
+    A LENS (``fleet``, ``ecosystem``, a project name) is matched exactly: it
+    names a view, and a card is filed under it or it is not.
+
+    ``agent:<id>`` IS NOT A LENS, it is an OWNER, and that is the distinction
+    this function exists to make. A card assigned to ``<id>`` is that agent's
+    work regardless of which lens a PEER happened to file it under, so it is
+    not excluded for carrying ``fleet``, ``ecosystem``, or no scope at all.
+
+    WHY THIS CHANGED, 2026-08-06. Exact equality here, combined with this
+    package's own MCP instructions telling every agent to "call list_tasks with
+    scope='agent:<id>' to see only your slice", hid work from the people
+    responsible for it. Measured on the CANONICAL store the day of the fix
+    (PostgreSQL — read through this package's own resolver, after a first pass
+    against a stale pre-migration ``cards.db`` produced numbers for the wrong
+    board): 441 open cards owned by an agent were excluded from that agent's
+    own scoped query, across 39 owners — 398 of them simply because nobody set
+    a scope when filing. The ``lead`` agent had 12 hidden and 0 visible, so its
+    slice query returned an empty board while it held work.
+
+    Reported independently by scitex-agent-container, scitex-ui and scitex-app,
+    none of whom were looking for it; each had followed the instruction and
+    reported "my slice" from it with confidence. The failure is silent by
+    construction — a filter that returns fewer rows looks exactly like a board
+    with fewer cards.
+
+    THE NARROWER FIX WAS CHOSEN DELIBERATELY. The proposal on the card was to
+    treat a MISSING scope as unknown and surface such cards in EVERYONE's view.
+    That fails safe but adds hundreds of other people's cards to every board,
+    and a human filtering that by hand reintroduces the same omission wearing
+    different clothes. Owner-matching surfaces each hidden card to exactly the
+    agent responsible for it and to nobody else.
+
+    A card whose scope names a DIFFERENT agent while being assigned to this one
+    matches both queries. That state is contradictory data, and showing it to
+    both parties is the honest rendering of it.
+    """
+    if task.get("scope") == scope:
+        return True
+    owner = _owner_named_by(scope)
+    if owner is None:
+        return False
+    return task.get("assignee") == owner or task.get("agent") == owner
+
 
 def _resolved_store(store: str | Path | None) -> Path:
     """Resolve a store path argument through the precedence chain.
@@ -89,6 +156,10 @@ def _match(
     """String-equality + predicate filter. ``None`` / empty = no constraint.
 
     Filter semantics (per PR #66 / ADR-0008 D2 + D10):
+      - ``scope`` matches a LENS exactly, but an ``agent:<id>`` scope names
+        an OWNER and also matches any card assigned to ``<id>`` whatever
+        lens it carries — see :func:`_in_scope` for why, and for what it
+        cost while the two were the same comparison.
       - ``status`` (single) and ``statuses`` (multi) are OR-combined: a
         row matches if its status is in ``set([status]) ∪ set(statuses)``
         (after dropping ``None``).
@@ -112,7 +183,7 @@ def _match(
     """
     if _is_tombstoned(task):
         return False
-    if scope is not None and task.get("scope") != scope:
+    if scope is not None and not _in_scope(task, scope):
         return False
     if assignee is not None and task.get("assignee") != assignee:
         return False
@@ -182,6 +253,10 @@ def list_tasks(
 
     - ``scope=None`` (default): use ``$SCITEX_TODO_SCOPE`` if set, else
       no filter. ``scope=""`` opts out of the env default explicitly.
+      ``scope="agent:<id>"`` names an OWNER, not a lens: it returns every
+      card assigned to ``<id>`` as well as those filed under that scope,
+      so work a peer filed under ``fleet`` or under no scope still reaches
+      the agent responsible for it (:func:`_in_scope`).
     - ``assignee`` / ``agent`` / ``project`` / ``host`` / ``repo`` /
       ``status``: ``None`` = no filter; any string = exact match.
       (Generic Req 8 — no fuzzy / glob; callers compose.) ``repo`` matches
