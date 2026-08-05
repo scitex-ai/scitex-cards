@@ -13,6 +13,7 @@ from pathlib import Path
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
 
@@ -23,8 +24,14 @@ _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 
 
 def _tasks_path_from_request(request):
-    """Optional explicit store path from the ``?store=`` query param."""
-    return request.GET.get("store") or None
+    """The store this READ resolves to — see :mod:`._request_store`.
+
+    A trusted middleware's ``request.scitex_store`` wins over the caller's
+    ``?store=``; this used to read the query and nothing else, which is why
+    scitex-hub had to overwrite the query rather than simply setting the
+    attribute.
+    """
+    return read_store(request)
 
 
 def _include_root(path: str, aliases: tuple[str, ...]) -> str:
