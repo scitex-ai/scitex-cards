@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-08-06
+
+**A board READ honours the trusted store attribute, and one module now owns
+the decision.**
+
+The write path stopped trusting `?store=` on 2026-07-28, after scitex-hub found
+in design review that a request parameter was choosing which file got written.
+The read path kept trusting it alone for nine more days — in the function
+immediately above it — because the same two `request.GET.get("store")` lines
+had been hand-copied into `views.py` and `handlers/dm.py`, and only one was
+ever revisited.
+
+That asymmetry was not merely untidy: it forced a neighbouring package into a
+worse design. Since reads consulted the query *only*, scitex-hub's tenancy
+middleware could not simply set `request.scitex_store` — it had to keep
+**overwriting** `request.GET["store"]`, which, as its own comment says, put a
+security-critical value "in the exact namespace the attacker controls", making
+their injected store and a hostile one "byte-identical, indistinguishable by
+construction" downstream. They were right, and the indistinguishability was
+ours: the two values *are* distinguishable where one arrives as an attribute
+and the other as a query parameter.
+
+`_django/_request_store.py` now decides for the whole layer. `write_store`
+accepts only the trusted attribute; `read_store` **prefers** it and falls back
+to the query. The preference is the fix — once the attribute wins, a
+caller-supplied `?store=` is inert wherever a tenancy middleware runs, defended
+by construction rather than by a neighbour remembering to overwrite it.
+
+The **value** does not change, only the channel. hub sets the attribute to a
+`Path` while it injected the query as `str(store)`, so the attribute is
+normalised to `str` and a test pins that both channels resolve identically — a
+silent type change riding along with a security fix is how the next incident
+starts.
+
+The query fallback **stays**, deliberately: the standalone loopback board and
+the Django suite both select a store through it, and removing it before hub
+deletes its injection would drop tenancy for a release window and fall the
+board back to one ambient store for every tenant. Alias first, then remove.
+
+A build-failing AST guard refuses any `store` key taken off `request.GET` **or**
+`request.POST` outside the owning module. `POST` is included though no handler
+reads one — the cheapest moment to refuse a channel is before it exists. It
+matches on syntax rather than on the word "store", because every docstring here
+contains that word and a text check would match its own prose; and it carries a
+positive control, because a matcher that has silently stopped matching and a
+tree that is genuinely clean produce the identical empty result.
+
 ## [0.32.1] - 2026-08-03
 
 **A merge must not overrule a deliberate blocker.**
