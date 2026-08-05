@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-08-06
+
+**An `agent:<id>` scope names an OWNER, not a lens — and the instruction that
+said otherwise shipped in every agent's system prompt.**
+
+`list_tasks` compared scope by exact string, while this package's own MCP
+instructions told every agent to *"call list_tasks with `scope='agent:<id>'`
+**to see only your slice**"*. That phrasing does not suggest a query; it asserts
+an equivalence, with tool authority, on first contact. It was false. A card a
+**peer** filed against you under `fleet`, `ecosystem`, or no scope at all — which
+is what most filings do — was excluded from "your slice".
+
+Measured on the canonical store: **441 open cards** owned by an agent were
+invisible to that agent's own scoped query, across **39 owners**, **398** of them
+for the single reason that nobody set a scope when filing. The `lead` agent had
+12 hidden and **0 visible** — an empty board while it held work.
+
+Reported independently by **scitex-agent-container** (69), **scitex-ui** (3, all
+blocked on an operator decision) and **scitex-app** (4). None were looking for
+it; two found it only after hearing about the first, which makes the discovery
+mechanism gossip rather than tooling. The failure is silent by construction — a
+filter returning fewer rows is indistinguishable from a board holding fewer
+cards.
+
+`_in_scope` now reads `agent:<id>` as an owner: a card assigned to `<id>`, or
+carrying it in `agent`, is that agent's work whatever lens someone else filed it
+under. `fleet`, `ecosystem` and project scopes are genuine views and still match
+exactly.
+
+Validated against the canonical store by importing the real predicate rather
+than reimplementing it: **461** open cards newly reach their owner, **0** become
+visible to a non-owner, **0** previously-visible cards are lost, **0** change to
+lens membership. The three zeros are what separate this from the broader
+proposal — surface every unscoped card to everyone — which would have made the
+first two non-zero by design and buried each agent under other people's work.
+
+Both halves changed together, in that order. The instruction now says the scope
+names *you* and points at `list_tasks(assignee=…)` as the direct question the
+two should agree on — a sentence that is only true because the filter changed
+first. Changing the wording alone would have moved the failure into the
+tool-result size cap, which two of the reporters had already hit that same
+session; an agent that hits the cap narrows its query, which is this bug again.
+
+One note on method, since it nearly cost the report its credibility: the first
+round of these figures was measured against `~/.scitex/cards/cards.db`, the
+**pre-migration SQLite store**, not the canonical PostgreSQL one. It was caught
+by a positive control — looking up a card created in the same session, which
+came back NOT FOUND, proving the reader wrong rather than the data. The stale
+file held 2,985 real cards and reproduced a reporter's own count exactly, which
+is precisely what stopped the checking. A store that answers plausibly is the
+dangerous kind of wrong.
+
 ## [0.32.2] - 2026-08-06
 
 **A board READ honours the trusted store attribute, and one module now owns
