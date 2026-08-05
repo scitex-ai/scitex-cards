@@ -77,11 +77,13 @@ def _in_scope(task: dict, scope: str) -> bool:
     WHY THIS CHANGED, 2026-08-06. Exact equality here, combined with this
     package's own MCP instructions telling every agent to "call list_tasks with
     scope='agent:<id>' to see only your slice", hid work from the people
-    responsible for it. Measured on the live store the day of the fix: 438 open
-    cards owned by an agent were excluded from that agent's own scoped query,
-    across 37 owners — 394 of them simply because nobody set a scope when
-    filing. The ``lead`` agent had 12 hidden and 0 visible, so its slice query
-    returned an empty board while it held work.
+    responsible for it. Measured on the CANONICAL store the day of the fix
+    (PostgreSQL — read through this package's own resolver, after a first pass
+    against a stale pre-migration ``cards.db`` produced numbers for the wrong
+    board): 441 open cards owned by an agent were excluded from that agent's
+    own scoped query, across 39 owners — 398 of them simply because nobody set
+    a scope when filing. The ``lead`` agent had 12 hidden and 0 visible, so its
+    slice query returned an empty board while it held work.
 
     Reported independently by scitex-agent-container, scitex-ui and scitex-app,
     none of whom were looking for it; each had followed the instruction and

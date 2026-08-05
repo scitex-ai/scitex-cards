@@ -31,10 +31,10 @@ with tool authority, on first contact. It was false: ``list_tasks`` compared
 scope by exact string, so a card filed against you under ``fleet``,
 ``ecosystem`` or no scope was excluded from "your slice".
 
-Measured on the live store 2026-08-06: **438 open cards** owned by an agent were
-invisible to that agent's own scoped query, across **37 owners**; 394 of them
-only because nobody set a scope when filing. The ``lead`` agent had 12 hidden
-and 0 visible — an empty board while holding work. Reported independently by
+Measured on the CANONICAL store 2026-08-06: **441 open cards** owned by an agent
+were invisible to that agent's own scoped query, across **39 owners**; 398 of
+them only because nobody set a scope when filing. The ``lead`` agent had 12
+hidden and 0 visible — an empty board while holding work. Reported independently by
 scitex-agent-container (69), scitex-ui (3, all P1/P2 blocked on an operator
 decision) and scitex-app (4), none of whom were looking for it. As scitex-app
 put it, disbelieving this sentence would have required suspecting the tool's own

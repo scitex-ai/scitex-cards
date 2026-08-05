@@ -8,10 +8,10 @@ to see only your slice", hid work from the people responsible for it. A card a
 PEER filed against you — under ``fleet``, under ``ecosystem``, or under no
 scope, which is what most filings do — was excluded from your own slice.
 
-Measured on the live store the day of the fix: 438 open cards owned by an agent
-were invisible to that agent's scoped query, across 37 owners, 394 of them for
-the sole reason that nobody set a scope. The ``lead`` agent had 12 hidden and 0
-visible, so its slice query returned an empty board while it held work.
+Measured on the CANONICAL store the day of the fix: 441 open cards owned by an
+agent were invisible to that agent's scoped query, across 39 owners, 398 of them
+for the sole reason that nobody set a scope. The ``lead`` agent had 12 hidden and
+0 visible, so its slice query returned an empty board while it held work.
 
 The failure is silent by construction: a filter returning fewer rows is
 indistinguishable from a board holding fewer cards. Three agents
@@ -87,7 +87,7 @@ def test_a_card_filed_under_my_own_scope_is_in_my_slice(board):
 
 
 def test_a_card_with_no_scope_at_all_is_in_its_owners_slice(board):
-    """394 of the 438 hidden cards were exactly this: nobody set a scope.
+    """398 of the 441 hidden cards were exactly this: nobody set a scope.
 
     Absent is not "not mine". Collapsing the two produced the whole hidden set.
     """
