@@ -57,21 +57,22 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from scitex_cards import _dm_receipt_state, _reactions, _threads
+from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
+    STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
+)
+from scitex_cards._django._request_store import read_store, write_store
 from scitex_cards._threads import OPERATOR_NAME
 
 
 def _store_of(request: HttpRequest):
-    """Optional explicit store path from the ``?store=`` query param.
+    """The store this READ resolves to — see :mod:`.._request_store`.
 
-    READ paths only. See :func:`_write_store_of` for why a write must never
-    use this.
+    A trusted middleware's ``request.scitex_store`` wins over the caller's
+    ``?store=``. Until 2026-08-06 this read the query and NOTHING else, while
+    :func:`_write_store_of` next door already accepted only the attribute —
+    the two halves of one contract disagreeing in adjacent functions.
     """
-    return request.GET.get("store") or None
-
-
-#: Request attribute a TRUSTED middleware may set to select the store for a
-#: write. An attribute cannot be forged over HTTP; a query parameter can.
-STORE_REQUEST_ATTR = "scitex_store"
+    return read_store(request)
 
 
 def _write_store_of(request: HttpRequest):

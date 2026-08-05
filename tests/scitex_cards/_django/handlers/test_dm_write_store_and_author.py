@@ -91,13 +91,36 @@ def test_the_query_seam_no_longer_applies_to_a_write():
 
 
 def test_a_read_still_honours_the_store_query_parameter():
-    """Reads keep the query seam — the hub injects tenancy through it today.
+    """Reads keep the query seam, but no longer PREFER it (2026-08-06).
 
-    Changing this in the same step would trade a security bug for an outage;
-    the coordinated fix moves hub to the attribute first.
+    The seam stays for the standalone loopback board and for this suite.
+    Removing it before scitex-hub deletes its query injection would drop
+    tenancy for a release window — that ordering is why the fallback exists.
     """
     # Arrange
     request = _Req(get={"store": "/srv/tenant/cards.db"})
+
+    # Act
+    resolved = _store_of(request)
+
+    # Assert
+    assert resolved == "/srv/tenant/cards.db"
+
+
+def test_a_read_prefers_the_trusted_attribute_over_the_query():
+    """The read half caught up with the write half, nine days later.
+
+    ``_write_store_of`` stopped trusting the query on 2026-07-28 while
+    ``_store_of``, in the adjacent function, kept trusting it alone. Because
+    reads consulted the query ONLY, scitex-hub could not simply set the
+    attribute — it had to keep OVERWRITING ``request.GET["store"]``, which its
+    own comment calls out as putting a security-critical value in the exact
+    namespace an attacker controls. Preferring the attribute here is what lets
+    them delete that block.
+    """
+    # Arrange
+    request = _Req(get={"store": "/tmp/attacker-chosen.db"})
+    setattr(request, STORE_REQUEST_ATTR, "/srv/tenant/cards.db")
 
     # Act
     resolved = _store_of(request)
