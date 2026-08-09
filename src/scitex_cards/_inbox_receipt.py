@@ -144,10 +144,10 @@ def _sqlite_stamp(
 
     Returns the ids that exist in this recipient's inbox (the ones stamped).
     """
-    from ._inbox_sqlite import _ensure_ready, inbox_db_path, open_connection
+    from ._inbox_sqlite import _ensure_ready, inbox_target, open_connection
 
     placeholders = ",".join("?" for _ in ids)
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
         _ensure_columns(conn)
         rows = conn.execute(
@@ -179,7 +179,7 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
     """
     from ._inbox_sqlite import inbox_db_path, open_connection
 
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     if not db.exists():
         return []
     with open_connection(db) as conn:

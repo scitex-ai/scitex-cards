@@ -55,6 +55,7 @@ from ._inbox_sqlite_schema import (
     _is_migrated,
     _MIGRATED_FLAG,
     inbox_db_path,
+    inbox_target,
     init_schema,
     open_connection,
 )
@@ -139,7 +140,7 @@ def enqueue(
     from ._inbox import _generate_notification_id, _utc_now_iso
 
     timestamp = ts if ts is not None else _utc_now_iso()
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
         # The null-safe operator is resolved from the LIVE connection rather
         # than hardcoded, so this SQL survives the move onto Postgres (where
@@ -228,7 +229,7 @@ def poll_inbox(
     """
     if not recipient_id:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     if not mark_seen:
         # Read-only fast path. This is the hot poll — an indexed
         # (recipient, seen) scan, NOT a whole-store parse. _ensure_ready is a
@@ -300,7 +301,7 @@ def ack(
     wanted = [nid for nid in (notification_ids or []) if nid]
     if not wanted:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     placeholders = ",".join("?" for _ in wanted)
     with open_connection(db) as conn:
         _ensure_ready(conn, store)
