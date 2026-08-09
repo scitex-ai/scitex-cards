@@ -56,7 +56,7 @@ import json
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import _dm_receipt_state, _reactions, _threads
+from scitex_cards import _dm_read, _dm_receipt_state, _reactions, _threads
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
@@ -167,7 +167,17 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         }
     # Merge in any peer that already has a thread with the operator (covers
     # unregistered senders — the thread store is the SSOT of who talked).
-    for key, summary in _threads.list_threads(store=store).items():
+    # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
+    # a PER-HOST FILE, and nothing else — so this view showed only the threads
+    # of agents running on the same machine as the board. Measured 2026-08-09
+    # on the operator's laptop: its sidecar had scitex-agent-container live at
+    # 12:33 (that agent runs laptop-side) while scitex-cards sat at 2026-08-02,
+    # and five agents on scitex-compute-04 were invisible entirely. All 4150
+    # messages were in the store the whole time. Operator's ruling the same
+    # day: "never use threads.json but database".
+    for key, summary in _dm_read.threads_summary(
+        OPERATOR_NAME, store=store
+    ).items():
         a, b = summary["peers"]
         if OPERATOR_NAME not in (a, b):
             continue
