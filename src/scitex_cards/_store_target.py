@@ -37,11 +37,35 @@ from ._store_url import BACKEND_SQLITE, backend_of, is_postgres_url
 
 __all__ = [
     "StoreTargetIsNotAPath",
+    "StoreTargetNotConfigured",
+    "TIER_CONFIG",
+    "TIER_DEFAULT",
+    "TIER_ENV",
+    "TIER_EXPLICIT",
+    "require_configured_store_target",
     "resolve_store_target",
     "resolve_store_backend",
+    "resolve_store_tier",
     "require_db_path",
     "store_label",
 ]
+
+#: Which tier of the precedence chain answered. Returned by
+#: :func:`resolve_store_tier` so a caller can tell "somebody CHOSE this store"
+#: from "nobody configured one and we invented a filename".
+#:
+#: THE DISTINCTION IS THE WHOLE POINT AND IT COST A WEEK. `resolve_store_target`
+#: answers the same TYPE for all four tiers -- a string -- so a deployment that
+#: never had a DSN and one that LOST its DSN are indistinguishable to every
+#: caller. Measured 2026-08-09: the operator's board ran with no
+#: ``SCITEX_CARDS_DB``, fell to ``TIER_DEFAULT``, and served a SQLite store
+#: frozen on 2026-08-02 for a week -- rendering perfectly, raising nothing,
+#: while the fleet wrote to PostgreSQL. His words: "NO SILENT FALLBACKS, it is
+#: always the cause of troubles".
+TIER_EXPLICIT = "explicit"
+TIER_ENV = "env"
+TIER_CONFIG = "config"
+TIER_DEFAULT = "default"
 
 
 class StoreTargetIsNotAPath(ValueError):
@@ -93,6 +117,73 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     from scitex_config._ecosystem import local_state
 
     return str(local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME))
+
+
+class StoreTargetNotConfigured(RuntimeError):
+    """NOBODY configured a store, and this caller refuses to invent one.
+
+    Raised by :func:`require_configured_store_target` for long-running SERVERS,
+    which are the callers that must never guess. A one-shot CLI landing on the
+    zero-config default is a fresh install behaving correctly; a BOARD landing
+    there is a deployment that lost its target and will now serve whatever
+    happens to be at that filename, to everyone, indefinitely.
+    """
+
+
+def resolve_store_tier(explicit: str | Path | None = None) -> str:
+    """WHICH TIER answers :func:`resolve_store_target` -- the missing signal.
+
+    Returns one of :data:`TIER_EXPLICIT`, :data:`TIER_ENV`, :data:`TIER_CONFIG`,
+    :data:`TIER_DEFAULT`.
+
+    Deliberately mirrors ``resolve_store_target``'s precedence rather than
+    sharing code with it. Sharing would mean returning a (target, tier) pair
+    from one function and changing every existing caller's shape; duplicating
+    four ``if`` statements is cheaper than that churn, and the pair is pinned by
+    ``test_the_tier_and_the_target_agree_on_every_tier`` so they cannot drift.
+    """
+    if explicit is not None:
+        return TIER_EXPLICIT
+    for env_name in (ENV_DB, ENV_DB_DEPRECATED):
+        if os.environ.get(env_name):
+            return TIER_ENV
+    from ._config import store_config_target
+
+    if store_config_target():
+        return TIER_CONFIG
+    return TIER_DEFAULT
+
+
+def require_configured_store_target(explicit: str | Path | None = None) -> str:
+    """The store target, but ONLY if somebody actually chose it.
+
+    For SERVERS. ``gui serve`` and friends run unattended for days and are
+    believed by whoever loads the page, so "I could not find a store, here is a
+    filename I made up" is the one answer they must never give.
+
+    RAISES :class:`StoreTargetNotConfigured` on :data:`TIER_DEFAULT`.
+
+    NOT a change to :func:`resolve_store_target`, and that restraint is
+    deliberate: making the DEFAULT tier raise everywhere would break every
+    zero-config install and every test that relies on it, which is a blast
+    radius nobody asked for. The rule the constitution states -- fail fast, fail
+    loud, no silent fallbacks, no surprises -- is enforced at the doors where a
+    guess does damage, one door at a time, each with a stated reason.
+    """
+    target = resolve_store_target(explicit)
+    if resolve_store_tier(explicit) != TIER_DEFAULT:
+        return target
+    raise StoreTargetNotConfigured(
+        f"REFUSING to serve: no store target is configured, so this would fall "
+        f"back to the zero-config default {target!r} -- a filename, not a "
+        f"decision. On 2026-08-09 that fallback served a store frozen eight "
+        f"days earlier while the fleet wrote elsewhere, and it looked healthy "
+        f"the whole time.\n"
+        f"Set one of, in precedence order:\n"
+        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:5432/scitex_cards\n"
+        f"  the `store` key in the scitex-cards config file\n"
+        f"Run `scitex-cards resolve-store` to see what this process resolves."
+    )
 
 
 def resolve_store_backend(explicit: str | Path | None = None) -> str:
