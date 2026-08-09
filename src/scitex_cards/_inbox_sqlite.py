@@ -195,20 +195,40 @@ def enqueue(
             "seen": False,
             "msg_id": msg_id,
         }
+        # THE PAYLOAD IS NOT OPTIONAL WHERE THE COLUMN EXISTS, and this is the
+        # line that took the fleet board down for 20 minutes on 2026-08-09.
+        #
+        # The INSERT below used to name nine columns. Correct on SQLite, whose
+        # `inbox` table has exactly those. On the canonical store it left
+        # `notifications.record_json` NULL — and that NULL is LOAD-BEARING:
+        # `_db_payload.card_payload_json` says a NULL "makes the read guard
+        # REFUSE THE WHOLE DB". One malformed notification made all 3556 cards
+        # unreadable fleet-wide while resolve_store and health stayed green,
+        # because the store itself was fine.
+        #
+        # The record dict above IS the payload — nothing is invented. It is
+        # stored under the SAME strict encoder as tasks.card_json and
+        # users.record_json, so the exporter reproduces it exactly.
+        #
+        # NOTE ON THE RECIPIENT KEY, which scitex-agent-container flagged as
+        # unanswerable from outside this package: the payload deliberately does
+        # NOT carry the recipient. It is a column on the row, under a name that
+        # DIFFERS BY BACKEND (`recipient` vs `recipient_id`), so embedding it
+        # would bake one backend's spelling into a backend-agnostic blob and
+        # make the two indistinguishable until something read it back.
+        columns = ["id", shape.recipient, "event_type", "card_id", "body",
+                   "actor", "ts", "seen", "msg_id"]
+        values = [record["id"], recipient_id, event_type, card_id, body,
+                  actor, timestamp, 0, msg_id]
+        if shape.payload:
+            from ._db_payload import card_payload_json  # noqa: PLC0415 -- cycle
+
+            columns.append(shape.payload)
+            values.append(card_payload_json(record))
         conn.execute(
-            f"INSERT INTO {shape.table}(id, {shape.recipient}, event_type, "
-            "card_id, body, actor, ts, seen, msg_id) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            (
-                record["id"],
-                recipient_id,
-                event_type,
-                card_id,
-                body,
-                actor,
-                timestamp,
-                msg_id,
-            ),
+            f"INSERT INTO {shape.table}({', '.join(columns)}) "
+            f"VALUES({', '.join('?' for _ in values)})",
+            tuple(values),
         )
         conn.commit()
         return dict(record)

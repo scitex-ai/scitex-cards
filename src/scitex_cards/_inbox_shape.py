@@ -47,6 +47,24 @@ class InboxShape:
     recipient: str
     #: Expression giving ARRIVAL order, oldest first.
     order_by: str
+    #: Column holding the VERBATIM record payload, or ``None`` where the table
+    #: has no such column.
+    #:
+    #: THIS FIELD EXISTS BECAUSE OMITTING IT TOOK THE FLEET BOARD DOWN FOR 20
+    #: MINUTES ON 2026-08-09. The rail's INSERT named nine columns, correct on
+    #: SQLite where ``inbox`` has exactly those. On the canonical store
+    #: ``notifications.record_json`` then landed NULL — and a NULL there is
+    #: LOAD-BEARING: ``_db_payload.card_payload_json``'s own docstring says it
+    #: makes the read guard REFUSE THE WHOLE DB rather than hand back a card
+    #: whose fields changed shape. So ONE malformed notification made all 3556
+    #: cards unreadable and unwritable fleet-wide, with `resolve_store` and
+    #: `health` still green because the store itself was fine.
+    #:
+    #: Putting the column name in the SHAPE rather than in an ``if`` at the
+    #: call site is deliberate: the shape is what every statement already
+    #: consults, so a future backend cannot be added without answering "does it
+    #: carry a payload, and under what name".
+    payload: str | None = None
 
     def order(self) -> str:
         """``ORDER BY <arrival order>`` — spelled once so call sites cannot drift."""
@@ -54,13 +72,18 @@ class InboxShape:
 
 
 #: The rail as it exists today: its own SQLite file, ``rowid`` as arrival order.
+#: No payload column — the ``inbox`` table never had one, which is why the
+#: nine-column INSERT was correct here and lethal on the store.
 SQLITE_SHAPE = InboxShape(table="inbox", recipient="recipient", order_by="rowid")
 
 #: The rail in the canonical store. ``seq`` is schema v9's arrival-order column,
 #: server-assigned via a sequence DEFAULT so a client that predates it still
 #: writes a correctly ordered row.
 POSTGRES_SHAPE = InboxShape(
-    table="notifications", recipient="recipient_id", order_by="seq"
+    table="notifications",
+    recipient="recipient_id",
+    order_by="seq",
+    payload="record_json",
 )
 
 
