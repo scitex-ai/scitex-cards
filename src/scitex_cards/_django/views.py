@@ -13,11 +13,76 @@ from pathlib import Path
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from .._store_errors import StoreNotProvisionedError, StoreUnavailableError
 from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
 
 logger = logging.getLogger(__name__)
+
+#: Answer for "this deployment has no task store for you YET".
+#:
+#: 404, and the 403 this replaced was rejected for a CONCRETE collision rather
+#: than a taxonomy preference: scitex.ai sits behind Cloudflare Access, which
+#: answers 403 when IT denies a request. A store-absent 403 would be
+#: indistinguishable — in a browser console, in logs, to anyone debugging —
+#: from "Access rejected you", sending whoever is looking straight into the
+#: auth layer, where nothing will help.
+#:
+#: The 404 objection was real and is answered by :data:`STORE_ABSENT_REASON`
+#: rather than dismissed. :func:`api_dispatch` also answers 404 for an UNKNOWN
+#: ENDPOINT, so status alone WOULD collapse "you asked for something that does
+#: not exist" into "you asked correctly and there is nothing here for you".
+#: The typed reason separates them, and
+#: ``test_an_unknown_endpoint_404_carries_no_reason`` pins that the other 404
+#: stays bare — without which the discriminator is a convention rather than a
+#: contract, and one helpful future edit re-collapses it silently.
+#:
+#: Between two collisions, take the one that does not impersonate an auth
+#: denial. The requirement is not naming purity: non-5xx (so a real outage
+#: stays visible in monitoring) and non-retryable (so a polling client stops
+#: rather than producing 11 console errors a minute).
+STORE_ABSENT_STATUS = 404
+
+#: Machine-readable discriminator, so a client distinguishes "no store" from any
+#: other 404 WITHOUT string-matching a human sentence. The prose is free to
+#: change — this is not.
+#:
+#: NAMED FOR THE NARROW CONDITION ON PURPOSE. This constant previously read
+#: ``store-unavailable``, which was evidence the conflation was designed in
+#: rather than overlooked: the machine-readable field, whose entire job is
+#: precision, carried the vague word. A typed field with a vague value is a
+#: contract to be vague.
+STORE_ABSENT_REASON = "store_absent"
+
+
+def _store_error_body(exc: Exception) -> str:
+    """The store's own sentence, in the form this audience may see.
+
+    Two audiences, one switch. ``str(exc)`` is the full diagnosis — the absolute
+    database path and the paragraph explaining that a missing file is not an
+    empty store — and it is what turns an outage into something an operator can
+    act on. ``exc.public_summary`` is what a stranger gets, after scitex-hub
+    loaded ``/apps/cards/`` anonymously and was shown our container filesystem
+    layout plus a design rationale addressed to us.
+
+    ``settings.DEBUG`` picks between them and is already correct on both sides
+    with no new configuration: the loopback board runs DEBUG=true and keeps its
+    diagnosis, while ``SCITEX_CARDS_PUBLIC_HOST`` FORCES DEBUG=false
+    (``settings.py``, deliberately not env-overridable), so anything publicly
+    reachable gets the summary. A second flag would be a second thing to set
+    wrongly.
+
+    The caller logs unconditionally, so the detail is never lost — it moves from
+    the response body to the place that was always its right home.
+    """
+    from django.conf import settings
+
+    public = getattr(exc, "public_summary", None)
+    if public is not None and not settings.DEBUG:
+        return public
+    return f"Cannot read the task store: {exc}"
+
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static" / "scitex_cards"
 _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
@@ -346,47 +411,65 @@ def api_dispatch(request, endpoint):
     if endpoint in NO_BOARD_ENDPOINTS:
         return handler(request, None)
 
-    # A STORE THAT CANNOT BE READ IS A 500 CARRYING ITS OWN REASON. Two failure
-    # shapes converge here and both were unreadable before: a swallowed
-    # FileNotFoundError became a generic 400, and every OTHER load failure
-    # (notably the ownership refusal) escaped this function entirely, because
-    # this call sat OUTSIDE the try below — so Django answered with an HTML
-    # error page that the board's ``fetch`` cannot parse, and the frontend
-    # showed a bare "HTTP 500" with no cause. The board template already reads
-    # ``payload.error`` off a non-OK response and renders it in the loud red
-    # panel, so putting the store's own sentence in the body is what turns an
-    # outage into a diagnosis. NEVER answer this with an empty board.
+    # A STORE THAT CANNOT BE READ STILL CARRIES ITS OWN REASON — but "no store
+    # here" and "we are broken" are DIFFERENT ANSWERS and must not share a
+    # status code. Every load failure used to be a 500, and scitex-hub measured
+    # what that costs on live scitex.ai: a signed-in visitor whose deployment
+    # has no store configured got /graph, /rev and /timeline all 500, and the
+    # client re-polled into 11 console errors in one minute.
+    #
+    # Three separate harms, none of them about the guard being wrong:
+    #   1. the visitor is told the PRODUCT is down when it is merely
+    #      unconfigured for them,
+    #   2. 5xx reads as "try again", so the client retries forever,
+    #   3. a real outage becomes indistinguishable from this steady state, so
+    #      5xx monitoring is poisoned by a condition that is not an outage.
+    #
+    # THE GUARD ITSELF IS NOT WEAKENED and must not be: it is what stopped 2,138
+    # cards being overwritten on 2026-07-19, and it still refuses to invent an
+    # empty board. Only the ANSWER changes.
     try:
         board = _get_board(
             request,
             allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
         )
+    except StoreNotProvisionedError as exc:
+        # MUST PRECEDE the StoreUnavailableError clause below — it is a SUBCLASS,
+        # so ordering is what makes the distinction exist at all. Swap these two
+        # and every not-provisioned response silently becomes a 500 again, with
+        # no test failing unless one pins the narrow case specifically.
+        #
+        # A CONFIGURATION STATE, NOT A CRASH — so it is logged as one. `.exception`
+        # would emit an ERROR traceback on every poll, which is the same
+        # monitoring noise in the log rail that the 500 was in the HTTP rail.
+        logger.warning(
+            "[scitex-todo] no task store for /%s on this deployment: %s",
+            endpoint,
+            exc,
+        )
+        return JsonResponse(
+            {"error": _store_error_body(exc), "reason": STORE_ABSENT_REASON},
+            status=STORE_ABSENT_STATUS,
+        )
+    except StoreUnavailableError as exc:
+        # THE STORE EXISTS AS A CONFIGURED TARGET AND WE COULD NOT REACH IT:
+        # PostgreSQL down, unreachable, out of connections, refusing auth, or
+        # the workspace root unset. That is an OUTAGE and it stays 5xx, stays in
+        # alerting, and stays retryable.
+        #
+        # Reaching this clause rather than the one above is the whole point of
+        # StoreNotProvisionedError existing. Before the split, one type covered
+        # both, so moving absence off 500 would have moved a dead database off
+        # 500 with it — rendering an onboarding page over an outage and dropping
+        # it out of monitoring. Silent, and silence looks exactly like health.
+        logger.exception(
+            "[scitex-todo] task store unreachable for /%s", endpoint
+        )
+        return JsonResponse({"error": _store_error_body(exc)}, status=500)
     except Exception as exc:
+        # Genuinely unexpected: this one IS an outage and belongs in 5xx.
         logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)
-        # THE FULL SENTENCE STAYS FOR US AND GOES NOWHERE ELSE.
-        #
-        # The comment above is right that the store's own sentence is what turns
-        # an outage into a diagnosis, and that stays true on the loopback board.
-        # But scitex-hub loaded /apps/cards/ ANONYMOUSLY in a browser and got the
-        # whole paragraph, including the absolute container path
-        # /app/.scitex/cards/cards.db. A stranger learns our filesystem layout and
-        # reads a rationale addressed to us.
-        #
-        # settings.DEBUG is the switch, and it is already correct on both sides
-        # with no new configuration: the local board runs DEBUG=true and keeps the
-        # diagnosis, while SCITEX_CARDS_PUBLIC_HOST FORCES DEBUG=false (settings.py,
-        # deliberately not env-overridable), so anything publicly reachable gets the
-        # summary. A second flag would be a second thing to set wrongly.
-        #
-        # The log line above is unconditional, so the detail is never lost - it
-        # moves from the response body to the place that was always the right home
-        # for it.
-        from django.conf import settings
-
-        public = getattr(exc, "public_summary", None)
-        if public is not None and not settings.DEBUG:
-            return JsonResponse({"error": public}, status=500)
-        return JsonResponse({"error": f"Cannot read the task store: {exc}"}, status=500)
+        return JsonResponse({"error": _store_error_body(exc)}, status=500)
 
     try:
         return handler(request, board)
