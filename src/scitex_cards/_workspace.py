@@ -44,7 +44,7 @@ import os
 import re
 from pathlib import Path
 
-from ._store_errors import StoreUnavailableError
+from ._store_errors import StoreNotProvisionedError, StoreUnavailableError
 
 __all__ = [
     "ENV_WORKSPACE_ROOT",
@@ -125,7 +125,12 @@ def resolve_workspace_store(identity: object) -> Path:
         )
 
     if not store.exists():
-        raise StoreUnavailableError(
+        # NOT-PROVISIONED, and on this path it is the ORDINARY case rather than
+        # an exceptional one: a workspace that has never been set up is what
+        # every new tenant looks like. The root being unset (above) stays the
+        # parent type — that is OUR deployment misconfigured, not their tenancy
+        # being new, and it must not render an onboarding page to everyone.
+        raise StoreNotProvisionedError(
             f"workspace store {store} does not exist. REFUSING to continue: a "
             f"missing database reads back as an empty document, and that value is "
             f"written back as the WHOLE store. Provision the workspace rather than "

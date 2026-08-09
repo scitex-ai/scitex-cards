@@ -13,30 +13,47 @@ from pathlib import Path
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .._store_errors import StoreUnavailableError
+from .._store_errors import StoreNotProvisionedError, StoreUnavailableError
 from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
 
 logger = logging.getLogger(__name__)
 
-#: Answer for "this deployment has no task store for you".
+#: Answer for "this deployment has no task store for you YET".
 #:
-#: 403 rather than 500 because the server is not broken, and rather than 404
-#: because :func:`api_dispatch` already answers 404 for an UNKNOWN ENDPOINT —
-#: reusing it would make "you asked for something that does not exist" and "you
-#: asked correctly and there is nothing here for you" indistinguishable to the
-#: client, which is the same collapse this whole change is undoing one level up.
+#: 404, and the 403 this replaced was rejected for a CONCRETE collision rather
+#: than a taxonomy preference: scitex.ai sits behind Cloudflare Access, which
+#: answers 403 when IT denies a request. A store-absent 403 would be
+#: indistinguishable — in a browser console, in logs, to anyone debugging —
+#: from "Access rejected you", sending whoever is looking straight into the
+#: auth layer, where nothing will help.
 #:
-#: The requirement it has to meet is not naming purity: it must be non-5xx (so a
-#: real outage stays visible in monitoring) and non-retryable by convention (so
-#: a polling client stops rather than producing 11 console errors a minute).
-STORE_UNAVAILABLE_STATUS = 403
+#: The 404 objection was real and is answered by :data:`STORE_ABSENT_REASON`
+#: rather than dismissed. :func:`api_dispatch` also answers 404 for an UNKNOWN
+#: ENDPOINT, so status alone WOULD collapse "you asked for something that does
+#: not exist" into "you asked correctly and there is nothing here for you".
+#: The typed reason separates them, and
+#: ``test_an_unknown_endpoint_404_carries_no_reason`` pins that the other 404
+#: stays bare — without which the discriminator is a convention rather than a
+#: contract, and one helpful future edit re-collapses it silently.
+#:
+#: Between two collisions, take the one that does not impersonate an auth
+#: denial. The requirement is not naming purity: non-5xx (so a real outage
+#: stays visible in monitoring) and non-retryable (so a polling client stops
+#: rather than producing 11 console errors a minute).
+STORE_ABSENT_STATUS = 404
 
 #: Machine-readable discriminator, so a client distinguishes "no store" from any
-#: other 403 WITHOUT string-matching a human sentence. The prose is free to
+#: other 404 WITHOUT string-matching a human sentence. The prose is free to
 #: change — this is not.
-STORE_UNAVAILABLE_REASON = "store-unavailable"
+#:
+#: NAMED FOR THE NARROW CONDITION ON PURPOSE. This constant previously read
+#: ``store-unavailable``, which was evidence the conflation was designed in
+#: rather than overlooked: the machine-readable field, whose entire job is
+#: precision, carried the vague word. A typed field with a vague value is a
+#: contract to be vague.
+STORE_ABSENT_REASON = "store_absent"
 
 
 def _store_error_body(exc: Exception) -> str:
@@ -416,7 +433,12 @@ def api_dispatch(request, endpoint):
             request,
             allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
         )
-    except StoreUnavailableError as exc:
+    except StoreNotProvisionedError as exc:
+        # MUST PRECEDE the StoreUnavailableError clause below — it is a SUBCLASS,
+        # so ordering is what makes the distinction exist at all. Swap these two
+        # and every not-provisioned response silently becomes a 500 again, with
+        # no test failing unless one pins the narrow case specifically.
+        #
         # A CONFIGURATION STATE, NOT A CRASH — so it is logged as one. `.exception`
         # would emit an ERROR traceback on every poll, which is the same
         # monitoring noise in the log rail that the 500 was in the HTTP rail.
@@ -426,9 +448,24 @@ def api_dispatch(request, endpoint):
             exc,
         )
         return JsonResponse(
-            {"error": _store_error_body(exc), "reason": STORE_UNAVAILABLE_REASON},
-            status=STORE_UNAVAILABLE_STATUS,
+            {"error": _store_error_body(exc), "reason": STORE_ABSENT_REASON},
+            status=STORE_ABSENT_STATUS,
         )
+    except StoreUnavailableError as exc:
+        # THE STORE EXISTS AS A CONFIGURED TARGET AND WE COULD NOT REACH IT:
+        # PostgreSQL down, unreachable, out of connections, refusing auth, or
+        # the workspace root unset. That is an OUTAGE and it stays 5xx, stays in
+        # alerting, and stays retryable.
+        #
+        # Reaching this clause rather than the one above is the whole point of
+        # StoreNotProvisionedError existing. Before the split, one type covered
+        # both, so moving absence off 500 would have moved a dead database off
+        # 500 with it — rendering an onboarding page over an outage and dropping
+        # it out of monitoring. Silent, and silence looks exactly like health.
+        logger.exception(
+            "[scitex-todo] task store unreachable for /%s", endpoint
+        )
+        return JsonResponse({"error": _store_error_body(exc)}, status=500)
     except Exception as exc:
         # Genuinely unexpected: this one IS an outage and belongs in 5xx.
         logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)

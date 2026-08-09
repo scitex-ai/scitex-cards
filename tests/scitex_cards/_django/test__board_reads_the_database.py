@@ -212,7 +212,7 @@ def test_an_absent_store_is_not_reported_as_a_server_fault(unreadable_store):
     response = views.api_dispatch(request, "tasks")
 
     # Assert
-    assert response.status_code == views.STORE_UNAVAILABLE_STATUS
+    assert response.status_code == views.STORE_ABSENT_STATUS
 
 
 def test_an_absent_store_never_answers_5xx(unreadable_store):
@@ -247,7 +247,7 @@ def test_an_absent_store_is_machine_readable_without_string_matching(
     payload = json.loads(views.api_dispatch(request, "tasks").content)
 
     # Assert
-    assert payload["reason"] == views.STORE_UNAVAILABLE_REASON
+    assert payload["reason"] == views.STORE_ABSENT_REASON
 
 
 def test_an_absent_store_still_refuses_rather_than_inventing_a_board(
@@ -307,6 +307,121 @@ def test_a_genuinely_broken_store_is_still_a_server_fault(corrupt_store):
 
     # Assert
     assert response.status_code == 500
+
+
+@pytest.fixture
+def unreachable_postgres(env):
+    """A PostgreSQL target whose SERVER IS NOT THERE — an outage, not config.
+
+    THIS IS THE CONTROL ``corrupt_store`` COULD NOT BE, and the difference is the
+    whole reason :class:`StoreNotProvisionedError` exists. ``corrupt_store``
+    raises ``DatabaseError`` — a DIFFERENT type from absence — so it exercises a
+    path that was never in doubt and goes green while the path that SHARES the
+    type with absence goes untested. Before the subclass, an unreachable server
+    and a tenant who never had a store both raised ``StoreUnavailableError``, so
+    moving absence off 5xx would have moved a dead database off 5xx with it.
+
+    A control must fail by the SAME MECHANISM as the hazard, not merely in the
+    same neighbourhood. So this points at a genuinely closed TCP port and lets
+    ``connect()`` fail for real, rather than patching it to raise — patching
+    would prove only that the patch worked, and would not notice if a future
+    edit made that call site raise the subclass.
+
+    THE PORT IS ALLOCATED, NOT GUESSED. Binding to port 0 and closing yields a
+    port the OS has just confirmed is free; a hard-coded number could silently
+    be in use on some host and turn this into a test of whatever answered.
+    ``connect_timeout`` is set so a DROPping firewall fails the test rather than
+    hanging the suite — an unbounded wait is not a passing test, it is no test.
+    """
+    import socket
+
+    _reset_board_caches()
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    target = (
+        f"postgresql://scitex_cards@127.0.0.1:{port}/scitex_cards"
+        f"?connect_timeout=2"
+    )
+    env.set("SCITEX_CARDS_DB", target)
+    env.set("SCITEX_TODO_DB", target)
+    yield port
+    _reset_board_caches()
+
+
+def test_the_unreachable_port_really_refuses(unreachable_postgres):
+    """Positive control ON the control: prove nothing is listening there.
+
+    Without this, a port that happened to be occupied would make the outage test
+    below pass for the wrong reason — and a test that passes for the wrong reason
+    is the failure mode this entire change set is about.
+    """
+    # Arrange
+    import contextlib
+    import functools
+    import socket
+
+    sock = socket.socket()
+    sock.settimeout(2)
+
+    # Act
+    dial = functools.partial(sock.connect, ("127.0.0.1", unreachable_postgres))
+
+    # Assert
+    with contextlib.closing(sock), pytest.raises(OSError):
+        dial()
+
+
+def test_an_unreachable_postgres_is_still_a_server_fault(unreachable_postgres):
+    """A database server that is DOWN must never read as "no store here".
+
+    This is the inversion the subclass prevents. Absence is a configuration state
+    that renders onboarding and must not be retried; an unreachable server is an
+    OUTAGE that must stay in 5xx monitoring and must be retried. They arrived at
+    the view as one type, so classifying absence as 4xx would have dropped real
+    outages out of alerting and rendered a setup page over a dead database —
+    silently, and silence is indistinguishable from health.
+
+    If a future edit raises ``StoreNotProvisionedError`` at the connect-failure
+    site in ``_store_canonical_read``, this test fails. That is its job.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    response = views.api_dispatch(request, "tasks")
+
+    # Assert
+    assert response.status_code >= 500
+
+
+def test_an_unknown_endpoint_404_carries_no_reason(unreadable_store):
+    """The two 404s must stay distinguishable BY FIELD, not by status alone.
+
+    ``store_absent`` answers 404, and :func:`api_dispatch` already answers 404
+    for an unknown endpoint. That collision was the strongest argument for 403,
+    and it is answered by the typed ``reason`` rather than dismissed — but only
+    while the OTHER 404 stays bare. Pin it here, or the discriminator is a
+    convention that one helpful future edit ("let us add a reason to every error
+    response") re-collapses silently.
+
+    Run against ``unreadable_store`` deliberately: this is the situation where
+    BOTH 404s could plausibly apply, so it is where the distinction has to hold.
+    """
+    # Arrange
+    request = RequestFactory().get("/not_a_real_endpoint")
+
+    # Act
+    response = views.api_dispatch(request, "not_a_real_endpoint")
+    payload = json.loads(response.content)
+
+    # Assert
+    assert response.status_code == 404 and "reason" not in payload, (
+        f"unknown-endpoint 404 must carry no `reason` discriminator, got "
+        f"{payload!r}"
+    )
 
 
 def test_the_failure_body_names_the_store_it_could_not_read(unreadable_store):

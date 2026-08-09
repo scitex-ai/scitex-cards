@@ -26,7 +26,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from ._store_errors import StoreUnavailableError
+from ._store_errors import StoreNotProvisionedError, StoreUnavailableError
 
 
 def _read_canonical_db_or_raise() -> dict:
@@ -84,7 +84,7 @@ def _read_canonical_db_or_raise() -> dict:
         # /apps/cards/. A named type lets that layer pick the audience-appropriate
         # form instead of string-matching prose. Still a RuntimeError subclass, so
         # every existing `except Exception` keeps working.
-        raise StoreUnavailableError(
+        raise StoreNotProvisionedError(
             f"canonical store {db_path} does not exist. REFUSING to continue: "
             f"the exporter answers a missing database with an empty document, "
             f"and this value is written back as the WHOLE store — every card "
@@ -162,6 +162,19 @@ def _read_canonical_postgres(target: str) -> dict:
     try:
         conn = connect(target)
     except _store_errors() as exc:
+        # DELIBERATELY THE PARENT TYPE, NOT StoreNotProvisionedError, AND THIS
+        # IS THE LOAD-BEARING LINE OF THE WHOLE DISTINCTION. A server that is
+        # down, unreachable, out of connections or refusing auth arrives here.
+        # That is an OUTAGE: it belongs in 5xx, it belongs in alerting, and the
+        # client SHOULD retry. "This tenant has no store yet" is the opposite
+        # answer on every one of those axes.
+        #
+        # Classifying this as not-provisioned would render an onboarding page
+        # over a dead database and drop a real outage out of monitoring —
+        # silently, which is strictly worse than the noisy misclassification
+        # this module's change set exists to remove. If a future edit makes
+        # this line raise the subclass, `test_an_unreachable_postgres_is_still
+        # _a_server_fault` fails, and it should.
         raise StoreUnavailableError(
             f"cannot open the PostgreSQL store {target!r} ({exc}). REFUSING to "
             f"continue rather than writing an unverified document back over "
@@ -174,7 +187,7 @@ def _read_canonical_postgres(target: str) -> dict:
         # {"tasks": []}, which is indistinguishable from a real empty board and
         # is exactly the value that must never be written back.
         if not has_table(conn, "tasks"):
-            raise StoreUnavailableError(
+            raise StoreNotProvisionedError(
                 f"the PostgreSQL store {target!r} has no `tasks` table. "
                 f"REFUSING to continue: the exporter answers a schemaless "
                 f"database with an empty document, and that value is written "
