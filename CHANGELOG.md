@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-08-10
+
+**A refused compare-and-set must destroy nothing.**
+
+Found by reading the *caller* of the code 0.35.0 shipped, before any caller
+could reach it.
+
+### Fixed
+
+- **`_write_card` compared the revision too late** (#792). It DROPS a card's
+  comments, roles and outbound edges before upserting — load-bearing, because
+  comments key on a sequence and re-inserting without clearing duplicates every
+  one of them on every write.
+
+  That drop sat in FRONT of the revision guard added in 0.35.0. A losing
+  compare-and-set would therefore have:
+
+  1. deleted the card's comments, roles and outbound edges
+  2. hit the guard and skipped the upsert
+  3. reported `revision_skipped=1` — *"I changed nothing"*
+
+  while the winner's comments were already gone. A lock that destroys the data
+  it protects and then reports success at protecting it is worse than no lock,
+  because the caller has no reason to look.
+
+  The revision is now read and compared BEFORE anything is dropped. The `WHERE`
+  clause inside `_insert_tasks` remains the real guard against the read-to-write
+  race; the pre-check only ensures the destructive half never runs for a write
+  that was always going to be refused.
+
+**This was latent in 0.35.0, never live.** No caller passed `expected_revision`
+through `_write_card`, so no published version could reach the destroying path.
+It would have become real the moment the row-level `update_task` did — which is
+the next change queued. Fixed before that, not after.
+
+### Why 0.35.0's tests did not catch it
+
+They asserted a losing write leaves the card's **title** intact. The title lives
+on the `tasks` row, which the guard genuinely protected. The comments live in a
+**child table cleared before it**. Testing the row you are thinking about rather
+than the blast radius of the operation is how this class of defect ships.
+
+Six new tests pin the blast radius, including one asserting comments are NOT
+duplicated on an accepted write — which pins why the drop exists at all, so it
+is not "simplified" away later.
+
 ## [0.35.0] - 2026-08-10
 
 **The revision lock is finally asserted.**
