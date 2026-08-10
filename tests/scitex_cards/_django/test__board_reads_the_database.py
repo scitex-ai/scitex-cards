@@ -28,8 +28,15 @@ THE CONTRACT PINNED HERE
 ------------------------
 * A populated store WITHOUT its YAML sidecar serves its cards. This is the live
   board's exact shape, and it is the regression: it fails on the old code.
-* A store that cannot be READ raises, and the endpoint answers 500 carrying the
-  store's own reason — never 200 with a task list.
+* A store that cannot be READ raises, and the endpoint answers with the store's
+  own reason — never 200 with a task list.
+* The STATUS distinguishes two different answers, which used to share 500
+  (changed 2026-08-06 after scitex-hub measured the cost on live scitex.ai):
+  an ABSENT store is a configuration state and answers 4xx with a typed
+  ``reason``, while a store that exists and cannot be parsed is a genuine fault
+  and stays 5xx. Collapsing them told visitors the product was down, made
+  clients retry forever (11 console errors a minute), and left a real outage
+  indistinguishable from a deployment nobody had configured.
 * Emptiness is READ, never inferred: a real database holding no cards is a
   legitimate 200 + ``empty_store: true``.
 * ``groups:`` still comes from the sidecar, because groups genuinely live
@@ -181,14 +188,240 @@ def test_a_store_that_cannot_be_read_raises(unreadable_store):
         get_board()
 
 
-def test_a_store_that_cannot_be_read_answers_500(unreadable_store):
-    """An unreadable store is a server-side fault, and it must say so."""
+def test_an_absent_store_is_not_reported_as_a_server_fault(unreadable_store):
+    """REPLACES ``test_a_store_that_cannot_be_read_answers_500``, deliberately.
+
+    That test said "an unreadable store is a server-side fault, and it must say
+    so", and it was right about the second half and wrong about the first.
+    scitex-hub measured the cost on live scitex.ai: a signed-in visitor whose
+    deployment has no store configured got /graph, /rev and /timeline all 500,
+    and the client re-polled into 11 console errors in one minute.
+
+    "No store here" is a CONFIGURATION state, not an outage. Answering 5xx tells
+    the visitor the product is down, tells the client to retry forever, and makes
+    a real outage indistinguishable from this steady state in 5xx monitoring.
+
+    Inverting a deliberate contract-pin with the reason is the honest response to
+    the day it changes — the same move this repo already made for the ``?store=``
+    write seam.
+    """
     # Arrange
     request = RequestFactory().get("/tasks")
+
     # Act
     response = views.api_dispatch(request, "tasks")
+
+    # Assert
+    assert response.status_code == views.STORE_ABSENT_STATUS
+
+
+def test_an_absent_store_never_answers_5xx(unreadable_store):
+    """The monitoring property, pinned independently of which 4xx we chose.
+
+    If this ever goes 5xx again, a real outage is once more indistinguishable
+    from a deployment that was simply never configured — which is the harm, and
+    it survives any later change of mind about 403-vs-404.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    response = views.api_dispatch(request, "tasks")
+
+    # Assert
+    assert response.status_code < 500
+
+
+def test_an_absent_store_is_machine_readable_without_string_matching(
+    unreadable_store,
+):
+    """A client must distinguish this from any other 4xx without reading prose.
+
+    The human sentence is free to change and has changed twice; this
+    discriminator is the part callers may depend on.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    payload = json.loads(views.api_dispatch(request, "tasks").content)
+
+    # Assert
+    assert payload["reason"] == views.STORE_ABSENT_REASON
+
+
+def test_an_absent_store_still_refuses_rather_than_inventing_a_board(
+    unreadable_store,
+):
+    """THE GUARD IS NOT WEAKENED — only the status code changed.
+
+    This is the fear worth pinning: the guard is what stopped 2,138 cards being
+    overwritten on 2026-07-19, and a "fix" that answered 200 with an empty board
+    would satisfy every other test here while reintroducing exactly that. An
+    empty board must remain impossible to obtain from an absent store.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    response = views.api_dispatch(request, "tasks")
+
+    # Assert
+    assert response.status_code != 200
+
+
+@pytest.fixture
+def corrupt_store(env, tmp_path):
+    """A store file that EXISTS and is not a database — a real fault, not config.
+
+    The distinction this fixture exists to exercise was measured rather than
+    assumed: an ABSENT store raises ``StoreUnavailableError`` while a CORRUPT one
+    raises ``DatabaseError`` ("file is not a database"). Had both produced the
+    same type, the 4xx branch would have been swallowing genuine corruption and
+    reporting it to monitoring as "merely unconfigured" — so this is written with
+    real bytes on disk rather than by patching, which would have proven only that
+    the patch worked.
+    """
+    _reset_board_caches()
+    broken = tmp_path / "corrupt" / "cards.db"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_bytes(b"this is not a sqlite database at all")
+    env.set("SCITEX_CARDS_DB", str(broken))
+    env.set("SCITEX_TODO_DB", str(broken))
+    yield broken
+    _reset_board_caches()
+
+
+def test_a_genuinely_broken_store_is_still_a_server_fault(corrupt_store):
+    """The change must not swallow real outages into a reassuring 4xx.
+
+    Only "there is no store here" is a configuration state. A store that exists
+    and cannot be parsed is a fault, and if it answered 4xx this fix would have
+    turned the monitoring rail off in the other direction — quieter, and wrong.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    response = views.api_dispatch(request, "tasks")
+
     # Assert
     assert response.status_code == 500
+
+
+@pytest.fixture
+def unreachable_postgres(env):
+    """A PostgreSQL target whose SERVER IS NOT THERE — an outage, not config.
+
+    THIS IS THE CONTROL ``corrupt_store`` COULD NOT BE, and the difference is the
+    whole reason :class:`StoreNotProvisionedError` exists. ``corrupt_store``
+    raises ``DatabaseError`` — a DIFFERENT type from absence — so it exercises a
+    path that was never in doubt and goes green while the path that SHARES the
+    type with absence goes untested. Before the subclass, an unreachable server
+    and a tenant who never had a store both raised ``StoreUnavailableError``, so
+    moving absence off 5xx would have moved a dead database off 5xx with it.
+
+    A control must fail by the SAME MECHANISM as the hazard, not merely in the
+    same neighbourhood. So this points at a genuinely closed TCP port and lets
+    ``connect()`` fail for real, rather than patching it to raise — patching
+    would prove only that the patch worked, and would not notice if a future
+    edit made that call site raise the subclass.
+
+    THE PORT IS ALLOCATED, NOT GUESSED. Binding to port 0 and closing yields a
+    port the OS has just confirmed is free; a hard-coded number could silently
+    be in use on some host and turn this into a test of whatever answered.
+    ``connect_timeout`` is set so a DROPping firewall fails the test rather than
+    hanging the suite — an unbounded wait is not a passing test, it is no test.
+    """
+    import socket
+
+    _reset_board_caches()
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    target = (
+        f"postgresql://scitex_cards@127.0.0.1:{port}/scitex_cards"
+        f"?connect_timeout=2"
+    )
+    env.set("SCITEX_CARDS_DB", target)
+    env.set("SCITEX_TODO_DB", target)
+    yield port
+    _reset_board_caches()
+
+
+def test_the_unreachable_port_really_refuses(unreachable_postgres):
+    """Positive control ON the control: prove nothing is listening there.
+
+    Without this, a port that happened to be occupied would make the outage test
+    below pass for the wrong reason — and a test that passes for the wrong reason
+    is the failure mode this entire change set is about.
+    """
+    # Arrange
+    import contextlib
+    import functools
+    import socket
+
+    sock = socket.socket()
+    sock.settimeout(2)
+
+    # Act
+    dial = functools.partial(sock.connect, ("127.0.0.1", unreachable_postgres))
+
+    # Assert
+    with contextlib.closing(sock), pytest.raises(OSError):
+        dial()
+
+
+def test_an_unreachable_postgres_is_still_a_server_fault(unreachable_postgres):
+    """A database server that is DOWN must never read as "no store here".
+
+    This is the inversion the subclass prevents. Absence is a configuration state
+    that renders onboarding and must not be retried; an unreachable server is an
+    OUTAGE that must stay in 5xx monitoring and must be retried. They arrived at
+    the view as one type, so classifying absence as 4xx would have dropped real
+    outages out of alerting and rendered a setup page over a dead database —
+    silently, and silence is indistinguishable from health.
+
+    If a future edit raises ``StoreNotProvisionedError`` at the connect-failure
+    site in ``_store_canonical_read``, this test fails. That is its job.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+
+    # Act
+    response = views.api_dispatch(request, "tasks")
+
+    # Assert
+    assert response.status_code >= 500
+
+
+def test_an_unknown_endpoint_404_carries_no_reason(unreadable_store):
+    """The two 404s must stay distinguishable BY FIELD, not by status alone.
+
+    ``store_absent`` answers 404, and :func:`api_dispatch` already answers 404
+    for an unknown endpoint. That collision was the strongest argument for 403,
+    and it is answered by the typed ``reason`` rather than dismissed — but only
+    while the OTHER 404 stays bare. Pin it here, or the discriminator is a
+    convention that one helpful future edit ("let us add a reason to every error
+    response") re-collapses silently.
+
+    Run against ``unreadable_store`` deliberately: this is the situation where
+    BOTH 404s could plausibly apply, so it is where the distinction has to hold.
+    """
+    # Arrange
+    request = RequestFactory().get("/not_a_real_endpoint")
+
+    # Act
+    response = views.api_dispatch(request, "not_a_real_endpoint")
+    payload = json.loads(response.content)
+
+    # Assert
+    assert response.status_code == 404 and "reason" not in payload, (
+        f"unknown-endpoint 404 must carry no `reason` discriminator, got "
+        f"{payload!r}"
+    )
 
 
 def test_the_failure_body_names_the_store_it_could_not_read(unreadable_store):

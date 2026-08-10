@@ -56,7 +56,13 @@ import json
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import _dm_receipt_state, _reactions, _threads
+from scitex_cards import (
+    _dm_read,
+    _dm_receipt_state,
+    _dm_write,
+    _reactions,
+    _threads,
+)
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
@@ -167,7 +173,17 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         }
     # Merge in any peer that already has a thread with the operator (covers
     # unregistered senders — the thread store is the SSOT of who talked).
-    for key, summary in _threads.list_threads(store=store).items():
+    # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
+    # a PER-HOST FILE, and nothing else — so this view showed only the threads
+    # of agents running on the same machine as the board. Measured 2026-08-09
+    # on the operator's laptop: its sidecar had scitex-agent-container live at
+    # 12:33 (that agent runs laptop-side) while scitex-cards sat at 2026-08-02,
+    # and five agents on scitex-compute-04 were invisible entirely. All 4150
+    # messages were in the store the whole time. Operator's ruling the same
+    # day: "never use threads.json but database".
+    for key, summary in _dm_read.threads_summary(
+        OPERATOR_NAME, store=store
+    ).items():
         a, b = summary["peers"]
         if OPERATOR_NAME not in (a, b):
             continue
@@ -224,7 +240,39 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # part of the same coordinated fix on
             # scitex-cards-dm-store-from-query-and-forced-operator-author-20260728.
             _threads.mark_read(key, _author_of(request), store=store)
-        messages = _threads.get_thread(OPERATOR_NAME, peer, store=store)
+            # AND THE RECEIPT GOES TO THE STORE, because that is now where the
+            # unread COUNT comes from. #776 moved the badge onto `dm_receipts`
+            # via `unread_for_conn`; leaving the ack on the sidecar alone would
+            # mean opening a thread never cleared its badge — the count would be
+            # correct and permanently unclearable, which is a worse bug than the
+            # stale one it replaced.
+            #
+            # Idempotent by primary key `(message_id, reader)`, so a re-open
+            # inserts nothing and returns 0 rather than erroring.
+            reader = _author_of(request)
+            unread_ids = [
+                m["id"]
+                for m in _dm_read.unread_for(reader, store=store, thread_id=key)
+            ]
+            if unread_ids:
+                _dm_write.mark_read(unread_ids, reader, store=store)
+        # THE STORE, NOT THE SIDECAR — the other half of #776.
+        #
+        # #776 moved the thread LIST onto the database and left this PANE on
+        # `_threads.get_thread`, which reads `threads.json`. That split is worse
+        # than the bug it half-fixed: the sidebar counted unread from the store
+        # while the pane rendered messages from a per-host file, so the operator
+        # saw a badge of 2 on a thread whose agent messages were not displayed
+        # at all. His words: "the number of new messages shown on the left
+        # sidebar is wrong; it does not reflect the actual states." It reflected
+        # the store correctly; the pane beside it did not.
+        #
+        # A count and a list that answer from different sources will disagree
+        # eventually by construction. Reading both from `dm_messages` is what
+        # makes the badge and the pane the same claim.
+        messages = _dm_read.messages_in(
+            _threads.thread_key(OPERATOR_NAME, peer), store=store
+        )
         # Reactions ride ALONGSIDE the messages, never inside them. The stored
         # DM records stay byte-identical to what an older client already
         # understands, and the v5 design's rule that a message is immutable

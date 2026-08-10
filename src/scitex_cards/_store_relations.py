@@ -105,7 +105,28 @@ def set_edge(
         tgt_task = _task._find_live_task(tasks, target)
         if src_task is None:
             raise TaskNotFoundError(f"set_edge: unknown source id {source!r}")
-        if tgt_task is None:
+        # THE TARGET MUST EXIST TO ADD AN EDGE, AND MUST NOT BE REQUIRED TO
+        # REMOVE ONE. Requiring it on both was one guard written once for two
+        # verbs with OPPOSITE preconditions, and it made the only verb that
+        # scrubs a reference refuse in exactly the case it exists for.
+        #
+        # Measured consequence, reported by scitex-db and scitex-dev on
+        # 2026-08-09: a tenant migration was blocked on ONE orphaned edge, and
+        # the documented remedy could not be run against the damage it names.
+        # The available workaround is `update_task(depends_on=[...])`, which
+        # REWRITES THE WHOLE LIST -- so the refusal did not merely block a
+        # caller, it pushed them onto a path that is LOSSY UNDER CONCURRENCY
+        # where a targeted removal is not. scitex-db put it best: validation
+        # and repair ended up on opposite sides of the same wall.
+        #
+        # On `add` the check stays, and keeps a DIFFERENT justification worth
+        # stating so nobody "harmonises" it away: it stops a TYPO minting a
+        # dangling edge. That is a caller error. A FORWARD REFERENCE -- naming
+        # a card not created yet -- is deliberate and documented
+        # (`_validate.py`: unknown `depends_on`/`blocks` ids are "DROPPED
+        # RATHER THAN REJECTED", and `_diagram/_mermaid.py` skips and warns),
+        # so leniency is policy, not oversight. Removal simply joins it.
+        if action == "add" and tgt_task is None:
             raise TaskNotFoundError(f"set_edge: unknown target id {target!r}")
         edges = src_task.get(kind) or []
         if action == "add" and target not in edges:

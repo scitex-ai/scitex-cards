@@ -18,7 +18,11 @@ stop overwriting and simply set the attribute.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
+
+from django.conf import settings as django_settings
+from django.test import override_settings
 
 from scitex_cards._django._request_store import (
     STORE_REQUEST_ATTR,
@@ -26,12 +30,35 @@ from scitex_cards._django._request_store import (
     write_store,
 )
 
+#: Distinguishes "the setting is absent" from any value it could hold.
+_MISSING = object()
+
 
 class _Req:
     """Minimal request double: query params plus optional attributes."""
 
     def __init__(self, get=None):
         self.GET = get or {}
+
+
+@contextlib.contextmanager
+def _settings_carrying_no_exposure_switch():
+    """Settings with no ``PUBLIC_HOST`` at all — a host application's shape.
+
+    NOT a mock (STX-NM). It deletes the attribute from the real settings
+    object and restores it, so the code under test meets the genuine
+    ``getattr`` miss that an embedding deployment produces, rather than a
+    stand-in that merely reports one. ``override_settings`` cannot express
+    this: it can set a value, and absence is not a value.
+    """
+    previous = getattr(django_settings, "PUBLIC_HOST", _MISSING)
+    if previous is not _MISSING:
+        delattr(django_settings, "PUBLIC_HOST")
+    try:
+        yield
+    finally:
+        if previous is not _MISSING:
+            setattr(django_settings, "PUBLIC_HOST", previous)
 
 
 def test_a_read_prefers_the_trusted_attribute_over_the_query():
@@ -171,6 +198,84 @@ def test_a_path_attribute_is_normalised_to_a_string():
 
     # Assert
     assert isinstance(resolved, str)
+
+
+# ---------------------------------------------------------------------------
+# The query channel is bounded by EXPOSURE.
+#
+# The seam above is safe on a loopback board with one caller and unsafe the
+# moment a hostile caller can reach the door. ``settings.PUBLIC_HOST`` already
+# is "the ONE switch that says 'this board is reachable from the internet'",
+# so the channel keys off that switch rather than off a second notion of
+# exposure that could drift from it.
+#
+# The DM rail is why this is not hygiene: it is the one surface where the
+# resolved store actually selects a database (``_dm_ids`` -> ``_db.open_db``).
+# The card rail discards the value at the door, so it was safe by a DIFFERENT
+# defect — which is exactly why the unguarded surface went unnoticed.
+# ---------------------------------------------------------------------------
+@override_settings(PUBLIC_HOST="")
+def test_the_query_is_admitted_on_a_board_that_is_not_publicly_reachable():
+    """The standalone board and this suite keep the seam they depend on."""
+    # Arrange
+    request = _Req(get={"store": "/srv/loopback/cards.db"})
+
+    # Act
+    resolved = read_store(request)
+
+    # Assert
+    assert resolved == "/srv/loopback/cards.db"
+
+
+@override_settings(PUBLIC_HOST="cards.example.com")
+def test_the_query_is_refused_on_a_publicly_reachable_board():
+    """A caller that can reach the door may not choose what it opens."""
+    # Arrange
+    request = _Req(get={"store": "/tmp/attacker-chosen.db"})
+
+    # Act
+    resolved = read_store(request)
+
+    # Assert
+    assert resolved is None
+
+
+@override_settings(PUBLIC_HOST="cards.example.com")
+def test_the_trusted_attribute_still_wins_on_a_publicly_reachable_board():
+    """Exposure bounds the QUERY channel only — a middleware still decides.
+
+    Refusing the query must not also refuse the trusted attribute, or an
+    exposed multi-tenant deployment would lose the one channel that carries
+    its tenancy.
+    """
+    # Arrange
+    request = _Req(get={"store": "/tmp/attacker-chosen.db"})
+    setattr(request, STORE_REQUEST_ATTR, "/srv/tenant/cards.db")
+
+    # Act
+    resolved = read_store(request)
+
+    # Assert
+    assert resolved == "/srv/tenant/cards.db"
+
+
+def test_the_query_is_refused_when_settings_carry_no_exposure_switch():
+    """Absent is not "not exposed" — it is "cannot tell", so it fails closed.
+
+    A host application embedding this board brings its own settings module,
+    which has no ``PUBLIC_HOST``. Reading that miss as "not exposed" would
+    admit a caller-named store on every embedding deployment while looking
+    like a conservative default.
+    """
+    # Arrange
+    request = _Req(get={"store": "/tmp/attacker-chosen.db"})
+
+    # Act
+    with _settings_carrying_no_exposure_switch():
+        resolved = read_store(request)
+
+    # Assert
+    assert resolved is None
 
 
 # EOF
