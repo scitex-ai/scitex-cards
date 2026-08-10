@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
 from ._db_payload import CARD_JSON_COL, card_payload_json
@@ -135,28 +136,41 @@ def _dedupe_last_wins(tasks: list) -> list[tuple[int, dict]]:
     return ordered
 
 
-class RevisionConflictError(RuntimeError):
-    """A compare-and-set write lost: the row moved since the caller read it.
+@dataclass(frozen=True)
+class RevisionOutcome:
+    """What a compare-and-set write did. ALWAYS this shape when opting in.
 
-    Carries both revisions so the caller can log what it lost to, and so a retry
-    loop can tell "someone else wrote" from "the row vanished" (``found`` False).
+    A LOST RACE IS NOT AN ERROR. It is the ordinary outcome a reconciler counts:
+    two writers touched one card and this one arrived second. Raising there would
+    make routine concurrency indistinguishable from a real fault, and a caller
+    reconciling thousands of rows would have to catch-and-continue around its own
+    happy path. So a race returns ``applied=False`` and the caller tallies it.
+
+    What DOES raise is misuse — a batch, or ``replace=False`` — because those are
+    the caller asking for something this function cannot do, and a capability gap
+    silently counted as a lost race is exactly the miscount this split prevents.
+
+    ``found`` is three-valued on purpose: the revision now in the row, or None
+    when the row is absent. "Someone wrote past me" and "the card is gone" call
+    for different responses, and collapsing them into a bare False loses that.
     """
 
-    def __init__(
-        self, task_id: str, expected: int, found: "int | None"
-    ) -> None:
-        self.task_id = task_id
-        self.expected = expected
-        self.found = found
-        if found is None:
-            detail = "the row no longer exists"
-        else:
-            detail = f"the row is now at revision {found}"
-        super().__init__(
-            f"card {task_id!r}: expected revision {expected}, but {detail}. "
-            f"Re-read the card and re-apply your change; do not retry this "
-            f"write unchanged, or you will discard whoever wrote in between."
-        )
+    applied: bool
+    task_id: str
+    expected: int
+    found: int | None
+
+    def __post_init__(self) -> None:
+        if self.applied and self.found != self.expected:
+            raise ValueError(
+                f"malformed RevisionOutcome: applied=True requires found == "
+                f"expected, got found={self.found!r} expected={self.expected!r}"
+            )
+        if not self.applied and self.found == self.expected:
+            raise ValueError(
+                "malformed RevisionOutcome: applied=False but found == expected, "
+                "which describes a write that should have landed"
+            )
 
 
 def _insert_tasks(
@@ -280,26 +294,34 @@ def _insert_tasks(
         if expected_revision is None:
             conn.execute(insert_sql, values)
         else:
-            tid_cas = row.get("id")
+            tid_cas = str(row.get("id"))
             # Read the CURRENT revision first. This is NOT the safety mechanism
-            # — the WHERE clause is, and it is what makes the write atomic. This
-            # SELECT exists so the exception can say what it lost TO, and so the
-            # row-absent case is reported rather than silently turning into an
-            # INSERT: ON CONFLICT DO UPDATE ... WHERE only fires when a row is
-            # actually there, so without this a compare-and-set against a
-            # deleted card would quietly re-create it.
-            cur = conn.execute(
+            # — the WHERE clause is, and it is what makes the write atomic. The
+            # SELECT exists so the outcome can report what it lost TO, and so the
+            # row-absent case is reported rather than silently becoming an
+            # INSERT: `ON CONFLICT DO UPDATE ... WHERE` only fires when a
+            # conflicting row exists, so without this a compare-and-set against
+            # a deleted card would quietly re-create it.
+            found_row = conn.execute(
                 "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
-            )
-            found_row = cur.fetchone()
+            ).fetchone()
             found = None if found_row is None else found_row[0]
             if found != expected_revision:
-                raise RevisionConflictError(str(tid_cas), expected_revision, found)
+                counts["revision_skipped"] = 1
+                counts["revision_found"] = found
+                return counts
             cur = conn.execute(insert_sql, [*values, expected_revision])
             if cur.rowcount == 0:
-                # The row moved between the SELECT and the UPDATE. This is the
-                # race the WHERE exists for, and reaching here means it WORKED.
-                raise RevisionConflictError(str(tid_cas), expected_revision, None)
+                # The row moved between the SELECT and the UPDATE — the race the
+                # WHERE exists for. Reaching here means the guard WORKED. Re-read
+                # so the caller is told the truth about where the row is now,
+                # rather than a stale value from before the losing attempt.
+                after = conn.execute(
+                    "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
+                ).fetchone()
+                counts["revision_skipped"] = 1
+                counts["revision_found"] = None if after is None else after[0]
+                return counts
         counts["tasks"] += 1
         tid = row.get("id")
         counts["comments"] += _insert_comments(conn, tid, row.get("comments"))
