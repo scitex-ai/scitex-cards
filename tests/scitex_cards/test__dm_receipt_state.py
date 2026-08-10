@@ -22,13 +22,13 @@ from pathlib import Path
 import pytest
 
 from scitex_cards._db import open_db
-from scitex_cards._dm_receipt_state import (
+from scitex_cards._dm.receipt_state import (
     STATE_PENDING,
     STATE_RECEIVED,
     STATE_UNKNOWABLE,
     receipt_state_for_conn,
 )
-from scitex_cards._dm_write import insert_receipt, record_member_event
+from scitex_cards._dm.write import insert_receipt, record_member_event
 from scitex_cards._threads import append_message, mark_read, thread_key
 
 

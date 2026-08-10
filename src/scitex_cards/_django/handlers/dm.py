@@ -57,12 +57,12 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from scitex_cards import (
-    _dm_read,
-    _dm_receipt_state,
-    _dm_write,
     _reactions,
     _threads,
 )
+from scitex_cards._dm import read as _dm_read
+from scitex_cards._dm import receipt_state as _dm_receipt_state
+from scitex_cards._dm import write as _dm_write
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )

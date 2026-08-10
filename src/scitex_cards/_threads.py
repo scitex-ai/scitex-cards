@@ -77,7 +77,7 @@ import secrets
 from pathlib import Path
 
 from . import _threads_mirror as _mirror
-from ._dm_ids import pair_thread_id, peers_of_pair
+from ._dm.ids import pair_thread_id, peers_of_pair
 from ._paths import resolve_tasks_path
 
 #: The sidecar's file mechanics live in :mod:`scitex_cards._threads_io`.
@@ -128,7 +128,7 @@ def threads_path(store: str | Path | None = None) -> Path:
 def thread_key(a: str, b: str) -> str:
     """Canonical thread id for a peer pair: ``dm:<a>::<b>``, names sorted.
 
-    DELEGATES to :func:`scitex_cards._dm_ids.pair_thread_id`, which is the
+    DELEGATES to :func:`scitex_cards._dm.ids.pair_thread_id`, which is the
     database's thread id. That is not indirection for its own sake: the
     migration's core promise is that no existing thread id is REWRITTEN (a
     rewrite is a delete plus an insert, which append-only forbids), and one
@@ -297,7 +297,7 @@ def append_message(
         "ts": ts or _utc_now_iso(),
         "read": False,
     }
-    from ._dm_write import append_pair
+    from ._dm.write import append_pair
 
     append_pair(
         from_,

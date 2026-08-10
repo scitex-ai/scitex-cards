@@ -499,7 +499,7 @@ def test_pair_thread_id_is_the_legacy_thread_key():
     whole history, which is precisely what the append-only ruling forbids.
     """
     # Arrange
-    from scitex_cards._dm_store import pair_thread_id
+    from scitex_cards._dm.store import pair_thread_id
     from scitex_cards._threads import thread_key
 
     # Act
