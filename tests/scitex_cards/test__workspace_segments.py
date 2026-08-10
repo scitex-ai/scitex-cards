@@ -16,9 +16,18 @@ IS a cross-tenant read — arrived at THROUGH the sanctioned primitive, which is
 worse than around it because it looks compliant.
 
 Joining as PATH COMPONENTS removes the separator entirely, so the collision
-cannot be expressed. ``test_the_two_shapes_that_used_to_collide_now_differ`` is
-the isolating case: it is the only test here that fails if the join is ever
-"simplified" back to concatenation.
+cannot be expressed. MUTATION-TESTED: replacing the join with
+``"-".join(segments)`` fails exactly two of these thirteen tests —
+``test_the_two_shapes_that_used_to_collide_now_differ`` (the collision itself)
+and ``test_each_segment_is_its_own_directory`` (the structure that prevents
+it). The other eleven still pass, so the mutation is narrowly caught rather
+than caught by everything, which is what makes those two load-bearing.
+
+An earlier version of this docstring said "the ONLY test that fails". That was
+measured with ``-x``, which stops at the first failure — one observation
+generalised into a claim about the whole file. Corrected here rather than left
+standing, because a test docstring asserting a false coverage property is the
+same defect class this suite exists to guard.
 
 WHY TWO VERBS. ``resolve`` refuses to create — a resolver that creates on miss
 turns a typo into a new empty tenant and the caller cannot tell that from a
@@ -112,11 +121,14 @@ def _unavailable_message(*segments) -> str:
 # The collision. This is the reason the signature changed.
 # ---------------------------------------------------------------------------
 def test_the_two_shapes_that_used_to_collide_now_differ(workspace_root):
-    """ISOLATING: the only test here that fails if the join becomes a concat.
+    """The collision itself. hub's measured example, not an invented one.
 
-    Everything else would still pass with a separator-joined identity. This
-    case is the whole argument, and it is hub's measured example rather than an
-    invented one.
+    One of the two tests that fail when the join is mutated to concatenation
+    (the other is ``test_each_segment_is_its_own_directory``). This one asserts
+    the CONSEQUENCE — two tenants must not share a store — while that one
+    asserts the STRUCTURE that guarantees it. Both are worth keeping: a future
+    change could preserve the directory shape and still collide, or collide
+    while preserving distinctness by accident.
     """
     # Arrange
     first = provision_workspace_store("user", "alice-my", "project")
