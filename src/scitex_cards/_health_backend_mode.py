@@ -102,9 +102,12 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
 
         return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")
 
-    from ._inbox_sqlite import inbox_db_path
+    from ._inbox_sqlite import inbox_target
 
-    return SQLITE, str(inbox_db_path(store))
+    # `inbox_target`, not `inbox_db_path`: the doctor must name WHERE THE RAIL
+    # ACTUALLY IS. Naming `runtime/todo.db` after the rail moved would send a
+    # reader to inspect an empty file and conclude the notifications were lost.
+    return SQLITE, str(inbox_target(store))
 
 
 def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:

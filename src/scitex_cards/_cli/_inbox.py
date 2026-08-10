@@ -98,8 +98,7 @@ def inbox_migrate_cmd(
 
     from scitex_cards._inbox_sqlite import (
         gather_migratable_inboxes,
-        inbox_db_path,
-    inbox_target,
+        inbox_target,
         migrate_to_sqlite,
     )
     from scitex_cards._paths import resolve_tasks_path

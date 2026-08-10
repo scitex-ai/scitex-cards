@@ -78,7 +78,17 @@ def inbox_target(store: str | Path | None = None):
     (``notifications``, with ``recipient_id`` and a ``seq`` ordering column), and
     ``POSTGRES_SHAPE`` already names them. :func:`inbox_db_path` stays for the
     migration tooling that must still find the old file.
+
+    AN EXPLICIT ``SCITEX_TODO_INBOX_DB`` STILL WINS OUTRIGHT, exactly as it did
+    for :func:`inbox_db_path`. That override is the documented way to pin the
+    rail somewhere specific, and silently ignoring it because the default moved
+    would be its own silent fallback — the operator sets a value, the code uses
+    a different one, and nothing says so. It is also what lets a caller keep the
+    rail on a file deliberately, which the delivery doctor's own tests rely on.
     """
+    override = os.environ.get(ENV_INBOX_DB)
+    if override:
+        return Path(override).expanduser()
     from ._store_target import resolve_store_target  # noqa: PLC0415 -- cycle
 
     return resolve_store_target(store)
