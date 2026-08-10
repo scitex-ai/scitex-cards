@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+## [0.32.4] - 2026-08-10
+
+**Six fixes had been merged and were sitting in no release. This is that
+release, and the reason it was late is worth recording.**
+
+`git tag --contains faae0e03` returned empty. The board 500 that scitex-hub
+reported on scitex.ai had been *fixed* since the afternoon and shipped to
+nobody; the `set_edge` fix that was blocking scitex-db's migration was in the
+same position. Both agents were waiting on work that was already done. The
+release was held by one test, and that test was a stopwatch.
+
+### Fixed
+
+- **A database this board cannot reach is an outage, not "nothing here"**
+  (#772). An unreachable database and a store that was never provisioned were
+  the same answer, so scitex.ai's board reported an empty task list where it
+  should have reported that it could not read its store. The two are now
+  distinguished by type; only the second is a 404.
+- **`set_edge(action="remove")` can scrub an edge whose target is gone**
+  (#773). Removal validated that the target still existed, so the one verb for
+  cleaning up a dangling edge refused precisely when the edge was dangling.
+- **`gui serve` refuses an unconfigured store instead of inventing one**
+  (#774). With no DSN configured the board did not fail — it silently read a
+  local SQLite file that had stopped being written on 2026-08-02 and served it
+  as current. A silent fallback to a stale store is the failure mode ADR-0016
+  exists to forbid.
+- **The board's DM thread list reads the database, not `threads.json`**
+  (#776), **and so does the thread pane** (#777), **and so does the agent-side
+  `dm_list`** (#778). `threads.json` is a PER-HOST file: the operator's board
+  showed only threads from agents on the same machine, so five agents on
+  scitex-compute-04 were invisible while all 4150 messages sat in the shared
+  store the entire time. Three separate readers had to be moved because each
+  looked complete on its own.
+
+### Changed
+
+- **The store-write verify asserts its mechanism rather than a stopwatch**
+  (#781). The test proving the event-scan verify is cheaper than the
+  `safe_load` construct-reparse it replaced compared two wall-clock
+  measurements, and failed CI at 0.3626 s vs 0.3274 s — a 35 ms margin on a
+  shared runner, with 5919 other tests passing. Speed was never the property;
+  *not constructing the document's object graph* is, and the speed is its
+  consequence. It now asserts that directly, with a document whose bytes are
+  well-formed YAML but whose tag no `SafeLoader` can build: parsing reaches
+  stream-end, constructing raises, so a verify that accepts it demonstrably
+  constructed nothing. Mutation-tested — reverting the implementation to a
+  constructing `safe_load` makes it fail, which the timing assertion would
+  have caught only on a quiet machine.
+
 ## [0.32.3] - 2026-08-06
 
 **An `agent:<id>` scope names an OWNER, not a lens — and the instruction that
