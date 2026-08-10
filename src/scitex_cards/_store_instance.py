@@ -201,9 +201,132 @@ def store_instance(conn) -> StoreInstance:
     )
 
 
+class IdentityVerdict(str, Enum):
+    """Whether the connected store is the one the caller expected.
+
+    THREE-VALUED, and the third value is the reason this enum exists rather
+    than a bool. ``expected_uuid`` reads ``None`` when unset, so the comparison
+    it feeds has no right-hand side and cannot fail — a gate that cannot fail
+    is not a gate. ``CANNOT_TELL`` gives that state a name so a caller must
+    handle it rather than inherit it as a pass.
+    """
+
+    MATCHES = "matches"
+    DIFFERS = "differs"
+    CANNOT_TELL = "cannot-tell"
+
+
+@dataclass(frozen=True)
+class IdentityCheck:
+    """The answer to "am I connected to the store I think I am".
+
+    Attributes
+    ----------
+    verdict : IdentityVerdict
+    observed : StoreInstance
+        What the connection actually reached.
+    expected : str or None
+        What the caller pinned, verbatim, so an error message can print both
+        sides rather than asserting a mismatch the reader cannot check.
+    reason : str or None
+        Why the answer is not ``MATCHES``. ``None`` only on ``MATCHES``.
+    """
+
+    verdict: IdentityVerdict
+    observed: StoreInstance
+    expected: Optional[str] = None
+    reason: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """A non-matching verdict must say why; a matching one must not."""
+        if self.verdict is IdentityVerdict.MATCHES:
+            if self.reason is not None:
+                raise ValueError(
+                    f"IdentityCheck(MATCHES) carries a reason — a reason "
+                    f"explains a refusal: {self.reason!r}"
+                )
+            return
+        if not self.reason:
+            raise ValueError(
+                f"IdentityCheck({self.verdict.value}) with no reason — a "
+                "refusal a caller cannot print is a refusal nobody can act on"
+            )
+
+    @property
+    def may_proceed(self) -> bool:
+        """Only ``MATCHES`` proceeds. ``CANNOT_TELL`` refuses like ``DIFFERS``.
+
+        Named as a question about permission rather than exposed as the raw
+        verdict, so no call site can accidentally treat "cannot tell" as a
+        pass by testing ``verdict is not DIFFERS``.
+        """
+        return self.verdict is IdentityVerdict.MATCHES
+
+
+def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
+    """Compare the connected instance against the identity the caller pinned.
+
+    ``expected`` is the value an operator recorded from a store they trust.
+    ``None`` means nothing was pinned, which is ``CANNOT_TELL`` and NOT a pass:
+    an unpinned client is exactly the one that reads a three-day-stale replica
+    and reports a confident match.
+
+    DIFFERS AND CANNOT_TELL BOTH REFUSE, WITH DIFFERENT REASONS. "You are
+    pointed at the wrong store" and "I cannot tell which store this is" call
+    for different actions from whoever reads the message, so collapsing them
+    would throw away the only part a human acts on.
+    """
+    observed = store_instance(conn)
+    if not expected:
+        return IdentityCheck(
+            verdict=IdentityVerdict.CANNOT_TELL,
+            observed=observed,
+            expected=None,
+            reason=(
+                "no expected store identity is pinned, so this connection "
+                "cannot be checked against anything. Record the identity of "
+                "the store you trust and pin it; an unpinned client cannot "
+                "tell a stale replica from the store it meant to reach."
+            ),
+        )
+    if observed.certainty is Certainty.UNKNOWN:
+        return IdentityCheck(
+            verdict=IdentityVerdict.CANNOT_TELL,
+            observed=observed,
+            expected=expected,
+            reason=(
+                f"an identity is pinned ({expected!r}) but this store cannot "
+                f"report one: {observed.reason}"
+            ),
+        )
+    if observed.instance_id != expected:
+        return IdentityCheck(
+            verdict=IdentityVerdict.DIFFERS,
+            observed=observed,
+            expected=expected,
+            reason=(
+                f"this connection reached instance "
+                f"{observed.instance_id!r}, but {expected!r} was pinned. Two "
+                "stores can carry the SAME store_uuid and different data — "
+                "measured 2026-08-10, 180 cards and three days apart — so a "
+                "matching uuid is not evidence. Point the client at the "
+                "pinned store, or re-pin deliberately if the move was "
+                "intended."
+            ),
+        )
+    return IdentityCheck(
+        verdict=IdentityVerdict.MATCHES,
+        observed=observed,
+        expected=expected,
+    )
+
+
 __all__ = [
     "Certainty",
+    "IdentityCheck",
+    "IdentityVerdict",
     "StoreInstance",
+    "check_store_identity",
     "store_instance",
 ]
 

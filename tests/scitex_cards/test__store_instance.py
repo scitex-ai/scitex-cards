@@ -41,7 +41,9 @@ import pytest
 from scitex_cards._db import connect
 from scitex_cards._store_instance import (
     Certainty,
+    IdentityVerdict,
     StoreInstance,
+    check_store_identity,
     store_instance,
 )
 from scitex_cards._store_url import BACKEND_POSTGRES, BACKEND_SQLITE
@@ -239,6 +241,107 @@ def test_a_known_identity_carries_no_reason():
     message = _refusal_message(**claimed)
     # Assert
     assert "reason explains an UNKNOWN" in message
+
+
+# ---------------------------------------------------------------------------
+# The guard. Only MATCHES proceeds.
+#
+# THE ISOLATING CASE is `test_a_pinned_identity_that_differs_refuses`: expected
+# is SET, certainty is KNOWN, the connection is live and the schema current —
+# everything valid, ONE condition varying. Delete the mismatch branch and that
+# test goes red while every other test here stays green, which is what makes it
+# a gate rather than a formality.
+#
+# It is written that way on purpose. A guard exercised only through cases that
+# ALSO fail for a second reason is untested — scitex-db measured exactly that
+# on their own preflight guard the night this was written: they deleted it and
+# 21 tests stayed green, because every case asserting failure also carried a
+# failing finding.
+# ---------------------------------------------------------------------------
+def test_a_pinned_identity_that_matches_proceeds(pg_conn):
+    """The positive control: without it, a guard that refuses everything passes."""
+    # Arrange
+    pinned = store_instance(pg_conn).instance_id
+    # Act
+    check = check_store_identity(pg_conn, pinned)
+    # Assert
+    assert check.may_proceed is True
+
+
+def test_a_pinned_identity_that_differs_refuses(pg_conn):
+    """ISOLATING: everything valid, only the VALUE differs.
+
+    The wrong value here stands in for the measured case — two live clusters
+    carrying store_uuid 1d55dd6e-…-a78835ab988f with 180 cards and three days
+    between them. One cluster is enough to pin the behaviour; the second is
+    what proved it was needed.
+    """
+    # Arrange
+    not_this_cluster = "7671108644284358700"
+    # Act
+    check = check_store_identity(pg_conn, not_this_cluster)
+    # Assert
+    assert check.verdict is IdentityVerdict.DIFFERS
+
+
+def test_a_differing_identity_names_both_sides(pg_conn):
+    """A refusal a reader cannot check is a refusal they must take on faith."""
+    # Arrange
+    not_this_cluster = "7671108644284358700"
+    # Act
+    check = check_store_identity(pg_conn, not_this_cluster)
+    # Assert
+    assert not_this_cluster in (check.reason or "")
+
+
+def test_nothing_pinned_cannot_tell(sqlite_conn):
+    """An unpinned client is the one that reads a stale replica confidently."""
+    # Arrange
+    conn = sqlite_conn
+    # Act
+    check = check_store_identity(conn, None)
+    # Assert
+    assert check.verdict is IdentityVerdict.CANNOT_TELL
+
+
+def test_nothing_pinned_does_not_proceed(sqlite_conn):
+    """CANNOT_TELL refuses. Collapsing it into a pass is the defect itself.
+
+    Separate from the verdict assertion above because the verdict and the
+    PERMISSION are different claims: a later refactor could keep the verdict
+    correct and let `may_proceed` fall through.
+    """
+    # Arrange
+    conn = sqlite_conn
+    # Act
+    check = check_store_identity(conn, None)
+    # Assert
+    assert check.may_proceed is False
+
+
+def test_a_store_that_cannot_report_an_identity_cannot_tell(sqlite_conn):
+    """Pinned, but the store cannot answer — still a refusal, not a pass."""
+    # Arrange
+    conn = sqlite_conn
+    # Act
+    check = check_store_identity(conn, "7668165447904178049")
+    # Assert
+    assert check.may_proceed is False
+
+
+def test_the_two_refusals_do_not_share_a_message(sqlite_conn):
+    """"Wrong store" and "cannot tell which store" need different actions.
+
+    The reason string is the only part a human acts on, so the two refusals
+    staying distinguishable is the feature, not the wording.
+    """
+    # Arrange
+    conn = sqlite_conn
+    # Act
+    unpinned = check_store_identity(conn, None).reason
+    unanswerable = check_store_identity(conn, "7668165447904178049").reason
+    # Assert
+    assert unpinned != unanswerable
 
 
 # EOF
