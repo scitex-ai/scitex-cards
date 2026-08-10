@@ -2,6 +2,76 @@
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-10
+
+**The notification rail can finally cross a host, and a store stops lying about
+which store it is.**
+
+The operator asked twice — 2026-07-30 and again 2026-08-09 (「通知は todo.db????
+…ポスグレを使っているはずなのになぜまだ sqlite を使っているのか」) — why
+notifications were still SQLite when the card store had moved to PostgreSQL. The
+honest answer is that the mission card claimed the migration was COMPLETE while
+only half of it was. Measured on the live rail the day of this release:
+
+```
+/home/agent/.scitex/cards/runtime/todo.db   table `inbox`
+  rows                324      unseen  133
+  recipient  operator 123      unseen  123   <- not one ever consumed
+  recipient  every agent whose consumer runs on this host: unseen 0
+```
+
+The split is binary with no middle case: delivery works exactly when a consumer
+is co-located with the file, and fails completely when it is not. Nothing errored
+anywhere — every write succeeded, every read answered honestly, and the only
+symptom available to anyone was a human saying nothing arrives.
+
+### Added
+
+- **A shared PostgreSQL inbox, so a notification can cross hosts** (#780). The
+  rail's backend is selected through the same seam as the card store rather than
+  being hardcoded to a local file. This is the mechanism the 123 stranded
+  messages needed; carrying the existing rows and giving the operator's inbox a
+  consumer are the remaining halves, tracked separately.
+
+- **A store identity a COPY cannot carry** (#784). `StoreInstance` reads
+  PostgreSQL's `system_identifier`, which is per-cluster and does not survive a
+  file copy, so a store restored from a snapshot is no longer mistaken for the
+  original. The verdict is three-valued by construction — MATCHES / DIFFERS /
+  CANNOT_TELL, with a validator that refuses to let two UNKNOWNs compare equal —
+  because collapsing "I could not tell" into either pole is the bug this type
+  exists to prevent.
+
+### Fixed
+
+- **`summarize_tasks` named a store it had not read** (#775). It reported
+  `/home/agent/.scitex/cards/tasks.yaml` — a path that does not exist on disk —
+  while serving 3709 cards out of PostgreSQL. Reported independently twice:
+  by scitex-logging on 2026-08-04, and by scitex-storage on 2026-08-10 while
+  reconnecting after an outage and asking the exact question this verb exists to
+  answer ("am I on the real store, or a local shadow?"). The label said local
+  YAML shadow; the data was canonical PostgreSQL. During an outage that is the
+  moment someone starts repairing a store that was never broken. The field now
+  reports the backend that actually served the read, and a test pins it to
+  `resolve_store()` so the next backend change cannot silently reopen it.
+
+### Changed
+
+- **The quality gate stops failing every pull request on inherited debt** (#788).
+  `PS-108` / `PS-108b` (12 prefix clusters; 133 flat `.py` files against a
+  threshold of 15) are structural debt no current PR introduced, and they were
+  red on all 18 open PRs. PR #785 *reduces* the count to 125 — exactly the remedy
+  the rule prescribes — and was failed for doing so, because `--new-only` keys
+  findings by a rendered line that contains the tally. A gate every PR fails is
+  as useless as one that cannot fail.
+
+  Both rules are skipped **per-rule, in `.scitex/dev/config.yaml`, each with a
+  written reason and an explicit deletion condition** tied to the tracking card —
+  never a blanket flag. Verified scoped rather than assumed: a strict local run
+  on the change still reports 233 findings across 12 other rules and still exits
+  1. Those rules are earning their keep — they are what caught #780's leaked test
+  connection and #785's missing test mirror. The upstream keying defect is
+  reported to scitex-dev.
+
 ## [0.33.0] - 2026-08-10
 
 **A workspace identity is SEGMENTS, and provisioning is its own verb.**
