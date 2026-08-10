@@ -36,6 +36,27 @@ release was held by one test, and that test was a stopwatch.
   store the entire time. Three separate readers had to be moved because each
   looked complete on its own.
 
+### Security
+
+- **A caller may not name the store on a board it can reach** (#782).
+  `read_store` fell back to the caller-controlled `?store=` query parameter
+  unconditionally. On the card path that fallback is inert — `load_tasks`
+  discards the resolved store and reads the one canonical database — but on
+  the **DM** path it is live: the value becomes a `cards.db` path and is
+  opened. So the one surface that honours the parameter was the one surface
+  with no guard, while the surface everyone reasons about was safe only by a
+  different defect. The query channel is now bounded by
+  `settings.PUBLIC_HOST`, already "the ONE switch that says 'this board is
+  reachable from the internet'": admitted when empty (loopback board, test
+  suite), refused when set, and refused when **absent** — because absence is
+  the signature of running inside a host application's settings, and "cannot
+  tell" must not read as "not exposed".
+
+  This is not a lenient read policy beside a strict write one, which
+  `_store_canonical_read` forbids by name. Reads converge on the write rule
+  wherever it matters and keep the legacy seam only where the deployment has
+  provably one tenant and one caller.
+
 ### Changed
 
 - **The store-write verify asserts its mechanism rather than a stopwatch**
