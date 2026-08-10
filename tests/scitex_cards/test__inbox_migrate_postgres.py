@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
+from pathlib import Path
 from typing import Iterator
 
 import pytest
@@ -51,26 +53,33 @@ def clean_destination() -> Iterator[None]:
 
 
 @pytest.fixture
-def source_inbox(tmp_path):
-    """A per-host SQLite inbox in the REAL legacy shape, with unseen rows."""
+def source_inbox(tmp_path) -> Iterator[Path]:
+    """A per-host SQLite inbox in the REAL legacy shape, with unseen rows.
+
+    The connection is scoped by ``closing`` rather than closed on the last
+    line: a CREATE/INSERT that raises mid-setup would skip a trailing
+    ``conn.close()`` and leak the handle into the rest of the session, which
+    is exactly the timing-dependent flake STX-TQ005 is about. Nothing needs
+    the connection past setup, so it is released before the test runs and the
+    fixture yields only the path.
+    """
     path = tmp_path / "todo.db"
-    conn = sqlite3.connect(path)
-    conn.execute(
-        f"CREATE TABLE {SQLITE_SHAPE.table} ("
-        f"id TEXT PRIMARY KEY, {SQLITE_SHAPE.recipient} TEXT, event_type TEXT, "
-        "card_id TEXT, body TEXT, actor TEXT, ts TEXT, seen INTEGER, msg_id TEXT)"
-    )
     rows = [
         ("n_seen01", "agent-a", "dm", "c1", "already read", "op", "T1", 1, None),
         ("n_unseen1", "agent-a", "dm", "c2", "never delivered", "op", "T2", 0, None),
         ("n_unseen2", "agent-b", "card", "c3", "also undelivered", "op", "T3", 0, None),
     ]
-    conn.executemany(
-        f"INSERT INTO {SQLITE_SHAPE.table} VALUES(?,?,?,?,?,?,?,?,?)", rows
-    )
-    conn.commit()
-    conn.close()
-    return path
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute(
+            f"CREATE TABLE {SQLITE_SHAPE.table} ("
+            f"id TEXT PRIMARY KEY, {SQLITE_SHAPE.recipient} TEXT, event_type TEXT, "
+            "card_id TEXT, body TEXT, actor TEXT, ts TEXT, seen INTEGER, msg_id TEXT)"
+        )
+        conn.executemany(
+            f"INSERT INTO {SQLITE_SHAPE.table} VALUES(?,?,?,?,?,?,?,?,?)", rows
+        )
+        conn.commit()
+    yield path
 
 
 def _migrate(source):
@@ -190,11 +199,11 @@ class TestTheSourceIsLeftAlone:
         # Arrange
         _migrate(source_inbox)
         # Act
-        conn = sqlite3.connect(f"file:{source_inbox}?mode=ro", uri=True)
-        remaining = conn.execute(
-            f"SELECT count(*) FROM {SQLITE_SHAPE.table}"
-        ).fetchone()[0]
-        conn.close()
+        readonly = sqlite3.connect(f"file:{source_inbox}?mode=ro", uri=True)
+        with closing(readonly) as conn:
+            remaining = conn.execute(
+                f"SELECT count(*) FROM {SQLITE_SHAPE.table}"
+            ).fetchone()[0]
         # Assert
         assert remaining == 3
 
