@@ -36,6 +36,33 @@ refusal: an unknown or unusable workspace RAISES. It never resolves to a default
 empty store, or the ambient store. "I could not tell which workspace" must not
 collapse into "here is somebody's data" - which under multi-tenancy is not merely a
 wrong answer, it is a disclosure.
+
+=========================================================================
+WHY THE IDENTITY IS SEGMENTS AND NOT ONE SLUG
+=========================================================================
+scitex-hub's tenancy is TWO-dimensional — a tenant is ``(owner, project)``, and
+the owner is itself two namespaces (users and orgs, separate base paths). One
+flat segment cannot express that, and the obvious workaround is the dangerous
+one. hub measured it before building against it:
+
+    owner "alice-my" + project "project"    ->  alice-my-project
+    owner "alice"    + project "my-project" ->  alice-my-project
+
+Two tenants, one identity, one store. ANY separator has this property as long as
+it is legal inside either component, so this is not a bad encoding to be improved
+— it is unsatisfiable. And under ADR-0017 (a tenant is a STORE, not a row; the
+authority boundary IS the handle) an identity collision IS a cross-tenant read,
+reached THROUGH the sanctioned primitive rather than around it, which is worse
+than reaching it around one because it looks compliant.
+
+So segments are joined as PATH COMPONENTS, never concatenated. There is then no
+separator to choose and nothing to escape: ``("user", "alice-my", "project")``
+and ``("user", "alice", "my-project")`` are distinct directories by construction.
+Each segment keeps the full validator, so traversal stays impossible per segment
+and the containment check is unchanged.
+
+Arity is the CALLER's business; validity is not. A one-dimensional consumer
+passes one segment and sees the previous behaviour exactly.
 """
 
 from __future__ import annotations
@@ -50,6 +77,7 @@ __all__ = [
     "ENV_WORKSPACE_ROOT",
     "InvalidWorkspaceIdentity",
     "is_valid_identity",
+    "provision_workspace_store",
     "resolve_workspace_store",
 ]
 
@@ -83,26 +111,37 @@ def is_valid_identity(value: object) -> bool:
     return isinstance(value, str) and bool(_IDENTITY_RE.match(value))
 
 
-def resolve_workspace_store(identity: object) -> Path:
-    """The canonical store for ``identity``. RAISES rather than guessing.
+def _store_path_for(segments: tuple[object, ...]) -> Path:
+    """Where ``segments`` map to, with every safety check, and NO existence test.
 
-    Raises:
-        InvalidWorkspaceIdentity: ``identity`` is not slug-shaped - including any
-            path, any traversal attempt, and any non-string.
-        StoreUnavailableError: the root is unconfigured, or that workspace has no
-            store. Never falls back to the ambient store: under multi-tenancy a
-            fallback would serve one tenant another tenant's data.
+    Shared by both verbs so they cannot disagree about where a workspace lives.
+    Two functions each computing the path independently is how ``resolve`` and
+    ``provision`` end up pointing at different directories after one of them is
+    edited — and the symptom is a tenant whose store is provisioned somewhere
+    the resolver will never look.
     """
-    if not is_valid_identity(identity):
+    if not segments:
+        raise InvalidWorkspaceIdentity(
+            "a workspace identity needs at least one segment; got none. "
+            "Passing nothing would resolve to the workspace ROOT, which is "
+            "every tenant's store at once."
+        )
+
+    for index, segment in enumerate(segments):
+        if is_valid_identity(segment):
+            continue
         # Deliberately does NOT echo the value: this text can reach a log that a
         # third party reads, and a rejected identity may itself be an injection
-        # attempt worth not repeating. The type and length are enough to debug a
-        # legitimate mistake.
+        # attempt worth not repeating. The position, type and length are enough
+        # to debug a legitimate mistake, and the POSITION is what a caller
+        # passing three segments actually needs.
         raise InvalidWorkspaceIdentity(
-            f"workspace identity must match {_IDENTITY_RE.pattern} "
-            f"(got {type(identity).__name__} of length "
-            f"{len(identity) if isinstance(identity, str) else 'n/a'}). "
-            f"A filesystem path is not an identity - pass the workspace slug."
+            f"workspace identity segment {index} must match "
+            f"{_IDENTITY_RE.pattern} (got {type(segment).__name__} of length "
+            f"{len(segment) if isinstance(segment, str) else 'n/a'}). "
+            f"A filesystem path is not an identity - pass validated segments. "
+            f"Uppercase is REFUSED rather than folded: folding would map "
+            f"'Alice' and 'alice' to one store."
         )
 
     root = os.environ.get(ENV_WORKSPACE_ROOT, "").strip()
@@ -113,7 +152,10 @@ def resolve_workspace_store(identity: object) -> Path:
             f"multi-tenancy that would serve one workspace another's cards."
         )
 
-    store = Path(root).expanduser() / identity / ".scitex" / "cards" / "cards.db"
+    store = Path(root).expanduser()
+    for segment in segments:
+        store = store / str(segment)
+    store = store / ".scitex" / "cards" / "cards.db"
 
     # BELT AND BRACES over the allowlist. The regex already makes traversal
     # impossible, so this can only fire if the regex is later loosened - which is
@@ -123,6 +165,74 @@ def resolve_workspace_store(identity: object) -> Path:
         raise InvalidWorkspaceIdentity(
             "resolved store escapes the workspace root - refusing"
         )
+    return store
+
+
+def provision_workspace_store(*segments: object) -> Path:
+    """Create the store for a workspace identity. Idempotent; returns its path.
+
+    The sanctioned creation path, and the ONLY one. It exists because
+    :func:`resolve_workspace_store` deliberately refuses to create — so without
+    this verb every new tenant hits a fail-closed raise with no way forward, and
+    the pressure would be to soften the resolver instead. Separating them keeps
+    "I could not find it" and "make me one" as different requests.
+
+    IDEMPOTENT BY EXISTENCE, not by exception: an already-provisioned workspace
+    returns its path unchanged rather than raising or recreating, because
+    re-provisioning must never truncate a store that already holds cards.
+
+    IT CREATES THE DATABASE, NOT MERELY THE DIRECTORY, and that is a contract
+    rather than a convenience: :func:`resolve_workspace_store` tests for the
+    FILE, so an earlier draft that made only the parent directory returned
+    success and left the very next resolve raising StoreNotProvisionedError.
+    Its own first test run caught that. A provision that does not satisfy the
+    resolver is not a provision — it is a rename of the problem.
+
+    The schema is built by :func:`scitex_cards._db.open_db`, which creates it on
+    first open and no-ops on an existing database. This verb decides WHERE and
+    delegates HOW, so the one place that knows how to build a schema stays the
+    one place that builds it.
+    """
+    store = _store_path_for(segments)
+    if store.exists():
+        return store
+
+    # parents=True because the identity is now several segments deep; exist_ok
+    # so two concurrent provisions of the same workspace do not race into an
+    # error.
+    store.parent.mkdir(parents=True, exist_ok=True)
+
+    from ._db import open_db  # noqa: PLC0415 -- import cycle
+
+    conn = open_db(store)
+    conn.close()
+    return store
+
+
+def resolve_workspace_store(*segments: object) -> Path:
+    """The canonical store for a workspace identity. RAISES rather than guessing.
+
+    ``segments`` are the ordered components of the identity — for a
+    two-dimensional tenancy, ``("user", owner, project)``. They are joined as
+    PATH COMPONENTS, so no separator exists to be ambiguous about and
+    ``("alice-my", "project")`` and ``("alice", "my-project")`` are different
+    stores. A single-segment caller sees exactly the previous behaviour.
+
+    NEVER CREATES. A resolver that creates on miss turns a typo into a new empty
+    tenant, silently, and the caller cannot tell that from a workspace that
+    genuinely existed. Creation is :func:`provision_workspace_store`, which a
+    caller has to mean.
+
+    Raises:
+        InvalidWorkspaceIdentity: no segments, or any segment is not slug-shaped
+            - including any path, any traversal attempt, and any non-string.
+        StoreUnavailableError: the root is unconfigured. That is OUR deployment
+            misconfigured, never the tenant's fault.
+        StoreNotProvisionedError: the workspace has no store yet. Distinct from
+            the above so a caller can render onboarding for one and an error for
+            the other.
+    """
+    store = _store_path_for(segments)
 
     if not store.exists():
         # NOT-PROVISIONED, and on this path it is the ORDINARY case rather than
