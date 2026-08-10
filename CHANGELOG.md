@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-10
+
+**A workspace identity is SEGMENTS, and provisioning is its own verb.**
+
+scitex-hub had been blocked on these two since 2026-07-30. Both are additive
+with zero callers in `src/`, so nothing changes for any existing consumer — a
+single-segment caller sees exactly the previous behaviour, which the unchanged
+existing test suite is the evidence for.
+
+### Added
+
+- **`resolve_workspace_store(*segments)` takes a structured identity.** hub's
+  tenancy is two-dimensional — a tenant is `(owner, project)`, and the owner is
+  itself two namespaces — and flattening that into one separator-joined slug
+  COLLIDES. hub measured it before building against it:
+
+  ```
+  owner "alice-my" + project "project"    ->  alice-my-project
+  owner "alice"    + project "my-project" ->  alice-my-project
+  ```
+
+  Two tenants, one identity, one store. *Any* separator has this property as
+  long as it is legal inside either component, so the encoding is unsatisfiable
+  rather than merely bad — and under ADR-0017 (*a tenant is a STORE, not a row;
+  the authority boundary IS the handle*) an identity collision **is** a
+  cross-tenant read, reached through the sanctioned primitive rather than around
+  it, which is worse because it looks compliant.
+
+  Segments now join as **path components**, so there is no separator to be
+  ambiguous about and nothing to escape. Each segment keeps the full allowlist,
+  so traversal stays impossible per segment. Uppercase is **refused, not
+  folded** — folding would map `Alice` and `alice` to one store, the second
+  collision arriving through the fix for the first.
+
+- **`provision_workspace_store(*segments)` — the sanctioned creation path, and
+  the only one.** `resolve` deliberately refuses to create, because a resolver
+  that creates on miss turns a typo into a new empty tenant and the caller
+  cannot tell that from a workspace that genuinely existed. But refusing with no
+  creation path anywhere leaves every new tenant at a fail-closed raise, which
+  is the pressure that eventually softens the resolver.
+
+  It creates the **database**, not merely the directory. An earlier draft made
+  only the parent directory while `resolve` tests for the file, so provision
+  returned success and the very next resolve raised `StoreNotProvisionedError` —
+  precisely the first-contact failure hub identified. Its own first test run
+  caught it. A provision that does not satisfy the resolver is a rename of the
+  problem.
+
 ## [0.32.4] - 2026-08-10
 
 **Six fixes had been merged and were sitting in no release. This is that
