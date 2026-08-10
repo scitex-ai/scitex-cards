@@ -238,16 +238,34 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
     THE ``missing_ok`` PARAMETER IS GONE, and its removal is the safety
     property rather than a tidy-up. It used to mean "an absent store yields an
     empty doc instead of raising", which was reasonable when the store was a
-    file that a fresh install legitimately lacked. Against a database it is a
-    loaded gun: an empty doc flows into a read-modify-write, the caller appends
-    its one new card, and ``mirror_doc_incremental`` diffs that one-card
-    document against the DB and DELETES every card missing from it.
+    file that a fresh install legitimately lacked. Against a database it was a
+    loaded gun: an empty doc flowed into a read-modify-write, the caller
+    appended its one new card, and the mirror diffed that one-card document
+    against the DB and deleted every card missing from it.
 
     Measured on a scratch store during this cutover: five sequential writes
     left exactly ONE row each time. On the live board that is 2065 cards down
     to 1, silently, with nothing raised anywhere in the stack. Found by
     round-tripping real writes, not by reading the diff — the write path looked
     correct in isolation and only end-to-end exercise showed the loss.
+
+    THAT MECHANISM IS CLOSED, and the tense above is deliberate — it describes
+    what the removal was FOR, not what would happen today. Two later guards
+    would now catch it independently:
+
+      * ``mirror_doc_incremental`` no longer infers a delete from absence at
+        all. Its own comment says so, and the ``removed = [i for i in prior if
+        i not in now_hashes]`` line it used to end with is gone. Only
+        caller-named ``deleted_ids`` are dropped.
+      * ``write_doc_to_db``'s shrink guard REFUSES a write missing rows the
+        store already has unless ``allow_shrink=True`` — installed after the
+        third board wipe.
+
+    ``missing_ok`` STAYS GONE REGARDLESS, and not because of the wipe: an empty
+    doc entering a read-modify-write is a bad input on its own terms, whatever
+    the layers below do with it. Do not reintroduce it on the grounds that the
+    mirror is now safe — that argument reasons from the wrong premise, and the
+    guards below are defence in depth rather than permission.
 
     So there is no "absent store" case to be tolerant about: a missing database
     is a configuration error and :func:`_read_canonical_db_or_raise` says so.
