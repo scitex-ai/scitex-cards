@@ -135,10 +135,62 @@ def _dedupe_last_wins(tasks: list) -> list[tuple[int, dict]]:
     return ordered
 
 
+class RevisionConflictError(RuntimeError):
+    """A compare-and-set write lost: the row moved since the caller read it.
+
+    Carries both revisions so the caller can log what it lost to, and so a retry
+    loop can tell "someone else wrote" from "the row vanished" (``found`` False).
+    """
+
+    def __init__(
+        self, task_id: str, expected: int, found: "int | None"
+    ) -> None:
+        self.task_id = task_id
+        self.expected = expected
+        self.found = found
+        if found is None:
+            detail = "the row no longer exists"
+        else:
+            detail = f"the row is now at revision {found}"
+        super().__init__(
+            f"card {task_id!r}: expected revision {expected}, but {detail}. "
+            f"Re-read the card and re-apply your change; do not retry this "
+            f"write unchanged, or you will discard whoever wrote in between."
+        )
+
+
 def _insert_tasks(
-    conn: sqlite3.Connection, tasks: list, *, replace: bool = True
+    conn: sqlite3.Connection,
+    tasks: list,
+    *,
+    replace: bool = True,
+    expected_revision: int | None = None,
 ) -> dict[str, int]:
     """Insert every card + its children.
+
+    ``expected_revision`` turns the upsert into a COMPARE-AND-SET. v6 added
+    ``tasks.revision`` and v7 added the ``tasks_bump_revision`` trigger, so every
+    row already carries a version that advances on write — but until now NO
+    writer compared it, which made every concurrent edit last-write-wins with the
+    loser discarded silently. A lock nobody asserts is not a lock; it is a column
+    that makes the schema look safe.
+
+    Pass the revision you READ, and the write lands only if nobody has written
+    since. On a mismatch the row is left ALONE and :class:`RevisionConflictError`
+    is raised, so the caller re-reads and re-applies rather than clobbers. Reject
+    over overwrite: a lost update is invisible, an exception is not.
+
+    IT IS OPT-IN BY CONSTRUCTION, and that is load-bearing rather than politeness.
+    ``_migrate_v6_to_v7`` records that scitex-db proposed REJECT semantics for
+    this lock and it was RULED UNUSABLE, because "an UPDATE from a writer that
+    knows nothing about ``revision`` would ABORT, so fleet writes would fail until
+    every container is current" — a condition this fleet cannot establish. So when
+    ``expected_revision`` is None no clause is emitted and the SQL is identical to
+    before: every existing caller, and every older client, is untouched. Only a
+    caller that opts in can fail.
+
+    SINGLE CARD ONLY when opting in. A batch cannot report WHICH row lost, and a
+    half-applied batch is worse than none, so a longer list is refused up front.
 
     ``replace`` picks the conflict clause, and it is worth 42x — MEASURED on the
     live 1,370-card store (2026-07-13)::
@@ -168,6 +220,19 @@ def _insert_tasks(
     REPLACE would have picked), so ``replace=False`` cannot conflict with itself.
     """
     counts = {"tasks": 0, "comments": 0, "edges": 0, "roles": 0}
+    if expected_revision is not None:
+        if not replace:
+            raise ValueError(
+                "expected_revision requires replace=True: with replace=False the "
+                "caller has already deleted the rows, so there is no prior "
+                "revision to compare against and the check would be vacuous."
+            )
+        if len(tasks) != 1:
+            raise ValueError(
+                f"expected_revision takes exactly one card, got {len(tasks)}. "
+                "A batch cannot report which row lost the race, and a "
+                "half-applied batch is worse than none."
+            )
     placeholders = ", ".join("?" for _ in TASK_INSERT_COLS)
     cols = ", ".join(TASK_INSERT_COLS)
     if replace:
@@ -194,6 +259,13 @@ def _insert_tasks(
             f"INSERT INTO tasks ({cols}) VALUES ({placeholders}) "
             f"ON CONFLICT(id) DO UPDATE SET {updates}"
         )
+        if expected_revision is not None:
+            # The compare-and-set. A WHERE on ON CONFLICT DO UPDATE makes the
+            # update conditional: when it does not hold, the conflicting row is
+            # left EXACTLY as it was — no write, no trigger, no revision bump.
+            # `tasks.revision` is qualified deliberately; bare `revision` is
+            # ambiguous against `excluded` on both engines.
+            insert_sql += " WHERE tasks.revision = ?"
     else:
         insert_sql = f"INSERT INTO tasks ({cols}) VALUES ({placeholders})"
     for order, row in _dedupe_last_wins(tasks):
@@ -205,7 +277,29 @@ def _insert_tasks(
         # it appeared in the source document (unknown keys, key order, types and
         # all). The typed columns above are only the INDEX. See :mod:`_db_payload`.
         values.append(card_payload_json(row))
-        conn.execute(insert_sql, values)
+        if expected_revision is None:
+            conn.execute(insert_sql, values)
+        else:
+            tid_cas = row.get("id")
+            # Read the CURRENT revision first. This is NOT the safety mechanism
+            # — the WHERE clause is, and it is what makes the write atomic. This
+            # SELECT exists so the exception can say what it lost TO, and so the
+            # row-absent case is reported rather than silently turning into an
+            # INSERT: ON CONFLICT DO UPDATE ... WHERE only fires when a row is
+            # actually there, so without this a compare-and-set against a
+            # deleted card would quietly re-create it.
+            cur = conn.execute(
+                "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
+            )
+            found_row = cur.fetchone()
+            found = None if found_row is None else found_row[0]
+            if found != expected_revision:
+                raise RevisionConflictError(str(tid_cas), expected_revision, found)
+            cur = conn.execute(insert_sql, [*values, expected_revision])
+            if cur.rowcount == 0:
+                # The row moved between the SELECT and the UPDATE. This is the
+                # race the WHERE exists for, and reaching here means it WORKED.
+                raise RevisionConflictError(str(tid_cas), expected_revision, None)
         counts["tasks"] += 1
         tid = row.get("id")
         counts["comments"] += _insert_comments(conn, tid, row.get("comments"))
