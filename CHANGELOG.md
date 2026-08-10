@@ -2,6 +2,124 @@
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-10
+
+**A workspace identity is SEGMENTS, and provisioning is its own verb.**
+
+scitex-hub had been blocked on these two since 2026-07-30. Both are additive
+with zero callers in `src/`, so nothing changes for any existing consumer — a
+single-segment caller sees exactly the previous behaviour, which the unchanged
+existing test suite is the evidence for.
+
+### Added
+
+- **`resolve_workspace_store(*segments)` takes a structured identity.** hub's
+  tenancy is two-dimensional — a tenant is `(owner, project)`, and the owner is
+  itself two namespaces — and flattening that into one separator-joined slug
+  COLLIDES. hub measured it before building against it:
+
+  ```
+  owner "alice-my" + project "project"    ->  alice-my-project
+  owner "alice"    + project "my-project" ->  alice-my-project
+  ```
+
+  Two tenants, one identity, one store. *Any* separator has this property as
+  long as it is legal inside either component, so the encoding is unsatisfiable
+  rather than merely bad — and under ADR-0017 (*a tenant is a STORE, not a row;
+  the authority boundary IS the handle*) an identity collision **is** a
+  cross-tenant read, reached through the sanctioned primitive rather than around
+  it, which is worse because it looks compliant.
+
+  Segments now join as **path components**, so there is no separator to be
+  ambiguous about and nothing to escape. Each segment keeps the full allowlist,
+  so traversal stays impossible per segment. Uppercase is **refused, not
+  folded** — folding would map `Alice` and `alice` to one store, the second
+  collision arriving through the fix for the first.
+
+- **`provision_workspace_store(*segments)` — the sanctioned creation path, and
+  the only one.** `resolve` deliberately refuses to create, because a resolver
+  that creates on miss turns a typo into a new empty tenant and the caller
+  cannot tell that from a workspace that genuinely existed. But refusing with no
+  creation path anywhere leaves every new tenant at a fail-closed raise, which
+  is the pressure that eventually softens the resolver.
+
+  It creates the **database**, not merely the directory. An earlier draft made
+  only the parent directory while `resolve` tests for the file, so provision
+  returned success and the very next resolve raised `StoreNotProvisionedError` —
+  precisely the first-contact failure hub identified. Its own first test run
+  caught it. A provision that does not satisfy the resolver is a rename of the
+  problem.
+
+## [0.32.4] - 2026-08-10
+
+**Six fixes had been merged and were sitting in no release. This is that
+release, and the reason it was late is worth recording.**
+
+`git tag --contains faae0e03` returned empty. The board 500 that scitex-hub
+reported on scitex.ai had been *fixed* since the afternoon and shipped to
+nobody; the `set_edge` fix that was blocking scitex-db's migration was in the
+same position. Both agents were waiting on work that was already done. The
+release was held by one test, and that test was a stopwatch.
+
+### Fixed
+
+- **A database this board cannot reach is an outage, not "nothing here"**
+  (#772). An unreachable database and a store that was never provisioned were
+  the same answer, so scitex.ai's board reported an empty task list where it
+  should have reported that it could not read its store. The two are now
+  distinguished by type; only the second is a 404.
+- **`set_edge(action="remove")` can scrub an edge whose target is gone**
+  (#773). Removal validated that the target still existed, so the one verb for
+  cleaning up a dangling edge refused precisely when the edge was dangling.
+- **`gui serve` refuses an unconfigured store instead of inventing one**
+  (#774). With no DSN configured the board did not fail — it silently read a
+  local SQLite file that had stopped being written on 2026-08-02 and served it
+  as current. A silent fallback to a stale store is the failure mode ADR-0016
+  exists to forbid.
+- **The board's DM thread list reads the database, not `threads.json`**
+  (#776), **and so does the thread pane** (#777), **and so does the agent-side
+  `dm_list`** (#778). `threads.json` is a PER-HOST file: the operator's board
+  showed only threads from agents on the same machine, so five agents on
+  scitex-compute-04 were invisible while all 4150 messages sat in the shared
+  store the entire time. Three separate readers had to be moved because each
+  looked complete on its own.
+
+### Security
+
+- **A caller may not name the store on a board it can reach** (#782).
+  `read_store` fell back to the caller-controlled `?store=` query parameter
+  unconditionally. On the card path that fallback is inert — `load_tasks`
+  discards the resolved store and reads the one canonical database — but on
+  the **DM** path it is live: the value becomes a `cards.db` path and is
+  opened. So the one surface that honours the parameter was the one surface
+  with no guard, while the surface everyone reasons about was safe only by a
+  different defect. The query channel is now bounded by
+  `settings.PUBLIC_HOST`, already "the ONE switch that says 'this board is
+  reachable from the internet'": admitted when empty (loopback board, test
+  suite), refused when set, and refused when **absent** — because absence is
+  the signature of running inside a host application's settings, and "cannot
+  tell" must not read as "not exposed".
+
+  This is not a lenient read policy beside a strict write one, which
+  `_store_canonical_read` forbids by name. Reads converge on the write rule
+  wherever it matters and keep the legacy seam only where the deployment has
+  provably one tenant and one caller.
+
+### Changed
+
+- **The store-write verify asserts its mechanism rather than a stopwatch**
+  (#781). The test proving the event-scan verify is cheaper than the
+  `safe_load` construct-reparse it replaced compared two wall-clock
+  measurements, and failed CI at 0.3626 s vs 0.3274 s — a 35 ms margin on a
+  shared runner, with 5919 other tests passing. Speed was never the property;
+  *not constructing the document's object graph* is, and the speed is its
+  consequence. It now asserts that directly, with a document whose bytes are
+  well-formed YAML but whose tag no `SafeLoader` can build: parsing reaches
+  stream-end, constructing raises, so a verify that accepts it demonstrably
+  constructed nothing. Mutation-tested — reverting the implementation to a
+  constructing `safe_load` makes it fail, which the timing assertion would
+  have caught only on a quiet machine.
+
 ## [0.32.3] - 2026-08-06
 
 **An `agent:<id>` scope names an OWNER, not a lens — and the instruction that
