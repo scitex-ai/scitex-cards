@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-10
+
+**The revision lock is finally asserted.**
+
+`tasks.revision` has existed since schema v6 and been auto-incremented by v7's
+`tasks_bump_revision` trigger. **No writer ever compared it.** So a card write
+that raced another writer simply won, and the losing side was discarded with
+nothing raised anywhere.
+
+Verified independently in two corpora before a line was written — the installed
+0.33.0 wheel and the repo at develop: `revision` appeared only in
+`_db_migrations.py`, `_schema_shape.py`, `_schema_current.py` and
+`_pg_triggers.py`, with no `WHERE ... revision = ?` in any write path.
+scitex-dev measured the same, plus a live histogram over 3,722 rows confirming
+the column is correct and moving — it simply was not read.
+
+Not theoretical: scitex-dev lost an edit to a concurrent writer and **reported
+it done**, because nothing told them otherwise.
+
+### Added
+
+- **`_insert_tasks(..., expected_revision=N)`** — compare-and-set on the
+  row-level write path (#790).
+
+  **A lost race is REPORTED, not raised** — `counts["revision_skipped"]` and
+  `counts["revision_found"]`. A reconciler counts lost races as ordinary
+  outcomes; an exception would make routine concurrency indistinguishable from
+  a fault and force catch-and-continue around the happy path. (scitex-dev's
+  correction; the first cut raised, and they were right that it was wrong.)
+
+  **Misuse still raises** — a batch, or `replace=False`. Those are capability
+  gaps, and a capability gap silently tallied as a lost race is precisely the
+  miscount this split prevents.
+
+  **`revision_found` is three-valued**: the revision now in the row, or `None`
+  when the row is gone. "Someone wrote past me" and "the card was deleted"
+  need different responses.
+
+  **Opt-in by construction, and that is load-bearing.** `_migrate_v6_to_v7`
+  records that REJECT semantics for this lock were *ruled unusable* — an UPDATE
+  from a writer ignorant of `revision` would ABORT, so fleet writes would fail
+  until every container was current. With `expected_revision` unset, no clause
+  is emitted and the SQL is identical to before. Only a caller that opts in can
+  fail; a test pins that.
+
+  One hole closed along the way: `ON CONFLICT DO UPDATE ... WHERE` only fires
+  when a conflicting row exists, so a compare-and-set against a **deleted** card
+  would have silently re-created it. A pre-read reports row-absent as a skip;
+  the `WHERE` still provides the atomicity.
+
+### Known limitation
+
+`update_task` is **whole-document read-modify-write**, so it does not yet accept
+`expected_revision` — putting it there would guard the caller's card while
+overwriting every other card in the same document, which is worse than the
+last-write-wins it replaces because it would carry the appearance of safety.
+The public verb arrives when `update_task` becomes row-level; tracked as
+`cards-update-task-is-whole-document-rmw-blocks-row-level-compare-and-set-20260810`.
+
+Scope note: `update_task` holds `_store_lock` across its read-modify-write, so
+within a single host writes ARE serialised. The exposure this release addresses
+is **cross-host**, where no shared lock exists — which is the multi-host mode
+now being built.
+
 ## [0.34.0] - 2026-08-10
 
 **The notification rail can finally cross a host, and a store stops lying about
