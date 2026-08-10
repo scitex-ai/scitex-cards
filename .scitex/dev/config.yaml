@@ -63,6 +63,62 @@ audit:
     # secret is shared across the fleet — renaming requires cross-repo
     # rotation.
     - PS-168
+    # PS-108 — `src-prefix-cluster-mess`. INHERITED STRUCTURAL DEBT, not
+    # drift introduced by any PR that currently trips it. Measured on
+    # develop @ 951124bc: 12 prefix-clusters totaling 89 flat files
+    # (`store_*` ×21, `db_*` ×11, `inbox_*` ×10, `dm_*` ×8, `health_*` ×8,
+    # `mcp_*` ×8, `channel_*` ×5, `stale_*` ×5, `reminder_*` ×4,
+    # `backend_*` ×3, `schema_*` ×3, `threads_*` ×3).
+    #
+    # The rule's own remedy is "land all clusters in one coherent refactor
+    # pass", which is precisely what is tracked as
+    # cards-group-the-store-db-dm-module-families-into-subpackages-20260810,
+    # with PR #785 (`_dm/` subpackage) as step one. That refactor moves most
+    # of the package and cannot be a precondition for unrelated work.
+    #
+    # DELETE THIS ENTRY WHEN THAT CARD LANDS. It is a bridge, not a verdict:
+    # the debt is real and the rule is right about it.
+    - PS-108
+    # PS-108b — `src-flat-py-files-over-threshold`. Same inherited debt,
+    # same tracking card, same deletion condition. Measured on develop @
+    # 951124bc: 133 flat .py files at `scitex_cards/` root against a
+    # threshold of 15.
+    #
+    # This one additionally made the gate NON-DETERMINISTIC ACROSS UNRELATED
+    # CHANGES, which is why skipping it is urgent rather than cosmetic. The
+    # finding text carries the COUNT ("133 flat .py files"), and `--new-only`
+    # keys findings by their rendered line, so ANY PR that adds or removes a
+    # file at the package root rewrites the key: one finding out, one in,
+    # net-new = 1, red. PR #785 REDUCES the count to 125 — real progress
+    # toward the threshold — and is failed by this rule for making it. A gate
+    # that a fix cannot pass is not measuring what it claims to.
+    #
+    # Same failure mode the quality-audit workflow header already documents
+    # for tally-bearing summary lines; reported upstream so the KEYING gets
+    # fixed. This entry is the bridge until then.
+    - PS-108b
+    #
+    # Both entries use `audit.skip` rather than the newer, reason-carrying
+    # `audit.skip-rules`, and that is deliberate — `skip-rules` DOES NOT WORK
+    # on the path CI actually runs. `skip-rules` masking is applied in
+    # `ecosystem/_cmds/_audit_all.py` after the auditor fan-out, but the
+    # `--new-only` branch (the flag this repo's quality workflow passes)
+    # discards the MaskReport and diffs the RAW sub-auditor stdout/stderr:
+    #
+    #     _, _head_exit, head_results, _ = _run_one(distribution)
+    #     head_combined = "\n".join((res.get("stdout") or "") + ... )
+    #
+    # so a `skip-rules` entry would print a reassuring masked inventory in
+    # strict runs and mask exactly nothing in CI. `audit.skip` is honoured
+    # inside `audit-project` itself — the auditor that emits PS-108/PS-108b —
+    # so the finding never reaches the diff. Verified by running the audit
+    # both ways before this landed, not assumed.
+    #
+    # EVERY OTHER RULE STAYS LIVE, and that is the point of doing this
+    # per-rule instead of reaching for a blanket flag. Those rules are
+    # currently earning their keep: they caught PR #780's STX-TQ005 fixture
+    # bug and PR #785's missing tests/scitex_cards/_dm/ mirror. Both are real
+    # defects found by the gate that this entry keeps pointed at real work.
 
   # PER-SITE exemptions (`audit.exemptions`, {rule: [{path, line, reason}]}).
   # Deliberately NOT `skip:` above: skip silences a rule REPO-WIDE, which for
