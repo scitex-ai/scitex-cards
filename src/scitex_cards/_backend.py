@@ -42,7 +42,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from . import _help_wait, _inbox, _store, _threads
+from . import _dm_read, _help_wait, _inbox, _store, _threads
 from ._currency import warn_if_stale_once
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
@@ -307,7 +307,37 @@ class LocalBackend:
         key = _threads.thread_key(sender, other)
         if ack:
             _threads.mark_read(key, sender, store=store)
-        messages = _threads.get_thread(sender, other, store=store)
+            # AND THE RECEIPT GOES TO THE STORE, for the same reason the board's
+            # does: the messages below now come from `dm_messages`, so an ack
+            # that only touched the sidecar would leave a thread permanently
+            # unread. Idempotent by `(message_id, reader)`.
+            from . import _dm_write
+
+            unread_ids = [
+                m["id"]
+                for m in _dm_read.unread_for(sender, store=store, thread_id=key)
+            ]
+            if unread_ids:
+                _dm_write.mark_read(unread_ids, sender, store=store)
+        # THE STORE, NOT THE SIDECAR — the agent-facing half of the same defect.
+        #
+        # PRs #776/#777 moved the BOARD's list and pane onto `dm_messages` and
+        # left THIS verb — the one every agent calls — on
+        # `_threads.get_thread`, which reads `threads.json`, A PER-HOST FILE.
+        #
+        # Reproduced 2026-08-09 by two readers on one store, which is what makes
+        # it undeniable rather than a hunch:
+        #   scitex-agent-container (laptop)     dm_list(peer="…-04") -> 1 message
+        #   scitex-agent-container-04 (compute) IDENTICAL query      -> []
+        # Same DSN, same store_uuid 1d55dd6e-3d2a-4c24-a429-a78835ab988f, no
+        # SQLite fallback, Postgres reachable from both, and — checked, because
+        # it was the obvious suspect — THE SAME PACKAGE VERSION 0.32.3 on both.
+        # The only difference was which host's `threads.json` each client read.
+        #
+        # That is the operator's complaint in his own words: his messages do not
+        # arrive at the agents' terminals. A per-host file cannot carry a
+        # cross-host conversation, so an agent could not read its own peer DMs.
+        messages = _dm_read.messages_in(key, store=store)
         return {"thread": key, "peer": other, "messages": messages}
 
 
