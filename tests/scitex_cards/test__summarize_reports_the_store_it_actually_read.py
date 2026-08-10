@@ -7,11 +7,9 @@ REPORTED BY scitex-storage, 2026-08-09, measured on scitex-compute-04:
     summarize_tasks(assignee="scitex-storage")
       -> {"store": "/home/agent/.scitex/cards/tasks.yaml", "total": 52, ...}
     resolve_store()
-      -> {"resolved": "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards",
-          "backend": "postgresql", ...}
+      -> {"resolved": "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards", ...}
     on disk
-      -> NO tasks.yaml, NO cards.db. Only a lockfile for a store file that
-         does not exist.
+      -> NO tasks.yaml. Only a lockfile for a store file that does not exist.
 
 THE COUNTS WERE CORRECT -- 10 blocked / 24 done / 18 deferred matched PostgreSQL
 exactly. So it read the right store and MISLABELLED it. The label came from
@@ -27,48 +25,33 @@ to chase a file that cannot exist -- and on 2026-08-09 the operator spent an
 evening on exactly that class, because his board silently served a store nobody
 had chosen.
 
-The operator's standing instruction the same day: "WE NEVER USE YAML CARDS BUT
-DBs ONLY", "DO REMOVE ALL REFERENCES THAT SAYS YAML FOR CARDS", "NO SILENT
-FALLBACKS". A verb naming a YAML file it did not read is all three at once.
+NO ENVIRONMENT OVERRIDE IN THIS FILE, and the first version's failure is the
+reason it is worth stating. That version pointed ``SCITEX_CARDS_DB`` at a live
+PostgreSQL DSN so it could assert against the real fleet store. It passed here
+and failed all three CI legs, because CI has no such server -- a test that
+depends on one machine's running database is not a test, it is a local probe
+wearing a test's name.
+
+``tests/conftest.py`` ALREADY hands every test its own scratch SQLite store via
+an autouse fixture, precisely so the suite can never touch the live board. The
+first version FOUGHT that fixture. This one uses it: the assertion is that the
+reported label AGREES WITH THE RESOLVER, whatever the resolver happens to
+resolve, which is the property that actually matters and is true on every
+backend.
 """
 
 from __future__ import annotations
 
-import os
-
-import pytest
-
 from scitex_cards._store_list import summarize_tasks
 from scitex_cards._store_target import resolve_store_target
 
-_DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
 
-
-@pytest.fixture()
-def env_target():
-    """Set a real store target in the real environment, restore on teardown.
-
-    No ``monkeypatch``: the defect was about which RESOLVER answers, so the test
-    moves the same environment a deployment moves. Patching a resolver would
-    assert a belief about the resolver rather than exercise the resolution.
-    """
-    saved = {name: os.environ.get(name) for name in _TARGET_VARS}
-    os.environ["SCITEX_CARDS_DB"] = _DSN
-    yield _DSN
-    for name, value in saved.items():
-        if value is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = value
-
-
-def test_the_reported_store_matches_the_resolver(env_target):
+def test_the_reported_store_matches_the_resolver():
     """THE CONTRACT: the label is the resolver's answer, not a composed path.
 
-    Asserted against ``resolve_store_target`` rather than against the literal
-    DSN, because the property that matters is AGREEMENT between what the verb
-    says and what the package resolves — not any particular value.
+    Asserted against ``resolve_store_target`` rather than a literal value,
+    because the property that matters is AGREEMENT between what the verb says
+    and what the package resolves -- not any particular store.
     """
     # Arrange
     expected = resolve_store_target(None)
@@ -80,12 +63,12 @@ def test_the_reported_store_matches_the_resolver(env_target):
     assert reported == expected
 
 
-def test_the_reported_store_is_never_a_yaml_path(env_target):
+def test_the_reported_store_is_never_a_yaml_path():
     """The reported case, pinned by its own shape.
 
-    Even if the resolver's answer changes, a cards store is a database. A
+    Even when the resolver's answer changes, a cards store is a database. A
     ``.yaml`` in this field means the label was composed from the legacy path
-    resolver again — the exact regression this fixes.
+    resolver again -- the exact regression this fixes.
     """
     # Arrange
     # Act
@@ -95,16 +78,24 @@ def test_the_reported_store_is_never_a_yaml_path(env_target):
     assert not str(reported).endswith(".yaml")
 
 
-def test_an_explicit_store_argument_is_reported_as_given(env_target, tmp_path):
-    """POSITIVE CONTROL: the fix must not hardcode "always the env target".
+def test_an_explicit_store_argument_is_reported_as_given(tmp_path):
+    """POSITIVE CONTROL: the fix must not hardcode "always the resolved target".
 
-    An explicit argument outranks the environment, and the label has to follow
-    it. Without this, a fix that simply always printed the DSN would pass both
-    tests above while lying to every caller that passed a store explicitly —
-    the same defect, relabelled.
+    An explicit argument outranks the ambient resolution, and the label has to
+    follow it. Without this, a fix that simply always printed the env target
+    would pass both tests above while lying to every caller that passed a store
+    explicitly -- the same defect, relabelled.
+
+    Uses the store the autouse fixture already created, copied to a second path,
+    so the argument names a REAL readable store rather than a path that would
+    fail for an unrelated reason.
     """
     # Arrange
-    explicit = tmp_path / "explicit" / "cards.db"
+    import shutil
+
+    resolved = resolve_store_target(None)
+    explicit = tmp_path / "explicit-cards.db"
+    shutil.copyfile(resolved, explicit)
 
     # Act
     reported = summarize_tasks(str(explicit))["store"]
