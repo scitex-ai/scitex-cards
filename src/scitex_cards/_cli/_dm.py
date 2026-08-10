@@ -78,7 +78,7 @@ def backfill_cmd(sidecar, db_path, store, apply_) -> None:
     moved or truncated, so this stays reversible: rolling back is redeploying
     the previous version, not restoring anything.
     """
-    from .._dm_migrate import backfill_from_sidecar
+    from .._dm.migrate import backfill_from_sidecar
 
     path = sidecar or _default_sidecar(store)
     report = backfill_from_sidecar(path, db=db_path, store=store, dry_run=not apply_)
@@ -105,7 +105,7 @@ def verify_cmd(sidecar, db_path, store) -> None:
     flips, new DMs land in the database first, so "the database has more" is
     the healthy steady state.
     """
-    from .._dm_migrate import verify_against_sidecar
+    from .._dm.migrate import verify_against_sidecar
 
     path = sidecar or _default_sidecar(store)
     report = verify_against_sidecar(path, db=db_path, store=store)
@@ -122,7 +122,7 @@ def export_cmd(db_path, store, out) -> None:
     """Dump every DM table in the shape ``dm merge`` consumes."""
     from pathlib import Path
 
-    from .._dm_migrate import export_dm
+    from .._dm.migrate import export_dm
 
     payload = export_dm(db=db_path, store=store)
     text = json.dumps(payload, indent=2, ensure_ascii=False)
@@ -149,7 +149,7 @@ def merge_cmd(payload_path, db_path, store) -> None:
     """
     from pathlib import Path
 
-    from .._dm_migrate import merge_dm
+    from .._dm.migrate import merge_dm
 
     payload = json.loads(Path(payload_path).expanduser().read_text(encoding="utf-8"))
     report = merge_dm(payload, db=db_path, store=store)

@@ -7,7 +7,7 @@ reversibility, concurrency). Part 1 and its tests cover the schema and the
 append-only rules; see ``tests/scitex_cards/test__dm_into_db_design.py``.
 
 These landed as non-strict ``xfail`` INTENT before the migration existed. The
-implementation is now in ``scitex_cards._dm_migrate``, so the markers are
+implementation is now in ``scitex_cards._dm.migrate``, so the markers are
 gone: an intent test that keeps its xfail after the feature ships stops being
 a requirement and becomes a note.
 
@@ -150,7 +150,7 @@ def test_backfill_leaves_the_sidecar_byte_identical(db_path, sidecar):
     about what the migration got halfway through.
     """
     # Arrange
-    from scitex_cards._dm_store import backfill_from_sidecar
+    from scitex_cards._dm.store import backfill_from_sidecar
 
     before = sidecar.read_bytes()
 
@@ -169,7 +169,7 @@ def test_backfill_is_idempotent(db_path, sidecar):
     running it again.
     """
     # Arrange
-    from scitex_cards._dm_store import backfill_from_sidecar, message_count
+    from scitex_cards._dm.store import backfill_from_sidecar, message_count
 
     backfill_from_sidecar(sidecar, db=db_path)
     first = message_count(db=db_path)
@@ -189,7 +189,7 @@ def test_backfill_carries_every_sidecar_message(db_path, sidecar):
     content-derived id instead. This test is what forbids the cheaper answer.
     """
     # Arrange
-    from scitex_cards._dm_store import backfill_from_sidecar, message_count
+    from scitex_cards._dm.store import backfill_from_sidecar, message_count
 
     # Act
     backfill_from_sidecar(sidecar, db=db_path)
@@ -206,7 +206,7 @@ def test_backfill_preserves_read_state_as_a_receipt(db_path, sidecar):
     not an absence. A NULL would be indistinguishable from "never read".
     """
     # Arrange
-    from scitex_cards._dm_store import backfill_from_sidecar, unread_for
+    from scitex_cards._dm.store import backfill_from_sidecar, unread_for
 
     # Act
     backfill_from_sidecar(sidecar, db=db_path)
@@ -226,7 +226,7 @@ def test_group_message_is_visible_to_every_member(db_path):
     a normal query instead of a schema change.
     """
     # Arrange
-    from scitex_cards._dm_store import append, create_group_thread, unread_for
+    from scitex_cards._dm.store import append, create_group_thread, unread_for
 
     thread = create_group_thread(
         "standup", ["operator", "agent-a", "agent-b"], db=db_path
@@ -247,7 +247,7 @@ def test_read_receipt_is_scoped_to_one_reader(db_path):
     why read state moves into its own per-reader table.
     """
     # Arrange
-    from scitex_cards._dm_store import (
+    from scitex_cards._dm.store import (
         append,
         create_group_thread,
         mark_read,
@@ -274,7 +274,7 @@ def test_group_thread_id_survives_a_membership_change(db_path):
     a delete-and-insert, which append-only forbids.
     """
     # Arrange
-    from scitex_cards._dm_store import (
+    from scitex_cards._dm.store import (
         add_member,
         append,
         create_group_thread,
@@ -302,7 +302,7 @@ def test_merge_from_a_peer_host_is_a_union(db_path, sidecar):
     snapshot to overwrite a local row.
     """
     # Arrange
-    from scitex_cards._dm_store import (
+    from scitex_cards._dm.store import (
         backfill_from_sidecar,
         merge_dm,
         message_count,
@@ -324,7 +324,7 @@ def test_merge_is_idempotent(db_path, sidecar):
     hosts, which is the property that removes the need for a coordinator.
     """
     # Arrange
-    from scitex_cards._dm_store import (
+    from scitex_cards._dm.store import (
         backfill_from_sidecar,
         merge_dm,
         message_count,
@@ -351,7 +351,7 @@ def test_merge_never_shrinks_the_message_count(db_path, sidecar):
     merge that receives a SUBSET must still keep the local extras.
     """
     # Arrange
-    from scitex_cards._dm_store import (
+    from scitex_cards._dm.store import (
         backfill_from_sidecar,
         merge_dm,
         message_count,
@@ -375,7 +375,7 @@ def test_thread_order_is_independent_of_insertion_order(db_path, tmp_path):
     order becomes a function of the row SET rather than of arrival sequence.
     """
     # Arrange — the same three rows, merged in opposite orders.
-    from scitex_cards._dm_store import merge_dm, messages_in
+    from scitex_cards._dm.store import merge_dm, messages_in
 
     ids = ["m_cccccccccccc", "m_dddddddddddd", "m_eeeeeeeeeeee"]
     other_db = tmp_path / "peer.db"

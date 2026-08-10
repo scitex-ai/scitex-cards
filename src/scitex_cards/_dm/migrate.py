@@ -38,14 +38,14 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ._dm_ids import (
+from .ids import (
     derived_message_id,
     origin_host,
     peers_of_pair,
     resolve_dm_db,
     utc_now_iso,
 )
-from ._dm_write import (
+from .write import (
     ensure_thread,
     insert_message,
     insert_receipt,
@@ -56,8 +56,8 @@ from ._dm_write import (
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value
-from ._store_tx import begin_write_transaction
+from .._schema_probe import _sole_value
+from .._store_tx import begin_write_transaction
 
 #: The tables a merge payload carries, PARENT FIRST. Order is not cosmetic:
 #: ``dm_messages`` has a foreign key onto ``dm_threads`` and ``dm_receipts``
@@ -78,7 +78,7 @@ BACKFILL_SOURCE = "backfill"
 
 
 def _open(db, store) -> sqlite3.Connection:
-    from ._db import open_db
+    from .._db import open_db
 
     return open_db(resolve_dm_db(db, store=store))
 
@@ -91,7 +91,7 @@ def _read_sidecar(path: Path) -> dict[str, list[dict]]:
     sidecar's own lock (never the task store's) is the same discipline the
     sidecar's writers use.
     """
-    from ._threads import _load_threads, _threads_lock
+    from .._threads import _load_threads, _threads_lock
 
     if not path.exists():
         return {}
@@ -274,7 +274,7 @@ def _insert_row(conn: sqlite3.Connection, table: str, row: dict) -> int:
     host does not know about — it is dropped, and its data survives inside
     ``record_json`` where the exactness rule keeps it.
     """
-    from ._db import table_columns
+    from .._db import table_columns
 
     known = table_columns(conn, table)
     cols = [c for c in row if c in known]

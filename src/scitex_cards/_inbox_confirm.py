@@ -167,7 +167,7 @@ def _record_dm_receipts(
     if not message_ids or not reader:
         return 0
     try:
-        from ._dm_write import mark_read
+        from ._dm.write import mark_read
 
         return mark_read(message_ids, reader, store=store, source="confirm")
     except Exception as exc:  # noqa: BLE001 — a mirror must not fail a confirm

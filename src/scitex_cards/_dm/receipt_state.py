@@ -67,13 +67,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from ._dm_read import CURRENT_MEMBERS_SQL, _open
+from .read import CURRENT_MEMBERS_SQL, _open
 
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value, row_values
+from .._schema_probe import _sole_value, row_values
 
 #: Durable, and no recipient has confirmed it yet. The read dot stays hollow.
 STATE_PENDING = "pending"
@@ -170,7 +170,7 @@ def queued_message_ids(
     if not message_ids:
         return set()
     try:
-        from ._inbox_sqlite import inbox_target, open_connection
+        from .._inbox_sqlite import inbox_target, open_connection
 
         with open_connection(inbox_target(store)) as inbox:
             rows = inbox.execute(

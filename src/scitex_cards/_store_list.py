@@ -35,6 +35,7 @@ from pathlib import Path
 
 from ._model import VALID_STATUSES, load_tasks
 from ._paths import resolve_tasks_path
+from ._store_target import resolve_store_target
 from ._task import _is_tombstoned
 
 #: Env var an agent sets to scope its default `list_tasks` / `summary` view. The
@@ -332,11 +333,18 @@ def summarize_tasks(
     consumers (web UI, progress widgets) don't have to special-case
     zero-count keys.
 
-    Still YAML-only, ON PURPOSE. It could be a handful of ``GROUP BY`` queries, and
-    that is precisely the temptation to resist in this PR: a second aggregation
-    written in SQL is a second implementation to keep in step with this one, and it
-    is not covered by the equality proof that makes :func:`list_tasks` safe to
-    switch. One path at a time, each proven identical before the next.
+    AGGREGATED IN PYTHON, ON PURPOSE. It could be a handful of ``GROUP BY``
+    queries, and that is precisely the temptation to resist: a second
+    aggregation written in SQL is a second implementation to keep in step with
+    this one, and it is not covered by the equality proof that makes
+    :func:`list_tasks` safe to switch. One path at a time, each proven
+    identical before the next.
+
+    (This paragraph said "Still YAML-only, ON PURPOSE" until 2026-08-09. That
+    was false and had become misleading: the counts come from ``load_tasks``,
+    which reads whatever the canonical resolver resolves -- PostgreSQL on this
+    fleet. The stale word is what made the mislabelled ``store`` key below look
+    intentional rather than wrong.)
     """
     resolved = _resolved_store(store)
     tasks = load_tasks(resolved)
@@ -357,7 +365,29 @@ def summarize_tasks(
         asg = task.get("assignee") or ""
         by_assignee[asg] = by_assignee.get(asg, 0) + 1
     return {
-        "store": str(resolved),
+        # THE STORE LABEL COMES FROM THE RESOLVER, NOT FROM A COMPOSED PATH.
+        #
+        # It used to report `_resolved_store(store)` -- the LEGACY path
+        # resolver -- while the counts above came from `load_tasks`, which
+        # reads the canonical store. Two different resolvers, one output, and
+        # nothing forced them to agree.
+        #
+        # Measured by scitex-storage 2026-08-09 on scitex-compute-04:
+        #   summarize_tasks -> "store": "/home/agent/.scitex/cards/tasks.yaml"
+        #   resolve_store   -> "postgresql://scitex_cards@127.0.0.1:5432/..."
+        #   on disk         -> NO tasks.yaml, NO cards.db; only a lockfile for
+        #                      a store file that does not exist
+        # The COUNTS were right (10 blocked / 24 done / 18 deferred matched
+        # PostgreSQL exactly). So it read the correct store and MISLABELLED it.
+        #
+        # Cosmetic in effect, dangerous in kind, and that is why it is fixed
+        # rather than noted: this package's own doctor calls the resolved path
+        # the SOLE store identity, and ADR-0016's failure mode BEGINS with
+        # someone believing the wrong path is authoritative. A verb that
+        # confidently prints a nonexistent tasks.yaml sends the next person
+        # debugging a board discrepancy to chase a file that cannot exist.
+        # Same family as the board silently serving a store nobody chose.
+        "store": resolve_store_target(store),
         "total": total,
         "by_status": by_status,
         "by_scope": by_scope,

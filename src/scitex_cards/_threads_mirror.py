@@ -110,7 +110,7 @@ def mirror_receipts(
     if not message_ids:
         return
     try:
-        from ._dm_write import mark_read
+        from ._dm.write import mark_read
 
         mark_read(message_ids, reader, store=store)
     except Exception:  # noqa: BLE001 — mirror, not the SSOT

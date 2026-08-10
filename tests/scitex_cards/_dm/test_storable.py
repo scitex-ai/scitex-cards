@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards._dm_storable import (
+from scitex_cards._dm.storable import (
     NUL,
     NUL_MARKER,
     to_storable,
@@ -215,7 +215,7 @@ class TestTheGuardModuleIsItselfPlainText:
 
     def test_the_guard_source_contains_no_literal_nul(self):
         # Arrange
-        import scitex_cards._dm_storable as mod
+        import scitex_cards._dm.storable as mod
 
         source = Path(mod.__file__)
         # Act
