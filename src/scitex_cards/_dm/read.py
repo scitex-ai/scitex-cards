@@ -27,7 +27,7 @@ from __future__ import annotations
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value
+from .._schema_probe import _sole_value
 
 import json
 import sqlite3
@@ -158,8 +158,8 @@ def unread_for_conn(
 
 
 def _open(db, store):
-    from ._db import open_db
-    from ._dm_ids import resolve_dm_db
+    from .._db import open_db
+    from .ids import resolve_dm_db
 
     return open_db(resolve_dm_db(db, store=store))
 

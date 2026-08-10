@@ -42,7 +42,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from . import _dm_read, _help_wait, _inbox, _store, _threads
+from . import _help_wait, _inbox, _store, _threads
+from ._dm import read as _dm_read
 from ._currency import warn_if_stale_once
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
@@ -311,7 +312,7 @@ class LocalBackend:
             # does: the messages below now come from `dm_messages`, so an ack
             # that only touched the sidecar would leave a thread permanently
             # unread. Idempotent by `(message_id, reader)`.
-            from . import _dm_write
+            from ._dm import write as _dm_write
 
             unread_ids = [
                 m["id"]

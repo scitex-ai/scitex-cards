@@ -40,7 +40,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from ._dm_ids import (
+from .ids import (
     derived_member_event_id,
     is_pair_thread,
     new_group_thread_id,
@@ -51,7 +51,7 @@ from ._dm_ids import (
     resolve_dm_db,
     utc_now_iso,
 )
-from ._dm_storable import to_storable
+from .storable import to_storable
 
 # ---------------------------------------------------------------------------
 # Row primitives live next door (`_dm_write_rows`). This module was 515 lines
@@ -62,7 +62,7 @@ from ._dm_storable import to_storable
 # names FROM HERE; each object below is the same one it always was, defined in
 # the sibling module. Same contract as the `_model` / `_store_write` splits.
 # ---------------------------------------------------------------------------
-from ._dm_write_rows import (  # noqa: E402,F401
+from .write_rows import (  # noqa: E402,F401
     _dumps,
     _open,
     ensure_thread,
@@ -77,8 +77,8 @@ from ._dm_write_rows import (  # noqa: E402,F401
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value
-from ._store_tx import begin_write_transaction
+from .._schema_probe import _sole_value
+from .._store_tx import begin_write_transaction
 
 
 def append(
