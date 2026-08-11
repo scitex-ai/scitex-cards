@@ -169,6 +169,23 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 -- in sqlite_master verbatim, so a comment inside the column list becomes part
 -- of the stored schema and test__ddl's round-trip against executescript fails.
 -- Measured: that test caught exactly this on the first push of v8.
+-- v10 adds the SYNC columns. They are here, on the fresh-create path, because
+-- retrofitting them onto a table that is already being replicated is a rewrite:
+-- every existing row would need an origin and a uuid nobody ever observed.
+--
+-- `origin_node` is this repo's `origin_host` fact under the sync vocabulary's
+-- name (the dm_* tables spell it the other way); it is NOT a third identity
+-- scheme. `row_uuid` is a 128-bit row identity, because `id` is 48 bits and a
+-- birthday collision across the fleet would be one delivered message silently
+-- replacing another. `deleted_at` is a tombstone the rail never uses — the rail
+-- has no hard delete — and exists so nobody reaches for DELETE.
+--
+-- The merge rule for this class is a LATCH, never a clock: seen is 0 -> 1,
+-- pushed_at and confirmed_at are NULL -> first stamp, so two divergent copies
+-- merge by OR and EARLIEST. See _db_migrations.NOTIFICATION_SYNC_COLUMNS.
+--
+-- They MUST match _migrate_v9_to_v10 exactly; a fresh store and a migrated
+-- store disagreeing on shape is this repo's own recorded v4 failure.
 CREATE TABLE IF NOT EXISTS notifications (
     id           TEXT PRIMARY KEY,
     recipient_id TEXT NOT NULL,
@@ -182,7 +199,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     msg_id       TEXT,
     pushed_at    TEXT,
     confirmed_at TEXT,
-    seq          BIGINT
+    seq          BIGINT,
+    origin_node  TEXT,
+    row_uuid     TEXT,
+    revision     INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT,
+    deleted_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
     ON notifications(recipient_id, seen);

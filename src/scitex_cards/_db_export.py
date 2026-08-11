@@ -133,8 +133,12 @@ def _refusal(row, table: str, *, detail: str) -> ExportRefused:
     )
 
 
-def _record(row, table: str) -> dict[str, Any]:
+def _record(row, table: str, *, repair: bool = True) -> dict[str, Any]:
     """Rebuild one record from its verbatim payload + mutable-column overlay.
+
+    ``repair`` names WHICH CONTRACT the caller is under. The board read is
+    tolerant (``True``, the default); the backup rail is strict (``False``).
+    See the ``else`` branch below for why those must not be the same setting.
 
     A payload-less row is REPAIRED where the data allows it, rather than
     failing the whole read. This matters far beyond the export: the live read
@@ -149,8 +153,31 @@ def _record(row, table: str) -> dict[str, Any]:
     blob = row["record_json"]
     if blob is not None:
         rec = card_from_payload(blob)
-    else:
+    elif repair:
         rec = _repair(row, table)
+    else:
+        # THE BACKUP RAIL DOES NOT REPAIR, and that is not a lesser tolerance —
+        # it is a different contract. This function serves two callers whose
+        # requirements are opposites: a BOARD READ must survive one damaged row
+        # (the alternative is a fleet-wide write outage over a notification the
+        # card path never looks at), while a BACKUP must be EXACT OR ABSENT
+        # (ADR-0010), because a snapshot that silently contains a rebuilt record
+        # is a snapshot you cannot restore from and cannot audit against.
+        #
+        # A rebuild is exact for what the columns hold, but it is still not the
+        # bytes the writer stored — and a backup's whole job is to be those
+        # bytes. So the strictness lives on the caller, not on the row.
+        raise _refusal(
+            row,
+            table,
+            detail=(
+                "this caller requires the VERBATIM payload: it is the backup "
+                "rail, whose contract is exact-or-absent. The same row reads "
+                "fine on the board, which repairs it in memory — so the store "
+                "is usable; it is the SNAPSHOT that must not silently contain "
+                "a reconstruction."
+            ),
+        )
     for col in _OVERLAYS[table]:
         if row[col] is not None:
             rec[col] = bool(row[col]) if col in _BOOL_COLS else row[col]
@@ -197,6 +224,7 @@ def export_doc(
     db_path: str | Path | None = None,
     *,
     conn: sqlite3.Connection | None = None,
+    repair: bool = True,
 ) -> tuple[dict, dict]:
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
@@ -273,7 +301,7 @@ def export_doc(
         # one-second resolution, so same-second rows would otherwise order
         # arbitrarily and the export would differ run to run.
         users = [
-            _record(r, "users")
+            _record(r, "users", repair=repair)
             for r in conn.execute(
                 "SELECT * FROM users ORDER BY created_at, id"
             ).fetchall()
@@ -289,12 +317,12 @@ def export_doc(
         }
         for r in conn.execute("SELECT * FROM notifications ORDER BY ts, id").fetchall():
             inboxes.setdefault(r["recipient_id"], []).append(
-                _record(r, "notifications")
+                _record(r, "notifications", repair=repair)
             )
 
         threads: dict[str, list[dict]] = {}
         for r in conn.execute("SELECT * FROM messages ORDER BY ts, id").fetchall():
-            threads.setdefault(r["thread_key"], []).append(_record(r, "messages"))
+            threads.setdefault(r["thread_key"], []).append(_record(r, "messages", repair=repair))
     finally:
         if owned:
             conn.close()
@@ -350,7 +378,11 @@ def export_json(
     from ._paths import resolve_tasks_path
     from ._store_target import resolve_store_target
 
-    doc, threads = export_doc(db_path)
+    # STRICT: a snapshot is exact or it is absent (ADR-0010). The board read
+    # takes the same function with repair=True, because a board that dies over
+    # one damaged inbox row is a fleet outage; a backup that silently contains
+    # a rebuilt record is a restore that quietly loses what the writer stored.
+    doc, threads = export_doc(db_path, repair=False)
 
     # TWO AXES, RESOLVED SEPARATELY — this was one call and it broke on a DSN.
     #
