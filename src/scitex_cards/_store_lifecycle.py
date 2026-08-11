@@ -26,6 +26,7 @@ from pathlib import Path
 from ._model import _save_doc_unlocked, _store_lock
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
+from ._touch import touch_last_activity
 
 #: The ONLY status that means "this work was delivered". ``failed`` and
 #: ``cancelled`` are terminal too, but they are NOT completions — a card can
@@ -130,8 +131,16 @@ def complete_task(
                 if not isinstance(log_meta, dict):
                     log_meta = {}
                     task["_log_meta"] = log_meta
-                log_meta["completed_at"] = _utc_now_iso()
+                now = _utc_now_iso()
+                log_meta["completed_at"] = now
                 log_meta["completed_by"] = _default_agent(by)
+                # A COMPLETION IS AN ACT, and every reconciler orders acts by
+                # `last_activity`. Stamping only `completed_at` made the newest
+                # possible change to a card invisible to the field that decides
+                # which copy wins — see `_touch` for the 3-host measurement.
+                # Same `now`, so the completion stamp and the activity stamp
+                # cannot straddle a tick and disagree about when this happened.
+                touch_last_activity(task, now)
                 _save_doc_unlocked(doc, resolved, tasks=tasks)
                 result = dict(task)
                 transitioned = True
@@ -263,7 +272,7 @@ def restore_task(
     expects to find and reverses in place.
     """
     from . import _model, _task
-    from ._store import _read_write_doc
+    from ._store import _read_write_doc, _utc_now_iso
 
     tasks_path = _resolved_store(store)
     if not isinstance(task, dict) or not task.get("id"):
@@ -271,17 +280,26 @@ def restore_task(
     tid = task["id"]
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
+        # The row we write is a COPY, stamped as a fresh act. `delete_task`
+        # advances `last_activity` when it tombstones (see its body), so a
+        # restore that reused the caller's pre-delete snapshot verbatim would
+        # be strictly OLDER than the tombstone it reverses. On a second host
+        # the reconciler would then read the tombstone as the later act and
+        # re-delete the card — an Undo that undoes itself. We do not mutate
+        # the caller's dict: the Undo payload stays replayable.
+        restored = dict(task)
+        touch_last_activity(restored, _utc_now_iso())
         existing = next((t for t in tasks if t.get("id") == tid), None)
         if existing is not None:
             if not _task._is_tombstoned(existing):
                 raise ValueError(f"restore_task: id {tid!r} already present")
             # UN-TOMBSTONE in place: replace with the caller's pre-delete
             # snapshot, at the SAME list position (an ordinary upsert).
-            tasks[tasks.index(existing)] = dict(task)
+            tasks[tasks.index(existing)] = restored
         else:
             # No row at all — a legacy pre-tombstone-era delete, or an
             # admin purge. Fall back to the original append behaviour.
-            tasks.append(dict(task))
+            tasks.append(restored)
         _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
     # refs are descriptive (the client passes them through so callers can
     # see which tasks had been mutated; we don't reverse-apply them since
@@ -319,11 +337,16 @@ def resolve_task(
         prior_status = target.get("status")  # C5: capture for the event
         target["status"] = "done"
         target.pop("blocker", None)
+        now = _utc_now_iso()
+        # Stamp even on the already-done noop path: this verb ALWAYS appends a
+        # comment, so it always changes the card, and a change that skips the
+        # activity stamp is exactly the lie this invariant exists to prevent.
+        touch_last_activity(target, now)
         comments = target.setdefault("comments", [])
         comments.append(
             {
                 "author": who,
-                "ts": _utc_now_iso(),
+                "ts": now,
                 "text": (
                     "[resolve (noop — already done)]"
                     if was_done
@@ -391,6 +414,11 @@ def reopen_task(
         target["status"] = "blocked"
         target["blocker"] = "operator-decision"
         cleared = clear_completion_stamp(target)
+        now = _utc_now_iso()
+        # An UN-completion is as much an act as a completion. Without this the
+        # reopen is invisible to timestamp comparison and a reconciler happily
+        # re-applies the done copy from the other host, undoing the reopen.
+        touch_last_activity(target, now)
         comments = target.setdefault("comments", [])
         text = (
             "[REOPENED via mcp.reopen_task] flipped status='done'->blocked, "
@@ -398,7 +426,7 @@ def reopen_task(
         )
         if cleared:
             text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
-        comments.append({"author": who, "ts": _utc_now_iso(), "text": text})
+        comments.append({"author": who, "ts": now, "text": text})
         _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
