@@ -40,6 +40,23 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # translate the name so the Python/YAML field is unchanged. ``deadlines`` and
 # ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
 # tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
+#
+# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths build this schema:
+# `executescript` (which SQLite records VERBATIM into sqlite_master.sql,
+# comments and all) and `_ddl.execute_ddl` (which strips comments before
+# executing, so sqlite_master records the comment-free text). A comment inside a
+# CREATE TABLE therefore makes the two paths produce stores that DISAGREE about
+# their own recorded schema — the fresh-vs-migrated shape divergence this
+# package keeps getting bitten by, minted from a line of prose.
+# `test__ddl.py::test_it_builds_the_same_schema_as_executescript` is the guard;
+# it caught exactly this on 2026-08-11. Explain things HERE, in Python, instead.
+#
+# WHY `task_edges.dst_task_id` HAS NO FOREIGN KEY, since that is the question the
+# schema below invites: a forward reference to a card that does not exist yet is
+# a SUPPORTED pattern (`_diagram/_mermaid.py` skips an unknown dst with a WARN
+# rather than failing). SRC is constrained, DST is not. Stated because
+# "task_edges is FK-free" has been relayed once already, and that phrasing drops
+# `src_task_id`, which is a real constraint.
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tasks (
     id             TEXT PRIMARY KEY,
@@ -102,11 +119,6 @@ CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
 CREATE TABLE IF NOT EXISTS task_edges (
     src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
                 DEFERRABLE INITIALLY DEFERRED,
-    -- dst_task_id is DELIBERATELY unconstrained: a forward reference to a card
-    -- that does not exist yet is a SUPPORTED pattern (_diagram/_mermaid.py
-    -- skips an unknown dst with a WARN rather than failing). SRC constrained,
-    -- DST not — stated here because "task_edges is FK-free" has been relayed
-    -- once already, and that phrasing drops a constraint that really exists.
     dst_task_id TEXT NOT NULL,
     edge_type   TEXT NOT NULL,
     PRIMARY KEY (src_task_id, dst_task_id, edge_type)
