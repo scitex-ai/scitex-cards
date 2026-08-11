@@ -261,15 +261,36 @@ class LocalBackend:
         notifications = _inbox.poll_inbox(
             recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
         )
+        from ._inbox_receipt import unconfirmed_ids
+
         payload = {
             "agent": agent,
             "recipient_id": recipient_id,
             "notifications": notifications,
             # The ids still awaiting confirmation, and the verb that confirms
             # them: the safe loop must be the OBVIOUS one to write from here.
-            "unconfirmed": [
-                n.get("id") for n in notifications if n.get("id") and not n.get("seen")
-            ],
+            #
+            # TWO THINGS THIS USED TO GET WRONG, both of which made the field
+            # incapable of ever reporting the backlog it exists to report.
+            #
+            # It keyed on `seen`. The channel drain advances `seen` when it
+            # pushes a record, so every pushed notification looked confirmed the
+            # moment it was delivered — while `confirmed_at`, the only actual
+            # evidence of delivery, stayed NULL. `is_confirmed` now owns that
+            # distinction for every caller (see `_inbox_receipt`).
+            #
+            # And it was computed over `notifications`, i.e. over THIS PAGE.
+            # The default page is unseen-only, and the drain has already marked
+            # the rows seen, so the page is empty and the field was empty with
+            # it — by construction, regardless of which column it read. Fixing
+            # only the column would have produced a correct predicate applied to
+            # nothing, and looked fixed.
+            #
+            # "What is still awaiting confirmation" is a property of the INBOX.
+            # Measured 2026-08-11: a consumer polled, was told nothing was
+            # outstanding, and had to query the rail directly to find the
+            # notification it had just acted on.
+            "unconfirmed": unconfirmed_ids(recipient_id, store=store),
             "confirm_with": "ack_notifications",
         }
         if deprecation is not None:
