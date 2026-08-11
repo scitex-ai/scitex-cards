@@ -23,6 +23,7 @@ from pathlib import Path
 
 from ._model import _save_doc_unlocked, _store_lock
 from ._store_list import _resolved_store
+from ._touch import touch_last_activity
 
 
 def set_edge(
@@ -84,7 +85,7 @@ def set_edge(
     suppression is correct — it just needs saying.
     """
     from . import _model, _task
-    from ._store import TaskNotFoundError, _read_write_doc
+    from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
 
     if action not in ("add", "remove"):
         raise ValueError("set_edge: action must be 'add' or 'remove'")
@@ -128,6 +129,7 @@ def set_edge(
         # so leniency is policy, not oversight. Removal simply joins it.
         if action == "add" and tgt_task is None:
             raise TaskNotFoundError(f"set_edge: unknown target id {target!r}")
+        before = list(src_task.get(kind) or [])
         edges = src_task.get(kind) or []
         if action == "add" and target not in edges:
             edges = list(edges) + [target]
@@ -137,6 +139,14 @@ def set_edge(
             src_task[kind] = edges
         else:
             src_task.pop(kind, None)
+        # Stamp only a REAL change. Re-adding an edge that is already present
+        # is an idempotent no-op, and stamping it would advance the card's age
+        # without the card having changed — the mirror image of the bug this
+        # invariant exists to close. `before` is captured above precisely so
+        # "did anything happen?" is answered by comparison, not by assumption.
+        now = _utc_now_iso()
+        if list(edges) != before:
+            touch_last_activity(src_task, now)
 
         if action == "add":
             # WHO waits, and WHO is waited on? `depends_on` points from the waiter
@@ -152,6 +162,14 @@ def set_edge(
                     subs.append(owner)
                     awaited["subscribers"] = subs
                     subscribed = owner
+                    # The AWAITED card changed too — it gained a subscriber.
+                    # This is the card whose completion will fire the
+                    # notification, so a reconciler that overwrites it with a
+                    # copy lacking this subscriber restores the exact silent
+                    # no-op the subscribe-on-edge rule above was written to
+                    # kill. Stamping both cards is not belt-and-braces; two
+                    # cards were mutated, so two cards are newer.
+                    touch_last_activity(awaited, now)
             # An OWNERLESS waiter cannot be subscribed to anything — there is nobody
             # to tell. We do NOT invent a recipient; `subscribed: None` says so
             # plainly rather than letting the caller assume delivery is wired.
