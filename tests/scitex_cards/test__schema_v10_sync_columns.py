@@ -140,9 +140,20 @@ class TestTheTwoPathsAgree:
     def test_a_migrated_store_has_the_same_columns_as_a_fresh_one(
         self, v9_store, fresh_store
     ):
-        """The divergence this repo has already been bitten by, as a gate."""
+        """The divergence this repo has already been bitten by, as a gate.
+
+        Asserted through ``init_schema`` — the FULL chain — rather than through
+        this one migration step. The single-step form is a proxy that goes red
+        on every subsequent version with nothing actually wrong: v9's copy of
+        this test did exactly that when v10 landed, having not inherited the
+        lesson its v8 sibling had already written down. A real store reaches the
+        current version because ``init_schema`` runs every rung, so that is what
+        the invariant should be stated against.
+        """
         # Arrange
-        _migrate_v9_to_v10(v9_store)
+        from scitex_cards._db import init_schema
+
+        init_schema(v9_store)
 
         # Act
         migrated = table_columns(v9_store, _TABLE)
