@@ -36,6 +36,26 @@ htmlcov/
 GITIGNORED/
 .worktrees/
 
+# Per-machine Claude Code agent context (settings.local.json, the scheduled
+# task lock). Synced from dotfiles per machine; not project source.
+.claude/
+
+# Playwright MCP snapshots — throwaway browser-automation output (console
+# logs, page .yml dumps, .png screenshots) from driving the board's UI.
+.playwright-mcp/
+
+# A directory literally named `postgresql:` — created when a connection DSN
+# was passed somewhere a filesystem path was expected, so the driver made
+# `postgresql:/scitex_cards@127.0.0.1:5432/` on disk and wrote a lock and a
+# todo.db into it. It is the artifact of a bug, never source. Root-anchored
+# so the odd name cannot match anything nested.
+/postgresql:/
+
+# The displaced-files trash bin. House rule is that nothing is ever deleted —
+# it is moved to .old/<timestamp>/ instead — so this accumulates superseded
+# files by design.
+.old/
+
 # Rendered task graphs — generated artifacts, never committed.
 tasks.png
 *.tasks.png
