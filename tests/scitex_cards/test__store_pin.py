@@ -40,10 +40,12 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import closing
+from pathlib import Path
 
 import pytest
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_DB, connect
 from scitex_cards._store import resolve_store
 from scitex_cards._store_instance import Certainty, IdentityVerdict
 from scitex_cards._store_pin import (
@@ -127,6 +129,22 @@ def live_instance_id(pg_dsn):
     return observed.instance_id
 
 
+def _create_sqlite_store(path: Path) -> str:
+    """Create ONE real store at ``path``; return the path, never the handle.
+
+    The connection lives and dies inside this function, inside ``closing`` —
+    so it is released even if ``connect`` hands back a store that raises on
+    use. This is deliberately NOT a fixture: a fixture that acquires a
+    resource has to give it to the test via ``yield`` so pytest can tear it
+    down (STX-TQ005), and the only way to owe no teardown is to own the
+    whole lifetime here. What escapes is a ``str`` path.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(connect(str(path))):
+        pass
+    return str(path)
+
+
 @pytest.fixture
 def two_sqlite_stores(tmp_path):
     """Two REAL, DIFFERENT SQLite stores on disk. No mocks (STX-NM).
@@ -134,15 +152,10 @@ def two_sqlite_stores(tmp_path):
     Created through the package's own ``connect`` so they are stores the
     resolver would genuinely accept, not empty files with the right names.
     """
-    from scitex_cards._db import connect
-
-    paths = []
-    for name in ("alpha", "beta"):
-        path = tmp_path / name / "cards.db"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        connect(str(path)).close()
-        paths.append(str(path))
-    return paths
+    return [
+        _create_sqlite_store(tmp_path / name / "cards.db")
+        for name in ("alpha", "beta")
+    ]
 
 
 @pytest.fixture
