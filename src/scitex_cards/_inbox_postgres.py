@@ -241,13 +241,26 @@ def enqueue(
                 seen=False,
                 msg_id=msg_id,
             )
-            # THE COLUMN LIST IS DERIVED FROM THE RECORD, not hand-written.
-            # Hand-writing it is what shipped this table's live writers without
-            # `record_json`: the export reconstructs each row from that
-            # verbatim payload and REFUSES a row that has none, so every
-            # notification enqueued here was unreadable by the next read — and
-            # because that read assembles the whole document, ONE such row
-            # failed every card write fleet-wide.
+            # `record_json` IS NOT OPTIONAL, and omitting it is a fleet outage.
+            #
+            # This INSERT listed nine columns and left the payload out. Every
+            # notification it wrote landed with record_json NULL — not
+            # occasionally, on EVERY row — because nothing here ever called the
+            # serialiser. A NULL payload makes the read path refuse, and that
+            # path assembles the WHOLE document, so on 2026-08-11 it took every
+            # card write down fleet-wide three times (add_task, update_task,
+            # comment_task) over rows minutes old. Two of the blocking rows were
+            # UNDELIVERED DMs, so the obvious "quarantine the bad row" remedy
+            # would have destroyed real messages; they were repaired by
+            # back-filling from their own columns, which is possible precisely
+            # because nothing was lost.
+            #
+            # #803 fixed this INSERT by adding the missing column. The column
+            # list is now DERIVED FROM THE RECORD instead, because hand-writing
+            # it IS the defect: three separate writers of this table each
+            # hand-wrote their own list and all three omitted the payload. There
+            # is no spelling of the call below that drops it without also
+            # dropping the id and the body.
             columns, values = notification_columns(
                 record,
                 recipient_id=recipient_id,
