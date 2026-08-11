@@ -18,10 +18,13 @@ or schema.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Iterator
 
 import pytest
+
+from scitex_cards._inbox_record import NOTIFICATION_RECORD_KEYS
 
 pytest.importorskip("psycopg")
 
@@ -250,6 +253,76 @@ class TestItRefusesToFallBack:
         refuses = "falling back" in message.lower()
         # Assert
         assert refuses
+
+
+class TestWhatItWritesCanBeReadBack:
+    """An enqueue whose row the reader refuses has not delivered anything.
+
+    ``notifications.record_json`` holds each record VERBATIM and the read path
+    reconstructs from it, refusing a row that has none. This backend wrote the
+    typed columns only, so every notification it enqueued was unreadable —
+    and because the read assembles the WHOLE document, ONE such row failed
+    every card write fleet-wide: add_task, update_task, comment_task.
+    Measured 2026-08-11, it took the board down three times in one night.
+    """
+
+    def _stored_payload(self, recipient="agent-x"):
+        """The record_json the last enqueue actually wrote, straight from SQL."""
+        import psycopg
+
+        with psycopg.connect(_DSN) as conn:
+            row = conn.execute(
+                "SELECT record_json FROM notifications WHERE recipient_id = %s",
+                (recipient,),
+            ).fetchone()
+        return row[0]
+
+    def test_an_enqueued_row_has_a_payload(self, inbox):
+        # Arrange
+        _enqueue(inbox)
+        # Act
+        stored = self._stored_payload()
+        # Assert — NULL here is the fleet-wide outage.
+        assert stored is not None
+
+    def test_the_payload_reproduces_the_enqueued_body(self, inbox):
+        # Arrange
+        _enqueue(inbox, body="the body that must survive")
+        # Act
+        stored = json.loads(self._stored_payload())
+        # Assert
+        assert stored["body"] == "the body that must survive"
+
+    def test_the_payload_carries_seen_as_a_json_bool(self, inbox):
+        # Arrange
+        _enqueue(inbox)
+        # Act
+        stored = json.loads(self._stored_payload())
+        # Assert — the column is an INTEGER; the record contract is a bool.
+        assert stored["seen"] is False
+
+    def test_the_payload_holds_exactly_the_record_keys(self, inbox):
+        # Arrange
+        _enqueue(inbox)
+        # Act
+        stored = json.loads(self._stored_payload())
+        # Assert — recipient_id and seq are columns, NOT part of the record.
+        assert tuple(stored) == NOTIFICATION_RECORD_KEYS
+
+    def test_the_whole_database_stays_exportable_after_an_enqueue(self, inbox):
+        """The end-to-end proof: the read path accepts what the writer wrote."""
+        import psycopg
+
+        from scitex_cards._db_export import export_doc
+
+        # Arrange
+        _enqueue(inbox)
+        # Act
+        with psycopg.connect(_DSN) as conn:
+            conn.row_factory = psycopg.rows.dict_row
+            doc, _ = export_doc(conn=conn)
+        # Assert — before the fix this raised ExportRefused for every caller.
+        assert doc["inboxes"]["agent-x"][0]["body"] == "hello"
 
 
 # EOF

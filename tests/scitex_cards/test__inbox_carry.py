@@ -23,11 +23,13 @@ SCITEX_CARDS_TEST_PG_DSN.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 
 import pytest
 
+from scitex_cards._inbox_record import NOTIFICATION_RECORD_KEYS
 from scitex_cards._inbox_carry import (
     SOURCE_COLUMNS,
     TARGET_COLUMNS,
@@ -138,17 +140,33 @@ def pg_conn():
 
 
 class TestTheColumnMappingIsAligned:
-    """A misaligned INSERT would write bodies into timestamps, silently."""
+    """A misaligned INSERT would write bodies into timestamps, silently.
 
-    def test_the_two_column_lists_are_the_same_length(self):
-        # Arrange
-        pair = (SOURCE_COLUMNS, TARGET_COLUMNS)
+    The target carries exactly ONE column the source cannot supply —
+    ``record_json``, which is COMPUTED per row. It is pinned as the LAST
+    column, and separately from the copied prefix, because that is what keeps
+    the copied columns positionally aligned with the source while still
+    letting the payload travel.
+    """
+
+    def test_the_copied_columns_are_the_same_length(self):
+        # Arrange — the target's copied prefix, excluding the computed payload.
+        pair = (SOURCE_COLUMNS, TARGET_COLUMNS[: len(SOURCE_COLUMNS)])
 
         # Act
         lengths = {len(pair[0]), len(pair[1])}
 
         # Assert
         assert len(lengths) == 1
+
+    def test_the_payload_is_the_one_column_with_no_source(self):
+        # Arrange
+        # Act
+        extra = TARGET_COLUMNS[len(SOURCE_COLUMNS) :]
+
+        # Assert — a carry that omitted it wrote rows the export REFUSES,
+        # which fails every card write on that database, not just the row.
+        assert extra == ("record_json",)
 
     def test_recipient_is_the_only_renamed_column(self):
         # Arrange
@@ -359,6 +377,76 @@ class TestAgainstRealPostgres:
 
         # Assert
         assert found == 3
+
+
+class TestTheCarriedRowIsReadable:
+    """A carried row the reader cannot read is a row that was not carried.
+
+    ``record_json`` is the one target column with no source column, so the
+    carry must COMPUTE it. Leaving it NULL produced rows the export path
+    refuses — and because that path assembles the whole document, one such row
+    failed every card write on the database rather than only the carried row.
+    """
+
+    def test_every_carried_row_has_a_payload(self, source, target):
+        # Arrange
+        _seed(source, 3)
+
+        # Act
+        carry_rows(read_source_rows(source), target, placeholder="?")
+        missing = target.execute(
+            "SELECT count(*) FROM notifications WHERE record_json IS NULL"
+        ).fetchone()[0]
+
+        # Assert
+        assert missing == 0
+
+    def test_the_payload_reproduces_the_rows_own_fields(self, source, target):
+        # Arrange
+        _seed(source, 1)
+
+        # Act
+        carry_rows(read_source_rows(source), target, placeholder="?")
+        blob = target.execute("SELECT record_json FROM notifications").fetchone()[0]
+
+        # Assert
+        assert json.loads(blob)["card_id"] == "card-0"
+
+    def test_the_payload_carries_seen_as_a_json_bool(self, source, target):
+        # Arrange
+        _seed(source, 1)
+
+        # Act
+        carry_rows(read_source_rows(source), target, placeholder="?")
+        blob = target.execute("SELECT record_json FROM notifications").fetchone()[0]
+
+        # Assert — the column is an INTEGER; the record contract is a bool.
+        assert json.loads(blob)["seen"] is False
+
+    def test_delivery_state_is_not_baked_into_the_payload(self, source, target):
+        # Arrange
+        _seed(source, 1)
+
+        # Act
+        carry_rows(read_source_rows(source), target, placeholder="?")
+        blob = target.execute("SELECT record_json FROM notifications").fetchone()[0]
+
+        # Assert — pushed_at / confirmed_at are delivery state the rail mutates
+        # afterwards, not part of the record the recipient receives.
+        assert "pushed_at" not in json.loads(blob)
+
+    def test_a_carried_row_survives_the_read_path(self, source, target):
+        # Arrange — the whole point: the reader must accept what the carry wrote.
+        _seed(source, 1)
+        carry_rows(read_source_rows(source), target, placeholder="?")
+        row = target.execute("SELECT * FROM notifications").fetchone()
+        columns = [d[0] for d in target.execute("SELECT * FROM notifications").description]
+
+        # Act
+        record = json.loads(dict(zip(columns, row))["record_json"])
+
+        # Assert
+        assert tuple(record) == NOTIFICATION_RECORD_KEYS
 
 
 # EOF

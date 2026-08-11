@@ -46,6 +46,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
+from ._inbox_record import notification_columns, notification_record
 from ._inbox_shape import shape_for
 from ._inbox_sqlite_schema import (
     ENV_INBOX_DB,
@@ -184,30 +185,33 @@ def enqueue(
         if dup is not None:
             conn.commit()  # persist a supersede-only pass even when deduped
             return None
-        record = {
-            "id": _generate_notification_id(),
-            "event_type": event_type,
-            "card_id": card_id,
-            "body": body,
-            "actor": actor,
-            "ts": timestamp,
-            "seen": False,
-            "msg_id": msg_id,
-        }
+        record = notification_record(
+            id=_generate_notification_id(),
+            event_type=event_type,
+            card_id=card_id,
+            body=body,
+            actor=actor,
+            ts=timestamp,
+            seen=False,
+            msg_id=msg_id,
+        )
+        # THE COLUMN LIST IS DERIVED FROM THE RECORD, and the payload column
+        # comes from the SHAPE, not from an assumption about which table this
+        # is. That distinction is the whole bug: this function writes the
+        # SQLite `inbox` table (no payload column) OR the canonical
+        # `notifications` table (a payload column the export refuses a row
+        # without), and it was writing the second as if it were the first.
+        columns, values = notification_columns(
+            record,
+            recipient_id=recipient_id,
+            recipient_column=shape.recipient,
+            payload_column=shape.payload,
+        )
+        placeholders = ", ".join(["?"] * len(columns))
         conn.execute(
-            f"INSERT INTO {shape.table}(id, {shape.recipient}, event_type, "
-            "card_id, body, actor, ts, seen, msg_id) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?)",
-            (
-                record["id"],
-                recipient_id,
-                event_type,
-                card_id,
-                body,
-                actor,
-                timestamp,
-                msg_id,
-            ),
+            f"INSERT INTO {shape.table}({', '.join(columns)}) "
+            f"VALUES({placeholders})",
+            values,
         )
         conn.commit()
         return dict(record)

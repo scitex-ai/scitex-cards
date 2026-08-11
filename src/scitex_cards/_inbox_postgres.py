@@ -54,6 +54,7 @@ import os
 from pathlib import Path
 from typing import Any, Final, Sequence
 
+from ._inbox_record import notification_columns, notification_record
 from ._inbox_shape import POSTGRES_SHAPE
 
 __all__ = ["ack", "enqueue", "poll_inbox", "resolve_dsn"]
@@ -230,33 +231,37 @@ def enqueue(
                 conn.commit()
                 return None
 
-            record = {
-                "id": _generate_notification_id(),
-                "event_type": event_type,
-                "card_id": card_id,
-                "body": body,
-                "actor": actor,
-                "ts": timestamp,
-                "seen": False,
-                "msg_id": msg_id,
-            }
+            record = notification_record(
+                id=_generate_notification_id(),
+                event_type=event_type,
+                card_id=card_id,
+                body=body,
+                actor=actor,
+                ts=timestamp,
+                seen=False,
+                msg_id=msg_id,
+            )
+            # THE COLUMN LIST IS DERIVED FROM THE RECORD, not hand-written.
+            # Hand-writing it is what shipped this table's live writers without
+            # `record_json`: the export reconstructs each row from that
+            # verbatim payload and REFUSES a row that has none, so every
+            # notification enqueued here was unreadable by the next read — and
+            # because that read assembles the whole document, ONE such row
+            # failed every card write fleet-wide.
+            columns, values = notification_columns(
+                record,
+                recipient_id=recipient_id,
+                recipient_column=_RECIPIENT,
+                payload_column=_SHAPE.payload,
+            )
+            placeholders = ", ".join(["%s"] * len(columns))
             # ON CONFLICT DO NOTHING makes a retried insert idempotent even
             # if two writers race past the dedup SELECT above.
             cur.execute(
-                f"INSERT INTO {_TABLE}"
-                f"(id, {_RECIPIENT}, event_type, card_id, body, actor, ts, seen, msg_id) "
-                "VALUES(%s, %s, %s, %s, %s, %s, %s, 0, %s) "
+                f"INSERT INTO {_TABLE}({', '.join(columns)}) "
+                f"VALUES({placeholders}) "
                 "ON CONFLICT (id) DO NOTHING",
-                (
-                    record["id"],
-                    recipient_id,
-                    event_type,
-                    card_id,
-                    body,
-                    actor,
-                    timestamp,
-                    msg_id,
-                ),
+                values,
             )
         conn.commit()
     return dict(record)
