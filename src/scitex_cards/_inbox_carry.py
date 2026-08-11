@@ -38,7 +38,9 @@ from typing import Any, Iterable
 
 __all__ = [
     "CarryResult",
+    "PAYLOAD_COLUMN",
     "carry_rows",
+    "payload_for_row",
     "read_source_rows",
     "source_ids",
     "target_ids",
@@ -122,6 +124,39 @@ def target_ids(conn: Any) -> set[str]:
     return {str(row[0]) for row in conn.execute("SELECT id FROM notifications")}
 
 
+#: The payload column. Not in TARGET_COLUMNS because it has no SOURCE_COLUMNS
+#: counterpart — it is SYNTHESISED here, which is the whole point of this card.
+PAYLOAD_COLUMN = "record_json"
+
+#: The source column naming the recipient. Excluded from the payload: the
+#: recipient is the ``recipient_id`` COLUMN, never a record field. See
+#: :func:`carry_rows` for why the distinction is load-bearing.
+_RECIPIENT_COLUMN = "recipient"
+
+
+def payload_for_row(row: "tuple") -> "str | None":
+    """Build the ``record_json`` blob for one source row.
+
+    The source row IS the record; nothing has to be invented. Every source
+    column except the recipient goes in, so the carry is lossless and a reader
+    reconstructing from the payload sees what the sidecar held.
+
+    Returns ``None`` only when the record genuinely cannot round-trip through
+    JSON — the same contract as ``card_payload_json``. A NULL from THIS function
+    means "this record is unrepresentable", which is the case the read guard was
+    designed for; the bug was emitting NULL for records that were perfectly
+    representable and simply never asked.
+    """
+    from ._db_payload import card_payload_json
+
+    record = {
+        name: value
+        for name, value in zip(SOURCE_COLUMNS, row)
+        if name != _RECIPIENT_COLUMN
+    }
+    return card_payload_json(record)
+
+
 def carry_rows(
     rows: Iterable[tuple], target_conn: Any, *, placeholder: str = "%s"
 ) -> int:
@@ -134,16 +169,41 @@ def carry_rows(
 
     ``placeholder`` exists because paramstyle differs between drivers; the
     caller passes what its connection speaks.
+
+    IT COMPUTES ``record_json`` RATHER THAN COPYING IT, because there is nothing
+    to copy: the SQLite ``inbox`` source has no such column, so every row this
+    function wrote used to land with a NULL payload — not occasionally, BY
+    CONSTRUCTION.
+
+    That NULL is load-bearing (``_db_payload.card_payload_json``): it makes the
+    read guard REFUSE THE WHOLE DATABASE rather than hand back a record whose
+    shape changed in transit. The guard was safe because it fell back to YAML,
+    and the YAML tier has since been removed — so "refuse and degrade" quietly
+    became "refuse and die". On 2026-08-09 ONE carried row took every card verb
+    down fleet-wide for ~20 minutes: 3556 cards unreadable, `resolve_store` and
+    `health` still fine, one malformed notification refusing everything.
+
+    THE RECIPIENT IS DELIBERATELY NOT IN THE PAYLOAD, and this was the open
+    question the incident report could not answer from outside the package. The
+    normal writer is ``_db_sections._insert_notifications``, which iterates
+    ``inboxes[recipient_id]`` and stores ``card_payload_json(r)`` where ``r`` is
+    the record INSIDE that recipient's list. The recipient is the map KEY; it
+    lives in the ``recipient_id`` COLUMN and has never been a field of the
+    record. So the answer is neither ``recipient`` (the source column name) nor
+    ``recipient_id`` (the target's) — embedding either would make this writer
+    produce a different shape than the normal one for the same logical row,
+    which is precisely the silent divergence the payload exists to prevent.
     """
-    columns = ", ".join(TARGET_COLUMNS)
-    marks = ", ".join([placeholder] * len(TARGET_COLUMNS))
+    columns = ", ".join(TARGET_COLUMNS + (PAYLOAD_COLUMN,))
+    marks = ", ".join([placeholder] * (len(TARGET_COLUMNS) + 1))
     statement = (
         f"INSERT INTO notifications ({columns}) VALUES ({marks}) "
         "ON CONFLICT (id) DO NOTHING"
     )
     written = 0
     for row in rows:
-        target_conn.execute(statement, tuple(row))
+        values = tuple(row)
+        target_conn.execute(statement, values + (payload_for_row(values),))
         written += 1
     return written
 
