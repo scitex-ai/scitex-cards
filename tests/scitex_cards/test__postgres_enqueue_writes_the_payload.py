@@ -14,94 +14,121 @@ WHY THE OBVIOUS TEST WOULD NOT HAVE CAUGHT IT. The natural test is to call
 `skipif` on `$SCITEX_CARDS_TEST_DSN`, which is unset in CI — 12 skips on the run
 that shipped this defect. A guard that only runs when someone remembers to point
 it at a scratch database is not a guard for the environment where the outage
-happened.
+happened. That reasoning is #803's and it still holds: the primary check here
+must run with NO database.
 
-So the PRIMARY check here is STRUCTURAL and always runs: the INSERT is read out
-of the function's own source. The defect was a missing column in a statement,
-and that is statically visible. The end-to-end check below it is the stronger
-assertion and runs when a DSN exists — both, not either.
+WHAT CHANGED, AND WHY THE CHECK MOVED. #803's always-runs check read the INSERT
+out of the function's own source with a regex and asserted the literal string
+`record_json` appeared in it. That guarded a SPELLING. The column list is no
+longer spelled in this module at all: it is DERIVED from the record by
+`_inbox_record.notification_columns`, precisely because three separate writers
+of this table each hand-wrote their own list and all three omitted the payload.
+
+So the always-runs check now calls that function and inspects what it produces.
+This is strictly stronger than the regex — it exercises the code that builds the
+real statement rather than the text of one call site, it cannot pass vacuously
+on a reformat, and it covers every writer that goes through the constructor
+rather than this one. The end-to-end check below is unchanged and still runs
+wherever a scratch DSN exists.
 """
 
-import inspect
 import os
-import re
 
 import pytest
 
 from scitex_cards import _inbox_postgres as pg
-
-#: The INSERT's column list and its VALUES list, from the live source.
-_INSERT_RE = re.compile(
-    r"INSERT INTO \{_TABLE\}\"?\s*(?P<cols>.*?)VALUES\((?P<vals>[^)]*)\)",
-    re.DOTALL,
-)
+from scitex_cards._inbox_record import notification_columns, notification_record
 
 
-def _insert_clause() -> str:
-    """The INSERT statement as it appears in `enqueue`'s own source."""
-    return inspect.getsource(pg.enqueue)
+def _columns_the_enqueue_would_write() -> tuple:
+    """The column list `enqueue` builds, without touching a database."""
+    record = notification_record(
+        id="n_000000000001",
+        event_type="commented",
+        card_id="card-payload-guard",
+        body="payload guard",
+        actor="tester",
+        ts="2026-08-11T22:03:54Z",
+    )
+    columns, _values = notification_columns(
+        record,
+        recipient_id="payload-guard-agent",
+        recipient_column=pg._RECIPIENT,
+        payload_column=pg._SHAPE.payload,
+    )
+    return columns
 
 
-def test_the_insert_statement_is_findable_at_all():
-    """POSITIVE CONTROL. Every assertion below reads the statement out of the
-    source; if the regex stops matching (someone reformats the SQL), the checks
-    would pass vacuously on an empty string and this file would guard nothing."""
+def test_the_postgres_shape_declares_a_payload_column():
+    """POSITIVE CONTROL. The column list is built from the shape, so a shape
+    that stopped naming a payload column would make every check below pass
+    vacuously while the outage returned."""
     # Arrange
-    source = _insert_clause()
+    shape = pg._SHAPE
     # Act
-    match = _INSERT_RE.search(source)
+    payload_column = shape.payload
     # Assert
-    assert match is not None
+    assert payload_column == "record_json"
 
 
-def test_the_insert_names_record_json():
+def test_the_written_columns_include_record_json():
     """THE FIX. `record_json` must be among the columns written."""
     # Arrange
-    match = _INSERT_RE.search(_insert_clause())
     # Act
-    columns = match.group("cols")
+    columns = _columns_the_enqueue_would_write()
     # Assert
     assert "record_json" in columns
 
 
-def test_every_column_has_a_placeholder():
+def test_every_column_has_a_value():
     """Guards a DIFFERENT bug: a column list and a VALUES list of unequal
     length, which raises at execution.
 
-    WHAT THIS TEST DOES NOT CATCH, stated because I first wrote that it did.
-    Measured against the unfixed source: it PASSED. The outage was a column
-    omitted from BOTH lists — nine columns, eight placeholders plus a literal,
-    perfectly self-consistent and perfectly wrong. Internal consistency cannot
-    detect an omission, because what is missing is missing from both sides of
-    the comparison.
-
-    Completeness is guarded by `test_the_insert_names_record_json`, which names
-    the column. This one stays because the mismatch bug is real and cheap to
-    exclude — but a test whose docstring claims more than it checks is the
-    thing this whole file exists to prevent.
-
-    `seen` is written as a literal 0 rather than a placeholder, so it is
-    expected to have no `%s` of its own."""
+    Under the derived construction this is now true BY CONSTRUCTION — the two
+    tuples are built in one pass — which is the point. It is kept because a
+    mismatch is the failure a future refactor of that function would produce,
+    and it is cheap to exclude.
+    """
     # Arrange
-    match = _INSERT_RE.search(_insert_clause())
-    columns = [c.strip() for c in match.group("cols").strip(' "()').split(",")]
+    record = notification_record(
+        id="n_000000000001",
+        event_type="commented",
+        card_id="c",
+        body="b",
+        actor="tester",
+        ts="2026-08-11T22:03:54Z",
+    )
     # Act
-    literal_columns = 1  # `seen` is the literal 0
-    counts = (len(columns) - literal_columns, match.group("vals").count("%s"))
+    columns, values = notification_columns(
+        record, recipient_id="r", recipient_column=pg._RECIPIENT
+    )
     # Assert
-    assert counts[0] == counts[1]
+    assert len(columns) == len(values)
 
 
-def test_the_payload_is_built_from_the_record_the_function_already_returns():
+def test_the_payload_is_built_from_the_record_the_function_returns():
     """The record dict is built, returned to the caller, and must be the SAME
     object handed to the database — not a second construction that could drift
-    from it. `card_payload_json(record)` is the call that guarantees that."""
+    from it. Deriving the columns FROM the record is what guarantees that: the
+    payload cannot describe a different record than the one returned."""
+    import json
+
     # Arrange
-    source = _insert_clause()
+    record = notification_record(
+        id="n_000000000001",
+        event_type="commented",
+        card_id="c",
+        body="the body the caller sees",
+        actor="tester",
+        ts="2026-08-11T22:03:54Z",
+    )
     # Act
-    serialises_the_record = "card_payload_json(record)" in source
+    columns, values = notification_columns(
+        record, recipient_id="r", recipient_column=pg._RECIPIENT
+    )
+    stored = json.loads(values[columns.index("record_json")])
     # Assert
-    assert serialises_the_record is True
+    assert stored == record
 
 
 # --------------------------------------------------------------------------- #
