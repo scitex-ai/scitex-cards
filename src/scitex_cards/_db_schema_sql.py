@@ -89,7 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pr_url   ON tasks(pr_url);
 
 CREATE TABLE IF NOT EXISTS task_comments (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED,
     seq     INTEGER NOT NULL,
     author  TEXT,
     ts      TEXT,
@@ -99,7 +100,13 @@ CREATE TABLE IF NOT EXISTS task_comments (
 CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
 
 CREATE TABLE IF NOT EXISTS task_edges (
-    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+                DEFERRABLE INITIALLY DEFERRED,
+    -- dst_task_id is DELIBERATELY unconstrained: a forward reference to a card
+    -- that does not exist yet is a SUPPORTED pattern (_diagram/_mermaid.py
+    -- skips an unknown dst with a WARN rather than failing). SRC constrained,
+    -- DST not — stated here because "task_edges is FK-free" has been relayed
+    -- once already, and that phrasing drops a constraint that really exists.
     dst_task_id TEXT NOT NULL,
     edge_type   TEXT NOT NULL,
     PRIMARY KEY (src_task_id, dst_task_id, edge_type)
@@ -107,7 +114,8 @@ CREATE TABLE IF NOT EXISTS task_edges (
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON task_edges(dst_task_id);
 
 CREATE TABLE IF NOT EXISTS task_roles (
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED,
     who     TEXT NOT NULL,
     role    TEXT NOT NULL,
     PRIMARY KEY (task_id, who, role)
@@ -128,6 +136,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_names (
     name    TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS idx_user_names_uid ON user_names(user_id);
 
