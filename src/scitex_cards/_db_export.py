@@ -51,12 +51,37 @@ def _record(row, table: str) -> dict[str, Any]:
     """Rebuild one record from its verbatim payload + mutable-column overlay."""
     blob = row["record_json"]
     if blob is None:
+        # SAY WHAT IS TRUE, NOT WHAT IS LIKELY. This message used to assert
+        # "this DB predates schema v3's payload columns and cannot be
+        # back-filled ... use a database written by a current version". Both
+        # clauses were a GUESS PRESENTED AS A DIAGNOSIS, and on 2026-08-11 both
+        # were false: the offending rows were SECONDS old, written by the
+        # current version (`_inbox_postgres.enqueue` omitted the column), and
+        # they back-filled trivially from their own columns.
+        #
+        # It cost real time. Three agents chased a migration that did not exist
+        # and could not have been performed, on a database that was current —
+        # dotfiles reported losing time to it before a channel event revealed
+        # the row's true age. An error that names the wrong cause is worse than
+        # one that names none, because it is ACTIONABLE in the wrong direction.
+        #
+        # So: report the row and the fact. The age of the database is not
+        # observable from here and must not be claimed. Where a writer can be
+        # named it should be, because that points at the bug rather than away
+        # from it (dotfiles' formulation, adopted).
         raise ExportRefused(
-            f"{table} row {row['id']!r} has no record_json payload — this DB "
-            "predates schema v3's payload columns and cannot be back-filled "
-            "(the importer was removed with the YAML tier); use a database "
-            "written by a current version. Exporting stripped records is worse "
-            "than exporting none."
+            f"{table} row {row['id']!r} was written without a record_json "
+            "payload. This is a WRITER defect: some emit path inserted the row "
+            "without serialising its payload. It is not evidence that the "
+            "database is old — a row written seconds ago by current code "
+            "produces this same refusal.\n"
+            "  NEXT STEP: find the write path that produced this row and make "
+            "it pass record_json. The row itself can usually be repaired by "
+            "rebuilding the payload from its own columns; do NOT delete or "
+            "quarantine it, because notification rows are often undelivered "
+            "messages and discarding one to unblock a write destroys it.\n"
+            "  Exporting stripped records is worse than exporting none, which "
+            "is why this refuses rather than returning a partial record."
         )
     rec = card_from_payload(blob)
     for col in _OVERLAYS[table]:
