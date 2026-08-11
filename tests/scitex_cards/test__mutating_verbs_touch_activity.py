@@ -238,6 +238,25 @@ def test_restore_task_does_not_mutate_the_callers_undo_payload():
     assert removed.get("last_activity") == before
 
 
+def test_delete_task_clears_the_blocker_it_tombstones():
+    """A `cancelled` card that still names an unresolved gate is incoherent, and
+    the validator refuses the WHOLE document over it — so deleting any blocked
+    card that named its gate failed outright. `complete_task` learned this rule
+    on 2026-08-01; `delete_task` had not.
+
+    Asserting on the STORED row, not on the returned payload: `removed` is the
+    pre-tombstone snapshot and carries the blocker either way. Reading the row
+    back also proves the write happened at all — before this fix
+    `_validate_tasks` rejected the document and nothing was persisted.
+    """
+    # Arrange
+    store = _store([_card(blocker="operator-decision")])
+    # Act
+    delete_task(store, "a")
+    # Assert
+    assert "blocker" not in next(t for t in load_tasks(store) if t["id"] == "a")
+
+
 def test_set_edge_advances_last_activity_on_the_source():
     # Arrange
     store = _store([_card(), _card(id="b", title="B")])

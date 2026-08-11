@@ -234,6 +234,21 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         actor = _default_agent(None)
         now = _utc_now_iso()
         target["status"] = "cancelled"
+        # CLEAR THE GATE WITH THE STATUS — the same rule `complete_task` learned
+        # on 2026-08-01, which this verb had not. A card that is `cancelled`
+        # while still naming an unresolved blocker is incoherent, and
+        # `_validate_tasks` refuses it:
+        #
+        #   TaskValidationError: task 'a' has blocker 'dependency' but status is
+        #   'cancelled'; set status: blocked or remove the blocker field
+        #
+        # So DELETING ANY BLOCKED CARD THAT NAMES ITS GATE FAILED OUTRIGHT — and
+        # because validation covers the WHOLE document, that one card stopped
+        # every other write in the same save. Found by the restore/undo test
+        # below, which deletes a realistically-blocked card rather than a bare
+        # one; the previous fixtures only ever tombstoned cards with no blocker,
+        # so the hole sat behind a test that could not reach it.
+        target.pop("blocker", None)
         log_meta = target.get("_log_meta")
         if not isinstance(log_meta, dict):
             log_meta = {}
