@@ -362,13 +362,73 @@ def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict
     return reader(recipient_id, store)
 
 
+def is_confirmed(record: dict) -> bool:
+    """Has THIS record been confirmed by its recipient? The single definition.
+
+    ``confirmed_at`` is the ONLY evidence of delivery. ``seen`` is not: the
+    channel drain advances ``seen`` when it pushes a record (see
+    ``_inbox_confirm.confirm_notifications``), so by the time a consumer acts on
+    a notification it is already seen and was never confirmed. Keying anything
+    on ``seen`` therefore answers "did the drain run?" while appearing to answer
+    "did the recipient get it?".
+
+    THIS FUNCTION EXISTS BECAUSE A COMMENT COULD NOT TRAVEL. That rule was
+    already written down, correctly and in full, at
+    ``_inbox_confirm.py:218-224`` — and it protected exactly the one line it was
+    attached to. Two other surfaces needed it and did not get it: ack's response
+    vocabulary and poll's ``unconfirmed`` both keyed on ``seen``, so both told
+    consumers "nothing outstanding" while the health doctor counted a growing
+    pile of pushed-but-unconfirmed rows and blamed the consumer for not acking.
+    Measured 2026-08-11 by scitex-db and reproduced first-person on 0.35.1: 20
+    acks, 20 ``already_confirmed``, zero ``confirmed``.
+
+    So the rule now lives in a function the callers must call, rather than in
+    prose the next caller must read. A mechanical barrier beats a written
+    warning precisely when the warning is correct and still gets missed.
+    """
+    return bool(record.get(CONFIRMED_AT))
+
+
+def unconfirmed_ids(
+    recipient_id: str,
+    ids: "list[str] | str | None" = None,
+    *,
+    store: str | Path | None = None,
+) -> list[str]:
+    """Ids in ``recipient_id``'s inbox with no confirmation stamp, oldest first.
+
+    Scoped to ``ids`` when given; otherwise the WHOLE inbox. The whole-inbox
+    default is the point: "what is still awaiting confirmation" is a property of
+    the INBOX, not of whichever page a caller happened to fetch. Computing it
+    over a page means a caller who fetched an empty page is told nothing is
+    outstanding — which is exactly what poll did, because the drain had already
+    marked every row seen and the default page is unseen-only.
+
+    Read-only: it never creates or migrates a store.
+    """
+    if not recipient_id:
+        return []
+    wanted = set(_wanted(ids)) if ids is not None else None
+    out: list[str] = []
+    for record in receipts(recipient_id, store=store):
+        rid = record.get("id")
+        if not rid or is_confirmed(record):
+            continue
+        if wanted is not None and rid not in wanted:
+            continue
+        out.append(str(rid))
+    return out
+
+
 __all__ = [
     "CONFIRMED_AT",
     "PUSHED_AT",
     "RECEIPT_COLUMNS",
+    "is_confirmed",
     "receipts",
     "record_confirmation",
     "record_push",
+    "unconfirmed_ids",
 ]
 
 # EOF
