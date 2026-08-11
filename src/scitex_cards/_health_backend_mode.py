@@ -94,17 +94,42 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
 
     Reports what the rail IS, by asking the same function the rail itself calls,
     rather than what a setting says it should be.
+
+    IT ASKS A THREE-VALUED QUESTION, because the rail has three backends. This
+    function used to ask ``_use_sqlite()`` — two-valued — and map its ``False``
+    onto "yaml". After #780 that ``False`` means POSTGRES far more often than it
+    means yaml, so the doctor reported the fleet's inbox as a JSON sidecar,
+    named a path that DID NOT EXIST on disk, and declared a SPLIT that had
+    already been closed. Measured 2026-08-11 on this container: rail on
+    postgres, doctor saying ``yaml (…/runtime/inboxes.json)``.
+
+    That is the same class of error the check exists to catch — a report about a
+    database nobody is using — pointed the other way. A doctor that cannot go
+    green when the patient recovers gets ignored, which costs exactly as much as
+    one that cannot go red.
     """
-    from ._inbox import _use_sqlite
+    from ._inbox_backend import POSTGRES as INBOX_POSTGRES
+    from ._inbox_backend import SQLITE as INBOX_SQLITE
+    from ._inbox_backend import backend
 
-    if not _use_sqlite():
-        from ._paths import runtime_dir
+    active = backend()
+    if active == INBOX_POSTGRES:
+        from ._inbox_postgres import _safe_dsn, resolve_dsn
 
-        return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")
+        try:
+            return POSTGRES, _safe_dsn(resolve_dsn(store))
+        except Exception as exc:  # noqa: BLE001 — a doctor must not crash
+            # SELECTED BUT UNREACHABLE IS ITS OWN ANSWER, and it must not be
+            # rendered as the SQLite sidecar: "the rail is a file" and "the rail
+            # is a server I cannot reach" call for opposite actions.
+            return POSTGRES, f"unresolved ({type(exc).__name__}: {exc})"
+    if active == INBOX_SQLITE:
+        from ._inbox_sqlite import inbox_db_path
 
-    from ._inbox_sqlite import inbox_db_path
+        return SQLITE, str(inbox_db_path(store))
+    from ._paths import runtime_dir
 
-    return SQLITE, str(inbox_db_path(store))
+    return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")
 
 
 def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
@@ -129,6 +154,26 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
                 f"(chosen by {source}), notification inbox at {inbox_where}"
             ),
             "hint": None,
+        }
+
+    if inbox_mode == POSTGRES:
+        # The inbox is on a SERVER while the cards are on a file. This is not
+        # the sidecar split below and must not borrow its remedy: nothing here
+        # is "located from the store PATH", and the fix is to point the STORE at
+        # the same server, not to move the inbox.
+        return {
+            "ok": False,
+            "detail": (
+                f"SPLIT BACKENDS, THE OTHER WAY ROUND — the notification inbox "
+                f"is on postgres ({inbox_where}) but the cards are on "
+                f"{store_mode} ({target}, chosen by {source}). Notifications "
+                "reference cards that the notification database has never seen, "
+                "so no read can join the two and no transaction can span them."
+            ),
+            "hint": (
+                "Point $SCITEX_CARDS_DB at the same server the inbox uses, so "
+                "a notification and the card it is about live in one database."
+            ),
         }
 
     return {

@@ -52,7 +52,6 @@ import sqlite3
 from pathlib import Path
 
 from ._db_bootstrap import (
-    _insert_notifications,
     _insert_tasks,
     _insert_users,
     _rebuild_from_doc,
@@ -77,7 +76,34 @@ CREATE TABLE IF NOT EXISTS {HASH_TABLE} (
 
 #: Sections of the doc that are NOT per-card. They change rarely, so they get one
 #: hash each and are only rebuilt when that hash moves.
-_SECTION_KEYS = ("users", "inboxes")
+#:
+#: ``inboxes`` IS DELIBERATELY ABSENT, for exactly the reason ``messages`` is
+#: absent from :data:`_db_bootstrap._DOC_CLEAR_ORDER`: A TABLE IS OWNED BY
+#: EXACTLY THE THING THAT PRODUCES IT, and since #780 the thing that produces
+#: ``notifications`` is the delivery rail (``_inbox_postgres``), not this
+#: document.
+#:
+#: While it was listed here, an ORDINARY CARD WRITE rebuilt the live rail:
+#: :func:`_sync_sections` issues ``DELETE FROM notifications`` and re-inserts
+#: from ``doc["inboxes"]`` through :func:`_db_sections._insert_notifications`,
+#: which writes NINE of the table's THIRTEEN columns. ``msg_id`` (the exact DM
+#: dedupe key), ``pushed_at`` and ``confirmed_at`` (the delivery receipts) were
+#: therefore ERASED, and ``seq`` — the arrival order the drain and the ack both
+#: order by — was re-issued from ``nextval`` in ``ts, id`` order, silently
+#: RENUMBERING the queue. Nothing failed while it happened.
+#:
+#: The trigger was not rare either: the section hash moves whenever any
+#: notification row changes, and ``seen`` is overlaid into the exported record,
+#: so every poll made the next unrelated ``add_task`` rebuild the rail.
+#:
+#: ``_migrate_v7_to_v8`` predicted this in writing — "that DELETE must be
+#: neutralised in the same change that flips the writers, or the migration turns
+#: a dead mirror into a silent deletion trigger". The writers flipped in #780
+#: and the DELETE was not neutralised. This is that neutralisation.
+#:
+#: The export still EMITS ``inboxes`` (the backup rail in ADR-0010 must contain
+#: the notifications); it is only the write-back that no longer owns them.
+_SECTION_KEYS = ("users",)
 
 
 def _card_hash(card: dict) -> str:
@@ -364,11 +390,16 @@ def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
 
 
 def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
-    """Rebuild ``users`` / ``notifications`` only when their section changed.
+    """Rebuild ``users`` only when its section changed.
 
-    These are whole-section tables (no per-row identity we can diff cheaply), so
-    they keep the delete-and-reinsert shape — but they now pay it only when they
-    have actually moved, instead of on every card write.
+    A whole-section table (no per-row identity we can diff cheaply), so it keeps
+    the delete-and-reinsert shape — but pays it only when it has actually moved,
+    instead of on every card write.
+
+    ``notifications`` USED TO BE REBUILT HERE AND MUST NEVER BE AGAIN. See
+    :data:`_SECTION_KEYS` for the measurement: the reinsert wrote 9 of 13
+    columns, so an unrelated card write erased the delivery receipts and
+    renumbered the queue. The rail owns that table now.
     """
     for key in _SECTION_KEYS:
         want = _section_hash(doc.get(key))
@@ -377,13 +408,9 @@ def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
         ).fetchone()
         if row and _sole_value(row) == want:
             continue
-        if key == "users":
-            conn.execute("DELETE FROM user_names")
-            conn.execute("DELETE FROM users")
-            _insert_users(conn, doc.get("users"))
-        else:  # inboxes -> notifications
-            conn.execute("DELETE FROM notifications")
-            _insert_notifications(conn, doc.get("inboxes"))
+        conn.execute("DELETE FROM user_names")
+        conn.execute("DELETE FROM users")
+        _insert_users(conn, doc.get("users"))
         conn.execute(
             f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
             f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",

@@ -173,6 +173,12 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     # one migration, so any of them would place the store equally well.
     (8, "column", "notifications", "msg_id"),
     (9, "column", "notifications", "seq"),
+    # v10 — the sync columns. `row_uuid` is the rung rather than any of the
+    # other four because it is the one that cannot plausibly be added by
+    # something else: `revision` and `updated_at` are names a future table might
+    # acquire for local reasons, and a rung that another change could satisfy
+    # would place a store at v10 that never ran this migration.
+    (10, "column", "notifications", "row_uuid"),
 )
 
 #: The lowest version this module can justify from physical evidence.

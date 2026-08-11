@@ -62,6 +62,27 @@ def sqlite_store(tmp_path):
             os.environ[name] = value
 
 
+@pytest.fixture
+def postgres_rails(sqlite_store):
+    """Both rails on a server: the shape the fleet has run since #780.
+
+    Layered on ``sqlite_store`` so the environment is saved and restored once.
+    Real environment variables, because which backend the rail picks is read
+    from ``os.environ`` and that resolution is exactly what is under test.
+    """
+    os.environ["SCITEX_CARDS_DB"] = _DSN
+    yield _DSN
+
+
+@pytest.fixture
+def postgres_inbox_only(sqlite_store):
+    """Inbox on a server, cards in a file — the split the other way round."""
+    os.environ["SCITEX_TODO_INBOX_BACKEND"] = "postgres"
+    os.environ["SCITEX_CARDS_INBOX_DSN"] = _DSN
+    yield sqlite_store
+    os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)
+
+
 class TestMatchingRailsPass:
     def test_a_file_store_reports_ok(self, sqlite_store):
         # Arrange
@@ -127,6 +148,76 @@ class TestASplitIsReportedAsFailure:
 
         # Assert
         assert isinstance(result["ok"], bool)
+
+
+class TestItCanGoGreenWhenTheRailMoves:
+    """A doctor that cannot report a recovery costs as much as one that cannot
+    report a fault.
+
+    Measured on a live container 2026-08-11, AFTER the rail moved into
+    PostgreSQL in #780: this check still reported ``SPLIT BACKENDS ... the
+    notification inbox is on yaml (~/.scitex/cards/runtime/inboxes.json)`` — a
+    path that did not exist on disk — because ``_inbox_mode`` asked the
+    two-valued ``_use_sqlite()`` and mapped its ``False`` onto "yaml". The
+    remedy the hint named had already been applied and the check could not say
+    so, which is the same class of error it exists to catch, pointed the other
+    way.
+    """
+
+    def test_both_rails_on_postgres_is_ok(self, postgres_rails):
+        # Arrange
+        store = postgres_rails
+
+        # Act
+        result = check_backend_mode(store)
+
+        # Assert
+        assert result["ok"] is True
+
+    def test_the_detail_does_not_claim_a_json_sidecar(self, postgres_rails):
+        """It named a file that was not there; that is worse than saying less."""
+        # Arrange
+        store = postgres_rails
+
+        # Act
+        detail = check_backend_mode(store)["detail"]
+
+        # Assert
+        assert "inboxes.json" not in detail
+
+    def test_the_inbox_is_reported_as_postgres(self, postgres_rails):
+        # Arrange
+        store = postgres_rails
+
+        # Act
+        detail = check_backend_mode(store)["detail"]
+
+        # Assert
+        assert f"both rails on {POSTGRES}" in detail
+
+
+class TestASplitTheOtherWayIsAlsoReported:
+    def test_a_postgres_inbox_with_a_file_store_fails(self, postgres_inbox_only):
+        """Notifications referencing cards their database has never seen."""
+        # Arrange
+        store = postgres_inbox_only
+
+        # Act
+        result = check_backend_mode(store)
+
+        # Assert
+        assert result["ok"] is False
+
+    def test_its_hint_does_not_tell_you_to_move_the_inbox(self, postgres_inbox_only):
+        """The inbox is already where it belongs; the STORE is the odd one."""
+        # Arrange
+        store = postgres_inbox_only
+
+        # Act
+        hint = check_backend_mode(store)["hint"]
+
+        # Assert
+        assert "SCITEX_CARDS_DB" in hint
 
 
 class TestItNamesWhichTierChoseTheTarget:
