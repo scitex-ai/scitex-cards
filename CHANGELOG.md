@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-08-11
+
+**Four things that reported success while doing something else.**
+
+Every fix here was found by a peer measuring rather than by a test failing, and
+each one had a correct-looking implementation. That is the theme: none of these
+were wrong code. They were right answers to questions nobody had asked.
+
+### Fixed
+
+- **Five verbs changed a card without aging it.** `complete_task`,
+  `resolve_task`, `reopen_task`, `restore_task` and `set_edge` mutated a card
+  without advancing `last_activity` — the field every last-writer-wins
+  reconciler orders by. Reported by scitex-dev after two cards proved
+  unorderable across three hosts; an AST audit of all 16 card-persisting
+  functions found five, not one. The failure does not lose a CARD, it loses a
+  COMPLETION, in the direction that looks like ordinary reconciliation.
+  `restore_task` was the worst: `delete_task` stamps when it tombstones, so a
+  restore replaying the pre-delete snapshot wrote a row strictly OLDER than the
+  tombstone it reverses — an Undo a second host would undo. (#795)
+
+- **Deleting a blocked card failed outright.** `delete_task` flipped `status` to
+  `cancelled` without clearing `blocker`, which `_validate_tasks` refuses — and
+  because validation covers the whole document, one such card blocked every
+  other write in the same save. The same rule `complete_task` learned on
+  2026-08-01, never applied to the other closing verb. (#795)
+
+- **`unconfirmed` described the fetched page, not the inbox.** It also keyed on
+  `seen`, which the channel drain advances when it pushes. Two independent
+  causes, and fixing either alone leaves the field useless: the default page is
+  unseen-only, so after the drain it is EMPTY and the field was empty with it —
+  by construction, whatever column it read. A consumer had to query the rail
+  directly to find a notification it had just acted on. (#797)
+
+- **`ack_notifications` told a first delivery "you already did this".**
+  Classification was read off the cursor advance, which the drain had already
+  performed, so `_inbox.ack` honestly reported flipping nothing and every first
+  ack of a pushed record returned `already_confirmed`. Measured across two
+  agents: twenty acks, twenty `already_confirmed`, zero `confirmed`. (#799)
+
+### Changed
+
+- **Foreign keys are declared `DEFERRABLE INITIALLY DEFERRED`.** Under directed
+  replay a foreign key is an ORDERING constraint: a child arriving before its
+  parent must be checked at COMMIT, not at statement. `NOT DEFERRABLE` was never
+  a decision — it is what an inline `REFERENCES` gives you when nobody thinks
+  about ordering. This fixes stores created after it; existing stores need a
+  migration rung, tracked separately. Raised by scitex-db, who declined to run
+  their own ALTER because two reconcilers with different target shapes oscillate
+  forever with both logs reporting success. (#796)
+
+- **`ack_notifications` response semantics.** `confirmed` and
+  `already_confirmed` now mean what their names say, keyed on the confirmation
+  stamp rather than on the cursor. A caller that treated `already_confirmed` as
+  "nothing to do" will now correctly see `confirmed` on a first delivery.
+
+### Added
+
+- `is_confirmed` / `unconfirmed_ids` in `_inbox_receipt` — the single definition
+  of "has the recipient confirmed this?", consumed by the three surfaces that
+  must agree. The rule was already written down, correctly and in full, at
+  `_inbox_confirm.py:218-224`, and it protected exactly the line it was attached
+  to. A comment cannot travel; a predicate can. (#797)
+
 ## [0.35.1] - 2026-08-10
 
 **A refused compare-and-set must destroy nothing.**
