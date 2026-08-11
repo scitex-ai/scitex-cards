@@ -95,29 +95,41 @@ def _written_at(row, table: str) -> str | None:
 def _refusal(row, table: str, *, detail: str) -> ExportRefused:
     """The refusal, saying what is true and what to do about it.
 
-    It must distinguish a row that is OLD and unrecoverable from one written
-    BROKEN BY CURRENT CODE, because those need opposite responses — re-import
-    the database versus fix the writer — and the row's own timestamp is what
-    tells them apart. Naming a cause the data contradicts is worse than naming
-    none.
+    SAY WHAT IS TRUE, NOT WHAT IS LIKELY. This message used to assert "this DB
+    predates schema v3's payload columns ... use a database written by a
+    current version". Both clauses were a GUESS PRESENTED AS A DIAGNOSIS, and
+    on 2026-08-11 both were false: the rows were SECONDS old, written by
+    current code, and they rebuilt trivially from their own columns. Three
+    agents chased a migration that did not exist. An error that names the wrong
+    cause is worse than one that names none, because it is ACTIONABLE in the
+    wrong direction.
+
+    The wording naming the WRITER rather than the row's age is #805's (itself
+    dotfiles' formulation) and is kept verbatim, because it points at the bug
+    instead of away from it. What is added here is the row's own TIMESTAMP —
+    the single fact that lets a reader settle the age question for themselves
+    instead of taking anyone's word for it — and the reason the automatic
+    repair could not rescue this particular row.
     """
     stamp = _written_at(row, table)
-    when = f" written {stamp}" if stamp else ""
+    when = f" (written {stamp})" if stamp else ""
     return ExportRefused(
-        f"{table} row {row['id']!r}{when} has no record_json payload, and "
-        f"{detail}\n"
-        "\n"
-        "Two different faults look like this, and the timestamp above tells "
-        "them apart:\n"
-        "  * an OLD row predating schema v3's payload columns — re-import the "
-        "database from an export written by a current version;\n"
-        "  * a row written moments ago by a CURRENT writer that omitted the "
-        "payload — that is a WRITER defect; report it with the row id and "
-        "timestamp above, and repair the row rather than delete it.\n"
-        "\n"
-        "Nothing was deleted or modified. Rebuildable rows are repaired "
-        "automatically on read; this one is not, so inspect it directly:\n"
-        f"  SELECT * FROM {table} WHERE id = '{row['id']}';"
+        f"{table} row {row['id']!r}{when} was written without a record_json "
+        "payload. This is a WRITER defect: some emit path inserted the row "
+        "without serialising its payload. It is not evidence that the "
+        "database is old — a row written seconds ago by current code "
+        "produces this same refusal, and the row's own timestamp above is "
+        "what settles that question.\n"
+        f"  This row could not be repaired automatically because {detail}\n"
+        "  NEXT STEP: find the write path that produced this row and make "
+        "it pass record_json. Rebuildable rows ARE repaired automatically on "
+        "read; do NOT delete or quarantine this one, because notification "
+        "rows are often undelivered messages and discarding one to unblock a "
+        "write destroys it. Nothing was deleted or modified here — inspect "
+        "the row with:\n"
+        f"    SELECT * FROM {table} WHERE id = '{row['id']}';\n"
+        "  Exporting stripped records is worse than exporting none, which "
+        "is why this refuses rather than returning a partial record."
     )
 
 
@@ -153,10 +165,9 @@ def _repair(row, table: str) -> dict[str, Any]:
             row,
             table,
             detail=(
-                f"no rebuild rule exists for {table}: its record may carry keys "
-                "that are not columns, so a column-based rebuild could silently "
-                "drop them. Exporting a stripped record is worse than "
-                "exporting none."
+                f"no rebuild rule exists for {table}: its record may carry "
+                "keys that are not columns, so a column-based rebuild could "
+                "silently drop them."
             ),
         )
     rebuilt = rebuild(row)
