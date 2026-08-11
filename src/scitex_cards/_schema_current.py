@@ -91,7 +91,35 @@ def schema_already_current(conn: Any, shape: Any, schema_version: int) -> bool:
     from ._schema_probe import trigger_names  # noqa: PLC0415 -- import cycle
     from ._schema_shape import ShapeAgreement  # noqa: PLC0415 -- import cycle
 
-    if shape.observed != schema_version:
+    # BEHIND, not DIFFERENT. This was `!=` until 2026-08-02, and the difference
+    # is the whole bug: `!=` fails in BOTH directions, so a client OLDER than the
+    # store re-ran the full DDL on every connection.
+    #
+    # For a client that is AHEAD, running the DDL is the point -- it migrates the
+    # store up. For one that is BEHIND it is worse than useless: a v7 client's
+    # DDL only knows rungs 1..7, the store is already at v9, so the statements
+    # change nothing AND take ShareRowExclusiveLock on pg_proc every single time
+    # a connection opens. It cannot help and it can only serialise.
+    #
+    # MEASURED, and this is the failure it produces at fleet width:
+    #     deadlock detected ... Process A waits for ShareLock on transaction N
+    #     Process B waits for ShareRowExclusiveLock on relation pg_proc
+    # Four samples on 2026-08-02, three of them hit by this agent's own
+    # update_task and add_task calls while writing the card that describes it.
+    # Two independent reporters had blamed row contention between concurrent
+    # writers; the real antagonist is any stale client OPENING A CONNECTION
+    # anywhere in the fleet, which is why the correlation with a co-writer
+    # looked convincing and pointed at the wrong layer.
+    #
+    # The stale population is not hypothetical: agent containers measured at
+    # SCHEMA_VERSION 7 against a store stamped 9, on more than one image vintage.
+    #
+    # `observed is None` stays a REFUSAL rather than becoming a comparison. It
+    # means the store sits below the ladder floor and genuinely cannot be placed
+    # (ShapeAgreement.UNKNOWN), and `None < int` would raise rather than decide.
+    # Unknown is not "current"; it falls through to the DDL, which is the
+    # conservative branch.
+    if shape.observed is None or shape.observed < schema_version:
         return False
     # The physical rungs and the stamp must tell the same story. A disagreement
     # is precisely the state the migration chain exists to repair, so it must

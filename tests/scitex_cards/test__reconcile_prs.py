@@ -97,12 +97,54 @@ def test_decide_skip_no_pr_when_pr_url_missing():
 
 
 def test_decide_skip_no_pr_when_pr_url_unparseable():
+    """Status is ``in_progress`` because this test is about the URL.
+
+    It said ``blocked`` until 2026-08-03, when ``blocked`` left OPEN_STATUSES.
+    That was incidental -- the subject is an unparseable ``pr_url`` -- and a
+    status that now short-circuits earlier would have made this assert the
+    wrong reason for the right answer.
+    """
     # Arrange
-    task = {"status": "blocked", "pr_url": "not-a-pr-url"}
+    task = {"status": "in_progress", "pr_url": "not-a-pr-url"}
     # Act
     action = decide_reconcile_action(task, MERGED)
     # Assert
     assert action == ACTION_SKIP_NO_PR
+
+
+def test_decide_never_auto_closes_a_blocked_card():
+    """THE DEFECT, EXECUTED. Measured on the live board 2026-08-03.
+
+    scitex-hub set a card to ``blocked=dependency`` at 19:08Z, its note opening
+    "STATUS blocked=dependency, NOT done". At 19:30Z this reconciler set it to
+    ``done`` on a merged PR. A blocker is the record that someone ALREADY
+    considered the question and decided the work is unfinished, so it is the
+    one status a heuristic must not overrule.
+    """
+    # Arrange
+    task = {"status": "blocked", "pr_url": "https://github.com/o/r/pull/528"}
+
+    # Act
+    action = decide_reconcile_action(task, MERGED)
+
+    # Assert
+    assert action == ACTION_SKIP_NOT_OPEN
+
+
+def test_decide_still_closes_an_in_progress_card():
+    """Positive control: the guard must not have disabled the whole feature.
+
+    Without this, a reconciler that closed NOTHING would pass every
+    must-not-close assertion above and look correct.
+    """
+    # Arrange
+    task = {"status": "in_progress", "pr_url": "https://github.com/o/r/pull/528"}
+
+    # Act
+    action = decide_reconcile_action(task, MERGED)
+
+    # Assert
+    assert action == ACTION_CLOSE
 
 
 def test_decide_skip_not_open_for_deferred_card():

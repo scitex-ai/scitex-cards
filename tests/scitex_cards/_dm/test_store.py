@@ -28,9 +28,9 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards import _dm_store
+from scitex_cards._dm import store as _dm_store
 from scitex_cards._db import SCHEMA_VERSION, open_db
-from scitex_cards._dm_read import current_members
+from scitex_cards._dm.read import current_members
 from scitex_cards._threads import append_message, get_thread, mark_read
 
 
@@ -114,7 +114,7 @@ def test_a_database_failure_is_not_swallowed(store, monkeypatch):
     def _boom(*_args, **_kwargs):
         raise sqlite3.OperationalError("disk I/O error")
 
-    monkeypatch.setattr("scitex_cards._dm_write.append_pair", _boom)
+    monkeypatch.setattr("scitex_cards._dm.write.append_pair", _boom)
 
     # Act
     refusal = pytest.raises(sqlite3.OperationalError)

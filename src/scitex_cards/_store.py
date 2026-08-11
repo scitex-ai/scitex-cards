@@ -238,16 +238,34 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
     THE ``missing_ok`` PARAMETER IS GONE, and its removal is the safety
     property rather than a tidy-up. It used to mean "an absent store yields an
     empty doc instead of raising", which was reasonable when the store was a
-    file that a fresh install legitimately lacked. Against a database it is a
-    loaded gun: an empty doc flows into a read-modify-write, the caller appends
-    its one new card, and ``mirror_doc_incremental`` diffs that one-card
-    document against the DB and DELETES every card missing from it.
+    file that a fresh install legitimately lacked. Against a database it was a
+    loaded gun: an empty doc flowed into a read-modify-write, the caller
+    appended its one new card, and the mirror diffed that one-card document
+    against the DB and deleted every card missing from it.
 
     Measured on a scratch store during this cutover: five sequential writes
     left exactly ONE row each time. On the live board that is 2065 cards down
     to 1, silently, with nothing raised anywhere in the stack. Found by
     round-tripping real writes, not by reading the diff — the write path looked
     correct in isolation and only end-to-end exercise showed the loss.
+
+    THAT MECHANISM IS CLOSED, and the tense above is deliberate — it describes
+    what the removal was FOR, not what would happen today. Two later guards
+    would now catch it independently:
+
+      * ``mirror_doc_incremental`` no longer infers a delete from absence at
+        all. Its own comment says so, and the ``removed = [i for i in prior if
+        i not in now_hashes]`` line it used to end with is gone. Only
+        caller-named ``deleted_ids`` are dropped.
+      * ``write_doc_to_db``'s shrink guard REFUSES a write missing rows the
+        store already has unless ``allow_shrink=True`` — installed after the
+        third board wipe.
+
+    ``missing_ok`` STAYS GONE REGARDLESS, and not because of the wipe: an empty
+    doc entering a read-modify-write is a bad input on its own terms, whatever
+    the layers below do with it. Do not reintroduce it on the grounds that the
+    mirror is now safe — that argument reasons from the wrong premise, and the
+    guards below are defence in depth rather than permission.
 
     So there is no "absent store" case to be tolerant about: a missing database
     is a configuration error and :func:`_read_canonical_db_or_raise` says so.
@@ -278,6 +296,11 @@ def resolve_store(store: str | Path | None = None) -> dict:
           "exists":           bool,
           "store_uuid":       <the database's own identity, or None>,
           "expected_uuid":    <$SCITEX_CARDS_STORE_UUID, or None>,
+          "instance_id":      <the SERVER's own identity, or None>,
+          "expected_instance": <$SCITEX_CARDS_STORE_INSTANCE, or None>,
+          "identity_verdict": "matches" | "differs" | "cannot-tell",
+          "identity_reason":  <why, when the verdict is not "matches">,
+          "may_proceed":      bool,
         }
 
     ``store_uuid`` is contract point 8, machine-readable half (design §11). The
@@ -292,8 +315,29 @@ def resolve_store(store: str | Path | None = None) -> dict:
     value this process was told to expect, and reading them from two different
     surfaces is how a mismatch stays undiagnosed.
 
-    THIS FUNCTION IS PURE REPORTING. Reading the identity here never mints one,
-    never stamps one, and never changes what resolves.
+    ``instance_id`` AND WHY ``store_uuid`` WAS NOT ENOUGH. On 2026-08-12 three
+    live PostgreSQL databases all answered ``store_uuid =
+    1d55dd6e-3d2a-4c24-a429-a78835ab988f`` while holding 3843, 3743 and 3422
+    cards. ``store_uuid`` is a ``schema_meta`` ROW and a dump/restore carries
+    rows, so every field reported here was byte-identical across stores that
+    were hundreds of cards apart — a report that cannot distinguish them is a
+    report that confirms whichever one you happened to reach. ``instance_id``
+    is the SERVER's own ``system_identifier``, minted by ``initdb`` and present
+    in no dump, so it is the one value a copy cannot carry. See
+    :mod:`._store_instance` and :mod:`._store_pin`.
+
+    ``may_proceed`` IS THE FIELD TO BRANCH ON, never ``identity_verdict``. A
+    caller testing ``verdict != "differs"`` reads "I cannot tell which store
+    this is" as a pass, which is exactly how three databases shared one
+    identity for five days without anything complaining.
+
+    THIS FUNCTION IS PURE REPORTING — AND THAT INCLUDES THE VERDICT. It reports
+    a refusal; it does not perform one. Reading the identity here never mints
+    one, never stamps one, and never changes what resolves, and a ``differs``
+    verdict raises nothing: this is the verb an operator runs WHEN THINGS ARE
+    ALREADY BROKEN, and on 2026-07-31 it was the one verb that CRASHED on the
+    case being diagnosed. The enforcing twin is
+    :func:`._store_pin.require_pinned_store`, which raises.
     """
     import os
 
@@ -301,6 +345,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
     from ._paths import PKG_SHORT, _user_root
     from ._store_target import resolve_store_target
     from ._store_url import backend_of, is_postgres_url
+    from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
     # The resolved store is the DATABASE — the sole store identity. It may be a
@@ -330,6 +375,35 @@ def resolve_store(store: str | Path | None = None) -> dict:
         "exists": None if on_server else Path(resolved).exists(),
         "store_uuid": store_uuid_at(resolved),
         "expected_uuid": expected_store_uuid(),
+        # Probed ONCE and compared in-process. `check_resolution` would re-run
+        # the whole resolution and open a second connection to say the same
+        # thing, and a diagnostic that costs two round-trips to a store that may
+        # be down is a diagnostic that hangs twice as long on the case it exists
+        # to explain.
+        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+    }
+
+
+def _identity_fields(check) -> dict:
+    """Flatten an :class:`._store_instance.IdentityCheck` into report keys.
+
+    FLAT, not nested, because this dict is rendered by the CLI, the MCP tool and
+    the board alike, and a nested object is the shape every one of them would
+    have to learn separately. ``instance_id`` sits beside ``store_uuid`` for the
+    same reason the uuid pair sits together: the facts you compare belong on one
+    surface.
+
+    ``identity_reason`` is carried verbatim rather than summarised. It is the
+    only part a human acts on, and the two refusals — "you are pointed at the
+    wrong store" and "I cannot tell which store this is" — call for different
+    actions, which a boolean cannot say.
+    """
+    return {
+        "instance_id": check.observed.instance_id,
+        "expected_instance": check.expected,
+        "identity_verdict": check.verdict.value,
+        "identity_reason": check.reason,
+        "may_proceed": check.may_proceed,
     }
 
 

@@ -379,7 +379,7 @@ scitex-cards skills install                  # install into ~/.claude/skills
 <summary><strong>Web board</strong></summary>
 
 ```bash
-pip install scitex-cards[web]
+pip install scitex-cards[all]
 scitex-cards board start --port 8051         # kanban + timeline, http://127.0.0.1:8051/
 scitex-cards board status | stop | restart   # pidfile-backed lifecycle
 ```

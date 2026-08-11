@@ -54,8 +54,8 @@ def store(tmp_path, monkeypatch):
 
 def _send(store_path, sender, to, body, ts=None):
     """Commit a real DM through the real write path. Returns the record."""
-    from scitex_cards._dm_ids import pair_thread_id
-    from scitex_cards._dm_write import append
+    from scitex_cards._dm.ids import pair_thread_id
+    from scitex_cards._dm.write import append
 
     return append(
         pair_thread_id(sender, to),
@@ -68,7 +68,7 @@ def _send(store_path, sender, to, body, ts=None):
 
 def _readers_of(store_path, message_id):
     """The readers who have confirmed ``message_id``, straight from the store."""
-    from scitex_cards._dm_read import _open
+    from scitex_cards._dm.read import _open
 
     conn = _open(None, store_path)
     try:

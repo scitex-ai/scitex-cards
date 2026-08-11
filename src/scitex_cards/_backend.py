@@ -43,6 +43,7 @@ import os
 from typing import Any
 
 from . import _help_wait, _inbox, _store, _threads
+from ._dm import read as _dm_read
 from ._currency import warn_if_stale_once
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
@@ -260,15 +261,36 @@ class LocalBackend:
         notifications = _inbox.poll_inbox(
             recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
         )
+        from ._inbox_receipt import unconfirmed_ids
+
         payload = {
             "agent": agent,
             "recipient_id": recipient_id,
             "notifications": notifications,
             # The ids still awaiting confirmation, and the verb that confirms
             # them: the safe loop must be the OBVIOUS one to write from here.
-            "unconfirmed": [
-                n.get("id") for n in notifications if n.get("id") and not n.get("seen")
-            ],
+            #
+            # TWO THINGS THIS USED TO GET WRONG, both of which made the field
+            # incapable of ever reporting the backlog it exists to report.
+            #
+            # It keyed on `seen`. The channel drain advances `seen` when it
+            # pushes a record, so every pushed notification looked confirmed the
+            # moment it was delivered — while `confirmed_at`, the only actual
+            # evidence of delivery, stayed NULL. `is_confirmed` now owns that
+            # distinction for every caller (see `_inbox_receipt`).
+            #
+            # And it was computed over `notifications`, i.e. over THIS PAGE.
+            # The default page is unseen-only, and the drain has already marked
+            # the rows seen, so the page is empty and the field was empty with
+            # it — by construction, regardless of which column it read. Fixing
+            # only the column would have produced a correct predicate applied to
+            # nothing, and looked fixed.
+            #
+            # "What is still awaiting confirmation" is a property of the INBOX.
+            # Measured 2026-08-11: a consumer polled, was told nothing was
+            # outstanding, and had to query the rail directly to find the
+            # notification it had just acted on.
+            "unconfirmed": unconfirmed_ids(recipient_id, store=store),
             "confirm_with": "ack_notifications",
         }
         if deprecation is not None:
@@ -307,7 +329,37 @@ class LocalBackend:
         key = _threads.thread_key(sender, other)
         if ack:
             _threads.mark_read(key, sender, store=store)
-        messages = _threads.get_thread(sender, other, store=store)
+            # AND THE RECEIPT GOES TO THE STORE, for the same reason the board's
+            # does: the messages below now come from `dm_messages`, so an ack
+            # that only touched the sidecar would leave a thread permanently
+            # unread. Idempotent by `(message_id, reader)`.
+            from ._dm import write as _dm_write
+
+            unread_ids = [
+                m["id"]
+                for m in _dm_read.unread_for(sender, store=store, thread_id=key)
+            ]
+            if unread_ids:
+                _dm_write.mark_read(unread_ids, sender, store=store)
+        # THE STORE, NOT THE SIDECAR — the agent-facing half of the same defect.
+        #
+        # PRs #776/#777 moved the BOARD's list and pane onto `dm_messages` and
+        # left THIS verb — the one every agent calls — on
+        # `_threads.get_thread`, which reads `threads.json`, A PER-HOST FILE.
+        #
+        # Reproduced 2026-08-09 by two readers on one store, which is what makes
+        # it undeniable rather than a hunch:
+        #   scitex-agent-container (laptop)     dm_list(peer="…-04") -> 1 message
+        #   scitex-agent-container-04 (compute) IDENTICAL query      -> []
+        # Same DSN, same store_uuid 1d55dd6e-3d2a-4c24-a429-a78835ab988f, no
+        # SQLite fallback, Postgres reachable from both, and — checked, because
+        # it was the obvious suspect — THE SAME PACKAGE VERSION 0.32.3 on both.
+        # The only difference was which host's `threads.json` each client read.
+        #
+        # That is the operator's complaint in his own words: his messages do not
+        # arrive at the agents' terminals. A per-host file cannot carry a
+        # cross-host conversation, so an agent could not read its own peer DMs.
+        messages = _dm_read.messages_in(key, store=store)
         return {"thread": key, "peer": other, "messages": messages}
 
 

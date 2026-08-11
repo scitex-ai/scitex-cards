@@ -23,6 +23,7 @@ from pathlib import Path
 
 from ._model import _save_doc_unlocked, _store_lock
 from ._store_list import _resolved_store
+from ._touch import touch_last_activity
 
 
 def set_edge(
@@ -84,7 +85,7 @@ def set_edge(
     suppression is correct — it just needs saying.
     """
     from . import _model, _task
-    from ._store import TaskNotFoundError, _read_write_doc
+    from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
 
     if action not in ("add", "remove"):
         raise ValueError("set_edge: action must be 'add' or 'remove'")
@@ -105,8 +106,30 @@ def set_edge(
         tgt_task = _task._find_live_task(tasks, target)
         if src_task is None:
             raise TaskNotFoundError(f"set_edge: unknown source id {source!r}")
-        if tgt_task is None:
+        # THE TARGET MUST EXIST TO ADD AN EDGE, AND MUST NOT BE REQUIRED TO
+        # REMOVE ONE. Requiring it on both was one guard written once for two
+        # verbs with OPPOSITE preconditions, and it made the only verb that
+        # scrubs a reference refuse in exactly the case it exists for.
+        #
+        # Measured consequence, reported by scitex-db and scitex-dev on
+        # 2026-08-09: a tenant migration was blocked on ONE orphaned edge, and
+        # the documented remedy could not be run against the damage it names.
+        # The available workaround is `update_task(depends_on=[...])`, which
+        # REWRITES THE WHOLE LIST -- so the refusal did not merely block a
+        # caller, it pushed them onto a path that is LOSSY UNDER CONCURRENCY
+        # where a targeted removal is not. scitex-db put it best: validation
+        # and repair ended up on opposite sides of the same wall.
+        #
+        # On `add` the check stays, and keeps a DIFFERENT justification worth
+        # stating so nobody "harmonises" it away: it stops a TYPO minting a
+        # dangling edge. That is a caller error. A FORWARD REFERENCE -- naming
+        # a card not created yet -- is deliberate and documented
+        # (`_validate.py`: unknown `depends_on`/`blocks` ids are "DROPPED
+        # RATHER THAN REJECTED", and `_diagram/_mermaid.py` skips and warns),
+        # so leniency is policy, not oversight. Removal simply joins it.
+        if action == "add" and tgt_task is None:
             raise TaskNotFoundError(f"set_edge: unknown target id {target!r}")
+        before = list(src_task.get(kind) or [])
         edges = src_task.get(kind) or []
         if action == "add" and target not in edges:
             edges = list(edges) + [target]
@@ -116,6 +139,14 @@ def set_edge(
             src_task[kind] = edges
         else:
             src_task.pop(kind, None)
+        # Stamp only a REAL change. Re-adding an edge that is already present
+        # is an idempotent no-op, and stamping it would advance the card's age
+        # without the card having changed — the mirror image of the bug this
+        # invariant exists to close. `before` is captured above precisely so
+        # "did anything happen?" is answered by comparison, not by assumption.
+        now = _utc_now_iso()
+        if list(edges) != before:
+            touch_last_activity(src_task, now)
 
         if action == "add":
             # WHO waits, and WHO is waited on? `depends_on` points from the waiter
@@ -131,6 +162,14 @@ def set_edge(
                     subs.append(owner)
                     awaited["subscribers"] = subs
                     subscribed = owner
+                    # The AWAITED card changed too — it gained a subscriber.
+                    # This is the card whose completion will fire the
+                    # notification, so a reconciler that overwrites it with a
+                    # copy lacking this subscriber restores the exact silent
+                    # no-op the subscribe-on-edge rule above was written to
+                    # kill. Stamping both cards is not belt-and-braces; two
+                    # cards were mutated, so two cards are newer.
+                    touch_last_activity(awaited, now)
             # An OWNERLESS waiter cannot be subscribed to anything — there is nobody
             # to tell. We do NOT invent a recipient; `subscribed: None` says so
             # plainly rather than letting the caller assume delivery is wired.

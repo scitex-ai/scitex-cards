@@ -62,7 +62,8 @@ SOURCE_COLUMNS = (
 )
 
 #: The matching ``notifications`` columns. Same order as SOURCE_COLUMNS;
-#: ``recipient`` is the one rename.
+#: ``recipient`` is the one rename. ``record_json`` is appended last and has NO
+#: source column — see :func:`carry_rows`, which COMPUTES it.
 TARGET_COLUMNS = (
     "id",
     "recipient_id",
@@ -75,6 +76,7 @@ TARGET_COLUMNS = (
     "msg_id",
     "pushed_at",
     "confirmed_at",
+    "record_json",
 )
 
 
@@ -134,6 +136,15 @@ def carry_rows(
 
     ``placeholder`` exists because paramstyle differs between drivers; the
     caller passes what its connection speaks.
+
+    THE PAYLOAD IS COMPUTED, NOT COPIED. ``record_json`` is the one target
+    column with no source column — the module docstring's "(no equivalent)" —
+    and a carry that therefore left it NULL produced rows the export path
+    REFUSES, which fails every card write on that database rather than only the
+    carried row. There is nothing to copy and everything to compute: the source
+    row already holds every field of the record, which is exactly why
+    :func:`scitex_cards._inbox_record.rebuild_notification_record` can rebuild
+    it exactly.
     """
     columns = ", ".join(TARGET_COLUMNS)
     marks = ", ".join([placeholder] * len(TARGET_COLUMNS))
@@ -143,9 +154,33 @@ def carry_rows(
     )
     written = 0
     for row in rows:
-        target_conn.execute(statement, tuple(row))
+        target_conn.execute(statement, _row_with_payload(row))
         written += 1
     return written
+
+
+def _row_with_payload(row: tuple) -> tuple:
+    """``row`` plus the ``record_json`` it has no source column for.
+
+    ``pushed_at`` / ``confirmed_at`` are deliberately NOT in the payload: they
+    are DELIVERY STATE the rail mutates after the fact, not part of the record
+    the recipient receives — the same reason ``seen`` is overlaid onto the
+    payload at export time rather than baked into it.
+    """
+    from ._inbox_record import notification_payload, notification_record
+
+    fields = dict(zip(SOURCE_COLUMNS, row))
+    record = notification_record(
+        id=fields["id"],
+        event_type=fields["event_type"],
+        card_id=fields.get("card_id"),
+        body=fields.get("body"),
+        actor=fields.get("actor"),
+        ts=fields["ts"],
+        seen=bool(fields.get("seen")),
+        msg_id=fields.get("msg_id"),
+    )
+    return (*row, notification_payload(record))
 
 
 def verify_carry(source_conn: Any, target_conn: Any) -> CarryResult:

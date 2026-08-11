@@ -71,14 +71,17 @@ def test_gui_redirect_error_names_the_current_cli():
 
 
 def test_mcp_install_hint_names_an_installable_extra():
-    # Arrange — the hint used to say `pip install 'scitex-todo[mcp]'`, which is
-    # not merely stale: the [mcp] extra is declared by scitex-cards, so the old
-    # hint pointed at the superseded dist.
+    # Arrange — the hint used to say `pip install 'scitex-todo[mcp]'`, which was
+    # wrong twice over: it named the superseded DISTRIBUTION, and it named a
+    # PARTIAL extra. The partial half is what took the fleet down on 2026-08-02
+    # — the container defs pinned scitex-cards[mcp], which does not pull
+    # psycopg, so every agent lost the store after the PostgreSQL cutover.
+    # Remedies now name [all], so following a hint cannot under-install.
     from scitex_cards._cli._mcp import _INSTALL_HINT
 
     # Act
     # Assert
-    assert "scitex-cards[mcp]" in _INSTALL_HINT
+    assert "scitex-cards[all]" in _INSTALL_HINT
 
 
 @pytest.mark.skipif(not _HAS_FASTMCP, reason="the [mcp] extra is not installed")

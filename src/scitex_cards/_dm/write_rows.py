@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """Single-row DM write primitives — open a connection, write ONE row.
 
-Split out of :mod:`scitex_cards._dm_write` (515 lines, cap 512). That file holds
+Split out of :mod:`scitex_cards._dm.write` (515 lines, cap 512). That file holds
 two layers with a one-way arrow between them: these primitives, and the public
 DM verbs that compose them. The verbs import these; nothing here imports a verb.
 
 THE PUBLIC IMPORT SURFACE DOES NOT MOVE. ``_dm_write`` re-exports every name
-below, so ``from scitex_cards._dm_write import insert_message`` keeps working —
+below, so ``from scitex_cards._dm.write import insert_message`` keeps working —
 same contract as the ``_model`` and ``_store_write`` splits already in the
 package.
 
@@ -41,13 +41,13 @@ import sqlite3
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._dm_ids import (
+from .ids import (
     derived_member_event_id,
     origin_host,
     resolve_dm_db,
     utc_now_iso,
 )
-from ._schema_probe import _sole_value
+from .._schema_probe import _sole_value
 
 
 def _open(db, store) -> sqlite3.Connection:
@@ -73,8 +73,8 @@ def _open(db, store) -> sqlite3.Connection:
     this store retired", because duplicating it per caller is how the answers
     drift — and the entire point is that exactly one store can be current.
     """
-    from ._db import open_db
-    from ._store_canonical_read import _refuse_if_retired_on
+    from .._db import open_db
+    from .._store_canonical_read import _refuse_if_retired_on
 
     conn = open_db(resolve_dm_db(db, store=store))
     try:

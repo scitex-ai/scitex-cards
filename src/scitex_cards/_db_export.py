@@ -24,6 +24,7 @@ import-time snapshot of those flags.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -31,6 +32,8 @@ from typing import Any
 
 from ._db import open_db
 from ._db_payload import card_from_payload
+
+logger = logging.getLogger(__name__)
 
 #: (table, mutable-column overlays applied on top of the verbatim payload)
 _OVERLAYS: dict[str, tuple[str, ...]] = {
@@ -44,25 +47,150 @@ _BOOL_COLS = {"seen", "read"}
 
 
 class ExportRefused(RuntimeError):
-    """A row has no verbatim payload — the DB must be re-imported first."""
+    """A row has no verbatim payload AND none can be rebuilt from its columns."""
+
+
+#: Per-table rebuild rules for a payload-less row. A table appears here ONLY
+#: when its record shape is CLOSED and every key is a column of its own, so the
+#: rebuild is exact rather than stripped. ``notifications`` qualifies;
+#: ``tasks`` emphatically does not (22 live card keys are not columns at all —
+#: see :mod:`scitex_cards._db_payload`), and ``users`` / ``messages`` have no
+#: live column-only writer, so a payload-less row there is a genuine unknown
+#: rather than a writer this package can name.
+_REBUILDERS: dict[str, Any] = {}
+
+
+def _rebuilders() -> dict[str, Any]:
+    """The rebuild rules, imported lazily to keep module import cheap."""
+    if not _REBUILDERS:
+        from ._inbox_record import rebuild_notification_record
+
+        _REBUILDERS["notifications"] = rebuild_notification_record
+    return _REBUILDERS
+
+
+#: The column whose value dates a row, per table. Named because the ONE fact
+#: that most reliably diagnoses a payload-less row is WHEN it was written, and
+#: the message that omitted it cost a night: it asserted "this DB predates
+#: schema v3" about rows created minutes earlier by current code, and sent
+#: three separate agents hunting a migration problem that did not exist.
+_WRITTEN_AT: dict[str, str] = {
+    "users": "created_at",
+    "notifications": "ts",
+    "messages": "ts",
+}
+
+
+def _written_at(row, table: str) -> str | None:
+    """When this row was written, if the table records it."""
+    column = _WRITTEN_AT.get(table)
+    if not column:
+        return None
+    try:
+        return row[column]
+    except (IndexError, KeyError):
+        return None
+
+
+def _refusal(row, table: str, *, detail: str) -> ExportRefused:
+    """The refusal, saying what is true and what to do about it.
+
+    SAY WHAT IS TRUE, NOT WHAT IS LIKELY. This message used to assert "this DB
+    predates schema v3's payload columns ... use a database written by a
+    current version". Both clauses were a GUESS PRESENTED AS A DIAGNOSIS, and
+    on 2026-08-11 both were false: the rows were SECONDS old, written by
+    current code, and they rebuilt trivially from their own columns. Three
+    agents chased a migration that did not exist. An error that names the wrong
+    cause is worse than one that names none, because it is ACTIONABLE in the
+    wrong direction.
+
+    The wording naming the WRITER rather than the row's age is #805's (itself
+    dotfiles' formulation) and is kept verbatim, because it points at the bug
+    instead of away from it. What is added here is the row's own TIMESTAMP —
+    the single fact that lets a reader settle the age question for themselves
+    instead of taking anyone's word for it — and the reason the automatic
+    repair could not rescue this particular row.
+    """
+    stamp = _written_at(row, table)
+    when = f" (written {stamp})" if stamp else ""
+    return ExportRefused(
+        f"{table} row {row['id']!r}{when} was written without a record_json "
+        "payload. This is a WRITER defect: some emit path inserted the row "
+        "without serialising its payload. It is not evidence that the "
+        "database is old — a row written seconds ago by current code "
+        "produces this same refusal, and the row's own timestamp above is "
+        "what settles that question.\n"
+        f"  This row could not be repaired automatically because {detail}\n"
+        "  NEXT STEP: find the write path that produced this row and make "
+        "it pass record_json. Rebuildable rows ARE repaired automatically on "
+        "read; do NOT delete or quarantine this one, because notification "
+        "rows are often undelivered messages and discarding one to unblock a "
+        "write destroys it. Nothing was deleted or modified here — inspect "
+        "the row with:\n"
+        f"    SELECT * FROM {table} WHERE id = '{row['id']}';\n"
+        "  Exporting stripped records is worse than exporting none, which "
+        "is why this refuses rather than returning a partial record."
+    )
 
 
 def _record(row, table: str) -> dict[str, Any]:
-    """Rebuild one record from its verbatim payload + mutable-column overlay."""
+    """Rebuild one record from its verbatim payload + mutable-column overlay.
+
+    A payload-less row is REPAIRED where the data allows it, rather than
+    failing the whole read. This matters far beyond the export: the live read
+    path assembles the ENTIRE document through here, so refusing one row failed
+    every card write fleet-wide — ``add_task``, ``update_task``,
+    ``comment_task`` — over a single notification the card path never even
+    looks at. Refusing was also the most destructive option available: an
+    operator responding to the refusal by clearing the offending row would have
+    destroyed an undelivered operator DM, which is what one of the three rows
+    measured on 2026-08-11 actually was.
+    """
     blob = row["record_json"]
-    if blob is None:
-        raise ExportRefused(
-            f"{table} row {row['id']!r} has no record_json payload — this DB "
-            "predates schema v3's payload columns and cannot be back-filled "
-            "(the importer was removed with the YAML tier); use a database "
-            "written by a current version. Exporting stripped records is worse "
-            "than exporting none."
-        )
-    rec = card_from_payload(blob)
+    if blob is not None:
+        rec = card_from_payload(blob)
+    else:
+        rec = _repair(row, table)
     for col in _OVERLAYS[table]:
         if row[col] is not None:
             rec[col] = bool(row[col]) if col in _BOOL_COLS else row[col]
     return rec
+
+
+def _repair(row, table: str) -> dict[str, Any]:
+    """Reconstruct a payload-less row from its columns, or raise saying why not."""
+    rebuild = _rebuilders().get(table)
+    if rebuild is None:
+        raise _refusal(
+            row,
+            table,
+            detail=(
+                f"no rebuild rule exists for {table}: its record may carry "
+                "keys that are not columns, so a column-based rebuild could "
+                "silently drop them."
+            ),
+        )
+    rebuilt = rebuild(row)
+    if rebuilt is None:
+        raise _refusal(
+            row,
+            table,
+            detail=(
+                "it cannot be rebuilt from its own columns either — a NOT NULL "
+                "column is empty, so the row carries no recoverable record."
+            ),
+        )
+    logger.warning(
+        "!! %s row %r%s HAS NO record_json PAYLOAD and was rebuilt from its "
+        "columns for this read. The row is UNCHANGED on disk and will be "
+        "rebuilt again on every read until it is repaired in place. A row this "
+        "package wrote should never lack a payload: if the timestamp is "
+        "recent, a WRITER omitted it and that is a bug worth reporting.",
+        table,
+        row["id"],
+        f" written {_written_at(row, table)}" if _written_at(row, table) else "",
+    )
+    return rebuilt
 
 
 def export_doc(
@@ -102,14 +230,32 @@ def export_doc(
         conn = open_db(db_path)
     try:
         tasks: list[dict] = []
+        # `last_activity` is selected for the REFUSAL, not for the record: a
+        # payload-less row's own timestamp is what says whether it is an old
+        # row or one a current writer just broke, and those need opposite
+        # responses. The record itself still comes from the verbatim payload.
         for r in conn.execute(
-            "SELECT id, card_json FROM tasks ORDER BY row_order"
+            "SELECT id, card_json, last_activity FROM tasks ORDER BY row_order"
         ).fetchall():
             if r["card_json"] is None:
+                stamp = r["last_activity"]
+                when = f" (last activity {stamp})" if stamp else ""
                 raise ExportRefused(
-                    f"task {r['id']!r} has no card_json payload — this DB "
-                    "predates the payload columns; use one written by a "
-                    "current version."
+                    f"task {r['id']!r}{when} has no card_json payload, and a "
+                    "card CANNOT be rebuilt from its columns: 22 distinct card "
+                    "keys measured on the live store are not columns at all, "
+                    "so a rebuild would drop them silently.\n"
+                    "\n"
+                    "Two different faults look like this:\n"
+                    "  * an OLD row predating the payload columns — re-import "
+                    "the database from an export written by a current "
+                    "version;\n"
+                    "  * a row a CURRENT writer stored without a payload — "
+                    "that is a WRITER defect; report it with the id and "
+                    "timestamp above.\n"
+                    "\n"
+                    "Nothing was deleted or modified. Inspect the row with:\n"
+                    f"  SELECT * FROM tasks WHERE id = '{r['id']}';"
                 )
             tasks.append(card_from_payload(r["card_json"]))
 

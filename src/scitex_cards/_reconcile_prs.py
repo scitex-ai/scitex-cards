@@ -64,12 +64,38 @@ from typing import Callable, Iterable, Optional
 SYSTEM_ACTOR: str = "reconcile-merged-prs"
 
 # Statuses we consider "open work that may have merged". A card outside
-# this set (done / deferred / failed / cancelled / goal) is never
+# this set (done / blocked / deferred / failed / cancelled / goal) is never
 # auto-closed — ``cancelled`` is already terminal, so it returns
 # ACTION_SKIP_NOT_OPEN like the other closed states. ``deferred`` stays out
 # on purpose: parked work must not be closed behind the owner's back by a
 # PR that happened to merge. (``pending`` was abolished 2026-07-10.)
-OPEN_STATUSES: frozenset[str] = frozenset({"in_progress", "blocked"})
+#
+# ``blocked`` LEFT THIS SET 2026-08-03, and the reason is the one already
+# written above for ``deferred`` -- it simply was never extended to the
+# status it applies to MORE strongly. ``deferred`` means "not now";
+# ``blocked`` means someone ALREADY CONSIDERED THIS and recorded that the
+# work cannot complete. It is the one status a heuristic must not overrule,
+# because encoding "do not assume" is the entire job of a blocker.
+#
+# MEASURED, scitex-hub, 2026-08-03. At 19:08Z they set a card to
+# blocked=dependency whose note began "STATUS blocked=dependency, NOT done".
+# At 19:30Z this reconciler set it to done: "auto-closed: linked PR #528
+# merged". Twenty-two minutes, with the note explaining why a merge is not
+# completion sitting unchanged in the card body.
+#
+# It was not merely early -- it was false. The card's closing condition was
+# an authenticated POST from the phone succeeding, and production was three
+# commits behind develop INCLUDING that PR, so the route did not exist and
+# such a POST would 404. The card would have reported the operator's
+# top-priority request as delivered while they still could not send a DM.
+#
+# A merge is evidence about a PULL REQUEST. Reading it as evidence about the
+# CARD holds only where the card's scope is strictly its diff; where the card
+# also carries verification or rollout, this closes live work -- and closes it
+# with the confident shape, ``done``, rather than surfacing a question. The
+# quiet part is that a closed card leaves the board, so no sweep ever nudges
+# it again and the mistake is invisible to anyone looking for it.
+OPEN_STATUSES: frozenset[str] = frozenset({"in_progress"})
 
 # Merge-state vocabulary the seam returns. "unknown" is the fail-soft value
 # for any parse/network error — it NEVER closes a card.

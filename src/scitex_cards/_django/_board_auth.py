@@ -39,14 +39,52 @@ from django.http import HttpResponse
 __all__ = [
     "REALM",
     "BoardPasswordMiddleware",
+    "CHALLENGE_BODY",
     "challenge",
     "is_authorised",
     "resolve_password",
 ]
 
-REALM = "SciTeX Cards"
-
 _ENV_VAR = "SCITEX_CARDS_PASSWORD"
+
+#: Shown by the browser INSIDE its own password dialog, so the dialog can say
+#: where its answer lives. It previously read "SciTeX Cards" and nothing else.
+#:
+#: THAT WAS THE BUG, and it is a usability bug with a security consequence.
+#: Measured 2026-08-02: the operator opened their own board, met a credential
+#: prompt they had not configured, and had no path from the dialog to the
+#: secret -- "何のパスワードかってまず心当たりがなくて、ユーザネームもわからない".
+#: An anonymous credential prompt is indistinguishable from a phishing one, so a
+#: user who cannot tell them apart is being trained to type secrets into
+#: whichever dialog appears. Naming the source is what makes the prompt
+#: refusable: if the named source is not one you control, do not answer it.
+#:
+#: Kept short because browsers truncate long realms; the full recovery
+#: instructions live in :data:`CHALLENGE_BODY`, which Chrome renders when the
+#: dialog is cancelled. Contains no quote or backslash -- a realm is an HTTP
+#: quoted-string and neither can be escaped portably.
+REALM = f"SciTeX Cards - password is {_ENV_VAR} on the server"
+
+#: The page behind the dialog. Answers the three questions the dialog cannot:
+#: what the username is (nothing -- it is discarded), where the password is
+#: kept, and what to do if you did not set one.
+CHALLENGE_BODY = f"""\
+SciTeX Cards is asking for a password because this board is reachable from
+somewhere other than loopback.
+
+  Username   ignored entirely. Leave it blank, or type anything.
+  Password   the value of {_ENV_VAR} in the environment of the process
+             serving this board.
+
+To read it on the machine running the board:
+
+  systemctl --user show scitex-todo.dashboard.service -p Environment
+  grep -rh {_ENV_VAR} ~/.config/systemd/user/
+
+IF YOU DID NOT SET THIS PASSWORD, DO NOT TYPE ONE. A credential prompt that
+cannot tell you where its answer lives is the same shape as a phishing prompt.
+Ask whoever runs this board before answering it.
+"""
 
 
 def resolve_password() -> str:
@@ -86,10 +124,17 @@ def is_authorised(header: str | None, password: str) -> bool:
 
 
 def challenge() -> HttpResponse:
-    """The 401 that makes a browser show its password prompt."""
+    """The 401 that makes a browser show its password prompt, and NAMES ITS SOURCE.
+
+    Both halves carry the source. The realm is what the browser prints inside
+    its own dialog; the body is what it renders when the dialog is cancelled.
+    Either route now reaches an answer, which the previous
+    "This board is password protected." did not -- it stated the fact the user
+    could already see and withheld the only thing they needed.
+    """
     response = HttpResponse(
-        "This board is password protected.",
-        content_type="text/plain",
+        CHALLENGE_BODY,
+        content_type="text/plain; charset=utf-8",
         status=401,
     )
     response["WWW-Authenticate"] = f'Basic realm="{REALM}", charset="UTF-8"'
@@ -116,10 +161,42 @@ class BoardPasswordMiddleware:
             raise MiddlewareNotUsed
 
     def __call__(self, request):
+        from ._board_login import (  # noqa: PLC0415 -- keeps this module import-light
+            cookie_is_valid,
+            issue_cookie,
+            login_page,
+            password_matches,
+            wants_html,
+        )
+
         header = request.META.get("HTTP_AUTHORIZATION")
-        if not is_authorised(header, self.password):
+        if is_authorised(header, self.password) or cookie_is_valid(request):
+            return self.get_response(request)
+
+        # A BROWSER GETS A PAGE; A TOOL GETS THE 401. Not a fallback either way —
+        # two audiences that RENDER differently, so the mechanism follows the
+        # audience.
+        #
+        # Measured 2026-08-02: Chrome's Basic dialog shows only "Sign in" and the
+        # origin. It does NOT print the realm, so the 401 below — which names
+        # SCITEX_CARDS_PASSWORD correctly, and which curl displays in full —
+        # reached the operator as a bare unlabelled password box on his own
+        # board. The header was right and invisible to the only person using it.
+        if not wants_html(request):
             return challenge()
-        return self.get_response(request)
+
+        if request.method == "POST":
+            if password_matches(request.POST.get("password"), self.password):
+                # 303 so the browser re-requests with GET: a refresh after login
+                # must not re-POST the password.
+                response = HttpResponse(status=303)
+                response["Location"] = request.get_full_path()
+                return issue_cookie(response, secure=request.is_secure())
+            # Deliberately does NOT say whether a password was even configured,
+            # and does not echo what was typed.
+            return login_page(env_var=_ENV_VAR, error="That password did not match.")
+
+        return login_page(env_var=_ENV_VAR)
 
 
 # EOF

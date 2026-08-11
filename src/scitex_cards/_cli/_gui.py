@@ -79,6 +79,37 @@ def gui_group(ctx: click.Context) -> None:
     ctx.exit(2)
 
 
+def _refuse_unconfigured_store() -> None:
+    """Fail BEFORE binding a port if nobody chose a store. No silent fallback.
+
+    Checked here rather than deeper in the stack because the damage is done by
+    SERVING, not by resolving: once the port is bound the page renders, and a
+    board that renders is a board people believe. The operator ran one for
+    eight days showing week-old data with no error anywhere.
+
+    Raises ``click.ClickException`` so the CLI prints the remedy instead of a
+    traceback -- the message already names every variable to set and the verb
+    that shows what this process resolved.
+
+    DEFINED ABOVE THE DECORATOR STACK, not between it and ``gui_serve_cmd``.
+    Placing a ``def`` inside a decorator chain silently rebinds every decorator
+    onto the WRONG function: the options and ``@gui_group.command`` would have
+    landed on this helper, leaving ``gui_serve_cmd`` an undecorated plain
+    function and unregistering the `serve` verb entirely. Caught here by the
+    positive control (`test_serve_does_not_refuse_when_a_target_is_configured`)
+    rather than in production, which is the only reason this comment exists.
+    """
+    from .._store_target import (
+        StoreTargetNotConfigured,
+        require_configured_store_target,
+    )
+
+    try:
+        require_configured_store_target()
+    except StoreTargetNotConfigured as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @gui_group.command(
     "serve",
     **spec_command_kwargs(
@@ -88,7 +119,7 @@ def gui_group(ctx: click.Context) -> None:
             "headless by design: it does NOT open a browser (use `gui open` "
             "for that), so it is safe to background with `&` in a loop over "
             "every SciTeX tool. Requires the web extra: "
-            "pip install scitex-cards[web]."
+            "pip install scitex-cards[all]."
         ),
         examples=(
             ("{prog} gui serve", "Serve on 127.0.0.1:8051 (blocking)."),
@@ -112,6 +143,7 @@ def gui_serve_cmd(port: int, host: str, dry_run: bool) -> None:
     if dry_run:
         click.echo(f"# dry-run: would serve the board on {host}:{port}, no browser")
         return
+    _refuse_unconfigured_store()
     existing = _board_read_pid()
     if existing is not None:
         raise click.ClickException(

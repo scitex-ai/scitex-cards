@@ -27,7 +27,7 @@ from __future__ import annotations
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value
+from .._schema_probe import _sole_value
 
 import json
 import sqlite3
@@ -158,8 +158,8 @@ def unread_for_conn(
 
 
 def _open(db, store):
-    from ._db import open_db
-    from ._dm_ids import resolve_dm_db
+    from .._db import open_db
+    from .ids import resolve_dm_db
 
     return open_db(resolve_dm_db(db, store=store))
 
@@ -204,6 +204,106 @@ def list_members(
     conn = _open(db, store)
     try:
         return current_members(conn, thread_id)
+    finally:
+        conn.close()
+
+
+def threads_summary_conn(conn: sqlite3.Connection, reader: str) -> dict[str, dict]:
+    """Per-thread summary FROM THE STORE, shaped like the sidecar's version.
+
+    Returns ``{thread_id: {"peers": (a, b), "last": <message|None>,
+    "count": N, "unread": {reader: n}}}`` — the exact shape
+    ``_threads.list_threads`` returns, so the board's DM view is a
+    substitution rather than a rewrite.
+
+    WHY THIS EXISTS. ``_threads.list_threads`` reads ``threads.json``, A
+    PER-HOST FILE, and reads nothing else. The board therefore showed only the
+    threads of agents running on the SAME MACHINE as the board. Measured
+    2026-08-09 on the operator's laptop: its sidecar had
+    ``dm:operator::scitex-agent-container`` live at 12:33 with 386 messages
+    (that agent runs on the laptop) while ``dm:operator::scitex-cards`` sat at
+    2026-08-02 — the last time THAT agent ran laptop-side. Five agents on
+    scitex-compute-04 were invisible to him entirely, writing a different
+    ``threads.json`` on a different host. The store meanwhile held all 4150
+    messages. Nothing was lost; the display was host-local.
+
+    NO WINDOW FUNCTIONS AND NO NEW AGGREGATION SQL, deliberately. One flat
+    SELECT and a fold in Python:
+
+      * the ORDER is the package's declared total order, applied with the same
+        key ``MESSAGE_ORDER_SQL`` names (``seq, ts, origin_host, id``). Using
+        ``MAX(ts)`` instead would silently disagree with what the thread pane
+        shows when opened, because ts alone is not how this package sorts.
+      * UNREAD IS NOT REIMPLEMENTED. It comes from :func:`unread_for_conn`,
+        whose docstring records why it is subtle — "the four conditions are the
+        whole definition of unread once a thread can have three members".
+        A second definition living in a summary query is a second thing to keep
+        in step, and it would drift toward the easy wrong answer (count rows
+        where ``read`` is false).
+      * TOMBSTONES ARE HIDDEN, matching :func:`messages_in_conn`, so a deleted
+        message can never become the "last" one.
+
+    A fold is affordable here and a join is not worth its risk: the whole store
+    is ~4150 rows, and the dialect differences this package already carries
+    (``shape_for`` / ``null_safe_eq_for``) are exactly where a hand-written
+    window query would break between SQLite and PostgreSQL.
+    """
+    rows = conn.execute(
+        "SELECT * FROM dm_messages WHERE deleted_at IS NULL"
+    ).fetchall()
+
+    by_thread: dict[str, list[dict]] = {}
+    for row in rows:
+        message = row_to_message(row)
+        by_thread.setdefault(message["thread_id"], []).append(message)
+
+    unread_counts: dict[str, int] = {}
+    for message in unread_for_conn(conn, reader):
+        thread_id = message["thread_id"]
+        unread_counts[thread_id] = unread_counts.get(thread_id, 0) + 1
+
+    summary: dict[str, dict] = {}
+    for thread_id, messages in by_thread.items():
+        messages.sort(
+            key=lambda m: (
+                m.get("seq") or 0,
+                m.get("ts") or "",
+                m.get("origin_host") or "",
+                m.get("id") or "",
+            )
+        )
+        summary[thread_id] = {
+            "peers": _peers_of(thread_id),
+            "last": messages[-1] if messages else None,
+            "count": len(messages),
+            "unread": {reader: unread_counts.get(thread_id, 0)},
+        }
+    return summary
+
+
+def _peers_of(thread_id: str) -> tuple[str, str]:
+    """The two peer names encoded in ``dm:<a>::<b>``.
+
+    Duplicated from ``_threads.peers_of`` rather than imported: ``_threads``
+    owns the SIDECAR, and this module must not grow an import edge to the file
+    layer it exists to replace. Sixteen characters of parsing is a cheaper
+    price than that dependency.
+    """
+    body = thread_id[3:] if thread_id.startswith("dm:") else thread_id
+    a, _, b = body.partition("::")
+    return (a, b)
+
+
+def threads_summary(
+    reader: str,
+    *,
+    db: str | Path | None = None,
+    store: str | Path | None = None,
+) -> dict[str, dict]:
+    """Public read: every thread's summary, from the store rather than a file."""
+    conn = _open(db, store)
+    try:
+        return threads_summary_conn(conn, reader)
     finally:
         conn.close()
 

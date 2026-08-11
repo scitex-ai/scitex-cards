@@ -122,13 +122,60 @@ def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
     conn.execute("DELETE FROM task_edges WHERE src_task_id = ?", (task_id,))
 
 
-def _write_card(conn: sqlite3.Connection, card: dict) -> None:
-    """Upsert ONE card and its derived rows."""
+def _write_card(
+    conn: sqlite3.Connection,
+    card: dict,
+    *,
+    expected_revision: int | None = None,
+) -> dict[str, int]:
+    """Upsert ONE card and its derived rows. Returns the insert counts.
+
+    ``expected_revision`` makes the whole sequence a COMPARE-AND-SET, and the
+    ORDER here is the entire point — get it wrong and the guard destroys data on
+    the path it refuses to take.
+
+    `_drop_card_rows` DELETES this card's comments, roles and outbound edges
+    before the upsert, because comments key on a sequence and re-inserting
+    without clearing would duplicate every one of them on every write. That drop
+    is load-bearing and cannot simply be removed.
+
+    But it means a naive compare-and-set — drop first, then let `_insert_tasks`
+    check the revision — would:
+
+        1. delete the card's comments, roles and outbound edges
+        2. hit the guard, skip the upsert
+        3. report revision_skipped=1, i.e. "I changed nothing"
+
+    while the WINNER's comments are already gone. A lock that silently destroys
+    the data it was protecting, and then reports success at protecting it, is
+    strictly worse than no lock: the caller has no reason to look.
+
+    So the revision is read and compared BEFORE anything is dropped. The `WHERE`
+    clause inside `_insert_tasks` remains the real guard against the race
+    between that read and the write — this pre-check is not a substitute for it,
+    it only ensures the DESTRUCTIVE half never runs for a write that was always
+    going to be refused.
+    """
     tid = str(card.get("id"))
+    if expected_revision is not None:
+        row = conn.execute(
+            "SELECT revision FROM tasks WHERE id = ?", (tid,)
+        ).fetchone()
+        found = None if row is None else row[0]
+        if found != expected_revision:
+            # Refuse BEFORE the drop. Nothing has been touched.
+            return {
+                "tasks": 0,
+                "comments": 0,
+                "edges": 0,
+                "roles": 0,
+                "revision_skipped": 1,
+                "revision_found": found,
+            }
     _drop_card_rows(conn, tid)
     # _insert_tasks handles the task row + comments + edges + roles for each
     # card it is given, so a one-element list is exactly one card's worth.
-    _insert_tasks(conn, [card])
+    return _insert_tasks(conn, [card], expected_revision=expected_revision)
 
 
 def _delete_card(conn: sqlite3.Connection, task_id: str) -> None:
