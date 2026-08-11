@@ -184,12 +184,27 @@ def test_confirming_a_record_the_drain_already_pushed_still_records_arrival(push
     assert receipt[CONFIRMED_AT] is not None
 
 
-def test_confirming_reports_the_id_as_already_confirmed_not_unknown(pushed):
+def test_confirming_reports_the_id_as_known_not_unknown(pushed):
+    """The #617 return contract: a record this inbox HELD must never come back
+    as `unknown`, which is reserved for a typo.
+
+    This asserted `already_confirmed == [id]` until 2026-08-11. That was a PROXY
+    for the intent in its own name — under the old cursor-based classification,
+    `already_confirmed` was the only non-`unknown` bucket a drained record could
+    reach, because the drain had already advanced `seen` and `_inbox.ack` flipped
+    nothing. Now that classification keys on the confirmation stamp, a FIRST
+    confirm of a drained record correctly reports `confirmed`, and the proxy no
+    longer tracks the intent.
+
+    So the assertion moves to what the name always claimed. Which bucket a
+    record lands in is pinned by `test__ack_classifies_on_confirmation.py`; this
+    one guards the contract it was written for.
+    """
     # Arrange — the #617 return contract must survive the new stamp.
     # Act
     result = confirm_notifications(AGENT, [pushed["id"]], store=pushed["store"])
     # Assert
-    assert result["already_confirmed"] == [pushed["id"]]
+    assert result["unknown"] == []
 
 
 # --------------------------------------------------------------------------- #
