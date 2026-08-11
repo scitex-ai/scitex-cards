@@ -2,6 +2,186 @@
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-08-10
+
+**A refused compare-and-set must destroy nothing.**
+
+Found by reading the *caller* of the code 0.35.0 shipped, before any caller
+could reach it.
+
+### Fixed
+
+- **`_write_card` compared the revision too late** (#792). It DROPS a card's
+  comments, roles and outbound edges before upserting — load-bearing, because
+  comments key on a sequence and re-inserting without clearing duplicates every
+  one of them on every write.
+
+  That drop sat in FRONT of the revision guard added in 0.35.0. A losing
+  compare-and-set would therefore have:
+
+  1. deleted the card's comments, roles and outbound edges
+  2. hit the guard and skipped the upsert
+  3. reported `revision_skipped=1` — *"I changed nothing"*
+
+  while the winner's comments were already gone. A lock that destroys the data
+  it protects and then reports success at protecting it is worse than no lock,
+  because the caller has no reason to look.
+
+  The revision is now read and compared BEFORE anything is dropped. The `WHERE`
+  clause inside `_insert_tasks` remains the real guard against the read-to-write
+  race; the pre-check only ensures the destructive half never runs for a write
+  that was always going to be refused.
+
+**This was latent in 0.35.0, never live.** No caller passed `expected_revision`
+through `_write_card`, so no published version could reach the destroying path.
+It would have become real the moment the row-level `update_task` did — which is
+the next change queued. Fixed before that, not after.
+
+### Why 0.35.0's tests did not catch it
+
+They asserted a losing write leaves the card's **title** intact. The title lives
+on the `tasks` row, which the guard genuinely protected. The comments live in a
+**child table cleared before it**. Testing the row you are thinking about rather
+than the blast radius of the operation is how this class of defect ships.
+
+Six new tests pin the blast radius, including one asserting comments are NOT
+duplicated on an accepted write — which pins why the drop exists at all, so it
+is not "simplified" away later.
+
+## [0.35.0] - 2026-08-10
+
+**The revision lock is finally asserted.**
+
+`tasks.revision` has existed since schema v6 and been auto-incremented by v7's
+`tasks_bump_revision` trigger. **No writer ever compared it.** So a card write
+that raced another writer simply won, and the losing side was discarded with
+nothing raised anywhere.
+
+Verified independently in two corpora before a line was written — the installed
+0.33.0 wheel and the repo at develop: `revision` appeared only in
+`_db_migrations.py`, `_schema_shape.py`, `_schema_current.py` and
+`_pg_triggers.py`, with no `WHERE ... revision = ?` in any write path.
+scitex-dev measured the same, plus a live histogram over 3,722 rows confirming
+the column is correct and moving — it simply was not read.
+
+Not theoretical: scitex-dev lost an edit to a concurrent writer and **reported
+it done**, because nothing told them otherwise.
+
+### Added
+
+- **`_insert_tasks(..., expected_revision=N)`** — compare-and-set on the
+  row-level write path (#790).
+
+  **A lost race is REPORTED, not raised** — `counts["revision_skipped"]` and
+  `counts["revision_found"]`. A reconciler counts lost races as ordinary
+  outcomes; an exception would make routine concurrency indistinguishable from
+  a fault and force catch-and-continue around the happy path. (scitex-dev's
+  correction; the first cut raised, and they were right that it was wrong.)
+
+  **Misuse still raises** — a batch, or `replace=False`. Those are capability
+  gaps, and a capability gap silently tallied as a lost race is precisely the
+  miscount this split prevents.
+
+  **`revision_found` is three-valued**: the revision now in the row, or `None`
+  when the row is gone. "Someone wrote past me" and "the card was deleted"
+  need different responses.
+
+  **Opt-in by construction, and that is load-bearing.** `_migrate_v6_to_v7`
+  records that REJECT semantics for this lock were *ruled unusable* — an UPDATE
+  from a writer ignorant of `revision` would ABORT, so fleet writes would fail
+  until every container was current. With `expected_revision` unset, no clause
+  is emitted and the SQL is identical to before. Only a caller that opts in can
+  fail; a test pins that.
+
+  One hole closed along the way: `ON CONFLICT DO UPDATE ... WHERE` only fires
+  when a conflicting row exists, so a compare-and-set against a **deleted** card
+  would have silently re-created it. A pre-read reports row-absent as a skip;
+  the `WHERE` still provides the atomicity.
+
+### Known limitation
+
+`update_task` is **whole-document read-modify-write**, so it does not yet accept
+`expected_revision` — putting it there would guard the caller's card while
+overwriting every other card in the same document, which is worse than the
+last-write-wins it replaces because it would carry the appearance of safety.
+The public verb arrives when `update_task` becomes row-level; tracked as
+`cards-update-task-is-whole-document-rmw-blocks-row-level-compare-and-set-20260810`.
+
+Scope note: `update_task` holds `_store_lock` across its read-modify-write, so
+within a single host writes ARE serialised. The exposure this release addresses
+is **cross-host**, where no shared lock exists — which is the multi-host mode
+now being built.
+
+## [0.34.0] - 2026-08-10
+
+**The notification rail can finally cross a host, and a store stops lying about
+which store it is.**
+
+The operator asked twice — 2026-07-30 and again 2026-08-09 (「通知は todo.db????
+…ポスグレを使っているはずなのになぜまだ sqlite を使っているのか」) — why
+notifications were still SQLite when the card store had moved to PostgreSQL. The
+honest answer is that the mission card claimed the migration was COMPLETE while
+only half of it was. Measured on the live rail the day of this release:
+
+```
+/home/agent/.scitex/cards/runtime/todo.db   table `inbox`
+  rows                324      unseen  133
+  recipient  operator 123      unseen  123   <- not one ever consumed
+  recipient  every agent whose consumer runs on this host: unseen 0
+```
+
+The split is binary with no middle case: delivery works exactly when a consumer
+is co-located with the file, and fails completely when it is not. Nothing errored
+anywhere — every write succeeded, every read answered honestly, and the only
+symptom available to anyone was a human saying nothing arrives.
+
+### Added
+
+- **A shared PostgreSQL inbox, so a notification can cross hosts** (#780). The
+  rail's backend is selected through the same seam as the card store rather than
+  being hardcoded to a local file. This is the mechanism the 123 stranded
+  messages needed; carrying the existing rows and giving the operator's inbox a
+  consumer are the remaining halves, tracked separately.
+
+- **A store identity a COPY cannot carry** (#784). `StoreInstance` reads
+  PostgreSQL's `system_identifier`, which is per-cluster and does not survive a
+  file copy, so a store restored from a snapshot is no longer mistaken for the
+  original. The verdict is three-valued by construction — MATCHES / DIFFERS /
+  CANNOT_TELL, with a validator that refuses to let two UNKNOWNs compare equal —
+  because collapsing "I could not tell" into either pole is the bug this type
+  exists to prevent.
+
+### Fixed
+
+- **`summarize_tasks` named a store it had not read** (#775). It reported
+  `/home/agent/.scitex/cards/tasks.yaml` — a path that does not exist on disk —
+  while serving 3709 cards out of PostgreSQL. Reported independently twice:
+  by scitex-logging on 2026-08-04, and by scitex-storage on 2026-08-10 while
+  reconnecting after an outage and asking the exact question this verb exists to
+  answer ("am I on the real store, or a local shadow?"). The label said local
+  YAML shadow; the data was canonical PostgreSQL. During an outage that is the
+  moment someone starts repairing a store that was never broken. The field now
+  reports the backend that actually served the read, and a test pins it to
+  `resolve_store()` so the next backend change cannot silently reopen it.
+
+### Changed
+
+- **The quality gate stops failing every pull request on inherited debt** (#788).
+  `PS-108` / `PS-108b` (12 prefix clusters; 133 flat `.py` files against a
+  threshold of 15) are structural debt no current PR introduced, and they were
+  red on all 18 open PRs. PR #785 *reduces* the count to 125 — exactly the remedy
+  the rule prescribes — and was failed for doing so, because `--new-only` keys
+  findings by a rendered line that contains the tally. A gate every PR fails is
+  as useless as one that cannot fail.
+
+  Both rules are skipped **per-rule, in `.scitex/dev/config.yaml`, each with a
+  written reason and an explicit deletion condition** tied to the tracking card —
+  never a blanket flag. Verified scoped rather than assumed: a strict local run
+  on the change still reports 233 findings across 12 other rules and still exits
+  1. Those rules are earning their keep — they are what caught #780's leaked test
+  connection and #785's missing test mirror. The upstream keying defect is
+  reported to scitex-dev.
+
 ## [0.33.0] - 2026-08-10
 
 **A workspace identity is SEGMENTS, and provisioning is its own verb.**

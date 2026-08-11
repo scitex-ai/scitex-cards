@@ -68,15 +68,22 @@ _ENV_INBOX_BACKEND = "SCITEX_TODO_INBOX_BACKEND"
 
 
 def _use_sqlite() -> bool:
-    """True unless the caller EXPLICITLY selected the file-backed break-glass backend.
+    """Back-compat shim. Prefer :func:`._inbox_backend.backend`.
 
-    Default-ON: an unset ``SCITEX_TODO_INBOX_BACKEND`` (or any value other than
-    the literal ``yaml``) routes the inbox onto SQLite. ONLY
-    ``SCITEX_TODO_INBOX_BACKEND=yaml`` selects this module's path. This
-    resolver never suppresses a SQLite error — the public functions delegate
-    directly so any backend failure propagates (no silent fallback).
+    Two-valued, so it cannot express the Postgres case — which is how a
+    third option gets silently folded into one of the other two. Kept only
+    for callers outside this module.
     """
-    return (os.environ.get(_ENV_INBOX_BACKEND) or "sqlite").strip().lower() != "yaml"
+    from ._inbox_backend import SQLITE, backend
+
+    return backend() == SQLITE
+
+
+def _use_postgres() -> bool:
+    """True when the SHARED inbox is in force (see ``_inbox_backend``)."""
+    from ._inbox_backend import POSTGRES, backend
+
+    return backend() == POSTGRES
 
 
 #: Stable notification-id prefix (``n_`` + 12 hex chars, 48 bits entropy) —
@@ -320,6 +327,20 @@ def enqueue(
         The enqueued record, or ``None`` when nothing was written (a falsy
         ``recipient_id`` or a deduped re-emit).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.enqueue(
+            recipient_id,
+            event_type=event_type,
+            card_id=card_id,
+            body=body,
+            actor=actor,
+            ts=ts,
+            supersede=supersede,
+            msg_id=msg_id,
+            store=store,
+        )
     if _use_sqlite():
         from . import _inbox_sqlite
 
@@ -417,6 +438,15 @@ def poll_inbox(
         The matching records (a copy each — mutating them does not touch the
         store). Order is append (oldest first).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.poll_inbox(
+            recipient_id,
+            unseen_only=unseen_only,
+            mark_seen=mark_seen,
+            store=store,
+        )
     if _use_sqlite():
         from . import _inbox_sqlite
 
@@ -469,6 +499,10 @@ def ack(
     store : str | pathlib.Path | None
         Store path override (default: the resolved task store).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.ack(recipient_id, notification_ids, store=store)
     if _use_sqlite():
         from . import _inbox_sqlite
 

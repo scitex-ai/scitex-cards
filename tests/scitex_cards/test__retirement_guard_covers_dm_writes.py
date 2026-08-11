@@ -52,7 +52,7 @@ class TestRetiredStoreRefusesDmWrites:
 
     def test_dm_write_funnel_refuses_on_a_retired_store(self, tmp_path):
         # Arrange
-        from scitex_cards._dm_write_rows import _open
+        from scitex_cards._dm.write_rows import _open
 
         db = _make_store(tmp_path, retired=True)
 
@@ -74,7 +74,7 @@ class TestRetiredStoreRefusesDmWrites:
     def test_dm_write_funnel_still_opens_a_current_store(self, tmp_path):
         # Arrange — POSITIVE CONTROL. A guard that refuses everything would
         # pass the test above while breaking every DM in the fleet.
-        from scitex_cards._dm_write_rows import _open
+        from scitex_cards._dm.write_rows import _open
 
         db = _make_store(tmp_path, retired=False)
 
@@ -148,7 +148,7 @@ class TestGuardIsNotDuplicated:
         # Arrange
         import inspect
 
-        from scitex_cards import _dm_write_rows
+        from scitex_cards._dm import write_rows as _dm_write_rows
 
         # Act
         src = inspect.getsource(_dm_write_rows._open)

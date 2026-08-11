@@ -22,10 +22,10 @@ the database the WRITE PATH instead.
 
 Layout — this module is a FACADE and holds no logic of its own:
 
-* :mod:`scitex_cards._dm_ids` — id shapes, host stamp, store resolution
-* :mod:`scitex_cards._dm_write` — append, membership, receipts, tombstone
-* :mod:`scitex_cards._dm_read` — the membership fold, ordering, unread
-* :mod:`scitex_cards._dm_migrate` — backfill, merge, the A/B verify gate
+* :mod:`scitex_cards._dm.ids` — id shapes, host stamp, store resolution
+* :mod:`scitex_cards._dm.write` — append, membership, receipts, tombstone
+* :mod:`scitex_cards._dm.read` — the membership fold, ordering, unread
+* :mod:`scitex_cards._dm.migrate` — backfill, merge, the A/B verify gate
 * :mod:`scitex_cards._db_dm_schema` — the v5 DDL and its append-only triggers
 
 WHAT THIS MODULE DOES NOT DO YET. The design stages the cutover, and this is
@@ -38,7 +38,7 @@ an EMPTY conversation, which is the failure this whole design exists to avoid.
 
 from __future__ import annotations
 
-from ._dm_ids import (
+from .ids import (
     derived_member_event_id,
     derived_message_id,
     is_pair_thread,
@@ -50,7 +50,7 @@ from ._dm_ids import (
     resolve_dm_db,
     utc_now_iso,
 )
-from ._dm_migrate import (
+from .migrate import (
     BACKFILL_SOURCE,
     MERGE_TABLES,
     backfill_from_sidecar,
@@ -58,14 +58,14 @@ from ._dm_migrate import (
     merge_dm,
     verify_against_sidecar,
 )
-from ._dm_read import (
+from .read import (
     list_members,
     message_count,
     messages_in,
     thread_ids,
     unread_for,
 )
-from ._dm_write import (
+from .write import (
     add_member,
     append,
     append_pair,

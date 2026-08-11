@@ -165,7 +165,7 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     DATABASE. Deriving from ``store.parent`` keeps the DB in exactly the
     directory the sidecar was already in.
     """
-    from ._db import DEFAULT_DB_FILENAME
+    from .._db import DEFAULT_DB_FILENAME
 
     if db is not None:
         return Path(db).expanduser()
@@ -183,7 +183,7 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     # db or store names a file, and deriving the DM database from
     # ``store.parent`` is what stops a test with a tmp store writing its DMs
     # into the live fleet database. Only the AMBIENT tier can be a server.
-    from ._store_target import resolve_store_target
+    from .._store_target import resolve_store_target
 
     return resolve_store_target(None)
 

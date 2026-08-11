@@ -29,9 +29,9 @@ from pathlib import Path
 
 import pytest
 
-from scitex_cards import _dm_store
+from scitex_cards._dm import store as _dm_store
 from scitex_cards._db import open_db
-from scitex_cards._dm_migrate import _assert_no_shrink
+from scitex_cards._dm.migrate import _assert_no_shrink
 
 THREAD_ID = "dm:agent-x::operator"
 
