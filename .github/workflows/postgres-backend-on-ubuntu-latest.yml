@@ -43,6 +43,7 @@ jobs:
         tests/scitex_cards/test__inbox_carry.py
         tests/scitex_cards/test__schema_v9_arrival_order.py
         tests/scitex_cards/test__store_instance.py
+        tests/scitex_cards/test__store_pin.py
 
     services:
       postgres:
