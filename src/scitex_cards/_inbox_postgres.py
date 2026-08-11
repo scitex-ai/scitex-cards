@@ -192,6 +192,7 @@ def enqueue(
     if not recipient_id:
         return None
 
+    from ._db_payload import card_payload_json
     from ._inbox import _generate_notification_id, _utc_now_iso
 
     timestamp = ts if ts is not None else _utc_now_iso()
@@ -240,12 +241,33 @@ def enqueue(
                 "seen": False,
                 "msg_id": msg_id,
             }
+            # `record_json` IS NOT OPTIONAL, and omitting it is a fleet outage.
+            #
+            # This INSERT listed nine columns and left the payload out. Every
+            # notification it wrote therefore landed with record_json NULL —
+            # not occasionally, on EVERY row, because nothing here ever called
+            # the serialiser. `record` above is already exactly the payload
+            # shape (`_SELECT_COLUMNS`); it was built, returned to the caller,
+            # and never handed to the database.
+            #
+            # A NULL payload makes the read guard refuse the WHOLE DATABASE
+            # (`_db_payload.card_payload_json`: the NULL is "LOAD-BEARING ...
+            # makes the read guard refuse the whole DB and fall back to YAML").
+            # The YAML tier was removed, so "refuse and degrade" became "refuse
+            # and die": on 2026-08-11 this took every card write down fleet-wide
+            # three times — add_task, update_task, comment_task — over rows
+            # minutes old. Two of the blocking rows were UNDELIVERED DMs, so the
+            # obvious "quarantine the bad row" remedy would have destroyed real
+            # messages; they were repaired by back-filling from their own
+            # columns, which is possible precisely because nothing was lost.
+            #
             # ON CONFLICT DO NOTHING makes a retried insert idempotent even
             # if two writers race past the dedup SELECT above.
             cur.execute(
                 f"INSERT INTO {_TABLE}"
-                f"(id, {_RECIPIENT}, event_type, card_id, body, actor, ts, seen, msg_id) "
-                "VALUES(%s, %s, %s, %s, %s, %s, %s, 0, %s) "
+                f"(id, {_RECIPIENT}, event_type, card_id, body, actor, ts, seen,"
+                " msg_id, record_json) "
+                "VALUES(%s, %s, %s, %s, %s, %s, %s, 0, %s, %s) "
                 "ON CONFLICT (id) DO NOTHING",
                 (
                     record["id"],
@@ -256,6 +278,7 @@ def enqueue(
                     actor,
                     timestamp,
                     msg_id,
+                    card_payload_json(record),
                 ),
             )
         conn.commit()
