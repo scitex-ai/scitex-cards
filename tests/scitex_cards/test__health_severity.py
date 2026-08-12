@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`ok` must answer "can I use this store", not "is every row tidy".
+"""A health report must distinguish an outage from untidy rows.
+
+WHAT SHIPPED AND WHAT DID NOT, stated first so this file does not read as a
+claim about `ok`. The severity axis lands and drives the SUMMARY; `ok` KEEPS its
+documented meaning (true iff no check failed, at any severity).
+
+Narrowing `ok` to blocking-only is what the incident argues for, it was written,
+and it was reverted: `test_report_ok_is_true_iff_no_check_actually_failed`
+caught it, and correctly — those semantics are a cross-package contract sac and
+cct both parse, and redefining a shared boolean without telling its consumers is
+the no-surprises violation this package spent the night finding elsewhere. That
+change is now a decision to raise WITH them, not a change to take from them.
+
+So the tests below assert the CLASSIFICATION and the AGGREGATION RULE, which are
+real and shipped, and deliberately do not assert `health()["ok"]`.
+
 
 THE INCIDENT, 2026-08-12. An agent read `ok: false` and "9/14 checks passed"
 and concluded the cards database was refusing its writes. It stopped carding

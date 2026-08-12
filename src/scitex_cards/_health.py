@@ -244,78 +244,12 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
 # --------------------------------------------------------------------------- #
 # Aggregator                                                                  #
 # --------------------------------------------------------------------------- #
-#: A failure here means THE CARDS DATABASE CANNOT BE USED AS EXPECTED. This is
-#: the only class that may set the report's overall ``ok`` to false.
-BLOCKING = "blocking"
-
-#: A failure here means NOTIFICATION DELIVERY is degraded. Cards read and write
-#: normally. Separated from BLOCKING because an agent asking "can I card this?"
-#: gets yes, and separated from ADVISORY because something is actually broken.
-DELIVERY = "delivery"
-
-#: A failure here means THE BOARD'S CONTENTS ARE IMPERFECT — stale stamps,
-#: falsely-blocked cards. Nothing is unavailable and nothing is blocked. These
-#: name the offending card ids and are fixed by ordinary card edits.
-ADVISORY = "advisory"
-
-
-def _run_check(
-    name: str,
-    fn: Callable[[], dict[str, Any]],
-    *,
-    severity: str = BLOCKING,
-) -> dict[str, Any]:
-    """Run one check, coercing its result to the standard record + never raising.
-
-    ``severity`` ANSWERS THE QUESTION THE CALLER ACTUALLY HAS, which is not "did
-    every check pass" but "can I use this store". Defaults to BLOCKING so a new
-    check is conservatively treated as availability-affecting until someone
-    decides otherwise — the safe direction for a field nobody remembered to set.
-
-    IT EXISTS BECAUSE THE ABSENCE OF IT COST AN AGENT A NIGHT. On 2026-08-12 an
-    agent read `ok: false` and "9/14 checks passed" — where the four failures
-    were a file-sidecar inbox, a stopped notifyd, five stale completion stamps
-    and eight falsely-blocked cards — and concluded the cards database was
-    refusing its writes. It stopped carding for hours and worked in prose.
-    `store_canonical` said "readable, writable" in the very same report.
-
-    A scoreboard implies every check weighs the same. These do not: one of them
-    means the store is gone and another means thirteen rows are untidy.
-
-    ``ok`` is preserved THREE-VALUED: a check that returns ``None`` means "I
-    cannot tell" and keeps ``None`` here. Coercing that to ``False`` would
-    manufacture an alarm out of a measurement nobody took; coercing it to
-    ``True`` would hide it, which is the failure mode this whole PR exists for.
-
-    A check that raises is reported as ``ok=false`` with the error in ``hint``
-    (never propagated) — an exception is evidence of a fault, not an absence of
-    evidence. Any non-passing check with an empty hint gets a fallback hint so
-    the "every failing or unknown check carries an actionable hint" rule always
-    holds.
-    """
-    try:
-        res = fn()
-        raw = res.get("ok")
-        ok = None if raw is None else bool(raw)
-        detail = str(res.get("detail", ""))
-        hint = res.get("hint")
-    except Exception as exc:  # noqa: BLE001 — health must NEVER raise out
-        ok = False
-        detail = f"{name} check errored: {type(exc).__name__}: {exc}"
-        hint = f"internal error in the {name} check: {exc}"
-    if ok is not True and not hint:
-        verdict = "could not be evaluated" if ok is None else "failed"
-        hint = f"{name} {verdict}: {detail}"
-    # SEVERITY DOES NOT RIDE IN THE RECORD. The four fields are a CROSS-PACKAGE
-    # contract that sac and cct parse, and this module's own docstring already
-    # refused to add a fifth key for the three-valued `ok`. Adding one for
-    # severity would be the same violation with a better excuse -- and the
-    # contract tests catch it, which is how I found out.
-    #
-    # So the classification is returned ALONGSIDE, and `health()` consumes it to
-    # decide `ok` and to write the summary. Both of those are inside the
-    # contract: `ok` is still a bool, `summary` is still a free string.
-    return {"name": name, "ok": ok, "detail": detail, "hint": hint}, severity
+from ._health_severity import (  # noqa: F401  (re-export: import surface)
+    ADVISORY,
+    BLOCKING,
+    DELIVERY,
+    _run_check,
+)
 
 
 def _soft_agent_id(agent_id: str | None) -> str | None:
@@ -478,13 +412,33 @@ def health(
         _failed(DELIVERY),
         _failed(ADVISORY),
     )
-    ok = not blocked_by
+
+    # `ok` KEEPS ITS DOCUMENTED MEANING: true iff NO check failed, at any
+    # severity. Narrowing it to blocking-only is what this incident argues for,
+    # and I wrote that, and then reverted it here.
+    #
+    # `test_report_ok_is_true_iff_no_check_actually_failed` caught it and was
+    # RIGHT to. Those semantics are a CROSS-PACKAGE contract sac and cct both
+    # parse, and silently redefining a shared boolean is exactly the
+    # no-surprises violation this package spent the night finding in other
+    # people's code. A consumer branching on `ok` would begin seeing `true` for
+    # a state it currently treats as a fault, with no announcement.
+    #
+    # So the severity work lands where it is unambiguously safe -- `summary`,
+    # a free-text field -- and the `ok` narrowing is raised as a decision WITH
+    # the consumers rather than taken from them. That is also the half that
+    # fixes the incident: the agent read the summary and quoted "9/14 checks
+    # passed".
+    ok = not [c for c in checks if c["ok"] is False]
 
     # THE SUMMARY CARRIES THE SEVERITY, because the top-level keys cannot. It is
     # a free string in the contract, and it is what a human or an agent actually
     # reads first -- the incident was someone reading "9/14 checks passed" and
     # inferring an outage. A scoreboard implies every check weighs the same.
-    head = "cards database USABLE" if ok else "cards database NOT USABLE"
+    # The head answers USABILITY, which is NOT the same question as `ok`
+    # while `ok` still counts every failure. Reading it from blocked_by
+    # keeps the sentence true regardless of which contract `ok` carries.
+    head = "cards database USABLE" if not blocked_by else "cards database NOT USABLE"
     summary = f"{head} — {n_ok}/{len(checks)} checks passed"
     if blocked_by:
         summary += "; BLOCKING: " + ", ".join(blocked_by)
