@@ -32,8 +32,14 @@ import click
 __all__ = ["refuse_unconfigured_store"]
 
 
-def refuse_unconfigured_store() -> None:
+def refuse_unconfigured_store(explicit: str | None = None) -> None:
     """Raise ``click.ClickException`` unless somebody actually chose a store.
+
+    ``explicit`` is the verb's own ``--store``-style argument, passed straight
+    through to the tier resolution. A caller that names a store on the command
+    line HAS chosen one, and refusing it would be the opposite defect: this
+    guard exists to reject an ABSENCE of choice, never a choice it dislikes.
+    Verbs with no such option pass nothing.
 
     CALL THIS BEFORE THE DRY-RUN BRANCH, not after. ``--dry-run`` reports what
     WOULD happen, and "would start board on port 8051" for a store nobody
@@ -61,7 +67,7 @@ def refuse_unconfigured_store() -> None:
     )
 
     try:
-        require_configured_store_target()
+        require_configured_store_target(explicit)
     except StoreTargetNotConfigured as exc:
         raise click.ClickException(str(exc)) from exc
 
