@@ -141,7 +141,7 @@ def complete_task(
                 # Same `now`, so the completion stamp and the activity stamp
                 # cannot straddle a tick and disagree about when this happened.
                 touch_last_activity(task, now)
-                _save_doc_unlocked(doc, resolved, tasks=tasks)
+                _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[task_id])
                 result = dict(task)
                 transitioned = True
                 break
@@ -268,7 +268,19 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
             }
         )
         target["last_activity"] = now
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # NAMES EVERY CARD IT TOUCHED, WHICH IS MORE THAN ONE. This verb
+        # tombstones `task_id` AND scrubs inbound references to it from every
+        # card in `refs` — so its intent genuinely spans several rows, unlike
+        # the other lifecycle verbs.
+        #
+        # `touched_ids=[task_id]` would have been the obvious conversion and it
+        # would have SILENTLY DISCARDED THE REF SCRUBS, leaving dangling
+        # references to a tombstoned card — a new defect introduced by the fix
+        # for an old one. The ids are already collected because the Undo payload
+        # returns them; naming intent here costs nothing extra.
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id, *refs]
+        )
     return {"removed": original, "refs": refs}
 
 
@@ -315,7 +327,10 @@ def restore_task(
             # No row at all — a legacy pre-tombstone-era delete, or an
             # admin purge. Fall back to the original append behaviour.
             tasks.append(restored)
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # NAMES THE ONE CARD IT TOUCHED. Both branches above write exactly `tid`
+        # -- un-tombstoning replaces that row in place, the fallback appends it
+        # -- so nothing else in the document is this verb's intent.
+        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=[tid])
     # refs are descriptive (the client passes them through so callers can
     # see which tasks had been mutated; we don't reverse-apply them since
     # the depends_on / blocks values were just stripped, not stored).
@@ -369,7 +384,9 @@ def resolve_task(
                 ),
             }
         )
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
     # Active-unblock DRIVE (ADR-0009) — resolving a blocker card to done
     # can free its dependents too. Outside the lock; skip the noop
     # (already-done) path. Handler token-dedupe keeps it idempotent.
@@ -442,7 +459,9 @@ def reopen_task(
         if cleared:
             text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
         comments.append({"author": who, "ts": now, "text": text})
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
 
