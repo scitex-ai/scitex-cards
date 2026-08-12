@@ -114,7 +114,26 @@ def pg(request):
             pytest.fail(f"{_ENV_PG_DSN} is set but psycopg is not installed")
         pytest.skip("psycopg not installed")
     try:
-        conn = psycopg.connect(dsn, connect_timeout=5)
+        # dict_row IS THE POINT, NOT A DETAIL. `scitex_cards._db.connect` opens
+        # PostgreSQL with `row_factory=dict_row` (_backend_connect.py:206) because
+        # the rest of the store reads columns by name. psycopg's DEFAULT factory
+        # yields TUPLES, which accept row[0]; dict_row yields a real dict, which
+        # raises KeyError: 0.
+        #
+        # This fixture originally used the default. Twenty tests passed against a
+        # live PostgreSQL and the code they exercised was DEAD in production —
+        # v11's probe read row[0] and the migration runs from init_schema, so
+        # every open_db on a host that took 0.37.0 crashed and the board became
+        # permanently unreadable. Caught by scitex-agent-container on the real
+        # store, after CI was green.
+        #
+        # A fixture that differs from production in ONE dimension tests a program
+        # that does not exist. The shim below was written to be faithful about
+        # the `?` placeholder and the `backend` attribute, and was unfaithful
+        # about the thing that mattered.
+        from psycopg.rows import dict_row
+
+        conn = psycopg.connect(dsn, connect_timeout=5, row_factory=dict_row)
     except Exception as exc:
         if declared:
             pytest.fail(f"{_ENV_PG_DSN} declares {dsn!r} but connecting raised {exc}")
@@ -144,15 +163,27 @@ def pg_repaired(pg):
     return pg
 
 
-def _fk_rows(pg, table):
-    """Every single-column FK on ``table`` in the current schema."""
-    return pg.execute(
-        "SELECT c.conname, c.condeferrable, c.condeferred"
-        " FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid"
-        " WHERE c.contype='f' AND t.relname = ?"
-        " AND t.relnamespace = current_schema()::regnamespace",
-        (table,),
-    ).fetchall()
+def _fk_names(pg, table):
+    """Constraint NAMES of every single-column FK on ``table``, read BY NAME.
+
+    Returns names rather than rows so no caller can index positionally. The
+    previous version returned raw rows and its callers did `rows[0][0]` — which
+    worked only because the fixture yielded tuples. Switching the fixture to
+    `dict_row` (production's factory) made those callers raise `KeyError: 0`,
+    the SAME error 0.37.0 hit on the live store. Two positional reads, one in
+    the shipped probe and one here, and the tuple fixture hid both.
+    """
+    return [
+        r["conname"]
+        for r in pg.execute(
+            "SELECT c.conname FROM pg_constraint c"
+            " JOIN pg_class t ON t.oid = c.conrelid"
+            " WHERE c.contype='f' AND t.relname = ?"
+            " AND t.relnamespace = current_schema()::regnamespace"
+            " ORDER BY c.conname",
+            (table,),
+        ).fetchall()
+    ]
 
 
 def _shapes(pg):
@@ -214,6 +245,47 @@ class TestTheDeclaredListMatchesTheSchema:
 
         # Assert
         assert constrained is False
+
+
+class TestTheFixtureMatchesProduction:
+    """The guard that would have caught 0.37.0's fleet-wide outage.
+
+    v11's probe read `row[0]`. Valid on tuples, raises `KeyError: 0` on
+    psycopg's `dict_row` — which is what production uses. Twenty tests passed
+    against a live PostgreSQL while the code was dead in production, because
+    this fixture used psycopg's DEFAULT factory.
+
+    So the fixture's row shape is now itself under test. Without this, someone
+    "simplifying" the fixture back to the default reopens the exact hole and
+    every other test in the file still passes.
+    """
+
+    def test_the_fixture_yields_mapping_rows_like_production(self, pg):
+        # Arrange: production opens PostgreSQL with row_factory=dict_row
+        # (_backend_connect.py:206). A tuple-yielding fixture tests a program
+        # that does not exist.
+        pg.execute(_PLAIN_FK)
+
+        # Act
+        row = pg.execute(
+            "SELECT c.conname FROM pg_constraint c"
+            " WHERE c.conname = 'task_comments_task_id_fkey'"
+        ).fetchone()
+
+        # Assert
+        assert row["conname"] == "task_comments_task_id_fkey"
+
+    def test_the_probe_reads_by_name_not_position(self, pg):
+        # Arrange: the regression itself. On a mapping row, positional access
+        # raises — so a probe that still indexed by position would fail here
+        # rather than in production three hours later.
+        pg.execute(_PLAIN_FK)
+
+        # Act
+        shape, name = observe_foreign_key(pg, "task_comments", "task_id")
+
+        # Assert
+        assert name == "task_comments_task_id_fkey"
 
 
 class TestObservation:
@@ -328,18 +400,18 @@ class TestTheRungRepairs:
         _migrate_v10_to_v11(pg)
 
         # Assert
-        assert len(_fk_rows(pg, "task_comments")) == 1
+        assert len(_fk_names(pg, "task_comments")) == 1
 
     def test_running_twice_changes_nothing(self, pg_repaired):
         # Arrange
-        first = {t: _fk_rows(pg_repaired, t) for t, _, _, _ in DECLARED_FOREIGN_KEYS}
+        first = {t: _fk_names(pg_repaired, t) for t, _, _, _ in DECLARED_FOREIGN_KEYS}
 
         # Act
         _migrate_v10_to_v11(pg_repaired)
 
         # Assert
         assert {
-            t: _fk_rows(pg_repaired, t) for t, _, _, _ in DECLARED_FOREIGN_KEYS
+            t: _fk_names(pg_repaired, t) for t, _, _, _ in DECLARED_FOREIGN_KEYS
         } == first
 
     def test_an_unconventionally_named_constraint_is_not_duplicated(self, pg):
@@ -362,7 +434,7 @@ class TestTheRungRepairs:
         _migrate_v10_to_v11(pg)
 
         # Assert
-        assert len(_fk_rows(pg, "task_comments")) == 1
+        assert len(_fk_names(pg, "task_comments")) == 1
 
     def test_an_unconventionally_named_constraint_keeps_its_name(self, pg):
         # Arrange
@@ -376,7 +448,7 @@ class TestTheRungRepairs:
         _migrate_v10_to_v11(pg)
 
         # Assert
-        assert _fk_rows(pg, "task_comments")[0][0] == "fk_comments_belong_to_a_task"
+        assert _fk_names(pg, "task_comments") == ["fk_comments_belong_to_a_task"]
 
     def test_the_constraint_actually_enforces_after_repair(self, pg_repaired):
         # Arrange: presence in the catalogue is not enforcement. Prove it bites.
@@ -411,7 +483,7 @@ class TestTheRungRepairs:
         assert (
             pg_repaired.execute(
                 "SELECT task_id FROM task_comments WHERE id='c1'"
-            ).fetchone()[0]
+            ).fetchone()["task_id"]
             == "t1"
         )
 
