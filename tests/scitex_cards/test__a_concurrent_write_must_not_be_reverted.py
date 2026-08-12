@@ -60,6 +60,13 @@ import pytest
 
 from scitex_cards._model import load_tasks, save_tasks
 from scitex_cards._store_comment import comment_task
+from scitex_cards._store_lifecycle import (
+    complete_task,
+    delete_task,
+    reopen_task,
+    resolve_task,
+    restore_task,
+)
 
 
 @pytest.fixture()
@@ -180,6 +187,118 @@ def test_the_fixture_starts_from_a_known_state(two_cards):
     before = {c["id"]: c for c in load_tasks(store)}
     # Assert
     assert before["card-b"]["status"] == "deferred"
+
+
+def _commit_b_in_progress(store):
+    """Commit a change to card-b so an unrelated write has something to revert."""
+    doc = load_tasks(store)
+    for card in doc:
+        if card["id"] == "card-b":
+            card["status"] = "in_progress"
+    save_tasks(doc, store)
+
+
+def test_completing_one_card_does_not_rewrite_another(two_cards):
+    """THE VERB FROM THE CONFIRMED LOSS.
+
+    figrecipe 2026-08-10: a complete_task that RETURNED status=done was later
+    found back at status=blocked, reverted by writes to unrelated cards. This is
+    the converse guarantee -- completing card-a must not revert card-b.
+    """
+    # Arrange
+    store = two_cards
+    _commit_b_in_progress(store)
+    # Act
+    complete_task(store, "card-a")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_the_completion_itself_still_lands(two_cards):
+    """POSITIVE CONTROL: narrowing the write must not narrow it to nothing."""
+    # Arrange
+    store = two_cards
+    # Act
+    complete_task(store, "card-a")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-a"]["status"] == "done"
+
+
+def test_resolving_one_card_does_not_rewrite_another(two_cards):
+    # Arrange
+    store = two_cards
+    doc = load_tasks(store)
+    for card in doc:
+        if card["id"] == "card-a":
+            card["status"] = "blocked"
+            card["blocker"] = "operator-decision"
+    save_tasks(doc, store)
+    _commit_b_in_progress(store)
+    # Act
+    resolve_task(store, "card-a", actor="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_reopening_one_card_does_not_rewrite_another(two_cards):
+    # Arrange
+    store = two_cards
+    complete_task(store, "card-a")
+    _commit_b_in_progress(store)
+    # Act
+    reopen_task(store, "card-a", by="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_restoring_one_card_does_not_rewrite_another(two_cards):
+    # Arrange
+    store = two_cards
+    payload = delete_task(store, "card-a")["removed"]
+    _commit_b_in_progress(store)
+    # Act
+    restore_task(store, payload)
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_deleting_one_card_does_not_rewrite_another(two_cards):
+    # Arrange
+    store = two_cards
+    _commit_b_in_progress(store)
+    # Act
+    delete_task(store, "card-a")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_deleting_a_card_still_scrubs_inbound_references(two_cards):
+    """THE TEST THAT WOULD HAVE CAUGHT THE OBVIOUS-BUT-WRONG CONVERSION.
+
+    delete_task tombstones its target AND scrubs references to it from other
+    cards, so its intent spans several rows. `touched_ids=[task_id]` — the
+    conversion every other verb takes — would have silently dropped the scrubs,
+    leaving card-b pointing at a tombstone. That is a NEW defect introduced by
+    the fix for an old one, and only this assertion distinguishes them.
+    """
+    # Arrange
+    store = two_cards
+    doc = load_tasks(store)
+    for card in doc:
+        if card["id"] == "card-b":
+            card["depends_on"] = ["card-a"]
+    save_tasks(doc, store)
+    # Act
+    delete_task(store, "card-a")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert "card-a" not in (after["card-b"].get("depends_on") or [])
 
 
 # EOF
