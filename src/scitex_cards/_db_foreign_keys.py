@@ -129,16 +129,52 @@ SELECT c.conname, c.condeferrable, c.condeferred
 """
 
 
+def _column(row: Any, name: str, position: int) -> Any:
+    """One column of a row, whatever shape the row is. BY NAME FIRST.
+
+    THIS FUNCTION EXISTS BECAUSE ITS ABSENCE SHIPPED A FLEET-WIDE OUTAGE.
+    v11 originally read ``row[0], row[1], row[2]``. That is valid on a plain
+    ``sqlite3`` cursor and on ``sqlite3.Row``, and it RAISES ``KeyError: 0`` on
+    psycopg's ``dict_row`` — which is exactly what
+    :func:`scitex_cards._db.connect` uses for PostgreSQL, because the rest of
+    the store reads columns by name.
+
+    The migration runs from ``init_schema``, i.e. on EVERY ``open_db``. So the
+    positional read did not fail once: it failed the migration, which failed
+    the open, which made the board permanently unreadable on any host that took
+    0.37.0. Reported by scitex-agent-container, who halted distribution — 3 of 3
+    runs, `scitex-cards summary` dead on 0.37.0 and fine on 0.36.0.
+
+    THE PACKAGE ALREADY KNEW. ``_backend_connect`` documents at :163 that
+    ``dict_row`` "supports only the [name]", and
+    :func:`scitex_cards._schema_probe._sole_value` exists for precisely this
+    hazard, with a docstring naming ``KeyError: 0``. New code reproduced a
+    documented trap because the documentation lived next to the OTHER readers.
+
+    Name first, position as the fallback, so the accessor is correct on all
+    three row shapes rather than on whichever one the author last tested.
+    """
+    try:
+        return row[name]
+    except (KeyError, IndexError, TypeError):
+        return row[position]
+
+
 def observe_foreign_key(conn: Any, table: str, column: str) -> tuple[str, str | None]:
     """The ACTUAL shape of the FK on ``table.column``, and its name if any.
 
     Returns ``(ForeignKeyShape.*, constraint_name_or_None)``. Reads the
     catalogue; asserts nothing.
+
+    Columns are read through :func:`_column` — BY NAME. See that function for
+    why positional access here took the board down fleet-wide.
     """
     row = conn.execute(_OBSERVE_SQL, (table, column)).fetchone()
     if row is None:
         return ForeignKeyShape.ABSENT, None
-    name, deferrable, deferred = row[0], bool(row[1]), bool(row[2])
+    name = _column(row, "conname", 0)
+    deferrable = bool(_column(row, "condeferrable", 1))
+    deferred = bool(_column(row, "condeferred", 2))
     if deferrable and deferred:
         return ForeignKeyShape.PRESENT_DEFERRED, name
     return ForeignKeyShape.PRESENT_NOT_DEFERRED, name
