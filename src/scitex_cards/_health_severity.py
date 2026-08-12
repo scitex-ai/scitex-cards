@@ -80,10 +80,42 @@ def _run_check(
         ok = None if raw is None else bool(raw)
         detail = str(res.get("detail", ""))
         hint = res.get("hint")
+        # SEVERITY IS A PROPERTY OF THE OUTCOME, NOT OF THE CHECK, and shipping
+        # it as a per-check constant was a hole I put in #819 twenty minutes
+        # after arguing for the axis.
+        #
+        # `terminal_state_honest` and `no_falsely_blocked` are ADVISORY when
+        # they report what they exist to report -- stale stamps, dead gates.
+        # But both ALSO return ok:false with "cannot read the task store
+        # (ExportRefused: ...)" when the store will not open, and that is not a
+        # data-quality finding wearing a check's name: IT IS THE OUTAGE. During
+        # the 2026-08-11/12 incident those two checks printed exactly that, and
+        # a static ADVISORY label would have filed a live outage under "board
+        # contents only, nothing blocked" -- the same collapse this axis exists
+        # to prevent, pointed the other way.
+        #
+        # So a check may ESCALATE its own outcome. It may not de-escalate: a
+        # check cannot talk its way out of being blocking, only into it.
+        escalated = res.get("severity")
+        if escalated == BLOCKING:
+            severity = BLOCKING
     except Exception as exc:  # noqa: BLE001 — health must NEVER raise out
         ok = False
         detail = f"{name} check errored: {type(exc).__name__}: {exc}"
         hint = f"internal error in the {name} check: {exc}"
+        # SEVERITY IS UNCHANGED ON THIS PATH, and I wrote the opposite first.
+        #
+        # The argument for escalating was "a check that raised measured
+        # nothing". It does not hold: a store that will not open is caught by
+        # the check's OWN except and escalated deliberately (see
+        # `_health_cards`), so anything reaching HERE escaped that handler and
+        # is an INTERNAL BUG IN THE PROBE. A buggy probe is not an availability
+        # fact, and reporting one as an outage is this axis collapsing toward
+        # the alarming pole -- the very thing it exists to prevent.
+        #
+        # `test_a_raising_check_still_carries_its_severity` caught the
+        # overreach. It was written an hour earlier, by me, arguing exactly
+        # this, and I broke it within the hour.
     if ok is not True and not hint:
         verdict = "could not be evaluated" if ok is None else "failed"
         hint = f"{name} {verdict}: {detail}"
