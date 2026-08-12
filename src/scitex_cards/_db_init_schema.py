@@ -28,6 +28,7 @@ from __future__ import annotations
 import sqlite3
 
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_foreign_keys import _migrate_v10_to_v11
 from ._db_migrations import (
     _migrate_v1_to_v2,
     _migrate_v2_to_v3,
@@ -155,6 +156,14 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v7_to_v8(conn)
     _migrate_v8_to_v9(conn)
     _migrate_v9_to_v10(conn)
+    # LAST, and after every column rung, because it is the only rung that takes
+    # locks on tables the fleet is actively writing. It also SERIALISES ~90
+    # clients on an advisory lock rather than letting them race — the same width
+    # that produced 11 DeadlockDetected failures out of 12 concurrent opens
+    # above, applied to ADD CONSTRAINT, which holds ShareRowExclusive on two
+    # tables while it validates. Running it last keeps that serialisation off
+    # the cheap rungs.
+    _migrate_v10_to_v11(conn)
     # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT. Both halves of that rule now
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.

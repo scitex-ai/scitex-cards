@@ -179,6 +179,26 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     # acquire for local reasons, and a rung that another change could satisfy
     # would place a store at v10 that never ran this migration.
     (10, "column", "notifications", "row_uuid"),
+    # v11 — the foreign keys a MIGRATED store never received. The rung is the
+    # constraint itself rather than a column or a trigger because the constraint
+    # IS what that migration installs, and this ladder is deliberately built on
+    # physical artifacts rather than stamps.
+    #
+    # THIS RUNG IS NOT OPTIONAL AND ITS ABSENCE IS NOT COSMETIC. `SCHEMA_VERSION`
+    # became 11 in the same change; without a rung to match, `observed` would
+    # stop at 10 while both stamps read 11, giving STAMP_IS_HIGH forever. That is
+    # not a stale number — `schema_already_current` treats any disagreement as
+    # "not current", so EVERY open from ~90 containers would re-run the full DDL,
+    # which is precisely the pg_proc contention this module's own measurements
+    # record as 11 of 12 concurrent opens failing with DeadlockDetected. A
+    # missing ladder rung would have converted a version bump into a fleet-wide
+    # deadlock generator.
+    #
+    # `task_comments.task_id` is the rung rather than any of the other three
+    # because it is the constraint over the largest child table (8421 rows on
+    # 2026-08-10), so it is the one whose absence matters most and the one no
+    # unrelated change would install by coincidence.
+    (11, "foreign_key", "task_comments", "task_id"),
 )
 
 #: The lowest version this module can justify from physical evidence.
@@ -375,6 +395,10 @@ def _rung_present(conn, kind: str, name: str, extra: str) -> bool:
         return _has_trigger(conn, name)
     if kind == "column":
         return _has_column(conn, name, extra)
+    if kind == "foreign_key":
+        from ._db_foreign_keys import foreign_key_is_deferred  # noqa: PLC0415
+
+        return foreign_key_is_deferred(conn, name, extra)
     raise ValueError(f"unknown ladder rung kind: {kind!r}")
 
 

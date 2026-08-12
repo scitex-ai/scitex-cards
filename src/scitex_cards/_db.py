@@ -122,7 +122,14 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: writers omitted that payload, and each omission took every card write down
 #: fleet-wide — a barrier in the engine is the only kind every version of every
 #: container obeys. See :func:`_db_migrations._migrate_v9_to_v10`.
-SCHEMA_VERSION = 10
+#: v11 gives a MIGRATED store the foreign keys the schema has always declared.
+#: Measured 2026-08-10, the live store held 1 of 4 (control: 278 total
+#: pg_constraint rows), and the one it held covered two empty tables — so every
+#: table with data had zero enforced referential integrity. Inline ``REFERENCES``
+#: reaches fresh stores only, which is this chain's documented
+#: ``CREATE TABLE IF NOT EXISTS`` hole in its second instance. See
+#: :func:`_db_foreign_keys._migrate_v10_to_v11`.
+SCHEMA_VERSION = 11
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
