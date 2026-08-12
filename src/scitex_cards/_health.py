@@ -13,6 +13,19 @@ standard shape shared with sac/cct::
       "summary": <str>,
     }
 
+The three-valued verdict is NOT this package's own
+--------------------------------------------------
+``Verdict`` / ``Check`` / ``rollup`` come from ``scitex_dev.status``
+(ADR-0010), which is where the fleet's status primitives live — leaves consume
+the primitive, they do not re-implement it to a documented spec (ADR-0006).
+This module used to spell the same rules out in prose and enforce them by
+convention; now the type enforces them and this docstring only says which
+choices scitex-cards made.
+
+**The wire form did not change.** The rules below are the same rules, and the
+JSON is byte-for-byte what it was — that was the point of adopting a type whose
+verdict rides in the existing ``ok`` field.
+
 Contract
 --------
 * A check's ``ok`` is THREE-VALUED: ``True`` (pass), ``False`` (fail) or
@@ -21,8 +34,15 @@ Contract
   ``None`` is the only honest report for a check whose evidence is missing.
   The record keeps exactly the four standard fields — the third value rides in
   ``ok`` as JSON ``null`` rather than in a fifth key sac/cct would not read.
-* An UNKNOWN does not fail the run (``report["ok"]`` counts only ``False``) but
-  it is NAMED in ``summary``, so it can never read as a silent pass.
+* An UNKNOWN does not fail the run but it is NAMED in ``summary``, so it can
+  never read as a silent pass. That is a CHOICE, and it is now a stated one:
+  this doctor rolls up under ``UnknownPolicy.TOLERATE``. A doctor answers "may
+  I proceed?", and its exit code drives scripts that would break if an
+  unmeasurable check started returning non-zero. ``PROPAGATE`` — reporting the
+  whole as unknown — is arguably more honest for a report something else
+  decides from, and it is a deliberate SEPARATE decision: it would flip the CLI
+  exit code and make the top-level ``ok`` ``null``. ``REFUSE`` belongs to
+  callers who act on the result, such as relocation, not to a doctor.
 * Every FAILING **and** every UNKNOWN check carries an ACTIONABLE ``hint`` (the
   exact next step — for an unknown, how to make it measurable). A passing check
   may leave ``hint`` ``None``.
@@ -50,6 +70,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
+
+from scitex_dev.status import Check, UnknownPolicy, Verdict, rollup
 
 from . import _inbox
 from ._health_backend_mode import check_backend_mode
@@ -244,34 +266,47 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
 # --------------------------------------------------------------------------- #
 # Aggregator                                                                  #
 # --------------------------------------------------------------------------- #
-def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
-    """Run one check, coercing its result to the standard record + never raising.
+def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> Check:
+    """Run one check and turn its raw dict into a VALIDATED :class:`Check`.
+
+    This is the ONLY place a sub-check's dict becomes a typed verdict, which is
+    why the migration to ``scitex_dev.status`` touches this function and the
+    aggregator and nothing else: the fourteen sub-checks keep returning plain
+    dicts, and the rules they have to satisfy are now enforced here instead of
+    being restated in each of their docstrings.
 
     ``ok`` is preserved THREE-VALUED: a check that returns ``None`` means "I
-    cannot tell" and keeps ``None`` here. Coercing that to ``False`` would
-    manufacture an alarm out of a measurement nobody took; coercing it to
-    ``True`` would hide it, which is the failure mode this whole PR exists for.
+    cannot tell" and becomes :attr:`Verdict.UNKNOWN`. Coercing that to a failure
+    would manufacture an alarm out of a measurement nobody took; coercing it to
+    a pass would hide it, which is the failure mode this doctor exists for.
 
-    A check that raises is reported as ``ok=false`` with the error in ``hint``
+    ``Verdict.from_ok`` is deliberately STRICTER than the ``bool(raw)`` it
+    replaced. ``bool()`` maps every truthy value onto a pass, so a sub-check
+    that ever returned something other than ``True``/``False``/``None`` would
+    have been silently read as passing; now it is reported as a failing check
+    naming the offending value.
+
+    A check that raises is reported as a failure with the error in ``hint``
     (never propagated) — an exception is evidence of a fault, not an absence of
-    evidence. Any non-passing check with an empty hint gets a fallback hint so
-    the "every failing or unknown check carries an actionable hint" rule always
-    holds.
+    evidence. Any non-passing check with an empty hint gets a fallback hint, and
+    an empty ``detail`` is filled the same way, because :class:`Check` refuses
+    both and :func:`health` must NEVER raise.
     """
     try:
         res = fn()
-        raw = res.get("ok")
-        ok = None if raw is None else bool(raw)
+        verdict = Verdict.from_ok(res.get("ok"))
         detail = str(res.get("detail", ""))
         hint = res.get("hint")
     except Exception as exc:  # noqa: BLE001 — health must NEVER raise out
-        ok = False
+        verdict = Verdict.NOT_OK
         detail = f"{name} check errored: {type(exc).__name__}: {exc}"
         hint = f"internal error in the {name} check: {exc}"
-    if ok is not True and not hint:
-        verdict = "could not be evaluated" if ok is None else "failed"
-        hint = f"{name} {verdict}: {detail}"
-    return {"name": name, "ok": ok, "detail": detail, "hint": hint}
+    if not detail.strip():
+        detail = f"{name} returned no detail"
+    if verdict is not Verdict.OK and not hint:
+        stated = "could not be evaluated" if verdict is Verdict.UNKNOWN else "failed"
+        hint = f"{name} {stated}: {detail}"
+    return Check(name=name, verdict=verdict, detail=detail, hint=hint)
 
 
 def _soft_agent_id(agent_id: str | None) -> str | None:
@@ -383,25 +418,19 @@ def health(
         ),
         _run_check("no_falsely_blocked", lambda: _check_no_falsely_blocked(store)),
     ]
-    # THREE-VALUED aggregation. An UNKNOWN (`ok is None`) is not a fault, so it
-    # must not fail the run — but it is not a pass either, so it is counted out
-    # of `n_ok` and NAMED in the summary. Collapsing it either way is how a
-    # check that measured nothing gets read as a check that found nothing.
-    failing = [c["name"] for c in checks if c["ok"] is False]
-    unknown = [c["name"] for c in checks if c["ok"] is None]
-    ok = not failing
-    n_ok = sum(1 for c in checks if c["ok"] is True)
-    summary = f"{n_ok}/{len(checks)} checks passed"
-    if failing:
-        summary += "; failing: " + ", ".join(failing)
-    if unknown:
-        summary += "; unknown: " + ", ".join(unknown)
-    return {
-        "package": "scitex-cards",
-        "ok": ok,
-        "checks": checks,
-        "summary": summary,
-    }
+    # THREE-VALUED aggregation, with the policy STATED rather than implied. An
+    # UNKNOWN is not a fault, so it must not fail the run — but it is not a pass
+    # either, so it is counted out and NAMED in the summary. Collapsing it
+    # either way is how a check that measured nothing gets read as a check that
+    # found nothing.
+    #
+    # TOLERATE is the choice this doctor makes and it is now visible at the call
+    # site instead of living in an `ok = not failing` expression that never said
+    # what it had decided about the unknowns standing beside it. See the module
+    # docstring for why not PROPAGATE.
+    return rollup(
+        "scitex-cards", checks, unknown_policy=UnknownPolicy.TOLERATE
+    ).to_dict()
 
 
 __all__ = ["UNSEEN_BACKLOG_THRESHOLD", "health"]

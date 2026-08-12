@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The doctor's three-valued `ok` is now a TYPE, not a convention.** `_health`
+  builds `scitex_dev.status.Check` objects and aggregates them with `rollup`
+  (ADR-0010) instead of hand-rolling dicts and an `ok = not failing`
+  expression. Leaves consume the primitive, they do not re-implement it to a
+  documented spec (ADR-0006).
+
+  **The JSON does not change.** The verdict still rides in `ok` as
+  `true`/`false`/`null`, the report still has exactly four keys and each check
+  exactly four fields, and the summary format is identical — the primitive
+  adopted this package's own encoding rather than the other way round. The CLI
+  and MCP wrappers are untouched, and so are all fourteen sub-checks: the
+  migration is confined to `_run_check` and the aggregator, which is the whole
+  point of converting at that boundary.
+
+  What it buys: the rules this module used to state in prose are now enforced
+  where a check is built. An `unknown` cannot be produced without a reason AND a
+  way to find out; a failing check cannot be produced without a hint. And
+  `Verdict.from_ok` is stricter than the `bool(raw)` it replaces — a sub-check
+  that ever returned a truthy non-boolean was silently read as PASSING, and is
+  now reported as a failure naming the value.
+
+  The aggregation policy is now stated rather than implied:
+  `UnknownPolicy.TOLERATE`, because a doctor answers "may I proceed?" and its
+  exit code drives scripts. `PROPAGATE` is arguably more honest and is a
+  separate, behaviour-changing decision — it would flip the exit code and make
+  the top-level `ok` `null`.
+
+  **This adds `scitex-dev` as a core dependency**, which the `currency` extra
+  explicitly refuses for `check_currency`. The cases differ and the reasoning is
+  in `pyproject.toml` beside the pin; it is the one contested line.
+
 ## [0.36.0] - 2026-08-11
 
 **Four things that reported success while doing something else.**
