@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The root group's own help must not advertise a backend or a default path.
+"""The root --help must not advertise a backend or a default path.
 
 WHY NOT A STRING-EQUALITY TEST. Pinning today's exact sentence would re-encode
 today's wording and fail on the next harmless rewrite. These assert the
@@ -8,19 +8,30 @@ CONSTRAINT — no banned backend name, no default file path, and the one honest
 answer to "which database?" is present — so any rewording that keeps the
 constraint keeps passing.
 
-WHY ``main.help`` AND NOT THE FULL ``--help`` OUTPUT. The full output also
-contains every subcommand's ``short_help``, and four of those still name
-SQLite (``db``, ``inbox``, ``index``, ``init-store``). Asserting over the whole
-render would make this file fail for text it does not own and cannot fix
-without a judgement it has not made — ``index`` in particular describes a
-genuinely separate SQLite artifact, the rebuildable derived index, where naming
-the engine may well be correct. Those four are tracked on their own card.
-``main.help`` is exactly the summary + config-resolution block this change
-owns, and it is real rendered text rather than the module constants, because
-the constants reaching the reader is the whole claim.
+WHY THE CONSTANT PLUS A REACHES-THE-READER TEST, RATHER THAN THE RENDER ALONE.
+The first version of this file asserted over ``main.help`` and claimed in this
+docstring that "both the spec-built renderer and _render_fallback_help compose
+these". THAT CLAIM WAS FALSE AND CI CAUGHT IT. Measured in both interpreters:
 
-Both the spec-built renderer and ``_render_fallback_help`` compose these, so
-these hold whether or not scitex-dev is installed.
+    scitex-dev ABSENT   ``main.help`` = summary + config-resolution block,
+    (fallback renderer)  and the block renders BEFORE the Options section
+
+    scitex-dev PRESENT  ``main.help`` = the summary line ONLY; the block is
+    (spec renderer)      composed at format time and renders AFTER Options
+
+So neither ``main.help`` nor any positional slice of the render is stable
+across environments. What IS stable: the constant is the single source of the
+text, and the text reaches a reader in both. Hence the split — the constraint
+tests read the constant this change owns, and two separate tests prove the
+constant actually reaches someone typing --help in whatever environment they
+are in.
+
+The full ``--help`` render is deliberately NOT asserted over, because it also
+contains every subcommand's short_help, four of which still name SQLite (db,
+inbox, index, init-store). Those need four separate judgements — ``index`` may
+be RIGHT to name it, the derived index being a genuinely separate rebuildable
+artifact — and are tracked on their own card. Widening these assertions is
+correct once that lands.
 """
 
 from __future__ import annotations
@@ -31,47 +42,62 @@ import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli import main
+from scitex_cards._cli._main import _STORE_RESOLUTION
 
 
 @pytest.fixture
-def group_help() -> str:
-    return main.help or ""
+def resolution_text() -> str:
+    return "\n".join(_STORE_RESOLUTION)
 
 
-def test_root_group_help_never_names_sqlite(group_help):
+@pytest.fixture
+def rendered_help() -> str:
+    return CliRunner().invoke(main, ["--help"]).output
+
+
+def test_the_config_resolution_block_never_names_sqlite(resolution_text):
     # Arrange
     banned = re.compile(r"sqlite", re.IGNORECASE)
     # Act
-    found = banned.search(group_help)
+    found = banned.search(resolution_text)
     # Assert
-    assert found is None, f"the root group help still names sqlite:\n{group_help}"
+    assert found is None, f"config resolution still names sqlite:\n{resolution_text}"
 
 
-def test_root_group_help_advertises_no_default_database_file(group_help):
+def test_the_config_resolution_block_advertises_no_default_file(resolution_text):
     # Arrange
     a_default_path = re.compile(r"~/\.scitex/\S*\.db\b")
     # Act
-    found = a_default_path.search(group_help)
+    found = a_default_path.search(resolution_text)
     # Assert
-    assert found is None, f"the root group help still advertises a file: {found}"
+    assert found is None, f"config resolution still advertises a file: {found}"
 
 
-def test_root_group_help_points_at_resolve_store_for_the_real_target(group_help):
+def test_the_config_resolution_block_points_at_resolve_store(resolution_text):
     # Arrange
     expected = "resolve-store"
     # Act
-    present = expected in group_help
+    present = expected in resolution_text
     # Assert
-    assert present, "the root group help must name the verb reporting the target"
+    assert present, "config resolution must name the verb reporting the target"
 
 
-def test_the_summary_reaches_a_user_invoking_help():
+def test_the_resolution_text_reaches_a_user_invoking_help(rendered_help):
     # Arrange
-    runner = CliRunner()
+    a_distinctive_phrase = "SOLE identity"
     # Act
-    rendered = runner.invoke(main, ["--help"]).output
+    present = a_distinctive_phrase in rendered_help
     # Assert
-    assert "Shared card database" in rendered
+    assert present, "the config-resolution block must reach --help, not just exist"
+
+
+def test_the_summary_reaches_a_user_invoking_help(rendered_help):
+    # Arrange
+    expected = "Shared card database"
+    # Act
+    present = expected in rendered_help
+    # Assert
+    assert present, "the summary must reach --help"
 
 
 # EOF
