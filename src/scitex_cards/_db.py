@@ -155,6 +155,33 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: reaches fresh stores only, which is this chain's documented
 #: ``CREATE TABLE IF NOT EXISTS`` hole in its second instance. See
 #: :func:`_db_foreign_keys._migrate_v10_to_v11`.
+#:
+#: ═══ THIS NUMBER IS A CLAIM ABOUT A CLIENT, NOT ABOUT A DATABASE ═══
+#:
+#: Raising it here changes what THIS CODE will assert the next time it opens a
+#: database. It changes NOTHING about any database until a client CARRYING this
+#: value actually opens one — the rungs run from ``init_schema``, so an
+#: unvisited database keeps whatever shape it had, indefinitely.
+#:
+#: SO A RELEASE NOTE SAYING "v11 ADDS THE FOREIGN KEYS" IS TRUE OF THE PACKAGE
+#: AND FALSE OF THE FLEET, until propagation. When 0.37.0 was tagged, the live
+#: cards database still had ZERO enforced referential integrity on every table
+#: holding data — the repair existed, was proven on three Python versions and a
+#: real PostgreSQL, and had not run anywhere.
+#:
+#: This is written here rather than only in a release note because the release
+#: note is read once, by the person who already knows. The reader who needs it
+#: is the one who finds this constant at 11 and concludes the databases are at
+#: 11. On 2026-08-11 the fleet ran 0.35.1 for hours while a fix for a
+#: write-outage sat published and unreachable, and three agents kept hitting the
+#: bug it fixed. MERGED IS NOT PUBLISHED; PUBLISHED IS NOT DEPLOYED; AND A
+#: SCHEMA VERSION IS NOT A SCHEMA.
+#:
+#: The same shape appears twice more in this package and both are deliberate:
+#: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned,
+#: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
+#: each case the artifact exists and its effect does not yet, which is a state
+#: worth being able to name.
 SCHEMA_VERSION = 11
 
 
