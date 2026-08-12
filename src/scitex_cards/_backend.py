@@ -244,10 +244,28 @@ class LocalBackend:
         # cursor at handover, so a consumer that dies before delivering has
         # destroyed the message. Deprecated, NOT changed — sac reads this path.
         deprecation = warn_ack_on_read() if ack else None
-        from ._users import resolve_user, touch_user
+        from ._inbox_confirm import recipient_keys
+        from ._users import touch_user
 
-        user = resolve_user(agent, store=store)
-        recipient_id = user.id if user is not None else agent
+        # READ EVERY KEY CONFIRM WRITES. This used to resolve ONE key —
+        # `user.id if user is not None else agent` — while
+        # `_inbox_confirm.confirm_notifications` acks under BOTH the raw name
+        # and the resolved `u_*` id, and `_mcp_channel.recipient_keys` drains
+        # both. Those are DIFFERENT ROW SETS, deliberately (the drain keeps the
+        # raw name for back-compat records keyed by name).
+        #
+        # `resolve_user` falls back to the raw name on ANY failure, so an
+        # intermittent resolution made POLL ALTERNATE BETWEEN TWO INBOXES while
+        # confirm always covered both. Measured by canary-resume-test as an
+        # OSCILLATING `unconfirmed`: ack -> confirmed, next poll -> unconfirmed
+        # again, then empty, then back, with no ack in between. No concurrency
+        # and no second store required to produce it.
+        #
+        # Three call sites resolved keys three ways and two already agreed;
+        # poll was the odd one out. They now share one function, so they cannot
+        # disagree by construction.
+        keys = recipient_keys(agent, store)
+        recipient_id = keys[-1] if keys else agent
         # Liveness heartbeat — fail-soft, exactly as the tool did inline:
         # a stamping failure must never break the poll.
         try:
@@ -258,9 +276,22 @@ class LocalBackend:
             logging.getLogger(__name__).warning(
                 "poll_notifications: heartbeat failed for %r", agent, exc_info=True
             )
-        notifications = _inbox.poll_inbox(
-            recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
-        )
+        # Union across keys, de-duplicated by id, first key wins. A record can
+        # legitimately exist under only one key; reading their union is what
+        # makes "nothing came back" mean "no rows under ANY key I know" rather
+        # than "I looked under one key" — the distinction sac asked for.
+        notifications: list = []
+        seen_ids: set = set()
+        for key in keys:
+            for record in _inbox.poll_inbox(
+                key, unseen_only=unseen_only, mark_seen=ack, store=store
+            ):
+                rid = record.get("id")
+                if rid is not None and rid in seen_ids:
+                    continue
+                if rid is not None:
+                    seen_ids.add(rid)
+                notifications.append(record)
         from ._inbox_receipt import unconfirmed_ids
 
         payload = {
