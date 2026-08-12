@@ -180,7 +180,11 @@ def require_configured_store_target(explicit: str | Path | None = None) -> str:
         f"days earlier while the fleet wrote elsewhere, and it looked healthy "
         f"the whole time.\n"
         f"Set one of, in precedence order:\n"
-        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:5432/scitex_cards\n"
+        # PORT 55432, NEVER 5432. Operator ruling: 5432 is never scitex and
+        # every reference to it is a defect. An example inside a refusal is the
+        # worst place to carry one -- it is read by someone who is already lost
+        # and looking for exactly this line to copy.
+        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
         f"  the `store` key in the scitex-cards config file\n"
         f"Run `scitex-cards resolve-store` to see what this process resolves."
     )
