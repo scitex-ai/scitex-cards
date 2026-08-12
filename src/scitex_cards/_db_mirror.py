@@ -225,6 +225,7 @@ def mirror_doc_incremental(
     conn: sqlite3.Connection | None = None,
     store_path: str | Path | None = None,
     deleted_ids: list[str] | None = None,
+    touched_ids: list[str] | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
@@ -244,6 +245,31 @@ def mirror_doc_incremental(
     absence — that inference is the wipe class this module refuses (see the loop
     below) — so an explicit single-card verb names what it removed and the mirror
     drops exactly those rows. ``None``/empty on every ordinary write.
+
+    ``touched_ids`` IS THE MISSING HALF OF THAT SAME ARGUMENT. ``deleted_ids``
+    exists because absence is not intent; ``touched_ids`` exists because
+    DIFFERENCE IS NOT INTENT EITHER. Without it, ``changed`` below means "every
+    card whose content differs from the database" — which silently includes
+    "somebody else changed this card and I am holding an old copy". The mirror
+    then faithfully writes the caller's stale version over the other agent's
+    committed one, and both callers are told their write succeeded.
+
+    Measured on the live board 2026-08-10 by figrecipe: a ``complete_task`` that
+    RETURNED ``status=done`` was later found back at ``status=blocked``, reverted
+    by writes to unrelated cards. Their conclusion — "there is no batching
+    discipline a caller can adopt to avoid it" — is correct, because the
+    competing writes come from a different process holding a different lock (the
+    store lock is an ``fcntl.flock`` on a per-container FILE while the cards live
+    in shared PostgreSQL).
+
+    So a caller that knows which card it touched names it, and cards it did not
+    touch are never written — the concurrent update survives regardless of who
+    holds which lock. ``None`` keeps the old whole-document behaviour, so verbs
+    convert one at a time rather than on a flag day.
+
+    THIS IS NOT A LOCK AND DOES NOT PRETEND TO BE. Two callers naming the SAME
+    card still race; that case wants ``pg_advisory_xact_lock``, and it is a much
+    smaller problem once the blast radius is one row instead of the whole board.
 
     Raises deliberately, like :func:`_db_bootstrap.mirror_doc` — the POLICY for a
     failed mirror (never break the user's write, never be silent) lives in
@@ -297,6 +323,27 @@ def mirror_doc_incremental(
         by_id = {str(c["id"]): c for c in cards}
 
         changed = [i for i, h in now_hashes.items() if prior.get(i) != h]
+
+        # DIFFERENCE IS NOT INTENT. `changed` above means "differs from the
+        # database", which silently includes "somebody else changed this card
+        # and I hold an old copy" — so a caller writing card A re-asserts its
+        # stale copy of card B over another agent's committed change, and both
+        # are told they succeeded.
+        #
+        # A caller that KNOWS what it touched narrows the write to that. Cards it
+        # did not touch are never written, so a concurrent update to them
+        # survives no matter who holds which lock — which matters because the
+        # store lock is an fcntl.flock on a per-container FILE while the cards
+        # live in shared PostgreSQL, i.e. it excludes nobody across agents.
+        #
+        # The intersection with `changed` is deliberate rather than replacing it:
+        # naming a card whose content did NOT change must still write nothing, so
+        # a caller cannot manufacture a no-op write into a clobber by over-
+        # declaring. Symmetric with `deleted_ids`, which likewise names intent
+        # rather than inferring it from the document.
+        if touched_ids is not None:
+            wanted = {str(i) for i in touched_ids}
+            changed = [i for i in changed if i in wanted]
 
         # RECONCILE INSERTS AND UPDATES. IT NEVER *INFERS* A DELETE FROM ABSENCE.
         # (Explicit, caller-named deletes are a separate, deliberate path — see

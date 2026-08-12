@@ -123,7 +123,12 @@ def _assert_no_shrink(
 
 
 def write_doc_to_db(
-    doc: dict, store_path, *, deleted_ids=None, allow_shrink: bool = False
+    doc: dict,
+    store_path,
+    *,
+    deleted_ids=None,
+    touched_ids=None,
+    allow_shrink: bool = False,
 ) -> dict:
     """Commit ``doc`` to SQLite, the only store. RAISES on failure.
 
@@ -197,7 +202,11 @@ def write_doc_to_db(
     # ON PURPOSE. Adding one could only make this quieter, which is the one
     # direction this function must never move.
     return mirror_doc_incremental(
-        doc, db_target, store_path=db_target, deleted_ids=deleted_ids
+        doc,
+        db_target,
+        store_path=db_target,
+        deleted_ids=deleted_ids,
+        touched_ids=touched_ids,
     )
 
 
