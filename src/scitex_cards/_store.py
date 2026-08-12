@@ -344,7 +344,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
     from ._store_target import resolve_store_target
-    from ._store_url import backend_of, is_postgres_url
+    from ._store_url import backend_of, is_attempted_dsn, is_postgres_url
     from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
@@ -366,6 +366,15 @@ def resolve_store(store: str | Path | None = None) -> dict:
         "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
         "backend": backend_of(target),
+        # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
+        # 2026-08-12 this verb answered `backend: "sqlite", exists: false` for
+        # SCITEX_CARDS_DB=":55432" — a port, reported as a file that merely does
+        # not exist yet. Both fields were true of the string and neither was
+        # true of the intent, so the report read as "fresh install" to every
+        # agent who ran it. `backend` cannot carry this: thirteen call sites
+        # branch on it two-valued. So the third answer gets its own field, and
+        # a diagnosing reader sees the malformation instead of inferring it.
+        "target_is_malformed_dsn": is_attempted_dsn(target),
         # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
         # answer for a server, and BOTH poles actively mislead: False reads as
         # "your store is missing" to every operator staring at a cutover, True

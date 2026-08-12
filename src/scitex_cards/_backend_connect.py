@@ -45,7 +45,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Iterable
 
-from ._store_url import BACKEND_POSTGRES, backend_of, to_paramstyle
+from ._store_url import (
+    BACKEND_POSTGRES,
+    backend_of,
+    reject_attempted_dsn,
+    to_paramstyle,
+)
 
 __all__ = ["StoreConnection", "connect"]
 
@@ -169,6 +174,12 @@ def connect(
     ``psycopg`` is imported lazily so SQLite-only deployments -- which is every
     deployment today -- do not need the driver installed.
     """
+    # THE DOOR WHERE A GUESS DOES DAMAGE. Resolution is total and stays total;
+    # opening is where a malformed DSN stops being a wrong string and becomes a
+    # real, empty cards database that answers queries. Checked before the
+    # dispatch below, because the SQLite branch CREATES its target.
+    reject_attempted_dsn(target)
+
     backend = backend_of(target)
     if backend != BACKEND_POSTGRES:
         uri = f"file:{target}?mode=ro" if read_only else str(target)
