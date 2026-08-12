@@ -114,7 +114,13 @@ def handle_reopen(request, board):
         ]
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
+            # Single-card: this handler flips one card's status and appends one
+            # comment to it. Unlike `priority` next door, and unlike the
+            # `delete_task` / `rescore_task` verbs, nothing here reaches
+            # another row.
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=tasks, touched_ids=[task_id]
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
