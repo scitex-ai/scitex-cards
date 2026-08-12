@@ -88,7 +88,19 @@ def comment_task(
         # list-stale, digests) — found 2026-07-10 when the idle guard kept
         # flagging a card that had received progress comments minutes earlier.
         target["last_activity"] = entry["ts"]
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # NAMES THE ONE CARD IT TOUCHED. Without this the write re-asserts every
+        # card in the document as it looked at THIS function's read time, so a
+        # comment on card A silently reverts another agent's committed change to
+        # card B — measured on the live board 2026-08-10, three times, once a
+        # confirmed loss of a completion that had reported success.
+        #
+        # comment_task is the first verb converted because it is the one that was
+        # measured, and because a comment is the most obviously-single-card write
+        # in the package: appending to one card's activity log cannot legitimately
+        # rewrite anything else.
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
         owner = target.get("agent") or target.get("assignee")
         # Persistent role lists (ADR-0009) — captured under the lock so
         # the bus emit below works off a consistent snapshot.

@@ -59,6 +59,7 @@ from __future__ import annotations
 import pytest
 
 from scitex_cards._model import load_tasks, save_tasks
+from scitex_cards._store_comment import comment_task
 
 
 @pytest.fixture()
@@ -130,6 +131,43 @@ def test_the_writer_own_change_lands(two_cards):
     # Assert
     after = {c["id"]: c for c in load_tasks(store)}
     assert after["card-a"]["status"] == "in_progress"
+
+
+def test_a_comment_on_one_card_does_not_rewrite_another(two_cards):
+    """THE CONVERTED VERB, and the guarantee `touched_ids` buys.
+
+    `comment_task` names the single card it touched, so the write can no longer
+    re-assert the caller's snapshot of every OTHER card. This is the narrow,
+    checkable half of the fix: not "concurrency is solved" but "a comment on A
+    cannot write B".
+
+    Asserted through the REAL verb rather than through the mirror, because the
+    defect was never in the mirror alone — it was in what the verb handed it.
+    """
+    # Arrange — B is committed after the store is seeded
+    store = two_cards
+    doc = load_tasks(store)
+    for card in doc:
+        if card["id"] == "card-b":
+            card["status"] = "in_progress"
+    save_tasks(doc, store)
+    # Act — comment on card-a only (first positional is the STORE, not the id)
+    comment_task(store, "card-a", "hello", by="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_the_comment_itself_still_lands(two_cards):
+    """POSITIVE CONTROL for the converted verb: narrowing the write must not
+    narrow it to nothing."""
+    # Arrange
+    store = two_cards
+    # Act
+    comment_task(store, "card-a", "hello", by="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-a"]["comments"][-1]["text"] == "hello"
 
 
 def test_the_fixture_starts_from_a_known_state(two_cards):

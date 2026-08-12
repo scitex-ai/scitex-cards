@@ -263,6 +263,7 @@ def _save_doc_unlocked(
     *,
     tasks: list[dict] | None = None,
     deleted_ids: list[str] | None = None,
+    touched_ids: list[str] | None = None,
     allow_shrink: bool = False,
 ) -> None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
@@ -319,7 +320,13 @@ def _save_doc_unlocked(
     # of the board — which is the exact defect this cutover exists to remove.
     from ._store_backend import write_doc_to_db
 
-    write_doc_to_db(doc, path, deleted_ids=deleted_ids, allow_shrink=allow_shrink)
+    write_doc_to_db(
+        doc,
+        path,
+        deleted_ids=deleted_ids,
+        touched_ids=touched_ids,
+        allow_shrink=allow_shrink,
+    )
 
 
 def _git_autocommit_store(path: Path) -> None:
