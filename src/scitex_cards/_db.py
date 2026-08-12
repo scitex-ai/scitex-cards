@@ -101,8 +101,34 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: nothing the operator actually talks through. See
 #: ``docs/design/dm-into-cards-db.md``.
 #:
-#: v6 (the optimistic lock) adds ``tasks.revision``, incremented by every
-#: row-level write and asserted in the write's WHERE clause. It exists so a
+#: v6 (the optimistic lock) adds ``tasks.revision``. It is incremented by every
+#: row-level write (v7's trigger, below) and it CAN be asserted in a write's
+#: WHERE clause — but only by a caller that opts in, and no public verb does.
+#:
+#: THAT DISTINCTION IS LOAD-BEARING AND THIS COMMENT USED TO ERASE IT. It read
+#: "incremented by every row-level write and asserted in the write's WHERE
+#: clause", in the present tense, as a property of the schema. Nothing asserted
+#: it at all until #790 (2026-08-10). scitex-dev read this line, reasonably
+#: concluded the lock was protecting them, skipped the check, and LOST AN EDIT
+#: to a concurrent writer — reporting the work done, because nothing said
+#: otherwise. A comment that overstates a guard is worse than no comment: it
+#: converts a reader's diligence into a reason to skip the check.
+#:
+#: WHAT IS TRUE TODAY — one SQL site, two callers, no public entry:
+#:   * ``_db_bootstrap._insert_tasks(..., expected_revision=N)`` appends
+#:     ``WHERE tasks.revision = ?`` — the only such clause in the package.
+#:   * ``_db_mirror._write_card(..., expected_revision=N)`` forwards to it.
+#:   * ``update_task`` / ``add_task`` accept no such argument, so every write
+#:     through the public surface remains LAST-WRITE-WINS, deliberately —
+#:     :func:`_migrate_v6_to_v7` ruled REJECT-by-default unusable across a fleet
+#:     that cannot be made uniformly current.
+#: So ``revision`` is a CAPABILITY, not a PROTECTION. Pinned by
+#: ``tests/scitex_cards/test__revision_is_opt_in.py`` so this text cannot drift
+#: again in EITHER direction: it fails if the WHERE clause disappears, and it
+#: fails if a public verb starts accepting the argument while this still says
+#: none does.
+#:
+#: The counter exists so a
 #: writer can tell "the row is there" (which ``rowcount == 1`` already answers)
 #: apart from "nobody changed it under me since I read" — the question that
 #: actually prevents a lost update, and the one sac's state-db taught us is easy
