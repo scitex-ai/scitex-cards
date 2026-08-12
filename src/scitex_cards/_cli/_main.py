@@ -79,6 +79,7 @@ _COMMAND_CATEGORIES = (
         ),
     ),
     ("Introspection", ("list-python-apis", "skills")),
+    ("Maintenance", ("dev",)),  # hook-bypass: line-limit (pre-existing over-cap)
     ("Shell", ("install-shell-completion", "print-shell-completion")),
 )
 
@@ -403,6 +404,7 @@ def list_tasks_cmd(
 # --------------------------------------------------------------------------- #
 from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; minimal wire)
     _board,
+    _cardsync,
     _ci_watch,
     _completion,
     _deliver,
@@ -503,6 +505,7 @@ _deliver.register(main)
 # operator-gated systemd user-unit template (never runs systemctl). See
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
+_cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
 
 
 if __name__ == "__main__":
