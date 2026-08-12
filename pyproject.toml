@@ -82,6 +82,54 @@ dependencies = [
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",
     "fastmcp>=2.0",
+    # THE ONE CONTESTED LINE IN THIS CHANGE. Read the `currency` extra below
+    # first -- it REFUSES to promote scitex-dev, and that refusal still stands
+    # for what it was written about.
+    #
+    # The two cases differ on the test the refusal itself names. `check_currency`
+    # is a NO-OP when scitex-dev is absent, so promoting it would buy a silent
+    # capability at the cost of a dev toolchain in every runtime install. The
+    # status PRIMITIVE fails the other way: `_health` imports
+    # `scitex_dev.status` at module scope, so its absence is
+    # `ModuleNotFoundError: scitex_dev` at the first `from scitex_cards._health
+    # import health` -- loud, self-naming, and one grep from fixed.
+    #
+    # That difference is not the argument, though. The argument is ADR-0006 and
+    # ADR-0010: LEAVES CONSUME THE PRIMITIVE, THEY DO NOT RE-IMPLEMENT IT TO A
+    # DOCUMENTED SPEC. scitex-dev's top-level `__init__` was deliberately made
+    # import-cheap for exactly this edge, and `scitex_dev.status` imports the
+    # standard library and yaml and nothing else in scitex-dev -- so the cost
+    # here is the PACKAGING edge, not the module.
+    #
+    # The alternative to this line is a second copy of a three-valued verdict in
+    # this package, which is the defect the SSoT rule exists to prevent, and
+    # which the fleet already has five of (versioning.Currency,
+    # store.StoreStatus, testing._audit_outcome, hygiene.Landed,
+    # _cli._doctor.Status -- none of them readable to the others).
+    #
+    # WHAT THIS COSTS, STATED HONESTLY: scitex-dev pulls textual, Pillow,
+    # scitex-scholar, newb and scitex-ssh, none of which scitex-cards needs. If
+    # that is judged too much for one type, the remedy is to split
+    # `scitex_dev.status` into its own distribution -- NOT to copy the type. That
+    # is a fleet decision and is deliberately not taken here.
+    #
+    # >=0.48 for scitex_dev.status.Verdict / Check / rollup (ADR-0010).
+    #
+    # THIS PIN IS NOT SATISFIABLE YET AND THAT IS DELIBERATE, not an oversight.
+    # Measured 2026-08-12 against the container's own interpreter: scitex-dev
+    # 0.47.0 is installed and `site-packages/scitex_dev/status/` DOES NOT EXIST
+    # -- the whole status subpackage, StatusCode included, is on develop and has
+    # never been released. So this line is a SEQUENCING statement: scitex-dev
+    # must cut a release carrying both the status package and ADR-0010's
+    # addition before this PR can go green, and until it does, one test
+    # (`test__import_order.py::test_module_can_be_imported_first[
+    # scitex_cards._health]`, which scrubs PYTHONPATH on purpose) fails with
+    # `ModuleNotFoundError: No module named 'scitex_dev.status'`.
+    #
+    # A pin that resolves to something without the names would be worse: pip
+    # would succeed, the import would fail at the NAME, and the traceback would
+    # point at _health.py instead of at this line.
+    "scitex-dev>=0.48",
 ]
 
 [project.optional-dependencies]
