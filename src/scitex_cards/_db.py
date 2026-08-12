@@ -322,9 +322,26 @@ def connect(path: str | Path) -> sqlite3.Connection:
     and observed while testing #682. Nothing raised, and the store looked
     healthy, which is exactly why the check cannot live further down.
     """
-    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
+    from ._store_url import (  # noqa: PLC0415 -- import cycle
+        is_postgres_url,
+        reject_attempted_dsn,
+    )
 
     target = str(path)
+    # AND THE DISPATCH BEING FIRST WAS STILL NOT ENOUGH, because the dispatch is
+    # TWO-VALUED: not-PostgreSQL is not the same as is-a-path, but the `if`
+    # below can only say one of them. Everything the paragraph above warns about
+    # therefore still happened to any target the predicate did not recognise.
+    #
+    # It is not hypothetical here either. Found 2026-08-12 in this repository's
+    # own root, untracked and not ignored:
+    #
+    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/todo.db
+    #
+    # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
+    # which collapses "//" to "/", then mkdir(parents=True) below built the
+    # directories and the inbox migration filled in the file. Moved to .old/.
+    reject_attempted_dsn(target)
     if is_postgres_url(target):
         from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
         from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
