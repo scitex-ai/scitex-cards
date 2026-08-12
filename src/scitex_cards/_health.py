@@ -244,8 +244,43 @@ from ._health_cards import (  # noqa: E402,F401  (re-export)
 # --------------------------------------------------------------------------- #
 # Aggregator                                                                  #
 # --------------------------------------------------------------------------- #
-def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+#: A failure here means THE CARDS DATABASE CANNOT BE USED AS EXPECTED. This is
+#: the only class that may set the report's overall ``ok`` to false.
+BLOCKING = "blocking"
+
+#: A failure here means NOTIFICATION DELIVERY is degraded. Cards read and write
+#: normally. Separated from BLOCKING because an agent asking "can I card this?"
+#: gets yes, and separated from ADVISORY because something is actually broken.
+DELIVERY = "delivery"
+
+#: A failure here means THE BOARD'S CONTENTS ARE IMPERFECT — stale stamps,
+#: falsely-blocked cards. Nothing is unavailable and nothing is blocked. These
+#: name the offending card ids and are fixed by ordinary card edits.
+ADVISORY = "advisory"
+
+
+def _run_check(
+    name: str,
+    fn: Callable[[], dict[str, Any]],
+    *,
+    severity: str = BLOCKING,
+) -> dict[str, Any]:
     """Run one check, coercing its result to the standard record + never raising.
+
+    ``severity`` ANSWERS THE QUESTION THE CALLER ACTUALLY HAS, which is not "did
+    every check pass" but "can I use this store". Defaults to BLOCKING so a new
+    check is conservatively treated as availability-affecting until someone
+    decides otherwise — the safe direction for a field nobody remembered to set.
+
+    IT EXISTS BECAUSE THE ABSENCE OF IT COST AN AGENT A NIGHT. On 2026-08-12 an
+    agent read `ok: false` and "9/14 checks passed" — where the four failures
+    were a file-sidecar inbox, a stopped notifyd, five stale completion stamps
+    and eight falsely-blocked cards — and concluded the cards database was
+    refusing its writes. It stopped carding for hours and worked in prose.
+    `store_canonical` said "readable, writable" in the very same report.
+
+    A scoreboard implies every check weighs the same. These do not: one of them
+    means the store is gone and another means thirteen rows are untidy.
 
     ``ok`` is preserved THREE-VALUED: a check that returns ``None`` means "I
     cannot tell" and keeps ``None`` here. Coercing that to ``False`` would
@@ -271,7 +306,16 @@ def _run_check(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     if ok is not True and not hint:
         verdict = "could not be evaluated" if ok is None else "failed"
         hint = f"{name} {verdict}: {detail}"
-    return {"name": name, "ok": ok, "detail": detail, "hint": hint}
+    # SEVERITY DOES NOT RIDE IN THE RECORD. The four fields are a CROSS-PACKAGE
+    # contract that sac and cct parse, and this module's own docstring already
+    # refused to add a fifth key for the three-valued `ok`. Adding one for
+    # severity would be the same violation with a better excuse -- and the
+    # contract tests catch it, which is how I found out.
+    #
+    # So the classification is returned ALONGSIDE, and `health()` consumes it to
+    # decide `ok` and to write the summary. Both of those are inside the
+    # contract: `ok` is still a bool, `summary` is still a free string.
+    return {"name": name, "ok": ok, "detail": detail, "hint": hint}, severity
 
 
 def _soft_agent_id(agent_id: str | None) -> str | None:
@@ -304,11 +348,24 @@ def health(
     Returns
     -------
     dict
-        ``{"package", "ok", "checks", "summary"}`` — ``ok`` is true iff every
-        check is ok. NEVER raises.
+        ``{"package", "ok", "checks", "summary"}`` — EXACTLY these four keys,
+        and each check record has exactly ``{name, ok, detail, hint}``. That
+        shape is a cross-package contract sac and cct parse; severity is
+        therefore expressed through ``ok`` and ``summary`` rather than through
+        keys they would not read.
+
+        ``ok`` IS TRUE IFF NO **BLOCKING** CHECK FAILED — not iff every check
+        passed. It answers "can I use this cards database", which is the
+        question every caller actually has. Delivery and advisory failures are
+        named in ``summary`` and keep their own ``ok: false`` in ``checks``, so
+        nothing is hidden; they simply no longer decide availability. Before
+        this, thirteen untidy rows could report the store as broken, and on
+        2026-08-12 an agent believed it and stopped working for hours.
+
+        NEVER raises.
     """
     soft_agent = _soft_agent_id(agent_id)
-    checks = [
+    graded = [
         _run_check("store_canonical", lambda: _check_store_canonical(store)),
         # Can this process WRITE at all? store_canonical answers the narrower
         # "does a parseable file exist there", and on 2026-07-19 it reported ok
@@ -323,21 +380,22 @@ def health(
         # let a DM commit to the store on 2026-08-01 while no notification was
         # ever created, with every card-side check green. Reported as a FAILURE
         # rather than an info line, because a split is not a normal state.
-        _run_check("backend_mode", lambda: check_backend_mode(store)),
+        _run_check("backend_mode", lambda: check_backend_mode(store), severity=DELIVERY),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
-        _run_check("notifyd_alive", lambda: _check_notifyd_alive(store)),
+        _run_check("notifyd_alive", lambda: _check_notifyd_alive(store), severity=DELIVERY),
         # Is anything actually being DELIVERED? notifyd_alive answers the
         # narrower "is the process ticking", and it was green throughout the
         # 2026-07-28 outage in which every tick failed to read the store and
         # the operator's DMs went undelivered for a day. A liveness signal that
         # only proves the loop is spinning is not a signal for what it exists
         # to do.
-        _run_check("delivery_liveness", lambda: _check_delivery_liveness(store)),
+        _run_check("delivery_liveness", lambda: _check_delivery_liveness(store), severity=DELIVERY),
         _run_check(
             "channel_drain",
             lambda: _check_channel_drain(soft_agent, store, unseen_threshold),
+            severity=DELIVERY,
         ),
-        _run_check("channel_capable", _check_channel_capable),
+        _run_check("channel_capable", _check_channel_capable, severity=DELIVERY),
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
@@ -346,7 +404,7 @@ def health(
         # drain kept marking records seen. Delivery here is fire-and-forget, so
         # a name the client does not know does not delay a notification, it
         # destroys it — silently. This is the only check that asks the far end.
-        _run_check("channel_reaches_session", check_channel_reaches_session),
+        _run_check("channel_reaches_session", check_channel_reaches_session, severity=DELIVERY),
         # Did anything we pushed ever get CONFIRMED? channel_reaches_session
         # reads the launch line, which only exists when a Claude launcher is in
         # our ancestry — under a container runtime that supplies the allowlist
@@ -359,6 +417,7 @@ def health(
         _run_check(
             "delivery_confirmed",
             lambda: check_delivery_confirmed(soft_agent, store),
+            severity=DELIVERY,
         ),
         # Is our own reported version actually TRUE? An orphaned/stale .dist-info
         # reports a version that outlived the code it describes — and the fleet's
@@ -379,21 +438,62 @@ def health(
         # went unnoticed for two days — the comments SAID they were closed; the
         # status field never took it. A conclusion in a comment is not a decision.
         _run_check(
-            "terminal_state_honest", lambda: _check_terminal_state_honest(store)
+            "terminal_state_honest",
+            lambda: _check_terminal_state_honest(store),
+            severity=ADVISORY,
         ),
-        _run_check("no_falsely_blocked", lambda: _check_no_falsely_blocked(store)),
+        _run_check(
+            "no_falsely_blocked",
+            lambda: _check_no_falsely_blocked(store),
+            severity=ADVISORY,
+        ),
     ]
     # THREE-VALUED aggregation. An UNKNOWN (`ok is None`) is not a fault, so it
     # must not fail the run — but it is not a pass either, so it is counted out
     # of `n_ok` and NAMED in the summary. Collapsing it either way is how a
     # check that measured nothing gets read as a check that found nothing.
-    failing = [c["name"] for c in checks if c["ok"] is False]
+    # _run_check returns (record, severity); split them here so `checks` holds
+    # ONLY the four-field records the cross-package contract allows.
+    checks = [rec for rec, _sev in graded]
+    severity_of = {rec["name"]: sev for rec, sev in graded}
+
     unknown = [c["name"] for c in checks if c["ok"] is None]
-    ok = not failing
     n_ok = sum(1 for c in checks if c["ok"] is True)
-    summary = f"{n_ok}/{len(checks)} checks passed"
-    if failing:
-        summary += "; failing: " + ", ".join(failing)
+
+    # SEVERITY-AWARE AGGREGATION. `ok` answers the question every caller
+    # actually asks -- "can I use this cards database?" -- so ONLY a blocking
+    # failure may set it false. Previously any failure did, which meant the
+    # answer to "is my store available" was decided by the tidiness of thirteen
+    # rows the caller does not own, and on 2026-08-12 an agent read that as an
+    # outage and stopped working for hours.
+    def _failed(level: str) -> list[str]:
+        return [
+            c["name"]
+            for c in checks
+            if c["ok"] is False and severity_of[c["name"]] == level
+        ]
+
+    blocked_by, degraded, advisories = (
+        _failed(BLOCKING),
+        _failed(DELIVERY),
+        _failed(ADVISORY),
+    )
+    ok = not blocked_by
+
+    # THE SUMMARY CARRIES THE SEVERITY, because the top-level keys cannot. It is
+    # a free string in the contract, and it is what a human or an agent actually
+    # reads first -- the incident was someone reading "9/14 checks passed" and
+    # inferring an outage. A scoreboard implies every check weighs the same.
+    head = "cards database USABLE" if ok else "cards database NOT USABLE"
+    summary = f"{head} — {n_ok}/{len(checks)} checks passed"
+    if blocked_by:
+        summary += "; BLOCKING: " + ", ".join(blocked_by)
+    if degraded:
+        summary += "; delivery degraded (cards unaffected): " + ", ".join(degraded)
+    if advisories:
+        summary += "; advisory, board contents only, nothing blocked: " + ", ".join(
+            advisories
+        )
     if unknown:
         summary += "; unknown: " + ", ".join(unknown)
     return {
