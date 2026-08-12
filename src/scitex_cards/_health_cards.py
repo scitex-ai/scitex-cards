@@ -97,10 +97,29 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
         # reading as 7/9 UNHEALTHY on perfectly healthy installs.)
         tasks = load_tasks(resolve_tasks_path(store))
     except Exception as exc:  # noqa: BLE001 — an unreadable store is a reportable state
+        # ESCALATED TO BLOCKING. This check is ADVISORY when it reports what it
+        # exists to report -- stale stamps, dead gates, thirteen untidy rows
+        # that block nobody. It is NOT advisory when the store will not open:
+        # that is the outage itself, surfacing through whichever check happened
+        # to touch the store first.
+        #
+        # On 2026-08-11/12 this exact branch printed "cannot read the task store
+        # (ExportRefused: notifications row ... has no record_json payload)",
+        # and an agent read the report as row hygiene and stopped carding for
+        # hours. Severity is a property of the OUTCOME, not of the check.
+        from ._health_severity import BLOCKING
+
         return {
             "ok": False,
+            "severity": BLOCKING,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-cards resolve-store`.",
+            "hint": (
+                "the STORE is unreadable — this is not a board-contents finding. "
+                "Check it with `scitex-cards resolve-store`; if the error names a "
+                "notifications row with no record_json payload, ONE row is wedging "
+                "the table (not your card, not the whole store) and a client older "
+                "than 0.37.1 is the likely writer."
+            ),
         }
 
     # Two DISTINCT lies, deliberately not merged — they corrupt different
@@ -224,10 +243,29 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
         # reading as 7/9 UNHEALTHY on perfectly healthy installs.)
         tasks = load_tasks(resolve_tasks_path(store))
     except Exception as exc:  # noqa: BLE001 — an unreadable store is a reportable state
+        # ESCALATED TO BLOCKING. This check is ADVISORY when it reports what it
+        # exists to report -- stale stamps, dead gates, thirteen untidy rows
+        # that block nobody. It is NOT advisory when the store will not open:
+        # that is the outage itself, surfacing through whichever check happened
+        # to touch the store first.
+        #
+        # On 2026-08-11/12 this exact branch printed "cannot read the task store
+        # (ExportRefused: notifications row ... has no record_json payload)",
+        # and an agent read the report as row hygiene and stopped carding for
+        # hours. Severity is a property of the OUTCOME, not of the check.
+        from ._health_severity import BLOCKING
+
         return {
             "ok": False,
+            "severity": BLOCKING,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-cards resolve-store`.",
+            "hint": (
+                "the STORE is unreadable — this is not a board-contents finding. "
+                "Check it with `scitex-cards resolve-store`; if the error names a "
+                "notifications row with no record_json payload, ONE row is wedging "
+                "the table (not your card, not the whole store) and a client older "
+                "than 0.37.1 is the likely writer."
+            ),
         }
 
     by_id = {t.get("id"): t for t in tasks}
