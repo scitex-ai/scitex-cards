@@ -1056,11 +1056,22 @@ def test_init_shared_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
+# THE STORE IS NAMED, NOT LEFT AMBIENT, in the three tests below. They used to
+# `env.delete("SCITEX_CARDS_DB")` and lean on $SCITEX_DIR to steer the
+# zero-config default; that tier was ABOLISHED on 2026-08-13 and now refuses,
+# so leaning on it would test the refusal instead of the verb. Naming the same
+# path through $SCITEX_CARDS_DB keeps each test's actual subject intact --
+# CREATE says "created", the store lands on disk, a second run is a no-op --
+# and it is also the workflow that survives the abolition: an operator states
+# where the store goes, and `init-store --shared` creates it there.
+_FRESH_STORE = ("fake-home", "cards", "cards.db")
+
+
 def test_init_shared_output_mentions_created(tmp_path, env):
-    # Arrange — redirect to a fresh store so init-store CREATES (not no-op).
+    # Arrange — a fresh, NAMED store so init-store CREATES (not no-op).
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_CARDS_DB")
+    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
     env.delete("SCITEX_TODO_DB")
     # Act
     result = runner.invoke(main, ["init-store", "--shared"])
@@ -1069,11 +1080,10 @@ def test_init_shared_output_mentions_created(tmp_path, env):
 
 
 def test_init_shared_creates_the_db(tmp_path, env):
-    # Arrange — redirect the store to a fresh location (unset the harness pin so
-    # SCITEX_DIR takes effect), so init-store has a store to CREATE.
+    # Arrange — a fresh, NAMED store, so init-store has one to CREATE.
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_CARDS_DB")
+    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
     env.delete("SCITEX_TODO_DB")
     from scitex_cards._db import resolve_db_path
 
@@ -1086,13 +1096,32 @@ def test_init_shared_is_idempotent(tmp_path, env):
     # Arrange
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_CARDS_DB")
+    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
     env.delete("SCITEX_TODO_DB")
     runner.invoke(main, ["init-store", "--shared"])
     # Act
     again = runner.invoke(main, ["init-store", "--shared"])
     # Assert — second run finds the DB already there.
     assert "no-op" in again.output
+
+
+def test_init_shared_refuses_when_no_store_is_configured(tmp_path, env):
+    """The tier those three tests used to ride on is GONE, and says so.
+
+    Without this, the edits above would read as "the fixture changed" rather
+    than "the behaviour changed", and nothing would notice if the zero-config
+    default came back: the three tests above would simply pass again.
+    """
+    # Arrange — nothing names a store; $SCITEX_DIR steers only local state.
+    runner = CliRunner()
+    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
+    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_TODO_DB")
+    # Act
+    result = runner.invoke(main, ["init-store", "--shared"])
+    # Assert — it refuses, and names the variable to set.
+    assert result.exit_code != 0
+    assert "SCITEX_CARDS_DB" in result.output
 
 
 def test_init_project_outside_git_errors(tmp_path, env):

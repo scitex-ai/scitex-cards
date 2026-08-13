@@ -157,7 +157,7 @@ _DB_OPTION = click.option(
     "--db",
     "db_path",
     default=None,
-    help="Explicit DB path (default: $SCITEX_CARDS_DB, else ~/.scitex/cards/cards.db).",
+    help="Explicit DB path (default: $SCITEX_CARDS_DB, else the configured store).",
 )
 
 
@@ -166,9 +166,11 @@ _DB_OPTION = click.option(
     help=(
         "Print the resolved DB path.\n\n"
         "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_TODO_DB "
-        "(deprecated, warned) > local_state.user_path('cards','cards.db'). "
-        "Delegates the user tier to the ecosystem resolver (never a "
-        "re-rolled project/user precedence).\n\n"
+        "(deprecated, warned) > the `store.target` key in the config file. "
+        "There is NO tier below that: it used to fall back to "
+        "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "
+        "unconfigured store REFUSES instead of naming a SQLite file nobody "
+        "chose.\n\n"
         "Example:\n"
         "  scitex-cards db path"
     ),

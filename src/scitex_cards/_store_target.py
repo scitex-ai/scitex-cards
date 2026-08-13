@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import NoReturn
 
 from ._db import DEFAULT_DB_FILENAME, ENV_DB, ENV_DB_DEPRECATED, PKG_SHORT
 from ._store_url import BACKEND_SQLITE, backend_of, is_postgres_url
@@ -42,6 +43,7 @@ __all__ = [
     "TIER_DEFAULT",
     "TIER_ENV",
     "TIER_EXPLICIT",
+    "refuse_zero_config_default",
     "require_configured_store_target",
     "resolve_store_target",
     "resolve_store_backend",
@@ -82,8 +84,13 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
 
     Mirrors ``_db.resolve_db_path``'s precedence exactly (explicit argument,
     then ``$SCITEX_CARDS_DB``, then the deprecated ``$SCITEX_TODO_DB``, then the
-    ecosystem user-canonical default) and differs only in refusing to turn the
-    answer into a ``Path``.
+    config file) and differs only in refusing to turn the answer into a
+    ``Path``.
+
+    THERE IS NO TIER BELOW THE CONFIG FILE. Until 2026-08-13 this fell through
+    to the ecosystem user-canonical default -- ``~/.scitex/cards/cards.db``, a
+    SQLite filename nobody chose. It now RAISES
+    :class:`StoreTargetNotConfigured`; see :func:`refuse_zero_config_default`.
 
     The deprecation warning is deliberately NOT re-emitted here -- ``_db``
     already warns on that tier, and warning twice for one resolution trains
@@ -111,12 +118,28 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     configured = store_config_target()
     if configured:
         return configured
-    # Same final tier as _db.resolve_db_path, imported lazily for the same
-    # reason: a caller with an explicit or env target must not hard-require
-    # scitex_config to be importable.
-    from scitex_config._ecosystem import local_state
-
-    return str(local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME))
+    # ZERO-CONFIG DEFAULT TIER -- ABOLISHED 2026-08-13. This used to be the
+    # same final tier as _db.resolve_db_path:
+    #
+    #     from scitex_config._ecosystem import local_state
+    #     return str(local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME))
+    #
+    # i.e. a SQLite filename nobody chose, returned as though somebody had.
+    # `refuse_zero_config_default` still computes that filename -- but only to
+    # NAME it in the refusal, never to hand it back as a store.
+    #
+    # WHY THE TIER AND NOT ANOTHER DOOR. Guarding one door at a time was the
+    # standing policy (see `require_configured_store_target`), and measured
+    # 2026-08-13 it had reached 1 of 31 production call sites while the fleet's
+    # own hosts kept arriving here: on compute-04 `~/.bashrc` exports
+    # $SCITEX_CARDS_DB *below* its non-interactive early-return, so every cron
+    # job, systemd unit and script on the box saw the variable EMPTY and
+    # resolved this tier. A guard that must be remembered at each new call site
+    # is a guard that will be missing from the next one. The operator's ruling,
+    # repeated and now final: SQLite is abolished fleet-wide, and the
+    # error-prone option is better off not existing -- fewer choices is the
+    # feature. So the tier itself stops answering.
+    refuse_zero_config_default()
 
 
 class StoreTargetNotConfigured(RuntimeError):
@@ -127,7 +150,62 @@ class StoreTargetNotConfigured(RuntimeError):
     zero-config default is a fresh install behaving correctly; a BOARD landing
     there is a deployment that lost its target and will now serve whatever
     happens to be at that filename, to everyone, indefinitely.
+
+    SINCE 2026-08-13 EVERY CALLER GETS THIS, not just the servers. The sentence
+    above described the trade that justified guarding one door at a time; the
+    operator retired that trade (SQLite abolished fleet-wide) after the "fresh
+    install behaving correctly" case turned out to be indistinguishable, from
+    inside the process, from a cron job whose environment lost the DSN.
+    :func:`refuse_zero_config_default` is now where it is raised, and both
+    resolvers end there.
     """
+
+
+def refuse_zero_config_default() -> NoReturn:
+    """Refuse, loudly, where the zero-config SQLite default used to answer.
+
+    THE ONE PLACE THIS TEXT LIVES, and the reason it is a function rather than
+    two ``raise`` statements: the abolished tier had TWO implementations --
+    :func:`resolve_store_target` and ``_db.resolve_db_path``, whose docstrings
+    promise to mirror each other's precedence exactly. Two copies of a refusal
+    is two things that can drift, and a tier that is closed in one resolver and
+    open in the other is the same silent fallback with an extra step.
+
+    THE FILENAME IS STILL COMPUTED, and only for the message. "No store is
+    configured" is a diagnosis; naming the file that WOULD have been served is
+    what makes it actionable, and it is how a reader recognises the store they
+    have been unknowingly reading for a week. Imported lazily for exactly the
+    reason the tier always was: a caller with an explicit or env target must
+    not hard-require ``scitex_config`` to be importable.
+
+    Raises
+    ------
+    StoreTargetNotConfigured
+        Always. The return annotation is :data:`~typing.NoReturn` so a caller
+        that forgets that is a type error rather than a caller that falls
+        through and returns ``None`` where a target was promised.
+    """
+    from scitex_config._ecosystem import local_state
+
+    target = str(local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME))
+    raise StoreTargetNotConfigured(
+        f"REFUSING to serve: no store target is configured, so this would fall "
+        f"back to the zero-config default {target!r} -- a filename, not a "
+        f"decision. On 2026-08-09 that fallback served a store frozen eight "
+        f"days earlier while the fleet wrote elsewhere, and it looked healthy "
+        f"the whole time.\n"
+        f"Set one of, in precedence order:\n"
+        # PORT 55432, NEVER 5432. Operator ruling: 5432 is never scitex and
+        # every reference to it is a defect. An example inside a refusal is the
+        # worst place to carry one -- it is read by someone who is already lost
+        # and looking for exactly this line to copy.
+        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
+        # The KEY PATH, not the section name. `store` alone sends the reader to
+        # write {"store": "<dsn>"}, which _config's fail-soft branch discards in
+        # silence -- landing them back here with no idea why.
+        f"  the `store.target` key in the scitex-cards config file\n"
+        f"Run `scitex-cards resolve-store` to see what this process resolves."
+    )
 
 
 def resolve_store_tier(explicit: str | Path | None = None) -> str:
@@ -163,31 +241,29 @@ def require_configured_store_target(explicit: str | Path | None = None) -> str:
 
     RAISES :class:`StoreTargetNotConfigured` on :data:`TIER_DEFAULT`.
 
-    NOT a change to :func:`resolve_store_target`, and that restraint is
-    deliberate: making the DEFAULT tier raise everywhere would break every
-    zero-config install and every test that relies on it, which is a blast
-    radius nobody asked for. The rule the constitution states -- fail fast, fail
-    loud, no silent fallbacks, no surprises -- is enforced at the doors where a
-    guess does damage, one door at a time, each with a stated reason.
+    NO LONGER THE ONLY DOOR, AND THAT IS THE POINT. This function was written
+    under a deliberate restraint: making the DEFAULT tier raise everywhere would
+    break every zero-config install and every test that relied on one, so the
+    refusal was enforced at the doors where a guess does damage, one door at a
+    time, each with a stated reason. Measured 2026-08-13, that policy had
+    reached 1 of 31 production call sites, while compute-04's own cron jobs
+    entered the default tier on every run. The operator abolished the tier
+    instead, so :func:`resolve_store_target` now refuses at source and this
+    function can no longer be the difference between safe and unsafe.
+
+    IT IS KEPT, AND CALLED, ANYWAY. It is the NAMED, greppable statement that a
+    server requires a chosen store -- ``_cli/_store_guard`` calls it to turn the
+    refusal into a ``ClickException``, and a reader asking "what does serve
+    require?" needs an answer that is a symbol, not an absence. The rule the
+    constitution states -- fail fast, fail loud, no silent fallbacks, no
+    surprises -- is now enforced at the resolver AND restated here.
     """
-    target = resolve_store_target(explicit)
+    # TIER FIRST, THEN THE TARGET. Resolving first would be dead code: since the
+    # default tier refuses, `resolve_store_target` raises before any check here
+    # could run. Asking the tier is the only question this function still owns.
     if resolve_store_tier(explicit) != TIER_DEFAULT:
-        return target
-    raise StoreTargetNotConfigured(
-        f"REFUSING to serve: no store target is configured, so this would fall "
-        f"back to the zero-config default {target!r} -- a filename, not a "
-        f"decision. On 2026-08-09 that fallback served a store frozen eight "
-        f"days earlier while the fleet wrote elsewhere, and it looked healthy "
-        f"the whole time.\n"
-        f"Set one of, in precedence order:\n"
-        # PORT 55432, NEVER 5432. Operator ruling: 5432 is never scitex and
-        # every reference to it is a defect. An example inside a refusal is the
-        # worst place to carry one -- it is read by someone who is already lost
-        # and looking for exactly this line to copy.
-        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
-        f"  the `store` key in the scitex-cards config file\n"
-        f"Run `scitex-cards resolve-store` to see what this process resolves."
-    )
+        return resolve_store_target(explicit)
+    refuse_zero_config_default()
 
 
 def resolve_store_backend(explicit: str | Path | None = None) -> str:

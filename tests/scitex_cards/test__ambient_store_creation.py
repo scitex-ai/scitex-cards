@@ -67,9 +67,9 @@ def test_an_existing_ambient_store_is_untouched_by_the_guard(tmp_path, monkeypat
     refuse_ambient_store_creation(present)
 
 
-def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypatch):
-    """The configuration EVERY fleet agent runs in: the board already exists at
-    the ambient default and nothing names it. Creating a card must WORK.
+def test_add_task_succeeds_against_an_existing_store(tmp_path, monkeypatch):
+    """The board already exists and the write must WORK. The pin that keeps
+    CREATE agreeing with read/update.
 
     Reproduced by scitex-ui on 0.17.7: every `add` failed for any agent whose
     env lacked ``$SCITEX_CARDS_DB``, while every read/update on the same store
@@ -82,15 +82,24 @@ def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypat
     The guard exists to stop a write MANUFACTURING a board. When the board is
     already there, there is nothing to manufacture, so there is nothing to
     refuse. An agent that cannot create a card cannot record work, hand off, or
-    escalate — so this is the pin that keeps CREATE agreeing with read/update.
+    escalate.
+
+    THE STORE IS NOW NAMED, AND THE TEST'S SUBJECT IS UNCHANGED. This used to
+    arrange "a REAL store at the AMBIENT default, named by nothing" — the
+    configuration it said every fleet agent ran in. That configuration is what
+    the operator abolished on 2026-08-13, precisely because "named by nothing"
+    and "named by a variable that got lost" are the same state from inside the
+    process. The write path being pinned here is identical either way; only the
+    arrangement moved from ambient to named, and the sibling test below still
+    covers the ambient-write refusal.
     """
-    # ARRANGE — a REAL store at the ambient default, named by nothing.
+    # ARRANGE — a REAL store, NAMED through the environment.
     import scitex_cards
     from scitex_cards._db import connect, init_schema, resolve_db_path
 
-    monkeypatch.delenv(ENV_DB, raising=False)
     monkeypatch.delenv("SCITEX_TODO_DB", raising=False)
     monkeypatch.setenv("SCITEX_DIR", str(tmp_path / "scitex"))
+    monkeypatch.setenv(ENV_DB, str(tmp_path / "scitex" / "cards" / "cards.db"))
 
     db = resolve_db_path(None)
     db.parent.mkdir(parents=True, exist_ok=True)

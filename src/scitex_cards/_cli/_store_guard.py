@@ -15,14 +15,23 @@ A guard that exists once per door is a guard that will be missing from the next
 door somebody adds. This module is the door-independent half; each caller still
 states its own reason for calling it, because the reasons genuinely differ.
 
-WHAT IT DOES NOT DO, and the restraint is deliberate: it does not make
-``resolve_store_target`` itself raise on the default tier. That would break
-every zero-config install and every test that relies on one. The rule -- fail
-fast, fail loud, no silent fallbacks -- is enforced at the doors where a guess
-does damage, one door at a time, each with a written reason. A one-shot CLI
-landing on the default is a fresh install behaving correctly; a SERVER landing
-there is a deployment that lost its target and will serve whatever sits at that
-filename, to everyone, for days.
+WHAT IT NO LONGER HAS TO DO. This module was written under a restraint that has
+since been overturned: it did NOT make ``resolve_store_target`` itself raise on
+the default tier, because that would break every zero-config install and every
+test that relied on one, so the rule -- fail fast, fail loud, no silent
+fallbacks -- was enforced door by door, each with a written reason. The
+door-by-door policy reached 1 production call site in 31; on 2026-08-13 the
+operator abolished the tier instead, and ``resolve_store_target`` now refuses at
+source. The paragraph above still holds -- a guard that exists once per door
+will be missing from the next door -- which is why the conclusion moved from
+"add another door" to "close the tier".
+
+THIS MODULE STAYS, and not out of sentiment. The resolver raises
+``StoreTargetNotConfigured``, which is a traceback; a CLI verb owes the operator
+the remedy instead, and that translation is what this function is. It also keeps
+the refusal ahead of ``--dry-run`` (see below), which no resolver-level raise can
+do, because a dry run that never touches the store would otherwise print a
+confident answer for a store nobody configured.
 """
 
 from __future__ import annotations
