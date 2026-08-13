@@ -18,4 +18,17 @@ on:
 jobs:
   import-smoke:
     uses: scitex-ai/.github/.github/workflows/import-smoke.yml@main
+    # PASS THE POOL EXPLICITLY. The reusable workflow's `runs_on` input
+    # defaults to the Spartan pool — its own docstring says so ("Defaults to
+    # the Spartan pool, i.e. exactly the value hard-coded here before this
+    # input existed"). Every Spartan runner was offline on 2026-08-13, so
+    # this job queued indefinitely and blocked #830 while every other check
+    # was green.
+    #
+    # A caller that passes nothing inherits whichever pool the org file
+    # happened to default to, which is how a repo ends up depending on a
+    # cluster it never chose. scitex-dev does not hit this because its
+    # import-smoke is a local job, not a caller of this workflow.
+    with:
+      runs_on: '["ubuntu-latest"]'
     secrets: inherit
