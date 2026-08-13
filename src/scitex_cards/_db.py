@@ -194,8 +194,12 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     2. ``$SCITEX_CARDS_DB`` environment override,
     3. ``$SCITEX_TODO_DB`` — deprecated pre-rename name, honoured with a
        loud warning for one transition window,
-    4. ``local_state.user_path("cards", "cards.db")`` — DELEGATED to the
-       ecosystem user-canonical resolver (never a re-rolled precedence).
+    4. NOTHING — there is no fourth tier. Until 2026-08-13 this DELEGATED to
+       the ecosystem user-canonical resolver,
+       ``local_state.user_path("cards", "cards.db")``; an unconfigured store
+       now RAISES
+       :class:`scitex_cards._store_target.StoreTargetNotConfigured` instead of
+       naming a SQLite file nobody chose.
 
     Returns a :class:`~pathlib.Path`; does NOT create the file.
 
@@ -266,12 +270,21 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     configured = store_config_target()
     if configured:
         return _as_path(configured, "the configured store target")
-    # Final tier — DELEGATE to the ecosystem user-canonical resolver.
-    # Imported lazily so a caller passing an explicit / env path never
-    # hard-requires scitex_config to be importable.
-    from scitex_config._ecosystem import local_state
+    # Final tier — ABOLISHED 2026-08-13. It used to DELEGATE to the ecosystem
+    # user-canonical resolver and return that path:
+    #
+    #     from scitex_config._ecosystem import local_state
+    #     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    #
+    # which is a SQLite filename nobody chose, indistinguishable at the call
+    # site from one somebody did. The refusal is the SAME object raised from the
+    # SAME place `resolve_store_target` raises it, not a second message here:
+    # this function's docstring promises its precedence mirrors that one
+    # exactly, and a tier closed in one resolver but open in the other is the
+    # original fallback with an extra hop. See `_store_target` for the ruling.
+    from ._store_target import refuse_zero_config_default  # noqa: PLC0415
 
-    return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    refuse_zero_config_default()
 
 
 # The core schema DDL and the table roster live in ``_db_schema_sql`` --

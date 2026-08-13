@@ -158,8 +158,26 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
 def resolve_store_cmd(as_json) -> None:
     """Resolve the store path and print the chain so agents can verify."""
     from .. import _store
+    from .._store_target import StoreTargetNotConfigured
 
-    info = _store.resolve_store(None)
+    # THE VERB THE REFUSAL TELLS YOU TO RUN, so it is the one verb that must not
+    # die on the case it exists to diagnose. Since 2026-08-13 an unconfigured
+    # store raises instead of resolving to ~/.scitex/cards/cards.db, and
+    # `refuse_zero_config_default`'s own message ends "Run `scitex-cards
+    # resolve-store` to see what this process resolves." An operator following
+    # that instruction and getting a traceback reads it as "the store is
+    # broken", which is the 2026-07-31 failure repeated -- back then this verb
+    # crashed on PostgreSQL while `list-tasks` served 2973 cards.
+    #
+    # HANDLED HERE AND NOT IN `_store.resolve_store` ON PURPOSE. The Python and
+    # MCP surfaces SHOULD raise: an absent store raising rather than handing
+    # back an empty board is their stated contract, and an agent needs the
+    # exception, not a dict it might not inspect. A human at a terminal needs
+    # the sentence. Same fact, two audiences.
+    try:
+        info = _store.resolve_store(None)
+    except StoreTargetNotConfigured as exc:
+        raise click.ClickException(str(exc)) from exc
     if as_json:
         click.echo(json.dumps(info))
         return
@@ -232,6 +250,16 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
             )
         target = git_root / ".scitex" / "cards" / "cards.db"
     else:
+        # THE SHARED SCOPE NAMES NO PATH, so it inherits whatever the store
+        # resolves to -- and since 2026-08-13 that RAISES when nobody chose
+        # one, instead of quietly meaning ~/.scitex/cards/cards.db. Asking the
+        # guard first turns that into the remedy this verb's user needs; going
+        # straight to `resolve_db_path` would hand them a traceback for the one
+        # question they are already trying to answer. `--project`, one branch
+        # up, states its own path and is deliberately not guarded.
+        from ._store_guard import refuse_unconfigured_store
+
+        refuse_unconfigured_store()
         target = resolve_db_path(None)
 
     if dry_run:
@@ -372,7 +400,14 @@ def store_group() -> None:
 def store_adopt_uuid_cmd(identity, as_json) -> None:
     """Bind the resolved database to a store identity and print it."""
     from .._store_uuid import adopt_store_uuid
+    from ._store_guard import refuse_unconfigured_store
 
+    # An identity is minted ONCE and forever, so "which database" must be a
+    # choice somebody made. Since 2026-08-13 an unconfigured store raises
+    # rather than naming ~/.scitex/cards/cards.db; the guard states that as the
+    # remedy instead of a traceback, and it runs BEFORE the existence check
+    # below so the two refusals cannot be confused for each other.
+    refuse_unconfigured_store()
     db_path = resolve_db_path(None)
     if not db_path.exists():
         raise click.ClickException(

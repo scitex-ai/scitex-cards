@@ -19,6 +19,7 @@ import pytest
 from conftest import seed_db_from_doc
 
 from scitex_cards import _db, _db_bootstrap, _model
+from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 # --------------------------------------------------------------------------- #
@@ -170,7 +171,11 @@ def test_resolve_db_path_env_over_userpath(tmp_path, env):
 def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
     """Neutralise both env tiers and record how `local_state.user_path` is called.
 
-    Returns ``(resolved, calls, sentinel)``.
+    Returns ``(outcome, calls, sentinel)``, where ``outcome`` is the raised
+    exception rather than a path. It could not be a path since 2026-08-13:
+    the final tier no longer RETURNS the delegated filename, it REFUSES and
+    names it. The delegation itself is unchanged and still observable, which
+    is what the second test below is about.
     """
     env.delete(_db.ENV_DB)
     env.delete(_db.ENV_DB_DEPRECATED)
@@ -184,25 +189,43 @@ def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
         return sentinel
 
     monkeypatch.setattr(local_state, "user_path", fake_user_path)
-    return _db.resolve_db_path(), calls, sentinel
+    try:
+        outcome = _db.resolve_db_path()
+    except StoreTargetNotConfigured as exc:
+        outcome = exc
+    return outcome, calls, sentinel
 
 
-def test_resolve_db_path_returns_the_delegated_user_path(tmp_path, env, monkeypatch):
-    """Final tier DELEGATES to local_state.user_path — no re-rolled precedence."""
+def test_resolve_db_path_refuses_instead_of_returning_the_user_path(
+    tmp_path, env, monkeypatch
+):
+    """Final tier REFUSES. It used to return the delegated filename.
+
+    The abolished behaviour was ``got == sentinel``: a SQLite path nobody
+    chose, handed back with the same type as one somebody did choose. That is
+    the whole defect, so this asserts the type of the outcome and not merely
+    that something went wrong.
+    """
     # Arrange
     # Act
-    got, _calls, sentinel = _resolve_with_delegated_user_path(
+    got, _calls, _sentinel = _resolve_with_delegated_user_path(
         tmp_path, env, monkeypatch
     )
 
     # Assert
-    assert got == sentinel
+    assert isinstance(got, StoreTargetNotConfigured)
 
 
 def test_resolve_db_path_delegates_with_the_cards_package_key(
     tmp_path, env, monkeypatch
 ):
-    """The delegation passes the package short-name and the db filename."""
+    """The delegation passes the package short-name and the db filename.
+
+    UNCHANGED BY THE ABOLITION, and deliberately still pinned: the filename is
+    still resolved through the ecosystem resolver, now to NAME the store in the
+    refusal rather than to serve it. A refusal that guessed the path itself
+    would send the reader to a file this package does not actually use.
+    """
     # Arrange
     # Act
     _got, calls, _sentinel = _resolve_with_delegated_user_path(
@@ -211,6 +234,18 @@ def test_resolve_db_path_delegates_with_the_cards_package_key(
 
     # Assert
     assert calls == [("cards", ("cards.db",))]
+
+
+def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
+    """And the name it reports is the one the delegation returned."""
+    # Arrange
+    # Act
+    got, _calls, sentinel = _resolve_with_delegated_user_path(
+        tmp_path, env, monkeypatch
+    )
+
+    # Assert
+    assert str(sentinel) in str(got)
 
 
 def _resolve_from_legacy_env_only(tmp_path, env, caplog):

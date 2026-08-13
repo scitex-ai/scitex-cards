@@ -25,7 +25,11 @@ import pytest
 
 from scitex_cards._config import CONFIG_NAME
 from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED, resolve_db_path
-from scitex_cards._store_target import StoreTargetIsNotAPath, resolve_store_target
+from scitex_cards._store_target import (
+    StoreTargetIsNotAPath,
+    StoreTargetNotConfigured,
+    resolve_store_target,
+)
 
 DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
 _MANAGED = (ENV_DB, ENV_DB_DEPRECATED, "HOME", "SCITEX_DIR")
@@ -70,16 +74,24 @@ class TestConfigSuppliesTheTarget:
         # Assert
         assert resolved == DSN
 
-    def test_absent_config_falls_through_to_the_default(self, config_home):
+    def test_absent_config_falls_through_past_the_tier(self, config_home):
+        """No config means this tier contributes nothing -- it does not ERROR.
+
+        The assertion moved on 2026-08-13 and the SUBJECT did not. It used to
+        be ``resolved.endswith("cards.db")``, because falling past this tier
+        landed on the zero-config SQLite default. That tier is abolished, so
+        falling past this one now lands on the refusal -- which is still the
+        NEXT tier answering, not this one failing. What is being pinned either
+        way is that an absent config is silent.
+        """
         # Arrange
         for stale in config_home.glob(CONFIG_NAME):
             stale.unlink()
 
         # Act
-        resolved = resolve_store_target(None)
-
         # Assert
-        assert resolved.endswith("cards.db")
+        with pytest.raises(StoreTargetNotConfigured):
+            resolve_store_target(None)
 
 
 class TestEnvironmentStillWins:
@@ -107,7 +119,21 @@ class TestEnvironmentStillWins:
 
 
 class TestFailSoft:
-    """A bad config contributes nothing. It must never take the board down."""
+    """A bad config contributes nothing. It must never take the board down.
+
+    THE DISTINCTION THESE TESTS DEFEND, restated after the 2026-08-13
+    abolition: "unusable config" and "no config" must be INDISTINGUISHABLE
+    downstream. A malformed JSON file must not produce a JSON error, a
+    non-string target must not produce a TypeError -- each one falls THROUGH,
+    and whatever the next tier says is what the caller hears.
+
+    What the next tier says has changed, and that is the only change here. It
+    used to invent ``~/.scitex/cards/cards.db``; it now refuses. So the
+    expected outcome below is ``StoreTargetNotConfigured`` -- the SAME outcome
+    an empty ``.scitex/cards/`` produces, which is exactly the equivalence
+    being pinned. A config error surfacing as anything OTHER than this would
+    still be the defect these tests were written for.
+    """
 
     @pytest.mark.parametrize(
         "payload",
@@ -133,20 +159,20 @@ class TestFailSoft:
         _write_config(config_home, payload)
 
         # Act
-        resolved = resolve_store_target(None)
-
-        # Assert
-        assert resolved.endswith("cards.db")
+        # Assert — falls through to the NEXT tier's answer, whatever it
+        # is, and never surfaces a config-shaped error of its own.
+        with pytest.raises(StoreTargetNotConfigured):
+            resolve_store_target(None)
 
     def test_malformed_json_falls_through(self, config_home):
         # Arrange
         (config_home / CONFIG_NAME).write_text("{not json", encoding="utf-8")
 
         # Act
-        resolved = resolve_store_target(None)
-
-        # Assert
-        assert resolved.endswith("cards.db")
+        # Assert — a JSONDecodeError reaching the caller would be the
+        # defect; the next tier's refusal is the correct pass-through.
+        with pytest.raises(StoreTargetNotConfigured):
+            resolve_store_target(None)
 
 
 class TestPathOnlyCallerRefusesAConfiguredDsn:
