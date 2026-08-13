@@ -1087,8 +1087,9 @@ def test_init_shared_creates_the_db(tmp_path, env):
     env.delete("SCITEX_TODO_DB")
     from scitex_cards._db import resolve_db_path
 
+    # Act
     runner.invoke(main, ["init-store", "--shared"])
-    # Act / Assert — the store is the canonical DB now, not a YAML file.
+    # Assert — the store is the canonical DB now, not a YAML file.
     assert resolve_db_path(None).exists()
 
 
@@ -1105,6 +1106,19 @@ def test_init_shared_is_idempotent(tmp_path, env):
     assert "no-op" in again.output
 
 
+def _init_shared_with_no_store_configured(tmp_path, env):
+    """Invoke ``init-store --shared`` with nothing naming a store.
+
+    ``$SCITEX_DIR`` steers only local state, so setting it leaves the store
+    axis genuinely unconfigured -- which is the state under test.
+    """
+    runner = CliRunner()
+    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
+    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_TODO_DB")
+    return runner.invoke(main, ["init-store", "--shared"])
+
+
 def test_init_shared_refuses_when_no_store_is_configured(tmp_path, env):
     """The tier those three tests used to ride on is GONE, and says so.
 
@@ -1112,15 +1126,19 @@ def test_init_shared_refuses_when_no_store_is_configured(tmp_path, env):
     than "the behaviour changed", and nothing would notice if the zero-config
     default came back: the three tests above would simply pass again.
     """
-    # Arrange — nothing names a store; $SCITEX_DIR steers only local state.
-    runner = CliRunner()
-    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_CARDS_DB")
-    env.delete("SCITEX_TODO_DB")
+    # Arrange
     # Act
-    result = runner.invoke(main, ["init-store", "--shared"])
-    # Assert — it refuses, and names the variable to set.
+    result = _init_shared_with_no_store_configured(tmp_path, env)
+    # Assert
     assert result.exit_code != 0
+
+
+def test_init_shared_refusal_names_the_variable_to_set(tmp_path, env):
+    """Refusing is half the job; the reader needs the variable to export."""
+    # Arrange
+    # Act
+    result = _init_shared_with_no_store_configured(tmp_path, env)
+    # Assert
     assert "SCITEX_CARDS_DB" in result.output
 
 

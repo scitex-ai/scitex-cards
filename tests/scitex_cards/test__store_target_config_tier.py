@@ -88,7 +88,8 @@ class TestConfigSuppliesTheTarget:
         for stale in config_home.glob(CONFIG_NAME):
             stale.unlink()
 
-        # Act / Assert
+        # Act
+        # Assert
         with pytest.raises(StoreTargetNotConfigured):
             resolve_store_target(None)
 
@@ -157,7 +158,8 @@ class TestFailSoft:
         # Arrange
         _write_config(config_home, payload)
 
-        # Act / Assert — falls through to the NEXT tier's answer, whatever it
+        # Act
+        # Assert — falls through to the NEXT tier's answer, whatever it
         # is, and never surfaces a config-shaped error of its own.
         with pytest.raises(StoreTargetNotConfigured):
             resolve_store_target(None)
@@ -166,7 +168,8 @@ class TestFailSoft:
         # Arrange
         (config_home / CONFIG_NAME).write_text("{not json", encoding="utf-8")
 
-        # Act / Assert — a JSONDecodeError reaching the caller would be the
+        # Act
+        # Assert — a JSONDecodeError reaching the caller would be the
         # defect; the next tier's refusal is the correct pass-through.
         with pytest.raises(StoreTargetNotConfigured):
             resolve_store_target(None)

@@ -116,6 +116,42 @@ def env_store(tmp_path):
                 os.environ[name] = value
 
 
+def _exhaust_the_resolvers() -> None:
+    """Drive BOTH resolvers past the point the abolished tier would have answered.
+
+    One closed door and one open one is the original fallback with an extra hop,
+    so the artefact tests below have to provoke both before looking at the disk.
+    The refusal is swallowed on purpose: what is under test here is what lands on
+    the filesystem, and that is asserted by the caller.
+    """
+    for resolve in (resolve_store_target, resolve_db_path):
+        try:
+            resolve(None)
+        except StoreTargetNotConfigured:
+            pass
+
+
+def _attempt_a_decoy_write() -> BaseException | None:
+    """Try to write a card with no store configured; return what came back.
+
+    Returns the raised exception rather than propagating it, so one test can
+    assert that it refused and another can assert that the refusal left nothing
+    behind -- the same attempt, examined on two different axes.
+    """
+    import scitex_cards
+
+    try:
+        scitex_cards.add_task(
+            id="decoy-card",
+            title="written to a store nobody configured",
+            assignee="scitex-cards",
+            agent="scitex-cards",
+        )
+    except BaseException as exc:  # noqa: BLE001 - the type is the assertion
+        return exc
+    return None
+
+
 class TestThePreconditionIsReal:
     """Control. Without this, every refusal below could pass for a wrong reason."""
 
@@ -220,32 +256,39 @@ class TestRefusingManufacturesNothing:
         self, unconfigured_store
     ):
         # Arrange
-        before = sorted(p.name for p in unconfigured_store.parent.iterdir())
-
         # Act
-        for resolve in (resolve_store_target, resolve_db_path):
-            try:
-                resolve(None)
-            except StoreTargetNotConfigured:
-                pass
+        _exhaust_the_resolvers()
 
         # Assert -- on the filesystem, not on the exception.
         assert not unconfigured_store.exists()
-        assert sorted(p.name for p in unconfigured_store.parent.iterdir()) == before
 
-    def test_a_write_does_not_manufacture_a_board(self, unconfigured_store):
-        """End to end: the door the 2026-07-20 incident came through."""
+    def test_nothing_else_appears_beside_the_would_be_default(
+        self, unconfigured_store
+    ):
+        """A refusal that still littered the directory would be a half-refusal."""
         # Arrange
-        import scitex_cards
+        before = sorted(p.name for p in unconfigured_store.parent.iterdir())
 
         # Act
-        with pytest.raises(RuntimeError):
-            scitex_cards.add_task(
-                id="decoy-card",
-                title="written to a store nobody configured",
-                assignee="scitex-cards",
-                agent="scitex-cards",
-            )
+        _exhaust_the_resolvers()
+
+        # Assert
+        assert sorted(p.name for p in unconfigured_store.parent.iterdir()) == before
+
+    def test_a_write_refuses_when_no_store_is_configured(self, unconfigured_store):
+        """End to end: the door the 2026-07-20 incident came through."""
+        # Arrange
+        # Act
+        raised = _attempt_a_decoy_write()
+
+        # Assert
+        assert isinstance(raised, RuntimeError)
+
+    def test_a_refused_write_does_not_manufacture_a_board(self, unconfigured_store):
+        """Refusing AFTER creating the board would have already done the damage."""
+        # Arrange
+        # Act
+        _attempt_a_decoy_write()
 
         # Assert
         assert not unconfigured_store.exists()
@@ -289,6 +332,15 @@ class TestTheRefusalIsActionable:
 
         # Assert
         assert "127.0.0.1:55432" in message
+
+    def test_the_example_dsn_never_shows_the_stock_port(self, unconfigured_store):
+        """The stock port is always wrong here, and a wrong example is copied
+        just as faithfully as a right one."""
+        # Arrange
+        # Act
+        message = self._message()
+
+        # Assert
         assert "127.0.0.1:5432" not in message
 
     def test_it_names_the_config_key_path_not_just_the_section(
@@ -315,7 +367,19 @@ class TestTheRemedyTheRefusalNamesStillWorks:
     not naming it.
     """
 
-    def test_resolve_store_reports_the_remedy_instead_of_a_traceback(
+    def test_resolve_store_fails_when_there_is_no_store(self, unconfigured_store):
+        """It FAILS -- there is genuinely no store, and saying otherwise would
+        be the diagnostic lying about the thing it diagnoses."""
+        # Arrange
+        runner = CliRunner()
+
+        # Act
+        result = runner.invoke(resolve_store_cmd, [])
+
+        # Assert
+        assert result.exit_code != 0
+
+    def test_resolve_store_names_the_variable_while_failing(
         self, unconfigured_store
     ):
         # Arrange
@@ -324,13 +388,34 @@ class TestTheRemedyTheRefusalNamesStillWorks:
         # Act
         result = runner.invoke(resolve_store_cmd, [])
 
-        # Assert -- it FAILS (there is genuinely no store) but it EXPLAINS.
-        assert result.exit_code != 0
+        # Assert
         assert ENV_DB in result.output
+
+    def test_resolve_store_explains_rather_than_traceback(self, unconfigured_store):
+        """A traceback here reads as "the store is broken" and costs the reader
+        the hour they came to this verb to save."""
+        # Arrange
+        runner = CliRunner()
+
+        # Act
+        result = runner.invoke(resolve_store_cmd, [])
+
+        # Assert
         assert "Traceback" not in result.output
 
-    def test_resolve_store_still_reports_a_configured_store(self, env_store):
+    def test_resolve_store_still_succeeds_for_a_configured_store(self, env_store):
         """POSITIVE CONTROL: the diagnostic did not become a refusal machine."""
+        # Arrange
+        env_store(DSN)
+        runner = CliRunner()
+
+        # Act
+        result = runner.invoke(resolve_store_cmd, [])
+
+        # Assert
+        assert result.exit_code == 0
+
+    def test_resolve_store_reports_the_configured_target(self, env_store):
         # Arrange
         expected = env_store(DSN)
         runner = CliRunner()
@@ -339,7 +424,6 @@ class TestTheRemedyTheRefusalNamesStillWorks:
         result = runner.invoke(resolve_store_cmd, [])
 
         # Assert
-        assert result.exit_code == 0
         assert expected in result.output
 
 
@@ -396,15 +480,23 @@ class TestLocalStateSurvivesAnUnconfiguredStore:
     there is no board, but there is still a machine.
     """
 
-    def test_the_local_state_dir_is_still_a_real_local_directory(
-        self, unconfigured_store
-    ):
+    def test_the_local_state_container_still_resolves(self, unconfigured_store):
         # Arrange
         # Act
         resolved = resolve_tasks_path(None)
 
         # Assert
         assert resolved.name == "tasks.yaml"
+
+    def test_the_local_state_container_is_an_absolute_path(
+        self, unconfigured_store
+    ):
+        """A relative one would land wherever the caller happened to be."""
+        # Arrange
+        # Act
+        resolved = resolve_tasks_path(None)
+
+        # Assert
         assert resolved.is_absolute()
 
     def test_the_local_state_dir_is_not_a_database(self, unconfigured_store):
@@ -415,6 +507,14 @@ class TestLocalStateSurvivesAnUnconfiguredStore:
 
         # Assert
         assert resolved.suffix != ".db"
+
+    def test_resolving_local_state_creates_no_store(self, unconfigured_store):
+        """Reading the local-state axis must not manufacture the store axis."""
+        # Arrange
+        # Act
+        resolve_tasks_path(None)
+
+        # Assert
         assert not unconfigured_store.exists()
 
 
