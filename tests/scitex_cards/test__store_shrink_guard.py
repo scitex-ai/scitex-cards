@@ -102,7 +102,9 @@ class TestDeleteTaskTombstones:
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         # Act / Assert — no raise.
+        # Act
         _store.delete_task(store, task_id="a")
+        # Assert
 
 
 # === reads exclude tombstones by default ====================================
@@ -127,6 +129,8 @@ class TestReadsExcludeTombstones:
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.delete_task(store, task_id="a")
         # Act / Assert
+        # Act
+        # Assert
         with pytest.raises(_store.TaskNotFoundError):
             _store.get_task(store, task_id="a")
 
@@ -137,6 +141,8 @@ class TestReadsExcludeTombstones:
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         _store.delete_task(store, task_id="a")
         # Act / Assert
+        # Act
+        # Assert
         with pytest.raises(_store.TaskNotFoundError):
             _store.set_edge(
                 store, action="add", kind="depends_on", source="b", target="a"
@@ -175,6 +181,8 @@ class TestRestoreUnTombstones:
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         # Act / Assert
+        # Act
+        # Assert
         with pytest.raises(ValueError):
             _store.restore_task(
                 store, task={"id": "a", "title": "A", "status": "deferred"}
@@ -208,6 +216,8 @@ class TestDocRewriteShrinkGuard:
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         # Act / Assert
+        # Act
+        # Assert
         with pytest.raises(StoreShrinkRefusedError):
             _save_doc_unlocked(dict(doc), store, tasks=stale_tasks)
 
@@ -246,7 +256,9 @@ class TestDocRewriteShrinkGuard:
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         # Act / Assert — no raise.
+        # Act
         _save_doc_unlocked(dict(doc), store, tasks=stale_tasks, allow_shrink=True)
+        # Assert
 
     def test_a_doc_naming_the_id_via_deleted_ids_is_not_refused(self, tmp_path):
         # Arrange — the ONE legitimate single-card removal path: the write
@@ -257,16 +269,20 @@ class TestDocRewriteShrinkGuard:
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         # Act / Assert — no raise.
+        # Act
         _save_doc_unlocked(dict(doc), store, tasks=stale_tasks, deleted_ids=["b"])
+        # Assert
 
     def test_a_fresh_store_growing_from_zero_is_never_refused(self, tmp_path):
         # Arrange — a brand-new store has nothing stored yet, so there is
         # nothing to be "missing"; growth must never trip the guard.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act / Assert — no raise, for any of the first several writes.
+        # Act
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         _store.add_task(store, id="c", title="C", assignee="agent:test-suite")
+        # Assert
         assert {t["id"] for t in _store.list_tasks(store, scope="")} == {
             "a",
             "b",
@@ -278,7 +294,9 @@ class TestDocRewriteShrinkGuard:
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         # Act / Assert — no raise.
+        # Act
         _store.update_task(store, task_id="a", note="touched")
+        # Assert
 
 
 # === count never decreases across a public-API sequence ====================
