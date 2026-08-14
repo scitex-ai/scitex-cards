@@ -30,6 +30,7 @@ from ._board import (
     board_status_cmd,
     board_stop_cmd,
 )
+from ._board_force import force_stop_running_board
 from ._board_proc import _board_read_pid
 from ._compat import spec_command_kwargs, spec_group_kwargs
 from ._store_guard import refuse_unconfigured_store
@@ -120,32 +121,62 @@ def _refuse_unconfigured_store() -> None:
         examples=(
             ("{prog} gui serve", "Serve on 127.0.0.1:8051 (blocking)."),
             ("{prog} gui serve --port 9000", "Serve on another port."),
+            ("{prog} gui serve --force", "Take over from a running board."),
         ),
     ),
 )
 @click.option("--port", type=int, default=DEFAULT_PORT, show_default=True)
 @click.option("--host", default=DEFAULT_HOST, show_default=True)
 @click.option(
+    "--force",
+    is_flag=True,
+    help="Stop a board that is already running, then serve. A no-op when "
+    "nothing is running — `--force` is a takeover, NOT a stop verb, so "
+    "the absence of an incumbent is success, not an error.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Print the planned launch without starting the server.",
 )
-def gui_serve_cmd(port: int, host: str, dry_run: bool) -> None:
+def gui_serve_cmd(port: int, host: str, force: bool, dry_run: bool) -> None:
     """Foreground-blocking serve, no browser.
+
+    ``--force`` exists because the operator asked for one command that
+    serves whether or not a board is already up (2026-08-14): 「stop する
+    のめんどくさいので。あとはなければ通すように。stop ではないので。」
+    Nothing running is therefore the NORMAL case for `--force`, not an
+    error case. WITHOUT `--force` the refusal is unchanged.
 
     Example:
       $ scitex-cards gui serve --port 8051
+      $ scitex-cards gui serve --force
     """
+    # BEFORE the dry-run branch, and before anything is killed or bound.
+    # Moved ahead of `--dry-run` when `--force` landed: a dry run that
+    # answers "would stop pid 4711, then serve" for a store nobody
+    # configured is a confident answer to the question the operator is
+    # asking precisely because he is unsure. `board start` has always
+    # ordered it this way; see `_store_guard`'s note on doors.
+    _refuse_unconfigured_store()
+    if force:
+        # Takeover, not a stop: returns None when nothing is running and we
+        # serve exactly as if `--force` were absent. It raises (naming the
+        # pid + the next step) if the kernel refused the signal, because
+        # binding a port that is demonstrably still held is the silent
+        # failure this repo does not ship.
+        force_stop_running_board(port, dry_run=dry_run)
     if dry_run:
         click.echo(f"# dry-run: would serve the board on {host}:{port}, no browser")
         return
-    _refuse_unconfigured_store()
-    existing = _board_read_pid()
-    if existing is not None:
-        raise click.ClickException(
-            f"the board is already running (pid {existing}). Use "
-            "`scitex-cards gui stop` or `scitex-cards gui status`."
-        )
+    if not force:
+        existing = _board_read_pid()
+        if existing is not None:
+            raise click.ClickException(
+                f"the board is already running (pid {existing}). Use "
+                "`scitex-cards gui stop` or `scitex-cards gui status`, or "
+                "pass --force to take over."
+            )
     _board_run_server(None, port, no_browser=True, host=host)
 
 

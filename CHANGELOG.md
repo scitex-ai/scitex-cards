@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`--force` on `gui serve` and `board start`** — stop a board that is already
+  running, then serve. The operator asked for it after `scitex-cards gui serve
+  --force` answered "No such option '--force'": 「stop するのめんどくさいので。
+  あとはなければ通すように。stop ではないので。」 Both halves are load-bearing.
+  With an incumbent, `--force` stops it (through the same resolve-by-pidfile,
+  then cmdline-verified-port path `stop` uses — never by port alone) and serves.
+  With NO incumbent it simply serves: `--force` is a takeover, not a stop verb,
+  so an absent board is the ordinary case and not an error. Without `--force`
+  the existing refusal is unchanged, and now names the flag as the remedy.
+  `--force --dry-run` prints which pid it WOULD stop and kills nothing; the
+  unconfigured-store guard still runs first, ahead of both the kill and the
+  bind. A stop the kernel REFUSES raises instead of binding a port that is
+  still held, naming the pid and the command to identify its owner.
+
+### Changed
+
+- **The SIGTERM → poll → SIGKILL sequence moved out of `board stop`'s command
+  body** into `stop_board_process` in `_cli/_board_proc.py`, so the three doors
+  onto the board lifecycle escalate identically instead of hand-rolling a copy
+  each. It answers with a validated `StopOutcome` dataclass whose `stopped` is
+  three-valued: `SIGKILL_SENT` reports `None`, because SIGKILL is sent and the
+  exit is never re-checked, and calling that "stopped" would report an
+  observation the code does not make. `board stop`'s messages, exit codes,
+  dry-run text and pidfile handling are unchanged, and are now pinned by exact
+  string assertions rather than substrings.
+
 ## [0.38.0] - 2026-08-14
 
 **A cutover that moved the rail and left the backlog.**
