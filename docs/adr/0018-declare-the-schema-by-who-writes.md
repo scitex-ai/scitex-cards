@@ -390,10 +390,38 @@ not declaring the store.
 Every citation in this document was opened and read before it was written, and two
 did not survive that check — they are recorded as the corrections in **N1** and
 **Q2** rather than quietly adjusted, because the brief for this ADR asked for the
-contradiction over the smoothing. The version measured against is `scitex_dev`
-0.48.0 as installed at `/opt/venv-sac`, whose `store` package exports `FieldKind`,
-`FieldRole`, `MergeRule`, `FieldPolicy` and `Schema`; `_store_plugin.py:170-181`
-reports `StorePlugin` absent from that install and present in 0.49.3, so the
-`provide()` degradation path described there is still live. If any quotation above
-ever says something other than what is attributed to it, this ADR is wrong and
-should be revised rather than defended.
+contradiction over the smoothing.
+
+**"The installed version" is not a single fact on this host, so naming a version
+without naming a venv is unreliable.** Two are present and they answer differently:
+
+| venv | `scitex_dev` | `StorePlugin` |
+|---|---|---|
+| `/opt/venv-sac` | 0.48.0 | **absent** — `ImportError` on import |
+| the repo's `.venv` | 0.49.2 | **present** |
+
+Upstream quotations above were read in `/opt/venv-sac` (0.48.0) unless the path
+says `federation/`, which exists only in 0.49.2 and was read there. `FieldKind`,
+`FieldRole`, `MergeRule`, `FieldPolicy` and `Schema` are exported by both.
+
+**`provide()` no longer degrades, and this paragraph previously said it did.** At
+the time of drafting, `provide()` caught `ImportError` and returned `[]`; that
+branch was removed by `446dbcac` on `feat/declare-card-merge-semantics` while this
+ADR was being written. The import is now unguarded on purpose: a raising provider
+is caught by `discover_store_plugins`, which logs `"Skipping store plugins from
+provider %r: it raised."` **with a traceback** (`federation/_discover.py:113-122`,
+`exc_info=True`), serving that function's stated intent — a broken leaf *"must not
+stop every other leaf's store from resolving — but it must not pass unnoticed
+either"* (`federation/_discover.py:96-99`). Returning `[]` suppressed exactly that
+warning, making a dead plugin indistinguishable from a healthy leaf that declares
+nothing. It was choosing the silent branch while citing the loud branch's property.
+
+**Line numbers into `_store_plugin.py` index `256899c1`**, the state of
+`feat/declare-card-merge-semantics` when this ADR was drafted. That file does not
+exist on `develop` at all, and `446dbcac` has since moved the entries this document
+cites — `card_json` to `:201-209` and `revision` to `:210-215`. The quoted text is
+unchanged; only its position is. Re-resolve by symbol, not by line, once that
+branch merges.
+
+If any quotation above ever says something other than what is attributed to it,
+this ADR is wrong and should be revised rather than defended.
