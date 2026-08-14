@@ -16,7 +16,26 @@ permissions:
 
 jobs:
   rtd-sphinx-build-on-ubuntu-latest:
-    runs-on: [self-hosted, scitex-ci]
+    # THE POOL IS A VARIABLE, AND ITS DEFAULT MUST BE A POOL THAT EXISTS.
+    # This job hard-coded `[self-hosted, scitex-ci]`. Every runner carrying
+    # `scitex-ci` was offline on 2026-08-13 (spartan-cpu-org-01/-02/-03 and
+    # spartan-pooled-cpu-01, all `status=offline`), while four
+    # `scitex-org-cpu` runners sat `online` and `busy=false`. A job whose
+    # label nobody carries does not fail — it QUEUES, beside idle machines,
+    # and a required check that never starts is missing from the rollup
+    # rather than red. #830 sat unmergeable for 47 minutes that way, with
+    # every other check green.
+    #
+    # `vars.CI_RUNS_ON` is the escape hatch the release workflow in this repo
+    # already uses, so pointing the repo back at Spartan when it returns is a
+    # variable change rather than a PR. What changes here is the DEFAULT:
+    # `ubuntu-latest`, which the audit, postgres-backend, pytest-matrix and
+    # cla jobs in this same repo all ran on successfully the same day.
+    #
+    # The uv-managed Python below is unaffected: it was introduced because
+    # self-hosted runners have no setup-python tool cache, and it works on
+    # hosted runners too.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install uv

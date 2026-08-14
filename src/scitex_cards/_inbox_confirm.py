@@ -124,7 +124,17 @@ def recipient_keys(agent: str, store: str | Path | None = None) -> list[str]:
 
         user = resolve_user(agent, store=store)
     except Exception as exc:  # noqa: BLE001 — resolution must never break confirm
-        logger.warning("ack_notifications: resolving %r failed: %s", agent, exc)
+        # CALLER-NEUTRAL: `poll_notifications` shares this function now, so
+        # naming one verb here misattributed the failure. And the line matters
+        # more than it looks — this fallback SILENTLY CHANGES WHICH INBOX the
+        # caller talks to, which is how the poll/confirm key split stayed
+        # invisible. A degraded identity must leave a trace.
+        logger.warning(
+            "recipient_keys: resolving %r failed, falling back to the raw "
+            "name (this changes which inbox is read/written): %s",
+            agent,
+            exc,
+        )
         user = None
     resolved = getattr(user, "id", None) if user is not None else None
     if resolved and resolved not in keys:

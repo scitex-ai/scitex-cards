@@ -174,7 +174,19 @@ def set_edge(
             # to tell. We do NOT invent a recipient; `subscribed: None` says so
             # plainly rather than letting the caller assume delivery is wired.
 
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # BOTH ENDS, not just `source`. The edge list lands on `src_task`, but
+        # the `add` branch above also appends to the OTHER card's
+        # `subscribers` — `awaited` is src or tgt depending on the edge
+        # direction, so the pair is the honest declaration either way.
+        # `touched_ids=[source]` would have silently dropped the subscription
+        # that makes the waiter hear about the gate, which is the entire point
+        # of adding the edge.
+        _model._save_doc_unlocked(
+            doc,
+            tasks_path,
+            tasks=tasks,
+            touched_ids=[source, target],
+        )
     return {
         "action": action,
         "kind": kind,
@@ -214,7 +226,11 @@ def _set_list_member(
                 else:
                     task.pop(field, None)
                 task["last_activity"] = _utc_now_iso()
-                _save_doc_unlocked(doc, tasks_path, tasks=tasks)
+                # Genuinely single-card, unlike `set_edge` above: this mutates
+                # one card's own list field and touches nothing else.
+                _save_doc_unlocked(
+                    doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+                )
                 return dict(task)
     raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
 

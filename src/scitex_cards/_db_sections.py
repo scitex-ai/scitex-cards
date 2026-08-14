@@ -110,19 +110,27 @@ def _insert_notifications(conn, inboxes) -> int:
             if not isinstance(r, dict):
                 continue
             conn.execute(
+                # DO NOTHING, NOT DO UPDATE — THE RAIL OWNS THIS TABLE.
+                #
+                # A document is no longer the producer of `notifications`; the
+                # delivery rail (`_inbox_postgres`) is, and it writes four
+                # columns this statement does not name (msg_id, pushed_at,
+                # confirmed_at, seq). An UPDATE from a document therefore
+                # rewrites live delivery state from a snapshot that was taken
+                # before the rail's last write — most damagingly `seen`, which
+                # would resurrect an already-delivered notification, or bury an
+                # undelivered one, depending on which way the clock fell.
+                #
+                # A blind ON CONFLICT DO UPDATE is exactly the merge rule this
+                # store forbids: it makes "whoever wrote last" the winner,
+                # which on a rail whose whole purpose is not losing messages is
+                # a coin toss with a message on each face. An INSERT that finds
+                # the row already present has nothing to say about it.
                 "INSERT INTO notifications"
                 "(id, recipient_id, event_type, card_id, body, actor, ts, "
                 " seen, record_json)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(id) DO UPDATE SET"
-                " recipient_id = excluded.recipient_id,"
-                " event_type = excluded.event_type,"
-                " card_id = excluded.card_id,"
-                " body = excluded.body,"
-                " actor = excluded.actor,"
-                " ts = excluded.ts,"
-                " seen = excluded.seen,"
-                " record_json = excluded.record_json",
+                " ON CONFLICT(id) DO NOTHING",
                 (
                     r.get("id") or _gen_id("n_"),
                     recipient_id,

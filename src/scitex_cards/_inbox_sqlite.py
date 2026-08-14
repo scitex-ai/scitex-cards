@@ -56,6 +56,7 @@ from ._inbox_sqlite_schema import (
     _is_migrated,
     _MIGRATED_FLAG,
     inbox_db_path,
+    inbox_target,
     init_schema,
     open_connection,
 )
@@ -140,7 +141,7 @@ def enqueue(
     from ._inbox import _generate_notification_id, _utc_now_iso
 
     timestamp = ts if ts is not None else _utc_now_iso()
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
         # The null-safe operator is resolved from the LIVE connection rather
         # than hardcoded, so this SQL survives the move onto Postgres (where
@@ -200,7 +201,18 @@ def enqueue(
         # is. That distinction is the whole bug: this function writes the
         # SQLite `inbox` table (no payload column) OR the canonical
         # `notifications` table (a payload column the export refuses a row
-        # without), and it was writing the second as if it were the first.
+        # without), and it was writing the second as if it were the first. One
+        # such payload-less row made all 3556 cards unreadable fleet-wide for 20
+        # minutes on 2026-08-09, while `resolve_store` and `health` stayed green
+        # because the store itself was fine.
+        #
+        # NOTE ON THE RECIPIENT KEY, which scitex-agent-container flagged as
+        # unanswerable from outside this package: the payload deliberately does
+        # NOT carry the recipient. It is a column on the row, under a name that
+        # DIFFERS BY BACKEND (`recipient` vs `recipient_id`), so embedding it
+        # would bake one backend's spelling into a backend-agnostic blob and
+        # make the two indistinguishable until something read it back. That is
+        # why `notification_columns` takes the column NAME as a parameter.
         columns, values = notification_columns(
             record,
             recipient_id=recipient_id,
@@ -232,7 +244,7 @@ def poll_inbox(
     """
     if not recipient_id:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     if not mark_seen:
         # Read-only fast path. This is the hot poll — an indexed
         # (recipient, seen) scan, NOT a whole-store parse. _ensure_ready is a
@@ -304,7 +316,7 @@ def ack(
     wanted = [nid for nid in (notification_ids or []) if nid]
     if not wanted:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     placeholders = ",".join("?" for _ in wanted)
     with open_connection(db) as conn:
         _ensure_ready(conn, store)

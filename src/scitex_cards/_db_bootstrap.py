@@ -395,12 +395,22 @@ def _insert_roles(conn, task_id, row) -> int:
     return n
 
 
-#: Tables owned by the legacy task-store doc. The ``messages`` table is
-#: DELIBERATELY absent: it is derived from the ``threads.json`` SIDECAR, which the doc-write
+#: Tables the doc-write path may clear. Three are DELIBERATELY absent, all for
+#: the same rule: A TABLE IS OWNED BY EXACTLY THE THING THAT PRODUCES IT.
+#:
+#: ``messages`` is derived from the ``threads.json`` SIDECAR, which the doc-write
 #: path never touches. A doc mirror that cleared ``messages`` would silently
-#: destroy every DM thread on each card write — the tables must be owned by
-#: exactly the file that produces them.
-_DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t != "messages")
+#: destroy every DM thread on each card write.
+#:
+#: ``notifications`` and ``inbox_recipients`` are produced by the DELIVERY RAIL
+#: (``_inbox_postgres``) since #780, not by this document. Clearing them on a
+#: first-run rebuild would delete the fleet's undelivered notifications —
+#: including operator DMs that were enqueued and never read — with nothing to
+#: restore them from, because the rail is now their only copy. The sibling
+#: neutralisation is ``_db_mirror._SECTION_KEYS``, which no longer rebuilds
+#: ``notifications`` on the INCREMENTAL path; this closes the FULL one.
+_DOC_OWNED_ELSEWHERE = ("messages", "notifications", "inbox_recipients")
+_DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t not in _DOC_OWNED_ELSEWHERE)
 
 
 def _rebuild_from_doc(

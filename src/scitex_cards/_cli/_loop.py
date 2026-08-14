@@ -223,6 +223,18 @@ def watch_cmd(
         run_watcher_forever,
         run_watcher_once,
     )
+    from ._store_guard import refuse_unconfigured_store
+
+    # BEFORE `--once` as well as before the forever loop. A watcher's failure is
+    # quieter than a board's and therefore worse: it does not show anyone wrong
+    # data, it WATCHES THE WRONG FILE and wakes nobody. Nothing renders, nothing
+    # errors, and the only symptom is that agents stop being woken -- which is
+    # indistinguishable from a quiet board, which is what the fleet mostly is.
+    #
+    # --once gets the same treatment because a single tick against the wrong
+    # store reports "no wakes" just as confidently as a correct one, and it is
+    # the mode a human runs when checking whether the watcher is healthy.
+    refuse_unconfigured_store()
 
     # Enforce the anti-spiral floor at the CLI boundary too, so the loud
     # warning fires for an interactive operator, not only inside the loop.

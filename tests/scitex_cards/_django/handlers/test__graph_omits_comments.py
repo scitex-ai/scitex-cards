@@ -71,21 +71,24 @@ def node():
 
 def test_graph_node_omits_the_comment_thread(node):
     """The 7.9 MiB. Re-adding this key must fail here, not in production."""
-    # Arrange / Act — the fixture built the node.
+    # Arrange
+    # Act — the fixture built the node.
     # Assert
     assert "comments" not in node
 
 
 def test_graph_node_still_reports_the_comment_count(node):
     """The list surfaces need the count; only the prose was dropped."""
-    # Arrange / Act — the fixture built the node.
+    # Arrange
+    # Act — the fixture built the node.
     # Assert
     assert node["comment_count"] == 2
 
 
 def test_graph_node_still_carries_the_last_comment_preview(node):
     """The timeline footer renders from this, so it must survive the drop."""
-    # Arrange / Act — the fixture built the node.
+    # Arrange
+    # Act — the fixture built the node.
     # Assert
     assert node["last_comment"]["text_preview"] == "drag"
 
@@ -93,7 +96,8 @@ def test_graph_node_still_carries_the_last_comment_preview(node):
 def test_graph_node_still_carries_rescore_history(node):
     """The Matrix needs event CONTENT; this is why the scalars alone were
     not enough to drop the thread."""
-    # Arrange / Act — the fixture built the node.
+    # Arrange
+    # Act — the fixture built the node.
     # Assert
     assert node["rescore_history"][0]["rescore"]["urgency"] == [1, 4]
 

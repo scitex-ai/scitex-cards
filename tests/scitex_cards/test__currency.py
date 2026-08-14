@@ -108,7 +108,8 @@ def test_check_currency_no_ops_when_scitex_dev_lacks_the_staleness_module(
     # `sys.modules` makes the import system raise ImportError for that name).
     monkeypatch.setitem(sys.modules, "scitex_dev.staleness", None)
 
-    # Act / Assert — no exception; scitex-cards stays standalone.
+    # Act
+    # Assert — no exception; scitex-cards stays standalone.
     check_currency()
 
 
@@ -142,7 +143,8 @@ def test_check_currency_raises_when_the_install_is_stale(monkeypatch):
 
     _install_fake_staleness_module(monkeypatch, _fake_ensure_current)
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(RuntimeError):
         check_currency()
 
@@ -180,7 +182,8 @@ def test_check_currency_broken_payload_error_also_propagates(monkeypatch):
 
     _install_fake_staleness_module(monkeypatch, _fake_ensure_current)
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(RuntimeError, match="ambiguous dist-info"):
         check_currency()
 
@@ -482,7 +485,8 @@ def test_warn_if_stale_once_lets_a_keyboard_interrupt_propagate(monkeypatch):
     # Arrange
     _raising_fake(monkeypatch, KeyboardInterrupt())
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(KeyboardInterrupt):
         warn_if_stale_once()
 
@@ -502,7 +506,8 @@ def test_currency_verdict_lets_a_keyboard_interrupt_propagate(monkeypatch):
     # Arrange
     _raising_fake(monkeypatch, KeyboardInterrupt())
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(KeyboardInterrupt):
         currency_verdict()
 

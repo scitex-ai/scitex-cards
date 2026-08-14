@@ -106,7 +106,9 @@ def test_parse_version_tuple_treats_a_non_numeric_segment_as_zero():
 
 
 def test_parse_version_tuple_orders_versions_the_way_a_reader_expects():
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     assert parse_version_tuple("0.17.4") < parse_version_tuple("0.17.5")
     assert parse_version_tuple("0.9.9") < parse_version_tuple("0.17.0")
     assert parse_version_tuple("1.0.0") > parse_version_tuple("0.99.99")
@@ -236,7 +238,8 @@ def test_connect_raises_client_too_old_when_the_client_is_below_the_floor():
     # Arrange
     _set_floor("9999.0.0")
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(ClientTooOldError):
         _db.connect(_db_path())
 
@@ -305,7 +308,8 @@ def test_the_write_path_is_gated_the_same_as_connect():
     _set_floor("9999.0.0")
     doc = {"tasks": [{"id": "t1", "title": "T", "status": "deferred"}]}
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(ClientTooOldError):
         _db_mirror.mirror_doc_incremental(doc, _db_path(), store_path=_db_path())
 
@@ -324,7 +328,8 @@ def test_the_read_path_is_gated_the_same_as_connect():
     _db_mirror.mirror_doc_incremental(doc, _db_path(), store_path=_db_path())
     _set_floor("9999.0.0")
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(ClientTooOldError):
         _store.list_tasks(scope="")
 

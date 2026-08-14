@@ -170,9 +170,9 @@ def queued_message_ids(
     if not message_ids:
         return set()
     try:
-        from .._inbox_sqlite import inbox_db_path, open_connection
+        from .._inbox_sqlite import inbox_target, open_connection
 
-        with open_connection(inbox_db_path(store)) as inbox:
+        with open_connection(inbox_target(store)) as inbox:
             rows = inbox.execute(
                 "SELECT DISTINCT msg_id FROM inbox WHERE msg_id IS NOT NULL"
             ).fetchall()

@@ -57,9 +57,24 @@ class InboxShape:
     recipient: str
     #: Expression giving ARRIVAL order, oldest first.
     order_by: str
-    #: Column holding the verbatim record payload, or ``None`` when this table
-    #: has none. NOT a boolean: the read path names the column, so the shape
-    #: must too.
+    #: Column holding the VERBATIM record payload, or ``None`` where the table
+    #: has no such column. NOT a boolean: the read path NAMES the column, so
+    #: the shape must too.
+    #:
+    #: THIS FIELD EXISTS BECAUSE OMITTING IT TOOK THE FLEET BOARD DOWN FOR 20
+    #: MINUTES ON 2026-08-09. The rail's INSERT named nine columns, correct on
+    #: SQLite where ``inbox`` has exactly those. On the canonical store
+    #: ``notifications.record_json`` then landed NULL — and a NULL there is
+    #: LOAD-BEARING: ``_db_payload.card_payload_json``'s own docstring says it
+    #: makes the read guard REFUSE THE WHOLE DB rather than hand back a card
+    #: whose fields changed shape. So ONE malformed notification made all 3556
+    #: cards unreadable and unwritable fleet-wide, with `resolve_store` and
+    #: `health` still green because the store itself was fine.
+    #:
+    #: Putting the column name in the SHAPE rather than in an ``if`` at the
+    #: call site is deliberate: the shape is what every statement already
+    #: consults, so a future backend cannot be added without answering "does it
+    #: carry a payload, and under what name".
     payload: str | None = None
 
     def order(self) -> str:
@@ -67,8 +82,11 @@ class InboxShape:
         return f"ORDER BY {self.order_by}"
 
 
-#: The rail as it exists today: its own SQLite file, ``rowid`` as arrival order,
-#: and no payload column (this table is never exported).
+#: The rail as it exists today: its own SQLite file, ``rowid`` as arrival order.
+#: No payload column — the ``inbox`` table never had one, which is why the
+#: nine-column INSERT was correct here and lethal on the store. ``payload`` is
+#: passed EXPLICITLY rather than left to the default: this is the shape whose
+#: missing payload caused the outage, so "it has none" is stated, not implied.
 SQLITE_SHAPE = InboxShape(
     table="inbox", recipient="recipient", order_by="rowid", payload=None
 )

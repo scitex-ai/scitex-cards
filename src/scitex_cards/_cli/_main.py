@@ -20,13 +20,29 @@ from .._model import load_tasks
 from .._paths import resolve_tasks_path
 from .._store_target import store_label
 from ._compat import spec_command_kwargs, spec_group_kwargs
+from ._help_tree import _emit_help_recursive
 
+# NAMES NO BACKEND AND NO DEFAULT PATH, ON PURPOSE.
+#
+# This block and the `summary` below are the two strings a human reads first
+# from `scitex-cards --help`. They used to open "Canonical store: the SQLite
+# database at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db...)" and
+# "Shared task store (SQLite canonical)".
+#
+# Both named a backend the code does not verify and the operator has banned,
+# and the first also advertised a default file path — which is precisely the
+# silent descent-to-a-file that an unresolvable target must NOT make.
+#
+# Substituting "PostgreSQL" would re-create the same defect with a different
+# word: the deployment decides the target, the resolved target is the sole
+# identity, and `resolve-store` is the only honest answer to "which one?".
+# Guarded by tests/scitex_cards/_cli/test__help_names_no_backend.py.
 _STORE_RESOLUTION = (
-    "Canonical store: the SQLite database at $SCITEX_CARDS_DB (default",
-    "~/.scitex/cards/cards.db, relocatable via $SCITEX_DIR). That path is the",
-    "SOLE store identity. An unresolvable/absent store raises rather than",
-    "standing in an empty board. Run `scitex-cards resolve-store` to see what",
-    "you actually resolved to.",
+    "The cards database is whatever $SCITEX_CARDS_DB resolves to, and that",
+    "resolved target is the SOLE identity — the deployment decides it, so do",
+    "not assume a backend or a path. An unresolvable/absent target RAISES",
+    "rather than standing in an empty board. Run `scitex-cards resolve-store`",
+    "to see what you actually resolved to.",
 )
 
 # Doctrine §4a (10a_command-categories.md): fixed, ordered category headers.
@@ -79,6 +95,7 @@ _COMMAND_CATEGORIES = (
         ),
     ),
     ("Introspection", ("list-python-apis", "skills")),
+    ("Maintenance", ("dev",)),  # hook-bypass: line-limit (pre-existing over-cap)
     ("Shell", ("install-shell-completion", "print-shell-completion")),
 )
 
@@ -86,46 +103,11 @@ _COMMAND_CATEGORIES = (
 # --------------------------------------------------------------------------- #
 # Top-level group (--help-recursive / --json universal flags)                 #
 # --------------------------------------------------------------------------- #
-def _iter_commands(cmd, ctx, prefix):
-    """Yield ``(prefix, command, context)`` for ``cmd`` and every descendant."""
-    yield prefix, cmd, ctx
-    if isinstance(cmd, click.Group):
-        for name, sub in sorted(cmd.commands.items()):
-            sub_ctx = click.Context(sub, info_name=name, parent=ctx)
-            yield from _iter_commands(sub, sub_ctx, f"{prefix} {name}")
-
-
-def _command_tree(cmd, ctx):
-    """Return a JSON-serializable ``{name, help, options, commands}`` tree."""
-    node = {
-        "name": ctx.info_name,
-        "help": (cmd.help or "").strip(),
-        "options": [p.opts[-1] for p in cmd.params if isinstance(p, click.Option)],
-        "commands": {},
-    }
-    if isinstance(cmd, click.Group):
-        for name, sub in sorted(cmd.commands.items()):
-            sub_ctx = click.Context(sub, info_name=name, parent=ctx)
-            node["commands"][name] = _command_tree(sub, sub_ctx)
-    return node
-
-
-def _emit_help_recursive(ctx, as_json):
-    """Print flattened help (or the command tree as JSON) for every subcommand."""
-    if as_json:
-        click.echo(json.dumps(_command_tree(ctx.command, ctx), indent=2))
-        return
-    blocks: list[str] = []
-    for prefix, cmd, sub_ctx in _iter_commands(ctx.command, ctx, ctx.info_name):
-        blocks.append(f"### {prefix}\n{cmd.get_help(sub_ctx)}")
-    click.echo("\n\n".join(blocks))
-
-
 @click.group(
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
     **spec_group_kwargs(
-        summary="Shared task store (SQLite canonical) + adapters for the agent fleet.",
+        summary="Shared card database + adapters for the agent fleet.",
         config_resolution=_STORE_RESOLUTION,
         version_of="scitex-cards",
         command_categories=_COMMAND_CATEGORIES,
@@ -403,6 +385,7 @@ def list_tasks_cmd(
 # --------------------------------------------------------------------------- #
 from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; minimal wire)
     _board,
+    _cardsync,
     _ci_watch,
     _completion,
     _deliver,
@@ -503,6 +486,7 @@ _deliver.register(main)
 # operator-gated systemd user-unit template (never runs systemctl). See
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
+_cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
 
 
 if __name__ == "__main__":

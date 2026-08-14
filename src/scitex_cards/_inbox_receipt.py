@@ -144,15 +144,20 @@ def _sqlite_stamp(
 
     Returns the ids that exist in this recipient's inbox (the ones stamped).
     """
-    from ._inbox_sqlite import _ensure_ready, inbox_db_path, open_connection
+    from ._inbox_sqlite import _ensure_ready, inbox_target, open_connection
 
     placeholders = ",".join("?" for _ in ids)
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
         _ensure_columns(conn)
+        # Same reason as the read below: table / recipient column / arrival
+        # order are properties of the OPEN CONNECTION, not of this file.
+        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
+
+        shape = shape_for(conn)
         rows = conn.execute(
-            f"SELECT id FROM inbox WHERE recipient = ? AND id IN ({placeholders}) "
-            f"ORDER BY rowid",
+            f"SELECT id FROM {shape.table} WHERE {shape.recipient} = ? "
+            f"AND id IN ({placeholders}) {shape.order()}",
             (recipient_id, *ids),
         ).fetchall()
         present = [row["id"] for row in rows]
@@ -177,20 +182,35 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
     predates the receipt columns simply reports ``None`` for both, which the
     health check reads — correctly — as "no push has ever been recorded".
     """
-    from ._inbox_sqlite import inbox_db_path, open_connection
+    from ._inbox_sqlite import inbox_target, open_connection
 
-    db = inbox_db_path(store)
-    if not db.exists():
+    db = inbox_target(store)
+    # THE ABSENCE PROBE CANNOT BE `.exists()` ANY MORE, and this is the same
+    # class the rest of today was: a store TARGET may be a URL, and `Path.exists`
+    # on one is either an AttributeError (it is a str) or a lie (it is a
+    # relative path that happens not to be there). The never-create guarantee in
+    # the docstring above is a FILE property, so it is asked only of files.
+    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
+
+    if not is_postgres_url(str(db)) and not Path(db).exists():
         return []
     with open_connection(db) as conn:
         columns = _existing_columns(conn)
         if not columns:
             return []
+        # Table, recipient column and arrival order come from the LIVE
+        # connection, not from this file's belief. Hardcoding `FROM inbox …
+        # ORDER BY rowid` was correct while the rail was its own SQLite file
+        # and is a syntax error against the canonical store, where the rail is
+        # `notifications` ordered by `seq`.
+        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
+
+        shape = shape_for(conn)
         selected = ["id", "event_type", "card_id", "ts", "seen"]
         selected += [c for c in RECEIPT_COLUMNS if c in columns]
         rows = conn.execute(
-            f"SELECT {', '.join(selected)} FROM inbox WHERE recipient = ? "
-            f"ORDER BY rowid",
+            f"SELECT {', '.join(selected)} FROM {shape.table} "
+            f"WHERE {shape.recipient} = ? {shape.order()}",
             (recipient_id,),
         ).fetchall()
     out: list[dict] = []
@@ -274,15 +294,42 @@ def _stamp(
     at: str | None,
     store: str | Path | None,
 ) -> list[str]:
-    """Dispatch a stamp onto whichever inbox backend is active."""
-    from ._inbox import _use_sqlite
+    """Dispatch a stamp onto whichever inbox backend is active.
+
+    THREE BACKENDS, NOT TWO, and the missing third was a live defect. This read
+    ``_sqlite_stamp if _use_sqlite() else _file_stamp`` — a two-valued question
+    asked of a three-valued world. After #780 the shared-inbox deployment (the
+    fleet's) answers "not sqlite", so every push receipt and every recipient
+    confirmation was written to a FILE while the notifications themselves lived
+    in PostgreSQL. Measured 2026-08-11: 8 rows on the rail, 0 with ``pushed_at``,
+    0 with ``confirmed_at``, and an ``inboxes.json`` LOCK file next to no
+    ``inboxes.json`` at all — the file rail being taken, finding nothing, and
+    reporting success. See :mod:`scitex_cards._inbox_receipt_postgres`.
+
+    Asking :func:`scitex_cards._inbox_backend.backend` — the same function the
+    enqueue/poll/ack path asks — is what keeps the receipt and the row it
+    describes in the same database by construction.
+    """
+    from ._inbox_backend import POSTGRES, SQLITE, backend
 
     normalized = _wanted(ids)
     if not recipient_id or not normalized:
         return []
     stamp = at or _now_iso()
-    backend = _sqlite_stamp if _use_sqlite() else _file_stamp
-    return backend(
+    active = backend()
+    if active == POSTGRES:
+        from ._inbox_receipt_postgres import stamp as _postgres_stamp
+
+        return _postgres_stamp(
+            recipient_id,
+            normalized,
+            column=column,
+            stamp=stamp,
+            advance_cursor=advance_cursor,
+            store=store if isinstance(store, str) else None,
+        )
+    writer = _sqlite_stamp if active == SQLITE else _file_stamp
+    return writer(
         recipient_id,
         normalized,
         column=column,
@@ -349,16 +396,27 @@ def record_confirmation(
 def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict]:
     """Every record for ``recipient_id`` with its receipts, oldest first.
 
-    Read-only on both backends (it will not create or migrate a store), so the
+    Read-only on every backend (it will not create or migrate a store), so the
     health doctor can measure without changing what it measures. Each entry is
     ``{id, event_type, card_id, ts, seen, pushed_at, confirmed_at}``; a record
     that predates receipts reports ``None`` for both stamps.
+
+    Dispatches three ways for the same reason :func:`_stamp` does — a doctor
+    reading a different database from the one the rail writes is a doctor that
+    reports health it never measured.
     """
-    from ._inbox import _use_sqlite
+    from ._inbox_backend import POSTGRES, SQLITE, backend
 
     if not recipient_id:
         return []
-    reader = _sqlite_receipts if _use_sqlite() else _file_receipts
+    active = backend()
+    if active == POSTGRES:
+        from ._inbox_receipt_postgres import receipts as _postgres_receipts
+
+        return _postgres_receipts(
+            recipient_id, store if isinstance(store, str) else None
+        )
+    reader = _sqlite_receipts if active == SQLITE else _file_receipts
     return reader(recipient_id, store)
 
 

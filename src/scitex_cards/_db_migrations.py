@@ -36,8 +36,11 @@ __all__ = [
     "_migrate_v6_to_v7",
     "_migrate_v7_to_v8",
     "_migrate_v8_to_v9",
+    "_migrate_v9_to_v10",
     "NOTIFICATION_RAIL_COLUMNS",
     "NOTIFICATION_ORDER_COLUMN",
+    "NOTIFICATION_SYNC_COLUMNS",
+    "NOTIFICATION_PAYLOAD_TRIGGER",
     "REVISION_TRIGGER_SQL",
     "record_migration_provenance",
 ]
@@ -263,6 +266,137 @@ def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
         f"SELECT setval('{_SEQ_NAME}', "
         f"(SELECT COALESCE(MAX({column}), 0) + 1 FROM notifications), false)"
     )
+
+
+#: The v10 SYNC columns on ``notifications``. Present FROM CREATION, not
+#: retrofitted, because retrofitting them onto a replicated table is a rewrite:
+#: every existing row would need an origin and a uuid it never had, and there is
+#: no honest value to invent for either.
+#:
+#: WHAT EACH ONE IS FOR
+#:
+#: ``origin_node``  which node wrote the row. The repo already spells this
+#:                  ``origin_host`` on the four ``dm_*`` tables and populates it
+#:                  from :func:`scitex_cards._dm.ids.origin_host`; this is the
+#:                  same fact under the sync vocabulary's name, and it is NOT a
+#:                  new identity scheme. Store identity remains the PAIR of the
+#:                  logical id and PostgreSQL's own ``system_identifier``, which
+#:                  lives in ``schema_meta`` where it belongs — a per-row column
+#:                  cannot carry a fact about the database.
+#: ``row_uuid``     a 128-bit identity for the ROW. ``id`` is ``n_`` + 12 hex =
+#:                  48 bits, which is fine as a local key and NOT fine as the
+#:                  merge key for rows generated independently on many hosts:
+#:                  at fleet volume a 48-bit birthday collision is a delivered
+#:                  message silently replacing another one.
+#: ``revision``     mutation counter, for a sync protocol to detect concurrent
+#:                  edits at all.
+#: ``updated_at``   when this row last changed. FOR AUDIT, NEVER FOR MERGE —
+#:                  see the conflict rule below.
+#: ``deleted_at``   tombstone. The rail never hard-deletes (``supersede`` marks
+#:                  seen; nothing else removes a row), so this exists so that a
+#:                  future retention policy is expressible without a schema
+#:                  change — and so no one reaches for ``DELETE``.
+#:
+#: THE CONFLICT RULE FOR THIS CLASS, stated here because a blind
+#: ``ON CONFLICT DO UPDATE`` is prohibited and a wall clock is never the
+#: arbiter. A notification is IMMUTABLE except for three MONOTONE LATCHES:
+#: ``seen`` (0 -> 1), ``pushed_at`` (NULL -> first stamp) and ``confirmed_at``
+#: (NULL -> first stamp). So merging two divergent copies of one row is not a
+#: choice between them: it is the OR of the flags and the EARLIEST non-null
+#: stamp, which is order-independent, commutative, and cannot destroy either
+#: side's work. That is why a real 2026-08-07 split that diverged in BOTH
+#: directions would have been merged correctly by this rule and destroyed by
+#: last-writer-wins.
+NOTIFICATION_SYNC_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("origin_node", "TEXT"),
+    ("row_uuid", "TEXT"),
+    ("revision", "INTEGER NOT NULL DEFAULT 0"),
+    ("updated_at", "TEXT"),
+    ("deleted_at", "TEXT"),
+)
+
+#: PostgreSQL trigger that back-fills ``record_json`` from the row's own columns
+#: whenever an INSERT leaves it NULL.
+NOTIFICATION_PAYLOAD_TRIGGER = "notifications_fill_payload"
+
+
+def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
+    """Sync columns on ``notifications``, and a payload no client can omit.
+
+    TWO CHANGES, ONE REASON: a fact that MUST be on every row cannot be left to
+    the writer, because the writers are not all the same version and never will
+    be. Measured 2026-07-30, the fleet ran 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0
+    simultaneously; v7 already concluded from that "application-side
+    incrementing would require every one of ~90 agent containers to be current
+    for the lock to mean anything, and that condition is not establishable".
+
+    THE PAYLOAD TRIGGER IS THE STRUCTURAL END OF A LOSS CLASS. ``record_json``
+    was omitted by ``_inbox_postgres.enqueue`` (fixed in #803), by
+    ``_inbox_carry.carry_rows`` and by ``_inbox_migrate_postgres`` (both fixed
+    alongside this) — three writers, the same omission, found one at a time
+    while the fleet was down. Four MORE payload-less rows appeared on the live
+    rail after the enqueue fix landed, at 19:02, 22:03, 22:17, 22:50 and 23:27,
+    because merged is not deployed and the containers still ran the old client.
+    Each was an undelivered operator DM, repaired by hand within a minute.
+
+    A NULL DEFAULT cannot fix that (a default only applies when the column is
+    omitted, and it cannot see the other values), and a NOT NULL constraint
+    would be WORSE than the disease: it turns a repairable row into a REFUSED
+    INSERT, and a refused insert on this table is a message that was never
+    enqueued at all. The trigger fills the gap instead: any client, of any
+    version, that inserts the nine columns it knows about gets a complete row.
+
+    Idempotent and additive throughout; no row is rewritten. ``origin_node`` and
+    ``row_uuid`` stay NULL on pre-existing rows, which is the honest value —
+    nobody observed which node wrote them, and inventing one would make the
+    missing data unrecoverable by looking correct.
+    """
+    present = table_columns(conn, "notifications")
+    for column, sql_type in NOTIFICATION_SYNC_COLUMNS:
+        if column not in present:
+            conn.execute(f"ALTER TABLE notifications ADD COLUMN {column} {sql_type}")
+
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if not _is_postgres(conn):
+        # SQLite gets the columns but not the trigger. `json_object()` is only
+        # enabled by default from SQLite 3.38 and the live host runs 3.37.2 —
+        # this repo has already lost 36 hours to SQL that parsed everywhere
+        # except on the one machine that mattered. The rail's SQLite writers are
+        # in-process and current by construction; the multi-version fleet is on
+        # PostgreSQL, which is where the guard is needed and where it works.
+        return
+    conn.execute(_PAYLOAD_TRIGGER_FN_SQL)
+    conn.execute(f"DROP TRIGGER IF EXISTS {NOTIFICATION_PAYLOAD_TRIGGER} ON notifications")
+    conn.execute(
+        f"CREATE TRIGGER {NOTIFICATION_PAYLOAD_TRIGGER} "
+        "BEFORE INSERT ON notifications FOR EACH ROW "
+        f"EXECUTE FUNCTION {NOTIFICATION_PAYLOAD_TRIGGER}_fn()"
+    )
+
+
+#: The fill function. ``jsonb_build_object`` -> ``::json`` keeps the key ORDER
+#: the enqueue path writes (jsonb would sort them), so a filled row and a
+#: written one are byte-comparable.
+_PAYLOAD_TRIGGER_FN_SQL = f"""
+CREATE OR REPLACE FUNCTION {NOTIFICATION_PAYLOAD_TRIGGER}_fn() RETURNS trigger AS $$
+BEGIN
+  IF NEW.record_json IS NULL THEN
+    NEW.record_json := json_build_object(
+      'id', NEW.id,
+      'event_type', NEW.event_type,
+      'card_id', NEW.card_id,
+      'body', NEW.body,
+      'actor', NEW.actor,
+      'ts', NEW.ts,
+      'seen', (NEW.seen <> 0),
+      'msg_id', NEW.msg_id
+    )::text;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
 
 
 def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
