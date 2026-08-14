@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-08-14
+
+**A cutover that moved the rail and left the backlog.**
+
+### Fixed
+
+- **149 undelivered notifications were stranded by the SQLite → PostgreSQL
+  cutover**, and nothing noticed for three days. The rail moved on 08-11; the
+  backlog did not — 0 of the 149 unseen rows existed in PostgreSQL. 130 were
+  addressed to the operator, and 134 of 149 were DMs to people rather than card
+  churn. Among them: an answer the operator had asked for, written 35 seconds
+  after he asked, and another agent's retraction of a false outage report. He
+  concluded this agent was dead; it was not, its reply was in a file nothing
+  read any more. All 149 recovered through the package's own `enqueue` path,
+  pre-image archived, verified per recipient.
+
+### Added
+
+- **`no_stranded_backlog` health check** — DELIVERY severity, three-valued.
+  Detects notifications left in a backend the rail no longer reads. Validated
+  on the real incident (red at 149, green after remediation) rather than on a
+  fixture. An unreadable legacy file reports `unknown`, never `ok`: collapsing
+  "I could not look" into "nothing is stranded" is exactly how the original
+  defect stayed invisible. (#836)
+- **`register_user` accepts a caller-supplied deterministic id**, so two hosts
+  minting the same user independently converge instead of forking. (#834)
+
+### Note on this file
+
+**0.37.0 and 0.37.1 shipped with no CHANGELOG entries.** Both releases exist as
+tags and on PyPI; only this file is missing them. Recording the gap rather than
+resuming as if the history were continuous — a changelog that silently skips
+two versions is worse than one that says which two.
+
 ## [0.36.0] - 2026-08-11
 
 **Four things that reported success while doing something else.**
