@@ -55,6 +55,7 @@ from . import _inbox
 from ._health_backend_mode import check_backend_mode
 from ._health_channel_reach import check_channel_reaches_session
 from ._health_delivery import check_delivery_confirmed
+from ._health_stranded_backlog import check_no_stranded_backlog
 from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
     _check_store_identity_agrees,
 )
@@ -316,6 +317,18 @@ def health(
         # rather than an info line, because a split is not a normal state.
         _run_check("backend_mode", lambda: check_backend_mode(store), severity=DELIVERY),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
+        # Did a BACKEND CUTOVER leave undelivered messages behind? Measured
+        # 2026-08-14: the rail moved from SQLite to PostgreSQL on 08-11 and
+        # stranded 149 unseen notifications — 0 of them migrated — including an
+        # answer the operator was waiting on and another agent's retraction of a
+        # false outage report. It sat for THREE DAYS with every call reporting
+        # success, because the writes and the reads were about different
+        # databases. Nothing detected it; someone had to go looking.
+        _run_check(
+            "no_stranded_backlog",
+            lambda: check_no_stranded_backlog(store),
+            severity=DELIVERY,
+        ),
         _run_check("notifyd_alive", lambda: _check_notifyd_alive(store), severity=DELIVERY),
         # Is anything actually being DELIVERED? notifyd_alive answers the
         # narrower "is the process ticking", and it was green throughout the
