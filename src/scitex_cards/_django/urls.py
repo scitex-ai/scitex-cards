@@ -14,6 +14,7 @@ from .handlers.fleet import (
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
+from .handlers.mine import mine_view
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -49,6 +50,14 @@ urlpatterns = [
     # consumes these instead of shelling out to the CLI verbs.
     path("runnable", runnable_view, name="runnable"),
     path("blocked-batch", blocked_batch_view, name="blocked_batch"),
+    # `/mine` — the requesting VIEWER's own cards, for the phone view
+    # (card cards-gui-phone-view-own-cards-20260814; operator 2026-08-14
+    # wants his cards from his phone via scitex.ai). Identity comes from
+    # `_board_identity.resolve_viewer`; an unidentified caller gets a typed
+    # 403 rather than the whole board. Registered BEFORE the catch-all
+    # `<path:endpoint>` route for the same reason as every named GET above:
+    # otherwise `api_dispatch` swallows it into "Unknown endpoint: mine".
+    path("mine", mine_view, name="mine"),
     # Time View — operator-direct ask (TG, relayed by lead a2a `d0f7a0e3`,
     # 2026-06-14). Live raster timeline so the operator watches ONE screen
     # and sees the whole fleet in motion. Polled by the FE TimelineView
