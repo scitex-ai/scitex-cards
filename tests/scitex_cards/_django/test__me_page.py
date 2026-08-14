@@ -169,6 +169,24 @@ def test_the_page_renders_in_the_dark_theme(page_at_root):
     assert expected in html
 
 
+def test_the_page_loads_the_stylesheet_that_defines_its_theme(page_at_root):
+    """THE ATTRIBUTE ABOVE IS INERT WITHOUT THIS, and fails silently.
+
+    ``data-theme="dark"`` selects a token set; ``theme.css`` is what DEFINES
+    one. Shipped without it, every ``var(--bg-page)`` in this template
+    resolved to nothing and the page rendered white-on-black-text with the
+    dark attribute sitting there doing nothing. Caught in a headless Chromium
+    at 390x844 (computed body background came back transparent), not by any
+    test -- so this is the test.
+    """
+    # Arrange
+    expected = "scitex_ui/css/shell/theme.css"
+    # Act
+    html = page_at_root
+    # Assert
+    assert expected in html
+
+
 def test_the_page_asks_for_the_full_phone_viewport(page_at_root):
     """``viewport-fit=cover`` is what makes the safe-area insets non-zero."""
     # Arrange

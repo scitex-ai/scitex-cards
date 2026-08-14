@@ -44,6 +44,19 @@ Behaviour lives in static/scitex_cards/me/: me_view.js (pure, node-tested)
 then me.js (DOM + network); load order matters, me.js reads window.MeView.
 This file is layout + CSS only.
 {% endcomment %}
+{% comment %}
+theme.css DEFINES the tokens every rule below reads (--bg-page, --text-primary,
+--border-default, …) under [data-theme="light"] and [data-theme="dark"]. It is
+NOT optional chrome: without it `var(--bg-page)` resolves to nothing, the
+fallbacks take over, and the page renders LIGHT — white behind black text —
+with `data-theme="dark"` sitting on the <html> element doing nothing. Measured
+exactly that way in a headless Chromium at 390x844 before this line existed.
+Dark is the standing default because the operator's eyes are sensitive, so a
+silently-light page is a real regression and not a cosmetic one.
+
+Same stylesheet chat.html links, from the same package, for the same reason.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <style>
   /* EVERY COLOUR HERE COMES FROM scitex-ui. NOT ONE IS PICKED LOCALLY.
