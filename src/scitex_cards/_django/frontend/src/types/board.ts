@@ -38,10 +38,7 @@ export type TaskKind = "task" | "compute" | "decision";
  *  - "agent-wait"        — 他エージェント待ち — waiting on a specific agent action
  */
 export type BlockerKind =
-  | "compute"
-  | "dep"
-  | "operator-decision"
-  | "agent-wait";
+  "compute" | "dep" | "operator-decision" | "agent-wait";
 
 export interface GraphNode {
   id: string;
@@ -122,7 +119,9 @@ export interface GraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
   status_colors: Record<string, StatusColor>;
-  mermaid: string;
+  // No `mermaid` field: the server stopped shipping it (38.4% of the /graph
+  // payload, and no reader). Graph views build their own source from `edges`
+  // + `status_colors`, which is what lets them respect the filter set.
   store_path: string;
   task_count: number;
 }

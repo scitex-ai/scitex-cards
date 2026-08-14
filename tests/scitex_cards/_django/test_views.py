@@ -114,13 +114,29 @@ def test_graph_endpoint_colors_goal_gold(store):
     assert payload["status_colors"]["goal"]["fill"] == "#ffe082"
 
 
-def test_graph_endpoint_includes_mermaid_source(store):
+def test_graph_endpoint_omits_mermaid_source(store):
+    """The /graph payload must NOT ship a prebuilt mermaid source.
+
+    It was 8,104,337 B of a 21,109,219 B response on the live store (38.4%,
+    4,394 cards) with no reader: every graph view builds its own source
+    client-side from `edges` + `status_colors`, because only the client knows
+    the active filter set. `build_mermaid` itself is unaffected and still
+    serves /legacy and the render-graph CLI, which call it directly.
+
+    Pinned as an ABSENCE so the key cannot drift back in unnoticed.
+    """
     # Arrange
     store_path = store
     # Act
     _status, payload = _graph_json(store_path)
     # Assert
-    assert payload["mermaid"].startswith("flowchart TB")
+    assert "mermaid" not in payload, (
+        "the /graph payload is shipping a prebuilt mermaid source again — "
+        "38.4% of the response on the live store, for a value no consumer "
+        "reads (graph views build their own from `edges`). If a consumer "
+        "genuinely needs server-built mermaid, give it its own endpoint "
+        "rather than putting it back on every poll of the whole board."
+    )
 
 
 def test_ping_endpoint_returns_ok_without_store():
