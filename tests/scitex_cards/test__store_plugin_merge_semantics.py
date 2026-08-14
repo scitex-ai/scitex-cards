@@ -125,15 +125,58 @@ def test_every_undeclared_field_states_a_reason():
     assert silent == []
 
 
-def test_provide_returns_empty_rather_than_raising_when_unfederated():
-    # Arrange — StorePlugin is absent from installed scitex_dev; a raising
-    # provider is swallowed by discover_store_plugins and would be
-    # indistinguishable from a leaf that declares nothing.
+def test_provide_never_raises_in_either_world():
+    # Arrange — this runs in BOTH worlds and must hold in both: where
+    # StorePlugin is absent it returns [], where it is present it returns one
+    # plugin. A raising provider is swallowed by discover_store_plugins and
+    # would be indistinguishable from a leaf that declares nothing.
+    #
+    # CI CAUGHT A REAL BUG HERE that no local run could: my machine's
+    # scitex_dev lacks StorePlugin, so the construction branch never executed
+    # locally and shipped `WriterPolicy()` — calling an Enum with no member.
+    # CI has a scitex_dev that HAS StorePlugin, ran that branch, and failed on
+    # all three Python versions.
     expected = list
     # Act
     got = provide()
     # Assert
     assert isinstance(got, expected)
+
+
+@pytest.fixture
+def constructed_plugin():
+    """The plugin, or a skip where the federation is not installed.
+
+    The construction branch cannot run on a machine whose scitex_dev lacks
+    StorePlugin — which is exactly how `WriterPolicy()` (calling an Enum with
+    no member) reached CI. Guarding here rather than in the test body keeps
+    one assertion per test.
+    """
+    plugins = provide()
+    if not plugins:
+        pytest.skip("scitex_dev.store.StorePlugin absent — nothing constructed")
+    return plugins[0]
+
+
+def test_a_constructed_plugin_declares_multi_writer(constructed_plugin):
+    # Arrange — SINGLE_WRITER promises one owner per record, which the board
+    # breaks hourly: any agent may comment on, reassign or complete any card
+    # from any host.
+    from scitex_dev.store import WriterPolicy
+
+    # Act
+    policy = constructed_plugin.writer_policy
+    # Assert
+    assert policy == WriterPolicy.MULTI_WRITER
+
+
+def test_a_constructed_plugin_is_named_for_its_schema(constructed_plugin):
+    # Arrange — `name == schema.name` is the federation's dedup key.
+    expected = STORE_NAME
+    # Act
+    name = constructed_plugin.name
+    # Assert
+    assert name == expected
 
 
 def test_a_status_rule_exists_even_though_it_is_imperfect():

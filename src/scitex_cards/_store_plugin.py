@@ -15,27 +15,27 @@ that. There is NO DEFAULT merge rule, and a wrong one loses data WITHOUT
 RAISING — so every field below states its rule and its reason, and the reason
 is the deliverable.
 
-═══ WHY `provide()` DOES NOT RETURN A StorePlugin YET ═══
+═══ WHY `provide()` DEGRADES INSTEAD OF RAISING ═══
 
-Measured 2026-08-14 on scitex-compute-04, installed scitex_dev 0.48.0:
+`StorePlugin` requires scitex-dev >= 0.49. On an older install `provide()`
+returns [] rather than raising, because `discover_store_plugins` CATCHES a
+raising provider and continues — so a raise would be indistinguishable from a
+leaf that declares nothing, i.e. a dead plugin that reports success.
 
-    present in scitex_dev.store : MergeRule, FieldPolicy, FieldRole, FieldKind,
-                                  Schema, WriterPolicy, merge_field, Store, ...
-    ABSENT                      : StorePlugin, discover_store_plugins,
-                                  plugin_for, resolve_target
-    _federation.py on origin/main    : does not exist
-    _federation.py on origin/develop : does not exist
+A CORRECTION WORTH KEEPING, because it nearly cost this work a day. I first
+concluded the federation did not exist at all, from two checks that were both
+about ARTIFACTS rather than the fact:
 
-The federation exists only on an unmerged branch. An entry point declared under
-``scitex_dev.store.plugins`` today would load a module whose import raises, and
-``discover_store_plugins`` swallows a raising provider (logs, continues) — so it
-would be a DEAD PLUGIN THAT REPORTS SUCCESS. That is the exact failure class
-this package keeps finding, and shipping one knowingly would be worse than
-waiting.
+    `_federation.py` absent from origin/main and origin/develop   TRUE, and
+                                                                  IRRELEVANT
+    StorePlugin absent from my installed scitex_dev 0.48.0        TRUE, and
+                                                                  STALE
 
-So the schema below is authored and TESTED against the real primitives that DO
-exist, and `provide()` builds a StorePlugin only once that symbol appears. No
-entry point is declared in pyproject until then.
+The released 0.49.3 wheel contains NO file named `_federation.py` — the
+internals were reorganised — and EXPORTS `StorePlugin` regardless. I had tested
+for a filename and for a three-release-old local install, and reported "the
+federation is not available" to another agent on that basis. Test for the
+symbol you need, in the environment that will run it.
 """
 
 from __future__ import annotations
@@ -188,7 +188,14 @@ def provide() -> "list[Any]":
             name=STORE_NAME,
             pkg=PACKAGE,
             schema=task_schema(),
-            writer_policy=WriterPolicy(),
+            # MULTI_WRITER, and this is a semantic choice rather than a
+            # default. SINGLE_WRITER means exactly one writer may append ops
+            # for a record, so divergence cannot arise — which is a stronger
+            # guarantee cards CANNOT make: any agent may comment on, reassign
+            # or complete any card, from any host. Declaring SINGLE_WRITER
+            # would promise an invariant the board breaks hourly, and every
+            # merge rule above exists precisely because it does.
+            writer_policy=WriterPolicy.MULTI_WRITER,
             provider=f"{__name__}:provide",
             description="scitex-cards task board — cards and their lifecycle.",
         )

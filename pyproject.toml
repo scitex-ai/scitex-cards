@@ -315,6 +315,17 @@ scitex-cards = "scitex_cards"
 [project.entry-points."scitex_dev.jobs"]
 scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 
+# Multi-host store federation. scitex-dev owns the machinery (HLC, oplog,
+# replay, merge_field) and discovers each leaf's MERGE SEMANTICS through this
+# group; only the leaf can say that a card's `created_at` is written once or
+# that `status` is a lifecycle. There is NO DEFAULT merge rule and a wrong one
+# loses data without raising, so `_store_plugin` states every field's rule and
+# its reason. Requires scitex-dev >= 0.49 (StorePlugin); `provide()` returns []
+# on older installs rather than raising, because `discover_store_plugins`
+# swallows a raising provider and a dead plugin would report success.
+[project.entry-points."scitex_dev.store.plugins"]
+scitex-cards = "scitex_cards._store_plugin:provide"
+
 # Hook-consumer entry-point contract (lead a2a `6fff33d6` +
 # `fbffb879`, 2026-06-14, operator-mandated). External producers
 # (SAC's push-hook, dev's merge-Action, future federated producers)
