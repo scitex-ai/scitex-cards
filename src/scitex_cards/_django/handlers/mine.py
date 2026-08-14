@@ -137,7 +137,14 @@ def mine_view(request: HttpRequest) -> HttpResponse:
     from .._request_store import read_store
 
     store = read_store(request)
-    viewer = resolve_viewer(request, store=store)
+    # NO STORE THREADED INTO THE VIEWER LOOKUP. `store` here is a CARDS store
+    # (SQLite/Postgres); the user registry is a YAML section with its own
+    # resolution, so forwarding this would feed a database file to a YAML
+    # parser. On the hub that value is a real database path set by their
+    # tenancy middleware, which made `load_users` decode a SQLite header as
+    # UTF-8 and raise -- a 500 reachable only on the deployment this feature
+    # exists for. See `_board_identity._registered_name`.
+    viewer = resolve_viewer(request)
 
     if not viewer.is_known:
         # 403 + a TYPED reason, mirroring how the board already answers an

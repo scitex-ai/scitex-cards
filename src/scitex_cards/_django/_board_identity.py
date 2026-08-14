@@ -176,7 +176,7 @@ def _configured_identity() -> str | None:
     return os.environ.get(ENV_IDENTITY, "").strip() or None
 
 
-def _registered_name(candidate: str, store=None) -> str | None:
+def _registered_name(candidate: str) -> str | None:
     """Resolve a string to a REGISTERED user's canonical name, else ``None``.
 
     Delegates to :func:`scitex_cards._users.resolve_user`, which is the
@@ -187,21 +187,40 @@ def _registered_name(candidate: str, store=None) -> str | None:
     Returns the user's FIRST alias -- the registry's canonical display name --
     so that two aliases of one person do not produce two different-looking
     viewers of the same board.
+
+    THE USER REGISTRY RESOLVES ITS OWN STORE, and this deliberately does NOT
+    hand it the caller's. The two live on DIFFERENT SUBSTRATES: cards are in
+    the SQLite/Postgres database, while ``users:`` is a YAML section read with
+    ``safe_load``. So a cards-store value forwarded here is fed to a YAML
+    parser -- and on the hub that value is a real database path, supplied as a
+    trusted request attribute by their tenancy middleware, which makes
+    ``load_users`` decode a SQLite header as UTF-8 and raise. Caught exactly
+    that way while writing the registry tests, which passed the scratch
+    ``SCITEX_CARDS_DB`` in and got ``UnicodeDecodeError: 'utf-8' codec can't
+    decode byte 0x89``, with ``b"SQLite format 3\\x00"`` in the traceback.
+
+    It never fired locally because ``read_store`` returns ``None`` on a board
+    with no tenancy middleware, so the parameter was always the one value that
+    happened to be safe -- a defect reachable only on the deployment this
+    feature exists for.
     """
     from .._users import resolve_user
 
-    user = resolve_user(candidate, store)
+    user = resolve_user(candidate)
     if user is None or not user.names:
         return None
     return user.names[0]
 
 
-def resolve_viewer(request, *, store=None) -> Viewer:
+def resolve_viewer(request) -> Viewer:
     """Resolve the board identity behind ``request``. Never raises.
 
     Walks the precedence chain documented in the module docstring and returns
     the first rung that answers. See that docstring for why the order is what
     it is, and why rung 4 must not widen into "show everything".
+
+    TAKES NO STORE, on purpose -- see :func:`_registered_name`. The user
+    registry resolves its own, and handing it a cards store crashes it.
 
     Parameters
     ----------
@@ -209,9 +228,6 @@ def resolve_viewer(request, *, store=None) -> Viewer:
         Any object with the Django request surface this reads: ``.user`` and
         ``.COOKIES``. Both are read defensively, so a minimal test double
         works without being taught fields it does not use.
-    store : str | Path | None
-        Task/user store override, threaded to the registry lookup so tests can
-        point at a scratch store rather than the ambient one.
 
     Returns
     -------
@@ -227,14 +243,14 @@ def resolve_viewer(request, *, store=None) -> Viewer:
         # through to the configured identity here would serve a logged-in
         # stranger the operator's own cards, which is precisely the leak this
         # module is ordered to prevent.
-        name = _registered_name(email, store)
+        name = _registered_name(email)
         if name:
             return Viewer(name=name, source="session-user", email=email)
         return Viewer(name=None, source="unlinked-email", email=email)
 
     subject = _cookie_subject(request)
     if subject:
-        name = _registered_name(subject, store)
+        name = _registered_name(subject)
         # An unregistered cookie subject is used VERBATIM: card owners predate
         # the user registry and are still free-form strings, so refusing an
         # unregistered name would lock out exactly the boards that never
@@ -244,7 +260,7 @@ def resolve_viewer(request, *, store=None) -> Viewer:
 
     configured = _configured_identity()
     if configured:
-        name = _registered_name(configured, store)
+        name = _registered_name(configured)
         return Viewer(name=name or configured, source="configured")
 
     return Viewer()
