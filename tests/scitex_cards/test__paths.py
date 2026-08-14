@@ -33,6 +33,7 @@ from scitex_cards._paths import (
     _user_root,
     resolve_tasks_path,
 )
+from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 @pytest.fixture
@@ -97,11 +98,30 @@ def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store
     )
 
 
-def test_canonical_default_identity_names_the_sqlite_database(clean_store_env):
-    """The canonical store IDENTITY default names the SQLite database."""
-    # Act / Assert — the identity is the DB; the container is its yaml sibling.
-    assert resolve_db_path(None).name == DEFAULT_DB_FILENAME == "cards.db"
-    assert resolve_tasks_path(None) == resolve_db_path(None).parent / "tasks.yaml"
+def test_there_is_no_canonical_default_identity_to_name(clean_store_env):
+    """The store IDENTITY has NO default. It used to name a SQLite database.
+
+    This test asserted the abolished behaviour by name -- it read
+    ``resolve_db_path(None).name == DEFAULT_DB_FILENAME == "cards.db"``, i.e.
+    that a store nobody configured still had an identity. On 2026-08-13 the
+    operator abolished that tier: SQLite is gone fleet-wide, and a filename is
+    not a decision. So the identity axis refuses.
+
+    THE LOCAL-STATE AXIS IS ASSERTED IN THE SAME BREATH, deliberately, because
+    the pair is the point of this module: the container the two used to share
+    was ``<db_dir>/tasks.yaml``, and with no db_dir to sit beside it must still
+    resolve. Splitting these into two tests would let one regress silently
+    while the other stayed green -- and "the query side went down because the
+    store went away" is exactly the 2026-07-31 failure.
+    """
+    # Arrange
+    # Act
+    with pytest.raises(StoreTargetNotConfigured):
+        resolve_db_path(None)
+    # ...and the local-state container still answers, under the local root.
+    # Assert — the identity refuses.
+    assert resolve_tasks_path(None) == _user_root() / "tasks.yaml"
+    assert DEFAULT_DB_FILENAME == "cards.db"  # the name it USED to invent
 
 
 def test_explicit_missing_path_returned_as_is(tmp_path, clean_store_env):
@@ -135,14 +155,19 @@ def test_bundled_example_is_deleted_not_merely_raising():
     stub itself was deleted. Re-adding it — even as "just a raise" — is the
     residue this test guards against.
     """
-    # Act / Assert
+    # Arrange
+    # Act
     import scitex_cards._paths as _paths_module
 
+    # Assert
     assert not hasattr(_paths_module, "bundled_example")
 
 
 def test_pkg_short_names_the_cards_directory():
     """PKG_SHORT is "cards" — the ONE place the store directory is named."""
+    # Arrange
+    # Act
+    # Assert
     assert PKG_SHORT == "cards"
 
 

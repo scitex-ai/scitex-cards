@@ -123,7 +123,11 @@ def handle_resolve(request, board):
         ]
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
+            # Single-card, same shape as the `reopen` handler: one status flip
+            # plus one appended comment, both on `task`.
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=tasks, touched_ids=[task_id]
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()

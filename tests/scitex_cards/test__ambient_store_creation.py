@@ -21,11 +21,12 @@ from scitex_cards._paths import refuse_ambient_store_creation
 
 
 def test_a_write_to_a_nonexistent_ambient_store_is_refused(tmp_path, monkeypatch):
-    # ARRANGE — nothing names the store: no explicit arg, no env var.
+    # Arrange — nothing names the store: no explicit arg, no env var.
     monkeypatch.delenv(ENV_DB, raising=False)
     absent = tmp_path / "never-created" / "cards.db"
 
-    # ACT / ASSERT — refusing is the whole point.
+    # Act
+    # Assert — refusing is the whole point.
     with pytest.raises(RuntimeError) as excinfo:
         refuse_ambient_store_creation(absent)
 
@@ -39,37 +40,40 @@ def test_a_write_to_a_nonexistent_ambient_store_is_refused(tmp_path, monkeypatch
 def test_a_write_to_an_explicitly_named_nonexistent_store_is_allowed(
     tmp_path, monkeypatch
 ):
-    # ARRANGE — the caller NAMED the destination; naming it is the opt-in.
+    # Arrange — the caller NAMED the destination; naming it is the opt-in.
     monkeypatch.delenv(ENV_DB, raising=False)
     absent = tmp_path / "deliberate" / "cards.db"
 
-    # ACT / ASSERT — must not raise; bootstraps and tests depend on this.
+    # Act
+    # Assert — must not raise; bootstraps and tests depend on this.
     refuse_ambient_store_creation(absent, explicit=absent)
 
 
 def test_an_env_named_nonexistent_store_is_allowed(tmp_path, monkeypatch):
-    # ARRANGE — an operator who exported the store variable has stated intent
+    # Arrange — an operator who exported the store variable has stated intent
     # just as clearly as one who passed the path.
     absent = tmp_path / "configured" / "cards.db"
     monkeypatch.setenv(ENV_DB, str(absent))
 
-    # ACT / ASSERT
+    # Act
+    # Assert
     refuse_ambient_store_creation(absent)
 
 
 def test_an_existing_ambient_store_is_untouched_by_the_guard(tmp_path, monkeypatch):
-    # ARRANGE — the ordinary healthy case: the board already exists.
+    # Arrange — the ordinary healthy case: the board already exists.
     monkeypatch.delenv(ENV_DB, raising=False)
     present = tmp_path / "cards.db"
     present.write_text("", encoding="utf-8")
 
-    # ACT / ASSERT — the guard is about CREATION, never about writing.
+    # Act
+    # Assert — the guard is about CREATION, never about writing.
     refuse_ambient_store_creation(present)
 
 
-def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypatch):
-    """The configuration EVERY fleet agent runs in: the board already exists at
-    the ambient default and nothing names it. Creating a card must WORK.
+def test_add_task_succeeds_against_an_existing_store(tmp_path, monkeypatch):
+    """The board already exists and the write must WORK. The pin that keeps
+    CREATE agreeing with read/update.
 
     Reproduced by scitex-ui on 0.17.7: every `add` failed for any agent whose
     env lacked ``$SCITEX_CARDS_DB``, while every read/update on the same store
@@ -82,15 +86,24 @@ def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypat
     The guard exists to stop a write MANUFACTURING a board. When the board is
     already there, there is nothing to manufacture, so there is nothing to
     refuse. An agent that cannot create a card cannot record work, hand off, or
-    escalate — so this is the pin that keeps CREATE agreeing with read/update.
+    escalate.
+
+    THE STORE IS NOW NAMED, AND THE TEST'S SUBJECT IS UNCHANGED. This used to
+    arrange "a REAL store at the AMBIENT default, named by nothing" — the
+    configuration it said every fleet agent ran in. That configuration is what
+    the operator abolished on 2026-08-13, precisely because "named by nothing"
+    and "named by a variable that got lost" are the same state from inside the
+    process. The write path being pinned here is identical either way; only the
+    arrangement moved from ambient to named, and the sibling test below still
+    covers the ambient-write refusal.
     """
-    # ARRANGE — a REAL store at the ambient default, named by nothing.
+    # Arrange — a REAL store, NAMED through the environment.
     import scitex_cards
     from scitex_cards._db import connect, init_schema, resolve_db_path
 
-    monkeypatch.delenv(ENV_DB, raising=False)
     monkeypatch.delenv("SCITEX_TODO_DB", raising=False)
     monkeypatch.setenv("SCITEX_DIR", str(tmp_path / "scitex"))
+    monkeypatch.setenv(ENV_DB, str(tmp_path / "scitex" / "cards" / "cards.db"))
 
     db = resolve_db_path(None)
     db.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +115,7 @@ def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypat
         conn.close()
     assert db.exists(), "arrange failed: no store to write against"
 
-    # ACT
+    # Act
     scitex_cards.add_task(
         id="ambient-card",
         title="created against an existing ambient store",
@@ -110,7 +123,7 @@ def test_add_task_succeeds_against_an_existing_ambient_store(tmp_path, monkeypat
         agent="scitex-cards",
     )
 
-    # ASSERT — on the artefact: the card is readable back from the canonical store.
+    # Assert — on the artefact: the card is readable back from the canonical store.
     assert scitex_cards.get_task(task_id="ambient-card")["id"] == "ambient-card"
 
 
@@ -122,7 +135,7 @@ def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
     Asserts on the FILESYSTEM, not on "nothing was raised" — a probe that
     concludes from an absent exception reports success when it never ran.
     """
-    # ARRANGE — point the ambient user root at an empty dir, name nothing.
+    # Arrange — point the ambient user root at an empty dir, name nothing.
     import scitex_cards
 
     monkeypatch.delenv(ENV_DB, raising=False)
@@ -130,7 +143,7 @@ def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
     monkeypatch.setenv("SCITEX_DIR", str(tmp_path / "scitex"))
     would_be = tmp_path / "scitex" / "cards" / "cards.db"
 
-    # ACT
+    # Act
     with pytest.raises(RuntimeError):
         scitex_cards.add_task(
             id="decoy-card",
@@ -139,5 +152,5 @@ def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
             agent="scitex-cards",
         )
 
-    # ASSERT — the artefact, not the exception: no board was invented.
+    # Assert — the artefact, not the exception: no board was invented.
     assert not would_be.exists()

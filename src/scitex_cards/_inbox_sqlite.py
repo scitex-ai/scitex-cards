@@ -46,6 +46,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
+from ._inbox_record import notification_columns, notification_record
 from ._inbox_shape import shape_for
 from ._inbox_sqlite_schema import (
     ENV_INBOX_DB,
@@ -185,50 +186,44 @@ def enqueue(
         if dup is not None:
             conn.commit()  # persist a supersede-only pass even when deduped
             return None
-        record = {
-            "id": _generate_notification_id(),
-            "event_type": event_type,
-            "card_id": card_id,
-            "body": body,
-            "actor": actor,
-            "ts": timestamp,
-            "seen": False,
-            "msg_id": msg_id,
-        }
-        # THE PAYLOAD IS NOT OPTIONAL WHERE THE COLUMN EXISTS, and this is the
-        # line that took the fleet board down for 20 minutes on 2026-08-09.
-        #
-        # The INSERT below used to name nine columns. Correct on SQLite, whose
-        # `inbox` table has exactly those. On the canonical store it left
-        # `notifications.record_json` NULL — and that NULL is LOAD-BEARING:
-        # `_db_payload.card_payload_json` says a NULL "makes the read guard
-        # REFUSE THE WHOLE DB". One malformed notification made all 3556 cards
-        # unreadable fleet-wide while resolve_store and health stayed green,
+        record = notification_record(
+            id=_generate_notification_id(),
+            event_type=event_type,
+            card_id=card_id,
+            body=body,
+            actor=actor,
+            ts=timestamp,
+            seen=False,
+            msg_id=msg_id,
+        )
+        # THE COLUMN LIST IS DERIVED FROM THE RECORD, and the payload column
+        # comes from the SHAPE, not from an assumption about which table this
+        # is. That distinction is the whole bug: this function writes the
+        # SQLite `inbox` table (no payload column) OR the canonical
+        # `notifications` table (a payload column the export refuses a row
+        # without), and it was writing the second as if it were the first. One
+        # such payload-less row made all 3556 cards unreadable fleet-wide for 20
+        # minutes on 2026-08-09, while `resolve_store` and `health` stayed green
         # because the store itself was fine.
-        #
-        # The record dict above IS the payload — nothing is invented. It is
-        # stored under the SAME strict encoder as tasks.card_json and
-        # users.record_json, so the exporter reproduces it exactly.
         #
         # NOTE ON THE RECIPIENT KEY, which scitex-agent-container flagged as
         # unanswerable from outside this package: the payload deliberately does
         # NOT carry the recipient. It is a column on the row, under a name that
         # DIFFERS BY BACKEND (`recipient` vs `recipient_id`), so embedding it
         # would bake one backend's spelling into a backend-agnostic blob and
-        # make the two indistinguishable until something read it back.
-        columns = ["id", shape.recipient, "event_type", "card_id", "body",
-                   "actor", "ts", "seen", "msg_id"]
-        values = [record["id"], recipient_id, event_type, card_id, body,
-                  actor, timestamp, 0, msg_id]
-        if shape.payload:
-            from ._db_payload import card_payload_json  # noqa: PLC0415 -- cycle
-
-            columns.append(shape.payload)
-            values.append(card_payload_json(record))
+        # make the two indistinguishable until something read it back. That is
+        # why `notification_columns` takes the column NAME as a parameter.
+        columns, values = notification_columns(
+            record,
+            recipient_id=recipient_id,
+            recipient_column=shape.recipient,
+            payload_column=shape.payload,
+        )
+        placeholders = ", ".join(["?"] * len(columns))
         conn.execute(
             f"INSERT INTO {shape.table}({', '.join(columns)}) "
-            f"VALUES({', '.join('?' for _ in values)})",
-            tuple(values),
+            f"VALUES({placeholders})",
+            values,
         )
         conn.commit()
         return dict(record)

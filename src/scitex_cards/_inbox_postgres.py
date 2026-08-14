@@ -54,6 +54,7 @@ import os
 from pathlib import Path
 from typing import Any, Final, Sequence
 
+from ._inbox_record import notification_columns, notification_record
 from ._inbox_shape import POSTGRES_SHAPE
 
 __all__ = ["ack", "enqueue", "poll_inbox", "resolve_dsn"]
@@ -230,33 +231,50 @@ def enqueue(
                 conn.commit()
                 return None
 
-            record = {
-                "id": _generate_notification_id(),
-                "event_type": event_type,
-                "card_id": card_id,
-                "body": body,
-                "actor": actor,
-                "ts": timestamp,
-                "seen": False,
-                "msg_id": msg_id,
-            }
+            record = notification_record(
+                id=_generate_notification_id(),
+                event_type=event_type,
+                card_id=card_id,
+                body=body,
+                actor=actor,
+                ts=timestamp,
+                seen=False,
+                msg_id=msg_id,
+            )
+            # `record_json` IS NOT OPTIONAL, and omitting it is a fleet outage.
+            #
+            # This INSERT listed nine columns and left the payload out. Every
+            # notification it wrote landed with record_json NULL — not
+            # occasionally, on EVERY row — because nothing here ever called the
+            # serialiser. A NULL payload makes the read path refuse, and that
+            # path assembles the WHOLE document, so on 2026-08-11 it took every
+            # card write down fleet-wide three times (add_task, update_task,
+            # comment_task) over rows minutes old. Two of the blocking rows were
+            # UNDELIVERED DMs, so the obvious "quarantine the bad row" remedy
+            # would have destroyed real messages; they were repaired by
+            # back-filling from their own columns, which is possible precisely
+            # because nothing was lost.
+            #
+            # #803 fixed this INSERT by adding the missing column. The column
+            # list is now DERIVED FROM THE RECORD instead, because hand-writing
+            # it IS the defect: three separate writers of this table each
+            # hand-wrote their own list and all three omitted the payload. There
+            # is no spelling of the call below that drops it without also
+            # dropping the id and the body.
+            columns, values = notification_columns(
+                record,
+                recipient_id=recipient_id,
+                recipient_column=_RECIPIENT,
+                payload_column=_SHAPE.payload,
+            )
+            placeholders = ", ".join(["%s"] * len(columns))
             # ON CONFLICT DO NOTHING makes a retried insert idempotent even
             # if two writers race past the dedup SELECT above.
             cur.execute(
-                f"INSERT INTO {_TABLE}"
-                f"(id, {_RECIPIENT}, event_type, card_id, body, actor, ts, seen, msg_id) "
-                "VALUES(%s, %s, %s, %s, %s, %s, %s, 0, %s) "
+                f"INSERT INTO {_TABLE}({', '.join(columns)}) "
+                f"VALUES({placeholders}) "
                 "ON CONFLICT (id) DO NOTHING",
-                (
-                    record["id"],
-                    recipient_id,
-                    event_type,
-                    card_id,
-                    body,
-                    actor,
-                    timestamp,
-                    msg_id,
-                ),
+                values,
             )
         conn.commit()
     return dict(record)

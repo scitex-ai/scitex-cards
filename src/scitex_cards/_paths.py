@@ -95,7 +95,31 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
     aware), the same ambient default a fresh install uses.
     """
-    from ._store_url import is_postgres_url
+    from ._store_url import is_postgres_url, reject_attempted_dsn
+
+    # A MALFORMED DSN IS NOT A PATH EITHER, and the paragraph below is the
+    # reason this line exists rather than an extra spelling in that predicate.
+    # `is_postgres_url` is TWO-VALUED: it separates "a server" from "everything
+    # else", and a DSN that has been through Path() -- "postgresql:/host/db",
+    # one slash -- lands in "everything else" alongside genuine filenames. So
+    # the redirect below catches the well-formed case the 2026-08-02 incident
+    # was about and misses the mangled form that incident actually produced.
+    #
+    # Measured on develop 2026-08-12, WITH the connect-door guards of #815
+    # already merged:
+    #     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/…'
+    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/todo.db
+    #     and the directory tree was created under the process's CWD.
+    # The guards were downstream: runtime_dir() mkdirs during PATH DERIVATION,
+    # before any connect happens, so a check at the connect door cannot see it.
+    #
+    # RAISES rather than redirecting, and the asymmetry with the valid-DSN
+    # branch is deliberate. A well-formed DSN is a legitimate deployment whose
+    # runtime state simply belongs locally. A malformed one is a configuration
+    # error with no correct interpretation -- there is no deployment for which
+    # SCITEX_CARDS_DB=":55432" is right -- and quietly serving it a local
+    # directory would hide the misconfiguration behind working software.
+    reject_attempted_dsn(explicit)
 
     if explicit is not None:
         # An EXPLICIT server store gets the same answer as an ambient one.
@@ -121,9 +145,35 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
             return _user_root() / "tasks.yaml"
         return Path(explicit).expanduser()
 
-    from ._store_target import resolve_store_target
+    from ._store_target import StoreTargetNotConfigured, resolve_store_target
 
-    if is_postgres_url(resolve_store_target(None)):
+    # NO STORE CONFIGURED IS NOT NO LOCAL STATE, and this is the one place that
+    # distinction has to be made in code rather than in the docstring above.
+    # Since 2026-08-13 the zero-config SQLite default RAISES instead of naming a
+    # database, so the derivation at the bottom of this function has nothing
+    # left to derive from -- but pidfiles, the delivery ledger, reminder state
+    # and the users/groups sidecar all still want a real local directory, and
+    # want one just as much when nobody has chosen a board yet as when the cards
+    # live on a server. The two axes this function's contract calls independent
+    # stay independent when the store axis has no answer at all.
+    #
+    # This is NOT the abolished fallback wearing a different hat: the answer is
+    # a DIRECTORY, the same `_user_root()` a server store already gets. It names
+    # no database, opens nothing, and holds no cards -- so it cannot become a
+    # second board the way `~/.scitex/cards/cards.db` did. Raising here instead
+    # would take down the whole query side exactly as the DSN coercion did on
+    # 2026-07-31, for a question the caller never asked.
+    try:
+        ambient = resolve_store_target(None)
+    except StoreTargetNotConfigured:
+        return _user_root() / "tasks.yaml"
+
+    # The AMBIENT branch needs the same check as the explicit one above: a
+    # malformed $SCITEX_CARDS_DB reaches here with explicit=None, so guarding
+    # only the argument would leave the commonest configuration mistake --
+    # a typo in the environment -- on the unguarded path.
+    reject_attempted_dsn(ambient)
+    if is_postgres_url(ambient):
         return _user_root() / "tasks.yaml"
 
     from ._db import resolve_db_path

@@ -40,8 +40,11 @@ def test_resolved_db_path_lives_under_the_pytest_tmp_root(tmp_path_factory):
     running (or stopped covering ``$SCITEX_CARDS_DB``), this would instead
     resolve to the real user-canonical store.
     """
+    # Arrange
+    # Act
     resolved = resolve_db_path(None).resolve()
     base_tmp = tmp_path_factory.getbasetemp().resolve()
+    # Assert
     assert base_tmp in resolved.parents, (
         f"resolve_db_path(None) = {resolved} is NOT under pytest's tmp root "
         f"{base_tmp} — the session isolation fixture in tests/conftest.py "
@@ -52,10 +55,13 @@ def test_resolved_db_path_lives_under_the_pytest_tmp_root(tmp_path_factory):
 def test_resolved_db_path_is_not_a_real_store_candidate():
     """Belt-and-braces companion to the tmp-root check above: also assert the
     resolved path is not literally one of the known real-store locations."""
+    # Arrange
+    # Act
     resolved = resolve_db_path(None).resolve()
     for home in _REAL_HOMES:
         for pkg in ("cards", "todo"):
             real = Path(home, ".scitex", pkg, "cards.db")
+            # Assert
             assert resolved != real, (
                 f"resolve_db_path(None) resolved to the REAL store {real} — "
                 "the isolation fixture in tests/conftest.py is not active."
@@ -72,8 +78,11 @@ def test_scitex_dir_fallback_is_also_pinned_under_tmp(tmp_path_factory):
     ``clean_store_env`` fixture) falls through to this path, and it must
     land in scratch even then.
     """
+    # Arrange
+    # Act
     base_tmp = tmp_path_factory.getbasetemp().resolve()
     scitex_dir_root = _user_root().resolve()
+    # Assert
     assert base_tmp in scitex_dir_root.parents or scitex_dir_root == base_tmp, (
         f"$SCITEX_DIR resolves _user_root() to {scitex_dir_root}, not under "
         f"pytest's tmp root {base_tmp} — the SCITEX_DIR pin in "
@@ -92,8 +101,11 @@ def test_env_db_still_names_the_winning_precedence_tier():
     that set it to the wrong place) would pass the two tests above vacuously
     if ``resolve_db_path`` fell through to an explicit-arg-only code path
     that happened to still avoid the real store by luck."""
+    # Arrange
+    # Act
     import os
 
+    # Assert
     assert os.environ.get(ENV_DB), (
         f"${ENV_DB} is unset — the session isolation fixture in "
         "tests/conftest.py is not pinning it."

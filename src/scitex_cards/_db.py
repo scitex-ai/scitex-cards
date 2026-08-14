@@ -42,24 +42,7 @@ import sqlite3
 from pathlib import Path
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
-from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
-from ._db_migrations import (
-    _migrate_v1_to_v2,
-    _migrate_v2_to_v3,
-    _migrate_v5_to_v6,
-    _migrate_v6_to_v7,
-    _migrate_v7_to_v8,
-    _migrate_v8_to_v9,
-    record_migration_provenance,
-    table_columns,
-)
-from ._ddl import execute_ddl
-from ._schema_shape import (
-    SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
-    observed_version,
-    stamp_schema_version,
-)
-from ._store_retirement import RETIREMENT_TRIGGER_SQL
+from ._db_migrations import table_columns
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +101,34 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: nothing the operator actually talks through. See
 #: ``docs/design/dm-into-cards-db.md``.
 #:
-#: v6 (the optimistic lock) adds ``tasks.revision``, incremented by every
-#: row-level write and asserted in the write's WHERE clause. It exists so a
+#: v6 (the optimistic lock) adds ``tasks.revision``. It is incremented by every
+#: row-level write (v7's trigger, below) and it CAN be asserted in a write's
+#: WHERE clause — but only by a caller that opts in, and no public verb does.
+#:
+#: THAT DISTINCTION IS LOAD-BEARING AND THIS COMMENT USED TO ERASE IT. It read
+#: "incremented by every row-level write and asserted in the write's WHERE
+#: clause", in the present tense, as a property of the schema. Nothing asserted
+#: it at all until #790 (2026-08-10). scitex-dev read this line, reasonably
+#: concluded the lock was protecting them, skipped the check, and LOST AN EDIT
+#: to a concurrent writer — reporting the work done, because nothing said
+#: otherwise. A comment that overstates a guard is worse than no comment: it
+#: converts a reader's diligence into a reason to skip the check.
+#:
+#: WHAT IS TRUE TODAY — one SQL site, two callers, no public entry:
+#:   * ``_db_bootstrap._insert_tasks(..., expected_revision=N)`` appends
+#:     ``WHERE tasks.revision = ?`` — the only such clause in the package.
+#:   * ``_db_mirror._write_card(..., expected_revision=N)`` forwards to it.
+#:   * ``update_task`` / ``add_task`` accept no such argument, so every write
+#:     through the public surface remains LAST-WRITE-WINS, deliberately —
+#:     :func:`_migrate_v6_to_v7` ruled REJECT-by-default unusable across a fleet
+#:     that cannot be made uniformly current.
+#: So ``revision`` is a CAPABILITY, not a PROTECTION. Pinned by
+#: ``tests/scitex_cards/test__revision_is_opt_in.py`` so this text cannot drift
+#: again in EITHER direction: it fails if the WHERE clause disappears, and it
+#: fails if a public verb starts accepting the argument while this still says
+#: none does.
+#:
+#: The counter exists so a
 #: writer can tell "the row is there" (which ``rowcount == 1`` already answers)
 #: apart from "nobody changed it under me since I read" — the question that
 #: actually prevents a lost update, and the one sac's state-db taught us is easy
@@ -133,7 +142,47 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: and that condition is not establishable — measured 2026-07-30, the fleet was
 #: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
 #: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
-SCHEMA_VERSION = 9
+#: v10 makes ``notifications`` a table that can be SYNCED and that no client can
+#: write incompletely: the five sync columns from creation, and a BEFORE INSERT
+#: trigger that fills ``record_json`` from the row's own columns. Three separate
+#: writers omitted that payload, and each omission took every card write down
+#: fleet-wide — a barrier in the engine is the only kind every version of every
+#: container obeys. See :func:`_db_migrations._migrate_v9_to_v10`.
+#: v11 gives a MIGRATED store the foreign keys the schema has always declared.
+#: Measured 2026-08-10, the live store held 1 of 4 (control: 278 total
+#: pg_constraint rows), and the one it held covered two empty tables — so every
+#: table with data had zero enforced referential integrity. Inline ``REFERENCES``
+#: reaches fresh stores only, which is this chain's documented
+#: ``CREATE TABLE IF NOT EXISTS`` hole in its second instance. See
+#: :func:`_db_foreign_keys._migrate_v10_to_v11`.
+#:
+#: ═══ THIS NUMBER IS A CLAIM ABOUT A CLIENT, NOT ABOUT A DATABASE ═══
+#:
+#: Raising it here changes what THIS CODE will assert the next time it opens a
+#: database. It changes NOTHING about any database until a client CARRYING this
+#: value actually opens one — the rungs run from ``init_schema``, so an
+#: unvisited database keeps whatever shape it had, indefinitely.
+#:
+#: SO A RELEASE NOTE SAYING "v11 ADDS THE FOREIGN KEYS" IS TRUE OF THE PACKAGE
+#: AND FALSE OF THE FLEET, until propagation. When 0.37.0 was tagged, the live
+#: cards database still had ZERO enforced referential integrity on every table
+#: holding data — the repair existed, was proven on three Python versions and a
+#: real PostgreSQL, and had not run anywhere.
+#:
+#: This is written here rather than only in a release note because the release
+#: note is read once, by the person who already knows. The reader who needs it
+#: is the one who finds this constant at 11 and concludes the databases are at
+#: 11. On 2026-08-11 the fleet ran 0.35.1 for hours while a fix for a
+#: write-outage sat published and unreachable, and three agents kept hitting the
+#: bug it fixed. MERGED IS NOT PUBLISHED; PUBLISHED IS NOT DEPLOYED; AND A
+#: SCHEMA VERSION IS NOT A SCHEMA.
+#:
+#: The same shape appears twice more in this package and both are deliberate:
+#: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned,
+#: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
+#: each case the artifact exists and its effect does not yet, which is a state
+#: worth being able to name.
+SCHEMA_VERSION = 11
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -145,8 +194,12 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     2. ``$SCITEX_CARDS_DB`` environment override,
     3. ``$SCITEX_TODO_DB`` — deprecated pre-rename name, honoured with a
        loud warning for one transition window,
-    4. ``local_state.user_path("cards", "cards.db")`` — DELEGATED to the
-       ecosystem user-canonical resolver (never a re-rolled precedence).
+    4. NOTHING — there is no fourth tier. Until 2026-08-13 this DELEGATED to
+       the ecosystem user-canonical resolver,
+       ``local_state.user_path("cards", "cards.db")``; an unconfigured store
+       now RAISES
+       :class:`scitex_cards._store_target.StoreTargetNotConfigured` instead of
+       naming a SQLite file nobody chose.
 
     Returns a :class:`~pathlib.Path`; does NOT create the file.
 
@@ -217,12 +270,21 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     configured = store_config_target()
     if configured:
         return _as_path(configured, "the configured store target")
-    # Final tier — DELEGATE to the ecosystem user-canonical resolver.
-    # Imported lazily so a caller passing an explicit / env path never
-    # hard-requires scitex_config to be importable.
-    from scitex_config._ecosystem import local_state
+    # Final tier — ABOLISHED 2026-08-13. It used to DELEGATE to the ecosystem
+    # user-canonical resolver and return that path:
+    #
+    #     from scitex_config._ecosystem import local_state
+    #     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    #
+    # which is a SQLite filename nobody chose, indistinguishable at the call
+    # site from one somebody did. The refusal is the SAME object raised from the
+    # SAME place `resolve_store_target` raises it, not a second message here:
+    # this function's docstring promises its precedence mirrors that one
+    # exactly, and a tier closed in one resolver but open in the other is the
+    # original fallback with an extra hop. See `_store_target` for the ruling.
+    from ._store_target import refuse_zero_config_default  # noqa: PLC0415
 
-    return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    refuse_zero_config_default()
 
 
 # The core schema DDL and the table roster live in ``_db_schema_sql`` --
@@ -273,9 +335,26 @@ def connect(path: str | Path) -> sqlite3.Connection:
     and observed while testing #682. Nothing raised, and the store looked
     healthy, which is exactly why the check cannot live further down.
     """
-    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
+    from ._store_url import (  # noqa: PLC0415 -- import cycle
+        is_postgres_url,
+        reject_attempted_dsn,
+    )
 
     target = str(path)
+    # AND THE DISPATCH BEING FIRST WAS STILL NOT ENOUGH, because the dispatch is
+    # TWO-VALUED: not-PostgreSQL is not the same as is-a-path, but the `if`
+    # below can only say one of them. Everything the paragraph above warns about
+    # therefore still happened to any target the predicate did not recognise.
+    #
+    # It is not hypothetical here either. Found 2026-08-12 in this repository's
+    # own root, untracked and not ignored:
+    #
+    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/todo.db
+    #
+    # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
+    # which collapses "//" to "/", then mkdir(parents=True) below built the
+    # directories and the inbox migration filled in the file. Moved to .old/.
+    reject_attempted_dsn(target)
     if is_postgres_url(target):
         from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
         from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
@@ -307,143 +386,12 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
-    """Create the schema idempotently + stamp version. Commits on success.
 
-    Runs the ``CREATE TABLE/INDEX IF NOT EXISTS`` script, applies the additive
-    column migrations, sets ``PRAGMA user_version=SCHEMA_VERSION``, and seeds the
-    ``schema_meta`` rows (``schema_version`` always; ``created_at`` / ``source``
-    only if absent so a re-init never clobbers the original provenance).
-    """
-    # BEFORE the schema script, because that script is what makes a fresh file
-    # look initialised. 0 means "new file" and is a CREATE, not a migration.
-    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
-
-    if _is_postgres(conn):
-        # PostgreSQL has no user_version and rejects PRAGMA outright. 0 is the
-        # honest starting point here for the same reason it is on a fresh file:
-        # "no stamp read" is not "version zero asserted", and the physical-shape
-        # read immediately below supplies the real prior version via max().
-        _prior_version = 0
-    else:
-        _prior_version = conn.execute("PRAGMA user_version").fetchone()[0]
-
-    # AND THE PRAGMA ALONE IS NOT TRUSTWORTHY HERE. A PRAGMA cannot carry a
-    # trigger, so the engine-level floor applied below protects `schema_meta`
-    # and structurally CANNOT protect `user_version`; any writer executing a
-    # bare `PRAGMA user_version=<its own>` still knocks it backwards.
-    #
-    # Measured on the live store 2026-07-31: `schema_migrated_at` advanced every
-    # ~45s with from=5 to=7 by 0.25.0, while v6's `tasks.revision` and v7's
-    # `tasks_bump_revision` were physically present the entire time. Since
-    # record_migration() returns early when prior == new, that churn is proof
-    # the PRAGMA genuinely kept reading 5 -- a current client re-migrating a
-    # store that was never behind, in a loop, forever.
-    #
-    # The physical shape cannot be un-migrated by a stamp, so it is the floor.
-    # `observed` is None on a fresh file (no rung present), which leaves
-    # _prior_version at 0 and preserves the CREATE-not-migration branch above.
-    _shape = observed_version(conn)
-    if _shape.observed is not None:
-        _prior_version = max(_prior_version, _shape.observed)
-
-    # ASSERT THE SCHEMA ONCE PER STORE, NOT ONCE PER OPEN.
-    #
-    # Everything below this point is DDL. On SQLite that was very nearly free.
-    # Against a shared PostgreSQL server it is DDL against the system
-    # catalogues, and CREATE OR REPLACE FUNCTION rewrites the pg_proc row every
-    # single time -- it is not a no-op when the function already matches.
-    #
-    # MEASURED on the live store 2026-08-01, with the entire fleet STOPPED and
-    # only four host daemons connected: all 9 trigger functions were dropped and
-    # recreated every ~10 seconds, continuously. And concurrency did not
-    # survive it:
-    #
-    #      4 simultaneous open_db  ->  at least 1 deadlock
-    #     12 simultaneous open_db  ->  11 of 12 failed, DeadlockDetected
-    #
-    # on pg_proc, which is exactly the contention two clients create by
-    # replacing the same function at the same time. The comment further down
-    # this function already notes that "~90 containers call init_schema on every
-    # connection"; at that width this is not a slow path, it is a broken one.
-    #
-    # So: when the store ALREADY has the shape this client would assert, skip
-    # the assertion entirely. The gate is a READ, and it is deliberately
-    # conservative -- every branch that is not provably current falls through to
-    # the full DDL below, so the worst case is exactly today's behaviour.
-    #
-    # THE GUARD TRIGGERS ARE CHECKED, NOT ASSUMED. They are not decoration: they
-    # are the retirement enforcement AND the proof-of-currency mechanism, so a
-    # client that skipped the DDL without confirming they exist could leave a
-    # store unguarded while believing it had guarded it. Presence is verified
-    # against the catalogue on every open; only the WRITE is skipped.
-    from ._schema_current import schema_already_current  # noqa: PLC0415
-
-    if schema_already_current(conn, _shape, SCHEMA_VERSION):
-        conn.commit()
-        return
-
-    execute_ddl(conn, _SCHEMA_SQL)
-    # Separate, not folded into _SCHEMA_SQL: per the note below, that script
-    # reaches FRESH files only, and these guards must reach every store the
-    # current client opens or it cannot prove it is current (_store_retirement).
-    execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
-    # Same reason, and doubly so: the client-side floor below binds only
-    # clients that HAVE it, while 2026-07-31 measured the live store swinging
-    # 5 -> 7 -> 5 with v7's artifacts physically present the whole time. This
-    # trigger is the copy of the rule an 0.18.0 writer cannot skip.
-    execute_ddl(conn, SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
-    _migrate_v1_to_v2(conn)
-    _migrate_v2_to_v3(conn)
-    # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
-    # only, which is FRESH-database-only. `CREATE TABLE IF NOT EXISTS` is a no-op
-    # on an existing table, so a v3 file upgraded straight to v5 never received
-    # them — the exact trap _migrate_v1_to_v2's docstring warns about, present in
-    # this very chain. Not fixed here (it needs establishing what v4 added);
-    # named so the gap is visible rather than inherited as a numbering quirk.
-    _migrate_v4_to_v5(conn)
-    _migrate_v5_to_v6(conn)
-    _migrate_v6_to_v7(conn)
-    _migrate_v7_to_v8(conn)
-    _migrate_v8_to_v9(conn)
-    # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT. Both halves of that rule now
-    # live in _schema_shape: this client-side one, and the engine-side trigger
-    # applied above which binds the clients that predate this code.
-    stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
-    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is SQLite-only
-    # syntax. The two are equivalent here -- both leave an existing row alone,
-    # which is what preserves the ORIGINAL provenance on a re-init -- but only
-    # this spelling parses on PostgreSQL. (`?` is fine on both: StoreConnection
-    # translates paramstyle, so call sites stay written in one dialect.)
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('created_at', ?) "
-        "ON CONFLICT(key) DO NOTHING",
-        (_utc_now_iso(),),
-    )
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('source', 'fresh') "
-        "ON CONFLICT(key) DO NOTHING",
-    )
-    # An upgrade of an EXISTING store names itself. See that function for why:
-    # a v5 -> v6 move on the live store was un-attributable on 2026-07-30, and
-    # the only evidence available was a sentinel that measures every neighbour.
-    #
-    # The condition is repeated here rather than left to the callee's own early
-    # return, because `__version__` resolves LAZILY on purpose (#630 took cold
-    # import from 425ms to ~137ms by deferring it) and ~90 containers call
-    # init_schema on every connection. Paying that resolution on every open, to
-    # stamp a row only a genuine upgrade writes, would spend the win #630 bought.
-    if _prior_version not in (0, SCHEMA_VERSION):
-        from . import __version__ as _client_version
-
-        record_migration_provenance(
-            conn,
-            _prior_version,
-            SCHEMA_VERSION,
-            _utc_now_iso(),
-            str(_client_version),
-        )
-    conn.commit()
+# THE SCHEMA ASSERTION MOVED to `_db_init_schema`. This module owns CONNECTIONS;
+# that one owns making an open connection carry the current shape (the currency
+# gate, the DDL, the v1->v10 ladder, the stamp). Re-exported under the same name
+# so every existing `from ._db import init_schema` resolves unchanged.
+from ._db_init_schema import init_schema  # noqa: E402
 
 
 def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:

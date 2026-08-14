@@ -39,7 +39,17 @@ __all__ = ["InboxShape", "SQLITE_SHAPE", "POSTGRES_SHAPE", "shape_for"]
 
 @dataclass(frozen=True)
 class InboxShape:
-    """The three names a statement against the inbox rail needs."""
+    """The names a statement against the inbox rail needs.
+
+    ``payload`` joined the other three after a fourth difference cost a night.
+    The canonical ``notifications`` table carries a VERBATIM ``record_json``
+    that the export/read path reconstructs from and REFUSES a row without; the
+    SQLite ``inbox`` table has no such column and needs none, because nothing
+    exports it. An enqueue that assumed one shape wrote payload-less rows into
+    the other, and one such row failed every card write fleet-wide — so where
+    the payload lives belongs here, with the other names that differ, rather
+    than in each writer's head.
+    """
 
     #: Table holding the notification rows.
     table: str
@@ -48,7 +58,8 @@ class InboxShape:
     #: Expression giving ARRIVAL order, oldest first.
     order_by: str
     #: Column holding the VERBATIM record payload, or ``None`` where the table
-    #: has no such column.
+    #: has no such column. NOT a boolean: the read path NAMES the column, so
+    #: the shape must too.
     #:
     #: THIS FIELD EXISTS BECAUSE OMITTING IT TOOK THE FLEET BOARD DOWN FOR 20
     #: MINUTES ON 2026-08-09. The rail's INSERT named nine columns, correct on
@@ -73,12 +84,17 @@ class InboxShape:
 
 #: The rail as it exists today: its own SQLite file, ``rowid`` as arrival order.
 #: No payload column — the ``inbox`` table never had one, which is why the
-#: nine-column INSERT was correct here and lethal on the store.
-SQLITE_SHAPE = InboxShape(table="inbox", recipient="recipient", order_by="rowid")
+#: nine-column INSERT was correct here and lethal on the store. ``payload`` is
+#: passed EXPLICITLY rather than left to the default: this is the shape whose
+#: missing payload caused the outage, so "it has none" is stated, not implied.
+SQLITE_SHAPE = InboxShape(
+    table="inbox", recipient="recipient", order_by="rowid", payload=None
+)
 
 #: The rail in the canonical store. ``seq`` is schema v9's arrival-order column,
 #: server-assigned via a sequence DEFAULT so a client that predates it still
-#: writes a correctly ordered row.
+#: writes a correctly ordered row. ``record_json`` is schema v3's payload column,
+#: which the export reconstructs from — a row without it is unreadable.
 POSTGRES_SHAPE = InboxShape(
     table="notifications",
     recipient="recipient_id",

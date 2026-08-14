@@ -159,8 +159,26 @@ class TestFreshAndMigratedAgreeOnShape:
     def test_the_two_paths_produce_the_same_notifications_columns(
         self, fresh_store, v8_store
     ):
+        """Runs the FULL chain, not one step.
+
+        This asserted ``_migrate_v8_to_v9`` alone against the CURRENT fresh
+        schema, which is a proxy that breaks on every new version rather than a
+        statement about the invariant — and it went red the moment v10 added
+        the sync columns, with nothing actually wrong: a real v8 store reaches
+        v10 because ``init_schema`` runs the WHOLE chain.
+
+        Its v8 sibling already learned this and says so in
+        ``test__schema_v8_notification_rail.py``; the lesson had not travelled
+        here. Asserting through ``init_schema`` — what production calls, and
+        what is idempotent by design because ~90 agents invoke it on every open
+        — makes this version-independent while still catching the failure it
+        was written for: a migration that forgets a column the fresh path
+        declares.
+        """
         # Arrange
-        _migrate_v8_to_v9(v8_store)
+        from scitex_cards._db import init_schema
+
+        init_schema(v8_store)
 
         # Act
         migrated = table_columns(v8_store, "notifications")

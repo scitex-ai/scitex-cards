@@ -244,10 +244,28 @@ class LocalBackend:
         # cursor at handover, so a consumer that dies before delivering has
         # destroyed the message. Deprecated, NOT changed — sac reads this path.
         deprecation = warn_ack_on_read() if ack else None
-        from ._users import resolve_user, touch_user
+        from ._inbox_confirm import recipient_keys
+        from ._users import touch_user
 
-        user = resolve_user(agent, store=store)
-        recipient_id = user.id if user is not None else agent
+        # READ EVERY KEY CONFIRM WRITES. This used to resolve ONE key —
+        # `user.id if user is not None else agent` — while
+        # `_inbox_confirm.confirm_notifications` acks under BOTH the raw name
+        # and the resolved `u_*` id, and `_mcp_channel.recipient_keys` drains
+        # both. Those are DIFFERENT ROW SETS, deliberately (the drain keeps the
+        # raw name for back-compat records keyed by name).
+        #
+        # `resolve_user` falls back to the raw name on ANY failure, so an
+        # intermittent resolution made POLL ALTERNATE BETWEEN TWO INBOXES while
+        # confirm always covered both. Measured by canary-resume-test as an
+        # OSCILLATING `unconfirmed`: ack -> confirmed, next poll -> unconfirmed
+        # again, then empty, then back, with no ack in between. No concurrency
+        # and no second store required to produce it.
+        #
+        # Three call sites resolved keys three ways and two already agreed;
+        # poll was the odd one out. They now share one function, so they cannot
+        # disagree by construction.
+        keys = recipient_keys(agent, store)
+        recipient_id = keys[-1] if keys else agent
         # Liveness heartbeat — fail-soft, exactly as the tool did inline:
         # a stamping failure must never break the poll.
         try:
@@ -258,18 +276,52 @@ class LocalBackend:
             logging.getLogger(__name__).warning(
                 "poll_notifications: heartbeat failed for %r", agent, exc_info=True
             )
-        notifications = _inbox.poll_inbox(
-            recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
-        )
+        # Union across keys, de-duplicated by id, first key wins. A record can
+        # legitimately exist under only one key; reading their union is what
+        # makes "nothing came back" mean "no rows under ANY key I know" rather
+        # than "I looked under one key" — the distinction sac asked for.
+        notifications: list = []
+        seen_ids: set = set()
+        for key in keys:
+            for record in _inbox.poll_inbox(
+                key, unseen_only=unseen_only, mark_seen=ack, store=store
+            ):
+                rid = record.get("id")
+                if rid is not None and rid in seen_ids:
+                    continue
+                if rid is not None:
+                    seen_ids.add(rid)
+                notifications.append(record)
+        from ._inbox_receipt import unconfirmed_ids
+
         payload = {
             "agent": agent,
             "recipient_id": recipient_id,
             "notifications": notifications,
             # The ids still awaiting confirmation, and the verb that confirms
             # them: the safe loop must be the OBVIOUS one to write from here.
-            "unconfirmed": [
-                n.get("id") for n in notifications if n.get("id") and not n.get("seen")
-            ],
+            #
+            # TWO THINGS THIS USED TO GET WRONG, both of which made the field
+            # incapable of ever reporting the backlog it exists to report.
+            #
+            # It keyed on `seen`. The channel drain advances `seen` when it
+            # pushes a record, so every pushed notification looked confirmed the
+            # moment it was delivered — while `confirmed_at`, the only actual
+            # evidence of delivery, stayed NULL. `is_confirmed` now owns that
+            # distinction for every caller (see `_inbox_receipt`).
+            #
+            # And it was computed over `notifications`, i.e. over THIS PAGE.
+            # The default page is unseen-only, and the drain has already marked
+            # the rows seen, so the page is empty and the field was empty with
+            # it — by construction, regardless of which column it read. Fixing
+            # only the column would have produced a correct predicate applied to
+            # nothing, and looked fixed.
+            #
+            # "What is still awaiting confirmation" is a property of the INBOX.
+            # Measured 2026-08-11: a consumer polled, was told nothing was
+            # outstanding, and had to query the rail directly to find the
+            # notification it had just acted on.
+            "unconfirmed": unconfirmed_ids(recipient_id, store=store),
             "confirm_with": "ack_notifications",
         }
         if deprecation is not None:

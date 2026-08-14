@@ -294,15 +294,42 @@ def _stamp(
     at: str | None,
     store: str | Path | None,
 ) -> list[str]:
-    """Dispatch a stamp onto whichever inbox backend is active."""
-    from ._inbox import _use_sqlite
+    """Dispatch a stamp onto whichever inbox backend is active.
+
+    THREE BACKENDS, NOT TWO, and the missing third was a live defect. This read
+    ``_sqlite_stamp if _use_sqlite() else _file_stamp`` — a two-valued question
+    asked of a three-valued world. After #780 the shared-inbox deployment (the
+    fleet's) answers "not sqlite", so every push receipt and every recipient
+    confirmation was written to a FILE while the notifications themselves lived
+    in PostgreSQL. Measured 2026-08-11: 8 rows on the rail, 0 with ``pushed_at``,
+    0 with ``confirmed_at``, and an ``inboxes.json`` LOCK file next to no
+    ``inboxes.json`` at all — the file rail being taken, finding nothing, and
+    reporting success. See :mod:`scitex_cards._inbox_receipt_postgres`.
+
+    Asking :func:`scitex_cards._inbox_backend.backend` — the same function the
+    enqueue/poll/ack path asks — is what keeps the receipt and the row it
+    describes in the same database by construction.
+    """
+    from ._inbox_backend import POSTGRES, SQLITE, backend
 
     normalized = _wanted(ids)
     if not recipient_id or not normalized:
         return []
     stamp = at or _now_iso()
-    backend = _sqlite_stamp if _use_sqlite() else _file_stamp
-    return backend(
+    active = backend()
+    if active == POSTGRES:
+        from ._inbox_receipt_postgres import stamp as _postgres_stamp
+
+        return _postgres_stamp(
+            recipient_id,
+            normalized,
+            column=column,
+            stamp=stamp,
+            advance_cursor=advance_cursor,
+            store=store if isinstance(store, str) else None,
+        )
+    writer = _sqlite_stamp if active == SQLITE else _file_stamp
+    return writer(
         recipient_id,
         normalized,
         column=column,
@@ -369,26 +396,97 @@ def record_confirmation(
 def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict]:
     """Every record for ``recipient_id`` with its receipts, oldest first.
 
-    Read-only on both backends (it will not create or migrate a store), so the
+    Read-only on every backend (it will not create or migrate a store), so the
     health doctor can measure without changing what it measures. Each entry is
     ``{id, event_type, card_id, ts, seen, pushed_at, confirmed_at}``; a record
     that predates receipts reports ``None`` for both stamps.
+
+    Dispatches three ways for the same reason :func:`_stamp` does — a doctor
+    reading a different database from the one the rail writes is a doctor that
+    reports health it never measured.
     """
-    from ._inbox import _use_sqlite
+    from ._inbox_backend import POSTGRES, SQLITE, backend
 
     if not recipient_id:
         return []
-    reader = _sqlite_receipts if _use_sqlite() else _file_receipts
+    active = backend()
+    if active == POSTGRES:
+        from ._inbox_receipt_postgres import receipts as _postgres_receipts
+
+        return _postgres_receipts(
+            recipient_id, store if isinstance(store, str) else None
+        )
+    reader = _sqlite_receipts if active == SQLITE else _file_receipts
     return reader(recipient_id, store)
+
+
+def is_confirmed(record: dict) -> bool:
+    """Has THIS record been confirmed by its recipient? The single definition.
+
+    ``confirmed_at`` is the ONLY evidence of delivery. ``seen`` is not: the
+    channel drain advances ``seen`` when it pushes a record (see
+    ``_inbox_confirm.confirm_notifications``), so by the time a consumer acts on
+    a notification it is already seen and was never confirmed. Keying anything
+    on ``seen`` therefore answers "did the drain run?" while appearing to answer
+    "did the recipient get it?".
+
+    THIS FUNCTION EXISTS BECAUSE A COMMENT COULD NOT TRAVEL. That rule was
+    already written down, correctly and in full, at
+    ``_inbox_confirm.py:218-224`` — and it protected exactly the one line it was
+    attached to. Two other surfaces needed it and did not get it: ack's response
+    vocabulary and poll's ``unconfirmed`` both keyed on ``seen``, so both told
+    consumers "nothing outstanding" while the health doctor counted a growing
+    pile of pushed-but-unconfirmed rows and blamed the consumer for not acking.
+    Measured 2026-08-11 by scitex-db and reproduced first-person on 0.35.1: 20
+    acks, 20 ``already_confirmed``, zero ``confirmed``.
+
+    So the rule now lives in a function the callers must call, rather than in
+    prose the next caller must read. A mechanical barrier beats a written
+    warning precisely when the warning is correct and still gets missed.
+    """
+    return bool(record.get(CONFIRMED_AT))
+
+
+def unconfirmed_ids(
+    recipient_id: str,
+    ids: "list[str] | str | None" = None,
+    *,
+    store: str | Path | None = None,
+) -> list[str]:
+    """Ids in ``recipient_id``'s inbox with no confirmation stamp, oldest first.
+
+    Scoped to ``ids`` when given; otherwise the WHOLE inbox. The whole-inbox
+    default is the point: "what is still awaiting confirmation" is a property of
+    the INBOX, not of whichever page a caller happened to fetch. Computing it
+    over a page means a caller who fetched an empty page is told nothing is
+    outstanding — which is exactly what poll did, because the drain had already
+    marked every row seen and the default page is unseen-only.
+
+    Read-only: it never creates or migrates a store.
+    """
+    if not recipient_id:
+        return []
+    wanted = set(_wanted(ids)) if ids is not None else None
+    out: list[str] = []
+    for record in receipts(recipient_id, store=store):
+        rid = record.get("id")
+        if not rid or is_confirmed(record):
+            continue
+        if wanted is not None and rid not in wanted:
+            continue
+        out.append(str(rid))
+    return out
 
 
 __all__ = [
     "CONFIRMED_AT",
     "PUSHED_AT",
     "RECEIPT_COLUMNS",
+    "is_confirmed",
     "receipts",
     "record_confirmation",
     "record_push",
+    "unconfirmed_ids",
 ]
 
 # EOF

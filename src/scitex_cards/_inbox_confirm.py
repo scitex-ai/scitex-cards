@@ -124,7 +124,17 @@ def recipient_keys(agent: str, store: str | Path | None = None) -> list[str]:
 
         user = resolve_user(agent, store=store)
     except Exception as exc:  # noqa: BLE001 — resolution must never break confirm
-        logger.warning("ack_notifications: resolving %r failed: %s", agent, exc)
+        # CALLER-NEUTRAL: `poll_notifications` shares this function now, so
+        # naming one verb here misattributed the failure. And the line matters
+        # more than it looks — this fallback SILENTLY CHANGES WHICH INBOX the
+        # caller talks to, which is how the poll/confirm key split stayed
+        # invisible. A degraded identity must leave a trace.
+        logger.warning(
+            "recipient_keys: resolving %r failed, falling back to the raw "
+            "name (this changes which inbox is read/written): %s",
+            agent,
+            exc,
+        )
         user = None
     resolved = getattr(user, "id", None) if user is not None else None
     if resolved and resolved not in keys:
@@ -202,19 +212,36 @@ def confirm_notifications(
         "already_confirmed", "unknown"}`` — ``confirmed`` holds the ids this
         call actually flipped unseen -> seen.
     """
-    from ._inbox_receipt import record_confirmation
+    from ._inbox_receipt import record_confirmation, unconfirmed_ids
 
     keys = recipient_keys(agent, store)
     primary = keys[-1] if keys else agent
     requested = _normalize_ids(ids)
-    confirmed: list[str] = []
     known: set[str] = set()
     dm_messages: list[str] = []
+    # WHAT LACKED A CONFIRMATION *BEFORE* THIS CALL — captured first, because it
+    # is the only way to answer "did THIS call confirm it" once the write below
+    # has happened.
+    #
+    # This used to be read off `_inbox.ack`'s return, i.e. off the ids whose
+    # CURSOR this call advanced. The cursor is the wrong instrument: the channel
+    # drain advances `seen` when it pushes a record, so by the time a consumer
+    # acts on a notification the flip has already happened and `ack` honestly
+    # reports flipping nothing. Every first ack of a pushed record therefore came
+    # back `already_confirmed` — "you have already done this" — to a consumer who
+    # had just delivered it for the first time. Measured 2026-08-11: twenty acks,
+    # twenty `already_confirmed`, zero `confirmed`, across two agents.
+    #
+    # The rule was already written down eight lines below, and it protected only
+    # the line it was attached to. It is a shared predicate now.
+    pending: set[str] = set()
     if requested and keys:
         for key in keys:
-            for nid in _inbox.ack(key, requested, store=store):
-                if nid not in confirmed:
-                    confirmed.append(nid)
+            pending.update(unconfirmed_ids(key, requested, store=store))
+        for key in keys:
+            # Still advance the cursor: an acked notification must not come back
+            # as unseen. Only its RETURN has stopped being the classifier.
+            _inbox.ack(key, requested, store=store)
             # THE ONLY ARRIVAL EVIDENCE THAT EXISTS. Stamped separately from
             # the cursor and independently of whether this call is the one that
             # flipped it: the channel drain has usually already advanced `seen`
@@ -242,9 +269,11 @@ def confirm_notifications(
         "agent": agent,
         "recipient_id": primary,
         "requested": requested,
-        "confirmed": confirmed,
+        # Both keyed on CONFIRMATION, not on the cursor, and both ordered by
+        # `requested` so a caller can zip them against what it asked for.
+        "confirmed": [nid for nid in requested if nid in known and nid in pending],
         "already_confirmed": [
-            nid for nid in requested if nid in known and nid not in confirmed
+            nid for nid in requested if nid in known and nid not in pending
         ],
         "unknown": [nid for nid in requested if nid not in known],
     }

@@ -40,6 +40,23 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # translate the name so the Python/YAML field is unchanged. ``deadlines`` and
 # ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
 # tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
+#
+# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths build this schema:
+# `executescript` (which SQLite records VERBATIM into sqlite_master.sql,
+# comments and all) and `_ddl.execute_ddl` (which strips comments before
+# executing, so sqlite_master records the comment-free text). A comment inside a
+# CREATE TABLE therefore makes the two paths produce stores that DISAGREE about
+# their own recorded schema — the fresh-vs-migrated shape divergence this
+# package keeps getting bitten by, minted from a line of prose.
+# `test__ddl.py::test_it_builds_the_same_schema_as_executescript` is the guard;
+# it caught exactly this on 2026-08-11. Explain things HERE, in Python, instead.
+#
+# WHY `task_edges.dst_task_id` HAS NO FOREIGN KEY, since that is the question the
+# schema below invites: a forward reference to a card that does not exist yet is
+# a SUPPORTED pattern (`_diagram/_mermaid.py` skips an unknown dst with a WARN
+# rather than failing). SRC is constrained, DST is not. Stated because
+# "task_edges is FK-free" has been relayed once already, and that phrasing drops
+# `src_task_id`, which is a real constraint.
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tasks (
     id             TEXT PRIMARY KEY,
@@ -89,7 +106,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_pr_url   ON tasks(pr_url);
 
 CREATE TABLE IF NOT EXISTS task_comments (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED,
     seq     INTEGER NOT NULL,
     author  TEXT,
     ts      TEXT,
@@ -99,7 +117,8 @@ CREATE TABLE IF NOT EXISTS task_comments (
 CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
 
 CREATE TABLE IF NOT EXISTS task_edges (
-    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+                DEFERRABLE INITIALLY DEFERRED,
     dst_task_id TEXT NOT NULL,
     edge_type   TEXT NOT NULL,
     PRIMARY KEY (src_task_id, dst_task_id, edge_type)
@@ -107,7 +126,8 @@ CREATE TABLE IF NOT EXISTS task_edges (
 CREATE INDEX IF NOT EXISTS idx_edges_dst ON task_edges(dst_task_id);
 
 CREATE TABLE IF NOT EXISTS task_roles (
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED,
     who     TEXT NOT NULL,
     role    TEXT NOT NULL,
     PRIMARY KEY (task_id, who, role)
@@ -128,6 +148,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS user_names (
     name    TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
+            DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS idx_user_names_uid ON user_names(user_id);
 
@@ -148,6 +169,23 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 -- in sqlite_master verbatim, so a comment inside the column list becomes part
 -- of the stored schema and test__ddl's round-trip against executescript fails.
 -- Measured: that test caught exactly this on the first push of v8.
+-- v10 adds the SYNC columns. They are here, on the fresh-create path, because
+-- retrofitting them onto a table that is already being replicated is a rewrite:
+-- every existing row would need an origin and a uuid nobody ever observed.
+--
+-- `origin_node` is this repo's `origin_host` fact under the sync vocabulary's
+-- name (the dm_* tables spell it the other way); it is NOT a third identity
+-- scheme. `row_uuid` is a 128-bit row identity, because `id` is 48 bits and a
+-- birthday collision across the fleet would be one delivered message silently
+-- replacing another. `deleted_at` is a tombstone the rail never uses — the rail
+-- has no hard delete — and exists so nobody reaches for DELETE.
+--
+-- The merge rule for this class is a LATCH, never a clock: seen is 0 -> 1,
+-- pushed_at and confirmed_at are NULL -> first stamp, so two divergent copies
+-- merge by OR and EARLIEST. See _db_migrations.NOTIFICATION_SYNC_COLUMNS.
+--
+-- They MUST match _migrate_v9_to_v10 exactly; a fresh store and a migrated
+-- store disagreeing on shape is this repo's own recorded v4 failure.
 CREATE TABLE IF NOT EXISTS notifications (
     id           TEXT PRIMARY KEY,
     recipient_id TEXT NOT NULL,
@@ -161,7 +199,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     msg_id       TEXT,
     pushed_at    TEXT,
     confirmed_at TEXT,
-    seq          BIGINT
+    seq          BIGINT,
+    origin_node  TEXT,
+    row_uuid     TEXT,
+    revision     INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT,
+    deleted_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
     ON notifications(recipient_id, seen);

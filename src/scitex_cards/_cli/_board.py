@@ -37,6 +37,7 @@ from scitex_cards._cli._board_proc import (
 )
 
 from ._compat import spec_command_kwargs, spec_group_kwargs
+from ._store_guard import refuse_unconfigured_store
 
 
 def register(main: click.Group) -> None:
@@ -59,6 +60,11 @@ def _board_run_server(
     ``host`` defaults to loopback. Binding elsewhere exposes an
     UNAUTHENTICATED board — the store carries every agent's cards — so the
     default must stay 127.0.0.1 and a wider bind must be typed out by hand.
+
+    THE UNCONFIGURED-STORE REFUSAL IS NOT HERE. It lives in the callers, before
+    their dry-run branches -- see :func:`.._store_guard.refuse_unconfigured_store`.
+    Putting it in this function would let `--dry-run` return before reaching it,
+    which makes the positive control unfalsifiable.
     """
     import os as _os
 
@@ -200,6 +206,17 @@ def board_start_cmd(
       $ scitex-cards board start --port 8051
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
+    # BEFORE THE DRY-RUN BRANCH, not after, and that ordering is the point.
+    # `--dry-run` reports what WOULD happen; printing "would start board on port
+    # 8051" for a store nobody configured is a confident answer to the question
+    # the operator is asking precisely because he is unsure. A dry run that
+    # cannot report the refusal is worse than no dry run.
+    #
+    # It also keeps the positive control honest: if this lived in
+    # `_board_run_server`, the configured-store test would take the dry-run exit
+    # and pass WITHOUT EVER REACHING THE GUARD -- a control that cannot fail,
+    # which is the defect this whole card is about.
+    refuse_unconfigured_store()
     # Guard rail: refuse to start if another board is already up so we
     # don't fight over the pidfile or the port.
     existing = _board_read_pid()

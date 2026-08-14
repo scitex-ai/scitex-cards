@@ -254,21 +254,42 @@ def test_the_schema_meta_row_also_holds_the_floor(tmp_path):
 
 
 def test_the_comparison_is_numeric_not_lexicographic(tmp_path):
-    """'10' < '9' as TEXT. A double-digit schema must not be downgraded to 9."""
-    # Arrange
-    from scitex_cards import _db
+    """'10' < '9' as TEXT. A double-digit stamp must not be lowered to 9.
 
-    conn = sqlite3.connect(tmp_path / "current.db")
-    _db.init_schema(conn)
+    THE CLIENT VERSION IS PASSED, NOT PATCHED. This used to stamp the store 10
+    and re-run ``init_schema``, asserting the stamp stayed 10 — which exercised
+    the digit boundary only while ``SCHEMA_VERSION`` happened to BE 10. When it
+    became 11 the correct behaviour was to raise the stamp to 11, so the test
+    failed for pinning a constant instead of a rule, and the property in its own
+    name had quietly stopped being tested some time before that.
+
+    :func:`stamp_schema_version` already takes the client version as an
+    argument, so the single-digit client can simply be handed to it. That
+    exercises the real production comparison with real arguments, and it keeps
+    doing so at every future schema version.
+
+    THE STORE IS BUILT BARE RATHER THAN THROUGH ``init_schema``, and that is not
+    a shortcut. ``init_schema`` installs
+    ``schema_meta_version_never_regresses``, whose entire job is to refuse a
+    lowered stamp — so on a store it built, the Arrange step could no longer
+    write '10' at all once ``SCHEMA_VERSION`` passed 10, and the test read back
+    the current version having silently never set up its own precondition. The
+    comparison under test is the one inside this function's SQL ``CASE``; the
+    trigger is a separate guard with its own tests.
+    """
+    # Arrange
+    from scitex_cards._schema_shape import stamp_schema_version
+
+    conn = sqlite3.connect(tmp_path / "bare.db")
+    conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO schema_meta(key, value) VALUES('schema_version','10')")
     conn.execute("PRAGMA user_version=10")
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version','10') "
-        "ON CONFLICT(key) DO UPDATE SET value='10'"
-    )
     conn.commit()
 
-    # Act
-    _db.init_schema(conn)
+    # Act: a SINGLE-DIGIT client stamps a DOUBLE-DIGIT store. `'10' < '9'` as
+    # text, so a lexicographic floor would "raise" this stamp down to 9.
+    stamp_schema_version(conn, 10, 9)
+    conn.commit()
 
     # Assert
     assert _meta(conn)["schema_version"] == "10"

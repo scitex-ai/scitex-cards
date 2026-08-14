@@ -39,6 +39,7 @@ from ._store_write import (  # noqa: F401  (public + test-pinned re-exports)
     _save_users_unlocked,
     _utc_now_iso,
     add_alias,
+    deterministic_user_id,
     register_user,
     set_notify,
     touch_user,
@@ -46,6 +47,7 @@ from ._store_write import (  # noqa: F401  (public + test-pinned re-exports)
 
 __all__ = [
     "add_alias",
+    "deterministic_user_id",
     "get_user",
     "list_users",
     "load_users",
