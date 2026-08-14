@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -173,14 +172,19 @@ def reaped_pid() -> int:
     return proc.pid
 
 
-@pytest.fixture
-def free_port() -> int:
-    """An ephemeral port nobody holds right now."""
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+# THERE IS DELIBERATELY NO `free_port` FIXTURE HERE.
+#
+# One existed, and it was both dead and wrong. Dead: the end-to-end tests ask
+# for ``--port 0`` and let the KERNEL choose, so nothing consumed it. Wrong:
+# it acquired a socket, bound it to find a free port, closed it and RETURNED
+# the number — which STX-TQ005 flagged, correctly, as a fixture acquiring an
+# external resource it can never tear down on a failing test.
+#
+# The remedy is not to `yield` the socket. A bind-then-release port is a
+# TOCTOU race with a name: the port is free at the moment it is measured and
+# any process may take it before the board binds. ``--port 0`` has neither
+# problem, because the kernel picks and binds in one step. So the acquisition
+# is gone rather than wrapped.
 
 
 # EOF
