@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-08-14
+
+**The notification rail finally reaches the database everyone else is on, and
+a board you already started stops being a wall.**
+
 ### Added
 
 - **`--force` on `gui serve` and `board start`** — stop a board that is already
@@ -16,10 +21,29 @@
   `--force --dry-run` prints which pid it WOULD stop and kills nothing; the
   unconfigured-store guard still runs first, ahead of both the kill and the
   bind. A stop the kernel REFUSES raises instead of binding a port that is
-  still held, naming the pid and the command to identify its owner.
+  still held, naming the pid and the command to identify its owner. (#838)
 
 ### Changed
 
+- **Notifications are stored where the cards are.** The inbox rail resolved its
+  own target — `runtime_dir(store)/todo.db`, a SQLite file *per container* —
+  while every card write went to PostgreSQL. Two agents on two hosts therefore
+  enqueued into two different files that nothing ever reconciled: measured on
+  2026-08-14 the laptop's copy was 5.1 MB, compute-04's 147 KB, and the
+  PostgreSQL `notifications` table held 0 rows, with 41 of the operator's
+  notifications unread in a single container. A notification enqueued by one
+  agent could not reach anyone else, by construction. `inbox_target(store)` is
+  now `resolve_store_target(store)` and every rail call site follows the
+  configured store; `inbox_db_path` survives only for the migration tooling,
+  which by definition must still read the old file. No schema change was
+  needed — `notifications` already carried `recipient_id` and a `seq` ordering
+  column. Verified end to end against the live store: enqueue → 1 row in
+  PostgreSQL → the same id read back through `poll_inbox`, the first row that
+  table has ever held. **If you are upgrading from ≤0.38.0, notifications still
+  sitting in a per-container `todo.db` are not migrated by installing this
+  release** — the `no_stranded_backlog` health check added in 0.38.0 is what
+  tells you whether you have any, and `_inbox_migrate` is what moves them.
+  (#779)
 - **The SIGTERM → poll → SIGKILL sequence moved out of `board stop`'s command
   body** into `stop_board_process` in `_cli/_board_proc.py`, so the three doors
   onto the board lifecycle escalate identically instead of hand-rolling a copy
@@ -28,7 +52,7 @@
   exit is never re-checked, and calling that "stopped" would report an
   observation the code does not make. `board stop`'s messages, exit codes,
   dry-run text and pidfile handling are unchanged, and are now pinned by exact
-  string assertions rather than substrings.
+  string assertions rather than substrings. (#838)
 
 ## [0.38.0] - 2026-08-14
 
