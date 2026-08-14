@@ -114,10 +114,12 @@ def test_there_is_no_canonical_default_identity_to_name(clean_store_env):
     while the other stayed green -- and "the query side went down because the
     store went away" is exactly the 2026-07-31 failure.
     """
-    # Act / Assert — the identity refuses...
+    # Arrange
+    # Act
     with pytest.raises(StoreTargetNotConfigured):
         resolve_db_path(None)
     # ...and the local-state container still answers, under the local root.
+    # Assert — the identity refuses.
     assert resolve_tasks_path(None) == _user_root() / "tasks.yaml"
     assert DEFAULT_DB_FILENAME == "cards.db"  # the name it USED to invent
 
@@ -153,14 +155,19 @@ def test_bundled_example_is_deleted_not_merely_raising():
     stub itself was deleted. Re-adding it — even as "just a raise" — is the
     residue this test guards against.
     """
-    # Act / Assert
+    # Arrange
+    # Act
     import scitex_cards._paths as _paths_module
 
+    # Assert
     assert not hasattr(_paths_module, "bundled_example")
 
 
 def test_pkg_short_names_the_cards_directory():
     """PKG_SHORT is "cards" — the ONE place the store directory is named."""
+    # Arrange
+    # Act
+    # Assert
     assert PKG_SHORT == "cards"
 
 
