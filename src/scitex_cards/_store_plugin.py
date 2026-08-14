@@ -9,18 +9,34 @@ scitex-dev's primitive, drop the hand-rolled parts.
 
 WHAT THIS MODULE OWNS, AND WHY IT CANNOT LIVE UPSTREAM. scitex-dev supplies the
 machinery (HLC, oplog, replay, `merge_field`); it cannot know that a card's
-`created_at` is written once, that `last_activity` only ever moves forward, or
-that `status` is a lifecycle rather than a free scalar. Only this package knows
-that. There is NO DEFAULT merge rule, and a wrong one loses data WITHOUT
-RAISING — so every field below states its rule and its reason, and the reason
-is the deliverable.
+`created_at` is written once, that `last_activity` is stamped automatically but
+can also be SET by any caller, or that `status` is a lifecycle rather than a
+free scalar. Only this package knows that. There is NO DEFAULT merge rule, and
+a wrong one loses data WITHOUT RAISING — so every field below states its rule
+and its reason, and the reason is the deliverable.
 
-═══ WHY `provide()` DEGRADES INSTEAD OF RAISING ═══
+THE REASON IS THE PART THAT GETS CHECKED. Two rules here were wrong in the
+first draft for the same reason: a field was described by what it OUGHT to be
+rather than by what the code does to it. `last_activity` "only ever moves
+forward" was a plausible sentence about a timestamp and a false statement about
+this column (`_store_mutate.py:379` — see its entry). When a rule's reason
+names a line of code, it can be checked; when it names an intuition, it cannot.
+
+═══ WHY `provide()` RAISES INSTEAD OF DEGRADING ═══
 
 `StorePlugin` requires scitex-dev >= 0.49. On an older install `provide()`
-returns [] rather than raising, because `discover_store_plugins` CATCHES a
-raising provider and continues — so a raise would be indistinguishable from a
-leaf that declares nothing, i.e. a dead plugin that reports success.
+RAISES the ImportError. An earlier draft returned [] instead and argued that a
+raise would be indistinguishable from a leaf that declares nothing — which is
+exactly backwards, and the upstream source says so:
+`scitex_dev/store/federation/_discover.py:113-122` catches a raising provider
+and emits `_logger.warning("Skipping store plugins from provider %r: it
+raised.", ..., exc_info=True)`, and :96-99 states the intent — one broken leaf
+"must not stop every other leaf's store from resolving — but it must not pass
+unnoticed either, hence the warning with a traceback."
+
+So RAISING is the LOUD branch: a warning naming this provider, with a
+traceback. RETURNING [] is the SILENT one — indistinguishable from a leaf that
+genuinely declares nothing, and therefore the dead plugin that reports success.
 
 A CORRECTION WORTH KEEPING, because it nearly cost this work a day. I first
 concluded the federation did not exist at all, from two checks that were both
@@ -44,11 +60,29 @@ from typing import Any
 
 from scitex_dev.store import FieldKind, FieldPolicy, FieldRole, MergeRule, Schema
 
+from ._paths import PKG_SHORT
+
 #: The table this package owns. `name == schema.name` is the federation's dedup
 #: key, so it must stay stable once declared.
 STORE_NAME = "scitex_cards_tasks"
 
-#: The owning distribution, reported to the federation for provenance.
+#: The declaring pip DISTRIBUTION — `StorePlugin.provider`, which upstream
+#: documents as "The declaring pip package (``\"scitex-cards\"``). Carried so a
+#: federation listing can say who is responsible for a declaration"
+#: (`scitex_dev/store/federation/_spec.py:60-63`). It is PROVENANCE and nothing
+#: else.
+#:
+#: It is NOT `StorePlugin.pkg`, and an earlier draft passed it as one. `pkg` is
+#: the package SHORT name and it "Decides where the store resolves ... two
+#: plugins naming different ``pkg`` values resolve to different stores"
+#: (:46-52). Passing "scitex-cards" there resolved a DIFFERENT, empty store from
+#: the live board, silently — no validator can catch it, because both strings
+#: are non-empty and plausible.
+#:
+#: Cards' short name is `PKG_SHORT` (`_paths.py:32`, value "cards"), imported
+#: above rather than re-spelled here: a second spelling of the same fact is how
+#: this bug happens, and re-typing the literal would reintroduce the drift the
+#: import exists to prevent.
 PACKAGE = "scitex-cards"
 
 
@@ -75,10 +109,40 @@ TASK_FIELDS: "dict[str, FieldPolicy]" = {
     # later value would let a re-import rewrite history.
     "created_at": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.IMMUTABLE),
     "created_by": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.IMMUTABLE),
-    # MAX — monotone stamps. `last_activity` only ever moves forward; taking
-    # the later of two observations is both correct and idempotent.
-    "last_activity": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.MAX),
-    "finished_at": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.MAX),
+    # NOT MAX, and the reason is not taste. An earlier draft wrote MAX here on
+    # the claim that `last_activity` "only ever moves forward". THAT CLAIM IS
+    # FALSE: `_store_mutate.py:379` auto-stamps only `if "last_activity" not in
+    # fields` — a caller who passes the field explicitly keeps their own value,
+    # and it IS public, on `add_task`/`update_task` (`_mcp_write.py:63,180`) and
+    # on the CLI (`_cli/_write.py:190`). Any agent can write any string.
+    #
+    # MAX IS UNREPAIRABLE FOR A FIELD WITH A PUBLIC SETTER. `merge_field`
+    # compares the VALUES, not the stamps (`_merge.py:121-138`: `wins = incoming
+    # > current`), so one writer setting "9999-01-01" replicates that value to
+    # every host and then every real timestamp loses to it FOREVER — including
+    # the repair, because a corrected timestamp is a LOWER value and MAX
+    # rejects it by construction. There is no in-band fix; you would be editing
+    # rows on every host by hand.
+    #
+    # LAST_WRITER_WINS is repairable: the repair is simply the newest write, and
+    # the HLC makes it win everywhere. It buys that at the cost of letting a
+    # stale-but-later write move the stamp backwards — a wrong recency colour on
+    # the board, which is visible and self-correcting on the next real edit. A
+    # recoverable wrong pixel beats a permanent unfixable one.
+    "last_activity": _p(
+        FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS
+    ),
+    # `finished_at` HAS THE SAME SHAPE, and the conclusion is the same. It is
+    # public on the same two surfaces (`_mcp_write.py:73,190`,
+    # `_cli/_write.py:218`) and, unlike `last_activity`, the package NEVER
+    # derives it — `_validate.py:344` classes it compute-only, so a
+    # caller-supplied string is its ONLY source. That makes it strictly less
+    # monotonic than `last_activity`, not more, so MAX is at least as
+    # unrepairable here. It is also legitimately re-written lower when a card is
+    # reopened and finished again, which MAX would silently refuse.
+    "finished_at": _p(
+        FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS
+    ),
     # LAST_WRITER_WINS, FLAGGED: `status` is a LIFECYCLE with legal
     # transitions, not a free scalar. LWW can resurrect a `cancelled` card into
     # `blocked` — sac measured exactly that split on the live board. It is the
@@ -168,25 +232,32 @@ def undeclared_fields_and_why() -> "dict[str, str]":
 
 
 def provide() -> "list[Any]":
-    """Entry-point provider — returns [] until the federation exists.
+    """Entry-point provider — the declaration, or a raise. Never a silent [].
 
-    NOT YET WIRED: `scitex_dev.store.StorePlugin` is absent from installed
-    0.48.0 and from origin/main and origin/develop (measured 2026-08-14). This
-    returns an EMPTY LIST rather than raising, because a raising provider is
-    swallowed by `discover_store_plugins` and would be indistinguishable from a
-    leaf that declares nothing.
+    NOT REGISTERED. `pyproject.toml` deliberately omits the
+    `scitex_dev.store.plugins` group (the omission is documented there, with
+    what has to be decided before it goes in), so nothing calls this in
+    production and this declaration governs no live data yet. That is checked,
+    not remembered: `test_the_entry_point_is_not_wired_yet` reads the real
+    pyproject.
 
-    It is also not registered in pyproject yet, so nothing calls this in
-    production — the emptiness cannot be mistaken for a live declaration.
+    THE IMPORT IS NOT GUARDED, deliberately. `StorePlugin` needs scitex-dev >=
+    0.49; on an older install this raises ImportError and
+    `discover_store_plugins` logs `"Skipping store plugins from provider %r: it
+    raised."` WITH a traceback (`federation/_discover.py:113-122`), which is
+    upstream's stated intent at :96-99 — a broken leaf "must not stop every
+    other leaf's store from resolving — but it must not pass unnoticed either".
+    Returning [] would suppress that warning and make a dead plugin look like a
+    healthy leaf that simply declares nothing. Raising is the LOUD branch.
     """
-    try:
-        from scitex_dev.store import StorePlugin, WriterPolicy
-    except ImportError:
-        return []
+    from scitex_dev.store import StorePlugin, WriterPolicy
+
     return [
         StorePlugin(
             name=STORE_NAME,
-            pkg=PACKAGE,
+            # `pkg` RESOLVES THE STORE (`federation/_spec.py:46-52`) — see
+            # PACKAGE's note. Short name, from the single source in `_paths`.
+            pkg=PKG_SHORT,
             schema=task_schema(),
             # MULTI_WRITER, and this is a semantic choice rather than a
             # default. SINGLE_WRITER means exactly one writer may append ops
@@ -196,7 +267,11 @@ def provide() -> "list[Any]":
             # would promise an invariant the board breaks hourly, and every
             # merge rule above exists precisely because it does.
             writer_policy=WriterPolicy.MULTI_WRITER,
-            provider=f"{__name__}:provide",
+            # PROVENANCE — the declaring pip distribution, which is what a
+            # federation listing prints and what a duplicate-name collision
+            # names. Not the module path: `_spec.py:60-63` asks for the
+            # package.
+            provider=PACKAGE,
             description="scitex-cards task board — cards and their lifecycle.",
         )
     ]
