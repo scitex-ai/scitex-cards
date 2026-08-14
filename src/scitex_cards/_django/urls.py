@@ -5,6 +5,7 @@
 from django.urls import path
 
 from . import views
+from ._me_page import me_page
 from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
@@ -50,14 +51,25 @@ urlpatterns = [
     # consumes these instead of shelling out to the CLI verbs.
     path("runnable", runnable_view, name="runnable"),
     path("blocked-batch", blocked_batch_view, name="blocked_batch"),
-    # `/mine` — the requesting VIEWER's own cards, for the phone view
-    # (card cards-gui-phone-view-own-cards-20260814; operator 2026-08-14
-    # wants his cards from his phone via scitex.ai). Identity comes from
-    # `_board_identity.resolve_viewer`; an unidentified caller gets a typed
-    # 403 rather than the whole board. Registered BEFORE the catch-all
-    # `<path:endpoint>` route for the same reason as every named GET above:
-    # otherwise `api_dispatch` swallows it into "Unknown endpoint: mine".
-    path("mine", mine_view, name="mine"),
+    # "My Cards" — the phone view of the viewer's OWN cards (card
+    # cards-gui-phone-view-own-cards-20260814; operator 2026-08-14 wants his
+    # cards from his phone via scitex.ai). `/me` is the PAGE and `/me/cards`
+    # is the JSON it polls — the same page/data shape `/dm` and `/dm/threads`
+    # already use, and the reason the JSON is NOT a sibling `/mine`: one
+    # letter between a page and an API is a footgun in every log and bug
+    # report that quotes either.
+    #
+    # Identity comes from `_board_identity.resolve_viewer`; a caller the
+    # board cannot identify gets a typed 403, never the whole board.
+    #
+    # Both the slashed and unslashed page spellings are registered for the
+    # same reason `legacy/`, `board-v3/` and `chat/` carry theirs: a trailing
+    # slash is the most natural thing in the world to type, and without it
+    # the catch-all `<path:endpoint>` answers "Unknown endpoint: me/". All
+    # three sit BEFORE that catch-all for exactly that reason.
+    path("me", me_page, name="me_page"),
+    path("me/", me_page, name="me_page_slash"),
+    path("me/cards", mine_view, name="me_cards"),
     # Time View — operator-direct ask (TG, relayed by lead a2a `d0f7a0e3`,
     # 2026-06-14). Live raster timeline so the operator watches ONE screen
     # and sees the whole fleet in motion. Polled by the FE TimelineView
