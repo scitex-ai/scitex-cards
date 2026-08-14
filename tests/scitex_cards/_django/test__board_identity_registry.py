@@ -189,6 +189,111 @@ def test_an_unregistered_name_does_not_borrow_a_registered_identity(
     assert viewer.name != registered
 
 
+# --- rung 1: the hub seam, on a registry that can actually answer ---------
+
+
+class _SignedInUser:
+    """An authenticated user, reduced to the two attributes the code reads."""
+
+    is_authenticated = True
+
+    def __init__(self, email: str) -> None:
+        self.email = email
+
+
+def _signed_in_as(email: str):
+    """A request carrying an authenticated session for ``email``."""
+    request = RequestFactory().get("/me/cards")
+    request.user = _SignedInUser(email)
+    return request
+
+
+@pytest.fixture
+def linked_account(registry):  # noqa: ARG001 -- ordering, not a value
+    """A person whose VERIFIED EMAIL is registered as one of their aliases.
+
+    THIS IS THE CLAIM I MADE TO scitex-hub, so it gets a test rather than a
+    promise: they can link an account today with NO schema change, because
+    ``names`` is explicitly an alias list and an email is a legitimate alias.
+    If that stops being true, this fails and the advice on their card is
+    withdrawn by the test suite rather than by somebody noticing.
+    """
+    return register_user(
+        kind="human",
+        names=["ywatanabe", "ywata1989@gmail.com"],
+    )
+
+
+def test_a_linked_session_email_resolves_to_the_board_identity(linked_account):
+    """THE HUB SEAM WORKING -- the success path rung 1 exists for.
+
+    Every other rung-1 test in this suite runs against an EMPTY registry, so
+    they all take the unlinked branch and none of them proves this branch is
+    reachable at all. Without this test, ``source="session-user"`` is a string
+    that appears in the source and in no assertion anywhere.
+    """
+    # Arrange
+    expected = "ywatanabe"
+    # Act
+    viewer = resolve_viewer(_signed_in_as("ywata1989@gmail.com"))
+    # Assert
+    assert viewer.name == expected
+
+
+def test_a_linked_session_reports_the_session_as_its_source(linked_account):
+    """The rung is named in the payload so a deployment is diagnosable."""
+    # Arrange
+    expected = "session-user"
+    # Act
+    viewer = resolve_viewer(_signed_in_as("ywata1989@gmail.com"))
+    # Assert
+    assert viewer.source == expected
+
+
+def test_a_linked_session_still_reports_the_email_it_came_from(linked_account):
+    """Carried on success too, not only in the unlinked case."""
+    # Arrange
+    expected = "ywata1989@gmail.com"
+    # Act
+    viewer = resolve_viewer(_signed_in_as("ywata1989@gmail.com"))
+    # Assert
+    assert viewer.email == expected
+
+
+def test_an_unknown_email_is_unlinked_even_when_others_are_registered(
+    linked_account,
+):
+    """THE NON-VACUOUS VERSION of the unlinked test.
+
+    The sibling suite asserts this against an empty registry, where NOTHING
+    resolves and the test cannot distinguish "correctly refused" from "the
+    lookup is not wired up". Here a registry that demonstrably CAN resolve an
+    email refuses a different one.
+    """
+    # Arrange
+    expected = "unlinked-email"
+    # Act
+    viewer = resolve_viewer(_signed_in_as("stranger@example.com"))
+    # Assert
+    assert viewer.source == expected
+
+
+def test_an_unknown_email_yields_no_identity_beside_a_registered_one(
+    linked_account,
+):
+    """The leak check, with a real neighbour to leak INTO.
+
+    A stranger must not end up as ``ywatanabe`` because that user happens to
+    exist in the registry the lookup just consulted.
+    """
+    # Arrange
+    neighbour = "ywatanabe"
+    # Act
+    viewer = resolve_viewer(_signed_in_as("stranger@example.com"))
+    # Assert
+    assert viewer.name != neighbour
+
+
 # --- the property the collision argument rests on -------------------------
 
 
