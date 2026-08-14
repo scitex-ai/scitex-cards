@@ -101,10 +101,13 @@ class TestDeleteTaskTombstones:
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
-        # Act / Assert — no raise.
         # Act
         _store.delete_task(store, task_id="a")
-        # Assert
+        # Assert — the untouched row survived, so the guard did not refuse the
+        # write. Asserting the OUTCOME rather than "no exception": a test whose
+        # only claim is that nothing was raised also passes when the call does
+        # nothing at all.
+        assert _live_row("b") is not None
 
 
 # === reads exclude tombstones by default ====================================
@@ -128,7 +131,6 @@ class TestReadsExcludeTombstones:
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.delete_task(store, task_id="a")
-        # Act / Assert
         # Act
         # Assert
         with pytest.raises(_store.TaskNotFoundError):
@@ -140,7 +142,6 @@ class TestReadsExcludeTombstones:
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         _store.delete_task(store, task_id="a")
-        # Act / Assert
         # Act
         # Assert
         with pytest.raises(_store.TaskNotFoundError):
@@ -180,7 +181,6 @@ class TestRestoreUnTombstones:
         # genuine conflict, not an undo.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-        # Act / Assert
         # Act
         # Assert
         with pytest.raises(ValueError):
@@ -215,7 +215,6 @@ class TestDocRewriteShrinkGuard:
         _store.add_task(store, id="c", title="C", assignee="agent:test-suite")
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
-        # Act / Assert
         # Act
         # Assert
         with pytest.raises(StoreShrinkRefusedError):
@@ -255,10 +254,21 @@ class TestDocRewriteShrinkGuard:
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
-        # Act / Assert — no raise.
         # Act
         _save_doc_unlocked(dict(doc), store, tasks=stale_tasks, allow_shrink=True)
-        # Assert
+        # Assert — no raise.
+        #
+        # LEFT WITHOUT AN EXPLICIT ASSERT ON PURPOSE, and the STX-TQ001 finding
+        # on this function is left standing rather than silenced. Two outcome
+        # assertions were tried and both were WRONG about this code:
+        #   `_live_task_count() == 1`  -> 2; the store tombstones, never deletes
+        #   `"b" not in the document`  -> "b" is still there
+        # So `allow_shrink=True` suppresses the refusal without removing the
+        # row from the document, and what it actually guarantees beyond "did
+        # not raise" is not clear from this test alone. Writing a third guess
+        # would encode another false belief about the store, which is worse
+        # than an open finding. Needs someone who knows `_save_doc_unlocked`'s
+        # contract; see the audit-cleanup card.
 
     def test_a_doc_naming_the_id_via_deleted_ids_is_not_refused(self, tmp_path):
         # Arrange — the ONE legitimate single-card removal path: the write
@@ -268,21 +278,21 @@ class TestDocRewriteShrinkGuard:
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
-        # Act / Assert — no raise.
         # Act
         _save_doc_unlocked(dict(doc), store, tasks=stale_tasks, deleted_ids=["b"])
-        # Assert
+        # Assert — naming the removal in `deleted_ids` let the write through,
+        # and it genuinely removed the row rather than being quietly ignored.
+        assert _live_task_count() == 1
 
     def test_a_fresh_store_growing_from_zero_is_never_refused(self, tmp_path):
         # Arrange — a brand-new store has nothing stored yet, so there is
         # nothing to be "missing"; growth must never trip the guard.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-        # Act / Assert — no raise, for any of the first several writes.
         # Act
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
         _store.add_task(store, id="c", title="C", assignee="agent:test-suite")
-        # Assert
+        # Assert — no raise, for any of the first several writes.
         assert {t["id"] for t in _store.list_tasks(store, scope="")} == {
             "a",
             "b",
@@ -293,10 +303,12 @@ class TestDocRewriteShrinkGuard:
         # Arrange
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-        # Act / Assert — no raise.
         # Act
         _store.update_task(store, task_id="a", note="touched")
-        # Assert
+        # Assert — an ordinary write neither removed the card nor was refused,
+        # which is the whole claim: the shrink guard fires on collapse, not on
+        # every write that happens to touch one row.
+        assert _live_task_count() == 1
 
 
 # === count never decreases across a public-API sequence ====================
