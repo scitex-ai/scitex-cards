@@ -124,9 +124,14 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
             # is a server I cannot reach" call for opposite actions.
             return POSTGRES, f"unresolved ({type(exc).__name__}: {exc})"
     if active == INBOX_SQLITE:
-        from ._inbox_sqlite import inbox_db_path
+        # `inbox_target`, not `inbox_db_path`: the doctor must name WHERE THE
+        # RAIL ACTUALLY IS. Naming `runtime/todo.db` after the rail moved would
+        # send a reader to inspect an empty file and conclude the notifications
+        # were lost — which is the same "report about a database nobody is
+        # using" this function exists to prevent.
+        from ._inbox_sqlite_schema import inbox_target
 
-        return SQLITE, str(inbox_db_path(store))
+        return SQLITE, str(inbox_target(store))
     from ._paths import runtime_dir
 
     return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")

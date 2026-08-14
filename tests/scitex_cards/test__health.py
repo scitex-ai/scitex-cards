@@ -397,8 +397,13 @@ def undrained_backlog_check(tmp_path_factory):
     Module-scoped because building it enqueues UNSEEN_BACKLOG_THRESHOLD+1
     notifications through the real store — expensive to repeat per assertion.
     """
-    store = tmp_path_factory.mktemp("undrained") / "tasks.yaml"
-    store.write_text("tasks: []\n", encoding="utf-8")
+    # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
+    # itself rather than a `runtime/todo.db` beside it, so handing it a YAML
+    # path makes sqlite refuse with "file is not a database" — correctly. The
+    # operator's ruling the same day was that no cards store is ever a file
+    # like this; a fixture that builds one is testing a store that must not
+    # exist.
+    store = tmp_path_factory.mktemp("undrained") / "cards.db"
     _enqueue_backlog(store, "agent-x", UNSEEN_BACKLOG_THRESHOLD + 1)
     return _check(health(store=store, agent_id="agent-x"), "channel_drain")
 

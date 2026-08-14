@@ -34,6 +34,7 @@ __all__ = [
     "ENV_INBOX_DB",
     "SCHEMA_VERSION",
     "inbox_db_path",
+    "inbox_target",
     "init_schema",
     "open_connection",
 ]
@@ -54,6 +55,43 @@ SCHEMA_VERSION = 1
 #: into this DB (the lazy auto-migration guard). Its presence is the cheap,
 #: indexed PK read that lets the steady-state hot poll path skip YAML entirely.
 _MIGRATED_FLAG = "migrated_from_yaml"
+
+
+def inbox_target(store: str | Path | None = None):
+    """WHERE THE RAIL ACTUALLY LIVES: the canonical store, not a per-host file.
+
+    This is c2c — the step c2a and c2b built the seam for and deliberately did
+    not take. c2a made every statement read its table/column from
+    ``shape_for(conn)``; c2b routed the opener through ``_db.connect`` so a DSN
+    could be handed to it at all. Both moved ZERO rows on purpose. This moves
+    the target.
+
+    WHAT IT FIXES, measured 2026-08-09: the notification rail wrote
+    ``runtime_dir(store)/todo.db`` — A FILE PER CONTAINER. The operator's laptop
+    copy was 5.1 MB, compute-04's was 147 KB, they were different files, and the
+    PostgreSQL ``notifications`` table had 0 rows. So a notification enqueued by
+    one agent could never reach anyone else, and the operator's own messages
+    never reached an agent's terminal. His words: 「ポスグレを使っているはずなのに
+    なぜまだ sqlite を使っているのか、意味不明です」.
+
+    Nothing is lost by switching: the rail's schema is already in the core store
+    (``notifications``, with ``recipient_id`` and a ``seq`` ordering column), and
+    ``POSTGRES_SHAPE`` already names them. :func:`inbox_db_path` stays for the
+    migration tooling that must still find the old file.
+
+    AN EXPLICIT ``SCITEX_TODO_INBOX_DB`` STILL WINS OUTRIGHT, exactly as it did
+    for :func:`inbox_db_path`. That override is the documented way to pin the
+    rail somewhere specific, and silently ignoring it because the default moved
+    would be its own silent fallback — the operator sets a value, the code uses
+    a different one, and nothing says so. It is also what lets a caller keep the
+    rail on a file deliberately, which the delivery doctor's own tests rely on.
+    """
+    override = os.environ.get(ENV_INBOX_DB)
+    if override:
+        return Path(override).expanduser()
+    from ._store_target import resolve_store_target  # noqa: PLC0415 -- cycle
+
+    return resolve_store_target(store)
 
 
 def inbox_db_path(store: str | Path | None = None) -> Path:
@@ -202,6 +240,22 @@ def _ensure_ready(conn: sqlite3.Connection, store: str | Path | None) -> None:
     ``todo.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
     flag is set even when there's nothing to copy, so a fresh store converges.
     """
+    # POSTGRES NEEDS NEITHER HALF OF THIS, AND BOTH WOULD FAIL.
+    #
+    # `init_schema` creates the SQLite-shaped `inbox` + `meta` tables; on the
+    # canonical store the rail's table is `notifications`, already part of the
+    # core schema. And the migration below is a one-time copy out of the legacy
+    # per-host YAML inbox, which never existed on the shared store — its
+    # `INSERT OR IGNORE` is SQLite-only syntax anyway.
+    #
+    # Returning early is what lets the rail OPEN the canonical store at all:
+    # every caller runs this first, so without the guard the move to Postgres
+    # dies on the first DDL statement rather than on anything to do with
+    # notifications.
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if _is_postgres(conn):
+        return
     init_schema(conn)
     if _is_migrated(conn):
         return
