@@ -71,7 +71,7 @@ from .active_thresholds import (
     _resolve_hours,
     _stale_active_hours,
 )
-from .._throughput import _now_utc
+from scitex_cards._throughput import _now_utc
 
 #: An extra row filter applied on top of the status filter — see
 #: ``_detect_owned_untouched``'s ``where`` parameter.
@@ -363,7 +363,7 @@ def detect_pending_backlog(
 
     Pure: no env reads beyond the threshold resolution, no network.
     """
-    from .._backlog_triage import is_parked
+    from scitex_cards._backlog_triage import is_parked
 
     return _detect_owned_untouched(
         tasks,

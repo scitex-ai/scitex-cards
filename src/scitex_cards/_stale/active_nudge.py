@@ -85,7 +85,7 @@ import logging
 import os
 from pathlib import Path
 
-from .._reminder_enqueue import _iso, _safe_enqueue, _safe_resolve
+from scitex_cards._reminder_enqueue import _iso, _safe_enqueue, _safe_resolve
 from .active import (
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -94,7 +94,7 @@ from .active import (
     pending_backlog_nudge_line,
     stale_active_nudge_line,
 )
-from .._throughput import _now_utc, _parse_iso
+from scitex_cards._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ def _floor_elapsed(delivered_at: str | None, now: _dt.datetime) -> bool:
 
 def _sidecar_path(store: str | Path | None) -> Path:
     """``nudges.yaml`` under the store's ``runtime/`` dir (scitex convention)."""
-    from .._paths import runtime_dir
+    from scitex_cards._paths import runtime_dir
 
     return runtime_dir(store) / NUDGE_SIDECAR_NAME
 
@@ -192,7 +192,7 @@ def load_nudge_state(store: str | Path | None = None) -> dict[str, dict]:
     """
     import yaml
 
-    from .._yaml import safe_load
+    from scitex_cards._yaml import safe_load
 
     path = _sidecar_path(store)
     empty: dict[str, dict] = {
@@ -252,7 +252,7 @@ def _push_echo(owner: str, body: str, *, kind: str, lines: list[str]) -> None:
     failed enqueue (no silent fallback between rails). Fully guarded — a dead
     receiver must not disturb the sweep.
     """
-    from .._push import NOTIFY_TIMEOUT_S, deliver
+    from scitex_cards._push import NOTIFY_TIMEOUT_S, deliver
 
     try:
         result = deliver(owner, body, kind=kind, timeout=NOTIFY_TIMEOUT_S)
@@ -425,9 +425,9 @@ def sweep_and_nudge(
     state = load_nudge_state(store)
 
     if enqueue is None:
-        from .._inbox import enqueue as enqueue  # type: ignore[no-redef]
+        from scitex_cards._inbox import enqueue as enqueue  # type: ignore[no-redef]
     if resolve_key is None:
-        from .._notify._resolver import _resolve_name_to_id
+        from scitex_cards._notify._resolver import _resolve_name_to_id
 
         def resolve_key(name: str) -> str:  # type: ignore[misc]
             return _resolve_name_to_id(name, store=store)
@@ -500,7 +500,7 @@ def _emit_hook(by_owner: dict, lines: list[str]) -> None:
     is logged and ignored. Appends a one-line marker to ``lines``.
     """
     try:
-        from .._hooks import dispatch_event
+        from scitex_cards._hooks import dispatch_event
 
         owners = {k: len(v) for k, v in by_owner.items()}
         dispatch_event(

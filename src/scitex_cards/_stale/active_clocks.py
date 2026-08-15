@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from .._throughput import _parse_iso
+from scitex_cards._throughput import _parse_iso
 
 __all__ = [
     "FIELD_BLOCKED_AT",
