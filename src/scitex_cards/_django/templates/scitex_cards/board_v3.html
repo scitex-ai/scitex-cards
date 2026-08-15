@@ -1286,10 +1286,18 @@
     }
 
     // Delegates to 16-card-helpers.js (split PR-2), which holds the real
-    // implementation and its tests. Kept as a declaration so window.escapeHtml
-    // stays a function for the ~47 call sites below and the four extracted
-    // modules that read it off `window`; the lookup is at CALL time because
-    // this inline script parses before the deferred module loads.
+    // implementation and its tests.
+    //
+    // THIS MUST STAY A `function` DECLARATION. Do not "simplify" it to
+    // `const escapeHtml = ...`. const/let create bindings in the global
+    // LEXICAL environment, NOT properties of the global object; only a
+    // function declaration (or var) puts the name on `window`. Four extracted
+    // modules read it off `window` — timeline.js, 14-matrix.js,
+    // 10-agent-avatar.js, timelineSelect.js — so an assignment form strips
+    // their escaping unconditionally. Secondarily, the declaration resolves
+    // STX at CALL time, which this inline script needs because it parses
+    // before the deferred module loads.
+    // Pinned by test_the_template_alias_is_a_function_declaration_not_an_assignment.
     // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
     function escapeHtml(s) {
       return STX.cardHelpers.escapeHtml(s);
