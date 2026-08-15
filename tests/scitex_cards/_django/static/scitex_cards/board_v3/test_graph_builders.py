@@ -76,8 +76,10 @@ def _call(expr: str) -> object:
     return json.loads(_run(f"console.log(JSON.stringify({expr}));"))
 
 
-def _src(visible: list, graph: object = None) -> object:
-    return _call(f"G._graphSrc({json.dumps(visible)}, {json.dumps(graph)})")
+def _src(visible: list, graph: object = None, cap: object = None) -> object:
+    return _call(
+        f"G._graphSrc({json.dumps(visible)}, {json.dumps(graph)}, {json.dumps(cap)})"
+    )
 
 
 def _card(cid: str, **kw) -> dict:
@@ -163,7 +165,15 @@ def test_disconnected_cards_are_counted_but_not_drawn():
     # Act
     built = _src(visible, {"edges": [_edge("a", "b")]})
     # Assert
-    assert built["stats"] == {"connected": 2, "dep": 1, "parent": 0, "hidden": 1}
+    assert built["stats"] == {
+        "connected": 2,
+        "nodes": 2,
+        "dep": 1,
+        "parent": 0,
+        "hidden": 1,
+        "total": 2,
+        "omitted": 0,
+    }
 
 
 @pytest.mark.parametrize("axis", ["dep", "parent"])
@@ -325,6 +335,458 @@ def test_an_absent_graph_payload_is_survivable():
     assert "  b -.-> a" in built["src"]
 
 
+# === _graphSrc — the node cap that keeps the diagram drawable ==============
+#
+# Card board-graph-layout-exceeds-mermaid-maxtextsize-20260815. On the live
+# board this builder emitted 155,977 characters for 407 connected cards
+# against mermaid's 50,000 ceiling, and the panel showed an error image with
+# zero console errors for weeks.
+
+
+def _chain(n: int) -> tuple[list, dict]:
+    """A connected chain of `n` cards — the shape the real board reached."""
+    cards = [_card(f"c{i:04d}") for i in range(n)]
+    edges = [_edge(f"c{i:04d}", f"c{i + 1:04d}") for i in range(n - 1)]
+    return cards, {"edges": edges}
+
+
+def test_a_board_within_the_cap_still_draws_every_connected_card():
+    # The cap must be invisible on a normal board — this is the regression
+    # guard for the 99% case, and it is why the cap is not simply "small".
+    # Arrange
+    cards, graph = _chain(30)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    assert built["stats"]["connected"] == 30
+
+def test_a_board_within_the_cap_omits_nothing():
+    # Arrange
+    cards, graph = _chain(30)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    assert built["stats"]["omitted"] == 0
+
+
+def test_a_board_over_the_cap_draws_no_more_than_the_cap():
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    assert built["stats"]["connected"] <= 120
+
+
+def test_the_cap_reports_the_full_connected_total_it_selected_from():
+    # The denominator has to survive the cap or the hint line cannot say
+    # "120 of 399" and the truncation becomes silent — which is the whole
+    # defect this card is about.
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    assert built["stats"]["total"] == 400
+
+
+def test_the_cap_reports_how_many_it_left_out():
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    stats = built["stats"]
+    assert stats["omitted"] == stats["total"] - stats["connected"]
+
+
+def test_every_drawn_node_still_has_at_least_one_drawn_edge():
+    # A cap that kept nodes whose neighbours were dropped would produce a
+    # field of isolated dots — which is what a naive top-N-by-degree
+    # selection does to a hub-and-spoke board.
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph)
+    lines = built["src"].split("\n")
+    drawn = {ln.split("[", 1)[0].strip() for ln in lines if "[" in ln}
+    linked = set()
+    for ln in lines:
+        if "-->" in ln:
+            left, right = ln.split("-->")
+            linked.update({left.strip(), right.strip()})
+    # Assert
+    assert drawn == linked
+
+
+def test_a_hub_keeps_its_children_rather_than_being_drawn_alone():
+    # The hub-and-spoke case specifically: 300 children of one parent. Ranking
+    # nodes by degree alone would select the hub (degree 300) plus 119 other
+    # hubs and drop every child, drawing nothing at all.
+    # Arrange
+    cards = [_card("hub")] + [_card(f"kid{i:03d}", parent="hub") for i in range(300)]
+    # Act
+    built = _src(cards, {"edges": []})
+    # Assert
+    assert built["stats"]["connected"] == 120
+
+
+@pytest.mark.parametrize("hub", ["hub-a", "hub-b", "hub-c"])
+def test_one_big_hub_does_not_eat_the_whole_budget(hub):
+    # MEASURED ON THE LIVE BOARD: the first version of this cap gave every
+    # slot to a single 300-child epic, so the panel drew one star and none of
+    # the board's shape. Each seed now takes a share before the next gets a
+    # turn — three equal hubs must all appear.
+    # Arrange
+    cards = []
+    for name in ("hub-a", "hub-b", "hub-c"):
+        cards.append(_card(name))
+        cards += [_card(f"{name}-kid{n:03d}", parent=name) for n in range(100)]
+    # Act
+    built = _src(cards, {"edges": []})
+    # Assert
+    assert f"  {hub}[" in built["src"]
+
+
+def test_the_cap_can_be_lifted_for_a_caller_that_wants_everything():
+    # The equivalence proof and any "draw it all" caller need an escape
+    # hatch; 0 means uncapped.
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph, cap=0)
+    # Assert
+    assert built["stats"]["connected"] == 400
+
+
+def test_the_selection_is_deterministic_for_the_same_board():
+    # Ties break on id, so the operator does not get a different subset every
+    # repaint of the same data.
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    first = _src(cards, graph)
+    second = _src(cards, graph)
+    # Assert
+    assert first["src"] == second["src"]
+
+
+def test_the_counts_describe_the_edges_actually_drawn():
+    # An edge whose far end was capped away is not on the diagram, so
+    # counting it would make the hint line describe a graph nobody can see.
+    # Arrange
+    cards, graph = _chain(400)
+    # Act
+    built = _src(cards, graph)
+    # Assert
+    assert built["stats"]["dep"] == built["src"].count(" --> ")
+
+
+# A board of the live one's shape: 4,488 cards of which ~800 are connected,
+# with labels the length real cards actually have. Built INSIDE node rather
+# than passed in as JSON — 4,488 cards do not fit in an argv (measured: the
+# first version of this test died with "Argument list too long").
+_BIG_BOARD_JS = """
+const N = 800, LONELY = 3688;
+const id = (i) => "card-" + String(i).padStart(4, "0");
+const cards = [], edges = [];
+for (let i = 0; i < N; i++) {
+  cards.push({id: id(i), project: "scitex-cards", status: "in_progress",
+              task: "a card title of the length real card titles have " + i});
+}
+for (let i = 0; i + 1 < N; i++) {
+  edges.push({source: id(i), target: id(i + 1), kind: "depends_on"});
+}
+for (let i = 0; i < LONELY; i++) {
+  cards.push({id: "lonely-" + i, project: "scitex-cards", status: "deferred",
+              task: "a card connected to nothing at all " + i});
+}
+const graph = {edges: edges};
+"""
+
+
+def _big_board(cap: object) -> dict:
+    return json.loads(
+        _run(
+            _BIG_BOARD_JS
+            + f"const built = G._graphSrc(cards, graph, {json.dumps(cap)});"
+            "console.log(JSON.stringify({len: built.src.length,"
+            " limit: G.MERMAID_MAX_TEXT, stats: built.stats}));"
+        )
+    )
+
+
+def test_a_real_sized_board_now_fits_under_mermaids_ceiling():
+    # THE BUG, MEASURED. The live board produced 155,977 characters against a
+    # 50,000 ceiling and mermaid answered with an error image.
+    # Arrange
+    # Act
+    out = _big_board(None)
+    # Assert
+    assert out["len"] < out["limit"]
+
+
+def test_the_same_board_uncapped_is_what_used_to_break_it():
+    # The other half of the proof: the cap is what fixed it, not a friendlier
+    # fixture. Uncapped, this same board still blows past the ceiling — so
+    # this test fails the moment the cap stops being applied.
+    # Arrange
+    # Act
+    out = _big_board(0)
+    # Assert
+    assert out["len"] > out["limit"]
+
+
+def test_the_real_sized_board_still_reports_its_full_connected_total():
+    # Arrange
+    # Act
+    out = _big_board(None)
+    # Assert
+    assert out["stats"]["total"] == 800
+
+
+# === _exceedsMermaidLimit — measure before asking ==========================
+
+
+def _exceeds(src: str, limit: object = None) -> bool:
+    return _call(f"G._exceedsMermaidLimit({json.dumps(src)}, {json.dumps(limit)})")
+
+
+def test_a_source_over_the_ceiling_is_refused():
+    # Arrange
+    # Act
+    # Assert
+    assert _exceeds("x" * 60000) is True
+
+
+def test_a_source_under_the_ceiling_is_allowed():
+    # Arrange
+    # Act
+    # Assert
+    assert _exceeds("flowchart LR") is False
+
+
+def test_a_source_exactly_at_the_ceiling_is_allowed():
+    # The limit is what mermaid accepts, so the boundary belongs on the
+    # allowed side — an off-by-one here would refuse a diagram that renders.
+    # Arrange
+    limit = _call("G.MERMAID_MAX_TEXT")
+    # Act
+    # Assert
+    assert _exceeds("x" * limit) is False
+
+
+def test_the_ceiling_can_be_overridden_by_the_caller():
+    # Arrange
+    # Act
+    # Assert
+    assert _exceeds("x" * 20, 10) is True
+
+
+# === _graphRenderFailed — a returned SVG is not a drawn diagram ============
+#
+# THE DEFECT, and the fixtures below are shaped from mermaid 10's REAL output
+# measured in a browser on 2026-08-15 (probe recorded in the PR), not from
+# what its docs suggest:
+#
+#   over the ceiling -> a VALID flowchart-v2 SVG with exactly ONE node whose
+#     LABEL is "Maximum text size in diagram exceeded". No throw, no error
+#     markup. This is what the live board displayed for weeks.
+#   parse error      -> mermaid.render() rejects; the caller's catch has it.
+#
+# RULE FOR THESE FIXTURES (keep it): when a render shape is found in
+# production that these do not cover, the fix ADDS THAT SHAPE HERE. They are
+# a growing record of every output that has mattered, not a sample.
+
+# Present in EVERY mermaid diagram, good or bad. It is why a string match on
+# "error-icon" detects nothing — see the regression test below.
+_MERMAID_STYLE = (
+    "<style>#stx{font-family:trebuchet ms;}#stx .error-icon{fill:#a44141;}"
+    "#stx .error-text{fill:#ddd;stroke:#ddd;}"
+    "#stx .node rect{fill:#1f2020;}</style>"
+)
+
+
+def _diagram(node_count: int, label: str = "scitex-cards") -> str:
+    """A mermaid flowchart-v2 SVG carrying `node_count` drawn nodes."""
+    nodes = "".join(
+        f'<g class="node default flowchart-label" id="flowchart-c{i}-{i}">'
+        f'<rect class="basic label-container"></rect><g class="label">'
+        f'<span class="nodeLabel">{label} {i}</span></g></g>'
+        for i in range(node_count)
+    )
+    return (
+        '<svg id="stx" aria-roledescription="flowchart-v2" role="graphics-document">'
+        f'{_MERMAID_STYLE}<g class="nodes">{nodes}</g></svg>'
+    )
+
+
+# What mermaid hands back for an oversized source: one node, its own message.
+_OVERFLOW_SVG = _diagram(1, "Maximum text size in diagram exceeded")
+
+
+def _render_failed(svg: object, expected: int) -> bool:
+    return _call(f"G._graphRenderFailed({json.dumps(svg)}, {json.dumps(expected)})")
+
+
+def test_the_overflow_graphic_is_recognised_as_a_failed_render():
+    # THE LIVE BUG. 120 nodes asked for, one node returned — a "successful"
+    # render of mermaid's own complaint.
+    # Arrange
+    # Act
+    # Assert
+    assert _render_failed(_OVERFLOW_SVG, 120) is True
+
+
+def test_the_boilerplate_error_classes_do_not_condemn_a_good_render():
+    # REGRESSION ON MY OWN FIRST FIX. Matching "error-icon"/"error-text" was
+    # the obvious check and it is worthless: every mermaid diagram carries
+    # those class rules in its <style> block. A predicate built on them would
+    # have blanked every healthy diagram, or (as it did) detected nothing.
+    # Arrange
+    good = _diagram(120)
+    # Act
+    # Assert
+    assert "error-icon" in good and _render_failed(good, 120) is False
+
+
+def test_a_render_that_drew_everything_asked_for_is_a_success():
+    # Arrange
+    # Act
+    # Assert
+    assert _render_failed(_diagram(7), 7) is False
+
+
+def test_a_render_missing_even_one_node_is_a_failure():
+    # Partial output is still not the diagram the operator was promised, and
+    # the counts line above it would be describing a graph that is not there.
+    # Arrange
+    # Act
+    # Assert
+    assert _render_failed(_diagram(119), 120) is True
+
+
+def test_an_error_diagram_is_recognised_even_though_mermaid_10_throws():
+    # mermaid 10 rejects on a parse error rather than returning this, but
+    # older and newer versions have returned an error SVG instead — cheap to
+    # keep, and the node count alone would not name the cause.
+    # Arrange
+    svg = (
+        '<svg aria-roledescription="error"><g><path class="error-icon"/>'
+        '<text class="error-text">Syntax error in text</text></g></svg>'
+    )
+    # Act
+    # Assert
+    assert _render_failed(svg, 0) is True
+
+
+@pytest.mark.parametrize("empty", ["", None])
+def test_nothing_at_all_is_a_failed_render(empty):
+    # Arrange
+    # Act
+    # Assert
+    assert _render_failed(empty, 0) is True
+
+
+def test_two_ids_that_escape_to_the_same_node_are_counted_once():
+    # WHAT THE RENDER IS MEASURED AGAINST. _esc maps every punctuation
+    # character to "_", so "a:b" and "a/b" are ONE mermaid node. Measuring a
+    # render against the CARD count would report a flawless render as a
+    # failure on any board holding such a pair, and blank the diagram.
+    # Arrange
+    visible = [_card("a:b"), _card("a/b"), _card("d")]
+    graph = {"edges": [_edge("a:b", "d"), _edge("a/b", "d")]}
+    # Act
+    built = _src(visible, graph)
+    # Assert
+    assert built["stats"]["nodes"] == 2
+
+
+def test_the_card_count_and_the_node_count_are_reported_separately():
+    # Arrange
+    visible = [_card("a:b"), _card("a/b"), _card("d")]
+    graph = {"edges": [_edge("a:b", "d"), _edge("a/b", "d")]}
+    # Act
+    built = _src(visible, graph)
+    # Assert
+    assert built["stats"]["connected"] == 3
+
+
+# === _graphFailureHtml / _graphOversizeHtml — the honest panels ============
+
+
+def _failure(reason: object) -> str:
+    return _call(f"G._graphFailureHtml({json.dumps(reason)})")
+
+
+def test_a_render_failure_says_mermaid_returned_the_wrong_thing():
+    # The operator must be able to tell "the drawing failed" from "the data
+    # is broken" — they lead to completely different next steps.
+    # Arrange
+    # Act
+    out = _failure("render")
+    # Assert
+    assert "something other than the diagram" in out
+
+
+def test_a_render_failure_absolves_the_card_data():
+    # Arrange
+    # Act
+    out = _failure("render")
+    # Assert
+    assert "not a data problem" in out
+
+
+def test_a_bundle_failure_keeps_naming_the_offline_case():
+    # This wording predates the fix and stays: a CDN that cannot be reached
+    # is a real, separate, actionable cause.
+    # Arrange
+    # Act
+    out = _failure("bundle")
+    # Assert
+    assert "failed to load" in out
+
+
+def test_an_unknown_reason_falls_back_to_the_load_failure_wording():
+    # A null reason means the render never reported one, which is the load
+    # path. Guessing "render" there would state a cause we did not observe.
+    # Arrange
+    # Act
+    out = _failure(None)
+    # Assert
+    assert "failed to load" in out
+
+
+def _oversize(stats: dict, length: int, limit: object = None) -> str:
+    return _call(
+        f"G._graphOversizeHtml({json.dumps(stats)}, {json.dumps(length)},"
+        f" {json.dumps(limit)})"
+    )
+
+
+@pytest.mark.parametrize("fragment", ["155,977", "50,000", "407 connected cards"])
+def test_the_oversize_panel_reports_the_measurement(fragment):
+    # Reporting the numbers is what stops the next person from having to
+    # rediscover them the way this bug had to be.
+    # Arrange
+    stats = {"connected": 0, "dep": 0, "parent": 0, "hidden": 0,
+             "total": 407, "omitted": 407}
+    # Act
+    out = _oversize(stats, 155977, 50000)
+    # Assert
+    assert fragment in out
+
+
+def test_the_oversize_panel_tells_the_operator_what_to_do():
+    # Arrange
+    stats = {"connected": 0, "dep": 0, "parent": 0, "hidden": 0,
+             "total": 407, "omitted": 407}
+    # Act
+    out = _oversize(stats, 155977, 50000)
+    # Assert
+    assert "Narrow the filters" in out
+
+
 # === _graphHintHtml — the counts line ======================================
 
 
@@ -409,6 +871,63 @@ def test_the_hint_button_calls_the_template_toggle():
     out = _hint(_STATS)
     # Assert
     assert 'onclick="toggleGraphFit()"' in out
+
+
+_CAPPED = {"connected": 120, "dep": 60, "parent": 59, "hidden": 4000,
+           "total": 407, "omitted": 287}
+
+
+def test_a_capped_diagram_says_how_many_of_the_total_it_drew():
+    # Without this the panel reports "120 connected nodes" on a board with
+    # 407 of them — the counts line would be the thing that lies.
+    # Arrange
+    # Act
+    out = _hint(_CAPPED)
+    # Assert
+    assert "<strong>120</strong> of <strong>407</strong> connected nodes" in out
+
+
+def test_a_capped_diagram_names_the_number_it_left_out():
+    # Arrange
+    # Act
+    out = _hint(_CAPPED)
+    # Assert
+    assert "287 more connected cards are omitted" in out
+
+
+def test_a_capped_diagram_says_what_to_do_about_it():
+    # Arrange
+    # Act
+    out = _hint(_CAPPED)
+    # Assert
+    assert "narrow the filters" in out
+
+
+def test_one_omitted_card_reads_as_singular():
+    # Arrange
+    stats = dict(_CAPPED, connected=406, omitted=1)
+    # Act
+    out = _hint(stats)
+    # Assert
+    assert "1 more connected card is omitted" in out
+
+
+def test_an_uncapped_diagram_says_nothing_about_omitting_anything():
+    # The cap sentence must not appear on a normal board — a permanent
+    # "0 omitted" note would train the operator to ignore the line.
+    # Arrange
+    # Act
+    out = _hint(dict(_CAPPED, connected=407, omitted=0))
+    # Assert
+    assert "omitted" not in out
+
+
+def test_the_cap_note_precedes_a_render_note():
+    # Arrange
+    # Act
+    out = _hint(_CAPPED, note="cached")
+    # Assert
+    assert out.index("omitted") < out.index("cached")
 
 
 # === _graphEmptyHtml — the explanatory empty state =========================
@@ -512,6 +1031,51 @@ def test_the_dom_half_deliberately_stayed_in_the_template(kept):
     # Act
     # Assert
     assert kept in template
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "STX.graphBuilders._graphRenderFailed(svg, expectedNodes)",
+        "STX.graphBuilders._exceedsMermaidLimit(built.src)",
+        "STX.graphBuilders._graphFailureHtml(",
+        "STX.graphBuilders._graphOversizeHtml(",
+        "_renderGraphSvg(built.src, built.stats.nodes)",
+    ],
+)
+def test_the_render_path_consults_the_new_guards(call):
+    # A predicate nothing calls is decoration. These are the whole fix:
+    # without the first, mermaid's one-node complaint is cached and shown as
+    # if it were the diagram; without the second, an oversized board is handed
+    # over to be refused; the last is the expected node count the first one
+    # measures against — omit it and the check silently compares against
+    # undefined and passes everything.
+    # Arrange
+    template = TEMPLATE.read_text(encoding="utf-8")
+    # Act
+    # Assert
+    assert call in template
+
+
+def test_the_template_pins_the_ceiling_it_guards_against():
+    # The guard and the renderer must agree on the number. Letting mermaid
+    # default it means a library change silently puts them on different
+    # ceilings and the error image comes back.
+    # Arrange
+    template = TEMPLATE.read_text(encoding="utf-8")
+    # Act
+    # Assert
+    assert "maxTextSize: STX.graphBuilders.MERMAID_MAX_TEXT," in template
+
+
+def test_the_template_no_longer_hardcodes_the_failure_message():
+    # It moved into _graphFailureHtml so the two failure causes could be told
+    # apart; a leftover copy would be the drift this split exists to remove.
+    # Arrange
+    template = TEMPLATE.read_text(encoding="utf-8")
+    # Act
+    # Assert
+    assert "the mermaid bundle failed to load (offline?)" not in template
 
 
 def test_the_module_touches_no_dom_at_import_time():
