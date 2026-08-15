@@ -13,11 +13,11 @@
   ≥0.5.0). For older scitex-ui installs the inspector degrades
   silently; the board itself works either way.
 
-  The favicon link is injected via extra_css (the shell template has
-  no favicon block; extra_css renders inside <head>).
+  No favicon link here: scitex-ui's shell supplies the shared SciTeX brand
+  mark as its default. One source, not two copies that drift. If the mark is
+  wrong, fix it in scitex-ui, which owns the asset.
 {% endcomment %}
 {% block extra_css %}
-<link rel="icon" type="image/svg+xml" href="{% static 'scitex_cards/favicon.svg' %}">
 <!-- P11b (lead-approved, operator priority 2026-06-12). Load the scitex-ui
      Combobox bundle (pre-built JS sibling of the TS class shipped in
      scitex-ui#36/#37). The CSS uses the existing scitex-ui design tokens
@@ -137,6 +137,14 @@
   (hook-bypass: line-limit — pre-existing over-cap template.)
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/15-dateinfo.js' %}"></script>
+{% comment %}
+  16-card-helpers.js — escapeHtml + cardOwner, extracted VERBATIM from the
+  inline <script> as split PR-2. Publishes window.STX.cardHelpers; node-tested
+  against the shipped file. Behaviour unchanged; the module explains why
+  escapeHtml keeps a delegating alias in the template and cardOwner does not.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/16-card-helpers.js' %}"></script>
 {% comment %}
   12-hover-tip.js — cursor-OFFSET hover tooltip for any [data-tip] element.
   Replaces the browser's native tooltip (SVG <title> / title=""), which
@@ -762,18 +770,10 @@
     const VALID_LAYOUTS = ["timeline", "wall", "graph", "matrix"];
     const DEFAULT_LAYOUT = "timeline";
 
-    // Owner SSOT (client mirror of scitex_cards._owner.card_owner) — the
-    // SINGLE rule for "who owns this card": `agent` falling back to
-    // `assignee`, else null (an owner-less card). Used for the card-render
-    // owner line + the unassigned-lane bucketing so an assignee-only card
-    // shows its real owner instead of a blank, and an owner-less card lands
-    // in a clearly-labeled lane rather than a retired fallback identity.
-    // (hook-bypass: line-limit — board_v3.html split still queued.)
-    function cardOwner(t) {
-      if (!t) return null;
-      const o = ((t.agent || t.assignee || "") + "").trim();
-      return o || null;
-    }
+    // The owner SSOT (client mirror of scitex_cards._owner.card_owner) moved
+    // to 16-card-helpers.js as split PR-2; its one call site now calls
+    // STX.cardHelpers.cardOwner directly, so no alias is kept here.
+    // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
     // The lane key an owner-less card buckets under — a clearly-labeled
     // lane, NEVER a retired identity (operator mandate 2026-06-26).
     const UNASSIGNED_LANE = "(unassigned)";
@@ -1285,9 +1285,14 @@
       if (typeof attachCombobox === "function") attachCombobox();
     }
 
+    // Delegates to 16-card-helpers.js (split PR-2), which holds the real
+    // implementation and its tests. Kept as a declaration so window.escapeHtml
+    // stays a function for the ~47 call sites below and the four extracted
+    // modules that read it off `window`; the lookup is at CALL time because
+    // this inline script parses before the deferred module loads.
+    // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
     function escapeHtml(s) {
-      return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
-        ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+      return STX.cardHelpers.escapeHtml(s);
     }
 
 
@@ -3268,7 +3273,7 @@
       // hook-bypass: line-limit (board_v3.html split still queued)
       if (STATE.graph) {
         const owners = [...new Set(
-          STATE.graph.nodes.map(n => cardOwner(n)).filter(Boolean)
+          STATE.graph.nodes.map(n => STX.cardHelpers.cardOwner(n)).filter(Boolean)
         )].sort();
         document.getElementById("at-assignee-list").innerHTML =
           owners.map(o => `<option value="${escapeHtml(o)}">`).join("");
