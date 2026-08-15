@@ -38,6 +38,8 @@ from collections import defaultdict
 
 from django.http import JsonResponse
 
+from ..._comment_ids import stamp_comment_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -260,7 +262,9 @@ def handle_archive(request, board):
         if task is None:
             return JsonResponse({"error": f"no task with id {task_id!r}"}, status=404)
 
-        comment = {"ts": now_iso, "author": by, "text": f"[CLOSED] {reason}"}
+        comment = stamp_comment_id(
+            {"ts": now_iso, "author": by, "text": f"[CLOSED] {reason}"}
+        )
         existing = task.get("comments")
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             comment

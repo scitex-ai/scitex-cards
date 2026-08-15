@@ -2,6 +2,113 @@
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-08-15
+
+### Added
+
+- **`scitex-cards dev list-undelivered` — measure the rail instead of asking
+  peers.** After a restart, `a2a_inbox` is an in-memory buffer: it returns empty
+  whether or not anything was sent, so it cannot distinguish "nothing arrived"
+  from "I lost my copy". Answering "did I miss anything?" from it previously led
+  to asking two other agents to resend messages the durable rail already knew
+  were delivered. This verb queries `channel_events` for undelivered inbound and
+  outbound rows and NAMES them — id, peer, timestamp, first line — so a lost
+  message can be resent without asking anyone what they said.
+  - A **positive control runs first**: if the rail is unreadable or empty, the
+    answer is `CANNOT_TELL`, which is NOT a pass. This matters because the
+    per-agent `state.db` shard *has* the `channel_events` table and *is* empty,
+    so a query against it succeeds and reads exactly like an all-clear. The verb
+    therefore reads the top-level rail and deliberately ignores
+    `$SCITEX_AGENT_CONTAINER_STATE_DB`, which points at that empty shard.
+  - `$SCITEX_CARDS_RAIL_DB` overrides the location; when set it is the *only*
+    candidate, because a silent fallback would be indistinguishable from the
+    override working.
+  - Exit codes: 0 clean, 1 undelivered found, 2 cannot tell.
+
+- **Every comment now carries a globally-unique id.** Comment elements
+  previously carried no `id`, which blocks declaring `comments[]` under
+  `MergeRule.APPEND` for multi-host replication: `_element_id` raises on an
+  id-less element, and the only id the schema offered was an autoincrement
+  primary key — which upstream names as *worse* than no id, since two hosts both
+  mint `id=8` and replay silently drops one. Ids are now minted at creation from
+  all nine append sites (the `_store_*` modules, the CLI loop, and the
+  `reopen`/`resolve`/`stale` handlers).
+  - **This is half of two.** Existing threads are not backfilled; 1,137 of 9,506
+    live comment elements still lack an id. `comments[]` cannot be declared
+    APPEND until that backfill lands.
+
+- **Phone view of your own cards** — `/me` and `/me/cards`.
+
+### Changed
+
+- **`/graph` no longer ships the `mermaid` key — 8.10 MB of a 21.11 MB payload,
+  38.4%.** The server was serializing the whole board a second time as a
+  flowchart string that no live surface read: `board_v3` builds its own mermaid
+  source client-side from `STATE.graph.edges` so it can respect the visible
+  filter set, and the server's copy was the unfiltered diagram nobody drew. The
+  `/legacy` view and the `render-graph` CLI call `build_mermaid` directly and are
+  unaffected. Measured before and after against the live store: 21,109,219 B ->
+  13,009,914 B.
+  - The board refetches the whole payload on nearly every 5-second poll, so this
+    is per-poll rather than per-page-load.
+
+- **The board is a resident service, and its absence is loud.** On 2026-08-14
+  the operator opened the board and got a bare `ERR_CONNECTION_REFUSED`:
+  nothing was listening on `:8051` on any host, and the board had been serving
+  nowhere for hours. Every other instrument was green — the card store was
+  resident, the GUI agent was alive with a fresh heartbeat — because the only
+  thing that had ever started the board was a human running a startup script by
+  hand. A process nobody is responsible for starting has no failure mode, only
+  an absence, and an absence is invisible until someone goes looking. That same
+  night the board had been declared the fleet's primary channel.
+  - `scitex-cards board install-service` writes a systemd **user** unit
+    (`scitex-cards-gui.service`) and prints the `systemctl --user` commands.
+    Operator-gated exactly like `notifyd install-unit`: it never runs systemctl
+    itself. The gate is on INSTALL, once per host — not on every boot. It sits
+    on `board`, this package's own noun, and NOT on `gui` — `gui` is the
+    ecosystem-standard four-verb group (`open`/`serve`/`status`/`stop`) shared
+    with figrecipe / scitex-writer / scitex-scholar so one startup script
+    drives every SciTeX GUI, and a shared convention each package extends
+    privately stops being shared. `tests/test_cli_gui.py` pins that group at
+    exactly four verbs and caught the first attempt.
+  - Check `loginctl show-user $USER -p Linger` before believing any of this on
+    a headless host: without lingering a user unit starts only at interactive
+    login, so the board would sit enabled and dead through every reboot — the
+    same silence, reached by a different road. `scitex-compute-04` has
+    `Linger=yes`.
+  - `Restart=always`, not the notify daemon's `on-failure`: the board's
+    ABSENCE is the fault however it went away, so a clean exit must still come
+    back. `ExecStart` carries `--force`, because `gui serve` refuses to start
+    against a live pidfile and one leftover would otherwise keep the unit down
+    forever — reproducing the outage with extra steps.
+  - Bound to `127.0.0.1` on EVERY host. The operator ruled out one
+    VPN-reachable board: 「一つの場所を見ると単一障害点になったり、vpn が切れる
+    と見れなくなったりしてしまいます」. What travels between hosts is the DATA,
+    over the per-host `:55432` Postgres and its existing sync.
+  - No `Environment=` line: verified under `env -i` that the store resolves
+    from `~/.scitex/cards/config.json` alone, so the unit cannot crash-loop on
+    the unconfigured-store guard — and the store keeps exactly one identity.
+  - New `gui_resident` health check, three-valued and DELIVERY-severity. It
+    reads a declaration (is a unit installed) before a liveness (is anything
+    listening): declared-and-silent is a FAILURE naming the restart command,
+    serving-without-a-unit PASSES but reports that the board will not survive a
+    reboot, and neither-declared-nor-serving is UNKNOWN — named in the summary,
+    never a silent pass, because a check that failed on every container in the
+    fleet would be switched off within a day. It probes the port the installed
+    unit declares, so a custom-port host is not told a confident story about
+    `:8051`. See `docs/ops/resident-board.md`.
+
+### Changed
+
+- **systemd unit rendering is shared, not copied.** The absolute-`ExecStart`
+  resolution — which raises rather than write a unit guaranteed to die at
+  `203/EXEC` — lived only in the notify daemon's installer. It now lives in
+  `scitex_cards._systemd_unit` as a `UnitSpec` + installer that both the daemon
+  and the board use. Every public name in `_delivery/_systemd.py` is unchanged
+  and its 35 tests pass untouched; this is a de-duplication, not a re-design.
+  A second unit copying that routine would have inherited whichever version its
+  author happened to read.
+
 ## [0.39.0] - 2026-08-14
 
 **The notification rail finally reaches the database everyone else is on, and

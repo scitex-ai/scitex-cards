@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -117,11 +118,13 @@ def reassign_all(
             task["scope"] = f"agent:{new_owner}"
             comments = task.setdefault("comments", [])
             comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": f"reassigned {old_owner} -> {new_owner} by {actor}",
-                }
+                stamp_comment_id(
+                    {
+                        "author": actor,
+                        "ts": _utc_now_iso(),
+                        "text": f"reassigned {old_owner} -> {new_owner} by {actor}",
+                    }
+                )
             )
             # Delegation keeps responsibility — mirrors reassign_task
             # EXACTLY: the previous owner + creator stay subscribed through
@@ -252,14 +255,16 @@ def reassign_task(
             target["scope"] = f"agent:{new_owner}"
             comments = target.setdefault("comments", [])
             comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": (
-                        f"reassigned {old_owner or '(unassigned)'} -> "
-                        f"{new_owner} by {actor}"
-                    ),
-                }
+                stamp_comment_id(
+                    {
+                        "author": actor,
+                        "ts": _utc_now_iso(),
+                        "text": (
+                            f"reassigned {old_owner or '(unassigned)'} -> "
+                            f"{new_owner} by {actor}"
+                        ),
+                    }
+                )
             )
             # Delegation keeps responsibility (operator 2026-07-18,
             # 「渡しました、で終わられると困る」/ constitution §2 "ownership

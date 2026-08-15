@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import click
 
+from .._systemd_gui import DEFAULT_HOST as GUI_DEFAULT_HOST
+from .._systemd_gui import DEFAULT_PORT as GUI_DEFAULT_PORT
 from ._board import (
     _board_run_server,
     board_status_cmd,
@@ -36,9 +38,12 @@ from ._compat import spec_command_kwargs, spec_group_kwargs
 from ._store_guard import refuse_unconfigured_store
 
 #: The board's long-standing default. The operator's startup script and the
-#: `board` verbs already agree on it; `gui` must not invent a second one.
-DEFAULT_PORT = 8051
-DEFAULT_HOST = "127.0.0.1"
+#: `board` verbs already agree on it; `gui` must not invent a second one — so
+#: these are IMPORTED, from the module that also bakes them into the systemd
+#: unit. A unit that promised :8051 while the CLI served something else would
+#: be a health check reporting on a port nobody uses.
+DEFAULT_PORT = GUI_DEFAULT_PORT
+DEFAULT_HOST = GUI_DEFAULT_HOST
 
 
 def register(main: click.Group) -> None:
@@ -75,7 +80,8 @@ def gui_group(ctx: click.Context) -> None:
         "  scitex-cards gui serve [--port N] [--host H]  # foreground/blocking\n"
         "  scitex-cards gui open [SURFACE]               # serve + open a browser\n"
         "  scitex-cards gui status [--json]\n"
-        "  scitex-cards gui stop",
+        "  scitex-cards gui stop\n"
+        "(to make the board resident: scitex-cards board install-service)",
         err=True,
     )
     ctx.exit(2)
@@ -228,6 +234,15 @@ def gui_open_cmd(surface: str, port: int, host: str) -> None:
         return
 
     _board_run_server(None, port, no_browser=False, host=host)
+
+
+# `install-service` is DELIBERATELY NOT HERE. It lives on the `board` noun
+# (`_board_service.py`). This group is the ecosystem-standard four —
+# open / serve / status / stop — shared with figrecipe, scitex-writer and
+# scitex-scholar so one startup script drives every SciTeX GUI the same way,
+# and `tests/test_cli_gui.py` pins it at exactly those four. A shared
+# convention that each package quietly extends is no longer shared. I added it
+# here first; that test caught it, and it was right to.
 
 
 # `status` and `stop` are the SAME commands the `board` group exposes, not

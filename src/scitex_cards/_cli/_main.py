@@ -403,6 +403,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _skills,
     _stats,
     _triage,
+    _undelivered,
     _write,
 )  # noqa: E402
 
@@ -487,6 +488,9 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# dev list-undelivered — the restart/cadence check against the DURABLE channel
+# rail, with a mandatory positive control so a filtered zero is trustworthy.
+_undelivered.register(main)
 
 
 if __name__ == "__main__":
