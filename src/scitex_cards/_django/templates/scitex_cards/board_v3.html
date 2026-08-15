@@ -146,6 +146,17 @@
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/16-card-helpers.js' %}"></script>
 {% comment %}
+  17-graph-builders.js — the Graph layout's PURE string builders
+  (_graphSrc / _graphHintHtml / _graphEmptyHtml), extracted VERBATIM from
+  the inline <script> as split PR-3. Publishes window.STX.graphBuilders;
+  node-tested against the shipped file. The DOM half (_mountGraphSvg,
+  toggleGraphFit, _ensureMermaid, _renderGraphSvg) deliberately stayed in
+  the template — a module that touches the DOM at import time cannot be
+  require()d by node, so moving it would be churn, not testability.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/17-graph-builders.js' %}"></script>
+{% comment %}
   12-hover-tip.js — cursor-OFFSET hover tooltip for any [data-tip] element.
   Replaces the browser's native tooltip (SVG <title> / title=""), which
   renders under the cursor and covers the dot or note being pointed at
@@ -2075,7 +2086,9 @@
     // (hook-bypass: line-limit.)
     //
     // Now:
-    //   1. `_graphSrc(visible)` is a PURE string build (cheap, no DOM).
+    //   1. `STX.graphBuilders._graphSrc(visible, STATE.graph)` is a PURE
+    //      string build (cheap, no DOM) — 17-graph-builders.js, split PR-3.
+    //      STATE.graph is PASSED, not read ambiently, so it is testable.
     //   2. `_prewarmGraph()` runs on requestIdleCallback after every paint:
     //      it loads mermaid once and renders the SVG OFF-DOM via the
     //      promise API `mermaid.render(id, src)` — mermaid hangs its own
@@ -2093,83 +2106,6 @@
       catch { return true; }
     })();
 
-    // Pure: task set -> mermaid source (or null when nothing is connected).
-    function _graphSrc(visible) {
-      const visibleIds = new Set(visible.map(t => t.id));
-      const _esc = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, "_");
-      const _safe = (s) => String(s || "").replace(/[\[\]\"]/g, " ").slice(0, 60);
-
-      // Pull EDGES from the canonical server payload, not per-node.
-      const rawEdges = (STATE.graph && STATE.graph.edges) || [];
-      const depEdges = [];
-      for (const e of rawEdges) {
-        // `kind` is "depends_on" or "blocks"; the server already emits
-        // source=dep, target=tid (handlers/graph.py:121) so the arrow
-        // points prereq → consumer either way.
-        if (!e || !visibleIds.has(e.source) || !visibleIds.has(e.target)) continue;
-        depEdges.push({ src: e.source, dst: e.target, kind: e.kind || "depends_on" });
-      }
-      // Hierarchical `parent` edges are a separate axis (not in `edges[]`).
-      // Dashed so hierarchy reads differently from a blocking dependency.
-      const parentEdges = [];
-      for (const t of visible) {
-        const p = t.parent;
-        if (p && visibleIds.has(p) && p !== t.id) {
-          parentEdges.push({ src: p, dst: t.id, kind: "parent" });
-        }
-      }
-      const allEdges = depEdges.concat(parentEdges);
-      const touched = new Set();
-      for (const e of allEdges) { touched.add(e.src); touched.add(e.dst); }
-      const connected = visible.filter(t => touched.has(t.id));
-      if (!connected.length) return null;
-
-      // Each node carries its RAW status class (st-<status>) so the in-board
-      // mermaid matches the python build_mermaid() artifacts — no 4-bucket
-      // color collapse.
-      const nodeLines = connected.map(t => {
-        const label = `${(t.project || "—").slice(0, 18)}<br>${_safe(t.task || t.title)}`;
-        return `  ${_esc(t.id)}["${label}"]:::st-${(t.status || "deferred").replace(/[^a-z_]/gi, "")}`;
-      });
-      const edgeLines = allEdges.map(e => (e.kind === "parent")
-        ? `  ${_esc(e.src)} -.-> ${_esc(e.dst)}`
-        : `  ${_esc(e.src)} --> ${_esc(e.dst)}`);
-      // classDefs from the SSOT status_colors (STATUS_STYLE, projected into
-      // the /graph payload) — never a second color table.
-      const sc = (STATE.graph && STATE.graph.status_colors) || {};
-      const classDefLines = Object.keys(sc).map(s => {
-        const c = sc[s];
-        let style = `fill:${c.fill},stroke:${c.stroke},stroke-width:1px,color:#222`;
-        if (c.dashed) style += ",stroke-dasharray:5 3";
-        return `  classDef st-${s} ${style};`;
-      });
-      const src = ["flowchart LR", ...classDefLines, ...nodeLines, ...edgeLines]
-        .join("\n");
-      return {
-        src,
-        stats: {
-          connected: connected.length,
-          dep: depEdges.length,
-          parent: parentEdges.length,
-          hidden: visible.length - connected.length,
-        },
-      };
-    }
-
-    function _graphHintHtml(stats, note) {
-      const s = stats;
-      return `<div class="graph-hint">
-        <span>Graph: <strong>${s.connected}</strong> connected node${s.connected === 1 ? "" : "s"} /
-        <strong>${s.dep}</strong> depends_on / blocks edge${s.dep === 1 ? "" : "s"} /
-        <strong>${s.parent}</strong> parent edge${s.parent === 1 ? "" : "s"} (dashed).
-        ${s.hidden} disconnected card${s.hidden === 1 ? "" : "s"} not drawn.${note ? " " + note : ""}</span>
-        <button type="button" class="graph-fit-btn" onclick="toggleGraphFit()"
-                title="Fit the diagram to the panel width, or show it at 1:1 and scroll">
-          ${GRAPH_FIT ? "⤢ 1:1" : "⤡ Fit"}
-        </button>
-      </div>`;
-    }
-
     // SIZE (operator: "サイズも調整して表示される"). mermaid emits the SVG with
     // hard width/height attributes (useMaxWidth:false) — dropped into the
     // panel as-is it overflows. We keep the viewBox (so the aspect ratio is
@@ -2179,7 +2115,7 @@
     // the wrapper so the toggle needs no re-render.
     function _mountGraphSvg(canvas, svg, stats, note) {
       canvas.innerHTML = `<div class="graph-wrap${GRAPH_FIT ? " graph-wrap--fit" : ""}">
-        ${_graphHintHtml(stats, note)}
+        ${STX.graphBuilders._graphHintHtml(stats, note, GRAPH_FIT)}
         <div class="graph-canvas">${svg}</div>
       </div>`;
       const el = canvas.querySelector(".graph-canvas svg");
@@ -2206,23 +2142,6 @@
       wrap.classList.toggle("graph-wrap--fit", GRAPH_FIT);
       const btn = wrap.querySelector(".graph-fit-btn");
       if (btn) btn.textContent = GRAPH_FIT ? "⤢ 1:1" : "⤡ Fit";
-    }
-
-    function _graphEmptyHtml(visibleCount) {
-      return `<div class="graph-wrap">
-        <div class="graph-empty">
-          <h3>No dependencies in the current scope</h3>
-          <p>The Graph layout draws <code>depends_on</code> / <code>blocks</code>
-          edges (from the server's <code>edges[]</code> payload) plus
-          <code>parent</code> edges (per-node) among the currently-visible cards.
-          Right now <strong>${visibleCount} card${visibleCount === 1 ? "" : "s"}</strong>
-          match the filters but none of them are connected to each other.</p>
-          <p class="graph-empty__hint">Encode dependencies in <code>tasks.yaml</code> like this:
-          <code>depends_on: [other-task-id]</code>, <code>blocks: [downstream-id]</code>,
-          or <code>parent: hub-task-id</code>. The <strong>⏱ Timeline</strong> and
-          <strong>🗒 Wall</strong> layouts show every card, connected or not.</p>
-        </div>
-      </div>`;
     }
 
     // Render `src` to an SVG string OFF-DOM. Cached by source, so a repeat
@@ -2265,8 +2184,11 @@
     }
 
     function _renderGraphView(canvas, visible) {
-      const built = _graphSrc(visible);
-      if (!built) { canvas.innerHTML = _graphEmptyHtml(visible.length); return; }
+      const built = STX.graphBuilders._graphSrc(visible, STATE.graph);
+      if (!built) {
+        canvas.innerHTML = STX.graphBuilders._graphEmptyHtml(visible.length);
+        return;
+      }
       // Cache hit → paint the ready diagram immediately (the whole point).
       if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) {
         _mountGraphSvg(canvas, GRAPH_CACHE.svg, built.stats);
@@ -2275,7 +2197,7 @@
       // Cache miss → show the numbers + a spinner line NOW (never a blank
       // canvas), and mount the SVG when the off-DOM render resolves.
       canvas.innerHTML = `<div class="graph-wrap">
-        ${_graphHintHtml(built.stats, "")}
+        ${STX.graphBuilders._graphHintHtml(built.stats, "", GRAPH_FIT)}
         <div class="graph-canvas graph-canvas--loading">drawing the diagram…</div>
       </div>`;
       _renderGraphSvg(built.src).then((svg) => {
@@ -2294,7 +2216,7 @@
           }
           return;
         }
-        const fresh = _graphSrc(_visibleTasks());
+        const fresh = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
         if (!fresh || fresh.src !== built.src) return;  // stale render
         _mountGraphSvg(c, svg, built.stats);
       });
@@ -2320,7 +2242,7 @@
       _prewarmHandle = idle(() => {
         _prewarmHandle = null;
         if (GRAPH_CACHE.failed) return;
-        const built = _graphSrc(_visibleTasks());
+        const built = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
         if (!built) return;                                   // nothing to draw
         if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) return;  // warm
         _renderGraphSvg(built.src);
