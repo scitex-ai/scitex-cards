@@ -37,7 +37,7 @@ import inspect
 import re
 
 from scitex_cards._model import is_overdue, next_deadline_for_task
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     detect_pending_backlog,
     detect_stale_active,
 )

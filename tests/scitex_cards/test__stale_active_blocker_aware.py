@@ -22,7 +22,7 @@ import datetime as _dt
 
 import pytest
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     EXTERNAL_BLOCKERS,
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -393,7 +393,7 @@ def test_line_composers_are_still_importable_from_the_original_module():
     """The split moved them to ``_stale_active_lines``; the re-export must hold
     so notifyd / the CLI / out-of-tree importers keep working unchanged."""
     # Arrange
-    from scitex_cards._stale_active import (  # noqa: F401
+    from scitex_cards._stale.active import (  # noqa: F401
         NUDGE_ID_CAP,
         pending_backlog_nudge_line,
     )

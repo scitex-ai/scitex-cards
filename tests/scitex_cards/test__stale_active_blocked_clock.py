@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     FIELD_BLOCKED_AT,
     detect_blocked_external,
     detect_stale_active,

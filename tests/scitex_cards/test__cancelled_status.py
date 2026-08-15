@@ -30,7 +30,7 @@ from scitex_cards._reconcile_prs import (
     decide_reconcile_action,
 )
 from scitex_cards._reminders import EVENT_DIGEST, sweep_reminders
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     detect_pending_backlog,
     detect_stale_active,
     is_stale_active,

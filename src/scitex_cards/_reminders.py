@@ -78,7 +78,7 @@ from ._reminder_enqueue import (
 )
 from ._reminder_liveness import _card_creator, _owner_liveness
 from ._reminder_cadence import resolve_owner_interval
-from ._stale_active import detect_pending_backlog, detect_stale_active
+from ._stale.active import detect_pending_backlog, detect_stale_active
 from ._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)

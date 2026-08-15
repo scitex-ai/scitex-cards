@@ -350,7 +350,7 @@ def _emit_stale_active_nudges(tasks: list[dict], store) -> None:
     ``store`` is the RESOLVED task-store path; the sweep keeps its
     deliver-on-change state in that store's ``runtime/`` sidecar.
     """
-    from .._stale_active_nudge import sweep_and_nudge
+    from .._stale.active_nudge import sweep_and_nudge
 
     for line in sweep_and_nudge(tasks, store=store):
         click.echo(line)
