@@ -1,6 +1,30 @@
 # ADR-0010 — `~/.scitex/cards/cards.db` becomes the single source of truth
 
-**Status:** ACCEPTED (operator-ruled, 2026-07-16)
+> **SUPERSEDED — 2026-08-15. THE STORE IS POSTGRESQL ON 55432, NOT A LOCAL
+> `cards.db`.** The body below is kept verbatim as the record of what was ruled
+> on 2026-07-16; it is **not** current architecture. Do not implement from it.
+>
+> What changed, measured rather than recalled:
+> - The live fleet store is `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards`
+>   (store_uuid `1d55dd6e-3d2a-4c24-a429-a78835ab988f`), one per host, synchronised
+>   across hosts.
+> - `_paths.py:152` records that **since 2026-08-13 the zero-config SQLite default
+>   RAISES** instead of naming a database. The tier this ADR established is gone.
+> - Operator, 2026-08-15, verbatim: 「and never use sqlite」/「we migrated to 55432
+>   postgres」/「if you find sqlite, <path/to>.db, it is violation」— and the
+>   reasoning he gave for the singularity: 「if you have both sqlite and postgres,
+>   it will introduce mistakes and misunderstanding; remember, more options does
+>   not mean better」.
+>
+> That last sentence is the same principle ADR-0016 already carries in its title
+> (*transport plurality yes, storage plurality no*); this ADR is the storage tier
+> that principle now excludes.
+>
+> An ADR marked ACCEPTED is the most authoritative doc form we have, so leaving
+> this one unmarked meant the most trusted document in the repo asserted the one
+> thing that is now a violation.
+
+**Status:** SUPERSEDED 2026-08-15 (was ACCEPTED, operator-ruled, 2026-07-16)
 **Supersedes / amends:** `docs/design/sqlite-migration.md` (the RFC on branch
 `design/sqlite-migration`) — adopted as the base design; this ADR records the
 deltas the operator's rulings introduced and the sequencing they force.

@@ -8,9 +8,10 @@ scitex-todo — canonical YAML task store with pluggable adapters
 adapters: a mermaid dependency-graph PNG, a read-only React-Flow web board,
 and a plain task listing. Part of `SciTeX <https://scitex.ai>`_.
 
-The store is resolved in precedence order: an explicit ``--tasks`` path →
-``$SCITEX_TODO_TASKS`` → project ``<git-root>/.scitex/todo/tasks.yaml`` → user
-``~/.scitex/todo/tasks.yaml`` → the bundled generic example.
+The store is **PostgreSQL on 55432** and there is ONE store identity: an explicit
+``store`` argument → ``$SCITEX_CARDS_DB``. Nothing else — unset RAISES. There is
+deliberately no SQLite tier, no project scope and no bundled-example fallback: an
+unconfigured store is a configuration error, not a cue to invent a board.
 
 Interfaces
 ----------
