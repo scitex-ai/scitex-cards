@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -60,11 +61,13 @@ def comment_task(
     if not text or not str(text).strip():
         raise ValueError("comment_task: 'text' is required")
     author = _default_agent(by)
-    entry = {
-        "author": author,
-        "ts": _utc_now_iso(),
-        "text": str(text),
-    }
+    entry = stamp_comment_id(
+        {
+            "author": author,
+            "ts": _utc_now_iso(),
+            "text": str(text),
+        }
+    )
     if kind:
         entry["kind"] = str(kind)
     with _model._store_lock(tasks_path):

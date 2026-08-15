@@ -28,6 +28,7 @@ import sys
 
 import click
 
+from .._comment_ids import stamp_comment_id
 from ._compat import spec_command_kwargs
 
 
@@ -144,11 +145,13 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
 
     tasks = load_tasks(path)
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    stamp = {
-        "ts": now,
-        "author": assignee,
-        "text": f"starting (auto-claim by {assignee})",
-    }
+    stamp = stamp_comment_id(
+        {
+            "ts": now,
+            "author": assignee,
+            "text": f"starting (auto-claim by {assignee})",
+        }
+    )
     for t in tasks:
         if t.get("id") == task_id:
             t["status"] = "in_progress"

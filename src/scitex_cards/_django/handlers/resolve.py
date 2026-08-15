@@ -25,6 +25,7 @@ import os
 
 from django.http import JsonResponse
 
+from ..._comment_ids import stamp_comment_id
 from .crud import _parse_body
 
 logger = logging.getLogger(__name__)
@@ -106,17 +107,20 @@ def handle_resolve(request, board):
         # round-trip-fail the next load.
         task.pop("blocker", None)
 
-        resolve_comment = {
-            "ts": datetime.datetime.now(datetime.timezone.utc)
-            .replace(microsecond=0)
-            .isoformat(),
-            "author": actor.strip(),
-            "text": (
-                f"[RESOLVED via board-v3] flipped status={prior_status!r}→done"
-                + (f", blocker={prior_blocker!r}→null" if prior_blocker else "")
-                + ". Owning agent will pick up via AutoRefresh / NotificationPort.publish."
-            ),
-        }
+        resolve_comment = stamp_comment_id(
+            {
+                "ts": datetime.datetime.now(datetime.timezone.utc)
+                .replace(microsecond=0)
+                .isoformat(),
+                "author": actor.strip(),
+                "text": (
+                    f"[RESOLVED via board-v3] flipped status={prior_status!r}→done"
+                    + (f", blocker={prior_blocker!r}→null" if prior_blocker else "")
+                    + ". Owning agent will pick up via AutoRefresh"
+                    + " / NotificationPort.publish."
+                ),
+            }
+        )
         existing = task.get("comments")
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             resolve_comment
