@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import click
 
+from .._systemd_gui import DEFAULT_HOST as GUI_DEFAULT_HOST
+from .._systemd_gui import DEFAULT_PORT as GUI_DEFAULT_PORT
 from ._board import (
     _board_run_server,
     board_status_cmd,
@@ -36,9 +38,12 @@ from ._compat import spec_command_kwargs, spec_group_kwargs
 from ._store_guard import refuse_unconfigured_store
 
 #: The board's long-standing default. The operator's startup script and the
-#: `board` verbs already agree on it; `gui` must not invent a second one.
-DEFAULT_PORT = 8051
-DEFAULT_HOST = "127.0.0.1"
+#: `board` verbs already agree on it; `gui` must not invent a second one — so
+#: these are IMPORTED, from the module that also bakes them into the systemd
+#: unit. A unit that promised :8051 while the CLI served something else would
+#: be a health check reporting on a port nobody uses.
+DEFAULT_PORT = GUI_DEFAULT_PORT
+DEFAULT_HOST = GUI_DEFAULT_HOST
 
 
 def register(main: click.Group) -> None:
@@ -58,7 +63,10 @@ def register(main: click.Group) -> None:
             "lifecycle — `board` remains the canonical noun and is not "
             "deprecated."
         ),
-        command_categories=(("Core", ("open", "serve", "status", "stop")),),
+        command_categories=(
+            ("Core", ("open", "serve", "status", "stop")),
+            ("Host setup", ("install-service",)),
+        ),
     ),
 )
 @click.pass_context
@@ -75,7 +83,8 @@ def gui_group(ctx: click.Context) -> None:
         "  scitex-cards gui serve [--port N] [--host H]  # foreground/blocking\n"
         "  scitex-cards gui open [SURFACE]               # serve + open a browser\n"
         "  scitex-cards gui status [--json]\n"
-        "  scitex-cards gui stop",
+        "  scitex-cards gui stop\n"
+        "  scitex-cards gui install-service              # make it resident",
         err=True,
     )
     ctx.exit(2)
@@ -228,6 +237,63 @@ def gui_open_cmd(surface: str, port: int, host: str) -> None:
         return
 
     _board_run_server(None, port, no_browser=False, host=host)
+
+
+@gui_group.command(
+    "install-service",
+    **spec_command_kwargs(
+        summary="Make the board RESIDENT on this host (systemd user unit).",
+        description=(
+            "Writes a systemd USER unit that serves the board on loopback and "
+            "restarts it whenever it goes away, then prints the exact "
+            "`systemctl --user` commands to enable it. OPERATOR-GATED: this "
+            "NEVER runs systemctl itself.\n\n"
+            "Run it on EVERY host. The board is served per-host on 127.0.0.1 "
+            "and the card data travels between hosts via the per-host "
+            "Postgres sync — one shared board reachable over the VPN would be "
+            "a single point of failure and would vanish with the network."
+        ),
+        examples=(
+            ("{prog} gui install-service", "Write the unit for 127.0.0.1:8051."),
+            ("{prog} gui install-service --force", "Overwrite an existing unit."),
+        ),
+    ),
+)
+@click.option("--port", type=int, default=DEFAULT_PORT, show_default=True)
+@click.option("--host", default=DEFAULT_HOST, show_default=True)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite an existing unit file (default: leave it untouched).",
+)
+def gui_install_service_cmd(port: int, host: str, force: bool) -> None:
+    """Write the systemd user unit (operator-gated) and print the enable commands.
+
+    Example:
+      $ scitex-cards gui install-service
+    """
+    from .._systemd_gui import install_gui_unit
+    from .._systemd_unit import ExecStartUnresolved
+
+    try:
+        result = install_gui_unit(host=host, port=port, force=force)
+    except ExecStartUnresolved as exc:
+        # Fail LOUDLY: a unit with an unresolvable ExecStart installs fine and
+        # then dies at 203/EXEC the moment the operator enables it — a board
+        # that is silently absent, which is the exact fault this verb exists
+        # to end.
+        raise click.ClickException(str(exc)) from exc
+    if result["written"]:
+        click.echo(f"# wrote systemd user unit: {result['path']}")
+        click.echo(f"#   ExecStart={result['exec_start']}")
+    elif result["existed"]:
+        click.echo(
+            f"# unit already exists (NOT overwritten): {result['path']}\n"
+            "#   pass --force to overwrite."
+        )
+    click.echo("#")
+    click.echo("# To enable + start it, the OPERATOR runs (this tool does NOT):")
+    click.echo(f"#   {result['enable_commands']}")
 
 
 # `status` and `stop` are the SAME commands the `board` group exposes, not
