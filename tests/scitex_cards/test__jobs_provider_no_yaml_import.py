@@ -77,19 +77,24 @@ class TestNoScheduledJobImportsYaml:
             f"genuinely needed, run it by hand where a human sees the result."
         )
 
-    def test_the_snapshot_job_still_pushes_off_site(self):
+    def test_the_snapshot_job_still_exists(self):
         # Arrange
         jobs = {j.name: j for j in _scheduled_jobs()}
         # Act
         snapshot = jobs.get("scitex-cards-snapshot")
         # Assert — removing `--refresh` must not quietly remove the BACKUP too.
-        # The export is the operator's stated fallback and deleting it would
-        # take the safety net away at the moment it matters most.
-        assert snapshot is not None, "the snapshot job disappeared entirely"
-        assert "--push" in snapshot.command, (
-            "the snapshot job no longer pushes off-site; the hourly rail would "
-            "commit locally and read as 'backed up' with no remote copy"
-        )
+        assert snapshot is not None
+
+    def test_the_snapshot_job_still_pushes_off_site(self):
+        # Arrange
+        jobs = {j.name: j for j in _scheduled_jobs()}
+        # Act
+        snapshot = jobs.get("scitex-cards-snapshot")
+        # Assert — split from "it exists" (STX-TQ007). A job that exists but
+        # stopped pushing is the WORSE failure: the hourly rail commits
+        # locally, reads as "backed up", and has no remote copy. Merged, that
+        # claim only ran once the existence check had already passed.
+        assert "--push" in snapshot.command
 
 
 # EOF
