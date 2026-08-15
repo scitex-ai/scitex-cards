@@ -303,6 +303,42 @@ def _wip_statuses() -> frozenset[str]:
     return WIP_STATUSES
 
 
+#: Kwargs that are CONTROL PARAMETERS somewhere in this stack but are not
+#: parameters of :func:`update_task` -- so ``**fields`` would swallow them
+#: and write them onto the card as DATA, silently, returning success.
+#:
+#: ``expected_revision`` is the dangerous one and the reason this exists.
+#: ``cardsync/__init__.py`` instructs the next developer to call
+#: ``update_task(..., expected_revision=N)`` for a compare-and-set; PR #790
+#: deliberately did NOT implement that, because this function is a
+#: whole-document read-modify-write and a per-row guard on it would be a lie
+#: (it would assert the lock on the caller's card while overwriting every
+#: other card from the same read). What #790 left behind is a call that
+#: silently ACCEPTS the request for a guard it does not provide -- so the
+#: caller believes they hold a compare-and-set while holding nothing.
+#: Refusing is the honest answer until the write path is row-level.
+#:
+#: ``tasks_path`` is the same concept as this function's ``store`` parameter
+#: under the name the backend/MCP layers use for it. It is NOT hypothetical:
+#: card ``probe-with-assignee`` has carried ``tasks_path='/tmp/seedprobe.yaml'``
+#: as a data field since 2026-07-10, measured across all 4,488 live cards.
+#: No card carries ``expected_revision``, so refusing it breaks nothing.
+_CONTROL_KWARGS: dict[str, str] = {
+    "expected_revision": (
+        "compare-and-set is NOT available on update_task: this function is a "
+        "whole-document read-modify-write, so a per-row revision guard would "
+        "silently overwrite concurrent edits to OTHER cards (PR #790). Use "
+        "_db_mirror._write_card(..., expected_revision=N) for a real CAS, or "
+        "omit the argument to accept last-writer-wins"
+    ),
+    "tasks_path": (
+        "did you mean the `store` parameter? `tasks_path` is the backend/MCP "
+        "name for the same thing and is not a card field -- passing it here "
+        "would write it onto the card as data"
+    ),
+}
+
+
 def update_task(
     store: str | Path | None = None,
     task_id: str | None = None,
@@ -316,6 +352,12 @@ def update_task(
     a field DELETES it (matches the operator's mental model: "clear the
     scope" = `update_task(..., scope=None)`). To leave a field untouched,
     just omit it.
+
+    The ONE exception is :data:`_CONTROL_KWARGS` -- names that are control
+    parameters elsewhere in this stack. Those are REFUSED with a message
+    naming the real path, because silently storing a requested guard as a
+    data field is worse than not offering it: the caller is then wrong about
+    whether they are protected.
 
     ONE clear rule, closed enums included: an empty string ``""`` on a
     CLOSED-ENUM field (``blocker`` / ``kind``) also DELETES the key — it is
@@ -343,6 +385,14 @@ def update_task(
 
     if not task_id:
         raise TypeError("update_task() requires a non-empty task_id")
+    # Refuse control parameters BEFORE anything is read or locked, so a
+    # doomed call never touches the store. See `_CONTROL_KWARGS` for why
+    # each name is listed; the short version is that `**fields` would
+    # otherwise write a requested GUARD onto the card as DATA and report
+    # success, leaving the caller wrong about whether they are protected.
+    for _name, _why in _CONTROL_KWARGS.items():
+        if _name in fields:
+            raise TypeError(f"update_task() does not accept {_name!r}: {_why}")
     # `""` on a CLOSED-ENUM field is a DELETE INSTRUCTION, consumed HERE —
     # it must never reach the validator as a value (see _store_enums: the
     # documented "pass '' to clear" contract used to be the one way that
