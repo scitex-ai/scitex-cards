@@ -213,7 +213,7 @@ def test_jobspec_provider_includes_ci_watch():
     # Act
     names = [j.name for j in jobs]
     # Assert
-    assert "scitex-todo.ci-watch" in names
+    assert "scitex-cards.ci-watch" in names
 
 
 def test_ci_watch_jobspec_runs_record_only_command():
@@ -224,9 +224,9 @@ def test_ci_watch_jobspec_runs_record_only_command():
 
     jobs = provide_jobs()
     # Act
-    spec = next(j for j in jobs if j.name == "scitex-todo.ci-watch")
+    spec = next(j for j in jobs if j.name == "scitex-cards.ci-watch")
     # Assert
-    assert spec.command == "scitex-todo watch-ci --once"
+    assert spec.command == "scitex-cards watch-ci --once"
 
 
 def test_ci_watch_jobspec_is_5_min_cron():
@@ -235,6 +235,6 @@ def test_ci_watch_jobspec_is_5_min_cron():
 
     jobs = provide_jobs()
     # Act
-    spec = next(j for j in jobs if j.name == "scitex-todo.ci-watch")
+    spec = next(j for j in jobs if j.name == "scitex-cards.ci-watch")
     # Assert
     assert spec.schedule == "*/5 * * * *"

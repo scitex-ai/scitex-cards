@@ -147,7 +147,7 @@ def board_group(ctx: click.Context) -> None:
     the fleet.
 
     In-tree call sites updated in this same PR: ``_jobs_provider.py``.
-    Host-side systemd unit ``scitex-todo.dashboard.service`` ExecStart
+    Host-side systemd unit ``scitex-cards.dashboard.service`` ExecStart
     also needs the same migration — flagged for lead's host-side pass.
     """
     if ctx.invoked_subcommand is not None:

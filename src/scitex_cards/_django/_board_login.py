@@ -176,7 +176,7 @@ _PAGE = """<!doctype html>
     <p style="margin:.9rem 0 0"><b>The password is</b> the value of
     <code style="display:inline;padding:.1rem .3rem">{env_var}</code> in the
     environment of the process serving this board. To read it on that machine:</p>
-    <code>systemctl --user show scitex-todo.dashboard.service -p Environment | tr ' ' '\\n' | grep {env_var}</code>
+    <code>systemctl --user show scitex-cards.dashboard.service -p Environment | tr ' ' '\\n' | grep {env_var}</code>
   </div>
   <p class="warn">If you did not set this password, do not type one. A prompt
   that cannot tell you where its answer lives has the same shape as a phishing

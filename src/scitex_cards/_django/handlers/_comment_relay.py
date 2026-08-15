@@ -30,7 +30,7 @@ resolves each id to a human NAME, and returns a dict the ``/comment`` JSON
 carries under ``relay`` so the board JS can toast "queued to N
 recipient(s)" instead of the old connection error.
 
-NB: the polling ``scitex-todo.wake-watcher`` may ALSO POST the owner's
+NB: the polling ``scitex-cards.wake-watcher`` may ALSO POST the owner's
 ``/v1/turn`` when it sees ``len(comments)`` grow. That background path is
 out of scope here; it likely also cannot reach a containerized owner (so
 it is harmless), and it is a redundant best-effort accelerator — not a

@@ -468,7 +468,7 @@ _ci_watch.register(main)
 # reconcile-merged-prs (card-freshness automation) — periodic auto-close of
 # cards whose linked PR (pr_url) has MERGED. Pure decision core + gh/REST
 # merge-state seam live in `_reconcile_prs.py`; DRY-RUN by default, --apply
-# to mutate. Paired with the scitex-todo.reconcile-merged-prs JobSpec.
+# to mutate. Paired with the scitex-cards.reconcile-merged-prs JobSpec.
 _reconcile.register(
     main
 )  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
