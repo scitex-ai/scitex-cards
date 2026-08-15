@@ -37,6 +37,6 @@ Universal flags
 - ``--json`` — machine-readable output on every data-reading command.
 - ``-V``, ``--version`` — print ``scitex-todo/X.Y.Z``.
 
-Every command resolves the task store the same way: ``--tasks`` →
-``$SCITEX_TODO_TASKS`` → ``<git-root>/.scitex/todo/tasks.yaml`` →
-``~/.scitex/todo/tasks.yaml`` → bundled example.
+Every command resolves the store the same way, and there is ONE store identity:
+``--store`` → ``$SCITEX_CARDS_DB`` (PostgreSQL on 55432). Nothing else — unset
+raises. No SQLite tier, no project scope, no bundled-example fallback.

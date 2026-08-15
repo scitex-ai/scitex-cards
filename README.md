@@ -86,19 +86,27 @@ pushes into that agent's Claude session.</sub>
 
 ### Where your task data lives (store resolution)
 
-The store is resolved by the precedence chain (first existing wins), from `scitex_cards._paths`:
+**The store is PostgreSQL on 55432, and its identity is `$SCITEX_CARDS_DB`.** One
+axis, not a search order:
 
-| Precedence | Source | Path |
+| Precedence | Source | Value |
 |---|---|---|
-| 1 | explicit `--tasks` flag / function arg | any path (wins even if missing) |
-| 2 | `$SCITEX_TODO_TASKS_YAML_SHARED` | any path |
-| 3 | project scope | `<git-root>/.scitex/todo/tasks.yaml` |
-| 4 | user scope (the shared-fleet default) | `$SCITEX_DIR/todo/tasks.yaml` (default `~/.scitex/todo`) |
-| 5 | bundled generic example | `scitex_cards/examples/tasks.yaml` |
+| 1 | explicit `store` / `--store` | wins even if missing |
+| 2 | `$SCITEX_CARDS_DB` | e.g. `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards` |
+| — | *nothing else* | **unset ⇒ raises `StoreTargetNotConfigured`** |
+
+**There is no second backend and no fallback tier.** Each removed tier was a way to
+silently answer with the wrong board: the zero-config **SQLite** default raises as of
+2026-08-13; **project scope** is gone (a per-repo store meant one agent saw a
+different board per directory); the **bundled example** went with #512. An
+unconfigured store is a configuration error and says so.
+
+Call `resolve_store` to see the target actually resolved, and pin the identity you
+expect — an unpinned client cannot tell a stale replica from the store it meant to
+reach (`identity_verdict: cannot-tell`).
 
 Runtime state (pidfiles, the delivery ledger, the reminder sidecar) lives under
-`<store-dir>/runtime/` (gitignored); the notify + reminder sidecars (`notify.yaml`,
-`reminders.yaml`) live next to `tasks.yaml`.
+`<store-dir>/runtime/` (gitignored).
 
 ## The card and its roles
 
@@ -278,8 +286,8 @@ rows = todo.list_tasks(None, status="in_progress")
 From the shell:
 
 ```bash
-# default store: project -> user -> bundled example (or $SCITEX_TODO_TASKS_YAML_SHARED)
-scitex-todo render-graph -o tasks.png     # YAML -> dependency PNG
+# store: $SCITEX_CARDS_DB (PostgreSQL on 55432); unset raises
+scitex-todo render-graph -o tasks.png     # dependency PNG
 scitex-todo render-graph --print-mermaid  # inspect the mermaid without rendering
 scitex-todo list-tasks --json             # resolved tasks, machine-readable
 
@@ -314,10 +322,16 @@ flags always override env vars; the full list of variables (with inline comments
 `.env.example`. Notable ones for the fleet slice:
 
 ```bash
-export SCITEX_TODO_TASKS_YAML_SHARED=/path/to/tasks.yaml   # override the store outright
-export SCITEX_TODO_AGENT_ID='agent:<name>'     # this agent's identity (channel + author + last_seen)
-export SCITEX_TODO_SCOPE='agent:<name>'        # default list/summary filter
+export SCITEX_CARDS_DB=postgresql://…/scitex_cards  # the store identity — a path OR a server URL
+export SCITEX_CARDS_AGENT_ID='agent:<name>'    # this agent's identity (channel + author + last_seen)
+export SCITEX_CARDS_SCOPE='agent:<name>'       # default list/summary filter
 ```
+
+The legacy `SCITEX_TODO_*` spellings are still honoured **for one transition
+window only** and emit a deprecation warning naming the variable to rename.
+`SCITEX_TODO_TASKS_YAML_SHARED` in particular no longer overrides the store —
+`$SCITEX_CARDS_DB` wins — so a script still exporting it is not doing what its
+name says.
 
 ## 5 Interfaces (Python · CLI · MCP · Skills · Web)
 
