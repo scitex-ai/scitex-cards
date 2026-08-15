@@ -2,7 +2,55 @@
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-08-15
+
 ### Added
+
+- **`scitex-cards dev list-undelivered` — measure the rail instead of asking
+  peers.** After a restart, `a2a_inbox` is an in-memory buffer: it returns empty
+  whether or not anything was sent, so it cannot distinguish "nothing arrived"
+  from "I lost my copy". Answering "did I miss anything?" from it previously led
+  to asking two other agents to resend messages the durable rail already knew
+  were delivered. This verb queries `channel_events` for undelivered inbound and
+  outbound rows and NAMES them — id, peer, timestamp, first line — so a lost
+  message can be resent without asking anyone what they said.
+  - A **positive control runs first**: if the rail is unreadable or empty, the
+    answer is `CANNOT_TELL`, which is NOT a pass. This matters because the
+    per-agent `state.db` shard *has* the `channel_events` table and *is* empty,
+    so a query against it succeeds and reads exactly like an all-clear. The verb
+    therefore reads the top-level rail and deliberately ignores
+    `$SCITEX_AGENT_CONTAINER_STATE_DB`, which points at that empty shard.
+  - `$SCITEX_CARDS_RAIL_DB` overrides the location; when set it is the *only*
+    candidate, because a silent fallback would be indistinguishable from the
+    override working.
+  - Exit codes: 0 clean, 1 undelivered found, 2 cannot tell.
+
+- **Every comment now carries a globally-unique id.** Comment elements
+  previously carried no `id`, which blocks declaring `comments[]` under
+  `MergeRule.APPEND` for multi-host replication: `_element_id` raises on an
+  id-less element, and the only id the schema offered was an autoincrement
+  primary key — which upstream names as *worse* than no id, since two hosts both
+  mint `id=8` and replay silently drops one. Ids are now minted at creation from
+  all nine append sites (the `_store_*` modules, the CLI loop, and the
+  `reopen`/`resolve`/`stale` handlers).
+  - **This is half of two.** Existing threads are not backfilled; 1,137 of 9,506
+    live comment elements still lack an id. `comments[]` cannot be declared
+    APPEND until that backfill lands.
+
+- **Phone view of your own cards** — `/me` and `/me/cards`.
+
+### Changed
+
+- **`/graph` no longer ships the `mermaid` key — 8.10 MB of a 21.11 MB payload,
+  38.4%.** The server was serializing the whole board a second time as a
+  flowchart string that no live surface read: `board_v3` builds its own mermaid
+  source client-side from `STATE.graph.edges` so it can respect the visible
+  filter set, and the server's copy was the unfiltered diagram nobody drew. The
+  `/legacy` view and the `render-graph` CLI call `build_mermaid` directly and are
+  unaffected. Measured before and after against the live store: 21,109,219 B ->
+  13,009,914 B.
+  - The board refetches the whole payload on nearly every 5-second poll, so this
+    is per-poll rather than per-page-load.
 
 - **The board is a resident service, and its absence is loud.** On 2026-08-14
   the operator opened the board and got a bare `ERR_CONNECTION_REFUSED`:
