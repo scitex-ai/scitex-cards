@@ -209,20 +209,30 @@ substrate handles axis 2.
 ### Axis 1 — across projects (precedence chain on one host)
 
 ```
-Resolution chain (highest → lowest, first match wins):
-  1. $SCITEX_TODO_TASKS (env-var override)
-  2. <git-root>/.scitex/todo/tasks.yaml      (project-scope; gitignored — project OVERRIDES user)
-  3. $SCITEX_DIR/todo/tasks.yaml             (user-scope; default ~/.scitex/todo — CROSS-PROJECT default)
-  4. <package>/examples/tasks.yaml           (bundled demo; fresh-install fallback)
+Store identity (ONE axis, not a search order):
+  1. explicit `store` / `--store` argument   (wins even if missing)
+  2. $SCITEX_CARDS_DB                        (PostgreSQL on 55432)
+  -. nothing else                            (unset => RAISES)
 ```
 
-The **user-scope path** (`~/.scitex/todo/tasks.yaml`) is the operator's
-**cross-PROJECT** store — one place where tasks from every project on
-this host live together. Per the SciTeX local-state-directories
-convention, a per-project store at `<project>/.scitex/todo/tasks.yaml`
-overrides the user-level one when you're inside that project tree. Use
-the project-scope for project-internal task lists you don't want in the
-cross-cut view; add the dir to the project's `.gitignore`.
+The store is **PostgreSQL on 55432, per host, synchronised across hosts** — one
+board where tasks from every project on this host live together. There is no
+SQLite tier and no `.db` file: two backends would be two ways to be wrong about
+which board you are reading.
+
+**THERE IS NO PROJECT SCOPE, AND THIS IS DELIBERATE.** An earlier version of
+this page said a per-project store at `<project>/.scitex/todo/tasks.yaml`
+*overrides* the user-level one inside that project tree. That is no longer
+true and following it silently does nothing: `scitex_cards._paths` states
+outright that there is DELIBERATELY no project-scope layer for the data
+store. A per-repo store meant one agent saw a different board depending on
+which directory it started in, so resolution was collapsed onto the single
+`$SCITEX_CARDS_DB` axis. If you create that path expecting an override, you
+will get the user-scope board and no warning.
+
+The bundled `<package>/examples/tasks.yaml` fallback is likewise gone (#512,
+*"no YAML task store ships in the wheel, and no fallback tier"*). An
+unconfigured store now RAISES instead of resolving to demo data.
 
 ### Axis 2 — across hosts (git-backed sync substrate)
 

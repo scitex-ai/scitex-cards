@@ -24,7 +24,7 @@ Render it to a dependency-graph PNG from Python:
 
 .. code-block:: bash
 
-    # default store: project -> user -> bundled example (or $SCITEX_TODO_TASKS)
+    # store: $SCITEX_CARDS_DB (PostgreSQL on 55432); unset raises
     scitex-todo render-graph -o tasks.png
 
     # inspect the generated mermaid without rendering
@@ -76,11 +76,13 @@ Each task in the ``tasks:`` list:
 Where your task data lives
 --------------------------
 
-``scitex-todo`` ships only the mechanism — no task content. The store resolves
-in this order (first existing wins):
+``scitex-cards`` ships only the mechanism — no task content. The store is
+**PostgreSQL on 55432**, and there is ONE store identity:
 
-1. an explicit ``--tasks`` path
-2. ``$SCITEX_TODO_TASKS``
-3. project scope: ``<git-root>/.scitex/todo/tasks.yaml``
-4. user scope: ``~/.scitex/todo/tasks.yaml`` (relocatable via ``$SCITEX_DIR``)
-5. the bundled generic example
+1. an explicit ``store`` / ``--store`` argument (wins even if missing)
+2. ``$SCITEX_CARDS_DB`` — e.g. ``postgresql://scitex_cards@127.0.0.1:55432/scitex_cards``
+
+Nothing else. Unset **raises**. There is deliberately no SQLite tier, no project
+scope (a per-repo store meant one agent saw a different board depending on which
+directory it started in), and no bundled ``examples/tasks.yaml`` fallback. Two
+backends would be two ways to be wrong about which board you are reading.

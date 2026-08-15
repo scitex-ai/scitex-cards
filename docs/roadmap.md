@@ -37,8 +37,9 @@ This keeps the data portable and the surfaces swappable.
 - **Web board (read-only + drag-reorder)** — React-Flow board served by Django
   (`scitex-todo board`); the priority handler persists drag-reorder back to the
   YAML store (the agent↔user GUI interface, first write path).
-- **Local-state path resolution** — explicit -> `$SCITEX_TODO_TASKS` ->
-  project `.scitex/todo/` -> user `~/.scitex/todo/` -> bundled example.
+- **Store identity** — explicit `store` -> `$SCITEX_CARDS_DB` (PostgreSQL on
+  55432); unset raises. One axis, one backend: no SQLite tier, no project scope,
+  no bundled-example fallback.
 - **CLI** — `render-graph`, `list-tasks`, `board`, plus the standard
   introspection / completion / `skills` commands.
 - **Agent skills** — `_skills/scitex-todo/` (installable via
