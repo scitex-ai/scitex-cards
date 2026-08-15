@@ -87,7 +87,7 @@ def stale_in_progress(
     ``status == "in_progress"`` (drop ``blocked`` — a legitimate park). Returns a
     list of ``StaleCard`` (id / title / status / age_hours), oldest-first.
     """
-    from ._stale_active import detect_stale_active
+    from ._stale.active import detect_stale_active
 
     if not agent:
         return []

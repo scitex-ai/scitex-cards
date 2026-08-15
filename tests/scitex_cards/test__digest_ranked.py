@@ -14,7 +14,7 @@ cards and demotes the total to a footnote.
 from __future__ import annotations
 
 from scitex_cards._reminder_bodies import DIGEST_ACT_ON, _digest_body, _rank_key
-from scitex_cards._stale_active import StaleCard
+from scitex_cards._stale.active import StaleCard
 
 
 def _c(id, *, priority=None, age=1.0, status="deferred") -> StaleCard:

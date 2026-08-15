@@ -130,7 +130,7 @@ def _run_stale_nudge_sweep(*, store, now) -> "str | None":
     """
     try:
         from .._model import load_tasks
-        from .._stale_active_nudge import sweep_and_nudge
+        from .._stale.active_nudge import sweep_and_nudge
 
         resolved = _resolved_store(store)
         tasks = load_tasks(resolved)

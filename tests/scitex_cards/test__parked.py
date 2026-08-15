@@ -22,7 +22,7 @@ from __future__ import annotations
 import datetime as _dt
 
 from scitex_cards import _backlog_triage as bt
-from scitex_cards import _stale_active as sa
+from scitex_cards._stale import active as sa
 
 NOW = _dt.datetime(2026, 7, 13, 12, 0, 0, tzinfo=_dt.timezone.utc)
 LONG_AGO = "2026-01-01T00:00:00Z"  # ancient on every clock in these tests

@@ -155,7 +155,7 @@ def add_task(
     # change produced no stamp; the fallback is load-bearing enough that a path
     # relying on it silently should not exist.
     if status == "blocked":
-        from ._stale_active_clocks import FIELD_BLOCKED_AT
+        from ._stale.active_clocks import FIELD_BLOCKED_AT
 
         new[FIELD_BLOCKED_AT] = _stamp
     # `created_by` — the creating USER, STRICTLY resolved above (never a
@@ -280,7 +280,7 @@ def _stamp_blocked_at(
     ``_blocked_age_hours`` reads their age from ``created_at`` instead. That
     makes them read as maximally stale, so the alarm errs toward firing.
     """
-    from ._stale_active_clocks import FIELD_BLOCKED_AT
+    from ._stale.active_clocks import FIELD_BLOCKED_AT
     from ._store import _utc_now_iso
 
     if task.get("status") != "blocked":

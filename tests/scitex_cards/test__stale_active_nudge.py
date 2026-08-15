@@ -32,11 +32,11 @@ from scitex_cards._db import ENV_DB
 from scitex_cards._inbox import enqueue as real_enqueue
 from scitex_cards._inbox import poll_inbox
 from scitex_cards._push import ENV_DRY_RUN
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     ENV_PENDING_NUDGE_HOURS,
     ENV_STALE_ACTIVE_HOURS,
 )
-from scitex_cards._stale_active_nudge import (
+from scitex_cards._stale.active_nudge import (
     ENV_NUDGE_FLOOR_HOURS,
     ENV_NUDGE_PUSH,
     KIND_PENDING_BACKLOG,
