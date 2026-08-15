@@ -109,14 +109,25 @@ def test_the_tab_title_still_carries_the_version(chat_html):
 # --- the switcher ----------------------------------------------------------
 
 
-def test_the_switcher_second_item_is_labelled_dm(chat_html):
-    """『Board | "DM"』 — their words."""
+def test_the_switcher_labels_the_dm_surface_dm(chat_html):
+    """『Board | "DM"』 — their words.
+
+    Was ``…_second_item_is_labelled_dm`` and asserted ``["Board", "DM"]``. The
+    POSITION was incidental; the LABEL is the operator's ruling. "Mine" (the
+    My Cards phone view) joined the switcher on 2026-08-14 and sits between
+    them, which moved DM to third without changing anything this test is
+    actually about.
+
+    Still an exact list rather than a membership check, deliberately: that is
+    what makes an item appearing or vanishing unnoticed a failure instead of a
+    silent change to the operator's own navigation.
+    """
     # Arrange
     html = chat_html
     # Act
     labels = _switcher_labels(html)
     # Assert
-    assert labels == ["Board", "DM"]
+    assert labels == ["Board", "Mine", "DM"]
 
 
 def test_the_switcher_has_no_item_labelled_chat(chat_html):
@@ -131,13 +142,33 @@ def test_the_switcher_has_no_item_labelled_chat(chat_html):
 
 def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     """`aria-label` is read aloud — an assistive user must not be told this is
-    a "Board or Chat" switcher when the visible label says DM."""
+    a "Board or Chat" switcher when the visible label says DM.
+
+    The wording grew from "Board or DM" to "Board, Mine or DM" when the My
+    Cards view joined the switcher (2026-08-14). The property under test is
+    unchanged: what is ANNOUNCED must name the same surfaces the eye sees, so
+    the landmark is asserted verbatim rather than by substring.
+    """
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Board or DM"' in html
+    announced = 'aria-label="Board, Mine or DM"' in html
     # Assert
     assert announced
+
+
+def test_the_switcher_landmark_never_announces_chat(chat_html):
+    """The half of the rule above that must hold whatever the wording becomes.
+
+    Asserted separately so that a future item joining the switcher changes ONE
+    verbatim string above and cannot quietly reintroduce "Chat" while doing it.
+    """
+    # Arrange
+    html = chat_html
+    # Act
+    announces_chat = "or Chat" in html
+    # Assert
+    assert announces_chat is False
 
 
 def test_the_switcher_tooltip_uses_the_longer_direct_message_wording(chat_html):
