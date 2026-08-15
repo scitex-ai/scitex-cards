@@ -1,0 +1,108 @@
+name: quality
+
+# Single-package quality gate — runs `scitex-dev ecosystem audit-all`
+# against this package. Mirrors the canonical audit that
+# `tests/develop/test_audit.py` runs inside the test suite, but as a
+# standalone gate so an audit regression is visible even when the matrix
+# is skipped.
+#
+# THE AUDIT IS FULL AND STRICT. Operator ruling 2026-07-19:
+# 「--new-only はだめです」「即赤です、だって違反しているじゃん」
+# 「全部直さなきゃいけませんよ？」「妥協するな」.
+#
+# It previously ran `--new-only`, which ratcheted the existing backlog as
+# a baseline and reported only net-new violations. The intent was decent
+# (don't block new work on inherited debt) and the effect was not: 73
+# real violations (56 audit-cli + 17 audit-project) sat permanently
+# invisible, and the job reported GREEN in 27 seconds while the same
+# command run by hand in the same checkout reported all 73. A gate that
+# cannot fail on what is already broken is not a gate.
+#
+# It also passed `--no-version-check`, skipping the "is scitex-dev
+# current?" probe — so the gate could pass against a stale rule corpus.
+# That is the same stale-code-looks-current failure mode that cost a full
+# day on 2026-07-19 (a Stop hook silently dead since the rename).
+#
+# Project-type + rule skips live in `.scitex/dev/config.yaml` in this
+# checkout and are applied automatically — that file, reviewed per-entry,
+# is the sanctioned place to exempt a rule. A blanket flag is not.
+#
+# Runner: this package's self-hosted Spartan CPU runners
+#   (spartan-cpu-todo-01 / -02). GitHub-hosted `ubuntu-latest` is
+#   unavailable on this account (Actions billing block), and todo runs
+#   ALL compute on the dedicated Spartan runners anyway. The
+#   `-on-ubuntu-latest` filename is kept for fleet naming consistency
+#   (cf. scitex-io / scitex-app / scitex-plt); it is a naming convention,
+#   not a runtime assertion — same as rtd-sphinx-build-on-ubuntu-latest.
+#   `actions/setup-python` has no tool cache on a self-hosted runner, so
+#   `uv` provisions the interpreter and the venv.
+
+on:
+  schedule:
+    - cron: "0 18 * * *"  # 18:00 UTC (~03:00 JST), after the test run
+  workflow_dispatch:
+  push:
+    branches: [develop]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".scitex/dev/config.yaml"
+      - ".github/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml"
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+
+      - name: Fetch develop ref for --new-only baseline
+        run: git fetch origin develop:develop || true
+
+      - name: Install package + audit tooling
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e ".[all,dev]" \
+            || uv pip install --python .venv/bin/python -e ".[dev]" \
+            || uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python "scitex-dev[cli-audit]>=0.17.14"
+
+      - name: Run scitex-dev ecosystem audit-all (FULL — no grandfathering)
+        # .venv/bin on PATH so the auditor's `shutil.which("scitex-dev")`
+        # and the per-auditor subprocess spawns resolve to THIS venv
+        # (where scitex-cards' console-script is installed).
+        #
+        # Operator ruling 2026-07-19: "--new-only はだめです / 即赤です、
+        # だって違反しているじゃん". Three things were wrong here:
+        #
+        #   scitex-todo         the package argument was never renamed, so
+        #                       this audited under the pre-2026-07-16 name.
+        #   --new-only          reported only violations NET-NEW vs develop.
+        #                       73 existing violations (56 from audit-cli,
+        #                       17 from audit-project) were grandfathered
+        #                       and could never fail CI — the job passed in
+        #                       27s while the same command run locally
+        #                       reported all 73. A gate that cannot fail on
+        #                       what is already broken is not a gate; it is
+        #                       a green light with a checklist taped to it.
+        #   --no-version-check  skipped the "is scitex-dev current?" probe,
+        #                       so CI could pass against a stale rule corpus.
+        #                       That is the same stale-code-looks-current
+        #                       failure that cost a day on 2026-07-19.
+        #
+        # This WILL be red until the 73 are cleared. That is the honest
+        # state and it is the point: we are in fact violating the doctrine.
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/.venv/bin:$PATH"
+          scitex-dev ecosystem audit-all scitex-cards --path "$PWD"
