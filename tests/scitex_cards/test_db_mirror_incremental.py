@@ -186,6 +186,28 @@ def _full_rebuild_db(tmp_path, doc):
     return full
 
 
+def _stale_doc_then_incremental(tmp_path):
+    """Set up the divergence both tests below measure; return ``(inc, full)``.
+
+    A STALE document (naming "gone") is mirrored first, then the current one.
+    A full rebuild of the current document is built alongside for comparison.
+    Shared here rather than duplicated because the two assertions it feeds are
+    separate claims about ONE arrangement — lifting the setup is what STX-TQ007
+    asks for when splitting.
+    """
+    doc_v2 = _doc(
+        _card("a", status="done", comments=[{"author": "x", "ts": "t", "text": "c"}]),
+        _card("b", depends_on=["a"]),
+        _card("c"),
+    )
+    (tmp_path / "inc").mkdir(exist_ok=True)
+    inc = _fresh_db(tmp_path / "inc")
+    mirror_doc_incremental(_doc(_card("a"), _card("b"), _card("gone")), inc)
+    full = _full_rebuild_db(tmp_path, doc_v2)
+    mirror_doc_incremental(doc_v2, inc)
+    return inc, full
+
+
 def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(tmp_path):
     """Incremental now SUPERSETS a full rebuild, and the difference is the point.
 
@@ -208,21 +230,29 @@ def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(tmp_path
     is its own change, carded, not smuggled in here.
     """
     # Arrange
-    doc_v2 = _doc(
-        _card("a", status="done", comments=[{"author": "x", "ts": "t", "text": "c"}]),
-        _card("b", depends_on=["a"]),
-        _card("c"),
-    )
-    (tmp_path / "inc").mkdir(exist_ok=True)
-    inc = _fresh_db(tmp_path / "inc")
-    mirror_doc_incremental(_doc(_card("a"), _card("b"), _card("gone")), inc)
-    full = _full_rebuild_db(tmp_path, doc_v2)
+    inc, full = _stale_doc_then_incremental(tmp_path)
     # Act
-    mirror_doc_incremental(doc_v2, inc)
-    # Assert — every row the rebuild has, incremental has too...
-    assert set(_ids(full)) <= set(_ids(inc))
-    # ...and the only extra is the row the stale document omitted.
-    assert set(_ids(inc)) - set(_ids(full)) == {"gone"}
+    extra = set(_ids(inc)) - set(_ids(full))
+    # Assert — the only row incremental keeps that the rebuild drops is the
+    # one the stale document omitted.
+    assert extra == {"gone"}
+
+
+def test_incremental_keeps_every_row_a_full_rebuild_produces(tmp_path):
+    """The superset half, split out under STX-TQ007 (one assertion per test).
+
+    NOT redundant with the sibling above, and the split makes that visible:
+    "the extra rows are exactly {gone}" does NOT imply "incremental has
+    everything the rebuild has" — a bug that dropped a row from BOTH sides
+    would satisfy the difference check and fail this one. While the two were a
+    single test, this assertion ran only when the other had already passed.
+    """
+    # Arrange
+    inc, full = _stale_doc_then_incremental(tmp_path)
+    # Act
+    missing = set(_ids(full)) - set(_ids(inc))
+    # Assert
+    assert missing == set()
 
 
 def test_incremental_comments_equal_a_full_rebuild(tmp_path):

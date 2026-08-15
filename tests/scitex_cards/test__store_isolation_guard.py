@@ -88,11 +88,28 @@ def test_scitex_dir_fallback_is_also_pinned_under_tmp(tmp_path_factory):
         f"pytest's tmp root {base_tmp} — the SCITEX_DIR pin in "
         "tests/conftest.py does not appear to be active."
     )
-    for home in _REAL_HOMES:
-        assert not str(scitex_dir_root).startswith(home), (
-            f"$SCITEX_DIR resolves under the REAL home {home} "
-            f"({scitex_dir_root}) — the SCITEX_DIR pin is not active."
-        )
+
+
+def test_scitex_dir_fallback_is_not_under_any_real_home(tmp_path_factory):
+    """The same pin, asserted from the OTHER direction.
+
+    Split from the test above under STX-TQ007 (one assertion per test), and the
+    split is worth more than compliance here: "resolves under pytest's tmp" and
+    "does not resolve under a real home" are DIFFERENT claims. A tmp root that
+    somehow sat inside a real home would satisfy the first and violate the
+    second, and while the two were one test the second assertion never ran
+    unless the first passed — so the more dangerous condition was checked only
+    when the safer one already held.
+    """
+    # Arrange
+    scitex_dir_root = _user_root().resolve()
+    # Act
+    offenders = [h for h in _REAL_HOMES if str(scitex_dir_root).startswith(h)]
+    # Assert
+    assert offenders == [], (
+        f"$SCITEX_DIR resolves under the REAL home(s) {offenders} "
+        f"({scitex_dir_root}) — the SCITEX_DIR pin is not active."
+    )
 
 
 def test_env_db_still_names_the_winning_precedence_tier():
