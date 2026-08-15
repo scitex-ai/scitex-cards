@@ -4,8 +4,7 @@
 
 Zero task logic here — everything delegates to ``scitex_cards``: the store is
 resolved + loaded by ``services.get_board`` (which calls ``resolve_tasks_path``
-and ``load_tasks``), the mermaid source comes from ``build_mermaid``, and node
-colors come from ``STATUS_STYLE``.
+and ``load_tasks``), and node colors come from ``STATUS_STYLE``.
 """
 
 from pathlib import Path
@@ -79,8 +78,6 @@ def _compute_deadline_next(t):
 
 def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
-    from scitex_cards._diagram import build_mermaid
-
     from ._comment_digest import comment_scalars, rescore_history
 
     ids = {t["id"] for t in board.tasks}
@@ -226,7 +223,33 @@ def _build_graph(board) -> dict:
         "nodes": nodes,
         "edges": edges,
         "status_colors": _status_colors(),
-        "mermaid": build_mermaid(board.tasks),
+        # `mermaid` IS GONE FROM THIS PAYLOAD. Measured on the live store
+        # (4,394 cards, 2026-08-14): 8,104,337 B of a 21,109,219 B response,
+        # 38.4% — a bigger share than the comments[] deletion that preceded
+        # it. ADR-0013 names it directly: "`mermaid` is generated only when
+        # the Graph layout asks for it — it is 19% of the payload serving one
+        # of four layouts."
+        #
+        # Nothing asks for it, which is why this is a deletion and not a
+        # move to an on-demand endpoint. The board's Graph layout builds its
+        # OWN mermaid source client-side in `_graphSrc(visible)` from
+        # `STATE.graph.edges` + `.status_colors` + each node's `parent` — it
+        # HAS to, because the server's copy is built from the whole store and
+        # cannot respect the active filter set. The server's copy was the
+        # unfiltered diagram nobody drew.
+        #
+        # The other producers of mermaid source are unaffected: they call
+        # `build_mermaid` DIRECTLY rather than reading this key —
+        # `views._static_graph_page` (the /legacy CDN page) and the
+        # `render-graph` CLI. Deleting the key does not touch them.
+        #
+        # Unlike the comments[] deletion, no consumer needed a migration or
+        # a fallback first: a full read of every `mermaid` reference (server
+        # templates, static/, frontend/src, the committed legacy SPA bundle,
+        # exporters, CLI) found no reader of THIS key. The legacy SPA bundle
+        # `static/scitex_cards/assets/index.js` contains the string zero
+        # times. `frontend/src/types/board.ts` merely DECLARED the field, and
+        # that declaration goes with this commit.
         "store_path": str(board.store_path),
         "task_count": len(board.tasks),
         # HONEST EMPTY STATE: True when the store was READ and held no cards —
@@ -283,7 +306,7 @@ def _graph_cache_reset() -> None:
 
 
 def handle_graph(request, board):
-    """GET graph -> structured nodes + edges + status colors (+ mermaid).
+    """GET graph -> structured nodes + edges + status colors.
 
     Cached by ``(store_path, board.mtime, board.sig)``; on hit, returns the
     prior payload directly. ``board.sig`` is the DB's read-stable content
