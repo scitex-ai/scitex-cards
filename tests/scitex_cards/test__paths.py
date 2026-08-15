@@ -89,6 +89,7 @@ def test_container_tracks_the_current_db_var_over_deprecated(tmp_path, clean_sto
 
 def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store_env):
     """There is no last resort — no packaged demo file can become the board."""
+    # Arrange
     # Act
     resolved = resolve_tasks_path(None)
     # Assert

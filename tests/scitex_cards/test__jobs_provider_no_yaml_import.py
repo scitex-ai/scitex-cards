@@ -53,7 +53,8 @@ class TestNoScheduledJobImportsYaml:
     """A timer must never be able to rebuild the store from a document."""
 
     def test_at_least_one_job_is_provided(self):
-        # Arrange / Act
+        # Arrange
+        # Act
         jobs = _scheduled_jobs()
         # Assert — guard the guard: an empty provider would make every
         # assertion below pass while testing nothing at all.
