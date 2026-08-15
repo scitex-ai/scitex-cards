@@ -25,7 +25,7 @@ Wiring (in ``pyproject.toml``)
     scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 
 After install, ``scitex-dev ecosystem up --yes`` materialises
-``~/.config/systemd/user/scitex-cards.dashboard.service`` and brings
+``~/.config/systemd/user/scitex-cards-dashboard.service`` and brings
 it up. The master ``scitex-dev-ecosystem-reconcile.service``
 (installed via ``ecosystem up --install-master-unit``) keeps it
 reconciled on every boot.
@@ -61,8 +61,8 @@ def provide_jobs() -> list[JobSpec]:
     * ``schedule=""`` — required to be empty for ``kind="service"``;
       ``JobSpec.validate()`` raises if we forget. (Services are NOT
       scheduled — they run continuously.)
-    * ``name="scitex-cards.dashboard"`` — package-prefixed so the unit
-      file becomes ``scitex-cards.dashboard.service`` and the operator
+    * ``name="scitex-cards-dashboard"`` — package-prefixed so the unit
+      file becomes ``scitex-cards-dashboard.service`` and the operator
       can grep ``systemctl --user list-units 'scitex-cards.*'`` to see
       every scitex-cards-owned unit at a glance.
 
@@ -84,7 +84,7 @@ def provide_jobs() -> list[JobSpec]:
     """
     return [
         JobSpec(
-            name="scitex-cards.dashboard",
+            name="scitex-cards-dashboard",
             kind="service",
             schedule="",
             command="scitex-cards board start --port 8051",
@@ -106,7 +106,7 @@ def provide_jobs() -> list[JobSpec]:
         # the failure mode the loop exists to prevent, so a crash MUST
         # be restarted automatically.
         JobSpec(
-            name="scitex-cards.wake-watcher",
+            name="scitex-cards-wake-watcher",
             kind="service",
             schedule="",
             # --interval 30 (was 2): a 2s interval re-parsed the ~9 MB store
@@ -140,7 +140,7 @@ def provide_jobs() -> list[JobSpec]:
         # (default 2 h) over the same push wire. Replaces the manual
         # card-freshness campaign; no new cron — it rides this */10 one.
         JobSpec(
-            name="scitex-cards.notify",
+            name="scitex-cards-notify",
             # `cron` (the JobSpec valid set is `cron|service|timer`).
             # 5-field cron schedule (min hour dom mon dow): every 10 min.
             kind="cron",
@@ -170,7 +170,7 @@ def provide_jobs() -> list[JobSpec]:
             # `watch-ci`. Not a typo — the verb was renamed in the
             # slice-6b pilot and the unit identity was not, so the two
             # are allowed to disagree here and only here.
-            name="scitex-cards.ci-watch",
+            name="scitex-cards-ci-watch",
             kind="cron",
             # 5-field cron: every 5 min. Matches the cadence dev
             # locked in the contract; SAC's independent poller can
@@ -227,7 +227,7 @@ def provide_jobs() -> list[JobSpec]:
         #
         # Minute 7: off the */5, */10 and */15 stampedes above.
         JobSpec(
-            name="scitex-cards.snapshot",
+            name="scitex-cards-snapshot",
             kind="cron",
             schedule="7 * * * *",
             # --push: the rail's job is the OFF-SITE copy (private repo
@@ -244,7 +244,7 @@ def provide_jobs() -> list[JobSpec]:
             timeout_sec=300,
         ),
         JobSpec(
-            name="scitex-cards.reconcile-merged-prs",
+            name="scitex-cards-reconcile-merged-prs",
             kind="cron",
             # 5-field cron (min hour dom mon dow): every 15 min.
             schedule="*/15 * * * *",

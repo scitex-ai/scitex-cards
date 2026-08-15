@@ -80,7 +80,7 @@ class TestNoScheduledJobImportsYaml:
         # Arrange
         jobs = {j.name: j for j in _scheduled_jobs()}
         # Act
-        snapshot = jobs.get("scitex-cards.snapshot")
+        snapshot = jobs.get("scitex-cards-snapshot")
         # Assert — removing `--refresh` must not quietly remove the BACKUP too.
         # The export is the operator's stated fallback and deleting it would
         # take the safety net away at the moment it matters most.

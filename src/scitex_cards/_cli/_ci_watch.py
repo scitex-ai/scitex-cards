@@ -43,7 +43,7 @@ the env override ``SCITEX_TODO_FLEET_CI_REPOS=owner/name,...``:
 
 ## Designed for cron use
 
-JobSpec entry ``scitex-cards.ci-watch`` (registered via
+JobSpec entry ``scitex-cards-ci-watch`` (registered via
 ``_jobs_provider.py``; the JobSpec NAME is a registry identity and
 keeps its historical spelling) runs ``scitex-todo watch-ci --once`` every
 5 min via ``scitex-dev ecosystem up``. The ``--once`` flag exits

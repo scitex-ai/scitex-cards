@@ -30,15 +30,15 @@ def test_provide_jobs_includes_the_board_dashboard():
     # Act
     names = {j.name for j in provide_jobs()}
     # Assert
-    assert "scitex-cards.dashboard" in names
+    assert "scitex-cards-dashboard" in names
 
 
 def _board() -> object:
-    return next(j for j in provide_jobs() if j.name == "scitex-cards.dashboard")
+    return next(j for j in provide_jobs() if j.name == "scitex-cards-dashboard")
 
 
 def _snapshot() -> object:
-    return next(j for j in provide_jobs() if j.name == "scitex-cards.snapshot")
+    return next(j for j in provide_jobs() if j.name == "scitex-cards-snapshot")
 
 
 def test_board_kind_is_service():
