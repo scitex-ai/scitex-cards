@@ -14,7 +14,23 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+def _repo_root() -> Path:
+    """The repo root, found by MARKER rather than by counting directories.
+
+    `parents[1]` was correct while this file sat at `tests/` and silently wrong
+    once it moved to `tests/scitex_cards/`. Counting parents encodes the file's
+    own location into a fact about the repository; searching upward for the
+    marker does not care where the caller lives.
+    """
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    raise RuntimeError(
+        f"no pyproject.toml above {__file__} — cannot locate the repo root"
+    )
+
+
+REPO = _repo_root()
 
 #: The stub's pyproject — the single artefact every test below reads.
 STUB_PYPROJECT = REPO / "stub" / "scitex-todo" / "pyproject.toml"

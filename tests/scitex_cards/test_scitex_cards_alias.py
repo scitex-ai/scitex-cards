@@ -18,8 +18,26 @@ from pathlib import Path
 import tomllib
 
 
+def _repo_root() -> Path:
+    """The repo root, found by MARKER rather than by counting directories.
+
+    `parents[1]` was correct while this file sat at `tests/`, and silently wrong
+    the moment it moved to `tests/scitex_cards/` — it resolved to `tests/` and
+    the open() failed with FileNotFoundError. Counting parents encodes the
+    file's own location into a fact about the repository, so any future move
+    re-arms the same trap one directory over. Searching upward for the marker
+    does not care where the caller lives.
+    """
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    raise RuntimeError(
+        f"no pyproject.toml above {__file__} — cannot locate the repo root"
+    )
+
+
 def _scripts() -> dict:
-    root = Path(__file__).resolve().parents[1]
+    root = _repo_root()
     with (root / "pyproject.toml").open("rb") as fh:
         return tomllib.load(fh)["project"]["scripts"]
 
