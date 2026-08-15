@@ -1,10 +1,54 @@
 name: CLA Assistant
 
+# Org-level reusable-workflow caller (scitex-ai/.github, fleet standard).
+#
+# Operator ruling 2026-08-15: "cla must be handled via the shared workflow which
+# is set for the organization, scitex-ai" / "you must not re-invent that" /
+# "github workflows must follow the organizations ones unless leaf package's
+# version is really unique to the leaf". Nothing about a CLA is unique to
+# scitex-cards, so this file delegates.
+#
+# THIS IS A SECURITY IMPROVEMENT, NOT A TIDY-UP, and that is worth stating
+# because the inline version it replaces carried a long comment block defending
+# its own arrangement. Both of that block's concerns are answered BETTER here:
+#
+#   1. THIRD-PARTY CODE. The inline version called `contributor-assistant/
+#      github-action`, an UPSTREAM third party, on an attacker-triggerable
+#      trigger (`pull_request_target` + `issue_comment` — anyone may open a PR
+#      or comment) while holding a personal access token. The org reusable calls
+#      `scitex-ai/github-action@114064ad` — the ORG-OWNED FORK, at a fixed SHA.
+#      Same pinning discipline, but the code being pinned is ours.
+#   2. RUNNER CHOICE. The inline version hard-coded `runs-on: ubuntu-latest` with
+#      a paragraph explaining why this one job is a deliberate exception to the
+#      self-hosted rule (a persistent runner's $HOME holds fleet credentials; a
+#      stranger's trigger must not run beside them). The reusable takes `runs_on`
+#      as an INPUT defaulting to '["ubuntu-latest"]', so the same decision holds
+#      and is now the org's to change once rather than ours to re-defend here.
+#
+# WHY THE `uses:` REF IS A SHA, NOT `@main`
+# -----------------------------------------
+# A mutable org-level ref means one change to the reusable lands in EVERY calling
+# repo at once with no review in any of them — and this workflow runs on
+# `pull_request_target` with a PAT. Pinning the SHA keeps the blast radius of an
+# org-level edit to the repos that deliberately re-pin. Matches scitex-dev.
+#
+# THE DEFECT THIS ALSO FIXES: the inline version wrote signatures to a
+# `cla-signatures` branch in THIS repo, and that branch has never existed --
+# measured 2026-08-15, `git ls-remote --heads origin cla-signatures` is empty.
+# So the gate could REFUSE a contributor but could never RECORD one accepting:
+# the "comment to sign" instruction it posted could not succeed. A per-repo
+# ledger was the wrong shape; the org owns one.
+#
+# Card: cards-cla-gate-has-no-branch-to-write-signatures-to-20260815
+
 on:
   issue_comment:
     types: [created]
   pull_request_target:
     types: [opened, closed, synchronize]
+  push:
+    branches: [main, develop]
+    tags: ['v*']
 
 permissions:
   actions: write
@@ -13,53 +57,10 @@ permissions:
   statuses: write
 
 jobs:
-  CLAssistant:
-    # DELIBERATE EXCEPTION to "no GitHub-hosted runners" — do NOT "fix" this
-    # back to self-hosted. Matching the exception scitex-agent-container made
-    # for this identical workflow on 2026-07-14.
-    #
-    # WHY: this job is THIRD-PARTY code on an ATTACKER-TRIGGERABLE trigger
-    # (pull_request_target + issue_comment — anyone may open a PR or comment),
-    # and it is handed a PERSONAL ACCESS TOKEN. The self-hosted runner is
-    # PERSISTENT and its $HOME holds the fleet's ~/.claude/.credentials.json.
-    # Running strangers' triggers next to fleet credentials is the exposure;
-    # a hosted runner is ephemeral and holds nothing of ours.
-    #
-    # The operator's rule exists to avoid PAYING for runners on real CI. This
-    # job is tiny, stateless, and free-tier — it buys none of the cost the
-    # rule guards against, and pays the whole risk the rule never considered.
-    # Reversible in one commit; decision carded for operator ratification.
-    # Card: cla-workflow-untrusted-action-on-selfhosted-runner-20260718
-    # Prior art: sac .github/hosted-runner-allowlist.yaml + _hosted_runner_guard.py
-    runs-on: ubuntu-latest
-    steps:
-      - name: CLA Assistant
-        # SHA-PINNED, NOT TAG-PINNED — deliberately, and do not "tidy" this
-        # back to a version tag.
-        #
-        # This job is third-party code that runs on an UNAUTHENTICATED trigger
-        # (anyone may open a PR or comment), with repo context via
-        # pull_request_target, on the PERSISTENT self-hosted runner whose $HOME
-        # holds the fleet's ~/.claude/.credentials.json — and it is handed a
-        # personal access token. A moving tag means the code executed here can
-        # be changed upstream with no diff in this repo and no review by us.
-        # A SHA cannot be repointed.
-        #
-        # ca4a40a = v2.6.1 at the time of pinning (2026-07-18). To upgrade:
-        # read the upstream diff, then move this SHA deliberately.
-        # Reported by scitex-agent-container; card
-        # cla-workflow-untrusted-action-on-selfhosted-runner-20260718.
-        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-        with:
-          path-to-signatures: "signatures/cla.json"
-          path-to-document: "https://github.com/scitex-ai/scitex-cards/blob/main/CLA.md"
-          branch: "cla-signatures"
-          allowlist: bot*,ywatanabe1989
-          custom-allsigned-prcomment: |
-            Thank you for signing the SciTeX CLA. Your contribution can now be reviewed.
-          custom-notsigned-prcomment: |
-            Please sign the [SciTeX CLA](https://github.com/scitex-ai/scitex-cards/blob/main/CLA.md) before your contribution can be merged.
-            Comment `I have read and agree to the SciTeX CLA.` to sign.
+  call:
+    uses: scitex-ai/.github/.github/workflows/cla.yml@ecb0345b88823776aad046047288623bd5d24511 # main@2026-07-29
+    with:
+      # Preserved verbatim from the inline version this replaces.
+      owner_allowlist: "bot*,ywatanabe1989"
+    secrets:
+      GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
