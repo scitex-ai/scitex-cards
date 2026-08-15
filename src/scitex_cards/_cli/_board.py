@@ -46,7 +46,15 @@ from ._store_guard import refuse_unconfigured_store
 
 def register(main: click.Group) -> None:
     """Attach the ``board`` noun group to the root group."""
+    from . import _board_service
+
     main.add_command(board_group)
+    # `install-service` lives on THIS noun, not on `gui`: `gui` is the
+    # ecosystem-standard four-verb group shared with figrecipe / writer /
+    # scholar, and a shared convention each package extends privately stops
+    # being shared. Attached from its own module because this file is at its
+    # line cap; passing the group in avoids an import cycle.
+    _board_service.register(board_group)
 
 
 def _board_run_server(

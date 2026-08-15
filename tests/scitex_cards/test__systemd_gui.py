@@ -330,6 +330,32 @@ def test_an_installed_unit_is_a_declaration(xdg_home):
 # --------------------------------------------------------------------------- #
 # reading the declared bind back — so the probe asks about the right port     #
 # --------------------------------------------------------------------------- #
+def test_install_service_is_a_board_verb():
+    # Arrange
+    # It must be reachable, and it must be reachable HERE: `gui` is the
+    # ecosystem-standard four-verb group shared with figrecipe / writer /
+    # scholar, and extending a shared convention privately un-shares it.
+    from scitex_cards._cli import main
+
+    # Act
+    verbs = main.commands["board"].commands
+    # Assert
+    assert "install-service" in verbs
+
+
+def test_install_service_is_not_on_the_shared_gui_group():
+    # Arrange
+    # The negative half, stated on purpose: this is the placement mistake I
+    # made first, and `tests/test_cli_gui.py` caught it. Without this test the
+    # next person restores it by looking at the docs.
+    from scitex_cards._cli import main
+
+    # Act
+    verbs = main.commands["gui"].commands
+    # Assert
+    assert "install-service" not in verbs
+
+
 def test_no_unit_declares_no_bind(xdg_home):
     # Arrange
     # Act

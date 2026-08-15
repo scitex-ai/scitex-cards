@@ -63,10 +63,7 @@ def register(main: click.Group) -> None:
             "lifecycle — `board` remains the canonical noun and is not "
             "deprecated."
         ),
-        command_categories=(
-            ("Core", ("open", "serve", "status", "stop")),
-            ("Host setup", ("install-service",)),
-        ),
+        command_categories=(("Core", ("open", "serve", "status", "stop")),),
     ),
 )
 @click.pass_context
@@ -84,7 +81,7 @@ def gui_group(ctx: click.Context) -> None:
         "  scitex-cards gui open [SURFACE]               # serve + open a browser\n"
         "  scitex-cards gui status [--json]\n"
         "  scitex-cards gui stop\n"
-        "  scitex-cards gui install-service              # make it resident",
+        "(to make the board resident: scitex-cards board install-service)",
         err=True,
     )
     ctx.exit(2)
@@ -239,61 +236,13 @@ def gui_open_cmd(surface: str, port: int, host: str) -> None:
     _board_run_server(None, port, no_browser=False, host=host)
 
 
-@gui_group.command(
-    "install-service",
-    **spec_command_kwargs(
-        summary="Make the board RESIDENT on this host (systemd user unit).",
-        description=(
-            "Writes a systemd USER unit that serves the board on loopback and "
-            "restarts it whenever it goes away, then prints the exact "
-            "`systemctl --user` commands to enable it. OPERATOR-GATED: this "
-            "NEVER runs systemctl itself.\n\n"
-            "Run it on EVERY host. The board is served per-host on 127.0.0.1 "
-            "and the card data travels between hosts via the per-host "
-            "Postgres sync — one shared board reachable over the VPN would be "
-            "a single point of failure and would vanish with the network."
-        ),
-        examples=(
-            ("{prog} gui install-service", "Write the unit for 127.0.0.1:8051."),
-            ("{prog} gui install-service --force", "Overwrite an existing unit."),
-        ),
-    ),
-)
-@click.option("--port", type=int, default=DEFAULT_PORT, show_default=True)
-@click.option("--host", default=DEFAULT_HOST, show_default=True)
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Overwrite an existing unit file (default: leave it untouched).",
-)
-def gui_install_service_cmd(port: int, host: str, force: bool) -> None:
-    """Write the systemd user unit (operator-gated) and print the enable commands.
-
-    Example:
-      $ scitex-cards gui install-service
-    """
-    from .._systemd_gui import install_gui_unit
-    from .._systemd_unit import ExecStartUnresolved
-
-    try:
-        result = install_gui_unit(host=host, port=port, force=force)
-    except ExecStartUnresolved as exc:
-        # Fail LOUDLY: a unit with an unresolvable ExecStart installs fine and
-        # then dies at 203/EXEC the moment the operator enables it — a board
-        # that is silently absent, which is the exact fault this verb exists
-        # to end.
-        raise click.ClickException(str(exc)) from exc
-    if result["written"]:
-        click.echo(f"# wrote systemd user unit: {result['path']}")
-        click.echo(f"#   ExecStart={result['exec_start']}")
-    elif result["existed"]:
-        click.echo(
-            f"# unit already exists (NOT overwritten): {result['path']}\n"
-            "#   pass --force to overwrite."
-        )
-    click.echo("#")
-    click.echo("# To enable + start it, the OPERATOR runs (this tool does NOT):")
-    click.echo(f"#   {result['enable_commands']}")
+# `install-service` is DELIBERATELY NOT HERE. It lives on the `board` noun
+# (`_board_service.py`). This group is the ecosystem-standard four —
+# open / serve / status / stop — shared with figrecipe, scitex-writer and
+# scitex-scholar so one startup script drives every SciTeX GUI the same way,
+# and `tests/test_cli_gui.py` pins it at exactly those four. A shared
+# convention that each package quietly extends is no longer shared. I added it
+# here first; that test caught it, and it was right to.
 
 
 # `status` and `stop` are the SAME commands the `board` group exposes, not

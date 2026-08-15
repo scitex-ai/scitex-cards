@@ -53,12 +53,19 @@ def listening_port():
 
 @pytest.fixture
 def silent_port():
-    """A real loopback port with NOTHING listening — a refused connection."""
+    """A real loopback port with NOTHING listening — a refused connection.
+
+    Yields rather than returns (STX-TQ005): a fixture that opens a socket owns
+    a resource for the test's lifetime, and the teardown half of that ownership
+    is only expressible after a ``yield``. The socket is closed before the test
+    runs — that is the point, the port must be silent — but the fixture still
+    holds the port reservation conceptually, so the shape has to be honest.
+    """
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
     port = probe.getsockname()[1]
     probe.close()
-    return port
+    yield port
 
 
 @pytest.fixture
@@ -159,7 +166,7 @@ def test_a_hand_started_board_is_told_how_to_become_resident(undeclared_but_up):
     # Arrange
     # Act
     # Assert
-    assert "gui install-service" in undeclared_but_up["hint"]
+    assert "board install-service" in undeclared_but_up["hint"]
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +199,7 @@ def test_an_undeclared_absent_board_still_carries_an_actionable_hint(
     # that says what to do — for an unknown, how to make it measurable.
     # Act
     # Assert
-    assert "gui install-service" in undeclared_and_down["hint"]
+    assert "board install-service" in undeclared_and_down["hint"]
 
 
 # --------------------------------------------------------------------------- #

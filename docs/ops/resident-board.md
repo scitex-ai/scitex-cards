@@ -21,7 +21,7 @@ channel that same night.
 ## Install it on every host
 
 ```bash
-scitex-cards gui install-service
+scitex-cards board install-service
 systemctl --user daemon-reload
 systemctl --user enable --now scitex-cards-gui.service
 ```
@@ -36,6 +36,22 @@ Verify with an HTTP status, never with "the process exists":
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8051/   # → 200
 ```
+
+### Check lingering, or the unit is a promise it cannot keep
+
+`WantedBy=default.target` starts the unit when the **user session** starts. On a
+headless host nobody logs into interactively, that never happens — the unit
+would sit enabled and dead through every reboot, which is the same silence this
+whole thing exists to end, arrived at by a different road.
+
+```bash
+loginctl show-user "$USER" -p Linger      # → Linger=yes
+sudo loginctl enable-linger "$USER"       # if it says no
+```
+
+`scitex-compute-04` already has `Linger=yes` (checked 2026-08-15), which is why
+`sac-listen.service` and `scitex-cards-pg.service` survive reboots there. Check
+it on any host before believing the board will come back on its own.
 
 ## Every host, on loopback — not one host over the VPN
 

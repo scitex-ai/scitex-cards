@@ -13,10 +13,21 @@
   hand. A process nobody is responsible for starting has no failure mode, only
   an absence, and an absence is invisible until someone goes looking. That same
   night the board had been declared the fleet's primary channel.
-  - `scitex-cards gui install-service` writes a systemd **user** unit
+  - `scitex-cards board install-service` writes a systemd **user** unit
     (`scitex-cards-gui.service`) and prints the `systemctl --user` commands.
     Operator-gated exactly like `notifyd install-unit`: it never runs systemctl
-    itself. The gate is on INSTALL, once per host — not on every boot.
+    itself. The gate is on INSTALL, once per host — not on every boot. It sits
+    on `board`, this package's own noun, and NOT on `gui` — `gui` is the
+    ecosystem-standard four-verb group (`open`/`serve`/`status`/`stop`) shared
+    with figrecipe / scitex-writer / scitex-scholar so one startup script
+    drives every SciTeX GUI, and a shared convention each package extends
+    privately stops being shared. `tests/test_cli_gui.py` pins that group at
+    exactly four verbs and caught the first attempt.
+  - Check `loginctl show-user $USER -p Linger` before believing any of this on
+    a headless host: without lingering a user unit starts only at interactive
+    login, so the board would sit enabled and dead through every reboot — the
+    same silence, reached by a different road. `scitex-compute-04` has
+    `Linger=yes`.
   - `Restart=always`, not the notify daemon's `on-failure`: the board's
     ABSENCE is the fault however it went away, so a clean exit must still come
     back. `ExecStart` carries `--force`, because `gui serve` refuses to start

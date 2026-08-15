@@ -67,7 +67,7 @@ CONNECT_TIMEOUT_S = 1.0
 
 #: The one command that makes a host's board resident.
 _INSTALL_HINT = (
-    "make the board resident on this host: `scitex-cards gui install-service` "
+    "make the board resident on this host: `scitex-cards board install-service` "
     f"then `systemctl --user daemon-reload && systemctl --user enable --now {GUI_UNIT_NAME}`"
 )
 
