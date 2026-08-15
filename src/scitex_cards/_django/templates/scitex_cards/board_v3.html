@@ -2147,7 +2147,17 @@
     // Render `src` to an SVG string OFF-DOM. Cached by source, so a repeat
     // call with unchanged data resolves instantly. Never rejects — a CDN
     // failure resolves to null and the caller shows an honest message.
-    function _renderGraphSvg(src) {
+    //
+    // A RESOLVED PROMISE IS NOT A DRAWN DIAGRAM. Over its size ceiling
+    // mermaid does not throw — it returns a VALID one-node flowchart whose
+    // label is its own complaint, so this function used to resolve happily
+    // with that graphic and cache it as the board's dependency map.
+    // `_graphRenderFailed(svg, expected)` is the assertion about WHAT CAME
+    // BACK that was missing: `expected` is the node count we asked for, and
+    // a render that produced fewer did not draw our diagram. The result is
+    // never cached, and `GRAPH_CACHE.reason` tells the caller which failure
+    // it was. (hook-bypass: line-limit.)
+    function _renderGraphSvg(src, expectedNodes) {
       if (GRAPH_CACHE.key === src && GRAPH_CACHE.svg) {
         return Promise.resolve(GRAPH_CACHE.svg);
       }
@@ -2157,9 +2167,11 @@
       GRAPH_CACHE.key = src;
       GRAPH_CACHE.svg = null;
       GRAPH_CACHE.failed = false;
+      GRAPH_CACHE.reason = null;
       const p = _ensureMermaid().then(async () => {
         if (!window.mermaid || !window.mermaid.render) {
           GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "bundle";
           return null;
         }
         try {
@@ -2169,11 +2181,21 @@
           const id = "stx-mermaid-" + Math.random().toString(36).slice(2, 10);
           const out = await window.mermaid.render(id, src);
           const svg = (out && out.svg) ? out.svg : String(out || "");
+          // Verify WHAT CAME BACK. mermaid answers a diagram it refuses with
+          // a one-node graphic and a resolved promise, so without this check
+          // the pink box is cached and shown as if it were the graph.
+          if (STX.graphBuilders._graphRenderFailed(svg, expectedNodes)) {
+            console.warn("[scitex-todo] mermaid drew fewer nodes than asked");
+            GRAPH_CACHE.failed = true;
+            GRAPH_CACHE.reason = "render";
+            return null;
+          }
           if (GRAPH_CACHE.key === src) { GRAPH_CACHE.svg = svg; }
           return svg;
         } catch (e) {
           console.warn("[scitex-todo] mermaid render failed:", e);
           GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "render";
           return null;
         }
       }).finally(() => {
@@ -2194,13 +2216,21 @@
         _mountGraphSvg(canvas, GRAPH_CACHE.svg, built.stats);
         return;
       }
+      // Never hand mermaid a source it will refuse. Over the ceiling it does
+      // not fail — it draws an error image — so the only way to keep the
+      // panel honest is to measure BEFORE asking and explain instead.
+      if (STX.graphBuilders._exceedsMermaidLimit(built.src)) {
+        canvas.innerHTML = STX.graphBuilders._graphOversizeHtml(
+          built.stats, built.src.length);
+        return;
+      }
       // Cache miss → show the numbers + a spinner line NOW (never a blank
       // canvas), and mount the SVG when the off-DOM render resolves.
       canvas.innerHTML = `<div class="graph-wrap">
         ${STX.graphBuilders._graphHintHtml(built.stats, "", GRAPH_FIT)}
         <div class="graph-canvas graph-canvas--loading">drawing the diagram…</div>
       </div>`;
-      _renderGraphSvg(built.src).then((svg) => {
+      _renderGraphSvg(built.src, built.stats.nodes).then((svg) => {
         // The operator may have switched layouts or the data may have moved
         // on while we were rendering — only paint if BOTH are still current.
         if (normalizeLayout(STATE.layout) !== "graph") return;
@@ -2210,9 +2240,8 @@
           const host = c.querySelector(".graph-canvas");
           if (host) {
             host.classList.remove("graph-canvas--loading");
-            host.innerHTML = `<p class="graph-empty__hint">Could not draw the
-              diagram — the mermaid bundle failed to load (offline?). The card
-              data is fine; try Timeline or Wall.</p>`;
+            host.innerHTML = STX.graphBuilders._graphFailureHtml(
+              GRAPH_CACHE.reason);
           }
           return;
         }
@@ -2245,7 +2274,11 @@
         const built = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
         if (!built) return;                                   // nothing to draw
         if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) return;  // warm
-        _renderGraphSvg(built.src);
+        // Same measurement the view makes: a source over the ceiling can only
+        // come back as an error image, so spending idle time on it is worse
+        // than useless — it would poison the cache with a failure.
+        if (STX.graphBuilders._exceedsMermaidLimit(built.src)) return;
+        _renderGraphSvg(built.src, built.stats.nodes);
       }, { timeout: 3000 });
     }
 
@@ -2260,6 +2293,13 @@
           try {
             window.mermaid.initialize({
               startOnLoad: false, theme: "dark", securityLevel: "loose",
+              // Pin the ceiling we guard against rather than inheriting
+              // whatever the library defaults to. This is not raising the
+              // limit — it is the same 50,000 mermaid 10 already uses — but
+              // it makes _exceedsMermaidLimit's constant true by
+              // construction, so a library default change cannot silently
+              // put the guard and the renderer on different numbers.
+              maxTextSize: STX.graphBuilders.MERMAID_MAX_TEXT,
               // useMaxWidth:false → mermaid emits the diagram at its natural
               // px size + a viewBox; _mountGraphSvg() then does the scaling
               // (fit-to-panel by default, 1:1 on demand). Letting mermaid do
