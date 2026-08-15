@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Added
+
+- **The board is a resident service, and its absence is loud.** On 2026-08-14
+  the operator opened the board and got a bare `ERR_CONNECTION_REFUSED`:
+  nothing was listening on `:8051` on any host, and the board had been serving
+  nowhere for hours. Every other instrument was green — the card store was
+  resident, the GUI agent was alive with a fresh heartbeat — because the only
+  thing that had ever started the board was a human running a startup script by
+  hand. A process nobody is responsible for starting has no failure mode, only
+  an absence, and an absence is invisible until someone goes looking. That same
+  night the board had been declared the fleet's primary channel.
+  - `scitex-cards board install-service` writes a systemd **user** unit
+    (`scitex-cards-gui.service`) and prints the `systemctl --user` commands.
+    Operator-gated exactly like `notifyd install-unit`: it never runs systemctl
+    itself. The gate is on INSTALL, once per host — not on every boot. It sits
+    on `board`, this package's own noun, and NOT on `gui` — `gui` is the
+    ecosystem-standard four-verb group (`open`/`serve`/`status`/`stop`) shared
+    with figrecipe / scitex-writer / scitex-scholar so one startup script
+    drives every SciTeX GUI, and a shared convention each package extends
+    privately stops being shared. `tests/test_cli_gui.py` pins that group at
+    exactly four verbs and caught the first attempt.
+  - Check `loginctl show-user $USER -p Linger` before believing any of this on
+    a headless host: without lingering a user unit starts only at interactive
+    login, so the board would sit enabled and dead through every reboot — the
+    same silence, reached by a different road. `scitex-compute-04` has
+    `Linger=yes`.
+  - `Restart=always`, not the notify daemon's `on-failure`: the board's
+    ABSENCE is the fault however it went away, so a clean exit must still come
+    back. `ExecStart` carries `--force`, because `gui serve` refuses to start
+    against a live pidfile and one leftover would otherwise keep the unit down
+    forever — reproducing the outage with extra steps.
+  - Bound to `127.0.0.1` on EVERY host. The operator ruled out one
+    VPN-reachable board: 「一つの場所を見ると単一障害点になったり、vpn が切れる
+    と見れなくなったりしてしまいます」. What travels between hosts is the DATA,
+    over the per-host `:55432` Postgres and its existing sync.
+  - No `Environment=` line: verified under `env -i` that the store resolves
+    from `~/.scitex/cards/config.json` alone, so the unit cannot crash-loop on
+    the unconfigured-store guard — and the store keeps exactly one identity.
+  - New `gui_resident` health check, three-valued and DELIVERY-severity. It
+    reads a declaration (is a unit installed) before a liveness (is anything
+    listening): declared-and-silent is a FAILURE naming the restart command,
+    serving-without-a-unit PASSES but reports that the board will not survive a
+    reboot, and neither-declared-nor-serving is UNKNOWN — named in the summary,
+    never a silent pass, because a check that failed on every container in the
+    fleet would be switched off within a day. It probes the port the installed
+    unit declares, so a custom-port host is not told a confident story about
+    `:8051`. See `docs/ops/resident-board.md`.
+
+### Changed
+
+- **systemd unit rendering is shared, not copied.** The absolute-`ExecStart`
+  resolution — which raises rather than write a unit guaranteed to die at
+  `203/EXEC` — lived only in the notify daemon's installer. It now lives in
+  `scitex_cards._systemd_unit` as a `UnitSpec` + installer that both the daemon
+  and the board use. Every public name in `_delivery/_systemd.py` is unchanged
+  and its 35 tests pass untouched; this is a de-duplication, not a re-design.
+  A second unit copying that routine would have inherited whichever version its
+  author happened to read.
+
 ## [0.39.0] - 2026-08-14
 
 **The notification rail finally reaches the database everyone else is on, and

@@ -55,6 +55,7 @@ from . import _inbox
 from ._health_backend_mode import check_backend_mode
 from ._health_channel_reach import check_channel_reaches_session
 from ._health_delivery import check_delivery_confirmed
+from ._health_gui import check_gui_resident
 from ._health_stranded_backlog import check_no_stranded_backlog
 from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
     _check_store_identity_agrees,
@@ -343,6 +344,15 @@ def health(
             severity=DELIVERY,
         ),
         _run_check("channel_capable", _check_channel_capable, severity=DELIVERY),
+        # Is the BOARD ITSELF reachable on this host? Every check above asks
+        # about the store or the notification rail; on 2026-08-14 all of them
+        # were green while the operator's browser got ERR_CONNECTION_REFUSED,
+        # because nothing was serving :8051 anywhere and no instrument was
+        # looking. He had been told that night that the board is the fleet's
+        # primary channel. DELIVERY, not BLOCKING: the cards are perfectly
+        # readable, they are just not reaching the person they are for —
+        # which is the same class of fault as an undelivered notification.
+        _run_check("gui_resident", check_gui_resident, severity=DELIVERY),
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
