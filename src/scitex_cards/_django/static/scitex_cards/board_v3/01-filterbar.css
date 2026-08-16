@@ -186,7 +186,7 @@ a {
   animation: pulse-green 2s ease-in-out infinite;
 }
 
-/* === Fleet-liveness dot-strip (ticket proj-scitex-todo-fleet-liveness) ===
+/* === Fleet-liveness dot-strip (ticket proj-scitex-cards-fleet-liveness) ===
    One colored dot per agent. Lives in the filter bar so the operator
    sees fleet state at a glance. Click a dot = filter to that agent. */
 .fleetstrip {

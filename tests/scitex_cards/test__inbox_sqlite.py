@@ -11,16 +11,17 @@ Covers the semantics the YAML path guarantees, re-implemented against SQLite:
 * ``supersede=True`` drops UNSEEN predecessors matching ``(event_type, card_id)``
   while leaving SEEN history untouched;
 * ``unseen_only`` filter + full-history read;
-* the migration verb copies YAML ``inboxes:`` records into SQLite, idempotently,
-  without deleting the YAML section;
-* the backend switch (``SCITEX_TODO_INBOX_BACKEND=sqlite``) routes the public
+* the migration verb copies file-backed ``inboxes.json`` records into the
+  store's rail, idempotently, without deleting the source;
+* the backend switch (``SCITEX_CARDS_INBOX_BACKEND=sqlite``) routes the public
   ``_inbox`` API onto the SQLite implementation.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
-import yaml as _yaml
 
 from scitex_cards import _inbox_sqlite as sq
 
@@ -29,11 +30,54 @@ from scitex_cards import _inbox_sqlite as sq
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _store(tmp_path):
-    return tmp_path / "tasks.yaml"
+    """A DB store, because the rail now lives IN the store.
+
+    This used to be ``tasks.yaml``, which worked only while the rail wrote a
+    separate ``runtime/cards.db`` beside the store. Now that the rail's target
+    IS the store, handing it a YAML document makes the enqueue open a YAML file
+    as SQLite — and it says so, loudly (``file is not a database``). That is the
+    correct answer for a YAML store; the fix is to stop naming one.
+    """
+    return tmp_path / "cards.db"
 
 
-def _read(store):
-    return _yaml.safe_load(store.read_text(encoding="utf-8"))
+def _sidecar(store):
+    """Path of the break-glass ``inboxes.json`` sidecar beside ``store``."""
+    from scitex_cards._inbox import _INBOXES_FILENAME
+
+    return store.parent / _INBOXES_FILENAME
+
+
+def _read_sidecar(store):
+    """Read the sidecar document (``{"inboxes": {recipient: [...]}}``)."""
+    import json
+
+    path = _sidecar(store)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _rail_row_count(store):
+    """Rows on the rail, read WITHOUT going through the inbox API.
+
+    An absent target, or a target with no rail table yet, is zero rows — those
+    are the shapes a store has before anything has been enqueued into it.
+    """
+    import sqlite3
+
+    target = Path(sq.inbox_target(store))
+    if not target.exists():
+        return 0
+    with sq.open_connection(target) as conn:
+        from scitex_cards._inbox_shape import shape_for
+
+        try:
+            return conn.execute(
+                f"SELECT COUNT(*) AS n FROM {shape_for(conn).table}"
+            ).fetchone()["n"]
+        except sqlite3.OperationalError:
+            return 0
 
 
 def _enqueue_completed(
@@ -80,22 +124,23 @@ def _enqueue_digest(store, body, ts):
     )
 
 
-def _seed_yaml_inbox(store, recipient, card_id, body, actor, ts, event_type):
-    """Seed one record directly into the LEGACY embedded ``inboxes:`` section
-    of the pre-cutover task-store document — the exact shape
-    ``migrate_to_sqlite`` reads (see ``_inbox._read_legacy_embedded_inboxes``).
+def _seed_sidecar_inbox(store, recipient, card_id, body, actor, ts, event_type):
+    """Seed one record into the file-backed ``inboxes.json`` sidecar — the
+    source ``migrate_to_sqlite`` still has to carry (see
+    ``_inbox_migrate.gather_migratable_inboxes``).
 
-    Deliberately independent of the live ``_inbox`` module's own write path:
-    that module's break-glass backend now persists to its own
-    ``inboxes.json`` sidecar (a DIFFERENT file), so seeding through it would
-    no longer land in the legacy location this migration test exercises.
+    It used to seed the OTHER source, the embedded ``inboxes:`` section of a
+    pre-cutover YAML task store. That source cannot be expressed any more: the
+    rail's destination is now the store itself, so a store holding a YAML
+    document would have to be a SQLite database at the same time. The sidecar
+    is the source that survives a DB store, and it exercises the same carry.
+
+    Deliberately independent of the live ``_inbox`` module's own write path, so
+    a change there cannot quietly stop these tests from seeding anything.
     """
-    doc = {}
-    if store.exists():
-        loaded = _yaml.safe_load(store.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            doc = loaded
-    doc.setdefault("tasks", [])
+    import json
+
+    doc = _read_sidecar(store)
     inboxes = doc.setdefault("inboxes", {})
     record = {
         "id": f"n_{recipient}_{card_id}_{len(inboxes.get(recipient, []))}",
@@ -107,18 +152,24 @@ def _seed_yaml_inbox(store, recipient, card_id, body, actor, ts, event_type):
         "seen": False,
     }
     inboxes.setdefault(recipient, []).append(record)
-    store.write_text(_yaml.safe_dump(doc), encoding="utf-8")
+    _sidecar(store).write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return dict(record)
 
 
-def _mark_yaml_seen(store, recipient, record_id):
-    """Flip one legacy embedded record's ``seen`` flag directly (test-only
-    counterpart to :func:`_seed_yaml_inbox` — see its docstring)."""
-    doc = _yaml.safe_load(store.read_text(encoding="utf-8")) or {}
+def _mark_sidecar_seen(store, recipient, record_id):
+    """Flip one seeded sidecar record's ``seen`` flag directly (test-only
+    counterpart to :func:`_seed_sidecar_inbox` — see its docstring)."""
+    import json
+
+    doc = _read_sidecar(store)
     for record in doc.get("inboxes", {}).get(recipient, []):
         if record.get("id") == record_id:
             record["seen"] = True
-    store.write_text(_yaml.safe_dump(doc), encoding="utf-8")
+    _sidecar(store).write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -137,14 +188,14 @@ def two_record_inbox(tmp_path):
 def migrated_store(tmp_path):
     """Two YAML inbox records (one acked) migrated into SQLite."""
     store = _store(tmp_path)
-    a = _seed_yaml_inbox(
+    a = _seed_sidecar_inbox(
         store, "u_abc", "c1", "hi", "bob", "2026-06-26T00:00:00Z", "reassigned"
     )
-    b = _seed_yaml_inbox(
+    b = _seed_sidecar_inbox(
         store, "dave", "c2", "bye", "carol", "2026-06-26T00:00:01Z", "completed"
     )
     # Mark one seen so the seen flag carries across.
-    _mark_yaml_seen(store, "dave", b["id"])
+    _mark_sidecar_seen(store, "dave", b["id"])
     stats = sq.migrate_to_sqlite(store=store)
     return {"store": store, "a": a, "b": b, "stats": stats}
 
@@ -153,7 +204,7 @@ def migrated_store(tmp_path):
 def twice_migrated_store(tmp_path):
     """One YAML inbox record run through migrate_to_sqlite TWICE."""
     store = _store(tmp_path)
-    _seed_yaml_inbox(
+    _seed_sidecar_inbox(
         store, "u_abc", "c1", "hi", "bob", "2026-06-26T00:00:00Z", "reassigned"
     )
     first = sq.migrate_to_sqlite(store=store)
@@ -167,7 +218,7 @@ def sqlite_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     rec = _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -186,7 +237,7 @@ def default_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.delete("SCITEX_TODO_INBOX_BACKEND")  # unset -> the default
+    env.delete("SCITEX_CARDS_INBOX_BACKEND")  # unset -> the default
     _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -205,7 +256,7 @@ def yaml_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.set("SCITEX_TODO_INBOX_BACKEND", "yaml")  # explicit break-glass
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "yaml")  # explicit break-glass
     _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -232,7 +283,7 @@ def cli_migrated_store():
     from scitex_cards._paths import resolve_tasks_path
 
     store = resolve_tasks_path(None)
-    _seed_yaml_inbox(
+    _seed_sidecar_inbox(
         store, "u_abc", "c1", "hi", "bob", "2026-06-26T00:00:00Z", "reassigned"
     )
     result = CliRunner().invoke(main, ["inbox", "migrate-to-sqlite", "-y"])
@@ -248,7 +299,7 @@ def cli_dry_run_store():
     from scitex_cards._paths import resolve_tasks_path
 
     store = resolve_tasks_path(None)
-    _seed_yaml_inbox(
+    _seed_sidecar_inbox(
         store, "u_abc", "c1", "hi", "bob", "2026-06-26T00:00:00Z", "reassigned"
     )
     result = CliRunner().invoke(main, ["inbox", "migrate-to-sqlite", "--dry-run"])
@@ -259,7 +310,7 @@ def cli_dry_run_store():
 # db path + schema                                                            #
 # --------------------------------------------------------------------------- #
 def test_db_path_lives_under_runtime_dir(tmp_path):
-    # <store_dir>/runtime/todo.db per the SciTeX runtime-DB convention.
+    # <store_dir>/runtime/cards.db per the SciTeX runtime-DB convention.
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -277,13 +328,13 @@ def test_db_path_parent_is_the_store_dir(tmp_path):
     assert p.parent.parent == tmp_path
 
 
-def test_db_file_is_named_todo_db(tmp_path):
+def test_db_file_is_named_cards_db(tmp_path):
     # Arrange
     store = _store(tmp_path)
     # Act
     p = sq.inbox_db_path(store)
     # Assert
-    assert p.name == "todo.db"
+    assert p.name == "cards.db"
 
 
 def test_schema_has_recipient_seen_index(tmp_path):
@@ -291,7 +342,7 @@ def test_schema_has_recipient_seen_index(tmp_path):
     store = _store(tmp_path)
     _enqueue_completed(store)
     # Act
-    with sq.open_connection(sq.inbox_db_path(store)) as conn:
+    with sq.open_connection(sq.inbox_target(store)) as conn:
         indexes = {
             row["name"]
             for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
@@ -305,7 +356,7 @@ def test_schema_enables_wal_journal_mode(tmp_path):
     store = _store(tmp_path)
     _enqueue_completed(store)
     # Act
-    with sq.open_connection(sq.inbox_db_path(store)) as conn:
+    with sq.open_connection(sq.inbox_target(store)) as conn:
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     # Assert — WAL is what lets a reader poll while a writer enqueues.
     assert journal_mode.lower() == "wal"
@@ -710,11 +761,11 @@ def test_migrate_carries_the_seen_flag(migrated_store):
     assert got_dave[0]["seen"] is True
 
 
-def test_migrate_does_not_delete_the_yaml_section(migrated_store):
+def test_migrate_does_not_delete_the_source(migrated_store):
     # Arrange
     store = migrated_store["store"]
     # Act
-    doc = _read(store)
+    doc = _read_sidecar(store)
     # Assert — the migration stays reversible.
     assert set(doc["inboxes"].keys()) == {"u_abc", "dave"}
 
@@ -776,13 +827,14 @@ def test_backend_switch_routes_to_sqlite(sqlite_backend_store):
     assert [r["card_id"] for r in got] == ["c1"]
 
 
-def test_backend_switch_does_not_write_the_yaml_section(sqlite_backend_store):
-    # The write went to SQLite, NOT the YAML store — the sqlite path never
-    # touched tasks.yaml, so there is no inboxes: section on disk.
+def test_backend_switch_writes_no_file_sidecar(sqlite_backend_store):
+    # The write went to the STORE, not to a file beside it — the sqlite path
+    # never touched inboxes.json, so no sidecar exists to read a stale copy
+    # from later.
     # Arrange
     store = sqlite_backend_store["store"]
     # Act
-    doc = _read(store) or {} if store.exists() else {}
+    doc = _read_sidecar(store)
     # Assert
     assert not doc.get("inboxes")
 
@@ -790,8 +842,8 @@ def test_backend_switch_does_not_write_the_yaml_section(sqlite_backend_store):
 def test_backend_switch_creates_the_sqlite_db(sqlite_backend_store):
     # Arrange
     store = sqlite_backend_store["store"]
-    # Act
-    db_path = sq.inbox_db_path(store)
+    # Act — the rail's OWN target, which is now the store itself.
+    db_path = Path(sq.inbox_target(store))
     # Assert
     assert db_path.exists()
 
@@ -800,7 +852,7 @@ def test_default_backend_is_sqlite(default_backend_store):
     # Arrange
     store = default_backend_store["store"]
     # Act
-    db_path = sq.inbox_db_path(store)
+    db_path = Path(sq.inbox_target(store))
     # Assert — with the env var unset, the default created the DB file.
     assert db_path.exists()
 
@@ -832,7 +884,7 @@ def test_break_glass_yaml_backend_creates_no_sqlite_db(yaml_backend_store):
     # Arrange
     store = yaml_backend_store["store"]
     # Act
-    db_path = sq.inbox_db_path(store)
+    db_path = Path(sq.inbox_target(store))
     # Assert
     assert not db_path.exists()
 
@@ -851,7 +903,7 @@ def test_lazy_auto_migration_starts_without_a_sqlite_db(yaml_backend_store):
     # Arrange
     store = yaml_backend_store["store"]
     # Act
-    db_path = sq.inbox_db_path(store)
+    db_path = Path(sq.inbox_target(store))
     # Assert
     assert not db_path.exists()
 
@@ -859,7 +911,7 @@ def test_lazy_auto_migration_starts_without_a_sqlite_db(yaml_backend_store):
 def test_lazy_auto_migration_on_first_sqlite_access(yaml_backend_store):
     # Arrange — switch to the default (sqlite) after the yaml seed.
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     # Act
     got = _inbox.poll_inbox("u_abc", store=store)
     # Assert — first access lazily migrated the record.
@@ -869,17 +921,17 @@ def test_lazy_auto_migration_on_first_sqlite_access(yaml_backend_store):
 def test_lazy_auto_migration_creates_the_sqlite_db(yaml_backend_store):
     # Arrange
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     # Act
     _inbox.poll_inbox("u_abc", store=store)
     # Assert
-    assert sq.inbox_db_path(store).exists()
+    assert Path(sq.inbox_target(store)).exists()
 
 
 def test_lazy_auto_migration_does_not_re_migrate(yaml_backend_store):
     # Arrange
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     _inbox.poll_inbox("u_abc", store=store)
     # Act
     again = _inbox.poll_inbox("u_abc", unseen_only=False, store=store)
@@ -903,7 +955,7 @@ def test_cli_migrate_to_sqlite(cli_migrated_store):
     # Arrange
     store = cli_migrated_store["store"]
     # Act
-    db_path = sq.inbox_db_path(store)
+    db_path = Path(sq.inbox_target(store))
     # Assert
     assert db_path.exists()
 
@@ -927,12 +979,54 @@ def test_cli_migrate_dry_run_exits_zero(cli_dry_run_store):
 
 
 def test_cli_migrate_dry_run_writes_nothing(cli_dry_run_store):
-    # Arrange
+    # Arrange — the rail's target is the store itself, which already exists, so
+    # "wrote nothing" is now a claim about ROWS, not about a file's presence.
+    # Read the rail DIRECTLY rather than through `poll_inbox`: a poll runs the
+    # lazy carry itself, so it would report the record the dry run declined to
+    # write and the test would be measuring its own read.
     store = cli_dry_run_store["store"]
     # Act
-    db_path = sq.inbox_db_path(store)
-    # Assert — a dry run creates no DB file.
-    assert not db_path.exists()
+    carried = _rail_row_count(store)
+    # Assert — a dry run carries no record.
+    assert carried == 0
+
+
+# --------------------------------------------------------------------------- #
+# WHERE THE RAIL POINTS — the two answers, both pinned                        #
+# --------------------------------------------------------------------------- #
+# These exist because BOTH answers were lost at once and nothing caught it.
+# `inbox_target` replaced `inbox_db_path` and dropped its env override, so a
+# pinned rail was read from somewhere else with nothing said. The visible cost
+# was `test_an_unreadable_inbox_says_why_it_is_silent`: its arrangement pins the
+# rail at an uncreatable path to prove a broken rail SPEAKS, and an ignored
+# override turned that into a healthy read of the scratch store — the test went
+# quiet because the arrangement went vacuous, which is the worst way for a
+# fail-loud contract to die. The default is pinned alongside it because the two
+# only mean anything together: "the store, unless someone said otherwise".
+
+
+def test_the_rail_targets_the_store_itself(tmp_path, env):
+    """The headline of this change: notifications live IN the canonical store,
+    not in a per-container ``runtime/cards.db`` beside it."""
+    # Arrange
+    env.delete("SCITEX_CARDS_INBOX_DB")
+    store = _store(tmp_path)
+    # Act
+    target = str(sq.inbox_target(store))
+    # Assert
+    assert target == str(store)
+
+
+def test_an_explicit_inbox_db_override_still_wins(tmp_path, env):
+    """An operator who NAMES the rail gets the rail they named. Ignoring a set
+    variable is a silent fallback, and it is what broke the fail-loud test."""
+    # Arrange
+    pinned = tmp_path / "pinned-rail.db"
+    env.set("SCITEX_CARDS_INBOX_DB", str(pinned))
+    # Act
+    target = str(sq.inbox_target(_store(tmp_path)))
+    # Assert
+    assert target == str(pinned)
 
 
 # EOF

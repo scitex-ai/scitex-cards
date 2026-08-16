@@ -1,6 +1,30 @@
 # ADR-0010 — `~/.scitex/cards/cards.db` becomes the single source of truth
 
-**Status:** ACCEPTED (operator-ruled, 2026-07-16)
+> **SUPERSEDED — 2026-08-15. THE STORE IS POSTGRESQL ON 55432, NOT A LOCAL
+> `cards.db`.** The body below is kept verbatim as the record of what was ruled
+> on 2026-07-16; it is **not** current architecture. Do not implement from it.
+>
+> What changed, measured rather than recalled:
+> - The live fleet store is `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards`
+>   (store_uuid `1d55dd6e-3d2a-4c24-a429-a78835ab988f`), one per host, synchronised
+>   across hosts.
+> - `_paths.py:152` records that **since 2026-08-13 the zero-config SQLite default
+>   RAISES** instead of naming a database. The tier this ADR established is gone.
+> - Operator, 2026-08-15, verbatim: 「and never use sqlite」/「we migrated to 55432
+>   postgres」/「if you find sqlite, <path/to>.db, it is violation」— and the
+>   reasoning he gave for the singularity: 「if you have both sqlite and postgres,
+>   it will introduce mistakes and misunderstanding; remember, more options does
+>   not mean better」.
+>
+> That last sentence is the same principle ADR-0016 already carries in its title
+> (*transport plurality yes, storage plurality no*); this ADR is the storage tier
+> that principle now excludes.
+>
+> An ADR marked ACCEPTED is the most authoritative doc form we have, so leaving
+> this one unmarked meant the most trusted document in the repo asserted the one
+> thing that is now a violation.
+
+**Status:** SUPERSEDED 2026-08-15 (was ACCEPTED, operator-ruled, 2026-07-16)
 **Supersedes / amends:** `docs/design/sqlite-migration.md` (the RFC on branch
 `design/sqlite-migration`) — adopted as the base design; this ADR records the
 deltas the operator's rulings introduced and the sequencing they force.
@@ -8,7 +32,7 @@ deltas the operator's rulings introduced and the sequencing they force.
 ## Context
 
 The RFC designed the yaml→sqlite migration when the package was still
-scitex-todo, target path `~/.scitex/todo/todo.db`, with open questions Q5 (git
+scitex-cards, target path `~/.scitex/cards/cards.db`, with open questions Q5 (git
 audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 
 1. The package was renamed **scitex-cards** (S1 shipped in v0.14.0: import
@@ -31,11 +55,11 @@ audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 ## Decision
 
 1. **Path.** `resolve_db_path`: explicit arg → `$SCITEX_CARDS_DB` →
-   `$SCITEX_TODO_DB` (deprecated, loud warning, one transition window) →
+   `$SCITEX_CARDS_DB` (deprecated, loud warning, one transition window) →
    `local_state.user_path("cards", "cards.db")`. The final tier stays
    DELEGATED to the ecosystem resolver — a project scope remains structurally
    inexpressible (the 2026-07-06 stale-store class stays dead).
-2. **The pre-rename shadow db is dead weight.** `~/.scitex/todo/todo.db`
+2. **The pre-rename shadow db is dead weight.** `~/.scitex/cards/cards.db`
    (stale since 2026-07-13, dual-write off fleet-wide) is never moved, read,
    or trusted; `cards.db` is REBUILT from the live yaml by the idempotent
    importer at cutover, then verified (RFC-R4 A/B equivalence, counts printed
@@ -50,7 +74,7 @@ audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
    the store. Order: publish scitex-cards (S3) → SIF floor bump → sac env flip
    → dotfiles store-path pin flip (their card
    `dotfiles-env-store-path-flip-to-scitex-cards-20260716`, pinged by us after
-   verification) → db becomes canonical → `~/.scitex/todo` becomes a symlink
+   verification) → db becomes canonical → `~/.scitex/cards` becomes a symlink
    to `~/.scitex/cards` (operator-ruled end shape). Exactly one canonical
    store at any moment.
 5. **Multi-host (RFC-Q6).** Spartan's island store and its project-shadow fork

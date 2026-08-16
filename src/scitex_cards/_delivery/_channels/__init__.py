@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Concrete delivery channels shipped inside scitex-todo.
+"""Concrete delivery channels shipped inside scitex-cards.
 
 Slice 1 ships exactly one: :class:`scitex_cards._delivery._channels.log.\
 LogChannel` — a creds-free stdlib-logging sink registered under the

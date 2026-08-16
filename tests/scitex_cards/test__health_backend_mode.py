@@ -31,11 +31,30 @@ import os
 
 import pytest
 
+from scitex_cards._config import CONFIG_NAME, STORE_SECTION, STORE_TARGET_KEY
 from scitex_cards._health_backend_mode import POSTGRES, SQLITE, check_backend_mode
 from scitex_cards._health_write_target import check_single_write_target
+from scitex_cards._paths import _user_root
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_TODO_INBOX_BACKEND")
+_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND")
+
+
+def _write_user_config(target: str) -> None:
+    """Point the user-scope config file at ``target``.
+
+    Written through the package's own ``_user_root`` rather than a hand-built
+    ``HOME/.scitex/cards`` path, so a test that claims to exercise the config
+    tier cannot silently write somewhere the resolver never reads.
+    """
+    import json
+
+    root = _user_root()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / CONFIG_NAME).write_text(
+        json.dumps({STORE_SECTION: {STORE_TARGET_KEY: target}}),
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture
@@ -44,7 +63,7 @@ def sqlite_store(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in ("SCITEX_DIR", "SCITEX_TODO_INBOX_BACKEND"):
+    for name in ("SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
@@ -77,7 +96,7 @@ def postgres_rails(sqlite_store):
 @pytest.fixture
 def postgres_inbox_only(sqlite_store):
     """Inbox on a server, cards in a file — the split the other way round."""
-    os.environ["SCITEX_TODO_INBOX_BACKEND"] = "postgres"
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
     os.environ["SCITEX_CARDS_INBOX_DSN"] = _DSN
     yield sqlite_store
     os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)
@@ -245,14 +264,34 @@ class TestItNamesWhichTierChoseTheTarget:
         assert "environment variable" in detail
 
     def test_the_config_file_is_named_when_no_env_var_is_set(self, sqlite_store):
+        """It must name ``config.json`` -- not merely resolve to SOMETHING.
+
+        THIS TEST WAS GREEN FOR THE WRONG REASON until the compat shim was
+        deleted. It asserted only ``"chosen by" in detail``, which every tier
+        satisfies, and it wrote no config file at all -- so the tier it is named
+        after was never exercised. What actually answered was the deleted
+        ``_env_compat`` module: it mirrored the ambient ``SCITEX_CARDS_DB`` onto
+        the retired env name AT IMPORT, the fixture did not manage that name,
+        and popping ``SCITEX_CARDS_DB`` therefore left the REAL production
+        PostgreSQL DSN visible through the retired one. Measured 2026-08-16:
+        with the env popped, ``resolve_store_target`` returned
+        ``postgresql://...:55432/scitex_cards``. A unit test was reading the
+        fleet's live store and calling that a config-file lookup.
+
+        So it now WRITES the config file and asserts the file is NAMED. Both
+        halves matter: without the write there is no config tier to find, and
+        without naming the file the assertion passes on any tier -- which is
+        exactly how it hid a leak of production state for as long as it did.
+        """
         # Arrange
         os.environ.pop("SCITEX_CARDS_DB", None)
+        _write_user_config(sqlite_store)
 
         # Act
         detail = check_backend_mode(None)["detail"]
 
         # Assert
-        assert "chosen by" in detail
+        assert CONFIG_NAME in detail
 
 
 class TestTheWriteTargetNamesTheRealEngine:

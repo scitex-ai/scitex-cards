@@ -67,7 +67,7 @@ def store(env):
     services._board_cache.clear()
     services._refreshing.clear()
     # No per-project lanes in the fixture — keep the unit about the cache.
-    env.set("SCITEX_TODO_LANE_GLOBS", "")
+    env.set("SCITEX_CARDS_LANE_GLOBS", "")
     yield str(path)
     services._board_cache.clear()
     services._refreshing.clear()

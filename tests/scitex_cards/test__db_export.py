@@ -292,7 +292,8 @@ def _run_snapshot(tmp_path):
 
 
 def test_snapshot_exits_clean(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     result, _snap = _run_snapshot(tmp_path)
 
     # Assert
@@ -300,7 +301,8 @@ def test_snapshot_exits_clean(tmp_path):
 
 
 def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     _result, snap = _run_snapshot(tmp_path)
 
     # Assert — read the export back; it is the seeded doc.
@@ -308,7 +310,8 @@ def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
 
 
 def test_snapshot_commits_the_export_into_a_git_repo(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     _result, snap = _run_snapshot(tmp_path)
 
     # Assert — the commit ran; the dir is a repo.

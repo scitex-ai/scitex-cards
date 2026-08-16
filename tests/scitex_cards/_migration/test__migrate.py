@@ -245,13 +245,13 @@ class TestRenderMarkdown:
 
 
 class TestCliPlan:
-    """`scitex-todo migration plan --json` emits parseable JSON."""
+    """`scitex-cards migration plan --json` emits parseable JSON."""
 
     def test_cli_plan_json_decodes(self, env, tmp_path):
         # Arrange — empty global + empty lane glob.
         global_store = tmp_path / "global.yaml"
         global_store.write_text("tasks: []\n", encoding="utf-8")
-        env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(global_store))
+        env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(global_store))
         # Act
         result = CliRunner().invoke(main, ["migration", "plan", "--json"])
         # Assert — JSON-decodable + has the expected top-level keys.
@@ -268,7 +268,7 @@ class TestCliPlan:
         # Arrange
         global_store = tmp_path / "global.yaml"
         global_store.write_text("tasks: []\n", encoding="utf-8")
-        env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(global_store))
+        env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(global_store))
         # Act
         result = CliRunner().invoke(main, ["migration", "plan", "--markdown"])
         # Assert

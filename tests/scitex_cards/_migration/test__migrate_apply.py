@@ -12,7 +12,7 @@ Lead-approved guardrails (operator OK via lead a2a `3cf31901`):
      lane is a no-op (every row classifies as canonical).
   4. Per-lane git commit at end: when the lane's parent is a git
      repo, the post-migration state is committed under a clear
-     ``[scitex-todo migrate]`` message.
+     ``[scitex-cards migrate]`` message.
 
 SQLite is the store (YAML→SQLite cutover): the migrator reads its rows
 from the canonical DB — NOT from a ``tasks.yaml`` file — classifies them,
@@ -219,7 +219,7 @@ class TestGitCommit:
         repo = tmp_path / "repo"
         repo.mkdir()
         _git_init(repo)
-        lane = repo / ".scitex" / "todo" / "tasks.yaml"
+        lane = repo / ".scitex" / "card" / "tasks.yaml"
         _seed_db(
             "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
         )

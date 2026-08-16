@@ -71,7 +71,7 @@ from scitex_cards import _inbox_sqlite, _inbox_sqlite_schema
 #: that control exists.
 RAIL_MODULES = (_inbox_sqlite, _inbox_sqlite_schema)
 
-_MANAGED = ("SCITEX_TODO_AGENT_ID", "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
+_MANAGED = ("SCITEX_CARDS_AGENT_ID", "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
 
 #: The spelling SQLite < 3.39 rejects. Assembled from fragments so this constant
 #: is not itself an occurrence the guards would trip over.
@@ -174,7 +174,7 @@ def sqlite_inbox_store(tmp_path):
 
     os.environ.pop("SCITEX_DIR", None)
     os.environ["HOME"] = str(tmp_path)
-    os.environ["SCITEX_TODO_AGENT_ID"] = "test-agent"
+    os.environ["SCITEX_CARDS_AGENT_ID"] = "test-agent"
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
     store = tmp_path / "cards.db"
     os.environ["SCITEX_CARDS_DB"] = str(store)

@@ -17,9 +17,9 @@ drain marks a record ``seen`` whether or not the push was accepted. A name
 mismatch therefore does not delay delivery, it DESTROYS it: the inbox empties,
 the session hears nothing, and no check anywhere goes red.
 
-MEASURED 2026-07-24, not hypothetical. The scitex-todo -> scitex-cards rename
-re-registered this MCP server as ``scitex-cards`` while agent launch lines still
-allowlisted the pre-rename ``scitex-todo``. The whole fleet went deaf to the
+MEASURED 2026-07-24, not hypothetical. The package rename re-registered this
+MCP server under its new name while agent launch lines still allowlisted the
+pre-rename one — the two spellings never met. The whole fleet went deaf to the
 board. A self-test notification enqueued at 06:36:24 was consumed and marked
 seen within six seconds and never appeared in any session — and it had been that
 way since the rename.
@@ -40,10 +40,11 @@ from typing import Any
 #: The launch flag that allowlists a server's channel pushes.
 CHANNEL_FLAG = "--dangerously-load-development-channels"
 
-#: Console-script names that ARE us. Both the current name and the pre-rename one
-#: count: during a migration the shim is still us, and a check that only knew the
-#: new name would be blind on exactly the agents left behind.
-OUR_CLI_NAMES = frozenset({"scitex-cards", "scitex-todo"})
+#: Console-script names that ARE us. This held the current name AND the
+#: pre-rename one, so the check stayed sighted on agents left behind by the
+#: migration. The migration is finished and the second script is no longer
+#: shipped, which left this frozenset holding one element written twice.
+OUR_CLI_NAMES = frozenset({"scitex-cards"})
 
 #: Ancestry walk bound. The launcher is a few hops up at most; the cap means a
 #: malformed /proc chain can never hang a health run.
@@ -135,7 +136,7 @@ def _runs_our_cli(spec: dict[str, Any]) -> bool:
     for index, token in enumerate(tokens):
         previous = tokens[index - 1] if index else ""
         if previous == "-m":
-            if token.startswith(("scitex_cards", "scitex_todo")):
+            if token.startswith("scitex_cards"):
                 return True
             continue
         if previous.startswith("-"):

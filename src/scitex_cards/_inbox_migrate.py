@@ -183,12 +183,17 @@ def migrate_to_sqlite(store: str | Path | None = None) -> dict:
     from ._inbox import _utc_now_iso
     from ._inbox_sqlite import (
         _MIGRATED_FLAG,
-        inbox_db_path,
+        inbox_target,
         init_schema,
         open_connection,
     )
 
-    with open_connection(inbox_db_path(store)) as conn:
+    # THE DESTINATION IS THE RAIL'S TARGET, not the per-host file. Carrying
+    # records into `runtime/cards.db` after the rail moved to the canonical store
+    # would write them where nothing reads — the same write-here-read-there
+    # shape this whole change exists to remove, and it would look like a
+    # successful migration while losing every record it "migrated".
+    with open_connection(inbox_target(store)) as conn:
         init_schema(conn)
         stats = _migrate_into_conn(conn, store)
         conn.execute(
@@ -201,16 +206,22 @@ def migrate_to_sqlite(store: str | Path | None = None) -> dict:
 
 def info(store: str | Path | None = None) -> dict[str, Any]:
     """Return a small status dict for the CLI (``inbox info``-style)."""
-    from ._inbox_sqlite import inbox_db_path, init_schema, open_connection
+    from ._inbox_shape import shape_for
+    from ._inbox_sqlite import inbox_target, init_schema, open_connection
+    from ._store_url import is_postgres_url
 
-    db = inbox_db_path(store)
-    if not db.exists():
+    db = inbox_target(store)
+    # A DSN has no `.exists()`; a server that is configured but unreachable is
+    # a DIFFERENT answer from "no rail here", so only a FILE target may be
+    # reported absent.
+    if not is_postgres_url(str(db)) and not Path(db).exists():
         return {"path": str(db), "exists": False, "rows": 0, "unseen": 0}
     with open_connection(db) as conn:
         init_schema(conn)
-        rows = conn.execute("SELECT COUNT(*) AS n FROM inbox").fetchone()["n"]
+        shape = shape_for(conn)
+        rows = conn.execute(f"SELECT COUNT(*) AS n FROM {shape.table}").fetchone()["n"]
         unseen = conn.execute(
-            "SELECT COUNT(*) AS n FROM inbox WHERE seen = 0"
+            f"SELECT COUNT(*) AS n FROM {shape.table} WHERE seen = 0"
         ).fetchone()["n"]
     return {"path": str(db), "exists": True, "rows": rows, "unseen": unseen}
 

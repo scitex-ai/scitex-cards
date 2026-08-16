@@ -56,6 +56,34 @@ def _live_task_count() -> int:
         conn.close()
 
 
+def _two_card_store() -> str:
+    """The shared arrange for the shrink-refusal tests: a store holding a and b."""
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
+    _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
+    return store
+
+
+def _refuses(doc, store, **kwargs) -> bool:
+    """Did the shrink guard refuse this write? Returns the VERDICT, never raises.
+
+    Lets a test assert the refusal's OUTCOME as one assertion (STX-TQ007), and
+    lets the tests that only need the refusal as a PRECONDITION have it without
+    spending their assertion on it.
+    """
+    try:
+        _save_doc_unlocked(doc, store, **kwargs)
+    except StoreShrinkRefusedError:
+        return True
+    return False
+
+
+def _refusal_message(doc, store, **kwargs) -> str:
+    with pytest.raises(StoreShrinkRefusedError) as excinfo:
+        _save_doc_unlocked(doc, store, **kwargs)
+    return str(excinfo.value)
+
+
 # === delete_task tombstones (never a physical delete) ======================
 
 
@@ -68,9 +96,20 @@ class TestDeleteTaskTombstones:
         _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
         # Act
         _store.delete_task(store, task_id="a")
-        # Assert
+        # Assert — the row is still THERE; whether it is correctly marked is
+        # the sibling test's claim.
+        assert _live_row("a") is not None
+
+    def test_deleted_row_is_marked_cancelled_in_sql(self, tmp_path):
+        # Arrange
+        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+        _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
+        # Act
+        _store.delete_task(store, task_id="a")
+        # Assert — split from "it survives" (STX-TQ007): a row that survives
+        # UNMARKED is a different and worse bug than one that vanishes, and
+        # merged it could never be the reported failure.
         row = _live_row("a")
-        assert row is not None
         assert row["status"] == "cancelled"
 
     def test_deleted_row_stamps_deleted_at(self, tmp_path):
@@ -222,53 +261,55 @@ class TestDocRewriteShrinkGuard:
 
     def test_the_exception_names_the_missing_ids(self, tmp_path):
         # Arrange
-        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-        _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-        _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
+        store = _two_card_store()
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         # Act
-        with pytest.raises(StoreShrinkRefusedError) as excinfo:
-            _save_doc_unlocked(dict(doc), store, tasks=stale_tasks)
+        message = _refusal_message(dict(doc), store, tasks=stale_tasks)
         # Assert
-        assert "b" in str(excinfo.value)
+        assert "b" in message
 
     def test_a_refused_write_does_not_touch_the_store(self, tmp_path):
         # Arrange
-        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-        _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-        _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
+        store = _two_card_store()
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         before = _live_task_count()
-        # Act
-        with pytest.raises(StoreShrinkRefusedError):
-            _save_doc_unlocked(dict(doc), store, tasks=stale_tasks)
+        # Act — the refusal itself is asserted by its own test; here it is the
+        # precondition, so it is caught rather than spent as this test's one
+        # assertion. A write that wrongly SUCCEEDED still falls through to the
+        # count check below, which is the point of this test.
+        _refuses(dict(doc), store, tasks=stale_tasks)
         # Assert
         assert _live_task_count() == before
 
     def test_allow_shrink_true_bypasses_the_raise(self, tmp_path):
+        """`allow_shrink=True` suppresses the refusal.
+
+        THE STX-TQ001 FINDING HERE WAS LEFT OPEN DELIBERATELY BY A PREVIOUS
+        AUTHOR, and their reasoning was sound: they tried two outcome
+        assertions and both were WRONG about this code —
+            `_live_task_count() == 1`  -> actually 2; the store tombstones
+            `"b" not in the document`  -> "b" is still there
+        so they declined to write a third guess, on the grounds that encoding
+        another false belief is worse than an open finding. That was the right
+        call given the two options they had.
+
+        The assertion below is a THIRD option that guesses nothing. It does not
+        claim anything about what the store contains afterwards — which is the
+        part `_save_doc_unlocked`'s contract does not make clear — only that the
+        refusal did not fire, which is exactly and only what this test's name
+        claims. What `allow_shrink=True` guarantees BEYOND not raising is still
+        unknown and still worth someone establishing.
+        """
         # Arrange
-        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-        _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-        _store.add_task(store, id="b", title="B", assignee="agent:test-suite")
+        store = _two_card_store()
         doc = load_doc(store, validate=False)
         stale_tasks = [t for t in doc["tasks"] if t["id"] == "a"]
         # Act
-        _save_doc_unlocked(dict(doc), store, tasks=stale_tasks, allow_shrink=True)
-        # Assert — no raise.
-        #
-        # LEFT WITHOUT AN EXPLICIT ASSERT ON PURPOSE, and the STX-TQ001 finding
-        # on this function is left standing rather than silenced. Two outcome
-        # assertions were tried and both were WRONG about this code:
-        #   `_live_task_count() == 1`  -> 2; the store tombstones, never deletes
-        #   `"b" not in the document`  -> "b" is still there
-        # So `allow_shrink=True` suppresses the refusal without removing the
-        # row from the document, and what it actually guarantees beyond "did
-        # not raise" is not clear from this test alone. Writing a third guess
-        # would encode another false belief about the store, which is worse
-        # than an open finding. Needs someone who knows `_save_doc_unlocked`'s
-        # contract; see the audit-cleanup card.
+        refused = _refuses(dict(doc), store, tasks=stale_tasks, allow_shrink=True)
+        # Assert
+        assert refused is False
 
     def test_a_doc_naming_the_id_via_deleted_ids_is_not_refused(self, tmp_path):
         # Arrange — the ONE legitimate single-card removal path: the write
@@ -314,32 +355,43 @@ class TestDocRewriteShrinkGuard:
 # === count never decreases across a public-API sequence ====================
 
 
+def _counts_across_a_realistic_write_sequence() -> list[int]:
+    """Live row count after each public write verb, including deletes/restore."""
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    counts: list[int] = [_live_task_count()]
+
+    def _step(fn, *args, **kwargs):
+        fn(*args, **kwargs)
+        counts.append(_live_task_count())
+
+    _step(_store.add_task, store, id="x", title="X", assignee="agent:test-suite")
+    _step(_store.add_task, store, id="y", title="Y", assignee="agent:test-suite")
+    _step(_store.add_task, store, id="z", title="Z", assignee="agent:test-suite")
+    _step(_store.update_task, store, task_id="x", note="hello")
+    _step(_store.comment_task, store, task_id="y", text="hi", by="agent:test-suite")
+    _step(_store.complete_task, store, task_id="z", by="agent:test-suite")
+    removed_x = _store.delete_task(store, task_id="x")["removed"]
+    counts.append(_live_task_count())
+    _step(_store.restore_task, store, task=removed_x, refs=[])
+    _step(_store.delete_task, store, task_id="y")
+    return counts
+
+
 class TestCountNeverDecreasesAcrossASequence:
     """The append-only invariant, exercised over a realistic verb sequence."""
 
     def test_count_is_monotonically_non_decreasing(self, tmp_path):
         # Arrange
-        store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-        counts: list[int] = [_live_task_count()]
-
-        def _step(fn, *args, **kwargs):
-            fn(*args, **kwargs)
-            counts.append(_live_task_count())
-
-        # Act — a realistic mix of every public write verb, including two
-        # deletes and a restore.
-        _step(_store.add_task, store, id="x", title="X", assignee="agent:test-suite")
-        _step(_store.add_task, store, id="y", title="Y", assignee="agent:test-suite")
-        _step(_store.add_task, store, id="z", title="Z", assignee="agent:test-suite")
-        _step(_store.update_task, store, task_id="x", note="hello")
-        _step(_store.comment_task, store, task_id="y", text="hi", by="agent:test-suite")
-        _step(_store.complete_task, store, task_id="z", by="agent:test-suite")
-        removed_x = _store.delete_task(store, task_id="x")["removed"]
-        counts.append(_live_task_count())
-        _step(_store.restore_task, store, task=removed_x, refs=[])
-        _step(_store.delete_task, store, task_id="y")
-
-        # Assert — every consecutive pair is non-decreasing, and the final
-        # count matches the three cards actually created.
+        # Act
+        counts = _counts_across_a_realistic_write_sequence()
+        # Assert
         assert all(b >= a for a, b in zip(counts, counts[1:]))
+
+    def test_the_final_count_matches_the_cards_actually_created(self, tmp_path):
+        # Arrange
+        # Act
+        counts = _counts_across_a_realistic_write_sequence()
+        # Assert — split under STX-TQ007, and it is the more interesting half:
+        # a store that LOST every row would still be monotonically
+        # non-decreasing from zero, so the invariant alone cannot catch it.
         assert counts[-1] == 3

@@ -1,4 +1,4 @@
-/** Shared types for the scitex-todo board. Mirror the backend graph payload. */
+/** Shared types for the scitex-cards board. Mirror the backend graph payload. */
 
 /** One entry in a task's append-only comment thread. `ts` is an ISO-8601 UTC
  * timestamp and `author` the commenter, both stamped server-side. */
@@ -38,10 +38,7 @@ export type TaskKind = "task" | "compute" | "decision";
  *  - "agent-wait"        — 他エージェント待ち — waiting on a specific agent action
  */
 export type BlockerKind =
-  | "compute"
-  | "dep"
-  | "operator-decision"
-  | "agent-wait";
+  "compute" | "dep" | "operator-decision" | "agent-wait";
 
 export interface GraphNode {
   id: string;
@@ -61,7 +58,7 @@ export interface GraphNode {
   /** Task kind. `null` (absent over the wire) is equivalent to `"task"`.
    *  `"compute"` marks a row representing an external compute job whose
    *  status is updated by an automated writer (north-star pillar #1; full
-   *  design in `tasks/proj-scitex-todo-compute-state-deps/description.md`).
+   *  design in `tasks/proj-scitex-cards-compute-state-deps/description.md`).
    */
   kind: TaskKind | null;
   /** Opaque compute-job identifier (slurm id, GH Actions run id, k8s job, …).
@@ -122,7 +119,9 @@ export interface GraphPayload {
   nodes: GraphNode[];
   edges: GraphEdge[];
   status_colors: Record<string, StatusColor>;
-  mermaid: string;
+  // No `mermaid` field: the server stopped shipping it (38.4% of the /graph
+  // payload, and no reader). Graph views build their own source from `edges`
+  // + `status_colors`, which is what lets them respect the filter set.
   store_path: string;
   task_count: number;
 }

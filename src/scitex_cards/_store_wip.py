@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import sys
 
+from ._comment_ids import stamp_comment_id
 from ._throughput import WIP_STATUSES, evaluate_wip
 
 # Cards at or below this priority are never gated. Lower = more urgent, so this
@@ -100,25 +101,28 @@ def refusal_message(rep) -> str:
         f"  • a card filed as deferred or blocked is never gated either.\n"
         f"Otherwise this is ordinary new work: FINISH or PARK one in-flight "
         f"card before starting another. Do NOT close cards you have not "
-        f"finished to get past this gate. See SCITEX_TODO_WIP_LIMIT env."
+        f"finished to get past this gate. See SCITEX_CARDS_WIP_LIMIT env."
     )
 
 
 def _override_comment(rep, priority: object, author: str | None, ts: str) -> dict:
     """The audit stamp written onto a card that was admitted over the cap."""
-    return {
-        "author": author or "unknown",
-        "ts": ts,
-        "kind": OVERRIDE_COMMENT_KIND,
-        "text": (
-            f"[wip-override] Created OVER the WIP cap: {rep.agent} had "
-            f"{rep.wip_count} tasks in_progress at insert time (limit "
-            f"{rep.limit}; refuse threshold {2 * rep.limit}). Admitted by the "
-            f"emergency-recording exemption because priority={priority} <= "
-            f"{EXEMPT_PRIORITY_MAX}. Recording an incident is never gated — "
-            f"this stamp exists so the bypass is auditable."
-        ),
-    }
+    return stamp_comment_id(
+        {
+            "author": author or "unknown",
+            "ts": ts,
+            "kind": OVERRIDE_COMMENT_KIND,
+            "text": (
+                f"[wip-override] Created OVER the WIP cap: {rep.agent} had "
+                f"{rep.wip_count} tasks in_progress at insert time (limit "
+                f"{rep.limit}; refuse threshold {2 * rep.limit}). Admitted by "
+                f"the emergency-recording exemption because "
+                f"priority={priority} <= {EXEMPT_PRIORITY_MAX}. Recording an "
+                f"incident is never gated — this stamp exists so the bypass "
+                f"is auditable."
+            ),
+        }
+    )
 
 
 def enforce_wip_gate(new: dict, tasks: list[dict], *, now_iso: str) -> None:

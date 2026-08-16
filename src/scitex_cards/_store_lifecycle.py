@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._model import _save_doc_unlocked, _store_lock
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
@@ -80,7 +81,7 @@ def complete_task(
     Idempotent per ``GITIGNORED/QUESTIONS.md`` #3: re-completing a
     ``done`` task is a no-op (timestamps stay frozen from the first
     completion). Pass ``by=`` to override the
-    ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
+    ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
 
     Returns the (post-mutation) task mapping.
 
@@ -257,15 +258,17 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         log_meta["deleted_by"] = actor
         comments = target.setdefault("comments", [])
         comments.append(
-            {
-                "author": actor,
-                "ts": now,
-                "text": (
-                    "[TOMBSTONED via delete_task] status -> cancelled, "
-                    "_log_meta.deleted_at stamped. Row retained (never "
-                    "physically removed); restore_task is the Undo."
-                ),
-            }
+            stamp_comment_id(
+                {
+                    "author": actor,
+                    "ts": now,
+                    "text": (
+                        "[TOMBSTONED via delete_task] status -> cancelled, "
+                        "_log_meta.deleted_at stamped. Row retained (never "
+                        "physically removed); restore_task is the Undo."
+                    ),
+                }
+            )
         )
         target["last_activity"] = now
         # NAMES EVERY CARD IT TOUCHED, WHICH IS MORE THAN ONE. This verb
@@ -374,15 +377,17 @@ def resolve_task(
         touch_last_activity(target, now)
         comments = target.setdefault("comments", [])
         comments.append(
-            {
-                "author": who,
-                "ts": now,
-                "text": (
-                    "[resolve (noop — already done)]"
-                    if was_done
-                    else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
-                ),
-            }
+            stamp_comment_id(
+                {
+                    "author": who,
+                    "ts": now,
+                    "text": (
+                        "[resolve (noop — already done)]"
+                        if was_done
+                        else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
+                    ),
+                }
+            )
         )
         _model._save_doc_unlocked(
             doc, tasks_path, tasks=tasks, touched_ids=[task_id]
@@ -458,7 +463,7 @@ def reopen_task(
         )
         if cleared:
             text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
-        comments.append({"author": who, "ts": now, "text": text})
+        comments.append(stamp_comment_id({"author": who, "ts": now, "text": text}))
         _model._save_doc_unlocked(
             doc, tasks_path, tasks=tasks, touched_ids=[task_id]
         )

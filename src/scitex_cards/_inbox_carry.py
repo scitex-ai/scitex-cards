@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Carry inbox rows from the SQLite rail onto the canonical store.
 
-The inbox rail still lives in its own SQLite file (``<store_dir>/runtime/todo.db``,
+The inbox rail still lives in its own SQLite file (``<store_dir>/runtime/cards.db``,
 table ``inbox``) while cards live in the canonical store, which for this
 deployment is PostgreSQL (table ``notifications``). Measured 2026-08-02:
 

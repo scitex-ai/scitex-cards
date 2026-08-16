@@ -69,7 +69,7 @@ The `close` verb landed in PR #151 (2026-06-13). It records the reason in `comme
 ```sh
 scitex-cards close <task-id> --reason "<short reason in imperative or past tense>"
 
-# With author override (default chain: $SCITEX_TODO_AGENT_ID -> $USER):
+# With author override (default chain: $SCITEX_CARDS_AGENT_ID -> $USER):
 scitex-cards close <task-id> --reason "<text>" --by <author>
 
 # Dry-run first (prints intent, does NOT mutate):
@@ -110,7 +110,7 @@ A complete sweep for ONE agent looks like:
 
 ```sh
 # 0) Snapshot current state (saves a copy you can diff against later).
-scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-before.json
+scitex-cards list-tasks --assignee $SCITEX_CARDS_AGENT_ID --json > /tmp/my-cards-before.json
 
 # 1) For every recently-merged PR you owned: mark its card done with the PR pointer.
 scitex-cards update <card-id> --status done --pr-url <pr-url>
@@ -122,7 +122,7 @@ scitex-cards close <card-id> --reason "<short why>"
 scitex-cards comment <card-id> "<update>"
 
 # 4) Re-snapshot + diff to verify your sweep landed:
-scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-after.json
+scitex-cards list-tasks --assignee $SCITEX_CARDS_AGENT_ID --json > /tmp/my-cards-after.json
 diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | head -200
 ```
 
@@ -133,7 +133,7 @@ diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | 
 The operator (not agents) decides which orphaned cards to archive. scitex-cards generates a periodic **stale-candidates list** at:
 
 ```
-~/.scitex/todo/STALE_CARDS_FOR_REVIEW.md
+~/.scitex/cards/STALE_CARDS_FOR_REVIEW.md
 ```
 
 Criteria for inclusion:
@@ -161,7 +161,7 @@ MARK DONE + PR        scitex-cards update <id> --status done --pr-url <url>
 CLOSE WITH REASON     scitex-cards close <id> --reason "<short why>"
 ADD COMMENT           scitex-cards comment <id> "<text>"
 DRY-RUN ANY MUTATION  add --dry-run before the real call
-STORE OVERRIDE        --tasks <path>  OR  SCITEX_TODO_TASKS_YAML_SHARED=<path>
+STORE OVERRIDE        --tasks <path>  OR  SCITEX_CARDS_TASKS_YAML_SHARED=<path>
 
 # Fleet enablement (P3a, one-shot register the MCP server) ─ PR #155:
 PREVIEW REGISTRATION  scitex-cards mcp install --apply --dry-run
@@ -169,35 +169,16 @@ REGISTER MCP SERVER   scitex-cards mcp install --apply -y
 REGISTER PROJECT MCP  scitex-cards mcp install --apply --to ./.mcp.json -y
 ```
 
-## 7.5. Fleet MCP enablement (P3a, lead-coordinated rollout)
-
-Each agent's `.mcp.json` needs the `scitex-cards` MCP server registered so the 16 board tools (`add_task` / `update_task` / `comment_task` / `list_tasks` / `delete_task` / `restore_task` / `resolve_task` / etc., see `21_fleet-mcp-rollout.md`) appear in its session. **PR #155** shipped a one-command idempotent enabler:
-
-```sh
-# Preview (dry-run; does not touch the file):
-scitex-cards mcp install --apply --dry-run
-
-# Commit (idempotent merge into ~/.mcp.json; preserves sibling servers):
-scitex-cards mcp install --apply -y
-
-# Project-scope target (when the agent works inside a repo with its own .mcp.json):
-scitex-cards mcp install --apply --to ./.mcp.json -y
-```
-
-Behavior guarantees:
-- **Idempotent** — re-running prints `# noop: target already has the scitex-cards entry`.
-- **Non-destructive** — sibling MCP server entries are preserved.
-- **Safe** — a `.mcp.json.bak` backup is created before overwriting an existing file.
-- **Fail-loud** — invalid JSON or a non-object root in the target raises a `ClickException` (clean non-zero exit, no traceback).
-
-Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent with the dry-run line first (each agent reports the diff back), then the commit line. The skill bundle (PR #149) is already shipped, so consuming agents have `21_fleet-mcp-rollout.md` locally to confirm the verb shape before they run `--apply`.
+Fleet MCP enablement (the `mcp install --apply` rollout, its idempotence and
+non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
+`21_fleet-mcp-rollout.md`. It was duplicated here in full; one copy drifts.
 
 ---
 
 ## 8. Gotchas
 
-1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` (the SQLite database path). Check with `scitex-cards resolve-store`. Many agents bind only the user database; a project-scoped database can shadow it silently.
-2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the SQLite migration; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
+1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
+2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the migration off per-project files; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
 3. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
 4. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
 5. **Close uses `deferred` today.** If/when `VALID_STATUSES` grows a dedicated `closed` value, `close` will switch over — the verb shape stays the same.
@@ -207,7 +188,7 @@ Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent w
 ## 9. Provenance
 
 - Operator directive 2026-06-13 (via lead a2a) — "make every agent reconcile their project's cards; 85 merges / 56 marked done is the drift signal".
-- Operator "all agents use scitex-cards, no parallel todo formats" → P3a fleet MCP rollout.
+- Operator "all agents use scitex-cards, no parallel card formats" → P3a fleet MCP rollout.
 - Verb gap closure: PR #151 (`feat(cli): close verb`).
 - Comment verb: PR #144.
 - Skill bundle refresh: PR #149.

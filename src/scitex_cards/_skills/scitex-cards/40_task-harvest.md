@@ -21,7 +21,7 @@ tags: [scitex-cards-task-harvest, scitex-cards-blockers, scitex-cards-throughput
 
 # Task harvest — blocker-driven backlog consumption
 
-The shared board (the SQLite task store, rendered live at
+The shared board (the shared task store, rendered live at
 `http://127.0.0.1:8051/`) is only valuable when **consumption rate >
 arrival rate**. Otherwise old entries drift away from the live codebase,
 the operator stops trusting the map, and the SSoT decays. This skill
@@ -34,10 +34,10 @@ RIGHT NOW.
 
 Every task on the shared board is **either**:
 
-| state    | meaning                                                          |
-| -------- | ---------------------------------------------------------------- |
-| BLOCKED  | A specific, named blocker prevents progress. Record it.          |
-| RUNNABLE | No live blocker. The task can start now → escalate it.           |
+| state | meaning |
+|---|---|
+| BLOCKED | A specific, named blocker prevents progress. Record it. |
+| RUNNABLE | No live blocker. The task can start now → escalate it. |
 
 "Runnable" is the **default**. A task that cannot point at a concrete
 blocker is RUNNABLE — and therefore eligible for immediate escalation.
@@ -50,120 +50,6 @@ The operator's framing (TG 21:53):
 > "効率で浮いてるのはもうブロッカーないってことじゃないですか"
 > ("If a task is just floating in the queue, that means it has no
 > blocker — escalate it.")
-
-## Blocker taxonomy (closed enum)
-
-When a task IS blocked, the blocker must come from one of these four
-categories so the lead can route it without per-task interpretation:
-
-| `blocker:` value     | meaning                                                                  | escalation route                                |
-| -------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| `compute`            | No live compute resource (SIF build pending, GPU lane full, Spartan job queued, host down). | wait on the resource; record `depends_on: [<job-or-job-task-id>]`. |
-| `quota`              | API quota / account credit exhausted (PyPI throttle, GH PAT scope, an account that hit its quota cap). | operator action: top up / change account.       |
-| `user-pending`       | Awaiting a human decision (operator, collaborator, external reviewer).   | operator action (the LOUD `operator-decision` blocker family in the board's "BLOCKING YOU" panel). |
-| `task-dependency`    | Another task in the graph must finish first; `depends_on` carries the id. | wait — clears automatically when the dep flips to `done`. |
-
-Any blocker that doesn't fit one of these four MUST be coerced into
-one (or surfaced as a fleet bug — the lead extends the enum, not the
-agent inventing a fifth category ad-hoc).
-
-### `task-dependency` cascades — the ROOT BLOCKER walk
-
-Operator's clarification (TG 2026-06-07 msg 327):
-
-> "ディペンズオンもブロッカーですよね。下のディペンディングデペン
-> デントなものが片付かないとそのカードは片付かない。ブロッカーは
-> カスケードのように下のほうに行く。1番下がブロッカーなんじゃない
-> ですか？目標に対して枝がどんどん退縮していくようにプレッシャー
-> をかけていきたい."
-
-`task-dependency` is **transitive**: if task A is blocked because it
-`depends_on: [B]`, and B is itself blocked because it `depends_on:
-[C]`, then escalating A — or even B — is wasted noise. The actual
-point where pressure can be applied is **C** (or whatever leaf C
-points at, recursively, until we reach an atomic blocker:
-`compute` / `quota` / `user-pending`, or a RUNNABLE node that's
-just waiting for someone to start it).
-
-Direction convention (so the routing is unambiguous):
-
-```
-                ┌─────────────────────┐
-                │  goal (top)         │  ← what we want done
-                └──────────┬──────────┘
-                           │ depends_on
-                ┌──────────▼──────────┐
-                │  feature task       │  ← blocked-on-B
-                └──────────┬──────────┘
-                           │ depends_on
-                ┌──────────▼──────────┐
-                │  enabler task (B)   │  ← blocked-on-C
-                └──────────┬──────────┘
-                           │ depends_on
-                ┌──────────▼──────────┐
-                │  ROOT BLOCKER (C)   │  ← compute / quota / user-pending / RUNNABLE
-                └─────────────────────┘   ← APPLY PRESSURE HERE
-```
-
-`A depends_on B` ⇒ B is the blocker of A. Goal at the top, deps
-extend downward, leaves are where work actually happens. As leaves
-resolve, the chain above auto-clears — the operator's intended
-visual on the board: the dep-chain **退縮 (recedes / contracts)**
-toward the top goal.
-
-**Walking the chain** (the lead's algorithm during Phase 1):
-
-For every task X with `status: blocked` and `blocker: task-dependency`:
-
-1. Look at `X.depends_on` — find any dep that is NOT yet `done`.
-2. If that dep is itself `status: blocked` with `blocker:
-   task-dependency`, recurse into its `depends_on` (the unsatisfied
-   subset).
-3. Stop when either:
-   - All deps in the chain are `done` ⇒ unblock X, cascade up.
-   - You reach a node with an **atomic** blocker (`compute` /
-     `quota` / `user-pending`) ⇒ that's the **root blocker**. The
-     escalation/pressure goes THERE, not at X.
-   - You reach a RUNNABLE node ⇒ that's the root blocker (someone
-     just needs to start it). Escalate IT, not X.
-4. Cycle guard: keep a `visited` set so a buggy YAML with a circular
-   `depends_on` doesn't loop forever (raise a fleet-bug a2a if one
-   is found; the validator should reject it at write time but the
-   harvest should still survive a stale store).
-
-**Escalation target is always the leaf**, never an intermediate
-`task-dependency`-blocked node. This is the multiplier — one leaf
-unblock can cascade-clear an entire dep-chain above it. ONE
-pressure point per chain, not N.
-
-**Why this matters for the board** (operator's "退縮" metaphor): a
-healthy board over time shows dep-chains shortening as leaves
-resolve upward — visible progress at the goal level driven by leaf
-work. A board where the same intermediate node keeps getting
-re-escalated without its leaf clearing means we're pushing the
-wrong row, and the harvest needs to walk further down.
-
-### Recording a blocker
-
-When a task transitions RUNNABLE → BLOCKED, the agent (or lead, during
-a sweep) writes the blocker + the dependency into the row:
-
-```
-- id: paper-scitex-clew/cohort-a-rerun
-  title: "Cohort A rerun #50"
-  status: blocked
-  blocker: compute            # one of: compute | quota | user-pending | task-dependency
-  depends_on:
-    - sif-build-202606         # the upstream item this blocker points at
-  comments:
-    - author: scitex-clew
-      ts: 2026-06-07T22:14:00Z
-      text: "Blocked on sif-build-202606 — base SIF rebuild needed before re-run."
-```
-
-The `comments[]` append-only entry is the durable rationale — when the
-blocker clears and the entry flips back to RUNNABLE, the comment stays
-as audit trail.
 
 ## The sweep cycle
 
@@ -220,195 +106,6 @@ The lead is **pushy on purpose** (operator TG 21:51):
 
 The point isn't politeness; it's keeping consumption-rate > arrival-rate.
 
-## Routing — lead-centric funnel
-
-The fleet does **not** have agents directly dispatching each other.
-All escalation flows through the lead:
-
-```
-              ┌────────────────────────────┐
-              │   the shared task store    │ ← SSoT (operator + lead + agents write)
-              └────────────┬───────────────┘
-                           │
-                           ▼  sweep
-                ┌──────────────────────┐
-                │       LEAD           │
-                │  (sweeps + dispatch) │
-                └─────┬────────┬───────┘
-                      │        │
-            a2a ESCALATE  ▼    ▼  a2a REPORT new blocker
-            ┌──────────────┐  ┌──────────────┐
-            │ owning agent │  │ owning agent │
-            │ (consumes)   │  │ (reports up) │
-            └──────────────┘  └──────────────┘
-```
-
-**Why the funnel** (operator TG 21:53 + lead resume note `870cbe71`):
-
-- Single source of dispatch decisions = no double-escalation when two
-  observers both decide to push the same task.
-- Lead holds the cross-project context — Phase-1 unblock checks often
-  need to read another project's state (e.g. a paper task blocked on a
-  `scitex-dev` PR), which is the lead's natural lane.
-- Agents stay focused on their own project's lane; their only
-  cross-project communication is "report new blocker UP to lead."
-
-### Where each role writes / reads
-
-| Role  | Reads                       | Writes                                                          |
-| ----- | --------------------------- | --------------------------------------------------------------- |
-| Agent | own project's tasks (filter `agent: <self>`) | own tasks' status + `comments[]`; a2a lead when reporting a new blocker. |
-| Lead  | the whole board             | every task during sweeps; a2a each owning agent with ESCALATE notices. |
-| Operator | the board UI + the lead's daily summary | resolves `user-pending` / `operator-decision` blockers via the "BLOCKING YOU" panel. |
-
-## Cadence — register with `scitex-dev cron`
-
-The harvest is a **recurring** cycle, not a one-shot. Operator's
-directive (TG msg 325): **don't roll a custom scheduler — register
-with the ecosystem-wide `scitex-dev cron` plugin pattern** so the
-fleet has ONE source of scheduled-job truth (alongside `watch-ci`,
-`quota-keepalive`, etc.).
-
-### Where the cron mechanism lives
-
-The supervisor ships in `scitex-dev` (read by every agent container
-via `/opt/venv-sac/lib/python3.12/site-packages/scitex_dev/_cli/cron/`):
-
-| CLI verb                     | What it does                                                   |
-| ---------------------------- | -------------------------------------------------------------- |
-| `scitex-dev cron list`       | show the JobSpec registry + the currently-installed crontab lines |
-| `scitex-dev cron install <n>`| materialize JobSpec `<n>` into the user crontab (idempotent — marker `# scitex-dev cron: <n>` pins exactly one line) |
-| `scitex-dev cron remove <n>` | strip the named job from the crontab                           |
-| `scitex-dev cron exec <n>`   | execute the job body (this is what cron itself calls)          |
-| `scitex-dev cron status`     | last-run / next-run hints for each registered job              |
-
-Cadence format: **standard Unix cron** (5-field `minute hour
-day-of-month month day-of-week`). Log location:
-`~/.scitex/dev/logs/cron-<name>.log` (per-job, operator-facing).
-
-### The 4-step plugin pattern
-
-To add the task-harvest as a registered cron job:
-
-1. **Body** — implement `run_once(...)` in a new module:
-
-   ```
-   scitex_dev/_cli/cron/_task_harvest.py
-       def run_once() -> None:
-           # 1. load the task store (resolve via the standard scitex-cards
-           #    store resolver)
-           # 2. Phase 1 — re-check every blocked task, walking the
-           #    task-dependency chain to its root (see "ROOT BLOCKER
-           #    walk" above)
-           # 3. Phase 2 — for every RUNNABLE task, a2a-send an
-           #    ESCALATE to the owning agent
-           # 4. append the audit line to the lead's running log
-   ```
-
-2. **Register** in `scitex_dev/_cli/cron/_jobs.py` (`JOB_REGISTRY`):
-
-   ```python
-   "task-harvest": JobSpec(
-       name="task-harvest",
-       schedule="0 */6 * * *",   # q6h default — operator-tunable
-       command=(
-           "mkdir -p $HOME/.scitex/dev/logs; "
-           "scitex-dev cron exec task-harvest "
-           ">> $HOME/.scitex/dev/logs/cron-task-harvest.log 2>&1"
-       ),
-       description="scitex-cards task-harvest (Phase 1 unblock + Phase 2 escalate).",
-   ),
-   ```
-
-3. **Wire the dispatch** in `scitex_dev/_cli/cron/run.py` — extend
-   the `exec_cmd` branch table so `scitex-dev cron exec task-harvest`
-   invokes `_task_harvest.run_once()`.
-
-4. **Pin with a test** in `tests/scitex_dev/_cli/cron/test__jobs.py`
-   — assert the `JOB_REGISTRY["task-harvest"]` entry exists with
-   the expected `schedule` + `command` so a future refactor can't
-   silently drop it.
-
-### Existing scitex-dev cron jobs to pattern-match against
-
-- **`watch-ci`** — polls each sac agent's repo for CI failures and
-  dispatches A2A fix-forward turns. (`*/10 * * * *`.)
-- **`quota-keepalive`** — fires every 30 min at the cron level, self-
-  gates to ~2.5h actual fires, pre-starts Claude's rolling quota
-  window so quota caps don't surprise the fleet.
-
-`task-harvest` slots into the same family: a fleet-wide
-scheduled job that mutates the shared state (here: the
-SSoT task store) on a fixed cadence.
-
-### Auxiliary triggers (NOT in cron)
-
-Two extra triggers beyond the cron tick:
-
-- **on every new task creation** — lightweight one-task pass (just
-  Phase 2 for the new task) so the lead dispatches it the moment it
-  lands. Wire via a hook on `save_tasks` (or the future Gitea
-  adapter's webhook), NOT via cron.
-- **on demand** — when the operator pings the lead with "what's
-  unblocked right now?", the lead invokes `run_once()` directly
-  (same body, ad-hoc trigger).
-
-The cron tick is the **default** drumbeat; the auxiliary triggers
-keep latency low for new arrivals + operator nudges.
-
-### Tunability
-
-`schedule` lives in ONE place (`JOB_REGISTRY`); changing it is one
-diff + one test. Operator may want q1h during a busy phase or q12h
-during a quiet phase. Re-install (`scitex-dev cron remove
-task-harvest && scitex-dev cron install task-harvest`) picks up
-the new schedule.
-
-## What the lead a2a's to whom
-
-After a sweep, the lead sends three kinds of a2a messages:
-
-### 1. To each owning agent — ESCALATE
-
-For every RUNNABLE task owned by `agent: <name>`:
-
-```
-[ESCALATE scitex-cards] task-id "Title" — RUNNABLE, no blocker.
-   You can do this now. Report PR # / a2a / comment when picked up.
-```
-
-The agent's expected response: either **pick it up** (status →
-`in_progress`, add a `comments[]` entry naming the worker) or
-**bounce it back with a blocker** (status → `blocked`, fill the
-4-category enum, a2a lead so the next sweep accounts for it).
-
-### 2. To the operator — daily summary
-
-Once per day, the lead sends ONE Telegram summary to the operator:
-
-```
-[task-harvest YYYY-MM-DD] pass:
-   - unblocked: N tasks (auto-cleared blockers)
-   - dispatched: M tasks to <K> agents
-   - awaiting you: P (`operator-decision` / `user-pending`)
-   - net board delta: +<arrival> / -<consumption> = <Δ>
-```
-
-A NEGATIVE delta is good — consumption > arrival. The summary is the
-operator's compact view; the BLOCKING YOU panel on the board is the
-detailed view (one click → resolve the awaiting items).
-
-### 3. To self — sweep log
-
-The lead appends a one-line audit entry to its own running log
-(`~/proj/scitex-lead/GITIGNORED/RUNNING/task-harvest.md` or equivalent):
-
-```
-2026-06-08T06:00Z sweep N=267 → unblocked=4 dispatched=18 awaiting=2 net=-3
-```
-
-So the operator-summary delta is reproducible from history.
-
 ## Worked example — one sweep
 
 Starting state (267 tasks):
@@ -419,13 +116,13 @@ Starting state (267 tasks):
 
 ### Phase 1 (re-check blockers)
 
-| id                              | blocker          | depends_on           | re-check result                | action     |
-| ------------------------------- | ---------------- | -------------------- | ------------------------------ | ---------- |
-| paper-clew/sle-pac-fanout       | compute          | sif-build-202606     | `sif-build-202606.status=done` | UNBLOCK    |
-| scitex-dev/audit-wave-2         | task-dependency  | scitex-dev/audit-1   | dep still in_progress          | leave      |
-| neurovista/onsets-pull          | quota            | (none)               | gh PAT reset overnight         | UNBLOCK    |
-| ripple-wm/recompute             | compute          | sac-base.sif rebuild | rebuild still pending          | leave      |
-| paper-clew/figure-3             | user-pending     | operator-decision    | no reply 4d                    | bump to `operator-decision` (loud halo) |
+| id | blocker | depends_on | re-check result | action |
+|---|---|---|---|---|
+| paper-clew/sle-pac-fanout | compute | sif-build-202606 | `sif-build-202606.status=done` | UNBLOCK |
+| scitex-dev/audit-wave-2 | task-dependency | scitex-dev/audit-1 | dep still in_progress | leave |
+| neurovista/onsets-pull | quota | (none) | gh PAT reset overnight | UNBLOCK |
+| ripple-wm/recompute | compute | sac-base.sif rebuild | rebuild still pending | leave |
+| paper-clew/figure-3 | user-pending | operator-decision | no reply 4d | bump to `operator-decision` (loud halo) |
 
 → 2 unblocked, 1 bumped LOUD, 2 still blocked.
 

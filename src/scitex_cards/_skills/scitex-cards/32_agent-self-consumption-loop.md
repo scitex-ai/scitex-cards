@@ -3,7 +3,7 @@
 **The board IS your work queue.** Every fleet agent — `lead` and every
 worker — runs the same loop: on wake, pick the top task from the
 board, work it, comment progress, update status, repeat. Local
-TODO/FUTURE files are scratch only (operator + lead 2026-06-12
+CARD/FUTURE files are scratch only (operator + lead 2026-06-12
 doctrine, see SKILL.md MANDATE).
 
 This sub-skill documents the 7-step loop, the supporting CLI verbs
@@ -32,7 +32,7 @@ task_id="$(echo "$task_json" | jq -r .id)"
 
 # 2. Read the task body — for richer context, the agent harness loads
 #    the JSON via `--json` AND opens the per-task README.md if any:
-#    ~/.scitex/todo/tasks/<task_id>/README.md
+#    ~/.scitex/cards/tasks/<task_id>/README.md
 
 # 3. Work the task. As progress happens, comment back:
 scitex-cards update "$task_id" --add-comment "step 1 done, starting step 2"
@@ -43,13 +43,27 @@ scitex-cards update "$task_id" --status done --pr-url "$pr_url" \
 
 # 5. If blocked, name the blocker:
 scitex-cards update "$task_id" --status blocked --blocker dependency \
-  --add-comment "blocked on todo-pXX (a2a relay)"
+  --add-comment "blocked on cards-pXX (a2a relay)"
 
 # 6. Loop back to step 1 until the backlog is empty.
 
 # 7. Idle. The next wake comes from `scitex-cards watch --push` (someone
 #    commented on a task assigned to you, or a new task was added with
 #    your agent name).
+#
+#    WHATEVER WOKE YOU, CONFIRM IT — after acting, not on receipt:
+#      poll_notifications(agent=<you>, ack=false)   # reads; does NOT confirm
+#      ...act on the records...
+#      ack_notifications(agent=<you>, ids=[...])    # confirms what you handled
+#
+#    Reading is deliberately not confirming, so a consumer that dies
+#    mid-delivery loses nothing: unconfirmed records come back next poll.
+#    But NEVER confirming fails silently in the other direction —
+#    `scitex-cards health` reports delivery_confirmed red forever, and its
+#    hint blames the transport before it blames the consumer. Measured
+#    2026-08-16 on this agent: 20 unconfirmed pushes, oldest 17.8h, with a
+#    healthy transport and an empty pull inbox. The loop was the bug.
+#    Long form: 23_stop-hook-second-delivery-rail.md step 4.
 ```
 
 ### Status transitions
@@ -104,7 +118,7 @@ same):
 {
   "trigger": "scitex-cards-watcher",
   "trigger_kind": "task_added" | "comment" | "status_changed",
-  "task_id": "todo-pXX-...",
+  "task_id": "cards-pXX-...",
   "task_title": "...",
   "summary": "comment by lead: please pick this up",
   "store_path": "/scitex-cards/cards.db"

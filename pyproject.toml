@@ -3,11 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-# Renamed from `scitex-todo` (operator directive 2026-07-15/16). The import
-# package is `scitex_cards`; `scitex_todo` ships as a deprecated re-export
-# shim for one transition window so un-cutover consumers keep working.
 name = "scitex-cards"
-version = "0.37.1"
+version = "0.42.0"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -15,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "Yusuke Watanabe" },
 ]
-keywords = ["todo", "tasks", "dependency-graph", "mermaid", "science"]
+keywords = ["cards", "tasks", "dependency-graph", "mermaid", "science"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -150,7 +147,6 @@ web = [
     # pins outside this repo are updated -- measured 2026-08-03, three build
     # sites in scitex-agent-container name `scitex-cards[mcp,postgres]`:
     #   containers/apptainer-scitex.def (x2), containers/apptainer-base.def
-    # plus docs/CHEATSHEET-fleet-todo.md naming `scitex-todo[mcp]`.
     #
     # Deleting the name first would not break those builds -- the dependencies
     # are core, so the install still gets everything, and an unknown extra is a
@@ -282,22 +278,14 @@ all = [
     "scitex-cards[dev,docs,mcp,web,currency,postgres]",
 ]
 
-# BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy
-# `scitex-todo` binary MUST keep working through the transition window: the
-# agent fleet invokes it today, and breaking it would cut every agent off from
-# the task board.
 [project.scripts]
 scitex-cards = "scitex_cards._cli:main"
-scitex-todo = "scitex_cards._cli:main"
 
-# Repo renamed to scitex-ai/scitex-cards (2026-07-16); old URLs auto-redirect.
-# Documentation stays on the scitex-todo RTD project until that console-side
-# rename lands (tracked on the S2 migration card).
 [project.urls]
 Homepage = "https://github.com/scitex-ai/scitex-cards"
 Repository = "https://github.com/scitex-ai/scitex-cards"
 Issues = "https://github.com/scitex-ai/scitex-cards/issues"
-Documentation = "https://scitex-todo.readthedocs.io"
+Documentation = "https://scitex-cards.readthedocs.io"
 
 # scitex_dev.* groups are ITERATED by scitex-dev (not looked up by key), so
 # each registers the NEW key only — a legacy twin key would list the package
@@ -344,13 +332,13 @@ scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 # See `scitex_cards._hooks` for the canonical event-payload spec and
 # the built-in handlers (which run regardless of plugins).
 # Standalone notification-DELIVERY channel registry (slice 1). The
-# delivery loop (`scitex-todo deliver`) discovers channels registered
+# delivery loop (`scitex-cards deliver`) discovers channels registered
 # under this group via importlib.metadata and hands each pending
 # notification to the channels a user is configured for in
 # recipients.yaml. Channel plugin = a class implementing the
 # DeliveryChannel Protocol (attribute `name`, synchronous `deliver`).
 # This group name is DELIBERATELY distinct from any
-# `scitex_agent_container.*` group — scitex-todo's delivery rail is
+# `scitex_agent_container.*` group — this package's delivery rail is
 # fully independent of sac (ZERO sac imports). See
 # src/scitex_cards/_delivery/_registry.py.
 [project.entry-points."scitex_cards.delivery_channels"]
@@ -358,22 +346,27 @@ log = "scitex_cards._delivery._channels.log:LogChannel"
 telegram = "scitex_cards._delivery._channels.telegram:TelegramChannel"
 
 [project.entry-points."scitex_cards.hooks"]
-# scitex-todo's built-in handler is invoked DIRECTLY by
+# The built-in handler is invoked DIRECTLY by
 # dispatch_event (not via the plugin loop). External producers add
 # their plugins under this group in their own pyproject.toml.
 
 [tool.hatch.build.targets.wheel]
-# `src/scitex_todo` is the deprecated import shim (re-exports scitex_cards);
-# it ships in the wheel until the fleet cutover completes, then gets dropped.
-packages = ["src/scitex_cards", "src/scitex_todo"]
+packages = ["src/scitex_cards"]
 # Bundle the Django app's non-Python assets (manifest, templates, built
-# frontend) into the wheel so `scitex-todo board` works from a pip install.
+# frontend) into the wheel so `scitex-cards board` works from a pip install.
 artifacts = [
     "src/scitex_cards/_django/manifest.json",
     "src/scitex_cards/_django/templates/**/*",
     "src/scitex_cards/_django/static/**/*",
     # Agent-facing skills — read at runtime by `scitex-cards skills get/install`.
     "src/scitex_cards/_skills/**/*",
+    # Sphinx HTML, GENERATED at release time and gitignored on purpose (see the
+    # release workflow's "Build docs into the package" step). `artifacts` is
+    # exactly hatchling's mechanism for shipping VCS-ignored files, so this
+    # line is what carries the docs into the wheel — without it the build stays
+    # green and the wheel ships no docs. The release workflow asserts on the
+    # built wheel for that reason.
+    "src/scitex_cards/_sphinx_html/**/*",
 ]
 
 [tool.pytest.ini_options]

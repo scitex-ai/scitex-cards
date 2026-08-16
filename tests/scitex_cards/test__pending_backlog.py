@@ -22,7 +22,7 @@ import datetime as _dt
 
 import pytest
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     DEFAULT_PENDING_NUDGE_HOURS,
     ENV_PENDING_NUDGE_HOURS,
     NUDGE_ID_CAP,
@@ -212,13 +212,24 @@ class TestPendingNudgeLine:
         )
         return pending_backlog_nudge_line("a", out["a"], pending_hours=24.0)
 
-    def test_line_contains_count_and_ids(self, nudge_line):
-        # Arrange
+    def test_line_contains_the_count(self, nudge_line):
+        # Arrange — wording moved 2026-08-16 when the line began stating its
+        # own predicate: "N untouched deferred card(s)" -> "N deferred card(s)
+        # untouched >Nh [aged by …; owner by …]". The COUNT is what this pins.
         line = nudge_line
         # Act
         summary = line
         # Assert
-        assert "1 untouched deferred card(s)" in summary and "c1" in summary
+        assert "1 deferred card(s)" in summary
+
+    def test_line_contains_the_ids(self, nudge_line):
+        # Arrange — split from the count assertion; `A and B` reports as one
+        # failure and hides which half broke (STX-TQ007).
+        line = nudge_line
+        # Act
+        summary = line
+        # Assert
+        assert "c1" in summary
 
     def test_line_mentions_threshold(self, nudge_line):
         # Arrange

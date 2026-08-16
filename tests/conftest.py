@@ -49,9 +49,7 @@ from _store_damage import content_or_none, damaged_candidates
 #: half-applied rename cannot leave one of them aimed at the live board.
 _STORE_ENV_VARS = (
     "SCITEX_CARDS_DB",
-    "SCITEX_TODO_DB",
     "SCITEX_CARDS_TASKS_YAML_SHARED",
-    "SCITEX_TODO_TASKS_YAML_SHARED",
 )
 
 #: Env names that select WHICH BACKEND is canonical. These are CLEARED, not
@@ -64,9 +62,7 @@ _STORE_ENV_VARS = (
 #: same everywhere.
 _BACKEND_ENV_VARS = (
     "SCITEX_CARDS_STORE_BACKEND",
-    "SCITEX_TODO_STORE_BACKEND",
     "SCITEX_CARDS_READ_BACKEND",
-    "SCITEX_TODO_READ_BACKEND",
 )
 
 #: ``$SCITEX_DIR`` is the BASE DIRECTORY under ``resolve_db_path``'s tier-4
@@ -74,7 +70,7 @@ _BACKEND_ENV_VARS = (
 #: ``os.environ.get("SCITEX_DIR", str(Path.home() / ".scitex"))`` on EVERY
 #: call — not just at import. It is pinned for the same reason the four vars
 #: above are: a test that legitimately clears BOTH ``SCITEX_CARDS_DB`` and
-#: ``SCITEX_TODO_DB`` to exercise that fallback (see
+#: ``SCITEX_CARDS_DB`` to exercise that fallback (see
 #: ``tests/scitex_cards/test__paths.py``'s ``clean_store_env`` fixture, which
 #: pops only the two DB vars) falls straight through to ``Path.home()`` — the
 #: REAL home — unless something ALSO names ``$SCITEX_DIR``. Every test that
@@ -118,9 +114,7 @@ def _pin_to_scratch() -> Path:
 def _point_env_at(scratch: Path) -> None:
     """Aim every store-selecting variable at ``scratch``."""
     os.environ["SCITEX_CARDS_DB"] = str(scratch / "cards.db")
-    os.environ["SCITEX_TODO_DB"] = str(scratch / "cards.db")
     os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
-    os.environ["SCITEX_TODO_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
     # Same scratch tree, own subdir — no separate tempfile.mkdtemp() call
     # needed, and it means a test's own $SCITEX_DIR override (every one that
     # wants the tier-4 fallback sets this explicitly) still wins for the
@@ -183,14 +177,22 @@ def scratch_store_root() -> Path:
 # reading $HOME/$SCITEX_DIR — the whole point is to catch a leak that reached
 # the store via one of those variables, so asking the same variable "were you
 # bypassed" would beg the question.
+# This listed FOUR paths: these two, plus the same two under the pre-rename
+# directory name, because that older location had held 2,117 real cards as
+# recently as the 2026-07-16 rename and a leak could still have landed there.
+# The rename swept the old dirname to the new one, which turned the extra two
+# entries into duplicates of the first two — so the guard silently stopped
+# covering the second location while its length still suggested it did.
+#
+# REMOVED RATHER THAN RE-POINTED, and checked before removing: the pre-rename
+# directory still EXISTS on both homes (which are the same bind-mounted path)
+# but is EMPTY — measured 2026-08-16, zero files, so the store file this
+# guarded is gone. Nothing can recreate it either: the env tier and the compat
+# mirror that could resolve to that dirname were deleted with the shim, so no
+# code path in this package names it any more.
 _REAL_STORE_CANDIDATES: tuple[Path, ...] = (
     Path("/home/agent/.scitex/cards/cards.db"),
     Path("/home/ywatanabe/.scitex/cards/cards.db"),
-    # Pre-rename dirname (package renamed scitex-todo -> scitex-cards,
-    # 2026-07-16); this path held 2,117 real cards as recently as the rename
-    # itself (see _env_compat.py's incident writeup) and may still exist.
-    Path("/home/agent/.scitex/todo/cards.db"),
-    Path("/home/ywatanabe/.scitex/todo/cards.db"),
 )
 
 

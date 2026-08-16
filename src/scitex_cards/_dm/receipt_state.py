@@ -162,7 +162,7 @@ def queued_message_ids(
 
     THE INBOX IS A DIFFERENT STORE, which is why it is passed rather than taken
     from the caller's connection. Notifications live in a SQLite sidecar at
-    ``runtime/todo.db`` while the messages live in the card store, so this is a
+    ``runtime/cards.db`` while the messages live in the card store, so this is a
     cross-store question today. Schema v8 adds these columns to the store's own
     ``notifications`` table; when the rail moves, this becomes one query and
     this function collapses into the main one.
@@ -170,9 +170,9 @@ def queued_message_ids(
     if not message_ids:
         return set()
     try:
-        from .._inbox_sqlite import inbox_db_path, open_connection
+        from .._inbox_sqlite import inbox_target, open_connection
 
-        with open_connection(inbox_db_path(store)) as inbox:
+        with open_connection(inbox_target(store)) as inbox:
             rows = inbox.execute(
                 "SELECT DISTINCT msg_id FROM inbox WHERE msg_id IS NOT NULL"
             ).fetchall()

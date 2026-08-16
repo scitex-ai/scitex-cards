@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """The reconciler stamps ITSELF when nothing else names an author.
 
-An unattended cron run has no ``$SCITEX_TODO_AGENT_ID``, so every close raised
+An unattended cron run has no ``$SCITEX_CARDS_AGENT_ID``, so every close raised
 "creator unresolved" and the job closed nothing — measured on the live */15
 entry 2026-08-01, once the store-target failure that had been masking it was
 fixed.

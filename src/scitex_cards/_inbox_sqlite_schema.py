@@ -5,7 +5,7 @@
 Split out of :mod:`scitex_cards._inbox_sqlite` because the two halves have
 OPPOSITE lifetimes, and keeping them in one file made that invisible.
 
-Everything here owns a FILE: the ``todo.db`` path, the ``CREATE TABLE`` for
+Everything here owns a FILE: the ``cards.db`` path, the ``CREATE TABLE`` for
 ``inbox``, the ``ALTER`` that adds ``msg_id`` to a DB predating it, and the
 one-time copy of the legacy YAML ``inboxes:`` records. All of it is SQLite-and-
 file specific, and all of it is DELETED when the rail finishes moving onto the
@@ -34,18 +34,19 @@ __all__ = [
     "ENV_INBOX_DB",
     "SCHEMA_VERSION",
     "inbox_db_path",
+    "inbox_target",
     "init_schema",
     "open_connection",
 ]
 
 #: Env override for the inbox DB path (full path to the ``.db`` file). Default
-#: is ``<store_dir>/runtime/todo.db`` (see :func:`inbox_db_path`). Mirrors the
-#: ``SCITEX_TODO_INDEX_PATH`` override on :mod:`scitex_cards._index`.
-ENV_INBOX_DB = "SCITEX_TODO_INBOX_DB"
+#: is ``<store_dir>/runtime/cards.db`` (see :func:`inbox_db_path`). Mirrors the
+#: ``SCITEX_CARDS_INDEX_PATH`` override on :mod:`scitex_cards._index`.
+ENV_INBOX_DB = "SCITEX_CARDS_INBOX_DB"
 
-#: Runtime-DB filename. ``todo`` is this package's short name (constitution:
+#: Runtime-DB filename. ``card`` is this package's short name (constitution:
 #: ``<proj-root>/.scitex/<pkg-short>/runtime/<pkg-short>.db``).
-_DB_FILENAME = "todo.db"
+_DB_FILENAME = "cards.db"
 
 #: Schema version. Bump when the column set / indexes change.
 SCHEMA_VERSION = 1
@@ -56,11 +57,48 @@ SCHEMA_VERSION = 1
 _MIGRATED_FLAG = "migrated_from_yaml"
 
 
+def inbox_target(store: str | Path | None = None):
+    """WHERE THE RAIL ACTUALLY LIVES: the canonical store, not a per-host file.
+
+    This is c2c — the step c2a and c2b built the seam for and deliberately did
+    not take. c2a made every statement read its table/column from
+    ``shape_for(conn)``; c2b routed the opener through ``_db.connect`` so a DSN
+    could be handed to it at all. Both moved ZERO rows on purpose. This moves
+    the target.
+
+    WHAT IT FIXES, measured 2026-08-09: the notification rail wrote
+    ``runtime_dir(store)/cards.db`` — A FILE PER CONTAINER. The operator's laptop
+    copy was 5.1 MB, compute-04's was 147 KB, they were different files, and the
+    PostgreSQL ``notifications`` table had 0 rows. So a notification enqueued by
+    one agent could never reach anyone else, and the operator's own messages
+    never reached an agent's terminal. His words: 「ポスグレを使っているはずなのに
+    なぜまだ sqlite を使っているのか、意味不明です」.
+
+    Nothing is lost by switching: the rail's schema is already in the core store
+    (``notifications``, with ``recipient_id`` and a ``seq`` ordering column), and
+    ``POSTGRES_SHAPE`` already names them. :func:`inbox_db_path` stays for the
+    migration tooling that must still find the old file.
+
+    AN EXPLICIT ``SCITEX_CARDS_INBOX_DB`` STILL WINS OUTRIGHT, exactly as it did
+    for :func:`inbox_db_path`. That override is the documented way to pin the
+    rail somewhere specific, and silently ignoring it because the default moved
+    would be its own silent fallback — the operator sets a value, the code uses
+    a different one, and nothing says so. It is also what lets a caller keep the
+    rail on a file deliberately, which the delivery doctor's own tests rely on.
+    """
+    override = os.environ.get(ENV_INBOX_DB)
+    if override:
+        return Path(override).expanduser()
+    from ._store_target import resolve_store_target  # noqa: PLC0415 -- cycle
+
+    return resolve_store_target(store)
+
+
 def inbox_db_path(store: str | Path | None = None) -> Path:
     """Resolved on-disk path for the inbox SQLite DB.
 
-    ``SCITEX_TODO_INBOX_DB`` wins outright; otherwise the DB lives at
-    ``runtime_dir(store)/todo.db`` — the runtime dir tracks whichever scope the
+    ``SCITEX_CARDS_INBOX_DB`` wins outright; otherwise the DB lives at
+    ``runtime_dir(store)/cards.db`` — the runtime dir tracks whichever scope the
     task store resolved to, so a per-test ``store=`` isolates its own DB.
     """
     override = os.environ.get(ENV_INBOX_DB)
@@ -92,7 +130,7 @@ def open_connection(target: "Optional[Path | str]" = None):
 
     * the S0 PRAGMAs rather than ``journal_mode`` alone -- notably
       ``busy_timeout=300000``, which matters on a store this many writers share
-    * the min-client-version gate, a no-op here because ``todo.db`` stamps no
+    * the min-client-version gate, a no-op here because ``cards.db`` stamps no
       floor (it carries a ``meta`` table, not ``schema_meta``)
     * ``row_factory = sqlite3.Row``, which this function already set
 
@@ -112,7 +150,7 @@ def open_connection(target: "Optional[Path | str]" = None):
 def _ensure_msg_id(conn: sqlite3.Connection) -> None:
     """Add ``inbox.msg_id`` if this DB predates it. Idempotent + race-safe.
 
-    ~21 agents share one ``todo.db``, so two can reach the ``ALTER`` at the
+    ~21 agents share one ``cards.db``, so two can reach the ``ALTER`` at the
     same instant and the loser sees ``duplicate column name``. That is the
     winner having done our job, not a failure — swallowing anything broader
     would let a real schema fault masquerade as a race.
@@ -199,9 +237,25 @@ def _ensure_ready(conn: sqlite3.Connection, store: str | Path | None) -> None:
     Guarded by the ``migrated_from_yaml`` meta flag: the first access on a
     fresh DB performs the one-time copy + sets the flag; every later access
     is a cheap flag probe. Concurrency-safe across the ~21 agents sharing one
-    ``todo.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
+    ``cards.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
     flag is set even when there's nothing to copy, so a fresh store converges.
     """
+    # POSTGRES NEEDS NEITHER HALF OF THIS, AND BOTH WOULD FAIL.
+    #
+    # `init_schema` creates the SQLite-shaped `inbox` + `meta` tables; on the
+    # canonical store the rail's table is `notifications`, already part of the
+    # core schema. And the migration below is a one-time copy out of the legacy
+    # per-host YAML inbox, which never existed on the shared store — its
+    # `INSERT OR IGNORE` is SQLite-only syntax anyway.
+    #
+    # Returning early is what lets the rail OPEN the canonical store at all:
+    # every caller runs this first, so without the guard the move to Postgres
+    # dies on the first DDL statement rather than on anything to do with
+    # notifications.
+    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+
+    if _is_postgres(conn):
+        return
     init_schema(conn)
     if _is_migrated(conn):
         return

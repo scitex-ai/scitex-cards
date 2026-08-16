@@ -71,7 +71,7 @@ def store(env):
     # and pins SCITEX_CARDS_TASKS_YAML_SHARED as the STORE IDENTITY. Return that
     # pinned store path (NOT a tmp_path file — a write stamped with any other
     # path fails the next read's ownership guard; see THE STORE-PATH RULE).
-    env.set("SCITEX_TODO_AGENT_ID", "rank-tester")
+    env.set("SCITEX_CARDS_AGENT_ID", "rank-tester")
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 

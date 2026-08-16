@@ -36,6 +36,7 @@ second processes, and the real guard.
 
 from __future__ import annotations
 
+import functools
 import os
 import sqlite3
 import subprocess
@@ -44,6 +45,7 @@ import textwrap
 import time
 
 import pytest
+from _pytest.outcomes import Failed
 
 from scitex_cards import _store_backend
 from scitex_cards._db import ENV_DB
@@ -56,6 +58,16 @@ _SEED_CARDS = 1200
 #: Guarded reads attempted while the writer runs. On the old two-connection
 #: code one read was usually already enough; several make it certain.
 _READS_UNDER_LOAD = 8
+
+#: How long the fixture will keep reading, waiting for the writer to commit
+#: INSIDE the read window, before declaring the trial non-overlapping.
+#:
+#: A MODULE CONSTANT SO THE TIMEOUT BRANCH IS TESTABLE. An escape hatch nobody
+#: can reach is the same defect as the one this whole file argues against — a
+#: guard that has only ever been exercised in the direction it normally goes.
+#: `test_a_non_overlapping_trial_fails_with_the_reason` overrides this to make
+#: the branch fire in bounded time.
+_OVERLAP_TIMEOUT_S = 30.0
 
 
 def _seed(db, n_cards):
@@ -120,6 +132,7 @@ _WRITER_SRC = textwrap.dedent(
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=60000")
     i = 0
+    consecutive_lock_failures = 0
     while True:
         i += 1
         cid = "writer-%06d" % i
@@ -135,34 +148,52 @@ _WRITER_SRC = textwrap.dedent(
                 (cid, cid, payload),
             )
             conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as exc:
+            # NEVER SWALLOW. A writer that silently skips every insert looks
+            # ALIVE to the fixture -- `poll()` is None, the process is running --
+            # while committing nothing, which is exactly the "idle database"
+            # the guard downstream exists to detect, wearing a healthy costume.
+            # One transient lock is normal under WAL; a RUN of them means this
+            # writer is not writing, and the honest thing is to die loudly so
+            # the fixture's existing `writer.poll() is not None` branch reports
+            # it with the error text attached.
+            consecutive_lock_failures += 1
+            if consecutive_lock_failures >= 50:
+                raise SystemExit(
+                    "writer: %d consecutive OperationalError, last: %s"
+                    % (consecutive_lock_failures, exc)
+                )
+        else:
+            consecutive_lock_failures = 0
         time.sleep(0.002)
     """
 )
 
 
-@pytest.fixture
-def concurrent_read_result(tmp_path_factory):
-    """Run the guarded read repeatedly WHILE a real writer commits rows.
+def _run_overlap_trial(
+    tmp_path,
+    *,
+    writer_src: str = None,
+    overlap_timeout_s: float = None,
+) -> dict:
+    """One trial: guarded reads against a database a real writer is mutating.
 
-    FUNCTION-scoped deliberately (STX-TQ004): this fixture seeds a database,
-    spawns a process and mutates ``os.environ``, and a module-scoped fixture
-    doing that hands every test below the SAME mutated state — the tests then
-    silently depend on execution order. Each test therefore runs its own
-    independent trial of the experiment, at roughly 12s a trial. That is the
-    price of isolation here and it buys something real: three independent
-    reproductions instead of one, so a result that only holds by luck of
-    ordering cannot pass.
+    TAKES ITS SCAFFOLDING AS PARAMETERS rather than reading module state, so the
+    failure branches can be reached deterministically by a test instead of by
+    waiting for CI to lose a race. `writer_src` and `overlap_timeout_s` are the
+    two knobs a forcing test needs; both default to the real values, so the
+    fixture below is unchanged in behaviour.
 
-    Every trial is gated before it asserts anything: the loop below fails the
-    test outright if the writer process dies or never commits, so no trial can
-    quietly degrade into "reads work on an idle database". The env var is set
-    and restored inside this fixture, so nothing leaks to other tests.
+    Nothing is patched: the code under test is the real
+    ``_read_canonical_db_or_raise`` against a real SQLite database with a real
+    second OS process writing to it.
     """
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    tmp_path = tmp_path_factory.mktemp("concurrent")
+    writer_src = _WRITER_SRC if writer_src is None else writer_src
+    overlap_timeout_s = (
+        _OVERLAP_TIMEOUT_S if overlap_timeout_s is None else overlap_timeout_s
+    )
     db = tmp_path / "cards.db"
     previous = os.environ.get(ENV_DB)
     os.environ[ENV_DB] = str(db)
@@ -171,7 +202,7 @@ def concurrent_read_result(tmp_path_factory):
         _seed(db, _SEED_CARDS)
 
         writer_py = tmp_path / "writer.py"
-        writer_py.write_text(_WRITER_SRC)
+        writer_py.write_text(writer_src)
         writer = subprocess.Popen(
             [sys.executable, str(writer_py), str(db)],
             stdout=subprocess.DEVNULL,
@@ -192,12 +223,51 @@ def concurrent_read_result(tmp_path_factory):
         before = _writer_rows(db)
         errors: list[str] = []
         sizes: list[int] = []
-        for _ in range(_READS_UNDER_LOAD):
+
+        def _one_read() -> None:
             try:
                 sizes.append(len(_read_canonical_db_or_raise()["tasks"]))
             except RuntimeError as exc:
                 errors.append(str(exc))
+
+        for _ in range(_READS_UNDER_LOAD):
+            _one_read()
         after = _writer_rows(db)
+
+        # THE OVERLAP MUST BE DEMONSTRATED, NOT HOPED FOR.
+        #
+        # The barrier above proves the writer committed BEFORE the reads; it
+        # says nothing about DURING them, and `rows_written_during_reads > 0`
+        # is what the anti-vacuity guard downstream asserts. The writer commits
+        # every ~2ms, so overlap is overwhelmingly likely -- but "overwhelmingly
+        # likely" is a race, and under xdist load it lost twice on 2026-08-15,
+        # on two different interpreter legs, from two PRs that could not touch
+        # this code (#852 py3.13, #853 py3.12, same base commit, minutes apart).
+        #
+        # A re-run turns that red into a green tick without changing anything,
+        # which is the worst available outcome: the guard is not flaky-failing,
+        # it is REPORTING that its two sibling tests just ran against an idle
+        # database. On the legs where it does not trip we learn nothing about
+        # whether they overlapped either -- only that this guard did not catch
+        # them. Re-running until green converts that signal into silence.
+        #
+        # So: keep reading until the writer demonstrably commits inside the
+        # window, or fail with the reason. That makes the guard's precondition
+        # DETERMINISTIC instead of asking it to stop asking.
+        overlap_deadline = time.time() + _OVERLAP_TIMEOUT_S
+        while after == before:
+            if writer.poll() is not None:
+                err = writer.stderr.read().decode(errors="replace")
+                pytest.fail(f"the concurrent writer died mid-read: {err}")
+            if time.time() > overlap_deadline:
+                pytest.fail(
+                    "the writer committed nothing during the read window "
+                    f"(before={before}, after={after}) — the reads and the "
+                    "writer did not overlap, so the sibling assertions would "
+                    "have described an idle database"
+                )
+            _one_read()
+            after = _writer_rows(db)
     finally:
         if writer is not None:
             writer.kill()
@@ -213,6 +283,23 @@ def concurrent_read_result(tmp_path_factory):
         "smallest_read": min(sizes) if sizes else 0,
         "rows_written_during_reads": after - before,
     }
+
+
+@pytest.fixture
+def concurrent_read_result(tmp_path_factory):
+    """One independent trial of the overlap experiment, per test.
+
+    FUNCTION-scoped deliberately (STX-TQ004): the trial seeds a database, spawns
+    a process and mutates ``os.environ``, and a module-scoped fixture doing that
+    hands every test below the SAME mutated state — the tests then silently
+    depend on execution order. Each test therefore runs its own trial, so a
+    result that only holds by luck of ordering cannot pass.
+
+    The trial itself lives in :func:`_run_overlap_trial` so its failure branches
+    take parameters and can be reached by a test rather than only by CI losing a
+    race. This fixture is the default-arguments call.
+    """
+    return _run_overlap_trial(tmp_path_factory.mktemp("concurrent"))
 
 
 def test_a_concurrent_writer_never_makes_the_canonical_read_refuse(
@@ -244,6 +331,40 @@ def test_reads_under_concurrent_writes_return_the_whole_store(
     # Act (fixture)
     # Assert
     assert concurrent_read_result["smallest_read"] >= _SEED_CARDS
+
+
+def test_a_non_overlapping_trial_fails_rather_than_passing_vacuously(tmp_path):
+    """The overlap wait must FAIL when overlap never happens — not pass, not hang.
+
+    THE BRANCH THIS EXERCISES IS THE ESCAPE HATCH, and an escape hatch that has
+    never fired is indistinguishable from one that cannot. The wait added on
+    2026-08-15 keeps reading until the writer commits inside the window; if that
+    loop could only ever succeed it would silently mask a dead writer rather
+    than catch a race, which is the exact failure this file argues against.
+
+    Forced deterministically rather than by luck: a writer slowed so far below
+    the read cadence that no commit can land in the window, and a wait bound
+    short enough to fire in seconds. Both are PARAMETERS of the real trial
+    function — no patching of anything, and the code under test is still the
+    real guard against a real database with a real second process.
+    """
+    # Arrange — commit fast enough to clear the fixture's own start barrier
+    # (>=5 rows), then stop dead, so the READ WINDOW specifically sees nothing.
+    # A uniformly-slow writer would trip the earlier barrier instead and this
+    # test would pass for the wrong reason.
+    never_commits_again = _WRITER_SRC.replace(
+        "time.sleep(0.002)", "time.sleep(0.002 if i < 6 else 600)"
+    )
+    trial = functools.partial(
+        _run_overlap_trial,
+        tmp_path,
+        writer_src=never_commits_again,
+        overlap_timeout_s=3.0,
+    )
+    # Act
+    # Assert
+    with pytest.raises(Failed, match="committed nothing during the read window"):
+        trial()
 
 
 def test_the_concurrency_test_actually_had_a_concurrent_writer(

@@ -4,7 +4,7 @@
 
 The card-event/notification foundation epic, card
 ``cenf-c5-store-event-producers-20260626`` (+ the reassign-verb child
-``todo-reassign-verb-with-owner-notify-20260626``). The mutating
+``cards-reassign-verb-with-owner-notify-20260626``). The mutating
 :mod:`scitex_cards._store` verbs now ALSO emit a canonical
 :class:`scitex_cards._events.Event` onto the hook bus, and a new
 :func:`scitex_cards._store.reassign_task` primitive does an atomic

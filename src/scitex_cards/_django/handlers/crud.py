@@ -131,7 +131,7 @@ def handle_create(request, board):
     old bug gave a UI card a BLANK creator + no required owner) so the UI path
     reuses the same fail-loud + ``agent==assignee`` lock-step + ``created_by``
     stamp. Owner (``assignee`` or ``agent``) REQUIRED -> 400 otherwise.
-    ``created_by`` defaults payload -> ``$SCITEX_TODO_AGENT_ID`` -> ``"operator"``
+    ``created_by`` defaults payload -> ``$SCITEX_CARDS_AGENT_ID`` -> ``"operator"``
     (the board is the operator's surface), never blank. ``status`` defaults
     ``pending``; the id is unique across the union view (global + lanes).
     """
@@ -162,7 +162,7 @@ def handle_create(request, board):
     # payload nor env names one — never blank. add_task re-validates this.
     created_by = (
         _clean(payload.get("created_by"))
-        or os.environ.get("SCITEX_TODO_AGENT_ID")
+        or os.environ.get("SCITEX_CARDS_AGENT_ID")
         or "operator"
     )
     # Unique id across the union view (global + lanes) the board renders, so a
@@ -200,7 +200,7 @@ def handle_create(request, board):
     except TaskValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
-    logger.info("[scitex-todo] created task %s in %s", task["id"], board.store_path)
+    logger.info("[scitex-cards] created task %s in %s", task["id"], board.store_path)
     return JsonResponse({"task": task, "store_path": str(board.store_path)})
 
 
@@ -273,7 +273,7 @@ def handle_update(request, board):
     # Transport-only annotation (owner-liveness) — not part of the persisted
     # task, and not part of this endpoint's response contract.
     task.pop("assignee_liveness", None)
-    logger.info("[scitex-todo] updated task %s in %s", task_id, board.store_path)
+    logger.info("[scitex-cards] updated task %s in %s", task_id, board.store_path)
     return JsonResponse({"task": task, "store_path": str(board.store_path)})
 
 
@@ -337,7 +337,7 @@ def handle_comment(request, board):
     _reset_cache()
     comment = result["comment"]
     logger.info(
-        "[scitex-todo] comment on %s by %s in %s", task_id, author, board.store_path
+        "[scitex-cards] comment on %s by %s in %s", task_id, author, board.store_path
     )
 
     # Re-read the freshly-written card (comment_task wrote under its own lock,

@@ -6,7 +6,7 @@ Split out of ``_store_lifecycle`` when adding :func:`reassign_all` pushed that
 module past its line budget. ``_store`` re-exports the name below so
 ``from ._store import reassign_all`` keeps working. The single-card
 :func:`reassign_task` stays in ``_store_lifecycle``; this module is the BULK
-verb ``sac agents rename`` needs (card ``todo-reassign-all-bulk-primitive``).
+verb ``sac agents rename`` needs (card ``cards-reassign-all-bulk-primitive``).
 
 The shared helpers (``_read_write_doc`` / ``_utc_now_iso`` / ``_default_agent``)
 stay in ``_store`` and are imported inside the function body — a deferred
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -34,7 +35,7 @@ def reassign_all(
     """Bulk owner change — move EVERY card owned by ``old_owner`` to
     ``new_owner`` in ONE atomic locked write, then emit ONE batch event.
 
-    The primitive ``sac agents rename`` needs (``todo-reassign-all-bulk-
+    The primitive ``sac agents rename`` needs (``cards-reassign-all-bulk-
     primitive``). Mirrors :func:`reassign_task`'s per-card semantics
     EXACTLY — for every matched card it sets ``agent = assignee =
     new_owner``, ``scope = "agent:<new_owner>"``, appends the identical
@@ -71,7 +72,7 @@ def reassign_all(
         Both required, non-empty. ``old_owner == new_owner`` raises
         ``ValueError`` — a self-rename is meaningless for a bulk verb.
     by : str, optional
-        The actor; resolved via ``$SCITEX_TODO_AGENT_ID`` -> ``$USER`` ->
+        The actor; resolved via ``$SCITEX_CARDS_AGENT_ID`` -> ``$USER`` ->
         ``"unknown"``.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
@@ -117,11 +118,13 @@ def reassign_all(
             task["scope"] = f"agent:{new_owner}"
             comments = task.setdefault("comments", [])
             comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": f"reassigned {old_owner} -> {new_owner} by {actor}",
-                }
+                stamp_comment_id(
+                    {
+                        "author": actor,
+                        "ts": _utc_now_iso(),
+                        "text": f"reassigned {old_owner} -> {new_owner} by {actor}",
+                    }
+                )
             )
             # Delegation keeps responsibility — mirrors reassign_task
             # EXACTLY: the previous owner + creator stay subscribed through
@@ -177,7 +180,7 @@ def reassign_task(
 ) -> dict:
     """Atomically change a card's owner — the primitive the board lacked.
 
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
+    C5 (``cards-reassign-verb-with-owner-notify``). In ONE locked write:
 
       * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
         in lock-step with the operator-co-designed ``agent`` so every
@@ -204,7 +207,7 @@ def reassign_task(
         The new owning agent (required, non-empty).
     by : str, optional
         The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
+        ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
         handler in tests); ``None`` uses real plugin discovery.
@@ -252,14 +255,16 @@ def reassign_task(
             target["scope"] = f"agent:{new_owner}"
             comments = target.setdefault("comments", [])
             comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": (
-                        f"reassigned {old_owner or '(unassigned)'} -> "
-                        f"{new_owner} by {actor}"
-                    ),
-                }
+                stamp_comment_id(
+                    {
+                        "author": actor,
+                        "ts": _utc_now_iso(),
+                        "text": (
+                            f"reassigned {old_owner or '(unassigned)'} -> "
+                            f"{new_owner} by {actor}"
+                        ),
+                    }
+                )
             )
             # Delegation keeps responsibility (operator 2026-07-18,
             # 「渡しました、で終わられると困る」/ constitution §2 "ownership

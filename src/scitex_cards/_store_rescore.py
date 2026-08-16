@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -194,22 +195,24 @@ def rescore_task(
         ]
 
         target.setdefault("comments", []).append(
-            {
-                "author": actor,
-                "ts": now,
-                "text": (
-                    f"rescore: urgency {old_u}->{new_u}, "
-                    f"importance {old_i}->{new_i}, "
-                    f"rank {old_r}->{new_r} (of {of})"
-                ),
-                "kind": "rescore",
-                "rescore": {
-                    "urgency": [old_u, new_u],
-                    "importance": [old_i, new_i],
-                    "rank": [old_r, new_r],
-                    "of": of,
-                },
-            }
+            stamp_comment_id(
+                {
+                    "author": actor,
+                    "ts": now,
+                    "text": (
+                        f"rescore: urgency {old_u}->{new_u}, "
+                        f"importance {old_i}->{new_i}, "
+                        f"rank {old_r}->{new_r} (of {of})"
+                    ),
+                    "kind": "rescore",
+                    "rescore": {
+                        "urgency": [old_u, new_u],
+                        "importance": [old_i, new_i],
+                        "rank": [old_r, new_r],
+                        "of": of,
+                    },
+                }
+            )
         )
         # `task_id` is listed EXPLICITLY and not left to the diff: a rescore
         # that does not move the card still rewrites its axes, `scored_at`,

@@ -8,7 +8,7 @@
  * syntax — and was surprised it fell through to the plain fuzzy match.
  *
  * The board_v3 (live-operator) template loads the .js sibling directly.
- * This .ts file is the TYPED equivalent used by the React TodoBoard
+ * This .ts file is the TYPED equivalent used by the React CardsBoard
  * (frontend/src/) so both code paths use the same parser semantics. The
  * implementations are kept in lock-step manually for now (the JS file
  * is the canonical source; this TS file mirrors the same dictionary

@@ -33,7 +33,7 @@ never confirmed stays visible forever instead of vanishing.
 
 WHY THIS MATTERS (the incident, 2026-07-29)
 -------------------------------------------
-An agent's spec allowlisted ``server:scitex-todo`` while ``.mcp.json`` registers
+An agent's spec allowlisted ``server:scitex-cards`` while ``.mcp.json`` registers
 this server as ``scitex-cards``. Every push was discarded on arrival; the drain
 ack'd on ``send()`` returning; 228 rows were enqueued and consumed, ZERO unseen.
 Weeks of operator DMs were destroyed with every check green. With a receipt on
@@ -108,7 +108,7 @@ def _existing_columns(conn: sqlite3.Connection) -> set[str]:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Add the receipt columns if this DB predates them. Idempotent + racy-safe.
 
-    ~21 agents share one ``todo.db``; two of them can reach the ``ALTER`` at the
+    ~21 agents share one ``cards.db``; two of them can reach the ``ALTER`` at the
     same instant and the loser sees ``duplicate column name``. That is the
     winner having done our job, not a failure, so it is swallowed — anything
     else and a health check could take down a drain.
@@ -144,15 +144,20 @@ def _sqlite_stamp(
 
     Returns the ids that exist in this recipient's inbox (the ones stamped).
     """
-    from ._inbox_sqlite import _ensure_ready, inbox_db_path, open_connection
+    from ._inbox_sqlite import _ensure_ready, inbox_target, open_connection
 
     placeholders = ",".join("?" for _ in ids)
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
         _ensure_columns(conn)
+        # Same reason as the read below: table / recipient column / arrival
+        # order are properties of the OPEN CONNECTION, not of this file.
+        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
+
+        shape = shape_for(conn)
         rows = conn.execute(
-            f"SELECT id FROM inbox WHERE recipient = ? AND id IN ({placeholders}) "
-            f"ORDER BY rowid",
+            f"SELECT id FROM {shape.table} WHERE {shape.recipient} = ? "
+            f"AND id IN ({placeholders}) {shape.order()}",
             (recipient_id, *ids),
         ).fetchall()
         present = [row["id"] for row in rows]
@@ -177,20 +182,35 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
     predates the receipt columns simply reports ``None`` for both, which the
     health check reads — correctly — as "no push has ever been recorded".
     """
-    from ._inbox_sqlite import inbox_db_path, open_connection
+    from ._inbox_sqlite import inbox_target, open_connection
 
-    db = inbox_db_path(store)
-    if not db.exists():
+    db = inbox_target(store)
+    # THE ABSENCE PROBE CANNOT BE `.exists()` ANY MORE, and this is the same
+    # class the rest of today was: a store TARGET may be a URL, and `Path.exists`
+    # on one is either an AttributeError (it is a str) or a lie (it is a
+    # relative path that happens not to be there). The never-create guarantee in
+    # the docstring above is a FILE property, so it is asked only of files.
+    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
+
+    if not is_postgres_url(str(db)) and not Path(db).exists():
         return []
     with open_connection(db) as conn:
         columns = _existing_columns(conn)
         if not columns:
             return []
+        # Table, recipient column and arrival order come from the LIVE
+        # connection, not from this file's belief. Hardcoding `FROM inbox …
+        # ORDER BY rowid` was correct while the rail was its own SQLite file
+        # and is a syntax error against the canonical store, where the rail is
+        # `notifications` ordered by `seq`.
+        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
+
+        shape = shape_for(conn)
         selected = ["id", "event_type", "card_id", "ts", "seen"]
         selected += [c for c in RECEIPT_COLUMNS if c in columns]
         rows = conn.execute(
-            f"SELECT {', '.join(selected)} FROM inbox WHERE recipient = ? "
-            f"ORDER BY rowid",
+            f"SELECT {', '.join(selected)} FROM {shape.table} "
+            f"WHERE {shape.recipient} = ? {shape.order()}",
             (recipient_id,),
         ).fetchall()
     out: list[dict] = []
@@ -204,7 +224,7 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# File backend (break-glass, SCITEX_TODO_INBOX_BACKEND=yaml)                   #
+# File backend (break-glass, SCITEX_CARDS_INBOX_BACKEND=yaml)                   #
 # --------------------------------------------------------------------------- #
 def _file_stamp(
     recipient_id: str,

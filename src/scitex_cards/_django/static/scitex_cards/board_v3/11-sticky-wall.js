@@ -1,6 +1,6 @@
 /* 11-sticky-wall.js — "sticky note wall" layout for board_v3.
  *
- * Operator design (todo-board-sticky-wall-view-20260710, msgs 929/931/933):
+ * Operator design (cards-board-sticky-wall-view-20260710, msgs 929/931/933):
  *   - Timeline is the centrepiece, but hover-to-read is tedious: every note
  *     must be READABLE WITHOUT HOVER.
  *   - Cluster the notes "like UMAP, but 適当に" — by a plain key (assignee by

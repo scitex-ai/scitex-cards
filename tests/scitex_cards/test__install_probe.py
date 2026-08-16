@@ -3,7 +3,7 @@
 """The version string can lie. These tests prove the probe catches it when it does.
 
 Regression cover for the 2026-07-12 incident: an orphaned ``.dist-info`` froze
-``scitex-todo`` at 0.7.26 while the code actually running was 0.8.7 — thirty
+``scitex-cards`` at 0.7.26 while the code actually running was 0.8.7 — thirty
 releases apart, permanently, with nothing reporting a problem. sac reproduced the
 same shape independently in its own container (baked dist-info over bound code).
 

@@ -65,7 +65,7 @@ _STORE_TEXT = (
 @pytest.fixture
 def store(env):
     # Hermetic: no per-project lane union from the real ~/proj tree.
-    env.set("SCITEX_TODO_LANE_GLOBS", "")
+    env.set("SCITEX_CARDS_LANE_GLOBS", "")
     # SQLite store: seed the prior cards into the canonical DB, then hand the
     # handler the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path fails the next read's ownership check). The DB is

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo's OWN liveness signal at the store boundary.
+"""scitex-cards's OWN liveness signal at the store boundary.
 
 Two thin wrappers over :mod:`scitex_cards._users` that the mutating store
 verbs (create / comment / update / reassign / inbox-poll) call:
@@ -12,7 +12,7 @@ verbs (create / comment / update / reassign / inbox-poll) call:
                           to a non-running agent."
 
 STANDALONE constraint (SoC mandate): liveness is computed PURELY from
-scitex-todo's own registry record's ``last_seen`` — stamped locally, read
+scitex-cards's own registry record's ``last_seen`` — stamped locally, read
 locally. There is NO ``sac`` / ``scitex_agent_container`` import and NO
 network probe to any external runtime here or anywhere it reaches.
 
@@ -30,7 +30,7 @@ def _heartbeat(actor: str | None, store: str | Path | None) -> None:
     """Stamp ``last_seen`` on the acting agent's registry record (fail-soft).
 
     Whenever an agent touches the store we stamp ``last_seen = now(UTC)`` on
-    its OWN scitex-todo registry record via the SAME identity seam the rest
+    its OWN scitex-cards registry record via the SAME identity seam the rest
     of the store uses (:func:`scitex_cards._users.touch_user`) — no second
     identity path. This is the signal :func:`scitex_cards._users.is_alive`
     reads to surface a non-running assignee.

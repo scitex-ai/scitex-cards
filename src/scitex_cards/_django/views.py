@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Views for the scitex-todo board Django app.
+"""Views for the scitex-cards board Django app.
 
 ``board_page`` renders the React SPA inside the scitex-ui workspace shell
 (falling back to a server-rendered static graph when the built frontend assets
@@ -158,14 +158,14 @@ def board_page(request):
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
-                # stays ``scitex-todo`` — it keys the shell's static/asset
+                # stays ``scitex-cards`` — it keys the shell's static/asset
                 # namespace, not the product name the operator reads.
-                {"app_name": "scitex-todo", "app_label": "SciTeX Cards"},
+                {"app_name": "scitex-cards", "app_label": "SciTeX Cards"},
                 request=request,
             )
             return HttpResponse(html)
         except Exception:
-            logger.exception("[scitex-todo] shell render failed; using fallback")
+            logger.exception("[scitex-cards] shell render failed; using fallback")
 
     # Fallback: server-rendered static graph (no Node/Vite build available).
     return HttpResponse(_static_graph_page(request))
@@ -186,7 +186,7 @@ def board_v3_page(request):
     """
     from django.template.loader import render_to_string
 
-    # Operator UX (TG 407): show the actual scitex-todo package version
+    # Operator UX (TG 407): show the actual scitex-cards package version
     # in the page title AND the in-page header so the operator can verify
     # at a glance which release the board is running. Read __version__
     # straight off the package import — no second source of truth to drift.
@@ -194,10 +194,10 @@ def board_v3_page(request):
         from scitex_cards import __version__ as _version
     except Exception:  # noqa: BLE001
         _version = "?"
-    # PRODUCT NAME (operator TG 2026-07-13: "製品なので、scitex-todo ではなく、
+    # PRODUCT NAME (operator TG 2026-07-13: "製品なので、scitex-cards ではなく、
     # SciTeX Cards としてタイトルを書いてください"). This is the DISPLAY string only
     # — the browser tab + the in-page header. The package, module, CLI, MCP
-    # tool prefix and store path are all still `scitex-todo`; renaming those
+    # tool prefix and store path are all still `scitex-cards`; renaming those
     # is a separate, coordinated change.
     label = f"SciTeX Cards v{_version}"
 
@@ -232,7 +232,7 @@ def board_v3_page(request):
         html = render_to_string(
             "scitex_cards/board_v3.html",
             {
-                "app_name": "scitex-todo",
+                "app_name": "scitex-cards",
                 "app_label": label,
                 "scitex_cards_version": _version,
                 # Include-root prefix for every board fetch (see above). The
@@ -248,7 +248,7 @@ def board_v3_page(request):
         )
         return HttpResponse(html)
     except Exception:
-        logger.exception("[scitex-todo] board_v3 render failed; using fallback")
+        logger.exception("[scitex-cards] board_v3 render failed; using fallback")
         return HttpResponse(_static_graph_page(request))
 
 
@@ -312,7 +312,7 @@ def _maybe_announce_missing_turn_urls(request) -> None:
         board = get_board(_tasks_path_from_request(request))
         announce_missing_at_boot(list(board.tasks))
     except Exception:  # noqa: BLE001
-        logger.exception("[scitex-todo] turn-url boot announce failed (non-fatal)")
+        logger.exception("[scitex-cards] turn-url boot announce failed (non-fatal)")
 
 
 def _static_graph_page(request) -> str:
@@ -367,7 +367,7 @@ def _static_graph_page(request) -> str:
 </script>
 </head>
 <body>
-  <h1>SciTeX Todo &mdash; dependency graph</h1>
+  <h1>SciTeX Card &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>
@@ -443,7 +443,7 @@ def api_dispatch(request, endpoint):
         # would emit an ERROR traceback on every poll, which is the same
         # monitoring noise in the log rail that the 500 was in the HTTP rail.
         logger.warning(
-            "[scitex-todo] no task store for /%s on this deployment: %s",
+            "[scitex-cards] no task store for /%s on this deployment: %s",
             endpoint,
             exc,
         )
@@ -463,18 +463,18 @@ def api_dispatch(request, endpoint):
         # 500 with it — rendering an onboarding page over an outage and dropping
         # it out of monitoring. Silent, and silence looks exactly like health.
         logger.exception(
-            "[scitex-todo] task store unreachable for /%s", endpoint
+            "[scitex-cards] task store unreachable for /%s", endpoint
         )
         return JsonResponse({"error": _store_error_body(exc)}, status=500)
     except Exception as exc:
         # Genuinely unexpected: this one IS an outage and belongs in 5xx.
-        logger.exception("[scitex-todo] cannot read the task store for /%s", endpoint)
+        logger.exception("[scitex-cards] cannot read the task store for /%s", endpoint)
         return JsonResponse({"error": _store_error_body(exc)}, status=500)
 
     try:
         return handler(request, board)
     except Exception as exc:
-        logger.exception("[scitex-todo] API error on /%s", endpoint)
+        logger.exception("[scitex-cards] API error on /%s", endpoint)
         return JsonResponse({"error": str(exc)}, status=500)
 
 

@@ -8,18 +8,17 @@ PNG) ships today. See the project roadmap for org and Web-UI adapters.
 
 Quick Start
 -----------
->>> import scitex_cards as todo
->>> tasks = todo.load_tasks()                    # doctest: +SKIP
->>> src = todo.build_mermaid(tasks)              # doctest: +SKIP
->>> todo.render(src, "tasks.png")                # doctest: +SKIP
+>>> import scitex_cards as card
+>>> tasks = card.load_tasks()                    # doctest: +SKIP
+>>> src = card.build_mermaid(tasks)              # doctest: +SKIP
+>>> card.render(src, "tasks.png")                # doctest: +SKIP
 'mmdc'
 """
 
 from __future__ import annotations
 
-# Environment dual-read shim — MUST run before anything reads SCITEX_TODO_*
+# Environment dual-read shim — MUST run before anything reads SCITEX_CARDS_*
 # env vars (mirrors SCITEX_CARDS_* onto the old names the code still reads).
-from . import _env_compat as _env_compat  # noqa: F401  (import for side effect)
 
 
 # `__version__` resolves LAZILY, in __getattr__ below. The reason is measured,
@@ -33,28 +32,31 @@ from . import _env_compat as _env_compat  # noqa: F401  (import for side effect)
 # statement, which is how a package with an otherwise correct lazy-import
 # design ended up over budget.
 #
-# The public surface is unchanged: `scitex_cards.__version__` still answers,
-# still prefers the `scitex-cards` dist, and still falls back to the
-# transition-window `scitex-todo` name for un-cutover editable installs. It
-# just pays for the metadata reader when someone asks for a version, which
+# The public surface is unchanged: `scitex_cards.__version__` still answers.
+# It just pays for the metadata reader when someone asks for a version, which
 # tab-completion never does.
 def _resolve_version() -> str:
-    """The installed version, read on demand. See the note above for why."""
+    """The installed version, read on demand. See the note above for why.
+
+    ONE DIST NAME. This loop used to try the current name and then fall back to
+    a transition-window name for un-cutover editable installs. The retired name
+    is gone, which left the loop iterating the SAME string twice: a second
+    `version()` call that can only raise the same `PackageNotFoundError` the
+    first one did, and a fallback chain with nothing to fall back to.
+    """
     try:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover — only on ancient Pythons
         return "0.0.0+local"
-    for dist in ("scitex-cards", "scitex-todo"):
-        try:
-            return version(dist)
-        except PackageNotFoundError:
-            continue
-    return "0.0.0+local"
+    try:
+        return version("scitex-cards")
+    except PackageNotFoundError:
+        return "0.0.0+local"
 
 
 #: Public API — Convention A (audit §6: every public Python API must match a
 #: registered MCP tool name 1:1). The MCP tool surface is documented in
-#: ``_skills/scitex-todo/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
+#: ``_skills/scitex-cards/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
 #:
 #: Render / mermaid / paths / model helpers used to be re-exported here.
 #: They were moved off the top level (audit §6) but remain importable from

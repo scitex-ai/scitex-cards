@@ -3,7 +3,7 @@
 """The delivery loop — read pending notifications, hand them to channels.
 
 :func:`deliver_pending` is slice 1's one-shot delivery pass (the CLI
-``scitex-todo deliver`` command + a future cron/loop runner call it). It is
+``scitex-cards deliver`` command + a future cron/loop runner call it). It is
 the orchestrator that wires the parts together while honouring the hard
 separation of concerns:
 
@@ -40,7 +40,7 @@ from ._tick import fault_text
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
-    print(f"[scitex-todo delivery] WARNING: {msg}", file=sys.stderr)
+    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
 
 
 def _resolve_channels(

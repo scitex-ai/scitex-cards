@@ -8,7 +8,7 @@ a bare NOUN that launched directly — CLI noun-verb violation, and the
 operator had no clean way to restart after a card/source change ("port
 already in use" trap).
 
-Pidfile at ``~/.scitex/todo/board.pid`` so stop/restart/status are
+Pidfile at ``~/.scitex/cards/board.pid`` so stop/restart/status are
 reliable across terminals. Bare ``scitex-cards board`` (no subcommand)
 hard-errors with a redirect (operator directive TG 13316: noun-verb CLI
 convention, no bare-noun back-compat).
@@ -27,22 +27,34 @@ import click
 # so existing call sites + tests keep importing them from ``_board``.
 from scitex_cards._cli._board_proc import (
     BOARD_PIDFILE,  # noqa: F401  (public re-export)
+    StopOutcome,  # noqa: F401  (public re-export)
+    StopResult,  # noqa: F401  (public re-export)
     _board_cmdline_is_board,  # noqa: F401  (public re-export)
-    _board_pid_alive,
+    _board_pid_alive,  # noqa: F401  (public re-export)
     _board_pid_on_port,  # noqa: F401  (public re-export)
     _board_pidfile,
     _board_read_pid,
     _board_resolve_pid,
     _board_write_pid,
+    stop_board_process,
 )
 
+from ._board_force import force_stop_running_board
 from ._compat import spec_command_kwargs, spec_group_kwargs
 from ._store_guard import refuse_unconfigured_store
 
 
 def register(main: click.Group) -> None:
     """Attach the ``board`` noun group to the root group."""
+    from . import _board_service
+
     main.add_command(board_group)
+    # `install-service` lives on THIS noun, not on `gui`: `gui` is the
+    # ecosystem-standard four-verb group shared with figrecipe / writer /
+    # scholar, and a shared convention each package extends privately stops
+    # being shared. Attached from its own module because this file is at its
+    # line cap; passing the group in avoids an import cycle.
+    _board_service.register(board_group)
 
 
 def _board_run_server(
@@ -112,7 +124,7 @@ def _board_run_server(
             "The `board` noun REQUIRES an explicit verb — bare `{prog} "
             "board` hard-errors with a redirect (operator directive TG "
             "13316: noun-verb CLI convention, no bare-noun back-compat). "
-            "Writes a pidfile at ~/.scitex/todo/board.pid so `stop` / "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so `stop` / "
             "`restart` / `status` work reliably from any terminal. "
             "`board start --help` documents the web extra it requires."
         ),
@@ -135,7 +147,7 @@ def board_group(ctx: click.Context) -> None:
     the fleet.
 
     In-tree call sites updated in this same PR: ``_jobs_provider.py``.
-    Host-side systemd unit ``scitex-todo.dashboard.service`` ExecStart
+    Host-side systemd unit ``scitex-cards-dashboard.service`` ExecStart
     also needs the same migration — flagged for lead's host-side pass.
     """
     if ctx.invoked_subcommand is not None:
@@ -160,7 +172,7 @@ def board_group(ctx: click.Context) -> None:
     **spec_command_kwargs(
         summary="Launch the board server (blocking, foreground).",
         description=(
-            "Writes a pidfile at ~/.scitex/todo/board.pid so other "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so other "
             "terminals can `board stop` / `board restart`. Requires the "
             "web extra: pip install scitex-cards[all]."
         ),
@@ -180,6 +192,13 @@ def board_group(ctx: click.Context) -> None:
     help="Don't open a browser automatically.",
 )
 @click.option(
+    "--force",
+    is_flag=True,
+    help="Stop a board that is already running, then start. A no-op when "
+    "nothing is running — `--force` is a takeover, NOT a stop verb, so "
+    "the absence of an incumbent is success, not an error.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Print the planned launch (port + browser flag) "
@@ -197,13 +216,20 @@ def board_group(ctx: click.Context) -> None:
 def board_start_cmd(
     port: int,
     no_browser: bool,
+    force: bool,
     dry_run: bool,
     assume_yes: bool,
 ) -> None:
     """Foreground start. Pidfile written; removed on clean shutdown.
 
+    ``--force`` takes over from a board that is already up. It is here as
+    well as on `gui serve` on purpose: these are two doors onto the same
+    Django app, and the last guard written for one door only (the
+    unconfigured-store refusal) left the other open for three days.
+
     Example:
       $ scitex-cards board start --port 8051
+      $ scitex-cards board start --force
     """
     _ = assume_yes  # accepted for §2 compliance; non-interactive verb.
     # BEFORE THE DRY-RUN BRANCH, not after, and that ordering is the point.
@@ -217,14 +243,23 @@ def board_start_cmd(
     # and pass WITHOUT EVER REACHING THE GUARD -- a control that cannot fail,
     # which is the defect this whole card is about.
     refuse_unconfigured_store()
-    # Guard rail: refuse to start if another board is already up so we
-    # don't fight over the pidfile or the port.
-    existing = _board_read_pid()
-    if existing is not None:
-        raise click.ClickException(
-            f"board is already running (pid {existing}). Use "
-            "`scitex-cards board stop` or `restart`."
-        )
+    if force:
+        # Takeover, not a stop: `force_stop_running_board` returns None when
+        # nothing is running and we serve exactly as if `--force` were absent.
+        # It raises (naming the pid + the next step) if the kernel refused the
+        # signal, because binding a port that is demonstrably still held is
+        # the silent failure this repo does not ship.
+        force_stop_running_board(port, dry_run=dry_run)
+    else:
+        # Guard rail: refuse to start if another board is already up so we
+        # don't fight over the pidfile or the port.
+        existing = _board_read_pid()
+        if existing is not None:
+            raise click.ClickException(
+                f"board is already running (pid {existing}). Use "
+                "`scitex-cards board stop` or `restart`, or pass --force to "
+                "take over."
+            )
     if dry_run:
         click.echo(
             f"# dry-run: would start board on port {port}, "
@@ -288,6 +323,12 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
     process owned by the SAME user — a cross-user kill is denied by the
     kernel and surfaces as a clear error below.
 
+    THE SIGTERM->poll->SIGKILL SEQUENCE IS NOT WRITTEN HERE. It lives in
+    :func:`.._board_proc.stop_board_process`, so ``--force`` on `start` /
+    `gui serve` escalates identically instead of hand-rolling a second
+    copy. Every message below is unchanged from when the sequence was
+    inline; the wording is the contract this verb's tests pin.
+
     Example:
       $ scitex-cards board stop
     """
@@ -303,10 +344,6 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
                 f"(timeout {timeout}s, then SIGKILL).",
             )
         return
-    import os as _os
-    import signal as _signal
-    import time as _time
-
     pid, untracked = _board_resolve_pid(port)
     if pid is None:
         click.echo("# board is not running (no pidfile / stale).")
@@ -316,40 +353,16 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
             f"# pidfile stale/missing; found live board on port {port} "
             f"(pid {pid}); stopping it.",
         )
-    try:
-        _os.kill(pid, _signal.SIGTERM)
-    except OSError as e:
-        raise click.ClickException(f"could not SIGTERM pid {pid}: {e}")
-    # Poll for graceful exit.
-    deadline = _time.time() + timeout
-    while _time.time() < deadline:
-        if not _board_pid_alive(pid):
-            click.echo(f"# stopped board (pid {pid}).")
-            # Clean up pidfile (the foreground process's finally
-            # also tries to remove it; this is idempotent).
-            pf = _board_pidfile()
-            try:
-                if pf.exists():
-                    pf.unlink()
-            except OSError:
-                pass
-            return
-        _time.sleep(0.1)
-    # Still alive — escalate.
-    try:
-        _os.kill(pid, _signal.SIGKILL)
+    outcome = stop_board_process(pid, timeout)
+    if outcome.error is not None:
+        raise click.ClickException(outcome.error)
+    if outcome.escalated_to_sigkill:
         click.echo(
             f"# board did not exit in {timeout}s; sent SIGKILL to pid {pid}.",
             err=True,
         )
-    except OSError as e:
-        raise click.ClickException(f"could not SIGKILL pid {pid}: {e}")
-    pf = _board_pidfile()
-    try:
-        if pf.exists():
-            pf.unlink()
-    except OSError:
-        pass
+        return
+    click.echo(f"# stopped board (pid {pid}).")
 
 
 @board_group.command(

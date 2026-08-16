@@ -14,7 +14,7 @@ write the first; the second is the recipient's own act. A record that was pushed
 and never confirmed stays on the row forever, where the health doctor can see it.
 
 RUN ON BOTH BACKENDS, EXPLICITLY. This suite's conftest pins
-``SCITEX_TODO_INBOX_BACKEND=yaml`` for every test, but PRODUCTION AGENTS SET
+``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test, but PRODUCTION AGENTS SET
 NEITHER VAR AND GET SQLITE. A receipt suite that inherited the default would
 therefore have tested everything except the code every real agent runs, and
 looked complete doing it. Every fixture below is parametrized over both.
@@ -87,7 +87,7 @@ def _receipt(store, notification_id, agent=AGENT):
 @pytest.fixture(params=BACKENDS)
 def store(request, env, tmp_path):
     """A real store on each real inbox backend, in turn."""
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return tmp_path / "tasks.yaml"
 
 

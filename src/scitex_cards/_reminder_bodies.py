@@ -30,7 +30,7 @@ def _rank_key(sc):
     un-started high-priority card", which is the first of the three signals the
     operator asked to lead with. (The other two axes sac named need data that
     StaleCard does not yet carry; they fold in once it does — the detail is on
-    card todo-nudges-need-force-rank-digest-escalate-to-operator-20260714, kept
+    card cards-nudges-need-force-rank-digest-escalate-to-operator-20260714, kept
     OUT of this delivery module on purpose. Ranking by priority+age is already a
     categorical improvement over "the 15 oldest regardless of priority".)
 
@@ -78,10 +78,37 @@ def _digest_body(cards: list, attempt: int) -> str:
     if remaining > 0:
         # The total is a FOOTNOTE, not the headline. It says "there is more" and
         # how to see it, without drowning the three cards that matter.
+        #
+        # THE COUNT DESCRIBES THIS DIGEST'S SET, NOT THE OPEN SET, and the
+        # wording must not equate them. It used to read "… for all {total}"
+        # beside a `--status in_progress,blocked,deferred` command that returns
+        # a DIFFERENT population: measured for scitex-hpc 2026-08-16, this
+        # digest counted 15 while that command returned 47.
+        #
+        # Both numbers were right and the sentence made each one evidence about
+        # the other. scitex-hpc read a drop from 20 to 7 across a 531-card
+        # migration and a daemon restart — the exact shape of data loss — and
+        # had to query the store to find out their board had not shrunk. A
+        # reader who trusts the line concludes they lost two thirds of their
+        # work; a reader who runs the command concludes the digest is broken.
+        #
+        # `list-tasks` CANNOT express this digest's predicate: it filters by
+        # status and by deadline, and offers no UNTOUCHED-FOR-N-HOURS filter.
+        # So the command is offered as what it is (the full open list, a
+        # different and larger question) rather than as a way to reproduce
+        # {total}.
+        #
+        # The deadline-filter flag is deliberately NOT named here. This module
+        # is scanned by `test__deadline_never_notifies` for deadline-reading
+        # tokens, and that guard is a REGEX OVER SOURCE TEXT — so a comment
+        # explaining that the digest cannot use a flag is indistinguishable
+        # from the digest using it. Naming it turned this file into an
+        # "offender" and reddened all three CI legs.
         body += (
-            f"\n  ({remaining} more open — the point is these {len(shown)}, not "
-            f"the pile; `scitex-todo list-tasks --status in_progress,blocked,"
-            f"deferred` for all {total}.)"
+            f"\n  ({remaining} more in this digest — the point is these "
+            f"{len(shown)}, not the pile. `scitex-cards list-tasks --status "
+            f"in_progress,blocked,deferred` lists your full open set, which is "
+            f"a different and usually larger count.)"
         )
     return body
 

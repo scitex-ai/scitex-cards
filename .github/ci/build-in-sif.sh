@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs INSIDE the reused scitex-ci SIF (apptainer exec — invoked via
-# exec-in-sif.sh). Builds scitex-todo's wheel + sdist into ./dist/.
+# exec-in-sif.sh). Builds scitex-cards's wheel + sdist into ./dist/.
 #
 # WHY build in the SIF: the self-hosted Spartan runner has no Python on the
 # bare node (the whole reason the old `actions/setup-python@v5` step failed:

@@ -57,7 +57,7 @@ def hub(tmp_path, env):
     env.set("SCITEX_CARDS_HUB_URL", f"http://127.0.0.1:{port}")
     env.set("SCITEX_CARDS_HUB_TOKEN_FILE", str(tokens_dir / "hub.token"))
     env.delete("SCITEX_CARDS_HUB_TOKEN")
-    env.set("SCITEX_TODO_AGENT_ID", "remote-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "remote-agent")
 
     yield {"store": str(store), "port": port, "tokens_dir": tokens_dir}
 

@@ -3,7 +3,7 @@
 """Tests for the help-wait / help-clear card semantics.
 
 The "agent is stuck waiting on the operator" card was lifted out of a
-dotfiles Notification hook into the package (so scitex-todo owns the
+dotfiles Notification hook into the package (so scitex-cards owns the
 contract; a schema drift can no longer break the hook silently). These
 tests pin the exact card contract + idempotency.
 

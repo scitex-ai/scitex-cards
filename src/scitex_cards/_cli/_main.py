@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Root ``scitex-todo`` group and core verbs (render-graph, list-tasks, board).
+"""Root ``scitex-cards`` group and core verbs (render-graph, list-tasks, board).
 
 The §1a introspection / completion / skills groups live in sibling modules and
 are attached to ``main`` at the bottom of this file.
@@ -208,9 +208,9 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
             "filters, matches are AND-composed."
         ),
         examples=(
-            ('{prog} list-tasks --assignee "$SCITEX_TODO_AGENT_ID" --json', ""),
+            ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
-                "{prog} list-tasks --project scitex-todo --status pending "
+                "{prog} list-tasks --project scitex-cards --status pending "
                 "--status in_progress",
                 "",
             ),
@@ -223,7 +223,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
 @click.option(
     "--scope",
     default=None,
-    help="Match `scope` exactly (use '' to ignore $SCITEX_TODO_SCOPE).",
+    help="Match `scope` exactly (use '' to ignore $SCITEX_CARDS_SCOPE).",
 )
 @click.option(
     "--assignee",
@@ -276,7 +276,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         "Predicate: tasks past their next deadline AND not in a closed "
         "lifecycle state (done / failed / cancelled / goal). Uses the "
         "deadline / deadlines schema + repeater rules from "
-        "scitex_cards._model.is_overdue (PR #125, todo-p6-overdue-ui). "
+        "scitex_cards._model.is_overdue (PR #125, cards-p6-overdue-ui). "
         "This filter is the ONLY thing a deadline drives (that, and the "
         "board view) — a deadline NEVER sends a notification, so poll "
         "this yourself. Owner nudges key on inactivity, not deadlines. "
@@ -403,12 +403,13 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _skills,
     _stats,
     _triage,
+    _undelivered,
     _write,
 )  # noqa: E402
 
 # board <verb> — dependency-graph board lifecycle (start/stop/restart/
 # status). Extracted to _board.py to keep _main.py under the 512-line cap;
-# behaviour + pidfile path (~/.scitex/todo/board.pid) are unchanged.
+# behaviour + pidfile path (~/.scitex/cards/board.pid) are unchanged.
 _board.register(main)
 # gui <verb> — the ecosystem-standard GUI verbs (open/serve/status/stop),
 # shared with figrecipe / scitex-writer / scitex-scholar so the operator's
@@ -440,9 +441,9 @@ _write.register(main)
 # individual verbs print a clear install hint when fastmcp is missing.
 _mcp.register(main)
 # P3b + P3d (lead-approved 2026-06-12) — self-consuming board loop.
-# `scitex-todo next` returns the top runnable task for an agent;
-# `scitex-todo watch --push` is the push side that wakes agents on
-# new/commented/changed tasks. See _skills/scitex-todo/32_*.md for the
+# `scitex-cards next` returns the top runnable task for an agent;
+# `scitex-cards watch --push` is the push side that wakes agents on
+# new/commented/changed tasks. See _skills/scitex-cards/32_*.md for the
 # 7-step agent self-consumption pattern.
 _loop.register(main)
 # T1.2 (lead a2a `74db4f2d`, 2026-06-14) — the parallelism dispatcher's
@@ -454,7 +455,7 @@ _runnable.register(main)
 # decides and mutates via the existing verbs. See _backlog_triage.py.
 _triage.register(main)
 # Hook-consumer wire (lead a2a `6fff33d6` + `fbffb879`, 2026-06-14,
-# operator-mandated). `scitex-todo hook push|done` verbs are the
+# operator-mandated). `scitex-cards hook push|done` verbs are the
 # CLI twins of POST /hooks/push and POST /hooks/done — same canonical
 # event-payload shape, same idempotency. See _hooks.py for the spec.
 _hooks.register(main)
@@ -467,7 +468,7 @@ _ci_watch.register(main)
 # reconcile-merged-prs (card-freshness automation) — periodic auto-close of
 # cards whose linked PR (pr_url) has MERGED. Pure decision core + gh/REST
 # merge-state seam live in `_reconcile_prs.py`; DRY-RUN by default, --apply
-# to mutate. Paired with the scitex-todo.reconcile-merged-prs JobSpec.
+# to mutate. Paired with the scitex-cards-reconcile-merged-prs JobSpec.
 _reconcile.register(
     main
 )  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
@@ -479,7 +480,7 @@ _reconcile.register(
 # src/scitex_cards/_delivery/.
 _deliver.register(main)
 # notifyd (slice 2 of the standalone notification-DELIVERY rail). The always-on
-# daemon: bare `scitex-todo notifyd` runs the foreground loop (systemd
+# daemon: bare `scitex-cards notifyd` runs the foreground loop (systemd
 # ExecStart) ticking deliver_pending every --interval seconds, single-instance
 # locked + signal-aware, re-surfacing standing terminal comm-misses on a
 # throttle. `--once` is a single pass; `notifyd install-unit` writes the
@@ -487,6 +488,9 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# dev list-undelivered — the restart/cadence check against the DURABLE channel
+# rail, with a mandatory positive control so a filtered zero is trustworthy.
+_undelivered.register(main)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 Regression cover for the silence measured 2026-07-29: this agent's operator DMs
 never arrived for weeks. The inbox held 228 rows and ZERO unseen — enqueued,
-consumed, gone — because the agent spec allowlisted ``server:scitex-todo`` while
+consumed, gone — because the agent spec allowlisted ``server:scitex-cards`` while
 ``.mcp.json`` registers this server as ``scitex-cards``, so Claude Code read
 every push and discarded it. ``channel_capable``, ``channel_drain`` and the
 drain itself were all green: the drain ack'd on ``send()`` RETURNING, which is
@@ -74,7 +74,7 @@ def _push_two(store):
 @pytest.fixture(params=BACKENDS)
 def backend(request, env):
     """Run the test body on each real inbox backend, in turn."""
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return {"name": request.param, "env": env}
 
 
@@ -262,7 +262,7 @@ def _break_the_inbox(backend, store, tmp_path):
     if backend == "sqlite":
         blocked = tmp_path / "not-a-database"
         blocked.mkdir()
-        return ("SCITEX_TODO_INBOX_DB", str(blocked))
+        return ("SCITEX_CARDS_INBOX_DB", str(blocked))
     from scitex_cards._inbox import _INBOXES_FILENAME
 
     sidecar = store.parent / _INBOXES_FILENAME

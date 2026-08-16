@@ -17,7 +17,7 @@
 #   3. twine upload dist/* with TWINE_USERNAME=__token__ and that minted token.
 #
 # This requires a Trusted Publisher to be configured on PyPI for
-# (project=scitex-todo, owner=ywatanabe1989, repo=scitex-todo,
+# (project=scitex-cards, owner=ywatanabe1989, repo=scitex-cards,
 #  workflow=pypi-publish-and-github-release-on-tag.yml). It already is — the
 # previous releases published via the Docker action under the same trusted
 # publisher; only the *client* changes here, not PyPI's trust config.
@@ -106,4 +106,4 @@ echo "=== twine upload dist/* ==="
 TWINE_USERNAME="__token__" TWINE_PASSWORD="$MINTED" \
     "$PY" -m twine upload --non-interactive --disable-progress-bar dist/*
 
-echo "PUBLISH-OK: scitex-todo dist/* uploaded to PyPI via manual OIDC trusted publishing"
+echo "PUBLISH-OK: scitex-cards dist/* uploaded to PyPI via manual OIDC trusted publishing"

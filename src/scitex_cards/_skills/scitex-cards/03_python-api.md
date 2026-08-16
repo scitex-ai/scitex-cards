@@ -10,7 +10,7 @@ tags: [scitex-cards-python-api]
 # Python API
 
 ```python
-import scitex_cards as todo
+import scitex_cards as card
 ```
 
 Audit §6 narrows the top-level surface (`scitex_cards.__all__`) to the six
@@ -29,7 +29,7 @@ Validating loader. Raises `TaskValidationError` on a missing `id`/`title`, a
 duplicate `id`, or an invalid `status`.
 
 ```python
-tasks = todo.load_tasks()
+tasks = card.load_tasks()
 # [{"id": "design", "title": "Design", "status": "done"}, ...]
 ```
 
@@ -57,7 +57,7 @@ raise `RenderError`.
 
 ### `resolve_tasks_path(explicit=None) -> Path`
 
-The store IDENTITY is `$SCITEX_CARDS_DB` (the SQLite database; see
+The store IDENTITY is `$SCITEX_CARDS_DB` (backend chosen by deployment; see
 `_db.resolve_db_path`). `resolve_tasks_path` does NOT return that identity —
 it returns the non-task YAML CONTAINER beside it (`<db_dir>/tasks.yaml`) that
 still holds the `users:` / `groups:` sections, plus doubles as the store

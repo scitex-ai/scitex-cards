@@ -9,11 +9,11 @@
  * This file groups the children into logical clusters + a primary action
  * zone, each with breathing room + a subtle vertical divider:
  *
- *   .stx-todo-filterbar__group--view     — Layout
- *   .stx-todo-filterbar__group--search   — Search input
+ *   .stx-cards-filterbar__group--view     — Layout
+ *   .stx-cards-filterbar__group--search   — Search input
  *                                          (lives on .fb-center band)
- *   .stx-todo-filterbar__primary         — + Add Task (brand accent, pops)
- *   .stx-todo-filterbar__divider         — subtle 1px vertical separator
+ *   .stx-cards-filterbar__primary         — + Add Task (brand accent, pops)
+ *   .stx-cards-filterbar__divider         — subtle 1px vertical separator
  *                                          between groups
  *
  * DECLUTTER 2026-07-13 (operator TG). The whole STATUS cluster is gone —
@@ -35,7 +35,7 @@
  * 05-responsive.css (≤768px) still owns the deep phone-mobile rules. */
 
 /* ── Inside-group gap (12-16 px) ───────────────────────────────────────── */
-.stx-todo-filterbar__group {
+.stx-cards-filterbar__group {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -52,7 +52,7 @@
 }
 
 /* ── Inside-group gap for the .fb-center SEARCH/FILTER group ──────────── */
-.fb-center.stx-todo-filterbar__group--search {
+.fb-center.stx-cards-filterbar__group--search {
   /* fb-center already sets `display:flex; align-items:center; flex:1 1
    * auto`. Re-state the gap so search + filters popover keep 12px
    * between them. */
@@ -61,19 +61,19 @@
 
 /* The search input wraps inside .filt-search-wrap; let it grow. The
  * Filters popover is fixed-width on the right of this group. */
-.fb-center.stx-todo-filterbar__group--search > .filt-search-wrap {
+.fb-center.stx-cards-filterbar__group--search > .filt-search-wrap {
   flex: 1 1 auto;
   min-width: 200px;
 }
 
-.fb-center.stx-todo-filterbar__group--search
+.fb-center.stx-cards-filterbar__group--search
   > .filt-search-wrap
   > .filt-search {
   width: 100%;
 }
 
 /* ── Subtle vertical dividers between groups ──────────────────────────── */
-.stx-todo-filterbar__divider {
+.stx-cards-filterbar__divider {
   display: inline-block;
   width: 1px;
   align-self: stretch;
@@ -86,7 +86,7 @@
 }
 
 /* ── PRIMARY ACTION zone (+ Add Task) ─────────────────────────────────── */
-.stx-todo-filterbar__primary {
+.stx-cards-filterbar__primary {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -102,7 +102,7 @@
  * Token-only colors: --purple is the brand accent; --gold is the
  * board's other accent (LOUD operator-decision). White text on purple
  * is supplied by the existing .add-task-btn rule. */
-.stx-todo-filterbar__primary > .add-task-btn {
+.stx-cards-filterbar__primary > .add-task-btn {
   /* Slightly bolder presence than the legacy button: stronger border,
    * brand-purple background even on the resting state, soft purple
    * halo on hover for the "press me" cue. No new hardcoded color —
@@ -118,8 +118,8 @@
     transform 120ms ease;
 }
 
-.stx-todo-filterbar__primary > .add-task-btn:hover,
-.stx-todo-filterbar__primary > .add-task-btn:focus-visible {
+.stx-cards-filterbar__primary > .add-task-btn:hover,
+.stx-cards-filterbar__primary > .add-task-btn:focus-visible {
   /* The hover-bg token isn't a strong enough lift — use the gold
    * accent for the halo so the brand accent stays the fill, and
    * lift the shadow + slight scale to read as "this is THE action". */
@@ -135,7 +135,7 @@
  * Group selects left with the Column layout on 2026-07-13). It is itself a
  * flex-row span; give it a tighter inner gap so the label stays glued to
  * the control. */
-.stx-todo-filterbar__group--view > .filt-layout {
+.stx-cards-filterbar__group--view > .filt-layout {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -153,20 +153,20 @@
     gap: 12px;
     row-gap: 8px;
   }
-  .stx-todo-filterbar__group {
+  .stx-cards-filterbar__group {
     flex: 1 1 100%;
   }
-  .stx-todo-filterbar__divider {
+  .stx-cards-filterbar__divider {
     /* Hide vertical dividers when each group lives on its own row
      * — a divider that stretches across one row's worth of space
      * would read as visual noise rather than separation. */
     display: none;
   }
-  .stx-todo-filterbar__primary {
+  .stx-cards-filterbar__primary {
     flex: 0 0 auto;
     margin-left: auto;
   }
-  .stx-todo-filterbar__group--search {
+  .stx-cards-filterbar__group--search {
     flex-wrap: wrap;
   }
 }

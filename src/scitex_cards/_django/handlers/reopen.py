@@ -21,6 +21,7 @@ import os
 
 from django.http import JsonResponse
 
+from ..._comment_ids import stamp_comment_id
 from .crud import _parse_body
 
 logger = logging.getLogger(__name__)
@@ -91,23 +92,25 @@ def handle_reopen(request, board):
             # Schema disallows blocker on non-blocked rows.
             task.pop("blocker", None)
 
-        reopen_comment = {
-            "ts": datetime.datetime.now(datetime.timezone.utc)
-            .replace(microsecond=0)
-            .isoformat(),
-            "author": actor.strip(),
-            "text": (
-                f"[UNDONE via board-v3] re-opened by {actor.strip()}; "
-                f"status={pre_status!r}→{new_status!r}"
-                + (
-                    f", blocker={pre_blocker!r}→{new_blocker!r}"
-                    if (pre_blocker or new_blocker)
-                    else ""
-                )
-                + ". Reverses the prior /resolve. Lossless: SacChannel wake "
-                "adapter not wired yet, dependent agent was never notified."
-            ),
-        }
+        reopen_comment = stamp_comment_id(
+            {
+                "ts": datetime.datetime.now(datetime.timezone.utc)
+                .replace(microsecond=0)
+                .isoformat(),
+                "author": actor.strip(),
+                "text": (
+                    f"[UNDONE via board-v3] re-opened by {actor.strip()}; "
+                    f"status={pre_status!r}→{new_status!r}"
+                    + (
+                        f", blocker={pre_blocker!r}→{new_blocker!r}"
+                        if (pre_blocker or new_blocker)
+                        else ""
+                    )
+                    + ". Reverses the prior /resolve. Lossless: SacChannel wake "
+                    "adapter not wired yet, dependent agent was never notified."
+                ),
+            }
+        )
         existing = task.get("comments")
         task["comments"] = ([*existing] if isinstance(existing, list) else []) + [
             reopen_comment
@@ -134,7 +137,7 @@ def handle_reopen(request, board):
         if _BUS is None:
             _BUS = InProcessPubSub()
             handle_reopen._BUS = _BUS  # type: ignore[attr-defined]
-        channel = f"scitex-todo:task:{task.get('project', 'unknown')}/{task_id}"
+        channel = f"scitex-cards:task:{task.get('project', 'unknown')}/{task_id}"
         _BUS.publish(
             channel,
             {
@@ -146,10 +149,10 @@ def handle_reopen(request, board):
             },
         )
     except Exception:  # noqa: BLE001 — publish-failure is non-fatal
-        logger.exception("[scitex-todo] reopen notify-publish failed (non-fatal)")
+        logger.exception("[scitex-cards] reopen notify-publish failed (non-fatal)")
 
     logger.info(
-        "[scitex-todo] REOPENED %s by %s in %s (status %r->%r)",
+        "[scitex-cards] REOPENED %s by %s in %s (status %r->%r)",
         task_id,
         actor,
         board.store_path,

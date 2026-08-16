@@ -208,7 +208,7 @@
  * sibling span to advertise the affordance even when the input is
  * empty. Global "/" focuses it; Esc blurs. Pinned by the regression
  * test ``tests/scitex_cards/test__board_v3_signatures.py``. */
-/* Operator 2026-07-10 (でかすぎ, todo-board-search-box-oversized-20260710):
+/* Operator 2026-07-10 (でかすぎ, cards-board-search-box-oversized-20260710):
  * the search input dwarfed the sibling .filt controls (44.5px tall, 16px
  * font, permanent purple glow). Sized to the filterbar baseline; the glow
  * now appears on :focus only (see :focus rule below). */
@@ -368,7 +368,7 @@
 
 /* Activity bucket badge (render side of working-status decay).
  *
- * Board card `scitex-todo-working-status-decay-tg12739`, render half of
+ * Board card `scitex-cards-working-status-decay-tg12739`, render half of
  * PR #122 (backend `_build_fleet` derives the same buckets for the
  * fleet strip). Per-card pill that reflects how recently the task was
  * touched, derived from `last_activity` freshness. Orthogonal to the

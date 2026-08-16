@@ -46,7 +46,7 @@ from scitex_cards._threads import append_message, threads_path
 DESIGN_DOC = "docs/design/dm-into-cards-db.md"
 
 
-def _todo(section: str):
+def _card(section: str):
     """An xfail marker whose reason points at the design doc section.
 
     Non-strict: an XPASS means the feature landed, which is good news and must

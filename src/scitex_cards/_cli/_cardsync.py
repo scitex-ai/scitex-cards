@@ -49,7 +49,8 @@ def register(main: click.Group) -> click.Group:
                 "the periodic look. It is READ-ONLY today: the decision is "
                 "computed and reported, and nothing is written, because a "
                 "card spans 28 derived columns plus three child tables and "
-                "the correct write path is update_task(expected_revision=N) "
+                "the correct write path is _db_mirror._write_card(..., "
+                "expected_revision=N) -- NOT update_task, which refuses it -- "
                 "rather than raw SQL. Verbs: report (compare two stores and "
                 "print the verdict counts).",
             ),

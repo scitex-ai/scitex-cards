@@ -39,7 +39,7 @@ Join keys (the card is self-describing):
 card.assignee  = <agent>    → card ⇄ Agent career
 card.branch    = <branch>   → card ⇄ VersionControl (git)
 card.pr_url    = <pr>       → card ⇄ VersionControl (github)
-agent id       = host@name  → the dedup/join key between todo membership and sac runtime
+agent id       = host@name  → the dedup/join key between card membership and sac runtime
 ```
 
 What already exists (verified 2026-06-24 by a 4-track code investigation):
@@ -47,7 +47,7 @@ What already exists (verified 2026-06-24 by a 4-track code investigation):
 * **The bus** — `scitex_cards.hooks` entry-point dispatch; events `push`
   / `done` / `card-message`; built-in handlers (`_handle_push` →
   comment, `_handle_done` → `status:done` + `pr_url`, both idempotent);
-  three surfaces (HTTP `/hooks/*`, CLI `scitex-todo hook`, in-process
+  three surfaces (HTTP `/hooks/*`, CLI `scitex-cards hook`, in-process
   `dispatch_event`).
 * **Ports & adapters** — `NotificationPort`, `IdentityACLPort`
   (default `OpenACL`), `TaskSyncPort` — the standalone-with-ports shape.
@@ -55,7 +55,7 @@ What already exists (verified 2026-06-24 by a 4-track code investigation):
   `runnable_tasks()` checks deps **passively** (no event when a dep
   finishes).
 * **Agent delivery** (sac) — `POST /agents/<name>/message:send` →
-  `Broker.publish` → SSE fan-out; todo's `deliver()` already resolves an
+  `Broker.publish` → SSE fan-out; the card layer's `deliver()` already resolves an
   agent's turn-URL via the sac `/agents` registry.
 
 ## Decision
@@ -105,10 +105,10 @@ No shared agent registry, no hard dependency:
 
 * **scitex-agent-container** is SSOT for agent **runtime** (exists /
   running / stopped / liveness) — it spawns them.
-* **scitex-todo** is SSOT for board **membership** (who may be
+* **scitex-cards** is SSOT for board **membership** (who may be
   assignee/collaborator/subscriber — including humans).
 * They join on the canonical agent id **`host@name`** and connect via a
-  **port** (entry-point provider): sac exposes an agent-directory; todo
+  **port** (entry-point provider): sac exposes an agent-directory; the card layer
   enriches its board when a provider exists and works standalone
   otherwise; dedup by `host@name`.
 

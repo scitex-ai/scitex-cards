@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+{% load static %}
+{% comment %}data-theme="dark" ACTIVATES scitex-ui's dark token set — it is not
+decoration. theme.css defines --text-primary / --bg-page / --border-default /
+… twice, once under [data-theme="light"] and once under [data-theme="dark"],
+and DEFAULTS TO LIGHT when the attribute is absent. Without this every token
+below silently resolves light values onto a dark surface, which is how
+scitex-ui 0.12.0's context menu rendered near-invisible on 2026-07-28. Dark is
+also the standing default (the operator's eyes are sensitive), so this is
+deliberate, not a preference to be "cleaned up".
+{% endcomment %}
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+{% comment %}
+viewport-fit=cover is what makes env(safe-area-inset-*) resolve to anything
+other than zero. Without it the bottom bar sits under an iPhone's home
+indicator — the insets below would be present, correct and inert.
+{% endcomment %}
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Cards — SciTeX Cards v{{ scitex_cards_version }}</title>
+{% comment %}
+No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
+as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
+a local <link rel="icon"> — if the mark is wrong, fix it in scitex-ui, which
+owns the asset.
+
+NB: this MUST be a {% templatetag openblock %} comment {% templatetag closeblock %}
+block, not Django's single-hash syntax — that one is single-line only, and a
+multi-line hash block leaks its body into the rendered page.
+{% endcomment %}
+{% comment %}
+"My Cards" — the phone view of a logged-in viewer's own cards (card
+cards-gui-phone-view-own-cards-20260814; operator 2026-08-14 wants his cards
+from his phone via scitex.ai).
+
+DELIBERATELY NOT board_v3.html. The board is a 3600-line desktop kanban with a
+graph, a timeline and a matrix, against a 1024-line hook cap it is already 3.5x
+over. This page answers one question — "what is on MY plate?" — and a phone
+asking it should not download the whole fleet to find out. Same call chat.html
+made, for the same reason, and the two now share the switcher.
+
+Behaviour lives in static/scitex_cards/me/: me_view.js (pure, node-tested)
+then me.js (DOM + network); load order matters, me.js reads window.MeView.
+This file is layout + CSS only.
+{% endcomment %}
+{% comment %}
+theme.css DEFINES the tokens every rule below reads (--bg-page, --text-primary,
+--border-default, …) under [data-theme="light"] and [data-theme="dark"]. It is
+NOT optional chrome: without it `var(--bg-page)` resolves to nothing, the
+fallbacks take over, and the page renders LIGHT — white behind black text —
+with `data-theme="dark"` sitting on the <html> element doing nothing. Measured
+exactly that way in a headless Chromium at 390x844 before this line existed.
+Dark is the standing default because the operator's eyes are sensitive, so a
+silently-light page is a real regression and not a cosmetic one.
+
+Same stylesheet chat.html links, from the same package, for the same reason.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
+<style>
+  /* EVERY COLOUR HERE COMES FROM scitex-ui. NOT ONE IS PICKED LOCALLY.
+     Operator directive 2026-07-28: "最適 ui を常に使ってください … scitex の
+     世界観も壊れるので s-ui を使ってほしい". chat.html hard-coded its own
+     palette and that is precisely what broke its context menu when scitex-ui
+     shipped a component reading tokens the page had never defined. */
+  :root {
+    --bg: var(--bg-page);
+    --panel: var(--bg-surface);
+    --line: var(--border-default);
+    --text: var(--text-primary);
+    --dim: var(--text-secondary);
+    --accent: var(--app-accent-figrecipe);
+    --alert: var(--app-accent-clew);
+    /* Feed the shared switcher component its tokens, exactly as the board and
+       DM pages do — the switcher styles itself from --sw-*, never from ours. */
+    --sw-surface: var(--panel);
+    --sw-surface-on: var(--accent);
+    --sw-fg: var(--text);
+    --sw-line: var(--line);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* The notch on the sides; the bottom bar handles its own inset. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* ONE COLUMN AT EVERY WIDTH, capped rather than stretched. This page is
+     phone-first and stays a readable column on a desktop instead of growing a
+     second layout that would need its own testing. */
+  .wrap {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 0 12px 5rem;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    padding-top: max(10px, env(safe-area-inset-top, 10px));
+    padding-bottom: 8px;
+  }
+  .head-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  h1 { font-size: 1.05rem; margin: 0; }
+  #viewer { color: var(--dim); font-size: 0.8rem; overflow-wrap: anywhere; }
+  #summary { color: var(--dim); font-size: 0.82rem; margin-top: 2px; }
+
+  .section__title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    margin: 1.4rem 0 0.5rem;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .section__count {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 0 6px;
+    font-size: 0.72rem;
+  }
+  .section__cards { list-style: none; margin: 0; padding: 0; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .card--in_progress { border-left-color: var(--accent); }
+  .card--blocked { border-left-color: var(--alert); }
+
+  /* 44px is Apple's minimum tap target; a card that is hard to hit on a phone
+     is a card you cannot open on a phone. */
+  .card__title {
+    display: block;
+    min-height: 30px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.98rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .chip {
+    font-size: 0.72rem;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 1px 7px;
+  }
+  .chip--blocker { color: var(--alert); border-color: var(--alert); }
+  .chip--overdue { color: var(--status-error); border-color: var(--status-error); }
+  .chip--today { color: var(--status-warning); border-color: var(--status-warning); }
+  .card__seen { font-size: 0.72rem; color: var(--dim); margin-left: auto; }
+
+  /* The refusal / failure panel. Not an afterthought: "we do not know who you
+     are" is the most likely thing a first visitor sees. */
+  #state { padding: 2rem 0.5rem; text-align: center; }
+  .state__title { font-size: 1rem; margin: 0 0 0.5rem; }
+  .state__detail { color: var(--dim); font-size: 0.88rem; margin: 0 auto; max-width: 32rem; }
+
+  .bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 8px 12px max(8px, env(safe-area-inset-bottom, 8px));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+  .bar button {
+    min-height: 38px;
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .bar button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body data-api-base="{{ api_base }}">
+<div class="wrap">
+  <header>
+    <div class="head-row">
+      <h1>My Cards</h1>
+      <span id="viewer"></span>
+    </div>
+    <div id="summary"></div>
+    {% include "scitex_cards/_page_switcher.html" with active="mine" %}
+  </header>
+
+  {% comment %}
+  Both regions start EMPTY and hidden rather than carrying placeholder copy.
+  A hardcoded "Loading…" that a failed fetch never clears is indistinguishable
+  from a hung page, and a hardcoded "No cards" is the believable-empty-board
+  failure the 2026-07-29 outage taught this repo to refuse — it would render
+  over a store that could not be read.
+  {% endcomment %}
+  <div id="state" hidden></div>
+  <div id="list"></div>
+</div>
+
+<nav class="bar">
+  <button id="closed-toggle" type="button" aria-pressed="false">Show done</button>
+</nav>
+
+<script src="{% static 'scitex_cards/me/me_view.js' %}"></script>
+<script src="{% static 'scitex_cards/me/me.js' %}"></script>
+</body>
+</html>
