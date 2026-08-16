@@ -120,12 +120,24 @@ def mirror_doc_incremental(
     store_path: str | Path | None = None,
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
+    expected_revision: int | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
     Returns a summary: ``{"changed": n, "removed": n, "unchanged": n, "full": bool}``.
     ``full`` is True when it fell back to a full rebuild (first run on a DB that
-    has no hash table yet).
+    has no hash table yet). A refused compare-and-set adds ``revision_skipped``
+    -- a LIST OF CARD IDS, never a count, because a caller who cannot name the
+    row it lost cannot retry it and must re-read the whole batch every round.
+
+    ``expected_revision`` makes the ONE write a compare-and-set. It REQUIRES
+    exactly one changed row and is refused on the first-run full rebuild: a guard
+    that cannot name the row it guarded is not a guard.
+
+    A REFUSED WRITE MUST NOT HAVE ITS HASH RECORDED -- the subtle half. Stamping a
+    refused card's NEW hash would make the retry that a refusal invites compute
+    that same hash, be judged unchanged, and write nothing, forever, silently. So
+    hashes are recorded for cards actually WRITTEN.
 
     ``store_path`` is the canonical YAML this doc was just written to. Pass it and
     the mirror stamps its provenance (path + mtime + size + card count) inside the
@@ -199,6 +211,18 @@ def mirror_doc_incremental(
         # no hashes to diff against, so do the full rebuild ONCE and record them.
         # This is what makes the change safe to deploy with no migration step.
         if not prior:
+            # A FULL REBUILD CANNOT HONOUR A PER-ROW GUARD -- it rewrites every
+            # card from the caller's doc. Silently ignoring the guard would be the
+            # worst outcome available: the caller believes they hold a
+            # compare-and-set on one row while the whole board is overwritten from
+            # their snapshot, which is the failure the guard exists to prevent.
+            # Only the tests found this; reading did not.
+            if expected_revision is not None:
+                raise ValueError(
+                    "expected_revision cannot be honoured on a first-run full "
+                    "rebuild (no hash table yet, so every card is rewritten from "
+                    "this doc). Mirror once without the guard, then retry."
+                )
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
@@ -272,14 +296,31 @@ def mirror_doc_incremental(
         # longer propagated here, so rows accumulate. That is the trade the
         # ruling makes, and it is the right one — unbounded growth is a
         # storage cost, and this was data loss.
-        for tid in changed:
-            _write_card(conn, by_id[tid])
+        if expected_revision is not None and len(changed) != 1:
+            raise ValueError(
+                f"expected_revision guards exactly one row, but this write would "
+                f"touch {len(changed)}: {sorted(changed)!r}. Name the single card "
+                f"via touched_ids, or omit expected_revision for last-writer-wins."
+            )
 
-        if changed:
+        # `written`, never `changed` -- see the docstring. A refused card was NOT
+        # written, and stamping its hash would strand it permanently.
+        written: list[str] = []
+        refused: list[str] = []
+        found: dict[str, int | None] = {}
+        for tid in changed:
+            counts = _write_card(conn, by_id[tid], expected_revision=expected_revision)
+            if counts.get("revision_skipped"):
+                refused.append(tid)
+                found[tid] = counts.get("revision_found")
+                continue
+            written.append(tid)
+
+        if written:
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
                 f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
-                [(tid, now_hashes[tid]) for tid in changed],
+                [(tid, now_hashes[tid]) for tid in written],
             )
 
         # EXPLICIT, CALLER-NAMED deletes — the ONE way a row leaves the mirror.
@@ -302,14 +343,27 @@ def mirror_doc_incremental(
         _stamp()
 
         conn.commit()
-        return {
-            "changed": len(changed),
+        summary = {
+            # `written`, not `changed`: a card the compare-and-set refused was a
+            # candidate, not a change, and counting it would tell the caller their
+            # write landed.
+            "changed": len(written),
             # Reconcile still never INFERS a delete; this counts only the
             # explicit, caller-named removals (0 on an ordinary write).
             "removed": len(removed),
-            "unchanged": len(cards) - len(changed),
+            "unchanged": len(cards) - len(written),
             "full": False,
         }
+        if refused:
+            # IDS, NOT A COUNT. A reconciler retries the losers; one that knows
+            # only HOW MANY it lost must re-read the whole batch every round,
+            # which gives back most of what a per-row guard was for.
+            summary["revision_skipped"] = refused
+            # ...and what the store actually holds, so the caller can log the gap
+            # without a second query. `None` means the row was absent entirely,
+            # which is a different failure from losing a race.
+            summary["revision_found"] = found
+        return summary
     except Exception:
         conn.rollback()
         raise

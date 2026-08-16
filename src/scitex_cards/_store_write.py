@@ -266,7 +266,8 @@ def _save_doc_unlocked(
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
     allow_shrink: bool = False,
-) -> None:
+    expected_revision: int | None = None,
+) -> dict | None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
 
     The doc-based write primitive. The read-modify-write callers in
@@ -324,12 +325,13 @@ def _save_doc_unlocked(
     # of the board — which is the exact defect this cutover exists to remove.
     from ._store_backend import write_doc_to_db
 
-    write_doc_to_db(
+    return write_doc_to_db(
         doc,
         path,
         deleted_ids=deleted_ids,
         touched_ids=touched_ids,
         allow_shrink=allow_shrink,
+        expected_revision=expected_revision,
     )
 
 

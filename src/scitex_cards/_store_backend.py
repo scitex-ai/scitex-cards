@@ -129,6 +129,7 @@ def write_doc_to_db(
     deleted_ids=None,
     touched_ids=None,
     allow_shrink: bool = False,
+    expected_revision: int | None = None,
 ) -> dict:
     """Commit ``doc`` to SQLite, the only store. RAISES on failure.
 
@@ -207,6 +208,7 @@ def write_doc_to_db(
         store_path=db_target,
         deleted_ids=deleted_ids,
         touched_ids=touched_ids,
+        expected_revision=expected_revision,
     )
 
 
