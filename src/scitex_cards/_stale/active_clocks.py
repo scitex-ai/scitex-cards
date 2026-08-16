@@ -150,11 +150,26 @@ def _deferred_age_hours(task: dict, now: _dt.datetime) -> float | None:
     never remove it, because a card's entry into the backlog cannot be later
     than its last touch. That is what makes it safe to land in one step.
     """
-    ts = task.get(BACKLOG_AGE_FIELD) or task.get("created_at")
-    parsed = _parse_iso(ts)
-    if parsed is None:
+    stamped = _parse_iso(task.get(BACKLOG_AGE_FIELD))
+    if stamped is not None:
+        return (now - stamped).total_seconds() / 3600.0
+
+    # UNSTAMPED: take the OLDEST evidence available, which is NOT the same as
+    # "falling back to last_activity". A fallback would let a touch make a card
+    # look FRESHER; taking the oldest can only make it look OLDER, so typing
+    # still cannot silence the alarm — the property this whole change exists
+    # to establish. Discarding `last_activity` outright was the mistake in the
+    # first draft: for a card with no stamp it is real evidence of age, and
+    # ignoring it silently dropped coverage on cards whose `created_at` is
+    # newer than their last touch (4 such rows live on 2026-08-16).
+    candidates = [
+        p
+        for p in (_parse_iso(task.get("created_at")), _parse_iso(task.get("last_activity")))
+        if p is not None
+    ]
+    if not candidates:
         return None
-    return (now - parsed).total_seconds() / 3600.0
+    return (now - min(candidates)).total_seconds() / 3600.0
 
 
 # EOF

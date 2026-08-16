@@ -100,11 +100,34 @@ def test_an_unstamped_card_falls_back_to_created_at():
     assert age > 1000
 
 
-def test_the_fallback_is_never_last_activity():
-    # Arrange — no deferred_at, no created_at, only a fresh touch. Routing
-    # through last_activity here would reproduce the defect for every legacy
-    # card at once, which is the population the fix exists to reach.
-    task = {"id": "c3", "status": "deferred", "last_activity": JUST_NOW}
+def test_an_unstamped_card_takes_the_oldest_evidence():
+    # Arrange — no stamp, created today, but touched long ago. Ignoring
+    # last_activity here would drop a card that IS demonstrably old (4 such
+    # rows measured live on 2026-08-16).
+    task = {"id": "c3", "status": "deferred", "created_at": JUST_NOW,
+            "last_activity": LONG_AGO}
+    # Act
+    age = _deferred_age_hours(task, NOW)
+    # Assert
+    assert age > 1000
+
+
+def test_a_touch_can_never_make_an_unstamped_card_look_fresher():
+    # Arrange — THE PROPERTY THAT MATTERS. Deferred long ago, commented on a
+    # minute ago. Taking the OLDEST evidence is not "falling back to
+    # last_activity": a fallback would read the fresh touch and silence the
+    # alarm, which is the entire defect. min() cannot.
+    task = {"id": "c4", "status": "deferred", "created_at": LONG_AGO,
+            "last_activity": JUST_NOW}
+    # Act
+    age = _deferred_age_hours(task, NOW)
+    # Assert
+    assert age > 1000
+
+
+def test_a_card_with_no_timestamps_at_all_is_unknowable():
+    # Arrange — nothing to date it by; the caller treats None as stale.
+    task = {"id": "c5", "status": "deferred"}
     # Act
     age = _deferred_age_hours(task, NOW)
     # Assert
