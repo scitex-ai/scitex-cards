@@ -190,7 +190,11 @@ def add_task(
     # writers each load a stale snapshot and the second `save_tasks` call
     # silently clobbers the first writer's insert. See
     # tests/scitex_cards/test__store.py::test_two_concurrent_writers...
-    with _store_lock(resolved):
+    # COLLECT the tolerated-value warnings this insert raises -- see the note at
+    # the result assembly below, and `_tolerated` for what went unseen.
+    from ._tolerated import collect as _collect_tolerated
+
+    with _collect_tolerated(id) as _tolerated, _store_lock(resolved):
         # `missing_ok=True` is gone deliberately. It meant "an absent store
         # yields an empty doc", which against a database feeds an empty doc
         # into this read-modify-write and lets the subsequent save delete every
@@ -241,6 +245,13 @@ def add_task(
     _liveness = _assignee_liveness(new.get("assignee"), resolved)
     if _liveness is not None:
         result["assignee_liveness"] = _liveness
+    # Same shape as `assignee_liveness` above, same reason: a fact the caller
+    # needs, attached rather than logged past them. THIS verb is where it
+    # matters most -- all three `pending` cards created after that status was
+    # abolished came through `add_task`, each firing a warning into the server's
+    # stderr. Only when non-empty, so an ordinary insert is unchanged.
+    if _tolerated:
+        result["warnings"] = list(_tolerated)
     return result
 
 
