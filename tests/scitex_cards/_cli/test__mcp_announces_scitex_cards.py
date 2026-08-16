@@ -163,24 +163,21 @@ def test_a_legacy_entry_execing_the_alias_is_recognised_as_ours():
     assert _is_our_entry(entry) is True
 
 
-# === the published contracts did NOT move ===================================
+# === the console-script surface =============================================
+#
+# THE TWO TESTS THAT WERE HERE PINNED THE RETIRED NAME IN PLACE. One asserted
+# the legacy console script was "still declared"; the other asserted both names
+# resolved to the same entry point. Their reasoning was sound while a fleet
+# still invoked the old binary — and it means the suite would have gone RED on
+# the removal, i.e. the tests were holding the deprecation open.
+#
+# The operator retired the name outright on 2026-08-16. So they are replaced by
+# their inverse: the retired script must be GONE, and only the canonical one
+# declared. A deletion needs a pin as much as an addition does, or the name
+# creeps back in the next merge that "restores compatibility".
 
 
-def test_legacy_console_script_is_still_declared():
-    # Arrange — breaking this would kill the operator's running units, one of
-    # which serves the board via the `scitex-todo` console script.
-    from pathlib import Path
-
-    import tomllib
-
-    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
-    # Act
-    scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
-    # Assert
-    assert "scitex-todo" in scripts
-
-
-def test_both_console_scripts_resolve_to_the_same_entry_point():
+def test_the_canonical_console_script_is_declared():
     # Arrange
     from pathlib import Path
 
@@ -190,7 +187,20 @@ def test_both_console_scripts_resolve_to_the_same_entry_point():
     # Act
     scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
     # Assert
-    assert scripts["scitex-todo"] == scripts["scitex-cards"]
+    assert "scitex-cards" in scripts
+
+
+def test_the_retired_console_script_is_gone():
+    # Arrange
+    from pathlib import Path
+
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    # Act
+    scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+    # Assert
+    assert "scitex-todo" not in scripts
 
 
 # EOF
