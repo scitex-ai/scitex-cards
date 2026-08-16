@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo mcp` subgroup — §3 required four verbs (+ channel).
+"""`scitex-cards mcp` subgroup — §3 required four verbs (+ channel).
 
 Verbs:
     start          Launch the FastMCP server (stdio by default).
@@ -10,12 +10,14 @@ Verbs:
     install-fleet  Apply the entry to every agent's to_home/.mcp.json.
     channel        Run the standalone channel-notification server (stdio).
 
-We prefer ``scitex_dev._mcp_cli.attach_mcp_subcommands`` when available
-(keeps every scitex package's `mcp` group identical) and fall back to a
-hand-rolled group when scitex-dev isn't installed (so a fresh
-``pip install scitex-todo[mcp]`` still works). The ``channel`` verb is
-scitex-todo's OWN feature (no scitex-dev parallel) and is wired onto the
-group in BOTH paths.
+This group is built HERE, by one builder, with no alternative path. It once
+preferred ``scitex_dev._mcp_cli.attach_mcp_subcommands`` and fell back to a
+local group when that import failed. scitex-dev retired that helper (measured
+2026-08-16: the symbol survives only in one of their skill markdowns, with no
+Python implementation and no replacement — each package attaches its own), so
+the preferred branch had been dead while a guarded ``except ImportError``
+kept it invisible. The ``channel`` verb is scitex-cards' OWN feature and has
+never had a scitex-dev parallel.
 
 The ``install`` / ``install-fleet`` verbs and the FastMCP tool-introspection
 helpers were extracted to ``_mcp_install`` / ``_mcp_tools`` to keep this
@@ -42,10 +44,19 @@ from ._mcp_tools import (  # noqa: F401
 )
 
 _SERVER_PATH = "scitex_cards._mcp_server:mcp"
-_CLI_NAME = "scitex-todo"
+
+# What this surface CALLS ITSELF. Used for three agent-visible things: the
+# `mcpServers` KEY in the emitted install snippet (so tools namespace as
+# `mcp__scitex-cards__*`), the `command` the entry execs, and the `{prog}` in
+# scitex-dev-rendered help. All three must say the CURRENT name.
+#
+# This is NOT the same decision as the console script: `scitex-cards` stays an
+# installed alias forever (the operator's running units invoke it). Renaming
+# what we ANNOUNCE is safe; renaming what we PUBLISH is not. See
+_CLI_NAME = "scitex-cards"
 
 _INSTALL_HINT = (
-    "scitex-todo MCP tools require the [mcp] extra:\n  pip install 'scitex-todo[mcp]'"
+    "scitex-cards MCP tools require the [mcp] extra:\n  pip install 'scitex-cards[all]'"
 )
 
 
@@ -60,17 +71,17 @@ def _try_import_mcp():
 
 
 def _run_unified_server() -> None:
-    """Run the ONE scitex-todo MCP server over stdio: it serves the card TOOLS
+    """Run the ONE scitex-cards MCP server over stdio: it serves the card TOOLS
     AND pushes this agent's digest (``notifications/claude/channel``).
 
     This merges what used to be two servers — the FastMCP tool server
     (``mcp start``) and the standalone channel server (``mcp channel``) — into a
-    single ``scitex-todo`` MCP integration (one ``.mcp.json`` entry). It reuses
+    single ``scitex-cards`` MCP integration (one ``.mcp.json`` entry). It reuses
     FastMCP's underlying low-level server (``mcp._mcp_server``, which already
     has every ``@mcp.tool()`` registered) and drives it with the channel
     module's own-the-session serve loop so the poll loop can push.
 
-    The agent id is OPTIONAL: with ``$SCITEX_TODO_AGENT_ID`` set the digest is
+    The agent id is OPTIONAL: with ``$SCITEX_CARDS_AGENT_ID`` set the digest is
     pushed; without it the server still serves tools (push disabled) rather than
     failing — the tools surface must work even with no identity configured.
     """
@@ -162,13 +173,17 @@ def _attach_unified_start(group: click.Group) -> None:
         _run_unified_server()
 
 
-def _fallback_mcp_group() -> click.Group:
-    """Hand-rolled `mcp` group used when scitex-dev's helper isn't present.
+def _build_mcp_group() -> click.Group:
+    """Build scitex-cards' `mcp` group. This is THE builder, not a fallback.
 
     Implements §3's required four (``start``, ``doctor``, ``list-tools``,
-    ``install``) plus ``install-fleet`` and the ``channel`` verb. Keeps
-    behavior parity with the scitex-dev helper so users see the same
-    surface either way.
+    ``install``) plus ``install-fleet`` and the ``channel`` verb.
+
+    It was named ``_fallback_mcp_group`` while a scitex-dev helper was the
+    preferred path. That helper is retired (see :func:`register`), so there is
+    nothing left for this to be a fallback FROM — and a name that describes a
+    relationship which no longer exists sends every reader looking for the
+    other half. Constitution §3: rename rather than re-explain.
     """
 
     @click.group(
@@ -208,7 +223,7 @@ def _fallback_mcp_group() -> click.Group:
     @click.option("--json", "as_json", is_flag=True)
     def doctor(as_json) -> None:
         diag = {
-            "package": "scitex-todo",
+            "package": "scitex-cards",
             "server_path": _SERVER_PATH,
             "fastmcp": None,
             "tools": 0,
@@ -284,50 +299,32 @@ def _fallback_mcp_group() -> click.Group:
 
     # ── install / install-fleet (extracted) ───────────────────────────── #
     attach_install_verbs(mcp_group)
-    # ── channel (scitex-todo's own standalone server) ─────────────────── #
+    # ── channel (scitex-cards' own standalone server) ─────────────────── #
     attach_channel_verb(mcp_group)
     return mcp_group
 
 
 def register(main: click.Group) -> None:
-    """Attach the `mcp` subgroup to `main`. Prefers the scitex-dev helper."""
-    try:
-        from scitex_dev._mcp_cli import attach_mcp_subcommands  # type: ignore
+    """Attach the `mcp` subgroup to `main`.
 
-        @click.group(
-            "mcp",
-            **spec_group_kwargs(
-                summary="MCP server subcommands (SciTeX §3 required four).",
-                command_categories=(
-                    (
-                        "Core",
-                        (
-                            "start",
-                            "doctor",
-                            "list-tools",
-                            "install",
-                            "install-fleet",
-                            "channel",
-                        ),
-                    ),
-                ),
-            ),
-        )
-        def mcp_group() -> None:
-            pass
+    THERE IS ONE PATH. This used to prefer ``scitex_dev._mcp_cli.
+    attach_mcp_subcommands`` and fall back to the local builder on
+    ImportError. That helper is RETIRED — confirmed by scitex-dev 2026-08-16,
+    who measured their own tree and found the symbol only in a skill markdown,
+    with no Python implementation anywhere and no replacement to point at:
+    each package now attaches its own subcommands.
 
-        attach_mcp_subcommands(mcp_group, server_path=_SERVER_PATH, cli_name=_CLI_NAME)
-        # Override scitex-dev's tools-only `start` with scitex-todo's UNIFIED
-        # server (tools + digest push) — one `scitex-todo` MCP integration.
-        _attach_unified_start(mcp_group)
-        # scitex-todo's OWN channel verb has no scitex-dev parallel — wire it
-        # on regardless of which path built the group (kept for back-compat).
-        attach_channel_verb(mcp_group)
-        main.add_command(mcp_group, name="mcp")
-        return
-    except ImportError:
-        # scitex-dev not available — use the hand-rolled fallback.
-        main.add_command(_fallback_mcp_group(), name="mcp")
+    So the preferred branch had been dead for some time and the fallback was
+    the only path that ever ran. Because the import sat inside ``try:`` /
+    ``except ImportError``, nothing said so — the CLI worked, the branch
+    evaporated silently, and the only visible trace was a cross-package import
+    gate that SKIPPED the missing module instead of failing on it.
+
+    Deleting the dead branch rather than repointing it, per constitution §3:
+    a vocabulary word no implementation stands behind is a promise the code
+    will break, and one dish beats a menu whose second item does not exist.
+    """
+    main.add_command(_build_mcp_group(), name="mcp")
 
 
 # EOF

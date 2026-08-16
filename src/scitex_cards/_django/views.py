@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Views for the scitex-todo board Django app.
+"""Views for the scitex-cards board Django app.
 
 ``board_page`` renders the React SPA inside the scitex-ui workspace shell
 (falling back to a server-rendered static graph when the built frontend assets
@@ -13,18 +13,123 @@ from pathlib import Path
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from .._store_errors import StoreNotProvisionedError, StoreUnavailableError
+from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
 
 logger = logging.getLogger(__name__)
+
+#: Answer for "this deployment has no task store for you YET".
+#:
+#: 404, and the 403 this replaced was rejected for a CONCRETE collision rather
+#: than a taxonomy preference: scitex.ai sits behind Cloudflare Access, which
+#: answers 403 when IT denies a request. A store-absent 403 would be
+#: indistinguishable — in a browser console, in logs, to anyone debugging —
+#: from "Access rejected you", sending whoever is looking straight into the
+#: auth layer, where nothing will help.
+#:
+#: The 404 objection was real and is answered by :data:`STORE_ABSENT_REASON`
+#: rather than dismissed. :func:`api_dispatch` also answers 404 for an UNKNOWN
+#: ENDPOINT, so status alone WOULD collapse "you asked for something that does
+#: not exist" into "you asked correctly and there is nothing here for you".
+#: The typed reason separates them, and
+#: ``test_an_unknown_endpoint_404_carries_no_reason`` pins that the other 404
+#: stays bare — without which the discriminator is a convention rather than a
+#: contract, and one helpful future edit re-collapses it silently.
+#:
+#: Between two collisions, take the one that does not impersonate an auth
+#: denial. The requirement is not naming purity: non-5xx (so a real outage
+#: stays visible in monitoring) and non-retryable (so a polling client stops
+#: rather than producing 11 console errors a minute).
+STORE_ABSENT_STATUS = 404
+
+#: Machine-readable discriminator, so a client distinguishes "no store" from any
+#: other 404 WITHOUT string-matching a human sentence. The prose is free to
+#: change — this is not.
+#:
+#: NAMED FOR THE NARROW CONDITION ON PURPOSE. This constant previously read
+#: ``store-unavailable``, which was evidence the conflation was designed in
+#: rather than overlooked: the machine-readable field, whose entire job is
+#: precision, carried the vague word. A typed field with a vague value is a
+#: contract to be vague.
+STORE_ABSENT_REASON = "store_absent"
+
+
+def _store_error_body(exc: Exception) -> str:
+    """The store's own sentence, in the form this audience may see.
+
+    Two audiences, one switch. ``str(exc)`` is the full diagnosis — the absolute
+    database path and the paragraph explaining that a missing file is not an
+    empty store — and it is what turns an outage into something an operator can
+    act on. ``exc.public_summary`` is what a stranger gets, after scitex-hub
+    loaded ``/apps/cards/`` anonymously and was shown our container filesystem
+    layout plus a design rationale addressed to us.
+
+    ``settings.DEBUG`` picks between them and is already correct on both sides
+    with no new configuration: the loopback board runs DEBUG=true and keeps its
+    diagnosis, while ``SCITEX_CARDS_PUBLIC_HOST`` FORCES DEBUG=false
+    (``settings.py``, deliberately not env-overridable), so anything publicly
+    reachable gets the summary. A second flag would be a second thing to set
+    wrongly.
+
+    The caller logs unconditionally, so the detail is never lost — it moves from
+    the response body to the place that was always its right home.
+    """
+    from django.conf import settings
+
+    public = getattr(exc, "public_summary", None)
+    if public is not None and not settings.DEBUG:
+        return public
+    return f"Cannot read the task store: {exc}"
+
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static" / "scitex_cards"
 _FAVICON_PATH = _STATIC_DIR / "favicon.svg"
 
 
 def _tasks_path_from_request(request):
-    """Optional explicit store path from the ``?store=`` query param."""
-    return request.GET.get("store") or None
+    """The store this READ resolves to — see :mod:`._request_store`.
+
+    A trusted middleware's ``request.scitex_store`` wins over the caller's
+    ``?store=``; this used to read the query and nothing else, which is why
+    scitex-hub had to overwrite the query rather than simply setting the
+    attribute.
+    """
+    return read_store(request)
+
+
+def _include_root(path: str, aliases: tuple[str, ...]) -> str:
+    """Recover the app's include root from a page's own ``request.path``.
+
+    A page served at ``<include-root><alias>`` must prefix every fetch and
+    every in-app link with ``<include-root>`` — "/" standalone, "/apps/cards/"
+    on the hub. The root ("") route needs no strip; every OTHER spelling of
+    the same page sits one segment deeper and does.
+
+    The alias is only stripped when it is a WHOLE trailing SEGMENT — i.e. the
+    path IS the alias, or it ends with ``"/" + alias``. The naive
+    ``endswith(alias)`` this replaces would have eaten the tail of an
+    unrelated mount: with ``/board`` now an alias, a hub mounting this app at
+    ``/apps/scoreboard/`` would have had its include root rewritten to
+    ``/apps/score`` and every call on the operator's board would 404 — the
+    exact class of bug #556 and #557 were.
+    """
+    for alias in aliases:
+        for candidate in (alias + "/", alias):
+            if path == candidate or path.endswith("/" + candidate):
+                return path[: len(path) - len(candidate)]
+    return path
+
+
+#: Every route in ``urls.py`` that serves the BOARD page, longest first so
+#: ``board-v3`` is tested before its ``board`` prefix-mate. The root ("")
+#: route is absent on purpose: there is nothing to strip there.
+_BOARD_ALIASES = ("board-v3", "board")
+
+#: Every route that serves the DM page. ``chat`` is the ORIGINAL published
+#: spelling and stays first; ``dm`` is the name the operator asked for.
+_DM_ALIASES = ("chat", "dm")
 
 
 def favicon_view(request):
@@ -53,14 +158,14 @@ def board_page(request):
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
-                # stays ``scitex-todo`` — it keys the shell's static/asset
+                # stays ``scitex-cards`` — it keys the shell's static/asset
                 # namespace, not the product name the operator reads.
-                {"app_name": "scitex-todo", "app_label": "SciTeX Cards"},
+                {"app_name": "scitex-cards", "app_label": "SciTeX Cards"},
                 request=request,
             )
             return HttpResponse(html)
         except Exception:
-            logger.exception("[scitex-todo] shell render failed; using fallback")
+            logger.exception("[scitex-cards] shell render failed; using fallback")
 
     # Fallback: server-rendered static graph (no Node/Vite build available).
     return HttpResponse(_static_graph_page(request))
@@ -81,7 +186,7 @@ def board_v3_page(request):
     """
     from django.template.loader import render_to_string
 
-    # Operator UX (TG 407): show the actual scitex-todo package version
+    # Operator UX (TG 407): show the actual scitex-cards package version
     # in the page title AND the in-page header so the operator can verify
     # at a glance which release the board is running. Read __version__
     # straight off the package import — no second source of truth to drift.
@@ -89,10 +194,10 @@ def board_v3_page(request):
         from scitex_cards import __version__ as _version
     except Exception:  # noqa: BLE001
         _version = "?"
-    # PRODUCT NAME (operator TG 2026-07-13: "製品なので、scitex-todo ではなく、
+    # PRODUCT NAME (operator TG 2026-07-13: "製品なので、scitex-cards ではなく、
     # SciTeX Cards としてタイトルを書いてください"). This is the DISPLAY string only
     # — the browser tab + the in-page header. The package, module, CLI, MCP
-    # tool prefix and store path are all still `scitex-todo`; renaming those
+    # tool prefix and store path are all still `scitex-cards`; renaming those
     # is a separate, coordinated change.
     label = f"SciTeX Cards v{_version}"
 
@@ -118,19 +223,16 @@ def board_v3_page(request):
     # fetches 404'd — https://scitex.ai/graph → 404 while
     # https://scitex.ai/apps/cards/graph → 200. ``request.path`` is the board
     # page's own URL; for the "" (root) route that IS the include root. The
-    # /board-v3 alias serves the same view one path segment deeper, so strip
-    # that trailing segment to recover the include root there too.
-    api_base = request.path
-    for _alias in ("board-v3/", "board-v3"):
-        if api_base.endswith(_alias):
-            api_base = api_base[: -len(_alias)]
-            break
+    # /board-v3 and /board aliases serve the same view one path segment
+    # deeper, so strip that trailing segment to recover the include root there
+    # too. See :func:`_include_root` for why the strip is segment-anchored.
+    api_base = _include_root(request.path, _BOARD_ALIASES)
 
     try:
         html = render_to_string(
             "scitex_cards/board_v3.html",
             {
-                "app_name": "scitex-todo",
+                "app_name": "scitex-cards",
                 "app_label": label,
                 "scitex_cards_version": _version,
                 # Include-root prefix for every board fetch (see above). The
@@ -146,7 +248,7 @@ def board_v3_page(request):
         )
         return HttpResponse(html)
     except Exception:
-        logger.exception("[scitex-todo] board_v3 render failed; using fallback")
+        logger.exception("[scitex-cards] board_v3 render failed; using fallback")
         return HttpResponse(_static_graph_page(request))
 
 
@@ -170,17 +272,17 @@ def chat_page(request):
         _version = "?"
 
     # Mount-aware API base — same contract as board_v3_page (see there for the
-    # full story). The chat page is served at "<include-root>chat", so stripping
-    # its own trailing segment off request.path recovers the include root the
-    # /dm/* fetches must be prefixed with ("/apps/cards/" on the hub, "/"
-    # standalone). chat.html ALWAYS sets window.API_BASE from this; chat.js
-    # refuses to run without it (a missing marker is an integration bug, never
-    # a silent root-mount guess).
-    api_base = request.path
-    for _alias in ("chat/", "chat"):
-        if api_base.endswith(_alias):
-            api_base = api_base[: -len(_alias)]
-            break
+    # full story). The chat page is served at "<include-root>chat" and, since
+    # 2026-07-29, also at "<include-root>dm", so stripping its own trailing
+    # segment off request.path recovers the include root the /dm/* fetches must
+    # be prefixed with ("/apps/cards/" on the hub, "/" standalone). Serving the
+    # page at /dm without teaching this the new alias would have left
+    # api_base == "/dm", pointing every DM poll at "/dm/dm/threads" and every
+    # switcher link at "/dmchat" — the page would render and then do nothing.
+    # chat.html ALWAYS sets window.API_BASE from this; chat.js refuses to run
+    # without it (a missing marker is an integration bug, never a silent
+    # root-mount guess).
+    api_base = _include_root(request.path, _DM_ALIASES)
 
     html = render_to_string(
         "scitex_cards/chat.html",
@@ -210,7 +312,7 @@ def _maybe_announce_missing_turn_urls(request) -> None:
         board = get_board(_tasks_path_from_request(request))
         announce_missing_at_boot(list(board.tasks))
     except Exception:  # noqa: BLE001
-        logger.exception("[scitex-todo] turn-url boot announce failed (non-fatal)")
+        logger.exception("[scitex-cards] turn-url boot announce failed (non-fatal)")
 
 
 def _static_graph_page(request) -> str:
@@ -265,7 +367,7 @@ def _static_graph_page(request) -> str:
 </script>
 </head>
 <body>
-  <h1>SciTeX Todo &mdash; dependency graph</h1>
+  <h1>SciTeX Card &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>
@@ -286,12 +388,17 @@ STALE_OK_ENDPOINTS = frozenset({"graph", "timeline"})
 
 
 def _get_board(request, *, allow_stale: bool = False):
-    """Return the board for this request, or None when the store can't load."""
-    try:
-        return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
-    except FileNotFoundError:
-        logger.warning("[scitex-todo] task store not found")
-        return None
+    """Return the board for this request. RAISES when the store can't be read.
+
+    IT NO LONGER SWALLOWS ``FileNotFoundError`` into a ``None``. That None
+    became a 400 "No task store found." — a fixed sentence that replaced
+    whatever the store actually said, so the one message carrying the diagnosis
+    ("stamped for a DIFFERENT store", "canonical store ... does not exist", the
+    export/COUNT(*) disagreement) was thrown away at the door and the operator
+    got a generic banner instead. The caller now renders the real reason; see
+    :func:`api_dispatch`.
+    """
+    return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
 
 
 @csrf_exempt
@@ -304,17 +411,70 @@ def api_dispatch(request, endpoint):
     if endpoint in NO_BOARD_ENDPOINTS:
         return handler(request, None)
 
-    board = _get_board(
-        request,
-        allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
-    )
-    if board is None:
-        return JsonResponse({"error": "No task store found."}, status=400)
+    # A STORE THAT CANNOT BE READ STILL CARRIES ITS OWN REASON — but "no store
+    # here" and "we are broken" are DIFFERENT ANSWERS and must not share a
+    # status code. Every load failure used to be a 500, and scitex-hub measured
+    # what that costs on live scitex.ai: a signed-in visitor whose deployment
+    # has no store configured got /graph, /rev and /timeline all 500, and the
+    # client re-polled into 11 console errors in one minute.
+    #
+    # Three separate harms, none of them about the guard being wrong:
+    #   1. the visitor is told the PRODUCT is down when it is merely
+    #      unconfigured for them,
+    #   2. 5xx reads as "try again", so the client retries forever,
+    #   3. a real outage becomes indistinguishable from this steady state, so
+    #      5xx monitoring is poisoned by a condition that is not an outage.
+    #
+    # THE GUARD ITSELF IS NOT WEAKENED and must not be: it is what stopped 2,138
+    # cards being overwritten on 2026-07-19, and it still refuses to invent an
+    # empty board. Only the ANSWER changes.
+    try:
+        board = _get_board(
+            request,
+            allow_stale=(endpoint in STALE_OK_ENDPOINTS and request.method == "GET"),
+        )
+    except StoreNotProvisionedError as exc:
+        # MUST PRECEDE the StoreUnavailableError clause below — it is a SUBCLASS,
+        # so ordering is what makes the distinction exist at all. Swap these two
+        # and every not-provisioned response silently becomes a 500 again, with
+        # no test failing unless one pins the narrow case specifically.
+        #
+        # A CONFIGURATION STATE, NOT A CRASH — so it is logged as one. `.exception`
+        # would emit an ERROR traceback on every poll, which is the same
+        # monitoring noise in the log rail that the 500 was in the HTTP rail.
+        logger.warning(
+            "[scitex-cards] no task store for /%s on this deployment: %s",
+            endpoint,
+            exc,
+        )
+        return JsonResponse(
+            {"error": _store_error_body(exc), "reason": STORE_ABSENT_REASON},
+            status=STORE_ABSENT_STATUS,
+        )
+    except StoreUnavailableError as exc:
+        # THE STORE EXISTS AS A CONFIGURED TARGET AND WE COULD NOT REACH IT:
+        # PostgreSQL down, unreachable, out of connections, refusing auth, or
+        # the workspace root unset. That is an OUTAGE and it stays 5xx, stays in
+        # alerting, and stays retryable.
+        #
+        # Reaching this clause rather than the one above is the whole point of
+        # StoreNotProvisionedError existing. Before the split, one type covered
+        # both, so moving absence off 500 would have moved a dead database off
+        # 500 with it — rendering an onboarding page over an outage and dropping
+        # it out of monitoring. Silent, and silence looks exactly like health.
+        logger.exception(
+            "[scitex-cards] task store unreachable for /%s", endpoint
+        )
+        return JsonResponse({"error": _store_error_body(exc)}, status=500)
+    except Exception as exc:
+        # Genuinely unexpected: this one IS an outage and belongs in 5xx.
+        logger.exception("[scitex-cards] cannot read the task store for /%s", endpoint)
+        return JsonResponse({"error": _store_error_body(exc)}, status=500)
 
     try:
         return handler(request, board)
     except Exception as exc:
-        logger.exception("[scitex-todo] API error on /%s", endpoint)
+        logger.exception("[scitex-cards] API error on /%s", endpoint)
         return JsonResponse({"error": str(exc)}, status=500)
 
 

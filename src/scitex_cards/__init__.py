@@ -8,48 +8,68 @@ PNG) ships today. See the project roadmap for org and Web-UI adapters.
 
 Quick Start
 -----------
->>> import scitex_cards as todo
->>> tasks = todo.load_tasks()                    # doctest: +SKIP
->>> src = todo.build_mermaid(tasks)              # doctest: +SKIP
->>> todo.render(src, "tasks.png")                # doctest: +SKIP
+>>> import scitex_cards as card
+>>> tasks = card.load_tasks()                    # doctest: +SKIP
+>>> src = card.build_mermaid(tasks)              # doctest: +SKIP
+>>> card.render(src, "tasks.png")                # doctest: +SKIP
 'mmdc'
 """
 
 from __future__ import annotations
 
-# Environment dual-read shim — MUST run before anything reads SCITEX_TODO_*
+# Environment dual-read shim — MUST run before anything reads SCITEX_CARDS_*
 # env vars (mirrors SCITEX_CARDS_* onto the old names the code still reads).
-from . import _env_compat as _env_compat  # noqa: F401  (import for side effect)
 
-try:
-    from importlib.metadata import PackageNotFoundError
-    from importlib.metadata import version as _v
 
+# `__version__` resolves LAZILY, in __getattr__ below. The reason is measured,
+# not stylistic: importing `importlib.metadata` at module scope cost 223 ms of
+# a 425 ms cold import — more than half — because reading package metadata
+# drags in email.message (96 ms), email.utils (74 ms) and zipfile (41 ms).
+#
+# This block used to sit directly above the comment explaining that the PEP 562
+# machinery exists "to keep cold-start well under the audit-cli §10 budget
+# (500 ms)". The module stated the goal and then broke it on the next
+# statement, which is how a package with an otherwise correct lazy-import
+# design ended up over budget.
+#
+# The public surface is unchanged: `scitex_cards.__version__` still answers.
+# It just pays for the metadata reader when someone asks for a version, which
+# tab-completion never does.
+def _resolve_version() -> str:
+    """The installed version, read on demand. See the note above for why.
+
+    ONE DIST NAME. This loop used to try the current name and then fall back to
+    a transition-window name for un-cutover editable installs. The retired name
+    is gone, which left the loop iterating the SAME string twice: a second
+    `version()` call that can only raise the same `PackageNotFoundError` the
+    first one did, and a fallback chain with nothing to fall back to.
+    """
     try:
-        __version__ = _v("scitex-cards")
+        from importlib.metadata import PackageNotFoundError, version
+    except ImportError:  # pragma: no cover — only on ancient Pythons
+        return "0.0.0+local"
+    try:
+        return version("scitex-cards")
     except PackageNotFoundError:
-        # Transition window: an environment that still has the old dist
-        # installed (editable installs on un-cutover agents).
-        try:
-            __version__ = _v("scitex-todo")
-        except PackageNotFoundError:
-            __version__ = "0.0.0+local"
-    del _v, PackageNotFoundError
-except ImportError:  # pragma: no cover — only on ancient Pythons
-    __version__ = "0.0.0+local"
+        return "0.0.0+local"
+
 
 #: Public API — Convention A (audit §6: every public Python API must match a
 #: registered MCP tool name 1:1). The MCP tool surface is documented in
-#: ``_skills/scitex-todo/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
+#: ``_skills/scitex-cards/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
 #:
 #: Render / mermaid / paths / model helpers used to be re-exported here.
 #: They were moved off the top level (audit §6) but remain importable from
 #: their submodules:
 #:
-#:     from scitex_cards._diagram  import render, render_with_kroki, render_with_mmdc, find_chromium, RenderError
-#:     from scitex_cards._diagram import build_mermaid, STATUS_STYLE
-#:     from scitex_cards._model   import load_tasks, save_tasks, VALID_STATUSES, TaskValidationError
-#:     from scitex_cards._paths   import resolve_tasks_path
+#:     from scitex_cards._diagram import (
+#:         render, render_with_kroki, render_with_mmdc, find_chromium,
+#:         RenderError, build_mermaid, STATUS_STYLE,
+#:     )
+#:     from scitex_cards._model import (
+#:         load_tasks, save_tasks, VALID_STATUSES, TaskValidationError,
+#:     )
+#:     from scitex_cards._paths import resolve_tasks_path
 
 # PEP 562 lazy attribute resolution — keeps `import scitex_cards` cold-start
 # well under the audit-cli §10 budget (500 ms) by deferring every submodule
@@ -102,6 +122,10 @@ def __getattr__(name: str):
     into module ``globals()`` so subsequent accesses skip the lookup.
     Unknown names raise ``AttributeError`` per the PEP.
     """
+    if name == "__version__":
+        value = _resolve_version()
+        globals()["__version__"] = value
+        return value
     target = _LAZY_IMPORTS.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

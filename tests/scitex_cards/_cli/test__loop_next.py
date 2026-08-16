@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for ``scitex-todo next`` CLI verb (the pull-side of the self-
+"""Tests for ``scitex-cards next`` CLI verb (the pull-side of the self-
 consuming board loop).
 
 Real `CliRunner` invocations against the per-test store (no mocks
@@ -10,12 +10,12 @@ per STX-NM / PA-306). Covers:
   - --json: prints a JSON-decodable task dict
   - no candidate: exits non-zero with a clear stderr message
   - --assignee filters down
-  - --mine + SCITEX_TODO_AGENT_ID env round-trip
+  - --mine + SCITEX_CARDS_AGENT_ID env round-trip
   - --mine without env: ClickException
   - --assignee + --mine mutually exclusive
   - --auto-claim flips status to in_progress + stamps a comment
 
-The coverage audit (proj-scitex-todo overnight, lead a2a `1397f103`)
+The coverage audit (proj-scitex-cards overnight, lead a2a `1397f103`)
 flagged `_cli/_loop.py` at 33% with no dedicated tests; this file
 adds end-to-end coverage of the `next` verb side. The `watch` verb
 (long-running poll loop) is covered via `_wake_watcher` integration
@@ -140,11 +140,11 @@ class TestAssigneeFilter:
 
 
 class TestMineFlag:
-    """`--mine` reads SCITEX_TODO_AGENT_ID from the env."""
+    """`--mine` reads SCITEX_CARDS_AGENT_ID from the env."""
 
     def test_mine_with_env_resolves_to_agent(self, store, env):
         # Arrange
-        env.set("SCITEX_TODO_AGENT_ID", "proj-beta")
+        env.set("SCITEX_CARDS_AGENT_ID", "proj-beta")
         # Act
         result = CliRunner().invoke(next_cmd, ["--mine", "--json"])
         payload = json.loads(result.output)
@@ -153,7 +153,7 @@ class TestMineFlag:
 
     def test_mine_without_env_raises_click_exception(self, store, env):
         # Arrange
-        env.delete("SCITEX_TODO_AGENT_ID")
+        env.delete("SCITEX_CARDS_AGENT_ID")
         # Act
         result = CliRunner().invoke(next_cmd, ["--mine"])
         # Assert

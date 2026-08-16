@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Graph + tasks handlers: thin adapters over the scitex-todo Python API.
+"""Graph + tasks handlers: thin adapters over the scitex-cards Python API.
 
 Zero task logic here — everything delegates to ``scitex_cards``: the store is
 resolved + loaded by ``services.get_board`` (which calls ``resolve_tasks_path``
-and ``load_tasks``), the mermaid source comes from ``build_mermaid``, and node
-colors come from ``STATUS_STYLE``.
+and ``load_tasks``), and node colors come from ``STATUS_STYLE``.
 """
 
 from pathlib import Path
@@ -79,7 +78,7 @@ def _compute_deadline_next(t):
 
 def _build_graph(board) -> dict:
     """Build the {nodes, edges, status_colors, ...} payload from a board."""
-    from scitex_cards._diagram import build_mermaid
+    from ._comment_digest import comment_scalars, rescore_history
 
     ids = {t["id"] for t in board.tasks}
 
@@ -97,9 +96,40 @@ def _build_graph(board) -> dict:
             # id the frontend treats this task as top-level (same lenient
             # stance as edges to unknown ids).
             "parent": t.get("parent"),
-            # Append-only comment thread (list of {ts, author, text}); always
-            # a list so the frontend can render / count without null-checks.
-            "comments": t.get("comments") or [],
+            # comments[] IS GONE FROM THIS PAYLOAD. Step 3 of 3, and the step
+            # the other two existed to make safe. It was 8.5 MB of a 19.8 MB
+            # response that the board refetched on nearly every 5 s /rev poll,
+            # because the store is written every ~4 s.
+            #
+            # A previous attempt removed it and added its replacements in ONE
+            # branch. That broke every consumer at once and sat unmergeable for
+            # twelve days until its owner stopped existing. So this time:
+            #   1. #634 emitted the summary scalars ALONGSIDE it (additive).
+            #   1b. #637 added rescore_history — the Matrix reads comment
+            #       CONTENT, so the scalars alone could not have replaced it.
+            #   2. #635/#638/#640 migrated every consumer, each keeping a
+            #      FALLBACK to comments[] so either payload shape works.
+            #   3. this deletion.
+            #
+            # The fallbacks are why this is a one-line change and not a flag
+            # day: they were deployed BEFORE the thing that needs them, so a
+            # consumer I missed degrades instead of breaking. Do not remove
+            # them in the same release as this — that ordering is the whole
+            # lesson of the twelve-day branch.
+            #
+            # The full thread is served by GET /chat/<card_id>, which preserves
+            # each comment's `kind` so the route-trace timeline still works,
+            # and the detail panel fetches it on open.
+            #
+            # List-view stand-ins follow.
+            **comment_scalars(t),
+            # The Matrix view is the one list surface that needs comment
+            # CONTENT rather than a summary: it reads the [old, new] axis
+            # pairs off `kind: "rescore"` comments to draw quadrant
+            # transitions. Serving just those keeps it working when
+            # comments[] goes. Measured 0.11% of comments[] (30 events on
+            # 2,864 cards) — see handlers/_comment_digest.py.
+            "rescore_history": rescore_history(t),
             # `kind` discriminator + compute metadata (north-star pillar #1,
             # validated by `_model._validate_tasks`). `kind: null` over the
             # wire = "task" (the default). FE renders compute affordances
@@ -146,7 +176,7 @@ def _build_graph(board) -> dict:
             "last_activity": t.get("last_activity"),
             "pr_url": t.get("pr_url"),
             "issue_url": t.get("issue_url"),
-            # USER-role fields (scitex-todo's entity is the USER;
+            # USER-role fields (scitex-cards's entity is the USER;
             # an agent is just user.kind=agent). The detail drawer renders
             # a ROLES section from these. `created_by` is the creating user
             # (absent on legacy rows — FE falls back to the earliest comment
@@ -193,19 +223,46 @@ def _build_graph(board) -> dict:
         "nodes": nodes,
         "edges": edges,
         "status_colors": _status_colors(),
-        "mermaid": build_mermaid(board.tasks),
+        # `mermaid` IS GONE FROM THIS PAYLOAD. Measured on the live store
+        # (4,394 cards, 2026-08-14): 8,104,337 B of a 21,109,219 B response,
+        # 38.4% — a bigger share than the comments[] deletion that preceded
+        # it. ADR-0013 names it directly: "`mermaid` is generated only when
+        # the Graph layout asks for it — it is 19% of the payload serving one
+        # of four layouts."
+        #
+        # Nothing asks for it, which is why this is a deletion and not a
+        # move to an on-demand endpoint. The board's Graph layout builds its
+        # OWN mermaid source client-side in `_graphSrc(visible)` from
+        # `STATE.graph.edges` + `.status_colors` + each node's `parent` — it
+        # HAS to, because the server's copy is built from the whole store and
+        # cannot respect the active filter set. The server's copy was the
+        # unfiltered diagram nobody drew.
+        #
+        # The other producers of mermaid source are unaffected: they call
+        # `build_mermaid` DIRECTLY rather than reading this key —
+        # `views._static_graph_page` (the /legacy CDN page) and the
+        # `render-graph` CLI. Deleting the key does not touch them.
+        #
+        # Unlike the comments[] deletion, no consumer needed a migration or
+        # a fallback first: a full read of every `mermaid` reference (server
+        # templates, static/, frontend/src, the committed legacy SPA bundle,
+        # exporters, CLI) found no reader of THIS key. The legacy SPA bundle
+        # `static/scitex_cards/assets/index.js` contains the string zero
+        # times. `frontend/src/types/board.ts` merely DECLARED the field, and
+        # that declaration goes with this commit.
         "store_path": str(board.store_path),
         "task_count": len(board.tasks),
-        # HONEST EMPTY STATE (hub card hub-cards-board-data-404): True when
-        # the resolved store-identity file did not exist at load time — a
-        # brand-new workspace's legitimate 0-card board, not an error. The
-        # frontend renders the normal zero-card board on this instead of the
-        # red load-error banner.
+        # HONEST EMPTY STATE: True when the store was READ and held no cards —
+        # a legitimate 0-card board, on which the frontend renders the normal
+        # empty board instead of the red load-error banner. It is NOT "the
+        # store file is missing": a store that cannot be read raises out of
+        # get_board and arrives here as a 500, never as this flag. See
+        # BoardState.empty_store for why that distinction is load-bearing.
         "empty_store": board.empty_store,
         # Fleet liveness — per-agent at-a-glance summary the operator can
         # scan from the board header to answer "who is alive + working on
         # what + blocked on me" without leaving the board (ADR-0008 design,
-        # ticket `proj-scitex-todo-fleet-liveness`, operator TG 9576 acute
+        # ticket `proj-scitex-cards-fleet-liveness`, operator TG 9576 acute
         # pain: 返事が来ない＝私にとって死んだのと同じ). FIRST SLICE — derived
         # from the already-loaded board tasks; the sidecar daemon + cross-host
         # roll-up land in follow-up PRs (no schema change today).
@@ -249,7 +306,7 @@ def _graph_cache_reset() -> None:
 
 
 def handle_graph(request, board):
-    """GET graph -> structured nodes + edges + status colors (+ mermaid).
+    """GET graph -> structured nodes + edges + status colors.
 
     Cached by ``(store_path, board.mtime, board.sig)``; on hit, returns the
     prior payload directly. ``board.sig`` is the DB's read-stable content
@@ -280,9 +337,9 @@ def handle_tasks(request, board):
         {
             "tasks": list(board.tasks),
             "store_path": str(board.store_path),
-            # Same honest-empty-state flag as the /graph payload: a resolved
-            # store file that does not exist yet is a fresh workspace, not an
-            # error (see BoardState.empty_store).
+            # Same honest-empty-state flag as the /graph payload: the store
+            # was read and holds no cards (see BoardState.empty_store). An
+            # unreadable store never reaches here — it is a 500.
             "empty_store": board.empty_store,
         }
     )

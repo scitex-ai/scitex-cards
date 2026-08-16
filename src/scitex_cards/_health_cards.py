@@ -73,7 +73,7 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
 
     *** THIS EXISTS BECAUSE IT ALREADY HAPPENED, TWICE, AND NOBODY NOTICED FOR
     TWO DAYS. *** (2026-07-13: `selftest-card-20260701` and
-    `todo-board-reads-stale-project-store-not-canonical-20260706` both carried
+    `cards-board-reads-stale-project-store-not-canonical-20260706` both carried
     `closed_at` and both sat in `deferred`. Both had COMMENTS saying they had
     been moved to a terminal state — the prose claimed the change; the FIELD
     never took it. They were found only by hand-scanning all 1,467 rows.)
@@ -97,10 +97,29 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
         # reading as 7/9 UNHEALTHY on perfectly healthy installs.)
         tasks = load_tasks(resolve_tasks_path(store))
     except Exception as exc:  # noqa: BLE001 — an unreadable store is a reportable state
+        # ESCALATED TO BLOCKING. This check is ADVISORY when it reports what it
+        # exists to report -- stale stamps, dead gates, thirteen untidy rows
+        # that block nobody. It is NOT advisory when the store will not open:
+        # that is the outage itself, surfacing through whichever check happened
+        # to touch the store first.
+        #
+        # On 2026-08-11/12 this exact branch printed "cannot read the task store
+        # (ExportRefused: notifications row ... has no record_json payload)",
+        # and an agent read the report as row hygiene and stopped carding for
+        # hours. Severity is a property of the OUTCOME, not of the check.
+        from ._health_severity import BLOCKING
+
         return {
             "ok": False,
+            "severity": BLOCKING,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-todo resolve-store`.",
+            "hint": (
+                "the STORE is unreadable — this is not a board-contents finding. "
+                "Check it with `scitex-cards resolve-store`; if the error names a "
+                "notifications row with no record_json payload, ONE row is wedging "
+                "the table (not your card, not the whole store) and a client older "
+                "than 0.37.1 is the likely writer."
+            ),
         }
 
     # Two DISTINCT lies, deliberately not merged — they corrupt different
@@ -144,7 +163,7 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
             hints.append(
                 "the close did not stick. Set the honest terminal state — `done` if "
                 "the work landed, `cancelled` if it was closed as not-planned — with "
-                "`scitex-todo update <id> --status done|cancelled`. A comment saying "
+                "`scitex-cards update <id> --status done|cancelled`. A comment saying "
                 "a card is closed is NOT a decision; the STATUS FIELD is."
             )
         if false_completions:
@@ -224,10 +243,29 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
         # reading as 7/9 UNHEALTHY on perfectly healthy installs.)
         tasks = load_tasks(resolve_tasks_path(store))
     except Exception as exc:  # noqa: BLE001 — an unreadable store is a reportable state
+        # ESCALATED TO BLOCKING. This check is ADVISORY when it reports what it
+        # exists to report -- stale stamps, dead gates, thirteen untidy rows
+        # that block nobody. It is NOT advisory when the store will not open:
+        # that is the outage itself, surfacing through whichever check happened
+        # to touch the store first.
+        #
+        # On 2026-08-11/12 this exact branch printed "cannot read the task store
+        # (ExportRefused: notifications row ... has no record_json payload)",
+        # and an agent read the report as row hygiene and stopped carding for
+        # hours. Severity is a property of the OUTCOME, not of the check.
+        from ._health_severity import BLOCKING
+
         return {
             "ok": False,
+            "severity": BLOCKING,
             "detail": f"cannot read the task store ({type(exc).__name__}: {exc})",
-            "hint": "check the store path with `scitex-todo resolve-store`.",
+            "hint": (
+                "the STORE is unreadable — this is not a board-contents finding. "
+                "Check it with `scitex-cards resolve-store`; if the error names a "
+                "notifications row with no record_json payload, ONE row is wedging "
+                "the table (not your card, not the whole store) and a client older "
+                "than 0.37.1 is the likely writer."
+            ),
         }
 
     by_id = {t.get("id"): t for t in tasks}
@@ -257,7 +295,7 @@ def _check_no_falsely_blocked(store: str | Path | None) -> dict[str, Any]:
             "hint": (
                 "the unblock event fired when the dependency completed and nobody "
                 "acted on it. Move each card to the honest status — `in_progress` if "
-                "it is being worked, `deferred` if it can wait — with `scitex-todo "
+                "it is being worked, `deferred` if it can wait — with `scitex-cards "
                 "update <id> --status in_progress|deferred`. A card blocked on a "
                 "finished card is not blocked, it is unstarted."
             ),

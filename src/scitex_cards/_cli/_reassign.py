@@ -7,7 +7,7 @@ surface shape of the sibling mutation verbs in ``_write.py`` (``add`` /
 ``update`` / ``done``) and ``_comment.py``:
 
   * positional ``TASK_ID`` + ``NEW_OWNER``
-  * ``--by NAME`` overrides the ``$SCITEX_TODO_AGENT_ID`` → ``$USER``
+  * ``--by NAME`` overrides the ``$SCITEX_CARDS_AGENT_ID`` → ``$USER``
     precedence chain (mirrors ``done --by`` / ``comment --author``)
   * ``--json`` emits the structured ``{task_id, from_owner, to_owner,
     actor, changed, task}`` payload
@@ -37,7 +37,7 @@ from ._write import _emit
         "is a separate concern). Idempotent: reassigning to the SAME current\n"
         "owner is a no-op (no write, no event).\n\n"
         "Example:\n"
-        "  scitex-todo reassign my-task <new-owner-agent-id> --by operator"
+        "  scitex-cards reassign my-task <new-owner-agent-id> --by operator"
     ),
 )
 @click.argument("task_id")
@@ -45,7 +45,7 @@ from ._write import _emit
 @click.option(
     "--by",
     default=None,
-    help="Override the actor (default: $SCITEX_TODO_AGENT_ID, then $USER).",
+    help="Override the actor (default: $SCITEX_CARDS_AGENT_ID, then $USER).",
 )
 @click.option(
     "--json", "as_json", is_flag=True, help="Emit the result payload as JSON."

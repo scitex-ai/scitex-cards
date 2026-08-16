@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the new ``scitex-todo board <verb>`` lifecycle CLI
+"""Tests for the new ``scitex-cards board <verb>`` lifecycle CLI
 (operator TG12949/12950/12951 via lead a2a `b5726672`).
 
 The tests cover:
@@ -18,7 +18,7 @@ The tests cover:
   - stale pidfile (PID dead) is cleaned up + treated as "not running"
 
 No mocks (STX-NM / PA-306): real subprocesses (Python `time.sleep` loop)
-and a tmp pidfile via the ``SCITEX_TODO_BOARD_PIDFILE`` env override.
+and a tmp pidfile via the ``SCITEX_CARDS_BOARD_PIDFILE`` env override.
 
 The actual Django/runserver path is NOT exercised here — `start` from
 the lifecycle perspective is the pidfile + dispatch contract; the
@@ -40,8 +40,8 @@ from click.testing import CliRunner
 
 from scitex_cards._cli import main
 from scitex_cards._cli._board import (
-    _board_pidfile,
     _board_pid_alive,
+    _board_pidfile,
     _board_read_pid,
     _board_write_pid,
     board_group,
@@ -51,9 +51,9 @@ from scitex_cards._cli._board import (
 @pytest.fixture
 def pidfile_path(env, tmp_path):
     """Point the pidfile at a tmp location so tests don't touch
-    ``~/.scitex/todo/board.pid``."""
+    ``~/.scitex/cards/board.pid``."""
     pf = tmp_path / "board.pid"
-    env.set("SCITEX_TODO_BOARD_PIDFILE", str(pf))
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf
 
 
@@ -181,7 +181,7 @@ class TestStartRefusesWhenAlreadyRunning:
 
 
 class TestBareBoardHardError:
-    """Bare ``scitex-todo board`` (no verb) is no longer back-compat — it
+    """Bare ``scitex-cards board`` (no verb) is no longer back-compat — it
     HARD-ERRORS with a redirect message + exit 2 so existing call sites
     get an immediate, actionable signal (operator directive TG 13316:
     noun-verb CLI convention, no bare-noun forwarding)."""
@@ -201,7 +201,7 @@ class TestBareBoardHardError:
         # we check the redirect message landed in the combined stream.
         result = runner.invoke(main, ["board"])
         # Assert — the redirect message names the canonical replacement.
-        assert "scitex-todo board start" in result.output
+        assert "scitex-cards board start" in result.output
 
     def test_bare_board_does_not_invoke_start(self, pidfile_path):
         # Arrange — set up a state that `board start` would normally

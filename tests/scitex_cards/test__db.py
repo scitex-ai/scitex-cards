@@ -19,6 +19,7 @@ import pytest
 from conftest import seed_db_from_doc
 
 from scitex_cards import _db, _db_bootstrap, _model
+from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 # --------------------------------------------------------------------------- #
@@ -39,8 +40,8 @@ def store(tmp_path):
                 "title": "First card",
                 "status": "in_progress",
                 "task": "do the thing",
-                "project": "scitex-todo",
-                "repo": "scitex-todo",
+                "project": "scitex-cards",
+                "repo": "scitex-cards",
                 "agent": "agent:alice",
                 "group": "core",
                 "priority": 3,
@@ -124,7 +125,7 @@ def store(tmp_path):
     return {
         "tasks_doc": tasks_doc,
         "threads": threads_doc["threads"],
-        "db_path": tmp_path / "todo.db",
+        "db_path": tmp_path / "cards.db",
     }
 
 
@@ -170,10 +171,13 @@ def test_resolve_db_path_env_over_userpath(tmp_path, env):
 def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
     """Neutralise both env tiers and record how `local_state.user_path` is called.
 
-    Returns ``(resolved, calls, sentinel)``.
+    Returns ``(outcome, calls, sentinel)``, where ``outcome`` is the raised
+    exception rather than a path. It could not be a path since 2026-08-13:
+    the final tier no longer RETURNS the delegated filename, it REFUSES and
+    names it. The delegation itself is unchanged and still observable, which
+    is what the second test below is about.
     """
     env.delete(_db.ENV_DB)
-    env.delete(_db.ENV_DB_DEPRECATED)
     from scitex_config._ecosystem import local_state
 
     calls = []
@@ -184,25 +188,43 @@ def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
         return sentinel
 
     monkeypatch.setattr(local_state, "user_path", fake_user_path)
-    return _db.resolve_db_path(), calls, sentinel
+    try:
+        outcome = _db.resolve_db_path()
+    except StoreTargetNotConfigured as exc:
+        outcome = exc
+    return outcome, calls, sentinel
 
 
-def test_resolve_db_path_returns_the_delegated_user_path(tmp_path, env, monkeypatch):
-    """Final tier DELEGATES to local_state.user_path — no re-rolled precedence."""
+def test_resolve_db_path_refuses_instead_of_returning_the_user_path(
+    tmp_path, env, monkeypatch
+):
+    """Final tier REFUSES. It used to return the delegated filename.
+
+    The abolished behaviour was ``got == sentinel``: a SQLite path nobody
+    chose, handed back with the same type as one somebody did choose. That is
+    the whole defect, so this asserts the type of the outcome and not merely
+    that something went wrong.
+    """
     # Arrange
     # Act
-    got, _calls, sentinel = _resolve_with_delegated_user_path(
+    got, _calls, _sentinel = _resolve_with_delegated_user_path(
         tmp_path, env, monkeypatch
     )
 
     # Assert
-    assert got == sentinel
+    assert isinstance(got, StoreTargetNotConfigured)
 
 
 def test_resolve_db_path_delegates_with_the_cards_package_key(
     tmp_path, env, monkeypatch
 ):
-    """The delegation passes the package short-name and the db filename."""
+    """The delegation passes the package short-name and the db filename.
+
+    UNCHANGED BY THE ABOLITION, and deliberately still pinned: the filename is
+    still resolved through the ecosystem resolver, now to NAME the store in the
+    refusal rather than to serve it. A refusal that guessed the path itself
+    would send the reader to a file this package does not actually use.
+    """
     # Arrange
     # Act
     _got, calls, _sentinel = _resolve_with_delegated_user_path(
@@ -213,47 +235,16 @@ def test_resolve_db_path_delegates_with_the_cards_package_key(
     assert calls == [("cards", ("cards.db",))]
 
 
-def _resolve_from_legacy_env_only(tmp_path, env, caplog):
-    """Set ONLY the pre-rename env name and resolve, capturing warnings."""
-    env.delete(_db.ENV_DB)
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-    with caplog.at_level("WARNING", logger="scitex_cards._db"):
-        return _db.resolve_db_path()
-
-
-def test_resolve_db_path_still_honours_the_legacy_env_name(tmp_path, env, caplog):
-    """SCITEX_TODO_DB (pre-rename) still resolves when it is the only export."""
+def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
+    """And the name it reports is the one the delegation returned."""
     # Arrange
     # Act
-    got = _resolve_from_legacy_env_only(tmp_path, env, caplog)
+    got, _calls, sentinel = _resolve_with_delegated_user_path(
+        tmp_path, env, monkeypatch
+    )
 
     # Assert
-    assert got == (tmp_path / "legacy.db")
-
-
-def test_resolve_db_path_warns_that_the_legacy_env_name_is_deprecated(
-    tmp_path, env, caplog
-):
-    """...and it resolves LOUDLY, so the export gets migrated."""
-    # Arrange
-    # Act
-    _resolve_from_legacy_env_only(tmp_path, env, caplog)
-
-    # Assert
-    assert any("deprecated" in r.message for r in caplog.records)
-
-
-def test_resolve_db_path_new_env_wins_over_legacy(tmp_path, env):
-    """When both names are set, SCITEX_CARDS_DB wins."""
-    # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "new.db"))
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-
-    # Act
-    got = _db.resolve_db_path()
-
-    # Assert
-    assert got == (tmp_path / "new.db")
+    assert str(sentinel) in str(got)
 
 
 # --------------------------------------------------------------------------- #
@@ -421,10 +412,26 @@ def test_schema_version_constant_is_at_least_the_payload_revision():
 # every index, exactly as v1 had them — and no dependency on any ALTER at all. The
 # fixture is a v1 DB because it was BUILT AS ONE, deterministically, on every SQLite.
 def _v1_schema_sql() -> str:
-    """Today's schema text, minus the single column v2 introduced."""
-    return _db._SCHEMA_SQL.replace(
-        "    row_order      INTEGER,\n    card_json      TEXT\n",
-        "    row_order      INTEGER\n",
+    """Today's schema text, minus every column added after v1.
+
+    Derived by DROPPING NAMED LINES rather than by matching a multi-line block
+    that happened to end the ``tasks`` table. The old form matched
+    ``row_order ...,\\n    card_json ...\\n`` — which silently stopped matching
+    the moment v6 appended ``revision`` after ``card_json``. The replace became
+    a no-op and the fixture quietly carried the very column it exists to omit,
+    so a test named "the v1 fixture omits the v2 column" was the thing that
+    caught it. A fixture coupled to which column happens to be LAST is a fixture
+    that breaks on every future column.
+    """
+    kept = [
+        line
+        for line in _db._SCHEMA_SQL.splitlines(keepends=True)
+        if not line.strip().startswith(("card_json", "revision"))
+    ]
+    sql = "".join(kept)
+    # Whatever column now ends the tasks table must not keep a trailing comma.
+    return sql.replace(
+        "    row_order      INTEGER,\n);", "    row_order      INTEGER\n);"
     )
 
 
@@ -638,7 +645,7 @@ def test_import_stores_the_repo_field(imported):
     row = _card_row(imported)
 
     # Assert
-    assert row["repo"] == "scitex-todo"
+    assert row["repo"] == "scitex-cards"
 
 
 def test_import_stores_the_priority_field(imported):
@@ -1060,21 +1067,21 @@ def test_verify_reports_an_absent_db_as_not_ok(tmp_path):
 def test_repo_field_survives_from_dict_on_the_dataclass():
     # Arrange
     # Act
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Assert
-    assert task.repo == "scitex-todo"
+    assert task.repo == "scitex-cards"
 
 
 def test_repo_field_survives_to_dict_on_the_dataclass():
     # Arrange
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Act
     payload = task.to_dict()
 
     # Assert
-    assert payload["repo"] == "scitex-todo"
+    assert payload["repo"] == "scitex-cards"
 
 
 def test_an_absent_repo_field_defaults_to_none():
@@ -1103,7 +1110,7 @@ def test_repo_field_round_trips_db_column(imported):
     val = imported["conn"].execute("SELECT repo FROM tasks WHERE id='c1'").fetchone()[0]
 
     # Assert
-    assert val == "scitex-todo"
+    assert val == "scitex-cards"
 
 
 # --------------------------------------------------------------------------- #
@@ -1174,7 +1181,7 @@ def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
     conn = _db.connect(store["db_path"])
     _db.init_schema(conn)
     conn.execute("BEGIN IMMEDIATE")
-    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "todo"}])
+    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "card"}])
 
     # Act — same id again, row still present: the incremental mirror's shape.
     _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v2", "status": "done"}])
@@ -1199,7 +1206,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             {
                 "id": "dup",
                 "title": "FIRST",
-                "status": "todo",
+                "status": "card",
                 "comments": [{"author": "a", "ts": "t", "text": "old"}],
             },
             {"id": "keep", "title": "Untouched", "status": "done"},
@@ -1211,7 +1218,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             },
         ]
     }
-    db_path = tmp_path / "todo.db"
+    db_path = tmp_path / "cards.db"
 
     with caplog.at_level("ERROR"):
         summary = seed_db_from_doc(doc, db_path)

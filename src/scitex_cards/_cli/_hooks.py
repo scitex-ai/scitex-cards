@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verbs ``scitex-todo hook push|done`` — the producer-side wire
+"""CLI verbs ``scitex-cards hook push|done`` — the producer-side wire
 for shell-driven event producers.
 
 Equivalent to the HTTP endpoints `/hooks/push` and `/hooks/done` but

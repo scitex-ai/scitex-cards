@@ -48,7 +48,7 @@ Method violations return ``405``. The Phase-0 fail-loud principle
 applies (mirrors ``handlers/runnable.py``): underlying-store errors
 bubble into Django's 500 handler.
 
-Out of scope (deferred per the operator brief — flagged with TODOs in
+Out of scope (deferred per the operator brief — flagged with CARDs in
 the FE):
 - Pan / zoom / drag-to-reschedule (``update`` is the side channel today).
 - WebSocket push (polling is fine for the floor — 30s, same cadence
@@ -77,7 +77,7 @@ _UNGROUPED_LANE: str = "(ungrouped)"
 
 #: Closed set of accepted ``lane_by`` values. ``agent`` is the operator default
 #: (raster plot per agent — the brief's anchor visual). ``group`` rasters by
-#: the T1.1 group field; ``project`` by the task's project (operator TODO
+#: the T1.1 group field; ``project`` by the task's project (operator CARD
 #: 2026-06-17 by-project view); ``task`` gives ONE lane per task (the basis
 #: of the "simple" per-task view).
 _VALID_LANE_BY: frozenset[str] = frozenset({"agent", "group", "project", "task"})
@@ -351,11 +351,10 @@ def timeline_view(request: HttpRequest) -> HttpResponse:
 
     payload = _build_payload(tasks, window_hours=window_hours, lane_by=lane_by)
     payload["store_path"] = str(board.store_path)
-    # HONEST EMPTY STATE (hub card hub-cards-board-data-404): a resolved
-    # store file that does not exist yet is a brand-new workspace's
-    # legitimate 0-event timeline, not an error (see BoardState.empty_store).
-    # Fail-loud stays intact for everything else: an unreadable EXISTING
-    # store still raises into Django's 500 handler.
+    # HONEST EMPTY STATE: the store was READ and holds no cards — a legitimate
+    # 0-event timeline, not an error (see BoardState.empty_store). Fail-loud is
+    # intact for every other shape: a store that cannot be read raises out of
+    # ``get_board`` above, and this view deliberately does not catch it.
     payload["empty_store"] = board.empty_store
     return JsonResponse(payload, json_dumps_params={"default": str})
 

@@ -24,7 +24,6 @@ import pytest
 from scitex_cards._db import (
     DEFAULT_DB_FILENAME,
     ENV_DB,
-    ENV_DB_DEPRECATED,
     resolve_db_path,
 )
 from scitex_cards._paths import (
@@ -33,13 +32,14 @@ from scitex_cards._paths import (
     _user_root,
     resolve_tasks_path,
 )
+from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB, ENV_DB_DEPRECATED)}
-    for v in (ENV_DB, ENV_DB_DEPRECATED):
+    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
+    for v in (ENV_DB,):
         os.environ.pop(v, None)
     try:
         yield
@@ -70,24 +70,24 @@ def test_ambient_container_is_beside_the_database(tmp_path, clean_store_env):
     resolved = resolve_tasks_path(None)
     # Assert — the container is `<db_dir>/tasks.yaml`, next to the identity DB.
     assert resolved == target.parent / "tasks.yaml"
-    assert resolve_db_path(None) == target
 
 
-def test_container_tracks_the_current_db_var_over_deprecated(tmp_path, clean_store_env):
-    """``$SCITEX_CARDS_DB`` (the identity) wins over the pre-rename ``$SCITEX_TODO_DB``."""
+def test_ambient_database_resolves_to_the_named_target(tmp_path, clean_store_env):
+    """The identity half of the pair above, split under STX-TQ007."""
     # Arrange
-    current = tmp_path / "current.db"
-    os.environ[ENV_DB] = str(current)
-    os.environ[ENV_DB_DEPRECATED] = str(tmp_path / "legacy.db")
+    target = tmp_path / "fromenv.db"
+    os.environ[ENV_DB] = str(target)
     # Act
-    resolved = resolve_tasks_path(None)
-    # Assert — the container tracks the winning database's directory.
-    assert resolved == current.parent / "tasks.yaml"
-    assert resolve_db_path(None) == current
+    resolved = resolve_db_path(None)
+    # Assert
+    assert resolved == target
+
+
 
 
 def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store_env):
     """There is no last resort — no packaged demo file can become the board."""
+    # Arrange
     # Act
     resolved = resolve_tasks_path(None)
     # Assert
@@ -97,11 +97,64 @@ def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store
     )
 
 
-def test_canonical_default_identity_names_the_sqlite_database(clean_store_env):
-    """The canonical store IDENTITY default names the SQLite database."""
-    # Act / Assert — the identity is the DB; the container is its yaml sibling.
-    assert resolve_db_path(None).name == DEFAULT_DB_FILENAME == "cards.db"
-    assert resolve_tasks_path(None) == resolve_db_path(None).parent / "tasks.yaml"
+#: THE THREE TESTS BELOW WERE ONE, AND THEIR AUTHOR ARGUED AGAINST SPLITTING
+#: THEM. The original docstring said: "Splitting these into two tests would let
+#: one regress silently while the other stayed green -- and 'the query side went
+#: down because the store went away' is exactly the 2026-07-31 failure."
+#:
+#: The CONCERN is right and the MECHANISM was backwards. Split, both tests run
+#: and both report; neither can regress silently. Merged, a failure of the
+#: `pytest.raises` meant the container assertion NEVER RAN — so the merged form
+#: was the one that could hide a regression, which is what STX-TQ007 says.
+#:
+#: What the merge was really protecting is the PAIRING: these two axes must be
+#: read together, because an unconfigured identity must not take the local-state
+#: container down with it. That is preserved here by saying so, in both
+#: docstrings, which survives a split and does not depend on assertion order.
+
+
+def test_an_unconfigured_store_identity_refuses(clean_store_env):
+    """The store IDENTITY has NO default. It used to name a SQLite database.
+
+    This asserted the abolished behaviour by name -- ``resolve_db_path(None)
+    .name == DEFAULT_DB_FILENAME == "cards.db"``, i.e. that a store nobody
+    configured still had an identity. On 2026-08-13 the operator abolished that
+    tier: SQLite is gone fleet-wide, and a filename is not a decision.
+
+    PAIRED WITH `test_the_local_state_container_still_resolves_with_no_database`
+    — refusing here must not take the container down with it.
+    """
+    # Arrange
+    # Act
+    # Assert
+    with pytest.raises(StoreTargetNotConfigured):
+        resolve_db_path(None)
+
+
+def test_the_local_state_container_still_resolves_with_no_database(clean_store_env):
+    """The local-state axis answers even when the identity axis refuses.
+
+    The container the two used to share was ``<db_dir>/tasks.yaml``; with no
+    db_dir to sit beside, it must still resolve, under the local root.
+
+    PAIRED WITH `test_an_unconfigured_store_identity_refuses`. "The query side
+    went down because the store went away" is the 2026-07-31 failure, and this
+    is the half that catches it.
+    """
+    # Arrange
+    # Act
+    resolved = resolve_tasks_path(None)
+    # Assert
+    assert resolved == _user_root() / "tasks.yaml"
+
+
+def test_the_abolished_default_filename_constant_is_unchanged(clean_store_env):
+    """The name the resolver USED to invent, pinned so its removal stays visible."""
+    # Arrange
+    # Act
+    name = DEFAULT_DB_FILENAME
+    # Assert
+    assert name == "cards.db"
 
 
 def test_explicit_missing_path_returned_as_is(tmp_path, clean_store_env):
@@ -135,14 +188,19 @@ def test_bundled_example_is_deleted_not_merely_raising():
     stub itself was deleted. Re-adding it — even as "just a raise" — is the
     residue this test guards against.
     """
-    # Act / Assert
+    # Arrange
+    # Act
     import scitex_cards._paths as _paths_module
 
+    # Assert
     assert not hasattr(_paths_module, "bundled_example")
 
 
 def test_pkg_short_names_the_cards_directory():
     """PKG_SHORT is "cards" — the ONE place the store directory is named."""
+    # Arrange
+    # Act
+    # Assert
     assert PKG_SHORT == "cards"
 
 

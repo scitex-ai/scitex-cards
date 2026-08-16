@@ -9,7 +9,7 @@ board must render helpfully instead of the red banner:
   ``{"error": "signed-out", "login_url": …}`` → the board renders a
   signed-out panel linking ``login_url``.
 - **no-active-project**: the hub's tenancy middleware
-  (``TodoBoardTenancyMiddleware``) answers 404 with an ``{"error", "hint"}``
+  (``CardsBoardTenancyMiddleware``) answers 404 with an ``{"error", "hint"}``
   payload whose error starts with "No active project" → the board renders a
   "No active project" panel linking the hint.
 - **anything else**: the loud red error stays, now carrying the server's

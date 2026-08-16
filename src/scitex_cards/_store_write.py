@@ -165,10 +165,26 @@ def store_generation(path: str | Path) -> str:
     import json
 
     from ._db import resolve_db_path
+    from ._store_target import resolve_store_target
+    from ._store_url import is_postgres_url
 
-    db = Path(resolve_db_path(None)).expanduser()
-    if not db.exists():
-        return "absent"
+    # THE EXISTENCE GATE IS A *FILE* GATE, AND A SERVER STORE HAS NO FILE.
+    # ``resolve_db_path`` REFUSES a DSN rather than coercing it — coercion would
+    # manufacture an empty SQLite store at a mangled path and serve 0 cards
+    # while reporting healthy — so calling it unconditionally raised on every
+    # PostgreSQL deployment. That took the board down with it, because
+    # ``get_board`` computes this generation on its read path.
+    #
+    # A server's existence is established by CONNECTING, which ``load_doc``
+    # does below and which raises when it cannot. So on a server there is
+    # nothing to pre-check and we fall straight through to the hash. Note the
+    # asymmetry is deliberate: "absent" disables the optimistic-concurrency
+    # guard, so it is reserved for the one case that genuinely means "no store
+    # yet" — a missing local file.
+    if not is_postgres_url(resolve_store_target(None)):
+        db = Path(resolve_db_path(None)).expanduser()
+        if not db.exists():
+            return "absent"
     doc = load_doc(path, validate=False)
     return hashlib.sha256(
         json.dumps(doc, sort_keys=True, default=str).encode("utf-8")
@@ -247,6 +263,7 @@ def _save_doc_unlocked(
     *,
     tasks: list[dict] | None = None,
     deleted_ids: list[str] | None = None,
+    touched_ids: list[str] | None = None,
     allow_shrink: bool = False,
 ) -> None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
@@ -303,7 +320,13 @@ def _save_doc_unlocked(
     # of the board — which is the exact defect this cutover exists to remove.
     from ._store_backend import write_doc_to_db
 
-    write_doc_to_db(doc, path, deleted_ids=deleted_ids, allow_shrink=allow_shrink)
+    write_doc_to_db(
+        doc,
+        path,
+        deleted_ids=deleted_ids,
+        touched_ids=touched_ids,
+        allow_shrink=allow_shrink,
+    )
 
 
 def _git_autocommit_store(path: Path) -> None:
@@ -317,7 +340,7 @@ def _git_autocommit_store(path: Path) -> None:
 
     Best-effort: never raises. Skips entirely if git isn't installed.
 
-    Opt-out: set ``SCITEX_TODO_STORE_GIT_AUTOCOMMIT`` to a falsy value
+    Opt-out: set ``SCITEX_CARDS_STORE_GIT_AUTOCOMMIT`` to a falsy value
     (``0``/``false``/``no``/``off``/empty) to skip the per-save commit
     entirely. This is the POST-MORTEM recovery layer, NOT the live
     crash-safety (that is the fcntl lock + atomic write in the caller), so
@@ -326,7 +349,7 @@ def _git_autocommit_store(path: Path) -> None:
     write path deterministic + fast under test (no git subprocess). Default
     is ON (unset ⇒ enabled).
     """
-    if os.environ.get("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "1").strip().lower() in (
+    if os.environ.get("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "1").strip().lower() in (
         "0",
         "false",
         "no",
@@ -369,8 +392,8 @@ def _git_autocommit_store(path: Path) -> None:
         )
         for cfg in (
             ("gc.pruneExpire", "never"),
-            ("user.name", "scitex-todo"),
-            ("user.email", "scitex-todo@localhost"),
+            ("user.name", "scitex-cards"),
+            ("user.email", "scitex-cards@localhost"),
         ):
             subprocess.run(
                 ["git", "-C", str(store_dir), "config", *cfg],

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo leaf provider for the ``scitex_dev.jobs`` federation.
+"""scitex-cards leaf provider for the ``scitex_dev.jobs`` federation.
 
-Declares scitex-todo's own pieces of the ecosystem-aggregator
+Declares scitex-cards' own pieces of the ecosystem-aggregator
 contract (lead a2a ``c2908456`` / ``d35f5ae6``, 2026-06-11): one
 ``scitex_dev.jobs`` entry point per leaf package, each returning the
 ``list[JobSpec]`` the leaf wants registered. scitex-dev's
 ``ecosystem up`` then installs / enables them as one set with no
 per-package systemctl ceremony.
 
-scitex-todo's only piece today is the **board** web dashboard — the
+scitex-cards' only piece today is the **board** web dashboard — the
 live ``http://127.0.0.1:8051/`` view of the shared task store that
 every sac agent reads from and writes to. The board is the operator's
 primary daily surface;
@@ -22,10 +22,10 @@ Wiring (in ``pyproject.toml``)
 ::
 
     [project.entry-points."scitex_dev.jobs"]
-    scitex-todo = "scitex_cards._jobs_provider:provide_jobs"
+    scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 
 After install, ``scitex-dev ecosystem up --yes`` materialises
-``~/.config/systemd/user/scitex-todo.dashboard.service`` and brings
+``~/.config/systemd/user/scitex-cards-dashboard.service`` and brings
 it up. The master ``scitex-dev-ecosystem-reconcile.service``
 (installed via ``ecosystem up --install-master-unit``) keeps it
 reconciled on every boot.
@@ -37,7 +37,7 @@ from scitex_dev.jobs import JobSpec
 
 
 def provide_jobs() -> list[JobSpec]:
-    """Return the JobSpec list scitex-todo contributes to the federation.
+    """Return the JobSpec list scitex-cards contributes to the federation.
 
     One entry: the board dashboard.
 
@@ -61,19 +61,35 @@ def provide_jobs() -> list[JobSpec]:
     * ``schedule=""`` — required to be empty for ``kind="service"``;
       ``JobSpec.validate()`` raises if we forget. (Services are NOT
       scheduled — they run continuously.)
-    * ``name="scitex-todo.dashboard"`` — package-prefixed so the unit
-      file becomes ``scitex-todo.dashboard.service`` and the operator
-      can grep ``systemctl --user list-units 'scitex-todo.*'`` to see
-      every scitex-todo-owned unit at a glance.
+    * ``name="scitex-cards-dashboard"`` — package-prefixed so the unit
+      file becomes ``scitex-cards-dashboard.service`` and the operator
+      can grep ``systemctl --user list-units 'scitex-cards.*'`` to see
+      every scitex-cards-owned unit at a glance.
+
+    These names carried the old ``scitex-cards.`` prefix until 2026-08-15.
+    Changing them was safe to do outright, rather than as a staged unit
+    migration, for a measured reason: NOTHING MATERIALISES THEM TODAY.
+    ``ecosystem up`` runs one supervisor that spawns children — it does
+    not write a unit file per JobSpec — and on both reachable hosts
+    (scitex-compute-04, scitex-nas-03) no unit file matched
+    ``scitex-cards*`` and no unit file's TEXT contained ``scitex-cards``.
+    So there were no old units left running under the old names, which
+    is the failure this would otherwise have caused.
+
+    If that premise ever stops holding — if some host does grow real
+    per-JobSpec units — a future rename here is a MIGRATION, not an
+    edit: the old units must be stopped AND disabled in the same change,
+    or the fleet runs both. The collision would at least be loud (two
+    dashboards cannot both bind 8051), not silent.
     """
     return [
         JobSpec(
-            name="scitex-todo.dashboard",
+            name="scitex-cards-dashboard",
             kind="service",
             schedule="",
-            command="scitex-todo board start --port 8051",
+            command="scitex-cards board start --port 8051",
             description=(
-                "scitex-todo board start — read-only live view of the "
+                "scitex-cards board start — read-only live view of the "
                 "shared task store at http://127.0.0.1:8051/"
             ),
             on_boot_sec="15s",
@@ -83,24 +99,24 @@ def provide_jobs() -> list[JobSpec]:
         # P3b + P3d (lead-approved 2026-06-12) — wake-watcher. The push
         # side of the self-consuming board loop: polls the task store,
         # detects new/commented/changed tasks, POSTs /v1/turn to the
-        # owning agent's a2a port. Pairs with `scitex-todo next --mine`
+        # owning agent's a2a port. Pairs with `scitex-cards next --mine`
         # (pull side) + the agent self-consumption loop sub-skill (32).
         # kind=service + Restart=on-failure: an absent watcher means
         # operator drops a request and nobody wakes up — that's exactly
         # the failure mode the loop exists to prevent, so a crash MUST
         # be restarted automatically.
         JobSpec(
-            name="scitex-todo.wake-watcher",
+            name="scitex-cards-wake-watcher",
             kind="service",
             schedule="",
             # --interval 30 (was 2): a 2s interval re-parsed the ~9 MB store
             # faster than the tick finished on a slow host and death-spiraled
-            # the fleet on 2026-07-08 (incident-todo-wake-watcher-interval2-
+            # the fleet on 2026-07-08 (incident-cards-wake-watcher-interval2-
             # spiral). The `watch` command additionally CLAMPS anything below
             # a 10s hard floor, so this value can never foot-gun again.
-            command="scitex-todo watch --push --interval 30",
+            command="scitex-cards watch --push --interval 30",
             description=(
-                "scitex-todo wake-watcher — push side of the "
+                "scitex-cards wake-watcher — push side of the "
                 "self-consuming board loop. POSTs /v1/turn to the "
                 "owning agent on new/commented/changed tasks."
             ),
@@ -112,26 +128,26 @@ def provide_jobs() -> list[JobSpec]:
         # `19d575415ae6422abdff9224b6a0c8de` + `9e710ab074ef4bf3a615be41793e0c51`,
         # 2026-06-12). 10-min structural-nudge cron — every 10 min, push
         # a per-agent body summary (RUNNABLE-first list + recent done)
-        # via scitex-todo's self-contained HTTP push wire (`_push.deliver`),
+        # via scitex-cards' self-contained HTTP push wire (`_push.deliver`),
         # plus a separate quiet-nudge if any open in_progress task has
-        # gone untouched for > SCITEX_TODO_NUDGE_QUIET_MIN minutes
+        # gone untouched for > SCITEX_CARDS_NUDGE_QUIET_MIN minutes
         # (default 10). Structural feedback loop: silence + in_progress
         # → escalation, no manual lead intervention required.
         #
         # The --nudge-quiet path ALSO runs the stale-active sweep
         # (_stale_active_nudge.sweep_and_nudge): per-OWNER nudge for
-        # in_progress/blocked cards untouched > SCITEX_TODO_STALE_ACTIVE_HOURS
+        # in_progress/blocked cards untouched > SCITEX_CARDS_STALE_ACTIVE_HOURS
         # (default 2 h) over the same push wire. Replaces the manual
         # card-freshness campaign; no new cron — it rides this */10 one.
         JobSpec(
-            name="scitex-todo.notify",
+            name="scitex-cards-notify",
             # `cron` (the JobSpec valid set is `cron|service|timer`).
             # 5-field cron schedule (min hour dom mon dow): every 10 min.
             kind="cron",
             schedule="*/10 * * * *",
-            command=("scitex-todo print-stats --by agent --notify --nudge-quiet"),
+            command=("scitex-cards print-stats --by agent --notify --nudge-quiet"),
             description=(
-                "scitex-todo throughput pulse — pushes per-agent open "
+                "scitex-cards throughput pulse — pushes per-agent open "
                 "list + quiet-nudge every 10 min. Pairs with the "
                 "operator's TG12608 nudge button + TG12618 channel "
                 "vision: the cron is the STRUCTURAL feedback path; "
@@ -147,25 +163,25 @@ def provide_jobs() -> list[JobSpec]:
         # diff against ci-state.json, log per-repo transitions, update
         # the cache. No bus emission, no a2a sends — SAC owns the
         # delivery side via its OWN independent poller. Two pollers,
-        # different cadences, each STANDALONE: todo down → sac still
-        # delivers; sac down → todo still records.
+        # different cadences, each STANDALONE: card down → sac still
+        # delivers; sac down → card still records.
         JobSpec(
-            # NOTE: the JobSpec NAME is a registry identity (systemd
-            # unit / dedupe key), so it keeps its historical spelling;
-            # the COMMAND uses the canonical verb (`watch-ci`, renamed
-            # from `ci-watch` in the slice-6b verb-rename pilot).
-            name="scitex-todo.ci-watch",
+            # NOTE: the NAME says `ci-watch` while the COMMAND says
+            # `watch-ci`. Not a typo — the verb was renamed in the
+            # slice-6b pilot and the unit identity was not, so the two
+            # are allowed to disagree here and only here.
+            name="scitex-cards-ci-watch",
             kind="cron",
             # 5-field cron: every 5 min. Matches the cadence dev
             # locked in the contract; SAC's independent poller can
             # run slower (10 / 15 / 30) without breaking parity since
             # the dedupe key (head_sha, overall) is content-keyed.
             schedule="*/5 * * * *",
-            command="scitex-todo watch-ci --once",
+            command="scitex-cards watch-ci --once",
             description=(
-                "scitex-todo watch-ci — record-only CI poller. Polls "
+                "scitex-cards watch-ci — record-only CI poller. Polls "
                 "the configured fleet repos every 5 min, diffs vs "
-                "~/.scitex/todo/ci-state.json, logs per-repo "
+                "~/.scitex/cards/ci-state.json, logs per-repo "
                 "transitions (newly-green / newly-red / still-pending). "
                 "Operator decoupled-pollers lane (no SAC dependency)."
             ),
@@ -211,7 +227,7 @@ def provide_jobs() -> list[JobSpec]:
         #
         # Minute 7: off the */5, */10 and */15 stampedes above.
         JobSpec(
-            name="scitex-cards.snapshot",
+            name="scitex-cards-snapshot",
             kind="cron",
             schedule="7 * * * *",
             # --push: the rail's job is the OFF-SITE copy (private repo
@@ -228,13 +244,13 @@ def provide_jobs() -> list[JobSpec]:
             timeout_sec=300,
         ),
         JobSpec(
-            name="scitex-todo.reconcile-merged-prs",
+            name="scitex-cards-reconcile-merged-prs",
             kind="cron",
             # 5-field cron (min hour dom mon dow): every 15 min.
             schedule="*/15 * * * *",
-            command="scitex-todo reconcile-merged-prs --apply",
+            command="scitex-cards reconcile-merged-prs --apply",
             description=(
-                "scitex-todo reconcile-merged-prs — periodic card-freshness "
+                "scitex-cards reconcile-merged-prs — periodic card-freshness "
                 "automation. Every 15 min, auto-close cards whose linked PR "
                 "(pr_url) has merged so nobody hand-updates the board. "
                 "Fail-soft: unknown merge-state is skipped, never closed."

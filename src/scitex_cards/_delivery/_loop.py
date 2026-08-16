@@ -3,7 +3,7 @@
 """The delivery loop — read pending notifications, hand them to channels.
 
 :func:`deliver_pending` is slice 1's one-shot delivery pass (the CLI
-``scitex-todo deliver`` command + a future cron/loop runner call it). It is
+``scitex-cards deliver`` command + a future cron/loop runner call it). It is
 the orchestrator that wires the parts together while honouring the hard
 separation of concerns:
 
@@ -16,6 +16,12 @@ separation of concerns:
   gate (quiet-hours/consent); a False result is a NON-terminal ``skipped``.
 * Fail-soft per item: a channel that RAISES is caught, recorded ``failed``
   (retryable), surfaced to stderr, and never stops the other items.
+* THREE-VALUED ``pending``: the pass reports how many notifications it found
+  waiting — and reports ``None`` (UNKNOWN) the moment any recipient's inbox
+  could not be READ. "nothing is pending" and "I could not tell what is
+  pending" are different states; collapsing the second into the first is what
+  let a day-long outage print a healthy-looking ``sent=0``. Every swallowed
+  exception is also returned in ``faults`` so the caller can COUNT it.
 """
 
 from __future__ import annotations
@@ -29,11 +35,12 @@ from ._channel import DeliveryChannel, DeliveryResult, Status
 from ._ledger import MAX_ATTEMPTS, Ledger
 from ._recipients import Recipient, load_recipients, should_deliver_now
 from ._registry import discover_channels
+from ._tick import fault_text
 
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
-    print(f"[scitex-todo delivery] WARNING: {msg}", file=sys.stderr)
+    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
 
 
 def _resolve_channels(
@@ -166,12 +173,18 @@ def deliver_pending(
     -------
     dict
         ``{"sent": n, "failed": n, "skipped": n, "failed_terminal": n,
-        "outcomes": [...]}`` where each outcome is
-        ``{recipient, notification_id, channel, outcome}`` for every item that
-        produced a ledger write this run (``noop`` items — already-sent /
-        not-yet-retry-due / already-terminal — are NOT listed).
+        "pending": n | None, "faults": [...], "outcomes": [...]}`` where each
+        outcome is ``{recipient, notification_id, channel, outcome}`` for every
+        item that produced a ledger write this run (``noop`` items —
+        already-sent / not-yet-retry-due / already-terminal — are NOT listed).
         ``failed_terminal`` counts items whose retry budget was exhausted THIS
         run (a comm-miss surfaced loudly to stderr).
+
+        ``pending`` is the number of notifications found across every
+        recipient's inbox, or ``None`` when at least one inbox could not be
+        READ — UNKNOWN, which must never be reported as zero. ``faults`` lists
+        every exception this pass swallowed, so a caller can count a failure it
+        would otherwise only find in a stderr line nobody greps.
     """
     now = now or _dt.datetime.now(_dt.timezone.utc)
     resolved_channels = _resolve_channels(channels)
@@ -180,6 +193,8 @@ def deliver_pending(
 
     counts = {"sent": 0, "failed": 0, "skipped": 0, "failed_terminal": 0}
     outcomes: list[dict] = []
+    faults: list[str] = []
+    pending = 0
 
     for recipient in recipients:
         # READ-ONLY: full history, never advance the user's seen cursor.
@@ -195,8 +210,16 @@ def deliver_pending(
                 f"failed to read inbox for {recipient.user!r}: "
                 f"{type(exc).__name__}: {exc}; skipping recipient"
             )
+            faults.append(fault_text(exc, where=f"inbox_read[{recipient.user}]"))
+            # We do not know what this recipient had waiting, so the pass no
+            # longer knows what is pending AT ALL. Poisoning the total is the
+            # point: a partial count presented as a total is a lie with a
+            # number on it.
+            pending = None
             continue
 
+        if pending is not None:
+            pending += len(notes)
         for note in notes:
             note_id = note.get("id")
             if not note_id:
@@ -231,7 +254,7 @@ def deliver_pending(
                     }
                 )
 
-    return {**counts, "outcomes": outcomes}
+    return {**counts, "pending": pending, "faults": faults, "outcomes": outcomes}
 
 
 __all__ = ["deliver_pending"]

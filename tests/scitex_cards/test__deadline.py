@@ -98,7 +98,9 @@ class TestScheduledFieldRoundTrip:
 
 class TestDeadlineEmptyStringRejected:
     def test_raises_on_empty_deadline_string(self):
-        # Arrange / Act / Assert — the read-time gate rejects '' as invalid.
+        # Arrange
+        # Act
+        # Assert — the read-time gate rejects '' as invalid.
         # (The DB's TEXT deadline column would round-trip '' unpredictably, so
         # exercise the exact validator ``load_tasks`` runs, with the exact
         # malformed input.)
@@ -112,7 +114,9 @@ class TestDeadlineEmptyStringRejected:
 
 class TestDeadlineNonStringRejected:
     def test_raises_on_int(self):
-        # Arrange / Act / Assert — a non-string deadline is invalid. Seeding an
+        # Arrange
+        # Act
+        # Assert — a non-string deadline is invalid. Seeding an
         # int into the TEXT column would coerce it to "20260615" (changing the
         # message to "unparseable"); assert the validator against the real int.
         with pytest.raises(TaskValidationError, match="invalid deadline"):
@@ -132,7 +136,9 @@ class TestDeadlineNonStringRejected:
 
 class TestDeadlineUnparseableRejected:
     def test_raises_on_garbage(self):
-        # Arrange / Act / Assert
+        # Arrange
+        # Act
+        # Assert
         with pytest.raises(TaskValidationError, match="unparseable deadline"):
             _validate_tasks(
                 [
@@ -150,7 +156,9 @@ class TestDeadlineUnparseableRejected:
 
 class TestScheduledUnparseableRejected:
     def test_raises_on_garbage(self):
-        # Arrange / Act / Assert
+        # Arrange
+        # Act
+        # Assert
         with pytest.raises(TaskValidationError, match="unparseable scheduled"):
             _validate_tasks(
                 [
@@ -168,7 +176,9 @@ class TestScheduledUnparseableRejected:
 
 class TestDeadlineBeforeScheduledRejected:
     def test_raises_when_deadline_precedes_scheduled(self):
-        # Arrange / Act / Assert
+        # Arrange
+        # Act
+        # Assert
         with pytest.raises(TaskValidationError, match="before scheduled"):
             _validate_tasks(
                 [

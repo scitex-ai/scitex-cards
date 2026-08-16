@@ -41,7 +41,7 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
         examples=(
             (
                 "{prog} update my-task --status in_progress --priority 1 "
-                '--agent "$SCITEX_TODO_AGENT_ID"',
+                '--agent "$SCITEX_CARDS_AGENT_ID"',
                 "Flip status + reprioritize.",
             ),
         ),

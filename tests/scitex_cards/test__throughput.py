@@ -380,7 +380,7 @@ class TestWipIsNotBacklog:
         store.write_text("tasks: []\n")
         # add_task's post-write card-event dispatcher resolves the DEFAULT
         # store, not the one passed in — so without this the suite reads and
-        # writes the operator's live ~/.scitex/todo/tasks.yaml.
+        # writes the operator's live ~/.scitex/cards/tasks.yaml.
         for i in range(4):
             with contextlib.suppress(TaskValidationError):
                 add_task(
@@ -534,7 +534,7 @@ class TestNotifyBody:
         # offset-aware datetimes` inside build_notify_body. Before the fix
         # this single naive row killed the entire --notify / --nudge-quiet
         # cron loop on the first hit, so no POSTs ever fired (proj-scitex-
-        # todo P3a(c) pilot, 2026-06-13).
+        # card P3a(c) pilot, 2026-06-13).
         # Arrange
         now = _utc(2026, 6, 13, 0, 0, 0)
         naive_ts = "2026-06-08T00:42:30"  # NO 'Z', NO offset — naive.

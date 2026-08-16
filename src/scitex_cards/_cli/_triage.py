@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo triage`` — the backlog-consumption payload.
+"""CLI verb ``scitex-cards triage`` — the backlog-consumption payload.
 
 READ-ONLY. Draws an owner's pick-for-action sample (recency-weighted, see
 :mod:`scitex_cards._backlog_triage`) plus their expired set, and prints it.
@@ -8,8 +8,8 @@ Mutation stays with the existing verbs (``update``, ``close``, ``comment``):
 the consumer decides, this verb only puts the decision in front of them.
 
 Primary consumer: a short-lived twin agent (sac concept, operator 2026-07-10)
-spawned from its parent with the PARENT's ``SCITEX_TODO_AGENT_ID``, which runs
-``scitex-todo triage --mine --json``, decides each drawn card (start it, name
+spawned from its parent with the PARENT's ``SCITEX_CARDS_AGENT_ID``, which runs
+``scitex-cards triage --mine --json``, decides each drawn card (start it, name
 its blocker, cancel it, or keep it), and exits. The parent never stops.
 """
 
@@ -46,7 +46,7 @@ def register(main: click.Group) -> None:
         "Keep-deferred does NOT reset a card's age; the clock reads\n"
         "deferred_at, stamped once on entry into the backlog.\n\n"
         "Example:\n"
-        "  scitex-todo triage --mine --json"
+        "  scitex-cards triage --mine --json"
     ),
 )
 @click.option(
@@ -58,23 +58,23 @@ def register(main: click.Group) -> None:
 @click.option(
     "--mine",
     is_flag=True,
-    help="Same as --agent $SCITEX_TODO_AGENT_ID.",
+    help="Same as --agent $SCITEX_CARDS_AGENT_ID.",
 )
 @click.option(
     "--n",
     "sample_n",
     type=int,
     default=None,
-    help="Sample size (default 10; env SCITEX_TODO_TRIAGE_SAMPLE).",
+    help="Sample size (default 10; env SCITEX_CARDS_TRIAGE_SAMPLE).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def triage_cmd(agent, mine, sample_n, as_json):
     if mine and agent:
         raise click.UsageError("--mine and --agent are mutually exclusive.")
     if mine:
-        agent = (os.environ.get("SCITEX_TODO_AGENT_ID") or "").strip()
+        agent = (os.environ.get("SCITEX_CARDS_AGENT_ID") or "").strip()
         if not agent:
-            raise click.UsageError("--mine requires SCITEX_TODO_AGENT_ID to be set.")
+            raise click.UsageError("--mine requires SCITEX_CARDS_AGENT_ID to be set.")
 
     resolved = resolve_tasks_path(None)
     tasks = load_tasks(resolved)

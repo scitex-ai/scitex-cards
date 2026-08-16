@@ -6,7 +6,7 @@ Regression cover for the 2026-07-12 finding: ``detect_stale_active`` keyed on
 STATUS alone (``{in_progress, blocked}``) and ignored the BLOCKER, so every
 blocked card nudged its owner every 2 h — including cards blocked on a
 dependency, a compute job, another agent, or an operator decision. All 8 of
-scitex-todo's own "stale" cards were externally blocked; not one was
+scitex-cards's own "stale" cards were externally blocked; not one was
 actionable. 12 identical nudges a day about work you are powerless to advance
 is not a signal, it is training to ignore the channel — which is precisely how
 the REAL nudge gets missed.
@@ -22,7 +22,7 @@ import datetime as _dt
 
 import pytest
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     EXTERNAL_BLOCKERS,
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -193,13 +193,21 @@ def test_lenient_sweep_reports_the_externally_blocked_card():
 
 
 def test_lenient_sweep_holds_fire_inside_its_threshold():
-    """Blocked an hour ago is not yet worth a "has it cleared?" ping."""
+    """Blocked an hour ago is not yet worth a "has it cleared?" ping.
+
+    The contract is unchanged; the FIELD carrying it moved. This sweep now
+    measures how long the ``(status, blocker)`` pair has stood (``blocked_at``)
+    rather than when the card was last touched, because a comment touches a card
+    without clearing its blocker (2026-07-30). Expressing "recently blocked" as
+    a recent ``last_activity`` was the conflation being fixed, so the fixture
+    states it directly instead.
+    """
     # Arrange
     fresh = _card(
         "just-blocked",
         "blocked",
         "dependency",
-        last_activity="2026-07-12T11:30:00Z",  # 30 min before NOW
+        blocked_at="2026-07-12T11:30:00Z",  # pair set 30 min before NOW
     )
     # Act
     got = detect_blocked_external([fresh], now=NOW)
@@ -385,7 +393,7 @@ def test_line_composers_are_still_importable_from_the_original_module():
     """The split moved them to ``_stale_active_lines``; the re-export must hold
     so notifyd / the CLI / out-of-tree importers keep working unchanged."""
     # Arrange
-    from scitex_cards._stale_active import (  # noqa: F401
+    from scitex_cards._stale.active import (  # noqa: F401
         NUDGE_ID_CAP,
         pending_backlog_nudge_line,
     )

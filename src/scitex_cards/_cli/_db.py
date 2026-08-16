@@ -52,8 +52,20 @@ def _live_task_fingerprint(db_path: str | None) -> tuple[int, str | None]:
 
     conn = open_db(db_path)
     try:
-        row = conn.execute("SELECT COUNT(*), MAX(last_activity) FROM tasks").fetchone()
-        return int(row[0]), row[1]
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(last_activity) AS newest FROM tasks"
+        ).fetchone()
+        # POSITIONAL INDEXING IS NOT PORTABLE HERE. sqlite3.Row supports both
+        # row[0] and row["n"]; the PostgreSQL wrapper yields a DICT-LIKE row
+        # where row[0] raises `KeyError: 0`. Measured 2026-08-02 — this line
+        # was the SECOND thing to break the off-site snapshot on Postgres,
+        # surfacing only once the resolve-path fix let execution reach it.
+        #
+        # A KeyError here is also easy to misread as "the tasks table is
+        # missing", which is why the columns are named and read BY NAME: the
+        # spelling that works on both backends, and the one whose failure says
+        # what it means.
+        return int(row["n"]), row["newest"]
     finally:
         conn.close()
 
@@ -214,7 +226,7 @@ _DB_OPTION = click.option(
     "--db",
     "db_path",
     default=None,
-    help="Explicit DB path (default: $SCITEX_CARDS_DB, else ~/.scitex/cards/cards.db).",
+    help="Explicit DB path (default: $SCITEX_CARDS_DB, else the configured store).",
 )
 
 
@@ -222,10 +234,12 @@ _DB_OPTION = click.option(
     "path",
     help=(
         "Print the resolved DB path.\n\n"
-        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_TODO_DB "
-        "(deprecated, warned) > local_state.user_path('cards','cards.db'). "
-        "Delegates the user tier to the ecosystem resolver (never a "
-        "re-rolled project/user precedence).\n\n"
+        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_CARDS_DB "
+        "(deprecated, warned) > the `store.target` key in the config file. "
+        "There is NO tier below that: it used to fall back to "
+        "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "
+        "unconfigured store REFUSES instead of naming a SQLite file nobody "
+        "chose.\n\n"
         "Example:\n"
         "  scitex-cards db path"
     ),
@@ -246,8 +260,8 @@ def db_path_cmd(db_path: str | None) -> None:
         "every expected table (with row counts), and PRAGMA quick_check. "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
-        "  scitex-todo db verify\n"
-        "  scitex-todo db verify --json"
+        "  scitex-cards db verify\n"
+        "  scitex-cards db verify --json"
     ),
 )
 @_DB_OPTION
@@ -262,7 +276,7 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-todo db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards db verify: {status} — {report['path']}")
     if not report["exists"]:
         click.echo("[FAIL] db does not exist yet (run `init-store`)")
         raise SystemExit(1)
@@ -384,13 +398,28 @@ def db_snapshot_cmd(
     import subprocess
     from pathlib import Path
 
-    from .._db import resolve_db_path
     from .._db_export import export_json
+    from .._paths import resolve_tasks_path
 
+    # THE SNAPSHOT DIR IS A LOCAL STATE DIR, NOT THE STORE'S IDENTITY.
+    #
+    # This used to be `resolve_db_path(db_path).parent / "snapshots"`, which
+    # derives a filesystem location from the STORE TARGET. That is fine while
+    # the target is a file and raises outright once it is a DSN — measured
+    # 2026-08-02, and it took the off-site backup down for ~31 hours: every
+    # hourly run died on `$SCITEX_CARDS_DB names a PostgreSQL server, not a
+    # file path`, with the traceback going to a log file nobody reads.
+    #
+    # The guard was right; the caller was wrong. Store identity (which may be a
+    # DSN) and local state dir (always a real directory) are INDEPENDENT AXES,
+    # and a backup needs the second one. `resolve_tasks_path` is the local
+    # axis: it returns the real path for a file store and the user root for a
+    # DSN, so the snapshot lands beside the store when there is one and in
+    # ~/.scitex/cards otherwise. File-store behaviour is unchanged.
     root = (
         Path(snap_dir).expanduser()
         if snap_dir
-        else resolve_db_path(db_path).parent / "snapshots"
+        else resolve_tasks_path(db_path).parent / "snapshots"
     )
     root.mkdir(parents=True, exist_ok=True)
 

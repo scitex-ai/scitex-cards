@@ -70,8 +70,8 @@ STALE_TICKS = 3.0
 MIN_STALE_SECONDS = 60.0
 
 _START_HINT = (
-    "notifyd is not running — start it: `scitex-todo notifyd` (foreground), "
-    "or install the systemd user unit: `scitex-todo notifyd install-unit`"
+    "notifyd is not running — start it: `scitex-cards notifyd` (foreground), "
+    "or install the systemd user unit: `scitex-cards notifyd install-unit`"
 )
 
 _LEGACY_HINT = (
@@ -281,9 +281,9 @@ def _by_freshness(
         ),
         "hint": (
             "notifyd stopped ticking — on the host that runs it: "
-            "`systemctl --user status scitex-todo-notifyd` and "
-            "`systemctl --user restart scitex-todo-notifyd` "
-            "(or run `scitex-todo notifyd` in the foreground)"
+            "`systemctl --user status scitex-cards-notifyd` and "
+            "`systemctl --user restart scitex-cards-notifyd` "
+            "(or run `scitex-cards notifyd` in the foreground)"
         ),
     }
 

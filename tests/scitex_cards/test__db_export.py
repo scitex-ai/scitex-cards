@@ -292,7 +292,8 @@ def _run_snapshot(tmp_path):
 
 
 def test_snapshot_exits_clean(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     result, _snap = _run_snapshot(tmp_path)
 
     # Assert
@@ -300,7 +301,8 @@ def test_snapshot_exits_clean(tmp_path):
 
 
 def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     _result, snap = _run_snapshot(tmp_path)
 
     # Assert — read the export back; it is the seeded doc.
@@ -308,7 +310,8 @@ def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
 
 
 def test_snapshot_commits_the_export_into_a_git_repo(tmp_path):
-    # Arrange / Act
+    # Arrange
+    # Act
     _result, snap = _run_snapshot(tmp_path)
 
     # Assert — the commit ran; the dir is a repo.
@@ -447,3 +450,155 @@ def test_snapshot_push_without_remote_explains_why_it_was_local_only(
     # Assert — the reason is said out loud, not left to guesswork.
     report = _json.loads(result.output.strip().splitlines()[-1])
     assert "no remote" in report["push_detail"]
+
+
+# === A payload-less NOTIFICATION is repaired, not left to fail the read =====
+#
+# Measured 2026-08-11: the shared Postgres inbox wrote notifications with no
+# record_json, and ONE such row made every card write on that database raise —
+# add_task, update_task, comment_task — because the live read path assembles
+# the whole document through `_record`. The card path never reads inboxes at
+# all, so the blast radius was entirely gratuitous.
+#
+# Refusing was also the most destructive option available: one of the three
+# live rows was an operator DM that had never been delivered, so an operator
+# clearing the offending row to unblock the fleet would have destroyed it.
+
+
+def _strip_notification_payload(seeded, **columns) -> None:
+    """Reproduce the live fault: a notification row with no verbatim payload."""
+    conn = connect(seeded["db"])
+    conn.execute("UPDATE notifications SET record_json = NULL")
+    for name, value in columns.items():
+        conn.execute(f"UPDATE notifications SET {name} = ?", (value,))
+    conn.commit()
+    conn.close()
+
+
+def test_export_repairs_a_payload_less_notification_instead_of_refusing(seeded):
+    # Arrange
+    _strip_notification_payload(seeded)
+
+    # Act — the whole database must stay readable.
+    doc, _ = export_doc(seeded["db"])
+
+    # Assert
+    (record,) = doc["inboxes"]["u_000000000001"]
+    assert record["id"] == "n_000000000001"
+
+
+def test_a_repaired_notification_keeps_the_columns_it_was_written_with(seeded):
+    # Arrange
+    _strip_notification_payload(seeded)
+
+    # Act
+    doc, _ = export_doc(seeded["db"])
+
+    # Assert — rebuilt from the row's own columns, exactly.
+    (record,) = doc["inboxes"]["u_000000000001"]
+    assert record["event_type"] == "commented"
+
+
+def test_a_repaired_notification_reports_seen_as_a_bool(seeded):
+    # Arrange
+    _strip_notification_payload(seeded)
+
+    # Act
+    doc, _ = export_doc(seeded["db"])
+
+    # Assert — the column is an INTEGER; the record contract is a bool.
+    (record,) = doc["inboxes"]["u_000000000001"]
+    assert record["seen"] is False
+
+
+def test_repairing_a_row_says_so_out_loud(seeded, caplog):
+    # Arrange
+    _strip_notification_payload(seeded)
+
+    # Act
+    with caplog.at_level("WARNING"):
+        export_doc(seeded["db"])
+
+    # Assert — a silent repair would hide the writer defect that caused it.
+    assert "record_json" in caplog.text
+
+
+def test_a_repaired_row_is_not_modified_on_disk(seeded):
+    # Arrange
+    _strip_notification_payload(seeded)
+
+    # Act — a read must not write.
+    export_doc(seeded["db"])
+    conn = connect(seeded["db"])
+    stored = conn.execute("SELECT record_json FROM notifications").fetchone()[0]
+    conn.close()
+
+    # Assert — the repair is in-memory; nothing on disk is rewritten.
+    assert stored is None
+
+
+def test_an_unrecoverable_notification_is_still_refused(seeded):
+    # Arrange — no event_type means no record to recover.
+    _strip_notification_payload(seeded, event_type="")
+
+    # Act
+    # Assert
+    with pytest.raises(ExportRefused):
+        export_doc(seeded["db"])
+
+
+def _refusal_text(seeded) -> str:
+    """The message an unrecoverable payload-less notification produces."""
+    _strip_notification_payload(seeded, event_type="")
+    with pytest.raises(ExportRefused) as excinfo:
+        export_doc(seeded["db"])
+    return str(excinfo.value)
+
+
+def test_the_refusal_does_not_assert_a_legacy_schema(seeded):
+    # Arrange
+    # Act
+    text = _refusal_text(seeded)
+
+    # Assert — the old text claimed "this DB predates schema v3" about rows
+    # written minutes earlier by current code, which sent three separate
+    # agents hunting a migration problem that did not exist.
+    assert "predates schema v3" not in text
+
+
+def test_the_refusal_dates_the_row_so_the_two_causes_can_be_told_apart(seeded):
+    # Arrange
+    # Act
+    text = _refusal_text(seeded)
+
+    # Assert — WHEN it was written is the fact that separates an old row from
+    # one a current writer broke, and they need opposite responses.
+    assert "2026-07-16T00:00:00Z" in text
+
+
+def test_the_refusal_names_the_writer_defect_as_a_possible_cause(seeded):
+    # Arrange
+    # Act
+    text = _refusal_text(seeded)
+
+    # Assert
+    assert "WRITER defect" in text
+
+
+def test_the_refusal_says_nothing_was_deleted(seeded):
+    # Arrange
+    # Act
+    text = _refusal_text(seeded)
+
+    # Assert — the first instinct on reading a refusal is to clear the row,
+    # and one of the live rows was an undelivered operator DM.
+    assert "Nothing was deleted" in text
+
+
+def test_the_refusal_says_what_to_do_next(seeded):
+    # Arrange
+    # Act
+    text = _refusal_text(seeded)
+
+    # Assert — an error that names only what broke is half an error.
+    assert "SELECT * FROM notifications" in text

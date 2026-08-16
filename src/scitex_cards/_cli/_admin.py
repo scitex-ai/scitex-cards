@@ -25,7 +25,8 @@ import json
 import click
 
 from .._db import resolve_db_path
-from ._compat import spec_command_kwargs
+from .._store_target import store_label
+from ._compat import spec_command_kwargs, spec_group_kwargs
 
 
 # --------------------------------------------------------------------------- #
@@ -80,7 +81,7 @@ def list_tasks_filtered(
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_db_path(tasks_path)
+    resolved = store_label(tasks_path)
     click.echo(f"# {resolved}  ({len(rows)} tasks)")
     for task in rows:
         sc = task.get("scope") or "-"
@@ -104,7 +105,7 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
     if as_json:
         click.echo(json.dumps(rows))
         return
-    resolved = resolve_db_path(tasks_path)
+    resolved = store_label(tasks_path)
     if not rows:
         click.echo("✓ Nothing is waiting on the operator (0 operator-decision blocks).")
         click.echo(f"# {resolved}")
@@ -157,12 +158,34 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
 def resolve_store_cmd(as_json) -> None:
     """Resolve the store path and print the chain so agents can verify."""
     from .. import _store
+    from .._store_target import StoreTargetNotConfigured
 
-    info = _store.resolve_store(None)
+    # THE VERB THE REFUSAL TELLS YOU TO RUN, so it is the one verb that must not
+    # die on the case it exists to diagnose. Since 2026-08-13 an unconfigured
+    # store raises instead of resolving to ~/.scitex/cards/cards.db, and
+    # `refuse_zero_config_default`'s own message ends "Run `scitex-cards
+    # resolve-store` to see what this process resolves." An operator following
+    # that instruction and getting a traceback reads it as "the store is
+    # broken", which is the 2026-07-31 failure repeated -- back then this verb
+    # crashed on PostgreSQL while `list-tasks` served 2973 cards.
+    #
+    # HANDLED HERE AND NOT IN `_store.resolve_store` ON PURPOSE. The Python and
+    # MCP surfaces SHOULD raise: an absent store raising rather than handing
+    # back an empty board is their stated contract, and an agent needs the
+    # exception, not a dict it might not inspect. A human at a terminal needs
+    # the sentence. Same fact, two audiences.
+    try:
+        info = _store.resolve_store(None)
+    except StoreTargetNotConfigured as exc:
+        raise click.ClickException(str(exc)) from exc
     if as_json:
         click.echo(json.dumps(info))
         return
     click.echo(f"resolved:        {info['resolved']}")
+    click.echo(f"backend:         {info['backend']}")
+    # Printed right under `backend` because `exists` is only meaningful for a
+    # file store; on a server it is None, and a bare "None" with no backend
+    # beside it is the kind of output an operator reads as "broken".
     click.echo(f"exists:          {info['exists']}")
     click.echo(f"explicit:        {info['explicit']}")
     click.echo(f"$SCITEX_CARDS_DB:  {info['db_env']}")
@@ -227,6 +250,16 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
             )
         target = git_root / ".scitex" / "cards" / "cards.db"
     else:
+        # THE SHARED SCOPE NAMES NO PATH, so it inherits whatever the store
+        # resolves to -- and since 2026-08-13 that RAISES when nobody chose
+        # one, instead of quietly meaning ~/.scitex/cards/cards.db. Asking the
+        # guard first turns that into the remedy this verb's user needs; going
+        # straight to `resolve_db_path` would hand them a traceback for the one
+        # question they are already trying to answer. `--project`, one branch
+        # up, states its own path and is deliberately not guarded.
+        from ._store_guard import refuse_unconfigured_store
+
+        refuse_unconfigured_store()
         target = resolve_db_path(None)
 
     if dry_run:
@@ -256,7 +289,7 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
     **spec_command_kwargs(
         summary="Sync the user-scope store across hosts (PHASE-1 STUB).",
         description=(
-            "Phase 2 body: `git -C ~/.scitex/todo pull --rebase "
+            "Phase 2 body: `git -C ~/.scitex/card pull --rebase "
             "--autostash && git push` against an operator-owned remote. "
             "The Phase-1 stub prints the plan and exits 0 (--dry-run is "
             "the default mode) so docs/skills can reference the verb "
@@ -300,7 +333,7 @@ def sync_store_cmd(mode, remote, yes) -> None:
         f"git -C {root} pull --rebase --autostash {remote}",
         f"git -C {root} push {remote}",
     ]
-    click.echo("# scitex-todo sync-store (PHASE-1 STUB)")
+    click.echo("# scitex-cards sync-store (PHASE-1 STUB)")
     click.echo(f"# store dir: {root}")
     click.echo(f"# remote:    {remote}")
     click.echo("# planned commands:")
@@ -314,13 +347,102 @@ def sync_store_cmd(mode, remote, yes) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# store adopt-uuid — bind this database to an identity, ONCE, deliberately     #
+# --------------------------------------------------------------------------- #
+@click.group(
+    "store",
+    **spec_group_kwargs(
+        summary="Store-identity operations on the resolved database.",
+        description=(
+            "Store IDENTITY is a uuid carried in the database, not a path. A "
+            "path is not identity when more than one view can produce it — one "
+            "bind-mounted cards.db has three names here, and the ownership "
+            "guard refused the board its own database for a day because of it.",
+        ),
+    ),
+)
+def store_group() -> None:
+    """Store-identity operations."""
+
+
+@store_group.command(
+    "adopt-uuid",
+    **spec_command_kwargs(
+        summary="Bind the resolved database to a store identity (mints one).",
+        description=(
+            "Writes ONE schema_meta row and prints the identity. It does NOT "
+            "touch store_path (re-stamping that produced an EMPTY board on "
+            "2026-07-28), does NOT touch any card row, and does NOT change "
+            "what any resolver resolves. Idempotent: a database that already "
+            "carries an identity keeps it and that value is printed. "
+            "SEQUENCING MATTERS: stamp the store FIRST, declare the "
+            "expectation ($SCITEX_CARDS_STORE_UUID, or a host-registry entry) "
+            "SECOND. Publishing an expected uuid before the store carries one "
+            "makes every read and write refuse.",
+        ),
+        examples=(
+            ("{prog} store adopt-uuid", "Mint and bind an identity."),
+            ("{prog} store adopt-uuid --json", "Same, machine-readable."),
+        ),
+    ),
+)
+@click.option(
+    "--uuid",
+    "identity",
+    default=None,
+    help=(
+        "Bind this exact identity (bare lowercase 8-4-4-4-12) instead of "
+        "minting one. For adopting an identity another scitex package already "
+        "minted for the SAME database."
+    ),
+)
+@click.option("--json", "as_json", is_flag=True)
+def store_adopt_uuid_cmd(identity, as_json) -> None:
+    """Bind the resolved database to a store identity and print it."""
+    from .._store_uuid import adopt_store_uuid
+    from ._store_guard import refuse_unconfigured_store
+
+    # An identity is minted ONCE and forever, so "which database" must be a
+    # choice somebody made. Since 2026-08-13 an unconfigured store raises
+    # rather than naming ~/.scitex/cards/cards.db; the guard states that as the
+    # remedy instead of a traceback, and it runs BEFORE the existence check
+    # below so the two refusals cannot be confused for each other.
+    refuse_unconfigured_store()
+    db_path = resolve_db_path(None)
+    if not db_path.exists():
+        raise click.ClickException(
+            f"no database at {db_path}. REFUSING to create one: an identity "
+            f"belongs to a store that already exists, and manufacturing a "
+            f"board here is how one gets replaced. Point $SCITEX_CARDS_DB at "
+            f"the real database first."
+        )
+    try:
+        value = adopt_store_uuid(db_path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if identity is not None and value != identity:
+        raise click.ClickException(
+            f"{db_path} already carries identity {value!r}; refusing to "
+            f"re-identify it as {identity!r}. A store's identity is minted "
+            f"once — every check that agreed with the old value would become "
+            f"retroactively meaningless."
+        )
+    if as_json:
+        click.echo(json.dumps({"db": str(db_path), "store_uuid": value}))
+        return
+    click.echo(f"db:         {db_path}")
+    click.echo(f"store_uuid: {value}")
+
+
+# --------------------------------------------------------------------------- #
 # Registration                                                                #
 # --------------------------------------------------------------------------- #
 def register(main: click.Group) -> None:
-    """Attach the admin-side verbs (resolve-store / init-store / sync-store)."""
+    """Attach the admin-side verbs (resolve-store / init-store / sync-store / store)."""
     main.add_command(resolve_store_cmd, name="resolve-store")
     main.add_command(init_store_cmd, name="init-store")
     main.add_command(sync_store_cmd, name="sync-store")
+    main.add_command(store_group, name="store")
 
 
 # EOF

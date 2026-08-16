@@ -29,6 +29,21 @@ Endpoints::
          pull-inbox (the unified channel server pushes it into the agent's
          session). 400 on an empty body.
 
+         This is ALSO the forward path. A forward is not a distinct kind of
+         record — it is an ordinary message whose body opens with a
+         ``[forwarded from <name>, <ts>]`` banner, the same shape
+         claude-code-telegrammer renders for messages forwarded into it
+         (``ts/lib/forward.ts:forwardBanner``). Mirroring that instead of
+         inventing a second convention means the operator reads one banner
+         everywhere, and it needs no new endpoint and no new field.
+
+    POST /dm/thread/<peer>/reaction
+         body = {"message_id": "m_…", "emoji": "👍", "action": "add"|"remove"}
+      -> 200 + {"event": <stored event>, "reactions": {emoji: [actors]}}
+         Appends one APPEND-ONLY reaction event (:mod:`scitex_cards._reactions`)
+         and answers with the message's refolded state. 400 on a missing
+         message_id/emoji or an unknown action.
+
 The operator's reserved peer name is ``scitex_cards._threads.OPERATOR_NAME``
 (``"operator"``). All endpoints honour the ``?store=`` query param the rest
 of the board uses, so tests drive a real tmp store.
@@ -41,26 +56,33 @@ import json
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from scitex_cards import _threads
+from scitex_cards import (
+    _reactions,
+    _threads,
+)
+from scitex_cards._dm import read as _dm_read
+from scitex_cards._dm import receipt_state as _dm_receipt_state
+from scitex_cards._dm import write as _dm_write
+from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
+    STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
+)
+from scitex_cards._django._request_store import read_store, write_store
 from scitex_cards._threads import OPERATOR_NAME
 
 
 def _store_of(request: HttpRequest):
-    """Optional explicit store path from the ``?store=`` query param.
+    """The store this READ resolves to — see :mod:`.._request_store`.
 
-    READ paths only. See :func:`_write_store_of` for why a write must never
-    use this.
+    A trusted middleware's ``request.scitex_store`` wins over the caller's
+    ``?store=``. Until 2026-08-06 this read the query and NOTHING else, while
+    :func:`_write_store_of` next door already accepted only the attribute —
+    the two halves of one contract disagreeing in adjacent functions.
     """
-    return request.GET.get("store") or None
-
-
-#: Request attribute a TRUSTED middleware may set to select the store for a
-#: write. An attribute cannot be forged over HTTP; a query parameter can.
-STORE_REQUEST_ATTR = "scitex_store"
+    return read_store(request)
 
 
 def _write_store_of(request: HttpRequest):
-    """The store a WRITE may touch — never taken from the request itself.
+    """The store a WRITE may touch — a TRUSTED ATTRIBUTE or nothing.
 
     ``_store_of`` reads ``?store=`` from the QUERY, and ``_threads`` derives
     the file it writes from that value. So the caller was choosing which file
@@ -69,25 +91,28 @@ def _write_store_of(request: HttpRequest):
     was an arbitrary-write surface, not a hardening nicety. Found by
     scitex-hub in design review, 2026-07-28.
 
-    A trusted middleware may still scope the write by setting
-    :data:`STORE_REQUEST_ATTR` on the request object. That is deliberately an
-    ATTRIBUTE rather than a query parameter: a remote caller can set the
-    latter and cannot set the former.
+    THE QUERY FALLBACK IS GONE, so a remote caller can no longer pick the
+    write target. Only a trusted middleware can, by setting
+    :data:`STORE_REQUEST_ATTR` on the request object — deliberately an
+    ATTRIBUTE rather than a query parameter, because a remote caller can set
+    the latter and cannot set the former.
 
-    THIS DOES NOT CLOSE THE HOLE YET, and saying so plainly matters more than
-    looking finished. The query seam is LOAD-BEARING today: the hub injects
-    tenancy through it (its middleware discards a client ``?store=`` and
-    mutates ``request.GET``), and the existing view tests scope themselves the
-    same way. Removing it outright was tried and broke both — trading a
-    security bug for an outage.
+    WHY THIS IS SAFE TO DELETE NOW, having been unsafe on 2026-07-28. The
+    fallback existed because removing it would have dropped the hub's tenancy
+    injection for a release window, and the board would then have fallen back
+    to its ambient canonical store — ONE store for every tenant. That is no
+    longer the situation: scitex-hub's ``CardsBoardTenancyMiddleware`` sets
+    ``request.scitex_store`` directly (its own comment calls that the PRIMARY
+    CHANNEL and marks the query injection as the legacy one to delete once
+    this side stops reading it). Both halves of the migration were in place
+    and each side was waiting on the other; measured 2026-07-29.
 
-    So this is the MIGRATION SEAM, not the fix: a trusted attribute WINS when
-    present, and the query remains the fallback until the hub switches. Once
-    it does, delete the fallback and the caller can no longer choose the write
-    target. Tracked on
-    ``scitex-cards-dm-store-from-query-and-forced-operator-author-20260728``.
+    ``None`` means NO trusted scope was supplied, and the caller must fall
+    back to its own server-side resolution rather than to anything the request
+    carried. Failing to a known store is safe; failing to a caller-named one
+    is the defect.
     """
-    return getattr(request, STORE_REQUEST_ATTR, None) or _store_of(request)
+    return getattr(request, STORE_REQUEST_ATTR, None)
 
 
 def _author_of(request: HttpRequest) -> str:
@@ -148,7 +173,17 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         }
     # Merge in any peer that already has a thread with the operator (covers
     # unregistered senders — the thread store is the SSOT of who talked).
-    for key, summary in _threads.list_threads(store=store).items():
+    # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
+    # a PER-HOST FILE, and nothing else — so this view showed only the threads
+    # of agents running on the same machine as the board. Measured 2026-08-09
+    # on the operator's laptop: its sidecar had scitex-agent-container live at
+    # 12:33 (that agent runs laptop-side) while scitex-cards sat at 2026-08-02,
+    # and five agents on scitex-compute-04 were invisible entirely. All 4150
+    # messages were in the store the whole time. Operator's ruling the same
+    # day: "never use threads.json but database".
+    for key, summary in _dm_read.threads_summary(
+        OPERATOR_NAME, store=store
+    ).items():
         a, b = summary["peers"]
         if OPERATOR_NAME not in (a, b):
             continue
@@ -205,9 +240,60 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # part of the same coordinated fix on
             # scitex-cards-dm-store-from-query-and-forced-operator-author-20260728.
             _threads.mark_read(key, _author_of(request), store=store)
-        messages = _threads.get_thread(OPERATOR_NAME, peer, store=store)
+            # AND THE RECEIPT GOES TO THE STORE, because that is now where the
+            # unread COUNT comes from. #776 moved the badge onto `dm_receipts`
+            # via `unread_for_conn`; leaving the ack on the sidecar alone would
+            # mean opening a thread never cleared its badge — the count would be
+            # correct and permanently unclearable, which is a worse bug than the
+            # stale one it replaced.
+            #
+            # Idempotent by primary key `(message_id, reader)`, so a re-open
+            # inserts nothing and returns 0 rather than erroring.
+            reader = _author_of(request)
+            unread_ids = [
+                m["id"]
+                for m in _dm_read.unread_for(reader, store=store, thread_id=key)
+            ]
+            if unread_ids:
+                _dm_write.mark_read(unread_ids, reader, store=store)
+        # THE STORE, NOT THE SIDECAR — the other half of #776.
+        #
+        # #776 moved the thread LIST onto the database and left this PANE on
+        # `_threads.get_thread`, which reads `threads.json`. That split is worse
+        # than the bug it half-fixed: the sidebar counted unread from the store
+        # while the pane rendered messages from a per-host file, so the operator
+        # saw a badge of 2 on a thread whose agent messages were not displayed
+        # at all. His words: "the number of new messages shown on the left
+        # sidebar is wrong; it does not reflect the actual states." It reflected
+        # the store correctly; the pane beside it did not.
+        #
+        # A count and a list that answer from different sources will disagree
+        # eventually by construction. Reading both from `dm_messages` is what
+        # makes the badge and the pane the same claim.
+        messages = _dm_read.messages_in(
+            _threads.thread_key(OPERATOR_NAME, peer), store=store
+        )
+        # Reactions ride ALONGSIDE the messages, never inside them. The stored
+        # DM records stay byte-identical to what an older client already
+        # understands, and the v5 design's rule that a message is immutable
+        # (docs/design/dm-into-cards-db.md §3.2) is not quietly broken by the
+        # wire shape. A client that ignores this key behaves exactly as before.
+        #
+        # `receipts` rides in the same seat for the same reason, and answers a
+        # different question: `reactions` is what someone CHOSE to say about a
+        # message, `receipts` is whether the message got THERE. It is derived
+        # per message id from `dm_receipts` (rows written by the reader), never
+        # from a transport call returning — see _dm_receipt_state.
         return JsonResponse(
-            {"thread": key, "peer": peer, "messages": messages},
+            {
+                "thread": key,
+                "peer": peer,
+                "messages": messages,
+                "reactions": _reactions.thread_reactions(key, store=store),
+                "receipts": _dm_receipt_state.receipt_state_for_thread(
+                    key, store=store
+                ),
+            },
             json_dumps_params={"default": str},
         )
 
@@ -225,6 +311,67 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     return JsonResponse({"message": record}, json_dumps_params={"default": str})
 
 
-__all__ = ["dm_thread_view", "dm_threads_view"]
+@csrf_exempt
+def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
+    """POST one reaction event onto a message in the operator↔``peer`` thread.
+
+    The THREAD is derived server-side from ``(operator, peer)`` — the caller
+    names a message and an emoji, never a thread id. A client that could name
+    the thread could attach a reaction to a conversation it is not part of;
+    deriving it means the URL already carries that authority.
+    """
+    if request.method != "POST":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+    if not peer or not peer.strip():
+        return JsonResponse({"error": "empty peer name"}, status=400)
+    peer = peer.strip()
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError as exc:
+        return JsonResponse({"error": f"invalid JSON body: {exc}"}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "reaction requires a JSON object"}, status=400)
+
+    message_id = payload.get("message_id")
+    if not isinstance(message_id, str) or not message_id.strip():
+        return JsonResponse(
+            {"error": "reaction requires a non-empty 'message_id'"}, status=400
+        )
+    action = payload.get("action", _reactions.ACTION_ADD)
+    if action not in _reactions.ACTIONS:
+        return JsonResponse(
+            {
+                "error": f"unknown action {action!r}",
+                "valid": list(_reactions.ACTIONS),
+            },
+            status=400,
+        )
+    try:
+        emoji = _reactions.validate_emoji(payload.get("emoji"))
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    key = _threads.thread_key(OPERATOR_NAME, peer)
+    event = _reactions.append_reaction_event(
+        thread=key,
+        message_id=message_id.strip(),
+        actor=_author_of(request),
+        emoji=emoji,
+        action=action,
+        store=_write_store_of(request),
+    )
+    # Answer with the REFOLDED state rather than echoing the event, so the
+    # tapping client renders the same chips every other client will see on its
+    # next poll instead of guessing the result of its own write.
+    folded = _reactions.thread_reactions(key, store=_write_store_of(request))
+    return JsonResponse(
+        {"event": event, "reactions": folded.get(message_id.strip(), {})},
+        json_dumps_params={"default": str},
+    )
+
+
+__all__ = ["dm_reaction_view", "dm_thread_view", "dm_threads_view"]
 
 # EOF

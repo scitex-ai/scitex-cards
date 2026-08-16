@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Standalone per-recipient pull-inbox for card-message delivery.
 
-scitex-todo MUST deliver card-messages to its members with ZERO dependency
+scitex-cards MUST deliver card-messages to its members with ZERO dependency
 on any external agent runtime. The existing push rail
 (:func:`scitex_cards._push.deliver`) POSTs directly to an agent's turn URL —
 which CANNOT reach a *containerized* agent (the agent subscribes outbound to
 a bus; a direct inbound POST is refused). The standalone-safe delivery model
 is therefore **PULL**: the C4 dispatcher ENQUEUEs a notification record into
-the recipient's inbox here, and the recipient's scitex-todo client POLLs the
+the recipient's inbox here, and the recipient's scitex-cards client POLLs the
 board (via the ``poll_notifications`` MCP tool or, later, an HTTP endpoint)
 for its pending notifications. The out-of-band push rail stays an OPTIONAL
 parallel ACCELERATOR for host-reachable agents — never a dependency.
@@ -16,7 +16,7 @@ parallel ACCELERATOR for host-reachable agents — never a dependency.
 Storage
 -------
 This module is the (non-default, break-glass) file-backed inbox
-implementation, selected only via ``SCITEX_TODO_INBOX_BACKEND=yaml``
+implementation, selected only via ``SCITEX_CARDS_INBOX_BACKEND=yaml``
 (the default is SQLite — see :mod:`scitex_cards._inbox_sqlite`).
 Inboxes live in their own ``inboxes.json`` SIDECAR next to the task
 store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
@@ -53,10 +53,10 @@ _INBOXES_KEY = "inboxes"
 #: Env var selecting the inbox storage backend. The DEFAULT is now ``sqlite``
 #: (the Phase-1 backend in :mod:`scitex_cards._inbox_sqlite`): a 5 s digest poll
 #: is then an indexed ``(recipient, seen)`` lookup on
-#: ``<store_dir>/runtime/todo.db`` instead of a full sidecar parse. This
+#: ``<store_dir>/runtime/cards.db`` instead of a full sidecar parse. This
 #: module (the file-backed break-glass backend, its own ``inboxes.json``
 #: sidecar — see the module docstring) is selected ONLY by
-#: ``SCITEX_TODO_INBOX_BACKEND=yaml`` (the value is a historical name for
+#: ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a historical name for
 #: "not sqlite"; the on-disk format itself is JSON — see the module
 #: docstring); unset (or any other value) uses SQLite. There is NO silent
 #: fallback: when the SQLite backend raises, the error PROPAGATES
@@ -64,19 +64,26 @@ _INBOXES_KEY = "inboxes"
 #: auto-migrates legacy embedded ``inboxes:`` records on first access, so
 #: flipping the default never loses unseen notifications. See the incident
 #: card ``store-sqlite-migration-o1-writes-future-20260701``.
-_ENV_INBOX_BACKEND = "SCITEX_TODO_INBOX_BACKEND"
+_ENV_INBOX_BACKEND = "SCITEX_CARDS_INBOX_BACKEND"
 
 
 def _use_sqlite() -> bool:
-    """True unless the caller EXPLICITLY selected the file-backed break-glass backend.
+    """Back-compat shim. Prefer :func:`._inbox_backend.backend`.
 
-    Default-ON: an unset ``SCITEX_TODO_INBOX_BACKEND`` (or any value other than
-    the literal ``yaml``) routes the inbox onto SQLite. ONLY
-    ``SCITEX_TODO_INBOX_BACKEND=yaml`` selects this module's path. This
-    resolver never suppresses a SQLite error — the public functions delegate
-    directly so any backend failure propagates (no silent fallback).
+    Two-valued, so it cannot express the Postgres case — which is how a
+    third option gets silently folded into one of the other two. Kept only
+    for callers outside this module.
     """
-    return (os.environ.get(_ENV_INBOX_BACKEND) or "sqlite").strip().lower() != "yaml"
+    from ._inbox_backend import SQLITE, backend
+
+    return backend() == SQLITE
+
+
+def _use_postgres() -> bool:
+    """True when the SHARED inbox is in force (see ``_inbox_backend``)."""
+    from ._inbox_backend import POSTGRES, backend
+
+    return backend() == POSTGRES
 
 
 #: Stable notification-id prefix (``n_`` + 12 hex chars, 48 bits entropy) —
@@ -111,45 +118,18 @@ def _inboxes_path(store: str | Path | None) -> Path:
     return path
 
 
-def _read_legacy_embedded_inboxes(path: Path) -> dict[str, list[dict]]:
-    """Read the LEGACY embedded ``inboxes:`` section off the pre-cutover
-    monolithic task-store document (absent / malformed -> {}). Shared by
-    this module's one-time JSON-sidecar migration and
-    :mod:`scitex_cards._inbox_sqlite`'s one-time SQLite migration.
-    """
-    if not path.exists():
-        return {}
-    from ._yaml import safe_load
-
-    with path.open(encoding="utf-8") as handle:
-        data = safe_load(handle) or {}
-    raw = data.get(_INBOXES_KEY) if isinstance(data, dict) else None
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, list[dict]] = {}
-    for rid, records in raw.items():
-        if not isinstance(rid, str) or not rid:
-            continue
-        out[rid] = (
-            [r for r in records if isinstance(r, dict)]
-            if isinstance(records, list)
-            else []
-        )
-    return out
-
-
-def _migrate_legacy_yaml_once(json_path: Path, legacy_doc_path: Path) -> None:
-    """Fold a legacy EMBEDDED ``inboxes:`` section into ``inboxes.json``, once.
-
-    No-op unless ``json_path`` is absent AND the legacy document has data.
-    No permanent YAML fallback: once ``inboxes.json`` exists, never fires
-    again.
-    """
-    if json_path.exists():
-        return
-    raw = _read_legacy_embedded_inboxes(legacy_doc_path)
-    if raw:
-        _save_inboxes_unlocked(raw, json_path)
+# The LEGACY-YAML readers live in _inbox_migrate.py — they are migration
+# concerns, not inbox concerns, and they exist only for stores that predate the
+# split. Re-exported because `_inboxes_path` above calls
+# `_migrate_legacy_yaml_once` and the tests import both by these names from
+# here. `_inbox_migrate` already imported `_read_legacy_embedded_inboxes` back
+# out of this module, which was the tell that it sat on the wrong side of the
+# seam. Function-local imports on both sides keep the mutual reference from
+# becoming a load-time cycle.
+from ._inbox_migrate import (  # noqa: E402,F401
+    _migrate_legacy_yaml_once,
+    _read_legacy_embedded_inboxes,
+)
 
 
 def _utc_now_iso() -> str:
@@ -283,6 +263,7 @@ def enqueue(
     actor: str | None,
     ts: str | None = None,
     supersede: bool = False,
+    msg_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """Append a notification record to ``recipient_id``'s inbox (STANDALONE).
@@ -327,6 +308,16 @@ def enqueue(
         reassigned / completed / escalation) are each DISTINCT and must NOT
         supersede. The default (``False``) keeps the plain
         ``(type,card,ts,actor)`` dedup path unchanged.
+    msg_id : str | None
+        The id of the DURABLE object this notification is about — today, a
+        ``dm_messages.id``. Carried so a consumer can join the notification
+        back to the message EXACTLY. Without it the only available key is
+        ``(event_type, card_id, ts, actor)``, which is many-to-one by
+        construction because DM timestamps are second-resolution: measured on
+        the live store, two distinct durable messages collapsed onto one
+        notification. When present it also becomes the dedupe key, so that
+        collapse cannot happen. ``None`` for events with no such object (card
+        events, digests), and ``None`` on rows enqueued before this existed.
     store : str | pathlib.Path | None
         Store path override (default: the resolved task store).
 
@@ -336,6 +327,20 @@ def enqueue(
         The enqueued record, or ``None`` when nothing was written (a falsy
         ``recipient_id`` or a deduped re-emit).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.enqueue(
+            recipient_id,
+            event_type=event_type,
+            card_id=card_id,
+            body=body,
+            actor=actor,
+            ts=ts,
+            supersede=supersede,
+            msg_id=msg_id,
+            store=store,
+        )
     if _use_sqlite():
         from . import _inbox_sqlite
 
@@ -347,6 +352,7 @@ def enqueue(
             actor=actor,
             ts=ts,
             supersede=supersede,
+            msg_id=msg_id,
             store=store,
         )
     if not recipient_id:
@@ -368,7 +374,12 @@ def enqueue(
                     r.get("event_type") == event_type and r.get("card_id") == card_id
                 )
             ]
-        if _is_duplicate(
+        if msg_id:
+            # Exact dedupe when the producer named the message (see the
+            # ``msg_id`` parameter docs for why the tuple below cannot be).
+            if any(r.get("msg_id") == msg_id for r in records):
+                return None
+        elif _is_duplicate(
             records,
             event_type=event_type,
             card_id=card_id,
@@ -384,6 +395,7 @@ def enqueue(
             "actor": actor,
             "ts": timestamp,
             "seen": False,
+            "msg_id": msg_id,
         }
         records.append(record)
         _save_inboxes_unlocked(inboxes, path)
@@ -426,6 +438,15 @@ def poll_inbox(
         The matching records (a copy each — mutating them does not touch the
         store). Order is append (oldest first).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.poll_inbox(
+            recipient_id,
+            unseen_only=unseen_only,
+            mark_seen=mark_seen,
+            store=store,
+        )
     if _use_sqlite():
         from . import _inbox_sqlite
 
@@ -478,6 +499,10 @@ def ack(
     store : str | pathlib.Path | None
         Store path override (default: the resolved task store).
     """
+    if _use_postgres():
+        from . import _inbox_postgres
+
+        return _inbox_postgres.ack(recipient_id, notification_ids, store=store)
     if _use_sqlite():
         from . import _inbox_sqlite
 

@@ -112,7 +112,7 @@ def test_card_owner_returns_none_for_a_non_mapping_card():
 def test_add_task_raises_when_owner_missing(tmp_path, env):
     # Arrange — a resolvable creator is set (suite default), but NO
     # assignee/agent.
-    env.set("SCITEX_TODO_AGENT_ID", "agent:creator")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
     store = tmp_path / "tasks.yaml"
     # Act
     ctx = pytest.raises(TaskValidationError, match="assignee is required")
@@ -124,7 +124,7 @@ def test_add_task_raises_when_owner_missing(tmp_path, env):
 def test_add_task_raises_when_creator_unresolvable(tmp_path, env):
     # Arrange — owner IS supplied, but the creator cannot be resolved (no env,
     # no arg).
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     store = tmp_path / "tasks.yaml"
     # Act
     ctx = pytest.raises(TaskValidationError, match="creator unresolved")
@@ -136,7 +136,7 @@ def test_add_task_raises_when_creator_unresolvable(tmp_path, env):
 def test_add_task_creator_unknown_sentinel_also_raises(tmp_path, env):
     # Arrange — the "unknown" placeholder is NOT a real creator: fail loud, no
     # silent stamping of "unknown".
-    env.set("SCITEX_TODO_AGENT_ID", "unknown")
+    env.set("SCITEX_CARDS_AGENT_ID", "unknown")
     store = tmp_path / "tasks.yaml"
     # Act
     ctx = pytest.raises(TaskValidationError, match="creator unresolved")
@@ -147,7 +147,7 @@ def test_add_task_creator_unknown_sentinel_also_raises(tmp_path, env):
 
 def test_add_task_succeeds_and_stamps_created_by(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:creator")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
     store = tmp_path / "tasks.yaml"
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:owner")
@@ -156,16 +156,16 @@ def test_add_task_succeeds_and_stamps_created_by(tmp_path, env):
 
 
 def test_add_task_deprecated_agent_env_fails_loud(tmp_path, env):
-    """The renamed-away $SCITEX_TODO_AGENT must never be silently honoured: if
+    """The renamed-away $SCITEX_CARDS_AGENT must never be silently honoured: if
     it is still exported, creator resolution fails LOUD pointing at the new
     name so a stale export can't quietly mis-attribute a card's creator."""
     # Arrange: a valid NEW-name creator is present AND the deprecated old name
     # is set — the guard must still fire (never silently prefers the new one).
-    env.set("SCITEX_TODO_AGENT_ID", "agent:creator")
-    env.set("SCITEX_TODO_AGENT", "legacy-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
+    env.set("SCITEX_CARDS_AGENT", "legacy-agent")
     store = tmp_path / "tasks.yaml"
     # Act
-    ctx = pytest.raises(RuntimeError, match="SCITEX_TODO_AGENT_ID")
+    ctx = pytest.raises(RuntimeError, match="SCITEX_CARDS_AGENT_ID")
     # Assert
     with ctx:
         _store.add_task(store, id="a", title="A", assignee="agent:owner")
@@ -173,7 +173,7 @@ def test_add_task_deprecated_agent_env_fails_loud(tmp_path, env):
 
 def test_add_task_explicit_created_by_wins(tmp_path, env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     store = tmp_path / "tasks.yaml"
     # Act
     inserted = _store.add_task(
@@ -193,7 +193,7 @@ def test_add_task_explicit_created_by_wins(tmp_path, env):
 @pytest.fixture()
 def lockstep_from_assignee(tmp_path, env):
     """add_task called with `assignee` only."""
-    env.set("SCITEX_TODO_AGENT_ID", "agent:creator")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
     store = tmp_path / "tasks.yaml"
     return _store.add_task(store, id="a", title="A", assignee="agent:owner")
 
@@ -233,7 +233,7 @@ def test_add_task_lockstep_assignee_only_resolves_through_the_ssot(
 @pytest.fixture()
 def lockstep_from_agent(tmp_path, env):
     """add_task called with `agent` only."""
-    env.set("SCITEX_TODO_AGENT_ID", "agent:creator")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:creator")
     store = tmp_path / "tasks.yaml"
     return _store.add_task(store, id="a", title="A", agent="agent:owner")
 
@@ -265,15 +265,15 @@ def test_add_task_lockstep_agent_only_sets_assignee(lockstep_from_agent):
 # "NO silent fallbacks") — it delegates to _resolve_creator_or_raise.         #
 # --------------------------------------------------------------------------- #
 #: WHY the two `raises_when_unresolved` tests below are split but share this
-#: rationale: no explicit arg AND no $SCITEX_TODO_AGENT_ID → fail loud (no
+#: rationale: no explicit arg AND no $SCITEX_CARDS_AGENT_ID → fail loud (no
 #: getuser()). The raise is only ACTIONABLE if the message names BOTH ways out
 #: — the env var to export and the `by=` argument to pass — so each half of
 #: the hint is pinned on its own.
 def test_default_agent_raise_names_the_identity_env_var(env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
-    ctx = pytest.raises(TaskValidationError, match="SCITEX_TODO_AGENT_ID")
+    ctx = pytest.raises(TaskValidationError, match="SCITEX_CARDS_AGENT_ID")
     # Assert
     with ctx:
         _store._default_agent(None)
@@ -281,7 +281,7 @@ def test_default_agent_raise_names_the_identity_env_var(env):
 
 def test_default_agent_raise_names_the_by_argument(env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     ctx = pytest.raises(TaskValidationError, match="by=")
     # Assert
@@ -292,7 +292,7 @@ def test_default_agent_raise_names_the_by_argument(env):
 def test_default_agent_unknown_sentinel_also_raises(env):
     # Arrange — the "unknown" placeholder is NOT a real actor: fail loud,
     # never stamp it.
-    env.set("SCITEX_TODO_AGENT_ID", "unknown")
+    env.set("SCITEX_CARDS_AGENT_ID", "unknown")
     # Act
     ctx = pytest.raises(TaskValidationError)
     # Assert
@@ -302,7 +302,7 @@ def test_default_agent_unknown_sentinel_also_raises(env):
 
 def test_default_agent_resolves_from_env(env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:actor-env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:actor-env")
     # Act
     resolved = _store._default_agent(None)
     # Assert
@@ -313,7 +313,7 @@ def test_default_agent_explicit_arg_wins(env):
     # Arrange — an explicit by=/actor is used even with the env unset: the
     # raise only fires when NOTHING is resolvable (legitimate callers are
     # unaffected).
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     resolved = _store._default_agent("agent:explicit-actor")
     # Assert
@@ -329,7 +329,7 @@ def test_default_agent_explicit_arg_wins(env):
 #: drift this pins.
 def test_default_agent_matches_creator_resolver(env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:same")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:same")
     # Act
     resolved = _store._default_agent(None)
     # Assert
@@ -338,7 +338,7 @@ def test_default_agent_matches_creator_resolver(env):
 
 def test_default_agent_raises_when_unresolved(env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     ctx = pytest.raises(TaskValidationError)
     # Assert
@@ -348,7 +348,7 @@ def test_default_agent_raises_when_unresolved(env):
 
 def test_creator_resolver_raises_when_unresolved(env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     ctx = pytest.raises(TaskValidationError)
     # Assert — the sibling resolver fails the same way, not just similarly.

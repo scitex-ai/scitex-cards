@@ -42,22 +42,45 @@
   var THREAD_POLL_MS = 5000;
   var LIST_POLL_MS = 10000;
 
+  /* How long a transient confirmation stays on screen. */
+  var NOTICE_MS = 2500;
+
   /* How close to the bottom still counts as "at the bottom" when deciding
    * whether new messages follow down. A few px of rounding drift must not
    * strand the operator off the newest message. */
   var STICK_THRESHOLD_PX = 40;
 
   var diff = window.ChatDiff;
+  /* Bubble construction — a long body clamps instead of filling the screen. */
+  var longtext = window.ChatLongText;
+  /* The message-action module (Reply / Copy / React / Forward + the reaction
+   * chips). Assigned at boot; messageNode asks it where chips go. */
+  var menu = null;
+
+  /* This page IS the operator's side of the DM board — every POST it makes is
+   * attributed to the operator server-side — so the operator is who a reaction
+   * chip should light up for. */
+  var VIEWER = "operator";
 
   var state = {
     peer: null, // currently open peer name, or null
     rendered: [], // fingerprints of the messages in the DOM, in order
     emptyShown: false, // the pane is currently the "no messages yet" hint
+    messages: [], // last painted message records (the menu addresses these)
+    reactions: {}, // {message_id: {emoji: [actors]}} from the last poll
+    agents: [], // last agent list, reused by the forward picker
     timerThread: null,
     timerList: null,
+    // Trailing messages rendered; grows on scroll-up. openThread resets it, but
+    // an explicit default matters: `undefined` makes windowed() return the WHOLE
+    // thread (length <= undefined is false, then slice(NaN)), which is safe but
+    // silently un-does the fix. See chat_window.js.
+    windowSize: 60,
   };
 
-  var $agents = document.getElementById("agents");
+  var $agentsPane = document.getElementById("agents");
+  var $agents = document.getElementById("agent-list");
+  var $agentFilter = document.getElementById("agent-filter");
   var $scrim = document.getElementById("scrim");
   var $menuBtn = document.getElementById("menu-btn");
   var $title = document.getElementById("thread-title");
@@ -72,12 +95,26 @@
   // ---- helpers -----------------------------------------------------------
 
   function showError(text) {
+    $errorBar.classList.remove("ok");
     $errorBar.textContent = text;
     $errorBar.style.display = "block";
   }
 
   function clearError() {
     $errorBar.style.display = "none";
+    $errorBar.classList.remove("ok");
+  }
+
+  /* Same bar, non-alarming colour. A forward lands in ANOTHER thread, so the
+   * operator sees nothing happen in the one they are looking at — without a
+   * confirmation the only honest read of a success is "the menu closed", which
+   * is indistinguishable from a no-op. Reporting it in the RED bar would be
+   * the opposite lie. */
+  function showNotice(text) {
+    $errorBar.textContent = text;
+    $errorBar.classList.add("ok");
+    $errorBar.style.display = "block";
+    setTimeout(clearError, NOTICE_MS);
   }
 
   function el(tag, className, text) {
@@ -112,26 +149,14 @@
 
   // ---- agent list --------------------------------------------------------
 
-  // Deterministic per-agent avatar: hue from a stable name hash, initials
-  // from the name's distinctive words (the shared "scitex-" prefix carries
-  // no identity, so it is stripped before initials are taken).
+  /* Deterministic per-agent avatar. The hash/initials logic is pure and lives in
+   * chat_avatar.js so node can test it; this builds the element from the spec. */
   function avatarFor(name) {
-    var hash = 0;
-    for (var i = 0; i < name.length; i++) {
-      hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-    }
-    var words = name
-      .replace(/^scitex-/, "")
-      .split(/[-_]+/)
-      .filter(Boolean);
-    var initials = words
-      .slice(0, 2)
-      .map(function (w) {
-        return w.charAt(0).toUpperCase();
-      })
-      .join("");
-    var av = el("span", "avatar", initials || "?");
-    av.style.background = "hsl(" + (hash % 360) + ", 55%, 42%)";
+    var spec = (window.ChatAvatar || null)
+      ? window.ChatAvatar.avatarSpec(name)
+      : { initials: "?", background: "transparent" };
+    var av = el("span", "avatar", spec.initials);
+    av.style.background = spec.background;
     return av;
   }
 
@@ -169,11 +194,20 @@
     $agents.scrollTop = scrollTop;
   }
 
+  // The unread count in the BROWSER TAB (chat_title.js). Fed the SAME array,
+  // from the SAME poll, as the per-peer badges above it: the tab and the
+  // drawer are one fact rendered twice, and neither counts anything itself.
+  // Giving the title its own request would be a second answer to "how many
+  // unread?" — do not.
+  var pageTitle = window.ChatTitle ? window.ChatTitle.mount({}) : null;
+
   function refreshAgents() {
     getJSON(API_BASE + "/dm/threads")
       .then(function (data) {
         clearError();
-        renderAgents(data.agents || []);
+        state.agents = data.agents || [];
+        renderAgents(state.agents);
+        if (pageTitle) pageTitle.update(state.agents);
       })
       .catch(function (err) {
         showError("Agent list failed: " + err.message);
@@ -182,57 +216,39 @@
 
   // ---- thread pane -------------------------------------------------------
 
-  // An attachment is carried as its own line in the body: a relative URL under
-  // `attachments/`. Deliberately NOT a new sidecar field — threads.json is the
-  // DM store and widening its record mid-incident is the kind of change that
-  // has cost this board data before. The body is already the source of truth,
-  // so a line IS the reference, and an older client still shows something
-  // meaningful (the path) instead of nothing.
-  var IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+  // Attachment RENDERING lives in chat_attach.js, beside the upload that
+  // produces the url — one module owns attachments end to end. `splitBody`
+  // separates an `attachments/…` line from the prose; `nodeFor` builds the
+  // <img>/<a> for one. Both are statics, so no mount ordering applies.
+  var attachments = window.ChatAttach;
 
-  function splitAttachments(body) {
-    var lines = String(body || "").split("\n");
-    var text = [];
-    var files = [];
-    lines.forEach(function (line) {
-      var t = line.trim();
-      if (t.indexOf("attachments/") === 0) files.push(t);
-      else text.push(line);
-    });
-    return { text: text.join("\n").trim(), files: files };
-  }
-
-  function attachmentNode(relUrl) {
-    var href = API_BASE + "/" + relUrl;
-    var name = relUrl.split("/").pop();
-    if (IMAGE_RE.test(name)) {
-      var a = el("a", "att-img");
-      a.href = href;
-      a.target = "_blank";
-      a.rel = "noopener";
-      var img = document.createElement("img");
-      img.src = href;
-      img.alt = name;
-      img.loading = "lazy";
-      a.appendChild(img);
-      return a;
-    }
-    var link = el("a", "att-file", "📎 " + name);
-    link.href = href;
-    link.target = "_blank";
-    link.rel = "noopener";
-    return link;
-  }
+  // The delivery indicator: three dots filling sent -> queued -> read.
+  // Optional by design: an older page without the module renders exactly as it
+  // did before rather than guessing at a state it was not served.
+  var receipts = window.ChatReceipts;
 
   function messageNode(m) {
     var mine = m.from === "operator";
     var wrap = el("div", "msg " + (mine ? "from-operator" : "from-agent"));
-    var parts = splitAttachments(m.body);
-    if (parts.text) wrap.appendChild(el("div", "bubble", parts.text));
+    // The id is what an ACTION addresses. Reacting to "the text in this
+    // bubble" would attach the reaction to whatever is on screen; reacting to
+    // an id survives a repaint.
+    if (m.id) wrap.setAttribute("data-msg-id", String(m.id));
+    var parts = attachments.splitBody(m.body);
+    if (parts.text) wrap.appendChild(longtext.bubbleFor(parts.text, m));
     parts.files.forEach(function (rel) {
-      wrap.appendChild(attachmentNode(rel));
+      wrap.appendChild(attachments.nodeFor(API_BASE, rel));
     });
-    wrap.appendChild(el("div", "meta", m.from + " · " + shortTs(m.ts)));
+    var meta = el("div", "meta", m.from + " · " + shortTs(m.ts));
+    // The delivery indicator belongs to chat_receipts.js, which owns what each
+    // step means; this file only says WHERE it goes. Into the META line on
+    // purpose: that row already exists, so the track costs no vertical space
+    // and cannot push the timestamp onto a second line on a phone.
+    if (receipts) receipts.render(meta, m, state.receipts);
+    wrap.appendChild(meta);
+    // Reaction chips belong to the menu module (it owns every reaction write),
+    // so this file only says WHERE they go, never what they are.
+    if (menu) menu.renderReactions(wrap, m);
     return wrap;
   }
 
@@ -260,6 +276,32 @@
   /* Bring the pane in line with `messages` by the smallest edit that will
    * do, holding the operator's scroll position unless they were already at
    * the bottom. */
+  /* The render window. Policy, arithmetic AND the scroll-up behaviour live in
+   * chat_window.js; this only supplies the collaborators. Its header explains why
+   * a window rather than content-visibility. */
+  var win = (typeof window !== "undefined" && window.ChatWindow) || null;
+
+  /* Rebuild the pane from a slice. Used by the scroll-up loader, which grew the
+   * window at the FRONT — so the old fingerprints are a SUFFIX and planRender's
+   * append path (prefix-only) cannot apply. */
+  function repaintWindow(msgs) {
+    $messages.textContent = "";
+    msgs.forEach(function (m) {
+      $messages.appendChild(messageNode(m));
+    });
+    state.rendered = diff.planRender(
+      [],
+      msgs,
+      state.reactions,
+      state.receipts,
+    ).fingerprints;
+  }
+
+  var loader = win
+    ? win.createScrollUpLoader($messages, state, repaintWindow)
+    : null;
+  if (loader) $messages.addEventListener("scroll", loader.onScroll);
+
   function applyPlan(plan, messages) {
     if (plan.mode === "noop") return;
 
@@ -305,11 +347,26 @@
         if (state.peer !== peer) return; // switched away mid-flight
         clearError();
         var msgs = data.messages || [];
+        // Reactions must be in place BEFORE the plan is computed: the plan's
+        // fingerprints read them, and messageNode paints them.
+        state.reactions = data.reactions || {};
+        // Same rule, same reason: the plan's fingerprints read the receipts, so
+        // a confirmation arriving on its own still repaints the bubble.
+        state.receipts = data.receipts || null;
+        state.messages = msgs;
         if (!msgs.length) {
           renderEmpty();
           return;
         }
-        applyPlan(diff.planRender(state.rendered, msgs), msgs);
+        // Plan against the WINDOW, not the whole thread: state.messages stays
+        // complete for everything else, only rendering is bounded.
+        var view = win
+      ? win.windowed(state.messages, state.windowSize)
+      : msgs;
+        applyPlan(
+          diff.planRender(state.rendered, view, state.reactions, state.receipts),
+          view,
+        );
       })
       .catch(function (err) {
         showError("Thread failed: " + err.message);
@@ -321,7 +378,19 @@
     // The pane is cleared just below, so the rendered set must be cleared
     // with it — the two describe one fact and must not drift apart.
     state.rendered = [];
+    // The window belongs to the OPEN THREAD, so it resets with the pane. Leaving
+    // it grown would render 200 nodes of a thread the operator just switched to.
+    state.windowSize = win ? win.WINDOW_INITIAL : Infinity;
     state.emptyShown = false;
+    // Reactions and messages describe the pane that is being cleared, so they
+    // clear with it. A stale map would paint the previous thread's chips onto
+    // the first messages of this one.
+    state.reactions = {};
+    // null, not {}: an empty map would mean "served, and every message is
+    // unknowable", which would paint a stale thread's bubbles with a state the
+    // server never sent. null means "not served yet" and paints nothing.
+    state.receipts = null;
+    state.messages = [];
     $title.innerHTML = "";
     $title.appendChild(document.createTextNode("Thread with "));
     $title.appendChild(el("b", null, peer));
@@ -336,210 +405,99 @@
 
   // ---- compose -----------------------------------------------------------
 
-  function sendMessage(event) {
-    event.preventDefault();
-    if (!state.peer) return;
-    var text = $body.value.trim();
-    if (!text) return;
-    $send.disabled = true;
-    fetch(API_BASE + "/dm/thread/" + encodeURIComponent(state.peer), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: text }),
-    })
-      .then(function (resp) {
-        if (!resp.ok) {
-          return resp
-            .json()
-            .catch(function () {
-              return {};
-            })
-            .then(function (data) {
-              throw new Error(data.error || "HTTP " + resp.status);
-            });
-        }
-        $body.value = "";
-        clearError();
-        refreshThread();
-        refreshAgents();
-      })
-      .catch(function (err) {
-        showError("Send failed: " + err.message);
-      })
-      .then(function () {
-        $send.disabled = false;
-        $body.focus();
-      });
-  }
-
-  // ---- message context menu ----------------------------------------------
-  // Look and markup come from scitex-ui (.stx-app-context-menu, >=0.11.1). Only
-  // the MECHANICS are here, and only until scitex-ui's ts/app/context-menu
-  // module lands — they confirmed base ships the stylesheet and zero lines of
-  // behaviour, which is exactly the private-implementation gap this is meant to
-  // avoid. When their module ships, delete this block; the markup it emits is
-  // identical, so nothing here leaks into the template.
-
-  var $menu = document.getElementById("msg-menu");
-  var menuTarget = null; // the .msg the menu was opened on
-
-  function closeMenu() {
-    if ($menu) $menu.classList.remove("open");
-    menuTarget = null;
-  }
-
-  function openMenuAt(x, y, msgNode) {
-    if (!$menu) return;
-    menuTarget = msgNode;
-    $menu.classList.add("open");
-    // Clamp into the viewport: a menu opened near the right/bottom edge would
-    // otherwise render half off-screen, which on a phone means unreachable.
-    var rect = $menu.getBoundingClientRect();
-    var maxX = window.innerWidth - rect.width - 8;
-    var maxY = window.innerHeight - rect.height - 8;
-    $menu.style.left = Math.max(8, Math.min(x, maxX)) + "px";
-    $menu.style.top = Math.max(8, Math.min(y, maxY)) + "px";
-  }
-
-  function messageTextOf(node) {
-    var bubble = node ? node.querySelector(".bubble") : null;
-    return bubble ? bubble.textContent : "";
-  }
-
-  if ($menu && $messages) {
-    $messages.addEventListener("contextmenu", function (event) {
-      var msgNode = event.target.closest ? event.target.closest(".msg") : null;
-      if (!msgNode) return; // right-click on blank space keeps the browser menu
-      event.preventDefault();
-      openMenuAt(event.clientX, event.clientY, msgNode);
-    });
-
-    var $reply = document.getElementById("mm-reply");
-    var $copy = document.getElementById("mm-copy");
-
-    if ($reply) {
-      $reply.addEventListener("click", function () {
-        // Quote-prefill rather than a threaded reply: the store has no parent
-        // pointer yet (that arrives with the DM move into cards.db), so a
-        // visible quote is honest about what it is. scitex-ui is designing the
-        // reply-quote BLOCK in base; this is the composer half.
-        var text = messageTextOf(menuTarget).trim();
-        if (text) {
-          var oneLine = text.replace(/\s+/g, " ");
-          var quoted = oneLine.length > 140 ? oneLine.slice(0, 140) + "…" : oneLine;
-          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
-          $body.value += sep + "> " + quoted + "\n\n";
-        }
-        closeMenu();
-        $body.focus();
-      });
-    }
-
-    if ($copy) {
-      $copy.addEventListener("click", function () {
-        var text = messageTextOf(menuTarget);
-        if (text && navigator.clipboard) {
-          navigator.clipboard.writeText(text).catch(function () {
-            showError("Copy failed — the browser refused clipboard access.");
-          });
-        }
-        closeMenu();
-      });
-    }
-
-    document.addEventListener("click", function (event) {
-      if ($menu.classList.contains("open") && !$menu.contains(event.target)) {
-        closeMenu();
-      }
-    });
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") closeMenu();
-    });
-    // Scroll dismissal: the menu is position:fixed, so it would otherwise hang
-    // in place while the message it belongs to scrolls away underneath it.
-    $messages.addEventListener("scroll", closeMenu);
-  }
+  // The send path (submit handler, Enter binding, in-flight guard) lives in
+  // chat_send.js — see that module for the two defects it replaced, the worse
+  // of which let the operator send exactly ONE message per page load.
 
   // ---- mobile drawer -----------------------------------------------------
 
+  // State, inert-when-closed and the scrim pairing live in ChatDrawer — see that
+  // module for the two defects it replaced (a closed drawer still in the tab
+  // order, and a drawer/scrim desync that could strand the operator behind an
+  // undismissable scrim). Panel is the NAV so the filter row travels with it.
+  var drawerHost = { panel: $agentsPane, scrim: $scrim, trigger: $menuBtn };
+  var drawer = window.ChatDrawer ? window.ChatDrawer.mount(drawerHost) : null;
+  if (window.ChatFilter)
+    window.ChatFilter.mount({ input: $agentFilter, list: $agents });
+
   function closeDrawer() {
-    $agents.classList.remove("open");
-    $scrim.classList.remove("open");
+    if (drawer) drawer.close();
   }
 
-  $menuBtn.addEventListener("click", function () {
-    $agents.classList.toggle("open");
-    $scrim.classList.toggle("open");
-  });
-  $scrim.addEventListener("click", closeDrawer);
-
-  // Enter sends; Shift+Enter inserts a newline (phone keyboards send via
-  // the button anyway — this is for desktop convenience).
-  $body.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      $form.requestSubmit();
-    }
-  });
-
-  // ---- attachments -------------------------------------------------------
-  // Three ways in, one path out: picker, clipboard paste, drag-drop all call
-  // uploadFiles, which appends the returned URL as its own line in the body.
-  // Uploading BEFORE send means a failed upload never produces a message that
-  // references a file that is not there.
-
-  function uploadFiles(files) {
-    var list = Array.prototype.slice.call(files || []).filter(Boolean);
-    if (!list.length) return;
-    clearError();
-    list.forEach(function (file) {
-      var form = new FormData();
-      form.append("file", file);
-      fetch(API_BASE + "/dm/upload", { method: "POST", body: form })
-        .then(function (resp) {
-          return resp.json().then(function (data) {
-            if (!resp.ok) throw new Error(data.error || "HTTP " + resp.status);
-            return data;
-          });
-        })
-        .then(function (data) {
-          var sep = $body.value && !/\n$/.test($body.value) ? "\n" : "";
-          $body.value += sep + data.url + "\n";
-          $body.focus();
-        })
-        .catch(function (err) {
-          showError("Upload failed: " + err.message);
-        });
+  // Attachments (picker / paste / drag-drop) live in chat_attach.js.
+  var attach = window.ChatAttach
+    ? window.ChatAttach.mount({
+        apiBase: API_BASE,
+        composerEl: $body,
+        attachEl: $attach,
+        fileEl: $file,
+        showError: showError,
+        clearError: clearError,
+      })
+    : null;
+  // Auto-grow + the offer to send an over-long draft through that SAME path.
+  var composer = window.ChatCompose
+    ? window.ChatCompose.mount({
+        form: $form,
+        textarea: $body,
+        uploadOne: attach ? attach.uploadOne : null,
+        showError: showError,
+      })
+    : null;
+  // Mounted AFTER `composer` exists, since it hands the composer its reset.
+  if (window.ChatSend) {
+    window.ChatSend.mount({
+      form: $form,
+      textarea: $body,
+      send: $send,
+      apiBase: API_BASE,
+      composer: composer,
+      getPeer: function () {
+        return state.peer;
+      },
+      onSent: function () {
+        refreshThread();
+        refreshAgents();
+      },
+      clearError: clearError,
+      showError: showError,
     });
   }
-
-  if ($attach && $file) {
-    $attach.addEventListener("click", function () {
-      $file.click();
-    });
-    $file.addEventListener("change", function () {
-      uploadFiles($file.files);
-      $file.value = "";
-    });
-  }
-
-  $body.addEventListener("paste", function (event) {
-    var items = (event.clipboardData || {}).files;
-    if (items && items.length) {
-      event.preventDefault();
-      uploadFiles(items);
-    }
-  });
-
-  ["dragover", "drop"].forEach(function (name) {
-    $body.addEventListener(name, function (event) {
-      event.preventDefault();
-      if (name === "drop") uploadFiles(event.dataTransfer.files);
-    });
-  });
-  $form.addEventListener("submit", sendMessage);
 
   // ---- boot --------------------------------------------------------------
+
+  // The message context menu (Reply / Copy / React / Forward) lives in
+  // chat_menu.js. It gets the seams this file owns and reaches back for
+  // nothing else.
+  if (window.ChatMenu) {
+    menu = window.ChatMenu.mount({
+      apiBase: API_BASE,
+      viewer: VIEWER,
+      messagesEl: $messages,
+      composerEl: $body,
+      showError: showError,
+      showNotice: showNotice,
+      refreshThread: refreshThread,
+      getPeer: function () {
+        return state.peer;
+      },
+      getMessages: function () {
+        return state.messages;
+      },
+      getReactions: function () {
+        return state.reactions;
+      },
+      getAgents: function () {
+        return state.agents;
+      },
+      onForwarded: function (toPeer, count) {
+        refreshAgents();
+        var many =
+          count > 1 ? count + " messages forwarded to " : "Forwarded to ";
+        showNotice(many + toPeer + ".");
+      },
+    });
+  }
 
   refreshAgents();
   state.timerList = setInterval(refreshAgents, LIST_POLL_MS);

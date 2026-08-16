@@ -1,6 +1,6 @@
 """CSS-contract tests for the themed scrollbar + <select> fix.
 
-Operator complaint via lead a2a `510a58d4` (2026-06-14): on the scitex-todo
+Operator complaint via lead a2a `510a58d4` (2026-06-14): on the scitex-cards
 board at http://127.0.0.1:8051 the SCROLLBAR and DROPDOWNS / SELECTS
 rendered WHITE in dark mode. The fix lives in two CSS surfaces:
 
@@ -134,15 +134,15 @@ def test_react_board_webkit_scrollbar_present_css_contains_4() -> None:
 
 
 def test_react_board_global_scrollbar_fallback() -> None:
-    """A GLOBAL fallback rule must target `.stx-todo-board, .stx-todo-board *`
+    """A GLOBAL fallback rule must target `.stx-cards-board, .stx-cards-board *`
     so any scrollable element inherits themed chrome — pre-empts elements
     we'd otherwise miss (lead a2a 510a58d4 KEY INSIGHT)."""
     # Arrange
     # Act
     css = _read(_BOARD_REACT_CSS)
     # Assert
-    assert ".stx-todo-board," in css and ".stx-todo-board *" in css, (
-        "board.css missing global `.stx-todo-board, .stx-todo-board *` "
+    assert ".stx-cards-board," in css and ".stx-cards-board *" in css, (
+        "board.css missing global `.stx-cards-board, .stx-cards-board *` "
         "scrollbar fallback"
     )
 
@@ -273,7 +273,7 @@ def test_board_v3_template_loads_global_theme_first_theme_idx_2() -> None:
 
 
 def test_react_board_select_rule_present_css_contains() -> None:
-    """The React board must style `.stx-todo-board select` with token-bound
+    """The React board must style `.stx-cards-board select` with token-bound
     background + color so vanilla dropdowns stop falling through to OS
     white."""
     # Arrange
@@ -281,15 +281,15 @@ def test_react_board_select_rule_present_css_contains() -> None:
     css = _read(_BOARD_REACT_CSS)
     # Assert
     # Pull the rule block out and verify it binds to scitex-ui tokens.
-    m = re.search(r"\.stx-todo-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
+    m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (
-        ".stx-todo-board select" in css
-    ), "board.css missing `.stx-todo-board select` rule"
+        ".stx-cards-board select" in css
+    ), "board.css missing `.stx-cards-board select` rule"
 
 
 def test_react_board_select_rule_present_m() -> None:
-    """The React board must style `.stx-todo-board select` with token-bound
+    """The React board must style `.stx-cards-board select` with token-bound
     background + color so vanilla dropdowns stop falling through to OS
     white."""
     # Arrange
@@ -297,13 +297,13 @@ def test_react_board_select_rule_present_m() -> None:
     css = _read(_BOARD_REACT_CSS)
     # Assert
     # Pull the rule block out and verify it binds to scitex-ui tokens.
-    m = re.search(r"\.stx-todo-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
+    m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
-    assert m is not None, "could not extract `.stx-todo-board select` block"
+    assert m is not None, "could not extract `.stx-cards-board select` block"
 
 
 def test_react_board_select_rule_present_case_3() -> None:
-    """The React board must style `.stx-todo-board select` with token-bound
+    """The React board must style `.stx-cards-board select` with token-bound
     background + color so vanilla dropdowns stop falling through to OS
     white."""
     # Arrange
@@ -311,7 +311,7 @@ def test_react_board_select_rule_present_case_3() -> None:
     css = _read(_BOARD_REACT_CSS)
     # Assert
     # Pull the rule block out and verify it binds to scitex-ui tokens.
-    m = re.search(r"\.stx-todo-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
+    m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (
         "background:" in block and "var(--" in block
@@ -319,7 +319,7 @@ def test_react_board_select_rule_present_case_3() -> None:
 
 
 def test_react_board_select_rule_present_case_4() -> None:
-    """The React board must style `.stx-todo-board select` with token-bound
+    """The React board must style `.stx-cards-board select` with token-bound
     background + color so vanilla dropdowns stop falling through to OS
     white."""
     # Arrange
@@ -327,7 +327,7 @@ def test_react_board_select_rule_present_case_4() -> None:
     css = _read(_BOARD_REACT_CSS)
     # Assert
     # Pull the rule block out and verify it binds to scitex-ui tokens.
-    m = re.search(r"\.stx-todo-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
+    m = re.search(r"\.stx-cards-board select\s*\{([^}]*)\}", css, flags=re.DOTALL)
     block = m.group(1)
     assert (
         "color:" in block and "var(--" in block
@@ -342,8 +342,8 @@ def test_react_board_select_focus_state() -> None:
     css = _read(_BOARD_REACT_CSS)
     # Assert
     assert (
-        ".stx-todo-board select:focus" in css
-        or ".stx-todo-board select:focus-visible" in css
+        ".stx-cards-board select:focus" in css
+        or ".stx-cards-board select:focus-visible" in css
     ), "board.css missing select focus state"
 
 

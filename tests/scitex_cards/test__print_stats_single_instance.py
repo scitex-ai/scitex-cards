@@ -3,7 +3,7 @@
 """Single-instance flock guard on ``print-stats --notify``.
 
 Third store-size daemon of the 2026-07-08 incident
-(incident-todo-wake-watcher-interval2-spiral-20260708): the managed
+(incident-cards-wake-watcher-interval2-spiral-20260708): the managed
 ``*/10`` notify cron (``print-stats --by agent --notify --nudge-quiet``)
 re-derives per-agent rollups from the ~9 MB / ~930-card store. A run that
 overruns the 10-min period OVERLAPS the next tick and runs STACK. The cure

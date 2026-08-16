@@ -74,7 +74,13 @@ def handle_priority(request, board):
             updated.append(task_id)
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
+            # `updated`, NOT `order`. A drag legitimately renumbers many cards,
+            # so there is no single id to declare here — and the two lists
+            # differ: `order` may name ids the board does not have (the skip
+            # above), while `updated` is exactly the rows this write changed.
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=tasks, touched_ids=updated
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
 
@@ -84,7 +90,7 @@ def handle_priority(request, board):
     _reset_cache()
 
     logger.info(
-        "[scitex-todo] priority reorder: %d ids updated in %s",
+        "[scitex-cards] priority reorder: %d ids updated in %s",
         len(updated),
         board.store_path,
     )

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -171,28 +172,58 @@ def rescore_task(
         # Activity + audit land ONLY on the rescored card (see module doc).
         target["last_activity"] = now
 
+        # RANKS BEFORE THE RECOMPUTE, so the write below can name every row it
+        # actually changed. `recompute_ranks` reassigns 1..N across every
+        # scored, non-terminal card and STRIPS the key from the rest — this
+        # verb's intent genuinely spans the whole board, which is why it is
+        # the one write here that must NOT declare `touched_ids=[task_id]`.
+        # Doing so would persist the rescored card and silently drop every
+        # neighbour's shifted rank, leaving duplicate and missing positions in
+        # a total order — a worse defect than the clobber the parameter fixes.
+        ranks_before = {t.get("id"): t.get("rank") for t in tasks}
+
         of = recompute_ranks(tasks)
         new_r = target.get("rank")
 
+        # `.get` on both sides so a card gaining or LOSING its rank key counts
+        # as changed; comparing only present keys would miss the strip.
+        shifted = [
+            tid
+            for t in tasks
+            if (tid := t.get("id")) is not None
+            and ranks_before.get(tid) != t.get("rank")
+        ]
+
         target.setdefault("comments", []).append(
-            {
-                "author": actor,
-                "ts": now,
-                "text": (
-                    f"rescore: urgency {old_u}->{new_u}, "
-                    f"importance {old_i}->{new_i}, "
-                    f"rank {old_r}->{new_r} (of {of})"
-                ),
-                "kind": "rescore",
-                "rescore": {
-                    "urgency": [old_u, new_u],
-                    "importance": [old_i, new_i],
-                    "rank": [old_r, new_r],
-                    "of": of,
-                },
-            }
+            stamp_comment_id(
+                {
+                    "author": actor,
+                    "ts": now,
+                    "text": (
+                        f"rescore: urgency {old_u}->{new_u}, "
+                        f"importance {old_i}->{new_i}, "
+                        f"rank {old_r}->{new_r} (of {of})"
+                    ),
+                    "kind": "rescore",
+                    "rescore": {
+                        "urgency": [old_u, new_u],
+                        "importance": [old_i, new_i],
+                        "rank": [old_r, new_r],
+                        "of": of,
+                    },
+                }
+            )
         )
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # `task_id` is listed EXPLICITLY and not left to the diff: a rescore
+        # that does not move the card still rewrites its axes, `scored_at`,
+        # `last_activity` and appends the audit comment, and none of that
+        # shows up as a rank change.
+        _model._save_doc_unlocked(
+            doc,
+            tasks_path,
+            tasks=tasks,
+            touched_ids=[task_id, *shifted],
+        )
         result_task = dict(target)
 
     _emit_card_event(

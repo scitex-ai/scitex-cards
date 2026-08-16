@@ -15,7 +15,7 @@ The behaviour the suite covers:
   dispatches correctly against a `tmp_path` store.
 - Tool naming follows the audit conventions: Convention A
   (tool_name == python_api_name, no `scitex_cards_` prefix) for the six
-  task-store tools, plus Convention B (`todo_<verb>_<noun>` per §5) for
+  task-store tools, plus Convention B (`cards_<verb>_<noun>` per §5) for
   the two skills tools — eight tools total.
 - The CLI `mcp list-tools` enumerates them.
 """
@@ -35,8 +35,8 @@ import pytest
 fastmcp = pytest.importorskip(
     "fastmcp",
     reason=(
-        "fastmcp not installed — `scitex-todo[mcp]` extra not present. "
-        "Install with `pip install scitex-todo[mcp]` to run the MCP tests."
+        "fastmcp not installed. "
+        "Install with `pip install scitex-cards[all]` to run the MCP tests."
     ),
 )
 
@@ -110,18 +110,28 @@ _CONVENTION_A_NAMES = {
     # Standalone pull-inbox read path — 1:1 with `_inbox.poll_inbox`
     # (registered in `_mcp_skills`). PULL card-message delivery, no sac.
     "poll_notifications",
+    # ...and the CONFIRM half — 1:1 with
+    # `_inbox_confirm.confirm_notifications`. Reading hands over; only this
+    # advances the cursor (lossless-delivery split, incident 2026-07-29).
+    "ack_notifications",
     # Operator↔agent direct messages — 1:1 with `_threads.append_message` /
     # `_threads.get_thread` (registered in `_mcp_skills`; scitex-dev DM
     # convention v1, threads.yaml sidecar).
     "dm_send",
     "dm_list",
+    # ...and the FILE half of the same surface — `_attachments.store_local_file`
+    # composed with `dm_send`. Text-only DMs meant a real deliverable reached
+    # the operator as prose describing a deliverable; this is the entry point
+    # that was missing, and it is deliberately NOT a BACKEND_VERBS member
+    # (a path-taking verb there would be dispatchable over HTTP).
+    "dm_send_document",
 }
-# Convention B — `todo_<verb>_<noun>` for the audit §5 required skills
+# Convention B — `cards_<verb>_<noun>` for the audit §5 required skills
 # tools. These don't map 1:1 to a Python API; they introspect the bundled
 # `_skills/` directory.
 _CONVENTION_B_NAMES = {
-    "todo_skills_list",
-    "todo_skills_get",
+    "cards_skills_list",
+    "cards_skills_get",
 }
 # Cross-package standard names — a fixed tool name shared verbatim with the
 # sac/cct health tools (single token by that shared spec, so exempt from the
@@ -232,11 +242,11 @@ def test_add_task_stores_created_by(tmp_path):
 
 
 def test_add_task_defaults_created_by_from_env(tmp_path, env):
-    # Arrange — no explicit author; resolves from $SCITEX_TODO_AGENT_ID.
+    # Arrange — no explicit author; resolves from $SCITEX_CARDS_AGENT_ID.
     from scitex_cards._mcp_server import add_task
 
     store = str(tmp_path / "tasks.yaml")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     # Act
     add = asyncio.run(_call_tool(add_task, id="a", title="A", assignee="agent:x"))
     # Assert
@@ -275,11 +285,11 @@ def test_scope_filter_excludes_other_scope(tmp_path):
             add_task,
             id="b",
             title="B",
-            scope="agent:proj-scitex-todo",
+            scope="agent:proj-scitex-cards",
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-todo"))
+    listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-cards"))
     # Assert
     assert {r["id"] for r in json.loads(listed)} == {"b"}
 
@@ -440,7 +450,7 @@ def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
 
 def test_complete_sets_status_done(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -456,7 +466,7 @@ def test_complete_sets_status_done(tmp_path, env):
 
 def test_complete_stamps_completed_by(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -472,7 +482,7 @@ def test_complete_stamps_completed_by(tmp_path, env):
 
 def test_complete_stamps_completed_at_z_suffix(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -498,12 +508,12 @@ def test_add_task_accepts_agent_field(tmp_path):
                 add_task,
                 id="a",
                 title="A",
-                agent="proj-scitex-todo",
+                agent="proj-scitex-cards",
             )
         )
     )
     # Assert
-    assert out["agent"] == "proj-scitex-todo"
+    assert out["agent"] == "proj-scitex-cards"
 
 
 def test_add_task_accepts_kind_compute(tmp_path):
@@ -539,12 +549,12 @@ def test_update_task_sets_agent(tmp_path):
             _call_tool(
                 update_task,
                 task_id="a",
-                agent="proj-scitex-todo",
+                agent="proj-scitex-cards",
             )
         )
     )
     # Assert
-    assert out["agent"] == "proj-scitex-todo"
+    assert out["agent"] == "proj-scitex-cards"
 
 
 def test_update_sets_status(tmp_path):
@@ -644,7 +654,6 @@ def test_where_returns_exists_false_when_absent(tmp_path, env):
     from scitex_cards._mcp_server import resolve_store
 
     env.set("SCITEX_CARDS_DB", str(tmp_path / "absent.db"))
-    env.set("SCITEX_TODO_DB", str(tmp_path / "absent.db"))
     # Act
     info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert

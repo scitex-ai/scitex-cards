@@ -22,6 +22,19 @@ exactly the "separate copy of the store" the one-database ruling forbids
 ``resolve_store`` and ``health`` are deliberately NOT backend verbs: they
 stay local and become backend-AWARE (reporting which backend is active) when
 the HTTP backend lands.
+
+THE CURRENCY VISIBILITY ASYMMETRY (incident 2026-07-29). This seam is the
+PYTHON rail, and it is deliberately NOT gated by
+``_currency.check_currency()``: an agent whose CLI/MCP rail is already
+REFUSING a stale install still reaches the operator through here, and taking
+that last rail away would be strictly worse than the bug it fixes (settled;
+see ``_currency.py``). It is, however, the only place such an agent will ever
+look — DMs keep arriving, so nothing else prompts them to suspect their card
+rail is dead. So the messaging verbs below call the NON-RAISING
+``warn_if_stale_once()``, which logs once per process naming the sibling rail.
+Deliberately NOT wired into the CLI (``_cli/_main.py``) or the MCP server
+(``_cli/_mcp.py``): both already call ``check_currency()``, and reporting the
+same fact twice on a rail that is already erroring is noise.
 """
 
 from __future__ import annotations
@@ -30,6 +43,9 @@ import os
 from typing import Any
 
 from . import _help_wait, _inbox, _store, _threads
+from ._dm import read as _dm_read
+from ._currency import warn_if_stale_once
+from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
 
@@ -56,6 +72,7 @@ BACKEND_VERBS: tuple[str, ...] = (
     "help_wait",
     "help_clear",
     "poll_notifications",
+    "ack_notifications",
     "dm_send",
     "dm_list",
 )
@@ -221,10 +238,34 @@ class LocalBackend:
         ack: bool = False,
         store: Any = None,
     ) -> dict:
-        from ._users import resolve_user, touch_user
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
+        # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
+        # cursor at handover, so a consumer that dies before delivering has
+        # destroyed the message. Deprecated, NOT changed — sac reads this path.
+        deprecation = warn_ack_on_read() if ack else None
+        from ._inbox_confirm import recipient_keys
+        from ._users import touch_user
 
-        user = resolve_user(agent, store=store)
-        recipient_id = user.id if user is not None else agent
+        # READ EVERY KEY CONFIRM WRITES. This used to resolve ONE key —
+        # `user.id if user is not None else agent` — while
+        # `_inbox_confirm.confirm_notifications` acks under BOTH the raw name
+        # and the resolved `u_*` id, and `_mcp_channel.recipient_keys` drains
+        # both. Those are DIFFERENT ROW SETS, deliberately (the drain keeps the
+        # raw name for back-compat records keyed by name).
+        #
+        # `resolve_user` falls back to the raw name on ANY failure, so an
+        # intermittent resolution made POLL ALTERNATE BETWEEN TWO INBOXES while
+        # confirm always covered both. Measured by canary-resume-test as an
+        # OSCILLATING `unconfirmed`: ack -> confirmed, next poll -> unconfirmed
+        # again, then empty, then back, with no ack in between. No concurrency
+        # and no second store required to produce it.
+        #
+        # Three call sites resolved keys three ways and two already agreed;
+        # poll was the odd one out. They now share one function, so they cannot
+        # disagree by construction.
+        keys = recipient_keys(agent, store)
+        recipient_id = keys[-1] if keys else agent
         # Liveness heartbeat — fail-soft, exactly as the tool did inline:
         # a stamping failure must never break the poll.
         try:
@@ -235,18 +276,75 @@ class LocalBackend:
             logging.getLogger(__name__).warning(
                 "poll_notifications: heartbeat failed for %r", agent, exc_info=True
             )
-        notifications = _inbox.poll_inbox(
-            recipient_id, unseen_only=unseen_only, mark_seen=ack, store=store
-        )
-        return {
+        # Union across keys, de-duplicated by id, first key wins. A record can
+        # legitimately exist under only one key; reading their union is what
+        # makes "nothing came back" mean "no rows under ANY key I know" rather
+        # than "I looked under one key" — the distinction sac asked for.
+        notifications: list = []
+        seen_ids: set = set()
+        for key in keys:
+            for record in _inbox.poll_inbox(
+                key, unseen_only=unseen_only, mark_seen=ack, store=store
+            ):
+                rid = record.get("id")
+                if rid is not None and rid in seen_ids:
+                    continue
+                if rid is not None:
+                    seen_ids.add(rid)
+                notifications.append(record)
+        from ._inbox_receipt import unconfirmed_ids
+
+        payload = {
             "agent": agent,
             "recipient_id": recipient_id,
             "notifications": notifications,
+            # The ids still awaiting confirmation, and the verb that confirms
+            # them: the safe loop must be the OBVIOUS one to write from here.
+            #
+            # TWO THINGS THIS USED TO GET WRONG, both of which made the field
+            # incapable of ever reporting the backlog it exists to report.
+            #
+            # It keyed on `seen`. The channel drain advances `seen` when it
+            # pushes a record, so every pushed notification looked confirmed the
+            # moment it was delivered — while `confirmed_at`, the only actual
+            # evidence of delivery, stayed NULL. `is_confirmed` now owns that
+            # distinction for every caller (see `_inbox_receipt`).
+            #
+            # And it was computed over `notifications`, i.e. over THIS PAGE.
+            # The default page is unseen-only, and the drain has already marked
+            # the rows seen, so the page is empty and the field was empty with
+            # it — by construction, regardless of which column it read. Fixing
+            # only the column would have produced a correct predicate applied to
+            # nothing, and looked fixed.
+            #
+            # "What is still awaiting confirmation" is a property of the INBOX.
+            # Measured 2026-08-11: a consumer polled, was told nothing was
+            # outstanding, and had to query the rail directly to find the
+            # notification it had just acted on.
+            "unconfirmed": unconfirmed_ids(recipient_id, store=store),
+            "confirm_with": "ack_notifications",
         }
+        if deprecation is not None:
+            payload["ack_on_read_deprecated"] = deprecation
+        return payload
+
+    def ack_notifications(
+        self,
+        agent: str,
+        ids: "list[str] | str | None" = None,
+        store: Any = None,
+    ) -> dict:
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
+        return confirm_notifications(agent, ids, store=store)
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
 
     def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
+        # CURRENCY VISIBILITY (module docstring): the confirmed entry point
+        # from the incident. Non-raising and warn-once by contract, so the DM
+        # still goes out even when the currency check itself is unhappy.
+        warn_if_stale_once()
         return _threads.append_message(sender, to, body, store=store)
 
     def dm_list(
@@ -256,11 +354,43 @@ class LocalBackend:
         ack: bool = False,
         store: Any = None,
     ) -> dict:
+        # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
+        warn_if_stale_once()
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:
             _threads.mark_read(key, sender, store=store)
-        messages = _threads.get_thread(sender, other, store=store)
+            # AND THE RECEIPT GOES TO THE STORE, for the same reason the board's
+            # does: the messages below now come from `dm_messages`, so an ack
+            # that only touched the sidecar would leave a thread permanently
+            # unread. Idempotent by `(message_id, reader)`.
+            from ._dm import write as _dm_write
+
+            unread_ids = [
+                m["id"]
+                for m in _dm_read.unread_for(sender, store=store, thread_id=key)
+            ]
+            if unread_ids:
+                _dm_write.mark_read(unread_ids, sender, store=store)
+        # THE STORE, NOT THE SIDECAR — the agent-facing half of the same defect.
+        #
+        # PRs #776/#777 moved the BOARD's list and pane onto `dm_messages` and
+        # left THIS verb — the one every agent calls — on
+        # `_threads.get_thread`, which reads `threads.json`, A PER-HOST FILE.
+        #
+        # Reproduced 2026-08-09 by two readers on one store, which is what makes
+        # it undeniable rather than a hunch:
+        #   scitex-agent-container (laptop)     dm_list(peer="…-04") -> 1 message
+        #   scitex-agent-container-04 (compute) IDENTICAL query      -> []
+        # Same DSN, same store_uuid 1d55dd6e-3d2a-4c24-a429-a78835ab988f, no
+        # SQLite fallback, Postgres reachable from both, and — checked, because
+        # it was the obvious suspect — THE SAME PACKAGE VERSION 0.32.3 on both.
+        # The only difference was which host's `threads.json` each client read.
+        #
+        # That is the operator's complaint in his own words: his messages do not
+        # arrive at the agents' terminals. A per-host file cannot carry a
+        # cross-host conversation, so an agent could not read its own peer DMs.
+        messages = _dm_read.messages_in(key, store=store)
         return {"thread": key, "peer": other, "messages": messages}
 
 

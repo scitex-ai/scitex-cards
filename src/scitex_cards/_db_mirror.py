@@ -52,12 +52,17 @@ import sqlite3
 from pathlib import Path
 
 from ._db_bootstrap import (
-    _insert_notifications,
     _insert_tasks,
     _insert_users,
     _rebuild_from_doc,
 )
 from ._db_freshness import stamp_store_provenance
+
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from ._schema_probe import _sole_value, row_values
 
 #: Per-card content hashes, so a write can tell what actually changed.
 HASH_TABLE = "mirror_hashes"
@@ -71,7 +76,34 @@ CREATE TABLE IF NOT EXISTS {HASH_TABLE} (
 
 #: Sections of the doc that are NOT per-card. They change rarely, so they get one
 #: hash each and are only rebuilt when that hash moves.
-_SECTION_KEYS = ("users", "inboxes")
+#:
+#: ``inboxes`` IS DELIBERATELY ABSENT, for exactly the reason ``messages`` is
+#: absent from :data:`_db_bootstrap._DOC_CLEAR_ORDER`: A TABLE IS OWNED BY
+#: EXACTLY THE THING THAT PRODUCES IT, and since #780 the thing that produces
+#: ``notifications`` is the delivery rail (``_inbox_postgres``), not this
+#: document.
+#:
+#: While it was listed here, an ORDINARY CARD WRITE rebuilt the live rail:
+#: :func:`_sync_sections` issues ``DELETE FROM notifications`` and re-inserts
+#: from ``doc["inboxes"]`` through :func:`_db_sections._insert_notifications`,
+#: which writes NINE of the table's THIRTEEN columns. ``msg_id`` (the exact DM
+#: dedupe key), ``pushed_at`` and ``confirmed_at`` (the delivery receipts) were
+#: therefore ERASED, and ``seq`` — the arrival order the drain and the ack both
+#: order by — was re-issued from ``nextval`` in ``ts, id`` order, silently
+#: RENUMBERING the queue. Nothing failed while it happened.
+#:
+#: The trigger was not rare either: the section hash moves whenever any
+#: notification row changes, and ``seen`` is overlaid into the exported record,
+#: so every poll made the next unrelated ``add_task`` rebuild the rail.
+#:
+#: ``_migrate_v7_to_v8`` predicted this in writing — "that DELETE must be
+#: neutralised in the same change that flips the writers, or the migration turns
+#: a dead mirror into a silent deletion trigger". The writers flipped in #780
+#: and the DELETE was not neutralised. This is that neutralisation.
+#:
+#: The export still EMITS ``inboxes`` (the backup rail in ADR-0010 must contain
+#: the notifications); it is only the write-back that no longer owns them.
+_SECTION_KEYS = ("users",)
 
 
 def _card_hash(card: dict) -> str:
@@ -89,7 +121,12 @@ def _section_hash(value) -> str:
 def _existing_hashes(conn: sqlite3.Connection) -> dict[str, str]:
     conn.execute(_HASH_DDL)
     rows = conn.execute(f"SELECT task_id, hash FROM {HASH_TABLE}").fetchall()
-    return {r[0]: r[1] for r in rows}
+    # row_values, NOT r[0]/r[1]: the annotation says sqlite3.Connection, but an
+    # annotation is a claim, not a guarantee -- this takes the CALLER's
+    # connection, and since #693 that caller can be holding a psycopg one, whose
+    # dict_row raises KeyError on a positional index.
+
+    return {v[0]: v[1] for v in (row_values(r) for r in rows)}
 
 
 def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
@@ -111,13 +148,60 @@ def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
     conn.execute("DELETE FROM task_edges WHERE src_task_id = ?", (task_id,))
 
 
-def _write_card(conn: sqlite3.Connection, card: dict) -> None:
-    """Upsert ONE card and its derived rows."""
+def _write_card(
+    conn: sqlite3.Connection,
+    card: dict,
+    *,
+    expected_revision: int | None = None,
+) -> dict[str, int]:
+    """Upsert ONE card and its derived rows. Returns the insert counts.
+
+    ``expected_revision`` makes the whole sequence a COMPARE-AND-SET, and the
+    ORDER here is the entire point — get it wrong and the guard destroys data on
+    the path it refuses to take.
+
+    `_drop_card_rows` DELETES this card's comments, roles and outbound edges
+    before the upsert, because comments key on a sequence and re-inserting
+    without clearing would duplicate every one of them on every write. That drop
+    is load-bearing and cannot simply be removed.
+
+    But it means a naive compare-and-set — drop first, then let `_insert_tasks`
+    check the revision — would:
+
+        1. delete the card's comments, roles and outbound edges
+        2. hit the guard, skip the upsert
+        3. report revision_skipped=1, i.e. "I changed nothing"
+
+    while the WINNER's comments are already gone. A lock that silently destroys
+    the data it was protecting, and then reports success at protecting it, is
+    strictly worse than no lock: the caller has no reason to look.
+
+    So the revision is read and compared BEFORE anything is dropped. The `WHERE`
+    clause inside `_insert_tasks` remains the real guard against the race
+    between that read and the write — this pre-check is not a substitute for it,
+    it only ensures the DESTRUCTIVE half never runs for a write that was always
+    going to be refused.
+    """
     tid = str(card.get("id"))
+    if expected_revision is not None:
+        row = conn.execute(
+            "SELECT revision FROM tasks WHERE id = ?", (tid,)
+        ).fetchone()
+        found = None if row is None else row[0]
+        if found != expected_revision:
+            # Refuse BEFORE the drop. Nothing has been touched.
+            return {
+                "tasks": 0,
+                "comments": 0,
+                "edges": 0,
+                "roles": 0,
+                "revision_skipped": 1,
+                "revision_found": found,
+            }
     _drop_card_rows(conn, tid)
     # _insert_tasks handles the task row + comments + edges + roles for each
     # card it is given, so a one-element list is exactly one card's worth.
-    _insert_tasks(conn, [card])
+    return _insert_tasks(conn, [card], expected_revision=expected_revision)
 
 
 def _delete_card(conn: sqlite3.Connection, task_id: str) -> None:
@@ -141,6 +225,7 @@ def mirror_doc_incremental(
     conn: sqlite3.Connection | None = None,
     store_path: str | Path | None = None,
     deleted_ids: list[str] | None = None,
+    touched_ids: list[str] | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
@@ -160,6 +245,31 @@ def mirror_doc_incremental(
     absence — that inference is the wipe class this module refuses (see the loop
     below) — so an explicit single-card verb names what it removed and the mirror
     drops exactly those rows. ``None``/empty on every ordinary write.
+
+    ``touched_ids`` IS THE MISSING HALF OF THAT SAME ARGUMENT. ``deleted_ids``
+    exists because absence is not intent; ``touched_ids`` exists because
+    DIFFERENCE IS NOT INTENT EITHER. Without it, ``changed`` below means "every
+    card whose content differs from the database" — which silently includes
+    "somebody else changed this card and I am holding an old copy". The mirror
+    then faithfully writes the caller's stale version over the other agent's
+    committed one, and both callers are told their write succeeded.
+
+    Measured on the live board 2026-08-10 by figrecipe: a ``complete_task`` that
+    RETURNED ``status=done`` was later found back at ``status=blocked``, reverted
+    by writes to unrelated cards. Their conclusion — "there is no batching
+    discipline a caller can adopt to avoid it" — is correct, because the
+    competing writes come from a different process holding a different lock (the
+    store lock is an ``fcntl.flock`` on a per-container FILE while the cards live
+    in shared PostgreSQL).
+
+    So a caller that knows which card it touched names it, and cards it did not
+    touch are never written — the concurrent update survives regardless of who
+    holds which lock. ``None`` keeps the old whole-document behaviour, so verbs
+    convert one at a time rather than on a flag day.
+
+    THIS IS NOT A LOCK AND DOES NOT PRETEND TO BE. Two callers naming the SAME
+    card still race; that case wants ``pg_advisory_xact_lock``, and it is a much
+    smaller problem once the blast radius is one row instead of the whole board.
 
     Raises deliberately, like :func:`_db_bootstrap.mirror_doc` — the POLICY for a
     failed mirror (never break the user's write, never be silent) lives in
@@ -197,7 +307,8 @@ def mirror_doc_incremental(
         if not prior:
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(str(c["id"]), _card_hash(c)) for c in cards],
             )
             _remember_sections(conn, doc)
@@ -212,6 +323,27 @@ def mirror_doc_incremental(
         by_id = {str(c["id"]): c for c in cards}
 
         changed = [i for i, h in now_hashes.items() if prior.get(i) != h]
+
+        # DIFFERENCE IS NOT INTENT. `changed` above means "differs from the
+        # database", which silently includes "somebody else changed this card
+        # and I hold an old copy" — so a caller writing card A re-asserts its
+        # stale copy of card B over another agent's committed change, and both
+        # are told they succeeded.
+        #
+        # A caller that KNOWS what it touched narrows the write to that. Cards it
+        # did not touch are never written, so a concurrent update to them
+        # survives no matter who holds which lock — which matters because the
+        # store lock is an fcntl.flock on a per-container FILE while the cards
+        # live in shared PostgreSQL, i.e. it excludes nobody across agents.
+        #
+        # The intersection with `changed` is deliberate rather than replacing it:
+        # naming a card whose content did NOT change must still write nothing, so
+        # a caller cannot manufacture a no-op write into a clobber by over-
+        # declaring. Symmetric with `deleted_ids`, which likewise names intent
+        # rather than inferring it from the document.
+        if touched_ids is not None:
+            wanted = {str(i) for i in touched_ids}
+            changed = [i for i in changed if i in wanted]
 
         # RECONCILE INSERTS AND UPDATES. IT NEVER *INFERS* A DELETE FROM ABSENCE.
         # (Explicit, caller-named deletes are a separate, deliberate path — see
@@ -251,7 +383,8 @@ def mirror_doc_incremental(
 
         if changed:
             conn.executemany(
-                f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+                f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+                f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
                 [(tid, now_hashes[tid]) for tid in changed],
             )
 
@@ -297,34 +430,37 @@ def _section_key(name: str) -> str:
 
 def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
     conn.executemany(
-        f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+        f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+        f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
         [(_section_key(k), _section_hash(doc.get(k))) for k in _SECTION_KEYS],
     )
 
 
 def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
-    """Rebuild ``users`` / ``notifications`` only when their section changed.
+    """Rebuild ``users`` only when its section changed.
 
-    These are whole-section tables (no per-row identity we can diff cheaply), so
-    they keep the delete-and-reinsert shape — but they now pay it only when they
-    have actually moved, instead of on every card write.
+    A whole-section table (no per-row identity we can diff cheaply), so it keeps
+    the delete-and-reinsert shape — but pays it only when it has actually moved,
+    instead of on every card write.
+
+    ``notifications`` USED TO BE REBUILT HERE AND MUST NEVER BE AGAIN. See
+    :data:`_SECTION_KEYS` for the measurement: the reinsert wrote 9 of 13
+    columns, so an unrelated card write erased the delivery receipts and
+    renumbered the queue. The rail owns that table now.
     """
     for key in _SECTION_KEYS:
         want = _section_hash(doc.get(key))
         row = conn.execute(
             f"SELECT hash FROM {HASH_TABLE} WHERE task_id = ?", (_section_key(key),)
         ).fetchone()
-        if row and row[0] == want:
+        if row and _sole_value(row) == want:
             continue
-        if key == "users":
-            conn.execute("DELETE FROM user_names")
-            conn.execute("DELETE FROM users")
-            _insert_users(conn, doc.get("users"))
-        else:  # inboxes -> notifications
-            conn.execute("DELETE FROM notifications")
-            _insert_notifications(conn, doc.get("inboxes"))
+        conn.execute("DELETE FROM user_names")
+        conn.execute("DELETE FROM users")
+        _insert_users(conn, doc.get("users"))
         conn.execute(
-            f"INSERT OR REPLACE INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)",
+            f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
+            f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
             (_section_key(key), want),
         )
 

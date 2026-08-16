@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo index`` — SQLite derived-index lifecycle.
+"""CLI noun group ``scitex-cards index`` — SQLite derived-index lifecycle.
 
 PR-B of Stage 2 plan (lead a2a ``aa02fb0e``). YAML stays authoritative;
-the SQLite index (~/.scitex/todo/.tasks.index.sqlite) is a rebuildable read
+the SQLite index (~/.scitex/cards/.tasks.index.sqlite) is a rebuildable read
 cache. Verbs: ``rebuild`` + ``info``.
 
 Extracted verbatim from ``_main.py`` to keep that module under the 512-line
@@ -28,7 +28,7 @@ def register(main: click.Group) -> None:
     **spec_group_kwargs(
         summary="Manage the SQLite derived-index (rebuildable read cache).",
         description=(
-            "YAML stays authoritative; ~/.scitex/todo/.tasks.index.sqlite "
+            "YAML stays authoritative; ~/.scitex/cards/.tasks.index.sqlite "
             "is a rebuildable read cache built from it."
         ),
         command_categories=(("Core", ("rebuild", "info")),),
@@ -68,7 +68,7 @@ def index_rebuild_cmd(dry_run: bool, assume_yes: bool) -> None:
     """Drop + repopulate the SQLite index from the YAML source(s).
 
     Example:
-      $ scitex-todo index rebuild -y
+      $ scitex-cards index rebuild -y
     """
     import sys as _sys
 
@@ -123,8 +123,8 @@ def index_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite index.
 
     Example:
-      $ scitex-todo index info
-      $ scitex-todo index info --json
+      $ scitex-cards index info
+      $ scitex-cards index info --json
     """
     import json as _json
 
@@ -136,7 +136,7 @@ def index_info_cmd(as_json: bool) -> None:
         return
     if not payload["exists"]:
         click.echo(f"# index does not exist yet: {payload['path']}")
-        click.echo("# run `scitex-todo index rebuild -y` to populate.")
+        click.echo("# run `scitex-cards index rebuild -y` to populate.")
         return
     click.echo(
         f"# index: {payload['path']}\n"

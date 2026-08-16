@@ -6,7 +6,7 @@ The operator's decision queue is the ``blocking_me`` predicate (status=blocked
 AND blocker=operator-decision) rendered as a project-grouped, glanceable view
 (title + the note as why / how-to-unblock context). AAA, no mocks (STX-NM),
 one assertion per test; ``created_by`` is passed so the fixture is independent
-of $SCITEX_TODO_AGENT_ID.
+of $SCITEX_CARDS_AGENT_ID.
 """
 
 from __future__ import annotations

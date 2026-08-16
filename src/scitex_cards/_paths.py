@@ -68,9 +68,114 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     Resolution: an explicit path wins outright; otherwise the container is the
     ``tasks.yaml`` beside the resolved database (``$SCITEX_CARDS_DB``'s dir), so
     there is no separate, YAML-named identity variable.
+
+    A SERVER STORE HAS NO DIRECTORY, and that is the whole reason this function
+    stopped deriving from the database unconditionally. ``$SCITEX_CARDS_DB`` may
+    now name a PostgreSQL server, and ``resolve_db_path`` RAISES on one rather
+    than coerce it (``Path("postgresql://h/db")`` silently collapses to the
+    relative ``postgresql:/h/db``). Every caller here — the users/groups sidecar,
+    pidfiles, the delivery ledger, reminder state — wants a LOCAL directory, and
+    wants one just as much when the cards live on a server. Deriving it from the
+    store identity welded the two together, so pointing the fleet at PostgreSQL
+    made the whole query side raise before it ever opened a connection.
+
+    Measured 2026-07-31, the failure this removes::
+
+        SCITEX_CARDS_DB=postgresql:///scitex_cards  scitex-cards list-tasks
+        StoreTargetIsNotAPath: names a PostgreSQL server, not a file path
+
+    Card DATA never needed this path: :func:`scitex_cards._model.load_doc` calls
+    ``_read_canonical_db_or_raise()`` with NO argument and interpolates the path
+    into an error message only. So the two axes are genuinely independent, and
+    are now resolved independently:
+
+    - store IDENTITY — ``$SCITEX_CARDS_DB``; a path OR a server URL
+    - local state DIR — always a real directory, whatever the backend
+
+    On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
+    aware), the same ambient default a fresh install uses.
     """
+    from ._store_url import is_postgres_url, reject_attempted_dsn
+
+    # A MALFORMED DSN IS NOT A PATH EITHER, and the paragraph below is the
+    # reason this line exists rather than an extra spelling in that predicate.
+    # `is_postgres_url` is TWO-VALUED: it separates "a server" from "everything
+    # else", and a DSN that has been through Path() -- "postgresql:/host/db",
+    # one slash -- lands in "everything else" alongside genuine filenames. So
+    # the redirect below catches the well-formed case the 2026-08-02 incident
+    # was about and misses the mangled form that incident actually produced.
+    #
+    # Measured on develop 2026-08-12, WITH the connect-door guards of #815
+    # already merged:
+    #     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/…'
+    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/cards.db
+    #     and the directory tree was created under the process's CWD.
+    # The guards were downstream: runtime_dir() mkdirs during PATH DERIVATION,
+    # before any connect happens, so a check at the connect door cannot see it.
+    #
+    # RAISES rather than redirecting, and the asymmetry with the valid-DSN
+    # branch is deliberate. A well-formed DSN is a legitimate deployment whose
+    # runtime state simply belongs locally. A malformed one is a configuration
+    # error with no correct interpretation -- there is no deployment for which
+    # SCITEX_CARDS_DB=":55432" is right -- and quietly serving it a local
+    # directory would hide the misconfiguration behind working software.
+    reject_attempted_dsn(explicit)
+
     if explicit is not None:
+        # An EXPLICIT server store gets the same answer as an ambient one.
+        # Without this the two branches disagreed: ambient returned the local
+        # root, while explicit fell through to Path(), which does not reject a
+        # DSN — it COLLAPSES it to a relative path
+        # (``postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards``). Callers
+        # then created that tree under their own CWD and wrote there.
+        #
+        # The failure was a silent SUCCESS, which is why it survived. Measured
+        # 2026-08-02: enqueue(store=<DSN>) returned a notification id and left a
+        # phantom store at ``<CWD>/postgresql:/…/runtime/cards.db``. Nothing
+        # raised, so the fail-soft caller logged nothing, and the notification
+        # was unreachable because nobody polls a directory named after a DSN.
+        #
+        # Every caller of this function wants a LOCAL directory (pidfiles, the
+        # delivery ledger, reminder state, the inbox sidecar) and wants one just
+        # as much when the cards live on a server — that is this function's
+        # stated contract above. So a DSN resolves to the local root here too,
+        # rather than raising: raising would break the board, which legitimately
+        # threads its store through to the inbox rail.
+        if is_postgres_url(str(explicit)):
+            return _user_root() / "tasks.yaml"
         return Path(explicit).expanduser()
+
+    from ._store_target import StoreTargetNotConfigured, resolve_store_target
+
+    # NO STORE CONFIGURED IS NOT NO LOCAL STATE, and this is the one place that
+    # distinction has to be made in code rather than in the docstring above.
+    # Since 2026-08-13 the zero-config SQLite default RAISES instead of naming a
+    # database, so the derivation at the bottom of this function has nothing
+    # left to derive from -- but pidfiles, the delivery ledger, reminder state
+    # and the users/groups sidecar all still want a real local directory, and
+    # want one just as much when nobody has chosen a board yet as when the cards
+    # live on a server. The two axes this function's contract calls independent
+    # stay independent when the store axis has no answer at all.
+    #
+    # This is NOT the abolished fallback wearing a different hat: the answer is
+    # a DIRECTORY, the same `_user_root()` a server store already gets. It names
+    # no database, opens nothing, and holds no cards -- so it cannot become a
+    # second board the way `~/.scitex/cards/cards.db` did. Raising here instead
+    # would take down the whole query side exactly as the DSN coercion did on
+    # 2026-07-31, for a question the caller never asked.
+    try:
+        ambient = resolve_store_target(None)
+    except StoreTargetNotConfigured:
+        return _user_root() / "tasks.yaml"
+
+    # The AMBIENT branch needs the same check as the explicit one above: a
+    # malformed $SCITEX_CARDS_DB reaches here with explicit=None, so guarding
+    # only the argument would leave the commonest configuration mistake --
+    # a typo in the environment -- on the unguarded path.
+    reject_attempted_dsn(ambient)
+    if is_postgres_url(ambient):
+        return _user_root() / "tasks.yaml"
+
     from ._db import resolve_db_path
 
     return resolve_db_path(None).parent / "tasks.yaml"
@@ -102,6 +207,18 @@ def refuse_ambient_store_creation(
         When ``resolved`` does not exist and nothing named it.
     """
     from ._db import ENV_DB
+    from ._store_url import is_postgres_url
+
+    # A SERVER TARGET CANNOT BE MANUFACTURED BY A WRITE, so the question this
+    # guard asks does not arise. The hazard it exists for is filesystem-shaped:
+    # an ambiently-resolved PATH that does not exist gets CREATED, and the empty
+    # store then looks real to everything that reads it. Connecting to a
+    # PostgreSQL server creates no database — the server either has it or the
+    # connection fails loudly. Returning early is therefore not a relaxation;
+    # asking `Path(dsn).exists()` would be, because it is False for every DSN
+    # and would make this refuse every server write unconditionally.
+    if is_postgres_url(resolved):
+        return
 
     path = Path(resolved)
     if path.exists() or explicit is not None or os.environ.get(ENV_DB):

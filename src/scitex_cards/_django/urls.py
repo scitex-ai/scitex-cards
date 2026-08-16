@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""URL patterns for the scitex-todo board Django app."""
+"""URL patterns for the scitex-cards board Django app."""
 
 from django.urls import path
 
 from . import views
+from ._me_page import me_page
 from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
-from .handlers.dm import dm_thread_view, dm_threads_view
+from .handlers.dm import dm_reaction_view, dm_thread_view, dm_threads_view
 from .handlers.fleet import (
     fleet_ci_status_view,
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
+from .handlers.mine import mine_view
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -49,6 +51,25 @@ urlpatterns = [
     # consumes these instead of shelling out to the CLI verbs.
     path("runnable", runnable_view, name="runnable"),
     path("blocked-batch", blocked_batch_view, name="blocked_batch"),
+    # "My Cards" — the phone view of the viewer's OWN cards (card
+    # cards-gui-phone-view-own-cards-20260814; operator 2026-08-14 wants his
+    # cards from his phone via scitex.ai). `/me` is the PAGE and `/me/cards`
+    # is the JSON it polls — the same page/data shape `/dm` and `/dm/threads`
+    # already use, and the reason the JSON is NOT a sibling `/mine`: one
+    # letter between a page and an API is a footgun in every log and bug
+    # report that quotes either.
+    #
+    # Identity comes from `_board_identity.resolve_viewer`; a caller the
+    # board cannot identify gets a typed 403, never the whole board.
+    #
+    # Both the slashed and unslashed page spellings are registered for the
+    # same reason `legacy/`, `board-v3/` and `chat/` carry theirs: a trailing
+    # slash is the most natural thing in the world to type, and without it
+    # the catch-all `<path:endpoint>` answers "Unknown endpoint: me/". All
+    # three sit BEFORE that catch-all for exactly that reason.
+    path("me", me_page, name="me_page"),
+    path("me/", me_page, name="me_page_slash"),
+    path("me/cards", mine_view, name="me_cards"),
     # Time View — operator-direct ask (TG, relayed by lead a2a `d0f7a0e3`,
     # 2026-06-14). Live raster timeline so the operator watches ONE screen
     # and sees the whole fleet in motion. Polled by the FE TimelineView
@@ -82,8 +103,39 @@ urlpatterns = [
     # `chat_page` already strips BOTH aliases off request.path when deriving the
     # include root, so the slashed form was mount-aware before it was reachable.
     path("chat/", views.chat_page, name="chat_page_slash"),
+    # `/dm` — THE NAME THE OPERATOR ASKED FOR. Operator, 2026-07-29 (TG): the
+    # URLs being `/` and `/chat` is uncomfortable; they want `/board` and
+    # `/dm`. They typed both and got 404, which reads as the board being
+    # broken.
+    #
+    # THIS DOES NOT COLLIDE WITH THE `dm/*` JSON API BELOW, and an earlier
+    # note claiming it did was wrong. `path()` matches EXACT paths: "dm",
+    # "dm/threads" and "dm/thread/<peer>" are three different strings and
+    # Django tries them in order, so none can shadow another. What actually
+    # 404'd `/dm` was the catch-all `<path:endpoint>` at the bottom, which
+    # swallowed it into `api_dispatch` → `{"error": "Unknown endpoint: dm"}`.
+    # Registering the page here — BEFORE the catch-all — is the whole fix.
+    #
+    # `/chat` and `/chat/` above are KEPT, deliberately: this is an ADDITION,
+    # not a rename. The operator has /chat bookmarked, agents reference it and
+    # `test__chat_page_trailing_slash.py` pins it. A published URL is a
+    # MIGRATION, not a label (the same rule `_page_switcher.html` states for
+    # the DM *label*). Both spellings of the new name are registered for the
+    # same reason `legacy/` and `board-v3/` carry theirs: a trailing slash is
+    # the most natural thing in the world to type.
+    path("dm", views.chat_page, name="dm_page"),
+    path("dm/", views.chat_page, name="dm_page_slash"),
     path("dm/threads", dm_threads_view, name="dm_threads"),
     path("dm/thread/<str:peer>", dm_thread_view, name="dm_thread"),
+    # Reactions on a DM. Nested UNDER the thread on purpose: the thread is then
+    # derived from the URL the caller already had the authority to address,
+    # rather than being a thread id the body could name. `<str:peer>` does not
+    # match a "/", so this route and the one above cannot shadow each other.
+    path(
+        "dm/thread/<str:peer>/reaction",
+        dm_reaction_view,
+        name="dm_reaction",
+    ),
     # Chat attachments — the operator's top blocker was a text-only chat.
     # Upload returns a relative URL the composer puts in the message body;
     # serve validates every path component and confirms the resolved file is
@@ -120,6 +172,14 @@ urlpatterns = [
     # bookmarks may still hit it). Serves the same view as root.
     path("board-v3", views.board_v3_page, name="board_v3"),
     path("board-v3/", views.board_v3_page, name="board_v3_slash"),
+    # `/board` — the readable twin of `/dm` (operator, 2026-07-29, see the DM
+    # note above). Root `/` is KEPT as the primary URL: it is what the
+    # operator's own bookmark, every agent reference and TG 263 all point at.
+    # This is a second door onto the same room, not a move — which is also why
+    # it serves `board_v3_page` directly rather than redirecting: a redirect
+    # would make the address bar disagree with the link the operator clicked.
+    path("board", views.board_v3_page, name="board_alias"),
+    path("board/", views.board_v3_page, name="board_alias_slash"),
     # `/favicon.ico` must precede the catch-all `<path:endpoint>` route — the
     # browser requests it implicitly and the catch-all would otherwise route
     # it to api_dispatch (→ 404). favicon_view serves the bundled SVG.

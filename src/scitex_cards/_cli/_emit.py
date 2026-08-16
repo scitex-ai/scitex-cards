@@ -5,7 +5,7 @@
 Fleet PRODUCERS (scitex-dev's C7 ``released`` / C8 ``pulled`` steps, and
 future federated producers) must emit canonical card-events WITHOUT
 importing :mod:`scitex_cards` — separation of concerns: a producer shells
-out to ``scitex-todo`` rather than coupling to its Python API. These two
+out to ``scitex-cards`` rather than coupling to its Python API. These two
 verbs are that shell-out seam:
 
   * ``emit-event`` constructs a canonical :class:`scitex_cards._events.Event`
@@ -73,8 +73,8 @@ def _parse_extra(pairs: tuple[str, ...]) -> dict[str, str]:
         "which the C4 consumer treats as a quiet no-op. Prints the dispatch "
         "summary as JSON (incl. any notify.enqueued / notify.delivered).\n\n"
         "Examples:\n"
-        "  scitex-todo emit-event --type pulled --repo owner/repo\n"
-        "  scitex-todo emit-event --type released --card-id my-card "
+        "  scitex-cards emit-event --type pulled --repo owner/repo\n"
+        "  scitex-cards emit-event --type released --card-id my-card "
         "--repo owner/repo --version v1.2.3 --actor ci"
     ),
 )
@@ -176,7 +176,7 @@ def emit_event_cmd(
 )
 def find_card_cmd(repo, kind, status) -> None:
     """Print ids of cards with ``repo == <R>`` (one per line; empty when none)."""
-    # `scope=""` opts out of the $SCITEX_TODO_SCOPE env default — a producer
+    # `scope=""` opts out of the $SCITEX_CARDS_SCOPE env default — a producer
     # resolving repo->card must see EVERY matching card, not just its own
     # scope slice.
     cards = _store.list_tasks(

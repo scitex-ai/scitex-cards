@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side Python API for the scitex-todo task store.
+"""Mutation-side Python API for the scitex-cards task store.
 
 THIN ORCHESTRATOR. The verbs themselves now live in focused siblings; this
 module owns the SHARED helpers they all pull on (identity resolution, the
@@ -34,7 +34,7 @@ Design constraints
   resolved by ``$SCITEX_CARDS_DB``; callers can override with an
   explicit ``store=`` path. The user-scope default
   (``~/.scitex/cards/cards.db``) covers Req 7.
-- **Shared with scopes** (Req 1): ``$SCITEX_TODO_SCOPE`` provides the
+- **Shared with scopes** (Req 1): ``$SCITEX_CARDS_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
   default and see everything.
@@ -114,16 +114,16 @@ from ._store_list import (  # noqa: F401  (re-export: preserve the public surfac
 
 #: Env var name carrying the agent's identity. Used as the default
 #: `completed_by` when :func:`complete_task` doesn't get an explicit `by=`.
-ENV_AGENT = "SCITEX_TODO_AGENT_ID"
+ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
 
 #: previous name of :data:`ENV_AGENT`. Renamed 2026-07-02. We fail LOUD (never
 #: silently honour it) if it is still set, so a stale export can't quietly
 #: mis-attribute a write — the operator must migrate to the new name.
-ENV_AGENT_DEPRECATED = "SCITEX_TODO_AGENT"
+ENV_AGENT_DEPRECATED = "SCITEX_CARDS_AGENT"
 
 
 def _reject_deprecated_agent_env() -> None:
-    """Fail loud if the old ``SCITEX_TODO_AGENT`` var is still set.
+    """Fail loud if the old ``SCITEX_CARDS_AGENT`` var is still set.
 
     No silent fallback: a leftover export of the old name is a configuration
     error the operator must fix, not something we quietly translate.
@@ -145,7 +145,7 @@ class TaskNotFoundError(KeyError):
 def _default_agent(arg: str | None) -> str:
     """Resolve an ACTOR/AUTHOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``
     (the former lenient chain): the operator mandate (constitution rule 2
     "fail fast and fail loud, NO silent fallbacks") requires completion /
@@ -168,7 +168,7 @@ def _default_agent(arg: str | None) -> str:
 def _resolve_creator_or_raise(arg: str | None) -> str:
     """Resolve a card CREATOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``:
     the operator mandate (constitution rule 2 "fail fast and fail loud, NO
     silent fallbacks") requires a card to record a REAL creator, never a blank
@@ -180,7 +180,7 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     Raises
     ------
     RuntimeError
-        When the deprecated ``$SCITEX_TODO_AGENT`` is still exported (renamed
+        When the deprecated ``$SCITEX_CARDS_AGENT`` is still exported (renamed
         away — see :func:`_reject_deprecated_agent_env`).
     TaskValidationError
         When the creator resolves to empty or the ``"unknown"`` sentinel,
@@ -190,7 +190,7 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     resolved = (arg or os.environ.get(ENV_AGENT) or "").strip()
     if not resolved or resolved == "unknown":
         raise TaskValidationError(
-            "creator unresolved — set SCITEX_TODO_AGENT_ID=<your-agent> or pass "
+            "creator unresolved — set SCITEX_CARDS_AGENT_ID=<your-agent> or pass "
             "created_by=/by= (creator+assignee are mandatory; no silent "
             "fallback to a blank/'unknown' creator; see constitution)."
         )
@@ -238,16 +238,34 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
     THE ``missing_ok`` PARAMETER IS GONE, and its removal is the safety
     property rather than a tidy-up. It used to mean "an absent store yields an
     empty doc instead of raising", which was reasonable when the store was a
-    file that a fresh install legitimately lacked. Against a database it is a
-    loaded gun: an empty doc flows into a read-modify-write, the caller appends
-    its one new card, and ``mirror_doc_incremental`` diffs that one-card
-    document against the DB and DELETES every card missing from it.
+    file that a fresh install legitimately lacked. Against a database it was a
+    loaded gun: an empty doc flowed into a read-modify-write, the caller
+    appended its one new card, and the mirror diffed that one-card document
+    against the DB and deleted every card missing from it.
 
     Measured on a scratch store during this cutover: five sequential writes
     left exactly ONE row each time. On the live board that is 2065 cards down
     to 1, silently, with nothing raised anywhere in the stack. Found by
     round-tripping real writes, not by reading the diff — the write path looked
     correct in isolation and only end-to-end exercise showed the loss.
+
+    THAT MECHANISM IS CLOSED, and the tense above is deliberate — it describes
+    what the removal was FOR, not what would happen today. Two later guards
+    would now catch it independently:
+
+      * ``mirror_doc_incremental`` no longer infers a delete from absence at
+        all. Its own comment says so, and the ``removed = [i for i in prior if
+        i not in now_hashes]`` line it used to end with is gone. Only
+        caller-named ``deleted_ids`` are dropped.
+      * ``write_doc_to_db``'s shrink guard REFUSES a write missing rows the
+        store already has unless ``allow_shrink=True`` — installed after the
+        third board wipe.
+
+    ``missing_ok`` STAYS GONE REGARDLESS, and not because of the wipe: an empty
+    doc entering a read-modify-write is a bad input on its own terms, whatever
+    the layers below do with it. Do not reintroduce it on the grounds that the
+    mirror is now safe — that argument reasons from the wrong premise, and the
+    guards below are defence in depth rather than permission.
 
     So there is no "absent store" case to be tolerant about: a missing database
     is a configuration error and :func:`_read_canonical_db_or_raise` says so.
@@ -263,7 +281,7 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
 def resolve_store(store: str | Path | None = None) -> dict:
     """Return the resolved task store path and the precedence chain.
 
-    Mirrors the data the `scitex-todo resolve-store` CLI verb and the
+    Mirrors the data the `scitex-cards resolve-store` CLI verb and the
     `resolve_store` MCP tool emit. Keeping a Python API by the same name
     as the MCP tool satisfies audit §6 (Convention A: tool_name == api_name).
 
@@ -276,24 +294,125 @@ def resolve_store(store: str | Path | None = None) -> dict:
           "user_store":       "/abs/path/to/~/.scitex/cards/cards.db",
           "pkg_short":        "cards",
           "exists":           bool,
+          "store_uuid":       <the database's own identity, or None>,
+          "expected_uuid":    <$SCITEX_CARDS_STORE_UUID, or None>,
+          "instance_id":      <the SERVER's own identity, or None>,
+          "expected_instance": <$SCITEX_CARDS_STORE_INSTANCE, or None>,
+          "identity_verdict": "matches" | "differs" | "cannot-tell",
+          "identity_reason":  <why, when the verdict is not "matches">,
+          "may_proceed":      bool,
         }
+
+    ``store_uuid`` is contract point 8, machine-readable half (design §11). The
+    identity is what a host registry must record next to this board's endpoint,
+    and "open the database and run a SQL query" is archaeology. This function
+    already answers "WHICH store did I actually resolve"; it answers "and WHAT
+    IS IT" in the same breath. ``None`` means the database is absent or carries
+    no identity yet — bind it with ``scitex-cards store adopt-uuid``.
+
+    ``expected_uuid`` is reported beside it deliberately: the two most useful
+    facts about an identity mismatch are the value the database carries and the
+    value this process was told to expect, and reading them from two different
+    surfaces is how a mismatch stays undiagnosed.
+
+    ``instance_id`` AND WHY ``store_uuid`` WAS NOT ENOUGH. On 2026-08-12 three
+    live PostgreSQL databases all answered ``store_uuid =
+    1d55dd6e-3d2a-4c24-a429-a78835ab988f`` while holding 3843, 3743 and 3422
+    cards. ``store_uuid`` is a ``schema_meta`` ROW and a dump/restore carries
+    rows, so every field reported here was byte-identical across stores that
+    were hundreds of cards apart — a report that cannot distinguish them is a
+    report that confirms whichever one you happened to reach. ``instance_id``
+    is the SERVER's own ``system_identifier``, minted by ``initdb`` and present
+    in no dump, so it is the one value a copy cannot carry. See
+    :mod:`._store_instance` and :mod:`._store_pin`.
+
+    ``may_proceed`` IS THE FIELD TO BRANCH ON, never ``identity_verdict``. A
+    caller testing ``verdict != "differs"`` reads "I cannot tell which store
+    this is" as a pass, which is exactly how three databases shared one
+    identity for five days without anything complaining.
+
+    THIS FUNCTION IS PURE REPORTING — AND THAT INCLUDES THE VERDICT. It reports
+    a refusal; it does not perform one. Reading the identity here never mints
+    one, never stamps one, and never changes what resolves, and a ``differs``
+    verdict raises nothing: this is the verb an operator runs WHEN THINGS ARE
+    ALREADY BROKEN, and on 2026-07-31 it was the one verb that CRASHED on the
+    case being diagnosed. The enforcing twin is
+    :func:`._store_pin.require_pinned_store`, which raises.
     """
     import os
 
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
+    from ._store_target import resolve_store_target
+    from ._store_url import backend_of, is_attempted_dsn, is_postgres_url
+    from ._store_pin import _check_against, instance_at, pinned_instance
+    from ._store_uuid import expected_store_uuid, store_uuid_at
 
-    # The resolved store is the DATABASE — the sole store identity.
-    resolved = resolve_db_path(
-        store if isinstance(store, (str, type(None))) else str(store)
-    )
+    # The resolved store is the DATABASE — the sole store identity. It may be a
+    # PATH or a SERVER URL, so it is resolved WITHOUT coercion: this verb exists
+    # to answer "which store am I on?", and it was the one verb that CRASHED the
+    # moment the answer stopped being a path (measured 2026-07-31, mid-cutover —
+    # `resolve-store` raised StoreTargetIsNotAPath against PostgreSQL while
+    # `list-tasks` served 2973 cards). A diagnostic that dies on the case you are
+    # diagnosing is worse than no diagnostic: it reads as "the store is broken".
+    _arg = store if isinstance(store, (str, type(None))) else str(store)
+    target = resolve_store_target(_arg)
+    on_server = is_postgres_url(target)
+    resolved = target if on_server else str(resolve_db_path(_arg))
     return {
-        "resolved": str(resolved),
+        "resolved": resolved,
         "explicit": str(store) if store is not None else None,
         "db_env": os.environ.get(ENV_DB),
         "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
         "pkg_short": PKG_SHORT,
-        "exists": Path(resolved).exists(),
+        "backend": backend_of(target),
+        # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
+        # 2026-08-12 this verb answered `backend: "sqlite", exists: false` for
+        # SCITEX_CARDS_DB=":55432" — a port, reported as a file that merely does
+        # not exist yet. Both fields were true of the string and neither was
+        # true of the intent, so the report read as "fresh install" to every
+        # agent who ran it. `backend` cannot carry this: thirteen call sites
+        # branch on it two-valued. So the third answer gets its own field, and
+        # a diagnosing reader sees the malformation instead of inferring it.
+        "target_is_malformed_dsn": is_attempted_dsn(target),
+        # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
+        # answer for a server, and BOTH poles actively mislead: False reads as
+        # "your store is missing" to every operator staring at a cutover, True
+        # would assert a reachability this function is forbidden to test (it is
+        # pure reporting — it never opens anything). Read `backend` to know
+        # which question was asked.
+        "exists": None if on_server else Path(resolved).exists(),
+        "store_uuid": store_uuid_at(resolved),
+        "expected_uuid": expected_store_uuid(),
+        # Probed ONCE and compared in-process. `check_resolution` would re-run
+        # the whole resolution and open a second connection to say the same
+        # thing, and a diagnostic that costs two round-trips to a store that may
+        # be down is a diagnostic that hangs twice as long on the case it exists
+        # to explain.
+        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+    }
+
+
+def _identity_fields(check) -> dict:
+    """Flatten an :class:`._store_instance.IdentityCheck` into report keys.
+
+    FLAT, not nested, because this dict is rendered by the CLI, the MCP tool and
+    the board alike, and a nested object is the shape every one of them would
+    have to learn separately. ``instance_id`` sits beside ``store_uuid`` for the
+    same reason the uuid pair sits together: the facts you compare belong on one
+    surface.
+
+    ``identity_reason`` is carried verbatim rather than summarised. It is the
+    only part a human acts on, and the two refusals — "you are pointed at the
+    wrong store" and "I cannot tell which store this is" — call for different
+    actions, which a boolean cannot say.
+    """
+    return {
+        "instance_id": check.observed.instance_id,
+        "expected_instance": check.expected,
+        "identity_verdict": check.verdict.value,
+        "identity_reason": check.reason,
+        "may_proceed": check.may_proceed,
     }
 
 

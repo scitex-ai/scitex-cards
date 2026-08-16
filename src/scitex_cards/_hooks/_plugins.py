@@ -65,11 +65,6 @@ logger = logging.getLogger(__name__)
 #: Entry-point group external producers register their plugins under.
 ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
-#: Pre-rename group name (package renamed 2026-07-16). External producers
-#: that registered under the old group keep firing until they re-release
-#: against the new name; drop together with the ``scitex_todo`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_todo.hooks"
-
 #: Default per-plugin wall-time budget (seconds). Each entry-point
 #: handler runs in a worker thread joined with this timeout, so a
 #: slow/hung plugin can NEVER hang the producer/request that drove
@@ -80,7 +75,7 @@ PLUGIN_TIMEOUT_S = 5.0
 
 #: Env override for :data:`PLUGIN_TIMEOUT_S`. Parsed as a float; a value
 #: <= 0 disables the wall-time budget (inline/legacy execution).
-PLUGIN_TIMEOUT_ENV = "SCITEX_TODO_HOOK_PLUGIN_TIMEOUT_S"
+PLUGIN_TIMEOUT_ENV = "SCITEX_CARDS_HOOK_PLUGIN_TIMEOUT_S"
 
 
 def _plugin_timeout_s() -> float:
@@ -197,7 +192,7 @@ def _run_plugins(
         # does not block interpreter shutdown.
         worker = threading.Thread(
             target=_worker,
-            name=f"scitex-todo-hook-{name}",
+            name=f"scitex-cards-hook-{name}",
             daemon=True,
         )
         worker.start()
@@ -292,7 +287,7 @@ def _iter_entry_points() -> Iterable:
     ``entry_points.txt`` — ~126 files in a real fleet venv — on each call. This
     runs on EVERY card event via :func:`dispatch_event`, so uncached it was the
     single largest cost in a card write: sac profiled 2.18 s of a 3.24 s warm
-    ``add_task`` HERE (card todo-reassign-all-bulk-primitive, 2026-07-14). It is
+    ``add_task`` HERE (card cards-reassign-all-bulk-primitive, 2026-07-14). It is
     FIXED overhead — paid in full on every write regardless of store size — so
     the cache makes every card write in the fleet ~2.2 s faster.
 
@@ -310,15 +305,9 @@ def _iter_entry_points() -> Iterable:
     # 3.10+: eps is an EntryPoints, supports .select(group=)
     select = getattr(eps, "select", None)
     if callable(select):
-        return [
-            *select(group=ENTRY_POINT_GROUP),
-            *select(group=LEGACY_ENTRY_POINT_GROUP),
-        ]
+        return list(select(group=ENTRY_POINT_GROUP))
     # 3.9 fallback: dict-like keyed by group.
-    return [
-        *eps.get(ENTRY_POINT_GROUP, []),
-        *eps.get(LEGACY_ENTRY_POINT_GROUP, []),
-    ]
+    return list(eps.get(ENTRY_POINT_GROUP, []))
 
 
 # EOF

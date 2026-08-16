@@ -23,9 +23,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._model import _save_doc_unlocked, _store_lock
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
+from ._touch import touch_last_activity
 
 #: The ONLY status that means "this work was delivered". ``failed`` and
 #: ``cancelled`` are terminal too, but they are NOT completions — a card can
@@ -79,7 +81,7 @@ def complete_task(
     Idempotent per ``GITIGNORED/QUESTIONS.md`` #3: re-completing a
     ``done`` task is a no-op (timestamps stay frozen from the first
     completion). Pass ``by=`` to override the
-    ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
+    ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
 
     Returns the (post-mutation) task mapping.
 
@@ -108,13 +110,39 @@ def complete_task(
                     # No unblock emit — re-completing changed nothing.
                     return dict(task)
                 task["status"] = "done"
+                # CLEAR THE GATE WITH THE STATUS, or the document we are about
+                # to save is INVALID and _validate_tasks refuses the whole save.
+                #
+                # A done card still naming an unresolved blocker is incoherent:
+                # either the gate was cleared, or the card is not done. The
+                # validator says exactly that, and `resolve_task` has always
+                # cleared the blocker for this reason. `complete_task` never
+                # learned it, so the two closing verbs disagreed and this one
+                # produced a document that could not be written back.
+                #
+                # Measured on the live */15 reconcile cron, 2026-08-01:
+                #   TaskValidationError: task 'ci-runner-gitconfig-lock-collision'
+                #   has blocker 'operator-decision' but status is 'done'
+                # That card was legitimately blocked on an operator decision and
+                # its pull request merged anyway — real data, not corruption.
+                # Because validation covers the WHOLE document, that one card
+                # stopped the sweep from closing ANY card.
+                task.pop("blocker", None)
                 log_meta = task.get("_log_meta")
                 if not isinstance(log_meta, dict):
                     log_meta = {}
                     task["_log_meta"] = log_meta
-                log_meta["completed_at"] = _utc_now_iso()
+                now = _utc_now_iso()
+                log_meta["completed_at"] = now
                 log_meta["completed_by"] = _default_agent(by)
-                _save_doc_unlocked(doc, resolved, tasks=tasks)
+                # A COMPLETION IS AN ACT, and every reconciler orders acts by
+                # `last_activity`. Stamping only `completed_at` made the newest
+                # possible change to a card invisible to the field that decides
+                # which copy wins — see `_touch` for the 3-host measurement.
+                # Same `now`, so the completion stamp and the activity stamp
+                # cannot straddle a tick and disagree about when this happened.
+                touch_last_activity(task, now)
+                _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[task_id])
                 result = dict(task)
                 transitioned = True
                 break
@@ -207,6 +235,21 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         actor = _default_agent(None)
         now = _utc_now_iso()
         target["status"] = "cancelled"
+        # CLEAR THE GATE WITH THE STATUS — the same rule `complete_task` learned
+        # on 2026-08-01, which this verb had not. A card that is `cancelled`
+        # while still naming an unresolved blocker is incoherent, and
+        # `_validate_tasks` refuses it:
+        #
+        #   TaskValidationError: task 'a' has blocker 'dependency' but status is
+        #   'cancelled'; set status: blocked or remove the blocker field
+        #
+        # So DELETING ANY BLOCKED CARD THAT NAMES ITS GATE FAILED OUTRIGHT — and
+        # because validation covers the WHOLE document, that one card stopped
+        # every other write in the same save. Found by the restore/undo test
+        # below, which deletes a realistically-blocked card rather than a bare
+        # one; the previous fixtures only ever tombstoned cards with no blocker,
+        # so the hole sat behind a test that could not reach it.
+        target.pop("blocker", None)
         log_meta = target.get("_log_meta")
         if not isinstance(log_meta, dict):
             log_meta = {}
@@ -215,18 +258,32 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         log_meta["deleted_by"] = actor
         comments = target.setdefault("comments", [])
         comments.append(
-            {
-                "author": actor,
-                "ts": now,
-                "text": (
-                    "[TOMBSTONED via delete_task] status -> cancelled, "
-                    "_log_meta.deleted_at stamped. Row retained (never "
-                    "physically removed); restore_task is the Undo."
-                ),
-            }
+            stamp_comment_id(
+                {
+                    "author": actor,
+                    "ts": now,
+                    "text": (
+                        "[TOMBSTONED via delete_task] status -> cancelled, "
+                        "_log_meta.deleted_at stamped. Row retained (never "
+                        "physically removed); restore_task is the Undo."
+                    ),
+                }
+            )
         )
         target["last_activity"] = now
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # NAMES EVERY CARD IT TOUCHED, WHICH IS MORE THAN ONE. This verb
+        # tombstones `task_id` AND scrubs inbound references to it from every
+        # card in `refs` — so its intent genuinely spans several rows, unlike
+        # the other lifecycle verbs.
+        #
+        # `touched_ids=[task_id]` would have been the obvious conversion and it
+        # would have SILENTLY DISCARDED THE REF SCRUBS, leaving dangling
+        # references to a tombstoned card — a new defect introduced by the fix
+        # for an old one. The ids are already collected because the Undo payload
+        # returns them; naming intent here costs nothing extra.
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id, *refs]
+        )
     return {"removed": original, "refs": refs}
 
 
@@ -245,7 +302,7 @@ def restore_task(
     expects to find and reverses in place.
     """
     from . import _model, _task
-    from ._store import _read_write_doc
+    from ._store import _read_write_doc, _utc_now_iso
 
     tasks_path = _resolved_store(store)
     if not isinstance(task, dict) or not task.get("id"):
@@ -253,18 +310,30 @@ def restore_task(
     tid = task["id"]
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
+        # The row we write is a COPY, stamped as a fresh act. `delete_task`
+        # advances `last_activity` when it tombstones (see its body), so a
+        # restore that reused the caller's pre-delete snapshot verbatim would
+        # be strictly OLDER than the tombstone it reverses. On a second host
+        # the reconciler would then read the tombstone as the later act and
+        # re-delete the card — an Undo that undoes itself. We do not mutate
+        # the caller's dict: the Undo payload stays replayable.
+        restored = dict(task)
+        touch_last_activity(restored, _utc_now_iso())
         existing = next((t for t in tasks if t.get("id") == tid), None)
         if existing is not None:
             if not _task._is_tombstoned(existing):
                 raise ValueError(f"restore_task: id {tid!r} already present")
             # UN-TOMBSTONE in place: replace with the caller's pre-delete
             # snapshot, at the SAME list position (an ordinary upsert).
-            tasks[tasks.index(existing)] = dict(task)
+            tasks[tasks.index(existing)] = restored
         else:
             # No row at all — a legacy pre-tombstone-era delete, or an
             # admin purge. Fall back to the original append behaviour.
-            tasks.append(dict(task))
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+            tasks.append(restored)
+        # NAMES THE ONE CARD IT TOUCHED. Both branches above write exactly `tid`
+        # -- un-tombstoning replaces that row in place, the fallback appends it
+        # -- so nothing else in the document is this verb's intent.
+        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=[tid])
     # refs are descriptive (the client passes them through so callers can
     # see which tasks had been mutated; we don't reverse-apply them since
     # the depends_on / blocks values were just stripped, not stored).
@@ -301,19 +370,28 @@ def resolve_task(
         prior_status = target.get("status")  # C5: capture for the event
         target["status"] = "done"
         target.pop("blocker", None)
+        now = _utc_now_iso()
+        # Stamp even on the already-done noop path: this verb ALWAYS appends a
+        # comment, so it always changes the card, and a change that skips the
+        # activity stamp is exactly the lie this invariant exists to prevent.
+        touch_last_activity(target, now)
         comments = target.setdefault("comments", [])
         comments.append(
-            {
-                "author": who,
-                "ts": _utc_now_iso(),
-                "text": (
-                    "[resolve (noop — already done)]"
-                    if was_done
-                    else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
-                ),
-            }
+            stamp_comment_id(
+                {
+                    "author": who,
+                    "ts": now,
+                    "text": (
+                        "[resolve (noop — already done)]"
+                        if was_done
+                        else "[RESOLVED via mcp.resolve_task] flipped status='blocked'->done, blocker cleared."  # noqa: E501  # hook-bypass: line-limit
+                    ),
+                }
+            )
         )
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
     # Active-unblock DRIVE (ADR-0009) — resolving a blocker card to done
     # can free its dependents too. Outside the lock; skip the noop
     # (already-done) path. Handler token-dedupe keeps it idempotent.
@@ -373,6 +451,11 @@ def reopen_task(
         target["status"] = "blocked"
         target["blocker"] = "operator-decision"
         cleared = clear_completion_stamp(target)
+        now = _utc_now_iso()
+        # An UN-completion is as much an act as a completion. Without this the
+        # reopen is invisible to timestamp comparison and a reconciler happily
+        # re-applies the done copy from the other host, undoing the reopen.
+        touch_last_activity(target, now)
         comments = target.setdefault("comments", [])
         text = (
             "[REOPENED via mcp.reopen_task] flipped status='done'->blocked, "
@@ -380,152 +463,18 @@ def reopen_task(
         )
         if cleared:
             text += " Cleared _log_meta.completed_{at,by} — the card is no longer completed."  # noqa: E501  # hook-bypass: line-limit
-        comments.append({"author": who, "ts": _utc_now_iso(), "text": text})
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        comments.append(stamp_comment_id({"author": who, "ts": now, "text": text}))
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
     return {"task_id": task_id, "by": who, "task": dict(target)}
 
 
-def reassign_task(
-    store: str | Path | None = None,
-    task_id: str | None = None,
-    new_owner: str | None = None,
-    *,
-    by: str | None = None,
-    entry_points=None,  # hook-bypass: line-limit
-) -> dict:
-    """Atomically change a card's owner — the primitive the board lacked.
-
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
-
-      * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
-        in lock-step with the operator-co-designed ``agent`` so every
-        reader — old dict-style and new — agrees on the owner), AND
-      * set ``scope = "agent:<new_owner>"`` (the convention the fleet
-        slices on), AND
-      * append an audit comment ``"reassigned <old> -> <new> by <actor>"``.
-
-    THEN (post-persist, outside the lock, fail-soft) emit a canonical
-    ``reassigned`` card-event with ``extra={"from_owner", "to_owner"}``.
-    The EVENT is the notification path — there is intentionally NO bespoke
-    notify/delivery here (delivery is C4, a separate card; this primitive
-    EMITS, it does not deliver).
-
-    Idempotent: reassigning to the SAME current owner is a no-op — no
-    write, no audit comment, no spurious event — so a replayed/duplicate
-    reassign is harmless.
-
-    Parameters
-    ----------
-    task_id : str
-        The card to reassign (required).
-    new_owner : str
-        The new owning agent (required, non-empty).
-    by : str, optional
-        The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
-    entry_points : iterable, optional
-        In-process injection seam forwarded to the event emit (real fake
-        handler in tests); ``None`` uses real plugin discovery.
-
-    Returns
-    -------
-    dict
-        ``{"task_id", "from_owner", "to_owner", "actor", "changed", "task"}``
-        where ``changed`` is ``False`` on the same-owner no-op path.
-
-    Raises
-    ------
-    ValueError
-        If ``task_id`` or ``new_owner`` is missing/empty.
-    TaskNotFoundError
-        If no task matches ``task_id``.
-    """
-    from . import _model, _task  # hook-bypass: line-limit
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
-
-    if not task_id:
-        raise ValueError("reassign_task: 'task_id' is required")
-    if not new_owner or not str(new_owner).strip():
-        raise ValueError("reassign_task: 'new_owner' is required")
-    new_owner = str(new_owner)
-    actor = _default_agent(by)
-    tasks_path = _resolved_store(store)
-    changed = False
-    old_owner: str | None = None
-    result_task: dict | None = None
-    with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        target = _task._find_live_task(tasks, task_id)
-        if target is None:
-            raise TaskNotFoundError(f"reassign_task: unknown id {task_id!r}")
-        # Current owner = `agent`, falling back to legacy `assignee`.
-        old_owner = target.get("agent") or target.get("assignee")
-        if old_owner == new_owner:
-            # Idempotent no-op: same owner → no write, no event. Return the
-            # current state with changed=False.
-            result_task = dict(target)
-        else:
-            target["agent"] = new_owner
-            target["assignee"] = new_owner
-            target["scope"] = f"agent:{new_owner}"
-            comments = target.setdefault("comments", [])
-            comments.append(
-                {
-                    "author": actor,
-                    "ts": _utc_now_iso(),
-                    "text": (
-                        f"reassigned {old_owner or '(unassigned)'} -> "
-                        f"{new_owner} by {actor}"
-                    ),
-                }
-            )
-            # Delegation keeps responsibility (operator 2026-07-18,
-            # 「渡しました、で終わられると困る」/ constitution §2 "ownership
-            # never dangles"): the PREVIOUS owner and the card's creator stay
-            # subscribed through the handoff, so lateness on the delegate
-            # reaches the delegator. Dropping out is an explicit
-            # set_subscriber remove, never a side effect of handing off.
-            subs = list(target.get("subscribers") or [])
-            for keeper in (old_owner, target.get("created_by")):
-                if keeper and keeper != new_owner and keeper not in subs:
-                    subs.append(keeper)
-            if subs:
-                target["subscribers"] = subs
-            target["last_activity"] = _utc_now_iso()
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
-            result_task = dict(target)
-            changed = True
-    # C5: emit `reassigned` ONLY on a real owner change, AFTER the write is
-    # durable + the lock released (fail-soft). The event is the
-    # notification path; delivery is C4. (hook-bypass: line-limit)
-    if changed:
-        _emit_card_event(
-            "reassigned",
-            task_id,
-            actor=actor,
-            extra={"from_owner": old_owner, "to_owner": new_owner},
-            store=tasks_path,
-            entry_points=entry_points,
-        )
-    # Liveness (assignee-liveness feature): heartbeat the reassigning actor,
-    # and surface the NEW owner's liveness so the caller learns immediately
-    # if it just reassigned the card to a non-running agent. Both fail-soft.
-    from ._liveness import _assignee_liveness, _heartbeat
-
-    _heartbeat(actor, tasks_path)
-    out = {
-        "task_id": task_id,
-        "from_owner": old_owner,
-        "to_owner": new_owner,
-        "actor": actor,
-        "changed": changed,
-        "task": result_task,
-    }
-    _liveness = _assignee_liveness(new_owner, tasks_path)
-    if _liveness is not None:
-        out["assignee_liveness"] = _liveness
-    return out
-
+# reassign_task now lives in _store_reassign, beside the bulk reassign_all:
+# ownership is one responsibility and was split across two modules, with the
+# module named for it holding only half. Re-exported here so every existing
+# import path (notably _store) keeps resolving unchanged.
+from ._store_reassign import reassign_task  # noqa: E402,F401
 
 __all__ = [
     "complete_task",

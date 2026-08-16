@@ -1,10 +1,33 @@
 <!DOCTYPE html>
 {% load static %}
-<html lang="en">
+{% comment %}data-theme="dark" ACTIVATES scitex-ui's dark token set — it is not
+decoration. theme.css defines --text-primary / --bg-page / --border-default /
+… twice, once under [data-theme="light"] and once under [data-theme="dark"],
+and DEFAULTS TO LIGHT when the attribute is absent. Without this every base
+component on the page silently resolves light values onto a dark surface, which
+is exactly how scitex-ui 0.12.0's context menu rendered near-invisible on
+2026-07-28. Dark is also the standing default (the operator's eyes are
+sensitive), so this is deliberate, not a preference to be "cleaned up".
+{% endcomment %}
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Chat — SciTeX Cards v{{ scitex_cards_version }}</title>
+{% comment %}
+"DM", not "Chat". Operator, 2026-07-29 (TG): 「あと、"chat" となってますが、"DM"
+で揃えると良いと思います。」 The browser tab was the last place still saying
+Chat — the switcher, the heading and this title now all read DM.
+
+THE ROUTE IS STILL /chat AND STAYS THAT WAY. Renaming a published URL is a
+MIGRATION, not a rename: every bookmark the operator has and every agent
+reference to /chat would break for a label change. See _page_switcher.html,
+which carries the same decision next to the href it does NOT rename.
+
+chat_title.js PREFIXES this string at runtime — "(3) DM — SciTeX Cards v…" —
+so the base title lives here, in one place, and that module spells neither the
+version nor the word DM.
+{% endcomment %}
+<title>DM — SciTeX Cards v{{ scitex_cards_version }}</title>
 {% comment %}
 No favicon link here: scitex-ui's shell supplies the shared SciTeX brand mark
 as its default (>=0.7.1). One source, not two copies that drift. Do NOT re-add
@@ -25,10 +48,50 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
 <512; this file is layout + CSS.
 {% endcomment %}
 <style>
+  /* EVERY COLOUR ON THIS PAGE COMES FROM scitex-ui. NOT ONE IS PICKED HERE.
+     Operator directive 2026-07-28, verbatim: "最適 ui を常に使ってください
+     勝手に変な色を使ったりするのでおかしなことになる … scitex の世界観も壊れる
+     ので s-ui を使ってほしい". They are right, and the bug below is the proof.
+
+     THIS PAGE USED TO HARD-CODE ITS OWN FIXED-DARK PALETTE (#1e1e2e, #7c5cbf,
+     …). That is what broke the right-click menu on 2026-07-28: scitex-ui
+     0.12.0's context-menu CSS reads --text-primary / --text-secondary, this
+     page defined neither, so the menu text fell back to the LIGHT-theme value
+     and rendered near-invisible on a dark menu. The items were live but looked
+     disabled. A private palette does not merely diverge in style — it silently
+     starves every base component the page later adopts, and the failure shows
+     up in the COMPONENT, not here, which is why it was hard to see.
+
+     The names below are ALIASES, not colours: each is a var() onto a scitex-ui
+     token, so the ~100 existing usages in this file keep working while the
+     values are entirely base's. Re-pointing an alias is how this page changes
+     palette from now on. DO NOT reintroduce a literal colour here. */
   :root {
-    --bg: #1e1e2e; --panel: #27273a; --panel-2: #313145; --line: #3d3d55;
-    --text: #e0e0e0; --dim: #a0a0b0; --accent: #7c5cbf; --accent-2: #9d7ce0;
-    --bubble-op: #4b3a78; --bubble-agent: #313145; --unread: #e0a030;
+    --bg: var(--bg-page);
+    --panel: var(--bg-surface);
+    --panel-2: var(--bg-muted);
+    --line: var(--border-default);
+    --text: var(--text-primary);
+    --dim: var(--text-muted);
+    --accent: var(--app-accent-figrecipe);
+    --accent-2: var(--app-accent-clew);
+    --bubble-op: var(--bg-muted);
+    --bubble-agent: var(--bg-surface);
+    --unread: var(--status-warning);
+    /* ONE readable column for the whole surface. The message list and the
+       composer row are both capped here and centred as WHOLES, which is what
+       keeps them aligned with each other on a wide window. Two literals would
+       be two numbers free to drift, and a composer that does not line up with
+       the messages above it is precisely the "space used badly" the operator
+       objected to. */
+    --column-max: 860px;
+    /* Height every control in the composer row shares — attach, the field and
+       send all read it, so the row cannot end up three heights. 44px is this
+       page's standing floor for a phone tap target (the reaction bar states
+       the same number for the same reason), and it comfortably holds one line
+       of composer text plus its padding, so the row is ONE control tall at
+       rest instead of the old 96px band. */
+    --compose-control: 44px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -44,15 +107,61 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
     display: flex; flex-direction: column;
   }
+  /* PALETTE ONLY. This header's BOX METRICS — display, gap, padding,
+     min-height, flex — come from page-header.css (`.stx-cards-headerbar`,
+     the class the <header> carries), which board_v3.html links too. They used
+     to live here as 10px/14px padding with no height floor, against the
+     board's 8px/14px and a 48px floor: two different-height headers, which is
+     what the operator saw on 2026-07-29 (「ヘッダーがそろっていないのが気持ち
+     悪い」). Do not restate a metric here — that is how they drifted.
+     The h1 and the version span are styled by the same shared sheet through
+     `.stx-cards-header`.
+
+     THIS PAGE NO LONGER OVERRIDES THE HEADING COLOUR, and that is the fix for
+     操作者 2026-07-30: 「SciTeX Cards の色がおかしい DM のほう赤い」. It used to
+     feed `--stx-cards-header-fg: var(--accent-2)` (the clew accent, red), while
+     board_v3.html feeds nothing and so gets page-header.css's own default. Two
+     pages, two heading colours.
+
+     That was tolerable while the DM heading read "Direct messages" — a different
+     label in a different colour looks intentional. Once both pages were made to
+     read "SciTeX Cards" (their earlier request: a heading that changes between
+     Board and DM reads as the page breaking), the colour became the ONLY
+     difference, and an identical word in two colours reads as a rendering fault.
+     I fixed the text and left the colour, so the header still changed — just
+     along a different axis than the one reported.
+
+     So: omit both overrides and let the SHARED sheet decide, which is the only
+     arrangement that cannot drift. Adding a colour back here re-creates the bug
+     even if it happens to match today. */
   header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px; background: var(--panel);
-    border-bottom: 1px solid var(--line); flex: 0 0 auto;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
   }
-  header h1 { font-size: 1rem; margin: 0; color: var(--accent-2); font-weight: 600; }
-  header .ver { color: var(--dim); font-size: 0.72rem; }
-  header a.board-link { margin-left: auto; color: var(--dim); font-size: 0.8rem; text-decoration: none; }
-  header a.board-link:hover { color: var(--text); }
+  /* Board | DM switcher (shared component — page-switcher.css + the
+     _page_switcher.html partial, now reached through _page_header.html). It
+     REPLACED the old "← board" link: the operator could reach the board from
+     here, but not the reverse, which is what made /chat/ a hidden URL. The
+     component reads six --sw-* variables; this page has its own fixed-dark
+     palette (the :root above shadows the scitex-ui theme tokens), so feed
+     that palette in here. This block sits BEFORE the page-switcher.css link
+     further down <head>, which is fine: `header .stx-cards-switcher` outranks
+     the component's own `.stx-cards-switcher` defaults on specificity, so
+     source order does not decide the winner.
+
+     THERE IS NO `margin-left: auto` HERE ANY MORE, and adding one back is the
+     regression. It is what put this page's switcher on the RIGHT while the
+     board's sat on the LEFT — the operator had already asked for LEFT on both
+     and restated it on 2026-07-29. The markup looked correct throughout: one
+     declaration moved the control while the template still read
+     switcher-first. page-header.css pins `margin-left: 0` and
+     test__page_header_is_shared.py fails on the auto margin. */
+  header .stx-cards-switcher {
+    --sw-line: var(--line);
+    --sw-surface: var(--panel-2);
+    --sw-fg: var(--dim);
+    --sw-surface-on: var(--accent);
+  }
   #menu-btn {
     background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
     border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; cursor: pointer;
@@ -61,10 +170,29 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #layout { flex: 1 1 auto; display: flex; min-height: 0; }
 
   /* ---- agent list (left) ---- */
+  /* The nav is now a COLUMN of two things — the filter row, which stays put,
+     and the scrolling list. `overflow-y` moved off the nav and onto #agent-list
+     for that reason: left on the nav, the filter scrolls away exactly when a
+     list long enough to need filtering is being scrolled. */
   #agents {
     width: 240px; flex: 0 0 auto; background: var(--panel);
-    border-right: 1px solid var(--line); overflow-y: auto;
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
   }
+  #agent-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+  /* Fuzzy filter over the agent list (operator standing request 2026-07-29:
+     「普通にあいまい検索でフィルタはいつも入れてください」). Every colour here is a
+     token — the matcher comes from scitex-ui and so does the palette. */
+  #agent-filter-row {
+    flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--line);
+  }
+  #agent-filter {
+    width: 100%; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; font-size: 0.78rem; font-family: inherit;
+  }
+  #agent-filter::placeholder { color: var(--dim); }
+  #agent-filter:focus { outline: none; border-color: var(--accent); }
   #agents .agent {
     display: flex; flex-direction: row; align-items: center; gap: 9px;
     padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--line);
@@ -74,13 +202,14 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agents .agent .avatar {
     flex: none; width: 34px; height: 34px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--text-primary); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em;
   }
   #agents .agent .cols { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   #agents .agent .row1 { display: flex; align-items: center; gap: 6px; }
   #agents .agent .name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agents .agent .badge {
-    margin-left: auto; background: var(--unread); color: #1e1e2e;
+    /* Dark text ON the warning fill — that is what --text-inverse is for. */
+    margin-left: auto; background: var(--unread); color: var(--text-inverse);
     border-radius: 9px; font-size: 0.68rem; font-weight: 700;
     padding: 1px 7px; min-width: 18px; text-align: center;
   }
@@ -94,42 +223,250 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     border-bottom: 1px solid var(--line); flex: 0 0 auto;
   }
   #thread-title b { color: var(--text); }
-  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 860px; margin-inline: auto; }
-  .msg { max-width: 78%; display: flex; flex-direction: column; gap: 2px; }
+  #messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: var(--column-max); margin-inline: auto; }
+  /* TYPING COST, not paint cost — AND A REVERTED ATTEMPT. Read before retrying.
+
+     Operator 2026-07-30: typing lags in a HEAVY thread, is comfortable in a
+     light one. Measured: operator::scitex-cards 222 msgs / 86,859 B lags;
+     operator::scitex-hpc 51 msgs / 18,761 B does not. The pane keeps EVERY
+     message in the DOM, so each keystroke pays style+layout across the whole
+     tree, and chat_compose.js auto-sizes the textarea by reading scrollHeight,
+     which forces that layout synchronously.
+
+     `content-visibility: auto` on .msg FIXED THE TYPING — the operator confirmed
+     it — AND MADE THE THREAD UNREADABLE: "一番下にたどり着けないの地獄すぎる".
+     Reverted within minutes.
+
+     WHY IT BROKE, so the next attempt does not repeat it: off-screen messages get
+     an ESTIMATED height, and I guessed `contain-intrinsic-size: auto 64px`.
+     Real bubbles here exceed 250px (the agent side averages 883 B/msg). Scrolling
+     down replaces estimates with real heights, so total scroll height GROWS and
+     the bottom recedes faster than you can reach it.
+
+     THE ASYMMETRY I GOT BACKWARDS: under-estimating makes the bottom UNREACHABLE;
+     over-estimating merely overshoots, and you can still get there. The safe
+     direction was LARGE. One guessed number turned a slow board into an unusable
+     one.
+
+     BEFORE RETRYING: measure real bubble heights in a browser and set
+     contain-intrinsic-size from that (erring high), and add a check that the
+     thread can still be scrolled to its last message. Note that the pane
+     controller's stick-to-bottom logic (applyPlan) reads
+     $messages.scrollHeight, which content-visibility makes unstable — that
+     interaction needs testing too, not reasoning about.
+
+     NB no bare module filenames in this comment on purpose:
+     test__chat_reaction_forward_wiring indexes the rendered page for those
+     tokens to check <script> load order, so naming one here in prose moves the
+     match earlier in the document and fails the test. I did exactly that and it
+     went red. Refer to modules by their FUNCTION here, not their filename. */
+  .msg {
+    max-width: 78%; display: flex; flex-direction: column; gap: 2px;
+  }
   .msg .bubble {
     padding: 8px 12px; border-radius: 12px; font-size: 0.88rem;
     white-space: pre-wrap; word-break: break-word; line-height: 1.35;
   }
   .msg .meta { font-size: 0.65rem; color: var(--dim); padding: 0 4px; }
+  /* ---- markdown bodies (chat_markdown.js) ----
+     Only `.bubble.md` — the plain-text path keeps pre-wrap, which is what
+     preserves an author's line breaks. A rendered body expresses those breaks
+     as real elements, so pre-wrap there would count every newline twice.
+     Inside a code fence pre-wrap comes BACK, because there the whitespace is
+     the content.
+
+     No literal colours: everything inherits the bubble's own tokens so dark
+     mode arrives with the theme rather than being re-specified here. */
+  .msg .bubble.md { white-space: normal; }
+  .msg .bubble.md > :first-child { margin-top: 0; }
+  .msg .bubble.md > :last-child { margin-bottom: 0; }
+  .msg .bubble.md .md-p { margin: 0 0 0.5em; }
+  .msg .bubble.md .md-h { margin: 0.6em 0 0.3em; font-size: 1em; font-weight: 700; }
+  .msg .bubble.md .md-list { margin: 0.3em 0; padding-left: 1.3em; }
+  .msg .bubble.md .md-quote {
+    margin: 0.4em 0; padding-left: 0.7em;
+    border-left: 2px solid currentColor; opacity: 0.85;
+  }
+  .msg .bubble.md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.92em; background: rgba(127,127,127,0.18);
+    padding: 0.1em 0.3em; border-radius: 4px;
+  }
+  .msg .bubble.md .md-pre {
+    margin: 0.5em 0; padding: 0.6em 0.7em; border-radius: 8px;
+    background: rgba(127,127,127,0.18);
+    white-space: pre; overflow-x: auto; max-width: 100%;
+  }
+  .msg .bubble.md .md-pre code { background: none; padding: 0; }
+  /* A wide table must scroll INSIDE the bubble rather than widening the
+     column — the operator reads this on a phone. */
+  .msg .bubble.md .md-table {
+    display: block; overflow-x: auto; max-width: 100%;
+    border-collapse: collapse; margin: 0.5em 0; font-size: 0.92em;
+  }
+  .msg .bubble.md .md-table th,
+  .msg .bubble.md .md-table td {
+    border: 1px solid rgba(127,127,127,0.35); padding: 0.25em 0.5em;
+    text-align: left; white-space: nowrap;
+  }
+  .msg .bubble.md a { color: inherit; text-decoration: underline; }
+  /* ---- delivery indicator (chat_receipts.js) ----
+     Three dots on a line, filling left to right: sent -> queued -> read.
+     QUIET BY REQUIREMENT — it sits on every message, and the operator's stated
+     goal is a clean screen, so it must not out-shout the message text.
+
+     STATE IS CARRIED BY SHAPE, NOT COLOUR: filled disc / hollow ring / DASHED
+     ring. Colour-only state fails for colour-blind readers and in high-contrast
+     modes, and the dashed ring is load-bearing — "we cannot see this step" must
+     not be readable as "confirmed" NOR as "hasn't happened", because the second
+     is also a claim we are not entitled to make.
+
+     `currentColor` throughout and no literal colour anywhere: the dots inherit
+     the meta line, so dark mode arrives with the theme tokens rather than being
+     re-specified here. */
+  .msg .meta .receipt {
+    display: inline-flex; align-items: center; gap: 2px;
+    margin-left: 6px; vertical-align: middle; white-space: nowrap;
+    cursor: default; line-height: 1;
+  }
+  .msg .meta .receipt:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+  .msg .meta .receipt i { width: 5px; height: 1px; background: currentColor; opacity: 0.45; }
+  .msg .meta .rc-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    border: 1px solid currentColor; box-sizing: border-box;
+  }
+  .msg .meta .rc-on { background: currentColor; }
+  .msg .meta .rc-off { background: transparent; opacity: 0.55; }
+  .msg .meta .rc-unknown { background: transparent; border-style: dashed; opacity: 0.4; }
+  /* The wording is present for hover, for screen readers and for a TAP, but it
+     only takes space once asked for — hover has no equivalent on the phone this
+     page is mostly read on, so the tap toggle is the mobile answer, not a
+     nicety. */
+  .msg .meta .rc-label { display: none; font-size: 0.62rem; margin-left: 4px; }
+  .msg .meta .receipt.rc-open { white-space: normal; }
+  .msg .meta .receipt.rc-open .rc-label { display: inline; }
   .msg.from-operator { align-self: flex-end; align-items: flex-end; }
   .msg.from-operator .bubble { background: var(--bubble-op); border-bottom-right-radius: 3px; }
   .msg.from-agent { align-self: flex-start; align-items: flex-start; }
   .msg.from-agent .bubble { background: var(--bubble-agent); border-bottom-left-radius: 3px; }
   #messages .hint { color: var(--dim); font-size: 0.8rem; margin: auto; text-align: center; }
 
-  /* ---- compose ---- */
+  /* ---- compose: ONE tight row, Telegram's shape ---- */
+  /* WHAT WAS WRONG. The row was `display: flex; justify-content: CENTER` with
+     a 64px-minimum textarea capped at 760px, inside 10px padding — a 96px band
+     on every screen. On the operator's 1496px window that centred the field
+     and left the attach and emoji buttons stranded in the gutter beside it,
+     with Send far off to the right: three controls floating around a hole.
+     Operator, verbatim: 「このスペースの使い方が下手」 (this space is used badly)
+     and 「telegram を真似てください」 (copy Telegram).
+
+     WHAT TELEGRAM DOES, which is what this is now. ONE row: attach at the far
+     left, the field taking every remaining pixel, emoji at the RIGHT EDGE OF
+     THE FIELD (inside it, not a fourth floating control), send at the far
+     right. Nothing is centred WITHIN the row — the row is centred as a whole,
+     capped at --column-max, so it lines up with the message column above it.
+     The row is one control tall at rest and grows only as you type
+     (chat_compose.js measures it; a textarea cannot do this in CSS), which is
+     where the other ~40px of that band went. */
   #compose {
-    display: flex; gap: 8px; justify-content: center; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 6px; padding: 6px 12px;
     border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   }
-  #compose textarea {
-    flex: 1 1 auto; max-width: 760px; resize: none; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-    font: inherit; font-size: 0.9rem; min-height: 64px; max-height: 200px;
+  #compose-row {
+    display: flex; align-items: flex-end; gap: 6px;
+    width: 100%; max-width: var(--column-max); margin-inline: auto;
   }
-  #compose button { align-self: flex-end; }
-  #compose textarea:focus { outline: 1px solid var(--accent); }
-  #compose button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
-    padding: 0 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  /* DIRECT children only. These are the composer's OWN buttons (attach,
+     send). Written without the child combinator they also matched every
+     button nested inside the emoji picker, and an id selector outranks that
+     component's own classes — so its toggle and all sixty of its emoji
+     rendered as accent-filled Send buttons. A shared primitive must not be
+     restyled by the page hosting it. The combinator is still load-bearing now
+     that the row is the parent: the picker lives INSIDE #compose-field, so it
+     is not a direct child of the row and these rules cannot reach it. */
+  #compose-row > button {
+    flex: 0 0 auto; min-height: var(--compose-control);
+    background: var(--accent); color: var(--text-primary); border: 0;
+    border-radius: 10px; padding: 0 16px; font: inherit; font-size: 0.9rem;
+    font-weight: 600; cursor: pointer; touch-action: manipulation;
   }
-  #compose button:disabled { opacity: 0.45; cursor: default; }
-  #compose-attach {
-    align-self: flex-end; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); padding: 0 12px; font-size: 1.05rem;
+  #compose-row > button:disabled { opacity: 0.45; cursor: default; }
+  /* Two ids, so this outranks the `#compose-row > button` rule above it —
+     an id-plus-element selector is MORE specific than a bare id, so the
+     shorter `#compose-attach` would have lost and the paperclip would have
+     rendered as a second accent-filled Send. */
+  #compose-row > #compose-attach {
+    min-width: var(--compose-control);
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); padding: 0 10px; font-size: 1.15rem;
+    font-weight: 400;
   }
-  #compose-attach:hover { background: var(--line); }
+  #compose-row > #compose-attach:hover { background: var(--line); }
+  /* The field owns the emoji button's seat: `position: relative` here is what
+     the absolutely-positioned picker below anchors to, and `min-width: 0` is
+     what lets a flex item shrink below its content on a narrow phone instead
+     of pushing Send off the screen. */
+  #compose-field { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
+  #compose-field textarea {
+    flex: 1 1 auto; width: 100%; resize: none;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    /* The right inset is the emoji button's seat: the component sizes its
+       toggle at 12px + glyph + 12px + borders (~43px) and it is placed 3px in,
+       so 52px leaves clearance rather than sitting exactly on the estimate.
+       The caret must never run underneath it. */
+    padding: 9px 52px 9px 12px;
+    font: inherit; font-size: 0.9rem; line-height: 1.35;
+    min-height: var(--compose-control); overflow-y: hidden;
+  }
+  #compose-field textarea:focus { outline: 1px solid var(--accent); }
+  /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
+     page maps ITS palette onto the component's tokens instead of overriding
+     the component's rules — that is the whole contract, and it is what lets
+     the widget be lifted into scitex-ui without dragging this page's colors
+     along with it. PLACEMENT is the host's job by the component's own design
+     ("the host page decides WHERE the affordance sits"), so positioning it
+     inside the field is not an override; the bare-toggle look and the
+     right-anchored panel are both ASKED FOR through the component's tokens
+     and its --right modifier rather than by restyling its rules. */
+  #compose-field .stx-emoji-picker {
+    position: absolute; right: 3px; bottom: 3px;
+    --stx-emoji-picker-surface: var(--panel-2);
+    --stx-emoji-picker-border: var(--line);
+    --stx-emoji-picker-text: var(--dim);
+    --stx-emoji-picker-hover: var(--line);
+    --stx-emoji-picker-accent: var(--accent);
+    --stx-emoji-picker-toggle-surface: transparent;
+    --stx-emoji-picker-toggle-border: transparent;
+    /* 38px tall inside a 44px field, and the component's own 12px side padding
+       carries the width to ~43px. Short of this page's 44px floor by design:
+       the toggle sits INSIDE the field, so a full-height square would leave no
+       field edge around it — and 38x43 is still a comfortable thumb target,
+       unlike the ~25px the content-sized default would have given. */
+    --stx-emoji-picker-toggle-min: 38px;
+  }
+  /* The long-draft offer (chat_compose.js builds it; see chat_longtext.js for
+     the threshold). Same column as the row under it, so the composer reads as
+     one block rather than two things that happen to be adjacent. */
+  #compose-longtext {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    width: 100%; max-width: var(--column-max); margin-inline: auto;
+    font-size: 0.72rem; color: var(--dim);
+  }
+  #compose-longtext button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 10px; font: inherit; font-size: 0.72rem;
+    min-height: 32px; cursor: pointer; touch-action: manipulation;
+  }
+  #compose-longtext button:hover { border-color: var(--accent); }
+  /* `hidden` must actually hide. The rule above sets `display: flex` from an
+     ID selector, which OUTRANKS the UA's `[hidden] { display: none }` — the
+     bar would then sit above the composer permanently, announcing a long
+     message on an empty draft. Exactly the trap emoji_picker.css documents
+     for its own panel. */
+  #compose-longtext[hidden] { display: none; }
   /* Attachments render under the bubble, inside the same message column, so
      an image reads as part of the message rather than a separate event. */
   .msg .att-img { display: block; margin-top: 4px; max-width: 100%; }
@@ -144,14 +481,72 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     font-size: 0.82rem; word-break: break-all;
   }
   .msg .att-file:hover { border-color: var(--accent); }
+
+  /* ---- long messages ---- */
+  /* Operator, verbatim: 「長い文章はテキストファイルに変換してアップロード・
+     ダウンロードできるように、画面を埋め尽くさないように」. Their own thread is the
+     proof — one pasted element-inspector dump took the whole viewport and
+     pushed the conversation off it.
+
+     THE FULL TEXT IS IN THE DOM. This clamps HEIGHT only, so find-in-page,
+     select-all and copy still see every character and expanding is a class
+     flip. Slicing the string would have been fewer lines and would have
+     destroyed the tail; the rendering has no business being lossier than an
+     append-only store.
+
+     8 lines must equal chat_longtext.js's CLAMP_LINES — a test pins the two
+     so the JS decision and this budget cannot drift. It is about a quarter of
+     the message pane on the operator's phone, so four messages still fit. */
+  .msg .bubble.clamped {
+    --longtext-lines: 8;
+    /* 1.35em is the bubble's own line-height; 16px is its vertical padding. */
+    max-height: calc(var(--longtext-lines) * 1.35em + 16px);
+    overflow: hidden; position: relative;
+  }
+  /* A hard cut mid-glyph reads as a rendering fault. The fade says "there is
+     more" — and it must ride the SAME bubble fill on each side, which is why
+     there are two rules rather than one. */
+  .msg .bubble.clamped::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 1.6em; pointer-events: none;
+  }
+  .msg.from-operator .bubble.clamped::after {
+    background: linear-gradient(to bottom, transparent, var(--bubble-op));
+  }
+  .msg.from-agent .bubble.clamped::after {
+    background: linear-gradient(to bottom, transparent, var(--bubble-agent));
+  }
+  /* Outside the bubble on purpose: inside, `overflow: hidden` would clip the
+     very control that undoes the clipping. */
+  .msg .longtext-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; padding: 0 2px; }
+  .msg .longtext-btn {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px 10px; font: inherit; font-size: 0.72rem;
+    min-height: 32px; cursor: pointer; touch-action: manipulation;
+  }
+  .msg .longtext-btn:hover { border-color: var(--accent); }
   #error-bar {
-    display: none; background: #6b2a2a; color: #ffd7d7; font-size: 0.78rem;
+    /* The error rail rides base's status token, not a hand-mixed maroon. */
+    display: none; background: var(--status-error); color: var(--text-inverse); font-size: 0.78rem;
     padding: 6px 14px; flex: 0 0 auto;
   }
+  /* Same bar, success colour. A forward succeeds in a thread the operator is
+     not looking at, so it needs to say so — but announcing a success in the
+     red error bar is its own kind of wrong. */
+  /* Success variant of the same rail. Rides base's status token like the error
+     variant above — introduced with the reactions/forward work as a literal
+     pair and converted here, caught by the palette guard rather than by review. */
+  #error-bar.ok { background: var(--status-success); color: var(--text-inverse); }
 
   /* ---- mobile: agent list becomes a drawer ---- */
   @media (max-width: 720px) {
     #menu-btn { display: block; }
+    /* The version chip is the first thing to go on a 375pt iPhone: hamburger
+       + title + version + switcher overflows the header, and the switcher is
+       the one item that MUST stay reachable. The board page still shows the
+       version. */
+    header .ver { display: none; }
     #agents {
       position: fixed; top: 0; bottom: 0; left: 0; z-index: 20;
       width: min(78vw, 300px); transform: translateX(-105%);
@@ -187,10 +582,118 @@ ships alongside this.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/shell/theme.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/context-menu.css' %}">
+{% comment %}
+Emoji picker — OUR file for now, but written as a harvestable primitive: it
+knows nothing about DMs, messages or `.msg`, and its palette rides
+`--stx-emoji-picker-*` tokens the host page maps (see the #compose block
+above). When scitex-ui adopts it, this link and the script tag at the bottom
+swap for the base ones and nothing else on this page moves.
+
+Board | DM switcher — the SAME stylesheet board_v3.html links, so the two
+pages cannot drift into two different-looking switchers. Palette mapping for
+this page is in the <style> above (header .stx-cards-switcher).
+
+page-header.css is the same idea one level up: the SAME stylesheet the board
+links, holding the header bar's height/padding/gap so the two headers line up
+structurally instead of by two hand-synced numbers.
+
+(Both links kept: the emoji picker and the switcher arrived in parallel PRs
+that each added a stylesheet at this spot. They are independent components
+and the page needs both — this was a textual collision, not a real one.)
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_cards/ui/emoji_picker.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
-  #msg-menu { position: fixed; display: none; z-index: 40; }
-  #msg-menu.open { display: block; }
+  #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
+  #forward-menu.open { display: block; }
+  /* The wrap is the operator's sketch made literal: the quick reaction ROW,
+     then the action LIST beneath it, opening and closing as one thing. Only
+     the wrap is positioned — the two panels inside it are in normal flow, so
+     the row can never drift away from the menu it belongs to. */
+  #msg-menu-wrap.open { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  /* THE RESET THAT MAKES THE STACK WORK — do not delete it as redundant.
+     scitex-ui's context-menu.css puts `position: fixed` on the CLASS itself,
+     not on a positioned variant. Both panels inside the wrap carry that class,
+     so without this they leave the flex column entirely and render on top of
+     each other: the reaction row would sit over the action list rather than
+     above it. The row/list layout is a page concern, so the page reclaims the
+     positioning; every VISUAL rule still comes from base. */
+  #msg-menu-wrap > .stx-app-context-menu { position: static; }
+  /* The emoji panels are the ones that are a ROW, not a list. */
+  #react-bar.open { display: flex; gap: 2px; padding: 4px; }
+  #react-quick { display: flex; gap: 2px; padding: 4px; }
+  /* 44px is the smallest reliably tappable target on a phone, and this feature
+     exists for a phone. `manipulation` drops the ~300ms double-tap-zoom wait,
+     so a reaction registers immediately rather than feeling broken. */
+  #react-bar .react-emoji, #react-quick .react-emoji, #react-quick .react-more {
+    min-width: 44px; height: 44px; font-size: 1.35rem; line-height: 1;
+    background: none; border: 0; border-radius: 8px; cursor: pointer;
+    touch-action: manipulation; color: inherit;
+  }
+  #react-bar .react-emoji:hover, #react-quick .react-emoji:hover { background: var(--panel-2); }
+  /* The chevron is an affordance, not a reaction: dimmer, narrower, and set
+     off by a rule so the row does not read as seven equal choices. */
+  #react-quick .react-more {
+    min-width: 32px; font-size: 0.9rem; color: var(--dim);
+    border-left: 1px solid var(--line); border-radius: 0 8px 8px 0;
+  }
+  #react-quick .react-more:hover { background: var(--panel-2); color: var(--text); }
+
+  /* ---- selection mode ---- */
+  #select-bar {
+    display: none; align-items: center; gap: 8px; flex: 0 0 auto;
+    padding: 6px 14px; background: var(--panel-2);
+    border-bottom: 1px solid var(--line); font-size: 0.8rem;
+  }
+  #select-bar.open { display: flex; }
+  #select-bar #sb-count { color: var(--dim); margin-right: auto; font-variant-numeric: tabular-nums; }
+  #select-bar button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 0.8rem;
+    cursor: pointer; touch-action: manipulation;
+  }
+  #select-bar button:hover { border-color: var(--accent); }
+  #select-bar button:disabled { opacity: 0.45; cursor: default; }
+  #select-bar #sb-cancel { color: var(--dim); }
+  /* In selection mode a tap SELECTS rather than doing what a tap normally does,
+     so the pointer has to say so — and text selection has to stop fighting it,
+     which is what drags a caret across three bubbles on a desktop. */
+  #messages.selecting .msg { cursor: pointer; user-select: none; }
+  #messages.selecting .msg .bubble { outline: 1px solid transparent; }
+  /* The selected state rides the accent OUTLINE rather than a fill: a fill
+     would have to differ from both bubble colours, and the operator-side and
+     agent-side bubbles are already two different colours. */
+  #messages.selecting .msg.selected .bubble {
+    outline: 2px solid var(--accent-2); background: var(--bubble-op);
+  }
+  /* A long agent list must not run off the bottom of a phone screen. */
+  #forward-menu { max-height: 60vh; overflow-y: auto; }
+  #forward-menu .forward-empty {
+    padding: 8px 12px; font-size: 0.78rem; color: var(--dim); white-space: nowrap;
+  }
+
+  /* ---- reaction chips ---- */
+  /* Under the bubble, inside the message column, so a reaction reads as part
+     of the message rather than as a separate event — the same placement rule
+     the attachments already follow. */
+  .msg .reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; padding: 0 2px; }
+  .msg .reactions .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 11px; padding: 1px 7px; cursor: pointer;
+    color: var(--text); font: inherit; font-size: 0.72rem; line-height: 1.5;
+    touch-action: manipulation;
+  }
+  .msg .reactions .chip:hover { border-color: var(--accent); }
+  /* The viewer's own reaction is outlined, not just coloured: "have I already
+     reacted?" must be answerable without comparing two shades. */
+  .msg .reactions .chip.mine { border-color: var(--accent-2); background: var(--bubble-op); }
+  .msg .reactions .chip-emoji { font-size: 0.85rem; }
+  .msg .reactions .chip-count { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .msg .reactions .chip.mine .chip-count { color: var(--text); }
 </style>
 </head>
 {% comment %}
@@ -203,15 +706,59 @@ is an integration bug, never a silently-guessed root mount. This attribute
 must therefore ALWAYS be rendered.
 {% endcomment %}
 <body data-api-base="{{ api_base }}">
-<header>
+{% comment %}
+The header is the SHARED partial board_v3.html renders too, so the two pages
+cannot drift into two different heights or two different switcher sides again
+(operator, 2026-07-29). `.stx-cards-headerbar` carries the geometry; the
+palette above is all this page still says about it.
+
+`#menu-btn` stays FIRST because it is the phone-only agent-list toggle and a
+leading hamburger is the platform convention there — it is `display: none` on
+every viewport wide enough for the list to be visible, so on the desktop the
+switcher IS the leftmost thing in the header, exactly as on the board.
+{% endcomment %}
+<header class="stx-cards-headerbar">
   <button id="menu-btn" aria-label="Toggle agent list">&#9776;</button>
-  <h1>Direct messages</h1>
-  <span class="ver">SciTeX Cards v{{ scitex_cards_version }}</span>
-  <a class="board-link" href="{{ api_base }}">&larr; board</a>
+  {% comment %}
+  page_title IS THE PRODUCT NAME ON BOTH PAGES, and it is deliberately NOT
+  "Direct messages". Operator, 2026-07-30: 「ボードの上で張った部分は DM でも
+  同じにしてください」 then 「header が変わると変です」 — they pasted the board's
+  identity band and asked for it verbatim here, because a header whose text
+  changes as you move between Board and DM reads as the page breaking rather
+  than as navigation.
+
+  THIS SUPERSEDES A DECISION FROM 2026-07-29, so do not "restore" it: back then
+  the same operator asked for DM wording over "chat" (「"Direct Message" が
+  よい」), and that was implemented partly as this heading. Their newer
+  instruction is about the heading CHANGING, not about the word — so the DM
+  wording stays in all three places that identify the PAGE (the switcher item
+  reads "DM" and is the thing that highlights, its tooltip reads "Direct
+  messages with the agents", and the browser tab reads "DM — SciTeX Cards v…").
+  The band above the switcher names the PRODUCT; the switcher names the page.
+  {% endcomment %}
+  {% include "scitex_cards/_page_header.html" with active="chat" page_title="SciTeX Cards" %}
 </header>
 <div id="error-bar"></div>
 <div id="layout">
-  <nav id="agents" aria-label="Agents"><div class="empty">Loading agents&hellip;</div></nav>
+{% comment %}
+The agent list is now a filter row plus a scrolling list, not one flat nav.
+`renderAgents` in chat.js clears its container on every 5s poll, so the input
+CANNOT live inside the rebuilt element — it would be wiped four seconds after
+the operator typed in it. `#agent-list` exists to be the wiped part.
+
+The input is written HERE rather than created by chat_filter.js so the page can
+be asserted to actually SERVE it (same reason the context-menu items are in the
+template). `#agents` keeps its id because the mobile drawer is mounted on it and
+every `#agents .agent` rule still matches through the new wrapper.
+{% endcomment %}
+  <nav id="agents" aria-label="Agents">
+    <div id="agent-filter-row">
+      <input id="agent-filter" type="search" autocomplete="off"
+             placeholder="Filter agents&hellip;" aria-label="Filter agents"
+             aria-controls="agent-list">
+    </div>
+    <div id="agent-list"><div class="empty">Loading agents&hellip;</div></div>
+  </nav>
   <div id="scrim"></div>
 {% comment %}
 Markup is scitex-ui's contract, verbatim — do not "tidy" it:
@@ -226,22 +773,211 @@ Positioning/dismiss is wired below by hand; scitex-ui is shipping a
 /Escape/scroll dismissal, items-array API) and this markup is exactly what it
 emits, so swapping to it will not change this block.
 {% endcomment %}
-  <div id="msg-menu" class="stx-app-context-menu" role="menu">
-    <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
-    <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy text</button>
+  <div id="msg-menu-wrap">
+{% comment %}
+The QUICK REACTION ROW, above the action list — the operator's sketch, and
+their reason for it: 「絵文字リアクションがすぐ打てると嬉しい」. A reaction was
+previously three taps (open menu -> React… -> emoji); here it is one, which is
+the whole point and the only reason this row exists.
+
+The emoji are NOT written here — chat_menu.js builds them from
+chat_actions.QUICK_REACTION_EMOJI and inserts them BEFORE the chevron. A copy in
+the template would be a second palette, free to drift from the Python one.
+
+The chevron IS the old "React…" item, moved into the row where the reference
+puts it: it opens #react-bar, the fuller picker over the whole palette. It keeps
+the id `mm-react` because it is the same affordance, and it lives in the
+template rather than in JS so the page can be asserted to actually SERVE it.
+`&#9662;` (▾) is a plain geometric glyph present in every system font — not an
+emoji, not an icon font, so it cannot fail to resolve over the tunnel.
+{% endcomment %}
+    <div id="react-quick" class="stx-app-context-menu" role="menu" aria-label="Quick reactions">
+      <button class="react-more" id="mm-react" type="button" role="menuitem" aria-label="More reactions">&#9662;</button>
+    </div>
+    <div id="msg-menu" class="stx-app-context-menu" role="menu">
+      <button class="stx-app-context-menu__item" id="mm-reply" role="menuitem">Reply</button>
+      <button class="stx-app-context-menu__item" id="mm-copy" role="menuitem">Copy</button>
+      <button class="stx-app-context-menu__item" id="mm-forward" role="menuitem">Forward&hellip;</button>
+      <button class="stx-app-context-menu__item" id="mm-select" role="menuitem">Select</button>
+    </div>
   </div>
+{% comment %}
+DELIBERATELY ABSENT, and both absences are decisions rather than oversights:
+
+  Translate — the operator said 「translate はいらない」.
+
+  Pin — nothing in this codebase pins a DM. There is no pinned-message store,
+  no endpoint and no place to render one, so the item could only ever look
+  like it worked. A dead control is worse than a missing one.
+
+  Delete — the DM store is APPEND-ONLY by operator ruling
+  (「一度書いたものは消えない」); `_threads` has no delete and
+  `_reactions._save_events_unlocked` REFUSES a write that shrinks the log.
+  Deleting a message honestly means an append-only tombstone event log plus an
+  endpoint plus a fold plus a render — a feature, not a menu item — so it is
+  carded rather than faked. A red "Delete" that leaves the message on screen
+  after the next 5s poll is the worst of the three options.
+{% endcomment %}
+{% comment %}
+Reaction bar and forward picker — both second-level panels the context menu
+opens in place of itself, so only one thing is ever on screen.
+
+The emoji are NOT written here. chat_actions.js owns the palette and
+chat_menu.js builds the buttons from it, which is what keeps the set the picker
+offers identical to the set the Python side documents — a hardcoded row here
+would be a second copy, free to drift.
+
+Empty on purpose; both are populated at runtime (the forward list from the
+agent list chat.js already polls, so the picker cannot disagree with the drawer
+about who exists).
+{% endcomment %}
+  <div id="react-bar" class="stx-app-context-menu" role="menu" aria-label="React"></div>
+  <div id="forward-menu" class="stx-app-context-menu" role="menu" aria-label="Forward to"></div>
   <main id="thread-pane">
     <div id="thread-title">Select an agent to open the thread.</div>
+{% comment %}
+Selection mode's own bar. Hidden until "Select" is chosen, and it is the ONLY
+reason Select is in the menu at all: a selection that cannot be acted on is a
+mode with no exit and no purpose. Copy and Forward are both real destinations
+built on paths that already work — the clipboard, and the same POST a single
+Forward uses.
+{% endcomment %}
+    <div id="select-bar">
+      <span id="sb-count">0 selected</span>
+      <button id="sb-copy" type="button">Copy</button>
+      <button id="sb-forward" type="button">Forward&hellip;</button>
+      <button id="sb-cancel" type="button">Cancel</button>
+    </div>
     <div id="messages"><div class="hint">No agent selected.</div></div>
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
-      <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
-      <textarea id="compose-body" rows="3" placeholder="Message&hellip; (paste or drag a file to attach)" disabled></textarea>
-      <button id="compose-send" type="submit" disabled>Send</button>
+      {% comment %}
+      ORDER IS THE LAYOUT. Telegram's composer reads left to right: attach,
+      field, send — with emoji tucked into the right edge of the field rather
+      than standing beside it as a fourth control. This markup IS that order,
+      so the row needs no `order:` juggling to produce it, and a screen reader
+      meets the controls in the same sequence as the eye.
+
+      The bar chat_compose.js inserts above this row (the offer to send an
+      over-long draft as a .txt) is built in JS, not written here: it exists
+      only while a draft is over the threshold, and markup that is hidden
+      99% of the time is markup nobody maintains.
+      {% endcomment %}
+      <div id="compose-row">
+        <button id="compose-attach" type="button" title="Attach a file (or paste / drag one in)">&#128206;</button>
+        <div id="compose-field">
+          <textarea id="compose-body" rows="1" placeholder="Message&hellip;" disabled></textarea>
+          {% comment %}
+          Declarative mount: emoji_picker.js finds this by the attribute and
+          builds its own toggle + panel here, so the composer's behaviour file
+          (chat.js) gains not one line for this feature. The value is the id of
+          the field the emoji land in.
+
+          --right is the component's own modifier for a toggle at the END of
+          its row: the default panel hangs from the toggle's LEFT edge, which
+          from here would open a ~20rem popover rightwards off the side of a
+          phone screen.
+          {% endcomment %}
+          <span class="stx-emoji-picker stx-emoji-picker--right" data-stx-emoji-picker-for="compose-body"></span>
+        </div>
+        <button id="compose-send" type="submit" disabled>Send</button>
+      </div>
     </form>
   </main>
 </div>
+{% comment %}
+Load order matters and is one-directional: each file reads the ones before it
+off `window` and never the reverse.
+
+  combobox.js      scitex-ui's fuzzy matcher (STX.Combobox.fuzzyMatch)
+  chat_diff.js     pure render planning (no deps)
+  chat_title.js    the unread count in the browser tab (no deps)
+  chat_actions.js  pure message-action decisions (no deps)
+  chat_select.js   multi-select mode + its bulk actions (reads ChatActions)
+  chat_menu.js     the message context menu + reaction chips (reads both)
+  chat_attach.js   attachment uploads AND their rendering (no deps)
+  chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
+  chat_filter.js   fuzzy filter over the agent list (reads STX.Combobox)
+  chat_longtext.js the long-body clamp + .txt download (no deps)
+  chat_compose.js  the composer: auto-grow + the long-draft offer
+                   (reads ChatLongText for the threshold, and is handed
+                   ChatAttach's single-file upload by chat.js)
+  chat_receipts.js the delivery indicator on a bubble (no deps)
+  chat.js          the page orchestrator (mounts the modules above)
+
+chat_menu mounts chat_select rather than chat.js doing it: the menu already
+holds every seam selection needs (the message list, the peer, the forward
+picker), so routing them through chat.js would only add a pass-through — and
+chat.js is at its 512-line budget.
+
+combobox.js is scitex-ui's, and it is here for its MATCHER, not its widget: the
+bundle attaches `window.STX.Combobox` and exports `fuzzyMatch` as a static, which
+is what makes "matches" mean the same thing on this page as on the board. It is
+the same file board_v3.html loads. chat_filter.js degrades to a substring match
+if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
+
+`defer` scripts execute in document order, so this list IS the order.
+{% endcomment %}
+<script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_diff.js' %}"></script>
+{% comment %}
+  chat_window.js — which messages render, and where scroll lands after older
+  ones load. Pure (no DOM of its own; the scrolling element is passed in).
+  MUST load before the controller that consumes it, like chat_diff.js.
+  chat_avatar.js — the per-agent initials/hue, pure, same reason.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/chat/chat_window.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_avatar.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_title.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_actions.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_marquee.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_select.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longpress.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_menu.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_receipts.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_send.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
+<script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
+{% comment %}
+SELF-VERIFYING WIRING, and it belongs HERE rather than in chat.js.
+
+On 2026-07-30 the operator's board served this template at 0.23.0 with 0.24.0 static
+files. chat_window.js and chat_avatar.js were fetchable (HTTP 200) but this template
+did not reference them, so their globals never existed. The consequences were both
+invisible: avatars fell back to a "?" chip, and the render-window fix simply DID NOT
+RUN while everyone believed it was shipped — the operator's typing stayed slow for
+two more days and it read as "the fix did not work" rather than "the fix is absent".
+Console errors: zero. It took an element-inspector dump to locate.
+
+THE TEMPLATE IS WHAT DECLARES THE MODULE SET, so the template is what should verify
+its own declaration arrived. Putting the check in chat.js would be checking a list
+against itself, and would be defeated by exactly the case that bit us — a stale
+chat.js paired with a current template, or the reverse.
+
+`load` rather than `DOMContentLoaded`: `defer` scripts run before DOMContentLoaded,
+but `load` is later still and costs nothing here, so a slow module cannot produce a
+false alarm. Report-only — never throw, because blanking the pane would trade a
+silent failure for a worse loud one.
+{% endcomment %}
+<script>
+window.addEventListener("load", function () {
+  var required = ["ChatDiff", "ChatWindow", "ChatAvatar"];
+  var missing = required.filter(function (name) { return !window[name]; });
+  if (missing.length) {
+    console.error(
+      "[chat] these modules did not load: " + missing.join(", ") +
+      " — the page will silently degrade (blank avatars, no render window). " +
+      "Most likely this template and the deployed static files are from " +
+      "different versions; check that both were deployed together."
+    );
+  }
+});
+</script>
 </body>
 </html>

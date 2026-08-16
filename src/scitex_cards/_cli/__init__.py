@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo`` command-line interface package.
+"""``scitex-cards`` command-line interface package.
 
-Public entry point is ``main`` (wired to the ``scitex-todo`` console script).
+Public entry point is ``main`` (wired to the ``scitex-cards`` console script).
 The command tree is split across focused modules:
 
     _main         root group + core verbs (render-graph, list-tasks, board)
@@ -21,6 +21,7 @@ focused module without a disruptive refactor of an unrelated oversized file.
 from __future__ import annotations
 
 from . import _db as _db_cli
+from . import _dm as _dm_cli
 from . import _health as _health_cli
 from . import _help_wait as _help_wait_cli
 from . import _hub as _hub_cli
@@ -44,6 +45,9 @@ _db_cli.register(main)
 # a no-op kept for this package's convention, since `db_group` is already
 # wired onto `main` by `_db_cli.register` above.
 _min_client_version_cli.register(main)
+# `dm` — the DM-into-cards.db migration surface (backfill / verify / export /
+# merge). Same thin-root wiring; see docs/design/dm-into-cards-db.md.
+_dm_cli.register(main)
 # `serve` — the hub RPC surface (remote-hub PR-2). Same thin-root wiring.
 _serve_cli.register(main)
 # `hub` — provisioning + doctor for the remote rail (remote-hub PR-4).

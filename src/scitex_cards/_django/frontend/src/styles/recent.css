@@ -1,6 +1,6 @@
 /* recent.css — RecentView styles (operator TG msg 513, 2026-06-12).
  *
- * Styling discipline: scope all selectors under `.stx-todo-recent` so the
+ * Styling discipline: scope all selectors under `.stx-cards-recent` so the
  * Recent view's CSS can never leak into Graph / Table. Reuse the
  * board's --stx-* palette + status colors via inline-styles set in
  * RecentView.tsx (so the existing theme switch keeps working).
@@ -10,7 +10,7 @@
  * tracked in GITIGNORED/REFACTORING.md.
  */
 
-.stx-todo-recent {
+.stx-cards-recent {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -20,7 +20,7 @@
   color: var(--stx-text);
 }
 
-.stx-todo-recent__titlebar {
+.stx-cards-recent__titlebar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -29,13 +29,13 @@
   flex: 0 0 auto;
 }
 
-.stx-todo-recent__heading {
+.stx-cards-recent__heading {
   font-weight: 600;
   font-size: 14px;
   color: var(--stx-text);
 }
 
-.stx-todo-recent__count {
+.stx-cards-recent__count {
   font-size: 12px;
   padding: 3px 8px;
   border-radius: 10px;
@@ -46,7 +46,7 @@
   letter-spacing: 0.02em;
 }
 
-.stx-todo-recent__show-older {
+.stx-cards-recent__show-older {
   appearance: none;
   margin-left: auto;
   background: transparent;
@@ -58,18 +58,18 @@
   cursor: pointer;
 }
 
-.stx-todo-recent__show-older:hover {
+.stx-cards-recent__show-older:hover {
   background: var(--stx-hover-bg);
   color: var(--stx-text);
 }
 
-.stx-todo-recent__list {
+.stx-cards-recent__list {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 8px 12px 24px;
 }
 
-.stx-todo-recent__row {
+.stx-cards-recent__row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -85,7 +85,7 @@
     border-color 0.08s ease;
 }
 
-.stx-todo-recent__row:hover {
+.stx-cards-recent__row:hover {
   background: var(--stx-hover-bg);
   border-color: var(--stx-border-strong);
 }
@@ -94,11 +94,11 @@
  * modifier class. The "new" variant gets a bright orange left-border;
  * the "recent" (24-72h) variant a subtle yellow tint; older + unknown
  * stay plain (just the default border). */
-.stx-todo-recent__row--new {
+.stx-cards-recent__row--new {
   border-left-color: #ff8c00;
 }
 
-.stx-todo-recent__row--recent {
+.stx-cards-recent__row--recent {
   border-left-color: #d4b341;
   background: linear-gradient(
     90deg,
@@ -107,21 +107,21 @@
   );
 }
 
-.stx-todo-recent__topline {
+.stx-cards-recent__topline {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.stx-todo-recent__ts {
+.stx-cards-recent__ts {
   font-size: 13px;
   font-weight: 600;
   color: var(--stx-text);
   min-width: 80px;
 }
 
-.stx-todo-recent__newbadge {
+.stx-cards-recent__newbadge {
   font-size: 11px;
   font-weight: 700;
   background: #ff8c00;
@@ -131,7 +131,7 @@
   letter-spacing: 0.04em;
 }
 
-.stx-todo-recent__status {
+.stx-cards-recent__status {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
@@ -142,7 +142,7 @@
   font-weight: 500;
 }
 
-.stx-todo-recent__project {
+.stx-cards-recent__project {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 10px;
@@ -157,7 +157,7 @@
   white-space: nowrap;
 }
 
-.stx-todo-recent__prio {
+.stx-cards-recent__prio {
   font-size: 11px;
   font-weight: 700;
   padding: 2px 6px;
@@ -165,43 +165,43 @@
   letter-spacing: 0.02em;
 }
 
-.stx-todo-recent__prio--p0 {
+.stx-cards-recent__prio--p0 {
   background: rgba(255, 80, 80, 0.18);
   color: #ff6b6b;
   border: 1px solid rgba(255, 80, 80, 0.5);
 }
 
-.stx-todo-recent__prio--p1 {
+.stx-cards-recent__prio--p1 {
   background: rgba(255, 165, 0, 0.18);
   color: #ffb147;
   border: 1px solid rgba(255, 165, 0, 0.5);
 }
 
-.stx-todo-recent__prio--p2,
-.stx-todo-recent__prio--p3 {
+.stx-cards-recent__prio--p2,
+.stx-cards-recent__prio--p3 {
   background: rgba(140, 140, 160, 0.18);
   color: var(--stx-text-muted);
   border: 1px solid var(--stx-border-strong);
 }
 
-.stx-todo-recent__title {
+.stx-cards-recent__title {
   font-size: 14px;
   color: var(--stx-text);
   line-height: 1.35;
 }
 
-.stx-todo-recent__meta {
+.stx-cards-recent__meta {
   display: flex;
   gap: 10px;
   font-size: 11px;
   color: var(--stx-text-muted);
 }
 
-.stx-todo-recent__assignee {
+.stx-cards-recent__assignee {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.stx-todo-recent__empty {
+.stx-cards-recent__empty {
   margin: 24px 16px;
   padding: 16px 20px;
   border: 1px dashed var(--stx-border-strong);
@@ -212,7 +212,7 @@
   line-height: 1.55;
 }
 
-.stx-todo-recent__empty code {
+.stx-cards-recent__empty code {
   background: var(--stx-code-bg);
   padding: 1px 6px;
   border-radius: 4px;
@@ -220,7 +220,7 @@
   color: var(--stx-text);
 }
 
-[data-theme="light"] .stx-todo-recent__row--recent {
+[data-theme="light"] .stx-cards-recent__row--recent {
   background: linear-gradient(
     90deg,
     rgba(212, 179, 65, 0.12) 0%,
@@ -228,6 +228,6 @@
   );
 }
 
-[data-theme="light"] .stx-todo-recent__newbadge {
+[data-theme="light"] .stx-cards-recent__newbadge {
   color: #fff;
 }

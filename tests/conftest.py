@@ -43,14 +43,13 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from _store_damage import content_or_none, damaged_candidates
 
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
 _STORE_ENV_VARS = (
     "SCITEX_CARDS_DB",
-    "SCITEX_TODO_DB",
     "SCITEX_CARDS_TASKS_YAML_SHARED",
-    "SCITEX_TODO_TASKS_YAML_SHARED",
 )
 
 #: Env names that select WHICH BACKEND is canonical. These are CLEARED, not
@@ -63,9 +62,7 @@ _STORE_ENV_VARS = (
 #: same everywhere.
 _BACKEND_ENV_VARS = (
     "SCITEX_CARDS_STORE_BACKEND",
-    "SCITEX_TODO_STORE_BACKEND",
     "SCITEX_CARDS_READ_BACKEND",
-    "SCITEX_TODO_READ_BACKEND",
 )
 
 #: ``$SCITEX_DIR`` is the BASE DIRECTORY under ``resolve_db_path``'s tier-4
@@ -73,7 +70,7 @@ _BACKEND_ENV_VARS = (
 #: ``os.environ.get("SCITEX_DIR", str(Path.home() / ".scitex"))`` on EVERY
 #: call — not just at import. It is pinned for the same reason the four vars
 #: above are: a test that legitimately clears BOTH ``SCITEX_CARDS_DB`` and
-#: ``SCITEX_TODO_DB`` to exercise that fallback (see
+#: ``SCITEX_CARDS_DB`` to exercise that fallback (see
 #: ``tests/scitex_cards/test__paths.py``'s ``clean_store_env`` fixture, which
 #: pops only the two DB vars) falls straight through to ``Path.home()`` — the
 #: REAL home — unless something ALSO names ``$SCITEX_DIR``. Every test that
@@ -117,9 +114,7 @@ def _pin_to_scratch() -> Path:
 def _point_env_at(scratch: Path) -> None:
     """Aim every store-selecting variable at ``scratch``."""
     os.environ["SCITEX_CARDS_DB"] = str(scratch / "cards.db")
-    os.environ["SCITEX_TODO_DB"] = str(scratch / "cards.db")
     os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
-    os.environ["SCITEX_TODO_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
     # Same scratch tree, own subdir — no separate tempfile.mkdtemp() call
     # needed, and it means a test's own $SCITEX_DIR override (every one that
     # wants the tier-4 fallback sets this explicitly) still wins for the
@@ -172,31 +167,40 @@ def scratch_store_root() -> Path:
 # Everything above this line makes it mechanically hard for a test to RESOLVE
 # a real store path. It assumes that guard has a hole somewhere it hasn't been
 # found yet — proven true on 2026-07-21 (2,170 cards -> 18; THIRD such wipe,
-# two days after the 2026-07-19 fix above), so this layer checks the only
-# fact that actually matters: did a real file on disk change, regardless of
-# which env var or code path let a write through.
+# two days after the 2026-07-19 fix above), so this layer checks the fact that
+# actually matters, regardless of which env var or code path let a write
+# through: is the real board still INTACT — same or more cards, same identity
+# stamps, structurally sound? See :func:`_store_damage.damage` for why not
+# "did the file change", is the criterion on a shared live board.
 #
 # Both real homes this fleet's agents run under. Checked BY NAME, not by
 # reading $HOME/$SCITEX_DIR — the whole point is to catch a leak that reached
 # the store via one of those variables, so asking the same variable "were you
 # bypassed" would beg the question.
+# This listed FOUR paths: these two, plus the same two under the pre-rename
+# directory name, because that older location had held 2,117 real cards as
+# recently as the 2026-07-16 rename and a leak could still have landed there.
+# The rename swept the old dirname to the new one, which turned the extra two
+# entries into duplicates of the first two — so the guard silently stopped
+# covering the second location while its length still suggested it did.
+#
+# REMOVED RATHER THAN RE-POINTED, and checked before removing: the pre-rename
+# directory still EXISTS on both homes (which are the same bind-mounted path)
+# but is EMPTY — measured 2026-08-16, zero files, so the store file this
+# guarded is gone. Nothing can recreate it either: the env tier and the compat
+# mirror that could resolve to that dirname were deleted with the shim, so no
+# code path in this package names it any more.
 _REAL_STORE_CANDIDATES: tuple[Path, ...] = (
     Path("/home/agent/.scitex/cards/cards.db"),
     Path("/home/ywatanabe/.scitex/cards/cards.db"),
-    # Pre-rename dirname (package renamed scitex-todo -> scitex-cards,
-    # 2026-07-16); this path held 2,117 real cards as recently as the rename
-    # itself (see _env_compat.py's incident writeup) and may still exist.
-    Path("/home/agent/.scitex/todo/cards.db"),
-    Path("/home/ywatanabe/.scitex/todo/cards.db"),
 )
 
 
 def _stat_or_none(path: Path) -> tuple[int, int] | None:
     """``(mtime_ns, size)`` for ``path``, or ``None`` when it doesn't exist.
 
-    Never raises. A permission hiccup or a benign race here is not evidence
-    of the thing this function exists to detect (a WRITE), so it must not
-    itself blow up test collection/teardown.
+    Never raises. Diagnostic context only — see :func:`_store_damage.damage`
+    for why file stat is NOT the failure criterion.
     """
     try:
         st = path.stat()
@@ -211,36 +215,35 @@ def _stat_or_none(path: Path) -> tuple[int, int] | None:
 _REAL_STORE_BEFORE: dict[Path, tuple[int, int] | None] = {
     p: _stat_or_none(p) for p in _REAL_STORE_CANDIDATES
 }
+_REAL_CONTENT_BEFORE: dict[Path, dict | None] = {
+    p: content_or_none(p) for p in _REAL_STORE_CANDIDATES
+}
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _assert_real_store_untouched_by_session():
-    """FAIL LOUD if any real store candidate changed during this session.
+    """FAIL LOUD if any real store candidate was DAMAGED during this session.
 
     This is a DETECTOR, not a preventer — the prevention is the pinning above
     and in ``tests/scitex_cards/conftest.py``. If this fires, do not go
-    hunting for the one leaking test as a condition of fixing THIS card: per
-    the incident runbook, report the failing state (which candidate path
-    moved, and its before/after ``(mtime_ns, size)``) and treat it as a
-    signal that the pinning fixtures need a wider audit — finding the exact
-    leaking test is legitimate follow-up work, not a blocker on having this
-    guard at all.
+    hunting for the one leaking test as a condition of fixing the card in
+    hand: per the incident runbook, report the failing state (which candidate
+    path, and what changed) and treat it as a signal that the pinning
+    fixtures need a wider audit — finding the exact leaking test is
+    legitimate follow-up work, not a blocker on having this guard at all.
     """
     yield
-    changed = [
-        (path, _REAL_STORE_BEFORE[path], _stat_or_none(path))
-        for path in _REAL_STORE_CANDIDATES
-        if _REAL_STORE_BEFORE[path] != _stat_or_none(path)
-    ]
-    if not changed:
+    damaged = damaged_candidates(_REAL_CONTENT_BEFORE, _REAL_STORE_CANDIDATES)
+    if not damaged:
         return
     details = "\n".join(
-        f"  {path}\n    before (mtime_ns, size) = {before}\n"
-        f"    after  (mtime_ns, size) = {after}"
-        for path, before, after in changed
+        f"  {path}\n    {why}\n"
+        f"    stat before (mtime_ns, size) = {_REAL_STORE_BEFORE[path]}\n"
+        f"    stat after  (mtime_ns, size) = {_stat_or_none(path)}"
+        for path, why in damaged
     )
     pytest.fail(
-        "REAL TASK STORE MUTATED DURING THIS TEST SESSION.\n"
+        "REAL TASK STORE DAMAGED DURING THIS TEST SESSION.\n"
         "Every pinning fixture in this file and in "
         "tests/scitex_cards/conftest.py is supposed to make this "
         "impossible; one of them has a hole. Do NOT chase the individual "

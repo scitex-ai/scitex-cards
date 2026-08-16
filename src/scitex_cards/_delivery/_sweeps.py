@@ -22,6 +22,13 @@ Both READ the store and release it — no lock is held across a sweep (a
 lock-holding sweep in this loop is what produced the store-lock convoy) — and
 both are FULLY GUARDED: an exception is logged and swallowed so a bad sweep can
 never kill the always-on delivery loop.
+
+SWALLOWED IS NOT UNCOUNTED (2026-07-28/29). Both sweeps now RETURN the fault
+they swallowed (``None`` when clean) so the caller can count it. Guarding the
+loop against a bad sweep is right; letting the tick summary then print
+``sent=0 failed=0`` — indistinguishable from a healthy idle tick — is what hid
+a day-long delivery outage. The guard keeps the daemon alive; the return value
+keeps it honest.
 """
 
 from __future__ import annotations
@@ -31,21 +38,31 @@ import logging
 import os
 
 from .._inbox import _resolved_store
+from ._tick import fault_text
 
 logger = logging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Cadence (MINUTES) of the fleet-liveness sweep. ``<= 0`` disables it.
-ENV_NUDGE_SWEEP_MINUTES = "SCITEX_TODO_NUDGE_SWEEP_MINUTES"
+ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
 DEFAULT_NUDGE_SWEEP_MINUTES = 30.0
 
 
-def _run_reminder_sweep(*, store, now) -> None:
+def _run_reminder_sweep(*, store, now) -> "str | None":
     """Enqueue any DUE owner digests + operator escalations for this tick.
 
     Fully guarded: loads the task list, runs the escalating-cadence sweep
     (:func:`scitex_cards._reminders.sweep_reminders`), and logs a one-line
     summary. Any error (bad store, etc.) is logged and swallowed so the
     reminder sweep can NEVER block the delivery pass that follows it.
+
+    Returns
+    -------
+    str | None
+        ``None`` when the sweep ran clean; otherwise the rendered fault, for
+        the caller to COUNT. This is the exact guard that hid the 2026-07-28
+        outage: it logged ``RuntimeError: REFUSING TO READ …`` on every tick
+        for a day while the tick summary kept printing a healthy-looking
+        ``sent=0 failed=0``.
     """
     try:
         from .._model import load_tasks
@@ -60,14 +77,15 @@ def _run_reminder_sweep(*, store, now) -> None:
         result = sweep_reminders(tasks, store=resolved, now=now)
         if result["digested"] or result["escalated"]:
             logger.info(
-                "notifyd nag sweep: %d owner digest(s), %d escalated, "
-                "%d not-yet-due",
+                "notifyd nag sweep: %d owner digest(s), %d escalated, %d not-yet-due",
                 len(result["digested"]),
                 len(result["escalated"]),
                 len(result["skipped"]),
             )
-    except Exception:  # noqa: BLE001 — a sweep error must never block delivery
+    except Exception as exc:  # noqa: BLE001 — must never block delivery
         logger.exception("notifyd reminder sweep raised; continuing to delivery")
+        return fault_text(exc, where="reminder_sweep")
+    return None
 
 
 def _nudge_sweep_minutes() -> float:
@@ -90,7 +108,7 @@ def _nudge_sweep_due(
     return (now - last_at).total_seconds() / 60.0 >= minutes
 
 
-def _run_stale_nudge_sweep(*, store, now) -> None:
+def _run_stale_nudge_sweep(*, store, now) -> "str | None":
     """Low-cadence fleet-liveness sweep: nudge owners of untouched work.
 
     Runs :func:`scitex_cards._stale_active_nudge.sweep_and_nudge`, which is
@@ -103,17 +121,25 @@ def _run_stale_nudge_sweep(*, store, now) -> None:
     Fully guarded: any error is logged and swallowed so the sweep can NEVER
     kill the delivery loop. Every result line (including the SUPPRESSED owners)
     is logged, so a running daemon always shows who was skipped and why.
+
+    Returns
+    -------
+    str | None
+        ``None`` when the sweep ran clean; otherwise the rendered fault, so the
+        caller can COUNT what the guard swallowed.
     """
     try:
         from .._model import load_tasks
-        from .._stale_active_nudge import sweep_and_nudge
+        from .._stale.active_nudge import sweep_and_nudge
 
         resolved = _resolved_store(store)
         tasks = load_tasks(resolved)
         for line in sweep_and_nudge(tasks, store=resolved, now=now):
             logger.info("notifyd liveness sweep: %s", line.strip())
-    except Exception:  # noqa: BLE001 — a sweep error must never block delivery
+    except Exception as exc:  # noqa: BLE001 — must never block delivery
         logger.exception("notifyd liveness sweep raised; continuing to delivery")
+        return fault_text(exc, where="liveness_sweep")
+    return None
 
 
 __all__ = [

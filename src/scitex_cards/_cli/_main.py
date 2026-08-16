@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Root ``scitex-todo`` group and core verbs (render-graph, list-tasks, board).
+"""Root ``scitex-cards`` group and core verbs (render-graph, list-tasks, board).
 
 The §1a introspection / completion / skills groups live in sibling modules and
 are attached to ``main`` at the bottom of this file.
@@ -15,18 +15,34 @@ import click
 
 from .. import __version__
 from .._currency import check_currency
-from .._db import resolve_db_path
 from .._diagram import build_mermaid, render
 from .._model import load_tasks
 from .._paths import resolve_tasks_path
+from .._store_target import store_label
 from ._compat import spec_command_kwargs, spec_group_kwargs
+from ._help_tree import _emit_help_recursive
 
+# NAMES NO BACKEND AND NO DEFAULT PATH, ON PURPOSE.
+#
+# This block and the `summary` below are the two strings a human reads first
+# from `scitex-cards --help`. They used to open "Canonical store: the SQLite
+# database at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db...)" and
+# "Shared task store (SQLite canonical)".
+#
+# Both named a backend the code does not verify and the operator has banned,
+# and the first also advertised a default file path — which is precisely the
+# silent descent-to-a-file that an unresolvable target must NOT make.
+#
+# Substituting "PostgreSQL" would re-create the same defect with a different
+# word: the deployment decides the target, the resolved target is the sole
+# identity, and `resolve-store` is the only honest answer to "which one?".
+# Guarded by tests/scitex_cards/_cli/test__help_names_no_backend.py.
 _STORE_RESOLUTION = (
-    "Canonical store: the SQLite database at $SCITEX_CARDS_DB (default",
-    "~/.scitex/cards/cards.db, relocatable via $SCITEX_DIR). That path is the",
-    "SOLE store identity. An unresolvable/absent store raises rather than",
-    "standing in an empty board. Run `scitex-cards resolve-store` to see what",
-    "you actually resolved to.",
+    "The cards database is whatever $SCITEX_CARDS_DB resolves to, and that",
+    "resolved target is the SOLE identity — the deployment decides it, so do",
+    "not assume a backend or a path. An unresolvable/absent target RAISES",
+    "rather than standing in an empty board. Run `scitex-cards resolve-store`",
+    "to see what you actually resolved to.",
 )
 
 # Doctrine §4a (10a_command-categories.md): fixed, ordered category headers.
@@ -61,7 +77,7 @@ _COMMAND_CATEGORIES = (
             "reconcile-merged-prs",
         ),
     ),
-    ("Data & Sync", ("db", "sync-github", "sync-store", "deliver")),
+    ("Data & Sync", ("db", "dm", "store", "sync-github", "sync-store", "deliver")),
     (
         "Service",
         ("board", "gui", "hub", "mcp", "notifyd", "serve", "watch", "watch-ci"),
@@ -79,6 +95,7 @@ _COMMAND_CATEGORIES = (
         ),
     ),
     ("Introspection", ("list-python-apis", "skills")),
+    ("Maintenance", ("dev",)),  # hook-bypass: line-limit (pre-existing over-cap)
     ("Shell", ("install-shell-completion", "print-shell-completion")),
 )
 
@@ -86,46 +103,11 @@ _COMMAND_CATEGORIES = (
 # --------------------------------------------------------------------------- #
 # Top-level group (--help-recursive / --json universal flags)                 #
 # --------------------------------------------------------------------------- #
-def _iter_commands(cmd, ctx, prefix):
-    """Yield ``(prefix, command, context)`` for ``cmd`` and every descendant."""
-    yield prefix, cmd, ctx
-    if isinstance(cmd, click.Group):
-        for name, sub in sorted(cmd.commands.items()):
-            sub_ctx = click.Context(sub, info_name=name, parent=ctx)
-            yield from _iter_commands(sub, sub_ctx, f"{prefix} {name}")
-
-
-def _command_tree(cmd, ctx):
-    """Return a JSON-serializable ``{name, help, options, commands}`` tree."""
-    node = {
-        "name": ctx.info_name,
-        "help": (cmd.help or "").strip(),
-        "options": [p.opts[-1] for p in cmd.params if isinstance(p, click.Option)],
-        "commands": {},
-    }
-    if isinstance(cmd, click.Group):
-        for name, sub in sorted(cmd.commands.items()):
-            sub_ctx = click.Context(sub, info_name=name, parent=ctx)
-            node["commands"][name] = _command_tree(sub, sub_ctx)
-    return node
-
-
-def _emit_help_recursive(ctx, as_json):
-    """Print flattened help (or the command tree as JSON) for every subcommand."""
-    if as_json:
-        click.echo(json.dumps(_command_tree(ctx.command, ctx), indent=2))
-        return
-    blocks: list[str] = []
-    for prefix, cmd, sub_ctx in _iter_commands(ctx.command, ctx, ctx.info_name):
-        blocks.append(f"### {prefix}\n{cmd.get_help(sub_ctx)}")
-    click.echo("\n\n".join(blocks))
-
-
 @click.group(
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
     **spec_group_kwargs(
-        summary="Shared task store (SQLite canonical) + adapters for the agent fleet.",
+        summary="Shared card database + adapters for the agent fleet.",
         config_resolution=_STORE_RESOLUTION,
         version_of="scitex-cards",
         command_categories=_COMMAND_CATEGORIES,
@@ -210,7 +192,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         return
 
     engine = render(mermaid_src, output)
-    click.echo(f"{output}  (rendered via {engine}; source: {resolve_db_path(None)})")
+    click.echo(f"{output}  (rendered via {engine}; source: {store_label(None)})")
 
 
 # --------------------------------------------------------------------------- #
@@ -226,9 +208,9 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
             "filters, matches are AND-composed."
         ),
         examples=(
-            ('{prog} list-tasks --assignee "$SCITEX_TODO_AGENT_ID" --json', ""),
+            ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
-                "{prog} list-tasks --project scitex-todo --status pending "
+                "{prog} list-tasks --project scitex-cards --status pending "
                 "--status in_progress",
                 "",
             ),
@@ -241,7 +223,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
 @click.option(
     "--scope",
     default=None,
-    help="Match `scope` exactly (use '' to ignore $SCITEX_TODO_SCOPE).",
+    help="Match `scope` exactly (use '' to ignore $SCITEX_CARDS_SCOPE).",
 )
 @click.option(
     "--assignee",
@@ -294,7 +276,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         "Predicate: tasks past their next deadline AND not in a closed "
         "lifecycle state (done / failed / cancelled / goal). Uses the "
         "deadline / deadlines schema + repeater rules from "
-        "scitex_cards._model.is_overdue (PR #125, todo-p6-overdue-ui). "
+        "scitex_cards._model.is_overdue (PR #125, cards-p6-overdue-ui). "
         "This filter is the ONLY thing a deadline drives (that, and the "
         "board view) — a deadline NEVER sends a notification, so poll "
         "this yourself. Owner nudges key on inactivity, not deadlines. "
@@ -393,7 +375,7 @@ def list_tasks_cmd(
     # the non-task sidecar container `load_tasks` takes only for naming in
     # error text (see `_paths.resolve_tasks_path`). Printing that sidecar
     # here mislabeled the header with a path the data never lived at.
-    click.echo(f"# {resolve_db_path(None)}  ({len(tasks)} tasks)")
+    click.echo(f"# {store_label(None)}  ({len(tasks)} tasks)")
     for task in tasks:
         click.echo(f"{task['id']:<24} {task['status']:<12} {task['title']}")
 
@@ -403,6 +385,7 @@ def list_tasks_cmd(
 # --------------------------------------------------------------------------- #
 from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; minimal wire)
     _board,
+    _cardsync,
     _ci_watch,
     _completion,
     _deliver,
@@ -420,12 +403,13 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _skills,
     _stats,
     _triage,
+    _undelivered,
     _write,
 )  # noqa: E402
 
 # board <verb> — dependency-graph board lifecycle (start/stop/restart/
 # status). Extracted to _board.py to keep _main.py under the 512-line cap;
-# behaviour + pidfile path (~/.scitex/todo/board.pid) are unchanged.
+# behaviour + pidfile path (~/.scitex/cards/board.pid) are unchanged.
 _board.register(main)
 # gui <verb> — the ecosystem-standard GUI verbs (open/serve/status/stop),
 # shared with figrecipe / scitex-writer / scitex-scholar so the operator's
@@ -457,9 +441,9 @@ _write.register(main)
 # individual verbs print a clear install hint when fastmcp is missing.
 _mcp.register(main)
 # P3b + P3d (lead-approved 2026-06-12) — self-consuming board loop.
-# `scitex-todo next` returns the top runnable task for an agent;
-# `scitex-todo watch --push` is the push side that wakes agents on
-# new/commented/changed tasks. See _skills/scitex-todo/32_*.md for the
+# `scitex-cards next` returns the top runnable task for an agent;
+# `scitex-cards watch --push` is the push side that wakes agents on
+# new/commented/changed tasks. See _skills/scitex-cards/32_*.md for the
 # 7-step agent self-consumption pattern.
 _loop.register(main)
 # T1.2 (lead a2a `74db4f2d`, 2026-06-14) — the parallelism dispatcher's
@@ -471,7 +455,7 @@ _runnable.register(main)
 # decides and mutates via the existing verbs. See _backlog_triage.py.
 _triage.register(main)
 # Hook-consumer wire (lead a2a `6fff33d6` + `fbffb879`, 2026-06-14,
-# operator-mandated). `scitex-todo hook push|done` verbs are the
+# operator-mandated). `scitex-cards hook push|done` verbs are the
 # CLI twins of POST /hooks/push and POST /hooks/done — same canonical
 # event-payload shape, same idempotency. See _hooks.py for the spec.
 _hooks.register(main)
@@ -484,7 +468,7 @@ _ci_watch.register(main)
 # reconcile-merged-prs (card-freshness automation) — periodic auto-close of
 # cards whose linked PR (pr_url) has MERGED. Pure decision core + gh/REST
 # merge-state seam live in `_reconcile_prs.py`; DRY-RUN by default, --apply
-# to mutate. Paired with the scitex-todo.reconcile-merged-prs JobSpec.
+# to mutate. Paired with the scitex-cards-reconcile-merged-prs JobSpec.
 _reconcile.register(
     main
 )  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
@@ -496,13 +480,17 @@ _reconcile.register(
 # src/scitex_cards/_delivery/.
 _deliver.register(main)
 # notifyd (slice 2 of the standalone notification-DELIVERY rail). The always-on
-# daemon: bare `scitex-todo notifyd` runs the foreground loop (systemd
+# daemon: bare `scitex-cards notifyd` runs the foreground loop (systemd
 # ExecStart) ticking deliver_pending every --interval seconds, single-instance
 # locked + signal-aware, re-surfacing standing terminal comm-misses on a
 # throttle. `--once` is a single pass; `notifyd install-unit` writes the
 # operator-gated systemd user-unit template (never runs systemctl). See
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
+_cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# dev list-undelivered — the restart/cadence check against the DURABLE channel
+# rail, with a mandatory positive control so a filtered zero is trustworthy.
+_undelivered.register(main)
 
 
 if __name__ == "__main__":

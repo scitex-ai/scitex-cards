@@ -11,12 +11,35 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+# `contents: read`, downgraded from `write` in the same change that removed the
+# commit-and-push step below. The write scope existed ONLY for that push, which
+# branch protection refused anyway — so this workflow has been holding a
+# permission it could not use. Nothing here writes to the repository now.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rtd-sphinx-build-on-ubuntu-latest:
-    runs-on: [self-hosted, scitex-ci]
+    # THE POOL IS A VARIABLE, AND ITS DEFAULT MUST BE A POOL THAT EXISTS.
+    # This job hard-coded `[self-hosted, scitex-ci]`. Every runner carrying
+    # `scitex-ci` was offline on 2026-08-13 (spartan-cpu-org-01/-02/-03 and
+    # spartan-pooled-cpu-01, all `status=offline`), while four
+    # `scitex-org-cpu` runners sat `online` and `busy=false`. A job whose
+    # label nobody carries does not fail — it QUEUES, beside idle machines,
+    # and a required check that never starts is missing from the rollup
+    # rather than red. #830 sat unmergeable for 47 minutes that way, with
+    # every other check green.
+    #
+    # `vars.CI_RUNS_ON` is the escape hatch the release workflow in this repo
+    # already uses, so pointing the repo back at Spartan when it returns is a
+    # variable change rather than a PR. What changes here is the DEFAULT:
+    # `ubuntu-latest`, which the audit, postgres-backend, pytest-matrix and
+    # cla jobs in this same repo all ran on successfully the same day.
+    #
+    # The uv-managed Python below is unaffected: it was introduced because
+    # self-hosted runners have no setup-python tool cache, and it works on
+    # hosted runners too.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -39,20 +62,31 @@ jobs:
         run: |
           .venv/bin/python -m sphinx -b html -W --keep-going \
             docs/sphinx docs/sphinx/_build/html
-      - name: Refresh in-wheel _sphinx_html (main/develop only)
-        if: github.event_name == 'push'
-        run: |
-          rm -rf src/scitex_todo/_sphinx_html
-          cp -rf docs/sphinx/_build/html src/scitex_todo/_sphinx_html
-          # scitex-cloud serves docs from this in-wheel dir (PS-121).
-          if [ -n "$(git status --porcelain src/scitex_todo/_sphinx_html)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add src/scitex_todo/_sphinx_html
-            # The commit-message marker keeps this from triggering itself.
-            git commit -m "docs(build): refresh _sphinx_html [skip-docs-rebuild]"
-            git push || echo "push rejected (branch moved); skipping refresh commit"
-          else
-            echo "_sphinx_html already current."
-          fi
-        continue-on-error: true
+      # THE REFRESH STEP THAT USED TO LIVE HERE IS GONE. It built the HTML,
+      # committed 99 files to develop, and pushed — which cannot succeed,
+      # because develop is protected and requires a pull request plus 6 status
+      # checks. Measured on run 31945230744 (2026-08-16):
+      #
+      #   remote: error: GH006: Protected branch update failed for refs/heads/develop.
+      #    ! [remote rejected] develop -> develop (protected branch hook declined)
+      #   push rejected (branch moved); skipping refresh commit
+      #
+      # Three things hid it: `git push || echo` turned the rejection into exit
+      # 0, `continue-on-error: true` would have swallowed it regardless, and
+      # the step's own conclusion was "success". The last refresh that actually
+      # landed was 2026-06-17 — two months of green runs producing nothing, and
+      # the package missing from https://scitex.ai/apps/docs/ the whole time.
+      #
+      # The message was the worst part: "branch moved" describes a race that
+      # was not happening, so anyone who read it went looking for the wrong
+      # bug. An actionable hint that points at the wrong cause is worse than no
+      # hint, because it survives review.
+      #
+      # The in-wheel docs are now BUILT at release time (see the "Build docs
+      # into the package" step in pypi-publish-and-github-release-on-tag.yml)
+      # and carried by hatchling `artifacts`. Nothing is committed, so this
+      # workflow keeps only the job it can actually do: proving the docs build
+      # clean with warnings-as-errors, above, which gates the PR.
+      #
+      # DO NOT reintroduce a commit-and-push here without first changing the
+      # branch protection — the failure is structural, not intermittent.

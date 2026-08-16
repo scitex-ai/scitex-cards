@@ -5,13 +5,13 @@
 Operator-direct directive (2026-06-13, lead a2a `[operator-driven]`,
 translated — the verbatim original lives on the board's task history):
 the canonical card shape is a per-task DIRECTORY at
-``<proj>/.scitex/todo/tasks/<card-id>/`` (with ``README.md`` for the
+``<proj>/.scitex/cards/tasks/<card-id>/`` (with ``README.md`` for the
 body + ``adr.md`` for decisions per skill 30). Writes that lay a row
 directly into the flat ``tasks.yaml`` are FORBIDDEN — the system must
 fail loud + name the offending path.
 
 This module is the SCAN side: walk every discovered lane (the
-``~/proj/*/.scitex/todo/tasks.yaml`` glob), classify each row, and
+``~/proj/*/.scitex/cards/tasks.yaml`` glob), classify each row, and
 emit a machine-readable plan + a human-readable Markdown summary.
 NOTHING is written to disk by the scanner — the migrator runs in a
 separate verb behind ``-y`` after the plan is operator-approved.
@@ -199,7 +199,7 @@ def scan_lane(lane_path: Path) -> LanePlan:
         rows = load_tasks(lane_path)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[scitex-todo._migrate] cannot load %s: %s",
+            "[scitex-cards._migrate] cannot load %s: %s",
             lane_path,
             exc,
         )
@@ -224,7 +224,7 @@ def scan_all_lanes(
     lane_paths: Optional[Iterable[Path]] = None,
 ) -> FleetPlan:
     """Scan every discovered lane + every project's ``tasks.yaml`` AND
-    the global user-scope ``~/.scitex/todo/tasks.yaml``.
+    the global user-scope ``~/.scitex/cards/tasks.yaml``.
 
     Defaults to :func:`scitex_cards._django.services._discover_lanes` +
     the resolved global store. Pass an explicit iterable for tests
@@ -456,7 +456,7 @@ def _git_commit_lane(lane_path: Path, message: str) -> tuple[bool, Optional[str]
     """
     work_dir = lane_path.parent
     # Locate the git root by walking up at most ``_GIT_WALK_MAX`` levels;
-    # the lane is conventionally at ``<repo>/.scitex/todo/tasks.yaml`` so
+    # the lane is conventionally at ``<repo>/.scitex/cards/tasks.yaml`` so
     # the project's ``.git`` is at most 3 parents up. Bounding the walk
     # prevents the test runner's tmp dir from accidentally resolving to
     # an unrelated git repo elsewhere on disk (e.g. an enclosing dev
@@ -512,7 +512,7 @@ def apply_lane(
     lane_path: Path,
     *,
     dry_run: bool = False,
-    author: str = "scitex-todo-migrator",
+    author: str = "scitex-cards-migrator",
 ) -> LaneApplyResult:
     """Migrate every row in `lane_path` to the canonical dir-card shape.
 
@@ -525,7 +525,7 @@ def apply_lane(
       - After all rows process, the YAML is saved atomically (via
         the existing ``_model._save_tasks_unlocked``).
       - After the YAML save, the lane's git repo (if any) gets a
-        single ``[scitex-todo migrate]`` commit.
+        single ``[scitex-cards migrate]`` commit.
       - Idempotent: rows that are already canonical (per
         :func:`classify_row`) become no-ops.
 
@@ -548,8 +548,8 @@ def apply_lane(
     # The migrator must be allowed to write directly to flat tasks.yaml
     # for the duration of the run; the validator (separate PR) reads
     # this env. Saved + restored on exit so we don't leak the bypass.
-    prior = _os.environ.get("SCITEX_TODO_ALLOW_FLAT_WRITES")
-    _os.environ["SCITEX_TODO_ALLOW_FLAT_WRITES"] = "1"
+    prior = _os.environ.get("SCITEX_CARDS_ALLOW_FLAT_WRITES")
+    _os.environ["SCITEX_CARDS_ALLOW_FLAT_WRITES"] = "1"
     try:
         with _store_lock(lane_path):
             # Re-load inside the lock so a concurrent writer can't
@@ -638,15 +638,15 @@ def apply_lane(
                 _save_tasks_unlocked(new_rows, lane_path)
     finally:
         if prior is None:
-            _os.environ.pop("SCITEX_TODO_ALLOW_FLAT_WRITES", None)
+            _os.environ.pop("SCITEX_CARDS_ALLOW_FLAT_WRITES", None)
         else:
-            _os.environ["SCITEX_TODO_ALLOW_FLAT_WRITES"] = prior
+            _os.environ["SCITEX_CARDS_ALLOW_FLAT_WRITES"] = prior
 
     # Per-lane git commit (skip in dry-run).
     if not dry_run and result.updated_count > 0:
         committed, skip_reason = _git_commit_lane(
             lane_path,
-            f"[scitex-todo migrate] flat → directory ({result.updated_count} cards)",
+            f"[scitex-cards migrate] flat → directory ({result.updated_count} cards)",
         )
         result.git_committed = committed
         result.git_skip_reason = skip_reason
@@ -657,7 +657,7 @@ def apply_all_lanes(
     lane_paths: Optional[Iterable[Path]] = None,
     *,
     dry_run: bool = False,
-    author: str = "scitex-todo-migrator",
+    author: str = "scitex-cards-migrator",
 ) -> List[LaneApplyResult]:
     """Migrate every lane returned by the scanner's default discovery.
 

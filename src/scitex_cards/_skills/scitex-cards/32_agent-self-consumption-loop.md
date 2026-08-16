@@ -3,12 +3,12 @@
 **The board IS your work queue.** Every fleet agent — `lead` and every
 worker — runs the same loop: on wake, pick the top task from the
 board, work it, comment progress, update status, repeat. Local
-TODO/FUTURE files are scratch only (operator + lead 2026-06-12
+CARD/FUTURE files are scratch only (operator + lead 2026-06-12
 doctrine, see SKILL.md MANDATE).
 
 This sub-skill documents the 7-step loop, the supporting CLI verbs
-(`scitex-todo next`, `scitex-todo update`), and how the wake
-(`scitex-todo watch --push`) hands a fresh request off to the owning
+(`scitex-cards next`, `scitex-cards update`), and how the wake
+(`scitex-cards watch --push`) hands a fresh request off to the owning
 agent.
 
 ---
@@ -19,7 +19,7 @@ Boot pattern — every agent's harness implements this:
 
 ```bash
 # 1. Read the next runnable task FOR THIS AGENT.
-task_json="$(scitex-todo next --mine --auto-claim --json)" || {
+task_json="$(scitex-cards next --mine --auto-claim --json)" || {
   # Exit-1 = empty backlog. Idle.
   exit 0
 }
@@ -32,24 +32,38 @@ task_id="$(echo "$task_json" | jq -r .id)"
 
 # 2. Read the task body — for richer context, the agent harness loads
 #    the JSON via `--json` AND opens the per-task README.md if any:
-#    ~/.scitex/todo/tasks/<task_id>/README.md
+#    ~/.scitex/cards/tasks/<task_id>/README.md
 
 # 3. Work the task. As progress happens, comment back:
-scitex-todo update "$task_id" --add-comment "step 1 done, starting step 2"
+scitex-cards update "$task_id" --add-comment "step 1 done, starting step 2"
 
 # 4. On completion:
-scitex-todo update "$task_id" --status done --pr-url "$pr_url" \
+scitex-cards update "$task_id" --status done --pr-url "$pr_url" \
   --add-comment "merged PR #<n>"
 
 # 5. If blocked, name the blocker:
-scitex-todo update "$task_id" --status blocked --blocker dependency \
-  --add-comment "blocked on todo-pXX (a2a relay)"
+scitex-cards update "$task_id" --status blocked --blocker dependency \
+  --add-comment "blocked on cards-pXX (a2a relay)"
 
 # 6. Loop back to step 1 until the backlog is empty.
 
-# 7. Idle. The next wake comes from `scitex-todo watch --push` (someone
+# 7. Idle. The next wake comes from `scitex-cards watch --push` (someone
 #    commented on a task assigned to you, or a new task was added with
 #    your agent name).
+#
+#    WHATEVER WOKE YOU, CONFIRM IT — after acting, not on receipt:
+#      poll_notifications(agent=<you>, ack=false)   # reads; does NOT confirm
+#      ...act on the records...
+#      ack_notifications(agent=<you>, ids=[...])    # confirms what you handled
+#
+#    Reading is deliberately not confirming, so a consumer that dies
+#    mid-delivery loses nothing: unconfirmed records come back next poll.
+#    But NEVER confirming fails silently in the other direction —
+#    `scitex-cards health` reports delivery_confirmed red forever, and its
+#    hint blames the transport before it blames the consumer. Measured
+#    2026-08-16 on this agent: 20 unconfirmed pushes, oldest 17.8h, with a
+#    healthy transport and an empty pull inbox. The loop was the bug.
+#    Long form: 23_stop-hook-second-delivery-rail.md step 4.
 ```
 
 ### Status transitions
@@ -68,7 +82,7 @@ rejects any other value.
 
 ### `next` predicate (one canonical rule, shared by all agents)
 
-`scitex-todo next` filters by:
+`scitex-cards next` filters by:
 
 - `agent` (or legacy `assignee`) matches the requested name,
 - `status` in `{pending, in_progress}`,
@@ -86,7 +100,7 @@ And sorts by:
 See `scitex_cards._next.next_task` for the Python entry, used by the
 CLI verb above.
 
-### The wake side (`scitex-todo watch --push`)
+### The wake side (`scitex-cards watch --push`)
 
 The watcher runs once per ~2 seconds on the host that hosts the
 canonical store (`$SCITEX_CARDS_DB`). On each tick:
@@ -102,18 +116,18 @@ same):
 
 ```json
 {
-  "trigger": "scitex-todo-watcher",
+  "trigger": "scitex-cards-watcher",
   "trigger_kind": "task_added" | "comment" | "status_changed",
-  "task_id": "todo-pXX-...",
+  "task_id": "cards-pXX-...",
   "task_title": "...",
   "summary": "comment by lead: please pick this up",
-  "store_path": "/scitex-todo/cards.db"
+  "store_path": "/scitex-cards/cards.db"
 }
 ```
 
 The agent's harness receives the wake, runs the 7-step loop above,
 and updates the board. The lead monitors the board state via a
-separate `scitex-todo list-tasks` cron — stalled per-agent queues
+separate `scitex-cards list-tasks` cron — stalled per-agent queues
 or 3-consecutive abandonments escalate to the lead's a2a (NOT the
 operator's; the lead is the single operator-facing voice).
 
@@ -121,8 +135,8 @@ Agent-registry resolution (where the watcher finds each peer's
 a2a port):
 
 - A top-level `agents:` list in `tasks.yaml`:
-  `[{name: scitex-todo, a2a_port: 41234}, ...]`. This static list is
-  scitex-todo's own SSoT for the agent port table — no external
+  `[{name: scitex-cards, a2a_port: 41234}, ...]`. This static list is
+  scitex-cards's own SSoT for the agent port table — no external
   runtime is consulted.
 
 ---

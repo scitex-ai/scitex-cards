@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo gui`` — the ecosystem-standard GUI verbs.
+"""CLI noun group ``scitex-cards gui`` — the ecosystem-standard GUI verbs.
 
 Verbs: ``open`` / ``serve`` / ``status`` / ``stop``, matching figrecipe,
 scitex-writer and scitex-scholar. The operator's ``scitex_start_gui_servers``
-script loops ``<pkg> gui serve &`` over every SciTeX tool; scitex-todo was the
-odd one out — it exposed the board only as ``scitex-todo board``, so his loop
+script loops ``<pkg> gui serve &`` over every SciTeX tool; scitex-cards was the
+odd one out — it exposed the board only as ``scitex-cards board``, so his loop
 died on ``Error: No such command 'gui'`` and NOTHING ever bound :8051. The
 board was never broken; the verb simply did not exist.
 
@@ -25,18 +25,25 @@ from __future__ import annotations
 
 import click
 
+from .._systemd_gui import DEFAULT_HOST as GUI_DEFAULT_HOST
+from .._systemd_gui import DEFAULT_PORT as GUI_DEFAULT_PORT
 from ._board import (
     _board_run_server,
     board_status_cmd,
     board_stop_cmd,
 )
+from ._board_force import force_stop_running_board
 from ._board_proc import _board_read_pid
 from ._compat import spec_command_kwargs, spec_group_kwargs
+from ._store_guard import refuse_unconfigured_store
 
 #: The board's long-standing default. The operator's startup script and the
-#: `board` verbs already agree on it; `gui` must not invent a second one.
-DEFAULT_PORT = 8051
-DEFAULT_HOST = "127.0.0.1"
+#: `board` verbs already agree on it; `gui` must not invent a second one — so
+#: these are IMPORTED, from the module that also bakes them into the systemd
+#: unit. A unit that promised :8051 while the CLI served something else would
+#: be a health check reporting on a port nobody uses.
+DEFAULT_PORT = GUI_DEFAULT_PORT
+DEFAULT_HOST = GUI_DEFAULT_HOST
 
 
 def register(main: click.Group) -> None:
@@ -69,14 +76,41 @@ def gui_group(ctx: click.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     click.echo(
-        "ERROR: `scitex-todo gui` needs a verb. Use:\n"
-        "  scitex-todo gui serve [--port N] [--host H]  # foreground/blocking\n"
-        "  scitex-todo gui open [SURFACE]               # serve + open a browser\n"
-        "  scitex-todo gui status [--json]\n"
-        "  scitex-todo gui stop",
+        "ERROR: `scitex-cards gui` needs a verb. Use:\n"
+        "  scitex-cards gui serve [--port N] [--host H]  # foreground/blocking\n"
+        "  scitex-cards gui open [SURFACE]               # serve + open a browser\n"
+        "  scitex-cards gui status [--json]\n"
+        "  scitex-cards gui stop\n"
+        "(to make the board resident: scitex-cards board install-service)",
         err=True,
     )
     ctx.exit(2)
+
+
+def _refuse_unconfigured_store() -> None:
+    """Fail BEFORE binding a port if nobody chose a store. No silent fallback.
+
+    Checked here rather than deeper in the stack because the damage is done by
+    SERVING, not by resolving: once the port is bound the page renders, and a
+    board that renders is a board people believe. The operator ran one for
+    eight days showing week-old data with no error anywhere.
+
+    THE BODY NOW LIVES IN :mod:`._store_guard`, shared with `board start`. This
+    guard was written for `gui serve` alone because that was the surface that
+    burned him -- and `board start`, the other door onto the same Django app,
+    stayed open for three days as a result. A refusal implemented once per door
+    is a refusal that will be missing from the next door somebody adds.
+
+    KEPT AS A NAMED WRAPPER, and DEFINED ABOVE THE DECORATOR STACK rather than
+    between it and ``gui_serve_cmd``. Placing a ``def`` inside a decorator chain
+    silently rebinds every decorator onto the WRONG function: the options and
+    ``@gui_group.command`` would have landed on this helper, leaving
+    ``gui_serve_cmd`` an undecorated plain function and unregistering the
+    `serve` verb entirely. Caught by the positive control
+    (`test_serve_does_not_refuse_when_a_target_is_configured`) rather than in
+    production, which is the only reason this comment exists.
+    """
+    refuse_unconfigured_store()
 
 
 @gui_group.command(
@@ -88,36 +122,67 @@ def gui_group(ctx: click.Context) -> None:
             "headless by design: it does NOT open a browser (use `gui open` "
             "for that), so it is safe to background with `&` in a loop over "
             "every SciTeX tool. Requires the web extra: "
-            "pip install scitex-todo[web]."
+            "pip install scitex-cards[all]."
         ),
         examples=(
             ("{prog} gui serve", "Serve on 127.0.0.1:8051 (blocking)."),
             ("{prog} gui serve --port 9000", "Serve on another port."),
+            ("{prog} gui serve --force", "Take over from a running board."),
         ),
     ),
 )
 @click.option("--port", type=int, default=DEFAULT_PORT, show_default=True)
 @click.option("--host", default=DEFAULT_HOST, show_default=True)
 @click.option(
+    "--force",
+    is_flag=True,
+    help="Stop a board that is already running, then serve. A no-op when "
+    "nothing is running — `--force` is a takeover, NOT a stop verb, so "
+    "the absence of an incumbent is success, not an error.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Print the planned launch without starting the server.",
 )
-def gui_serve_cmd(port: int, host: str, dry_run: bool) -> None:
+def gui_serve_cmd(port: int, host: str, force: bool, dry_run: bool) -> None:
     """Foreground-blocking serve, no browser.
 
+    ``--force`` exists because the operator asked for one command that
+    serves whether or not a board is already up (2026-08-14): 「stop する
+    のめんどくさいので。あとはなければ通すように。stop ではないので。」
+    Nothing running is therefore the NORMAL case for `--force`, not an
+    error case. WITHOUT `--force` the refusal is unchanged.
+
     Example:
-      $ scitex-todo gui serve --port 8051
+      $ scitex-cards gui serve --port 8051
+      $ scitex-cards gui serve --force
     """
+    # BEFORE the dry-run branch, and before anything is killed or bound.
+    # Moved ahead of `--dry-run` when `--force` landed: a dry run that
+    # answers "would stop pid 4711, then serve" for a store nobody
+    # configured is a confident answer to the question the operator is
+    # asking precisely because he is unsure. `board start` has always
+    # ordered it this way; see `_store_guard`'s note on doors.
+    _refuse_unconfigured_store()
+    if force:
+        # Takeover, not a stop: returns None when nothing is running and we
+        # serve exactly as if `--force` were absent. It raises (naming the
+        # pid + the next step) if the kernel refused the signal, because
+        # binding a port that is demonstrably still held is the silent
+        # failure this repo does not ship.
+        force_stop_running_board(port, dry_run=dry_run)
     if dry_run:
         click.echo(f"# dry-run: would serve the board on {host}:{port}, no browser")
         return
-    existing = _board_read_pid()
-    if existing is not None:
-        raise click.ClickException(
-            f"the board is already running (pid {existing}). Use "
-            "`scitex-todo gui stop` or `scitex-todo gui status`."
-        )
+    if not force:
+        existing = _board_read_pid()
+        if existing is not None:
+            raise click.ClickException(
+                f"the board is already running (pid {existing}). Use "
+                "`scitex-cards gui stop` or `scitex-cards gui status`, or "
+                "pass --force to take over."
+            )
     _board_run_server(None, port, no_browser=True, host=host)
 
 
@@ -144,8 +209,8 @@ def gui_open_cmd(surface: str, port: int, host: str) -> None:
     """Serve + open a browser. Reuses a running board if there is one.
 
     Example:
-      $ scitex-todo gui open
-      $ scitex-todo gui open timeline
+      $ scitex-cards gui open
+      $ scitex-cards gui open timeline
     """
     url = f"http://{host}:{port}/{surface.lstrip('/')}"
 
@@ -169,6 +234,15 @@ def gui_open_cmd(surface: str, port: int, host: str) -> None:
         return
 
     _board_run_server(None, port, no_browser=False, host=host)
+
+
+# `install-service` is DELIBERATELY NOT HERE. It lives on the `board` noun
+# (`_board_service.py`). This group is the ecosystem-standard four —
+# open / serve / status / stop — shared with figrecipe, scitex-writer and
+# scitex-scholar so one startup script drives every SciTeX GUI the same way,
+# and `tests/test_cli_gui.py` pins it at exactly those four. A shared
+# convention that each package quietly extends is no longer shared. I added it
+# here first; that test caught it, and it was right to.
 
 
 # `status` and `stop` are the SAME commands the `board` group exposes, not

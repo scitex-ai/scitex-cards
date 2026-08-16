@@ -5,12 +5,12 @@
 P3b + P3d (lead-approved 2026-06-12). Two verbs together realize the
 fleet's central-command loop:
 
-  scitex-todo next [--mine|--assignee X] [--auto-claim] [--json]
+  scitex-cards next [--mine|--assignee X] [--auto-claim] [--json]
     The single canonical "what to pick up next" predicate, used by
     every agent's harness on wake. See ``_next.next_task`` for the
     filter + sort rules.
 
-  scitex-todo watch --push [--interval N] [--once]
+  scitex-cards watch --push [--interval N] [--once]
     The push side: polls the store, detects new/commented/changed
     tasks, POSTs ``/v1/turn`` to the owning agent's a2a port. See
     ``_wake_watcher`` for the wire shape + debounce.
@@ -28,6 +28,7 @@ import sys
 
 import click
 
+from .._comment_ids import stamp_comment_id
 from ._compat import spec_command_kwargs
 
 
@@ -59,7 +60,7 @@ def register(main: click.Group) -> None:
     "--mine",
     "use_mine",
     is_flag=True,
-    help="Filter on SCITEX_TODO_AGENT_ID env var.",
+    help="Filter on SCITEX_CARDS_AGENT_ID env var.",
 )
 @click.option(
     "--project",
@@ -96,10 +97,10 @@ def next_cmd(
     if assignee and use_mine:
         raise click.ClickException("Pass --assignee OR --mine, not both.")
     if use_mine:
-        env = os.environ.get("SCITEX_TODO_AGENT_ID")
+        env = os.environ.get("SCITEX_CARDS_AGENT_ID")
         if not env:
             raise click.ClickException(
-                "--mine needs SCITEX_TODO_AGENT_ID to be set in the env."
+                "--mine needs SCITEX_CARDS_AGENT_ID to be set in the env."
             )
         assignee = env
 
@@ -144,11 +145,13 @@ def _auto_claim(path, task_id: str, *, assignee: str) -> None:
 
     tasks = load_tasks(path)
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    stamp = {
-        "ts": now,
-        "author": assignee,
-        "text": f"starting (auto-claim by {assignee})",
-    }
+    stamp = stamp_comment_id(
+        {
+            "ts": now,
+            "author": assignee,
+            "text": f"starting (auto-claim by {assignee})",
+        }
+    )
     for t in tasks:
         if t.get("id") == task_id:
             t["status"] = "in_progress"
@@ -223,6 +226,18 @@ def watch_cmd(
         run_watcher_forever,
         run_watcher_once,
     )
+    from ._store_guard import refuse_unconfigured_store
+
+    # BEFORE `--once` as well as before the forever loop. A watcher's failure is
+    # quieter than a board's and therefore worse: it does not show anyone wrong
+    # data, it WATCHES THE WRONG FILE and wakes nobody. Nothing renders, nothing
+    # errors, and the only symptom is that agents stop being woken -- which is
+    # indistinguishable from a quiet board, which is what the fleet mostly is.
+    #
+    # --once gets the same treatment because a single tick against the wrong
+    # store reports "no wakes" just as confidently as a correct one, and it is
+    # the mode a human runs when checking whether the watcher is healthy.
+    refuse_unconfigured_store()
 
     # Enforce the anti-spiral floor at the CLI boundary too, so the loud
     # warning fires for an interactive operator, not only inside the loop.
@@ -243,7 +258,7 @@ def watch_cmd(
             click.echo(f"WAKE {w.agent} {w.trigger_kind} {w.task_id} :: {w.summary}")
         return
     click.echo(
-        f"[scitex-todo] watch --push tracking {path} "
+        f"[scitex-cards] watch --push tracking {path} "
         f"(interval={interval_s}s, debounce={min_wake_interval_s}s)",
         err=True,
     )

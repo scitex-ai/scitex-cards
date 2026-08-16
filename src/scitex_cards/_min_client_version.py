@@ -54,9 +54,13 @@ from pathlib import Path
 #: ``schema_meta`` key holding the store's minimum-client-version floor.
 KEY_MIN_CLIENT_VERSION = "min_client_version"
 
-#: Distribution names to try, in order — the current name first, then the
-#: pre-rename name (mirrors ``scitex_cards.__version__``'s own fallback).
-_DIST_NAMES = ("scitex-cards", "scitex-todo")
+#: The distribution to read this client's version from. This was a two-name
+#: fallback (current, then pre-rename) mirroring ``scitex_cards.__version__``;
+#: both entries collapsed onto the same string when the retired name went, so
+#: the "fallback" could only re-raise the first lookup's error. That matters
+#: more here than in a version banner: a floor check that cannot determine its
+#: own version falls back to ``_UNKNOWN_VERSION`` and reads as too old.
+_DIST_NAMES = ("scitex-cards",)
 
 #: Version used when NEITHER importlib.metadata NOR a pyproject.toml can be
 #: found. Deliberately the smallest possible version — an install this
@@ -170,14 +174,31 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     :func:`scitex_cards._db.init_schema` on a fresh file). Either way: no
     floor has ever been set, so the gate is a no-op.
     """
-    try:
-        row = conn.execute(
-            "SELECT value FROM schema_meta WHERE key = ?",
-            (KEY_MIN_CLIENT_VERSION,),
-        ).fetchone()
-    except sqlite3.OperationalError:
+    # ABSENCE IS ASKED, NOT CAUGHT. This used to be a bare
+    # ``except sqlite3.OperationalError`` around the SELECT, which reads the
+    # "table does not exist yet" case off a SQLite-SPECIFIC exception type. On
+    # PostgreSQL the same condition raises ``psycopg.errors.UndefinedTable``,
+    # which that clause does not catch — so a brand-new PostgreSQL store would
+    # have RAISED out of a function whose whole contract is "no floor yet, this
+    # is a no-op". Asking :func:`has_table` instead states the question the code
+    # actually means and answers it the same way on both backends.
+    from ._schema_probe import has_table  # noqa: PLC0415 -- avoids import cycle
+
+    if not has_table(conn, "schema_meta"):
         return None
-    return str(row[0]) if row is not None else None
+    row = conn.execute(
+        "SELECT value FROM schema_meta WHERE key = ?",
+        (KEY_MIN_CLIENT_VERSION,),
+    ).fetchone()
+    if row is None:
+        return None
+    # BY NAME, NOT BY POSITION. ``sqlite3.Row`` accepts both ``row[0]`` and
+    # ``row["value"]``; psycopg's ``dict_row`` accepts only the latter and
+    # raises on the former. ``_backend_connect.connect`` deliberately leaves
+    # that asymmetry visible rather than papering over it, so that the port
+    # finds call sites like this one while it is still cheap to fix. This is
+    # one of the sites it found.
+    return str(row["value"])
 
 
 def stamp_floor(conn: sqlite3.Connection, version: str) -> None:

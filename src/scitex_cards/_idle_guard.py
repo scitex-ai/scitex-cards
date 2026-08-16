@@ -34,7 +34,7 @@ engine + freshness campaign use (:func:`scitex_cards._stale_active.detect_stale_
 Wiring (the fleet-wide enforcement)
 -----------------------------------
 Add a Stop hook to each agent's Claude settings so the guard runs whenever the
-agent tries to go idle (``SCITEX_TODO_AGENT_ID`` + ``SCITEX_TODO_TASKS_YAML_SHARED`` are already
+agent tries to go idle (``SCITEX_CARDS_AGENT_ID`` + ``SCITEX_CARDS_TASKS_YAML_SHARED`` are already
 in the agent's env)::
 
     "hooks": {
@@ -67,7 +67,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 #: Env var naming the current agent (the owner whose claimed work we guard).
-ENV_AGENT = "SCITEX_TODO_AGENT_ID"
+ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
 
 #: Cap on cards listed in the block reason (keep the message bounded).
 _REASON_CARD_CAP = 15
@@ -87,7 +87,7 @@ def stale_in_progress(
     ``status == "in_progress"`` (drop ``blocked`` — a legitimate park). Returns a
     list of ``StaleCard`` (id / title / status / age_hours), oldest-first.
     """
-    from ._stale_active import detect_stale_active
+    from ._stale.active import detect_stale_active
 
     if not agent:
         return []
@@ -111,12 +111,12 @@ def _reason(agent: str, cards: list) -> str:
         f"you marked as being worked but have not finished:\n{body}\n\n"
         "Silently stopping with claimed work is the abandonment incident the board "
         "exists to prevent. For EACH card, pick one honest disposition now:\n"
-        "  1. Finish it  → scitex-todo close <id>  (or complete it).\n"
-        "  2. Hand it off → scitex-todo reassign <id> --to <owner>.\n"
+        "  1. Finish it  → scitex-cards close <id>  (or complete it).\n"
+        "  2. Hand it off → scitex-cards reassign <id> --to <owner>.\n"
         "  3. Genuinely can't proceed → set it blocked with a reason: "
-        "scitex-todo update <id> --status blocked --blocker <operator-decision|dependency> "
+        "scitex-cards update <id> --status blocked --blocker <operator-decision|dependency> "
         "and comment WHY.\n"
-        "  4. Not actually working it → scitex-todo update <id> --status deferred.\n"
+        "  4. Not actually working it → scitex-cards update <id> --status deferred.\n"
         "Once none of your in-progress cards are stale, you may stop."
     )
 
@@ -133,7 +133,7 @@ def evaluate(
     from ._paths import resolve_tasks_path
 
     # Resolve BEFORE load: load_tasks(None) trips on Path(None); the precedence
-    # chain ($SCITEX_TODO_TASKS_YAML_SHARED → project → user) yields a concrete path.
+    # chain ($SCITEX_CARDS_TASKS_YAML_SHARED → project → user) yields a concrete path.
     tasks = load_tasks(resolve_tasks_path(store))
     cards = stale_in_progress(agent, tasks, now=now, stale_hours=stale_hours)
     if not cards:
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     """Stop-hook entry point. Exit 2 (block) when claimed work is abandoned, else 0.
 
     Resolves the agent from ``--agent`` or :data:`ENV_AGENT`; reads the store from
-    the standard precedence (``$SCITEX_TODO_TASKS_YAML_SHARED`` …). Reads — but does not
+    the standard precedence (``$SCITEX_CARDS_TASKS_YAML_SHARED`` …). Reads — but does not
     require — the Stop-hook JSON on stdin. Fail-soft: any error allows the stop.
     """
     argv = list(sys.argv[1:] if argv is None else argv)

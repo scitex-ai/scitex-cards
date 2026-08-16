@@ -1,5 +1,5 @@
 /* 11-sticky-wall.css — sticky-note wall layout + the shared status-transition
- * glow utility (todo-board-sticky-wall-view-20260710).
+ * glow utility (cards-board-sticky-wall-view-20260710).
  *
  * Product surface (operator: 一応製品になる予定). Dark-first, status tokens
  * only (--status-fill-*, emitted server-side from STATUS_STYLE), no one-off

@@ -42,8 +42,8 @@ try:
     from fastmcp import FastMCP
 except ImportError as _exc:  # pragma: no cover — exercised in the doctor test
     raise ImportError(
-        "scitex-todo MCP tools require the [mcp] extra. Install with:\n"
-        "  pip install 'scitex-todo[mcp]'"
+        "scitex-cards MCP tools require the [mcp] extra. Install with:\n"
+        "  pip install 'scitex-cards[all]'"
     ) from _exc
 
 from ._channel_identity import resolve_agent_id_optional
@@ -58,8 +58,8 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
 )
 
 # The instructions name THIS agent's OWN scope, interpolated from its resolved
-# identity ($SCITEX_TODO_AGENT_ID) — never a hard-coded example, which is how
-# every agent came to be taught the scope of the long-dead `proj-scitex-todo`.
+# identity ($SCITEX_CARDS_AGENT_ID) — never a hard-coded example, which is how
+# every agent came to be taught the scope of the long-dead `proj-scitex-cards`.
 # An UNRESOLVED identity names no scope at all; see `_mcp_instructions`.
 mcp = FastMCP(
     name="scitex-cards",

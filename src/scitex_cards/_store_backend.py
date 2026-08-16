@@ -48,27 +48,35 @@ can do.
 from __future__ import annotations
 
 
-def _current_stored_ids(db_path) -> set[str]:
-    """The ids the ``tasks`` table ALREADY has, read fresh from SQLite.
+def _current_stored_ids(db_target) -> set[str]:
+    """The ids the ``tasks`` table ALREADY has, read fresh from the store.
 
     Ground truth for :func:`_assert_no_shrink` — deliberately a live query,
     not a value threaded through from an earlier read, so the check is
     correct even when ``doc`` was built from a stale snapshot (the exact
     shape of the 2170->18 collapse).
+
+    BY COLUMN NAME, not position. ``sqlite3.Row`` accepts both ``r["id"]`` and
+    ``r[0]``; psycopg's ``dict_row`` accepts only the former and raises
+    ``KeyError: 0``. ``_backend_connect`` documents that asymmetry and
+    deliberately does NOT paper over it, so that call sites are found while it
+    is still cheap — this was one of them, and it was load-bearing: the raise
+    happened inside the shrink guard, which is the last thing standing between
+    a bad write and a board wipe.
     """
     from ._db import open_db
 
-    conn = open_db(db_path)
+    conn = open_db(db_target)
     try:
         rows = conn.execute("SELECT id FROM tasks").fetchall()
-        return {str(r[0]) for r in rows}
+        return {str(r["id"]) for r in rows}
     finally:
         conn.close()
 
 
 def _assert_no_shrink(
     doc: dict,
-    db_path,
+    db_target,
     *,
     deleted_ids: list[str] | None = None,
     allow_shrink: bool = False,
@@ -86,7 +94,7 @@ def _assert_no_shrink(
     """
     if allow_shrink:
         return
-    stored_ids = _current_stored_ids(db_path)
+    stored_ids = _current_stored_ids(db_target)
     if not stored_ids:
         return
     incoming_ids = {
@@ -115,7 +123,12 @@ def _assert_no_shrink(
 
 
 def write_doc_to_db(
-    doc: dict, store_path, *, deleted_ids=None, allow_shrink: bool = False
+    doc: dict,
+    store_path,
+    *,
+    deleted_ids=None,
+    touched_ids=None,
+    allow_shrink: bool = False,
 ) -> dict:
     """Commit ``doc`` to SQLite, the only store. RAISES on failure.
 
@@ -150,22 +163,29 @@ def write_doc_to_db(
     outcomes of a mismatch — clobbering the wrong database, or dropping the
     card — are unacceptable, so the caller is told.
     """
-    from ._db import resolve_db_path
     from ._db_mirror import mirror_doc_incremental
     from ._dual_write import _db_mirrors_this_store
+    from ._store_target import resolve_store_target
 
-    db_path = resolve_db_path(None)
-    # The store identity IS the database path ($SCITEX_CARDS_DB). The caller's
+    # TARGET, not path. ``resolve_db_path`` RAISES on a PostgreSQL URL, and it
+    # raised HERE — so every card write against a server store died in this
+    # line, after the read path had already been fixed. Named ``db_target``
+    # rather than ``db_path`` on purpose: the value is passed onward five
+    # times, and a name ending in "path" invites the next reader to call
+    # ``.parent`` or ``.exists()`` on it, which is precisely the assumption
+    # that took the query side down.
+    db_target = resolve_store_target(None)
+    # The store identity IS the store target ($SCITEX_CARDS_DB). The caller's
     # ``store_path`` names the logical store for messages and sidecar dirs, but
     # it is NOT a second identity axis: reads (``_read_canonical_db_or_raise``)
-    # and writes both key on ``db_path``, so a fresh database is adopted on
+    # and writes both key on ``db_target``, so a fresh database is adopted on
     # first write and every subsequent access agrees with the stamp. Keying the
     # guard on ``store_path`` here is what let a write stamp the database with a
     # different path than reads compared against — two axes that could disagree,
     # the exact failure class the cutover removed.
-    if not _db_mirrors_this_store(db_path, db_path):
+    if not _db_mirrors_this_store(db_target, db_target):
         raise RuntimeError(
-            f"refusing to write {db_path}: it is stamped for a DIFFERENT "
+            f"refusing to write {db_target}: it is stamped for a DIFFERENT "
             f"database, and writing it would replace that store's rows with "
             f"this one's. Point $SCITEX_CARDS_DB at this store's own database."
         )
@@ -174,13 +194,19 @@ def write_doc_to_db(
     # AFTER ownership (a write to the wrong store is a worse bug than a
     # shrink, and should raise as that first) but BEFORE the mirror ever
     # touches a row. See `_assert_no_shrink` for the invariant.
-    _assert_no_shrink(doc, db_path, deleted_ids=deleted_ids, allow_shrink=allow_shrink)
+    _assert_no_shrink(
+        doc, db_target, deleted_ids=deleted_ids, allow_shrink=allow_shrink
+    )
 
     # `mirror_doc_incremental` already raises on failure — no try/except here
     # ON PURPOSE. Adding one could only make this quieter, which is the one
     # direction this function must never move.
     return mirror_doc_incremental(
-        doc, db_path, store_path=db_path, deleted_ids=deleted_ids
+        doc,
+        db_target,
+        store_path=db_target,
+        deleted_ids=deleted_ids,
+        touched_ids=touched_ids,
     )
 
 

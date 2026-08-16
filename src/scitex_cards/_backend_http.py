@@ -25,7 +25,7 @@ forbids. Concretely:
   :class:`scitex_cards.TaskValidationError`; any other 400 → ``ValueError``.
 
 IDENTITY. The hub executes verbs under ITS OWN environment, so any verb
-that defaults its actor from ``$SCITEX_TODO_AGENT_ID`` would stamp the
+that defaults its actor from ``$SCITEX_CARDS_AGENT_ID`` would stamp the
 HUB's identity onto a remote agent's write. The client therefore injects
 its resolved identity into the verbs' existing ``by`` / ``actor`` /
 ``created_by`` kwargs whenever the caller left them unset — and ALWAYS
@@ -48,7 +48,7 @@ from typing import Any
 
 _TOKEN_ENV = "SCITEX_CARDS_HUB_TOKEN"
 _TOKEN_FILE_ENV = "SCITEX_CARDS_HUB_TOKEN_FILE"
-_AGENT_ENV = "SCITEX_TODO_AGENT_ID"
+_AGENT_ENV = "SCITEX_CARDS_AGENT_ID"
 _TIMEOUT_S = 60
 
 #: Which kwarg carries the acting identity, per verb, for injection when
@@ -148,7 +148,7 @@ class HubBackend:
             self._token = _resolve_token()
         if not self._agent:
             raise HubBackendError(
-                "no agent identity: set SCITEX_TODO_AGENT_ID (the hub "
+                "no agent identity: set SCITEX_CARDS_AGENT_ID (the hub "
                 "requires X-Scitex-Agent on every request)"
             )
         # Send kwargs EXACTLY as built — including explicit nulls. None is
@@ -377,10 +377,25 @@ class HubBackend:
         store: Any = None,
     ) -> dict:
         self._forbid_store(store)
+        if ack:
+            # HANDOVER IS NOT CONFIRMATION — warn on the CLIENT too, not just
+            # hub-side, so the deprecation reaches the process that wrote it.
+            from ._inbox_confirm import warn_ack_on_read
+
+            warn_ack_on_read()
         return self._call(
             "poll_notifications",
             {"agent": agent, "unseen_only": unseen_only, "ack": ack},
         )
+
+    def ack_notifications(
+        self,
+        agent: str,
+        ids: "list[str] | str | None" = None,
+        store: Any = None,
+    ) -> dict:
+        self._forbid_store(store)
+        return self._call("ack_notifications", {"agent": agent, "ids": ids})
 
     def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
         self._forbid_store(store)

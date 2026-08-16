@@ -37,7 +37,7 @@ from typing import Any
 #: Legacy dual-write toggle names. The feature they gated was DELETED
 #: entirely — SQLite is the only write target, unconditionally, with no env
 #: var left to read.
-_LEGACY_DUAL_WRITE_ENV_VARS = ("SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
+_LEGACY_DUAL_WRITE_ENV_VARS = ("SCITEX_CARDS_DUAL_WRITE",)
 
 #: Symbols that made up the deleted toggle. Their reappearance on
 #: ``scitex_cards._dual_write`` means the feature was reintroduced.
@@ -79,10 +79,23 @@ def check_single_write_target() -> dict[str, Any]:
                 "scitex_cards._store_backend.write_doc_to_db"
             ),
         }
+    # NAME THE ENGINE THIS PROCESS IS ACTUALLY ON. This string used to read
+    # "SQLite" unconditionally, which was true when written and became a lie the
+    # day a store could be a PostgreSQL server: the doctor then reported SQLite
+    # while every card write went to PostgreSQL. An operator asking "which mode
+    # am I in?" — the exact question this line looks like it answers — got the
+    # wrong answer, confidently. Resolve it instead of asserting it.
+    try:
+        from ._health_backend_mode import _store_mode
+
+        engine, target = _store_mode(None)
+        where = f"{engine} ({target})"
+    except Exception:  # noqa: BLE001 — a doctor must not crash the caller
+        where = "the resolved store (engine undetermined)"
     return {
         "ok": True,
         "detail": (
-            "exactly one write target: SQLite via "
+            f"exactly one write target: {where} via "
             "_store_backend.write_doc_to_db; no dual-write toggle present"
         ),
         "hint": None,

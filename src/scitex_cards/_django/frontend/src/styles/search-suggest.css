@@ -1,5 +1,5 @@
 /* search-suggest.css — autocomplete dropdown for the React board search
- * input (TodoBoard.tsx -> SearchAutocomplete.tsx). Mirrored on the vanilla
+ * input (CardsBoard.tsx -> SearchAutocomplete.tsx). Mirrored on the vanilla
  * side in board_v3/01-filterbar.css. Operator TG 12318 (2026-06-12).
  *
  * The wrapper sits inline in the toolbar; the dropdown is absolutely
@@ -8,12 +8,12 @@
  * stretch the toolbar.
  */
 
-.stx-todo-search-suggest__wrap {
+.stx-cards-search-suggest__wrap {
   position: relative;
   display: inline-block;
 }
 
-.stx-todo-search-suggest {
+.stx-cards-search-suggest {
   position: absolute;
   top: 100%;
   left: 0;
@@ -32,7 +32,7 @@
   color: var(--stx-text, #e0e0e0);
 }
 
-.stx-todo-search-suggest__row {
+.stx-cards-search-suggest__row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -42,25 +42,25 @@
   line-height: 1.3;
 }
 
-.stx-todo-search-suggest__row--active,
-.stx-todo-search-suggest__row:hover {
+.stx-cards-search-suggest__row--active,
+.stx-cards-search-suggest__row:hover {
   background: var(--stx-hover-bg, rgba(155, 127, 214, 0.18));
 }
 
-.stx-todo-search-suggest__label {
+.stx-cards-search-suggest__label {
   flex: 0 0 auto;
   font-weight: 600;
   color: var(--stx-accent, #a78bfa);
 }
 
-.stx-todo-search-suggest__row--value .stx-todo-search-suggest__label {
+.stx-cards-search-suggest__row--value .stx-cards-search-suggest__label {
   /* values use the regular text color so the visual hierarchy is
      KEY (accent) > VALUE (regular) > hint/badge (muted). */
   color: var(--stx-text, #e0e0e0);
   font-weight: 500;
 }
 
-.stx-todo-search-suggest__badge {
+.stx-cards-search-suggest__badge {
   margin-left: auto;
   flex: 0 0 auto;
   padding: 1px 6px;
@@ -71,7 +71,7 @@
   font-weight: 600;
 }
 
-.stx-todo-search-suggest__hint {
+.stx-cards-search-suggest__hint {
   flex: 1 1 auto;
   text-align: right;
   color: var(--stx-text-faint, #8a8a9c);

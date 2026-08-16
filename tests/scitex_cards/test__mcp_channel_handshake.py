@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """Regression guard: the channel poll loop must NOT starve the MCP handshake.
 
-Bug (2026-07-04, fleet-wide "scitex-todo MCP not connected"): the unified
-``scitex-todo mcp start`` server starts an inbox poll loop; its first
+Bug (2026-07-04, fleet-wide "scitex-cards MCP not connected"): the unified
+``scitex-cards mcp start`` server starts an inbox poll loop; its first
 :func:`drain_once` ran SYNCHRONOUS blocking store IO (``recipient_keys`` +
 ``_inbox.poll_inbox``) inline on the event loop. While that ran the
 ``ServerSession`` could not answer the client's ``initialize`` request, so
@@ -96,7 +96,7 @@ def _initialize_under_poll_loop(agent):
                         s_read,
                         s_write,
                         agent_id=agent,
-                        source="stodo",
+                        source="scards",
                         interval=0.05,  # hammer the poll loop to maximise contention
                         server=None,  # bare low-level server: exercises the handshake
                     )
@@ -136,8 +136,8 @@ def initialize_result(tmp_path, env):
     # A non-trivial inbox so the drain has real work to do each tick.
     _seed(store, agent, 50)
     # The poll loop resolves the store from the environment.
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_AGENT_ID", agent)
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_AGENT_ID", agent)
     return _initialize_under_poll_loop(agent)
 
 

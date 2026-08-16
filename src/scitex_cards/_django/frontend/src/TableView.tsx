@@ -121,10 +121,10 @@ export function TableView({ graph }: { graph: GraphPayload }) {
   };
 
   return (
-    <div className="stx-todo-table-wrap">
-      <div className="stx-todo-table__toolbar">
+    <div className="stx-cards-table-wrap">
+      <div className="stx-cards-table__toolbar">
         <label
-          className="stx-todo-table__toggle"
+          className="stx-cards-table__toggle"
           title={
             "Show structural cards (kind=status, kind=goal) — quality-axis " +
             "rows and goal/umbrella anchors. Hidden by default; they still " +
@@ -139,21 +139,21 @@ export function TableView({ graph }: { graph: GraphPayload }) {
           <span>Show structural cards</span>
         </label>
       </div>
-      <table className="stx-todo-table">
+      <table className="stx-cards-table">
         <thead>
           <tr>
             {COLUMNS.map((col) => (
               <th
                 key={col.key}
-                className={`stx-todo-table__th${
-                  sortKey === col.key ? " stx-todo-table__th--sorted" : ""
+                className={`stx-cards-table__th${
+                  sortKey === col.key ? " stx-cards-table__th--sorted" : ""
                 }`}
                 onClick={() => onSort(col.key)}
                 title={`Sort by ${col.label}`}
               >
                 {col.label}
                 {sortKey === col.key && (
-                  <span className="stx-todo-table__caret" aria-hidden="true">
+                  <span className="stx-cards-table__caret" aria-hidden="true">
                     {sortDir === "asc" ? " ▲" : " ▼"}
                   </span>
                 )}
@@ -168,8 +168,8 @@ export function TableView({ graph }: { graph: GraphPayload }) {
             return (
               <tr
                 key={node.id}
-                className={`stx-todo-table__row${
-                  selected ? " stx-todo-table__row--selected" : ""
+                className={`stx-cards-table__row${
+                  selected ? " stx-cards-table__row--selected" : ""
                 }`}
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey) {
@@ -190,13 +190,13 @@ export function TableView({ graph }: { graph: GraphPayload }) {
                     : "Details (right-click to edit)"
                 }
               >
-                <td className="stx-todo-table__title">
+                <td className="stx-cards-table__title">
                   {hasChildren ? "▸ " : ""}
                   {node.title}
                 </td>
                 <td>
                   <span
-                    className="stx-todo-table__status"
+                    className="stx-cards-table__status"
                     style={{
                       background: c?.fill ?? "#888",
                       borderColor: c?.stroke ?? "#888",
@@ -205,16 +205,16 @@ export function TableView({ graph }: { graph: GraphPayload }) {
                     {node.status}
                   </span>
                 </td>
-                <td className="stx-todo-table__num">{node.priority ?? ""}</td>
-                <td className="stx-todo-table__repo">{node.repo ?? ""}</td>
-                <td className="stx-todo-table__num">{deps || ""}</td>
-                <td className="stx-todo-table__num">{comments || ""}</td>
+                <td className="stx-cards-table__num">{node.priority ?? ""}</td>
+                <td className="stx-cards-table__repo">{node.repo ?? ""}</td>
+                <td className="stx-cards-table__num">{deps || ""}</td>
+                <td className="stx-cards-table__num">{comments || ""}</td>
               </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td className="stx-todo-table__empty" colSpan={COLUMNS.length}>
+              <td className="stx-cards-table__empty" colSpan={COLUMNS.length}>
                 No matching tasks.
               </td>
             </tr>

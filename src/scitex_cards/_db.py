@@ -24,7 +24,7 @@ plus ``schema_meta`` rows.
 
 Path resolution — DELEGATED, never re-rolled
 --------------------------------------------
-Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_TODO_DB``
+Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_CARDS_DB``
 (deprecated, warned) → the ecosystem ``local_state.user_path("cards",
 "cards.db")``. We DELEGATE the final tier to
 ``scitex_config._ecosystem.local_state.user_path`` rather than re-rolling a
@@ -41,12 +41,15 @@ import os
 import sqlite3
 from pathlib import Path
 
+from ._db_dm_schema import DM_TABLES as _DM_TABLES
+from ._db_migrations import table_columns
+
 logger = logging.getLogger(__name__)
 
 #: Canonical DB filename. ``.db`` (not ``.sqlite``) so a future
 #: ``stx.io.load("cards.db")`` round-trips (scitex-io registers only ``.db``).
 #: ``cards.db`` under ``~/.scitex/cards/`` is the operator-declared SSOT
-#: target (2026-07-16); the pre-rename shadow lived at ``~/.scitex/todo/todo.db``
+#: target (2026-07-16); the pre-rename shadow lived at ``~/.scitex/cards/cards.db``
 #: and is REBUILT by import at cutover, never moved or trusted as current.
 DEFAULT_DB_FILENAME = "cards.db"
 
@@ -56,14 +59,6 @@ PKG_SHORT = "cards"
 
 #: env var that overrides the resolved DB path entirely (2nd tier).
 ENV_DB = "SCITEX_CARDS_DB"
-
-#: pre-rename name of :data:`ENV_DB` (package renamed 2026-07-16). Honoured
-#: for one transition window with a loud deprecation warning; the NEW name
-#: wins when both are set. (``scitex_cards._env_compat`` also mirrors
-#: ``SCITEX_CARDS_DB`` onto this name at import, so the pair cannot diverge
-#: for in-package readers — this fallback exists for direct callers of
-#: :func:`resolve_db_path` in processes that never imported the package root.)
-ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 
 #: schema version — mirrored into both ``PRAGMA user_version`` and the
 #: ``schema_meta`` table so a fast gate (pragma) and a human-readable row exist.
@@ -89,7 +84,97 @@ ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 #: the JSON is the PAYLOAD — a column-based export would silently drop
 #: unknown keys, and the JSON-snapshot backup rail (ADR-0010) must be exact
 #: by construction.
-SCHEMA_VERSION = 4
+#:
+#: v5 (DM into the store) adds ``dm_threads`` / ``dm_thread_member_events`` /
+#: ``dm_messages`` / ``dm_receipts`` plus their append-only triggers. DMs were
+#: the ONE piece of fleet data the store's protections did not cover: they
+#: lived in a ``threads.json`` sidecar, so WAL, store-identity stamping,
+#: tombstones, no-shrink, export and snapshot all applied to cards and to
+#: nothing the operator actually talks through. See
+#: ``docs/design/dm-into-cards-db.md``.
+#:
+#: v6 (the optimistic lock) adds ``tasks.revision``. It is incremented by every
+#: row-level write (v7's trigger, below) and it CAN be asserted in a write's
+#: WHERE clause — but only by a caller that opts in, and no public verb does.
+#:
+#: THAT DISTINCTION IS LOAD-BEARING AND THIS COMMENT USED TO ERASE IT. It read
+#: "incremented by every row-level write and asserted in the write's WHERE
+#: clause", in the present tense, as a property of the schema. Nothing asserted
+#: it at all until #790 (2026-08-10). scitex-dev read this line, reasonably
+#: concluded the lock was protecting them, skipped the check, and LOST AN EDIT
+#: to a concurrent writer — reporting the work done, because nothing said
+#: otherwise. A comment that overstates a guard is worse than no comment: it
+#: converts a reader's diligence into a reason to skip the check.
+#:
+#: WHAT IS TRUE TODAY — one SQL site, two callers, no public entry:
+#:   * ``_db_bootstrap._insert_tasks(..., expected_revision=N)`` appends
+#:     ``WHERE tasks.revision = ?`` — the only such clause in the package.
+#:   * ``_db_mirror._write_card(..., expected_revision=N)`` forwards to it.
+#:   * ``update_task`` / ``add_task`` accept no such argument, so every write
+#:     through the public surface remains LAST-WRITE-WINS, deliberately —
+#:     :func:`_migrate_v6_to_v7` ruled REJECT-by-default unusable across a fleet
+#:     that cannot be made uniformly current.
+#: So ``revision`` is a CAPABILITY, not a PROTECTION. Pinned by
+#: ``tests/scitex_cards/test__revision_is_opt_in.py`` so this text cannot drift
+#: again in EITHER direction: it fails if the WHERE clause disappears, and it
+#: fails if a public verb starts accepting the argument while this still says
+#: none does.
+#:
+#: The counter exists so a
+#: writer can tell "the row is there" (which ``rowcount == 1`` already answers)
+#: apart from "nobody changed it under me since I read" — the question that
+#: actually prevents a lost update, and the one sac's state-db taught us is easy
+#: to believe you have answered when you have not: it checks ``rowcount`` in
+#: eight places and carries no revision column, so every one of those checks
+#: passes in exactly the case a lock exists to catch.
+#:
+#: v7 makes the v6 counter DB-ENFORCED via ``tasks_bump_revision``, so no writer
+#: version can skip the increment. Application-side incrementing would require
+#: every one of ~90 agent containers to be current for the lock to mean anything,
+#: and that condition is not establishable — measured 2026-07-30, the fleet was
+#: simultaneously running 0.13.5 / 0.17.5 / 0.18.0 / 0.22.0. See
+#: :func:`_migrate_v6_to_v7` for why ASSIGN rather than REJECT semantics.
+#: v10 makes ``notifications`` a table that can be SYNCED and that no client can
+#: write incompletely: the five sync columns from creation, and a BEFORE INSERT
+#: trigger that fills ``record_json`` from the row's own columns. Three separate
+#: writers omitted that payload, and each omission took every card write down
+#: fleet-wide — a barrier in the engine is the only kind every version of every
+#: container obeys. See :func:`_db_migrations._migrate_v9_to_v10`.
+#: v11 gives a MIGRATED store the foreign keys the schema has always declared.
+#: Measured 2026-08-10, the live store held 1 of 4 (control: 278 total
+#: pg_constraint rows), and the one it held covered two empty tables — so every
+#: table with data had zero enforced referential integrity. Inline ``REFERENCES``
+#: reaches fresh stores only, which is this chain's documented
+#: ``CREATE TABLE IF NOT EXISTS`` hole in its second instance. See
+#: :func:`_db_foreign_keys._migrate_v10_to_v11`.
+#:
+#: ═══ THIS NUMBER IS A CLAIM ABOUT A CLIENT, NOT ABOUT A DATABASE ═══
+#:
+#: Raising it here changes what THIS CODE will assert the next time it opens a
+#: database. It changes NOTHING about any database until a client CARRYING this
+#: value actually opens one — the rungs run from ``init_schema``, so an
+#: unvisited database keeps whatever shape it had, indefinitely.
+#:
+#: SO A RELEASE NOTE SAYING "v11 ADDS THE FOREIGN KEYS" IS TRUE OF THE PACKAGE
+#: AND FALSE OF THE FLEET, until propagation. When 0.37.0 was tagged, the live
+#: cards database still had ZERO enforced referential integrity on every table
+#: holding data — the repair existed, was proven on three Python versions and a
+#: real PostgreSQL, and had not run anywhere.
+#:
+#: This is written here rather than only in a release note because the release
+#: note is read once, by the person who already knows. The reader who needs it
+#: is the one who finds this constant at 11 and concludes the databases are at
+#: 11. On 2026-08-11 the fleet ran 0.35.1 for hours while a fix for a
+#: write-outage sat published and unreachable, and three agents kept hitting the
+#: bug it fixed. MERGED IS NOT PUBLISHED; PUBLISHED IS NOT DEPLOYED; AND A
+#: SCHEMA VERSION IS NOT A SCHEMA.
+#:
+#: The same shape appears twice more in this package and both are deliberate:
+#: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned,
+#: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
+#: each case the artifact exists and its effect does not yet, which is a state
+#: worth being able to name.
+SCHEMA_VERSION = 11
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -99,186 +184,96 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
 
     1. ``explicit`` argument (CLI ``--db`` / function arg),
     2. ``$SCITEX_CARDS_DB`` environment override,
-    3. ``$SCITEX_TODO_DB`` — deprecated pre-rename name, honoured with a
+    3. ``$SCITEX_CARDS_DB`` — deprecated pre-rename name, honoured with a
        loud warning for one transition window,
-    4. ``local_state.user_path("cards", "cards.db")`` — DELEGATED to the
-       ecosystem user-canonical resolver (never a re-rolled precedence).
+    4. NOTHING — there is no fourth tier. Until 2026-08-13 this DELEGATED to
+       the ecosystem user-canonical resolver,
+       ``local_state.user_path("cards", "cards.db")``; an unconfigured store
+       now RAISES
+       :class:`scitex_cards._store_target.StoreTargetNotConfigured` instead of
+       naming a SQLite file nobody chose.
 
     Returns a :class:`~pathlib.Path`; does NOT create the file.
+
+    A POSTGRESQL TARGET IS REFUSED HERE, LOUDLY, RATHER THAN COERCED. This
+    function used to run ``Path(value)`` over whatever it was given, and
+    ``Path`` accepts a DSN without complaint: ``postgresql://host/db`` becomes
+    the relative path ``postgresql:/host/db`` — the ``//`` silently collapses.
+
+    MEASURED 2026-07-31, and it is the worst failure this store can have.
+    With ``SCITEX_CARDS_DB`` set to a PostgreSQL URL:
+
+        list_tasks()            ->     0 cards   (SQLite target: 2960)
+        resolve-store `exists`  ->  True         the guard reported healthy
+        and on disk:  ./postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards
+                      a real, freshly created, EMPTY 217 KB SQLite database
+
+    So it did not merely resolve wrong. The store layer MANUFACTURED a new
+    empty store at the mangled path, initialised its schema, declared it
+    present, and served nothing. An empty board that reports itself healthy is
+    the exact outage this package's read-door and retirement guards exist to
+    prevent — the one that previously took this store from 2170 rows to 18.
+
+    ``_db.connect`` learned to dispatch a PostgreSQL target in #685, but the
+    STORE reaches the database through THIS function, so closing one door left
+    the other open. Refusing is correct even once PostgreSQL is fully
+    supported: this function's contract is to return a filesystem Path, and a
+    DSN is not one. Routing a server target belongs in the caller
+    (:mod:`scitex_cards._store_target` already provides
+    ``resolve_store_target`` / ``resolve_store_backend`` for that).
     """
+    from ._store_target import StoreTargetIsNotAPath  # noqa: PLC0415
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    def _as_path(value: str | Path, source: str) -> Path:
+        if is_postgres_url(str(value)):
+            raise StoreTargetIsNotAPath(
+                f"{source} names a PostgreSQL server, not a file path: "
+                f"{value!r}. resolve_db_path returns a filesystem Path, and "
+                "coercing a DSN here silently creates an EMPTY SQLite store at "
+                "a mangled path and serves 0 cards while reporting healthy. "
+                "Use scitex_cards._store_target.resolve_store_target() to get "
+                "the target, or _db.connect() to open it."
+            )
+        return Path(value).expanduser()
+
     if explicit is not None:
-        return Path(explicit).expanduser()
+        return _as_path(explicit, "the explicit target")
     env_val = os.environ.get(ENV_DB)
     if env_val:
-        return Path(env_val).expanduser()
-    legacy_val = os.environ.get(ENV_DB_DEPRECATED)
-    if legacy_val:
-        logger.warning(
-            "%s is deprecated (package renamed 2026-07-16); rename the "
-            "export to %s. The legacy value is honoured for one "
-            "transition window only.",
-            ENV_DB_DEPRECATED,
-            ENV_DB,
-        )
-        return Path(legacy_val).expanduser()
-    # Final tier — DELEGATE to the ecosystem user-canonical resolver.
-    # Imported lazily so a caller passing an explicit / env path never
-    # hard-requires scitex_config to be importable.
-    from scitex_config._ecosystem import local_state
+        return _as_path(env_val, f"${ENV_DB}")
+    # CONFIG TIER — kept in lockstep with resolve_store_target, whose docstring
+    # promises this function's precedence is mirrored exactly. Routed through
+    # _as_path deliberately: this function is typed `-> Path`, so a DSN written
+    # into the config must produce the same loud refusal an env DSN does rather
+    # than being coerced into a mangled relative path.
+    from ._config import store_config_target
 
-    return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    configured = store_config_target()
+    if configured:
+        return _as_path(configured, "the configured store target")
+    # Final tier — ABOLISHED 2026-08-13. It used to DELEGATE to the ecosystem
+    # user-canonical resolver and return that path:
+    #
+    #     from scitex_config._ecosystem import local_state
+    #     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
+    #
+    # which is a SQLite filename nobody chose, indistinguishable at the call
+    # site from one somebody did. The refusal is the SAME object raised from the
+    # SAME place `resolve_store_target` raises it, not a second message here:
+    # this function's docstring promises its precedence mirrors that one
+    # exactly, and a tier closed in one resolver but open in the other is the
+    # original fallback with an extra hop. See `_store_target` for the ruling.
+    from ._store_target import refuse_zero_config_default  # noqa: PLC0415
+
+    refuse_zero_config_default()
 
 
-# --------------------------------------------------------------------------- #
-# Schema                                                                      #
-# --------------------------------------------------------------------------- #
-#
-# Rule (RFC #348 §2): a field any read path filters/sorts on → typed column +
-# index; rare / nested / opaque payloads → JSON TEXT. ``group`` is remapped to
-# the ``grp`` column (``group`` is a SQL reserved word); the adapter/bootstrap
-# translate the name so the Python/YAML field is unchanged. ``deadlines`` and
-# ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
-# tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS tasks (
-    id             TEXT PRIMARY KEY,
-    title          TEXT NOT NULL,
-    status         TEXT NOT NULL DEFAULT 'pending',
-    kind           TEXT,
-    blocker        TEXT,
-    task           TEXT,
-    note           TEXT,
-    goal           TEXT,
-    project        TEXT,
-    repo           TEXT,
-    host           TEXT,
-    agent          TEXT,
-    assignee       TEXT,
-    scope          TEXT,
-    grp            TEXT,
-    priority       INTEGER,
-    parent         TEXT,
-    pr_url         TEXT,
-    issue_url      TEXT,
-    deadline       TEXT,
-    scheduled      TEXT,
-    created_at     TEXT,
-    last_activity  TEXT,
-    started_at     TEXT,
-    finished_at    TEXT,
-    created_by     TEXT,
-    job_id         TEXT,
-    command        TEXT,
-    deadlines_json TEXT,
-    log_meta_json  TEXT,
-    row_order      INTEGER,
-    card_json      TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_status   ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_agent    ON tasks(agent);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
-CREATE INDEX IF NOT EXISTS idx_tasks_scope    ON tasks(scope);
-CREATE INDEX IF NOT EXISTS idx_tasks_kind     ON tasks(kind);
-CREATE INDEX IF NOT EXISTS idx_tasks_blocker  ON tasks(blocker);
-CREATE INDEX IF NOT EXISTS idx_tasks_project  ON tasks(project);
-CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent   ON tasks(parent);
-CREATE INDEX IF NOT EXISTS idx_tasks_pr_url   ON tasks(pr_url);
-
-CREATE TABLE IF NOT EXISTS task_comments (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    seq     INTEGER NOT NULL,
-    author  TEXT,
-    ts      TEXT,
-    kind    TEXT,
-    text    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
-
-CREATE TABLE IF NOT EXISTS task_edges (
-    src_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    dst_task_id TEXT NOT NULL,
-    edge_type   TEXT NOT NULL,
-    PRIMARY KEY (src_task_id, dst_task_id, edge_type)
-);
-CREATE INDEX IF NOT EXISTS idx_edges_dst ON task_edges(dst_task_id);
-
-CREATE TABLE IF NOT EXISTS task_roles (
-    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    who     TEXT NOT NULL,
-    role    TEXT NOT NULL,
-    PRIMARY KEY (task_id, who, role)
-);
-CREATE INDEX IF NOT EXISTS idx_roles_who ON task_roles(who);
-
-CREATE TABLE IF NOT EXISTS users (
-    id           TEXT PRIMARY KEY,
-    kind         TEXT NOT NULL,
-    host_at_name TEXT,
-    notify_json  TEXT,
-    turn_url     TEXT,
-    a2a_port     INTEGER,
-    created_at   TEXT,
-    last_seen    TEXT,
-    record_json  TEXT
-);
-CREATE TABLE IF NOT EXISTS user_names (
-    name    TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE INDEX IF NOT EXISTS idx_user_names_uid ON user_names(user_id);
-
-CREATE TABLE IF NOT EXISTS inbox_recipients (
-    recipient_id TEXT PRIMARY KEY
-);
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id           TEXT PRIMARY KEY,
-    recipient_id TEXT NOT NULL,
-    event_type   TEXT NOT NULL,
-    card_id      TEXT,
-    body         TEXT,
-    actor        TEXT,
-    ts           TEXT NOT NULL,
-    seen         INTEGER NOT NULL DEFAULT 0,
-    record_json  TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_notif_recipient_seen
-    ON notifications(recipient_id, seen);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id         TEXT PRIMARY KEY,
-    thread_key TEXT NOT NULL,
-    sender     TEXT NOT NULL,
-    recipient  TEXT NOT NULL,
-    body       TEXT NOT NULL,
-    ts         TEXT NOT NULL,
-    read       INTEGER NOT NULL DEFAULT 0,
-    record_json TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_key, ts);
-
-CREATE TABLE IF NOT EXISTS schema_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
-"""
-
-#: Ordered tuple of every table name the schema creates — used by
-#: :func:`verify` and the tests to assert completeness.
-SCHEMA_TABLES: tuple[str, ...] = (
-    "tasks",
-    "task_comments",
-    "task_edges",
-    "task_roles",
-    "users",
-    "user_names",
-    "inbox_recipients",
-    "notifications",
-    "messages",
-    "schema_meta",
-)
+# The core schema DDL and the table roster live in ``_db_schema_sql`` --
+# ``_db`` owns connections, not the shape of the store. Re-exported under
+# the historical private name so existing callers and tests are unaffected.
+from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
+from ._db_schema_sql import SCHEMA_TABLES
 
 
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
@@ -305,7 +300,59 @@ def connect(path: str | Path) -> sqlite3.Connection:
     not merely warn. A brand-new file (no ``schema_meta`` table yet) has no
     floor stamped, so the gate is a no-op and :func:`init_schema` still runs
     normally afterwards.
+
+    A POSTGRESQL TARGET IS NOT A PATH, and this is where that stops mattering to
+    callers. ``path`` may be a PostgreSQL URL or a libpq keyword/value conninfo;
+    those are dispatched to :func:`scitex_cards._backend_connect.connect` and
+    come back as a ``StoreConnection``. The SQLite branch is unchanged, so every
+    existing caller still receives the exact ``sqlite3.Connection`` it always
+    has — this widens what ``connect`` ACCEPTS without changing what it returns
+    for the only target in production today.
+
+    THE DISPATCH IS THE FIRST STATEMENT, before any ``Path`` handling, and that
+    ordering is the point. ``Path(dsn)`` on a conninfo does not raise: it yields
+    a plausible relative path, and ``mkdir`` + ``sqlite3.connect`` then
+    MANUFACTURE a SQLite file named after the DSN — which accepts writes and
+    answers queries while the real server sits untouched. That file was created
+    and observed while testing #682. Nothing raised, and the store looked
+    healthy, which is exactly why the check cannot live further down.
     """
+    from ._store_url import (  # noqa: PLC0415 -- import cycle
+        is_postgres_url,
+        reject_attempted_dsn,
+    )
+
+    target = str(path)
+    # AND THE DISPATCH BEING FIRST WAS STILL NOT ENOUGH, because the dispatch is
+    # TWO-VALUED: not-PostgreSQL is not the same as is-a-path, but the `if`
+    # below can only say one of them. Everything the paragraph above warns about
+    # therefore still happened to any target the predicate did not recognise.
+    #
+    # It is not hypothetical here either. Found 2026-08-12 in this repository's
+    # own root, untracked and not ignored:
+    #
+    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/cards.db
+    #
+    # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
+    # which collapses "//" to "/", then mkdir(parents=True) below built the
+    # directories and the inbox migration filled in the file. Moved to .old/.
+    reject_attempted_dsn(target)
+    if is_postgres_url(target):
+        from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
+        from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
+
+        # PRAGMAs are deliberately NOT applied: journal_mode / synchronous /
+        # busy_timeout / foreign_keys are SQLite storage-engine settings that the
+        # server owns instead. ``rows_by_name`` because the store reads columns
+        # by name throughout.
+        pg = _connect_backend(target, read_only=False, rows_by_name=True)
+        try:
+            enforce_min_client_version(pg)
+        except Exception:
+            pg.close()
+            raise
+        return pg
+
     p = Path(path).expanduser()
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p))
@@ -321,151 +368,44 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    """The column names actually present on ``table`` in THIS database file.
 
-    The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
-    a number some code wrote — and a stamp is metadata, so it can outlive the
-    thing it describes. The columns are the artifact itself.
-    """
-    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-
-
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
-    """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
-
-    ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
-    add a column — so a DB created before v2 keeps the old shape forever unless
-    something ALTERs it. That silently-missing column is precisely the sort of
-    thing a version stamp would have papered over.
-
-    Existing rows get ``card_json = NULL``: the column is added, but NOT
-    back-filled (a back-fill needs the YAML, which this layer does not have).
-    Those NULLs are load-bearing — they are what makes the S2 read guard REFUSE a
-    DB that has not been re-imported, instead of quietly serving cards with their
-    unknown fields stripped. Nothing back-fills them: the importer was removed
-    with the YAML tier, so a database carrying these NULLs must be replaced with
-    one a current version wrote.
-    """
-    if "card_json" not in table_columns(conn, "tasks"):
-        conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
-
-
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
-    """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
-
-    Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
-    NOT back-filled here — the exporter REFUSES NULL payloads loudly, which is
-    what forces the database to be replaced by a current one instead of silently
-    exporting stripped records.
-    """
-    for table in ("users", "notifications", "messages"):
-        if "record_json" not in table_columns(conn, table):
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
-
-
-def init_schema(conn: sqlite3.Connection) -> None:
-    """Create the schema idempotently + stamp version. Commits on success.
-
-    Runs the ``CREATE TABLE/INDEX IF NOT EXISTS`` script, applies the additive
-    column migrations, sets ``PRAGMA user_version=SCHEMA_VERSION``, and seeds the
-    ``schema_meta`` rows (``schema_version`` always; ``created_at`` / ``source``
-    only if absent so a re-init never clobbers the original provenance).
-    """
-    conn.executescript(_SCHEMA_SQL)
-    _migrate_v1_to_v2(conn)
-    _migrate_v2_to_v3(conn)
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('created_at', ?)",
-        (_utc_now_iso(),),
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_meta(key, value) VALUES('source', 'fresh')",
-    )
-    conn.commit()
+# THE SCHEMA ASSERTION MOVED to `_db_init_schema`. This module owns CONNECTIONS;
+# that one owns making an open connection carry the current shape (the currency
+# gate, the DDL, the v1->v10 ladder, the stamp). Re-exported under the same name
+# so every existing `from ._db import init_schema` resolves unchanged.
+from ._db_init_schema import init_schema  # noqa: E402
 
 
 def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:
     """Resolve → connect → ensure schema. The one-call adapter entry point.
 
-    Combines :func:`resolve_db_path`, :func:`connect`, and
+    Combines :func:`resolve_store_target`, :func:`connect`, and
     :func:`init_schema`. Returns a ready-to-use connection whose schema is
     guaranteed present (created on first open; a no-op on an existing DB).
+
+    RESOLVES THE TARGET, NOT A PATH. ``resolve_db_path`` is typed ``-> Path``
+    and now refuses a DSN outright, so routing through it made this function --
+    the one-call entry point the canonical read path uses -- structurally unable
+    to reach PostgreSQL, no matter that :func:`connect` had already learned to
+    dispatch one. That is why ``_store_target``'s docstring could say the seam
+    existed and NOTHING imported it. Filesystem-only callers (snapshots,
+    backups, the on-disk health probes) keep ``resolve_db_path`` deliberately.
     """
-    return _open_at(resolve_db_path(explicit))
+    from ._store_target import resolve_store_target  # noqa: PLC0415
+
+    return _open_at(resolve_store_target(explicit))
 
 
-def _open_at(path: Path) -> sqlite3.Connection:
+def _open_at(path: str | Path) -> sqlite3.Connection:
     conn = connect(path)
     init_schema(conn)
     return conn
 
 
-def verify(explicit: str | Path | None = None) -> dict:
-    """Open the DB read/verify its integrity + report table row counts.
-
-    Returns a JSON-friendly dict::
-
-        {"path", "exists", "ok", "user_version", "schema_version",
-         "quick_check", "tables": {<name>: <row_count>, ...}, "source"}
-
-    ``ok`` is True iff the file exists, ``user_version`` and the
-    ``schema_meta.schema_version`` both equal :data:`SCHEMA_VERSION`, every
-    expected table is present, and ``PRAGMA quick_check`` returns ``ok``.
-    Never raises on a merely-absent DB (``exists=False``, ``ok=False``).
-    """
-    path = resolve_db_path(explicit)
-    report: dict = {
-        "path": str(path),
-        "exists": path.exists(),
-        "ok": False,
-        "user_version": None,
-        "schema_version": None,
-        "quick_check": None,
-        "source": None,
-        "tables": {},
-    }
-    if not path.exists():
-        return report
-
-    conn = connect(path)
-    try:
-        report["user_version"] = int(conn.execute("PRAGMA user_version").fetchone()[0])
-        report["quick_check"] = conn.execute("PRAGMA quick_check").fetchone()[0]
-        present = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        tables: dict[str, int] = {}
-        for name in SCHEMA_TABLES:
-            if name in present:
-                tables[name] = int(
-                    conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                )
-        report["tables"] = tables
-        meta = {
-            row[0]: row[1] for row in conn.execute("SELECT key, value FROM schema_meta")
-        }
-        report["schema_version"] = meta.get("schema_version")
-        report["source"] = meta.get("source")
-        all_tables_present = all(t in present for t in SCHEMA_TABLES)
-        report["ok"] = bool(
-            report["user_version"] == SCHEMA_VERSION
-            and report["schema_version"] == str(SCHEMA_VERSION)
-            and all_tables_present
-            and report["quick_check"] == "ok"
-        )
-    finally:
-        conn.close()
-    return report
+#: ``db verify`` lives in :mod:`scitex_cards._db_verify` (this module owns the
+#: schema and the connection; that one only INSPECTS a file). Re-exported so
+#: every existing ``from ._db import verify`` keeps resolving unchanged.
+from ._db_verify import verify  # noqa: E402  (re-export, after the definitions)
 
 
 def _utc_now_iso() -> str:

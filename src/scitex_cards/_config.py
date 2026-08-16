@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 #: Config file name (in each scope's ``.scitex/cards`` dir).
 CONFIG_NAME = "config.json"
 
+#: The ``store:`` knobs — which store this host talks to.
+STORE_SECTION = "store"
+
+#: Key inside ``store:`` naming the canonical store: a path OR a URL.
+STORE_TARGET_KEY = "target"
+
 #: The ``reminders:`` knobs.
 REMINDERS_SECTION = "reminders"
 
@@ -107,6 +113,47 @@ def reminders_config() -> dict:
     """The merged ``reminders:`` section (``{}`` when absent)."""
     section = load_config().get(REMINDERS_SECTION)
     return section if isinstance(section, dict) else {}
+
+
+def store_config_target() -> str | None:
+    """The configured store target, or ``None`` when the file does not set one.
+
+    WHY THIS EXISTS. Until this was added, the ONLY way to point a client at a
+    non-default store was ``$SCITEX_CARDS_DB``, set at every single invocation
+    site. Everything that forgot fell through to a hardcoded local SQLite
+    filename. During the 2026-08-01 PostgreSQL cutover that cost us eight
+    host-side writers (four systemd units, three cron entries, one hourly timer)
+    silently writing the OLD store while the fleet was believed migrated, and
+    then those same cron jobs failing outright once that store was retired.
+
+    An environment variable is a rule each caller has to remember. A config file
+    is a fact the host states once. This is the mechanism the constitution asks
+    for in place of a remembered rule.
+
+    Returns
+    -------
+    str or None
+        The target AS WRITTEN — a path or a URL, never coerced, for the same
+        reason :mod:`scitex_cards._store_target` does not coerce. ``None`` when
+        absent, empty, or not a string, so the caller falls through to its next
+        tier rather than being handed a malformed target.
+
+    Notes
+    -----
+    Fail-soft, like every other reader here: a missing or malformed config
+    contributes nothing rather than raising. A bad config must not be able to
+    take the board down.
+
+    THE PASSWORD IS NOT AND MUST NOT BE HERE. For PostgreSQL the target is a
+    DSN with no password in it; libpq reads ``$PGPASSFILE`` itself.
+    """
+    section = load_config().get(STORE_SECTION)
+    if not isinstance(section, dict):
+        return None
+    value = section.get(STORE_TARGET_KEY)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 def _positive_number(value: Any) -> float | None:

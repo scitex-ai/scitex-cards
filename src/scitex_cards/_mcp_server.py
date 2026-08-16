@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo MCP server — one FastMCP instance per the SciTeX convention.
+"""scitex-cards MCP server — one FastMCP instance per the SciTeX convention.
 
 Tools follow audit §6 Convention A (``tool_name == python_api_name``); see
 ``TOOL_NAMES`` for the full registered set (task CRUD + edges + roles, the
 ``help_wait`` / ``help_clear`` cards, ``poll_notifications`` — the standalone
-PULL card-message inbox — and the ``todo_skills_*`` §5 pair).
+PULL card-message inbox — and the ``cards_skills_*`` §5 pair).
 
 Three cohesive tool clusters live in sibling modules for this module's line
 budget and register on the SAME ``mcp`` instance (imported at the tail for the
@@ -22,7 +22,7 @@ list the Python API returns.
 
 Import semantics
 ----------------
-``fastmcp`` is an OPTIONAL dependency (``pip install scitex-todo[mcp]``).
+``fastmcp`` is an OPTIONAL dependency (``pip install scitex-cards[all]``).
 Importing this module without fastmcp installed raises :class:`ImportError`
 with a clear install hint — it does NOT raise at ``import scitex_cards``
 time (the CLI guards the import; the MCP `start` verb surfaces the same
@@ -91,7 +91,7 @@ async def complete_task(
     """Mark a task done and stamp `_log_meta.completed_{at,by}`.
 
     Idempotent: re-completing a `done` task keeps the original stamp.
-    `by` overrides the $SCITEX_TODO_AGENT_ID → $USER precedence.
+    `by` overrides the $SCITEX_CARDS_AGENT_ID → $USER precedence.
     """
     done = await anyio.to_thread.run_sync(
         functools.partial(get_backend().complete_task, None, task_id, by=by)
@@ -116,15 +116,15 @@ async def list_tasks(
 ) -> str:
     """List tasks, filtered by any combination of fields. Returns a JSON array.
 
-    ``scope=None`` (default) uses $SCITEX_TODO_SCOPE if set; ``scope=""``
+    ``scope=None`` (default) uses $SCITEX_CARDS_SCOPE if set; ``scope=""``
     opts out of that env default. ``statuses`` (multi) OR-combines with
     ``status`` (single). ``blocker="__none"`` matches rows with no blocker.
     ``blocking_me=True`` matches the board's BLOCKING-YOU predicate
     (``status=blocked AND blocker=operator-decision``). ``overdue=True``
     matches tasks past their next deadline AND not in a terminal lifecycle
-    state (mirrors the ``scitex-todo list-tasks --overdue`` CLI flag and
+    state (mirrors the ``scitex-cards list-tasks --overdue`` CLI flag and
     the fleet payload's ``overdue_count``; see scitex_cards._model.is_overdue
-    — todo-p6-overdue-ui, PR #125 / #126). ``overdue`` is a PULL filter,
+    — cards-p6-overdue-ui, PR #125 / #126). ``overdue`` is a PULL filter,
     not an alarm: this query is the ONLY way an overdue card reaches you
     — nothing pushes it. A deadline passing notifies nobody, so poll
     ``overdue=True`` yourself if you care. Note it only ever matches
@@ -230,7 +230,7 @@ async def comment_task(
 ) -> str:
     """Append an entry to a task's ``comments[]`` thread (the
     Gitea-compatible Issue-activity log). ``by`` overrides the default
-    author resolution ($SCITEX_TODO_AGENT_ID → $USER).
+    author resolution ($SCITEX_CARDS_AGENT_ID → $USER).
     """
     result = await anyio.to_thread.run_sync(
         functools.partial(get_backend().comment_task, None, task_id, text, by=by)
@@ -301,14 +301,24 @@ TOOL_NAMES: tuple[str, ...] = (
     "help_clear",
     # Standalone pull-inbox read path (1:1 `_inbox.poll_inbox`; in _mcp_skills).
     "poll_notifications",
+    # ...and its CONFIRM half (1:1 `_inbox_confirm.confirm_notifications`).
+    # Reading hands over; only this advances the cursor, so an undelivered
+    # notification is redelivered instead of destroyed (incident 2026-07-29).
+    "ack_notifications",
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
     "health",
-    "todo_skills_list",
-    "todo_skills_get",
+    "cards_skills_list",
+    "cards_skills_get",
     # Operator↔agent DMs (threads.json sidecar; registered in _mcp_skills).
     "dm_send",
     "dm_list",
+    # ...and the FILE half. Text-only DMs meant a deliverable reached the
+    # operator as prose describing a deliverable; this is the entry point that
+    # was simply missing. Composes _attachments with dm_send in-process, and
+    # is deliberately NOT a BACKEND_VERBS member — `_server.py` dispatches that
+    # tuple over HTTP, and a path-taking verb there would be remotely callable.
+    "dm_send_document",
 )
 
 # Imports for the registration side effect: these modules (kept separate for

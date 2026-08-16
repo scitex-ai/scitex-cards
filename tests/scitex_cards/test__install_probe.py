@@ -3,7 +3,7 @@
 """The version string can lie. These tests prove the probe catches it when it does.
 
 Regression cover for the 2026-07-12 incident: an orphaned ``.dist-info`` froze
-``scitex-todo`` at 0.7.26 while the code actually running was 0.8.7 — thirty
+``scitex-cards`` at 0.7.26 while the code actually running was 0.8.7 — thirty
 releases apart, permanently, with nothing reporting a problem. sac reproduced the
 same shape independently in its own container (baked dist-info over bound code).
 
@@ -640,12 +640,45 @@ def test_two_distinfos_name_both_and_the_repair(ambiguous_probe):
 
 
 def test_two_distinfos_hint_names_the_repair(ambiguous_probe):
+    """The repair is uninstall-until-empty, NOT `rm -rf` of a guessed directory.
+
+    THIS TEST USED TO DEMAND THE DANGEROUS GUIDANCE. It asserted `"rm -rf" in
+    hint`, which pinned a hint that named ONE directory to delete, chosen with
+    `sorted(names)[0]` — a LEXICOGRAPHIC sort over version strings. With 0.17.9
+    and 0.17.10 side by side that picks 0.17.10, because "1" < "9": it told the
+    reader to delete the NEWER directory. Both versions shipped 2026-07-28, so
+    it was reachable, not hypothetical.
+
+    A test can pin a defect as firmly as it pins a feature. This one made the
+    harmful wording a requirement, so the fix could not land until the test was
+    corrected — which is worth noticing, because "the tests fail" reads as "the
+    change is wrong" and here it meant the opposite.
+    """
     # Arrange
     p = ambiguous_probe
+
     # Act
     hint = p.hint or ""
-    # Assert — names the actual repair.
-    assert "rm -rf" in hint
+
+    # Assert - the repair that cannot pick the wrong directory.
+    assert "while pip uninstall" in hint
+
+
+def test_two_distinfos_hint_does_not_guess_which_to_delete(ambiguous_probe):
+    """Naming a single directory is the defect, whatever the sort order.
+
+    Separate from the test above because "prescribes the safe repair" and
+    "does not also prescribe the unsafe one" are different claims — a hint
+    could satisfy the first while still carrying the second.
+    """
+    # Arrange
+    p = ambiguous_probe
+
+    # Act
+    hint = p.hint or ""
+
+    # Assert
+    assert "rm -rf" not in hint
 
 
 def test_the_symbol_probe_still_tells_the_truth_when_the_version_cannot(

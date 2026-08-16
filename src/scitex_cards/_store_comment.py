@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ._comment_ids import stamp_comment_id
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -35,7 +36,7 @@ def comment_task(
     """Append an entry to ``task.comments[]`` (the established Issue-
     activity-log shape from skill 30, Gitea-compatible field).
 
-    `by` overrides the $SCITEX_TODO_AGENT_ID → $USER precedence used by
+    `by` overrides the $SCITEX_CARDS_AGENT_ID → $USER precedence used by
     add_task / complete_task.
 
     `kind` is an optional feedback-ring / event tag (e.g. ``push`` /
@@ -60,11 +61,13 @@ def comment_task(
     if not text or not str(text).strip():
         raise ValueError("comment_task: 'text' is required")
     author = _default_agent(by)
-    entry = {
-        "author": author,
-        "ts": _utc_now_iso(),
-        "text": str(text),
-    }
+    entry = stamp_comment_id(
+        {
+            "author": author,
+            "ts": _utc_now_iso(),
+            "text": str(text),
+        }
+    )
     if kind:
         entry["kind"] = str(kind)
     with _model._store_lock(tasks_path):
@@ -88,7 +91,19 @@ def comment_task(
         # list-stale, digests) — found 2026-07-10 when the idle guard kept
         # flagging a card that had received progress comments minutes earlier.
         target["last_activity"] = entry["ts"]
-        _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+        # NAMES THE ONE CARD IT TOUCHED. Without this the write re-asserts every
+        # card in the document as it looked at THIS function's read time, so a
+        # comment on card A silently reverts another agent's committed change to
+        # card B — measured on the live board 2026-08-10, three times, once a
+        # confirmed loss of a completion that had reported success.
+        #
+        # comment_task is the first verb converted because it is the one that was
+        # measured, and because a comment is the most obviously-single-card write
+        # in the package: appending to one card's activity log cannot legitimately
+        # rewrite anything else.
+        _model._save_doc_unlocked(
+            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+        )
         owner = target.get("agent") or target.get("assignee")
         # Persistent role lists (ADR-0009) — captured under the lock so
         # the bus emit below works off a consistent snapshot.

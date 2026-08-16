@@ -42,10 +42,19 @@ def _insert_users(conn, users: list) -> dict[str, int]:
         if not (isinstance(uid, str) and uid):
             continue
         conn.execute(
-            "INSERT OR REPLACE INTO users"
+            "INSERT INTO users"
             "(id, kind, host_at_name, notify_json, turn_url, a2a_port, "
             " created_at, last_seen, record_json)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " kind = excluded.kind,"
+            " host_at_name = excluded.host_at_name,"
+            " notify_json = excluded.notify_json,"
+            " turn_url = excluded.turn_url,"
+            " a2a_port = excluded.a2a_port,"
+            " created_at = excluded.created_at,"
+            " last_seen = excluded.last_seen,"
+            " record_json = excluded.record_json",
             (
                 uid,
                 u.get("kind"),
@@ -69,7 +78,9 @@ def _insert_users(conn, users: list) -> dict[str, int]:
                 if not (isinstance(name, str) and name):
                     continue
                 conn.execute(
-                    "INSERT OR REPLACE INTO user_names(name, user_id) VALUES (?, ?)",
+                    "INSERT INTO user_names(name, user_id) VALUES (?, ?)"
+                    " ON CONFLICT(name) DO UPDATE SET"
+                    " user_id = excluded.user_id",
                     (name, uid),
                 )
                 counts["user_names"] += 1
@@ -89,17 +100,37 @@ def _insert_notifications(conn, inboxes) -> int:
         # the round-trip, and zero notification rows cannot carry the
         # key (schema v4).
         conn.execute(
-            "INSERT OR REPLACE INTO inbox_recipients(recipient_id) VALUES (?)",
+            # DO NOTHING, not DO UPDATE: the only column IS the conflict key,
+            # so there is nothing left to write on a conflict.
+            "INSERT INTO inbox_recipients(recipient_id) VALUES (?)"
+            " ON CONFLICT DO NOTHING",
             (recipient_id,),
         )
         for r in records:
             if not isinstance(r, dict):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO notifications"
+                # DO NOTHING, NOT DO UPDATE — THE RAIL OWNS THIS TABLE.
+                #
+                # A document is no longer the producer of `notifications`; the
+                # delivery rail (`_inbox_postgres`) is, and it writes four
+                # columns this statement does not name (msg_id, pushed_at,
+                # confirmed_at, seq). An UPDATE from a document therefore
+                # rewrites live delivery state from a snapshot that was taken
+                # before the rail's last write — most damagingly `seen`, which
+                # would resurrect an already-delivered notification, or bury an
+                # undelivered one, depending on which way the clock fell.
+                #
+                # A blind ON CONFLICT DO UPDATE is exactly the merge rule this
+                # store forbids: it makes "whoever wrote last" the winner,
+                # which on a rail whose whole purpose is not losing messages is
+                # a coin toss with a message on each face. An INSERT that finds
+                # the row already present has nothing to say about it.
+                "INSERT INTO notifications"
                 "(id, recipient_id, event_type, card_id, body, actor, ts, "
                 " seen, record_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO NOTHING",
                 (
                     r.get("id") or _gen_id("n_"),
                     recipient_id,
@@ -129,10 +160,18 @@ def _insert_messages(conn, threads) -> int:
             if not isinstance(r, dict):
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO messages"
+                "INSERT INTO messages"
                 "(id, thread_key, sender, recipient, body, ts, read, "
                 " record_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " thread_key = excluded.thread_key,"
+                " sender = excluded.sender,"
+                " recipient = excluded.recipient,"
+                " body = excluded.body,"
+                " ts = excluded.ts,"
+                " read = excluded.read,"
+                " record_json = excluded.record_json",
                 (
                     r.get("id") or _gen_id("m_"),
                     thread_key,

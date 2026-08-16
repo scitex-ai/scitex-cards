@@ -9,7 +9,7 @@ Covers BOTH the config loader and the gh-CLI adapter:
 - Config loader: missing file = empty repos list (NOT raise — "no repos
   configured" is a valid steady state for a fresh install). Malformed
   YAML RAISES. Env override
-  ``SCITEX_TODO_FLEET_CI_REPOS=a,b`` replaces the file-sourced list.
+  ``SCITEX_CARDS_FLEET_CI_REPOS=a,b`` replaces the file-sourced list.
 - gh adapter: calling ``fetch_repo_ci_status`` on a non-existent slug
   RAISES (skipped cleanly if the test runner has no ``gh`` auth — we
   refuse to hardcode test-only credentials).
@@ -71,7 +71,7 @@ def _isolate_home(env, tmp_path):
     helper from the shared conftest (NOT monkeypatch).
     """
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
 
 
 def test_config_missing_file_returns_empty_repos(env, tmp_path) -> None:
@@ -116,7 +116,7 @@ def test_config_env_override_replaces_file_list(env, tmp_path) -> None:
         '{"fleet": {"ci_status": {"repos": ["file/one", "file/two"]}}}',
         encoding="utf-8",
     )
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "env/aaa, env/bbb")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "env/aaa, env/bbb")
     # Act
     out = fleet_config_load()
     # Assert
@@ -127,7 +127,7 @@ def test_config_env_override_without_file(env, tmp_path) -> None:
     """The env override alone is enough — no file required."""
     # Arrange
     _isolate_home(env, tmp_path)
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "owner/x,owner/y")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "owner/x,owner/y")
     # Act
     out = fleet_config_load()
     # Assert
@@ -140,7 +140,7 @@ def test_config_env_override_empty_string_means_no_repos(env, tmp_path) -> None:
     env value."""
     # Arrange
     _isolate_home(env, tmp_path)
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "")
     # Act
     out = fleet_config_load()
     # Assert
@@ -201,7 +201,7 @@ def test_nonexistent_repo_raises() -> None:
         # A slug that almost-certainly resolves to 404. We avoid using a
         # name that COULD be claimed later by namespacing it under a
         # uuid-like path.
-        fetch_repo_ci_status("ywatanabe1989/scitex-todo-test-does-not-exist-xyz123")
+        fetch_repo_ci_status("ywatanabe1989/scitex-cards-test-does-not-exist-xyz123")
 
 
 def test_invalid_slug_shape_raises_without_gh_raises_fleetadaptererror() -> None:
@@ -301,7 +301,7 @@ def test_config_module_constant_paths_env_repos() -> None:
     # Arrange
     # Act
     # Assert
-    assert fleet_config_mod._ENV_REPOS == "SCITEX_TODO_FLEET_CI_REPOS"
+    assert fleet_config_mod._ENV_REPOS == "SCITEX_CARDS_FLEET_CI_REPOS"
 
 
 def test_module_has_documented_attrs() -> None:
@@ -358,7 +358,7 @@ def test_overall_from_rollup_maps_state_to_color(state, expected) -> None:
     "slug,is_valid",
     [
         ("owner/name", True),
-        ("ywatanabe1989/scitex-todo", True),
+        ("ywatanabe1989/scitex-cards", True),
         ("dotted.owner/dot.repo-1", True),
         ("no-slash", False),
         ("too/many/slashes", False),
@@ -516,8 +516,8 @@ def test_ecosystem_flag_off_keeps_only_explicit_repos(env, tmp_path) -> None:
     ecosystem union is strictly opt-in."""
     # Arrange
     _isolate_home(env, tmp_path)
-    env.delete("SCITEX_TODO_FLEET_CI_ECOSYSTEM")
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "owner/x,owner/y")
+    env.delete("SCITEX_CARDS_FLEET_CI_ECOSYSTEM")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "owner/x,owner/y")
 
     # Act
     out = fleet_config_load()
@@ -541,8 +541,8 @@ def _unioned_ecosystem_repos(env, tmp_path):
     _isolate_home(env, tmp_path)
     fleet_config_mod._eco_cache["ts"] = 0.0
     fleet_config_mod._eco_cache["repos"] = []
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "owner/pinned")
-    env.set("SCITEX_TODO_FLEET_CI_ECOSYSTEM", "1")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "owner/pinned")
+    env.set("SCITEX_CARDS_FLEET_CI_ECOSYSTEM", "1")
     repos = fleet_config_load()["fleet"]["ci_status"]["repos"]
     if len(repos) <= 1:
         pytest.skip("live `scitex-dev ecosystem list` returned no ecosystem repos")

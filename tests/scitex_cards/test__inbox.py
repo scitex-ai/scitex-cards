@@ -213,8 +213,8 @@ def bus_dispatch(tmp_path, env):
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
     envelope = Event(type=EventType.REASSIGNED, card_id="c1", actor="bob").to_dict()
     summary = dispatch_event(envelope, store=store, entry_points=[])
     return {"store": store, "alice": alice, "summary": summary, "envelope": envelope}
@@ -730,7 +730,7 @@ except ImportError:  # pragma: no cover — exercised only without the extra
 
 _skip_no_mcp = pytest.mark.skipif(
     not _HAS_FASTMCP,
-    reason="fastmcp not installed — `scitex-todo[mcp]` extra absent.",
+    reason="fastmcp not installed. Install with scitex-cards[all].",
 )
 
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo's OWN standalone channel-notification MCP server.
+"""scitex-cards's OWN standalone channel-notification MCP server.
 
 A long-running MCP **stdio** server that pushes unsolicited
 ``notifications/claude/channel`` messages into the Claude session, draining
-THIS agent's scitex-todo inbox (:mod:`scitex_cards._inbox`). Claude renders
-each push as ``<- scitex-todo`` in the agent's terminal — driven by
-``meta.source = "scitex-todo"``.
+THIS agent's scitex-cards inbox (:mod:`scitex_cards._inbox`). Claude renders
+each push as ``<- scitex-cards`` in the agent's terminal — driven by
+``meta.source = "scitex-cards"``.
 
 Why a hand-rolled low-level server (NOT FastMCP)
 ------------------------------------------------
@@ -21,8 +21,8 @@ push ("server did not declare claude/channel capability").
 The shape of this server (own-the-session + manual incoming-message drive)
 is a standard MCP-channel pattern, but this module has ZERO external
 runtime dependency: it drains the standalone :mod:`scitex_cards._inbox`
-pull-inbox — reads scitex-todo's own inbox rows; no external runtime
-import or shell-out. scitex-todo's delivery rail is fully self-contained.
+pull-inbox — reads scitex-cards's own inbox rows; no external runtime
+import or shell-out. scitex-cards's delivery rail is fully self-contained.
 
 Wire format (exact)
 -------------------
@@ -39,8 +39,8 @@ guards prevent that: :func:`build_channel_params` caps the body at
 :func:`drain_once` pushes at most ``MAX_PUSH_PER_DRAIN`` (50) records per tick so
 a backlog can never burst all at once on first connect.
 
-Headless / solver capsules (no push): with NO ``$SCITEX_TODO_AGENT_ID`` set the
-unified server (``scitex-todo mcp start``) runs TOOLS-ONLY — the poll loop is not
+Headless / solver capsules (no push): with NO ``$SCITEX_CARDS_AGENT_ID`` set the
+unified server (``scitex-cards mcp start``) runs TOOLS-ONLY — the poll loop is not
 started and the session receives ZERO channel pushes (see
 :func:`resolve_agent_id_optional`). Intended mode for solver / headless capsules
 that must not receive unsolicited pushes: just do not export the id for them.
@@ -66,31 +66,42 @@ from ._channel_guard import (
 # under its line budget); re-exported below so
 # ``from scitex_cards._mcp_channel import resolve_agent_id`` keeps working.
 from ._channel_identity import resolve_agent_id, resolve_agent_id_optional
+from ._channel_log_sink import install_channel_log_sink
+
+# Loop self-measurement, extracted so this module keeps ONE responsibility (the
+# channel server) and the timing invariant lives beside the numbers it guards.
+from ._channel_tick_timing import TickTimer, format_inconsistency, format_spans
+
+# The cursor advance is a RECEIPT now, not a claim of delivery — see
+# `_inbox_receipt` for what the MCP transport can and cannot tell us.
+from ._inbox_receipt import record_push
 
 logger = logging.getLogger(__name__)
 
-#: Env var overriding ``meta.source`` (the ``<- stodo`` render name)
+#: Env var overriding ``meta.source`` (the ``<- scards`` render name)
 #: when ``--name`` is not passed explicitly. Precedence: CLI > env > default.
-_ENV_SOURCE = "SCITEX_TODO_CHANNEL_SOURCE"
+_ENV_SOURCE = "SCITEX_CARDS_CHANNEL_SOURCE"
 
 #: Env var overriding the poll interval (seconds) when ``--interval`` is not
 #: passed explicitly. Precedence: CLI > env > default.
-_ENV_INTERVAL = "SCITEX_TODO_CHANNEL_INTERVAL"
+_ENV_INTERVAL = "SCITEX_CARDS_CHANNEL_INTERVAL"
 
 #: Default poll interval (seconds) between inbox drains.
 _DEFAULT_INTERVAL = 5.0
 
 #: Default ``meta.source`` — drives the channel render name. Per the fleet
 #: naming agreement (2026-07-07) source labels are SHORT sender-identity names
-#: (sac / cct / stodo). Kept DISTINCT from the ``scitex-todo`` agent id — a
-#: system push renders ``<- stodo`` (carries sender- AND task-identity).
-_DEFAULT_SOURCE = "stodo"
+#: (sac / cct / scards). Kept DISTINCT from the ``scitex-cards`` agent id — a
+#: system push renders ``<- scards`` (carries sender- AND task-identity).
+_DEFAULT_SOURCE = "scards"
 
 
 # --------------------------------------------------------------------------- #
 # Pure logic (tested directly — no live MCP session needed)                   #
 # --------------------------------------------------------------------------- #
-def build_channel_params(rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE) -> dict[str, Any]:
+def build_channel_params(
+    rec: dict[str, Any], *, source: str = _DEFAULT_SOURCE
+) -> dict[str, Any]:
     """Project an inbox record onto the Claude channel notification shape.
 
     Returns ``{"content": <body str>, "meta": {<all-string-values>}}``. EVERY
@@ -138,7 +149,7 @@ def recipient_keys(agent_id: str, *, store: str | None = None) -> list[str]:
             keys.append(resolved)
     except Exception as exc:  # noqa: BLE001 — resolution must never break the drain
         logger.warning(
-            "scitex-todo channel: recipient-key resolution for %r failed: %s",
+            "scitex-cards channel: recipient-key resolution for %r failed: %s",
             agent_id,
             exc,
         )
@@ -157,12 +168,25 @@ async def drain_once(
     The seam that makes the receive→push path testable without a live MCP
     session. Drains EVERY key in :func:`recipient_keys` (the raw agent name
     AND its resolved user-id) so it always finds what the producer enqueued.
-    Reads UNSEEN records (``mark_seen=False`` — we ack ONLY after a successful
-    push so a push failure is retried next drain), builds the channel params,
-    awaits ``send(params)``, and on success ack's the record on the SAME key.
+    Reads UNSEEN records (``mark_seen=False`` — we record ONLY after a
+    successful push so a push failure is retried next drain), builds the channel
+    params, awaits ``send(params)``, and on success writes a PUSH RECEIPT on the
+    SAME key via :func:`scitex_cards._inbox_receipt.record_push`.
+
+    THE RECEIPT IS THE HONEST PART. ``await send(params)`` returning proves only
+    that our own stdout writer took the bytes: the push is a JSON-RPC
+    NOTIFICATION, which by spec has no reply, and Claude Code silently DISCARDS
+    a push from a server missing from its launch-line allowlist. This drain used
+    to ack there and call it delivered — which destroyed weeks of operator DMs
+    with every health check green (2026-07-29). It now advances the cursor and
+    stamps ``pushed_at`` in ONE atomic write, leaving ``confirmed_at`` for the
+    recipient's own ``ack_notifications``, so an undelivered notification stays
+    VISIBLE to the ``delivery_confirmed`` health check instead of vanishing.
 
     Fail-soft per record: one bad push (``send`` raises) leaves THAT record
-    un-ack'd (retried next drain) and does not abort the rest of the batch.
+    un-ack'd (retried next drain) and does not abort the rest of the batch. A
+    receipt write that fails moves NEITHER the stamp nor the cursor, so that
+    record is likewise retried — the same bound the old ack-failure path had.
 
     Burst-guarded: at most ``MAX_PUSH_PER_DRAIN`` records are pushed per call,
     across ALL recipient keys combined; the rest stay unseen and drain on the
@@ -176,7 +200,7 @@ async def drain_once(
         Async callable that delivers one channel-params payload (the real
         server passes a closure over the MCP session's ``send_message``).
     source : str
-        ``meta.source`` value (default ``"stodo"``).
+        ``meta.source`` value (default ``"scards"``).
     store : str | None
         Store path override (default: the resolved task store).
 
@@ -200,12 +224,16 @@ async def drain_once(
     import anyio
 
     pushed = 0
-    keys = await anyio.to_thread.run_sync(partial(recipient_keys, agent_id, store=store))
+    keys = await anyio.to_thread.run_sync(
+        partial(recipient_keys, agent_id, store=store)
+    )
     for key in keys:
         if pushed >= MAX_PUSH_PER_DRAIN:
             break  # burst cap reached — remaining keys drain next tick
         records = await anyio.to_thread.run_sync(
-            partial(_inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store)
+            partial(
+                _inbox.poll_inbox, key, unseen_only=True, mark_seen=False, store=store
+            )
         )
         for rec in records:
             if pushed >= MAX_PUSH_PER_DRAIN:
@@ -215,23 +243,34 @@ async def drain_once(
                 await send(params)
             except Exception as exc:  # noqa: BLE001 — one bad push must not kill the loop
                 logger.warning(
-                    "scitex-todo channel: pushing notification %s failed: %s",
+                    "scitex-cards channel: pushing notification %s failed: %s",
                     rec.get("id"),
                     exc,
                 )
                 continue
-            # Ack ONLY after a successful send — a push failure stays unseen
-            # and is retried on the next drain. Ack on the SAME key it came
-            # from.
+            # Record the push ONLY after a successful send — a push failure
+            # stays unseen and is retried on the next drain. Recorded on the
+            # SAME key it came from.
+            #
+            # `record_push` is the old `_inbox.ack` plus the truth: it advances
+            # the cursor AND stamps `pushed_at` in one atomic UPDATE, so the row
+            # says "handed to the transport, confirmed by nobody" instead of
+            # silently claiming delivery. Confirmation is a separate stamp only
+            # the RECIPIENT can write (`ack_notifications`), because a JSON-RPC
+            # notification has no reply for us to wait on.
             rec_id = rec.get("id")
             if rec_id:
                 try:
                     await anyio.to_thread.run_sync(
-                        partial(_inbox.ack, key, [rec_id], store=store)
+                        partial(record_push, key, [rec_id], store=store)
                     )
-                except Exception as exc:  # noqa: BLE001 — ack failure shouldn't kill the loop
+                except Exception as exc:  # noqa: BLE001 — a receipt failure shouldn't kill the loop
                     logger.warning(
-                        "scitex-todo channel: ack of %s failed: %s", rec_id, exc
+                        "scitex-cards channel: recording the push of %s failed — "
+                        "the cursor did not move either, so it is retried next "
+                        "drain: %s",
+                        rec_id,
+                        exc,
                     )
             pushed += 1
     return pushed
@@ -263,11 +302,38 @@ async def _poll_loop(
     is long-lived and must survive transient store/IO errors.
     """
     state = _DrainState()
+    # TICK TIMING, because the outside view could not separate the causes.
+    #
+    # Measured 2026-08-02: DMs reach an agent 13-25s after they are written,
+    # against a 5s interval. SEVEN candidates were eliminated from outside —
+    # notifyd (wrong path), the mtime gate (fails safe, always drains), the
+    # burst cap, PostgreSQL write latency (0.4-0.6s), drain work (poll_inbox
+    # 0.02s), an overridden interval (the running code reads 5.0), and MCP
+    # transport backpressure (an idle session was SLOWER, 20s vs 13s). Every
+    # component measured fast and the composite stayed slow, which is precisely
+    # the shape that outside observation cannot resolve.
+    #
+    # So record the three spans the loop actually controls. `drain_s` is the
+    # work, `gap_s` is wall time since the previous tick STARTED — so
+    # `gap_s - drain_s - interval` is the time the loop spent neither working
+    # nor sleeping, which is the quantity none of the seven probes could see.
+    timer = TickTimer(interval)
     while True:
+        timer.start_tick()
         try:
             await gated_drain_once(agent_id, send, state, source=source)
         except Exception as exc:  # noqa: BLE001 — keep the long-lived loop alive
-            logger.warning("scitex-todo channel: drain tick failed: %s", exc)
+            logger.warning("scitex-cards channel: drain tick failed: %s", exc)
+        spans = timer.end_tick()
+        # REPORTED, NEVER RAISED — see _channel_tick_timing's docstring. A bare
+        # assert here raises OUTSIDE the try above and kills this long-lived
+        # task, stopping delivery outright.
+        if spans.is_inconsistent:
+            logger.warning("scitex-cards channel: %s", format_inconsistency(spans))
+        # DEBUG, not INFO: this fires every `interval` on every agent, so at
+        # INFO it would be ~17k lines a day per session for a diagnostic that
+        # is only wanted while something is wrong.
+        logger.debug("scitex-cards channel: %s", format_spans(spans))
         await asyncio.sleep(interval)
 
 
@@ -290,10 +356,19 @@ async def _serve(
 
     ``server`` lets a caller pass an EXISTING low-level server that already has
     tool handlers registered (e.g. FastMCP's ``mcp._mcp_server``) so ONE server
-    serves tools AND pushes the digest — the unified ``scitex-todo mcp start``.
+    serves tools AND pushes the digest — the unified ``scitex-cards mcp start``.
     When omitted, a bare push-only server is created (the standalone
     ``mcp channel``). ``agent_id`` may be ``None`` (tools-only, no push) so the
     tools surface still works when no identity is configured.
+
+    The transport pair is wrapped by
+    :func:`scitex_cards._mcp_handshake_log.instrument_handshake` before the
+    session sees it, so WHEN ``initialize`` arrived and WHEN it was answered land
+    in an append-only sink that survives a restart. The wrap must sit here, at
+    the transport, because ``ServerSession`` answers ``initialize`` internally
+    and never yields it to the message loop below — and because a request that is
+    received and never answered has to be recorded on arrival to be recorded at
+    all. Disabled or unwritable, it hands the original streams straight back.
     """
     from contextlib import AsyncExitStack
 
@@ -303,8 +378,35 @@ async def _serve(
     from mcp.shared.message import SessionMessage
     from mcp.types import JSONRPCMessage, JSONRPCNotification
 
+    from ._mcp_handshake_log import instrument_handshake
+
+    # Attach the log sink FIRST, before anything worth logging happens — and
+    # before instrument_handshake below, so records emitted during the
+    # handshake are captured too. Both entry points (standalone ``mcp channel``
+    # and unified ``mcp start``) reach the server through here, so this is the
+    # one place that covers both.
+    #
+    # Distinct from the handshake log, deliberately: that one appends STRUCTURED
+    # events to its own JSONL sink so a restart cannot empty them. This one
+    # makes ORDINARY logging readable at all — without it every logger.debug in
+    # the package is discarded, which is what left the 0.31.5 tick instrument
+    # computing drain_s every 5s into nowhere.
+    #
+    # No-op unless $SCITEX_CARDS_CHANNEL_LOG is set; raises if it is set and
+    # unwritable, because a server that silently discards its own diagnostics
+    # is the exact failure being removed here.
+    sink = install_channel_log_sink()
+    if sink is not None:
+        logger.info("scitex-cards channel: logging to %s", sink)
+
     if server is None:
-        server = Server(name=f"scitex-todo-channel-{agent_id}")
+        server = Server(name=f"scitex-cards-channel-{agent_id}")
+
+    read_stream, write_stream, handshake_log = instrument_handshake(
+        read_stream,
+        write_stream,
+        extra={"agent_id": agent_id, "push": bool(agent_id)},
+    )
 
     async with AsyncExitStack() as stack:
         lifespan_context = await stack.enter_async_context(server.lifespan(server))
@@ -356,6 +458,12 @@ async def _serve(
         finally:
             if poll_task is not None:
                 poll_task.cancel()
+            # An orphan `initialize_received` with a `server_exit` after it says
+            # the process died mid-handshake; an orphan with NOTHING after it
+            # says it is still hanging. Distinguishing those two is why the exit
+            # is recorded at all.
+            handshake_log.record("server_exit")
+            handshake_log.close()
 
 
 async def _run(
@@ -379,7 +487,7 @@ async def _run(
 
 
 def _resolve_source(name: str | None) -> str:
-    """Resolve ``meta.source``: explicit ``name`` → ``$SCITEX_TODO_CHANNEL_SOURCE``
+    """Resolve ``meta.source``: explicit ``name`` → ``$SCITEX_CARDS_CHANNEL_SOURCE``
     → the built-in default. Fully env-configurable so the ``.mcp.json`` entry
     needs zero config args."""
     if name is not None:
@@ -389,7 +497,7 @@ def _resolve_source(name: str | None) -> str:
 
 def _resolve_interval(interval: float | None) -> float:
     """Resolve the poll interval (seconds): explicit ``interval`` →
-    ``$SCITEX_TODO_CHANNEL_INTERVAL`` → the built-in default. A malformed env
+    ``$SCITEX_CARDS_CHANNEL_INTERVAL`` → the built-in default. A malformed env
     value falls back to the default rather than crashing the server."""
     if interval is not None:
         return float(interval)
@@ -419,12 +527,12 @@ def main(
     args (``args: ["mcp", "channel"]``). Precedence for every param is
     explicit-value > env var > default:
 
-    * ``name`` sets ``meta.source`` — env ``$SCITEX_TODO_CHANNEL_SOURCE``,
-      default ``"scitex-todo"``.
-    * ``interval`` is the poll seconds — env ``$SCITEX_TODO_CHANNEL_INTERVAL``,
+    * ``name`` sets ``meta.source`` — env ``$SCITEX_CARDS_CHANNEL_SOURCE``,
+      default ``"scitex-cards"``.
+    * ``interval`` is the poll seconds — env ``$SCITEX_CARDS_CHANNEL_INTERVAL``,
       default ``5.0``.
     * ``agent`` overrides the agent id; otherwise resolved from
-      ``$SCITEX_TODO_AGENT_ID`` (fail-loud when unresolved).
+      ``$SCITEX_CARDS_AGENT_ID`` (fail-loud when unresolved).
     """
     agent_id = resolve_agent_id(agent)
     source = _resolve_source(name)

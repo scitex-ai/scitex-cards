@@ -3,7 +3,7 @@
 """Django view tests for ``GET /fleet/timing``.
 
 No mocks (STX-NM/PA-306). Drives the view via Django's RequestFactory
-against a real on-disk task store pinned through ``SCITEX_TODO_TASKS_YAML_SHARED``,
+against a real on-disk task store pinned through ``SCITEX_CARDS_TASKS_YAML_SHARED``,
 following the same pattern as ``test__timeline_view.py``.
 
 Contract pinned here:

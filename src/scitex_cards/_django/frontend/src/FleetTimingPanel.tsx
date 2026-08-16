@@ -31,13 +31,13 @@
  * bar shade picks one of three design-token CSS classes
  * (``--status-success`` / ``--status-warning`` / ``--status-error``).
  *
- * TODO(phase-5.b): per-task drill-down — clicking a bar surfaces the
+ * CARD(phase-5.b): per-task drill-down — clicking a bar surfaces the
  * constituent task IDs. Phase-4 backend doesn't ship that today.
- * TODO(phase-5.b): CDF / histogram overlays — Phase-4 emits median + p95
+ * CARD(phase-5.b): CDF / histogram overlays — Phase-4 emits median + p95
  * only.
- * TODO(phase-5.b): sparkline / time-series overlay — Phase-4 is an
+ * CARD(phase-5.b): sparkline / time-series overlay — Phase-4 is an
  * aggregate snapshot.
- * TODO(phase-5.b): a2a-turn-duration surfacing — Phase 4.b backend gap.
+ * CARD(phase-5.b): a2a-turn-duration surfacing — Phase 4.b backend gap.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -144,11 +144,11 @@ export function barWidthPct(value: number | null, max: number): number {
  */
 export function barColorToken(pct: number): string {
   if (!Number.isFinite(pct) || pct <= 0) {
-    return "stx-todo-fleet-timing__bar--ok";
+    return "stx-cards-fleet-timing__bar--ok";
   }
-  if (pct < 50) return "stx-todo-fleet-timing__bar--ok";
-  if (pct < 80) return "stx-todo-fleet-timing__bar--warn";
-  return "stx-todo-fleet-timing__bar--slow";
+  if (pct < 50) return "stx-cards-fleet-timing__bar--ok";
+  if (pct < 80) return "stx-cards-fleet-timing__bar--warn";
+  return "stx-cards-fleet-timing__bar--slow";
 }
 
 /** Sort a ``per_*`` row map's keys by p95 descending (slowest first
@@ -201,7 +201,7 @@ interface State {
   groupBy: GroupBy;
 }
 
-/** Top-level component — mounted by ``TodoBoard.tsx`` next to the
+/** Top-level component — mounted by ``CardsBoard.tsx`` next to the
  * ``FleetMeshPanel`` in the board header's STATUS group. */
 export function FleetTimingPanel() {
   const [state, setState] = useState<State>({
@@ -296,15 +296,15 @@ export function FleetTimingPanel() {
   if (state.adapterError) {
     return (
       <span
-        className="stx-todo-fleet-timing stx-todo-fleet-timing--error"
+        className="stx-cards-fleet-timing stx-cards-fleet-timing--error"
         title={state.adapterError}
         role="group"
         aria-label="Fleet timing — adapter error"
       >
-        <span className="stx-todo-fleet-timing__label">
+        <span className="stx-cards-fleet-timing__label">
           📊 (no timing data)
         </span>
-        <span className="stx-todo-fleet-timing__dot" aria-hidden="true">
+        <span className="stx-cards-fleet-timing__dot" aria-hidden="true">
           !
         </span>
       </span>
@@ -314,7 +314,7 @@ export function FleetTimingPanel() {
   if (!state.payload) {
     return (
       <span
-        className="stx-todo-fleet-timing stx-todo-fleet-timing--loading"
+        className="stx-cards-fleet-timing stx-cards-fleet-timing--loading"
         aria-hidden="true"
       />
     );
@@ -326,12 +326,12 @@ export function FleetTimingPanel() {
     return (
       <button
         type="button"
-        className="stx-todo-fleet-timing stx-todo-fleet-timing--collapsed"
+        className="stx-cards-fleet-timing stx-cards-fleet-timing--collapsed"
         onClick={() => setState((prev) => ({ ...prev, expanded: true }))}
         title={`click to expand · ${payload.n_tasks_in_window} tasks in window · ${payload.n_tasks_missing_timestamps} missing timestamps`}
         aria-label="Open fleet timing chart"
       >
-        <span className="stx-todo-fleet-timing__label">
+        <span className="stx-cards-fleet-timing__label">
           {timingPanelLabel(payload, state.groupBy)}
         </span>
       </button>
@@ -340,18 +340,18 @@ export function FleetTimingPanel() {
 
   return (
     <span
-      className="stx-todo-fleet-timing stx-todo-fleet-timing--expanded"
+      className="stx-cards-fleet-timing stx-cards-fleet-timing--expanded"
       role="group"
       aria-label="Fleet timing chart"
     >
-      <span className="stx-todo-fleet-timing__header">
-        <span className="stx-todo-fleet-timing__label">
+      <span className="stx-cards-fleet-timing__header">
+        <span className="stx-cards-fleet-timing__label">
           {timingPanelLabel(payload, state.groupBy)}
         </span>
-        <label className="stx-todo-fleet-timing__control">
+        <label className="stx-cards-fleet-timing__control">
           window
           <select
-            className="stx-todo-fleet-timing__select"
+            className="stx-cards-fleet-timing__select"
             value={state.windowDays}
             onChange={(e) =>
               setState((prev) => ({
@@ -366,10 +366,10 @@ export function FleetTimingPanel() {
             <option value={90}>90d</option>
           </select>
         </label>
-        <label className="stx-todo-fleet-timing__control">
+        <label className="stx-cards-fleet-timing__control">
           group by
           <select
-            className="stx-todo-fleet-timing__select"
+            className="stx-cards-fleet-timing__select"
             value={state.groupBy}
             onChange={(e) =>
               setState((prev) => ({
@@ -386,7 +386,7 @@ export function FleetTimingPanel() {
         </label>
         <button
           type="button"
-          className="stx-todo-fleet-timing__close"
+          className="stx-cards-fleet-timing__close"
           onClick={() => setState((prev) => ({ ...prev, expanded: false }))}
           aria-label="Collapse fleet timing chart"
           title="collapse"
@@ -395,12 +395,12 @@ export function FleetTimingPanel() {
         </button>
       </span>
       <div
-        className="stx-todo-fleet-timing__chart"
+        className="stx-cards-fleet-timing__chart"
         role="img"
         aria-label="Fleet timing bar chart"
       >
         {chart.keys.length === 0 ? (
-          <span className="stx-todo-fleet-timing__empty">
+          <span className="stx-cards-fleet-timing__empty">
             no rows in window
           </span>
         ) : (
@@ -424,26 +424,26 @@ export function FleetTimingPanel() {
             return (
               <div
                 key={key}
-                className="stx-todo-fleet-timing__row"
+                className="stx-cards-fleet-timing__row"
                 title={tooltip}
               >
-                <span className="stx-todo-fleet-timing__rowlabel">{key}</span>
-                <span className="stx-todo-fleet-timing__bars">
+                <span className="stx-cards-fleet-timing__rowlabel">{key}</span>
+                <span className="stx-cards-fleet-timing__bars">
                   <span
-                    className={`stx-todo-fleet-timing__bar stx-todo-fleet-timing__bar--median ${barColorToken(medianPct)}`}
+                    className={`stx-cards-fleet-timing__bar stx-cards-fleet-timing__bar--median ${barColorToken(medianPct)}`}
                     style={{ width: `${medianPct}%` }}
                     aria-label={`median ${formatDurationSeconds(row.median_started_to_done_s)}`}
                   >
-                    <span className="stx-todo-fleet-timing__bartext">
+                    <span className="stx-cards-fleet-timing__bartext">
                       {formatDurationSeconds(row.median_started_to_done_s)}
                     </span>
                   </span>
                   <span
-                    className={`stx-todo-fleet-timing__bar stx-todo-fleet-timing__bar--p95 ${barColorToken(p95Pct)}`}
+                    className={`stx-cards-fleet-timing__bar stx-cards-fleet-timing__bar--p95 ${barColorToken(p95Pct)}`}
                     style={{ width: `${p95Pct}%` }}
                     aria-label={`p95 ${formatDurationSeconds(row.p95_started_to_done_s)}`}
                   >
-                    <span className="stx-todo-fleet-timing__bartext">
+                    <span className="stx-cards-fleet-timing__bartext">
                       {formatDurationSeconds(row.p95_started_to_done_s)}
                     </span>
                   </span>
@@ -453,7 +453,7 @@ export function FleetTimingPanel() {
           })
         )}
       </div>
-      <span className="stx-todo-fleet-timing__footer">
+      <span className="stx-cards-fleet-timing__footer">
         {`${payload.n_tasks_in_window} tasks in window · ${payload.n_tasks_missing_timestamps} missing timestamps (diagnostic)`}
       </span>
     </span>

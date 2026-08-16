@@ -4,7 +4,7 @@
 
 :class:`TelegramChannel` POSTs one ``sendMessage`` call per notification to
 ``https://api.telegram.org/bot<TOKEN>/sendMessage``. It is creds-DEPENDENT —
-the bot token is read (lazily) from ``SCITEX_TODO_TELEGRAM_BOT_TOKEN`` (or an
+the bot token is read (lazily) from ``SCITEX_CARDS_TELEGRAM_BOT_TOKEN`` (or an
 ``__init__`` override). ``address`` is the destination Telegram ``chat_id``.
 
 Why stdlib ``urllib`` (and a transport seam)
@@ -44,7 +44,7 @@ from typing import Callable
 from .._channel import DeliveryResult, Status
 
 #: Env var the bot token is read from (lazily) when no override is given.
-TOKEN_ENV = "SCITEX_TODO_TELEGRAM_BOT_TOKEN"
+TOKEN_ENV = "SCITEX_CARDS_TELEGRAM_BOT_TOKEN"
 
 #: Telegram Bot API base; the token is interpolated into the path segment.
 API_BASE = "https://api.telegram.org"

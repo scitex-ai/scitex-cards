@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for ``scitex_cards._model.is_overdue``.
 
-todo-p6-overdue-ui — backend half (the fleet liveness payload now
+cards-p6-overdue-ui — backend half (the fleet liveness payload now
 exposes a per-agent `overdue_count`, and the CLI can use this helper
 for a `--overdue` filter). No mocks — real dicts + frozen ``now``
 arg per STX-NM / PA-306.
@@ -328,8 +328,8 @@ class TestIsOverdueUnparseableDeadlineIsLoud:
     a read-time parse failure signals corruption). It still must not raise, so
     one bad card cannot crash the fleet-wide overdue scan."""
 
-    def test_unparseable_deadline_is_not_overdue_and_warns(self, caplog):
-        # Arrange
+    def test_unparseable_deadline_reads_as_not_overdue(self, caplog):
+        # Arrange — the safe value: one corrupt card must not crash the scan.
         task = {
             "id": "a",
             "title": "A",
@@ -339,9 +339,37 @@ class TestIsOverdueUnparseableDeadlineIsLoud:
         # Act
         with caplog.at_level("WARNING"):
             result = is_overdue(task, now=_utc(2026, 6, 12, 12, 0, 0))
-        # Assert — safe value AND a loud, greppable warning naming the value.
+        # Assert
         assert result is False
+
+    def test_unparseable_deadline_warns_that_it_is_unparseable(self, caplog):
+        # Arrange — the safe value alone would be a SILENT swallow; the warning
+        # is what makes the corruption findable.
+        task = {
+            "id": "a",
+            "title": "A",
+            "status": "pending",
+            "deadline": "not-a-real-date",
+        }
+        # Act
+        with caplog.at_level("WARNING"):
+            is_overdue(task, now=_utc(2026, 6, 12, 12, 0, 0))
+        # Assert
         assert "unparseable stored deadline" in caplog.text
+
+    def test_unparseable_deadline_warning_quotes_the_bad_value(self, caplog):
+        # Arrange — a warning that omits the offending value is not greppable
+        # back to the card that carries it.
+        task = {
+            "id": "a",
+            "title": "A",
+            "status": "pending",
+            "deadline": "not-a-real-date",
+        }
+        # Act
+        with caplog.at_level("WARNING"):
+            is_overdue(task, now=_utc(2026, 6, 12, 12, 0, 0))
+        # Assert
         assert "not-a-real-date" in caplog.text
 
 

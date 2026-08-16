@@ -16,14 +16,14 @@ whole file repeatedly (a store-lock convoy).
 This module moves ONLY the inbox read/write path onto SQLite so a poll
 no longer parses all cards. The SciTeX runtime-DB convention places
 package runtime databases at ``<store_dir>/runtime/<pkg-short>.db`` —
-here ``<store_dir>/runtime/todo.db``. WAL mode lets the ~21 concurrent
+here ``<store_dir>/runtime/cards.db``. WAL mode lets the ~21 concurrent
 pollers read without blocking the writer.
 
 Scope
 -----
 INBOXES ONLY. This is now the DEFAULT backend (see
 :mod:`scitex_cards._inbox`'s ``_use_sqlite``); the file-backed
-break-glass backend (``SCITEX_TODO_INBOX_BACKEND=yaml``, its own
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``, its own
 ``inboxes.json`` sidecar) is the non-default fallback. Semantics —
 dedup key ``(event_type, card_id, ts, actor)``, ``supersede`` dropping
 UNSEEN ``(event_type, card_id)`` predecessors, ``poll_inbox(unseen_only,
@@ -46,100 +46,23 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
+from ._inbox_record import notification_columns, notification_record
+from ._inbox_shape import shape_for
+from ._inbox_sqlite_schema import (
+    ENV_INBOX_DB,
+    SCHEMA_VERSION,
+    _ensure_msg_id,
+    _ensure_ready,
+    _is_migrated,
+    _MIGRATED_FLAG,
+    inbox_db_path,
+    inbox_target,
+    init_schema,
+    open_connection,
+)
+from ._sql_null_safe import null_safe_eq_for
+
 logger = logging.getLogger(__name__)
-
-#: Env override for the inbox DB path (full path to the ``.db`` file). Default
-#: is ``<store_dir>/runtime/todo.db`` (see :func:`inbox_db_path`). Mirrors the
-#: ``SCITEX_TODO_INDEX_PATH`` override on :mod:`scitex_cards._index`.
-ENV_INBOX_DB = "SCITEX_TODO_INBOX_DB"
-
-#: Runtime-DB filename. ``todo`` is this package's short name (constitution:
-#: ``<proj-root>/.scitex/<pkg-short>/runtime/<pkg-short>.db``).
-_DB_FILENAME = "todo.db"
-
-#: Schema version. Bump when the column set / indexes change.
-SCHEMA_VERSION = 1
-
-#: ``meta`` key set ONCE after the YAML ``inboxes:`` records have been copied
-#: into this DB (the lazy auto-migration guard). Its presence is the cheap,
-#: indexed PK read that lets the steady-state hot poll path skip YAML entirely.
-_MIGRATED_FLAG = "migrated_from_yaml"
-
-
-def inbox_db_path(store: str | Path | None = None) -> Path:
-    """Resolved on-disk path for the inbox SQLite DB.
-
-    ``SCITEX_TODO_INBOX_DB`` wins outright; otherwise the DB lives at
-    ``runtime_dir(store)/todo.db`` — the runtime dir tracks whichever scope the
-    task store resolved to, so a per-test ``store=`` isolates its own DB.
-    """
-    override = os.environ.get(ENV_INBOX_DB)
-    if override:
-        return Path(override).expanduser()
-    from ._paths import runtime_dir
-
-    return runtime_dir(store, create=True) / _DB_FILENAME
-
-
-@contextmanager
-def open_connection(path: Optional[Path] = None):
-    """Open the inbox DB (WAL, autocommit isolation, ``Row`` factory).
-
-    Caller-managed: closes on context exit. Creates the parent dir if missing
-    (first-run friendly). Mirrors :func:`scitex_cards._index.open_connection`.
-    """
-    target = Path(path) if path is not None else inbox_db_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(target))
-    try:
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.row_factory = sqlite3.Row
-        yield conn
-    finally:
-        conn.close()
-
-
-def init_schema(conn: sqlite3.Connection) -> None:
-    """Create the ``inbox`` table + its indexes idempotently.
-
-    Columns mirror the record dict the YAML path stores
-    (``id / event_type / card_id / body / actor / ts / seen``) plus the
-    ``recipient`` inbox key. ``rowid`` (implicit) preserves append order — a
-    poll returns oldest-first by ``ORDER BY rowid``. The composite index on
-    ``(recipient, seen)`` makes a single recipient's UNSEEN lookup — the hot
-    poll path — an indexed scan rather than a full-table read.
-    """
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS inbox (
-            id TEXT PRIMARY KEY,
-            recipient TEXT NOT NULL,
-            event_type TEXT,
-            card_id TEXT,
-            body TEXT,
-            actor TEXT,
-            ts TEXT,
-            seen INTEGER NOT NULL DEFAULT 0
-        )
-        """
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inbox_recipient_seen ON inbox(recipient, seen)"
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-        """
-    )
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(SCHEMA_VERSION),),
-    )
-    conn.commit()
 
 
 def _row_to_record(row: sqlite3.Row) -> dict:
@@ -157,42 +80,11 @@ def _row_to_record(row: sqlite3.Row) -> dict:
         "actor": row["actor"],
         "ts": row["ts"],
         "seen": bool(row["seen"]),
+        # ALWAYS present, None when this row predates the column or carries no
+        # message (a card event, a digest). An absent key is how a consumer
+        # reads `undefined`, renders nothing, and looks like it worked.
+        "msg_id": row["msg_id"] if "msg_id" in row.keys() else None,
     }
-
-
-def _is_migrated(conn: sqlite3.Connection) -> bool:
-    """True once the YAML ``inboxes:`` records have been copied into this DB.
-
-    A single indexed PRIMARY-KEY probe of the ``meta`` table — the cheap check
-    that lets the steady-state hot poll path skip the YAML read entirely.
-    """
-    row = conn.execute(
-        "SELECT 1 FROM meta WHERE key = ? LIMIT 1", (_MIGRATED_FLAG,)
-    ).fetchone()
-    return row is not None
-
-
-def _ensure_ready(conn: sqlite3.Connection, store: str | Path | None) -> None:
-    """Per-connection readiness: ensure the schema, then lazily migrate
-    pre-existing file-backed inbox records into SQLite EXACTLY ONCE.
-
-    Guarded by the ``migrated_from_yaml`` meta flag: the first access on a
-    fresh DB performs the one-time copy + sets the flag; every later access
-    is a cheap flag probe. Concurrency-safe across the ~21 agents sharing one
-    ``todo.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
-    flag is set even when there's nothing to copy, so a fresh store converges.
-    """
-    init_schema(conn)
-    if _is_migrated(conn):
-        return
-    from ._inbox import _utc_now_iso
-
-    _migrate_into_conn(conn, store)
-    conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
-        (_MIGRATED_FLAG, _utc_now_iso()),
-    )
-    conn.commit()
 
 
 # --------------------------------------------------------------------------- #
@@ -207,14 +99,36 @@ def enqueue(
     actor: str | None,
     ts: str | None = None,
     supersede: bool = False,
+    msg_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """SQLite twin of :func:`scitex_cards._inbox.enqueue` — same contract.
 
     Builds ``{id, event_type, card_id, body, actor, ts, seen: False}`` and
     inserts it for ``recipient_id``. Dedups on ``(event_type, card_id, ts,
-    actor)`` (NULL-safe via the ``IS`` operator so ``actor=None`` dedups
-    correctly). When ``supersede`` is set, every EXISTING UNSEEN row matching
+    actor)``, NULL-safe so ``actor=None`` dedups correctly.
+
+    The null-safe operator is resolved per connection via
+    :func:`scitex_cards._sql_null_safe.null_safe_eq_for`, NOT hardcoded, because
+    THERE IS NO SPELLING THAT WORKS ON BOTH BACKENDS:
+
+    * SQLite's ``IS`` is null-safe in every version that ships this module, but
+      Postgres rejects ``IS $1`` outright.
+    * Standard-SQL ``IS NOT DISTINCT FROM`` works on Postgres, but SQLite only
+      learned it in 3.39 (2022-06).
+
+    That second half is not hypothetical. On the live host (SQLite 3.37.2) the
+    standard spelling made EVERY enqueue raise ``near "DISTINCT": syntax
+    error``, the fail-soft caller swallowed it, and messages committed to the
+    store while NO notification was ever delivered — for 36 hours. CI and every
+    container ran a newer SQLite and parsed it happily, so the version floor,
+    not the SQL, was the thing actually under test.
+
+    Resolving from the connection is what lets this module move onto
+    ``_db.connect()`` without either regressing that outage or breaking on
+    Postgres. On SQLite it emits exactly the ``IS`` that is here today.
+
+    When ``supersede`` is set, every EXISTING UNSEEN row matching
     both ``event_type`` AND ``card_id`` is deleted BEFORE the dedup/insert, so
     at most one pending digest per recipient survives (SEEN history is kept).
     Returns the enqueued record, or ``None`` for a falsy recipient / a deduped
@@ -227,43 +141,89 @@ def enqueue(
     from ._inbox import _generate_notification_id, _utc_now_iso
 
     timestamp = ts if ts is not None else _utc_now_iso()
-    with open_connection(inbox_db_path(store)) as conn:
+    with open_connection(inbox_target(store)) as conn:
         _ensure_ready(conn, store)
+        # The null-safe operator is resolved from the LIVE connection rather
+        # than hardcoded, so this SQL survives the move onto Postgres (where
+        # ``IS ?`` is a syntax error). Today every one of these resolves to
+        # SQLite's ``IS`` — byte-identical to what was here before — which is
+        # the point of doing this step separately from the backend switch.
+        ns_event_type = null_safe_eq_for(conn, "event_type")
+        ns_card_id = null_safe_eq_for(conn, "card_id")
+        # Same reasoning for WHERE the rows live: table and recipient column are
+        # read from the live connection, not assumed. On SQLite this spells
+        # exactly what was hardcoded here before.
+        shape = shape_for(conn)
         if supersede:
             conn.execute(
-                "DELETE FROM inbox WHERE recipient = ? AND seen = 0 "
-                "AND event_type IS ? AND card_id IS ?",
+                f"DELETE FROM {shape.table} WHERE {shape.recipient} = ? AND seen = 0 "
+                f"AND {ns_event_type} "
+                f"AND {ns_card_id}",
                 (recipient_id, event_type, card_id),
             )
-        dup = conn.execute(
-            "SELECT 1 FROM inbox WHERE recipient = ? AND event_type IS ? "
-            "AND card_id IS ? AND ts IS ? AND actor IS ? LIMIT 1",
-            (recipient_id, event_type, card_id, timestamp, actor),
-        ).fetchone()
+        if msg_id:
+            # EXACT dedupe when the producer told us which message this is.
+            # The tuple below is the ONLY key available without it, and DM
+            # timestamps are second-resolution, so that key is many-to-one BY
+            # CONSTRUCTION — measured on the live store, two distinct durable
+            # messages collapsed onto one notification and the second was
+            # never delivered. `msg_id` makes the key exact, which is a
+            # correctness fix in its own right, not just plumbing.
+            dup = conn.execute(
+                f"SELECT 1 FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"AND {null_safe_eq_for(conn, 'msg_id')} LIMIT 1",
+                (recipient_id, msg_id),
+            ).fetchone()
+        else:
+            dup = conn.execute(
+                f"SELECT 1 FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"AND {ns_event_type} "
+                f"AND {ns_card_id} "
+                f"AND {null_safe_eq_for(conn, 'ts')} "
+                f"AND {null_safe_eq_for(conn, 'actor')} LIMIT 1",
+                (recipient_id, event_type, card_id, timestamp, actor),
+            ).fetchone()
         if dup is not None:
             conn.commit()  # persist a supersede-only pass even when deduped
             return None
-        record = {
-            "id": _generate_notification_id(),
-            "event_type": event_type,
-            "card_id": card_id,
-            "body": body,
-            "actor": actor,
-            "ts": timestamp,
-            "seen": False,
-        }
+        record = notification_record(
+            id=_generate_notification_id(),
+            event_type=event_type,
+            card_id=card_id,
+            body=body,
+            actor=actor,
+            ts=timestamp,
+            seen=False,
+            msg_id=msg_id,
+        )
+        # THE COLUMN LIST IS DERIVED FROM THE RECORD, and the payload column
+        # comes from the SHAPE, not from an assumption about which table this
+        # is. That distinction is the whole bug: this function writes the
+        # SQLite `inbox` table (no payload column) OR the canonical
+        # `notifications` table (a payload column the export refuses a row
+        # without), and it was writing the second as if it were the first. One
+        # such payload-less row made all 3556 cards unreadable fleet-wide for 20
+        # minutes on 2026-08-09, while `resolve_store` and `health` stayed green
+        # because the store itself was fine.
+        #
+        # NOTE ON THE RECIPIENT KEY, which scitex-agent-container flagged as
+        # unanswerable from outside this package: the payload deliberately does
+        # NOT carry the recipient. It is a column on the row, under a name that
+        # DIFFERS BY BACKEND (`recipient` vs `recipient_id`), so embedding it
+        # would bake one backend's spelling into a backend-agnostic blob and
+        # make the two indistinguishable until something read it back. That is
+        # why `notification_columns` takes the column NAME as a parameter.
+        columns, values = notification_columns(
+            record,
+            recipient_id=recipient_id,
+            recipient_column=shape.recipient,
+            payload_column=shape.payload,
+        )
+        placeholders = ", ".join(["?"] * len(columns))
         conn.execute(
-            "INSERT INTO inbox(id, recipient, event_type, card_id, body, "
-            "actor, ts, seen) VALUES(?, ?, ?, ?, ?, ?, ?, 0)",
-            (
-                record["id"],
-                recipient_id,
-                event_type,
-                card_id,
-                body,
-                actor,
-                timestamp,
-            ),
+            f"INSERT INTO {shape.table}({', '.join(columns)}) "
+            f"VALUES({placeholders})",
+            values,
         )
         conn.commit()
         return dict(record)
@@ -284,36 +244,41 @@ def poll_inbox(
     """
     if not recipient_id:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     if not mark_seen:
         # Read-only fast path. This is the hot poll — an indexed
         # (recipient, seen) scan, NOT a whole-store parse. _ensure_ready is a
         # cheap indexed meta-flag probe once migrated (no YAML, no writes).
         with open_connection(db) as conn:
             _ensure_ready(conn, store)
+            shape = shape_for(conn)
             if unseen_only:
                 rows = conn.execute(
-                    "SELECT * FROM inbox WHERE recipient = ? AND seen = 0 "
-                    "ORDER BY rowid",
+                    f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                    f"AND seen = 0 {shape.order()}",
                     (recipient_id,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM inbox WHERE recipient = ? ORDER BY rowid",
+                    f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                    f"{shape.order()}",
                     (recipient_id,),
                 ).fetchall()
             return [_row_to_record(r) for r in rows]
     # mark_seen -> read-modify-write.
     with open_connection(db) as conn:
         _ensure_ready(conn, store)
+        shape = shape_for(conn)
         if unseen_only:
             rows = conn.execute(
-                "SELECT * FROM inbox WHERE recipient = ? AND seen = 0 ORDER BY rowid",
+                f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"AND seen = 0 {shape.order()}",
                 (recipient_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM inbox WHERE recipient = ? ORDER BY rowid",
+                f"SELECT * FROM {shape.table} WHERE {shape.recipient} = ? "
+                f"{shape.order()}",
                 (recipient_id,),
             ).fetchall()
         if not rows:
@@ -321,7 +286,8 @@ def poll_inbox(
         ids = [r["id"] for r in rows]
         placeholders = ",".join("?" for _ in ids)
         conn.execute(
-            f"UPDATE inbox SET seen = 1 WHERE recipient = ? AND id IN ({placeholders})",
+            f"UPDATE {shape.table} SET seen = 1 "
+            f"WHERE {shape.recipient} = ? AND id IN ({placeholders})",
             (recipient_id, *ids),
         )
         conn.commit()
@@ -350,22 +316,23 @@ def ack(
     wanted = [nid for nid in (notification_ids or []) if nid]
     if not wanted:
         return []
-    db = inbox_db_path(store)
+    db = inbox_target(store)
     placeholders = ",".join("?" for _ in wanted)
     with open_connection(db) as conn:
         _ensure_ready(conn, store)
+        shape = shape_for(conn)
         # The ids that are currently UNSEEN among the wanted set — those are
-        # the ones this call flips. Preserve append order (rowid).
+        # the ones this call flips. Preserve arrival order.
         rows = conn.execute(
-            f"SELECT id FROM inbox WHERE recipient = ? AND seen = 0 "
-            f"AND id IN ({placeholders}) ORDER BY rowid",
+            f"SELECT id FROM {shape.table} WHERE {shape.recipient} = ? "
+            f"AND seen = 0 AND id IN ({placeholders}) {shape.order()}",
             (recipient_id, *wanted),
         ).fetchall()
         flipped = [r["id"] for r in rows]
         if flipped:
             flip_placeholders = ",".join("?" for _ in flipped)
             conn.execute(
-                f"UPDATE inbox SET seen = 1 WHERE recipient = ? "
+                f"UPDATE {shape.table} SET seen = 1 WHERE {shape.recipient} = ? "
                 f"AND id IN ({flip_placeholders})",
                 (recipient_id, *flipped),
             )
@@ -376,122 +343,21 @@ def ack(
 # --------------------------------------------------------------------------- #
 # Migration: legacy embedded inboxes: section -> SQLite                       #
 # --------------------------------------------------------------------------- #
-def gather_migratable_inboxes(store: str | Path | None) -> dict[str, list]:
-    """Read + merge every pre-existing file-backed inbox source, per recipient.
-
-    Two sources so a store carries over regardless of which one an operator
-    was using: the pre-cutover LEGACY embedded ``inboxes:`` section, and the
-    break-glass ``inboxes.json`` sidecar. Read-only. Shared by
-    :func:`_migrate_into_conn` and the CLI's ``--dry-run`` preview.
-    """
-    from ._inbox import (
-        _INBOXES_FILENAME,
-        _load_inboxes_section,
-        _read_legacy_embedded_inboxes,
-        _resolved_store,
-    )
-
-    path = _resolved_store(store)
-    inboxes: dict[str, list] = {}
-    for recipient_id, records in _read_legacy_embedded_inboxes(path).items():
-        inboxes.setdefault(recipient_id, []).extend(records)
-    breakglass_path = path.parent / _INBOXES_FILENAME
-    for recipient_id, records in _load_inboxes_section(breakglass_path).items():
-        inboxes.setdefault(recipient_id, []).extend(records)
-    return inboxes
-
-
-def _migrate_into_conn(conn: sqlite3.Connection, store: str | Path | None) -> dict:
-    """Copy pre-existing file-backed inbox records into ``conn``'s ``inbox`` table.
-
-    The shared body of :func:`migrate_to_sqlite` (explicit CLI verb) and the
-    lazy :func:`_ensure_ready` guard. Dedups on the notification ``id``
-    PRIMARY KEY (``INSERT OR IGNORE``) so it is idempotent, copies BOTH seen +
-    unseen for fidelity, and NEVER touches either source document
-    (reversible). Assumes the schema already exists (caller ran
-    :func:`init_schema`); does NOT commit — the caller owns the transaction.
-    Returns ``{recipients, records, inserted, skipped}``.
-    """
-    inboxes = gather_migratable_inboxes(store)
-    stats = {"recipients": 0, "records": 0, "inserted": 0, "skipped": 0}
-    for recipient_id, records in inboxes.items():
-        if not recipient_id or not isinstance(records, list):
-            continue
-        stats["recipients"] += 1
-        for rec in records:
-            if not isinstance(rec, dict):
-                continue
-            nid = rec.get("id")
-            if not nid:
-                # A record with no stable id cannot be deduped on re-run;
-                # skip it rather than risk a duplicate on the next pass.
-                logger.warning(
-                    "[scitex-todo._inbox_sqlite] skipping id-less inbox "
-                    "record for %r during migration",
-                    recipient_id,
-                )
-                stats["skipped"] += 1
-                continue
-            stats["records"] += 1
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO inbox(id, recipient, event_type, "
-                "card_id, body, actor, ts, seen) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    nid,
-                    recipient_id,
-                    rec.get("event_type"),
-                    rec.get("card_id"),
-                    rec.get("body"),
-                    rec.get("actor"),
-                    rec.get("ts"),
-                    1 if rec.get("seen") else 0,
-                ),
-            )
-            if cur.rowcount:
-                stats["inserted"] += 1
-            else:
-                stats["skipped"] += 1
-    return stats
-
-
-def migrate_to_sqlite(store: str | Path | None = None) -> dict:
-    """Copy the legacy embedded ``inboxes:`` records into the SQLite inbox DB.
-
-    Idempotent + reversible: dedups on notification ``id`` (``INSERT OR
-    IGNORE`` on the ``id`` PK) so a re-run inserts nothing new, and NEVER
-    touches the legacy document (a rollback keeps working). All records are
-    copied (seen + unseen) for fidelity. Returns a stats dict
-    ``{recipients, records, inserted, skipped}``; also sets the
-    ``migrated_from_yaml`` flag so a later lazy access treats the DB as
-    already migrated (this verb and the lazy guard share the same flag).
-    """
-    from ._inbox import _utc_now_iso
-
-    with open_connection(inbox_db_path(store)) as conn:
-        init_schema(conn)
-        stats = _migrate_into_conn(conn, store)
-        conn.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
-            (_MIGRATED_FLAG, _utc_now_iso()),
-        )
-        conn.commit()
-    return stats
-
-
-def info(store: str | Path | None = None) -> dict[str, Any]:
-    """Return a small status dict for the CLI (``inbox info``-style)."""
-    db = inbox_db_path(store)
-    if not db.exists():
-        return {"path": str(db), "exists": False, "rows": 0, "unseen": 0}
-    with open_connection(db) as conn:
-        init_schema(conn)
-        rows = conn.execute("SELECT COUNT(*) AS n FROM inbox").fetchone()["n"]
-        unseen = conn.execute(
-            "SELECT COUNT(*) AS n FROM inbox WHERE seen = 0"
-        ).fetchone()["n"]
-    return {"path": str(db), "exists": True, "rows": rows, "unseen": unseen}
-
+# EXTRACTED to _inbox_migrate.py (this module had reached its size budget and
+# the msg_id column had nowhere to go). Re-exported rather than moved-and-
+# forgotten: `_ensure_ready` above calls `_migrate_into_conn`, the CLI imports
+# `migrate_to_sqlite` / `gather_migratable_inboxes` / `info` from HERE, and the
+# YAML-path tests import `_migrate_into_conn` by that name. A rename would have
+# been a silent break in four places for no gain.
+#
+# The seam is real: everything over there runs ONCE per store, ever, while
+# everything here runs on every poll, enqueue and ack.
+from ._inbox_migrate import (  # noqa: E402,F401
+    _migrate_into_conn,
+    gather_migratable_inboxes,
+    info,
+    migrate_to_sqlite,
+)
 
 __all__ = [
     "ENV_INBOX_DB",

@@ -28,7 +28,6 @@ Real tmp files, NO mocks (STX-NM / PA-306).
 from __future__ import annotations
 
 import os
-import time
 
 import pytest
 import yaml
@@ -80,6 +79,17 @@ def _verify_error_message(tmp, dumped: str) -> str:
     return str(excinfo.value)
 
 
+def _construct_error_message(document: str) -> str:
+    """The text the SafeLoader refuses to CONSTRUCT ``document`` with.
+
+    Mirrors :func:`_verify_error_message`: the raise is expected here, so a
+    test built on this helper spends its one assertion on the message.
+    """
+    with pytest.raises(yaml.constructor.ConstructorError) as excinfo:
+        yaml.load(document, Loader=_SAFE_LOADER)
+    return str(excinfo.value)
+
+
 def _events_before_failure(path):
     """Parse ``path`` until the stream breaks; return the events consumed.
 
@@ -125,7 +135,7 @@ def promoted_store(env):
     throwaway ``tmp_path`` here would stamp the DB for a store nothing reads,
     so every round-trip below would raise "stamped for a DIFFERENT store".
     """
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     with _model._store_lock(store):
         _model._save_doc_unlocked(_valid_doc(3), store)
@@ -373,54 +383,67 @@ class TestByteLengthGuard:
 
 
 # ---------------------------------------------------------------------------
-# Perf note (informational) — evidences that the event-scan verify is cheaper
-# than the full ``safe_load`` construct-reparse it replaces.
+# (d) The verify CONSTRUCTS NOTHING — the property Fix B2 exists for.
+#
+# This pair replaces a wall-clock assertion (``t_event_scan < t_full_load``)
+# that measured the RIGHT thing with the WRONG instrument. It failed CI on
+# 2026-08-09 at 0.3626 vs 0.3274 s — a 35 ms margin on a shared runner, with
+# 5919 other tests passing — and its own docstring claimed it was written that
+# way "to stay non-flaky on loaded CI". A timing comparison between two
+# operations on a machine whose load we do not control is not made
+# deterministic by being relative; it is only made cheaper to lose.
+#
+# Speed was never the property. NOT CONSTRUCTING THE OBJECT GRAPH is the
+# property, and the speed is its consequence — ``_store_verify``'s own module
+# docstring says so: the C parser "raises yaml.YAMLError on truncation ...
+# WITHOUT constructing the ~159k Python objects — that is the whole point".
+#
+# So assert the mechanism directly, with a document whose bytes are perfectly
+# well-formed YAML but whose tag no SafeLoader can BUILD. Parsing it reaches
+# StreamEnd; constructing it raises. Nothing else in the language separates
+# those two operations so exactly, which makes the gap between them a decision
+# procedure: a verify that accepts this document did not construct it.
+#
+# The result is a STRICTER gate than the stopwatch, not a weaker one. If
+# anyone reverts the verify to a constructing ``safe_load``, this fails every
+# time, on every machine, naming the regression — where the timing assertion
+# would have caught it only if the machine happened to be quiet.
 # ---------------------------------------------------------------------------
-class TestPerfShape:
-    def test_event_scan_verify_is_faster_than_full_safe_load(self, tmp_path):
-        """The whole point of Fix B2: prove parseability WITHOUT constructing
-        the document's Python object graph. On a synthetic realistic-shape
-        store the event-scan measured ~2.4x faster than the old full
-        ``safe_load`` construct-reparse (see PR body for numbers). We assert
-        the RELATIVE property — event-scan strictly faster than the old
-        approach — rather than an absolute wall-clock ceiling, so the test
-        evidences the improvement without being flaky on loaded CI."""
-        import io
 
-        # Arrange — realistic card shape (notes + comments) so the construct
-        # cost the old path paid is represented, not a degenerate doc.
-        doc = {
-            "tasks": [
-                {
-                    "id": f"t{i}",
-                    "title": f"Title {i}",
-                    "status": "pending",
-                    "note": "lorem ipsum dolor sit amet " * 12,
-                    "comments": [
-                        {
-                            "text": "a comment here " * 4,
-                            "author": "x",
-                            "ts": "2026-01-01",
-                        }
-                        for _ in range(3)
-                    ],
-                }
-                for i in range(700)
-            ],
-            "users": {"alice": {"role": "dev"}},
-        }
-        dumped = safe_dump(doc)
-        tmp = _tmp_holding(tmp_path, dumped)
+#: Well-formed YAML carrying a tag the SafeLoader has no constructor for.
+#: ``yaml.parse`` walks it to StreamEnd; ``yaml.load`` raises ConstructorError.
+_PARSEABLE_BUT_UNCONSTRUCTABLE = (
+    "tasks:\n"
+    "- id: t0\n"
+    "  title: Title 0\n"
+    "  status: pending\n"
+    "  note: !a-tag-with-no-constructor payload\n"
+)
+
+
+class TestVerifyConstructsNothing:
+    """The event-scan proves parseability without building the objects."""
+
+    def test_full_safe_load_rejects_the_document(self, tmp_path):
+        """CONTROL — the old construct-reparse cannot accept these bytes.
+
+        Asserted separately so that if PyYAML ever grows a constructor for
+        unregistered tags, THIS test fails and names the reason, instead of
+        silently turning its sibling into a test that proves nothing.
+        """
+        # Arrange
+        document = _PARSEABLE_BUT_UNCONSTRUCTABLE
         # Act
-        # OLD approach: full safe_load construct-reparse (what we replaced).
-        t0 = time.perf_counter()
-        yaml.load(io.StringIO(dumped), Loader=_SAFE_LOADER)
-        t_full_load = time.perf_counter() - t0
+        message = _construct_error_message(document)
+        # Assert
+        assert "constructor" in message
 
-        # NEW approach: the event-scan verify.
-        t0 = time.perf_counter()
-        _verify_dumped_tmp(tmp, dumped)
-        t_event_scan = time.perf_counter() - t0
-        # Assert — strictly cheaper than the full construct it supersedes
-        # (measured ~2.4x; assert only `<` to stay non-flaky on loaded CI).
-        assert t_event_scan < t_full_load
+    def test_event_scan_verify_accepts_the_document(self, tmp_path):
+        """Therefore the verify does not construct: it accepts what the
+        constructor refuses, which no constructing implementation can do."""
+        # Arrange
+        tmp = _tmp_holding(tmp_path, _PARSEABLE_BUT_UNCONSTRUCTABLE)
+        # Act
+        _verify_dumped_tmp(tmp, _PARSEABLE_BUT_UNCONSTRUCTABLE)
+        # Assert — reaching here IS the assertion; a construct-reparse raises.
+        assert tmp.exists()

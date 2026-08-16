@@ -7,14 +7,14 @@ mocks (STX-NM / PA-306). AAA + one-assertion-per-test per the
 scitex-dev test-quality corpus (STX-TQ002 / STX-TQ007).
 
 Covers:
-  * Env resolution (`SCITEX_TODO_AGENT_TURN_URLS` JSON map +
-    per-agent `SCITEX_TODO_TURN_URL_<SLUG>` fallback)
+  * Env resolution (`SCITEX_CARDS_AGENT_TURN_URLS` JSON map +
+    per-agent `SCITEX_CARDS_TURN_URL_<SLUG>` fallback)
   * No-URL → ok=False with reason="no-turn-url-configured"
   * Successful POST → ok=True with the real status code
   * HTTP 4xx/5xx → ok=False with reason="http-error"
   * Transport error (port that no server listens on) →
     ok=False with reason="transport-error"
-  * SCITEX_TODO_PUSH_DRY_RUN=1 → ok=True, wire="dry-run"
+  * SCITEX_CARDS_PUSH_DRY_RUN=1 → ok=True, wire="dry-run"
   * announce_missing_at_boot returns the diff list
 """
 
@@ -52,14 +52,14 @@ from scitex_cards._users import register_user
 def _hermetic_resolution(tmp_path):
     """Isolate ``turn_url_for`` from the test HOST's live resolution sources.
 
-    ``turn_url_for`` resolves through scitex-todo's OWN user registry (step
+    ``turn_url_for`` resolves through scitex-cards's OWN user registry (step
     0, the DEFAULT store via ``resolve_tasks_path(None)``). On a real agent
-    host that store at ``~/.scitex/todo/tasks.yaml`` is live and would leak
+    host that store at ``~/.scitex/cards/tasks.yaml`` is live and would leak
     a non-None URL into the env-only tests, making them flaky/host-dependent.
 
     This fixture pins step 0 at an EMPTY per-test store — leaving the env map
     / per-agent env as the only resolution path unless a test opts back in:
-      * user-registry tests override ``SCITEX_TODO_TASKS_YAML_SHARED`` with their own
+      * user-registry tests override ``SCITEX_CARDS_TASKS_YAML_SHARED`` with their own
         populated ``tmp_path`` store.
     PA-306-compliant: plain os.environ save/restore, no monkeypatch.
     """
@@ -184,9 +184,9 @@ class TestTurnUrlFor:
 
 
 class TestUserRegistryResolution:
-    """scitex-todo's OWN ``users:`` registry as the file-local, NO-bearer
+    """scitex-cards's OWN ``users:`` registry as the file-local, NO-bearer
     PRIMARY source (step 0). Real temp store via ``register_user`` + the
-    ``SCITEX_TODO_TASKS_YAML_SHARED`` env so ``turn_url_for(agent)`` (which resolves the
+    ``SCITEX_CARDS_TASKS_YAML_SHARED`` env so ``turn_url_for(agent)`` (which resolves the
     DEFAULT store) reads the same file (no mocks per STX-NM / PA-306).
     """
 
@@ -338,10 +338,10 @@ class TestDeliver:
 
     def test_post_carries_text_field_aliased_to_body(self, env):
         # Regression guard: SAC's /v1/turn (and claude-code-telegrammer's
-        # TURN_URL) require a `text` key — pre-fix scitex-todo only sent
+        # TURN_URL) require a `text` key — pre-fix scitex-cards only sent
         # `body`, so the SAC receiver returned HTTP 400 "missing or empty
         # 'text' field" and the whole nudge chain died on arrival
-        # (proj-scitex-todo P3a(c) pilot, 2026-06-13; lead a2a 8afe659e).
+        # (proj-scitex-cards P3a(c) pilot, 2026-06-13; lead a2a 8afe659e).
         # Arrange
         cap = _Capture()
         cap.response_code = 200
