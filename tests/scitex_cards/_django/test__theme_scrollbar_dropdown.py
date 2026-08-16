@@ -1,6 +1,6 @@
 """CSS-contract tests for the themed scrollbar + <select> fix.
 
-Operator complaint via lead a2a `510a58d4` (2026-06-14): on the scitex-todo
+Operator complaint via lead a2a `510a58d4` (2026-06-14): on the scitex-cards
 board at http://127.0.0.1:8051 the SCROLLBAR and DROPDOWNS / SELECTS
 rendered WHITE in dark mode. The fix lives in two CSS surfaces:
 

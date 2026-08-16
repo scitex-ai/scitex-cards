@@ -1,6 +1,6 @@
 /** Board bridge init — entry point that mounts the board into #app-mount.
  *
- * Standalone (scitex-todo board): mount immediately; the board IS the whole
+ * Standalone (scitex-cards board): mount immediately; the board IS the whole
  * app (unlike figrecipe's per-file editor, there is no file-click gate).
  * Embedded (scitex-hub workspace): same bundle, fetch override rewrites API
  * paths via MountPoint.

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """The MCP/CLI surface must ANNOUNCE the current name (`scitex-cards`).
 
-The package was renamed `scitex-todo` -> `scitex-cards`, but the surface kept
+The package was renamed `scitex-cards` -> `scitex-cards`, but the surface kept
 introducing itself by the old name: the emitted `.mcp.json` key (which is the
 namespace agents see their tools under -- `mcp__<key>__add_task`), the
 `command` it execs, the install hint, and the `mcp doctor` payload.
@@ -10,7 +10,7 @@ namespace agents see their tools under -- `mcp__<key>__add_task`), the
 These tests pin the DISTINCTION that makes the rename safe:
 
   * what the surface CALLS ITSELF must say `scitex-cards`;
-  * what the surface PUBLISHES -- the `scitex-todo` console script, the
+  * what the surface PUBLISHES -- the `scitex-cards` console script, the
     `SCITEX_CARDS_*` env vars, the systemd unit -- must keep working. Those are
     migrations, not renames, and are asserted NOT to have moved.
 
@@ -83,7 +83,7 @@ def test_mcp_doctor_payload_names_scitex_cards():
 # === applying RETIRES our stale entry (no duplicate tool namespaces) ========
 #
 # Renaming the key we write is only half a migration. A config that already had
-# `scitex-todo` would otherwise end up with BOTH keys pointing at the same
+# `scitex-cards` would otherwise end up with BOTH keys pointing at the same
 # server, and the agent would load two copies of every tool -- both writing the
 # same store.
 
@@ -96,7 +96,7 @@ def test_apply_retires_our_legacy_entry(tmp_path):
             {
                 "mcpServers": {
                     LEGACY_CLI_NAME: {
-                        "command": "scitex-todo",
+                        "command": "scitex-cards",
                         "args": ["mcp", "start"],
                     }
                 }
@@ -118,7 +118,7 @@ def test_apply_leaves_exactly_one_of_our_entries(tmp_path):
             {
                 "mcpServers": {
                     LEGACY_CLI_NAME: {
-                        "command": "scitex-todo",
+                        "command": "scitex-cards",
                         "args": ["mcp", "start"],
                     }
                 }
@@ -155,9 +155,9 @@ def test_a_foreign_server_under_the_legacy_key_is_not_retired():
 
 
 def test_a_legacy_entry_execing_the_alias_is_recognised_as_ours():
-    # Arrange — the `scitex-todo` console script stays installed forever, so a
+    # Arrange — the `scitex-cards` console script stays installed forever, so a
     # legacy entry legitimately execs it.
-    entry = {"command": "/opt/venv/bin/scitex-todo", "args": ["mcp", "start"]}
+    entry = {"command": "/opt/venv/bin/scitex-cards", "args": ["mcp", "start"]}
     # Act
     # Assert — matched by basename, so an absolute path still counts.
     assert _is_our_entry(entry) is True
@@ -200,7 +200,7 @@ def test_the_retired_console_script_is_gone():
     # Act
     scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
     # Assert
-    assert "scitex-todo" not in scripts
+    assert "scitex-cards" not in scripts
 
 
 # EOF

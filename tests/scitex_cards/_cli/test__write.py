@@ -382,10 +382,10 @@ def test_add_agent_flag_persists(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     # Act
-    runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-todo"])
+    runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-cards"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["agent"] == "proj-scitex-todo"
+    assert on_disk["agent"] == "proj-scitex-cards"
 
 
 def test_add_project_flag_persists(tmp_path):
@@ -402,19 +402,19 @@ def test_add_project_flag_persists(tmp_path):
             "a",
             "A",
             "--project",
-            "scitex-todo",
+            "scitex-cards",
         ],
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["project"] == "scitex-todo"
+    assert on_disk["project"] == "scitex-cards"
 
 
 def test_add_pr_url_flag_persists(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    url = "https://github.com/ywatanabe1989/scitex-todo/pull/65"
+    url = "https://github.com/ywatanabe1989/scitex-cards/pull/65"
     # Act
     runner.invoke(
         main,
@@ -530,10 +530,10 @@ def test_update_agent_persists(tmp_path):
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    runner.invoke(main, ["update", "a", "--agent", "proj-scitex-todo"])
+    runner.invoke(main, ["update", "a", "--agent", "proj-scitex-cards"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["agent"] == "proj-scitex-todo"
+    assert on_disk["agent"] == "proj-scitex-cards"
 
 
 def test_update_depends_on_replaces_list(tmp_path):
@@ -710,13 +710,13 @@ def test_list_filters_by_scope_exits_zero(tmp_path):
             "b",
             "B",
             "--scope",
-            "agent:proj-scitex-todo",
+            "agent:proj-scitex-cards",
         ],
     )
     # Act
     result = runner.invoke(
         main,
-        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-cards", "--json"],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -746,12 +746,12 @@ def test_list_filters_by_scope_returns_matching(tmp_path):
             "b",
             "B",
             "--scope",
-            "agent:proj-scitex-todo",
+            "agent:proj-scitex-cards",
         ],
     )
     result = runner.invoke(
         main,
-        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-cards", "--json"],
     )
     # Act
     rows = json.loads(result.output.strip())
@@ -1240,7 +1240,7 @@ def test_mcp_install_payload_has_scitex_cards():
 
 
 def _mcp_doctor_info():
-    """Run ``scitex-todo mcp doctor --json`` and return the parsed payload.
+    """Run ``scitex-cards mcp doctor --json`` and return the parsed payload.
 
     Tests that branch on fastmcp's presence call this once and then check a
     single field — keeps each test at one assertion (STX-TQ007).
@@ -1322,7 +1322,7 @@ def test_mcp_doctor_tool_count_when_fastmcp_installed():
 
 
 # --------------------------------------------------------------------------- #
-# kind=status — board card scitex-todo-relocate-q-status-tracking + lead a2a  #
+# kind=status — board card scitex-cards-relocate-q-status-tracking + lead a2a  #
 # 60a1a93d. Per option (b): the CLI surface accepts the new kind and the     #
 # list-tasks --kind filter selects it. Default list behavior UNCHANGED — the #
 # board's default-hide is a separate frontend PR.                             #

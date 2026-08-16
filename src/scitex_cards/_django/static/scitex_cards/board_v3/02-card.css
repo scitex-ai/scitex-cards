@@ -368,7 +368,7 @@
 
 /* Activity bucket badge (render side of working-status decay).
  *
- * Board card `scitex-todo-working-status-decay-tg12739`, render half of
+ * Board card `scitex-cards-working-status-decay-tg12739`, render half of
  * PR #122 (backend `_build_fleet` derives the same buckets for the
  * fleet strip). Per-card pill that reflects how recently the task was
  * touched, derived from `last_activity` freshness. Orthogonal to the

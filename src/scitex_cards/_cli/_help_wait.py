@@ -4,12 +4,12 @@
 the operator" card, lifted out of the dotfiles Notification hook.
 
 A dotfiles hook used to hand-roll these cards by shelling out to the generic
-``scitex-todo add / update / list-tasks`` verbs; a schema drift broke it
+``scitex-cards add / update / list-tasks`` verbs; a schema drift broke it
 silently. These two verbs own the card semantics in-package (the single
 source of truth) so the hook can become a thin trigger that calls one verb.
 
-  scitex-todo help-wait  <agent> [--question TEXT] [--host HOST]
-  scitex-todo help-clear <agent>
+  scitex-cards help-wait  <agent> [--question TEXT] [--host HOST]
+  scitex-cards help-clear <agent>
 
 The card contract (byte-for-byte what the old hook produced) lives in
 :mod:`scitex_cards._help_wait`; these verbs are thin click wrappers around it,

@@ -24,12 +24,12 @@ _CLI_NAME = "scitex-cards"
 
 #: The key we used to write. Kept ONLY so we can RETIRE it — see
 #: :func:`_retire_legacy_entry`. This is not a fallback we ever write.
-LEGACY_CLI_NAME = "scitex-todo"
+LEGACY_CLI_NAME = "scitex-cards"
 
 #: Commands that mark an `.mcp.json` entry as OURS. Both console scripts are
-#: installed (``scitex-todo`` stays a permanent alias), so a legacy entry may
+#: installed (``scitex-cards`` stays a permanent alias), so a legacy entry may
 #: exec either one.
-_OUR_COMMANDS = frozenset({"scitex-cards", "scitex-todo"})
+_OUR_COMMANDS = frozenset({"scitex-cards", "scitex-cards"})
 
 
 def _is_our_entry(entry: object) -> bool:
@@ -52,16 +52,16 @@ def _is_our_entry(entry: object) -> bool:
 
 
 def _retire_legacy_entry(servers: dict) -> bool:
-    """Drop OUR stale ``scitex-todo`` entry from ``servers``. Returns whether it did.
+    """Drop OUR stale ``scitex-cards`` entry from ``servers``. Returns whether it did.
 
     Renaming the key we write is only half a migration. Left alone, a config
-    that already had ``scitex-todo`` would end up with BOTH keys pointing at the
+    that already had ``scitex-cards`` would end up with BOTH keys pointing at the
     same server — the agent would load two copies of every tool
-    (``mcp__scitex-todo__add_task`` *and* ``mcp__scitex-cards__add_task``),
+    (``mcp__scitex-cards__add_task`` *and* ``mcp__scitex-cards__add_task``),
     both writing the same store. So writing the new key RETIRES the old one.
 
     Only OUR entry is retired (see :func:`_is_our_entry`); a third-party server
-    that happens to be keyed ``scitex-todo`` is left exactly as found.
+    that happens to be keyed ``scitex-cards`` is left exactly as found.
     """
     legacy = servers.get(LEGACY_CLI_NAME)
     if legacy is None or not _is_our_entry(legacy):
@@ -340,7 +340,7 @@ def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
     Shared body for ``install-fleet``. Same rules as the single-file
     ``install --apply``: existing JSON preserved + sibling mcpServers
     kept; idempotent re-application is a noop; dry-run prints the
-    planned action without touching disk; OUR stale ``scitex-todo`` entry is
+    planned action without touching disk; OUR stale ``scitex-cards`` entry is
     retired so no agent ends up loading both copies. Returns
     ``(action_label, changed)``.
     """

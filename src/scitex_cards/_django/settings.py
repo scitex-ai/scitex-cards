@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Minimal Django settings for the standalone scitex-todo board.
+"""Minimal Django settings for the standalone scitex-cards board.
 
 Used when running the board without a parent Django project (Route A in the
 design doc — figrecipe parity, scitex-app optional). No database is configured
@@ -14,7 +14,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-_DEV_SECRET_KEY = "scitex-todo-standalone-dev-key-not-for-production"
+_DEV_SECRET_KEY = "scitex-cards-standalone-dev-key-not-for-production"
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _DEV_SECRET_KEY)
 

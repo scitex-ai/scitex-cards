@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Root ``scitex-todo`` group and core verbs (render-graph, list-tasks, board).
+"""Root ``scitex-cards`` group and core verbs (render-graph, list-tasks, board).
 
 The §1a introspection / completion / skills groups live in sibling modules and
 are attached to ``main`` at the bottom of this file.
@@ -210,7 +210,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         examples=(
             ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
-                "{prog} list-tasks --project scitex-todo --status pending "
+                "{prog} list-tasks --project scitex-cards --status pending "
                 "--status in_progress",
                 "",
             ),
@@ -441,9 +441,9 @@ _write.register(main)
 # individual verbs print a clear install hint when fastmcp is missing.
 _mcp.register(main)
 # P3b + P3d (lead-approved 2026-06-12) — self-consuming board loop.
-# `scitex-todo next` returns the top runnable task for an agent;
-# `scitex-todo watch --push` is the push side that wakes agents on
-# new/commented/changed tasks. See _skills/scitex-todo/32_*.md for the
+# `scitex-cards next` returns the top runnable task for an agent;
+# `scitex-cards watch --push` is the push side that wakes agents on
+# new/commented/changed tasks. See _skills/scitex-cards/32_*.md for the
 # 7-step agent self-consumption pattern.
 _loop.register(main)
 # T1.2 (lead a2a `74db4f2d`, 2026-06-14) — the parallelism dispatcher's
@@ -455,7 +455,7 @@ _runnable.register(main)
 # decides and mutates via the existing verbs. See _backlog_triage.py.
 _triage.register(main)
 # Hook-consumer wire (lead a2a `6fff33d6` + `fbffb879`, 2026-06-14,
-# operator-mandated). `scitex-todo hook push|done` verbs are the
+# operator-mandated). `scitex-cards hook push|done` verbs are the
 # CLI twins of POST /hooks/push and POST /hooks/done — same canonical
 # event-payload shape, same idempotency. See _hooks.py for the spec.
 _hooks.register(main)
@@ -480,7 +480,7 @@ _reconcile.register(
 # src/scitex_cards/_delivery/.
 _deliver.register(main)
 # notifyd (slice 2 of the standalone notification-DELIVERY rail). The always-on
-# daemon: bare `scitex-todo notifyd` runs the foreground loop (systemd
+# daemon: bare `scitex-cards notifyd` runs the foreground loop (systemd
 # ExecStart) ticking deliver_pending every --interval seconds, single-instance
 # locked + signal-aware, re-surfacing standing terminal comm-misses on a
 # throttle. `--once` is a single pass; `notifyd install-unit` writes the

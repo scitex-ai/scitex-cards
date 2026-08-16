@@ -3,7 +3,7 @@
 """The always-on delivery daemon (slice 2) — a single-instance notify loop.
 
 Slice 1 shipped :func:`scitex_cards._delivery.deliver_pending` (ONE pass) and
-the ``scitex-todo deliver`` one-shot verb. This module wraps that pass in a
+the ``scitex-cards deliver`` one-shot verb. This module wraps that pass in a
 long-running, signal-aware loop so notifications keep flowing without an
 external cron:
 
@@ -144,7 +144,7 @@ class _SingleInstanceLock:
             fd.close()
             existing = self._read_pid_text()
             raise DaemonAlreadyRunning(
-                f"another scitex-todo notifyd already holds {self._path} "
+                f"another scitex-cards notifyd already holds {self._path} "
                 f"(pid {existing or 'unknown'}); refusing to start a second "
                 f"instance ({type(exc).__name__})"
             ) from exc
@@ -392,7 +392,7 @@ def run_notifyd(
             # daemon. deliver_pending is already fail-soft per recipient, but a
             # ledger/disk/clock error could still raise — catch it, log with a
             # traceback, and continue to the next tick. This self-heals under
-            # BOTH foreground `scitex-todo notifyd` AND systemd (which also has
+            # BOTH foreground `scitex-cards notifyd` AND systemd (which also has
             # Restart=on-failure as a second safety net).
             try:
                 # NAG sweep FIRST: enqueue any due reminders / escalations so

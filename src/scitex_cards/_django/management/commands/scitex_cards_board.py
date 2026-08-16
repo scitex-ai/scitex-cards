@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Management command to run the scitex-todo board standalone.
+"""Management command to run the scitex-cards board standalone.
 
 Usage:
     python -m django scitex_cards_board [--tasks PATH] [--port 8051]
 
-Typically invoked via the ``scitex-todo board`` CLI verb.
+Typically invoked via the ``scitex-cards board`` CLI verb.
 """
 
 import os
@@ -29,7 +29,7 @@ def _apply_tasks_env(tasks: str) -> None:
 
 
 class Command(BaseCommand):
-    help = "Run the scitex-todo dependency-graph board as a standalone server"
+    help = "Run the scitex-cards dependency-graph board as a standalone server"
 
     def add_arguments(self, parser):
         parser.add_argument(

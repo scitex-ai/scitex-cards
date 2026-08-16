@@ -80,7 +80,7 @@ def _digest_body(cards: list, attempt: int) -> str:
         # how to see it, without drowning the three cards that matter.
         body += (
             f"\n  ({remaining} more open — the point is these {len(shown)}, not "
-            f"the pile; `scitex-todo list-tasks --status in_progress,blocked,"
+            f"the pile; `scitex-cards list-tasks --status in_progress,blocked,"
             f"deferred` for all {total}.)"
         )
     return body

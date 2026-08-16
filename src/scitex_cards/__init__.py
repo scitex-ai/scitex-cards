@@ -34,7 +34,7 @@ from __future__ import annotations
 #
 # The public surface is unchanged: `scitex_cards.__version__` still answers,
 # still prefers the `scitex-cards` dist, and still falls back to the
-# transition-window `scitex-todo` name for un-cutover editable installs. It
+# transition-window `scitex-cards` name for un-cutover editable installs. It
 # just pays for the metadata reader when someone asks for a version, which
 # tab-completion never does.
 def _resolve_version() -> str:
@@ -43,7 +43,7 @@ def _resolve_version() -> str:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover — only on ancient Pythons
         return "0.0.0+local"
-    for dist in ("scitex-cards", "scitex-todo"):
+    for dist in ("scitex-cards", "scitex-cards"):
         try:
             return version(dist)
         except PackageNotFoundError:
@@ -53,7 +53,7 @@ def _resolve_version() -> str:
 
 #: Public API — Convention A (audit §6: every public Python API must match a
 #: registered MCP tool name 1:1). The MCP tool surface is documented in
-#: ``_skills/scitex-todo/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
+#: ``_skills/scitex-cards/05_mcp-tools.md`` and registered in ``_mcp_server.py``.
 #:
 #: Render / mermaid / paths / model helpers used to be re-exported here.
 #: They were moved off the top level (audit §6) but remain importable from

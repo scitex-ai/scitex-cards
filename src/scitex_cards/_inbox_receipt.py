@@ -33,7 +33,7 @@ never confirmed stays visible forever instead of vanishing.
 
 WHY THIS MATTERS (the incident, 2026-07-29)
 -------------------------------------------
-An agent's spec allowlisted ``server:scitex-todo`` while ``.mcp.json`` registers
+An agent's spec allowlisted ``server:scitex-cards`` while ``.mcp.json`` registers
 this server as ``scitex-cards``. Every push was discarded on arrival; the drain
 ack'd on ``send()`` returning; 228 rows were enqueued and consumed, ZERO unseen.
 Weeks of operator DMs were destroyed with every check green. With a receipt on

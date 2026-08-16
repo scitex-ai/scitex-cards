@@ -35,8 +35,8 @@ ENTRY_POINT_GROUP = "scitex_cards.delivery_channels"
 
 #: Pre-rename group name (package renamed 2026-07-16). External channels
 #: registered under the old group stay discoverable until they re-release;
-#: drop together with the ``scitex_todo`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_todo.delivery_channels"
+#: drop together with the ``scitex_cards`` shim.
+LEGACY_ENTRY_POINT_GROUP = "scitex_cards.delivery_channels"
 
 
 def _iter_entry_points(group: str):
@@ -57,7 +57,7 @@ def _warn(msg: str) -> None:
     silently stops receiving notifications.
     """
     logger.warning("%s", msg)
-    print(f"[scitex-todo delivery] WARNING: {msg}", file=sys.stderr)
+    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
 
 
 def _load_entry_point_channels() -> list[tuple[str, DeliveryChannel]]:

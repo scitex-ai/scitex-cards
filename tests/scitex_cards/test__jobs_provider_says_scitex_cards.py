@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""No JobSpec this package declares may still say ``scitex-todo``.
+"""No JobSpec this package declares may still say ``scitex-cards``.
 
 The package was renamed to scitex-cards. The operator's instruction was that
 the rename be complete rather than incremental (2026-08-15, verbatim: 「new
@@ -10,7 +10,7 @@ half-finished rename accrues interest: 「負債は利子が広がって大き�
 
 WHY THIS IS A TEST AND NOT A ONE-TIME EDIT. The strings here become things
 the fleet runs: ``command`` is the argv a host executes unattended, ``name``
-is the identity a supervisor schedules under. A stale ``scitex-todo`` in
+is the identity a supervisor schedules under. A stale ``scitex-cards`` in
 either is not a cosmetic typo — it is either a command that invokes the old
 console script, or a unit registered under a name nobody greps for anymore.
 Both fail quietly, on a timer, on a machine nobody is watching.
@@ -33,9 +33,9 @@ from scitex_cards._jobs_provider import provide_jobs
 #: The retired package name, in the spellings that would actually reach a
 #: shell or a unit file. The console script and the systemd prefix are the
 #: two that execute; the underscore form is the importable module, which is
-#: a DIFFERENT decision (``src/scitex_todo/`` is a deliberate, still-load-
+#: a DIFFERENT decision (``src/scitex_cards/`` is a deliberate, still-load-
 #: bearing import shim) and is intentionally not covered here.
-RETIRED_NAME = "scitex-todo"
+RETIRED_NAME = "scitex-cards"
 
 #: The JobSpec fields whose contents are executed or scheduled, as opposed to
 #: merely read by a human.

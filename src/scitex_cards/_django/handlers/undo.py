@@ -82,7 +82,7 @@ def handle_delete(request, board):
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
-    logger.info("[scitex-todo] deleted task %s from %s", task_id, board.store_path)
+    logger.info("[scitex-cards] deleted task %s from %s", task_id, board.store_path)
     return JsonResponse(
         {
             "deleted": task_id,
@@ -150,7 +150,7 @@ def handle_restore(request, board):
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
-    logger.info("[scitex-todo] restored task %s in %s", tid, board.store_path)
+    logger.info("[scitex-cards] restored task %s in %s", tid, board.store_path)
     return JsonResponse({"restored": tid, "store_path": str(board.store_path)})
 
 

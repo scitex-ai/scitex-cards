@@ -12,7 +12,7 @@ a file).
 Architectural principles in play:
 
 - NO hardcoded proper nouns. There is no
-  ``["scitex-todo","scitex-dev",…]`` literal in this module — the
+  ``["scitex-cards","scitex-dev",…]`` literal in this module — the
   config is the only source of truth.
 - Absence is NOT an error. A fresh install has no dashboard config; that
   means "no repos configured" and the UI hides the pills strip gracefully.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo watch-ci` — server-side CI poller (record-only).
+"""`scitex-cards watch-ci` — server-side CI poller (record-only).
 
 Renamed from `ci-watch` in the slice-6b verb-rename pilot (doctrine §1d:
 compounds are kebab-case and VERB-FIRST); the old name stays as a hidden
@@ -45,7 +45,7 @@ the env override ``SCITEX_CARDS_FLEET_CI_REPOS=owner/name,...``:
 
 JobSpec entry ``scitex-cards-ci-watch`` (registered via
 ``_jobs_provider.py``; the JobSpec NAME is a registry identity and
-keeps its historical spelling) runs ``scitex-todo watch-ci --once`` every
+keeps its historical spelling) runs ``scitex-cards watch-ci --once`` every
 5 min via ``scitex-dev ecosystem up``. The ``--once`` flag exits
 after one sweep; absence of it loops with a configurable interval
 (default 300s). Per the operator's principle: SAC + todo poll at

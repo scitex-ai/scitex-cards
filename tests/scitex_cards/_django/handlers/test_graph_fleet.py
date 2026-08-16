@@ -3,7 +3,7 @@
 """Tests for the ``fleet`` key on the GET /graph payload — the per-agent
 liveness summary the operator scans from the board header to answer
 "who is alive + working on what + blocked on me" without leaving the
-board (ADR-0008 design, ticket ``proj-scitex-todo-fleet-liveness``,
+board (ADR-0008 design, ticket ``proj-scitex-cards-fleet-liveness``,
 operator TG 9576: 返事が来ない＝私にとって死んだのと同じ).
 
 First-slice scope (this PR — what's covered here):

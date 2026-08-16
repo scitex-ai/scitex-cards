@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Django AppConfig for the scitex-todo board.
+"""Django AppConfig for the scitex-cards board.
 
 Inherits ``scitex_app._django.ScitexAppConfig`` when scitex-app is installed
 (so the board can register as a scitex-hub module), and falls back to Django's

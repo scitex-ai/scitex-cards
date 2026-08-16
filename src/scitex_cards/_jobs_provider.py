@@ -66,13 +66,13 @@ def provide_jobs() -> list[JobSpec]:
       can grep ``systemctl --user list-units 'scitex-cards.*'`` to see
       every scitex-cards-owned unit at a glance.
 
-    These names carried the old ``scitex-todo.`` prefix until 2026-08-15.
+    These names carried the old ``scitex-cards.`` prefix until 2026-08-15.
     Changing them was safe to do outright, rather than as a staged unit
     migration, for a measured reason: NOTHING MATERIALISES THEM TODAY.
     ``ecosystem up`` runs one supervisor that spawns children — it does
     not write a unit file per JobSpec — and on both reachable hosts
     (scitex-compute-04, scitex-nas-03) no unit file matched
-    ``scitex-todo*`` and no unit file's TEXT contained ``scitex-todo``.
+    ``scitex-cards*`` and no unit file's TEXT contained ``scitex-cards``.
     So there were no old units left running under the old names, which
     is the failure this would otherwise have caused.
 

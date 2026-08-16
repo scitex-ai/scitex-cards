@@ -518,7 +518,7 @@
             {% comment %}
               TIMESCALE — the SAME d/w/m window the Timeline raster uses
               (timeline.js `WINDOWS = {1d:24, 1w:168, 1m:720}` hours, stored
-              under localStorage["scitex-todo:tl-window"]). Clicking here
+              under localStorage["scitex-cards:tl-window"]). Clicking here
               calls the timeline's own setTimelineWindow(), so there is ONE
               definition of "week" on the board, not two that can drift.
             {% endcomment %}
@@ -728,7 +728,7 @@
         <div style="flex: 1;">
           <label for="at-project">Project</label>
           <input class="at-input" id="at-project" list="at-project-list" type="text"
-                 placeholder="e.g. scitex-todo">
+                 placeholder="e.g. scitex-cards">
           <datalist id="at-project-list"></datalist>
         </div>
         <div style="flex: 1;">
@@ -796,10 +796,10 @@
                  // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12).
                  // `status: done` cards drop from every layout unless
                  // the popover toggle is flipped on. Sticky via
-                 // localStorage["scitex-todo:show-done"].
+                 // localStorage["scitex-cards:show-done"].
                  showDone: (function () {
                    try {
-                     return localStorage.getItem("scitex-todo:show-done") === "1";
+                     return localStorage.getItem("scitex-cards:show-done") === "1";
                    } catch { return false; }
                  })(),
                  search: "", date: "" },
@@ -815,26 +815,26 @@
       // stored value so the coercion happens exactly once.
       layout: (function () {
         let stored = null;
-        try { stored = localStorage.getItem("scitex-todo:layout"); } catch {}
+        try { stored = localStorage.getItem("scitex-cards:layout"); } catch {}
         const m = normalizeLayout(stored);
         if (stored !== m) {
-          try { localStorage.setItem("scitex-todo:layout", m); } catch {}
+          try { localStorage.setItem("scitex-cards:layout", m); } catch {}
         }
         return m;
       })() };
 
     // === Hide (per-user soft-hide, localStorage-backed) ====================
-    // Stored as an array of task ids under "scitex-todo:hidden". Per-user/per-
+    // Stored as an array of task ids under "scitex-cards:hidden". Per-user/per-
     // browser only — fine for the single-host MBA today; cross-device sync
     // would need a schema field, deferred. Operator TG 256.
     function hiddenSet() {
       try {
-        const raw = localStorage.getItem("scitex-todo:hidden") || "[]";
+        const raw = localStorage.getItem("scitex-cards:hidden") || "[]";
         return new Set(JSON.parse(raw));
       } catch { return new Set(); }
     }
     function saveHidden(s) {
-      localStorage.setItem("scitex-todo:hidden", JSON.stringify([...s]));
+      localStorage.setItem("scitex-cards:hidden", JSON.stringify([...s]));
     }
     function hideTask(id) {
       const s = hiddenSet(); s.add(id); saveHidden(s);
@@ -1763,8 +1763,8 @@
     // "切り口"), `selected` = the expanded island. Sticky across reloads so
     // picking your own lane once is remembered. (hook-bypass: line-limit.)
     const WALL = {
-      groupBy: (() => { try { return localStorage.getItem("scitex-todo:wall-group") || "assignee"; } catch { return "assignee"; } })(),
-      selected: (() => { try { return localStorage.getItem("scitex-todo:wall-selected") || null; } catch { return null; } })(),
+      groupBy: (() => { try { return localStorage.getItem("scitex-cards:wall-group") || "assignee"; } catch { return "assignee"; } })(),
+      selected: (() => { try { return localStorage.getItem("scitex-cards:wall-selected") || null; } catch { return null; } })(),
     };
     // Matrix layout (ADR-0011 §8). RENDERS the urgency/importance axes the
     // store carries and the rank the engine computed; it does NOT score — a
@@ -1794,7 +1794,7 @@
       if (head) {
         const k = head.getAttribute("data-key");
         WALL.selected = WALL.selected === k ? null : k;
-        try { localStorage.setItem("scitex-todo:wall-selected", WALL.selected || ""); } catch {}
+        try { localStorage.setItem("scitex-cards:wall-selected", WALL.selected || ""); } catch {}
         render();
         return;
       }
@@ -2030,7 +2030,7 @@
     }
 
     async function archiveStaleCard(id, title) {
-      // Operator confirm + reason. Verb: scitex-todo close TASK_ID
+      // Operator confirm + reason. Verb: scitex-cards close TASK_ID
       // --reason TEXT (PR #151) — same behavior server-side here.
       // For v1 we use the browser-native window.prompt; a styled modal
       // is a follow-up. The reason is REQUIRED (server returns 400 on
@@ -2102,7 +2102,7 @@
     const GRAPH_CACHE = { key: null, svg: null, pending: null, failed: false };
     // Fit-to-width (default) vs 1:1 natural size. Sticky across reloads.
     let GRAPH_FIT = (function () {
-      try { return localStorage.getItem("scitex-todo:graph-fit") !== "0"; }
+      try { return localStorage.getItem("scitex-cards:graph-fit") !== "0"; }
       catch { return true; }
     })();
 
@@ -2136,7 +2136,7 @@
 
     function toggleGraphFit() {
       GRAPH_FIT = !GRAPH_FIT;
-      try { localStorage.setItem("scitex-todo:graph-fit", GRAPH_FIT ? "1" : "0"); } catch {}
+      try { localStorage.setItem("scitex-cards:graph-fit", GRAPH_FIT ? "1" : "0"); } catch {}
       const wrap = document.querySelector(".graph-wrap");
       if (!wrap) return;
       wrap.classList.toggle("graph-wrap--fit", GRAPH_FIT);
@@ -2185,7 +2185,7 @@
           // a one-node graphic and a resolved promise, so without this check
           // the pink box is cached and shown as if it were the graph.
           if (STX.graphBuilders._graphRenderFailed(svg, expectedNodes)) {
-            console.warn("[scitex-todo] mermaid drew fewer nodes than asked");
+            console.warn("[scitex-cards] mermaid drew fewer nodes than asked");
             GRAPH_CACHE.failed = true;
             GRAPH_CACHE.reason = "render";
             return null;
@@ -2193,7 +2193,7 @@
           if (GRAPH_CACHE.key === src) { GRAPH_CACHE.svg = svg; }
           return svg;
         } catch (e) {
-          console.warn("[scitex-todo] mermaid render failed:", e);
+          console.warn("[scitex-cards] mermaid render failed:", e);
           GRAPH_CACHE.failed = true;
           GRAPH_CACHE.reason = "render";
           return null;
@@ -2321,7 +2321,7 @@
     // Accordion behaviour lifted from scitex-writer's details-panel.ts: an
     // open-set persisted in localStorage, sections closed by default except
     // the ones we open here. (hook-bypass: line-limit.)
-    const DETAILS_PANE_KEY = "scitex-todo:details-collapsed";
+    const DETAILS_PANE_KEY = "scitex-cards:details-collapsed";
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
       if (!pane) return;
@@ -2349,7 +2349,7 @@
       }
     }
 
-    const DETAILS_OPEN_KEY = "scitex-todo:details-open";
+    const DETAILS_OPEN_KEY = "scitex-cards:details-open";
     function _detailsOpenSet() {
       try {
         const raw = localStorage.getItem(DETAILS_OPEN_KEY);
@@ -2398,7 +2398,7 @@
       if (typeof window.setTimelineWindow === "function") {
         window.setTimelineWindow(key);   // persists + re-renders the raster
       } else {
-        try { localStorage.setItem("scitex-todo:tl-window", key); } catch {}
+        try { localStorage.setItem("scitex-cards:tl-window", key); } catch {}
         if (window._TL) window._TL.windowKey = key;
       }
       renderStats();
@@ -2689,7 +2689,7 @@
       const on = !!(e && e.target && e.target.checked);
       STATE.filters.showDone = on;
       try {
-        localStorage.setItem("scitex-todo:show-done", on ? "1" : "0");
+        localStorage.setItem("scitex-cards:show-done", on ? "1" : "0");
       } catch {}
       render();
     }
@@ -2710,7 +2710,7 @@
     function onLayoutChange(mode) {
       const m = normalizeLayout(mode);
       STATE.layout = m;
-      try { localStorage.setItem("scitex-todo:layout", m); } catch {}
+      try { localStorage.setItem("scitex-cards:layout", m); } catch {}
       // Repaint the segment buttons' active state without a full render.
       document.querySelectorAll(".filt-layout-btn").forEach(btn => {
         const active = btn.getAttribute("data-layout") === m;
@@ -2739,7 +2739,7 @@
     // ESC closes the open modal — operator TG 265: "popup は常に esc 有効
     // なように." HIG / WAI-ARIA universal expectation. Long-term home is
     // the scitex-ui Modal primitive (so every scitex-app gets it for free);
-    // this local handler is the short-term scitex-todo fix until that lands.
+    // this local handler is the short-term scitex-cards fix until that lands.
     // Listens on document so the focus can be anywhere (the modal contents,
     // an input field, the body) and ESC still closes.
     document.addEventListener("keydown", (e) => {
@@ -2788,7 +2788,7 @@
       const t = (STATE.graph?.nodes || []).find(x => x.id === id);
       if (!t) return;
       document.getElementById("d-title").textContent = t.task || t.title;
-      // scitex-todo's entity is the USER (an agent is just user.kind=agent),
+      // scitex-cards's entity is the USER (an agent is just user.kind=agent),
       // so the meta line names the ASSIGNEE in user terms, not "agent".
       // (hook-bypass: line-limit — board_v3.html split still queued.)
       const assignee = t.assignee || t.agent || "—";

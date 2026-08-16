@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Standalone notification-DELIVERY loop for scitex-todo.
+"""Standalone notification-DELIVERY loop for scitex-cards.
 
-scitex-todo already EMITS card-events and ENQUEUEs per-recipient
+scitex-cards already EMITS card-events and ENQUEUEs per-recipient
 notifications into the YAML pull-inbox (:mod:`scitex_cards._inbox`), but
 nothing pushes those records OUT to recipients — they sit unread. This
-package adds scitex-todo's OWN standalone delivery rail: a loop that reads
+package adds scitex-cards's OWN standalone delivery rail: a loop that reads
 each user's pending notifications and hands them to the channels configured
 for that user (log, telegram, …), tracking what was delivered in a keyed
 dedup ledger so nothing is double-sent.
@@ -25,10 +25,10 @@ Hard separation of concerns
   ``sent | failed | skipped`` — they never decide WHETHER to deliver.
 
 Slice 1 ships the port + a stdlib-logging channel + registry + ledger +
-recipients + the loop + a ``scitex-todo deliver`` one-shot CLI command. Slice 2
+recipients + the loop + a ``scitex-cards deliver`` one-shot CLI command. Slice 2
 adds the always-on daemon (:func:`run_notifyd`, single-instance-locked +
 signal-aware, with throttled terminal-comm-miss re-surfacing), the
-``scitex-todo notifyd`` CLI verb, and an operator-gated systemd user-unit
+``scitex-cards notifyd`` CLI verb, and an operator-gated systemd user-unit
 template + install helper.
 """
 

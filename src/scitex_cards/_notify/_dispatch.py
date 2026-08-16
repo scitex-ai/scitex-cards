@@ -45,7 +45,7 @@ refused). It also makes the EMITTING mutation wait on a slow/unreachable
 network target. So C4's delivery is purely the per-recipient PULL-inbox
 (:mod:`scitex_cards._inbox`): it **enqueues** each resolved recipient's
 notification into the inbox, persisted in the same store with ZERO sac
-dependency and ZERO network. The recipient's scitex-todo client then POLLs
+dependency and ZERO network. The recipient's scitex-cards client then POLLs
 that inbox (``poll_notifications`` MCP tool). The enqueue is FAIL-SOFT: an
 inbox error can never break the mutation or ``emit()``.
 
@@ -306,7 +306,7 @@ def dispatch_notifications(
         card = get_task(store=store, task_id=card_id)
     except Exception as exc:  # noqa: BLE001 — fail-soft (incl. TaskNotFoundError)
         logger.warning(
-            "[scitex-todo._notify] card %r not loadable for %r event; "
+            "[scitex-cards._notify] card %r not loadable for %r event; "
             "skipping notify: %s",
             card_id, event_type, exc,
         )
@@ -320,7 +320,7 @@ def dispatch_notifications(
         recipients = set(resolve_recipients(event, card, store=store))
     except Exception as exc:  # noqa: BLE001 — a config error must not break emit
         logger.warning(
-            "[scitex-todo._notify] resolve_recipients failed for %r event "
+            "[scitex-cards._notify] resolve_recipients failed for %r event "
             "on card %r; skipping notify: %s",
             event_type, card_id, exc,
         )
@@ -367,7 +367,7 @@ def dispatch_notifications(
             )
         except Exception as exc:  # noqa: BLE001 — inbox must not break emit
             logger.warning(
-                "[scitex-todo._notify] inbox enqueue to %r raised for %r "
+                "[scitex-cards._notify] inbox enqueue to %r raised for %r "
                 "event on card %r: %s",
                 uid, event_type, card_id, exc,
             )

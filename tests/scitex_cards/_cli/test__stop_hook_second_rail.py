@@ -4,7 +4,7 @@
 
 WHY. Operator DMs did not reach an agent for roughly three weeks. Delivery had
 exactly ONE rail: the MCP channel push. The agent spec whitelisted
-``server:scitex-todo`` while ``.mcp.json`` registered the server as
+``server:scitex-cards`` while ``.mcp.json`` registered the server as
 ``scitex-cards`` (renamed during the migration), so Claude Code SILENTLY
 DISCARDED every push. ``send()`` still returned normally, the drain acked on
 that success, and the message was gone. Measured at the time: 228 inbox rows

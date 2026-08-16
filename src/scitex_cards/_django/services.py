@@ -254,7 +254,7 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
             _board_cache[key] = (fresh, time.time())
         except Exception:  # noqa: BLE001 — never break the served board
             logger.warning(
-                "[scitex-todo] background board refresh failed; keeping the "
+                "[scitex-cards] background board refresh failed; keeping the "
                 "previous board (next request retries)",
                 exc_info=True,
             )
@@ -464,7 +464,7 @@ def get_board(
     )
     _board_cache[key] = (board, time.time())
     logger.info(
-        "[scitex-todo] Loaded board from %s (%d tasks, %d groups)",
+        "[scitex-cards] Loaded board from %s (%d tasks, %d groups)",
         resolved,
         len(tasks),
         len(groups),

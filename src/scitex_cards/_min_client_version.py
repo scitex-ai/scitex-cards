@@ -56,7 +56,7 @@ KEY_MIN_CLIENT_VERSION = "min_client_version"
 
 #: Distribution names to try, in order — the current name first, then the
 #: pre-rename name (mirrors ``scitex_cards.__version__``'s own fallback).
-_DIST_NAMES = ("scitex-cards", "scitex-todo")
+_DIST_NAMES = ("scitex-cards", "scitex-cards")
 
 #: Version used when NEITHER importlib.metadata NOR a pyproject.toml can be
 #: found. Deliberately the smallest possible version — an install this

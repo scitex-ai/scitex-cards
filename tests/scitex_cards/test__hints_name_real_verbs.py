@@ -44,7 +44,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 CONTROL_VERBS = ("list-tasks", "add", "update", "health")
 
 #: Program names our hints may print. Both are shipped console scripts.
-_PROGRAMS = ("scitex-cards", "scitex-todo")
+_PROGRAMS = ("scitex-cards", "scitex-cards")
 
 #: A single clean command token: lowercase letters, digits, hyphens, starting
 #: with a letter. Every real CLI verb matches (``list-tasks``, ``db``,

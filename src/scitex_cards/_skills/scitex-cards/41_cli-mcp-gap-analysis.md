@@ -186,7 +186,7 @@ Proposed PR slicing for the lead to approve/reorder:
    verbs; nice-to-have, defer until adoption demands).
 7. **Separate arc** — schema/validator gap closures (E above) on the
    package's quality-hygiene roadmap. Already tracked as
-   `proj-scitex-todo-quality-hygiene`.
+   `proj-scitex-cards-quality-hygiene`.
 
 Lead drives the ordering. If you want the rollout to wait until the
 `comment` verb lands so the skill doesn't direct agents at the Python

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo's OWN standalone channel-notification MCP server.
+"""scitex-cards's OWN standalone channel-notification MCP server.
 
 A long-running MCP **stdio** server that pushes unsolicited
 ``notifications/claude/channel`` messages into the Claude session, draining
-THIS agent's scitex-todo inbox (:mod:`scitex_cards._inbox`). Claude renders
-each push as ``<- scitex-todo`` in the agent's terminal — driven by
-``meta.source = "scitex-todo"``.
+THIS agent's scitex-cards inbox (:mod:`scitex_cards._inbox`). Claude renders
+each push as ``<- scitex-cards`` in the agent's terminal — driven by
+``meta.source = "scitex-cards"``.
 
 Why a hand-rolled low-level server (NOT FastMCP)
 ------------------------------------------------
@@ -21,8 +21,8 @@ push ("server did not declare claude/channel capability").
 The shape of this server (own-the-session + manual incoming-message drive)
 is a standard MCP-channel pattern, but this module has ZERO external
 runtime dependency: it drains the standalone :mod:`scitex_cards._inbox`
-pull-inbox — reads scitex-todo's own inbox rows; no external runtime
-import or shell-out. scitex-todo's delivery rail is fully self-contained.
+pull-inbox — reads scitex-cards's own inbox rows; no external runtime
+import or shell-out. scitex-cards's delivery rail is fully self-contained.
 
 Wire format (exact)
 -------------------
@@ -40,7 +40,7 @@ guards prevent that: :func:`build_channel_params` caps the body at
 a backlog can never burst all at once on first connect.
 
 Headless / solver capsules (no push): with NO ``$SCITEX_CARDS_AGENT_ID`` set the
-unified server (``scitex-todo mcp start``) runs TOOLS-ONLY — the poll loop is not
+unified server (``scitex-cards mcp start``) runs TOOLS-ONLY — the poll loop is not
 started and the session receives ZERO channel pushes (see
 :func:`resolve_agent_id_optional`). Intended mode for solver / headless capsules
 that must not receive unsolicited pushes: just do not export the id for them.
@@ -91,7 +91,7 @@ _DEFAULT_INTERVAL = 5.0
 
 #: Default ``meta.source`` — drives the channel render name. Per the fleet
 #: naming agreement (2026-07-07) source labels are SHORT sender-identity names
-#: (sac / cct / stodo). Kept DISTINCT from the ``scitex-todo`` agent id — a
+#: (sac / cct / stodo). Kept DISTINCT from the ``scitex-cards`` agent id — a
 #: system push renders ``<- stodo`` (carries sender- AND task-identity).
 _DEFAULT_SOURCE = "stodo"
 
@@ -149,7 +149,7 @@ def recipient_keys(agent_id: str, *, store: str | None = None) -> list[str]:
             keys.append(resolved)
     except Exception as exc:  # noqa: BLE001 — resolution must never break the drain
         logger.warning(
-            "scitex-todo channel: recipient-key resolution for %r failed: %s",
+            "scitex-cards channel: recipient-key resolution for %r failed: %s",
             agent_id,
             exc,
         )
@@ -243,7 +243,7 @@ async def drain_once(
                 await send(params)
             except Exception as exc:  # noqa: BLE001 — one bad push must not kill the loop
                 logger.warning(
-                    "scitex-todo channel: pushing notification %s failed: %s",
+                    "scitex-cards channel: pushing notification %s failed: %s",
                     rec.get("id"),
                     exc,
                 )
@@ -266,7 +266,7 @@ async def drain_once(
                     )
                 except Exception as exc:  # noqa: BLE001 — a receipt failure shouldn't kill the loop
                     logger.warning(
-                        "scitex-todo channel: recording the push of %s failed — "
+                        "scitex-cards channel: recording the push of %s failed — "
                         "the cursor did not move either, so it is retried next "
                         "drain: %s",
                         rec_id,
@@ -323,17 +323,17 @@ async def _poll_loop(
         try:
             await gated_drain_once(agent_id, send, state, source=source)
         except Exception as exc:  # noqa: BLE001 — keep the long-lived loop alive
-            logger.warning("scitex-todo channel: drain tick failed: %s", exc)
+            logger.warning("scitex-cards channel: drain tick failed: %s", exc)
         spans = timer.end_tick()
         # REPORTED, NEVER RAISED — see _channel_tick_timing's docstring. A bare
         # assert here raises OUTSIDE the try above and kills this long-lived
         # task, stopping delivery outright.
         if spans.is_inconsistent:
-            logger.warning("scitex-todo channel: %s", format_inconsistency(spans))
+            logger.warning("scitex-cards channel: %s", format_inconsistency(spans))
         # DEBUG, not INFO: this fires every `interval` on every agent, so at
         # INFO it would be ~17k lines a day per session for a diagnostic that
         # is only wanted while something is wrong.
-        logger.debug("scitex-todo channel: %s", format_spans(spans))
+        logger.debug("scitex-cards channel: %s", format_spans(spans))
         await asyncio.sleep(interval)
 
 
@@ -356,7 +356,7 @@ async def _serve(
 
     ``server`` lets a caller pass an EXISTING low-level server that already has
     tool handlers registered (e.g. FastMCP's ``mcp._mcp_server``) so ONE server
-    serves tools AND pushes the digest — the unified ``scitex-todo mcp start``.
+    serves tools AND pushes the digest — the unified ``scitex-cards mcp start``.
     When omitted, a bare push-only server is created (the standalone
     ``mcp channel``). ``agent_id`` may be ``None`` (tools-only, no push) so the
     tools surface still works when no identity is configured.
@@ -397,10 +397,10 @@ async def _serve(
     # is the exact failure being removed here.
     sink = install_channel_log_sink()
     if sink is not None:
-        logger.info("scitex-todo channel: logging to %s", sink)
+        logger.info("scitex-cards channel: logging to %s", sink)
 
     if server is None:
-        server = Server(name=f"scitex-todo-channel-{agent_id}")
+        server = Server(name=f"scitex-cards-channel-{agent_id}")
 
     read_stream, write_stream, handshake_log = instrument_handshake(
         read_stream,
@@ -528,7 +528,7 @@ def main(
     explicit-value > env var > default:
 
     * ``name`` sets ``meta.source`` — env ``$SCITEX_CARDS_CHANNEL_SOURCE``,
-      default ``"scitex-todo"``.
+      default ``"scitex-cards"``.
     * ``interval`` is the poll seconds — env ``$SCITEX_CARDS_CHANNEL_INTERVAL``,
       default ``5.0``.
     * ``agent`` overrides the agent id; otherwise resolved from

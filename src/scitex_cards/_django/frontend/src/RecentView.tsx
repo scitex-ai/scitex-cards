@@ -264,7 +264,7 @@ export function RecentView({ graph }: { graph: GraphPayload }) {
           No <code>created_at</code> timestamps yet — Recent view will populate
           as new tasks are added with <code>created_at</code> or{" "}
           <code>comments[]</code>. Existing tasks can be timestamped via{" "}
-          <code>scitex-todo update &lt;id&gt; --created-at &lt;iso&gt;</code>.
+          <code>scitex-cards update &lt;id&gt; --created-at &lt;iso&gt;</code>.
         </div>
       )}
       {sorted.length === 0 && hasAnyTimestamp && (

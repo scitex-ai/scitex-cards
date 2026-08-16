@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Single canonical "what to pick up next" predicate for fleet agents.
 
-Used by the ``scitex-todo next [--mine|--assignee X]`` CLI verb to
+Used by the ``scitex-cards next [--mine|--assignee X]`` CLI verb to
 return the top runnable task for an agent. One source of truth so
 every fleet agent applies the SAME filter + sort rules — no risk of
 drift between agents.
@@ -74,7 +74,7 @@ def next_task(
         Agent name to filter on. When ``None``, ALL agents'
         tasks compete (rare; only useful for the lead-side cron).
     project : str, optional
-        Project name to scope the query (e.g. ``"scitex-todo"``).
+        Project name to scope the query (e.g. ``"scitex-cards"``).
         ``None`` = no project filter.
 
     Returns

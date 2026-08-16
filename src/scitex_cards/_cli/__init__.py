@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo`` command-line interface package.
+"""``scitex-cards`` command-line interface package.
 
-Public entry point is ``main`` (wired to the ``scitex-todo`` console script).
+Public entry point is ``main`` (wired to the ``scitex-cards`` console script).
 The command tree is split across focused modules:
 
     _main         root group + core verbs (render-graph, list-tasks, board)

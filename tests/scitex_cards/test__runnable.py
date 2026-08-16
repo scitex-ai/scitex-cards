@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""T1.2 — runnable_tasks() Python API + `scitex-todo runnable` CLI verb.
+"""T1.2 — runnable_tasks() Python API + `scitex-cards runnable` CLI verb.
 
 Lead a2a `74db4f2d`, 2026-06-14. The parallelism-engine dispatcher
 asks "what's runnable right now?" — base filter + dep-closure + agent
@@ -164,12 +164,12 @@ def test_agent_filter_matches_agent_field():
             "id": "t-mine",
             "title": "x",
             "status": "deferred",
-            "agent": "proj-scitex-todo",
+            "agent": "proj-scitex-cards",
         },
         {"id": "t-other", "title": "y", "status": "deferred", "agent": "proj-other"},
     ]
     # Act
-    result = runnable_tasks(tasks, agent="proj-scitex-todo")
+    result = runnable_tasks(tasks, agent="proj-scitex-cards")
     # Assert
     assert [t["id"] for t in result.tasks] == ["t-mine"]
 
@@ -181,11 +181,11 @@ def test_agent_filter_matches_legacy_assignee_field():
             "id": "t-a",
             "title": "x",
             "status": "deferred",
-            "assignee": "proj-scitex-todo",
+            "assignee": "proj-scitex-cards",
         }
     ]
     # Act
-    result = runnable_tasks(tasks, agent="proj-scitex-todo")
+    result = runnable_tasks(tasks, agent="proj-scitex-cards")
     # Assert
     assert [t["id"] for t in result.tasks] == ["t-a"]
 
@@ -299,8 +299,8 @@ def test_cli_runnable_exit_1_when_queue_empty():
 
 def test_cli_runnable_mine_uses_env_agent(env):
     # Arrange — --mine reads $SCITEX_CARDS_AGENT_ID.
-    add_task(id="t-a", title="x", agent="proj-scitex-todo")
-    env.set("SCITEX_CARDS_AGENT_ID", "proj-scitex-todo")
+    add_task(id="t-a", title="x", agent="proj-scitex-cards")
+    env.set("SCITEX_CARDS_AGENT_ID", "proj-scitex-cards")
     runner = CliRunner()
     # Act
     result = runner.invoke(

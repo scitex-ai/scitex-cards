@@ -1,4 +1,4 @@
-# scitex-todo configuration knobs.
+# scitex-cards configuration knobs.
 #
 # Resolved across two scopes and LAYERED (user is the base, project overrides
 # it key-by-key):
@@ -26,7 +26,7 @@ reminders:
   # Empty / omitted = nag every owner. (The SCITEX_CARDS_REMINDER_OWNERS env var
   # overrides this when present.)
   # owners:
-  #   - scitex-todo
+  #   - scitex-cards
 
 # A single card can override the cadence just for itself by setting
 # `reminder_interval_minutes: <n>` on the card in tasks.yaml — the tightest of

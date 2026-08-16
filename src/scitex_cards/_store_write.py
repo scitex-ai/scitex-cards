@@ -392,8 +392,8 @@ def _git_autocommit_store(path: Path) -> None:
         )
         for cfg in (
             ("gc.pruneExpire", "never"),
-            ("user.name", "scitex-todo"),
-            ("user.email", "scitex-todo@localhost"),
+            ("user.name", "scitex-cards"),
+            ("user.email", "scitex-cards@localhost"),
         ):
             subprocess.run(
                 ["git", "-C", str(store_dir), "config", *cfg],

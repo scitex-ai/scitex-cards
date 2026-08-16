@@ -25,7 +25,7 @@ import pytest
 class _EnvHelper:
     """Captures the original env-var state + cwd and restores them on teardown.
 
-    Implements just the slice of monkeypatch's API the scitex-todo test
+    Implements just the slice of monkeypatch's API the scitex-cards test
     suite actually uses: ``set`` / ``delete`` (env vars) and ``chdir``
     (process working directory). New keys are removed on teardown;
     previously-set keys are restored to their original value; cwd is

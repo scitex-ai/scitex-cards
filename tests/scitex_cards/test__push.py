@@ -52,7 +52,7 @@ from scitex_cards._users import register_user
 def _hermetic_resolution(tmp_path):
     """Isolate ``turn_url_for`` from the test HOST's live resolution sources.
 
-    ``turn_url_for`` resolves through scitex-todo's OWN user registry (step
+    ``turn_url_for`` resolves through scitex-cards's OWN user registry (step
     0, the DEFAULT store via ``resolve_tasks_path(None)``). On a real agent
     host that store at ``~/.scitex/todo/tasks.yaml`` is live and would leak
     a non-None URL into the env-only tests, making them flaky/host-dependent.
@@ -184,7 +184,7 @@ class TestTurnUrlFor:
 
 
 class TestUserRegistryResolution:
-    """scitex-todo's OWN ``users:`` registry as the file-local, NO-bearer
+    """scitex-cards's OWN ``users:`` registry as the file-local, NO-bearer
     PRIMARY source (step 0). Real temp store via ``register_user`` + the
     ``SCITEX_CARDS_TASKS_YAML_SHARED`` env so ``turn_url_for(agent)`` (which resolves the
     DEFAULT store) reads the same file (no mocks per STX-NM / PA-306).
@@ -338,10 +338,10 @@ class TestDeliver:
 
     def test_post_carries_text_field_aliased_to_body(self, env):
         # Regression guard: SAC's /v1/turn (and claude-code-telegrammer's
-        # TURN_URL) require a `text` key — pre-fix scitex-todo only sent
+        # TURN_URL) require a `text` key — pre-fix scitex-cards only sent
         # `body`, so the SAC receiver returned HTTP 400 "missing or empty
         # 'text' field" and the whole nudge chain died on arrival
-        # (proj-scitex-todo P3a(c) pilot, 2026-06-13; lead a2a 8afe659e).
+        # (proj-scitex-cards P3a(c) pilot, 2026-06-13; lead a2a 8afe659e).
         # Arrange
         cap = _Capture()
         cap.response_code = 200

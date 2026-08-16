@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Size / burst guards for the scitex-todo channel push path.
+"""Size / burst guards for the scitex-cards channel push path.
 
 Regression coverage for the 2026-07-02 incident: 180 solver apptainer
 containers died on boot with ``JSON message exceeded maximum buffer size of
-1048576 bytes`` when an oversized scitex-todo channel push overflowed the SDK's
+1048576 bytes`` when an oversized scitex-cards channel push overflowed the SDK's
 1 MB stdio reader. Two guards are pinned here:
 
 * :func:`build_channel_params` truncates an oversized ``content`` body to

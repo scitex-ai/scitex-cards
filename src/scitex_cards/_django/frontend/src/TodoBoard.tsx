@@ -368,7 +368,7 @@ function ExportGroup({ graph }: { graph: GraphPayload }) {
     [graph.nodes, query, activeStatuses, activeRepos],
   );
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const base = `scitex-todo-${stamp}-${visible.length}`;
+  const base = `scitex-cards-${stamp}-${visible.length}`;
   return (
     <span
       className="stx-todo-toolbar__export"

@@ -42,7 +42,7 @@ scitex-cards has TWO rails into the same store, and only ONE of them is
 gated by :func:`check_currency`::
 
     scitex-cards --version     -> answered 0.17.7          (CLI rail, gated)
-    scitex-todo  list-tasks    -> REFUSED "0.17.7 is behind latest 0.17.9"
+    scitex-cards  list-tasks    -> REFUSED "0.17.7 is behind latest 0.17.9"
     LocalBackend.dm_send(...)  -> SUCCEEDED                (Python rail, ungated)
 
 Their card rail was dead for HOURS with no way to know it. They reach the

@@ -32,7 +32,7 @@ def _warn_tolerated(msg: str) -> None:
     import sys as _sys
     import warnings as _warnings
 
-    banner = f"[scitex-todo] TOLERATED (read-side): {msg}"
+    banner = f"[scitex-cards] TOLERATED (read-side): {msg}"
     print(banner, file=_sys.stderr, flush=True)
     _warnings.warn(banner, stacklevel=3)
 
@@ -122,7 +122,7 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
                 else (
                     f"{source}: task {tid!r} has unknown status {status!r}; "
                     f"this build knows {VALID_STATUSES}. If another agent wrote "
-                    f"it, your scitex-todo is older than the writer's — upgrade "
+                    f"it, your scitex-cards is older than the writer's — upgrade "
                     f"rather than rewriting the card."
                 )
             )

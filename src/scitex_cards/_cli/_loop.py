@@ -5,12 +5,12 @@
 P3b + P3d (lead-approved 2026-06-12). Two verbs together realize the
 fleet's central-command loop:
 
-  scitex-todo next [--mine|--assignee X] [--auto-claim] [--json]
+  scitex-cards next [--mine|--assignee X] [--auto-claim] [--json]
     The single canonical "what to pick up next" predicate, used by
     every agent's harness on wake. See ``_next.next_task`` for the
     filter + sort rules.
 
-  scitex-todo watch --push [--interval N] [--once]
+  scitex-cards watch --push [--interval N] [--once]
     The push side: polls the store, detects new/commented/changed
     tasks, POSTs ``/v1/turn`` to the owning agent's a2a port. See
     ``_wake_watcher`` for the wire shape + debounce.
@@ -258,7 +258,7 @@ def watch_cmd(
             click.echo(f"WAKE {w.agent} {w.trigger_kind} {w.task_id} :: {w.summary}")
         return
     click.echo(
-        f"[scitex-todo] watch --push tracking {path} "
+        f"[scitex-cards] watch --push tracking {path} "
         f"(interval={interval_s}s, debounce={min_wake_interval_s}s)",
         err=True,
     )

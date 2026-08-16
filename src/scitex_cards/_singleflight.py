@@ -10,7 +10,7 @@ CLI invocation that is re-launched on a schedule.
 Motivation (incident-todo-wake-watcher-interval2-spiral-20260708, third
 store-size daemon):
 
-  The managed notify cron runs ``scitex-todo print-stats --by agent
+  The managed notify cron runs ``scitex-cards print-stats --by agent
   --notify --nudge-quiet`` every 10 minutes. ``print-stats --by agent``
   re-derives per-agent rollups from all ~930 cards in the ~9 MB
   store. When a single run exceeds the 10-min period it OVERLAPS

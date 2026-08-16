@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Enable ``python -m scitex_cards`` as an alias for the ``scitex-todo`` CLI."""
+"""Enable ``python -m scitex_cards`` as an alias for the ``scitex-cards`` CLI."""
 
 from __future__ import annotations
 

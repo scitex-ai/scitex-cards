@@ -180,7 +180,7 @@ def scratch_store_root() -> Path:
 _REAL_STORE_CANDIDATES: tuple[Path, ...] = (
     Path("/home/agent/.scitex/cards/cards.db"),
     Path("/home/ywatanabe/.scitex/cards/cards.db"),
-    # Pre-rename dirname (package renamed scitex-todo -> scitex-cards,
+    # Pre-rename dirname (package renamed scitex-cards -> scitex-cards,
     # 2026-07-16); this path held 2,117 real cards as recently as the rename
     # itself (see _env_compat.py's incident writeup) and may still exist.
     Path("/home/agent/.scitex/todo/cards.db"),

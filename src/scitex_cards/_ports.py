@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Extension ports — the four interfaces that let `scitex-todo` stay
+"""Extension ports — the four interfaces that let `scitex-cards` stay
 standalone while fleet-specific behaviour plugs in.
 
 Architectural backbone per operator TG 9678 + lead a2a `fae53b8e`:
-`scitex-todo` IS a standalone package that knows nothing about
+`scitex-cards` IS a standalone package that knows nothing about
 `sac`, `a2a`, SSH-fanout, the 6-stream fleet — but exposes EXTENSION
 PORTS through which that fleet-specific behaviour can plug in. Clean
 architecture / dependency-inversion.
@@ -14,7 +14,7 @@ Three layers:
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  FLEET ADAPTERS — implement these ports against sac / SSH / a2a /│
-│  git. Live OUTSIDE this package (e.g. `scitex-todo-fleet`).      │
+│  git. Live OUTSIDE this package (e.g. `scitex-cards-fleet`).      │
 └──────────────────────────────────────────────────────────────────┘
                                 ↑ implements
 ┌──────────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@ Three layers:
 
 The core ships with default no-op / single-host implementations in
 :mod:`scitex_cards._adapters` (LocalFileSync, InProcessPubSub,
-NullLiveness, OpenACL) so :command:`pip install scitex-todo` is
+NullLiveness, OpenACL) so :command:`pip install scitex-cards` is
 independently usable. Fleet deployments inject the real adapters.
 
 See ADR-0006 in ``docs/adr/`` for the full design rationale,
@@ -72,7 +72,7 @@ class TaskSyncPort(Protocol):
 
     **Default impl**: :class:`scitex_cards._adapters.LocalFileSync` —
     atomic ruamel write to ``~/.scitex/todo/tasks.yaml``, no cross-host
-    awareness. A single-user installing ``scitex-todo`` gets a working
+    awareness. A single-user installing ``scitex-cards`` gets a working
     local board with this default.
 
     **Fleet impl** (lives outside this package, e.g.
@@ -135,7 +135,7 @@ class NotificationPort(Protocol):
     standalone installation.
 
     **Fleet impl** (e.g. ``scitex_cards_fleet.SacChannelNotificationAdapter``):
-    publishes on ``scitex-todo:task:<project>/<local-id>`` over the sac
+    publishes on ``scitex-cards:task:<project>/<local-id>`` over the sac
     a2a/channel bus. The wake-generalize + empty-beacon-fix work in
     ``scitex-agent-container`` makes this reliable for waking idle
     agent subscribers — every task update can wake the relevant agent
@@ -145,9 +145,9 @@ class NotificationPort(Protocol):
 
     .. code-block:: text
 
-        scitex-todo:task:<project>/<local-id>     — a specific task changed
-        scitex-todo:task:<project>/*              — any task in a project
-        scitex-todo:task:*                        — every task (UI firehose)
+        scitex-cards:task:<project>/<local-id>     — a specific task changed
+        scitex-cards:task:<project>/*              — any task in a project
+        scitex-cards:task:*                        — every task (UI firehose)
     """
 
     def publish(self, channel: str, payload: dict[str, Any]) -> None:
@@ -212,7 +212,7 @@ class LivenessPort(Protocol):
         .. code-block:: python
 
             {
-                "name": "scitex-todo",
+                "name": "scitex-cards",
                 "host": "ywata-note-win",
                 "status": "running" | "idle" | "working" | "stopped" | "unreachable",
                 "heartbeat": "<ISO-8601 UTC of last heartbeat>",
@@ -270,17 +270,17 @@ class IdentityACLPort(Protocol):
 #
 #   - scitex-agent-container (sac) is SSOT for agent RUNTIME — whether an
 #     agent exists / is running / is stopped on a given host.
-#   - scitex-todo is SSOT for board MEMBERSHIP — who may be an assignee,
+#   - scitex-cards is SSOT for board MEMBERSHIP — who may be an assignee,
 #     collaborator, or subscriber on the board (HUMANS included; humans
 #     have a board identity but no sac runtime).
 #
 # They join on the canonical agent id **`host@name`** and connect via the
 # :class:`AgentDirectoryPort` below (an entry-point provider). sac exposes
-# an agent-directory provider; scitex-todo ENRICHES its board when a
+# an agent-directory provider; scitex-cards ENRICHES its board when a
 # provider is installed and works STANDALONE otherwise. Rows from any
 # provider are deduped by their `host@name` join key.
 #
-# This is the scitex-todo SIDE only: the Protocol, the standalone-safe
+# This is the scitex-cards SIDE only: the Protocol, the standalone-safe
 # :class:`EmptyAgentDirectory` default, the identity helpers, and the
 # resolver. The sac-side provider that implements the port is a separate
 # package concern (it registers under :data:`AGENT_DIRECTORY_GROUP`).
@@ -310,7 +310,7 @@ class AgentIdentityError(ValueError):
 def canonical_agent_id(name: str, host: str | None = None) -> str:
     """Return the canonical agent id in **`host@name`** form.
 
-    The canonical join key between scitex-todo board membership and the
+    The canonical join key between scitex-cards board membership and the
     sac agent runtime (ADR-0009). One agent may run on exactly one host,
     so the pair ``(host, name)`` uniquely identifies it.
 
@@ -419,7 +419,7 @@ def parse_agent_id(host_at_name: str) -> tuple[str, str]:
 class AgentInfo:
     """One agent row surfaced by an :class:`AgentDirectoryPort`.
 
-    The shared shape scitex-todo uses to enrich board membership with
+    The shared shape scitex-cards uses to enrich board membership with
     runtime facts from a provider. The ``host_at_name`` field is the
     canonical join key (see :func:`canonical_agent_id`) and the dedup key
     (see :func:`dedup_agents`).
@@ -455,9 +455,9 @@ class AgentInfo:
 class AgentDirectoryPort(Protocol):
     """Read-only feed of agent-runtime rows to enrich board membership.
 
-    scitex-todo is SSOT for board *membership*; scitex-agent-container is
+    scitex-cards is SSOT for board *membership*; scitex-agent-container is
     SSOT for agent *runtime*. This port is how the runtime SSOT feeds the
-    board so a member row can show "running / stopped" without scitex-todo
+    board so a member row can show "running / stopped" without scitex-cards
     importing sac (ADR-0009). The join key is ``host@name``.
 
     **Default impl**: :class:`EmptyAgentDirectory` — ``list_agents()``

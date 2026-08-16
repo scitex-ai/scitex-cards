@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the new ``scitex-todo board <verb>`` lifecycle CLI
+"""Tests for the new ``scitex-cards board <verb>`` lifecycle CLI
 (operator TG12949/12950/12951 via lead a2a `b5726672`).
 
 The tests cover:
@@ -181,7 +181,7 @@ class TestStartRefusesWhenAlreadyRunning:
 
 
 class TestBareBoardHardError:
-    """Bare ``scitex-todo board`` (no verb) is no longer back-compat — it
+    """Bare ``scitex-cards board`` (no verb) is no longer back-compat — it
     HARD-ERRORS with a redirect message + exit 2 so existing call sites
     get an immediate, actionable signal (operator directive TG 13316:
     noun-verb CLI convention, no bare-noun forwarding)."""

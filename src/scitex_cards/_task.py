@@ -46,7 +46,7 @@ VALID_STATUSES: tuple[str, ...] = (  # hook-bypass: line-limit
 # Valid task kinds — north-star pillars #1 (compute state) + #4 (operator
 # pain "where am I the blocker"). A row with ``kind: compute`` represents
 # an external compute job whose status is updated by an automated writer
-# (see tasks/proj-scitex-todo-compute-state-deps/README.md). A row with
+# (see tasks/proj-scitex-cards-compute-state-deps/README.md). A row with
 # ``kind: decision`` represents an operator/agent decision that other tasks
 # can ``depends_on`` — when the decision-node's status flips to ``done``
 # (the decision is made) the dependents auto-unblock via the existing dep-
@@ -63,7 +63,7 @@ VALID_KINDS: tuple[str, ...] = (
     # ``status`` — a non-actionable status-tracking card (e.g. the q-*
     # quality-CI status rows, one per fleet package). Carries one-liner
     # status notes (audit-debt counts, green flags) rather than a real
-    # ToDo body. Per board card ``scitex-todo-relocate-q-status-tracking``
+    # ToDo body. Per board card ``scitex-cards-relocate-q-status-tracking``
     # + lead a2a ``60a1a93d`` (operator direction): proceeding with
     # option (b) — keep the rows on the board but mark them with this
     # axis so the board's filter UI (separate frontend PR) can hide them
@@ -251,7 +251,7 @@ from dataclasses import fields as _dc_fields  # noqa: E402
 
 @dataclass(slots=True)
 class Task:
-    """Canonical task shape — the single schema source for scitex-todo.
+    """Canonical task shape — the single schema source for scitex-cards.
 
     Field layout follows the operator's co-design (TG 9667, lead a2a
     `6d9b6073`): the operator's named fields come first
@@ -292,7 +292,7 @@ class Task:
     task: str | None = None
     project: str | None = None  # directory / repo basename
     # `repo` = the git repository slug the card's work lands in (e.g.
-    # ``scitex-todo``). Used by add_task / list_tasks and historically rode
+    # ``scitex-cards``). Used by add_task / list_tasks and historically rode
     # ``**extras`` without a dataclass field — a confirmed latent bug: a row
     # carrying ``repo`` survived on disk but never round-tripped through the
     # Task dataclass (from_dict dropped it as an unknown key). Promoted to a

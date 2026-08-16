@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo watch-ci` — record-only CI poller (renamed from `ci-watch`).
+"""`scitex-cards watch-ci` — record-only CI poller (renamed from `ci-watch`).
 
 Lead a2a (operator decoupled-pollers override, dev msg `96afacc7`,
 2026-06-15). Tests the pure-function transition classifier, the

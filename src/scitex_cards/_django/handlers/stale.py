@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Stale-cards review handler — derives the standing "operator should
 archive" list from the loaded board + the SAME criteria as the
-``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-todo
+``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-cards
 2026-06-13, operator-direct via lead a2a).
 
 Two endpoints:
@@ -284,7 +284,7 @@ def handle_archive(request, board):
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
     logger.info(
-        "[scitex-todo] archive %s by %s (reason: %.80s) in %s",
+        "[scitex-cards] archive %s by %s (reason: %.80s) in %s",
         task_id,
         by,
         reason,

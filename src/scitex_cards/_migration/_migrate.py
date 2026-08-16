@@ -199,7 +199,7 @@ def scan_lane(lane_path: Path) -> LanePlan:
         rows = load_tasks(lane_path)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[scitex-todo._migrate] cannot load %s: %s",
+            "[scitex-cards._migrate] cannot load %s: %s",
             lane_path,
             exc,
         )
@@ -512,7 +512,7 @@ def apply_lane(
     lane_path: Path,
     *,
     dry_run: bool = False,
-    author: str = "scitex-todo-migrator",
+    author: str = "scitex-cards-migrator",
 ) -> LaneApplyResult:
     """Migrate every row in `lane_path` to the canonical dir-card shape.
 
@@ -525,7 +525,7 @@ def apply_lane(
       - After all rows process, the YAML is saved atomically (via
         the existing ``_model._save_tasks_unlocked``).
       - After the YAML save, the lane's git repo (if any) gets a
-        single ``[scitex-todo migrate]`` commit.
+        single ``[scitex-cards migrate]`` commit.
       - Idempotent: rows that are already canonical (per
         :func:`classify_row`) become no-ops.
 
@@ -646,7 +646,7 @@ def apply_lane(
     if not dry_run and result.updated_count > 0:
         committed, skip_reason = _git_commit_lane(
             lane_path,
-            f"[scitex-todo migrate] flat → directory ({result.updated_count} cards)",
+            f"[scitex-cards migrate] flat → directory ({result.updated_count} cards)",
         )
         result.git_committed = committed
         result.git_skip_reason = skip_reason
@@ -657,7 +657,7 @@ def apply_all_lanes(
     lane_paths: Optional[Iterable[Path]] = None,
     *,
     dry_run: bool = False,
-    author: str = "scitex-todo-migrator",
+    author: str = "scitex-cards-migrator",
 ) -> List[LaneApplyResult]:
     """Migrate every lane returned by the scanner's default discovery.
 

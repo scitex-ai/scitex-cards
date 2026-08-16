@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """A deadline is a VIEW, never a notifier — pin the contract.
 
-scitex-todo accepts a `deadline` with an org-style recurring repeater
+scitex-cards accepts a `deadline` with an org-style recurring repeater
 (`+1d` / `+1w` / `+1m` / `+1y`), and the repeater genuinely rolls the next
 occurrence forward. Agents therefore read "recurring deadline" as "this will
 remind me periodically". IT WILL NOT. Two separate truths, both pinned here

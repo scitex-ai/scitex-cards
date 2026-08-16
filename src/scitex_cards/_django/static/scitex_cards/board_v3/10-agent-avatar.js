@@ -62,7 +62,7 @@
   // Agents NOT in this map fall back to hash-hue + initials, so a new
   // agent still gets a stable, distinct icon with zero config.
   var BRAND = {
-    "scitex-todo": { label: "TODO", color: "#1f8a70" },
+    "scitex-cards": { label: "CARDS", color: "#1f8a70" },
     "scitex-hub": { label: "Hub", color: "#2f6fd0" },
     "scitex-dev": { label: "DEV", color: "#5a6472" },
     "scitex-agent-container": { label: "SAC", color: "#2fae5f" },

@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Standalone per-recipient pull-inbox for card-message delivery.
 
-scitex-todo MUST deliver card-messages to its members with ZERO dependency
+scitex-cards MUST deliver card-messages to its members with ZERO dependency
 on any external agent runtime. The existing push rail
 (:func:`scitex_cards._push.deliver`) POSTs directly to an agent's turn URL —
 which CANNOT reach a *containerized* agent (the agent subscribes outbound to
 a bus; a direct inbound POST is refused). The standalone-safe delivery model
 is therefore **PULL**: the C4 dispatcher ENQUEUEs a notification record into
-the recipient's inbox here, and the recipient's scitex-todo client POLLs the
+the recipient's inbox here, and the recipient's scitex-cards client POLLs the
 board (via the ``poll_notifications`` MCP tool or, later, an HTTP endpoint)
 for its pending notifications. The out-of-band push rail stays an OPTIONAL
 parallel ACCELERATOR for host-reachable agents — never a dependency.

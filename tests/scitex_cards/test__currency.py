@@ -339,7 +339,7 @@ def test_warn_if_stale_once_warning_names_both_console_script_forms(
     monkeypatch, caplog
 ):
     """The command that ACTUALLY refused in the 2026-07-29 incident was
-    `scitex-todo list-tasks` — the legacy console script, still installed
+    `scitex-cards list-tasks` — the legacy console script, still installed
     (pyproject ships both, same `_cli:main`) and still what much of the fleet
     types. A reader who types that name must recognise the warning as being
     about the command they are running, so BOTH forms are named."""
@@ -354,7 +354,7 @@ def test_warn_if_stale_once_warning_names_both_console_script_forms(
     message = _currency_warnings(caplog)[0].getMessage()
     assert all(
         form in message
-        for form in ("scitex-cards list-tasks", "scitex-todo list-tasks")
+        for form in ("scitex-cards list-tasks", "scitex-cards list-tasks")
     )
 
 

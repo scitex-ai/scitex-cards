@@ -8,7 +8,7 @@ the row, losing context; the closed-enum ``VALID_STATUSES`` has no
 ``"closed"`` slot, and adding one would cascade through the model /
 board / docs. So the ergonomic gap is filled here:
 
-  scitex-todo close TASK_ID --reason TEXT [--by AUTHOR] [--json] \\
+  scitex-cards close TASK_ID --reason TEXT [--by AUTHOR] [--json] \\
       [--dry-run] [-y]
 
 Semantics (composition over invention):

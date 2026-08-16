@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for ``scitex-todo next`` CLI verb (the pull-side of the self-
+"""Tests for ``scitex-cards next`` CLI verb (the pull-side of the self-
 consuming board loop).
 
 Real `CliRunner` invocations against the per-test store (no mocks
@@ -15,7 +15,7 @@ per STX-NM / PA-306). Covers:
   - --assignee + --mine mutually exclusive
   - --auto-claim flips status to in_progress + stamps a comment
 
-The coverage audit (proj-scitex-todo overnight, lead a2a `1397f103`)
+The coverage audit (proj-scitex-cards overnight, lead a2a `1397f103`)
 flagged `_cli/_loop.py` at 33% with no dedicated tests; this file
 adds end-to-end coverage of the `next` verb side. The `watch` verb
 (long-running poll loop) is covered via `_wake_watcher` integration

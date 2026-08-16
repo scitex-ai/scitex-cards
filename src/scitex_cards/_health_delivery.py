@@ -6,7 +6,7 @@ The one question every other channel check leaves unasked. ``channel_capable``
 asks "can we push at all", ``channel_drain`` asks "is the inbox being consumed",
 ``channel_reaches_session`` asks "does this session's launch line name us". All
 three were GREEN for weeks while this agent's operator DMs were destroyed on
-arrival: the spec allowlisted ``server:scitex-todo`` while ``.mcp.json``
+arrival: the spec allowlisted ``server:scitex-cards`` while ``.mcp.json``
 registers the server as ``scitex-cards``, so Claude Code read each push and
 dropped it. The inbox held 228 rows for the agent and ZERO unseen — enqueued,
 then consumed, then gone. Nothing was ever red.

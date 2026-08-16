@@ -115,13 +115,13 @@ def comment_inbox_toast(task: dict, author: str, *, store=None) -> dict:
         queued = _recipient_names(task, author, store=store)
     except Exception:  # noqa: BLE001 — toast is best-effort, never fails write
         logger.warning(
-            "[scitex-todo] comment toast recipient-resolve failed for %r",
+            "[scitex-cards] comment toast recipient-resolve failed for %r",
             task.get("id"),
             exc_info=True,
         )
         queued = []
     logger.info(
-        "[scitex-todo] comment on %s queued to inbox for %s (target=%s)",
+        "[scitex-cards] comment on %s queued to inbox for %s (target=%s)",
         task.get("id"),
         queued,
         target,

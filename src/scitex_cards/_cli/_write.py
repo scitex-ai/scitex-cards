@@ -83,7 +83,7 @@ class _BlockerOrClearParamType(click.ParamType):
 
     def get_metavar(self, param, ctx=None):
         # click >= 8.2 passes ctx as a keyword; older click passes only
-        # param. Without the default, `scitex-todo update --help` crashed
+        # param. Without the default, `scitex-cards update --help` crashed
         # with a TypeError on newer click (found by neurovista, 2026-07-11).
         return "[" + "|".join(list(VALID_BLOCKERS) + ["", "none"]) + "]"
 
@@ -145,7 +145,7 @@ def _emit(payload, *, as_json: bool, human: str) -> None:
         examples=(
             (
                 "{prog} add my-task 'Implement my-task' "
-                '--agent "$SCITEX_CARDS_AGENT_ID" --project scitex-todo',
+                '--agent "$SCITEX_CARDS_AGENT_ID" --project scitex-cards',
                 "",
             ),
         ),
@@ -165,7 +165,7 @@ def _emit(payload, *, as_json: bool, human: str) -> None:
     "--task", default=None, help="The BIG board-card text (distinct from --title)."
 )
 @click.option(
-    "--project", default=None, help="Project / repo basename (e.g. 'scitex-todo')."
+    "--project", default=None, help="Project / repo basename (e.g. 'scitex-cards')."
 )
 @click.option("--host", default=None, help="Where the work happens (hostname).")
 @click.option(

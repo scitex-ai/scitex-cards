@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Agent-identity resolution for the scitex-todo channel server.
+"""Agent-identity resolution for the scitex-cards channel server.
 
 Answers "whose inbox does this channel drain?" — extracted from
 :mod:`scitex_cards._mcp_channel` (which re-exports both functions for

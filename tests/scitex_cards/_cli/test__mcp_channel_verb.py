@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the `scitex-todo mcp channel` verb registration.
+"""Tests for the `scitex-cards mcp channel` verb registration.
 
 CliRunner against the real click group (no mocks — STX-NM / PA-306). Verifies
 the verb is wired onto the `mcp` group and that its `--help` advertises the

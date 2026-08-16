@@ -388,7 +388,7 @@ class TestDeliveryLivenessIsExposed:
         # Act
         verdict = assess_delivery(run["store"])
         # Assert
-        assert "systemctl --user restart scitex-todo-notifyd" in verdict["hint"]
+        assert "systemctl --user restart scitex-cards-notifyd" in verdict["hint"]
 
     def test_the_failing_verdict_names_the_underlying_reason(
         self, tmp_path, caplog, monkeypatch

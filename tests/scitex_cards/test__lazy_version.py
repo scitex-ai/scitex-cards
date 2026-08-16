@@ -154,7 +154,7 @@ def test_resolver_prefers_scitex_cards_dist(monkeypatch):
     assert resolved == "9.9.9"
 
 
-def test_resolver_falls_back_to_scitex_todo_dist(monkeypatch):
+def test_resolver_falls_back_to_scitex_cards_dist(monkeypatch):
     """Un-cutover editable installs still only carry the old dist name."""
     # Arrange
     import importlib.metadata as md

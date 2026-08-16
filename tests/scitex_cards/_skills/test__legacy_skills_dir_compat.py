@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The legacy ``_skills/scitex-todo`` path must keep resolving after the rename.
+"""The legacy ``_skills/scitex-cards`` path must keep resolving after the rename.
 
 WHY THIS EXISTS — it is a fleet-liveness pin, not a naming preference.
 
 The fleet stages package skills through symlinks that name the directory
 **by its on-disk path**:
 
-    ~/.claude/to_claude/skills/scitex/scitex-todo
-        -> <repo>/src/scitex_cards/_skills/scitex-todo
+    ~/.claude/to_claude/skills/scitex/scitex-cards
+        -> <repo>/src/scitex_cards/_skills/scitex-cards
 
 Those links are git-tracked dotfiles state (mode 120000 blobs), ~40 siblings
 in the same shape, and they live OUTSIDE this repository. When the directory
 was renamed, that link dangled and every ``sac agents start`` that stages the
 skill died in ``shutil.copytree`` with ``[Errno 2]``. On 2026-07-16 that took
-``scitex-todo``, ``scitex-dev``, ``scitex-hpc`` and ``claude-code-telegrammer``
+``scitex-cards``, ``scitex-dev``, ``scitex-hpc`` and ``claude-code-telegrammer``
 down at once — the fleet could not be restored at all until the link was
 re-pointed by hand.
 
@@ -53,7 +53,7 @@ pytestmark = pytest.mark.skipif(
 #: The pre-rename directory name. Hardcoded ON PURPOSE: it is the string
 #: baked into out-of-repo symlinks, so deriving it from a constant would let
 #: the two drift apart silently — which is the whole failure this pins.
-LEGACY_DIR_NAME = "scitex-todo"
+LEGACY_DIR_NAME = "scitex-cards"
 
 
 def _skills_parent() -> Path:

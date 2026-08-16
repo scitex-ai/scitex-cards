@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo MCP server — one FastMCP instance per the SciTeX convention.
+"""scitex-cards MCP server — one FastMCP instance per the SciTeX convention.
 
 Tools follow audit §6 Convention A (``tool_name == python_api_name``); see
 ``TOOL_NAMES`` for the full registered set (task CRUD + edges + roles, the
@@ -122,7 +122,7 @@ async def list_tasks(
     ``blocking_me=True`` matches the board's BLOCKING-YOU predicate
     (``status=blocked AND blocker=operator-decision``). ``overdue=True``
     matches tasks past their next deadline AND not in a terminal lifecycle
-    state (mirrors the ``scitex-todo list-tasks --overdue`` CLI flag and
+    state (mirrors the ``scitex-cards list-tasks --overdue`` CLI flag and
     the fleet payload's ``overdue_count``; see scitex_cards._model.is_overdue
     — todo-p6-overdue-ui, PR #125 / #126). ``overdue`` is a PULL filter,
     not an alarm: this query is the ONLY way an overdue card reaches you

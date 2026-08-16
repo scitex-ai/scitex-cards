@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Org-mode export adapter for scitex-todo (P4 PR2, lead-approved 2026-06-12).
+"""Org-mode export adapter for scitex-cards (P4 PR2, lead-approved 2026-06-12).
 
 Renders the canonical YAML task list to a ``tasks.org`` document with
 emacs org-mode wire-shape:
@@ -11,7 +11,7 @@ emacs org-mode wire-shape:
     :PROPERTIES:
     :ID: <task-id>
     :PROJECT: <project>
-    :STATUS: <scitex-todo-status>
+    :STATUS: <scitex-cards-status>
     :END:
 
     <note body, free-form markdown>
@@ -19,7 +19,7 @@ emacs org-mode wire-shape:
 The mapping below pins the wire-shape so an emacs / org-agenda reader
 can ingest the file directly:
 
-  * scitex-todo status -> org TODO STATE
+  * scitex-cards status -> org TODO STATE
       pending     -> TODO
       in_progress -> INPROGRESS
       blocked     -> WAITING
@@ -28,24 +28,24 @@ can ingest the file directly:
       failed      -> CANCELLED
       goal        -> GOAL
 
-  * scitex-todo deadline   -> org DEADLINE: line
-  * scitex-todo scheduled  -> org SCHEDULED: line
-  * scitex-todo parent     -> nesting depth (parent heading -> child heading)
-  * scitex-todo note       -> body (free-form markdown)
+  * scitex-cards deadline   -> org DEADLINE: line
+  * scitex-cards scheduled  -> org SCHEDULED: line
+  * scitex-cards parent     -> nesting depth (parent heading -> child heading)
+  * scitex-cards note       -> body (free-form markdown)
   * everything else        -> :PROPERTIES: drawer entries
 
 Today's slice is EXPORT only (one-way YAML -> .org). Import (.org ->
 YAML) lands when the operator starts editing the .org file in emacs
 + org-agenda; design notes are in the P4 design a2a.
 
-Note on DEADLINE lines: this export is where a scitex-todo deadline can
-first *reach* a reminder engine — because ORG-AGENDA is one. scitex-todo
-itself is NOT. In scitex-todo a deadline is a VIEW: it feeds the `overdue`
+Note on DEADLINE lines: this export is where a scitex-cards deadline can
+first *reach* a reminder engine — because ORG-AGENDA is one. scitex-cards
+itself is NOT. In scitex-cards a deadline is a VIEW: it feeds the `overdue`
 filter and the board, and NEVER sends a notification; a recurring one does
 not even reach that filter (the repeater rolls it into the future — see
 `_model.is_overdue`). Emitting a `DEADLINE:` here does not change any of
 that; it just hands the date to org, where a repeater DOES mean what a
-reader expects. Do not infer scitex-todo behaviour from org's.
+reader expects. Do not infer scitex-cards behaviour from org's.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def build_org(tasks: Iterable[dict]) -> str:
     asks for it; org-agenda handles flat-heading TODO state perfectly).
     """
     out: list[str] = []
-    out.append("#+TITLE: scitex-todo export")
+    out.append("#+TITLE: scitex-cards export")
     out.append("#+TODO: TODO INPROGRESS WAITING | DONE CANCELLED SOMEDAY")
     out.append("#+STARTUP: showall")
     out.append("")

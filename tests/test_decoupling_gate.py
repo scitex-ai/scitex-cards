@@ -20,7 +20,7 @@ Two layers, because each catches what the other cannot:
 
 The runtime probe deliberately does NOT assert "no forbidden module is in
 ``sys.modules``". A port PROVIDER loading is the design succeeding, not
-failing: sac registers a handler into our ``scitex_todo.hooks`` group, so a
+failing: sac registers a handler into our ``scitex_cards.hooks`` group, so a
 write legitimately imports ``scitex_agent_container`` via ``ep.load()``. The
 arrow still points at us — we never name it. Asserting on ``sys.modules``
 flagged that as a violation and failed on correct code (2026-07-22).
@@ -42,7 +42,7 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "scitex_cards"
 
-#: Root module names scitex-cards must NEVER import. ``scitex_todo`` is
+#: Root module names scitex-cards must NEVER import. ``scitex_cards`` is
 #: deliberately absent: that is our own shim, not a foreign package.
 FORBIDDEN_ROOTS = {
     "scitex_agent_container",
@@ -211,7 +211,7 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     WHY THIS, AND NOT "no forbidden module is in ``sys.modules``" (the shape
     this test had until 2026-07-22): that assertion measured the wrong thing
     and failed on correct code. ``sac`` registers a card-event delivery
-    handler into our ``scitex_todo.hooks`` entry-point group, so the FIRST
+    handler into our ``scitex_cards.hooks`` entry-point group, so the FIRST
     write loads ``scitex_agent_container`` through ``ep.load()`` — the PORTS
     mechanism working exactly as designed, with the dependency arrow still
     pointing at us (we never name sac; the AST scan above proves that, and it

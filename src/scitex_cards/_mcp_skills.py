@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo MCP tools extracted from the budget-bound server module.
+"""scitex-cards MCP tools extracted from the budget-bound server module.
 
 :mod:`scitex_cards._mcp_server` sat at its line budget, so two cohesive tool
 clusters live here instead and register on the SAME shared ``mcp`` FastMCP
@@ -14,7 +14,7 @@ Clusters:
     file-system introspection on the bundled ``_skills/`` dir.
   - Help-wait (``help_wait`` / ``help_clear``) — the "agent is stuck waiting
     on the operator" card, lifted out of the dotfiles Notification hook so
-    scitex-todo owns the semantics. 1:1 with :mod:`scitex_cards._help_wait`.
+    scitex-cards owns the semantics. 1:1 with :mod:`scitex_cards._help_wait`.
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ from ._mcp_app import mcp  # the LEAF — importing _mcp_server here would cycle
 
 
 def _skills_dir():
-    """Return the path to the bundled scitex-todo skill files."""
+    """Return the path to the bundled scitex-cards skill files."""
     from pathlib import Path
 
-    return Path(__file__).parent / "_skills" / "scitex-todo"
+    return Path(__file__).parent / "_skills" / "scitex-cards"
 
 
 @mcp.tool()
 async def todo_skills_list() -> str:
-    """List bundled scitex-todo skill files. Returns a JSON array of names."""
+    """List bundled scitex-cards skill files. Returns a JSON array of names."""
     skills_dir = _skills_dir()
     if not skills_dir.exists():
         return json.dumps([])
@@ -47,7 +47,7 @@ async def todo_skills_list() -> str:
 
 @mcp.tool()
 async def todo_skills_get(name: str) -> str:
-    """Return the content of one bundled scitex-todo skill file.
+    """Return the content of one bundled scitex-cards skill file.
 
     `name` must match a file in the bundled skills dir (e.g.
     `"01_installation.md"`). Returns a JSON object
@@ -145,7 +145,7 @@ async def poll_notifications(
     The standalone (zero external runtime) delivery read path: the C4
     dispatcher ENQUEUEs each card-event into the recipient's per-recipient
     pull-inbox (a sibling ``inboxes:`` section in the shared store); this
-    tool returns that inbox so any agent's scitex-todo client can poll it
+    tool returns that inbox so any agent's scitex-cards client can poll it
     WITHOUT any external runtime. The optional out-of-band push rail stays a
     parallel accelerator, not a dependency.
 

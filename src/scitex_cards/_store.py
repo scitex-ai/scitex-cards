@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side Python API for the scitex-todo task store.
+"""Mutation-side Python API for the scitex-cards task store.
 
 THIN ORCHESTRATOR. The verbs themselves now live in focused siblings; this
 module owns the SHARED helpers they all pull on (identity resolution, the
@@ -281,7 +281,7 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
 def resolve_store(store: str | Path | None = None) -> dict:
     """Return the resolved task store path and the precedence chain.
 
-    Mirrors the data the `scitex-todo resolve-store` CLI verb and the
+    Mirrors the data the `scitex-cards resolve-store` CLI verb and the
     `resolve_store` MCP tool emit. Keeping a Python API by the same name
     as the MCP tool satisfies audit §6 (Convention A: tool_name == api_name).
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Pin the NEVER-hand-edit mandate in the canonical scitex-todo skill.
+"""Pin the NEVER-hand-edit mandate in the canonical scitex-cards skill.
 
 The 2026-06-13 corruption episode (the then-canonical file-based store
 truncated mid-string at line ~2784) traced to a hand-edit bypassing the

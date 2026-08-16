@@ -250,7 +250,7 @@ class TestQueryTasks:
 
 
 class TestCliRebuildAndInfo:
-    """`scitex-todo index rebuild` + `info` round-trip via CliRunner."""
+    """`scitex-cards index rebuild` + `info` round-trip via CliRunner."""
 
     def test_rebuild_then_info_reports_rows(
         self,

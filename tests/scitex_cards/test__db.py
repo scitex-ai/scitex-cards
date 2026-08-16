@@ -40,8 +40,8 @@ def store(tmp_path):
                 "title": "First card",
                 "status": "in_progress",
                 "task": "do the thing",
-                "project": "scitex-todo",
-                "repo": "scitex-todo",
+                "project": "scitex-cards",
+                "repo": "scitex-cards",
                 "agent": "agent:alice",
                 "group": "core",
                 "priority": 3,
@@ -645,7 +645,7 @@ def test_import_stores_the_repo_field(imported):
     row = _card_row(imported)
 
     # Assert
-    assert row["repo"] == "scitex-todo"
+    assert row["repo"] == "scitex-cards"
 
 
 def test_import_stores_the_priority_field(imported):
@@ -1067,21 +1067,21 @@ def test_verify_reports_an_absent_db_as_not_ok(tmp_path):
 def test_repo_field_survives_from_dict_on_the_dataclass():
     # Arrange
     # Act
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Assert
-    assert task.repo == "scitex-todo"
+    assert task.repo == "scitex-cards"
 
 
 def test_repo_field_survives_to_dict_on_the_dataclass():
     # Arrange
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Act
     payload = task.to_dict()
 
     # Assert
-    assert payload["repo"] == "scitex-todo"
+    assert payload["repo"] == "scitex-cards"
 
 
 def test_an_absent_repo_field_defaults_to_none():
@@ -1110,7 +1110,7 @@ def test_repo_field_round_trips_db_column(imported):
     val = imported["conn"].execute("SELECT repo FROM tasks WHERE id='c1'").fetchone()[0]
 
     # Assert
-    assert val == "scitex-todo"
+    assert val == "scitex-cards"
 
 
 # --------------------------------------------------------------------------- #

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo wake-watcher — push side of the self-consuming board loop.
+"""scitex-cards wake-watcher — push side of the self-consuming board loop.
 
 Polls the task store on a fixed interval (default 30s, hard floor 10s —
 raised from 2s after the 2026-07-08 death-spiral incident), diffs
@@ -15,24 +15,24 @@ Wake payload is small + stable so a future Gitea-webhook variant can
 emit the same shape::
 
     {
-      "trigger":      "scitex-todo-watcher",
+      "trigger":      "scitex-cards-watcher",
       "trigger_kind": "task_added" | "comment" | "status_changed",
       "task_id":      "<id>",
       "task_title":   "<title>",
       "summary":      "<short human-readable change description>",
-      "store_path":   "/scitex-todo/tasks.yaml"
+      "store_path":   "/scitex-cards/tasks.yaml"
     }
 
 The agent's harness (e.g. claude-code container) handles the rest:
-runs ``scitex-todo next --mine --json``, picks the top task, works it,
-flips status, comments. See ``_skills/scitex-todo/32_agent-self-
+runs ``scitex-cards next --mine --json``, picks the top task, works it,
+flips status, comments. See ``_skills/scitex-cards/32_agent-self-
 consumption-loop.md`` for the canonical 7-step loop.
 
 Agent registry (where to find each peer's a2a port):
 
   A ``agents:`` top-level list in tasks.yaml. Each entry:
-  ``{name: scitex-todo, a2a_port: 41234}``. This static list is
-  scitex-todo's own SSoT for the agent port table — no external
+  ``{name: scitex-cards, a2a_port: 41234}``. This static list is
+  scitex-cards's own SSoT for the agent port table — no external
   runtime is consulted.
 
 Per-agent debounce: at most ONE wake per ``min_wake_interval`` seconds
@@ -172,7 +172,7 @@ class WakeRecord:
 
     def to_payload(self, *, store_path: str) -> dict:
         return {
-            "trigger": "scitex-todo-watcher",
+            "trigger": "scitex-cards-watcher",
             "trigger_kind": self.trigger_kind,
             "task_id": self.task_id,
             "task_title": self.task_title,
@@ -467,7 +467,7 @@ def run_watcher_forever(
 ) -> None:  # pragma: no cover - infinite loop
     """Run the watcher in a polling loop until interrupted.
 
-    Drives the live ``scitex-todo watch --push`` CLI entry. Tests use
+    Drives the live ``scitex-cards watch --push`` CLI entry. Tests use
     :func:`run_watcher_once` directly.
 
     Three anti-spiral guards wrap the loop:

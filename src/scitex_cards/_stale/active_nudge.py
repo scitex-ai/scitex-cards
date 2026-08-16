@@ -26,7 +26,7 @@ almost any agent, and a containerized agent cannot be POSTed to at all —
 so once the sweep was actually scheduled inside notifyd (v0.8.2) it
 delivered to NOBODY::
 
-    notifyd liveness sweep: ERR  scitex-todo    32 pending  wire=http  reason=transport-error
+    notifyd liveness sweep: ERR  scitex-cards    32 pending  wire=http  reason=transport-error
     notifyd liveness sweep: ERR  scitex-types    2 pending  wire=http  reason=no-turn-url-configured
     notifyd liveness sweep: # 0 pending-backlog push(es) sent
 
@@ -342,7 +342,7 @@ def _deliver_per_owner(
             else:
                 counts["failed"] += 1
                 logger.error(
-                    "[scitex-todo._stale_active_nudge] %s nudge for %s was NOT "
+                    "[scitex-cards._stale_active_nudge] %s nudge for %s was NOT "
                     "delivered: inbox enqueue to %r failed — this owner will "
                     "NOT see their %d %s card(s)",
                     kind, owner, recipient, len(cards), label,
@@ -388,7 +388,7 @@ def _summary_lines(kind: str, counts: dict[str, int]) -> list[str]:
             f"!! ALERT {kind}: 0 of {attempted} attempted nudge(s) delivered — "
             f"this sweep reached NOBODY (every owner's inbox enqueue failed)"
         )
-        logger.error("[scitex-todo._stale_active_nudge] %s", msg)
+        logger.error("[scitex-cards._stale_active_nudge] %s", msg)
         out.append(f"# {msg}")
     return out
 
@@ -506,7 +506,7 @@ def _emit_hook(by_owner: dict, lines: list[str]) -> None:
         dispatch_event(
             {
                 "kind": "stale-active",
-                "source": "scitex-todo._stale_active_nudge",
+                "source": "scitex-cards._stale_active_nudge",
                 "owners": owners,
                 "total": sum(owners.values()),
             }
@@ -514,7 +514,7 @@ def _emit_hook(by_owner: dict, lines: list[str]) -> None:
         lines.append(f"  hook  stale-active emitted ({len(owners)} owner(s))")
     except Exception as exc:  # noqa: BLE001 — best-effort.
         logger.debug(
-            "[scitex-todo._stale_active_nudge] hook emit skipped: %s", exc,
+            "[scitex-cards._stale_active_nudge] hook emit skipped: %s", exc,
         )
 
 

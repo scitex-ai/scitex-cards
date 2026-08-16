@@ -147,7 +147,7 @@ OWNERSHIP rules below — they still bind.
 - An agent writes rows where `task.agent == <its-own-name>`. It does
   NOT write to OTHER agents' rows (no cross-lane writes).
 - Status flips on its own tasks are FAIL-LOUD-validated against the
-  Task dataclass (see `proj-scitex-todo-quality-hygiene/README.md`
+  Task dataclass (see `proj-scitex-cards-quality-hygiene/README.md`
   for the dataclass; ADR-0002/-0003/-0004 for the closed enums).
 - If an agent wants to push a task to ANOTHER agent (e.g. "I need
   the SIF agent to rebuild"), it creates a row with
@@ -239,7 +239,7 @@ Examples:
 ```
 paper-scitex-clew/cohort-a-rerun
 scitex-hub/decide-prod-cutover-final-go
-scitex-cards/proj-scitex-todo-fleet-liveness
+scitex-cards/proj-scitex-cards-fleet-liveness
 ```
 
 **URL scheme** (the board's Django serves it):
@@ -256,7 +256,7 @@ board's renderer. Citation in chat: "see
 fleet.
 
 **Backward-compat**: existing single-segment ids
-(`proj-scitex-todo-compute-state-deps`) carry through; the
+(`proj-scitex-cards-compute-state-deps`) carry through; the
 aggregator stamps `_log_meta.canonical_id = "<project>/<id>"` on
 read so the URL works on legacy rows.
 
@@ -302,7 +302,7 @@ GitHub-vs-SSH-fanout split above.
 - **ADR-0004** — `blocker` enum, orthogonal to `kind`.
 - **ADR-0005** — fleet-liveness panel + SSH-fanout watcher.
 - **ADR-0006** — full board UI spec + GUI→code wiring.
-- **`tasks/proj-scitex-todo-quality-hygiene/README.md`** — Task
+- **`tasks/proj-scitex-cards-quality-hygiene/README.md`** — Task
   dataclass = single schema source.
 - **`scitex_dev` skill** `general/05_paths/01_local-state-dirs` —
   the ecosystem local-state directories convention this skill

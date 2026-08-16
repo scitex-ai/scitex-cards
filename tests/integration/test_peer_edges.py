@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Per-edge INTEGRATION + DEGRADATION tests for scitex-todo's OPTIONAL peers.
+"""Per-edge INTEGRATION + DEGRADATION tests for scitex-cards's OPTIONAL peers.
 
-scitex-todo's Django board (``scitex_cards._django``) wires into two *optional*
+scitex-cards's Django board (``scitex_cards._django``) wires into two *optional*
 sibling SciTeX packages. Both edges are guarded in source so a lean
-``pip install scitex-todo`` (no ``[web]``/``[dev]`` extras) still works:
+``pip install scitex-cards`` (no ``[web]``/``[dev]`` extras) still works:
 
 Edge 1 — ``scitex-app`` (``_django/apps.py``)
     ``ScitexTodoConfig`` inherits ``scitex_app._django.ScitexAppConfig`` when

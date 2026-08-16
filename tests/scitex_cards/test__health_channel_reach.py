@@ -3,9 +3,9 @@
 """Tests for the ``channel_reaches_session`` health check.
 
 Regression cover for the 2026-07-24 fleet-wide silent-deafness outage: the
-scitex-todo -> scitex-cards rename re-registered the MCP server as
+scitex-cards -> scitex-cards rename re-registered the MCP server as
 ``scitex-cards`` while agent launch lines still allowlisted the pre-rename
-``scitex-todo``. Every channel push was discarded on arrival, and because the
+``scitex-cards``. Every channel push was discarded on arrival, and because the
 drain marks records seen regardless, card events and DMs were consumed and lost.
 ``channel_capable`` and ``channel_drain`` were GREEN throughout.
 
@@ -50,7 +50,7 @@ class TestAllowlistParsing:
         argv = [
             "claude",
             CHANNEL_FLAG,
-            "server:scitex-todo",
+            "server:scitex-cards",
             CHANNEL_FLAG,
             "server:sac",
             CHANNEL_FLAG,
@@ -59,7 +59,7 @@ class TestAllowlistParsing:
         # Act
         result = allowlisted_channel_servers(argv)
         # Assert
-        assert result == {"scitex-todo", "sac", "claude-code-telegrammer"}
+        assert result == {"scitex-cards", "sac", "claude-code-telegrammer"}
 
     def test_non_server_and_empty_values_are_ignored(self):
         # Arrange — a bare `server:` appears in real launch lines.
@@ -118,12 +118,12 @@ class TestRegisteredServerNames:
         # Arrange — during a migration the old shim is still us; a check that
         # only knew the new name would be blind on the agents left behind.
         blobs = [
-            {"mcpServers": {"scitex-todo": {"command": "scitex-todo", "args": ["mcp"]}}}
+            {"mcpServers": {"scitex-cards": {"command": "scitex-cards", "args": ["mcp"]}}}
         ]
         # Act
         result = registered_server_names(blobs)
         # Assert
-        assert result == {"scitex-todo"}
+        assert result == {"scitex-cards"}
 
     def test_a_flag_value_naming_us_is_not_our_server(self):
         """THE false pass, caught live on 2026-07-24 before this shipped.
@@ -197,7 +197,7 @@ def rename_outage_result():
     separate obligations needs four separate tests.
     """
     registered = {"scitex-cards"}
-    allowed = {"scitex-todo", "sac", "claude-code-telegrammer"}
+    allowed = {"scitex-cards", "sac", "claude-code-telegrammer"}
     return evaluate_reachability(allowed, registered)
 
 
@@ -250,7 +250,7 @@ class TestReachabilityDecision:
         # Arrange — during the migration both names are allowlisted.
         # Act
         result = evaluate_reachability(
-            {"scitex-todo", "scitex-cards"}, {"scitex-cards"}
+            {"scitex-cards", "scitex-cards"}, {"scitex-cards"}
         )
         # Assert
         assert result["ok"] is True

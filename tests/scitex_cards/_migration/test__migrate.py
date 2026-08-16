@@ -245,7 +245,7 @@ class TestRenderMarkdown:
 
 
 class TestCliPlan:
-    """`scitex-todo migration plan --json` emits parseable JSON."""
+    """`scitex-cards migration plan --json` emits parseable JSON."""
 
     def test_cli_plan_json_decodes(self, env, tmp_path):
         # Arrange — empty global + empty lane glob.

@@ -11,7 +11,7 @@
    tracked in /work/GITIGNORED/REFACTORING.md. This three-line @import
    addition lands inside the existing limit suspension. */
 
-/* scitex-todo board layout */
+/* scitex-cards board layout */
 
 /* ── Theme palette ───────────────────────────────────────────────────────
  * The board lives inside the scitex-ui shell, which sets <html
@@ -57,16 +57,16 @@
  * board those three sidebars are dead weight — hide them so the board's
  * #main-content (flex: 1) fills the full viewport width.
  *
- * Scoped via :has(#app-mount[data-app-name="scitex-todo"]) so it ONLY
+ * Scoped via :has(#app-mount[data-app-name="scitex-cards"]) so it ONLY
  * applies to the standalone todo board, NEVER to the embedded scitex-hub
  * multi-app workspace (where the sidebars are wanted). */
-body:has(#app-mount[data-app-name="scitex-todo"]) .ws-ai-pane,
-body:has(#app-mount[data-app-name="scitex-todo"]) .ws-worktree-pane,
-body:has(#app-mount[data-app-name="scitex-todo"]) .ws-viewer-pane {
+body:has(#app-mount[data-app-name="scitex-cards"]) .ws-ai-pane,
+body:has(#app-mount[data-app-name="scitex-cards"]) .ws-worktree-pane,
+body:has(#app-mount[data-app-name="scitex-cards"]) .ws-viewer-pane {
   display: none !important;
 }
 
-body:has(#app-mount[data-app-name="scitex-todo"]) #main-content.ws-module-pane {
+body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane {
   flex: 1 1 100%;
   width: 100%;
   overflow: hidden;

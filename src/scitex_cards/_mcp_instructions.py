@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The scitex-todo MCP server's agent-facing instructions text.
+"""The scitex-cards MCP server's agent-facing instructions text.
 
 Every agent reads this string at session start — it is the single most-read
 sentence the package ships, so it gets its own module (extracted from the
@@ -8,13 +8,13 @@ budget-bound :mod:`scitex_cards._mcp_server`) and its own tests.
 
 Why the identity is INTERPOLATED
 --------------------------------
-The instructions used to hard-code ONE example scope — the ``proj-scitex-todo``
+The instructions used to hard-code ONE example scope — the ``proj-scitex-cards``
 identity. That identity does not exist: the ``proj-`` prefix is a dead legacy
 naming (see :data:`scitex_cards._users.IDENTITY_PREFIXES`, which exists to STRIP
 it). An agent that followed the instruction filtered on a scope holding almost
 nothing and reasonably concluded the board had no work for it. Measured against
-the live store on 2026-07-11: **2** cards scoped to the dead ``proj-scitex-todo``
-vs **63** scoped to the real ``scitex-todo``. A mechanical explanation for the
+the live store on 2026-07-11: **2** cards scoped to the dead ``proj-scitex-cards``
+vs **63** scoped to the real ``scitex-cards``. A mechanical explanation for the
 standing "the fleet ignores the board" complaint.
 
 So the scope is now rendered from the agent's OWN id — resolved by the package's

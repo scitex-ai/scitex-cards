@@ -220,7 +220,7 @@ class TestRecentViewLoadBearingUX:
         # Arrange
         # Act
         # Assert
-        assert "scitex-todo update" in tsx_text
+        assert "scitex-cards update" in tsx_text
 
 
 class TestQualifierSearchReused:

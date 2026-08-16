@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the ``scitex-todo notifyd`` CLI verb (slice 2).
+"""Tests for the ``scitex-cards notifyd`` CLI verb (slice 2).
 
 Uses click's ``CliRunner`` against the real root group — no mocks. Covers:
 * ``notifyd --once`` runs a single real delivery pass and exits (no daemon).
@@ -88,7 +88,7 @@ def _run_install_unit(tmp_path, env, monkeypatch):
         lambda *a, **k: (calls.append((a, k)), real_run(*a, **k))[1],
     )
     result = CliRunner().invoke(main, ["notifyd", "install-unit"])
-    target = tmp_path / "cfg" / "systemd" / "user" / "scitex-todo-notifyd.service"
+    target = tmp_path / "cfg" / "systemd" / "user" / "scitex-cards-notifyd.service"
     return result, target, calls
 
 

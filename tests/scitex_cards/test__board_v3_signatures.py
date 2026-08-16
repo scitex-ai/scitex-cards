@@ -845,7 +845,7 @@ class TestMultiselectBatchOpsRemoved:
 
 # -----------------------------------------------------------------------------
 # Activity bucket badge — render side of working-status decay
-# (board card `scitex-todo-working-status-decay-tg12739`, render half of PR #122)
+# (board card `scitex-cards-working-status-decay-tg12739`, render half of PR #122)
 # -----------------------------------------------------------------------------
 
 
@@ -934,7 +934,7 @@ class TestStaleReviewPanel:
 
     def test_stale_fetch_target_endpoint(self, board_js):
         # Mount-aware (P1 sub-path fix): the dispatcher registers plain
-        # "stale" — the old "/scitex-todo/stale" literal 404'd even at a
+        # "stale" — the old "/scitex-cards/stale" literal 404'd even at a
         # root mount, and every fetch is API_BASE-prefixed now.
         # Arrange
         # Act
@@ -949,7 +949,7 @@ class TestStaleReviewPanel:
 
     def test_archive_post_target_endpoint(self, board_js):
         # Mount-aware (P1 sub-path fix): the dispatcher registers plain
-        # "archive" — the old "/scitex-todo/archive" literal 404'd even at
+        # "archive" — the old "/scitex-cards/archive" literal 404'd even at
         # a root mount, and every fetch is API_BASE-prefixed now.
         # Arrange
         # Act

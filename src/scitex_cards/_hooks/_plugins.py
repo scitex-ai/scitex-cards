@@ -67,8 +67,8 @@ ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
 #: Pre-rename group name (package renamed 2026-07-16). External producers
 #: that registered under the old group keep firing until they re-release
-#: against the new name; drop together with the ``scitex_todo`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_todo.hooks"
+#: against the new name; drop together with the ``scitex_cards`` shim.
+LEGACY_ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
 #: Default per-plugin wall-time budget (seconds). Each entry-point
 #: handler runs in a worker thread joined with this timeout, so a
@@ -197,7 +197,7 @@ def _run_plugins(
         # does not block interpreter shutdown.
         worker = threading.Thread(
             target=_worker,
-            name=f"scitex-todo-hook-{name}",
+            name=f"scitex-cards-hook-{name}",
             daemon=True,
         )
         worker.start()

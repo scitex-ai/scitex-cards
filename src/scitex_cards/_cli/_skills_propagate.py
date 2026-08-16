@@ -10,12 +10,12 @@ line limit while this propagation surface grows.
 Purpose
 -------
 Operator directive — board card
-``rec-propagate-scitex-todo-skill-into-every-agent-required-skills``: every
-fleet agent's spec.yaml must declare the scitex-todo skill IDs on its skill
+``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``: every
+fleet agent's spec.yaml must declare the scitex-cards skill IDs on its skill
 list so the agent reads the usage skill on boot and consults the shared YAML
 store correctly.
 
-scitex-todo can't directly edit other agents' spec.yaml files
+scitex-cards can't directly edit other agents' spec.yaml files
 (agent-container's territory). Instead this verb walks a directory of
 ``<agent>/spec.yaml`` files and idempotently appends the canonical IDs
 (from :func:`canonical_skill_ids`) to the configured field.
@@ -48,9 +48,9 @@ _DEFAULT_SKILL_FIELD = "metadata.labels.skills"
 def manifest_path():
     """Resolve the bundled ``_skills/manifest.yaml`` path.
 
-    Sibling of the ``_skills/scitex-todo/`` skill pack so the spec-generation
+    Sibling of the ``_skills/scitex-cards/`` skill pack so the spec-generation
     script in agent-container can read it without depending on the
-    scitex-todo Python API (a plain ``yaml.safe_load`` on this path works).
+    scitex-cards Python API (a plain ``yaml.safe_load`` on this path works).
     """
     from pathlib import Path
 
@@ -68,7 +68,7 @@ def load_manifest():
 
     path = manifest_path()
     if not path.is_file():
-        raise FileNotFoundError(f"scitex-todo manifest missing: {path}")
+        raise FileNotFoundError(f"scitex-cards manifest missing: {path}")
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     if not isinstance(data, dict):
@@ -79,7 +79,7 @@ def load_manifest():
 
 
 def canonical_skill_ids():
-    """Return the canonical scitex-todo skill IDs (list[str]) from the manifest.
+    """Return the canonical scitex-cards skill IDs (list[str]) from the manifest.
 
     This is the value that should be appended to every fleet agent's skill
     list. Ordered (manifest order is significant); de-dup is the caller's
@@ -252,7 +252,7 @@ def build_propagate_cmd():
     @click.command(
         "propagate",
         **spec_command_kwargs(
-            summary="Append canonical scitex-todo skill IDs to every agent's spec.yaml.",
+            summary="Append canonical scitex-cards skill IDs to every agent's spec.yaml.",
             description=(
                 "Fleet-wide required_skills propagation. Default field "
                 "is `metadata.labels.skills` (v3 CSV) — use --field to "
@@ -317,7 +317,7 @@ def build_propagate_cmd():
         canonical = canonical_skill_ids()
         if not canonical:
             raise click.ClickException(
-                "scitex-todo manifest has no skills — refusing to "
+                "scitex-cards manifest has no skills — refusing to "
                 "propagate nothing."
             )
 

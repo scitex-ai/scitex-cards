@@ -285,11 +285,11 @@ def test_scope_filter_excludes_other_scope(tmp_path):
             add_task,
             id="b",
             title="B",
-            scope="agent:proj-scitex-todo",
+            scope="agent:proj-scitex-cards",
         )
     )
     # Act
-    listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-todo"))
+    listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-cards"))
     # Assert
     assert {r["id"] for r in json.loads(listed)} == {"b"}
 
@@ -508,12 +508,12 @@ def test_add_task_accepts_agent_field(tmp_path):
                 add_task,
                 id="a",
                 title="A",
-                agent="proj-scitex-todo",
+                agent="proj-scitex-cards",
             )
         )
     )
     # Assert
-    assert out["agent"] == "proj-scitex-todo"
+    assert out["agent"] == "proj-scitex-cards"
 
 
 def test_add_task_accepts_kind_compute(tmp_path):
@@ -549,12 +549,12 @@ def test_update_task_sets_agent(tmp_path):
             _call_tool(
                 update_task,
                 task_id="a",
-                agent="proj-scitex-todo",
+                agent="proj-scitex-cards",
             )
         )
     )
     # Assert
-    assert out["agent"] == "proj-scitex-todo"
+    assert out["agent"] == "proj-scitex-cards"
 
 
 def test_update_sets_status(tmp_path):

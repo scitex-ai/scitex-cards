@@ -38,7 +38,7 @@ export function toMarkdown(graph: GraphPayload, nodes: GraphNode[]): string {
     groups.set(n.status, list);
   }
   const out: string[] = [
-    `# scitex-todo — ${nodes.length} tasks`,
+    `# scitex-cards — ${nodes.length} tasks`,
     `*store: \`${graph.store_path}\`*`,
     "",
   ];

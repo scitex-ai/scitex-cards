@@ -1,12 +1,12 @@
 {
   "name": "scitex_cards_app",
-  "slug": "scitex-todo",
+  "slug": "scitex-cards",
   "label": "Todo",
   "version": "0.1.0",
   "icon": "fas fa-diagram-project",
-  "subtitle": "Dependency-graph view of the scitex-todo task store",
-  "about": "View the scitex-todo task dependency graph in a browser. Nodes are colored by status; edges show depends_on and blocks relationships.",
-  "description": "scitex-todo board is a read-only browser view of the canonical SQLite task store. It renders the task dependency DAG with React Flow: nodes colored by status (goal, pending, in_progress, blocked, done, deferred, failed), depends_on arrows, and blocks inhibition edges.",
+  "subtitle": "Dependency-graph view of the scitex-cards task store",
+  "about": "View the scitex-cards task dependency graph in a browser. Nodes are colored by status; edges show depends_on and blocks relationships.",
+  "description": "scitex-cards board is a read-only browser view of the canonical SQLite task store. It renders the task dependency DAG with React Flow: nodes colored by status (goal, pending, in_progress, blocked, done, deferred, failed), depends_on arrows, and blocks inhibition edges.",
   "author": "ywatanabe",
   "license": "AGPL-3.0",
   "capabilities": [
@@ -18,7 +18,7 @@
   "allowed_extensions": [".db", ".sqlite"],
   "wip": false,
   "standalone": true,
-  "standalone_command": "scitex-todo board",
+  "standalone_command": "scitex-cards board",
   "standalone_port": 8051,
   "frontend_type": "react",
   "embedded_package": true,
@@ -27,6 +27,6 @@
     "source_root": "src"
   },
   "dependencies": {
-    "python": ["scitex-todo", "django", "scitex-app", "scitex-ui"]
+    "python": ["scitex-cards", "django", "scitex-app", "scitex-ui"]
   }
 }

@@ -15,7 +15,7 @@ satisfy "the old name imports" while creating a SECOND module object, and a
 second execution forks module-level state — thresholds read once from the
 environment, caches, and anything else evaluated at import time. Two modules
 disagreeing about the nudge threshold is a silent behaviour change that no
-import check would catch. :mod:`scitex_todo`'s package-level shim avoids the
+import check would catch. :mod:`scitex_cards`'s package-level shim avoids the
 same hazard the same way and documents it.
 
 Card ``cards-package-144-flat-modules-20260815``; pattern from PR #785.

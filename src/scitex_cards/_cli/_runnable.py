@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI verb ``scitex-todo runnable`` — the parallelism dispatcher's
+"""CLI verb ``scitex-cards runnable`` — the parallelism dispatcher's
 view of "what's runnable right now."
 
-Sister to ``scitex-todo next`` (single agent-pickup), but BATCH
+Sister to ``scitex-cards next`` (single agent-pickup), but BATCH
 (returns the FULL list, optionally filtered by agent / group) and
 respects ``depends_on`` (transitive upstream closure). Lead a2a
 ``74db4f2d``, 2026-06-14 — TRACK 1 (dependency-aware tickets)

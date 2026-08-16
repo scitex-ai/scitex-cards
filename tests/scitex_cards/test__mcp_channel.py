@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for scitex-todo's OWN standalone channel-notification server.
+"""Tests for scitex-cards's OWN standalone channel-notification server.
 
 Real round-trips, NO mocks (STX-NM / PA-306): a real ``tmp_path`` store, real
 :mod:`scitex_cards._inbox` enqueue/poll/ack, and a real (in-process) async
@@ -318,7 +318,7 @@ def test_build_channel_params_source_defaults_to_stodo():
     # Act
     params = build_channel_params(rec)
     # Assert — source drives the `<- stodo` render (the fleet's short
-    # sender-identity label — distinct from the scitex-todo agent id so the TUI
+    # sender-identity label — distinct from the scitex-cards agent id so the TUI
     # doesn't confuse system pushes with the agent's own messages).
     assert params["meta"]["source"] == "stodo"
 
@@ -1003,7 +1003,7 @@ def test_resolve_agent_id_optional_returns_id_when_both_vars_set(monkeypatch):
     assert resolved == "env-agent"
 
 
-# === unified server: one scitex-todo serves tools AND declares the channel ====
+# === unified server: one scitex-cards serves tools AND declares the channel ====
 
 #: WHY the two `unified_server` tests below are split but share one story: the
 #: unified `mcp start` runs FastMCP's underlying low-level server (which has the
@@ -1039,7 +1039,7 @@ def test_unified_server_declares_the_channel_capability():
 
 
 def test_unified_start_wiring_present():
-    """`scitex-todo mcp start` is wired to the unified server (tools + push)."""
+    """`scitex-cards mcp start` is wired to the unified server (tools + push)."""
     # Arrange
     from scitex_cards._cli import _mcp
 

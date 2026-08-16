@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Project-group definitions for the scitex-todo board.
+"""Project-group definitions for the scitex-cards board.
 
 A *group* is a user-defined cluster of projects that the board can render
 as one collapsible header above the per-project columns. Two operator

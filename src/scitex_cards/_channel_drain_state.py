@@ -77,7 +77,7 @@ def _resolve_store_file(store: str | Path | None) -> Optional[Path]:
             return None
         return _inboxes_path(store)
     except Exception as exc:  # noqa: BLE001 — unresolvable ⇒ fail-safe drain
-        logger.debug("scitex-todo channel: store path unresolved for gate: %s", exc)
+        logger.debug("scitex-cards channel: store path unresolved for gate: %s", exc)
         return None
 
 

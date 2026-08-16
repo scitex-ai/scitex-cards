@@ -18,7 +18,7 @@ class TestOrgPreamble:
         # Act
         text = build_org([])
         # Assert
-        assert "#+TITLE: scitex-todo export" in text
+        assert "#+TITLE: scitex-cards export" in text
 
     def test_declares_todo_state_keywords(self):
         # Arrange
@@ -152,13 +152,13 @@ class TestPropertiesDrawer:
                 "id": "a",
                 "title": "x",
                 "status": "pending",
-                "project": "scitex-todo",
+                "project": "scitex-cards",
             }
         ]
         # Act
         text = build_org(tasks)
         # Assert
-        assert ":PROJECT: scitex-todo" in text
+        assert ":PROJECT: scitex-cards" in text
 
     def test_omits_unset_fields(self):
         # Arrange

@@ -48,7 +48,7 @@ _SERVER_PATH = "scitex_cards._mcp_server:mcp"
 # `mcp__scitex-cards__*`), the `command` the entry execs, and the `{prog}` in
 # scitex-dev-rendered help. All three must say the CURRENT name.
 #
-# This is NOT the same decision as the console script: `scitex-todo` stays an
+# This is NOT the same decision as the console script: `scitex-cards` stays an
 # installed alias forever (the operator's running units invoke it). Renaming
 # what we ANNOUNCE is safe; renaming what we PUBLISH is not. See
 # `_mcp_install.LEGACY_CLI_NAME` for the matching entry migration.

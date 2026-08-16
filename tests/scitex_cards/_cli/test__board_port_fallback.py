@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the port-fallback hardening of ``scitex-todo board``.
+"""Tests for the port-fallback hardening of ``scitex-cards board``.
 
 Incident: a board process was serving on its port, but the pidfile
 (``~/.scitex/todo/board.pid``) was STALE (its pid dead while a different,

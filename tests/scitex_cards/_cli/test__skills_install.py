@@ -192,7 +192,7 @@ def test_the_bundled_skills_directory_is_named_for_this_package():
 
     Every other assertion derives it from ``_SKILLS_PKG``, so the name lives in
     exactly one test instead of a dozen string literals. When it moved from
-    ``scitex-todo`` to ``scitex-cards`` (2026-07-20, operator directive: stop
+    ``scitex-cards`` to ``scitex-cards`` (2026-07-20, operator directive: stop
     using the todo paths), the hardcoded copies all failed at once and said
     nothing about which was the contract and which was an echo of it.
 

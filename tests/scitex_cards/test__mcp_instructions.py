@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Tests for the MCP server's agent-facing instructions (`_mcp_instructions`).
 
-The bug these lock down: the instructions hard-coded ``'agent:proj-scitex-todo'``
+The bug these lock down: the instructions hard-coded ``'agent:proj-scitex-cards'``
 as the example scope. That identity does not exist — ``proj-`` is a dead legacy
 prefix (the one :data:`scitex_cards._users.IDENTITY_PREFIXES` exists to STRIP).
 Measured against the live store on 2026-07-11:
 
-    cards under the TAUGHT scope  agent:proj-scitex-todo :  2
-    cards under the REAL   scope  agent:scitex-todo      : 63
+    cards under the TAUGHT scope  agent:proj-scitex-cards :  2
+    cards under the REAL   scope  agent:scitex-cards      : 63
 
 So every agent that followed its own MCP instructions saw ~3% of its cards and
 concluded the board had nothing for it. The instructions must therefore name the
@@ -41,11 +41,11 @@ DEAD_PREFIX = "proj-"
 # --------------------------------------------------------------------------- #
 def test_instructions_name_the_resolved_identity():
     # Arrange
-    agent_id = "scitex-todo"
+    agent_id = "scitex-cards"
     # Act
     text = build_instructions(agent_id)
     # Assert
-    assert "agent:scitex-todo" in text
+    assert "agent:scitex-cards" in text
 
 
 def test_instructions_name_whatever_identity_is_resolved():
@@ -54,7 +54,7 @@ def test_instructions_name_whatever_identity_is_resolved():
     # Act
     text = build_instructions(agent_id)
     # Assert
-    assert "agent:ripple-wm" in text and "scitex-todo`" not in text
+    assert "agent:ripple-wm" in text and "scitex-cards`" not in text
 
 
 def _server_instructions_under(env_agent_id: str | None) -> str:
@@ -98,7 +98,7 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
 def test_live_server_instructions_carry_the_env_identity():
     """The REAL server string, built at import, names $SCITEX_CARDS_AGENT_ID."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     # Act
     text = _server_instructions_under("test-agent-xyz")
     # Assert
@@ -108,7 +108,7 @@ def test_live_server_instructions_carry_the_env_identity():
 def test_live_server_instructions_name_no_scope_without_an_identity():
     """With the identity unset the REAL server fabricates no `agent:` example."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     # Act
     text = _server_instructions_under(None)
     # Assert
@@ -203,7 +203,7 @@ def test_no_dead_prefix_anywhere_in_the_mcp_surface():
     list. One dead identity in there mis-teaches the whole fleet.
     """
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     from scitex_cards._mcp_server import mcp  # noqa: PLC0415
 
     # Act

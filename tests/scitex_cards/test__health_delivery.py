@@ -4,7 +4,7 @@
 
 Regression cover for the silence measured 2026-07-29: this agent's operator DMs
 never arrived for weeks. The inbox held 228 rows and ZERO unseen — enqueued,
-consumed, gone — because the agent spec allowlisted ``server:scitex-todo`` while
+consumed, gone — because the agent spec allowlisted ``server:scitex-cards`` while
 ``.mcp.json`` registers this server as ``scitex-cards``, so Claude Code read
 every push and discarded it. ``channel_capable``, ``channel_drain`` and the
 drain itself were all green: the drain ack'd on ``send()`` RETURNING, which is

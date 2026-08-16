@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Turn-URL resolution for scitex-todo's push delivery.
+"""Turn-URL resolution for scitex-cards's push delivery.
 
 One cohesive responsibility: *where do I deliver a board event for this
 agent?* The actual HTTP wire (``deliver`` + boot announcement) lives in
@@ -10,17 +10,17 @@ resolving unchanged.
 
 Resolution precedence (see :func:`turn_url_for`):
 
-  0. scitex-todo's OWN user registry (``users:`` section of the task
+  0. scitex-cards's OWN user registry (``users:`` section of the task
      store) — file-local, NO bearer, the reliable PRIMARY source.
   1. ``SCITEX_CARDS_AGENT_TURN_URLS`` JSON map (operator-pinned).
-  2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
+  2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-cards's own
      per-agent turn-url env contract).
   3. None → caller falls through to fail-loud "no-turn-url-configured".
 
 Step 0 is the durable root fix (card
 ``todo-push-turn-url-from-user-registry-20260626``): the board OWNS the
 registry, so that file-local, bearer-free source is consulted FIRST. It is
-NOT a runtime pull — it reads scitex-todo's own ``users:`` rows (no external
+NOT a runtime pull — it reads scitex-cards's own ``users:`` rows (no external
 import, no HTTP, no bearer); the endpoint fields are populated by explicit
 registration and (later) by an external ``agent_registered`` bus consumer, a
 separate card.
@@ -39,12 +39,12 @@ PER_AGENT_PREFIX = "SCITEX_CARDS_TURN_URL_"
 
 
 def _slug(agent: str) -> str:
-    """scitex-todo's per-agent env-slug convention."""
+    """scitex-cards's per-agent env-slug convention."""
     return agent.upper().replace("-", "_").replace("/", "_")
 
 
 def _turn_url_from_user_registry(agent: str) -> str | None:
-    """Resolve ``agent``'s turn URL from scitex-todo's OWN user registry.
+    """Resolve ``agent``'s turn URL from scitex-cards's OWN user registry.
 
     File-local, NO-bearer PRIMARY source (step 0 of :func:`turn_url_for`):
     resolves ``agent`` to a :class:`scitex_cards._users.User` and returns its
@@ -63,7 +63,7 @@ def _turn_url_from_user_registry(agent: str) -> str | None:
         return user_turn_url(user) if user is not None else None
     except Exception as exc:  # noqa: BLE001 — registry must never break delivery
         logger.debug(
-            "[scitex-todo._turn_url] user-registry lookup for %r failed: %s",
+            "[scitex-cards._turn_url] user-registry lookup for %r failed: %s",
             agent, exc,
         )
         return None
@@ -73,12 +73,12 @@ def turn_url_for(agent: str) -> str | None:
     """Resolve the turn URL for ``agent``. Returns None when not configured.
 
     Lookup order:
-      0. scitex-todo's OWN user registry (``users:`` section) — file-local,
+      0. scitex-cards's OWN user registry (``users:`` section) — file-local,
          NO bearer, reliable PRIMARY source. See
          :func:`_turn_url_from_user_registry`. (Root fix, card
          ``todo-push-turn-url-from-user-registry-20260626``.)
       1. ``SCITEX_CARDS_AGENT_TURN_URLS`` JSON map entry (operator-pinned).
-      2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
+      2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-cards's own
          per-agent turn-url env contract).
       3. None — caller falls through to fail-loud "no-turn-url-configured".
 
@@ -95,7 +95,7 @@ def turn_url_for(agent: str) -> str | None:
             mapping = json.loads(raw)
         except json.JSONDecodeError as exc:
             logger.error(
-                "[scitex-todo._turn_url] %s is not valid JSON — ignoring: %s",
+                "[scitex-cards._turn_url] %s is not valid JSON — ignoring: %s",
                 ENV_MAP, exc,
             )
             mapping = {}

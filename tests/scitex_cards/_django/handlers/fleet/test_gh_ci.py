@@ -201,7 +201,7 @@ def test_nonexistent_repo_raises() -> None:
         # A slug that almost-certainly resolves to 404. We avoid using a
         # name that COULD be claimed later by namespacing it under a
         # uuid-like path.
-        fetch_repo_ci_status("ywatanabe1989/scitex-todo-test-does-not-exist-xyz123")
+        fetch_repo_ci_status("ywatanabe1989/scitex-cards-test-does-not-exist-xyz123")
 
 
 def test_invalid_slug_shape_raises_without_gh_raises_fleetadaptererror() -> None:
@@ -358,7 +358,7 @@ def test_overall_from_rollup_maps_state_to_color(state, expected) -> None:
     "slug,is_valid",
     [
         ("owner/name", True),
-        ("ywatanabe1989/scitex-todo", True),
+        ("ywatanabe1989/scitex-cards", True),
         ("dotted.owner/dot.repo-1", True),
         ("no-slash", False),
         ("too/many/slashes", False),
