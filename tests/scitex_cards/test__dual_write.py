@@ -4,7 +4,7 @@
 
 This file used to be the S1 dual-write mirror's test suite: a whole feature
 that mirrored every card write into SQLite while YAML stayed canonical, gated
-by ``SCITEX_TODO_DUAL_WRITE``. That feature is DELETED — not defaulted off —
+by ``SCITEX_CARDS_DUAL_WRITE``. That feature is DELETED — not defaulted off —
 per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
 ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:
 ``cards.db`` carried a stale ``schema_meta`` row pointing at an old YAML file,
@@ -79,7 +79,6 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(monkeypatch, tmp_p
     # legacy flags are set BEFORE that bootstrap too, to prove they influence
     # neither step.
     monkeypatch.setenv("SCITEX_CARDS_DUAL_WRITE", "1")
-    monkeypatch.setenv("SCITEX_TODO_DUAL_WRITE", "1")
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "cards.db"
     monkeypatch.setenv(ENV_DB, str(db))

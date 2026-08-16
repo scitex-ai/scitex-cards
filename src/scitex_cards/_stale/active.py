@@ -35,7 +35,7 @@ Design
   so the core stays unit-testable with plain list-of-dicts inputs.
 * Threshold default is :data:`DEFAULT_STALE_ACTIVE_HOURS` (2 h),
   env-overridable via :data:`ENV_STALE_ACTIVE_HOURS`. Deliberately
-  shorter than the 24 h ``SCITEX_TODO_STALE_HOURS`` used for the stats
+  shorter than the 24 h ``SCITEX_CARDS_STALE_HOURS`` used for the stats
   ``stale_count`` pill — *active* cards (in_progress / blocked) should
   move on a tighter clock than the general open backlog.
 * Timestamp parsing reuses :mod:`scitex_cards._throughput`'s lenient

@@ -29,16 +29,16 @@ from scitex_cards._reminders import (
 @pytest.fixture(autouse=True)
 def _isolate_engine(env, monkeypatch):
     """Strip env knobs AND detach config resolution so a deployed container's
-    settings (``SCITEX_TODO_REMINDER_OWNERS`` from the spec, a real
+    settings (``SCITEX_CARDS_REMINDER_OWNERS`` from the spec, a real
     ``~/.scitex/todo/config.yaml``) can never leak into these unit tests.
     Each test sets only what it needs via args."""
     for var in (
-        "SCITEX_TODO_REMINDER_OWNERS",
-        "SCITEX_TODO_REMINDER_ESCALATE_AFTER",
-        "SCITEX_TODO_REMINDER_ESCALATE_PRIORITY",
-        "SCITEX_TODO_OPERATOR",
-        "SCITEX_TODO_STALE_ACTIVE_HOURS",
-        "SCITEX_TODO_PENDING_NUDGE_HOURS",
+        "SCITEX_CARDS_REMINDER_OWNERS",
+        "SCITEX_CARDS_REMINDER_ESCALATE_AFTER",
+        "SCITEX_CARDS_REMINDER_ESCALATE_PRIORITY",
+        "SCITEX_CARDS_OPERATOR",
+        "SCITEX_CARDS_STALE_ACTIVE_HOURS",
+        "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
     # No config files contribute anything unless a test opts in.

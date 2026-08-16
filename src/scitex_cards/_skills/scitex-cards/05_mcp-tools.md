@@ -69,7 +69,7 @@ database. See [20_env-vars.md](20_env-vars.md).
 
 ## Scope filtering
 
-`list_tasks` / `summarize_tasks` honor `$SCITEX_TODO_SCOPE` as the default
+`list_tasks` / `summarize_tasks` honor `$SCITEX_CARDS_SCOPE` as the default
 `scope` value. Pass `scope=""` (empty string) to opt out of that env
 default and see every task. The agent-facing convention these tools
 respect is documented in [02_quick-start.md](02_quick-start.md).

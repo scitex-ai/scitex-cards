@@ -548,8 +548,8 @@ def apply_lane(
     # The migrator must be allowed to write directly to flat tasks.yaml
     # for the duration of the run; the validator (separate PR) reads
     # this env. Saved + restored on exit so we don't leak the bypass.
-    prior = _os.environ.get("SCITEX_TODO_ALLOW_FLAT_WRITES")
-    _os.environ["SCITEX_TODO_ALLOW_FLAT_WRITES"] = "1"
+    prior = _os.environ.get("SCITEX_CARDS_ALLOW_FLAT_WRITES")
+    _os.environ["SCITEX_CARDS_ALLOW_FLAT_WRITES"] = "1"
     try:
         with _store_lock(lane_path):
             # Re-load inside the lock so a concurrent writer can't
@@ -638,9 +638,9 @@ def apply_lane(
                 _save_tasks_unlocked(new_rows, lane_path)
     finally:
         if prior is None:
-            _os.environ.pop("SCITEX_TODO_ALLOW_FLAT_WRITES", None)
+            _os.environ.pop("SCITEX_CARDS_ALLOW_FLAT_WRITES", None)
         else:
-            _os.environ["SCITEX_TODO_ALLOW_FLAT_WRITES"] = prior
+            _os.environ["SCITEX_CARDS_ALLOW_FLAT_WRITES"] = prior
 
     # Per-lane git commit (skip in dry-run).
     if not dry_run and result.updated_count > 0:

@@ -602,7 +602,7 @@ def test_done_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["done", "a"])
     # Assert
@@ -613,7 +613,7 @@ def test_done_output_mentions_id(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["done", "a"])
     # Assert
@@ -625,7 +625,7 @@ def test_done_persists_status(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -638,7 +638,7 @@ def test_done_persists_completed_by(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -651,7 +651,7 @@ def test_done_persists_completed_at_z_suffix(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -663,7 +663,7 @@ def test_done_by_overrides_env_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     # Act
     result = runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Assert
@@ -675,7 +675,7 @@ def test_done_by_overrides_env_on_disk(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -786,8 +786,8 @@ def test_list_env_scope_default(tmp_path, env):
             "agent:other",
         ],
     )
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
-    # Act — no --scope here so $SCITEX_TODO_SCOPE='agent:lead' applies via the filter path.
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
+    # Act — no --scope here so $SCITEX_CARDS_SCOPE='agent:lead' applies via the filter path.
     result = runner.invoke(main, ["list-tasks", "--json", "--status", "deferred"])
     rows = json.loads(result.output.strip())
     # Assert
@@ -1007,7 +1007,6 @@ def test_where_exits_zero(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     Path(store).write_text("tasks: []\n", encoding="utf-8")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", store)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", store)
     # Act
     result = runner.invoke(main, ["resolve-store", "--json"])
@@ -1021,7 +1020,6 @@ def test_where_resolved_path(tmp_path, env):
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_CARDS_DB", db)
-    env.set("SCITEX_TODO_DB", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
@@ -1035,7 +1033,6 @@ def test_where_exists_true(tmp_path, env):
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_CARDS_DB", db)
-    env.set("SCITEX_TODO_DB", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
@@ -1072,7 +1069,6 @@ def test_init_shared_output_mentions_created(tmp_path, env):
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
     env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
     # Act
     result = runner.invoke(main, ["init-store", "--shared"])
     # Assert
@@ -1084,7 +1080,6 @@ def test_init_shared_creates_the_db(tmp_path, env):
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
     env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
     from scitex_cards._db import resolve_db_path
 
     # Act
@@ -1098,7 +1093,6 @@ def test_init_shared_is_idempotent(tmp_path, env):
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
     env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
     runner.invoke(main, ["init-store", "--shared"])
     # Act
     again = runner.invoke(main, ["init-store", "--shared"])
@@ -1115,7 +1109,6 @@ def _init_shared_with_no_store_configured(tmp_path, env):
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
     env.delete("SCITEX_CARDS_DB")
-    env.delete("SCITEX_TODO_DB")
     return runner.invoke(main, ["init-store", "--shared"])
 
 

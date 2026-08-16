@@ -19,7 +19,7 @@ from ._compat import spec_command_kwargs
 #: (prog, complete_var) — not one shared var.
 _PROGS = (
     ("scitex-cards", "_SCITEX_CARDS_COMPLETE"),
-    ("scitex-todo", "_SCITEX_TODO_COMPLETE"),
+    ("scitex-todo", "_SCITEX_CARDS_COMPLETE"),
 )
 _RC_MARKER = "# scitex-cards-completion: scitex-cards"
 

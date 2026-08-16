@@ -11,7 +11,7 @@ These tests pin the DISTINCTION that makes the rename safe:
 
   * what the surface CALLS ITSELF must say `scitex-cards`;
   * what the surface PUBLISHES -- the `scitex-todo` console script, the
-    `SCITEX_TODO_*` env vars, the systemd unit -- must keep working. Those are
+    `SCITEX_CARDS_*` env vars, the systemd unit -- must keep working. Those are
     migrations, not renames, and are asserted NOT to have moved.
 
 CliRunner against a tmp `.mcp.json`; no mocks (STX-NM / PA-306).

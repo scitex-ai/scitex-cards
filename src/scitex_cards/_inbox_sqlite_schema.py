@@ -41,8 +41,8 @@ __all__ = [
 
 #: Env override for the inbox DB path (full path to the ``.db`` file). Default
 #: is ``<store_dir>/runtime/todo.db`` (see :func:`inbox_db_path`). Mirrors the
-#: ``SCITEX_TODO_INDEX_PATH`` override on :mod:`scitex_cards._index`.
-ENV_INBOX_DB = "SCITEX_TODO_INBOX_DB"
+#: ``SCITEX_CARDS_INDEX_PATH`` override on :mod:`scitex_cards._index`.
+ENV_INBOX_DB = "SCITEX_CARDS_INBOX_DB"
 
 #: Runtime-DB filename. ``todo`` is this package's short name (constitution:
 #: ``<proj-root>/.scitex/<pkg-short>/runtime/<pkg-short>.db``).
@@ -79,7 +79,7 @@ def inbox_target(store: str | Path | None = None):
     ``POSTGRES_SHAPE`` already names them. :func:`inbox_db_path` stays for the
     migration tooling that must still find the old file.
 
-    AN EXPLICIT ``SCITEX_TODO_INBOX_DB`` STILL WINS OUTRIGHT, exactly as it did
+    AN EXPLICIT ``SCITEX_CARDS_INBOX_DB`` STILL WINS OUTRIGHT, exactly as it did
     for :func:`inbox_db_path`. That override is the documented way to pin the
     rail somewhere specific, and silently ignoring it because the default moved
     would be its own silent fallback — the operator sets a value, the code uses
@@ -97,7 +97,7 @@ def inbox_target(store: str | Path | None = None):
 def inbox_db_path(store: str | Path | None = None) -> Path:
     """Resolved on-disk path for the inbox SQLite DB.
 
-    ``SCITEX_TODO_INBOX_DB`` wins outright; otherwise the DB lives at
+    ``SCITEX_CARDS_INBOX_DB`` wins outright; otherwise the DB lives at
     ``runtime_dir(store)/todo.db`` — the runtime dir tracks whichever scope the
     task store resolved to, so a per-test ``store=`` isolates its own DB.
     """

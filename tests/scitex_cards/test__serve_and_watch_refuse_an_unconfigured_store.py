@@ -42,7 +42,7 @@ from scitex_cards._cli._loop import watch_cmd
 from scitex_cards._cli._serve import serve_cmd
 from scitex_cards._store_target import TIER_DEFAULT, resolve_store_tier
 
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
+_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_CARDS_DB")
 
 
 class GuardDidNotFire(AssertionError):

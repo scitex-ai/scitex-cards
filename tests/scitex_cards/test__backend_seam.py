@@ -35,7 +35,7 @@ from scitex_cards._backend import (
 
 @pytest.fixture
 def store(env):
-    env.set("SCITEX_TODO_AGENT_ID", "seam-tester")
+    env.set("SCITEX_CARDS_AGENT_ID", "seam-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
     # SQLite is the store; the conftest pins + bootstraps an empty canonical
     # DB per test. Return the pinned STORE IDENTITY path (== resolve_tasks_path

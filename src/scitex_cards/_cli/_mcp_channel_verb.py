@@ -29,9 +29,9 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
             "Run the standalone channel-notification server (stdio).\n\n"
             "Pushes `notifications/claude/channel` (rendered `<- stodo`)\n"
             "into the Claude session, draining this agent's inbox. ZERO sac\n"
-            "dependency. Agent id resolves from $SCITEX_TODO_AGENT_ID (or\n"
-            "--agent). --name/--interval fall back to $SCITEX_TODO_CHANNEL_SOURCE\n"
-            "/$SCITEX_TODO_CHANNEL_INTERVAL then the defaults, so the .mcp.json\n"
+            "dependency. Agent id resolves from $SCITEX_CARDS_AGENT_ID (or\n"
+            "--agent). --name/--interval fall back to $SCITEX_CARDS_CHANNEL_SOURCE\n"
+            "/$SCITEX_CARDS_CHANNEL_INTERVAL then the defaults, so the .mcp.json\n"
             "entry can carry zero config args.\n\n"
             "Example:\n"
             "  scitex-cards mcp channel --name stodo --interval 5"
@@ -42,7 +42,7 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
         default=None,
         help=(
             "Sets meta.source (drives the `<- stodo` render). "
-            "Default: $SCITEX_TODO_CHANNEL_SOURCE, then 'stodo'."
+            "Default: $SCITEX_CARDS_CHANNEL_SOURCE, then 'stodo'."
         ),
     )
     @click.option(
@@ -51,13 +51,13 @@ def attach_channel_verb(mcp_group: click.Group) -> None:
         default=None,
         help=(
             "Seconds between inbox drains. "
-            "Default: $SCITEX_TODO_CHANNEL_INTERVAL, then 5.0."
+            "Default: $SCITEX_CARDS_CHANNEL_INTERVAL, then 5.0."
         ),
     )
     @click.option(
         "--agent",
         default=None,
-        help="Override the agent id (default: $SCITEX_TODO_AGENT_ID, fail-loud).",
+        help="Override the agent id (default: $SCITEX_CARDS_AGENT_ID, fail-loud).",
     )
     def channel(name, interval, agent) -> None:
         try:

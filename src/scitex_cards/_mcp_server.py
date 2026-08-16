@@ -91,7 +91,7 @@ async def complete_task(
     """Mark a task done and stamp `_log_meta.completed_{at,by}`.
 
     Idempotent: re-completing a `done` task keeps the original stamp.
-    `by` overrides the $SCITEX_TODO_AGENT_ID → $USER precedence.
+    `by` overrides the $SCITEX_CARDS_AGENT_ID → $USER precedence.
     """
     done = await anyio.to_thread.run_sync(
         functools.partial(get_backend().complete_task, None, task_id, by=by)
@@ -116,7 +116,7 @@ async def list_tasks(
 ) -> str:
     """List tasks, filtered by any combination of fields. Returns a JSON array.
 
-    ``scope=None`` (default) uses $SCITEX_TODO_SCOPE if set; ``scope=""``
+    ``scope=None`` (default) uses $SCITEX_CARDS_SCOPE if set; ``scope=""``
     opts out of that env default. ``statuses`` (multi) OR-combines with
     ``status`` (single). ``blocker="__none"`` matches rows with no blocker.
     ``blocking_me=True`` matches the board's BLOCKING-YOU predicate
@@ -230,7 +230,7 @@ async def comment_task(
 ) -> str:
     """Append an entry to a task's ``comments[]`` thread (the
     Gitea-compatible Issue-activity log). ``by`` overrides the default
-    author resolution ($SCITEX_TODO_AGENT_ID → $USER).
+    author resolution ($SCITEX_CARDS_AGENT_ID → $USER).
     """
     result = await anyio.to_thread.run_sync(
         functools.partial(get_backend().comment_task, None, task_id, text, by=by)

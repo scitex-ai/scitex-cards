@@ -242,11 +242,11 @@ def test_add_task_stores_created_by(tmp_path):
 
 
 def test_add_task_defaults_created_by_from_env(tmp_path, env):
-    # Arrange — no explicit author; resolves from $SCITEX_TODO_AGENT_ID.
+    # Arrange — no explicit author; resolves from $SCITEX_CARDS_AGENT_ID.
     from scitex_cards._mcp_server import add_task
 
     store = str(tmp_path / "tasks.yaml")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     # Act
     add = asyncio.run(_call_tool(add_task, id="a", title="A", assignee="agent:x"))
     # Assert
@@ -450,7 +450,7 @@ def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
 
 def test_complete_sets_status_done(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -466,7 +466,7 @@ def test_complete_sets_status_done(tmp_path, env):
 
 def test_complete_stamps_completed_by(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -482,7 +482,7 @@ def test_complete_stamps_completed_by(tmp_path, env):
 
 def test_complete_stamps_completed_at_z_suffix(tmp_path, env):
     # Arrange
-    env.set("SCITEX_TODO_AGENT_ID", "agent:mcp-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:mcp-test")
     from scitex_cards._mcp_server import (
         add_task,
         complete_task,
@@ -654,7 +654,6 @@ def test_where_returns_exists_false_when_absent(tmp_path, env):
     from scitex_cards._mcp_server import resolve_store
 
     env.set("SCITEX_CARDS_DB", str(tmp_path / "absent.db"))
-    env.set("SCITEX_TODO_DB", str(tmp_path / "absent.db"))
     # Act
     info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert

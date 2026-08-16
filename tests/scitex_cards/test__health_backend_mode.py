@@ -35,7 +35,7 @@ from scitex_cards._health_backend_mode import POSTGRES, SQLITE, check_backend_mo
 from scitex_cards._health_write_target import check_single_write_target
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_TODO_INBOX_BACKEND")
+_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND")
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def sqlite_store(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in ("SCITEX_DIR", "SCITEX_TODO_INBOX_BACKEND"):
+    for name in ("SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
@@ -77,7 +77,7 @@ def postgres_rails(sqlite_store):
 @pytest.fixture
 def postgres_inbox_only(sqlite_store):
     """Inbox on a server, cards in a file — the split the other way round."""
-    os.environ["SCITEX_TODO_INBOX_BACKEND"] = "postgres"
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
     os.environ["SCITEX_CARDS_INBOX_DSN"] = _DSN
     yield sqlite_store
     os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)

@@ -40,7 +40,7 @@ def register(main: click.Group) -> None:
             "agents/groups. Filters: --agent restricts to one agent's "
             "queue; --group restricts to a dispatch cluster ('' = "
             "ungrouped only); --mine is shorthand for --agent "
-            "$SCITEX_TODO_AGENT_ID.",
+            "$SCITEX_CARDS_AGENT_ID.",
         ),
         examples=(
             (
@@ -59,7 +59,7 @@ def register(main: click.Group) -> None:
     "--mine",
     "use_mine",
     is_flag=True,
-    help="Filter on $SCITEX_TODO_AGENT_ID.",
+    help="Filter on $SCITEX_CARDS_AGENT_ID.",
 )
 @click.option(
     "--group",
@@ -89,10 +89,10 @@ def runnable_cmd(
     if agent and use_mine:
         raise click.ClickException("Pass --agent OR --mine, not both.")
     if use_mine:
-        env = os.environ.get("SCITEX_TODO_AGENT_ID")
+        env = os.environ.get("SCITEX_CARDS_AGENT_ID")
         if not env:
             raise click.ClickException(
-                "--mine needs SCITEX_TODO_AGENT_ID to be set in the env."
+                "--mine needs SCITEX_CARDS_AGENT_ID to be set in the env."
             )
         agent = env
 
@@ -166,7 +166,7 @@ def runnable_cmd(
     "--mine",
     "use_mine",
     is_flag=True,
-    help="Filter on $SCITEX_TODO_AGENT_ID.",
+    help="Filter on $SCITEX_CARDS_AGENT_ID.",
 )
 @click.option(
     "--group",
@@ -193,10 +193,10 @@ def blocked_cmd(
     if agent and use_mine:
         raise click.ClickException("Pass --agent OR --mine, not both.")
     if use_mine:
-        env = os.environ.get("SCITEX_TODO_AGENT_ID")
+        env = os.environ.get("SCITEX_CARDS_AGENT_ID")
         if not env:
             raise click.ClickException(
-                "--mine needs SCITEX_TODO_AGENT_ID to be set in the env."
+                "--mine needs SCITEX_CARDS_AGENT_ID to be set in the env."
             )
         agent = env
 

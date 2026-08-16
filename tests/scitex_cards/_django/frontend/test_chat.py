@@ -245,13 +245,13 @@ def test_node_detail_panel_imports_chat_panel_tsx_contains_2() -> None:
 
 
 def test_chat_panel_references_scitex_cards_agent_env() -> None:
-    """The component reads SCITEX_TODO_AGENT to default the author
+    """The component reads SCITEX_CARDS_AGENT to default the author
     field — no hardcoded proper nouns per the architectural principle."""
     # Arrange
     # Act
     tsx = _read(_CHAT_TSX)
     # Assert
-    assert "SCITEX_TODO_AGENT" in tsx
+    assert "SCITEX_CARDS_AGENT" in tsx
 
 
 def test_chat_panel_has_fail_loud_error_path_tsx_contains() -> None:

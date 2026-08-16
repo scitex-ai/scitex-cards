@@ -224,7 +224,7 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# File backend (break-glass, SCITEX_TODO_INBOX_BACKEND=yaml)                   #
+# File backend (break-glass, SCITEX_CARDS_INBOX_BACKEND=yaml)                   #
 # --------------------------------------------------------------------------- #
 def _file_stamp(
     recipient_id: str,

@@ -108,7 +108,7 @@
 
 /* ── Composer ────────────────────────────────────────────────────────
  * Author input + textarea + send button. The author input defaults to
- * SCITEX_TODO_AGENT (set by the Django template); operator can override. */
+ * SCITEX_CARDS_AGENT (set by the Django template); operator can override. */
 .stx-todo-chat__form {
   display: flex;
   flex-direction: column;

@@ -208,7 +208,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
             "filters, matches are AND-composed."
         ),
         examples=(
-            ('{prog} list-tasks --assignee "$SCITEX_TODO_AGENT_ID" --json', ""),
+            ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
                 "{prog} list-tasks --project scitex-todo --status pending "
                 "--status in_progress",
@@ -223,7 +223,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
 @click.option(
     "--scope",
     default=None,
-    help="Match `scope` exactly (use '' to ignore $SCITEX_TODO_SCOPE).",
+    help="Match `scope` exactly (use '' to ignore $SCITEX_CARDS_SCOPE).",
 )
 @click.option(
     "--assignee",

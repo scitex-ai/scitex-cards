@@ -63,7 +63,7 @@ def _resolve_store_file(store: str | Path | None) -> Optional[Path]:
       mtime is not a reliable "did anything change" signal); reads are
       already indexed/fast, so the gate's original 9 MB-full-parse problem
       doesn't apply here. Returns ``None`` (fail-safe: every tick drains).
-    * The break-glass file backend (``SCITEX_TODO_INBOX_BACKEND=yaml``) —
+    * The break-glass file backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``) —
       its own ``inboxes.json`` sidecar (see ``_inbox._inboxes_path``); THIS
       is the file that must be stat'd for the gate to be sound.
 

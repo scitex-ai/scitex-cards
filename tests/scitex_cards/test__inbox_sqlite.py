@@ -13,7 +13,7 @@ Covers the semantics the YAML path guarantees, re-implemented against SQLite:
 * ``unseen_only`` filter + full-history read;
 * the migration verb copies file-backed ``inboxes.json`` records into the
   store's rail, idempotently, without deleting the source;
-* the backend switch (``SCITEX_TODO_INBOX_BACKEND=sqlite``) routes the public
+* the backend switch (``SCITEX_CARDS_INBOX_BACKEND=sqlite``) routes the public
   ``_inbox`` API onto the SQLite implementation.
 """
 
@@ -218,7 +218,7 @@ def sqlite_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     rec = _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -237,7 +237,7 @@ def default_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.delete("SCITEX_TODO_INBOX_BACKEND")  # unset -> the default
+    env.delete("SCITEX_CARDS_INBOX_BACKEND")  # unset -> the default
     _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -256,7 +256,7 @@ def yaml_backend_store(tmp_path, env):
     from scitex_cards import _inbox
 
     store = _store(tmp_path)
-    env.set("SCITEX_TODO_INBOX_BACKEND", "yaml")  # explicit break-glass
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "yaml")  # explicit break-glass
     _inbox.enqueue(
         "u_abc",
         event_type="completed",
@@ -911,7 +911,7 @@ def test_lazy_auto_migration_starts_without_a_sqlite_db(yaml_backend_store):
 def test_lazy_auto_migration_on_first_sqlite_access(yaml_backend_store):
     # Arrange — switch to the default (sqlite) after the yaml seed.
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     # Act
     got = _inbox.poll_inbox("u_abc", store=store)
     # Assert — first access lazily migrated the record.
@@ -921,7 +921,7 @@ def test_lazy_auto_migration_on_first_sqlite_access(yaml_backend_store):
 def test_lazy_auto_migration_creates_the_sqlite_db(yaml_backend_store):
     # Arrange
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     # Act
     _inbox.poll_inbox("u_abc", store=store)
     # Assert
@@ -931,7 +931,7 @@ def test_lazy_auto_migration_creates_the_sqlite_db(yaml_backend_store):
 def test_lazy_auto_migration_does_not_re_migrate(yaml_backend_store):
     # Arrange
     store, _inbox = yaml_backend_store["store"], yaml_backend_store["inbox"]
-    yaml_backend_store["env"].delete("SCITEX_TODO_INBOX_BACKEND")
+    yaml_backend_store["env"].delete("SCITEX_CARDS_INBOX_BACKEND")
     _inbox.poll_inbox("u_abc", store=store)
     # Act
     again = _inbox.poll_inbox("u_abc", unseen_only=False, store=store)
@@ -1009,7 +1009,7 @@ def test_the_rail_targets_the_store_itself(tmp_path, env):
     """The headline of this change: notifications live IN the canonical store,
     not in a per-container ``runtime/todo.db`` beside it."""
     # Arrange
-    env.delete("SCITEX_TODO_INBOX_DB")
+    env.delete("SCITEX_CARDS_INBOX_DB")
     store = _store(tmp_path)
     # Act
     target = str(sq.inbox_target(store))
@@ -1022,7 +1022,7 @@ def test_an_explicit_inbox_db_override_still_wins(tmp_path, env):
     variable is a silent fallback, and it is what broke the fail-loud test."""
     # Arrange
     pinned = tmp_path / "pinned-rail.db"
-    env.set("SCITEX_TODO_INBOX_DB", str(pinned))
+    env.set("SCITEX_CARDS_INBOX_DB", str(pinned))
     # Act
     target = str(sq.inbox_target(_store(tmp_path)))
     # Assert

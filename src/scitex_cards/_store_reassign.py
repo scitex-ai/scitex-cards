@@ -72,7 +72,7 @@ def reassign_all(
         Both required, non-empty. ``old_owner == new_owner`` raises
         ``ValueError`` — a self-rename is meaningless for a bulk verb.
     by : str, optional
-        The actor; resolved via ``$SCITEX_TODO_AGENT_ID`` -> ``$USER`` ->
+        The actor; resolved via ``$SCITEX_CARDS_AGENT_ID`` -> ``$USER`` ->
         ``"unknown"``.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
@@ -207,7 +207,7 @@ def reassign_task(
         The new owning agent (required, non-empty).
     by : str, optional
         The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
+        ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
         handler in tests); ``None`` uses real plugin discovery.

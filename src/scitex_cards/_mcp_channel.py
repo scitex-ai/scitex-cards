@@ -39,7 +39,7 @@ guards prevent that: :func:`build_channel_params` caps the body at
 :func:`drain_once` pushes at most ``MAX_PUSH_PER_DRAIN`` (50) records per tick so
 a backlog can never burst all at once on first connect.
 
-Headless / solver capsules (no push): with NO ``$SCITEX_TODO_AGENT_ID`` set the
+Headless / solver capsules (no push): with NO ``$SCITEX_CARDS_AGENT_ID`` set the
 unified server (``scitex-todo mcp start``) runs TOOLS-ONLY — the poll loop is not
 started and the session receives ZERO channel pushes (see
 :func:`resolve_agent_id_optional`). Intended mode for solver / headless capsules
@@ -80,11 +80,11 @@ logger = logging.getLogger(__name__)
 
 #: Env var overriding ``meta.source`` (the ``<- stodo`` render name)
 #: when ``--name`` is not passed explicitly. Precedence: CLI > env > default.
-_ENV_SOURCE = "SCITEX_TODO_CHANNEL_SOURCE"
+_ENV_SOURCE = "SCITEX_CARDS_CHANNEL_SOURCE"
 
 #: Env var overriding the poll interval (seconds) when ``--interval`` is not
 #: passed explicitly. Precedence: CLI > env > default.
-_ENV_INTERVAL = "SCITEX_TODO_CHANNEL_INTERVAL"
+_ENV_INTERVAL = "SCITEX_CARDS_CHANNEL_INTERVAL"
 
 #: Default poll interval (seconds) between inbox drains.
 _DEFAULT_INTERVAL = 5.0
@@ -487,7 +487,7 @@ async def _run(
 
 
 def _resolve_source(name: str | None) -> str:
-    """Resolve ``meta.source``: explicit ``name`` → ``$SCITEX_TODO_CHANNEL_SOURCE``
+    """Resolve ``meta.source``: explicit ``name`` → ``$SCITEX_CARDS_CHANNEL_SOURCE``
     → the built-in default. Fully env-configurable so the ``.mcp.json`` entry
     needs zero config args."""
     if name is not None:
@@ -497,7 +497,7 @@ def _resolve_source(name: str | None) -> str:
 
 def _resolve_interval(interval: float | None) -> float:
     """Resolve the poll interval (seconds): explicit ``interval`` →
-    ``$SCITEX_TODO_CHANNEL_INTERVAL`` → the built-in default. A malformed env
+    ``$SCITEX_CARDS_CHANNEL_INTERVAL`` → the built-in default. A malformed env
     value falls back to the default rather than crashing the server."""
     if interval is not None:
         return float(interval)
@@ -527,12 +527,12 @@ def main(
     args (``args: ["mcp", "channel"]``). Precedence for every param is
     explicit-value > env var > default:
 
-    * ``name`` sets ``meta.source`` — env ``$SCITEX_TODO_CHANNEL_SOURCE``,
+    * ``name`` sets ``meta.source`` — env ``$SCITEX_CARDS_CHANNEL_SOURCE``,
       default ``"scitex-todo"``.
-    * ``interval`` is the poll seconds — env ``$SCITEX_TODO_CHANNEL_INTERVAL``,
+    * ``interval`` is the poll seconds — env ``$SCITEX_CARDS_CHANNEL_INTERVAL``,
       default ``5.0``.
     * ``agent`` overrides the agent id; otherwise resolved from
-      ``$SCITEX_TODO_AGENT_ID`` (fail-loud when unresolved).
+      ``$SCITEX_CARDS_AGENT_ID`` (fail-loud when unresolved).
     """
     agent_id = resolve_agent_id(agent)
     source = _resolve_source(name)

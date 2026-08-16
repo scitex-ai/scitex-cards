@@ -74,7 +74,7 @@ def test_scitex_dir_fallback_is_also_pinned_under_tmp(tmp_path_factory):
 
     This guards the ``SCITEX_DIR`` pin added alongside the end-of-session
     real-store assert: a test that clears both ``$SCITEX_CARDS_DB`` and
-    ``$SCITEX_TODO_DB`` (see ``tests/scitex_cards/test__paths.py``'s
+    ``$SCITEX_CARDS_DB`` (see ``tests/scitex_cards/test__paths.py``'s
     ``clean_store_env`` fixture) falls through to this path, and it must
     land in scratch even then.
     """

@@ -20,7 +20,7 @@ Verbs:
     blocking where the actor cannot remediate.
 
 Enabling the SQLite backend at runtime is a SEPARATE, deliberate step: export
-``SCITEX_TODO_INBOX_BACKEND=sqlite``. Until then the YAML path stays the
+``SCITEX_CARDS_INBOX_BACKEND=sqlite``. Until then the YAML path stays the
 default and this migration is a harmless no-op-safe copy.
 
 Attached to the root group via :func:`register`, matching the sibling
@@ -44,7 +44,7 @@ def register(main: click.Group) -> None:
         "`inbox migrate-to-sqlite` copies the YAML `inboxes:` records into "
         "the SQLite DB (<store_dir>/runtime/todo.db); it is idempotent and "
         "does NOT delete the YAML section (reversible). Enable the backend "
-        "with SCITEX_TODO_INBOX_BACKEND=sqlite."
+        "with SCITEX_CARDS_INBOX_BACKEND=sqlite."
     ),
 )
 def inbox_group() -> None:
@@ -206,7 +206,7 @@ def inbox_info_cmd(as_json: bool) -> None:
 @click.option(
     "--agent",
     default=None,
-    help="Whose inbox to confirm in (default: $SCITEX_TODO_AGENT_ID).",
+    help="Whose inbox to confirm in (default: $SCITEX_CARDS_AGENT_ID).",
 )
 @click.option(
     "--json",

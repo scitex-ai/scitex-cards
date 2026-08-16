@@ -807,7 +807,7 @@ def producer_guarantee_dispatch(tmp_path, env):
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
 
     rec = _ExplodingDeliver()
     summary = dispatch_notifications(
@@ -868,7 +868,7 @@ def bus_reassigned_summary(tmp_path, env):
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
 
     envelope = Event(type=EventType.REASSIGNED, card_id="c1", actor="bob").to_dict()
     return {
@@ -937,7 +937,7 @@ def bus_merged_summary(tmp_path, env):
     store = _store(tmp_path)
     register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
 
     envelope = Event(
         type=EventType.MERGED, card_id="c1", actor="bob", repo="o/r"
@@ -989,8 +989,8 @@ def emitted_reassigned_result(tmp_path, env):
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
 
     result = emit(
         Event(type=EventType.REASSIGNED, card_id="c1", actor="bob"),

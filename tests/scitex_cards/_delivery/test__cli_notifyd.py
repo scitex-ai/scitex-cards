@@ -154,9 +154,9 @@ def _sweep_with_none_store(env, monkeypatch):
         last_activity="2026-01-01T00:00:00Z",
     )
     # Hermetic: a deployed container scopes the nag to one agent via
-    # SCITEX_TODO_REMINDER_OWNERS / a real config.yaml; neutralise both so this
+    # SCITEX_CARDS_REMINDER_OWNERS / a real config.yaml; neutralise both so this
     # owner ("alice") is nagged regardless of the host's settings.
-    env.delete("SCITEX_TODO_REMINDER_OWNERS")
+    env.delete("SCITEX_CARDS_REMINDER_OWNERS")
     monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
 
     _run_reminder_sweep(store=None, now=_now_utc())  # must NOT raise

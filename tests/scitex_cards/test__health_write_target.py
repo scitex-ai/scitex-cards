@@ -44,18 +44,17 @@ def test_ok_when_no_legacy_env_var_is_set(env):
     assert res["ok"] is True
 
 
-def test_flags_a_lingering_SCITEX_TODO_DUAL_WRITE(env):
+def test_flags_a_lingering_SCITEX_CARDS_DUAL_WRITE(env):
     """The pre-rename toggle name — still a footgun even though nothing reads it."""
     # Arrange
-    env.set("SCITEX_TODO_DUAL_WRITE", "1")
-    env.delete("SCITEX_CARDS_DUAL_WRITE")
+    env.set("SCITEX_CARDS_DUAL_WRITE", "1")
 
     # Act
     res = check_single_write_target()
 
     # Assert
     assert res["ok"] is False
-    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
+    assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
     assert "unset" in (res["hint"] or "")
 
 
@@ -63,7 +62,6 @@ def test_flags_a_lingering_SCITEX_CARDS_DUAL_WRITE(env):
     """The incident's actual env var — root cause 2026-07-21."""
     # Arrange
     env.set("SCITEX_CARDS_DUAL_WRITE", "1")
-    env.delete("SCITEX_TODO_DUAL_WRITE")
 
     # Act
     res = check_single_write_target()
@@ -75,14 +73,12 @@ def test_flags_a_lingering_SCITEX_CARDS_DUAL_WRITE(env):
 
 def test_names_both_legacy_vars_when_both_are_set(env):
     # Arrange
-    env.set("SCITEX_TODO_DUAL_WRITE", "1")
     env.set("SCITEX_CARDS_DUAL_WRITE", "1")
 
     # Act
     res = check_single_write_target()
 
     # Assert
-    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
     assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
 
 

@@ -23,7 +23,7 @@ reminders:
   escalate_priority: 1
 
   # Optional phased-rollout allowlist: when set, ONLY these owners are nagged.
-  # Empty / omitted = nag every owner. (The SCITEX_TODO_REMINDER_OWNERS env var
+  # Empty / omitted = nag every owner. (The SCITEX_CARDS_REMINDER_OWNERS env var
   # overrides this when present.)
   # owners:
   #   - scitex-todo

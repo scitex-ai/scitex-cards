@@ -78,7 +78,7 @@ def register(main: click.Group) -> None:
     default=None,
     help="Cadence (minutes) of the fleet-liveness stale/backlog nudge sweep, "
     "kept OUT of the hot delivery path (default: 30, or "
-    "$SCITEX_TODO_NUDGE_SWEEP_MINUTES; <=0 disables).",
+    "$SCITEX_CARDS_NUDGE_SWEEP_MINUTES; <=0 disables).",
 )
 @click.pass_context
 def notifyd_group(

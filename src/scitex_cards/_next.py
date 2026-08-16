@@ -104,7 +104,7 @@ def _is_runnable(
         return False
     if assignee is not None:
         # Accept either `agent` (operator-co-designed, ADR-0007) OR the
-        # legacy `assignee` field. agents wired with SCITEX_TODO_AGENT_ID
+        # legacy `assignee` field. agents wired with SCITEX_CARDS_AGENT_ID
         # will match either spelling so older tasks aren't orphaned.
         agent_match = task.get("agent") == assignee
         legacy_match = task.get("assignee") == assignee

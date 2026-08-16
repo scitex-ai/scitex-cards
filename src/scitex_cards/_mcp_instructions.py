@@ -19,7 +19,7 @@ standing "the fleet ignores the board" complaint.
 
 So the scope is now rendered from the agent's OWN id — resolved by the package's
 existing :func:`scitex_cards._channel_identity.resolve_agent_id_optional`
-(``$SCITEX_TODO_AGENT_ID``) — and when that identity is UNRESOLVABLE we name NO
+(``$SCITEX_CARDS_AGENT_ID``) — and when that identity is UNRESOLVABLE we name NO
 scope at all. A silently-wrong example is worse than an honest absence: that IS
 the bug. The unresolved branch instead tells the agent how to DISCOVER its slice.
 
@@ -96,7 +96,7 @@ def build_instructions(agent_id: str | None) -> str:
     Parameters
     ----------
     agent_id : str | None
-        The resolved agent identity (``$SCITEX_TODO_AGENT_ID``), or ``None`` /
+        The resolved agent identity (``$SCITEX_CARDS_AGENT_ID``), or ``None`` /
         ``""`` when it cannot be resolved. NEVER substitute a placeholder here:
         the caller passes exactly what resolution returned.
 
@@ -110,7 +110,7 @@ def build_instructions(agent_id: str | None) -> str:
     """
     if agent_id:
         slice_line = (
-            f"You are `{agent_id}` (from $SCITEX_TODO_AGENT_ID): call list_tasks "
+            f"You are `{agent_id}` (from $SCITEX_CARDS_AGENT_ID): call list_tasks "
             f"with scope='agent:{agent_id}' for your slice — that scope names YOU, "
             "so it returns cards assigned to you even when a peer filed them under "
             "`fleet`, `ecosystem` or no scope at all. If you need certainty, "
@@ -119,13 +119,13 @@ def build_instructions(agent_id: str | None) -> str:
         )
     else:
         slice_line = (
-            "Your identity is UNRESOLVED ($SCITEX_TODO_AGENT_ID is unset or "
+            "Your identity is UNRESOLVED ($SCITEX_CARDS_AGENT_ID is unset or "
             "blank), so this server cannot name your scope — do NOT guess one, "
             "because a wrong `scope` silently hides your own cards. Discover it "
             "instead: call list_tasks with NO scope to see every card (yours are "
             "the ones whose agent/assignee names you), and resolve_store to "
             "confirm which store you are reading. Then set "
-            "SCITEX_TODO_AGENT_ID=<your-agent-id> so scoped queries work."
+            "SCITEX_CARDS_AGENT_ID=<your-agent-id> so scoped queries work."
         )
     return (
         "scitex-cards: shared task store across agents and hosts. "

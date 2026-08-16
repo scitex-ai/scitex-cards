@@ -176,7 +176,7 @@ def emit_event_cmd(
 )
 def find_card_cmd(repo, kind, status) -> None:
     """Print ids of cards with ``repo == <R>`` (one per line; empty when none)."""
-    # `scope=""` opts out of the $SCITEX_TODO_SCOPE env default — a producer
+    # `scope=""` opts out of the $SCITEX_CARDS_SCOPE env default — a producer
     # resolving repo->card must see EVERY matching card, not just its own
     # scope slice.
     cards = _store.list_tasks(

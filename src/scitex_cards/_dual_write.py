@@ -7,7 +7,7 @@ SQLite is the ONLY write target (operator ruling 2026-07-21): 「データベー
 おかしい」 — there is no such thing as a second place to write; the mere
 EXISTENCE of a dual-write option is the bug. What used to live in this module
 alongside the guard below — an env-gated mirror-to-YAML path
-(``SCITEX_TODO_DUAL_WRITE`` / ``ENV_DUAL_WRITE``, ``enabled()``,
+(``SCITEX_CARDS_DUAL_WRITE`` / ``ENV_DUAL_WRITE``, ``enabled()``,
 ``mirror_after_save()``, the failure counter, ``check_mirror_healthy()``) — is
 DELETED, not defaulted off. A toggle that can be flipped is a second write
 target that merely happens to be switched off today; deleting the code that

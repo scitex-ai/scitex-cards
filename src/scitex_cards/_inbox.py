@@ -16,7 +16,7 @@ parallel ACCELERATOR for host-reachable agents — never a dependency.
 Storage
 -------
 This module is the (non-default, break-glass) file-backed inbox
-implementation, selected only via ``SCITEX_TODO_INBOX_BACKEND=yaml``
+implementation, selected only via ``SCITEX_CARDS_INBOX_BACKEND=yaml``
 (the default is SQLite — see :mod:`scitex_cards._inbox_sqlite`).
 Inboxes live in their own ``inboxes.json`` SIDECAR next to the task
 store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
@@ -56,7 +56,7 @@ _INBOXES_KEY = "inboxes"
 #: ``<store_dir>/runtime/todo.db`` instead of a full sidecar parse. This
 #: module (the file-backed break-glass backend, its own ``inboxes.json``
 #: sidecar — see the module docstring) is selected ONLY by
-#: ``SCITEX_TODO_INBOX_BACKEND=yaml`` (the value is a historical name for
+#: ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a historical name for
 #: "not sqlite"; the on-disk format itself is JSON — see the module
 #: docstring); unset (or any other value) uses SQLite. There is NO silent
 #: fallback: when the SQLite backend raises, the error PROPAGATES
@@ -64,7 +64,7 @@ _INBOXES_KEY = "inboxes"
 #: auto-migrates legacy embedded ``inboxes:`` records on first access, so
 #: flipping the default never loses unseen notifications. See the incident
 #: card ``store-sqlite-migration-o1-writes-future-20260701``.
-_ENV_INBOX_BACKEND = "SCITEX_TODO_INBOX_BACKEND"
+_ENV_INBOX_BACKEND = "SCITEX_CARDS_INBOX_BACKEND"
 
 
 def _use_sqlite() -> bool:

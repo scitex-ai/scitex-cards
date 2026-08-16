@@ -129,7 +129,7 @@ def check_delivery_confirmed(
                 "delivery confirmation unevaluated"
             ),
             "hint": (
-                "set SCITEX_TODO_AGENT_ID=<your-agent-id> so this agent's inbox "
+                "set SCITEX_CARDS_AGENT_ID=<your-agent-id> so this agent's inbox "
                 "can be identified, then re-run the doctor"
             ),
         }
@@ -164,7 +164,7 @@ def check_delivery_confirmed(
             ),
             "hint": (
                 "start the channel server for this agent (`scitex-cards mcp "
-                "start` with SCITEX_TODO_AGENT_ID set) and re-run the doctor; "
+                "start` with SCITEX_CARDS_AGENT_ID set) and re-run the doctor; "
                 "records enqueued before this version carry no receipt and "
                 "stay unknown until new ones are pushed"
             ),

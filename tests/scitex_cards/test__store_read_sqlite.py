@@ -3,7 +3,7 @@
 """The S2 SQLite read accelerator is DELETED — this file pins the new contract.
 
 INCIDENT (2026-07-21, P0): agent scitex-dev, running scitex-cards 0.17.4 with
-the deprecated ``SCITEX_TODO_READ_BACKEND=sqlite`` env var set (and NOT
+the deprecated ``SCITEX_CARDS_READ_BACKEND=sqlite`` env var set (and NOT
 ``SCITEX_CARDS_STORE_BACKEND``), hit ``_store_read_sqlite.py``'s refusal ("THE
 SQLITE READ BACKEND IS REFUSING TO SERVE ... falling back to the canonical
 YAML"). SQLite had already become the ONE canonical store by then (no mirror,
@@ -44,7 +44,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 #: (or even just its read-backend selector) would almost certainly reuse one
 #: of these literal strings, so the sentinel checks for THEM by name, not a
 #: generic "*_BACKEND" pattern that would also flag unrelated code.
-_BANNED_ENV_NAMES = ("SCITEX_TODO_READ_BACKEND", "SCITEX_CARDS_STORE_BACKEND")
+_BANNED_ENV_NAMES = ("SCITEX_CARDS_READ_BACKEND", "SCITEX_CARDS_STORE_BACKEND")
 
 
 def test_the_s2_accelerator_module_is_gone():
@@ -104,7 +104,7 @@ def test_the_deprecated_read_backend_env_var_is_ignored(env):
 
     from scitex_cards import _store
 
-    env.set("SCITEX_TODO_READ_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_READ_BACKEND", "sqlite")
     seed_db_from_doc(
         {"tasks": [{"id": "a", "title": "A", "status": "deferred"}]},
         os.environ["SCITEX_CARDS_DB"],

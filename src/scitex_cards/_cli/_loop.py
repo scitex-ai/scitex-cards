@@ -60,7 +60,7 @@ def register(main: click.Group) -> None:
     "--mine",
     "use_mine",
     is_flag=True,
-    help="Filter on SCITEX_TODO_AGENT_ID env var.",
+    help="Filter on SCITEX_CARDS_AGENT_ID env var.",
 )
 @click.option(
     "--project",
@@ -97,10 +97,10 @@ def next_cmd(
     if assignee and use_mine:
         raise click.ClickException("Pass --assignee OR --mine, not both.")
     if use_mine:
-        env = os.environ.get("SCITEX_TODO_AGENT_ID")
+        env = os.environ.get("SCITEX_CARDS_AGENT_ID")
         if not env:
             raise click.ClickException(
-                "--mine needs SCITEX_TODO_AGENT_ID to be set in the env."
+                "--mine needs SCITEX_CARDS_AGENT_ID to be set in the env."
             )
         assignee = env
 

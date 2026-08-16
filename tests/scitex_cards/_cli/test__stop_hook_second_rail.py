@@ -274,7 +274,6 @@ def test_an_unreadable_board_allows_the_stop(env):
     """Our own bug must never be the reason an agent cannot finish a turn."""
     # Arrange — the canonical database does not exist, so reading it raises.
     env.set("SCITEX_CARDS_DB", UNREADABLE_DB)
-    env.set("SCITEX_TODO_DB", UNREADABLE_DB)
 
     # Act
     out = _decide(store=None)
@@ -287,7 +286,6 @@ def test_an_unreadable_board_says_why_it_is_silent(env):
     """Silence with no explanation is how the original outage stayed hidden."""
     # Arrange
     env.set("SCITEX_CARDS_DB", UNREADABLE_DB)
-    env.set("SCITEX_TODO_DB", UNREADABLE_DB)
 
     # Act
     out = _decide(store=None)
@@ -300,8 +298,8 @@ def test_an_unreadable_inbox_allows_the_stop(env):
     """The message rail fails on its own terms — a mail read that raises must
     not wedge the agent any more than a board read that raises."""
     # Arrange — an inbox database at a path that cannot even be created.
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
-    env.set("SCITEX_TODO_INBOX_DB", UNREADABLE_INBOX_DB)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_DB", UNREADABLE_INBOX_DB)
 
     # Act
     out = _decide()
@@ -312,8 +310,8 @@ def test_an_unreadable_inbox_allows_the_stop(env):
 
 def test_an_unreadable_inbox_says_why_it_is_silent(env):
     # Arrange
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
-    env.set("SCITEX_TODO_INBOX_DB", UNREADABLE_INBOX_DB)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_DB", UNREADABLE_INBOX_DB)
 
     # Act
     out = _decide()
@@ -436,7 +434,7 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 # 7. The backend PRODUCTION actually runs                                     #
 # --------------------------------------------------------------------------- #
 #
-# This suite pins ``SCITEX_TODO_INBOX_BACKEND=yaml`` for every test while the
+# This suite pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test while the
 # fleet runs SQLite (see tests/scitex_cards/conftest.py and the note in
 # tests/scitex_cards/_delivery/test__tick_truth.py). A delivery rail proven
 # only on the break-glass backend is proven on a configuration nobody runs —
@@ -446,7 +444,7 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 
 def test_a_pending_message_blocks_on_the_sqlite_backend(env):
     # Arrange
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     _send()
 
     # Act
@@ -458,7 +456,7 @@ def test_a_pending_message_blocks_on_the_sqlite_backend(env):
 
 def test_acking_releases_the_block_on_the_sqlite_backend(env):
     # Arrange
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     ids = _send()
     confirm_notifications(AGENT, ids, store=_store())
 
@@ -471,7 +469,7 @@ def test_acking_releases_the_block_on_the_sqlite_backend(env):
 
 def test_the_sqlite_read_does_not_mark_anything_seen(env):
     # Arrange
-    env.set("SCITEX_TODO_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     _send()
     _decide()
 

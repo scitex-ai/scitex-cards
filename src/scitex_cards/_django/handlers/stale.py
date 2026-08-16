@@ -208,7 +208,7 @@ def handle_archive(request, board):
       3. Flip ``status`` to ``"deferred"`` (sentinel — no new enum
          value cascading into FE / tests today).
       4. Stamp ``_log_meta.closed_{at,by}`` (UTC ISO-8601 + author
-         precedence chain: body ``by`` -> ``$SCITEX_TODO_AGENT_ID`` ->
+         precedence chain: body ``by`` -> ``$SCITEX_CARDS_AGENT_ID`` ->
          ``$USER`` -> ``"user"``).
       5. Persist via the board's existing save path.
 
@@ -235,7 +235,7 @@ def handle_archive(request, board):
 
     by = payload.get("by")
     if not isinstance(by, str) or not by.strip():
-        by = os.environ.get("SCITEX_TODO_AGENT_ID") or os.environ.get("USER") or "user"
+        by = os.environ.get("SCITEX_CARDS_AGENT_ID") or os.environ.get("USER") or "user"
     by = by.strip()
 
     from scitex_cards import TaskValidationError

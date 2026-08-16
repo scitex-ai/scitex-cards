@@ -70,7 +70,7 @@ Behaviour (rides the existing ``*/10`` ``--nudge-quiet`` cron):
   owner is still nudged daily). Suppressed owners are still LOGGED — a
   silent sweep is one nobody trusts.
 
-Optional hook event: when ``SCITEX_TODO_STALE_ACTIVE_EMIT_HOOK=1`` and
+Optional hook event: when ``SCITEX_CARDS_STALE_ACTIVE_EMIT_HOOK=1`` and
 the package's hook dispatcher is importable, the sweep also emits a
 ``stale-active`` finding so scitex-dev's ecosystem reconcile can consume
 it. The primary deliverable is the per-owner nudge; the hook emission is
@@ -98,7 +98,7 @@ from scitex_cards._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)
 
-ENV_EMIT_HOOK = "SCITEX_TODO_STALE_ACTIVE_EMIT_HOOK"
+ENV_EMIT_HOOK = "SCITEX_CARDS_STALE_ACTIVE_EMIT_HOOK"
 
 #: OPT-IN secondary echo of each nudge on the turn-url push wire
 #: (:func:`scitex_cards._push.deliver`) — for the rare host-reachable receiver
@@ -106,7 +106,7 @@ ENV_EMIT_HOOK = "SCITEX_TODO_STALE_ACTIVE_EMIT_HOOK"
 #: never a rail: the inbox enqueue is always attempted and is the ONLY thing
 #: that decides delivered/failed (and therefore the suppression). There is NO
 #: fallback between the two rails in either direction.
-ENV_NUDGE_PUSH = "SCITEX_TODO_NUDGE_PUSH"
+ENV_NUDGE_PUSH = "SCITEX_CARDS_NUDGE_PUSH"
 
 #: Sidecar holding the per-(owner, kind) deliver-on-change state. A SIBLING of
 #: the reminder sidecar in the store's ``runtime/`` dir — deliberately its own
@@ -119,7 +119,7 @@ NUDGE_SIDECAR_NAME = "nudges.yaml"
 #: How long an UNCHANGED nudge stays suppressed before it is re-sent anyway.
 #: Mirrors :data:`scitex_cards._reminder_enqueue.ENV_DIGEST_FLOOR_HOURS`: without
 #: a floor, deliver-on-change would go silent forever on a frozen backlog.
-ENV_NUDGE_FLOOR_HOURS = "SCITEX_TODO_NUDGE_FLOOR_HOURS"
+ENV_NUDGE_FLOOR_HOURS = "SCITEX_CARDS_NUDGE_FLOOR_HOURS"
 DEFAULT_NUDGE_FLOOR_HOURS = 24.0
 
 #: Inbox ``event_type`` per kind (the inbox dedup discriminator + the drain's

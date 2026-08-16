@@ -14,9 +14,9 @@ The agent-facing convention these verbs honor (per
 ``GITIGNORED/ARCHITECTURE.md`` Req 1):
 
 - ``--scope LABEL`` / ``--assignee LABEL`` on read verbs respect
-  ``$SCITEX_TODO_SCOPE`` as the default. Pass ``--scope ""`` to opt out.
+  ``$SCITEX_CARDS_SCOPE`` as the default. Pass ``--scope ""`` to opt out.
 - ``--by NAME`` on ``done`` overrides the
-  ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` precedence chain.
+  ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` precedence chain.
 
 The ``sync`` verb is a deliberate Phase-1 no-op stub (Req 2 substrate
 lands in Phase 2). The stable name + flag shape exist now so docs and
@@ -145,7 +145,7 @@ def _emit(payload, *, as_json: bool, human: str) -> None:
         examples=(
             (
                 "{prog} add my-task 'Implement my-task' "
-                '--agent "$SCITEX_TODO_AGENT_ID" --project scitex-todo',
+                '--agent "$SCITEX_CARDS_AGENT_ID" --project scitex-todo',
                 "",
             ),
         ),
@@ -252,7 +252,7 @@ def _emit(payload, *, as_json: bool, human: str) -> None:
     "--created-by",
     "created_by",
     default=None,  # hook-bypass: line-limit
-    help="Creating USER (agent/human). Absent => $SCITEX_TODO_AGENT_ID -> $USER.",
+    help="Creating USER (agent/human). Absent => $SCITEX_CARDS_AGENT_ID -> $USER.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the inserted task as JSON.")
 @click.option(
@@ -370,14 +370,14 @@ def add_cmd(
             "for success and `close --reason` for non-success). Idempotent: "
             "re-doneing a `done` task keeps the original stamp."
         ),
-        examples=(('{prog} done my-task --by "$SCITEX_TODO_AGENT_ID"', ""),),
+        examples=(('{prog} done my-task --by "$SCITEX_CARDS_AGENT_ID"', ""),),
     ),
 )
 @click.argument("task_id")
 @click.option(
     "--by",
     default=None,
-    help="Override completed_by (default: $SCITEX_TODO_AGENT_ID, then $USER).",
+    help="Override completed_by (default: $SCITEX_CARDS_AGENT_ID, then $USER).",
 )
 @click.option("--json", "as_json", is_flag=True)
 def done_cmd(task_id, by, as_json) -> None:

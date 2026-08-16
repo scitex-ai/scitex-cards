@@ -340,7 +340,7 @@ def _git_autocommit_store(path: Path) -> None:
 
     Best-effort: never raises. Skips entirely if git isn't installed.
 
-    Opt-out: set ``SCITEX_TODO_STORE_GIT_AUTOCOMMIT`` to a falsy value
+    Opt-out: set ``SCITEX_CARDS_STORE_GIT_AUTOCOMMIT`` to a falsy value
     (``0``/``false``/``no``/``off``/empty) to skip the per-save commit
     entirely. This is the POST-MORTEM recovery layer, NOT the live
     crash-safety (that is the fcntl lock + atomic write in the caller), so
@@ -349,7 +349,7 @@ def _git_autocommit_store(path: Path) -> None:
     write path deterministic + fast under test (no git subprocess). Default
     is ON (unset ⇒ enabled).
     """
-    if os.environ.get("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "1").strip().lower() in (
+    if os.environ.get("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "1").strip().lower() in (
         "0",
         "false",
         "no",

@@ -45,24 +45,24 @@ BACKLOG_STATUS = "deferred"
 
 #: How many cards one triage sweep puts in front of an owner. Small on
 #: purpose: a list of 50 "decide these" cards is itself ignorable.
-ENV_TRIAGE_SAMPLE = "SCITEX_TODO_TRIAGE_SAMPLE"
+ENV_TRIAGE_SAMPLE = "SCITEX_CARDS_TRIAGE_SAMPLE"
 DEFAULT_TRIAGE_SAMPLE = 10
 
 #: Recency half-life. A card deferred this many hours ago is half as likely to
 #: be drawn as one deferred just now. 7 days keeps roughly the last fortnight
 #: in play and lets the rest drift toward expiry.
-ENV_HALF_LIFE_HOURS = "SCITEX_TODO_TRIAGE_HALF_LIFE_HOURS"
+ENV_HALF_LIFE_HOURS = "SCITEX_CARDS_TRIAGE_HALF_LIFE_HOURS"
 DEFAULT_HALF_LIFE_HOURS = 24.0 * 7
 
 #: A card drawn and kept-deferred is not drawn again for this long. Without a
 #: cooldown the weighting alone would re-draw the same fresh cards every sweep
 #: and never show the owner anything else.
-ENV_COOLDOWN_HOURS = "SCITEX_TODO_TRIAGE_COOLDOWN_HOURS"
+ENV_COOLDOWN_HOURS = "SCITEX_CARDS_TRIAGE_COOLDOWN_HOURS"
 DEFAULT_COOLDOWN_HOURS = 72.0
 
 #: Past this age a deferred card is expired: proposed for cancellation rather
 #: than offered for action.
-ENV_EXPIRY_DAYS = "SCITEX_TODO_DEFERRED_EXPIRY_DAYS"
+ENV_EXPIRY_DAYS = "SCITEX_CARDS_DEFERRED_EXPIRY_DAYS"
 DEFAULT_EXPIRY_DAYS = 30.0
 
 #: Field names. ``deferred_at`` is the age clock (stamped once, never reset);

@@ -69,7 +69,7 @@ The `close` verb landed in PR #151 (2026-06-13). It records the reason in `comme
 ```sh
 scitex-cards close <task-id> --reason "<short reason in imperative or past tense>"
 
-# With author override (default chain: $SCITEX_TODO_AGENT_ID -> $USER):
+# With author override (default chain: $SCITEX_CARDS_AGENT_ID -> $USER):
 scitex-cards close <task-id> --reason "<text>" --by <author>
 
 # Dry-run first (prints intent, does NOT mutate):
@@ -110,7 +110,7 @@ A complete sweep for ONE agent looks like:
 
 ```sh
 # 0) Snapshot current state (saves a copy you can diff against later).
-scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-before.json
+scitex-cards list-tasks --assignee $SCITEX_CARDS_AGENT_ID --json > /tmp/my-cards-before.json
 
 # 1) For every recently-merged PR you owned: mark its card done with the PR pointer.
 scitex-cards update <card-id> --status done --pr-url <pr-url>
@@ -122,7 +122,7 @@ scitex-cards close <card-id> --reason "<short why>"
 scitex-cards comment <card-id> "<update>"
 
 # 4) Re-snapshot + diff to verify your sweep landed:
-scitex-cards list-tasks --assignee $SCITEX_TODO_AGENT_ID --json > /tmp/my-cards-after.json
+scitex-cards list-tasks --assignee $SCITEX_CARDS_AGENT_ID --json > /tmp/my-cards-after.json
 diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | head -200
 ```
 
@@ -161,7 +161,7 @@ MARK DONE + PR        scitex-cards update <id> --status done --pr-url <url>
 CLOSE WITH REASON     scitex-cards close <id> --reason "<short why>"
 ADD COMMENT           scitex-cards comment <id> "<text>"
 DRY-RUN ANY MUTATION  add --dry-run before the real call
-STORE OVERRIDE        --tasks <path>  OR  SCITEX_TODO_TASKS_YAML_SHARED=<path>
+STORE OVERRIDE        --tasks <path>  OR  SCITEX_CARDS_TASKS_YAML_SHARED=<path>
 
 # Fleet enablement (P3a, one-shot register the MCP server) ─ PR #155:
 PREVIEW REGISTRATION  scitex-cards mcp install --apply --dry-run

@@ -271,7 +271,7 @@ scitex-cards done scitex-cards-fleet-rollout --by scitex-cards
 ```
 
 Stamps `_log_meta.completed_at` (UTC ISO-8601) + `completed_by` (the
-`--by` value, defaults to `$SCITEX_TODO_AGENT_ID` then `$USER`).
+`--by` value, defaults to `$SCITEX_CARDS_AGENT_ID` then `$USER`).
 Idempotent (re-doneing a `done` task keeps the original stamp).
 
 MCP: `complete_task`. Python: `scitex_cards.complete_task`.

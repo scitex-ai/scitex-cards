@@ -55,7 +55,7 @@ _needs_port_tool = pytest.mark.skipif(
 def pidfile_path(env, tmp_path):
     """Point the pidfile at a tmp location (env override)."""
     pf = tmp_path / "board.pid"
-    env.set("SCITEX_TODO_BOARD_PIDFILE", str(pf))
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf
 
 

@@ -74,7 +74,7 @@ def _push_two(store):
 @pytest.fixture(params=BACKENDS)
 def backend(request, env):
     """Run the test body on each real inbox backend, in turn."""
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return {"name": request.param, "env": env}
 
 
@@ -262,7 +262,7 @@ def _break_the_inbox(backend, store, tmp_path):
     if backend == "sqlite":
         blocked = tmp_path / "not-a-database"
         blocked.mkdir()
-        return ("SCITEX_TODO_INBOX_DB", str(blocked))
+        return ("SCITEX_CARDS_INBOX_DB", str(blocked))
     from scitex_cards._inbox import _INBOXES_FILENAME
 
     sidecar = store.parent / _INBOXES_FILENAME

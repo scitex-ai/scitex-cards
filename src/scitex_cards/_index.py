@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 #: Env override for the index file path. Default is sibling to the
 #: global task store: ``~/.scitex/todo/.tasks.index.sqlite``.
-ENV_INDEX_PATH = "SCITEX_TODO_INDEX_PATH"
+ENV_INDEX_PATH = "SCITEX_CARDS_INDEX_PATH"
 
 #: Schema version. Bump when the column set or indexes change; the
 #: rebuilder drops + recreates when a stored ``meta.index_version`` is

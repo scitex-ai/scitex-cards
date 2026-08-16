@@ -73,7 +73,7 @@ def _break_the_inbox(tmp_path) -> None:
     """Make the inbox genuinely unreadable — on EITHER inbox backend.
 
     Both are broken deliberately. The suite pins
-    ``SCITEX_TODO_INBOX_BACKEND=yaml`` while production runs SQLite, so
+    ``SCITEX_CARDS_INBOX_BACKEND=yaml`` while production runs SQLite, so
     breaking only the one this harness happens to use would make the test pass
     for a reason that does not exist in production — and a test that cannot
     fail on the real path is not a test.

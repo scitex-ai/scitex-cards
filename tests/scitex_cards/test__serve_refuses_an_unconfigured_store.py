@@ -48,7 +48,7 @@ from scitex_cards._store_target import (
 )
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
+_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_CARDS_DB")
 
 
 @pytest.fixture()

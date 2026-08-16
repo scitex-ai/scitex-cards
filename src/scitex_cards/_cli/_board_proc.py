@@ -50,7 +50,7 @@ def _board_pidfile() -> _Path:
     """Return the pidfile path (function so tests can override via env)."""
     import os as _os
 
-    override = _os.environ.get("SCITEX_TODO_BOARD_PIDFILE")
+    override = _os.environ.get("SCITEX_CARDS_BOARD_PIDFILE")
     if override:
         return _Path(override)
     return BOARD_PIDFILE

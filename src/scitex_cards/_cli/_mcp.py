@@ -80,7 +80,7 @@ def _run_unified_server() -> None:
     has every ``@mcp.tool()`` registered) and drives it with the channel
     module's own-the-session serve loop so the poll loop can push.
 
-    The agent id is OPTIONAL: with ``$SCITEX_TODO_AGENT_ID`` set the digest is
+    The agent id is OPTIONAL: with ``$SCITEX_CARDS_AGENT_ID`` set the digest is
     pushed; without it the server still serves tools (push disabled) rather than
     failing — the tools surface must work even with no identity configured.
     """

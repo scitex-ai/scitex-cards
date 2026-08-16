@@ -46,7 +46,7 @@ def store(tmp_path):
 @pytest.fixture
 def agent_id(monkeypatch):
     """A resolvable sender identity; the DM 'from' must name a real agent."""
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "scitex-cards")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "scitex-cards")
     monkeypatch.delenv("SCITEX_CARDS_HUB_URL", raising=False)
     return "scitex-cards"
 

@@ -130,13 +130,13 @@ def provide_jobs() -> list[JobSpec]:
         # a per-agent body summary (RUNNABLE-first list + recent done)
         # via scitex-cards' self-contained HTTP push wire (`_push.deliver`),
         # plus a separate quiet-nudge if any open in_progress task has
-        # gone untouched for > SCITEX_TODO_NUDGE_QUIET_MIN minutes
+        # gone untouched for > SCITEX_CARDS_NUDGE_QUIET_MIN minutes
         # (default 10). Structural feedback loop: silence + in_progress
         # → escalation, no manual lead intervention required.
         #
         # The --nudge-quiet path ALSO runs the stale-active sweep
         # (_stale_active_nudge.sweep_and_nudge): per-OWNER nudge for
-        # in_progress/blocked cards untouched > SCITEX_TODO_STALE_ACTIVE_HOURS
+        # in_progress/blocked cards untouched > SCITEX_CARDS_STALE_ACTIVE_HOURS
         # (default 2 h) over the same push wire. Replaces the manual
         # card-freshness campaign; no new cron — it rides this */10 one.
         JobSpec(

@@ -12,9 +12,9 @@ tags: [scitex-cards-env-vars]
 | Name                | Default                      | Purpose                                              |
 |---------------------|------------------------------|------------------------------------------------------|
 | `SCITEX_CARDS_DB`    | (unset)                      | Absolute path to the SQLite database; wins over the user-canonical default. This is the SOLE store-identity axis — see `scitex_cards._paths`. |
-| `SCITEX_TODO_AGENT_ID` | (unset)                   | This agent's identity — stamps every write's `created_by`/`updated_by`, keys the channel inbox, and is the `--mine` filter. Fail-loud when unresolved. (Renamed 2026-07-02 from the now-rejected `SCITEX_TODO_AGENT`.) **Headless lever:** leave it UNSET and `scitex-cards mcp start` runs TOOLS-ONLY — the inbox poll loop is not started and the session receives ZERO channel pushes. This is the intended mode for solver / headless capsules that must not receive unsolicited pushes. |
-| `SCITEX_TODO_CHANNEL_SOURCE` | `stodo` | `mcp channel` `meta.source` (drives the `<- stodo` render — the fleet's short sender-identity label, deliberately distinct from the `scitex-cards` agent id). Overridden by `--name`. |
-| `SCITEX_TODO_CHANNEL_INTERVAL` | `5.0`             | `mcp channel` poll interval (seconds) between inbox drains. Overridden by `--interval`. |
+| `SCITEX_CARDS_AGENT_ID` | (unset)                   | This agent's identity — stamps every write's `created_by`/`updated_by`, keys the channel inbox, and is the `--mine` filter. Fail-loud when unresolved. (Renamed 2026-07-02 from the now-rejected `SCITEX_CARDS_AGENT`.) **Headless lever:** leave it UNSET and `scitex-cards mcp start` runs TOOLS-ONLY — the inbox poll loop is not started and the session receives ZERO channel pushes. This is the intended mode for solver / headless capsules that must not receive unsolicited pushes. |
+| `SCITEX_CARDS_CHANNEL_SOURCE` | `stodo` | `mcp channel` `meta.source` (drives the `<- stodo` render — the fleet's short sender-identity label, deliberately distinct from the `scitex-cards` agent id). Overridden by `--name`. |
+| `SCITEX_CARDS_CHANNEL_INTERVAL` | `5.0`             | `mcp channel` poll interval (seconds) between inbox drains. Overridden by `--interval`. |
 | `SCITEX_DIR`        | `~/.scitex`                  | Relocates the user-scope state root, so the user database becomes `$SCITEX_DIR/cards/cards.db`. |
 
 Copy [`.env.example`](../../../../.env.example) to `.env` at your project root

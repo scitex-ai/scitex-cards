@@ -112,7 +112,7 @@ def register(main: click.Group) -> click.Command:
     @click.option(
         "--agent",
         default=None,
-        help="Agent identity to report on. Defaults to $SCITEX_TODO_AGENT_ID.",
+        help="Agent identity to report on. Defaults to $SCITEX_CARDS_AGENT_ID.",
     )
     @click.option(
         "--rail",

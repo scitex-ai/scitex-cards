@@ -281,7 +281,7 @@ def test_the_wip_override_audit_stamp_carries_a_comment_id(env):
     # Arrange — limit 1 makes the refuse threshold 2, so two in-flight cards
     # push the third over the cap; priority 0 admits it via the emergency
     # exemption, which is the branch that writes the audit comment.
-    env.set("SCITEX_TODO_WIP_LIMIT", "1")
+    env.set("SCITEX_CARDS_WIP_LIMIT", "1")
     in_flight = [
         {"id": "w1", "title": "W1", "agent": "agent-busy", "status": "in_progress"},
         {"id": "w2", "title": "W2", "agent": "agent-busy", "status": "in_progress"},

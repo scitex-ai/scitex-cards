@@ -50,7 +50,7 @@ import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli._admin import resolve_store_cmd
-from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED, resolve_db_path
+from scitex_cards._db import ENV_DB, resolve_db_path
 from scitex_cards._paths import resolve_tasks_path
 from scitex_cards._store_target import (
     TIER_DEFAULT,
@@ -62,7 +62,7 @@ from scitex_cards._store_target import (
 )
 
 DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
-_MANAGED = (ENV_DB, ENV_DB_DEPRECATED, "HOME", "SCITEX_DIR")
+_MANAGED = (ENV_DB, "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def unconfigured_store(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in (ENV_DB, ENV_DB_DEPRECATED, "SCITEX_DIR"):
+    for name in (ENV_DB, "SCITEX_DIR"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
@@ -100,7 +100,7 @@ def unconfigured_store(tmp_path):
 @pytest.fixture
 def env_store(tmp_path):
     """A store CHOSEN through the real environment, restored on teardown."""
-    saved = {name: os.environ.get(name) for name in (ENV_DB, ENV_DB_DEPRECATED)}
+    saved = {name: os.environ.get(name) for name in (ENV_DB,)}
 
     def _set(value: str) -> str:
         os.environ[ENV_DB] = value

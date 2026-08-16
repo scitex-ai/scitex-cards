@@ -20,7 +20,7 @@
  *     existing NodeDetailPanel comment section reads from — no parallel
  *     state.
  *   - NO hardcoded proper nouns: the author field defaults to the
- *     `SCITEX_TODO_AGENT` value read from the page-load env (rendered
+ *     `SCITEX_CARDS_AGENT` value read from the page-load env (rendered
  *     into the bundle by the Django template) with operator-typed
  *     override. The hash-to-color helper is a stable, content-agnostic
  *     mapping from a string to a scitex-ui token.
@@ -111,14 +111,14 @@ function fmtTs(ts: string): string {
   });
 }
 
-/** Read the `SCITEX_TODO_AGENT` value rendered into the page by the
+/** Read the `SCITEX_CARDS_AGENT` value rendered into the page by the
  *  Django template. Falls through to a persisted localStorage value
  *  (so operator-typed overrides survive a reload) and finally an empty
  *  string (which the backend then resolves to `<unknown>`). No hardcoded
  *  agent names — the env is the source of truth. */
 function defaultAuthor(): string {
-  const w = window as unknown as { SCITEX_TODO_AGENT?: string };
-  const fromEnv = (w.SCITEX_TODO_AGENT ?? "").trim();
+  const w = window as unknown as { SCITEX_CARDS_AGENT?: string };
+  const fromEnv = (w.SCITEX_CARDS_AGENT ?? "").trim();
   if (fromEnv) return fromEnv;
   return localStorage.getItem(AUTHOR_KEY) ?? "";
 }
@@ -261,7 +261,7 @@ export function ChatPanel({
         <input
           className="stx-todo-input stx-todo-chat__author-input"
           value={author}
-          placeholder="your name (defaults to SCITEX_TODO_AGENT)"
+          placeholder="your name (defaults to SCITEX_CARDS_AGENT)"
           onChange={(e) => setAuthor(e.target.value)}
           aria-label="Chat author"
         />

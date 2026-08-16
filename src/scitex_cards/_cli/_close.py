@@ -52,7 +52,7 @@ from ._write import _emit
         examples=(
             (
                 "{prog} close stale-card --reason 'superseded by PR #142' "
-                '--by "$SCITEX_TODO_AGENT_ID"',
+                '--by "$SCITEX_CARDS_AGENT_ID"',
                 "",
             ),
         ),
@@ -67,7 +67,7 @@ from ._write import _emit
 @click.option(
     "--by",
     default=None,
-    help="Override closed_by / comment.author (default: $SCITEX_TODO_AGENT_ID, then $USER).",
+    help="Override closed_by / comment.author (default: $SCITEX_CARDS_AGENT_ID, then $USER).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the close payload as JSON.")
 @click.option(

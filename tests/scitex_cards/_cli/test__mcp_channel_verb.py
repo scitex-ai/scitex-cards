@@ -63,7 +63,7 @@ def test_mcp_channel_help_advertises_interval_option():
 def test_mcp_channel_unresolved_agent_exits_nonzero(env):
     # Arrange — no agent id in the env and none passed → fail loud rather than
     # draining an "unknown" inbox.
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     runner = CliRunner()
     # Act
     result = runner.invoke(main, ["mcp", "channel", "--interval", "0.01"])
@@ -73,12 +73,12 @@ def test_mcp_channel_unresolved_agent_exits_nonzero(env):
 
 def test_mcp_channel_unresolved_agent_names_the_env_var(env):
     # Arrange — the failure must carry an actionable hint.
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     runner = CliRunner()
     # Act
     result = runner.invoke(main, ["mcp", "channel", "--interval", "0.01"])
     # Assert
-    assert "SCITEX_TODO_AGENT_ID" in result.output
+    assert "SCITEX_CARDS_AGENT_ID" in result.output
 
 
 # EOF

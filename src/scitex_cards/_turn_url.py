@@ -12,8 +12,8 @@ Resolution precedence (see :func:`turn_url_for`):
 
   0. scitex-todo's OWN user registry (``users:`` section of the task
      store) — file-local, NO bearer, the reliable PRIMARY source.
-  1. ``SCITEX_TODO_AGENT_TURN_URLS`` JSON map (operator-pinned).
-  2. ``SCITEX_TODO_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
+  1. ``SCITEX_CARDS_AGENT_TURN_URLS`` JSON map (operator-pinned).
+  2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
      per-agent turn-url env contract).
   3. None → caller falls through to fail-loud "no-turn-url-configured".
 
@@ -34,8 +34,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-ENV_MAP = "SCITEX_TODO_AGENT_TURN_URLS"
-PER_AGENT_PREFIX = "SCITEX_TODO_TURN_URL_"
+ENV_MAP = "SCITEX_CARDS_AGENT_TURN_URLS"
+PER_AGENT_PREFIX = "SCITEX_CARDS_TURN_URL_"
 
 
 def _slug(agent: str) -> str:
@@ -77,8 +77,8 @@ def turn_url_for(agent: str) -> str | None:
          NO bearer, reliable PRIMARY source. See
          :func:`_turn_url_from_user_registry`. (Root fix, card
          ``todo-push-turn-url-from-user-registry-20260626``.)
-      1. ``SCITEX_TODO_AGENT_TURN_URLS`` JSON map entry (operator-pinned).
-      2. ``SCITEX_TODO_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
+      1. ``SCITEX_CARDS_AGENT_TURN_URLS`` JSON map entry (operator-pinned).
+      2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-todo's own
          per-agent turn-url env contract).
       3. None — caller falls through to fail-loud "no-turn-url-configured".
 

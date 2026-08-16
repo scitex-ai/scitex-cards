@@ -24,7 +24,6 @@ import pytest
 from scitex_cards._db import (
     DEFAULT_DB_FILENAME,
     ENV_DB,
-    ENV_DB_DEPRECATED,
     resolve_db_path,
 )
 from scitex_cards._paths import (
@@ -39,8 +38,8 @@ from scitex_cards._store_target import StoreTargetNotConfigured
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB, ENV_DB_DEPRECATED)}
-    for v in (ENV_DB, ENV_DB_DEPRECATED):
+    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
+    for v in (ENV_DB,):
         os.environ.pop(v, None)
     try:
         yield
@@ -72,19 +71,6 @@ def test_ambient_container_is_beside_the_database(tmp_path, clean_store_env):
     # Assert — the container is `<db_dir>/tasks.yaml`, next to the identity DB.
     assert resolved == target.parent / "tasks.yaml"
     assert resolve_db_path(None) == target
-
-
-def test_container_tracks_the_current_db_var_over_deprecated(tmp_path, clean_store_env):
-    """``$SCITEX_CARDS_DB`` (the identity) wins over the pre-rename ``$SCITEX_TODO_DB``."""
-    # Arrange
-    current = tmp_path / "current.db"
-    os.environ[ENV_DB] = str(current)
-    os.environ[ENV_DB_DEPRECATED] = str(tmp_path / "legacy.db")
-    # Act
-    resolved = resolve_tasks_path(None)
-    # Assert — the container tracks the winning database's directory.
-    assert resolved == current.parent / "tasks.yaml"
-    assert resolve_db_path(None) == current
 
 
 def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store_env):

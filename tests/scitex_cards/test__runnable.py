@@ -298,9 +298,9 @@ def test_cli_runnable_exit_1_when_queue_empty():
 
 
 def test_cli_runnable_mine_uses_env_agent(env):
-    # Arrange — --mine reads $SCITEX_TODO_AGENT_ID.
+    # Arrange — --mine reads $SCITEX_CARDS_AGENT_ID.
     add_task(id="t-a", title="x", agent="proj-scitex-todo")
-    env.set("SCITEX_TODO_AGENT_ID", "proj-scitex-todo")
+    env.set("SCITEX_CARDS_AGENT_ID", "proj-scitex-todo")
     runner = CliRunner()
     # Act
     result = runner.invoke(

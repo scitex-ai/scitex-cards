@@ -231,11 +231,10 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     # that reason: add_task resolves its creator from the env).
     #
     # BOTH identity variables, because ``_env_compat`` gives the
-    # ``SCITEX_CARDS_*`` name precedence: pinning only the ``SCITEX_TODO_*``
+    # ``SCITEX_CARDS_*`` name precedence: pinning only the ``SCITEX_CARDS_*``
     # one leaves the test reading the runner's real agent id whenever
     # ``SCITEX_CARDS_AGENT_ID`` is exported — which it is for every agent in
     # this fleet, so the pin was silently inert exactly where it was needed.
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "decoupling-gate-test")
     monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
@@ -297,7 +296,6 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
     """
     # Arrange
     provided = forbidden_port_providers
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "decoupling-gate-test")
     monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store

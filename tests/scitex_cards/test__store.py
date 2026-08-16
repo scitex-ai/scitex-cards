@@ -527,7 +527,7 @@ def test_update_task_empty_id_typeerror(tmp_path):
 def test_complete_task_sets_status_done(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -538,7 +538,7 @@ def test_complete_task_sets_status_done(tmp_path, env):
 def test_complete_task_stamps_completed_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -549,7 +549,7 @@ def test_complete_task_stamps_completed_by(tmp_path, env):
 def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -560,7 +560,7 @@ def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
 def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -571,7 +571,7 @@ def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
 def test_complete_task_persists_completed_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
     # Act
@@ -583,7 +583,7 @@ def test_complete_task_persists_completed_by(tmp_path, env):
 def test_complete_task_persists_completed_at(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
     stamp = done["_log_meta"]["completed_at"]
@@ -596,7 +596,7 @@ def test_complete_task_persists_completed_at(tmp_path, env):
 def test_complete_task_explicit_by_overrides_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a", by="agent:cli")
@@ -607,10 +607,10 @@ def test_complete_task_explicit_by_overrides_env(tmp_path, env):
 def test_complete_task_is_idempotent_timestamp(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:first")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     first = _store.complete_task(store, "a")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:second")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:second")
     # Act
     second = _store.complete_task(store, "a")
     # Assert
@@ -620,10 +620,10 @@ def test_complete_task_is_idempotent_timestamp(tmp_path, env):
 def test_complete_task_is_idempotent_preserves_original_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:first")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     _store.complete_task(store, "a")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:second")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:second")
     # Act
     second = _store.complete_task(store, "a")
     # Assert
@@ -710,7 +710,7 @@ def test_list_tasks_filters_by_status(populated_store):
 def test_list_tasks_env_scope_is_default(populated_store, env):
     # Arrange
     store = populated_store
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
     # Act
     rows = _store.list_tasks(store)
     # Assert
@@ -720,7 +720,7 @@ def test_list_tasks_env_scope_is_default(populated_store, env):
 def test_list_tasks_explicit_empty_string_overrides_env(populated_store, env):
     # Arrange
     store = populated_store
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
     # Act
     rows = _store.list_tasks(store, scope="")
     # Assert
@@ -1178,10 +1178,10 @@ def test_add_task_stores_created_by_explicit(tmp_path):
 def test_add_task_returns_created_by_from_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    # Assert — no explicit author resolves from $SCITEX_TODO_AGENT_ID, the
+    # Assert — no explicit author resolves from $SCITEX_CARDS_AGENT_ID, the
     # same chain comment authorship uses.
     assert inserted["created_by"] == "agent:fromenv"
 
@@ -1189,7 +1189,7 @@ def test_add_task_returns_created_by_from_env(tmp_path, env):
 def test_add_task_defaults_created_by_from_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     on_disk = _model.load_tasks(store)

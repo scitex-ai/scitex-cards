@@ -18,15 +18,15 @@ channel) will pick up the same event from both sides.
 
 Configuration
 -------------
-``SCITEX_TODO_AGENT_TURN_URLS`` — JSON object mapping agent ids to
+``SCITEX_CARDS_AGENT_TURN_URLS`` — JSON object mapping agent ids to
 their turn URLs (any HTTP endpoint that accepts a JSON ``POST``):
 
-    SCITEX_TODO_AGENT_TURN_URLS='{
+    SCITEX_CARDS_AGENT_TURN_URLS='{
         "scitex-todo": "https://agents.example/v1/turn/scitex-todo",
         "lead": "https://agents.example/v1/turn/lead"
     }'
 
-Per-agent fallback ``SCITEX_TODO_TURN_URL_<AGENT_SLUG>`` (agent slug
+Per-agent fallback ``SCITEX_CARDS_TURN_URL_<AGENT_SLUG>`` (agent slug
 upper-case + hyphens → underscores) — scitex-todo's own per-agent
 turn-url env contract.
 
@@ -45,7 +45,7 @@ Loud-but-not-fatal policy (lead-confirmed)
   status: <code>}``; never raise out into the request handler.
 * Network exception / timeout → same shape, ``reason:
   "transport-error", error: <str>``.
-* ``SCITEX_TODO_PUSH_DRY_RUN=1`` → no network; print the body to
+* ``SCITEX_CARDS_PUSH_DRY_RUN=1`` → no network; print the body to
   stdout for dev / test; returns ``ok=True, wire="dry-run"``.
 
 Boot-time announcement (``announce_missing_at_boot``) lists the
@@ -76,7 +76,7 @@ from ._turn_url import (
 
 logger = logging.getLogger(__name__)
 
-ENV_DRY_RUN = "SCITEX_TODO_PUSH_DRY_RUN"
+ENV_DRY_RUN = "SCITEX_CARDS_PUSH_DRY_RUN"
 
 #: Default per-POST timeout in seconds. Env-overridable.
 #:
@@ -100,7 +100,7 @@ ENV_DRY_RUN = "SCITEX_TODO_PUSH_DRY_RUN"
 #:
 #: Callers can override per-call with ``deliver(..., timeout=120.0)``
 #: when they need the receiver's full response payload.
-ENV_PUSH_TIMEOUT_S = "SCITEX_TODO_PUSH_TIMEOUT_S"
+ENV_PUSH_TIMEOUT_S = "SCITEX_CARDS_PUSH_TIMEOUT_S"
 DEFAULT_TIMEOUT_S = 30.0
 
 #: Short per-POST timeout for INTERACTIVE callers (the board's comment
@@ -180,7 +180,7 @@ def deliver(
     """Deliver ``body`` to ``agent`` via the configured turn URL.
 
     ``timeout`` defaults to :data:`DEFAULT_TIMEOUT_S` (env-overridable
-    via ``SCITEX_TODO_PUSH_TIMEOUT_S``). The receiver's ``/v1/turn``
+    via ``SCITEX_CARDS_PUSH_TIMEOUT_S``). The receiver's ``/v1/turn``
     runs the turn synchronously, so a client read-timeout does NOT
     imply the request was lost — the receiver may still be processing
     it. We treat the timeout case as DISPATCHED success (``ok=True,

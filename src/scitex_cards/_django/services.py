@@ -62,7 +62,7 @@ _CACHE_TTL_SECONDS = 3_600  # 1 hour
 #: Default ``~/proj/*/.scitex/todo/tasks.yaml`` covers the operator's
 #: layout; other hosts can override (e.g. ``~/work/*/.scitex/todo/
 #: tasks.yaml``) without code change.
-ENV_LANE_GLOBS = "SCITEX_TODO_LANE_GLOBS"
+ENV_LANE_GLOBS = "SCITEX_CARDS_LANE_GLOBS"
 DEFAULT_LANE_GLOBS = "~/proj/*/.scitex/todo/tasks.yaml"
 
 

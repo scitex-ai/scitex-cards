@@ -21,9 +21,9 @@ _NOW = _dt.datetime(2026, 6, 30, 12, 0, 0, tzinfo=_dt.timezone.utc)
 @pytest.fixture(autouse=True)
 def _hermetic_env(env):
     for var in (
-        "SCITEX_TODO_STALE_ACTIVE_HOURS",
-        "SCITEX_TODO_AGENT_ID",
-        "SCITEX_TODO_TASKS_YAML_SHARED",
+        "SCITEX_CARDS_STALE_ACTIVE_HOURS",
+        "SCITEX_CARDS_AGENT_ID",
+        "SCITEX_CARDS_TASKS_YAML_SHARED",
     ):
         env.delete(var)
 
@@ -173,8 +173,8 @@ def test_main_blocks_with_exit_2(tmp_path, env, monkeypatch, capsys):
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
     )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_STALE_ACTIVE_HOURS", "2")
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_STALE_ACTIVE_HOURS", "2")
     _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
@@ -187,8 +187,8 @@ def test_main_names_the_stale_card_on_stderr(tmp_path, env, monkeypatch, capsys)
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
     )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_STALE_ACTIVE_HOURS", "2")
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_STALE_ACTIVE_HOURS", "2")
     _silence_stdin(monkeypatch)
     # Act
     _idle_guard.main(["--agent", "alice"])
@@ -206,7 +206,7 @@ def test_main_allows_with_exit_0(tmp_path, env, monkeypatch):
     store = _store(
         tmp_path, [_t(id="pend", owner="alice", status="pending", hours_ago=99)]
     )
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
@@ -215,7 +215,7 @@ def test_main_allows_with_exit_0(tmp_path, env, monkeypatch):
 
 
 def test_main_no_agent_allows(tmp_path, monkeypatch):
-    # No --agent, no SCITEX_TODO_AGENT_ID → cannot attribute work → allow stop.
+    # No --agent, no SCITEX_CARDS_AGENT_ID → cannot attribute work → allow stop.
     # Arrange
     _silence_stdin(monkeypatch)
     # Act

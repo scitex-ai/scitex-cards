@@ -58,7 +58,7 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
 )
 
 # The instructions name THIS agent's OWN scope, interpolated from its resolved
-# identity ($SCITEX_TODO_AGENT_ID) — never a hard-coded example, which is how
+# identity ($SCITEX_CARDS_AGENT_ID) — never a hard-coded example, which is how
 # every agent came to be taught the scope of the long-dead `proj-scitex-todo`.
 # An UNRESOLVED identity names no scope at all; see `_mcp_instructions`.
 mcp = FastMCP(

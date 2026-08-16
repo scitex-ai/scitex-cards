@@ -17,9 +17,8 @@ Quick Start
 
 from __future__ import annotations
 
-# Environment dual-read shim — MUST run before anything reads SCITEX_TODO_*
+# Environment dual-read shim — MUST run before anything reads SCITEX_CARDS_*
 # env vars (mirrors SCITEX_CARDS_* onto the old names the code still reads).
-from . import _env_compat as _env_compat  # noqa: F401  (import for side effect)
 
 
 # `__version__` resolves LAZILY, in __getattr__ below. The reason is measured,

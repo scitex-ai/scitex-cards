@@ -34,7 +34,7 @@ BACKENDS = ("sqlite", "yaml")
 
 @pytest.fixture(params=BACKENDS)
 def store(request, env, tmp_path):
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return tmp_path / "tasks.yaml"
 
 

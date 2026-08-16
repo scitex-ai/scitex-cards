@@ -131,7 +131,7 @@ def handle_create(request, board):
     old bug gave a UI card a BLANK creator + no required owner) so the UI path
     reuses the same fail-loud + ``agent==assignee`` lock-step + ``created_by``
     stamp. Owner (``assignee`` or ``agent``) REQUIRED -> 400 otherwise.
-    ``created_by`` defaults payload -> ``$SCITEX_TODO_AGENT_ID`` -> ``"operator"``
+    ``created_by`` defaults payload -> ``$SCITEX_CARDS_AGENT_ID`` -> ``"operator"``
     (the board is the operator's surface), never blank. ``status`` defaults
     ``pending``; the id is unique across the union view (global + lanes).
     """
@@ -162,7 +162,7 @@ def handle_create(request, board):
     # payload nor env names one — never blank. add_task re-validates this.
     created_by = (
         _clean(payload.get("created_by"))
-        or os.environ.get("SCITEX_TODO_AGENT_ID")
+        or os.environ.get("SCITEX_CARDS_AGENT_ID")
         or "operator"
     )
     # Unique id across the union view (global + lanes) the board renders, so a

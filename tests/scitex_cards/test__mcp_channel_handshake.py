@@ -136,8 +136,8 @@ def initialize_result(tmp_path, env):
     # A non-trivial inbox so the drain has real work to do each tick.
     _seed(store, agent, 50)
     # The poll loop resolves the store from the environment.
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_AGENT_ID", agent)
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_AGENT_ID", agent)
     return _initialize_under_poll_loop(agent)
 
 

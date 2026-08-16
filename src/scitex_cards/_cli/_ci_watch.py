@@ -19,7 +19,7 @@ This module is todo's lane.
 
 For each repo configured in
 ``~/.scitex/cards/dashboard.json`` (``fleet.ci_status.repos``) — or
-the env override ``SCITEX_TODO_FLEET_CI_REPOS=owner/name,...``:
+the env override ``SCITEX_CARDS_FLEET_CI_REPOS=owner/name,...``:
 
 1. Call the existing
    ``_django.handlers.fleet.gh_ci.fetch_repo_ci_status`` adapter
@@ -129,7 +129,7 @@ def classify_transition(
 
 def state_path() -> Path:
     """Resolve the per-repo state cache path (env > home default)."""
-    override = os.environ.get("SCITEX_TODO_CI_STATE")
+    override = os.environ.get("SCITEX_CARDS_CI_STATE")
     if override:
         return Path(override).expanduser()
     return Path.home() / ".scitex" / "todo" / "ci-state.json"
@@ -178,7 +178,7 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
             "Polls every configured repo's GitHub CI default-branch state, "
             "compares to the local state cache at "
             "~/.scitex/todo/ci-state.json (override via env "
-            "SCITEX_TODO_CI_STATE), and logs the transition.\n\n"
+            "SCITEX_CARDS_CI_STATE), and logs the transition.\n\n"
             "Designed for cron use: --once runs ONE sweep + exits 0; "
             "absence of --once loops with --interval (default 300s)."
         ),
@@ -186,7 +186,7 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
             ("{prog} watch-ci --once", ""),
             ("{prog} watch-ci --interval 600", ""),
             (
-                "SCITEX_TODO_FLEET_CI_REPOS=owner/a,owner/b {prog} watch-ci --once",
+                "SCITEX_CARDS_FLEET_CI_REPOS=owner/a,owner/b {prog} watch-ci --once",
                 "",
             ),
         ),

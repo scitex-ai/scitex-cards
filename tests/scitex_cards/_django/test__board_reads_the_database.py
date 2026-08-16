@@ -173,7 +173,6 @@ def unreadable_store(env, tmp_path):
     _reset_board_caches()
     missing = tmp_path / "no-such-store" / "cards.db"
     env.set("SCITEX_CARDS_DB", str(missing))
-    env.set("SCITEX_TODO_DB", str(missing))
     yield missing
     _reset_board_caches()
 
@@ -287,7 +286,6 @@ def corrupt_store(env, tmp_path):
     broken.parent.mkdir(parents=True, exist_ok=True)
     broken.write_bytes(b"this is not a sqlite database at all")
     env.set("SCITEX_CARDS_DB", str(broken))
-    env.set("SCITEX_TODO_DB", str(broken))
     yield broken
     _reset_board_caches()
 
@@ -346,7 +344,6 @@ def unreachable_postgres(env):
         f"?connect_timeout=2"
     )
     env.set("SCITEX_CARDS_DB", target)
-    env.set("SCITEX_TODO_DB", target)
     yield port
     _reset_board_caches()
 

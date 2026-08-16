@@ -23,7 +23,7 @@ Scope
 -----
 INBOXES ONLY. This is now the DEFAULT backend (see
 :mod:`scitex_cards._inbox`'s ``_use_sqlite``); the file-backed
-break-glass backend (``SCITEX_TODO_INBOX_BACKEND=yaml``, its own
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``, its own
 ``inboxes.json`` sidecar) is the non-default fallback. Semantics —
 dedup key ``(event_type, card_id, ts, actor)``, ``supersede`` dropping
 UNSEEN ``(event_type, card_id)`` predecessors, ``poll_inbox(unseen_only,

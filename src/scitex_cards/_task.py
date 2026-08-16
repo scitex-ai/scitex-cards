@@ -383,7 +383,7 @@ class Task:
     subscribers: list[str] = field(default_factory=list)
     # `created_by` = the USER (agent or human; user.kind=agent) who created
     # the card, captured at insert by add_task from the same author chain
-    # comment authorship resolves ($SCITEX_TODO_AGENT_ID → $USER → "unknown").
+    # comment authorship resolves ($SCITEX_CARDS_AGENT_ID → $USER → "unknown").
     # Back-compat: ABSENT on legacy rows — readers fall back to the earliest
     # comment author, else "—". Optional non-empty string when present.
     # (hook-bypass: line-limit — _model.py split still queued.)

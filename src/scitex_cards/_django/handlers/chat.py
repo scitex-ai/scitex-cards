@@ -39,7 +39,7 @@ Design principles (HARD, from the operator brief):
   write via the existing ``_store.comment_task`` API. No new schema,
   no parallel storage.
 - **NO hardcoded proper nouns** — the ``author`` value flows in from
-  the request body (set by the FE from ``SCITEX_TODO_AGENT_ID`` env, with
+  the request body (set by the FE from ``SCITEX_CARDS_AGENT_ID`` env, with
   operator-typed override). The fallback used when neither is supplied
   is the closed sentinel string ``"<unknown>"`` — purely a display token,
   not a literal agent name.
@@ -67,7 +67,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 # ---------------------------------------------------------------------------
 
 #: Fallback display label when neither the request body's ``author`` field nor
-#: the underlying ``_store.comment_task`` default (``$SCITEX_TODO_AGENT_ID`` →
+#: the underlying ``_store.comment_task`` default (``$SCITEX_CARDS_AGENT_ID`` →
 #: ``$USER``) is set. Purely a display string — never a literal agent name,
 #: per the "no hardcoded proper nouns" principle.
 _UNKNOWN_AUTHOR: str = "<unknown>"

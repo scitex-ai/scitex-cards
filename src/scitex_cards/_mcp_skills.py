@@ -83,7 +83,7 @@ async def reassign_task(
     Args:
       task_id: the card id.
       new_owner: the new owning agent.
-      by: the actor ($SCITEX_TODO_AGENT_ID → $USER precedence).
+      by: the actor ($SCITEX_CARDS_AGENT_ID → $USER precedence).
     """
     result = await anyio.to_thread.run_sync(
         functools.partial(
@@ -238,7 +238,7 @@ async def health(tasks_path: str | None = None) -> str:
     (which only checks the fastmcp install). Runs the checks in
     :func:`scitex_cards._health.health`: ``store_canonical`` (resolved store is
     the canonical, readable+writable, parses with a ``tasks`` key — no
-    project shadow), ``agent_id`` ($SCITEX_TODO_AGENT_ID resolvable),
+    project shadow), ``agent_id`` ($SCITEX_CARDS_AGENT_ID resolvable),
     ``notifyd_alive`` (delivery-daemon pidfile probe), ``channel_drain`` (this
     agent's unseen vs seen inbox backlog), and ``channel_capable``
     (``_mcp_channel`` importable). Returns the cross-package standard shape
@@ -267,9 +267,9 @@ def _dm_sender_or_error() -> "tuple[str | None, str | None]":
         return None, json.dumps(
             {
                 "error": "dm: no agent identity configured. Set "
-                "SCITEX_TODO_AGENT_ID=<your-agent> in the MCP server env "
-                '(.mcp.json: "SCITEX_TODO_AGENT_ID": '
-                "\"${SCITEX_TODO_AGENT_ID}\") so the DM 'from' field names a "
+                "SCITEX_CARDS_AGENT_ID=<your-agent> in the MCP server env "
+                '(.mcp.json: "SCITEX_CARDS_AGENT_ID": '
+                "\"${SCITEX_CARDS_AGENT_ID}\") so the DM 'from' field names a "
                 "real agent."
             }
         )
@@ -289,7 +289,7 @@ async def dm_send(
     ``dm:<a>::<b>``, peers sorted) and enqueues a ``dm`` notification into the
     recipient's pull-inbox so the unified channel server delivers it into
     their live session. ``from`` is THIS agent's resolved identity
-    ($SCITEX_TODO_AGENT_ID). The operator's reserved peer name is
+    ($SCITEX_CARDS_AGENT_ID). The operator's reserved peer name is
     ``"operator"`` — the operator reads the thread on the board's /chat view.
     Returns the stored record as JSON.
 

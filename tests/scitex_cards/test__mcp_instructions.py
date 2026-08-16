@@ -68,15 +68,14 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
     """
     env = dict(os.environ)
     # The identity now resolves from the post-rename $SCITEX_CARDS_AGENT_ID,
-    # which `_env_compat` mirrors onto $SCITEX_TODO_AGENT_ID at import (new
+    # which `_env_compat` mirrors onto $SCITEX_CARDS_AGENT_ID at import (new
     # name wins). An ambient SCITEX_CARDS_AGENT_ID would therefore clobber
     # whatever we set on the old name, so normalise BOTH prefixes (and both
     # deprecated twins) to a known state before driving the one we want.
     for var in (
         "SCITEX_CARDS_AGENT_ID",
-        "SCITEX_TODO_AGENT_ID",
         "SCITEX_CARDS_AGENT",  # deprecated twin: fails loud if set
-        "SCITEX_TODO_AGENT",
+        "SCITEX_CARDS_AGENT",
     ):
         env.pop(var, None)
     if env_agent_id is not None:
@@ -97,7 +96,7 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
 
 
 def test_live_server_instructions_carry_the_env_identity():
-    """The REAL server string, built at import, names $SCITEX_TODO_AGENT_ID."""
+    """The REAL server string, built at import, names $SCITEX_CARDS_AGENT_ID."""
     # Arrange
     pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
     # Act
@@ -167,7 +166,7 @@ def test_unresolved_identity_admits_the_identity_is_unresolved(unresolved):
 @pytest.mark.parametrize("unresolved", [None, ""])
 def test_unresolved_identity_names_the_env_var_that_fixes_it(unresolved):
     # Arrange
-    env_var = "SCITEX_TODO_AGENT_ID"
+    env_var = "SCITEX_CARDS_AGENT_ID"
     # Act
     text = build_instructions(unresolved)
     # Assert — the agent is told WHICH knob turns the absence into an identity.
@@ -231,7 +230,7 @@ DEAD_IDENTITY_EXAMPLE = re.compile(
             ["']?(?:agent:)?proj-                               # CLI flag
       | \b(?:agent|assignee|author|scope|owner)\s*[:=]\s*
             ["']?(?:agent:)?proj-                               # field / kwarg
-      | SCITEX_TODO_AGENT_ID\s*=\s*["']?proj-                   # the env var
+      | SCITEX_CARDS_AGENT_ID\s*=\s*["']?proj-                   # the env var
     )
     """
 )

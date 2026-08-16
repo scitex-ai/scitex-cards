@@ -18,7 +18,7 @@ The tests cover:
   - stale pidfile (PID dead) is cleaned up + treated as "not running"
 
 No mocks (STX-NM / PA-306): real subprocesses (Python `time.sleep` loop)
-and a tmp pidfile via the ``SCITEX_TODO_BOARD_PIDFILE`` env override.
+and a tmp pidfile via the ``SCITEX_CARDS_BOARD_PIDFILE`` env override.
 
 The actual Django/runserver path is NOT exercised here — `start` from
 the lifecycle perspective is the pidfile + dispatch contract; the
@@ -53,7 +53,7 @@ def pidfile_path(env, tmp_path):
     """Point the pidfile at a tmp location so tests don't touch
     ``~/.scitex/todo/board.pid``."""
     pf = tmp_path / "board.pid"
-    env.set("SCITEX_TODO_BOARD_PIDFILE", str(pf))
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf
 
 

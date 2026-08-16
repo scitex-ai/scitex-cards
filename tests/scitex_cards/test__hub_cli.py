@@ -46,7 +46,7 @@ def rig(tmp_path, env):
     env.set("SCITEX_CARDS_HUB_URL", url)
     env.set("SCITEX_CARDS_HUB_TOKEN_FILE", str(token_file))
     env.delete("SCITEX_CARDS_HUB_TOKEN")
-    env.set("SCITEX_TODO_AGENT_ID", "remote-doctor")
+    env.set("SCITEX_CARDS_AGENT_ID", "remote-doctor")
 
     yield {"url": url, "token": token_file.read_text().strip()}
 
@@ -206,18 +206,18 @@ def test_doctor_unreachable_hub_exits_one(rig, env):
 
 def test_doctor_no_identity_fails_check_four(rig, env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     result = _doctor()
     report = json.loads(result.output)
     echo = next(c for c in report["checks"] if c["name"] == "identity_echo")
     # Assert — constitution §2: the failing check carries its own next step.
-    assert echo["ok"] is False and "SCITEX_TODO_AGENT_ID" in echo["hint"]
+    assert echo["ok"] is False and "SCITEX_CARDS_AGENT_ID" in echo["hint"]
 
 
 def test_doctor_no_identity_exits_one(rig, env):
     # Arrange
-    env.delete("SCITEX_TODO_AGENT_ID")
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     result = _doctor()
     # Assert

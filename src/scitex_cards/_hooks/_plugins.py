@@ -80,7 +80,7 @@ PLUGIN_TIMEOUT_S = 5.0
 
 #: Env override for :data:`PLUGIN_TIMEOUT_S`. Parsed as a float; a value
 #: <= 0 disables the wall-time budget (inline/legacy execution).
-PLUGIN_TIMEOUT_ENV = "SCITEX_TODO_HOOK_PLUGIN_TIMEOUT_S"
+PLUGIN_TIMEOUT_ENV = "SCITEX_CARDS_HOOK_PLUGIN_TIMEOUT_S"
 
 
 def _plugin_timeout_s() -> float:

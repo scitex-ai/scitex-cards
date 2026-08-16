@@ -66,7 +66,7 @@ def store() -> str:
 def store_resolved_from_env(store: str, env) -> str:
     """The fixture store becomes what the precedence chain resolves to."""
     env.delete("SCITEX_CARDS_TASKS_YAML_SHARED")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     return store
 
 

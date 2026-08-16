@@ -178,7 +178,6 @@ def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
     is what the second test below is about.
     """
     env.delete(_db.ENV_DB)
-    env.delete(_db.ENV_DB_DEPRECATED)
     from scitex_config._ecosystem import local_state
 
     calls = []
@@ -246,49 +245,6 @@ def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
 
     # Assert
     assert str(sentinel) in str(got)
-
-
-def _resolve_from_legacy_env_only(tmp_path, env, caplog):
-    """Set ONLY the pre-rename env name and resolve, capturing warnings."""
-    env.delete(_db.ENV_DB)
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-    with caplog.at_level("WARNING", logger="scitex_cards._db"):
-        return _db.resolve_db_path()
-
-
-def test_resolve_db_path_still_honours_the_legacy_env_name(tmp_path, env, caplog):
-    """SCITEX_TODO_DB (pre-rename) still resolves when it is the only export."""
-    # Arrange
-    # Act
-    got = _resolve_from_legacy_env_only(tmp_path, env, caplog)
-
-    # Assert
-    assert got == (tmp_path / "legacy.db")
-
-
-def test_resolve_db_path_warns_that_the_legacy_env_name_is_deprecated(
-    tmp_path, env, caplog
-):
-    """...and it resolves LOUDLY, so the export gets migrated."""
-    # Arrange
-    # Act
-    _resolve_from_legacy_env_only(tmp_path, env, caplog)
-
-    # Assert
-    assert any("deprecated" in r.message for r in caplog.records)
-
-
-def test_resolve_db_path_new_env_wins_over_legacy(tmp_path, env):
-    """When both names are set, SCITEX_CARDS_DB wins."""
-    # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "new.db"))
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-
-    # Act
-    got = _db.resolve_db_path()
-
-    # Assert
-    assert got == (tmp_path / "new.db")
 
 
 # --------------------------------------------------------------------------- #

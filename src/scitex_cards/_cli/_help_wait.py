@@ -36,7 +36,7 @@ from ._write import _emit
         ),
         examples=(
             (
-                '{prog} help-wait "$SCITEX_TODO_AGENT_ID" '
+                '{prog} help-wait "$SCITEX_CARDS_AGENT_ID" '
                 "--question 'merge PR #240 or wait for CI?'",
                 "Raise (or refresh) the waiting card.",
             ),
@@ -74,7 +74,7 @@ def help_wait_cmd(agent, question, host, as_json) -> None:
         summary="Resolve the help-<agent>-waiting card (status=done + clear blocker).",
         description="No-op (exit 0) if the card does not exist.",
         examples=(
-            ('{prog} help-clear "$SCITEX_TODO_AGENT_ID"', "Clear the waiting card."),
+            ('{prog} help-clear "$SCITEX_CARDS_AGENT_ID"', "Clear the waiting card."),
         ),
     ),
 )

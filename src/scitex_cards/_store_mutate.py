@@ -480,7 +480,7 @@ def update_task(
                 entry_points=entry_points,
             )
     # Liveness (assignee-liveness feature). Heartbeat the acting agent
-    # (best-effort from $SCITEX_TODO_AGENT_ID — update_task has no `by`, and we
+    # (best-effort from $SCITEX_CARDS_AGENT_ID — update_task has no `by`, and we
     # deliberately reuse the SAME env identity seam rather than inventing a
     # second one; fail-soft so a missing env never breaks the update). When
     # this update SET an assignee/agent, surface that owner's liveness in the

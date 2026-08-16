@@ -189,7 +189,7 @@ def _store_with(tmp_path: Path) -> Path:
 def test_push_appends_comment_to_card(tmp_path: Path, env):
     # Arrange
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "push",
@@ -213,7 +213,7 @@ def test_push_is_idempotent_when_commit_sha_already_recorded(
     # Arrange — first push recorded; second one with same commit_sha
     # must be a noop.
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "push",
@@ -234,7 +234,7 @@ def test_push_is_idempotent_when_commit_sha_already_recorded(
 def test_push_unknown_card_id_is_soft_noop(tmp_path: Path, env):
     # Arrange — producer hinted at a card that doesn't exist.
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "push",
@@ -256,7 +256,7 @@ def test_push_unknown_card_id_is_soft_noop(tmp_path: Path, env):
 def test_done_flips_card_to_done_with_pr_url(tmp_path: Path, env):
     # Arrange
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "done",
@@ -276,7 +276,7 @@ def test_done_flips_card_to_done_with_pr_url(tmp_path: Path, env):
 def test_done_records_pr_url_on_card(tmp_path: Path, env):
     # Arrange
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "done",
@@ -299,7 +299,7 @@ def test_done_is_idempotent_when_already_done_with_same_pr_url(
 ):
     # Arrange — first done recorded; second is a noop.
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "done",
@@ -333,7 +333,7 @@ def test_dispatch_event_handles_plugin_error_gracefully(tmp_path: Path, env):
             return _bad
 
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "push",
@@ -385,7 +385,7 @@ def test_event_validate_unblock_normalizes_card_ids():
 def test_unblock_handler_appends_comment_to_dependent(tmp_path: Path, env):
     # Arrange
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {"kind": "unblock", "unlocker_id": "blocker-x", "card_ids": ["card-1"]}
     )
@@ -398,7 +398,7 @@ def test_unblock_handler_appends_comment_to_dependent(tmp_path: Path, env):
 def test_unblock_handler_is_idempotent_on_same_unlocker(tmp_path: Path, env):
     # Arrange — re-emitting the same unblock must not double-comment.
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {"kind": "unblock", "unlocker_id": "blocker-x", "card_ids": ["card-1"]}
     )
@@ -412,7 +412,7 @@ def test_unblock_handler_is_idempotent_on_same_unlocker(tmp_path: Path, env):
 def test_unblock_handler_unknown_card_is_soft_noop(tmp_path: Path, env):
     # Arrange
     store = _store_with(tmp_path)
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     event = event_validate(
         {
             "kind": "unblock",

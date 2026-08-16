@@ -24,7 +24,7 @@ plus ``schema_meta`` rows.
 
 Path resolution — DELEGATED, never re-rolled
 --------------------------------------------
-Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_TODO_DB``
+Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_CARDS_DB``
 (deprecated, warned) → the ecosystem ``local_state.user_path("cards",
 "cards.db")``. We DELEGATE the final tier to
 ``scitex_config._ecosystem.local_state.user_path`` rather than re-rolling a
@@ -59,14 +59,6 @@ PKG_SHORT = "cards"
 
 #: env var that overrides the resolved DB path entirely (2nd tier).
 ENV_DB = "SCITEX_CARDS_DB"
-
-#: pre-rename name of :data:`ENV_DB` (package renamed 2026-07-16). Honoured
-#: for one transition window with a loud deprecation warning; the NEW name
-#: wins when both are set. (``scitex_cards._env_compat`` also mirrors
-#: ``SCITEX_CARDS_DB`` onto this name at import, so the pair cannot diverge
-#: for in-package readers — this fallback exists for direct callers of
-#: :func:`resolve_db_path` in processes that never imported the package root.)
-ENV_DB_DEPRECATED = "SCITEX_TODO_DB"
 
 #: schema version — mirrored into both ``PRAGMA user_version`` and the
 #: ``schema_meta`` table so a fast gate (pragma) and a human-readable row exist.
@@ -192,7 +184,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
 
     1. ``explicit`` argument (CLI ``--db`` / function arg),
     2. ``$SCITEX_CARDS_DB`` environment override,
-    3. ``$SCITEX_TODO_DB`` — deprecated pre-rename name, honoured with a
+    3. ``$SCITEX_CARDS_DB`` — deprecated pre-rename name, honoured with a
        loud warning for one transition window,
     4. NOTHING — there is no fourth tier. Until 2026-08-13 this DELEGATED to
        the ecosystem user-canonical resolver,
@@ -250,16 +242,6 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     env_val = os.environ.get(ENV_DB)
     if env_val:
         return _as_path(env_val, f"${ENV_DB}")
-    legacy_val = os.environ.get(ENV_DB_DEPRECATED)
-    if legacy_val:
-        logger.warning(
-            "%s is deprecated (package renamed 2026-07-16); rename the "
-            "export to %s. The legacy value is honoured for one "
-            "transition window only.",
-            ENV_DB_DEPRECATED,
-            ENV_DB,
-        )
-        return _as_path(legacy_val, f"${ENV_DB_DEPRECATED}")
     # CONFIG TIER — kept in lockstep with resolve_store_target, whose docstring
     # promises this function's precedence is mirrored exactly. Routed through
     # _as_path deliberately: this function is typed `-> Path`, so a DSN written
