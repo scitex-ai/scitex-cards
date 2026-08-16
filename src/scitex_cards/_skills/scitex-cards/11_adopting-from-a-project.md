@@ -193,7 +193,7 @@ your project's color rail + the BIG text.
 
 ## Cross-references
 
-- [`02_quick-start.md`](02_quick-start.md) — `import scitex_cards as todo`.
+- [`02_quick-start.md`](02_quick-start.md) — `import scitex_cards as card`.
 - [`03_python-api.md`](03_python-api.md) — full Python API surface.
 - [`04_cli-reference.md`](04_cli-reference.md) — full CLI verbs.
 - [`05_mcp-tools.md`](05_mcp-tools.md) — MCP tool surface for agent callers.

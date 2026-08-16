@@ -16,7 +16,7 @@ whole file repeatedly (a store-lock convoy).
 This module moves ONLY the inbox read/write path onto SQLite so a poll
 no longer parses all cards. The SciTeX runtime-DB convention places
 package runtime databases at ``<store_dir>/runtime/<pkg-short>.db`` —
-here ``<store_dir>/runtime/todo.db``. WAL mode lets the ~21 concurrent
+here ``<store_dir>/runtime/cards.db``. WAL mode lets the ~21 concurrent
 pollers read without blocking the writer.
 
 Scope

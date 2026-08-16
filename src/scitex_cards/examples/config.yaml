@@ -2,8 +2,8 @@
 #
 # Resolved across two scopes and LAYERED (user is the base, project overrides
 # it key-by-key):
-#   1. user:     ~/.scitex/todo/config.yaml      (or $SCITEX_DIR/todo/config.yaml)
-#   2. project:  <git-root>/.scitex/todo/config.yaml
+#   1. user:     ~/.scitex/cards/config.yaml      (or $SCITEX_DIR/card/config.yaml)
+#   2. project:  <git-root>/.scitex/cards/config.yaml
 #
 # Copy this file to one of those locations and edit. A missing file just means
 # "use the built-in defaults". The running notifyd re-reads it each tick, so

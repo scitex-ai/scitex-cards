@@ -3,7 +3,7 @@
 """Tests for the port-fallback hardening of ``scitex-cards board``.
 
 Incident: a board process was serving on its port, but the pidfile
-(``~/.scitex/todo/board.pid``) was STALE (its pid dead while a different,
+(``~/.scitex/cards/board.pid``) was STALE (its pid dead while a different,
 untracked board held the port), so ``status`` reported NOT-running and
 ``stop``/``restart`` couldn't act on the live board.
 

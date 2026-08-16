@@ -78,7 +78,7 @@ export function AutoRefresh() {
     return (
       <button
         type="button"
-        className="stx-todo-sync stx-todo-sync--stale"
+        className="stx-cards-sync stx-cards-sync--stale"
         onClick={onRefresh}
         title="The shared store changed — click to reload"
       >
@@ -88,7 +88,7 @@ export function AutoRefresh() {
   }
   if (flash) {
     return (
-      <div className="stx-todo-sync stx-todo-sync--ok" aria-live="polite">
+      <div className="stx-cards-sync stx-cards-sync--ok" aria-live="polite">
         ✓ synced
       </div>
     );

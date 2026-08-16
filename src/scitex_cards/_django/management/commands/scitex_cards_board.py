@@ -80,7 +80,7 @@ class Command(BaseCommand):
 
             threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
-        self.stdout.write(f"SciTeX Todo Board running at {url}")
+        self.stdout.write(f"SciTeX Card Board running at {url}")
         self.stdout.write("Press Ctrl+C to stop")
 
         from django.core.management import call_command

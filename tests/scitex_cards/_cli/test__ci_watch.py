@@ -165,7 +165,7 @@ def test_ci_watch_dry_run_with_no_repos_configured(tmp_path: Path, env):
     # empty (no SCITEX_CARDS_FLEET_CI_REPOS, no dashboard.yaml under HOME).
     env.set("SCITEX_CARDS_CI_STATE", str(tmp_path / "ci-state.json"))
     # Force a hermetic HOME so the test doesn't pick up the operator's
-    # actual ~/.scitex/todo/dashboard.yaml.
+    # actual ~/.scitex/cards/dashboard.yaml.
     env.set("HOME", str(tmp_path))
     env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
     runner = CliRunner()

@@ -86,7 +86,7 @@ interface State {
   globalError: string | null;
 }
 
-/** Top-level component — mounted by ``TodoBoard.tsx`` inside the
+/** Top-level component — mounted by ``CardsBoard.tsx`` inside the
  * STATUS group of the toolbar. */
 export function FleetCiPills() {
   const [state, setState] = useState<State>({
@@ -135,7 +135,7 @@ export function FleetCiPills() {
   if (state.globalError) {
     return (
       <span
-        className="stx-todo-fleet-ci stx-todo-fleet-ci--note"
+        className="stx-cards-fleet-ci stx-cards-fleet-ci--note"
         title={state.globalError}
       >
         no CI status configured
@@ -147,7 +147,7 @@ export function FleetCiPills() {
     // placeholder so the toolbar grid doesn't reflow on first paint.
     return (
       <span
-        className="stx-todo-fleet-ci stx-todo-fleet-ci--loading"
+        className="stx-cards-fleet-ci stx-cards-fleet-ci--loading"
         aria-hidden="true"
       />
     );
@@ -157,7 +157,7 @@ export function FleetCiPills() {
     // Config absent / empty — the spec's graceful-hide path.
     return (
       <span
-        className="stx-todo-fleet-ci stx-todo-fleet-ci--note"
+        className="stx-cards-fleet-ci stx-cards-fleet-ci--note"
         title={
           "Set fleet.ci_status.repos in ~/.scitex/cards/dashboard.json " +
           "or SCITEX_CARDS_FLEET_CI_REPOS=owner/name,owner/other to enable."
@@ -170,7 +170,7 @@ export function FleetCiPills() {
 
   return (
     <span
-      className="stx-todo-fleet-ci"
+      className="stx-cards-fleet-ci"
       role="group"
       aria-label="Fleet CI status"
     >
@@ -186,11 +186,11 @@ export function FleetCiPills() {
         return (
           <span
             key={repo.slug}
-            className={`stx-todo-fleet-ci__pill stx-todo-fleet-ci__pill--${modifier}`}
+            className={`stx-cards-fleet-ci__pill stx-cards-fleet-ci__pill--${modifier}`}
             title={tooltip}
           >
-            <span className="stx-todo-fleet-ci__name">{display}</span>
-            <span className="stx-todo-fleet-ci__dot" aria-hidden="true">
+            <span className="stx-cards-fleet-ci__name">{display}</span>
+            <span className="stx-cards-fleet-ci__dot" aria-hidden="true">
               {isErr ? "!" : "●"}
             </span>
           </span>

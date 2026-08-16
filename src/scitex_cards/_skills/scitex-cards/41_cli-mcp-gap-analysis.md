@@ -229,7 +229,7 @@ it adopt, broaden once stable.
 Per lead a2a `60a1a93d` (operator direction): the `q-*` family
 (~66 cards, one per fleet package: `q-gen` / `q-io` / `q-ml` / ...)
 carries quality-CI status as one-liner notes (audit-debt counts,
-green flags). That's a status DB — not a ToDo list — so surfacing
+green flags). That's a status DB — not a Card list — so surfacing
 those rows on the actionable board generates noise.
 
 **Resolution (option b):** keep the rows on the board, but graduate

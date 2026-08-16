@@ -96,7 +96,7 @@ def _initialize_under_poll_loop(agent):
                         s_read,
                         s_write,
                         agent_id=agent,
-                        source="stodo",
+                        source="scards",
                         interval=0.05,  # hammer the poll loop to maximise contention
                         server=None,  # bare low-level server: exercises the handshake
                     )

@@ -276,7 +276,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         "Predicate: tasks past their next deadline AND not in a closed "
         "lifecycle state (done / failed / cancelled / goal). Uses the "
         "deadline / deadlines schema + repeater rules from "
-        "scitex_cards._model.is_overdue (PR #125, todo-p6-overdue-ui). "
+        "scitex_cards._model.is_overdue (PR #125, cards-p6-overdue-ui). "
         "This filter is the ONLY thing a deadline drives (that, and the "
         "board view) — a deadline NEVER sends a notification, so poll "
         "this yourself. Owner nudges key on inactivity, not deadlines. "
@@ -409,7 +409,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
 
 # board <verb> — dependency-graph board lifecycle (start/stop/restart/
 # status). Extracted to _board.py to keep _main.py under the 512-line cap;
-# behaviour + pidfile path (~/.scitex/todo/board.pid) are unchanged.
+# behaviour + pidfile path (~/.scitex/cards/board.pid) are unchanged.
 _board.register(main)
 # gui <verb> — the ecosystem-standard GUI verbs (open/serve/status/stop),
 # shared with figrecipe / scitex-writer / scitex-scholar so the operator's

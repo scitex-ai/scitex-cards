@@ -8,10 +8,10 @@ PNG) ships today. See the project roadmap for org and Web-UI adapters.
 
 Quick Start
 -----------
->>> import scitex_cards as todo
->>> tasks = todo.load_tasks()                    # doctest: +SKIP
->>> src = todo.build_mermaid(tasks)              # doctest: +SKIP
->>> todo.render(src, "tasks.png")                # doctest: +SKIP
+>>> import scitex_cards as card
+>>> tasks = card.load_tasks()                    # doctest: +SKIP
+>>> src = card.build_mermaid(tasks)              # doctest: +SKIP
+>>> card.render(src, "tasks.png")                # doctest: +SKIP
 'mmdc'
 """
 

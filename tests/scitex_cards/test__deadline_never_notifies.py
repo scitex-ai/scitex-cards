@@ -23,7 +23,7 @@ because both are DOC-level promises a doc could silently break:
 
 The structural guard at the bottom fails if a delivery module ever starts
 reading a deadline (a real, queued proposal — card
-``todo-recurring-deadline-does-not-nudge-docs-lie-20260712``), forcing the
+``cards-recurring-deadline-does-not-nudge-docs-lie-20260712``), forcing the
 docs to be corrected in the same breath.
 
 No mocks — real dicts + a frozen ``now``, per STX-NM / PA-306.

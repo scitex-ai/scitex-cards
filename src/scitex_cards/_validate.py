@@ -373,7 +373,7 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
         #  (b) A REAL blocker variant on a non-blocked row → raise.
         #  (c) The `"none"` sentinel ("no specific blocker named") is LENIENT
         #      on a non-blocked row: normalized away (dropped in place), not
-        #      rejected. Card `todo-blocker-none-validation-lenient`.
+        #      rejected. Card `cards-blocker-none-validation-lenient`.
         #      (hook-bypass: line-limit — _model.py split still queued.)
         blocker = task.get("blocker")
         if blocker is not None:

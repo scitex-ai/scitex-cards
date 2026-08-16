@@ -259,7 +259,7 @@ def _agent_facing_files(root: Path) -> list[Path]:
     files += list((pkg / "_skills").rglob("*.md"))
     files += [
         p
-        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-todo.md")
+        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-card.md")
         if p.exists()
     ]
     return files

@@ -3,7 +3,7 @@
 """CLI noun group ``scitex-cards index`` — SQLite derived-index lifecycle.
 
 PR-B of Stage 2 plan (lead a2a ``aa02fb0e``). YAML stays authoritative;
-the SQLite index (~/.scitex/todo/.tasks.index.sqlite) is a rebuildable read
+the SQLite index (~/.scitex/cards/.tasks.index.sqlite) is a rebuildable read
 cache. Verbs: ``rebuild`` + ``info``.
 
 Extracted verbatim from ``_main.py`` to keep that module under the 512-line
@@ -28,7 +28,7 @@ def register(main: click.Group) -> None:
     **spec_group_kwargs(
         summary="Manage the SQLite derived-index (rebuildable read cache).",
         description=(
-            "YAML stays authoritative; ~/.scitex/todo/.tasks.index.sqlite "
+            "YAML stays authoritative; ~/.scitex/cards/.tasks.index.sqlite "
             "is a rebuildable read cache built from it."
         ),
         command_categories=(("Core", ("rebuild", "info")),),

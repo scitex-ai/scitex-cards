@@ -64,7 +64,7 @@ from typing import Iterable, Optional, TextIO
 
 logger = logging.getLogger(__name__)
 
-# Anti-spiral defaults (incident-todo-wake-watcher-interval2-spiral-20260708).
+# Anti-spiral defaults (incident-cards-wake-watcher-interval2-spiral-20260708).
 # A 2s interval re-parsed the ~9 MB / ~930-card store faster than the tick
 # finished on a slow host, sustaining ~56% CPU and starving the box. The
 # default is now 30s and a HARD FLOOR (below) rejects anything under 10s so a
@@ -102,7 +102,7 @@ def clamp_interval(
         logger.warning(
             "wake-watcher: --interval %.3gs is below the %.3gs safety floor; "
             "clamping to %.3gs (a sub-floor interval death-spiraled the fleet "
-            "on 2026-07-08, incident-todo-wake-watcher-interval2-spiral).",
+            "on 2026-07-08, incident-cards-wake-watcher-interval2-spiral).",
             val,
             floor,
             floor,
@@ -487,7 +487,7 @@ def run_watcher_forever(
         logger.error(
             "wake-watcher: another instance already holds the single-instance "
             "lock; refusing to start a second (overlapping watchers saturated "
-            "the host on 2026-07-08, incident-todo-wake-watcher-interval2-spiral)."
+            "the host on 2026-07-08, incident-cards-wake-watcher-interval2-spiral)."
         )
         return
     state = WatcherState()

@@ -56,7 +56,7 @@ UNREADABLE_DB = "/proc/1/definitely-not-a-directory/cards.db"
 
 #: An inbox database under a path that cannot even be created, so the message
 #: rail fails on its own rather than borrowing the board's failure.
-UNREADABLE_INBOX_DB = "/proc/1/definitely-not-a-directory/todo.db"
+UNREADABLE_INBOX_DB = "/proc/1/definitely-not-a-directory/cards.db"
 
 
 def _store():

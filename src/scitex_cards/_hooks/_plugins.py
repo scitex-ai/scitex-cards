@@ -292,7 +292,7 @@ def _iter_entry_points() -> Iterable:
     ``entry_points.txt`` — ~126 files in a real fleet venv — on each call. This
     runs on EVERY card event via :func:`dispatch_event`, so uncached it was the
     single largest cost in a card write: sac profiled 2.18 s of a 3.24 s warm
-    ``add_task`` HERE (card todo-reassign-all-bulk-primitive, 2026-07-14). It is
+    ``add_task`` HERE (card cards-reassign-all-bulk-primitive, 2026-07-14). It is
     FIXED overhead — paid in full on every write regardless of store size — so
     the cache makes every card write in the fleet ~2.2 s faster.
 

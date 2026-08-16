@@ -19,7 +19,7 @@ Usage (integrated into a Django project):
     path("scitex-cards/", include("scitex_cards._django.urls")),
 """
 
-default_app_config = "scitex_cards._django.apps.ScitexTodoConfig"
+default_app_config = "scitex_cards._django.apps.ScitexCardsConfig"
 
 __all__ = ["default_app_config"]
 

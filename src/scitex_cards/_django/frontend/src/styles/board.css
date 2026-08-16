@@ -24,7 +24,7 @@
  * stay legible (lavender on dark panels, deeper violet on light), so it is
  * overridden in the [data-theme="light"] block below rather than sourced
  * from a shell variable. */
-.stx-todo-board {
+.stx-cards-board {
   --stx-text: var(--text-primary, #e0e0e0);
   --stx-text-muted: var(--text-muted, #a0a0b0);
   --stx-text-faint: var(--text-muted, #8a8a9c);
@@ -42,7 +42,7 @@
   --stx-scrollbar-thumb-hover: var(--text-muted, #6a6a82);
 }
 
-[data-theme="light"] .stx-todo-board {
+[data-theme="light"] .stx-cards-board {
   --stx-accent: #6a4fb0;
 }
 
@@ -53,12 +53,12 @@
 
 /* ── Full-screen standalone (Fix #2) ─────────────────────────────────────
  * The scitex-ui standalone shell wraps the board in a three-column layout
- * (Console/Chat | Files | Viewer | App Content). For the standalone todo
+ * (Console/Chat | Files | Viewer | App Content). For the standalone card
  * board those three sidebars are dead weight — hide them so the board's
  * #main-content (flex: 1) fills the full viewport width.
  *
  * Scoped via :has(#app-mount[data-app-name="scitex-cards"]) so it ONLY
- * applies to the standalone todo board, NEVER to the embedded scitex-hub
+ * applies to the standalone card board, NEVER to the embedded scitex-hub
  * multi-app workspace (where the sidebars are wanted). */
 body:has(#app-mount[data-app-name="scitex-cards"]) .ws-ai-pane,
 body:has(#app-mount[data-app-name="scitex-cards"]) .ws-worktree-pane,
@@ -72,7 +72,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   overflow: hidden;
 }
 
-.stx-todo-board {
+.stx-cards-board {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -82,7 +82,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text);
 }
 
-.stx-todo-board__header {
+.stx-cards-board__header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -93,30 +93,30 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text);
 }
 
-.stx-todo-board__title {
+.stx-cards-board__title {
   font-weight: 600;
   color: var(--stx-accent);
 }
 
-.stx-todo-board__meta {
+.stx-cards-board__meta {
   font-size: 0.8rem;
   color: var(--stx-text-muted);
 }
 
-.stx-todo-board__meta code {
+.stx-cards-board__meta code {
   background: var(--stx-code-bg);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
-.stx-todo-board__canvas {
+.stx-cards-board__canvas {
   flex: 1;
   min-height: 0;
   position: relative;
 }
 
 /* Flow container: a flex row [docked pool | canvas]; breadcrumb overlays. */
-.stx-todo-flow {
+.stx-cards-flow {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -125,14 +125,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   min-height: 0;
 }
 
-.stx-todo-flow__body {
+.stx-cards-flow__body {
   display: flex;
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.stx-todo-flow__canvas {
+.stx-cards-flow__canvas {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -143,7 +143,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * reload graph), dim the canvas slightly so the operator sees the save in
  * progress. Pointer-events stay enabled — the saving window is short and
  * blocking input would feel laggy. */
-.stx-todo-flow--saving {
+.stx-cards-flow--saving {
   opacity: 0.85;
   transition: opacity 0.12s linear;
 }
@@ -155,7 +155,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * (just "Home" at the top level) so the layout doesn't jump as you drill.
  * Click any past crumb to pop back; the current crumb is non-interactive.
  */
-.stx-todo-breadcrumb {
+.stx-cards-breadcrumb {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -169,7 +169,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-.stx-todo-breadcrumb__crumb {
+.stx-cards-breadcrumb__crumb {
   appearance: none;
   background: transparent;
   border: none;
@@ -180,23 +180,23 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   border-radius: 4px;
 }
 
-.stx-todo-breadcrumb__crumb:hover,
-.stx-todo-breadcrumb__crumb:focus-visible {
+.stx-cards-breadcrumb__crumb:hover,
+.stx-cards-breadcrumb__crumb:focus-visible {
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-.stx-todo-breadcrumb__crumb--current {
+.stx-cards-breadcrumb__crumb--current {
   color: var(--stx-text);
   cursor: default;
   font-weight: 600;
 }
 
-.stx-todo-breadcrumb__crumb--current:hover {
+.stx-cards-breadcrumb__crumb--current:hover {
   background: transparent;
 }
 
-.stx-todo-breadcrumb__sep {
+.stx-cards-breadcrumb__sep {
   color: var(--stx-text-faint);
   padding: 0 2px;
 }
@@ -207,7 +207,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * drag-out / drop-in is a later interactivity phase. Bottom-left so it
  * doesn't collide with the bottom-right MiniMap. */
 /* Docked left sidebar (no longer a floating overlay over the canvas). */
-.stx-todo-pool {
+.stx-cards-pool {
   flex: 0 0 248px;
   width: 248px;
   height: 100%;
@@ -222,7 +222,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 
 /* Collapsed: a thin full-height rail (just an expand button) so the canvas
  * reclaims the width the open sidebar would take. */
-.stx-todo-pool--collapsed {
+.stx-cards-pool--collapsed {
   flex: 0 0 28px;
   width: 28px;
   padding: 0;
@@ -230,7 +230,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   overflow: visible;
 }
 
-.stx-todo-pool__expand {
+.stx-cards-pool__expand {
   appearance: none;
   width: 100%;
   height: 100%;
@@ -246,18 +246,18 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font: inherit;
 }
 
-.stx-todo-pool__expand:hover,
-.stx-todo-pool__expand:focus-visible {
+.stx-cards-pool__expand:hover,
+.stx-cards-pool__expand:focus-visible {
   color: var(--stx-text);
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-.stx-todo-pool__expand-glyph {
+.stx-cards-pool__expand-glyph {
   font-size: 0.8rem;
 }
 
-.stx-todo-pool__expand-label {
+.stx-cards-pool__expand-label {
   writing-mode: vertical-rl;
   font-size: 0.68rem;
   font-weight: 600;
@@ -266,7 +266,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* Title doubles as the collapse toggle (button reset to match the panel). */
-.stx-todo-pool__title {
+.stx-cards-pool__title {
   appearance: none;
   background: transparent;
   border: none;
@@ -280,24 +280,24 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   padding: 2px 0;
 }
 
-.stx-todo-pool__title:hover,
-.stx-todo-pool__title:focus-visible {
+.stx-cards-pool__title:hover,
+.stx-cards-pool__title:focus-visible {
   color: var(--stx-text);
   outline: none;
 }
 
-.stx-todo-pool__empty {
+.stx-cards-pool__empty {
   font-size: 0.75rem;
   color: var(--stx-text-faint);
 }
 
-.stx-todo-pool__items {
+.stx-cards-pool__items {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.stx-todo-pool__item {
+.stx-cards-pool__item {
   /* nodeStyle() provides background/border/color; size to the pool here.
    * Rendered as a <button> so the click target is announced to assistive
    * tech — reset the browser button chrome so it visually matches the
@@ -310,22 +310,22 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   outline: none;
 }
 
-.stx-todo-pool__item:hover,
-.stx-todo-pool__item:focus-visible {
+.stx-cards-pool__item:hover,
+.stx-cards-pool__item:focus-visible {
   filter: brightness(1.12);
   box-shadow: 0 0 0 2px var(--stx-accent);
 }
 
 /* React Flow graph nodes (.react-flow__node) are also clickable — the click
  * handler in GraphView opens the same detail drawer. Cue affordance via a
- * pointer cursor + a hover/focus ring. Scope to the todo flow container so
+ * pointer cursor + a hover/focus ring. Scope to the card flow container so
  * we don't restyle other React Flow boards mounted on the page. */
-.stx-todo-flow .react-flow__node {
+.stx-cards-flow .react-flow__node {
   cursor: pointer;
 }
 
-.stx-todo-flow .react-flow__node:hover,
-.stx-todo-flow .react-flow__node.selected {
+.stx-cards-flow .react-flow__node:hover,
+.stx-cards-flow .react-flow__node.selected {
   filter: brightness(1.08);
 }
 
@@ -347,7 +347,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * title attribute, so the graph-side tooltip is carried by the cursor +
  * label-glyph cues alone (the count badge is the explicit "N children"
  * affordance). */
-.stx-todo-flow .react-flow__node.stx-todo-node--parent {
+.stx-cards-flow .react-flow__node.stx-cards-node--parent {
   cursor: zoom-in;
   /* Operator UX evolution on parent-hover (TG 229 → 245):
    *   TG 229 (-3deg → -1deg): "やりすぎ" — toned down.
@@ -360,7 +360,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
    *     "glows" through the canvas — the operator's "下のグラフがまた
    *     見える" reads cleanly because we don't tilt the card OVER the
    *     graph anymore, we just light it up IN PLACE.
-   *   - the `.stx-todo-node__hover-hint` ("⊞ Drill in") becomes visible
+   *   - the `.stx-cards-node__hover-hint` ("⊞ Drill in") becomes visible
    *     next to the badge so the click affordance is unambiguous.
    * Transition list trimmed accordingly — no rotate, just filter +
    * box-shadow. */
@@ -369,7 +369,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
     box-shadow 0.12s ease;
 }
 
-.stx-todo-flow .react-flow__node.stx-todo-node--parent:hover {
+.stx-cards-flow .react-flow__node.stx-cards-node--parent:hover {
   /* In-place hover lift: brightness + a wider purple halo. NO ROTATE —
    * neighbouring cards stay aligned; the graph "underneath" remains
    * visible because nothing tilts over it. */
@@ -386,7 +386,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * parentLabel) next to the corner badge. Operator UX TG 245: "ドリル
  * というか視覚的に持ってくれるといいなと思います" — name the action
  * explicitly so anyone reading the canvas can tell click=drill. */
-.stx-todo-node__hover-hint {
+.stx-cards-node__hover-hint {
   display: inline-block;
   margin-left: 6px;
   padding: 0 6px;
@@ -402,24 +402,24 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   vertical-align: middle;
   pointer-events: none;
 }
-.stx-todo-flow
-  .react-flow__node.stx-todo-node--parent:hover
-  .stx-todo-node__hover-hint {
+.stx-cards-flow
+  .react-flow__node.stx-cards-node--parent:hover
+  .stx-cards-node__hover-hint {
   opacity: 1;
 }
 
-.stx-todo-flow .react-flow__node.stx-todo-node--leaf {
+.stx-cards-flow .react-flow__node.stx-cards-node--leaf {
   cursor: pointer;
 }
 
 /* Pool buttons mirror the same parent/leaf distinction. */
-.stx-todo-pool__item--parent {
+.stx-cards-pool__item--parent {
   cursor: zoom-in;
 }
 
-.stx-todo-pool__item--parent:hover,
-.stx-todo-pool__item--parent:focus-visible {
-  /* The .stx-todo-pool__item:hover rule above already lands a purple focus
+.stx-cards-pool__item--parent:hover,
+.stx-cards-pool__item--parent:focus-visible {
+  /* The .stx-cards-pool__item:hover rule above already lands a purple focus
    * ring + 1.12 brightness; nudge a notch further for parents so the
    * affordance feels heavier than a leaf detail-drawer click. */
   filter: brightness(1.18);
@@ -431,7 +431,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * `position: relative` so the badge corner-anchors on the actual title
  * line rather than the whole React Flow node wrapper (the latter would
  * drift if React Flow added internal padding). */
-.stx-todo-node__label {
+.stx-cards-node__label {
   display: block;
   position: relative;
 }
@@ -442,11 +442,11 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * card rather than a label inside it. `pointer-events: none` so it never
  * intercepts the click that should hit the node body itself.
  *
- * Pool-side gets the same look via the shared `.stx-todo-pool__badge`
+ * Pool-side gets the same look via the shared `.stx-cards-pool__badge`
  * selector — parent-pool buttons get `position: relative` (below) so the
  * absolute badge corner-anchors there too. */
-.stx-todo-node__badge,
-.stx-todo-pool__badge {
+.stx-cards-node__badge,
+.stx-cards-pool__badge {
   position: absolute;
   top: -10px;
   right: -8px;
@@ -464,19 +464,19 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   pointer-events: none;
 }
 
-.stx-todo-pool__item--parent {
+.stx-cards-pool__item--parent {
   position: relative;
 }
 
 /* Inline expand glyph ("⊞") that prefixes the parent title — bumped color
  * so it reads as a deliberate "drill in" mark rather than a stray bullet. */
-.stx-todo-node__glyph {
+.stx-cards-node__glyph {
   color: var(--stx-accent, #6a4fb0);
   font-weight: 700;
   margin-right: 1px;
 }
 
-.stx-todo-legend {
+.stx-cards-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -485,13 +485,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   margin-left: auto;
 }
 
-.stx-todo-legend__item {
+.stx-cards-legend__item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.stx-todo-legend__swatch {
+.stx-cards-legend__swatch {
   display: inline-block;
   width: 14px;
   height: 14px;
@@ -499,7 +499,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* Edge legend: a short bar in the edge color (depends_on vs blocks). */
-.stx-todo-legend__edge {
+.stx-cards-legend__edge {
   display: inline-block;
   width: 18px;
   height: 3px;
@@ -507,7 +507,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* ── Progress summary (header) ─────────────────────────────────────────── */
-.stx-todo-progress {
+.stx-cards-progress {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -516,11 +516,11 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text-muted);
 }
 
-.stx-todo-progress strong {
+.stx-cards-progress strong {
   color: var(--stx-text);
 }
 
-.stx-todo-progress__chip {
+.stx-cards-progress__chip {
   padding: 1px 7px;
   border: 1px solid var(--stx-border);
   border-radius: 999px;
@@ -529,7 +529,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* ── Filter toolbar (search + status chips) ────────────────────────────── */
-.stx-todo-toolbar {
+.stx-cards-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -539,7 +539,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   background: var(--stx-panel-bg);
 }
 
-.stx-todo-toolbar__search {
+.stx-cards-toolbar__search {
   flex: 0 1 320px;
   padding: 6px 10px;
   border: 1px solid var(--stx-border);
@@ -550,7 +550,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-size: 0.82rem;
 }
 
-.stx-todo-toolbar__search::placeholder {
+.stx-cards-toolbar__search::placeholder {
   color: var(--stx-text-faint);
 }
 
@@ -560,13 +560,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * pill so the operator SEES the parser's understanding as they type.
  * Unknown qualifier → grey dashed; unknown enum value → amber dashed
  * — the same visual idiom as the board_v3 (vanilla) template. */
-.stx-todo-toolbar__qhints {
+.stx-cards-toolbar__qhints {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
 }
-.stx-todo-toolbar__qhint {
+.stx-cards-toolbar__qhint {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -580,39 +580,39 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: help;
   line-height: 1.5;
 }
-.stx-todo-toolbar__qhint-key {
+.stx-cards-toolbar__qhint-key {
   color: var(--stx-accent, #6d4cad);
   font-weight: 700;
   text-transform: lowercase;
 }
-.stx-todo-toolbar__qhint-val {
+.stx-cards-toolbar__qhint-val {
   opacity: 0.92;
 }
-.stx-todo-toolbar__qhint--unknown {
+.stx-cards-toolbar__qhint--unknown {
   border-color: var(--stx-text-faint);
   border-style: dashed;
   background: rgba(110, 118, 134, 0.08);
   color: var(--stx-text-faint);
 }
-.stx-todo-toolbar__qhint--unknown .stx-todo-toolbar__qhint-key {
+.stx-cards-toolbar__qhint--unknown .stx-cards-toolbar__qhint-key {
   color: var(--stx-text-faint);
 }
-.stx-todo-toolbar__qhint--unknown-value {
+.stx-cards-toolbar__qhint--unknown-value {
   border-color: #ffb300;
   border-style: dashed;
   background: rgba(255, 179, 0, 0.08);
 }
-.stx-todo-toolbar__qhint--unknown-value .stx-todo-toolbar__qhint-key {
+.stx-cards-toolbar__qhint--unknown-value .stx-cards-toolbar__qhint-key {
   color: #ffb300;
 }
 
-.stx-todo-toolbar__chips {
+.stx-cards-toolbar__chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.stx-todo-chip {
+.stx-cards-chip {
   appearance: none;
   padding: 2px 10px;
   border: 1px solid var(--stx-border-strong);
@@ -624,15 +624,15 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-chip:hover {
+.stx-cards-chip:hover {
   filter: brightness(1.15);
 }
 
-.stx-todo-chip--on {
+.stx-cards-chip--on {
   font-weight: 600;
 }
 
-.stx-todo-toolbar__reset {
+.stx-cards-toolbar__reset {
   appearance: none;
   border: 1px solid var(--stx-border-strong);
   border-radius: 6px;
@@ -644,17 +644,17 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-toolbar__reset:hover {
+.stx-cards-toolbar__reset:hover {
   background: var(--stx-hover-bg);
 }
 
-.stx-todo-status {
+.stx-cards-status {
   padding: 24px;
   color: var(--stx-text-muted);
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-.stx-todo-status--err {
+.stx-cards-status--err {
   color: var(--stx-danger);
 }
 
@@ -666,70 +666,70 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * `scrollbar-*` properties; Chromium/WebKit use the pseudo-elements.
  *
  * GLOBAL FALLBACK (operator complaint via lead a2a 510a58d4, 2026-06-14):
- * `.stx-todo-board, .stx-todo-board *` so any scrollable element inside
+ * `.stx-cards-board, .stx-cards-board *` so any scrollable element inside
  * the board inherits themed scrollbars — preempts elements we'd otherwise
  * miss. Per-element rules below remain for explicit specificity, but the
  * universal selector catches React Flow's panes, picked CodeMirror frames,
  * the table-wrap, and anything added later without an extra rule. */
-.stx-todo-board,
-.stx-todo-board * {
+.stx-cards-board,
+.stx-cards-board * {
   scrollbar-width: thin;
   scrollbar-color: var(--stx-scrollbar-thumb) var(--stx-canvas-bg);
 }
 
-.stx-todo-board ::-webkit-scrollbar,
-.stx-todo-board::-webkit-scrollbar {
+.stx-cards-board ::-webkit-scrollbar,
+.stx-cards-board::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.stx-todo-board ::-webkit-scrollbar-track,
-.stx-todo-board::-webkit-scrollbar-track {
+.stx-cards-board ::-webkit-scrollbar-track,
+.stx-cards-board::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.stx-todo-board ::-webkit-scrollbar-thumb,
-.stx-todo-board::-webkit-scrollbar-thumb {
+.stx-cards-board ::-webkit-scrollbar-thumb,
+.stx-cards-board::-webkit-scrollbar-thumb {
   background: var(--stx-scrollbar-thumb);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
-.stx-todo-board ::-webkit-scrollbar-thumb:hover,
-.stx-todo-board::-webkit-scrollbar-thumb:hover {
+.stx-cards-board ::-webkit-scrollbar-thumb:hover,
+.stx-cards-board::-webkit-scrollbar-thumb:hover {
   background: var(--stx-scrollbar-thumb-hover);
   background-clip: padding-box;
 }
 
-.stx-todo-board ::-webkit-scrollbar-corner,
-.stx-todo-board::-webkit-scrollbar-corner {
+.stx-cards-board ::-webkit-scrollbar-corner,
+.stx-cards-board::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-.stx-todo-pool,
-.stx-todo-detail,
-.stx-todo-detail__markdown pre {
+.stx-cards-pool,
+.stx-cards-detail,
+.stx-cards-detail__markdown pre {
   scrollbar-width: thin;
   scrollbar-color: var(--stx-scrollbar-thumb) transparent;
 }
 
-.stx-todo-pool::-webkit-scrollbar,
-.stx-todo-detail::-webkit-scrollbar,
-.stx-todo-detail__markdown pre::-webkit-scrollbar {
+.stx-cards-pool::-webkit-scrollbar,
+.stx-cards-detail::-webkit-scrollbar,
+.stx-cards-detail__markdown pre::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.stx-todo-pool::-webkit-scrollbar-track,
-.stx-todo-detail::-webkit-scrollbar-track,
-.stx-todo-detail__markdown pre::-webkit-scrollbar-track {
+.stx-cards-pool::-webkit-scrollbar-track,
+.stx-cards-detail::-webkit-scrollbar-track,
+.stx-cards-detail__markdown pre::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.stx-todo-pool::-webkit-scrollbar-thumb,
-.stx-todo-detail::-webkit-scrollbar-thumb,
-.stx-todo-detail__markdown pre::-webkit-scrollbar-thumb {
+.stx-cards-pool::-webkit-scrollbar-thumb,
+.stx-cards-detail::-webkit-scrollbar-thumb,
+.stx-cards-detail__markdown pre::-webkit-scrollbar-thumb {
   background: var(--stx-scrollbar-thumb);
   border-radius: 6px;
   /* Inset the thumb so it reads as a thin pill rather than a full-width bar. */
@@ -737,15 +737,15 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   background-clip: padding-box;
 }
 
-.stx-todo-pool::-webkit-scrollbar-thumb:hover,
-.stx-todo-detail::-webkit-scrollbar-thumb:hover,
-.stx-todo-detail__markdown pre::-webkit-scrollbar-thumb:hover {
+.stx-cards-pool::-webkit-scrollbar-thumb:hover,
+.stx-cards-detail::-webkit-scrollbar-thumb:hover,
+.stx-cards-detail__markdown pre::-webkit-scrollbar-thumb:hover {
   background: var(--stx-scrollbar-thumb-hover);
   background-clip: padding-box;
 }
 
-.stx-todo-pool::-webkit-scrollbar-corner,
-.stx-todo-detail::-webkit-scrollbar-corner {
+.stx-cards-pool::-webkit-scrollbar-corner,
+.stx-cards-detail::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -760,7 +760,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  *
  * `<option>` styling is best-effort — Chrome / Firefox style the popover
  * via these properties on most platforms, Safari falls back to native. */
-.stx-todo-board select {
+.stx-cards-board select {
   appearance: auto;
   padding: 4px 8px;
   border: 1px solid var(--stx-border-strong);
@@ -772,18 +772,18 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-board select:hover {
+.stx-cards-board select:hover {
   border-color: var(--stx-accent);
 }
 
-.stx-todo-board select:focus,
-.stx-todo-board select:focus-visible {
+.stx-cards-board select:focus,
+.stx-cards-board select:focus-visible {
   outline: none;
   border-color: var(--stx-accent);
   box-shadow: 0 0 0 2px var(--stx-hover-bg);
 }
 
-.stx-todo-board select option {
+.stx-cards-board select option {
   background: var(--stx-panel-bg);
   color: var(--stx-text);
 }
@@ -792,14 +792,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * The flat inbox is now split into collapsible <details> sections by status
  * (GraphView UncategorizedPool), and the header carries a "new task" button
  * beside the collapse toggle. */
-.stx-todo-pool__head {
+.stx-cards-pool__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
-.stx-todo-pool__new {
+.stx-cards-pool__new {
   appearance: none;
   flex: 0 0 auto;
   width: 22px;
@@ -813,26 +813,26 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-pool__new:hover,
-.stx-todo-pool__new:focus-visible {
+.stx-cards-pool__new:hover,
+.stx-cards-pool__new:focus-visible {
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-.stx-todo-pool__groups {
+.stx-cards-pool__groups {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.stx-todo-pool__group {
+.stx-cards-pool__group {
   border: 1px solid var(--stx-border);
   border-radius: 6px;
   background: var(--stx-input-bg);
   padding: 4px 6px;
 }
 
-.stx-todo-pool__group-summary {
+.stx-cards-pool__group-summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -847,21 +847,21 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   user-select: none;
 }
 
-.stx-todo-pool__group-summary::-webkit-details-marker {
+.stx-cards-pool__group-summary::-webkit-details-marker {
   display: none;
 }
 
-.stx-todo-pool__group-summary::before {
+.stx-cards-pool__group-summary::before {
   content: "▸";
   font-size: 0.7rem;
   color: var(--stx-text-faint);
 }
 
-.stx-todo-pool__group[open] > .stx-todo-pool__group-summary::before {
+.stx-cards-pool__group[open] > .stx-cards-pool__group-summary::before {
   content: "▾";
 }
 
-.stx-todo-pool__group-swatch {
+.stx-cards-pool__group-swatch {
   display: inline-block;
   width: 10px;
   height: 10px;
@@ -869,7 +869,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   border: 1px solid;
 }
 
-.stx-todo-pool__group .stx-todo-pool__items {
+.stx-cards-pool__group .stx-cards-pool__items {
   margin-top: 6px;
 }
 
@@ -877,13 +877,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * One menu instance (ContextMenu.tsx) rendered from the store's `menu`
  * state. The backdrop is a full-screen click-catcher; the menu is fixed at
  * the cursor (clamped to the viewport in JS). */
-.stx-todo-menu__backdrop {
+.stx-cards-menu__backdrop {
   position: fixed;
   inset: 0;
   z-index: 20;
 }
 
-.stx-todo-menu {
+.stx-cards-menu {
   position: fixed;
   min-width: 180px;
   max-width: 220px;
@@ -896,7 +896,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-size: 0.82rem;
 }
 
-.stx-todo-menu__label {
+.stx-cards-menu__label {
   padding: 4px 8px 6px;
   font-size: 0.72rem;
   font-weight: 600;
@@ -906,7 +906,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   text-overflow: ellipsis;
 }
 
-.stx-todo-menu__item {
+.stx-cards-menu__item {
   display: block;
   width: 100%;
   text-align: left;
@@ -920,23 +920,23 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-menu__item:hover,
-.stx-todo-menu__item:focus-visible {
+.stx-cards-menu__item:hover,
+.stx-cards-menu__item:focus-visible {
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-.stx-todo-menu__item--danger {
+.stx-cards-menu__item--danger {
   color: var(--stx-danger);
 }
 
-.stx-todo-menu__sep {
+.stx-cards-menu__sep {
   height: 1px;
   margin: 4px 2px;
   background: var(--stx-border);
 }
 
-.stx-todo-menu__group-label {
+.stx-cards-menu__group-label {
   padding: 2px 8px;
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -944,12 +944,12 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text-faint);
 }
 
-.stx-todo-menu__statuses {
+.stx-cards-menu__statuses {
   display: flex;
   flex-direction: column;
 }
 
-.stx-todo-menu__status {
+.stx-cards-menu__status {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -966,23 +966,23 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-menu__status:hover,
-.stx-todo-menu__status:focus-visible {
+.stx-cards-menu__status:hover,
+.stx-cards-menu__status:focus-visible {
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-.stx-todo-menu__status--current {
+.stx-cards-menu__status--current {
   font-weight: 600;
 }
 
-.stx-todo-menu__status--current::after {
+.stx-cards-menu__status--current::after {
   content: "✓";
   margin-left: auto;
   color: var(--stx-accent);
 }
 
-.stx-todo-menu__swatch {
+.stx-cards-menu__swatch {
   display: inline-block;
   width: 11px;
   height: 11px;
@@ -992,14 +992,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* ── Detail drawer: editable form ────────────────────────────────────────── */
-.stx-todo-detail__title-actions {
+.stx-cards-detail__title-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
 }
 
-.stx-todo-detail__edit {
+.stx-cards-detail__edit {
   appearance: none;
   background: transparent;
   color: var(--stx-text-muted);
@@ -1012,14 +1012,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-detail__edit:hover,
-.stx-todo-detail__edit:focus-visible {
+.stx-cards-detail__edit:hover,
+.stx-cards-detail__edit:focus-visible {
   background: var(--stx-hover-bg);
   color: var(--stx-text);
   outline: none;
 }
 
-.stx-todo-detail__form {
+.stx-cards-detail__form {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1027,7 +1027,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   min-height: 0;
 }
 
-.stx-todo-field {
+.stx-cards-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1035,30 +1035,30 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text-muted);
 }
 
-.stx-todo-field > span {
+.stx-cards-field > span {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.stx-todo-field-row {
+.stx-cards-field-row {
   display: flex;
   gap: 12px;
 }
 
-.stx-todo-field-row .stx-todo-field {
+.stx-cards-field-row .stx-cards-field {
   flex: 1;
 }
 
-.stx-todo-field--narrow {
+.stx-cards-field--narrow {
   flex: 0 0 90px !important;
 }
 
-.stx-todo-field--grow {
+.stx-cards-field--grow {
   flex: 1;
   min-height: 0;
 }
 
-.stx-todo-input {
+.stx-cards-input {
   appearance: none;
   padding: 7px 9px;
   border: 1px solid var(--stx-border);
@@ -1069,12 +1069,12 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-size: 0.85rem;
 }
 
-.stx-todo-input:focus-visible {
+.stx-cards-input:focus-visible {
   outline: none;
   border-color: var(--stx-accent);
 }
 
-.stx-todo-textarea {
+.stx-cards-textarea {
   resize: vertical;
   min-height: 120px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1082,7 +1082,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   line-height: 1.5;
 }
 
-.stx-todo-detail__actions {
+.stx-cards-detail__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -1090,7 +1090,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   padding-top: 6px;
 }
 
-.stx-todo-btn {
+.stx-cards-btn {
   appearance: none;
   padding: 7px 14px;
   border: 1px solid var(--stx-border-strong);
@@ -1102,23 +1102,23 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-btn:hover:not(:disabled) {
+.stx-cards-btn:hover:not(:disabled) {
   background: var(--stx-hover-bg);
 }
 
-.stx-todo-btn:disabled {
+.stx-cards-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.stx-todo-btn--primary {
+.stx-cards-btn--primary {
   border-color: var(--stx-accent);
   background: var(--stx-accent);
   color: var(--stx-accent-on);
   font-weight: 600;
 }
 
-.stx-todo-btn--primary:hover:not(:disabled) {
+.stx-cards-btn--primary:hover:not(:disabled) {
   filter: brightness(1.08);
   background: var(--stx-accent);
 }
@@ -1128,7 +1128,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * author · time · text, with an add box (author + textarea) at the bottom.
  * A "💬N" badge on the cards (graph label + pool item) cues which tasks
  * carry discussion. */
-.stx-todo-comments {
+.stx-cards-comments {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--stx-border);
@@ -1137,7 +1137,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   gap: 10px;
 }
 
-.stx-todo-comments__title {
+.stx-cards-comments__title {
   margin: 0;
   font-size: 0.8rem;
   font-weight: 600;
@@ -1145,13 +1145,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text-muted);
 }
 
-.stx-todo-comments__empty {
+.stx-cards-comments__empty {
   margin: 0;
   font-size: 0.8rem;
   color: var(--stx-text-faint);
 }
 
-.stx-todo-comments__list {
+.stx-cards-comments__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1160,14 +1160,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   gap: 8px;
 }
 
-.stx-todo-comment {
+.stx-cards-comment {
   border: 1px solid var(--stx-border);
   border-radius: 6px;
   background: var(--stx-input-bg);
   padding: 7px 10px;
 }
 
-.stx-todo-comment__meta {
+.stx-cards-comment__meta {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1175,42 +1175,42 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   margin-bottom: 3px;
 }
 
-.stx-todo-comment__author {
+.stx-cards-comment__author {
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--stx-accent);
 }
 
-.stx-todo-comment__ts {
+.stx-cards-comment__ts {
   font-size: 0.7rem;
   color: var(--stx-text-faint);
 }
 
-.stx-todo-comment__text {
+.stx-cards-comment__text {
   font-size: 0.84rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.stx-todo-comments__form {
+.stx-cards-comments__form {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.stx-todo-comments__author {
+.stx-cards-comments__author {
   font-size: 0.8rem;
 }
 
-.stx-todo-comments__text {
+.stx-cards-comments__text {
   resize: vertical;
   min-height: 44px;
   font-size: 0.84rem;
   line-height: 1.45;
 }
 
-.stx-todo-comments__actions {
+.stx-cards-comments__actions {
   display: flex;
   justify-content: flex-end;
 }
@@ -1219,7 +1219,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * Transient cue at top-center of the canvas: a brief "✓ synced" toast after
  * an automatic reload, or a clickable "● Updated — refresh" pill when the
  * store changed while the user was mid-edit. */
-.stx-todo-sync {
+.stx-cards-sync {
   position: absolute;
   top: 10px;
   left: 50%;
@@ -1234,25 +1234,25 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
-.stx-todo-sync--ok {
+.stx-cards-sync--ok {
   color: var(--status-success, #5a9a7e);
   pointer-events: none;
-  animation: stx-todo-sync-fade 1.8s ease forwards;
+  animation: stx-cards-sync-fade 1.8s ease forwards;
 }
 
-.stx-todo-sync--stale {
+.stx-cards-sync--stale {
   appearance: none;
   cursor: pointer;
   color: var(--stx-accent);
 }
 
-.stx-todo-sync--stale:hover,
-.stx-todo-sync--stale:focus-visible {
+.stx-cards-sync--stale:hover,
+.stx-cards-sync--stale:focus-visible {
   background: var(--stx-hover-bg);
   outline: none;
 }
 
-@keyframes stx-todo-sync-fade {
+@keyframes stx-cards-sync-fade {
   0% {
     opacity: 0;
   }
@@ -1268,14 +1268,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* ── View toggle (graph | table) ─────────────────────────────────────────── */
-.stx-todo-viewtoggle {
+.stx-cards-viewtoggle {
   display: inline-flex;
   border: 1px solid var(--stx-border-strong);
   border-radius: 6px;
   overflow: hidden;
 }
 
-.stx-todo-viewtoggle__btn {
+.stx-cards-viewtoggle__btn {
   appearance: none;
   border: none;
   background: transparent;
@@ -1286,18 +1286,18 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-viewtoggle__btn:hover {
+.stx-cards-viewtoggle__btn:hover {
   background: var(--stx-hover-bg);
 }
 
-.stx-todo-viewtoggle__btn--on {
+.stx-cards-viewtoggle__btn--on {
   background: var(--stx-accent);
   color: var(--stx-accent-on);
   font-weight: 600;
 }
 
 /* ── Table view ──────────────────────────────────────────────────────────── */
-.stx-todo-table-wrap {
+.stx-cards-table-wrap {
   position: absolute;
   inset: 0;
   overflow: auto;
@@ -1306,25 +1306,25 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   scrollbar-color: var(--stx-scrollbar-thumb) transparent;
 }
 
-.stx-todo-table-wrap::-webkit-scrollbar {
+.stx-cards-table-wrap::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.stx-todo-table-wrap::-webkit-scrollbar-thumb {
+.stx-cards-table-wrap::-webkit-scrollbar-thumb {
   background: var(--stx-scrollbar-thumb);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
-.stx-todo-table {
+.stx-cards-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
   color: var(--stx-text);
 }
 
-.stx-todo-table__th {
+.stx-cards-table__th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1342,34 +1342,34 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   white-space: nowrap;
 }
 
-.stx-todo-table__th--sorted {
+.stx-cards-table__th--sorted {
   color: var(--stx-accent);
 }
 
-.stx-todo-table__caret {
+.stx-cards-table__caret {
   font-size: 0.6rem;
 }
 
-.stx-todo-table__row {
+.stx-cards-table__row {
   cursor: pointer;
   border-bottom: 1px solid var(--stx-border);
 }
 
-.stx-todo-table__row:hover {
+.stx-cards-table__row:hover {
   background: var(--stx-hover-bg);
 }
 
-.stx-todo-table td {
+.stx-cards-table td {
   padding: 6px 10px;
   vertical-align: middle;
 }
 
-.stx-todo-table__title {
+.stx-cards-table__title {
   font-weight: 500;
   max-width: 520px;
 }
 
-.stx-todo-table__status {
+.stx-cards-table__status {
   display: inline-block;
   padding: 1px 8px;
   border-radius: 999px;
@@ -1378,25 +1378,25 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: #222;
 }
 
-.stx-todo-table__num {
+.stx-cards-table__num {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--stx-text-muted);
 }
 
-.stx-todo-table__repo {
+.stx-cards-table__repo {
   color: var(--stx-text-muted);
   font-size: 0.78rem;
 }
 
-.stx-todo-table__empty {
+.stx-cards-table__empty {
   padding: 24px;
   text-align: center;
   color: var(--stx-text-faint);
 }
 
 /* Edge-kind picker swatch (EdgeKindMenu): a short bar in the edge color. */
-.stx-todo-menu__edge-swatch {
+.stx-cards-menu__edge-swatch {
   display: inline-block;
   width: 16px;
   height: 3px;
@@ -1406,18 +1406,18 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* Multi-select (Ctrl+click) highlight for pool items + table rows. */
-.stx-todo-pool__item--selected {
+.stx-cards-pool__item--selected {
   outline: 2px solid var(--stx-accent);
   outline-offset: 1px;
 }
 
-.stx-todo-table__row--selected {
+.stx-cards-table__row--selected {
   background: var(--stx-hover-bg);
   box-shadow: inset 3px 0 0 0 var(--stx-accent);
 }
 
 /* ── Undo toast (Toast.tsx) ──────────────────────────────────────────────── */
-.stx-todo-toast {
+.stx-cards-toast {
   position: absolute;
   bottom: 18px;
   left: 50%;
@@ -1436,13 +1436,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   max-width: 80%;
 }
 
-.stx-todo-toast__msg {
+.stx-cards-toast__msg {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.stx-todo-toast__undo {
+.stx-cards-toast__undo {
   appearance: none;
   border: 1px solid var(--stx-accent);
   border-radius: 6px;
@@ -1455,11 +1455,11 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-.stx-todo-toast__undo:hover {
+.stx-cards-toast__undo:hover {
   background: var(--stx-hover-bg);
 }
 
-.stx-todo-toast__close {
+.stx-cards-toast__close {
   appearance: none;
   border: none;
   background: transparent;
@@ -1469,8 +1469,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   cursor: pointer;
 }
 
-/* Repo facet dropdown (TodoBoard Toolbar) — accent border when a repo is set. */
-.stx-todo-toolbar__repo {
+/* Repo facet dropdown (CardsBoard Toolbar) — accent border when a repo is set. */
+.stx-cards-toolbar__repo {
   appearance: auto;
   padding: 4px 8px;
   border: 1px solid var(--stx-border-strong);
@@ -1482,50 +1482,50 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   max-width: 180px;
   cursor: pointer;
 }
-.stx-todo-toolbar__repo--on {
+.stx-cards-toolbar__repo--on {
   border-color: var(--stx-accent);
   color: var(--stx-accent);
   font-weight: 600;
 }
 
-/* Export group (TodoBoard Toolbar) — Markdown / CSV / JSON buttons. */
-.stx-todo-toolbar__export {
+/* Export group (CardsBoard Toolbar) — Markdown / CSV / JSON buttons. */
+.stx-cards-toolbar__export {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-left: auto;
 }
-.stx-todo-toolbar__export-label {
+.stx-cards-toolbar__export-label {
   font-size: 0.7rem;
   color: var(--stx-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.stx-todo-chip--export {
+.stx-cards-chip--export {
   border-color: var(--stx-border-strong);
   color: var(--stx-text-muted);
   padding: 2px 8px;
 }
-.stx-todo-chip--export:hover {
+.stx-cards-chip--export:hover {
   background: var(--stx-hover-bg);
   color: var(--stx-accent);
 }
 
 /* ---------------------------------------------------------------------------
  * BLOCKER VISIBILITY (operator UX 2026-06-06: "ブロッカーが何かわからないので、
- * todo にブロッカー可視化") — three coordinated cues:
- *   (a) `.stx-todo-node__blocked`   — red 🚧 glyph prefix on the node label
+ * card にブロッカー可視化") — three coordinated cues:
+ *   (a) `.stx-cards-node__blocked`   — red 🚧 glyph prefix on the node label
  *                                     for any status=blocked task. Renders
  *                                     inside both leafLabel and parentLabel.
- *   (b) `.stx-todo-progress__chip--blocked` — clickable chip in the progress
+ *   (b) `.stx-cards-progress__chip--blocked` — clickable chip in the progress
  *                                     summary that toggles the blocked-only
  *                                     status filter. Highlighted when active.
- *   (c) `.stx-todo-blockers` (+ children) — the new "🚧 Blockers" section in
+ *   (c) `.stx-cards-blockers` (+ children) — the new "🚧 Blockers" section in
  *                                     the NodeDetailPanel listing upstream
  *                                     deps + downstream waiters.
  * ------------------------------------------------------------------------- */
 
-.stx-todo-node__blocked {
+.stx-cards-node__blocked {
   /* Drop-shadow keeps the emoji legible on darker status fills (blocked
    * status uses a muted grey-blue tone); margin-right adds breathing room
    * before the title text. */
@@ -1534,11 +1534,11 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 }
 
 /* Compute-job glyph — leading "⚙" on every `kind: "compute"` node label
- * (north-star pillar #1, lead a2a 2c7a431d). Parallel to `.stx-todo-node__
+ * (north-star pillar #1, lead a2a 2c7a431d). Parallel to `.stx-cards-node__
  * blocked` (🚧) and the parent-drill ⊞ glyph; together the three answer at
  * a glance: who's stuck / who's a container / who's externally updated.
  * Slate-blue drop-shadow differentiates from the red blocked glyph. */
-.stx-todo-node__compute {
+.stx-cards-node__compute {
   margin-right: 4px;
   filter: drop-shadow(0 0 1px rgba(40, 90, 150, 0.7));
 }
@@ -1546,19 +1546,19 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 /* Decision-node glyph + impact badge + LOUD operator-decision halo
  * (north-star pillar #4, ADR-0003 + ADR-0004 in docs/adr/, lead a2a
  * 4691b114 + 554435df, operator TG 9524). Three pieces:
- *  - `.stx-todo-node__decision`           = leading "⚖️" glyph on label
- *  - `.stx-todo-node__decision-impact`    = "⚖️ unblocks N" leverage chip
- *  - `.stx-todo-node--decision-operator`  = LOUD purple-gold halo on kind=
+ *  - `.stx-cards-node__decision`           = leading "⚖️" glyph on label
+ *  - `.stx-cards-node__decision-impact`    = "⚖️ unblocks N" leverage chip
+ *  - `.stx-cards-node--decision-operator`  = LOUD purple-gold halo on kind=
  *                                           decision rows whose blocker is
  *                                           "operator-decision" — the one
  *                                           the operator OPENS the UI to find.
  */
-.stx-todo-node__decision {
+.stx-cards-node__decision {
   margin-right: 4px;
   filter: drop-shadow(0 0 1px rgba(155, 127, 214, 0.85));
 }
 
-.stx-todo-node__decision-impact {
+.stx-cards-node__decision-impact {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 7px;
@@ -1571,7 +1571,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   white-space: nowrap;
   vertical-align: middle;
 }
-.stx-todo-node__decision-impact--high {
+.stx-cards-node__decision-impact--high {
   /* High-leverage decisions pop louder so the operator can prioritize
    * "deciding hub-cutover unblocks the whole prod chain" vs single-task
    * decisions at a glance. Lead a2a `554435df` impact-badge spec. */
@@ -1586,14 +1586,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * so the gold pops against any status-fill underneath. Layered ADDITIVE
  * with the existing parent-style stacked-card shadows if this row is
  * also a parent. */
-.stx-todo-flow .react-flow__node.stx-todo-node--decision-operator {
+.stx-cards-flow .react-flow__node.stx-cards-node--decision-operator {
   box-shadow:
     0 0 0 3px #ffc107,
     0 0 0 6px #6d4cad,
     0 0 18px 6px rgba(255, 193, 7, 0.45),
     0 0 28px 10px rgba(155, 127, 214, 0.35);
 }
-.stx-todo-flow .react-flow__node.stx-todo-node--decision-operator:hover {
+.stx-cards-flow .react-flow__node.stx-cards-node--decision-operator:hover {
   box-shadow:
     0 0 0 3px #ffc107,
     0 0 0 6px #6d4cad,
@@ -1606,7 +1606,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * node, so the operator sees the actual blocker id without opening the
  * drawer. Full id stays in the hover title attr. (lead-callout b9503957:
  * "secret-migration-phase3 ← blocked by ← ci-recovery-wave should jump out".) */
-.stx-todo-node__blocked-by {
+.stx-cards-node__blocked-by {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px;
@@ -1620,7 +1620,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   vertical-align: middle;
 }
 
-.stx-todo-progress__chip--blocked {
+.stx-cards-progress__chip--blocked {
   cursor: pointer;
   background: transparent;
   border: 1px solid #c0392b;
@@ -1632,10 +1632,10 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
     background 100ms ease,
     color 100ms ease;
 }
-.stx-todo-progress__chip--blocked:hover {
+.stx-cards-progress__chip--blocked:hover {
   background: rgba(192, 57, 43, 0.12);
 }
-.stx-todo-progress__chip--blocked.stx-todo-progress__chip--on {
+.stx-cards-progress__chip--blocked.stx-cards-progress__chip--on {
   background: #c0392b;
   color: #fff;
 }
@@ -1645,7 +1645,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * flood quick-glance signal (lead a2a `554435df`). Not clickable in v1
  * (the awaiting list is reachable by clicking any LOUD decision node);
  * pure status display. */
-.stx-todo-progress__chip--awaiting-operator {
+.stx-cards-progress__chip--awaiting-operator {
   background: #ffc107;
   color: #6d4cad;
   border: 1px solid #6d4cad;
@@ -1660,15 +1660,15 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * UI 上にヒント的に書いておいて") — the operator can't tell from looking at
  * the board which area is which. Small purple pill labels sit on each region
  * to name it explicitly, so a glance answers "what am I looking at?":
- *   - `.stx-todo-board__region`            → "Board"      (top-left of header)
- *   - `.stx-todo-breadcrumb__hint`         → "Drill:"     (prefix on breadcrumb)
- *   - `.stx-todo-flow__canvas-label`       → "Canvas"     (corner of React Flow)
+ *   - `.stx-cards-board__region`            → "Board"      (top-left of header)
+ *   - `.stx-cards-breadcrumb__hint`         → "Drill:"     (prefix on breadcrumb)
+ *   - `.stx-cards-flow__canvas-label`       → "Canvas"     (corner of React Flow)
  *   - `Pool —` prefix in the pool title    → handled in markup, not CSS
- * The original "SciTeX Todo — dependency graph" title stays alongside; the
+ * The original "SciTeX Card — dependency graph" title stays alongside; the
  * region chip is the at-a-glance name.
  * ------------------------------------------------------------------------- */
 
-.stx-todo-board__region {
+.stx-cards-board__region {
   display: inline-block;
   padding: 2px 9px;
   background: rgba(155, 127, 214, 0.18);
@@ -1682,7 +1682,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   margin-right: 8px;
 }
 
-.stx-todo-breadcrumb__hint {
+.stx-cards-breadcrumb__hint {
   margin-right: 6px;
   color: #6d4cad;
   font-size: 0.72rem;
@@ -1695,7 +1695,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 /* Explicit "← Back" button in the breadcrumb (operator UX TG 233: after
  * a drill click they didn't read "Home" as a back-button). Sits right
  * after the "DRILL:" hint, before the first crumb. Hidden at top level. */
-.stx-todo-breadcrumb__back {
+.stx-cards-breadcrumb__back {
   margin-right: 8px;
   padding: 2px 8px;
   border: 1px solid #6d4cad;
@@ -1709,7 +1709,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
     background 100ms ease,
     color 100ms ease;
 }
-.stx-todo-breadcrumb__back:hover {
+.stx-cards-breadcrumb__back:hover {
   background: #6d4cad;
   color: #fff;
 }
@@ -1719,12 +1719,12 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * あとえ、なに？どゆこと？"). Sits centered inside the React Flow canvas
  * area as an overlay; pointer-events:none so React Flow's pan/zoom keeps
  * working underneath. */
-.stx-todo-flow__canvas {
+.stx-cards-flow__canvas {
   /* `position: relative` was set in the earlier region-label block; keep
-   * it so this `.stx-todo-flow__empty` overlay anchors against the
+   * it so this `.stx-cards-flow__empty` overlay anchors against the
    * canvas, not the whole flow. */
 }
-.stx-todo-flow__empty {
+.stx-cards-flow__empty {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1739,13 +1739,13 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   pointer-events: none; /* let pan/zoom pass through */
   user-select: none;
 }
-.stx-todo-flow__empty-title {
+.stx-cards-flow__empty-title {
   margin: 0 0 8px 0;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--stx-text);
 }
-.stx-todo-flow__empty-body {
+.stx-cards-flow__empty-body {
   margin: 0;
   font-size: 0.85rem;
   color: var(--stx-text-muted);
@@ -1755,10 +1755,10 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 /* `Canvas` pill floats inside the React Flow root, top-left corner. Pointer-
  * events disabled so it never blocks a click on the underlying graph. The
  * React Flow surface owns the rest of the area. */
-.stx-todo-flow__canvas {
+.stx-cards-flow__canvas {
   position: relative;
 }
-.stx-todo-flow__canvas-label {
+.stx-cards-flow__canvas-label {
   position: absolute;
   top: 8px;
   left: 8px;
@@ -1783,7 +1783,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * drill scope into "on canvas" vs "hidden in parent cards" vs "in pool".
  * ------------------------------------------------------------------------- */
 
-.stx-todo-counts {
+.stx-cards-counts {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1791,20 +1791,20 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-size: 0.78rem;
   color: var(--stx-text);
 }
-.stx-todo-counts__chip {
+.stx-cards-counts__chip {
   padding: 1px 6px;
   border: 1px solid var(--stx-border);
   border-radius: 999px;
   background: var(--stx-panel-bg);
   white-space: nowrap;
 }
-.stx-todo-counts__chip--total {
+.stx-cards-counts__chip--total {
   border-color: #6d4cad;
   background: rgba(155, 127, 214, 0.14);
   color: #6d4cad;
   font-weight: 700;
 }
-.stx-todo-counts__sep {
+.stx-cards-counts__sep {
   color: var(--stx-text-muted);
   opacity: 0.5;
 }

@@ -1,4 +1,4 @@
-/* timeline.js — board_v3 "Timeline" layout (operator TODO 2026-06-17).
+/* timeline.js — board_v3 "Timeline" layout (operator CARD 2026-06-17).
  *
  * An own-data layout (sibling of the Stale layout) with three views,
  * chosen via a selector, over a day / week / month window:

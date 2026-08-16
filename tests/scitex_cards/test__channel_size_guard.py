@@ -409,7 +409,7 @@ def test_non_dm_record_keeps_the_channel_source_label():
     # Act
     meta = build_channel_params(rec)["meta"]
     # Assert
-    assert meta["source"] == "stodo", "non-DM keeps the configured channel label"
+    assert meta["source"] == "scards", "non-DM keeps the configured channel label"
 
 
 def test_non_dm_record_carries_no_conversation_id():
@@ -427,7 +427,7 @@ def test_dm_record_missing_actor_falls_back_to_channel_source():
     # Act
     meta = build_channel_params(rec)["meta"]
     # Assert
-    assert meta["source"] == "stodo"
+    assert meta["source"] == "scards"
 
 
 def test_dm_record_missing_actor_still_carries_the_thread_key():

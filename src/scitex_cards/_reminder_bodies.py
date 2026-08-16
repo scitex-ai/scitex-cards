@@ -30,7 +30,7 @@ def _rank_key(sc):
     un-started high-priority card", which is the first of the three signals the
     operator asked to lead with. (The other two axes sac named need data that
     StaleCard does not yet carry; they fold in once it does — the detail is on
-    card todo-nudges-need-force-rank-digest-escalate-to-operator-20260714, kept
+    card cards-nudges-need-force-rank-digest-escalate-to-operator-20260714, kept
     OUT of this delivery module on purpose. Ranking by priority+age is already a
     categorical improvement over "the 15 oldest regardless of priority".)
 

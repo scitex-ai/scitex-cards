@@ -78,7 +78,7 @@ from ._inbox_receipt import record_push
 
 logger = logging.getLogger(__name__)
 
-#: Env var overriding ``meta.source`` (the ``<- stodo`` render name)
+#: Env var overriding ``meta.source`` (the ``<- scards`` render name)
 #: when ``--name`` is not passed explicitly. Precedence: CLI > env > default.
 _ENV_SOURCE = "SCITEX_CARDS_CHANNEL_SOURCE"
 
@@ -91,9 +91,9 @@ _DEFAULT_INTERVAL = 5.0
 
 #: Default ``meta.source`` — drives the channel render name. Per the fleet
 #: naming agreement (2026-07-07) source labels are SHORT sender-identity names
-#: (sac / cct / stodo). Kept DISTINCT from the ``scitex-cards`` agent id — a
-#: system push renders ``<- stodo`` (carries sender- AND task-identity).
-_DEFAULT_SOURCE = "stodo"
+#: (sac / cct / scards). Kept DISTINCT from the ``scitex-cards`` agent id — a
+#: system push renders ``<- scards`` (carries sender- AND task-identity).
+_DEFAULT_SOURCE = "scards"
 
 
 # --------------------------------------------------------------------------- #
@@ -200,7 +200,7 @@ async def drain_once(
         Async callable that delivers one channel-params payload (the real
         server passes a closure over the MCP session's ``send_message``).
     source : str
-        ``meta.source`` value (default ``"stodo"``).
+        ``meta.source`` value (default ``"scards"``).
     store : str | None
         Store path override (default: the resolved task store).
 

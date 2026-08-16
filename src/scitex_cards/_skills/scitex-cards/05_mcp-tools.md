@@ -31,8 +31,8 @@ returns.
 | `list_tasks` | `scitex_cards.list_tasks` | Filter the store by scope / assignee / status. |
 | `summarize_tasks` | `scitex_cards.summarize_tasks` | Counts by status / scope / assignee. |
 | `resolve_store` | `scitex_cards.resolve_store` | Resolved store path + the precedence chain. |
-| `todo_skills_list` | (skills introspection) | List bundled agent skills (file names). |
-| `todo_skills_get` | (skills introspection) | Get the content of one bundled skill by name. |
+| `cards_skills_list` | (skills introspection) | List bundled agent skills (file names). |
+| `cards_skills_get` | (skills introspection) | Get the content of one bundled skill by name. |
 
 ## ⚠️ A deadline is a VIEW, never a notifier
 

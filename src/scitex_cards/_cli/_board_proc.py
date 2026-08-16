@@ -35,7 +35,7 @@ import enum
 from dataclasses import dataclass, field
 from pathlib import Path as _Path
 
-BOARD_PIDFILE = _Path.home() / ".scitex" / "todo" / "board.pid"
+BOARD_PIDFILE = _Path.home() / ".scitex" / "card" / "board.pid"
 
 # Markers we expect in a board process's /proc/<pid>/cmdline. The board
 # is launched via Django's ``call_command("scitex_cards_board", ...)``

@@ -20,22 +20,22 @@ class TestOrgPreamble:
         # Assert
         assert "#+TITLE: scitex-cards export" in text
 
-    def test_declares_todo_state_keywords(self):
+    def test_declares_cards_state_keywords(self):
         # Arrange
         # Act
         text = build_org([])
         # Assert
-        assert "#+TODO: TODO INPROGRESS WAITING | DONE CANCELLED SOMEDAY" in text
+        assert "#+CARD: CARD INPROGRESS WAITING | DONE CANCELLED SOMEDAY" in text
 
 
 class TestSingleTaskHeading:
-    def test_renders_todo_heading(self):
+    def test_renders_cards_heading(self):
         # Arrange
         tasks = [{"id": "a", "title": "Ship it", "status": "pending"}]
         # Act
         text = build_org(tasks)
         # Assert
-        assert "* TODO Ship it" in text
+        assert "* CARD Ship it" in text
 
     def test_maps_in_progress_to_inprogress(self):
         # Arrange

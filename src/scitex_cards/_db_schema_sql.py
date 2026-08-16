@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 );
 
 -- v8 adds msg_id / pushed_at / confirmed_at so the notification rail can move
--- INTO the store instead of living in runtime/todo.db beside it. `msg_id` makes
+-- INTO the store instead of living in runtime/cards.db beside it. `msg_id` makes
 -- DM dedup exact -- the (event_type, card_id, ts, actor) key is many-to-one by
 -- construction at second resolution. `confirmed_at` is what lets delivery be
 -- proven by the RECIPIENT rather than by the sender's transport returning.

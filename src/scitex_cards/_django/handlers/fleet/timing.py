@@ -39,12 +39,12 @@ Aggregates draw only from tasks whose ``_log_meta.completed_at`` falls
 within ``window_days`` (default 30) — the chart is meant to show the
 recent past, not all-time.
 
-# TODO(phase-4.b): a2a-log scraping for agent-turn-level durations
+# CARD(phase-4.b): a2a-log scraping for agent-turn-level durations
 # (the lead's per-message latency). That source is the SAC mesh log,
 # not the card store — separate adapter, separate PR.
-# TODO(phase-4.b): histograms / CDF arrays for the chart's distribution
+# CARD(phase-4.b): histograms / CDF arrays for the chart's distribution
 # overlay; the floor here is median + p95 only.
-# TODO(phase-4.b): p50/p75/p99 percentile knobs — the chart can request
+# CARD(phase-4.b): p50/p75/p99 percentile knobs — the chart can request
 # more once Phase 5 lands.
 """
 

@@ -136,7 +136,7 @@ MIDDLEWARE = [
     # shape compresses roughly 10x. Semantics-free: no payload or handler
     # change, so it ships on its own. The structural fix (list payload
     # WITHOUT note/comments + a per-card detail fetch) is
-    # todo-board-graph-payload-slim-20260710.
+    # cards-board-graph-payload-slim-20260710.
     "django.middleware.gzip.GZipMiddleware",
     # The password gate sits as high as it can while still letting GZip wrap the
     # response, so an unauthenticated request reaches no handler, touches no

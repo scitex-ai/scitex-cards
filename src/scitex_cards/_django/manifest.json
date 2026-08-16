@@ -1,7 +1,7 @@
 {
   "name": "scitex_cards_app",
   "slug": "scitex-cards",
-  "label": "Todo",
+  "label": "Card",
   "version": "0.1.0",
   "icon": "fas fa-diagram-project",
   "subtitle": "Dependency-graph view of the scitex-cards task store",

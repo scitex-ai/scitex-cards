@@ -111,7 +111,7 @@ def provide_jobs() -> list[JobSpec]:
             schedule="",
             # --interval 30 (was 2): a 2s interval re-parsed the ~9 MB store
             # faster than the tick finished on a slow host and death-spiraled
-            # the fleet on 2026-07-08 (incident-todo-wake-watcher-interval2-
+            # the fleet on 2026-07-08 (incident-cards-wake-watcher-interval2-
             # spiral). The `watch` command additionally CLAMPS anything below
             # a 10s hard floor, so this value can never foot-gun again.
             command="scitex-cards watch --push --interval 30",
@@ -163,8 +163,8 @@ def provide_jobs() -> list[JobSpec]:
         # diff against ci-state.json, log per-repo transitions, update
         # the cache. No bus emission, no a2a sends — SAC owns the
         # delivery side via its OWN independent poller. Two pollers,
-        # different cadences, each STANDALONE: todo down → sac still
-        # delivers; sac down → todo still records.
+        # different cadences, each STANDALONE: card down → sac still
+        # delivers; sac down → card still records.
         JobSpec(
             # NOTE: the NAME says `ci-watch` while the COMMAND says
             # `watch-ci`. Not a typo — the verb was renamed in the
@@ -181,7 +181,7 @@ def provide_jobs() -> list[JobSpec]:
             description=(
                 "scitex-cards watch-ci — record-only CI poller. Polls "
                 "the configured fleet repos every 5 min, diffs vs "
-                "~/.scitex/todo/ci-state.json, logs per-repo "
+                "~/.scitex/cards/ci-state.json, logs per-repo "
                 "transitions (newly-green / newly-red / still-pending). "
                 "Operator decoupled-pollers lane (no SAC dependency)."
             ),

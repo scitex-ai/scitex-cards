@@ -5,7 +5,7 @@
 Split out of :mod:`scitex_cards._inbox_sqlite` because the two halves have
 OPPOSITE lifetimes, and keeping them in one file made that invisible.
 
-Everything here owns a FILE: the ``todo.db`` path, the ``CREATE TABLE`` for
+Everything here owns a FILE: the ``cards.db`` path, the ``CREATE TABLE`` for
 ``inbox``, the ``ALTER`` that adds ``msg_id`` to a DB predating it, and the
 one-time copy of the legacy YAML ``inboxes:`` records. All of it is SQLite-and-
 file specific, and all of it is DELETED when the rail finishes moving onto the
@@ -40,13 +40,13 @@ __all__ = [
 ]
 
 #: Env override for the inbox DB path (full path to the ``.db`` file). Default
-#: is ``<store_dir>/runtime/todo.db`` (see :func:`inbox_db_path`). Mirrors the
+#: is ``<store_dir>/runtime/cards.db`` (see :func:`inbox_db_path`). Mirrors the
 #: ``SCITEX_CARDS_INDEX_PATH`` override on :mod:`scitex_cards._index`.
 ENV_INBOX_DB = "SCITEX_CARDS_INBOX_DB"
 
-#: Runtime-DB filename. ``todo`` is this package's short name (constitution:
+#: Runtime-DB filename. ``card`` is this package's short name (constitution:
 #: ``<proj-root>/.scitex/<pkg-short>/runtime/<pkg-short>.db``).
-_DB_FILENAME = "todo.db"
+_DB_FILENAME = "cards.db"
 
 #: Schema version. Bump when the column set / indexes change.
 SCHEMA_VERSION = 1
@@ -67,7 +67,7 @@ def inbox_target(store: str | Path | None = None):
     the target.
 
     WHAT IT FIXES, measured 2026-08-09: the notification rail wrote
-    ``runtime_dir(store)/todo.db`` — A FILE PER CONTAINER. The operator's laptop
+    ``runtime_dir(store)/cards.db`` — A FILE PER CONTAINER. The operator's laptop
     copy was 5.1 MB, compute-04's was 147 KB, they were different files, and the
     PostgreSQL ``notifications`` table had 0 rows. So a notification enqueued by
     one agent could never reach anyone else, and the operator's own messages
@@ -98,7 +98,7 @@ def inbox_db_path(store: str | Path | None = None) -> Path:
     """Resolved on-disk path for the inbox SQLite DB.
 
     ``SCITEX_CARDS_INBOX_DB`` wins outright; otherwise the DB lives at
-    ``runtime_dir(store)/todo.db`` — the runtime dir tracks whichever scope the
+    ``runtime_dir(store)/cards.db`` — the runtime dir tracks whichever scope the
     task store resolved to, so a per-test ``store=`` isolates its own DB.
     """
     override = os.environ.get(ENV_INBOX_DB)
@@ -130,7 +130,7 @@ def open_connection(target: "Optional[Path | str]" = None):
 
     * the S0 PRAGMAs rather than ``journal_mode`` alone -- notably
       ``busy_timeout=300000``, which matters on a store this many writers share
-    * the min-client-version gate, a no-op here because ``todo.db`` stamps no
+    * the min-client-version gate, a no-op here because ``cards.db`` stamps no
       floor (it carries a ``meta`` table, not ``schema_meta``)
     * ``row_factory = sqlite3.Row``, which this function already set
 
@@ -150,7 +150,7 @@ def open_connection(target: "Optional[Path | str]" = None):
 def _ensure_msg_id(conn: sqlite3.Connection) -> None:
     """Add ``inbox.msg_id`` if this DB predates it. Idempotent + race-safe.
 
-    ~21 agents share one ``todo.db``, so two can reach the ``ALTER`` at the
+    ~21 agents share one ``cards.db``, so two can reach the ``ALTER`` at the
     same instant and the loser sees ``duplicate column name``. That is the
     winner having done our job, not a failure — swallowing anything broader
     would let a real schema fault masquerade as a race.
@@ -237,7 +237,7 @@ def _ensure_ready(conn: sqlite3.Connection, store: str | Path | None) -> None:
     Guarded by the ``migrated_from_yaml`` meta flag: the first access on a
     fresh DB performs the one-time copy + sets the flag; every later access
     is a cheap flag probe. Concurrency-safe across the ~21 agents sharing one
-    ``todo.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
+    ``cards.db`` — idempotent (``INSERT OR IGNORE`` on the ``id`` PK); the
     flag is set even when there's nothing to copy, so a fresh store converges.
     """
     # POSTGRES NEEDS NEITHER HALF OF THIS, AND BOTH WOULD FAIL.

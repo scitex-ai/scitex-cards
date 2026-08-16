@@ -36,7 +36,7 @@ from typing import Dict, Iterable, List, Optional
 logger = logging.getLogger(__name__)
 
 #: Env override for the index file path. Default is sibling to the
-#: global task store: ``~/.scitex/todo/.tasks.index.sqlite``.
+#: global task store: ``~/.scitex/cards/.tasks.index.sqlite``.
 ENV_INDEX_PATH = "SCITEX_CARDS_INDEX_PATH"
 
 #: Schema version. Bump when the column set or indexes change; the
@@ -52,7 +52,7 @@ def index_path() -> Path:
     override = os.environ.get(ENV_INDEX_PATH)
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".scitex" / "todo" / ".tasks.index.sqlite"
+    return Path.home() / ".scitex" / "card" / ".tasks.index.sqlite"
 
 
 @contextmanager

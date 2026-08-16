@@ -71,7 +71,7 @@ class TaskSyncPort(Protocol):
     "durable" means and how (if at all) state propagates across hosts.
 
     **Default impl**: :class:`scitex_cards._adapters.LocalFileSync` —
-    atomic ruamel write to ``~/.scitex/todo/tasks.yaml``, no cross-host
+    atomic ruamel write to ``~/.scitex/cards/tasks.yaml``, no cross-host
     awareness. A single-user installing ``scitex-cards`` gets a working
     local board with this default.
 
@@ -291,7 +291,7 @@ class IdentityACLPort(Protocol):
 #: returns an :class:`AgentDirectoryPort`-shaped object::
 #:
 #:     [project.entry-points."scitex_cards.agent_directory"]
-#:     sac = "scitex_agent_container.todo_directory:provider"
+#:     sac = "scitex_agent_container.cards_directory:provider"
 #:
 #: Mirrors :data:`scitex_cards._hooks.ENTRY_POINT_GROUP` ("scitex_cards.hooks").
 AGENT_DIRECTORY_GROUP = "scitex_cards.agent_directory"
@@ -473,7 +473,7 @@ class AgentDirectoryPort(Protocol):
     by :func:`resolve_agent_directory`.
 
     The port is a LIBRARY SEAM, not a board verb: there is intentionally
-    no MCP tool for it. Membership stays authoritative on the todo side;
+    no MCP tool for it. Membership stays authoritative on the card side;
     the directory only annotates.
     """
 

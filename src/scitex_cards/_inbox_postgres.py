@@ -5,7 +5,7 @@
 
 The bug this exists to fix
 --------------------------
-The inbox was a PER-HOST SQLite file at ``<store_dir>/runtime/todo.db``.
+The inbox was a PER-HOST SQLite file at ``<store_dir>/runtime/cards.db``.
 Measured 2026-08-09, the same logical inbox on two machines::
 
     laptop      4901 rows, 1981 unseen, 130 recipients

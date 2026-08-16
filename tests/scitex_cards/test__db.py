@@ -125,7 +125,7 @@ def store(tmp_path):
     return {
         "tasks_doc": tasks_doc,
         "threads": threads_doc["threads"],
-        "db_path": tmp_path / "todo.db",
+        "db_path": tmp_path / "cards.db",
     }
 
 
@@ -1181,7 +1181,7 @@ def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
     conn = _db.connect(store["db_path"])
     _db.init_schema(conn)
     conn.execute("BEGIN IMMEDIATE")
-    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "todo"}])
+    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "card"}])
 
     # Act — same id again, row still present: the incremental mirror's shape.
     _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v2", "status": "done"}])
@@ -1206,7 +1206,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             {
                 "id": "dup",
                 "title": "FIRST",
-                "status": "todo",
+                "status": "card",
                 "comments": [{"author": "a", "ts": "t", "text": "old"}],
             },
             {"id": "keep", "title": "Untouched", "status": "done"},
@@ -1218,7 +1218,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             },
         ]
     }
-    db_path = tmp_path / "todo.db"
+    db_path = tmp_path / "cards.db"
 
     with caplog.at_level("ERROR"):
         summary = seed_db_from_doc(doc, db_path)

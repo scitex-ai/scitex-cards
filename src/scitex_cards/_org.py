@@ -19,8 +19,8 @@ emacs org-mode wire-shape:
 The mapping below pins the wire-shape so an emacs / org-agenda reader
 can ingest the file directly:
 
-  * scitex-cards status -> org TODO STATE
-      pending     -> TODO
+  * scitex-cards status -> org CARD STATE
+      pending     -> CARD
       in_progress -> INPROGRESS
       blocked     -> WAITING
       done        -> DONE
@@ -52,11 +52,11 @@ from __future__ import annotations
 
 from typing import Iterable
 
-# Status -> org TODO state mapping. Keep this aligned with VALID_STATUSES
-# in _model.py; an unknown status falls back to bare TODO so a forward-
+# Status -> org CARD state mapping. Keep this aligned with VALID_STATUSES
+# in _model.py; an unknown status falls back to bare CARD so a forward-
 # compat YAML status doesn't crash the export.
 STATUS_TO_ORG: dict[str, str] = {
-    "pending": "TODO",
+    "pending": "CARD",
     "in_progress": "INPROGRESS",
     "blocked": "WAITING",
     "done": "DONE",
@@ -64,7 +64,7 @@ STATUS_TO_ORG: dict[str, str] = {
     "failed": "CANCELLED",
     # ``cancelled`` (closed as not planned) maps to org CANCELLED — a closed
     # org state, same family as ``failed``. Both are declared after the org
-    # ``|`` separator in the ``#+TODO`` line so org-agenda treats them as DONE-
+    # ``|`` separator in the ``#+CARD`` line so org-agenda treats them as DONE-
     # type (closed) keywords.
     "cancelled": "CANCELLED",
     "goal": "GOAL",
@@ -104,11 +104,11 @@ def build_org(tasks: Iterable[dict]) -> str:
     Headings are flat (all top-level ``*``) for the first slice. Parent
     nesting is encoded via the ``:PARENT:`` property (avoids the
     cycle-detection complexity of an actual tree until the operator
-    asks for it; org-agenda handles flat-heading TODO state perfectly).
+    asks for it; org-agenda handles flat-heading CARD state perfectly).
     """
     out: list[str] = []
     out.append("#+TITLE: scitex-cards export")
-    out.append("#+TODO: TODO INPROGRESS WAITING | DONE CANCELLED SOMEDAY")
+    out.append("#+CARD: CARD INPROGRESS WAITING | DONE CANCELLED SOMEDAY")
     out.append("#+STARTUP: showall")
     out.append("")
     for task in tasks:
@@ -123,7 +123,7 @@ def _render_task(task: dict) -> list[str]:
     """Render a single task as a list of org lines."""
     tid = task.get("id") or ""
     title = task.get("title") or tid
-    state = STATUS_TO_ORG.get(task.get("status") or "", "TODO")
+    state = STATUS_TO_ORG.get(task.get("status") or "", "CARD")
     head = f"* {state} {title}"
     lines: list[str] = [head]
 

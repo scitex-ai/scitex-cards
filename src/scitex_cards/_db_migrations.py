@@ -178,7 +178,7 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
 
     WHAT THIS DOES NOT DO, stated because the gap is the dangerous part.
     Installing the columns does NOT move the rail. ``_inbox_sqlite`` still writes
-    ``runtime/todo.db``, and ``_db_mirror`` still issues ``DELETE FROM
+    ``runtime/cards.db``, and ``_db_mirror`` still issues ``DELETE FROM
     notifications`` as part of a mirror rebuild — harmless against a derived
     empty table, and DATA LOSS the moment this one becomes the store of record.
     That DELETE must be neutralised in the same change that flips the writers,

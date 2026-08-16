@@ -6,7 +6,7 @@ Phase 1 of the store SQLite migration (incident card
 ``store-sqlite-migration-o1-writes-future-20260701``). The per-recipient
 notification inbox moves off the monolithic legacy sidecar (whose 5 s
 digest-poll re-parsed all ~1000 cards) onto a small SQLite DB at
-``<store_dir>/runtime/todo.db``.
+``<store_dir>/runtime/cards.db``.
 
 Verbs:
   * ``inbox migrate-to-sqlite`` — copy the YAML ``inboxes:`` records into
@@ -42,7 +42,7 @@ def register(main: click.Group) -> None:
     help=(
         "Inbox storage-backend lifecycle (Phase 1 SQLite migration).\n\n"
         "`inbox migrate-to-sqlite` copies the YAML `inboxes:` records into "
-        "the SQLite DB (<store_dir>/runtime/todo.db); it is idempotent and "
+        "the SQLite DB (<store_dir>/runtime/cards.db); it is idempotent and "
         "does NOT delete the YAML section (reversible). Enable the backend "
         "with SCITEX_CARDS_INBOX_BACKEND=sqlite."
     ),

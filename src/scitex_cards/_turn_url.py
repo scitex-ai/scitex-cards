@@ -18,7 +18,7 @@ Resolution precedence (see :func:`turn_url_for`):
   3. None → caller falls through to fail-loud "no-turn-url-configured".
 
 Step 0 is the durable root fix (card
-``todo-push-turn-url-from-user-registry-20260626``): the board OWNS the
+``cards-push-turn-url-from-user-registry-20260626``): the board OWNS the
 registry, so that file-local, bearer-free source is consulted FIRST. It is
 NOT a runtime pull — it reads scitex-cards's own ``users:`` rows (no external
 import, no HTTP, no bearer); the endpoint fields are populated by explicit
@@ -76,7 +76,7 @@ def turn_url_for(agent: str) -> str | None:
       0. scitex-cards's OWN user registry (``users:`` section) — file-local,
          NO bearer, reliable PRIMARY source. See
          :func:`_turn_url_from_user_registry`. (Root fix, card
-         ``todo-push-turn-url-from-user-registry-20260626``.)
+         ``cards-push-turn-url-from-user-registry-20260626``.)
       1. ``SCITEX_CARDS_AGENT_TURN_URLS`` JSON map entry (operator-pinned).
       2. ``SCITEX_CARDS_TURN_URL_<SLUG>`` per-agent env (scitex-cards's own
          per-agent turn-url env contract).

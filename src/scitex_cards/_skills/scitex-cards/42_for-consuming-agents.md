@@ -6,7 +6,7 @@ description: |
   Python entry point to use for create / list / update / comment /
   complete, the closed-enum (fail-loud) schema, the title-prefix
   convention, and the lead↔worker coordination wire. Read this first if
-  you've just been told "use scitex-cards for your todos."
+  you've just been told "use scitex-cards for your cards."
 tags:
   [
     scitex-cards-consuming-agent,
@@ -456,7 +456,7 @@ trying to eliminate.
 
 This skill is the **teaching surface**: the operator's directive
 (2026-06-07) is that every fleet agent auto-loads it on boot, so
-"how do I file a TODO" is the same answer everywhere.
+"how do I file a CARD" is the same answer everywhere.
 
 1. **Pip-install pins the version** — `pip install
    scitex-cards>=<version>` lands the bundled skills under

@@ -44,10 +44,10 @@ Design principles (HARD, from the operator brief):
   is the closed sentinel string ``"<unknown>"`` — purely a display token,
   not a literal agent name.
 - **read + write floor; NO RW-perm gating yet** — the operator may want
-  operator-only writes later (TODO below); the floor allows all writes
+  operator-only writes later (CARD below); the floor allows all writes
   so the WRITE-BACK UI can land standalone.
 
-Out of scope (deferred — flagged with TODOs):
+Out of scope (deferred — flagged with CARDs):
 
 - RW-perm gating (operator-write, agents-read).
 - WebSocket push — polling at 30s is fine for the floor.

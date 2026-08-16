@@ -315,7 +315,7 @@ def test_runnable_count_excludes_blocked_done_deferred_failed_goal(store):
 
 def test_overdue_count_present_on_every_fleet_row(store):
     # The fleet payload exposes per-agent `overdue_count` so the FE can
-    # surface a tally without re-walking the store (todo-p6-overdue-ui).
+    # surface a tally without re-walking the store (cards-p6-overdue-ui).
     # The curated fixture has no deadlines, so every count is 0 — the
     # key still must be there.
     # Arrange
@@ -377,7 +377,7 @@ def test_overdue_count_counts_pending_past_deadline(overdue_store):
 
 
 # === Waiting-on-operator queue (operator P1 ============================ #
-# todo-operator-blocking-queue-view): the per-agent count + id list of
+# cards-operator-blocking-queue-view): the per-agent count + id list of
 # cards stuck on the operator. SSOT predicate is
 # `_match(..., blocking_me=True)` == status==blocked AND
 # blocker==operator-decision. These tests cover the three discriminating

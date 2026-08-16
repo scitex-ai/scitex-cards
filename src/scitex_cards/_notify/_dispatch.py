@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 #: handled by the interactive comment-relay's direct turn-URL POST, but that
 #: POST could never reach a containerized owner (connection refused) — so a
 #: comment never arrived. Folding ``commented`` into C4 (card
-#: ``todo-fold-comment-relay-into-c4-dispatcher-20260626``) makes the inbox
+#: ``cards-fold-comment-relay-into-c4-dispatcher-20260626``) makes the inbox
 #: the single, always-works comment-delivery rail; the board toast now
 #: reflects the inbox queue instead of a stale direct-POST result.
 _SKIP_EVENT_TYPES: frozenset[str] = frozenset()

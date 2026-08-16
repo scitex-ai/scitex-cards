@@ -39,7 +39,7 @@ from scitex_cards._health_stranded_backlog import (
 
 def _legacy_inbox(tmp_path: Path, unseen: int, seen: int = 0) -> Path:
     """A file shaped like the real stranded inbox."""
-    p = tmp_path / "todo.db"
+    p = tmp_path / "cards.db"
     conn = sqlite3.connect(p)
     conn.execute(
         "create table inbox (id text primary key, recipient text, seen int)"

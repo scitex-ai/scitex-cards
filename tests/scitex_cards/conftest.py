@@ -93,7 +93,7 @@ def env():
 #
 # PR introducing the per-project lane UNION (lead a2a `1ceec0ef` /
 # `40c0a42d`, operator-validated) made ``services.get_board`` glob
-# ``~/proj/*/.scitex/todo/tasks.yaml`` by default. Without an opt-out,
+# ``~/proj/*/.scitex/cards/tasks.yaml`` by default. Without an opt-out,
 # test harnesses that pass an explicit ``tmp_path`` global store would
 # ALSO pick up the test runner's HOST ``~/proj`` lanes — contaminating
 # fixture-pure assertions (e.g. the priority-endpoint test asserts a

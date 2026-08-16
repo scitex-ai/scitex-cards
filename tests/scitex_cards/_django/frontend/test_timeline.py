@@ -54,14 +54,14 @@ _TIMELINE_TSX = (
     / "TimelineView.tsx"
 )
 
-_TODOBOARD_TSX = (
+_CARDSBOARD_TSX = (
     _REPO_ROOT
     / "src"
     / "scitex_cards"
     / "_django"
     / "frontend"
     / "src"
-    / "TodoBoard.tsx"
+    / "CardsBoard.tsx"
 )
 
 
@@ -78,18 +78,18 @@ def _read(path: Path) -> str:
 @pytest.mark.parametrize(
     "selector",
     [
-        ".stx-todo-timeline",
-        ".stx-todo-timeline__bar",
-        ".stx-todo-timeline__title",
-        ".stx-todo-timeline__controls",
-        ".stx-todo-timeline__select",
-        ".stx-todo-timeline__svg",
-        ".stx-todo-timeline__lane-label",
-        ".stx-todo-timeline__lane-bg",
-        ".stx-todo-timeline__bar--completed",
-        ".stx-todo-timeline__edge",
-        ".stx-todo-timeline__ticktext",
-        ".stx-todo-timeline__tickline",
+        ".stx-cards-timeline",
+        ".stx-cards-timeline__bar",
+        ".stx-cards-timeline__title",
+        ".stx-cards-timeline__controls",
+        ".stx-cards-timeline__select",
+        ".stx-cards-timeline__svg",
+        ".stx-cards-timeline__lane-label",
+        ".stx-cards-timeline__lane-bg",
+        ".stx-cards-timeline__bar--completed",
+        ".stx-cards-timeline__edge",
+        ".stx-cards-timeline__ticktext",
+        ".stx-cards-timeline__tickline",
     ],
 )
 def test_timeline_css_declares_selector(selector: str) -> None:
@@ -213,37 +213,37 @@ def test_timeline_view_is_a_module() -> None:
     assert "export function TimelineView(" in tsx
 
 
-def test_todoboard_wires_timeline_view_tsx_contains() -> None:
-    """TodoBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
+def test_cardsboard_wires_timeline_view_tsx_contains() -> None:
+    """CardsBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
     the toggle button sets view='timeline'."""
     # Arrange
     # Act
-    tsx = _read(_TODOBOARD_TSX)
+    tsx = _read(_CARDSBOARD_TSX)
     # Assert
     assert "import { TimelineView }" in tsx
 
 
-def test_todoboard_wires_timeline_view_tsx_contains_2() -> None:
-    """TodoBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
+def test_cardsboard_wires_timeline_view_tsx_contains_2() -> None:
+    """CardsBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
     the toggle button sets view='timeline'."""
     # Arrange
     # Act
-    tsx = _read(_TODOBOARD_TSX)
+    tsx = _read(_CARDSBOARD_TSX)
     # Assert
     assert 'setView("timeline")' in tsx
 
 
-def test_todoboard_wires_timeline_view_tsx_contains_3() -> None:
-    """TodoBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
+def test_cardsboard_wires_timeline_view_tsx_contains_3() -> None:
+    """CardsBoard.tsx mounts TimelineView when ``view === 'timeline'`` and
     the toggle button sets view='timeline'."""
     # Arrange
     # Act
-    tsx = _read(_TODOBOARD_TSX)
+    tsx = _read(_CARDSBOARD_TSX)
     # Assert
     assert 'view === "timeline"' in tsx
 
 
-def test_todoboard_polls_30s_default_window() -> None:
+def test_cardsboard_polls_30s_default_window() -> None:
     """The TimelineView component declares a polling cadence that matches
     the other fleet surfaces (30s) — keeps the operator's "what just
     changed" cognitive load uniform."""

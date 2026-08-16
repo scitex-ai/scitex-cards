@@ -6,7 +6,7 @@ Split out of ``_store_lifecycle`` when adding :func:`reassign_all` pushed that
 module past its line budget. ``_store`` re-exports the name below so
 ``from ._store import reassign_all`` keeps working. The single-card
 :func:`reassign_task` stays in ``_store_lifecycle``; this module is the BULK
-verb ``sac agents rename`` needs (card ``todo-reassign-all-bulk-primitive``).
+verb ``sac agents rename`` needs (card ``cards-reassign-all-bulk-primitive``).
 
 The shared helpers (``_read_write_doc`` / ``_utc_now_iso`` / ``_default_agent``)
 stay in ``_store`` and are imported inside the function body — a deferred
@@ -35,7 +35,7 @@ def reassign_all(
     """Bulk owner change — move EVERY card owned by ``old_owner`` to
     ``new_owner`` in ONE atomic locked write, then emit ONE batch event.
 
-    The primitive ``sac agents rename`` needs (``todo-reassign-all-bulk-
+    The primitive ``sac agents rename`` needs (``cards-reassign-all-bulk-
     primitive``). Mirrors :func:`reassign_task`'s per-card semantics
     EXACTLY — for every matched card it sets ``agent = assignee =
     new_owner``, ``scope = "agent:<new_owner>"``, appends the identical
@@ -180,7 +180,7 @@ def reassign_task(
 ) -> dict:
     """Atomically change a card's owner — the primitive the board lacked.
 
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
+    C5 (``cards-reassign-verb-with-owner-notify``). In ONE locked write:
 
       * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
         in lock-step with the operator-co-designed ``agent`` so every

@@ -7,7 +7,7 @@
  * deliberately not persisted here.
  */
 
-const KEY = "stx-todo-view";
+const KEY = "stx-cards-view";
 
 export interface PersistedView {
   query: string;

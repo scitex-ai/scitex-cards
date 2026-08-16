@@ -398,7 +398,7 @@ def undrained_backlog_check(tmp_path_factory):
     notifications through the real store — expensive to repeat per assertion.
     """
     # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
-    # itself rather than a `runtime/todo.db` beside it, so handing it a YAML
+    # itself rather than a `runtime/cards.db` beside it, so handing it a YAML
     # path makes sqlite refuse with "file is not a database" — correctly. The
     # operator's ruling the same day was that no cards store is ever a file
     # like this; a fixture that builds one is testing a store that must not

@@ -33,11 +33,11 @@ function ViewToggle() {
   const view = useBoardStore((s) => s.view);
   const setView = useBoardStore((s) => s.setView);
   return (
-    <div className="stx-todo-viewtoggle" role="group" aria-label="View mode">
+    <div className="stx-cards-viewtoggle" role="group" aria-label="View mode">
       <button
         type="button"
-        className={`stx-todo-viewtoggle__btn${
-          view === "graph" ? " stx-todo-viewtoggle__btn--on" : ""
+        className={`stx-cards-viewtoggle__btn${
+          view === "graph" ? " stx-cards-viewtoggle__btn--on" : ""
         }`}
         onClick={() => setView("graph")}
         aria-pressed={view === "graph"}
@@ -46,8 +46,8 @@ function ViewToggle() {
       </button>
       <button
         type="button"
-        className={`stx-todo-viewtoggle__btn${
-          view === "table" ? " stx-todo-viewtoggle__btn--on" : ""
+        className={`stx-cards-viewtoggle__btn${
+          view === "table" ? " stx-cards-viewtoggle__btn--on" : ""
         }`}
         onClick={() => setView("table")}
         aria-pressed={view === "table"}
@@ -56,8 +56,8 @@ function ViewToggle() {
       </button>
       <button
         type="button"
-        className={`stx-todo-viewtoggle__btn${
-          view === "recent" ? " stx-todo-viewtoggle__btn--on" : ""
+        className={`stx-cards-viewtoggle__btn${
+          view === "recent" ? " stx-cards-viewtoggle__btn--on" : ""
         }`}
         onClick={() => setView("recent")}
         aria-pressed={view === "recent"}
@@ -67,8 +67,8 @@ function ViewToggle() {
       </button>
       <button
         type="button"
-        className={`stx-todo-viewtoggle__btn${
-          view === "calendar" ? " stx-todo-viewtoggle__btn--on" : ""
+        className={`stx-cards-viewtoggle__btn${
+          view === "calendar" ? " stx-cards-viewtoggle__btn--on" : ""
         }`}
         onClick={() => setView("calendar")}
         aria-pressed={view === "calendar"}
@@ -81,8 +81,8 @@ function ViewToggle() {
        * alongside Graph / Table / Recent / Calendar. */}
       <button
         type="button"
-        className={`stx-todo-viewtoggle__btn${
-          view === "timeline" ? " stx-todo-viewtoggle__btn--on" : ""
+        className={`stx-cards-viewtoggle__btn${
+          view === "timeline" ? " stx-cards-viewtoggle__btn--on" : ""
         }`}
         onClick={() => setView("timeline")}
         aria-pressed={view === "timeline"}
@@ -96,11 +96,11 @@ function ViewToggle() {
 
 function Legend({ colors }: { colors: Record<string, StatusColor> }) {
   return (
-    <div className="stx-todo-legend">
+    <div className="stx-cards-legend">
       {Object.entries(colors).map(([status, c]) => (
-        <span key={status} className="stx-todo-legend__item">
+        <span key={status} className="stx-cards-legend__item">
           <span
-            className="stx-todo-legend__swatch"
+            className="stx-cards-legend__swatch"
             style={{
               background: c.fill,
               border: `2px ${c.dashed ? "dashed" : "solid"} ${c.stroke}`,
@@ -110,16 +110,16 @@ function Legend({ colors }: { colors: Record<string, StatusColor> }) {
         </span>
       ))}
       {/* Edge semantics — depends_on (arrow) vs blocks (inhibition tee). */}
-      <span className="stx-todo-legend__item" title="A depends on B">
+      <span className="stx-cards-legend__item" title="A depends on B">
         <span
-          className="stx-todo-legend__edge"
+          className="stx-cards-legend__edge"
           style={{ background: EDGE_COLOR_DEPENDS }}
         />
         depends&nbsp;on&nbsp;→
       </span>
-      <span className="stx-todo-legend__item" title="A blocks B">
+      <span className="stx-cards-legend__item" title="A blocks B">
         <span
-          className="stx-todo-legend__edge"
+          className="stx-cards-legend__edge"
           style={{ background: EDGE_COLOR_BLOCKS }}
         />
         blocks&nbsp;⊣
@@ -183,14 +183,14 @@ function Progress({ graph }: { graph: GraphPayload }) {
   ];
   const blockedOn = activeStatuses.includes("blocked");
   return (
-    <span className="stx-todo-progress" aria-label="Progress summary">
+    <span className="stx-cards-progress" aria-label="Progress summary">
       <strong>
         {scope ? "scope " : ""}
         {done}/{total} done ({pct}%)
       </strong>
       {awaitingOperator > 0 && (
         <span
-          className="stx-todo-progress__chip stx-todo-progress__chip--awaiting-operator"
+          className="stx-cards-progress__chip stx-cards-progress__chip--awaiting-operator"
           title="Decision nodes awaiting the operator (kind=decision, status=blocked, blocker=operator-decision). Click a node to open its ADR (adr.md)."
         >
           👤 awaiting you {awaitingOperator}
@@ -203,8 +203,8 @@ function Progress({ graph }: { graph: GraphPayload }) {
             <button
               key={s}
               type="button"
-              className={`stx-todo-progress__chip stx-todo-progress__chip--blocked${
-                blockedOn ? " stx-todo-progress__chip--on" : ""
+              className={`stx-cards-progress__chip stx-cards-progress__chip--blocked${
+                blockedOn ? " stx-cards-progress__chip--on" : ""
               }`}
               onClick={() => toggleStatus("blocked")}
               aria-pressed={blockedOn}
@@ -217,7 +217,7 @@ function Progress({ graph }: { graph: GraphPayload }) {
               🚧 blocked {counts[s]}
             </button>
           ) : (
-            <span key={s} className="stx-todo-progress__chip">
+            <span key={s} className="stx-cards-progress__chip">
               {s} {counts[s]}
             </span>
           ),
@@ -235,15 +235,15 @@ function QualifierHints({ query }: { query: string }) {
   if (!parsed.hasQualifiers) return null;
   return (
     <div
-      className="stx-todo-toolbar__qhints"
+      className="stx-cards-toolbar__qhints"
       aria-live="polite"
       aria-label="Recognized search qualifiers"
     >
       {parsed.hints.map((h, i) => {
         const cls = [
-          "stx-todo-toolbar__qhint",
-          h.unknown ? "stx-todo-toolbar__qhint--unknown" : "",
-          h.unknownValue ? "stx-todo-toolbar__qhint--unknown-value" : "",
+          "stx-cards-toolbar__qhint",
+          h.unknown ? "stx-cards-toolbar__qhint--unknown" : "",
+          h.unknownValue ? "stx-cards-toolbar__qhint--unknown-value" : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -254,8 +254,8 @@ function QualifierHints({ query }: { query: string }) {
             : `filter on ${h.label}`;
         return (
           <span key={`${h.label}-${i}`} className={cls} title={tip}>
-            <span className="stx-todo-toolbar__qhint-key">{h.label}:</span>
-            <span className="stx-todo-toolbar__qhint-val">
+            <span className="stx-cards-toolbar__qhint-key">{h.label}:</span>
+            <span className="stx-cards-toolbar__qhint-val">
               {h.value || "(empty)"}
             </span>
           </span>
@@ -288,10 +288,10 @@ function Toolbar({ graph }: { graph: GraphPayload }) {
     activeRepos.length > 0;
 
   return (
-    <div className="stx-todo-toolbar">
+    <div className="stx-cards-toolbar">
       <SearchAutocomplete query={query} setQuery={setQuery} nodes={graph.nodes}>
         <input
-          className="stx-todo-toolbar__search"
+          className="stx-cards-toolbar__search"
           type="search"
           placeholder="Search — try project:foo, status:blocked, kind:compute, …"
           value={query}
@@ -301,7 +301,7 @@ function Toolbar({ graph }: { graph: GraphPayload }) {
         />
       </SearchAutocomplete>
       <QualifierHints query={query} />
-      <div className="stx-todo-toolbar__chips">
+      <div className="stx-cards-toolbar__chips">
         {statuses.map((s) => {
           const on = activeStatuses.includes(s);
           const c = graph.status_colors[s];
@@ -309,7 +309,7 @@ function Toolbar({ graph }: { graph: GraphPayload }) {
             <button
               key={s}
               type="button"
-              className={`stx-todo-chip${on ? " stx-todo-chip--on" : ""}`}
+              className={`stx-cards-chip${on ? " stx-cards-chip--on" : ""}`}
               style={
                 on
                   ? { background: c.fill, borderColor: c.stroke, color: "#222" }
@@ -325,8 +325,8 @@ function Toolbar({ graph }: { graph: GraphPayload }) {
       </div>
       {repos.length > 0 && (
         <select
-          className={`stx-todo-toolbar__repo${
-            activeRepos.length ? " stx-todo-toolbar__repo--on" : ""
+          className={`stx-cards-toolbar__repo${
+            activeRepos.length ? " stx-cards-toolbar__repo--on" : ""
           }`}
           value={activeRepos[0] ?? ""}
           onChange={(e) => setRepos(e.target.value ? [e.target.value] : [])}
@@ -344,7 +344,7 @@ function Toolbar({ graph }: { graph: GraphPayload }) {
       {filtering && (
         <button
           type="button"
-          className="stx-todo-toolbar__reset"
+          className="stx-cards-toolbar__reset"
           onClick={resetFilters}
         >
           clear
@@ -371,15 +371,15 @@ function ExportGroup({ graph }: { graph: GraphPayload }) {
   const base = `scitex-cards-${stamp}-${visible.length}`;
   return (
     <span
-      className="stx-todo-toolbar__export"
+      className="stx-cards-toolbar__export"
       role="group"
       aria-label={`Export ${visible.length} visible tasks`}
       title={`Export ${visible.length} visible tasks`}
     >
-      <span className="stx-todo-toolbar__export-label">Export</span>
+      <span className="stx-cards-toolbar__export-label">Export</span>
       <button
         type="button"
-        className="stx-todo-chip stx-todo-chip--export"
+        className="stx-cards-chip stx-cards-chip--export"
         onClick={() =>
           downloadText(
             toMarkdown(graph, visible),
@@ -392,7 +392,7 @@ function ExportGroup({ graph }: { graph: GraphPayload }) {
       </button>
       <button
         type="button"
-        className="stx-todo-chip stx-todo-chip--export"
+        className="stx-cards-chip stx-cards-chip--export"
         onClick={() =>
           downloadText(toCsv(graph, visible), `${base}.csv`, "text/csv")
         }
@@ -401,7 +401,7 @@ function ExportGroup({ graph }: { graph: GraphPayload }) {
       </button>
       <button
         type="button"
-        className="stx-todo-chip stx-todo-chip--export"
+        className="stx-cards-chip stx-cards-chip--export"
         onClick={() =>
           downloadText(
             toJson(graph, visible),
@@ -460,33 +460,33 @@ function CountBreakdown({ graph }: { graph: GraphPayload }) {
     : `Total store size + breakdown of what is on the canvas vs hidden in parent cards vs in the Pool.`;
 
   return (
-    <span className="stx-todo-counts" aria-label="Task counts" title={tooltip}>
-      <span className="stx-todo-counts__chip stx-todo-counts__chip--total">
+    <span className="stx-cards-counts" aria-label="Task counts" title={tooltip}>
+      <span className="stx-cards-counts__chip stx-cards-counts__chip--total">
         Total {counts.total}
       </span>
-      <span className="stx-todo-counts__sep" aria-hidden="true">
+      <span className="stx-cards-counts__sep" aria-hidden="true">
         ·
       </span>
       <span
-        className="stx-todo-counts__chip"
+        className="stx-cards-counts__chip"
         title="Tasks rendered on the Canvas right now (this drill scope)"
       >
         Showing {counts.showing}
       </span>
-      <span className="stx-todo-counts__sep" aria-hidden="true">
+      <span className="stx-cards-counts__sep" aria-hidden="true">
         ·
       </span>
       <span
-        className="stx-todo-counts__chip"
+        className="stx-cards-counts__chip"
         title="Tasks hidden inside parent cards on the canvas — drill in to see"
       >
         Nested {counts.nested}
       </span>
-      <span className="stx-todo-counts__sep" aria-hidden="true">
+      <span className="stx-cards-counts__sep" aria-hidden="true">
         ·
       </span>
       <span
-        className="stx-todo-counts__chip"
+        className="stx-cards-counts__chip"
         title="Uncategorized / disconnected tasks in the Pool sidebar"
       >
         Pool {counts.pool}
@@ -495,7 +495,7 @@ function CountBreakdown({ graph }: { graph: GraphPayload }) {
   );
 }
 
-export function TodoBoard() {
+export function CardsBoard() {
   const { graph, loading, error, load } = useBoardStore();
   const view = useBoardStore((s) => s.view);
 
@@ -504,37 +504,37 @@ export function TodoBoard() {
   }, [load]);
 
   if (loading && !graph) {
-    return <div className="stx-todo-status">Loading task graph…</div>;
+    return <div className="stx-cards-status">Loading task graph…</div>;
   }
   if (error) {
     return (
-      <div className="stx-todo-status stx-todo-status--err">Error: {error}</div>
+      <div className="stx-cards-status stx-cards-status--err">Error: {error}</div>
     );
   }
   if (!graph) {
-    return <div className="stx-todo-status">No graph.</div>;
+    return <div className="stx-cards-status">No graph.</div>;
   }
 
   return (
-    <div className="stx-todo-board">
-      <header className="stx-todo-board__header">
+    <div className="stx-cards-board">
+      <header className="stx-cards-board__header">
         {/* "Board" region hint — operator UX 2026-06-06: "canvas/drill/pool/
          * table/board とか UI 上にヒント的に書いておいて" — pairs with the
          * "Drill:" label on the breadcrumb, "Canvas" on the React Flow root,
          * and the "Pool —" prefix in the UncategorizedPool. The original
-         * "SciTeX Todo — dependency graph" still sits next to it as the
+         * "SciTeX Card — dependency graph" still sits next to it as the
          * full title; the new chip is just the at-a-glance region name. */}
         <span
-          className="stx-todo-board__region"
+          className="stx-cards-board__region"
           aria-hidden="true"
           title="Board — the whole dependency graph page"
         >
           Board
         </span>
-        <span className="stx-todo-board__title">
-          SciTeX Todo — dependency graph
+        <span className="stx-cards-board__title">
+          SciTeX Card — dependency graph
         </span>
-        <span className="stx-todo-board__meta">
+        <span className="stx-cards-board__meta">
           <code>{graph.store_path}</code>
         </span>
         <CountBreakdown graph={graph} />
@@ -559,7 +559,7 @@ export function TodoBoard() {
         <Legend colors={graph.status_colors} />
       </header>
       <Toolbar graph={graph} />
-      <div className="stx-todo-board__canvas">
+      <div className="stx-cards-board__canvas">
         {view === "graph" ? (
           <GraphView graph={graph} />
         ) : view === "recent" ? (

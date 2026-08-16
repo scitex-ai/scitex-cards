@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 #: Canonical DB filename. ``.db`` (not ``.sqlite``) so a future
 #: ``stx.io.load("cards.db")`` round-trips (scitex-io registers only ``.db``).
 #: ``cards.db`` under ``~/.scitex/cards/`` is the operator-declared SSOT
-#: target (2026-07-16); the pre-rename shadow lived at ``~/.scitex/todo/todo.db``
+#: target (2026-07-16); the pre-rename shadow lived at ``~/.scitex/cards/cards.db``
 #: and is REBUILT by import at cutover, never moved or trusted as current.
 DEFAULT_DB_FILENAME = "cards.db"
 
@@ -331,7 +331,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
     # It is not hypothetical here either. Found 2026-08-12 in this repository's
     # own root, untracked and not ignored:
     #
-    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/todo.db
+    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/cards.db
     #
     # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
     # which collapses "//" to "/", then mkdir(parents=True) below built the

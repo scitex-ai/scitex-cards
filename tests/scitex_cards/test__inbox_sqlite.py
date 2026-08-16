@@ -33,7 +33,7 @@ def _store(tmp_path):
     """A DB store, because the rail now lives IN the store.
 
     This used to be ``tasks.yaml``, which worked only while the rail wrote a
-    separate ``runtime/todo.db`` beside the store. Now that the rail's target
+    separate ``runtime/cards.db`` beside the store. Now that the rail's target
     IS the store, handing it a YAML document makes the enqueue open a YAML file
     as SQLite — and it says so, loudly (``file is not a database``). That is the
     correct answer for a YAML store; the fix is to stop naming one.
@@ -310,7 +310,7 @@ def cli_dry_run_store():
 # db path + schema                                                            #
 # --------------------------------------------------------------------------- #
 def test_db_path_lives_under_runtime_dir(tmp_path):
-    # <store_dir>/runtime/todo.db per the SciTeX runtime-DB convention.
+    # <store_dir>/runtime/cards.db per the SciTeX runtime-DB convention.
     # Arrange
     store = _store(tmp_path)
     # Act
@@ -328,13 +328,13 @@ def test_db_path_parent_is_the_store_dir(tmp_path):
     assert p.parent.parent == tmp_path
 
 
-def test_db_file_is_named_todo_db(tmp_path):
+def test_db_file_is_named_cards_db(tmp_path):
     # Arrange
     store = _store(tmp_path)
     # Act
     p = sq.inbox_db_path(store)
     # Assert
-    assert p.name == "todo.db"
+    assert p.name == "cards.db"
 
 
 def test_schema_has_recipient_seen_index(tmp_path):
@@ -1007,7 +1007,7 @@ def test_cli_migrate_dry_run_writes_nothing(cli_dry_run_store):
 
 def test_the_rail_targets_the_store_itself(tmp_path, env):
     """The headline of this change: notifications live IN the canonical store,
-    not in a per-container ``runtime/todo.db`` beside it."""
+    not in a per-container ``runtime/cards.db`` beside it."""
     # Arrange
     env.delete("SCITEX_CARDS_INBOX_DB")
     store = _store(tmp_path)

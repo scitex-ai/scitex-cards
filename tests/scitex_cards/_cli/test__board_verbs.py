@@ -51,7 +51,7 @@ from scitex_cards._cli._board import (
 @pytest.fixture
 def pidfile_path(env, tmp_path):
     """Point the pidfile at a tmp location so tests don't touch
-    ``~/.scitex/todo/board.pid``."""
+    ``~/.scitex/cards/board.pid``."""
     pf = tmp_path / "board.pid"
     env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf

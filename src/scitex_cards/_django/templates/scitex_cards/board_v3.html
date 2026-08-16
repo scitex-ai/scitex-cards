@@ -48,7 +48,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator TODO 2026-06-17) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
@@ -103,7 +103,7 @@
   deterministic hash-hue + initials fallback) + status ring for the Timeline
   raster. MUST load BEFORE timeline.js: publishes window.STX.agentAvatar,
   captured like _pack/_geo; timeline.js falls back to plain-text lane labels
-  when absent. Operator 2026-07-10 (todo-board-agent-icons-status-rings).
+  when absent. Operator 2026-07-10 (cards-board-agent-icons-status-rings).
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/10-agent-avatar.js' %}"></script>
 {% comment %}
@@ -113,7 +113,7 @@
   Loads AFTER 10-agent-avatar.js (it reuses window.STX.agentAvatar for the
   note avatar) and publishes window.STX.stickyWall; render() falls back to the
   column layout when absent. Operator design, card
-  todo-board-sticky-wall-view-20260710.
+  cards-board-sticky-wall-view-20260710.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/11-sticky-wall.js' %}"></script>
 {% comment %}
@@ -201,7 +201,7 @@
   a rich per-task "simple" list). Classic <script defer> so it shares the
   page globals (STATE / escapeHtml / openDetail / render); it
   exposes its entry points on window for the inline render() dispatch.
-  Operator TODO 2026-06-17.
+  Operator CARD 2026-06-17.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/timeline.js' %}"></script>
 <style>
@@ -282,7 +282,7 @@
       <span class="small"><span class="live-dot"></span>LIVE</span>
     </div>
 
-    <div class="fb-center stx-todo-filterbar__group stx-todo-filterbar__group--search">
+    <div class="fb-center stx-cards-filterbar__group stx-cards-filterbar__group--search">
       <!-- SEARCH/FILTER group (board UI overhaul part 2, 2026-06-14): the
            search input + Filters popover share the center band so the
            operator's two query-narrowing tools live next to each other.
@@ -311,7 +311,7 @@
          STATUS  = recent-count + Reload + hide-project + blocking-me + hidden
          PRIMARY = + Add Task (separated by a divider, brand-accent)
        The legacy `.fb-right` keeps its wrap-friendly flex; the new
-       `.stx-todo-filterbar__group--*` wrappers add the breathing room
+       `.stx-cards-filterbar__group--*` wrappers add the breathing room
        + dividers.
 
        NB: this MUST be a `comment` block, not `{# #}` — Django's `{# #}`
@@ -321,7 +321,7 @@
        PR); fix-forward in this PR per lead a2a
        `f7a5d37930b9479ca7e53a7e316c132d`, 2026-06-14, after the operator
        reported it live. {% endcomment %}
-    <div class="stx-todo-filterbar__group stx-todo-filterbar__group--view"
+    <div class="stx-cards-filterbar__group stx-cards-filterbar__group--view"
          role="group" aria-label="View controls — layout, sort, group">
     <!-- P9 (lead brief 2026-06-12) — sort-by control. The headline use
          is "sort by deadline" (pairs with the P4 deadline schema landing
@@ -377,9 +377,9 @@
     </span>
     </div>{# end VIEW group #}
 
-    <span class="stx-todo-filterbar__divider" aria-hidden="true"></span>
+    <span class="stx-cards-filterbar__divider" aria-hidden="true"></span>
 
-    <div class="stx-todo-filterbar__primary" role="group"
+    <div class="stx-cards-filterbar__primary" role="group"
          aria-label="Primary action — add a new task">
     <!-- Add Task — operator-CRUD wiring (TG 344): one-click new-task
          entry from the filterbar. Opens the #add-task-backdrop modal

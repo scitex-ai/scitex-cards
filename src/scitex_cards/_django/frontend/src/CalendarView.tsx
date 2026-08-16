@@ -43,7 +43,7 @@ const VISIBLE_CHIPS_PER_CELL = 4;
 function StatusDot({ color }: { color: StatusColor | undefined }) {
   return (
     <span
-      className="stx-todo-cal__dot"
+      className="stx-cards-cal__dot"
       aria-hidden="true"
       style={{
         background: color?.fill ?? "var(--stx-border-strong)",
@@ -69,7 +69,7 @@ function TaskChip({
   return (
     <button
       type="button"
-      className="stx-todo-cal__chip"
+      className="stx-cards-cal__chip"
       onClick={(e) => {
         e.stopPropagation();
         selectNode(node.id);
@@ -82,7 +82,7 @@ function TaskChip({
       title={`${node.title}\nstatus: ${node.status}${node.repo ? `\nrepo: ${node.repo}` : ""}`}
     >
       <StatusDot color={c} />
-      <span className="stx-todo-cal__chip-title">{node.title}</span>
+      <span className="stx-cards-cal__chip-title">{node.title}</span>
     </button>
   );
 }
@@ -114,11 +114,11 @@ function DayCell({
   const past = cell.inMonth && cell.date.getTime() < todayMidnight;
   const weekend = cell.weekday === 0 || cell.weekday === 6;
   const classes = [
-    "stx-todo-cal__cell",
-    cell.inMonth ? "" : "stx-todo-cal__cell--out",
-    cell.isToday ? "stx-todo-cal__cell--today" : "",
-    past ? "stx-todo-cal__cell--past" : "",
-    weekend ? "stx-todo-cal__cell--weekend" : "",
+    "stx-cards-cal__cell",
+    cell.inMonth ? "" : "stx-cards-cal__cell--out",
+    cell.isToday ? "stx-cards-cal__cell--today" : "",
+    past ? "stx-cards-cal__cell--past" : "",
+    weekend ? "stx-cards-cal__cell--weekend" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -130,21 +130,21 @@ function DayCell({
         cell.tasks.length === 1 ? "" : "s"
       }`}
     >
-      <div className="stx-todo-cal__cell-head">
-        <span className="stx-todo-cal__cell-day">{cell.day}</span>
+      <div className="stx-cards-cal__cell-head">
+        <span className="stx-cards-cal__cell-day">{cell.day}</span>
         {cell.isToday && (
-          <span className="stx-todo-cal__cell-today" title="Today">
+          <span className="stx-cards-cal__cell-today" title="Today">
             today
           </span>
         )}
       </div>
-      <div className="stx-todo-cal__chips">
+      <div className="stx-cards-cal__chips">
         {visible.map((t) => (
           <TaskChip key={t.id} node={t} statusColors={statusColors} />
         ))}
         {overflow > 0 && (
           <span
-            className="stx-todo-cal__more"
+            className="stx-cards-cal__more"
             title={`${overflow} more task${overflow === 1 ? "" : "s"} on this day`}
           >
             +{overflow} more
@@ -230,12 +230,12 @@ export function CalendarView({ graph }: { graph: GraphPayload }) {
   };
 
   return (
-    <div className="stx-todo-cal">
-      <div className="stx-todo-cal__bar">
-        <div className="stx-todo-cal__nav">
+    <div className="stx-cards-cal">
+      <div className="stx-cards-cal__bar">
+        <div className="stx-cards-cal__nav">
           <button
             type="button"
-            className="stx-todo-cal__navbtn"
+            className="stx-cards-cal__navbtn"
             onClick={onPrev}
             aria-label="Previous month"
             title="Previous month"
@@ -244,27 +244,27 @@ export function CalendarView({ graph }: { graph: GraphPayload }) {
           </button>
           <button
             type="button"
-            className="stx-todo-cal__navbtn"
+            className="stx-cards-cal__navbtn"
             onClick={onNext}
             aria-label="Next month"
             title="Next month"
           >
             ›
           </button>
-          <span className="stx-todo-cal__title" aria-live="polite">
+          <span className="stx-cards-cal__title" aria-live="polite">
             {MONTH_NAMES[monthIndex]} {year}
           </span>
         </div>
-        <div className="stx-todo-cal__bar-right">
+        <div className="stx-cards-cal__bar-right">
           <span
-            className="stx-todo-cal__count"
+            className="stx-cards-cal__count"
             title="Tasks placed on a day in this month (deadline → last_activity)"
           >
             {monthCount} scheduled this month
           </span>
           {undated > 0 && (
             <span
-              className="stx-todo-cal__undated"
+              className="stx-cards-cal__undated"
               title={`${undated} matching task${undated === 1 ? "" : "s"} have no deadline or last_activity and are not rendered on the calendar`}
             >
               {undated} undated
@@ -272,7 +272,7 @@ export function CalendarView({ graph }: { graph: GraphPayload }) {
           )}
           <button
             type="button"
-            className="stx-todo-cal__today-pill"
+            className="stx-cards-cal__today-pill"
             onClick={onToday}
             title="Snap back to the current month"
           >
@@ -280,18 +280,18 @@ export function CalendarView({ graph }: { graph: GraphPayload }) {
           </button>
         </div>
       </div>
-      <div className="stx-todo-cal__weekdays" role="row">
+      <div className="stx-cards-cal__weekdays" role="row">
         {WEEKDAY_NAMES.map((w, i) => (
           <div
             key={w}
-            className={`stx-todo-cal__weekday${i === 0 || i === 6 ? " stx-todo-cal__weekday--weekend" : ""}`}
+            className={`stx-cards-cal__weekday${i === 0 || i === 6 ? " stx-cards-cal__weekday--weekend" : ""}`}
             role="columnheader"
           >
             {w}
           </div>
         ))}
       </div>
-      <div className="stx-todo-cal__grid" role="grid" aria-label="Month grid">
+      <div className="stx-cards-cal__grid" role="grid" aria-label="Month grid">
         {cells.map((c) => (
           <DayCell
             key={c.key}

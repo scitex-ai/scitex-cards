@@ -15,7 +15,7 @@ The behaviour the suite covers:
   dispatches correctly against a `tmp_path` store.
 - Tool naming follows the audit conventions: Convention A
   (tool_name == python_api_name, no `scitex_cards_` prefix) for the six
-  task-store tools, plus Convention B (`todo_<verb>_<noun>` per §5) for
+  task-store tools, plus Convention B (`cards_<verb>_<noun>` per §5) for
   the two skills tools — eight tools total.
 - The CLI `mcp list-tools` enumerates them.
 """
@@ -126,12 +126,12 @@ _CONVENTION_A_NAMES = {
     # (a path-taking verb there would be dispatchable over HTTP).
     "dm_send_document",
 }
-# Convention B — `todo_<verb>_<noun>` for the audit §5 required skills
+# Convention B — `cards_<verb>_<noun>` for the audit §5 required skills
 # tools. These don't map 1:1 to a Python API; they introspect the bundled
 # `_skills/` directory.
 _CONVENTION_B_NAMES = {
-    "todo_skills_list",
-    "todo_skills_get",
+    "cards_skills_list",
+    "cards_skills_get",
 }
 # Cross-package standard names — a fixed tool name shared verbatim with the
 # sac/cct health tools (single token by that shared spec, so exempt from the

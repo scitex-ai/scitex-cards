@@ -7,7 +7,7 @@
 
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { TodoBoard } from "../TodoBoard";
+import { CardsBoard } from "../CardsBoard";
 
 const SLUG = "scitex-cards";
 const API_PATHS = ["/graph", "/tasks", "/ping"];
@@ -33,7 +33,7 @@ function installFetchOverride(): void {
   overrideInstalled = true;
 }
 
-export function mountTodoBoard(
+export function mountCardsBoard(
   container: HTMLElement,
   embedded: boolean,
 ): void {
@@ -43,10 +43,10 @@ export function mountTodoBoard(
     root = null;
   }
   root = createRoot(container);
-  root.render(createElement(TodoBoard));
+  root.render(createElement(CardsBoard));
 }
 
-export function unmountTodoBoard(): void {
+export function unmountCardsBoard(): void {
   if (root) {
     root.unmount();
     root = null;

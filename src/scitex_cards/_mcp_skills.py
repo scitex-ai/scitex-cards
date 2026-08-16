@@ -10,7 +10,7 @@ continues to expose every tool.
 
 Clusters:
 
-  - Skills (Convention B, ``todo_<verb>_<noun>``) — audit §5 required pair;
+  - Skills (Convention B, ``cards_<verb>_<noun>``) — audit §5 required pair;
     file-system introspection on the bundled ``_skills/`` dir.
   - Help-wait (``help_wait`` / ``help_clear``) — the "agent is stuck waiting
     on the operator" card, lifted out of the dotfiles Notification hook so
@@ -36,7 +36,7 @@ def _skills_dir():
 
 
 @mcp.tool()
-async def todo_skills_list() -> str:
+async def cards_skills_list() -> str:
     """List bundled scitex-cards skill files. Returns a JSON array of names."""
     skills_dir = _skills_dir()
     if not skills_dir.exists():
@@ -46,7 +46,7 @@ async def todo_skills_list() -> str:
 
 
 @mcp.tool()
-async def todo_skills_get(name: str) -> str:
+async def cards_skills_get(name: str) -> str:
     """Return the content of one bundled scitex-cards skill file.
 
     `name` must match a file in the bundled skills dir (e.g.
@@ -422,8 +422,8 @@ __all__ = [
     "help_wait",
     "poll_notifications",
     "reassign_task",
-    "todo_skills_get",
-    "todo_skills_list",
+    "cards_skills_get",
+    "cards_skills_list",
 ]
 
 # EOF

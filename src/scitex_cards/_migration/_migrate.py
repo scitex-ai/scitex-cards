@@ -5,13 +5,13 @@
 Operator-direct directive (2026-06-13, lead a2a `[operator-driven]`,
 translated — the verbatim original lives on the board's task history):
 the canonical card shape is a per-task DIRECTORY at
-``<proj>/.scitex/todo/tasks/<card-id>/`` (with ``README.md`` for the
+``<proj>/.scitex/cards/tasks/<card-id>/`` (with ``README.md`` for the
 body + ``adr.md`` for decisions per skill 30). Writes that lay a row
 directly into the flat ``tasks.yaml`` are FORBIDDEN — the system must
 fail loud + name the offending path.
 
 This module is the SCAN side: walk every discovered lane (the
-``~/proj/*/.scitex/todo/tasks.yaml`` glob), classify each row, and
+``~/proj/*/.scitex/cards/tasks.yaml`` glob), classify each row, and
 emit a machine-readable plan + a human-readable Markdown summary.
 NOTHING is written to disk by the scanner — the migrator runs in a
 separate verb behind ``-y`` after the plan is operator-approved.
@@ -224,7 +224,7 @@ def scan_all_lanes(
     lane_paths: Optional[Iterable[Path]] = None,
 ) -> FleetPlan:
     """Scan every discovered lane + every project's ``tasks.yaml`` AND
-    the global user-scope ``~/.scitex/todo/tasks.yaml``.
+    the global user-scope ``~/.scitex/cards/tasks.yaml``.
 
     Defaults to :func:`scitex_cards._django.services._discover_lanes` +
     the resolved global store. Pass an explicit iterable for tests
@@ -456,7 +456,7 @@ def _git_commit_lane(lane_path: Path, message: str) -> tuple[bool, Optional[str]
     """
     work_dir = lane_path.parent
     # Locate the git root by walking up at most ``_GIT_WALK_MAX`` levels;
-    # the lane is conventionally at ``<repo>/.scitex/todo/tasks.yaml`` so
+    # the lane is conventionally at ``<repo>/.scitex/cards/tasks.yaml`` so
     # the project's ``.git`` is at most 3 parents up. Bounding the walk
     # prevents the test runner's tmp dir from accidentally resolving to
     # an unrelated git repo elsewhere on disk (e.g. an enclosing dev

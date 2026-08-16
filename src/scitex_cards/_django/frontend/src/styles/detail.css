@@ -1,16 +1,16 @@
 /* scitex-cards board — node detail drawer + markdown rendering.
  * Imported by board.css (kept as one import site).
  *
- * Colors come from the --stx-* palette defined on .stx-todo-board (board.css),
+ * Colors come from the --stx-* palette defined on .stx-cards-board (board.css),
  * which is derived from the scitex-ui shell theme vars and flips with
- * <html data-theme>. The drawer is rendered inside .stx-todo-board, so those
+ * <html data-theme>. The drawer is rendered inside .stx-cards-board, so those
  * variables cascade here. */
 
 /* ── Node detail drawer ──────────────────────────────────────────────────
  * Right-side panel that opens when a graph or pool card is clicked. The
  * backdrop is a transparent click-catcher that dims the canvas slightly
  * and closes the drawer on click-away. */
-.stx-todo-detail__backdrop {
+.stx-cards-detail__backdrop {
   position: absolute;
   inset: 0;
   z-index: 10;
@@ -20,7 +20,7 @@
   cursor: pointer; /* click-away is the primary close action */
 }
 
-.stx-todo-detail {
+.stx-cards-detail {
   width: min(480px, 90%);
   height: 100%;
   padding: 18px 22px 22px 22px;
@@ -36,7 +36,7 @@
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-.stx-todo-detail__header {
+.stx-cards-detail__header {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -44,14 +44,14 @@
   padding-bottom: 12px;
 }
 
-.stx-todo-detail__title-row {
+.stx-cards-detail__title-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.stx-todo-detail__title {
+.stx-cards-detail__title {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
@@ -59,7 +59,7 @@
   line-height: 1.3;
 }
 
-.stx-todo-detail__close {
+.stx-cards-detail__close {
   appearance: none;
   background: transparent;
   color: var(--stx-text-muted);
@@ -73,14 +73,14 @@
   flex: 0 0 auto;
 }
 
-.stx-todo-detail__close:hover,
-.stx-todo-detail__close:focus-visible {
+.stx-cards-detail__close:hover,
+.stx-cards-detail__close:focus-visible {
   background: var(--stx-hover-bg);
   color: var(--stx-text);
   outline: none;
 }
 
-.stx-todo-detail__meta {
+.stx-cards-detail__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -89,7 +89,7 @@
   color: var(--stx-text-muted);
 }
 
-.stx-todo-detail__badge {
+.stx-cards-detail__badge {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 0.72rem;
@@ -97,74 +97,74 @@
   letter-spacing: 0.02em;
 }
 
-.stx-todo-detail__prio,
-.stx-todo-detail__repo,
-.stx-todo-detail__id {
+.stx-cards-detail__prio,
+.stx-cards-detail__repo,
+.stx-cards-detail__id {
   font-size: 0.75rem;
 }
 
-.stx-todo-detail__id code,
-.stx-todo-detail__repo code {
+.stx-cards-detail__id code,
+.stx-cards-detail__repo code {
   background: var(--stx-code-bg);
   padding: 1px 6px;
   border-radius: 4px;
   color: var(--stx-text-muted);
 }
 
-.stx-todo-detail__body {
+.stx-cards-detail__body {
   flex: 1;
   min-height: 0;
 }
 
-.stx-todo-detail__empty {
+.stx-cards-detail__empty {
   color: var(--stx-text-faint);
 }
 
 /* Markdown rendering — scoped to the drawer so we don't disturb other
  * markdown rendering anywhere else on the page. */
-.stx-todo-detail__markdown {
+.stx-cards-detail__markdown {
   font-size: 0.9rem;
   line-height: 1.55;
   color: var(--stx-text);
 }
 
-.stx-todo-detail__markdown h1,
-.stx-todo-detail__markdown h2,
-.stx-todo-detail__markdown h3,
-.stx-todo-detail__markdown h4 {
+.stx-cards-detail__markdown h1,
+.stx-cards-detail__markdown h2,
+.stx-cards-detail__markdown h3,
+.stx-cards-detail__markdown h4 {
   color: var(--stx-text);
   margin: 1em 0 0.4em;
   line-height: 1.25;
 }
 
-.stx-todo-detail__markdown h1 {
+.stx-cards-detail__markdown h1 {
   font-size: 1.15rem;
 }
 
-.stx-todo-detail__markdown h2 {
+.stx-cards-detail__markdown h2 {
   font-size: 1.05rem;
 }
 
-.stx-todo-detail__markdown h3,
-.stx-todo-detail__markdown h4 {
+.stx-cards-detail__markdown h3,
+.stx-cards-detail__markdown h4 {
   font-size: 0.95rem;
 }
 
-.stx-todo-detail__markdown p {
+.stx-cards-detail__markdown p {
   margin: 0.5em 0;
 }
 
-.stx-todo-detail__markdown ul,
-.stx-todo-detail__markdown ol {
+.stx-cards-detail__markdown ul,
+.stx-cards-detail__markdown ol {
   padding-left: 1.4em;
   margin: 0.5em 0;
 }
 
-.stx-todo-detail__markdown li {
+.stx-cards-detail__markdown li {
   margin: 0.2em 0;
 }
 
-.stx-todo-detail__markdown code {
+.stx-cards-detail__markdown code {
   background: var(--stx-code-bg);
   padding: 1px 5px;
   border-radius: 3px;
@@ -172,7 +172,7 @@
   color: var(--stx-accent);
 }
 
-.stx-todo-detail__markdown pre {
+.stx-cards-detail__markdown pre {
   background: var(--stx-input-bg);
   border: 1px solid var(--stx-border);
   border-radius: 6px;
@@ -181,37 +181,37 @@
   margin: 0.6em 0;
 }
 
-.stx-todo-detail__markdown pre code {
+.stx-cards-detail__markdown pre code {
   background: transparent;
   padding: 0;
   color: var(--stx-text);
 }
 
-.stx-todo-detail__markdown a {
+.stx-cards-detail__markdown a {
   color: var(--stx-accent);
   text-decoration: underline;
 }
 
-.stx-todo-detail__markdown blockquote {
+.stx-cards-detail__markdown blockquote {
   margin: 0.6em 0;
   padding: 0.1em 0 0.1em 12px;
   border-left: 3px solid var(--stx-border-strong);
   color: var(--stx-text-muted);
 }
 
-.stx-todo-detail__markdown hr {
+.stx-cards-detail__markdown hr {
   border: none;
   border-top: 1px solid var(--stx-border);
   margin: 1em 0;
 }
 
-.stx-todo-detail__markdown table {
+.stx-cards-detail__markdown table {
   border-collapse: collapse;
   margin: 0.6em 0;
 }
 
-.stx-todo-detail__markdown th,
-.stx-todo-detail__markdown td {
+.stx-cards-detail__markdown th,
+.stx-cards-detail__markdown td {
   border: 1px solid var(--stx-border);
   padding: 4px 8px;
 }
@@ -223,7 +223,7 @@
  * when they open the drawer (operator UX 2026-06-06).
  * ------------------------------------------------------------------------- */
 
-.stx-todo-blockers {
+.stx-cards-blockers {
   margin: 0 0 14px 0;
   padding: 10px 12px;
   background: var(--stx-panel-bg);
@@ -232,14 +232,14 @@
   border-radius: 6px;
 }
 
-.stx-todo-blockers__title {
+.stx-cards-blockers__title {
   margin: 0 0 6px 0;
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--stx-text);
 }
 
-.stx-todo-blockers__subtitle {
+.stx-cards-blockers__subtitle {
   margin: 10px 0 4px 0;
   font-size: 0.85rem;
   font-weight: 600;
@@ -248,7 +248,7 @@
   letter-spacing: 0.04em;
 }
 
-.stx-todo-blockers__list {
+.stx-cards-blockers__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -257,18 +257,18 @@
   gap: 4px;
 }
 
-.stx-todo-blockers__empty,
-.stx-todo-blockers__hint {
+.stx-cards-blockers__empty,
+.stx-cards-blockers__hint {
   margin: 4px 0 0 0;
   color: var(--stx-text-muted);
   font-size: 0.85rem;
 }
 
-.stx-todo-blocker {
+.stx-cards-blocker {
   margin: 0;
 }
 
-.stx-todo-blocker__link {
+.stx-cards-blocker__link {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -283,12 +283,12 @@
   font: inherit;
   transition: background 100ms ease, border-color 100ms ease;
 }
-.stx-todo-blocker__link:hover {
+.stx-cards-blocker__link:hover {
   background: var(--stx-hover-bg);
   border-color: var(--stx-accent);
 }
 
-.stx-todo-blocker__title {
+.stx-cards-blocker__title {
   flex: 1 1 auto;
   font-weight: 500;
   white-space: nowrap;
@@ -296,22 +296,22 @@
   text-overflow: ellipsis;
 }
 
-.stx-todo-blocker__why {
+.stx-cards-blocker__why {
   flex: 0 0 auto;
   color: var(--stx-text-muted);
   font-size: 0.75rem;
   font-style: italic;
 }
 
-.stx-todo-blockers__satisfied {
+.stx-cards-blockers__satisfied {
   margin-top: 8px;
   font-size: 0.85rem;
 }
-.stx-todo-blockers__satisfied summary {
+.stx-cards-blockers__satisfied summary {
   cursor: pointer;
   color: var(--stx-text-muted);
 }
-.stx-todo-blockers__satisfied[open] summary {
+.stx-cards-blockers__satisfied[open] summary {
   margin-bottom: 6px;
 }
 
@@ -319,12 +319,12 @@
  * COMPUTE METADATA — kind: "compute" rows render a KV table at the top of
  * the NodeDetailPanel body, before the Blockers section (north-star pillar
  * #1, lead a2a 2c7a431d "opening a compute card answers 'what is this and
- * where does it run' immediately"). Visually paired with `.stx-todo-blockers`
+ * where does it run' immediately"). Visually paired with `.stx-cards-blockers`
  * via the matching left-border accent (here: slate-blue vs blockers' red),
  * so the two sections read as the same "structural cards" shape.
  * ------------------------------------------------------------------------- */
 
-.stx-todo-compute {
+.stx-cards-compute {
   margin: 0 0 14px 0;
   padding: 10px 12px;
   background: var(--stx-panel-bg);
@@ -332,23 +332,23 @@
   border-left: 3px solid #285a96;
   border-radius: 6px;
 }
-.stx-todo-compute__title {
+.stx-cards-compute__title {
   margin: 0 0 6px 0;
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--stx-text);
 }
-.stx-todo-compute__kv {
+.stx-cards-compute__kv {
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: minmax(80px, max-content) 1fr;
   gap: 4px 12px;
 }
-.stx-todo-compute__row {
+.stx-cards-compute__row {
   display: contents;
 }
-.stx-todo-compute__key {
+.stx-cards-compute__key {
   margin: 0;
   color: var(--stx-text-muted);
   font-size: 0.78rem;
@@ -356,28 +356,28 @@
   letter-spacing: 0.04em;
   align-self: center;
 }
-.stx-todo-compute__val {
+.stx-cards-compute__val {
   margin: 0;
   font-size: 0.88rem;
   color: var(--stx-text);
   word-break: break-all;
 }
-.stx-todo-compute__val code {
+.stx-cards-compute__val code {
   font-family: var(--stx-mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
   background: transparent;
   padding: 0;
 }
-.stx-todo-compute__cmd {
+.stx-cards-compute__cmd {
   margin-top: 8px;
 }
-.stx-todo-compute__cmd-label {
+.stx-cards-compute__cmd-label {
   color: var(--stx-text-muted);
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 4px;
 }
-.stx-todo-compute__cmd-text {
+.stx-cards-compute__cmd-text {
   margin: 0;
   padding: 6px 8px;
   background: var(--stx-input-bg);
@@ -389,11 +389,11 @@
   overflow-x: auto;
   max-height: 180px;
 }
-.stx-todo-compute__cmd-text code {
+.stx-cards-compute__cmd-text code {
   background: transparent;
   padding: 0;
 }
-.stx-todo-compute__empty {
+.stx-cards-compute__empty {
   margin: 4px 0 0 0;
   color: var(--stx-text-muted);
   font-size: 0.85rem;

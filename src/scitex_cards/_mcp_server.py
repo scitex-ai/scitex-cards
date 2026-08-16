@@ -5,7 +5,7 @@
 Tools follow audit §6 Convention A (``tool_name == python_api_name``); see
 ``TOOL_NAMES`` for the full registered set (task CRUD + edges + roles, the
 ``help_wait`` / ``help_clear`` cards, ``poll_notifications`` — the standalone
-PULL card-message inbox — and the ``todo_skills_*`` §5 pair).
+PULL card-message inbox — and the ``cards_skills_*`` §5 pair).
 
 Three cohesive tool clusters live in sibling modules for this module's line
 budget and register on the SAME ``mcp`` instance (imported at the tail for the
@@ -124,7 +124,7 @@ async def list_tasks(
     matches tasks past their next deadline AND not in a terminal lifecycle
     state (mirrors the ``scitex-cards list-tasks --overdue`` CLI flag and
     the fleet payload's ``overdue_count``; see scitex_cards._model.is_overdue
-    — todo-p6-overdue-ui, PR #125 / #126). ``overdue`` is a PULL filter,
+    — cards-p6-overdue-ui, PR #125 / #126). ``overdue`` is a PULL filter,
     not an alarm: this query is the ONLY way an overdue card reaches you
     — nothing pushes it. A deadline passing notifies nobody, so poll
     ``overdue=True`` yourself if you care. Note it only ever matches
@@ -308,8 +308,8 @@ TOOL_NAMES: tuple[str, ...] = (
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
     "health",
-    "todo_skills_list",
-    "todo_skills_get",
+    "cards_skills_list",
+    "cards_skills_get",
     # Operator↔agent DMs (threads.json sidecar; registered in _mcp_skills).
     "dm_send",
     "dm_list",

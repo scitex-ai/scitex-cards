@@ -59,11 +59,11 @@ _board_cache: Dict[str, Tuple["BoardState", float]] = {}
 _CACHE_TTL_SECONDS = 3_600  # 1 hour
 
 #: Env override for the per-project lane discovery glob. Comma-separated.
-#: Default ``~/proj/*/.scitex/todo/tasks.yaml`` covers the operator's
-#: layout; other hosts can override (e.g. ``~/work/*/.scitex/todo/
+#: Default ``~/proj/*/.scitex/cards/tasks.yaml`` covers the operator's
+#: layout; other hosts can override (e.g. ``~/work/*/.scitex/cards/
 #: tasks.yaml``) without code change.
 ENV_LANE_GLOBS = "SCITEX_CARDS_LANE_GLOBS"
-DEFAULT_LANE_GLOBS = "~/proj/*/.scitex/todo/tasks.yaml"
+DEFAULT_LANE_GLOBS = "~/proj/*/.scitex/cards/tasks.yaml"
 
 
 @dataclass

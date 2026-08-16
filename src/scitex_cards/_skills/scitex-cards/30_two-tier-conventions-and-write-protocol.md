@@ -2,8 +2,8 @@
 description: |
   [TOPIC] Two-tier conventions + write protocol — project-level vs global
   [DETAILS] How the fleet uses scitex-cards as the shared SSoT: per-project
-  `<project>/.scitex/todo/` (each agent owns its own lane) rolls up into the
-  global `~/.scitex/todo/` (fleet-wide aggregate the board renders). Who
+  `<project>/.scitex/cards/` (each agent owns its own lane) rolls up into the
+  global `~/.scitex/cards/` (fleet-wide aggregate the board renders). Who
   writes what, when, and with which conflict rules — the load-bearing
   contract for the fleet migration off the lead's in-memory TaskList onto
   the persistent board.
@@ -18,8 +18,8 @@ without per-agent silos OR cross-agent drift, the package follows a
 **two-tier convention**:
 
 - **Project tier** — every project / agent owns its own
-  `<project>/.scitex/todo/` directory, writes its tasks there.
-- **Global tier** — `~/.scitex/todo/` is the fleet-wide aggregate; the
+  `<project>/.scitex/cards/` directory, writes its tasks there.
+- **Global tier** — `~/.scitex/cards/` is the fleet-wide aggregate; the
   board renders from it; the operator + lead write here when they
   coordinate cross-project.
 
@@ -63,7 +63,7 @@ tiers, etc.
 
 ## Tier 1 — project-scoped rows
 
-Historically each project had its own on-disk `<project>/.scitex/todo/`
+Historically each project had its own on-disk `<project>/.scitex/cards/`
 directory. That layout is retired: the canonical store is now a single
 SQLite database (`$SCITEX_CARDS_DB`), and "project tier" is a `scope`
 value on rows in that one database, not a separate file. The agent

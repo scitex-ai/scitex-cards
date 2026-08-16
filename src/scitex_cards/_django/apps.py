@@ -14,10 +14,10 @@ except ImportError:  # scitex-app not installed — standalone still works
     from django.apps import AppConfig as ScitexAppConfig
 
 
-class ScitexTodoConfig(ScitexAppConfig):
+class ScitexCardsConfig(ScitexAppConfig):
     name = "scitex_cards._django"
     label = "scitex_cards_board"
-    verbose_name = "SciTeX Todo Board"
+    verbose_name = "SciTeX Card Board"
 
 
 # EOF

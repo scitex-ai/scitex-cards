@@ -108,7 +108,7 @@ def _existing_columns(conn: sqlite3.Connection) -> set[str]:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Add the receipt columns if this DB predates them. Idempotent + racy-safe.
 
-    ~21 agents share one ``todo.db``; two of them can reach the ``ALTER`` at the
+    ~21 agents share one ``cards.db``; two of them can reach the ``ALTER`` at the
     same instant and the loser sees ``duplicate column name``. That is the
     winner having done our job, not a failure, so it is swallowed — anything
     else and a health check could take down a drain.

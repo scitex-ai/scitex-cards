@@ -219,7 +219,7 @@ class TestGitCommit:
         repo = tmp_path / "repo"
         repo.mkdir()
         _git_init(repo)
-        lane = repo / ".scitex" / "todo" / "tasks.yaml"
+        lane = repo / ".scitex" / "card" / "tasks.yaml"
         _seed_db(
             "tasks:\n  - {id: a, title: A, status: pending, note: 'body'}\n",
         )

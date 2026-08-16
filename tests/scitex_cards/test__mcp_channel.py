@@ -240,7 +240,7 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
 
     recorder = _SendRecorder()
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, state, source="stodo", store=store)
+        gated_drain_once(agent, recorder, state, source="scards", store=store)
     )
     return {
         "seeded": seeded,
@@ -270,7 +270,7 @@ def gated_drain_after_change(tmp_path):
     )
     state = _DrainState()
     first_pushed = asyncio.run(
-        gated_drain_once(agent, _SendRecorder(), state, source="stodo", store=store)
+        gated_drain_once(agent, _SendRecorder(), state, source="scards", store=store)
     )
     _inbox.enqueue(
         agent,
@@ -291,7 +291,7 @@ def gated_drain_after_change(tmp_path):
     os.utime(gated_file, (bumped, bumped))
     recorder = _SendRecorder()
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, state, source="stodo", store=store)
+        gated_drain_once(agent, recorder, state, source="scards", store=store)
     )
     return {
         "first_pushed": first_pushed,
@@ -312,15 +312,15 @@ def test_build_channel_params_content_is_the_record_body():
     assert params["content"] == rec["body"]
 
 
-def test_build_channel_params_source_defaults_to_stodo():
+def test_build_channel_params_source_defaults_to_scards():
     # Arrange
     rec = _FULL_RECORD
     # Act
     params = build_channel_params(rec)
-    # Assert — source drives the `<- stodo` render (the fleet's short
+    # Assert — source drives the `<- scards` render (the fleet's short
     # sender-identity label — distinct from the scitex-cards agent id so the TUI
     # doesn't confuse system pushes with the agent's own messages).
-    assert params["meta"]["source"] == "stodo"
+    assert params["meta"]["source"] == "scards"
 
 
 def test_build_channel_params_all_meta_strings():
@@ -462,7 +462,7 @@ def test_drain_once_stamps_the_default_source(drained_two_records):
     # Act
     sources = {c["meta"]["source"] for c in recorder.calls}
     # Assert
-    assert sources == {"stodo"}
+    assert sources == {"scards"}
 
 
 def test_drain_once_meta_values_are_all_strings(drained_two_records):
@@ -769,7 +769,7 @@ def test_gated_drain_first_tick_delivers_pending(tmp_path):
     recorder = _SendRecorder()
     # Act
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, _DrainState(), source="stodo", store=store)
+        gated_drain_once(agent, recorder, _DrainState(), source="scards", store=store)
     )
     # Assert
     assert pushed == 1
@@ -791,7 +791,7 @@ def test_gated_drain_first_tick_delivers_the_body(tmp_path):
     recorder = _SendRecorder()
     # Act
     asyncio.run(
-        gated_drain_once(agent, recorder, _DrainState(), source="stodo", store=store)
+        gated_drain_once(agent, recorder, _DrainState(), source="scards", store=store)
     )
     # Assert
     assert recorder.calls[0]["content"] == "seed me"

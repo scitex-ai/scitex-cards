@@ -17,7 +17,7 @@ tags:
 
 # Fleet-wide skills propagation
 
-scitex-cards is **THE fleet's single source of truth** for durable todos
+scitex-cards is **THE fleet's single source of truth** for durable cards
 (operator + lead mandate; see [SKILL.md](./SKILL.md#-mandate--single-source-of-truth-operator--lead-2026-06-12)).
 For every agent to honour that mandate it has to **read the scitex-cards
 usage skill on boot** — which means the skill ID has to be declared in

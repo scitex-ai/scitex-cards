@@ -87,7 +87,7 @@ def _break_the_inbox(tmp_path) -> None:
     and "the instrument is broken" otherwise look identical from the outside.
     """
     (tmp_path / "inboxes.json").write_text("{ not json at all", encoding="utf-8")
-    (tmp_path / "runtime" / "todo.db").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "runtime" / "cards.db").mkdir(parents=True, exist_ok=True)
 
 
 def _run_ticks(

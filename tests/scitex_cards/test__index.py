@@ -41,7 +41,7 @@ from scitex_cards._cli import main
 @pytest.fixture
 def index_target(env, tmp_path):
     """Point ``SCITEX_CARDS_INDEX_PATH`` at a tmp file so the real
-    ``~/.scitex/todo/.tasks.index.sqlite`` is never touched."""
+    ``~/.scitex/cards/.tasks.index.sqlite`` is never touched."""
     target = tmp_path / "tasks.index.sqlite"
     env.set("SCITEX_CARDS_INDEX_PATH", str(target))
     yield target

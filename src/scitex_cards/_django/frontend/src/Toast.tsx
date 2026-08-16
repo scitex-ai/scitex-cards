@@ -23,12 +23,12 @@ export function Toast() {
   if (!toast) return null;
 
   return (
-    <div className="stx-todo-toast" role="status" aria-live="polite">
-      <span className="stx-todo-toast__msg">{toast.message}</span>
+    <div className="stx-cards-toast" role="status" aria-live="polite">
+      <span className="stx-cards-toast__msg">{toast.message}</span>
       {toast.undo && (
         <button
           type="button"
-          className="stx-todo-toast__undo"
+          className="stx-cards-toast__undo"
           onClick={() => {
             toast.undo?.();
             dismissToast();
@@ -39,7 +39,7 @@ export function Toast() {
       )}
       <button
         type="button"
-        className="stx-todo-toast__close"
+        className="stx-cards-toast__close"
         onClick={dismissToast}
         aria-label="Dismiss"
       >

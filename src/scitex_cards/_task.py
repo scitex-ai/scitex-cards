@@ -63,7 +63,7 @@ VALID_KINDS: tuple[str, ...] = (
     # ``status`` — a non-actionable status-tracking card (e.g. the q-*
     # quality-CI status rows, one per fleet package). Carries one-liner
     # status notes (audit-debt counts, green flags) rather than a real
-    # ToDo body. Per board card ``scitex-cards-relocate-q-status-tracking``
+    # Card body. Per board card ``scitex-cards-relocate-q-status-tracking``
     # + lead a2a ``60a1a93d`` (operator direction): proceeding with
     # option (b) — keep the rows on the board but mark them with this
     # axis so the board's filter UI (separate frontend PR) can hide them

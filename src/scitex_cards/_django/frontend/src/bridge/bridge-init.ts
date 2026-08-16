@@ -7,13 +7,13 @@
  */
 
 import "../styles/board.css";
-import { mountTodoBoard } from "./MountPoint";
+import { mountCardsBoard } from "./MountPoint";
 
 function init(): void {
   const mount = document.getElementById("app-mount");
   if (!mount) return;
   const embedded = mount.dataset.embedded === "true";
-  mountTodoBoard(mount, embedded);
+  mountCardsBoard(mount, embedded);
 }
 
 if (document.readyState === "loading") {

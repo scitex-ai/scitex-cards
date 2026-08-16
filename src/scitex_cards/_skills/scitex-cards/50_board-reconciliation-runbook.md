@@ -133,7 +133,7 @@ diff <(jq -S . /tmp/my-cards-before.json) <(jq -S . /tmp/my-cards-after.json) | 
 The operator (not agents) decides which orphaned cards to archive. scitex-cards generates a periodic **stale-candidates list** at:
 
 ```
-~/.scitex/todo/STALE_CARDS_FOR_REVIEW.md
+~/.scitex/cards/STALE_CARDS_FOR_REVIEW.md
 ```
 
 Criteria for inclusion:
@@ -207,7 +207,7 @@ Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent w
 ## 9. Provenance
 
 - Operator directive 2026-06-13 (via lead a2a) — "make every agent reconcile their project's cards; 85 merges / 56 marked done is the drift signal".
-- Operator "all agents use scitex-cards, no parallel todo formats" → P3a fleet MCP rollout.
+- Operator "all agents use scitex-cards, no parallel card formats" → P3a fleet MCP rollout.
 - Verb gap closure: PR #151 (`feat(cli): close verb`).
 - Comment verb: PR #144.
 - Skill bundle refresh: PR #149.

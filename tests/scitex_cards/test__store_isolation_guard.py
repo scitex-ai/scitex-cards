@@ -59,7 +59,7 @@ def test_resolved_db_path_is_not_a_real_store_candidate():
     # Act
     resolved = resolve_db_path(None).resolve()
     for home in _REAL_HOMES:
-        for pkg in ("cards", "todo"):
+        for pkg in ("cards", "card"):
             real = Path(home, ".scitex", pkg, "cards.db")
             # Assert
             assert resolved != real, (

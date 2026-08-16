@@ -185,14 +185,14 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
                 current = sorted(pool, key=_priority_key)[0]
 
         # `overdue_count` = tasks past their next deadline AND not in a
-        # terminal state. Feeds the operator UX (todo-p6-overdue-ui):
+        # terminal state. Feeds the operator UX (cards-p6-overdue-ui):
         # "attended an overdue task but no suitable UI to act" — the
         # fleet strip + filter bar can now surface a per-agent overdue
         # tally without re-walking the store on the client side.
         from scitex_cards._model import is_overdue as _is_overdue
 
         # "Waiting-on-operator" queue (operator P1
-        # todo-operator-blocking-queue-view): cards stuck on a
+        # cards-operator-blocking-queue-view): cards stuck on a
         # human decision. SSOT — reuse the board's BLOCKING-YOU
         # predicate (``_match(..., blocking_me=True)`` == the same
         # filter ``list_tasks(blocking_me=True)`` uses) so the count

@@ -54,7 +54,7 @@ def _hermetic_resolution(tmp_path):
 
     ``turn_url_for`` resolves through scitex-cards's OWN user registry (step
     0, the DEFAULT store via ``resolve_tasks_path(None)``). On a real agent
-    host that store at ``~/.scitex/todo/tasks.yaml`` is live and would leak
+    host that store at ``~/.scitex/cards/tasks.yaml`` is live and would leak
     a non-None URL into the env-only tests, making them flaky/host-dependent.
 
     This fixture pins step 0 at an EMPTY per-test store — leaving the env map

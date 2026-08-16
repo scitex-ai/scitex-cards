@@ -10,7 +10,7 @@ tags: [scitex-cards-python-api]
 # Python API
 
 ```python
-import scitex_cards as todo
+import scitex_cards as card
 ```
 
 Audit §6 narrows the top-level surface (`scitex_cards.__all__`) to the six
@@ -29,7 +29,7 @@ Validating loader. Raises `TaskValidationError` on a missing `id`/`title`, a
 duplicate `id`, or an invalid `status`.
 
 ```python
-tasks = todo.load_tasks()
+tasks = card.load_tasks()
 # [{"id": "design", "title": "Design", "status": "done"}, ...]
 ```
 

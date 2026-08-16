@@ -3,7 +3,7 @@
 """v8 gives ``notifications`` the columns the inbox rail needs — on BOTH paths.
 
 The notification inbox currently lives in a SQLite sidecar at
-``runtime/todo.db``, located from the store PATH. So pointing the store at a
+``runtime/cards.db``, located from the store PATH. So pointing the store at a
 PostgreSQL server does not move it: cards go to the server and notifications
 stay on a local file. That split is what let a DM commit to the store on
 2026-08-01 while no notification was ever created, with every card-side check
@@ -23,7 +23,7 @@ the column. So the load-bearing test here is not "does the migration add the
 columns" — it is **does a FRESH store end up identical to a MIGRATED one**.
 
 Scope, stated so nobody reads more into v8 than it does: installing the columns
-does NOT move the rail. ``_inbox_sqlite`` still writes ``todo.db``, and
+does NOT move the rail. ``_inbox_sqlite`` still writes ``cards.db``, and
 ``_db_mirror`` still issues ``DELETE FROM notifications`` — harmless against a
 derived empty table, and data loss the moment this table becomes the store of
 record. That DELETE must be neutralised in the same change that flips the

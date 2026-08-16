@@ -16,7 +16,7 @@ reach?" stop being a live question.
 
 THE INCIDENT THIS ANSWERS (root cause, diagnosed 2026-07-21). ``cards.db``
 carried a stale ``schema_meta`` row (``yaml_path`` pointing at an old
-``~/.scitex/todo/tasks.yaml``). An agent whose environment still carried the
+``~/.scitex/cards/tasks.yaml``). An agent whose environment still carried the
 dual-write flag had every MCP/CLI write silently routed to that YAML instead
 of the canonical database: every call returned SUCCESS, ``health`` stayed
 green, and an entire session of card writes never reached the board. The flag

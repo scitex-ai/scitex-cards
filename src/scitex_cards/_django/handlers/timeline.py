@@ -48,7 +48,7 @@ Method violations return ``405``. The Phase-0 fail-loud principle
 applies (mirrors ``handlers/runnable.py``): underlying-store errors
 bubble into Django's 500 handler.
 
-Out of scope (deferred per the operator brief — flagged with TODOs in
+Out of scope (deferred per the operator brief — flagged with CARDs in
 the FE):
 - Pan / zoom / drag-to-reschedule (``update`` is the side channel today).
 - WebSocket push (polling is fine for the floor — 30s, same cadence
@@ -77,7 +77,7 @@ _UNGROUPED_LANE: str = "(ungrouped)"
 
 #: Closed set of accepted ``lane_by`` values. ``agent`` is the operator default
 #: (raster plot per agent — the brief's anchor visual). ``group`` rasters by
-#: the T1.1 group field; ``project`` by the task's project (operator TODO
+#: the T1.1 group field; ``project`` by the task's project (operator CARD
 #: 2026-06-17 by-project view); ``task`` gives ONE lane per task (the basis
 #: of the "simple" per-task view).
 _VALID_LANE_BY: frozenset[str] = frozenset({"agent", "group", "project", "task"})

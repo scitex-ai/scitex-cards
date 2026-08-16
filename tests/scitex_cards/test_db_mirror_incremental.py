@@ -36,7 +36,7 @@ def _card(cid, **kw):
 
 
 def _fresh_db(tmp_path):
-    p = tmp_path / "todo.db"
+    p = tmp_path / "cards.db"
     conn = sqlite3.connect(str(p))
     init_schema(conn)
     conn.commit()

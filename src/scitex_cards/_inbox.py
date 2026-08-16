@@ -53,7 +53,7 @@ _INBOXES_KEY = "inboxes"
 #: Env var selecting the inbox storage backend. The DEFAULT is now ``sqlite``
 #: (the Phase-1 backend in :mod:`scitex_cards._inbox_sqlite`): a 5 s digest poll
 #: is then an indexed ``(recipient, seen)`` lookup on
-#: ``<store_dir>/runtime/todo.db`` instead of a full sidecar parse. This
+#: ``<store_dir>/runtime/cards.db`` instead of a full sidecar parse. This
 #: module (the file-backed break-glass backend, its own ``inboxes.json``
 #: sidecar — see the module docstring) is selected ONLY by
 #: ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a historical name for

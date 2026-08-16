@@ -367,7 +367,7 @@ def _static_graph_page(request) -> str:
 </script>
 </head>
 <body>
-  <h1>SciTeX Todo &mdash; dependency graph</h1>
+  <h1>SciTeX Card &mdash; dependency graph</h1>
   {meta}
   {body}
 </body>

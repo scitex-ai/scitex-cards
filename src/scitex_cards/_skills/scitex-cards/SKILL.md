@@ -6,13 +6,13 @@ description: |
   render them as a mermaid dependency graph (PNG), a read-only React-Flow web
   board, or a plain task listing.
   [WHEN] **Use scitex-cards for EVERY durable / cross-session / cross-agent
-  todo.** When the user wants to "track tasks as a dependency graph",
-  "render my todo as a diagram", "show what blocks what", "list my
-  tasks", or "launch the todo board" — AND any time YOU are
-  about to write a private TODO / FUTURE / notes file in your repo's
+  card.** When the user wants to "track tasks as a dependency graph",
+  "render my card as a diagram", "show what blocks what", "list my
+  tasks", or "launch the card board" — AND any time YOU are
+  about to write a private CARD / FUTURE / notes file in your repo's
   `GITIGNORED/` for something that should persist or be operator- or
   peer-visible.
-  [HOW] `import scitex_cards as todo` for the Python API; `scitex-cards --help`
+  [HOW] `import scitex_cards as card` for the Python API; `scitex-cards --help`
   for the CLI; **or the MCP tools** (`add_task`, `update_task`,
   `comment_task`, `list_tasks` — see [05_mcp-tools.md](05_mcp-tools.md)) —
   THE preferred wire from inside an agent container.
@@ -46,10 +46,10 @@ binding rule:
 
 - **USE the scitex-cards MCP** (`add_task`, `update_task`,
   `comment_task`, `list_tasks` — see [05_mcp-tools.md](05_mcp-tools.md))
-  for every todo. From a Claude-Code agent container, the MCP wire is
+  for every card. From a Claude-Code agent container, the MCP wire is
   the preferred path; the CLI is the equivalent fallback.
-- **DO NOT create parallel todo formats.** No private task-markdown, no
-  per-agent `GITIGNORED/FUTURE/*.md` / `GITIGNORED/TODO.md` /
+- **DO NOT create parallel card formats.** No private task-markdown, no
+  per-agent `GITIGNORED/FUTURE/*.md` / `GITIGNORED/CARD.md` /
   `GITIGNORED/RUNNING/*.md` for durable tracking; **migrate them into
   the shared store** the moment the underlying task is actionable.
 - **The harness `TaskList` is in-session SCRATCH ONLY.** Use it for a
@@ -139,7 +139,7 @@ The hard rule:
 
 - **Do this BEFORE you move on to the next task.** Treat the
   recording call as part of the merge sequence — not a follow-up
-  TODO. Operator-stated rationale: a missing recording is a missing
+  CARD. Operator-stated rationale: a missing recording is a missing
   signal, and the fleet plans on the signal not on the work itself.
 
 - **Bulk catch-up is also OK** when an agent realises a batch of
@@ -194,15 +194,15 @@ scitex-cards add --title "fix CI red on develop" \
   --project scitex-cards --agent scitex-cards --priority 2
 
 # Flip status as you work. --add-comment stamps an activity row.
-scitex-cards update todo-pXX --status in_progress \
+scitex-cards update cards-pXX --status in_progress \
   --add-comment "starting; PR draft soon"
 
-scitex-cards update todo-pXX --status done \
+scitex-cards update cards-pXX --status done \
   --pr-url https://github.com/.../pull/123 \
   --add-comment "merged; tests green"
 
 # Append a comment without changing any other field (PR #144).
-scitex-cards comment todo-pXX "lead a2a: please rebase before merging" \
+scitex-cards comment cards-pXX "lead a2a: please rebase before merging" \
   --author scitex-cards
 
 # List the tasks for a project / agent.
@@ -215,7 +215,7 @@ scitex-cards list-tasks --kind task          # actionable only
 scitex-cards list-tasks --kind status        # status-tracking only
 
 # Set / clear an edge (depends_on).
-scitex-cards update todo-pYY --depends-on todo-pXX
+scitex-cards update cards-pYY --depends-on cards-pXX
 
 # Pick the next runnable task FOR THIS AGENT (single canonical rule).
 SCITEX_CARDS_AGENT_ID=scitex-cards \
@@ -254,7 +254,7 @@ monitors. Read 32 before wiring up a new agent's harness.
 
 ### Workflows (10+)
 - [10_campaign-tracking.md](10_campaign-tracking.md) — companion tools
-  (`check_releases.py`, `campaign_report.py`) under `~/.scitex/todo/`
+  (`check_releases.py`, `campaign_report.py`) under `~/.scitex/cards/`
   for multi-package release/audit campaigns
 - [11_adopting-from-a-project.md](11_adopting-from-a-project.md) — the
   30-second adoption path: how a project agent (clew / neurovista /
@@ -268,7 +268,7 @@ monitors. Read 32 before wiring up a new agent's harness.
 ### Meta (20+)
 - [20_env-vars.md](20_env-vars.md) — environment variables and local state
 - [21_fleet-mcp-rollout.md](21_fleet-mcp-rollout.md) — **canonical
-  `.mcp.json` block + binding "MCP-only durable todos" mandate** for
+  `.mcp.json` block + binding "MCP-only durable cards" mandate** for
   the fleet-wide P3a rollout (agent-container `to_home/_base/.mcp.json`)
 - [22_skills-propagation.md](22_skills-propagation.md) — **fleet-wide
   `required_skills` propagation** via the bundled manifest +
@@ -310,7 +310,7 @@ monitors. Read 32 before wiring up a new agent's harness.
 
 ### For consuming agents (42+)
 - [42_for-consuming-agents.md](42_for-consuming-agents.md) — **start
-  here if you've been told "use scitex-cards for your todos."**
+  here if you've been told "use scitex-cards for your cards."**
   One-page protocol for any fleet agent: CRUD verbs, closed enums,
   title-prefix convention, lead↔worker sync wire. (Was `40_…` in PR
   #63's source branch; renumbered to `42_` during rebase to avoid

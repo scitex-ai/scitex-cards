@@ -7,7 +7,7 @@ A small, reusable mirror of the wake-watcher's process-level lock
 The wake-watcher guards a long-lived polling LOOP; this guards a one-shot
 CLI invocation that is re-launched on a schedule.
 
-Motivation (incident-todo-wake-watcher-interval2-spiral-20260708, third
+Motivation (incident-cards-wake-watcher-interval2-spiral-20260708, third
 store-size daemon):
 
   The managed notify cron runs ``scitex-cards print-stats --by agent

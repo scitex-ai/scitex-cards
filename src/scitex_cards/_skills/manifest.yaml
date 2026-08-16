@@ -10,7 +10,7 @@
 # Operator directive (board card
 # ``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``):
 # every agent must read the scitex-cards usage skill on boot so they
-# consult the shared YAML store correctly — no parallel todo formats,
+# consult the shared YAML store correctly — no parallel card formats,
 # no per-agent invention of board conventions.
 #
 # scitex-cards can't directly edit other agents' spec.yaml files
@@ -47,7 +47,7 @@ skills:
   - id: scitex-cards
     description: |
       Canonical YAML task store + the fleet-wide mandate that every
-      durable / cross-session / cross-agent todo writes to it. Read
+      durable / cross-session / cross-agent card writes to it. Read
       this on every agent boot to learn the store-resolution chain,
       the write protocol, and the SSoT write-here rule.
     leaf: SKILL.md

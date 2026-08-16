@@ -289,7 +289,7 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
     **spec_command_kwargs(
         summary="Sync the user-scope store across hosts (PHASE-1 STUB).",
         description=(
-            "Phase 2 body: `git -C ~/.scitex/todo pull --rebase "
+            "Phase 2 body: `git -C ~/.scitex/card pull --rebase "
             "--autostash && git push` against an operator-owned remote. "
             "The Phase-1 stub prints the plan and exits 0 (--dry-run is "
             "the default mode) so docs/skills can reference the verb "

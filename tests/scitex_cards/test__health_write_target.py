@@ -6,7 +6,7 @@ The dual-write mirror was DELETED as a feature, not defaulted off (operator
 ruling: 「データベースしか書く場所なんてありえない。デュアルライトっていうオ
 プションがあること自体がおかしい」). The root cause it answers: `cards.db`
 carried a stale `schema_meta` row (`yaml_path` pointing at an old
-`~/.scitex/todo/tasks.yaml`), and an agent whose environment still carried
+`~/.scitex/cards/tasks.yaml`), and an agent whose environment still carried
 the dual-write flag had every MCP/CLI write silently routed to that dead YAML
 instead of the canonical database — every call returned SUCCESS and `health`
 stayed green while an entire session of card writes never reached the board.

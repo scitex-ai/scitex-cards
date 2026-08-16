@@ -77,7 +77,7 @@ def _initialize_over_memory_streams():
                         s_read,
                         s_write,
                         agent_id=None,  # tools-only: no store, no poll loop
-                        source="stodo",
+                        source="scards",
                         interval=60.0,
                         server=None,
                     )

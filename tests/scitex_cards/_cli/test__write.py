@@ -24,7 +24,7 @@ from scitex_cards._paths import PKG_SHORT
 
 
 def _store_path(tmp_path) -> str:
-    """Path string to a fresh empty store under tmp_path/.scitex/todo/."""
+    """Path string to a fresh empty store under tmp_path/.scitex/cards/."""
     return str(tmp_path / "tasks.yaml")
 
 

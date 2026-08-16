@@ -30,7 +30,7 @@ from scitex_cards._reminders import (
 def _isolate_engine(env, monkeypatch):
     """Strip env knobs AND detach config resolution so a deployed container's
     settings (``SCITEX_CARDS_REMINDER_OWNERS`` from the spec, a real
-    ``~/.scitex/todo/config.yaml``) can never leak into these unit tests.
+    ``~/.scitex/cards/config.yaml``) can never leak into these unit tests.
     Each test sets only what it needs via args."""
     for var in (
         "SCITEX_CARDS_REMINDER_OWNERS",
