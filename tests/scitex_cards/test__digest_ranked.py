@@ -113,12 +113,31 @@ def test_body_headline_is_not_the_raw_total():
 
 
 def test_body_keeps_the_total_as_a_footnote_so_nothing_is_hidden():
+    # Arrange — the pile size must survive; scitex-hpc's objection to dropping
+    # it is the reason: "'these 3, not the pile' only lands if the reader knows
+    # how big the pile is."
+    # Act
+    body = _body_for_98_p2_cards()
+
+    # Assert
+    assert "95 more in this digest" in body
+
+
+def test_the_footnote_does_not_claim_the_open_set():
+    """The count describes THIS DIGEST's set, and the wording must say so.
+
+    It used to read "… for all {total}" beside a
+    `--status in_progress,blocked,deferred` command returning a DIFFERENT
+    population — measured 15 vs 47 for one owner on 2026-08-16. Both numbers
+    real; the sentence made each evidence about the other, and a reader took a
+    changed count for two-thirds data loss.
+    """
     # Arrange
     # Act
     body = _body_for_98_p2_cards()
 
     # Assert
-    assert "98" in body and "more open" in body
+    assert "for all 98" not in body
 
 
 def test_a_small_backlog_has_no_footnote():
@@ -129,7 +148,7 @@ def test_a_small_backlog_has_no_footnote():
     body = _digest_body(cards, attempt=1)
 
     # Assert
-    assert "more open" not in body
+    assert "more in this digest" not in body
 
 
 def test_a_small_backlog_lists_every_card():
