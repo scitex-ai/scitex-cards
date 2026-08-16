@@ -21,16 +21,39 @@ import sys
 import click
 
 from .._may_stop import may_stop
+from ._compat import spec_command_kwargs
 
 
-@click.command("may-stop")
+@click.command(
+    "may-stop",
+    **spec_command_kwargs(
+        summary="Exit 0 iff the agent has NO runnable work; else exit 2 + hints.",
+        description=(
+            "The never-stop detector's CLI face. The EXIT CODE is the "
+            "contract: 0 = may stop, 2 = runnable work exists, with the "
+            "numbered hint list on stderr and the JSON verdict on stdout."
+        ),
+        examples=(
+            ("{prog} may-stop --agent scitex-cards", ""),
+        ),
+    ),
+)
 @click.option(
     "--agent",
     default=None,
-    help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
+    help=(
+        "Agent to check. Defaults to $SCITEX_CARDS_AGENT_ID; there is NO "
+        "fallback — an unresolvable identity fails loudly rather than "
+        "guessing (see _store._default_agent)."
+    ),
 )
 def may_stop_cmd(agent):
-    """Exit 0 iff the agent has NO runnable work; else exit 2 + hints."""
+    """Exit 0 iff the agent has NO runnable work; else exit 2 + hints.
+
+    \b
+    Example:
+      $ scitex-cards may-stop --agent scitex-cards
+    """
     from .._store import _default_agent
 
     verdict = may_stop(_default_agent(agent), None)
