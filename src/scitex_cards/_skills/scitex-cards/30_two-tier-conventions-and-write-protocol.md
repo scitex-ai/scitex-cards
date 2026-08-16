@@ -47,21 +47,15 @@ prose) is unchanged.
   where the target id may live under ANOTHER project's scope — the
   graph builder is lenient on dangling refs until they resolve.
 
-**What goes in `tasks/<task-id>/README.md`**:
+**`tasks/<task-id>/README.md`** is the Issue body — what / why / how, free
+markdown, referenced from the task's `note`. Locked filename per operator
+TG 9511 / lead a2a `dd1da069`.
 
-The Issue body — what / why / how. Free-form markdown. Referenced
-from the task's `note` field. Locked filename per operator TG 9511 /
-lead a2a `dd1da069`.
-
-**What goes in `tasks/<task-id>/adr.md`**:
-
-Append-only ADR-template decision log per the SciTeX ADR convention
-(see `~/.claude/skills/scitex/general/04_docs/05_adr.md`). One ADR
-template entry per significant task-scoped decision (lifecycle flip,
-plan change). Cross-cutting / repo-architectural decisions live in
-the OWNING REPO's `docs/adr/NNNN-*.md` per the two-tier ADR
-placement (HANDOFF.md SSoT-layout section); the per-task adr.md
-carries a one-line cross-link.
+**`tasks/<task-id>/adr.md`** is an append-only ADR-template decision log
+(see `~/.claude/skills/scitex/general/04_docs/05_adr.md`), one entry per
+significant task-scoped decision. Cross-cutting or repo-architectural
+decisions live in the OWNING REPO's `docs/adr/NNNN-*.md`; the per-task
+adr.md carries a one-line cross-link.
 
 ## Tier 2 — the fleet-shared database
 
@@ -176,17 +170,31 @@ all_tasks = list_tasks()          # every row visible to this identity
 mine = list_tasks(scope="agent:<you>")  # just your own slice
 ```
 
+## NEVER hand-edit the store — the long form
+
+Mandate 2 in [SKILL.md](SKILL.md), in full. On 2026-06-13 the then
+file-based store was found TRUNCATED MID-STRING: board render, throughput
+script and every agent's read/write broke until the lead repaired it by
+hand. PR-#166's post-dump round-trip-validate layer made the WRITER side
+safer, but only for writes through this package's API. The move to SQLite
+removed that failure class; the rule is unchanged, because a hand-edit
+(direct SQL, an editor, a GUI save on a raw export) bypasses every safety
+net the package has.
+
+**Emergency repair exception.** A store that is ALREADY broken — will not
+open, will not validate — cannot be repaired through the API, so a
+hand-repair is justified in that one case. You MUST (a) back up the broken
+store, (b) verify the repair validates before declaring done, and (c) report
+the episode so the API-side net can be hardened. The lead's 2026-06-13
+repair followed this protocol exactly.
+
 ## Cross-reference
 
-- **HANDOFF.md** — SSoT DATA LAYOUT + NORTH STAR pillars #3
-  (cross-host sync) and #4 (live/online/shared/machine-readable).
+- **HANDOFF.md** — SSoT DATA LAYOUT + NORTH STAR pillars #3 and #4.
 - **ADR-0002** — `kind` enum, fail-loud Literal pattern.
 - **ADR-0003** — `kind: "decision"` for first-class decision-nodes.
 - **ADR-0004** — `blocker` enum, orthogonal to `kind`.
 - **ADR-0005** — fleet-liveness panel + SSH-fanout watcher.
 - **ADR-0006** — full board UI spec + GUI→code wiring.
-- **`tasks/proj-scitex-cards-quality-hygiene/README.md`** — Task
-  dataclass = single schema source.
-- **`scitex_dev` skill** `general/05_paths/01_local-state-dirs` —
-  the ecosystem local-state directories convention this skill
-  inherits from.
+- **`scitex_dev` skill** `general/05_paths/01_local-state-dirs` — the
+  ecosystem local-state convention this skill inherits from.

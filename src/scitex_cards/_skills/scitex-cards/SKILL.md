@@ -41,10 +41,9 @@ file.
 fleet store for all durable / cross-session / cross-agent tracking. Use the
 MCP tools for every card (CLI is the equivalent fallback). Do NOT create
 parallel card formats — no private task-markdown, no per-agent
-`GITIGNORED/FUTURE/*.md`. The harness `TaskList` is in-session SCRATCH ONLY;
-anything that must survive the turn, reach a peer, or carry a deadline /
-blocker / dependency goes here. A stale row is cheap to update; a missing
-row is invisible.
+`GITIGNORED/FUTURE/*.md`. The harness `TaskList` is SCRATCH ONLY; anything
+that must survive the turn, reach a peer, or carry a deadline / blocker /
+dependency goes here. A stale row is cheap; a missing row is invisible.
 
 **2. Never hand-edit the store** (lead a2a `02c8a4ae`, 2026-06-13). No
 manual SQL, no editing a raw export and re-importing it. A hand-edit
@@ -62,10 +61,11 @@ card is NOT done until its completion is recorded WITH the evidence link:
 scitex-cards done <card-id> --pr-url <merged-PR-URL>
 ```
 
-`--pr-url` is REQUIRED — a bare `done <id>` is a gap the reconcile pass
-cannot verify later. No PR? Record a `comment_task` naming the evidence just
-before the flip, as part of the merge rather than a follow-up card. Bulk
-catch-up: `scitex-cards sync-github --since <date> -y`. Rationale:
+`--pr-url` is REQUIRED, not optional — a bare `done <id>` is a gap the
+reconcile pass cannot verify later. No PR? Record a `comment_task` naming the
+evidence just before the flip, as part of the merge rather than a follow-up
+card. Bulk catch-up: `scitex-cards sync-github --since <date> -y`. Rationale
+(the 完了率 metric it feeds), the no-PR path and the per-wire verbs:
 [60_pr-merge-recording-mandate.md](60_pr-merge-recording-mandate.md).
 
 ## Who writes what
@@ -91,21 +91,21 @@ work queue — the 7-step wake loop is in 32.
 
 **Meta (20+)**
 - [20_env-vars.md](20_env-vars.md) — env vars and local state
-- [21_fleet-mcp-rollout.md](21_fleet-mcp-rollout.md) — canonical `.mcp.json` block + MCP-only mandate
-- [22_pretooluse-hook-redirect.md](22_pretooluse-hook-redirect.md) — redirects private task files into the store
-- [22_skills-propagation.md](22_skills-propagation.md) — fleet-wide `required_skills` propagation
-- [23_stop-hook-second-delivery-rail.md](23_stop-hook-second-delivery-rail.md) — the Stop hook, second delivery rail
+- [21_fleet-mcp-rollout.md](21_fleet-mcp-rollout.md) — canonical `.mcp.json` block + MCP-only rule
+- [22_pretooluse-hook-redirect.md](22_pretooluse-hook-redirect.md) — redirects private task files here
+- [22_skills-propagation.md](22_skills-propagation.md) — `required_skills` propagation
+- [23_stop-hook-second-delivery-rail.md](23_stop-hook-second-delivery-rail.md) — Stop hook, second delivery rail
 
 **Architecture (30+)**
 - [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md) — tiers, store resolution, write protocol (how-to: 11)
-- [31_fleet-ports-sync-and-citation.md](31_fleet-ports-sync-and-citation.md) — ports, cross-host sync, citation, auto-merge poll
-- [32_agent-self-consumption-loop.md](32_agent-self-consumption-loop.md) — the 7-step agent loop; every agent reads this
+- [31_fleet-ports-sync-and-citation.md](31_fleet-ports-sync-and-citation.md) — ports, sync, citation, auto-merge poll
+- [32_agent-self-consumption-loop.md](32_agent-self-consumption-loop.md) — the 7-step agent loop; all agents read this
 
 **Operations (40+)**
 - [40_task-harvest.md](40_task-harvest.md) — blocker-driven backlog consumption
-- [45_blocker-taxonomy.md](45_blocker-taxonomy.md) — the four blocker values and their obligations
+- [45_blocker-taxonomy.md](45_blocker-taxonomy.md) — the four blocker values
 - [46_task-harvest-cadence-and-routing.md](46_task-harvest-cadence-and-routing.md) — cron cadence + funnel routing
-- [41_cli-mcp-gap-analysis.md](41_cli-mcp-gap-analysis.md) — CLI / MCP / Python gap audit (partly shipped)
+- [41_cli-mcp-gap-analysis.md](41_cli-mcp-gap-analysis.md) — CLI / MCP / Python gap audit (partly done)
 - [42_for-consuming-agents.md](42_for-consuming-agents.md) — **start here if told to use scitex-cards**
 - [43_consuming-agent-schema-and-crud.md](43_consuming-agent-schema-and-crud.md) — closed-enum schema + CRUD verbs
 - [44_consuming-agent-coordination.md](44_consuming-agent-coordination.md) — board coordination + the lead-worker wire
