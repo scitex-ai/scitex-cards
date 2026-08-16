@@ -29,10 +29,12 @@ audit:
     # have no 1:1 mirror under src/scitex_cards/. Restructuring or
     # splitting them is its own PR.
     - PS-204
-    # PS-140 — `cross-package-imports-test-missing`. The
-    # tests/integration/test_cross_package_imports.py gate file lists
-    # an older import set; needs a regeneration sweep.
-    - PS-140
+    # PS-140 — REMOVED 2026-08-16. The skip said the gate file "lists an older
+    # import set; needs a regeneration sweep". PR #865 did that sweep: the file
+    # now lists all six cross-package modules src/ imports (it listed three of
+    # seven), and the seventh, scitex_dev._mcp_cli, is gone from src/ because
+    # scitex-dev retired the helper. The skip's stated condition is satisfied,
+    # so the skip goes rather than outliving its reason.
     # PS-169 — `hosted-runner-forbidden`. Unlike PS-224 next to it, this rule
     # offers NO exemption path: its own message says "forbidden without
     # exception" and the only remedy it names is the self-hosted pool. So a
