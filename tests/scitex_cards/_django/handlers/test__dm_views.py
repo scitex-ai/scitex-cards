@@ -4,7 +4,8 @@
 
 Minimal-slice contract (card fleet-agent-direct-message-board-pane-20260707):
 
-  - GET  /dm/threads      → registry agents ∪ thread peers, with unread + last.
+  - GET  /dm/threads      → registry ∪ card owners ∪ thread peers, with
+                            unread + last.
   - GET  /dm/thread/<p>   → chronological messages; mark_read=1 acks.
   - POST /dm/thread/<p>   → appends from=operator, dm-dispatches to the
                             agent's pull-inbox; 400 on empty body.
@@ -347,6 +348,124 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
     stored = get_thread("operator", "agent-x", store=store)
     # Assert
     assert stored[-1]["body"] == "scoped by the trusted attribute"
+
+
+# === roster seeded from card owners (2026-08-15) ============================
+#
+# The operator's report: with no messages sent, the roster is empty, so a
+# thread can never be STARTED. The users: registry sidecar is dead on
+# post-migration hosts (always empty), while the cards — which name their
+# owners — live in the canonical DB. The roster is therefore seeded from
+# card owners, unioned with the registry and the thread peers, and sorted
+# two tiers: rows with a real conversation by recency, roster-only rows
+# alphabetically below.
+
+
+def _threads_with_card_owners(store):
+    """Cards owned by agents who have never DM'd the operator.
+
+    One owner via ``assignee``, one via ``agent`` — both fields are how the
+    fleet actually records ownership, so both must feed the roster.
+    """
+    from scitex_cards._store import add_task
+
+    add_task(store=store, id="c-1", title="owned via assignee", assignee="agent-b")
+    add_task(store=store, id="c-2", title="owned via agent", agent="agent-c")
+    return dm_threads_view(_get(f"/dm/threads?store={store}"))
+
+
+def test_threads_view_seeds_the_roster_from_card_owners(store):
+    # Arrange / Act
+    response = _threads_with_card_owners(store)
+    # Assert
+    assert [a["name"] for a in _agents_of(response)] == ["agent-b", "agent-c"]
+
+
+def test_card_owner_row_has_no_unread_messages(store):
+    # Arrange
+    response = _threads_with_card_owners(store)
+    # Act
+    seeded = {a["name"]: a for a in _agents_of(response)}
+    # Assert
+    assert seeded["agent-b"]["unread"] == 0
+
+
+def test_card_owner_row_has_no_last_timestamp(store):
+    # Arrange
+    response = _threads_with_card_owners(store)
+    # Act
+    seeded = {a["name"]: a for a in _agents_of(response)}
+    # Assert
+    assert seeded["agent-b"]["last_ts"] is None
+
+
+def test_card_owner_row_has_no_kind(store):
+    # Arrange — cards name owners but carry no kind; only the registry does
+    response = _threads_with_card_owners(store)
+    # Act
+    seeded = {a["name"]: a for a in _agents_of(response)}
+    # Assert
+    assert seeded["agent-b"]["kind"] is None
+
+
+def test_the_operator_is_not_seeded_from_their_own_cards(store):
+    # Arrange
+    from scitex_cards._store import add_task
+
+    add_task(store=store, id="c-1", title="mine", assignee="operator")
+    response = dm_threads_view(_get(f"/dm/threads?store={store}"))
+    # Act
+    agents = _agents_of(response)
+    # Assert — the operator IS the viewer, never a row in their own roster
+    assert [a["name"] for a in agents] == []
+
+
+def test_seeded_agents_sort_below_agents_with_live_threads(store):
+    # Arrange — agent-x has a conversation; the two card owners do not
+    append_message("agent-x", "operator", "ping", store=store)
+    # Act
+    response = _threads_with_card_owners(store)
+    # Assert
+    assert [a["name"] for a in _agents_of(response)] == [
+        "agent-x",
+        "agent-b",
+        "agent-c",
+    ]
+
+
+def test_registry_kind_is_kept_when_a_card_also_names_the_agent(store):
+    # Arrange — the registry row (with its kind) must win the union
+    from scitex_cards._store import add_task
+    from scitex_cards._users import register_user
+
+    register_user(kind="agent", names=["agent-quiet"], store=store)
+    add_task(store=store, id="c-1", title="x", assignee="agent-quiet")
+    response = dm_threads_view(_get(f"/dm/threads?store={store}"))
+    # Act
+    agents = _agents_of(response)
+    # Assert
+    # A card-owner seed carries no kind, so the "agent" here can only
+    # come from the registry row winning the union.
+    assert agents[0]["kind"] == "agent"
+
+
+def test_an_unreadable_board_keeps_the_thread_peers_in_the_roster(store, tmp_path, env):
+    """The seed is fail-soft: a broken DB degrades the roster, not the view.
+
+    ``get_board`` raises on an unreadable canonical DB; ``_task_agents``
+    swallows that into an empty seed. The roster must still list the agents
+    the operator can prove exist — the thread peers — instead of 500ing.
+    """
+    # Arrange — one card owner (gone with the DB) and one thread peer (kept)
+    from scitex_cards._store import add_task
+
+    add_task(store=store, id="c-1", title="x", assignee="agent-b")
+    append_message("agent-x", "operator", "ping", store=store)
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "gone.db"))
+    # Act
+    response = dm_threads_view(_get(f"/dm/threads?store={store}"))
+    # Assert
+    assert [a["name"] for a in _agents_of(response)] == ["agent-x"]
 
 
 # EOF
