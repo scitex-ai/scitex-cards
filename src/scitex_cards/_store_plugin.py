@@ -219,6 +219,57 @@ UNDECLARED: "dict[str, str]" = {
         "column set, not treated as backend bookkeeping'. Both cannot be true. "
         "ADR-0018 Q1 records the disagreement without resolving it."
     ),
+    # THE FOUR BELOW ARRIVED WITH SCHEMA RUNG v11 -> v12, which gave `tasks` and
+    # `task_comments` the operator's mandated sync columns. They are the
+    # REPLICATION SUBSTRATE — what the merge machinery READS — not card data it
+    # merges, so declaring any of them as a DATA field would have the merge
+    # rewriting its own bookkeeping. Same shape as `revision` above, and they
+    # are listed one at a time because this gate rightly refuses a bulk excuse.
+    "origin_node": (
+        "OWNED BY THE PRIMITIVE, and it means SUBJECT rather than PROVENANCE. "
+        "scitex_dev.store reserves `_origin`. Beyond that it must never be "
+        "declared as replicated data, because the two readings diverge: "
+        "`_origin` is WHICH NODE TOLD ME (provenance), while this column is "
+        "WHICH MACHINE THE ROW IS ABOUT (subject). They coincide only while a "
+        "single writer owns each record and part company at the first relay — "
+        "so a merge rule chosen for one is silently wrong for the other. NULL "
+        "on every row today, which is the honest value: nobody observed who "
+        "wrote them, and inventing an origin makes the gap unrecoverable BY "
+        "LOOKING CORRECT. Credit for the distinction: sac, 2026-08-12."
+    ),
+    "row_uuid": (
+        "IDENTITY, AND A MERGE MUST NOT REWRITE ITS OWN JOIN KEY. This is the "
+        "128-bit row identity a cross-host merge matches on; the primitive "
+        "derives its own from `_record` / the declared identity fields. A "
+        "per-field rule over it is incoherent — LWW on an identity column lets "
+        "the loser of one merge become a different row in the next. `tasks.id` "
+        "is a human-authored slug and IS portable, which is why it is the "
+        "declared IDENTITY field; `task_comments` deliberately has no portable "
+        "key, which is why that table needs this one."
+    ),
+    "updated_at": (
+        "FOR AUDIT, NEVER FOR MERGE — stated in v10's own column docs and "
+        "repeated here because it is the single most tempting wrong answer in "
+        "this file. A wall clock is not the arbiter: clocks disagree across "
+        "hosts, and the causal order is what a merge needs. That is what the "
+        "HLC is for. The related trap is one this package already measured: "
+        "`last_activity` is the only other per-row time column and COMMENTING "
+        "touches it, so wiring last-writer-wins to a domain timestamp makes "
+        "chatter outrank decisions."
+    ),
+    "deleted_at": (
+        "TOMBSTONE, AND THE COLUMN THE RESURRECTION DEFECT HAS BEEN WAITING "
+        "FOR. It maps onto the primitive's `_hidden`. Read it together with "
+        "`DOCUMENT_COL` above, which records that `_log_meta.deleted_at` is "
+        "today's SOLE delete marker and that under LWW a later edit on another "
+        "host carries a whole document WITHOUT the tombstone in it, so the card "
+        "is live again everywhere with no error and no conflict. That defect "
+        "needs a delete marker OUTSIDE the merged document, and this rung "
+        "finally gives `tasks` one — but a TEXT stamp is not yet the BOOL "
+        "`FieldRole.HIDE_FLAG` the fix calls for, and nothing populates it. So "
+        "it is undeclared for now, and it is the obvious first promotion once "
+        "HIDE_FLAG lands. Named here so the connection is not rediscovered."
+    ),
 }
 
 
