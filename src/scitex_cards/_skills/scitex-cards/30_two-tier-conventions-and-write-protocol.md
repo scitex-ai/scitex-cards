@@ -31,8 +31,8 @@ other's task state from one place + the board surfaces the whole map.
 
 Historically each project had its own on-disk `<project>/.scitex/cards/`
 directory. That layout is retired: the canonical store is now a single
-SQLite database (`$SCITEX_CARDS_DB`), and "project tier" is a `scope`
-value on rows in that one database, not a separate file. The agent
+database (`$SCITEX_CARDS_DB`; the deployment picks the engine — never
+assume one), and "project tier" is a `scope` value on rows in it, not a file. The agent
 owning a project still writes its OWN tasks with that project's scope;
 the per-task `tasks/<task-id>/` directory (`README.md` + `adr.md`
 prose) is unchanged.
@@ -60,7 +60,7 @@ adr.md carries a one-line cross-link.
 ## Tier 2 — the fleet-shared database
 
 The fleet aggregate is no longer a separate directory: it's the SAME
-SQLite database, filtered to rows with a fleet-coordination `scope`
+database, filtered to rows with a fleet-coordination `scope`
 (vs a single project's scope). There is one canonical database, not
 one-file-per-project rolled up into a second file.
 
@@ -76,14 +76,14 @@ never human-edited, never part of the task store.
 ## Store resolution — one canonical database
 
 Follows `src/scitex_cards/_paths.py` / `_db.py`: the store identity is
-`$SCITEX_CARDS_DB` — an explicit env var wins, otherwise it resolves
-to the user-canonical `~/.scitex/cards/cards.db` regardless of the
-calling process's working directory. There is deliberately no
-per-repo copy of the data store (a 2026-07-06 incident showed a
-project-local shadow copy serving stale data); a legacy
-`tasks.yaml` sidecar living beside the database still holds a few
-non-task sections (`users:`, `groups:`, `inboxes:`) pending their own
-migration into the database — see `_paths.resolve_tasks_path`.
+`$SCITEX_CARDS_DB`, and there is NO fallback — an unconfigured target
+RAISES rather than resolving a filename nobody chose. That zero-config
+tier was deleted 2026-08-13 after proving reachable in production: a host
+exported the var below `.bashrc`'s non-interactive early return, so cron
+jobs saw it EMPTY, resolved a nonexistent database, and the exporter
+answers that with an empty document written back as the WHOLE store.
+There is likewise no per-repo copy (2026-07-06: a project-local shadow
+served stale data). A `tasks.yaml` sidecar still holds `users:`/`groups:`.
 
 PathManager handles resolution — agents use `from scitex_cards._db
 import resolve_db_path` and never hand-construct the path.
@@ -91,7 +91,7 @@ import resolve_db_path` and never hand-construct the path.
 ## Write protocol — who writes when
 
 The crux of the two-tier convention. Lead a2a `93e314b2` directly
-captured this; the SQLite migration changed the STORAGE (one database
+captured this; the migration to a database changed the STORAGE (one store
 instead of per-project files rolled up by an aggregator) but not the
 OWNERSHIP rules below — they still bind.
 
@@ -176,7 +176,7 @@ Mandate 2 in [SKILL.md](SKILL.md), in full. On 2026-06-13 the then
 file-based store was found TRUNCATED MID-STRING: board render, throughput
 script and every agent's read/write broke until the lead repaired it by
 hand. PR-#166's post-dump round-trip-validate layer made the WRITER side
-safer, but only for writes through this package's API. The move to SQLite
+safer, but only for writes through this package's API. The move off files
 removed that failure class; the rule is unchanged, because a hand-edit
 (direct SQL, an editor, a GUI save on a raw export) bypasses every safety
 net the package has.

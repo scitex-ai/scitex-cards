@@ -35,6 +35,11 @@ from ._model import (
     _store_lock,
 )
 from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creation
+from ._store_clocks import (
+    _clear_completion_stamp_on_leaving_done,
+    _stamp_blocked_at,
+    _stamp_deferred_at,
+)
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
@@ -244,50 +249,12 @@ def add_task(
     return result
 
 
-def _stamp_deferred_at(task: dict, prior_status: str | None) -> None:
-    """Set ``deferred_at`` when a card ENTERS the backlog, and only then.
-
-    Fires on the TRANSITION only. A card that was already ``deferred`` is left
-    untouched — including the legacy cards that carry no stamp at all, whose
-    age ``deferred_since`` reads from ``created_at``. Stamping those on any
-    passing mutation (a comment, a reassign) would silently reset the rot clock
-    on the entire existing backlog, which is the one thing this field exists to
-    prevent. A card that leaves and later returns is re-stamped, because that
-    genuinely is a new spell in the backlog.
-    """
-    from ._backlog_triage import BACKLOG_STATUS, FIELD_DEFERRED_AT
-    from ._store import _utc_now_iso
-
-    if task.get("status") != BACKLOG_STATUS or prior_status == BACKLOG_STATUS:
-        return
-    task[FIELD_DEFERRED_AT] = _utc_now_iso()
-
-
-def _stamp_blocked_at(
-    task: dict, prior_status: str | None, prior_blocker: str | None
-) -> None:
-    """Set ``blocked_at`` when the ``(status, blocker)`` PAIR moves, and only then.
-
-    The blocked-check's clock, exactly parallel to :func:`_stamp_deferred_at` but
-    keyed on the pair rather than the status alone — because re-blocking the same
-    card on a DIFFERENT blocker genuinely starts a new wait, while commenting on
-    it does not. A comment changes ``last_activity`` and neither element of the
-    pair, so it must leave this stamp alone: keying the sweep on a field every
-    mutation touches is what made the alarm silenceable by typing.
-
-    Cards already blocked before this shipped carry no stamp; they are left
-    untouched here rather than back-filled on a passing mutation, and
-    ``_blocked_age_hours`` reads their age from ``created_at`` instead. That
-    makes them read as maximally stale, so the alarm errs toward firing.
-    """
-    from ._stale.active_clocks import FIELD_BLOCKED_AT
-    from ._store import _utc_now_iso
-
-    if task.get("status") != "blocked":
-        return
-    if prior_status == "blocked" and task.get("blocker") == prior_blocker:
-        return  # Pair unchanged — not a new wait.
-    task[FIELD_BLOCKED_AT] = _utc_now_iso()
+# The three lifecycle clocks now live in `_store_clocks`, imported at the top of
+# this module and re-exported below. They moved out when a THIRD one was added
+# (`_clear_completion_stamp_on_leaving_done`) and this file passed the 512-line
+# limit: they are pure, they share one shape, and they are the only pieces of
+# this module another module reaches for by name. Existing imports from here
+# still resolve — see `__all__`.
 
 
 def _wip_statuses() -> frozenset[str]:
@@ -433,6 +400,14 @@ def update_task(
                 # if the age clock moved with it, a card re-deferred every week
                 # would read as permanently young and could never expire. The
                 # rot would be real and invisible at the same time.
+                # LEAVING `done` must drop the completion stamp. Placed with the
+                # other transition clocks, at the one point a status change is
+                # applied, so a future exit from `done` inherits it without its
+                # author knowing the invariant exists. Before this, the only
+                # unstamping path was `reopen_task` — which forces
+                # status=blocked, and is therefore wrong for a card being
+                # deferred or cancelled. So every honest exit kept the stamp.
+                _clear_completion_stamp_on_leaving_done(task, prior_status)
                 _stamp_deferred_at(task, prior_status)
                 # Same lesson, the blocked-check's clock: stamp when the
                 # (status, blocker) PAIR moves, never on a passing comment.

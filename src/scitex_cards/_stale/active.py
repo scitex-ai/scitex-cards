@@ -55,6 +55,7 @@ from .active_clocks import (
     FIELD_BLOCKED_AT,
     _age_hours,
     _blocked_age_hours,
+    _deferred_age_hours,
     _owner_of,
 )
 from .active_thresholds import (
@@ -340,6 +341,22 @@ def detect_pending_backlog(
     via :data:`ENV_BACKLOG_NUDGE_HOURS`). Same owner-resolution,
     oldest-first ordering, and missing-timestamp-is-stale semantics.
 
+    THE CLOCK IS ``_deferred_age_hours``, NOT THE DEFAULT. This sweep asks
+    "how long has this sat in the backlog", so it measures ENTRY into
+    ``deferred`` and not the last touch — exactly as
+    :func:`detect_stale_blocked` measures the age of its ``(status, blocker)``
+    pair, and for the identical reason it gives: keying it on
+    ``last_activity`` made the alarm SILENCEABLE BY TYPING, because a comment
+    reset the clock without starting anything.
+
+    That is not a new idea here; it is the sibling sweep's ruling finally
+    applied. Until 2026-08-16 this function passed no ``clock`` and silently
+    inherited ``_age_hours``, while the paragraph explaining why that is wrong
+    sat forty lines above it and ``deferred_at`` was written on every entry and
+    read by nobody. Measured on 1854 deferred cards the day it was wired: 1193
+    nudged before, 1354 after, and ZERO cards lost coverage — the change can
+    only ADD, since entry into the backlog cannot postdate the last touch.
+
     This is the "you have untouched backlog" reminder, and it deliberately
     keeps its oldest-first ordering: it reports a fact. It is NOT the
     pick-for-action draw — that lives in :mod:`scitex_cards._backlog_triage`
@@ -371,6 +388,7 @@ def detect_pending_backlog(
         threshold_hours=_pending_nudge_hours(pending_hours),
         now=now,
         where=lambda t: not is_parked(t),
+        clock=_deferred_age_hours,
     )
 
 

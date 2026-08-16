@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scitex-cards"
-version = "0.41.0"
+version = "0.42.0"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"

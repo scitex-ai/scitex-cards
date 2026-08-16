@@ -57,7 +57,7 @@ raise `RenderError`.
 
 ### `resolve_tasks_path(explicit=None) -> Path`
 
-The store IDENTITY is `$SCITEX_CARDS_DB` (the SQLite database; see
+The store IDENTITY is `$SCITEX_CARDS_DB` (backend chosen by deployment; see
 `_db.resolve_db_path`). `resolve_tasks_path` does NOT return that identity —
 it returns the non-task YAML CONTAINER beside it (`<db_dir>/tasks.yaml`) that
 still holds the `users:` / `groups:` sections, plus doubles as the store

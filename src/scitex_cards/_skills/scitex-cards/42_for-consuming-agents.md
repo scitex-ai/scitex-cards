@@ -45,8 +45,9 @@ Three rules, in priority order:
 
 ## Store identity — one database, `$SCITEX_CARDS_DB`
 
-The canonical store is a SQLite database. There is **one** identity
-axis: `$SCITEX_CARDS_DB` (the resolved database path) — see
+The canonical store is a database; the deployment picks the engine, so
+never assume one. There is **one** identity
+axis: `$SCITEX_CARDS_DB` (the resolved target) — see
 `src/scitex_cards/_paths.py`. There is no tiered legacy-sidecar
 precedence chain anymore; older docs describing a "project root vs
 user root" file precedence are historical and no longer apply.
@@ -55,7 +56,7 @@ Confirm where you're about to write BEFORE you write:
 
 ```bash
 scitex-cards resolve-store
-# → prints {resolved: <path>, backend: sqlite, ...}
+# → prints {resolved: <target>, backend: <engine>, ...} — READ it, don't assume it
 ```
 
 See [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md)

@@ -50,6 +50,20 @@ scitex-cards update "$task_id" --status blocked --blocker dependency \
 # 7. Idle. The next wake comes from `scitex-cards watch --push` (someone
 #    commented on a task assigned to you, or a new task was added with
 #    your agent name).
+#
+#    WHATEVER WOKE YOU, CONFIRM IT — after acting, not on receipt:
+#      poll_notifications(agent=<you>, ack=false)   # reads; does NOT confirm
+#      ...act on the records...
+#      ack_notifications(agent=<you>, ids=[...])    # confirms what you handled
+#
+#    Reading is deliberately not confirming, so a consumer that dies
+#    mid-delivery loses nothing: unconfirmed records come back next poll.
+#    But NEVER confirming fails silently in the other direction —
+#    `scitex-cards health` reports delivery_confirmed red forever, and its
+#    hint blames the transport before it blames the consumer. Measured
+#    2026-08-16 on this agent: 20 unconfirmed pushes, oldest 17.8h, with a
+#    healthy transport and an empty pull inbox. The loop was the bug.
+#    Long form: 23_stop-hook-second-delivery-rail.md step 4.
 ```
 
 ### Status transitions

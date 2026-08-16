@@ -33,13 +33,13 @@ wire is live.
 
 1. **All durable cards go through the scitex-cards MCP.** Every
    every worker agent, the lead, and the operator write to the same
-   shared SQLite store via the wire below. There is **one**
+   shared store via the wire below. There is **one**
    shared store; there are **no** parallel formats.
 
 2. **No private card files.** Do not create
    `GITIGNORED/FUTURE/*.md`, `GITIGNORED/CARD.md`,
    `GITIGNORED/RUNNING/*.md`, or any other markdown / YAML /
-   JSON / SQLite stand-in for the durable backlog. The harness
+   JSON / database stand-in for the durable backlog. The harness
    `TaskList` is in-session SCRATCH ONLY — anything that should
    survive the turn goes in scitex-cards.
 
@@ -87,7 +87,7 @@ a soft default.
 |---|---|---|---|
 | `SCITEX_CARDS_AGENT_ID` | **YES** | `<your-peer-name>` | Stamps every write's `_log_meta.created_by` / `updated_by`. The board's "by agent" lens, throughput stats, and notify routing all key off this. |
 | `SCITEX_CARDS_SCOPE` | recommended | `agent:<your-peer-name>` | Default scope for `list_tasks` / `summarize_tasks` so the agent sees its own slice by default. Pass `scope=""` to opt out per-call. |
-| `SCITEX_CARDS_DB` | only if non-default | Absolute path to the SQLite database | Pins the store. Default resolution (explicit → env → user-canonical) usually picks the right one without this. |
+| `SCITEX_CARDS_DB` | **YES** | The store target — a DSN or a path; the deployment picks the backend | The SOLE store identity. There is no default to fall back on: unset RAISES. Confirm with `scitex-cards resolve-store` rather than assuming. |
 
 For agent-container's `to_home/_base/.mcp.json` rollout, the per-agent
 `SCITEX_CARDS_AGENT_ID` value is templated from the agent's name; see the
