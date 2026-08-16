@@ -49,7 +49,9 @@ _BANNED_ENV_NAMES = ("SCITEX_CARDS_READ_BACKEND", "SCITEX_CARDS_STORE_BACKEND")
 
 def test_the_s2_accelerator_module_is_gone():
     """``_store_read_sqlite`` must not exist — deleted whole, not disabled."""
-    # Arrange / Act / Assert
+    # Arrange
+    # Act
+    # Assert
     with pytest.raises(ModuleNotFoundError):
         import scitex_cards._store_read_sqlite  # noqa: F401
 
@@ -85,14 +87,16 @@ def test_list_tasks_raises_when_the_store_is_unresolvable(env, tmp_path):
     it end to end, rather than silently swallowing the raise or resolving to
     an empty document somewhere between the two.
     """
-    # Arrange — nothing at the resolved path; a missing DB is a configuration
-    # error, never an empty board (see `_read_canonical_db_or_raise`).
+    # Arrange
+    # Nothing at the resolved path; a missing DB is a configuration error,
+    # never an empty board (see `_read_canonical_db_or_raise`).
     from scitex_cards import _store
 
     missing = tmp_path / "never-created" / "cards.db"
     env.set("SCITEX_CARDS_DB", str(missing))
 
-    # Act / Assert
+    # Act
+    # Assert
     with pytest.raises(RuntimeError, match="does not exist"):
         _store.list_tasks(scope="")
 

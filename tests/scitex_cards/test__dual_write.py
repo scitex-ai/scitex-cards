@@ -4,7 +4,7 @@
 
 This file used to be the S1 dual-write mirror's test suite: a whole feature
 that mirrored every card write into SQLite while YAML stayed canonical, gated
-by ``SCITEX_CARDS_DUAL_WRITE``. That feature is DELETED — not defaulted off —
+by a dual-write toggle. That feature is DELETED — not defaulted off —
 per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
 ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:
 ``cards.db`` carried a stale ``schema_meta`` row pointing at an old YAML file,
@@ -43,27 +43,46 @@ def test_the_dual_write_module_now_exposes_only_the_ownership_guard():
     """
     # Arrange
     # Act
+    exported = set(_dual_write.__all__)
     # Assert
-    assert set(_dual_write.__all__) == {"_db_mirrors_this_store", "_same_file"}
-    for gone in (
-        "enabled",
-        "ENV_DUAL_WRITE",
-        "mirror_after_save",
-        "check_mirror_healthy",
-        "failure_count",
-        "failures",
-        "reset_failures",
-        "_has_incremental_mirror",
-        "_refusal_logged",
-        "_failures",
-    ):
-        assert not hasattr(_dual_write, gone), (
-            f"_dual_write.{gone} must not exist — the dual-write toggle was "
-            f"DELETED as a feature, not defaulted off"
-        )
+    assert exported == {"_db_mirrors_this_store", "_same_file"}
 
 
-def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(monkeypatch, tmp_path):
+#: The toggle's surface, kept as data so the survivor test below names every
+#: offender at once rather than stopping at whichever is checked first.
+_DELETED_TOGGLE_NAMES = (
+    "enabled",
+    "ENV_DUAL_WRITE",
+    "mirror_after_save",
+    "check_mirror_healthy",
+    "failure_count",
+    "failures",
+    "reset_failures",
+    "_has_incremental_mirror",
+    "_refusal_logged",
+    "_failures",
+)
+
+
+def test_no_deleted_toggle_symbol_survives_on_the_module():
+    """Split from the `__all__` check under STX-TQ007, and not redundant with it.
+
+    `__all__` is a DECLARATION; `hasattr` is the FACT. A symbol can be absent
+    from `__all__` and still be reachable on the module — which is exactly the
+    state "defaulted off" would leave behind, and exactly what this file exists
+    to refuse. Merged, this ran only once the declaration check had passed.
+    """
+    # Arrange
+    # Act
+    survivors = [n for n in _DELETED_TOGGLE_NAMES if hasattr(_dual_write, n)]
+    # Assert
+    assert not survivors, (
+        f"_dual_write still exposes {survivors} — the dual-write toggle was "
+        f"DELETED as a feature, not defaulted off"
+    )
+
+
+def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(env, tmp_path):
     """The incident, closed: the flag has ZERO effect on where a write lands.
 
     2026-07-21 root cause: an agent env carrying ``SCITEX_CARDS_DUAL_WRITE=1``
@@ -78,18 +97,18 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(monkeypatch, tmp_p
     # deliberate guard — see `_store._read_canonical_db_or_raise`), so the
     # legacy flags are set BEFORE that bootstrap too, to prove they influence
     # neither step.
-    monkeypatch.setenv("SCITEX_CARDS_DUAL_WRITE", "1")
+    env.set("SCITEX_CARDS_DUAL_WRITE", "1")
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "cards.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     _store_backend.write_doc_to_db({"tasks": []}, store)
 
-    # Act — the legacy dual-write env vars stay set for the actual write too.
+    # Act — the legacy dual-write env var stays set for the actual write too.
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
 
     # Assert
     assert _db_ids(db) == {"a"}, (
-        "a write with the legacy dual-write env vars set must still reach "
+        "a write with the legacy dual-write env var set must still reach "
         "the canonical database — there is no other place left for it to go"
     )
 
@@ -107,7 +126,7 @@ def _db_ids(db_path) -> set[str]:
 # --------------------------------------------------------------------------
 
 
-def test_a_card_write_does_not_touch_the_messages_table(monkeypatch, tmp_path):
+def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
     """DM threads MUST survive a card write.
 
     `mirror_doc_incremental` is now the SOLE canonical write primitive, and the
@@ -121,7 +140,7 @@ def test_a_card_write_does_not_touch_the_messages_table(monkeypatch, tmp_path):
     # Arrange — one canonical write builds the DB, then a DM lands in `messages`.
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "own.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -169,7 +188,7 @@ def test_a_card_write_does_not_touch_the_messages_table(monkeypatch, tmp_path):
 # controls guard the opposite error of refusing legitimate mirrors.
 
 
-def _mirror_of_store_a(monkeypatch, tmp_path):
+def _mirror_of_store_a(env, tmp_path):
     """A DB holding A's card, STAMPED for a FOREIGN identity (not its own path).
 
     Single-identity model: the store IS the database, so "a database that
@@ -186,7 +205,7 @@ def _mirror_of_store_a(monkeypatch, tmp_path):
 
     db = tmp_path / "mirror-of-a.db"
     foreign = tmp_path / "a" / "cards.db"  # a DIFFERENT database path
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     doc = {
         "tasks": [
             {
@@ -208,17 +227,17 @@ def _mirror_of_store_a(monkeypatch, tmp_path):
     return db
 
 
-def test_the_mirror_of_store_a_really_holds_store_as_card(monkeypatch, tmp_path):
+def test_the_mirror_of_store_a_really_holds_store_as_card(env, tmp_path):
     # Arrange
     # Act
-    db = _mirror_of_store_a(monkeypatch, tmp_path)
+    db = _mirror_of_store_a(env, tmp_path)
 
     # Assert — the precondition every foreign-write test below rests on.
     assert "a-only" in _db_ids(db), "precondition: the DB mirrors store A"
 
 
 def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     """The incident, in miniature: store B must not overwrite store A's mirror.
 
@@ -227,14 +246,19 @@ def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
     read door of `add_task` RAISES before any row is touched.
     """
     # Arrange — a DB stamped for a FOREIGN identity, holding A's card.
-    db = _mirror_of_store_a(monkeypatch, tmp_path)
+    db = _mirror_of_store_a(env, tmp_path)
 
     # Act — the resolved database is foreign-stamped, so the read door of
     # add_task RAISES before any row is touched (the `store` arg is cosmetic —
-    # identity is the database path).
+    # identity is the database path). The raise is asserted by its own test
+    # below; here it is the PRECONDITION, caught rather than spent as this
+    # test's one assertion (STX-TQ007). A write that wrongly SUCCEEDED falls
+    # through to the mirror check, which is exactly what this pins.
     store_b = tmp_path / "b" / "cards.db"
-    with pytest.raises(RuntimeError):
+    try:
         _store.add_task(store_b, id="b-only", title="B", assignee="agent:test-suite")
+    except RuntimeError:
+        pass
 
     # Assert — A's mirror is untouched; B never entered it.
     assert _db_ids(db) == {"a-only"}, (
@@ -243,14 +267,33 @@ def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
     )
 
 
+def test_a_write_to_a_foreign_store_raises_rather_than_returning_quietly(
+    env, tmp_path
+):
+    """The refusal itself, split out under STX-TQ007.
+
+    A write that cannot reach the canonical database must NEVER report success.
+    Its sibling above pins that A's mirror is untouched; this pins that the
+    caller was TOLD. Both matter and they fail for different reasons — a guard
+    that silently no-ops would satisfy the mirror check and fail this one.
+    """
+    # Arrange
+    _mirror_of_store_a(env, tmp_path)
+    store_b = tmp_path / "b" / "cards.db"
+    # Act
+    # Assert
+    with pytest.raises(RuntimeError):
+        _store.add_task(store_b, id="b-only", title="B", assignee="agent:test-suite")
+
+
 def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     """Control: refusing must not break the FIRST write to a brand-new mirror."""
     # Arrange
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "fresh.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
 
     # Act — the first canonical write to an un-adopted DB must claim it.
     _store_backend.write_doc_to_db(
@@ -273,12 +316,12 @@ def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(
     )
 
 
-def test_a_store_writing_to_its_own_mirror_is_not_refused(monkeypatch, tmp_path):
+def test_a_store_writing_to_its_own_mirror_is_not_refused(env, tmp_path):
     """Control: the normal case — repeated writes to one's own mirror keep working."""
     # Arrange — first write adopts the DB and stamps it for `store`.
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "own.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -328,11 +371,11 @@ def test_a_store_writing_to_its_own_mirror_is_not_refused(monkeypatch, tmp_path)
 # wrong when the DB is the only copy: it would report success for a card that was
 # never stored.
 def test_canonical_write_to_a_foreign_db_RAISES_rather_than_clobbering(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     # Arrange — a DB that belongs to store A.
 
-    db = _mirror_of_store_a(monkeypatch, tmp_path)
+    db = _mirror_of_store_a(env, tmp_path)
     store_b = tmp_path / "b" / "cards.db"
 
     # Act
@@ -342,11 +385,11 @@ def test_canonical_write_to_a_foreign_db_RAISES_rather_than_clobbering(
 
 
 def test_a_refused_canonical_write_leaves_the_foreign_rows_untouched(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     # Arrange — a DB that belongs to store A.
 
-    db = _mirror_of_store_a(monkeypatch, tmp_path)
+    db = _mirror_of_store_a(env, tmp_path)
     store_b = tmp_path / "b" / "cards.db"
 
     # Act — the refused write. (Captured, not `pytest.raises`: the refusal
@@ -375,12 +418,12 @@ def test_a_refused_canonical_write_leaves_the_foreign_rows_untouched(
 #: shipped that shape more than once. The healthy-read test is what proves the
 #: guard discriminates rather than merely fires.
 def test_reading_a_foreign_stamped_db_RAISES_rather_than_returning_its_rows(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     # Arrange — a database whose provenance names a DIFFERENT database path.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    _mirror_of_store_a(monkeypatch, tmp_path)
+    _mirror_of_store_a(env, tmp_path)
 
     # Act
     # Assert
@@ -388,13 +431,13 @@ def test_reading_a_foreign_stamped_db_RAISES_rather_than_returning_its_rows(
         _read_canonical_db_or_raise()
 
 
-def test_reading_the_db_that_owns_this_store_returns_its_cards(monkeypatch, tmp_path):
+def test_reading_the_db_that_owns_this_store_returns_its_cards(env, tmp_path):
     # Arrange — a database stamped for its OWN path (the normal case): the first
     # canonical write adopts the fresh database and stamps its own identity.
     from scitex_cards._store import _read_canonical_db_or_raise
 
     db = tmp_path / "own.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -417,7 +460,7 @@ def test_reading_the_db_that_owns_this_store_returns_its_cards(monkeypatch, tmp_
 
 
 def test_a_missing_canonical_db_RAISES_instead_of_reading_an_empty_store(
-    monkeypatch, tmp_path
+    env, tmp_path
 ):
     """A failed READ must never become a write of nothing.
 
@@ -432,7 +475,7 @@ def test_a_missing_canonical_db_RAISES_instead_of_reading_an_empty_store(
     # Arrange — point at a database that does not exist.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    monkeypatch.setenv(ENV_DB, str(tmp_path / "not-here.db"))
+    env.set(ENV_DB, str(tmp_path / "not-here.db"))
 
     # Act
     # Assert
