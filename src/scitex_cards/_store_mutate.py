@@ -62,30 +62,23 @@ def _wip_statuses() -> frozenset[str]:
 #: parameters of :func:`update_task` -- so ``**fields`` would swallow them
 #: and write them onto the card as DATA, silently, returning success.
 #:
-#: ``expected_revision`` is the dangerous one and the reason this exists.
-#: ``cardsync/__init__.py`` instructs the next developer to call
-#: ``update_task(..., expected_revision=N)`` for a compare-and-set; PR #790
-#: deliberately did NOT implement that, because this function is a
-#: whole-document read-modify-write and a per-row guard on it would be a lie
-#: (it would assert the lock on the caller's card while overwriting every
-#: other card from the same read). What #790 left behind is a call that
-#: silently ACCEPTS the request for a guard it does not provide -- so the
-#: caller believes they hold a compare-and-set while holding nothing.
-#: Refusing is the honest answer until the write path is row-level.
+#: ``expected_revision`` USED TO BE LISTED HERE and is now a real parameter of
+#: :func:`update_task`. PR #790 refused it because this function was a
+#: whole-document read-modify-write, so a per-row guard "would assert the lock on
+#: the caller's card while overwriting every other card from the same read".
+#: THAT PREMISE EXPIRED with #872: update_task declares ``touched_ids=[task_id]``
+#: and ``_db_mirror`` intersects the write set with it, so the write already
+#: reaches exactly one row. The refusal outlived its reason by six days because
+#: it stated a CONCLUSION rather than the CONDITION it depended on -- had it read
+#: "refused while update_task is whole-document RMW" it would have expired
+#: visibly. The read is still whole-document; that is a scale property now, not a
+#: correctness one.
 #:
 #: ``tasks_path`` is the same concept as this function's ``store`` parameter
 #: under the name the backend/MCP layers use for it. It is NOT hypothetical:
 #: card ``probe-with-assignee`` has carried ``tasks_path='/tmp/seedprobe.yaml'``
 #: as a data field since 2026-07-10, measured across all 4,488 live cards.
-#: No card carries ``expected_revision``, so refusing it breaks nothing.
 _CONTROL_KWARGS: dict[str, str] = {
-    "expected_revision": (
-        "compare-and-set is NOT available on update_task: this function is a "
-        "whole-document read-modify-write, so a per-row revision guard would "
-        "silently overwrite concurrent edits to OTHER cards (PR #790). Use "
-        "_db_mirror._write_card(..., expected_revision=N) for a real CAS, or "
-        "omit the argument to accept last-writer-wins"
-    ),
     "tasks_path": (
         "did you mean the `store` parameter? `tasks_path` is the backend/MCP "
         "name for the same thing and is not a card field -- passing it here "
@@ -99,6 +92,7 @@ def update_task(
     task_id: str | None = None,
     *,
     entry_points=None,  # hook-bypass: line-limit
+    expected_revision: int | None = None,
     **fields,
 ) -> dict:
     """Update fields of the task with id ``task_id``; return the merged dict.
@@ -107,6 +101,21 @@ def update_task(
     a field DELETES it (matches the operator's mental model: "clear the
     scope" = `update_task(..., scope=None)`). To leave a field untouched,
     just omit it.
+
+    ``expected_revision`` makes the write a COMPARE-AND-SET: pass the ``revision``
+    you read and it lands only if nobody has written since. On a mismatch NOTHING
+    is written and :class:`RevisionConflictError` is raised, so a caller re-reads
+    and re-applies rather than clobbers.
+
+    IT IS OPT-IN, and that is load-bearing. ``_migrate_v6_to_v7`` records that
+    REJECT-by-default was RULED UNUSABLE -- "an UPDATE from a writer that knows
+    nothing about ``revision`` would ABORT, so fleet writes would fail until every
+    container is current", which this fleet cannot establish. With ``None`` no
+    guard is emitted and the write is byte-identical to before.
+
+    It RAISES here while the bulk path REPORTS, and the predicate is the opt-in
+    rather than the layer: passing a revision IS an assertion, and a violated
+    explicit assertion that returns quietly is an invisible lost update.
 
     The ONE exception is :data:`_CONTROL_KWARGS` -- names that are control
     parameters elsewhere in this stack. Those are REFUSED with a message
@@ -217,7 +226,25 @@ def update_task(
                 # `_store_rescore`, which shifts NEIGHBOURING rows and
                 # therefore must declare them too; under-declaring is the way
                 # this parameter goes wrong (see `_store_relations:181`).
-                _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[task_id])
+                _mirror = _save_doc_unlocked(
+                    doc,
+                    resolved,
+                    tasks=tasks,
+                    touched_ids=[task_id],
+                    expected_revision=expected_revision,
+                )
+                # RAISE rather than return counts. The mirror reports a refusal as
+                # `revision_skipped`; a caller who does not inspect it is told
+                # nothing and believes the write landed -- the invisible lost
+                # update, reintroduced one layer up from where it was fixed.
+                if _mirror and _mirror.get("revision_skipped"):
+                    from ._store_errors import RevisionConflictError
+
+                    raise RevisionConflictError(
+                        task_id,
+                        expected_revision,
+                        (_mirror.get("revision_found") or {}).get(task_id),
+                    )
                 result = dict(task)
                 transitioned_to_done = (
                     fields.get("status") == "done" and prior_status != "done"
