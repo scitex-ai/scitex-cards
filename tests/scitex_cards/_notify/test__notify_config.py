@@ -181,9 +181,36 @@ def test_a_lone_pre_json_sidecar_is_not_read(tmp_path):
     )
     # Act
     cfg = load_notify_config(store=_store(tmp_path))
-    # Assert — nothing read from it; built-ins apply, file left untouched.
+    # Assert — nothing was read from it; the built-ins apply.
     assert cfg.rules == DEFAULT_NOTIFY_RULES
+
+
+def test_a_lone_pre_json_sidecar_is_not_converted_into_notify_json(tmp_path):
+    """No silent migration: reading must not WRITE."""
+    # Arrange
+    (tmp_path / "notify.pre-json").write_text(
+        '{"rules": {"commented": ["subscribers"]}}\n',
+        encoding="utf-8",
+    )
+    # Act
+    load_notify_config(store=_store(tmp_path))
+    # Assert — split under STX-TQ007. "The stray file was ignored" and "no new
+    # file was created from it" are different behaviours, and a loader that
+    # silently converted the sidecar would satisfy the rules check while
+    # rewriting the operator's directory.
     assert not (tmp_path / "notify.json").exists()
+
+
+def test_a_lone_pre_json_sidecar_is_left_on_disk(tmp_path):
+    """Ignoring a file must not mean deleting it."""
+    # Arrange
+    (tmp_path / "notify.pre-json").write_text(
+        '{"rules": {"commented": ["subscribers"]}}\n',
+        encoding="utf-8",
+    )
+    # Act
+    load_notify_config(store=_store(tmp_path))
+    # Assert
     assert (tmp_path / "notify.pre-json").exists()
 
 

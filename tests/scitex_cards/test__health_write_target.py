@@ -17,6 +17,13 @@ stayed in sync. That mirror is gone, so this file tests what replaced it:
 second write target — a legacy toggle env var lingering in the process
 environment (harmless today, since nothing reads it, but the exact footgun
 that caused the incident), or the toggle having been reintroduced as code.
+
+ONE ASSERTION PER TEST (STX-TQ007). These tests were merged three-to-a-function
+until 2026-08-15. That grouping is exactly wrong for THIS check: a failure of
+"does the detail name the offending variable" and a failure of "does the check
+fail at all" are different defects with different fixes, and the merged form
+reported only whichever came first. The shared setup lives in the helpers
+below rather than in a bigger test.
 """
 
 from __future__ import annotations
@@ -32,58 +39,107 @@ def _check(report: dict, name: str) -> dict:
     return {c["name"]: c for c in report["checks"]}[name]
 
 
-def test_ok_when_no_legacy_env_var_is_set(env):
-    # Arrange
+def _with_only(env, *set_vars: str) -> dict:
+    """Run the check with exactly ``set_vars`` present and the rest cleared."""
     for name in _LEGACY_DUAL_WRITE_ENV_VARS:
         env.delete(name)
+    for name in set_vars:
+        env.set(name, "1")
+    return check_single_write_target()
 
+
+def _healthy_store(tmp_path):
+    """A real, minimal-but-valid task store — hermetic, no ambient env."""
+    store = tmp_path / "tasks.yaml"
+    store.write_text("tasks: []\n", encoding="utf-8")
+    return store
+
+
+def _health_with_only(env, tmp_path, *set_vars: str) -> dict:
+    for name in _LEGACY_DUAL_WRITE_ENV_VARS:
+        env.delete(name)
+    for name in set_vars:
+        env.set(name, "1")
+    return health(store=_healthy_store(tmp_path), agent_id="agent-x")
+
+
+def test_ok_when_no_legacy_env_var_is_set(env):
+    # Arrange
     # Act
-    res = check_single_write_target()
-
+    res = _with_only(env)
     # Assert
     assert res["ok"] is True
 
 
-def test_flags_a_lingering_SCITEX_TODO_DUAL_WRITE(env):
-    """The pre-rename toggle name — still a footgun even though nothing reads it."""
+# === the pre-rename toggle name — still a footgun though nothing reads it ===
+
+
+def test_a_lingering_scitex_todo_dual_write_is_not_ok(env):
     # Arrange
-    env.set("SCITEX_TODO_DUAL_WRITE", "1")
-    env.delete("SCITEX_CARDS_DUAL_WRITE")
-
     # Act
-    res = check_single_write_target()
-
+    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
     # Assert
     assert res["ok"] is False
+
+
+def test_a_lingering_scitex_todo_dual_write_is_named_in_the_detail(env):
+    # Arrange
+    # Act
+    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
+    # Assert — naming the variable is the whole value of the check; a bare
+    # "not ok" leaves the reader hunting their own environment.
     assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
+
+
+def test_a_lingering_scitex_todo_dual_write_hint_says_to_unset_it(env):
+    # Arrange
+    # Act
+    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
+    # Assert — constitution section 2: an error that only states what broke is
+    # half-written. The hint must say what to DO.
     assert "unset" in (res["hint"] or "")
 
 
-def test_flags_a_lingering_SCITEX_CARDS_DUAL_WRITE(env):
-    """The incident's actual env var — root cause 2026-07-21."""
+# === the incident's actual env var — root cause 2026-07-21 =================
+
+
+def test_a_lingering_scitex_cards_dual_write_is_not_ok(env):
     # Arrange
-    env.set("SCITEX_CARDS_DUAL_WRITE", "1")
-    env.delete("SCITEX_TODO_DUAL_WRITE")
-
     # Act
-    res = check_single_write_target()
-
+    res = _with_only(env, "SCITEX_CARDS_DUAL_WRITE")
     # Assert
     assert res["ok"] is False
-    assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
 
 
-def test_names_both_legacy_vars_when_both_are_set(env):
+def test_a_lingering_scitex_cards_dual_write_is_named_in_the_detail(env):
     # Arrange
-    env.set("SCITEX_TODO_DUAL_WRITE", "1")
-    env.set("SCITEX_CARDS_DUAL_WRITE", "1")
-
     # Act
-    res = check_single_write_target()
-
+    res = _with_only(env, "SCITEX_CARDS_DUAL_WRITE")
     # Assert
-    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
     assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
+
+
+# === both set at once: NEITHER may be swallowed by the other ===============
+
+
+def test_the_old_name_is_still_named_when_both_are_set(env):
+    # Arrange
+    # Act
+    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
+    # Assert — split from its sibling deliberately: a check that reports only
+    # the FIRST offender it finds passes a combined assertion by accident.
+    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
+
+
+def test_the_new_name_is_still_named_when_both_are_set(env):
+    # Arrange
+    # Act
+    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
+    # Assert
+    assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
+
+
+# === the deleted toggle stays deleted ======================================
 
 
 def test_the_deleted_toggle_symbols_are_actually_gone():
@@ -98,60 +154,82 @@ def test_the_deleted_toggle_symbols_are_actually_gone():
     # Arrange
     import scitex_cards._dual_write as dual_write_mod
 
-    # Act / Assert
-    for name in (
-        "enabled",
-        "mirror_after_save",
-        "ENV_DUAL_WRITE",
-        "check_mirror_healthy",
-    ):
-        assert not hasattr(dual_write_mod, name), (
-            f"scitex_cards._dual_write.{name} must not exist — the dual-write "
-            f"toggle was deleted as a feature, not defaulted off"
+    # Act — collect every survivor in one pass, so a failure names ALL of
+    # them rather than stopping at whichever happens to be checked first.
+    survivors = [
+        name
+        for name in (
+            "enabled",
+            "mirror_after_save",
+            "ENV_DUAL_WRITE",
+            "check_mirror_healthy",
         )
+        if hasattr(dual_write_mod, name)
+    ]
+    # Assert
+    assert not survivors, (
+        f"scitex_cards._dual_write still exposes {survivors} — the dual-write "
+        f"toggle was deleted as a feature, not defaulted off"
+    )
 
 
-def test_the_ownership_guard_itself_survives_the_deletion():
-    """The guard is NOT part of the deleted toggle — it must still be here."""
+def test_the_store_ownership_guard_survives_the_deletion():
+    """`_db_mirrors_this_store` is NOT part of the deleted toggle."""
     # Arrange
     import scitex_cards._dual_write as dual_write_mod
 
-    # Act / Assert
-    assert callable(dual_write_mod._db_mirrors_this_store)
-    assert callable(dual_write_mod._same_file)
-
-
-def _healthy_store(tmp_path):
-    """A real, minimal-but-valid task store — hermetic, no ambient env."""
-    store = tmp_path / "tasks.yaml"
-    store.write_text("tasks: []\n", encoding="utf-8")
-    return store
-
-
-def test_health_runs_single_write_target_and_not_the_deleted_check(tmp_path, env):
-    """The aggregator wires in the new check under its new name."""
-    # Arrange
-    for name in _LEGACY_DUAL_WRITE_ENV_VARS:
-        env.delete(name)
-
     # Act
-    report = health(store=_healthy_store(tmp_path), agent_id="agent-x")
-
+    guard = getattr(dual_write_mod, "_db_mirrors_this_store", None)
     # Assert
-    names = {c["name"] for c in report["checks"]}
-    assert "single_write_target" in names
-    assert "dual_write_mirror" not in names
+    assert callable(guard)
 
 
-def test_health_fails_overall_when_a_legacy_var_leaks_into_the_env(tmp_path, env):
-    # Arrange — every OTHER check hermetically healthy, only the legacy var is set.
-    env.set("SCITEX_CARDS_DUAL_WRITE", "1")
+def test_the_same_file_helper_survives_the_deletion():
+    """`_same_file` is NOT part of the deleted toggle."""
+    # Arrange
+    import scitex_cards._dual_write as dual_write_mod
 
     # Act
-    report = health(store=_healthy_store(tmp_path), agent_id="agent-x")
+    same_file = getattr(dual_write_mod, "_same_file", None)
+    # Assert
+    assert callable(same_file)
 
+
+# === the aggregator wires in the new check under its new name ==============
+
+
+def test_health_runs_the_single_write_target_check(tmp_path, env):
+    # Arrange
+    # Act
+    report = _health_with_only(env, tmp_path)
+    # Assert
+    assert "single_write_target" in {c["name"] for c in report["checks"]}
+
+
+def test_health_no_longer_runs_the_deleted_dual_write_check(tmp_path, env):
+    # Arrange
+    # Act
+    report = _health_with_only(env, tmp_path)
+    # Assert — the deleted check must not linger under its old name, or the
+    # report would still advertise a mirror nothing maintains.
+    assert "dual_write_mirror" not in {c["name"] for c in report["checks"]}
+
+
+def test_a_leaked_legacy_var_fails_the_write_target_check(tmp_path, env):
+    # Arrange
+    # Act
+    report = _health_with_only(env, tmp_path, "SCITEX_CARDS_DUAL_WRITE")
     # Assert
     assert _check(report, "single_write_target")["ok"] is False
+
+
+def test_a_leaked_legacy_var_fails_the_report_overall(tmp_path, env):
+    # Arrange
+    # Act
+    report = _health_with_only(env, tmp_path, "SCITEX_CARDS_DUAL_WRITE")
+    # Assert — split from its sibling: a check can fail while the aggregator
+    # still reports green overall, and that combination is the actual bug this
+    # file exists to catch.
     assert report["ok"] is False
 
 

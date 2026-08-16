@@ -63,16 +63,30 @@ def _skills_parent() -> Path:
 class TestLegacyPathStillResolves:
     """The old directory name must remain a usable path into the skills."""
 
-    def test_legacy_dir_name_resolves_to_the_renamed_directory(self):
+    def test_the_legacy_dir_name_still_exists(self):
+        # Arrange
+        legacy = _skills_parent() / LEGACY_DIR_NAME
+        # Act
+        present = legacy.exists()
+        # Assert
+        assert present, (
+            f"{legacy} does not resolve. Out-of-repo fleet symlinks name this "
+            "exact path; without it `sac agents start` dies in copytree."
+        )
+
+    def test_the_legacy_dir_name_is_not_a_second_copy(self):
+        """Split under STX-TQ007, and it is the half that catches the bad fix.
+
+        "The path exists" is satisfied by someone COPYING the skills directory
+        under the old name — which is the wrong fix, because the two then drift
+        and half the fleet reads stale skills. Only this assertion rejects it,
+        and merged it ran second.
+        """
         # Arrange
         legacy = _skills_parent() / LEGACY_DIR_NAME
         # Act
         resolved = legacy.resolve()
         # Assert
-        assert legacy.exists(), (
-            f"{legacy} does not resolve. Out-of-repo fleet symlinks name this "
-            "exact path; without it `sac agents start` dies in copytree."
-        )
         assert resolved == Path(_skills_root()).resolve(), (
             "the legacy path must resolve to the current skills directory, "
             f"not to a second copy — got {resolved}"
