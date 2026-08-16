@@ -198,7 +198,24 @@ def test_the_bundled_skills_directory_is_named_for_this_package():
 
     Pinned because it IS a contract — other packages resolve this path on disk.
     """
+    # Arrange
+    # Act
+    name = _SKILLS_PKG
+    # Assert
+    assert name == "scitex-cards"
+
+
+def test_the_bundled_skills_directory_exists_on_disk():
+    """The NAME being right and the DIRECTORY being there are separate claims.
+
+    Split under STX-TQ007: a rename that updated the constant but not the
+    packaged data satisfies the name assertion and fails this one, which is
+    precisely the failure other packages would hit when they resolve the path.
+    """
+    # Arrange
     from scitex_cards._cli._skills import _skills_root
 
-    assert _SKILLS_PKG == "scitex-cards"
-    assert _skills_root().is_dir(), f"bundled skills missing at {_skills_root()}"
+    # Act
+    root = _skills_root()
+    # Assert
+    assert root.is_dir(), f"bundled skills missing at {root}"
