@@ -864,7 +864,7 @@ def test_store_action_stamps_last_seen_on_actor(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _users.register_user(kind="agent", names=["actor-1"], store=store)
-    env.set("SCITEX_TODO_AGENT_ID", "actor-1")
+    env.set("SCITEX_CARDS_AGENT_ID", "actor-1")
     _store.add_task(store, id="t1", title="T", assignee="actor-1", created_by="actor-1")
     # Act — created_by heartbeat already stamped; the comment re-stamps.
     _store.comment_task(store, "t1", "hello", by="actor-1")

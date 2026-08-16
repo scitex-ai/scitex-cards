@@ -10,7 +10,7 @@ confirming no ``systemctl`` subprocess is ever spawned (a real
 test — the helper simply has no subprocess call to intercept).
 
 REGRESSION (203/EXEC): the shipped template used a BARE
-``ExecStart=scitex-todo notifyd``. systemd does not use the user's login PATH,
+``ExecStart=scitex-cards notifyd``. systemd does not use the user's login PATH,
 and the console script lives in a venv, so the unit died at ``status=203/EXEC``
 and had to be hand-patched before it would start. ExecStart must be an
 ABSOLUTE, EXISTING, EXECUTABLE path — asserted through the MECHANISM (resolve
@@ -171,7 +171,7 @@ def test_exec_start_program_is_the_console_script():
     # Act
     program = exec_start.split()[0]
     # Assert
-    assert Path(program).name == "scitex-todo"
+    assert Path(program).name == "scitex-cards"
 
 
 def test_exec_start_arguments_are_only_the_notifyd_verb():
@@ -205,7 +205,7 @@ def test_rendered_unit_exec_start_program_exists_on_disk():
 def test_console_script_prefers_the_running_interpreters_bin_dir():
     # Arrange
     # a venv install must point the unit at THAT venv.
-    candidate = Path(sys.executable).parent / "scitex-todo"
+    candidate = Path(sys.executable).parent / "scitex-cards"
     if not (candidate.is_file() and os.access(candidate, os.X_OK)):
         pytest.skip("no console script beside this interpreter to prefer")
     # Act
@@ -281,7 +281,7 @@ def test_install_unit_reports_the_unit_was_written(xdg_home):
 
 def test_install_unit_reports_the_xdg_config_home_path(xdg_home):
     # Arrange
-    target = xdg_home / "systemd" / "user" / "scitex-todo-notifyd.service"
+    target = xdg_home / "systemd" / "user" / "scitex-cards-notifyd.service"
     # Act
     result = _systemd.install_unit()
     # Assert
@@ -290,7 +290,7 @@ def test_install_unit_reports_the_xdg_config_home_path(xdg_home):
 
 def test_install_unit_creates_the_unit_file_on_disk(xdg_home):
     # Arrange
-    target = xdg_home / "systemd" / "user" / "scitex-todo-notifyd.service"
+    target = xdg_home / "systemd" / "user" / "scitex-cards-notifyd.service"
     # Act
     _systemd.install_unit()
     # Assert
@@ -338,7 +338,7 @@ def test_install_unit_returns_the_enable_now_command(xdg_home):
     # Act
     result = _systemd.install_unit()
     # Assert
-    assert "enable --now scitex-todo-notifyd.service" in result["enable_commands"]
+    assert "enable --now scitex-cards-notifyd.service" in result["enable_commands"]
 
 
 def test_install_unit_never_spawns_a_systemctl_subprocess(
@@ -426,7 +426,7 @@ def test_forced_install_exec_start_program_exists_on_disk(xdg_home):
 def test_explicit_exec_start_is_echoed_in_the_result(xdg_home):
     # Arrange
     # an explicit override still works (the operator stays in control).
-    override = "/opt/venv/bin/scitex-todo notifyd"
+    override = "/opt/venv/bin/scitex-cards notifyd"
     # Act
     result = _systemd.install_unit(exec_start=override)
     # Assert
@@ -435,7 +435,7 @@ def test_explicit_exec_start_is_echoed_in_the_result(xdg_home):
 
 def test_explicit_exec_start_is_written_into_the_unit(xdg_home):
     # Arrange
-    override = "/opt/venv/bin/scitex-todo notifyd"
+    override = "/opt/venv/bin/scitex-cards notifyd"
     result = _systemd.install_unit(exec_start=override)
     # Act
     body = Path(result["path"]).read_text(encoding="utf-8")

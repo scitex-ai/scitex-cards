@@ -37,7 +37,7 @@ from typing import Any
 #: Legacy dual-write toggle names. The feature they gated was DELETED
 #: entirely — SQLite is the only write target, unconditionally, with no env
 #: var left to read.
-_LEGACY_DUAL_WRITE_ENV_VARS = ("SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
+_LEGACY_DUAL_WRITE_ENV_VARS = ("SCITEX_CARDS_DUAL_WRITE",)
 
 #: Symbols that made up the deleted toggle. Their reappearance on
 #: ``scitex_cards._dual_write`` means the feature was reintroduced.

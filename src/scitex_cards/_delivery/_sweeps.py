@@ -43,7 +43,7 @@ from ._tick import fault_text
 logger = logging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Cadence (MINUTES) of the fleet-liveness sweep. ``<= 0`` disables it.
-ENV_NUDGE_SWEEP_MINUTES = "SCITEX_TODO_NUDGE_SWEEP_MINUTES"
+ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
 DEFAULT_NUDGE_SWEEP_MINUTES = 30.0
 
 

@@ -302,9 +302,9 @@ class _EnqueueRecorder:
 @pytest.fixture(autouse=True)
 def _isolate_engine(env, monkeypatch):
     for var in (
-        "SCITEX_TODO_REMINDER_OWNERS",
-        "SCITEX_TODO_STALE_ACTIVE_HOURS",
-        "SCITEX_TODO_PENDING_NUDGE_HOURS",
+        "SCITEX_CARDS_REMINDER_OWNERS",
+        "SCITEX_CARDS_STALE_ACTIVE_HOURS",
+        "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
     monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])

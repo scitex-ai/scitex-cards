@@ -14,24 +14,24 @@ Render it to a dependency-graph PNG from Python:
 
 .. code-block:: python
 
-    import scitex_todo as todo
+    import scitex_cards as cards
 
-    tasks = todo.load_tasks("tasks.yaml")
-    mermaid_src = todo.build_mermaid(tasks)
-    engine = todo.render(mermaid_src, "tasks.png")   # 'mmdc' or 'kroki'
+    tasks = cards.load_tasks("tasks.yaml")
+    mermaid_src = cards.build_mermaid(tasks)
+    engine = cards.render(mermaid_src, "tasks.png")   # 'mmdc' or 'kroki'
 
 …or from the shell:
 
 .. code-block:: bash
 
     # store: $SCITEX_CARDS_DB (PostgreSQL on 55432); unset raises
-    scitex-todo render-graph -o tasks.png
+    scitex-cards render-graph -o tasks.png
 
     # inspect the generated mermaid without rendering
-    scitex-todo render-graph --print-mermaid
+    scitex-cards render-graph --print-mermaid
 
     # list the resolved tasks (machine-readable with --json)
-    scitex-todo list-tasks --json
+    scitex-cards list-tasks --json
 
 Task schema
 -----------

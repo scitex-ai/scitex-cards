@@ -63,7 +63,7 @@ def source_inbox(tmp_path) -> Iterator[Path]:
     the connection past setup, so it is released before the test runs and the
     fixture yields only the path.
     """
-    path = tmp_path / "todo.db"
+    path = tmp_path / "cards.db"
     rows = [
         ("n_seen01", "agent-a", "dm", "c1", "already read", "op", "T1", 1, None),
         ("n_unseen1", "agent-a", "dm", "c2", "never delivered", "op", "T2", 0, None),

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite derived-index for the scitex-todo board (PR-B of the lead-
+"""SQLite derived-index for the scitex-cards board (PR-B of the lead-
 approved Stage 2 plan, lead a2a `aa02fb0e` / `e5243003`).
 
 The task store stays authoritative. This SQLite file is a SEPARATE
 read-cache (a derived FTS/search index, not the store itself), never
 written to by the writer path. Indexing is idempotent + rebuildable:
-``scitex-todo index rebuild`` drops + repopulates from the store(s)
+``scitex-cards index rebuild`` drops + repopulates from the store(s)
 in a single transaction. Schema migrations move the
 ``meta.index_version`` forward; older versions are dropped and
 rebuilt.
@@ -36,8 +36,8 @@ from typing import Dict, Iterable, List, Optional
 logger = logging.getLogger(__name__)
 
 #: Env override for the index file path. Default is sibling to the
-#: global task store: ``~/.scitex/todo/.tasks.index.sqlite``.
-ENV_INDEX_PATH = "SCITEX_TODO_INDEX_PATH"
+#: global task store: ``~/.scitex/cards/.tasks.index.sqlite``.
+ENV_INDEX_PATH = "SCITEX_CARDS_INDEX_PATH"
 
 #: Schema version. Bump when the column set or indexes change; the
 #: rebuilder drops + recreates when a stored ``meta.index_version`` is
@@ -52,7 +52,7 @@ def index_path() -> Path:
     override = os.environ.get(ENV_INDEX_PATH)
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".scitex" / "todo" / ".tasks.index.sqlite"
+    return Path.home() / ".scitex" / "card" / ".tasks.index.sqlite"
 
 
 @contextmanager
@@ -127,7 +127,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         # FTS5 may be absent on older SQLite builds — degrade
         # gracefully; the rest of the index still works.
         logger.warning(
-            "[scitex-todo._index] FTS5 unavailable, skipping (%s)",
+            "[scitex-cards._index] FTS5 unavailable, skipping (%s)",
             e,
         )
     conn.execute(
@@ -267,7 +267,7 @@ def rebuild_index(
             global_tasks = load_tasks(global_path) if global_path.exists() else []
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "[scitex-todo._index] global store unreadable %s: %s",
+                "[scitex-cards._index] global store unreadable %s: %s",
                 global_path,
                 exc,
             )
@@ -284,7 +284,7 @@ def rebuild_index(
                 lane_tasks = load_tasks(lp)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "[scitex-todo._index] lane %s unreadable: %s",
+                    "[scitex-cards._index] lane %s unreadable: %s",
                     lp,
                     exc,
                 )
@@ -301,7 +301,7 @@ def rebuild_index(
                 ).fetchone()
                 if prior is not None and prior["source_path"] != str(lp):
                     logger.warning(
-                        "[scitex-todo._index] id %r collision — %s overrides %s",
+                        "[scitex-cards._index] id %r collision — %s overrides %s",
                         t["id"],
                         lp,
                         prior["source_path"],

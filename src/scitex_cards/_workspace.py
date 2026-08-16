@@ -4,7 +4,7 @@
 WHY IDENTITY AND NOT A PATH. scitex-hub knows which workspace a request belongs
 to - that is genuinely hub's fact, because hub owns orgs, projects and users. It
 does NOT know where cards keeps data, and when it did know (it injected
-``base/<slug>/.scitex/todo/tasks.yaml``) my store migration broke it. So hub passes
+``base/<slug>/.scitex/cards/tasks.yaml``) my store migration broke it. So hub passes
 ``request.scitex_workspace``, an identity, and the identity -> store mapping lives
 here, once.
 

@@ -365,7 +365,7 @@ def _serve_child(argv: list[str], log: Path) -> subprocess.Popen:
     """Start ``scitex-cards <argv>`` for real, logging to ``log``.
 
     Inherits ``os.environ``, which already carries the tmp
-    ``SCITEX_TODO_BOARD_PIDFILE`` from the ``pidfile_path`` fixture and the
+    ``SCITEX_CARDS_BOARD_PIDFILE`` from the ``pidfile_path`` fixture and the
     suite's scratch store — so the child writes its pidfile where the test can
     see it and touches no real board. Output goes to a FILE rather than a
     pipe nobody drains, which would deadlock the child at 64 KB.

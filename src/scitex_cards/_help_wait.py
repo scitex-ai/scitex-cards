@@ -6,9 +6,9 @@ operator" card as a first-class verb pair.
 Background (SoC lift)
 ---------------------
 A dotfiles Notification hook used to hand-roll these cards by shelling out to
-the generic ``scitex-todo add / update / list-tasks`` verbs. Whenever the card
+the generic ``scitex-cards add / update / list-tasks`` verbs. Whenever the card
 schema drifted, the hook broke *silently*. Lifting the semantics into the
-package makes scitex-todo the single source of truth; the hook becomes a thin
+package makes scitex-cards the single source of truth; the hook becomes a thin
 trigger that calls one verb (``help-wait`` / ``help-clear``).
 
 Card contract (byte-for-byte what the old hook produced, so this is a drop-in

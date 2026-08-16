@@ -1,19 +1,19 @@
 ---
 description: |
   [TOPIC] Fleet-wide scitex-cards MCP rollout — the canonical `.mcp.json`
-  block and the binding "MCP-only for durable todos" mandate.
+  block and the binding "MCP-only for durable cards" mandate.
   [WHEN] Read on every agent boot. This is the leaf that locks in WHY
-  scitex-cards is the single durable-todo wire AND HOW to wire it from a
+  scitex-cards is the single durable-card wire AND HOW to wire it from a
   Claude-Code container — one copy-pasteable JSON block, one env var,
   one smoke test. Agent-container drops this `.mcp.json` into every
   agent's `to_home/.mcp.json` per the P3a wave (lead-dispatched).
   [HOW] Copy the JSON below into your `~/.mcp.json` (or the
   agent-container `to_home/_base/.mcp.json` for fleet rollout). Set
-  `SCITEX_TODO_AGENT_ID=<your-peer-name>` in the agent's env. Verify with
+  `SCITEX_CARDS_AGENT_ID=<your-peer-name>` in the agent's env. Verify with
   `scitex-cards mcp doctor`.
 tags:
   [
-    scitex-cards-fleet-rollout,
+    scitex-cards-fleet-mcp-rollout,
     scitex-cards-mcp-canonical,
     scitex-cards-p3a,
   ]
@@ -22,7 +22,7 @@ tags:
 # Fleet MCP rollout — the canonical wire
 
 scitex-cards is **THE fleet's single source of truth** for durable /
-cross-session / cross-agent todos (operator standing directive +
+cross-session / cross-agent cards (operator standing directive +
 lead-confirmed mandate in [SKILL.md](./SKILL.md#-mandate--single-source-of-truth-operator--lead-2026-06-12)).
 This leaf is the **canonical fleet-rollout artifact**: one
 copy-pasteable `.mcp.json` block, one mandatory env var, one smoke
@@ -31,13 +31,13 @@ wire is live.
 
 ## ⚑ Mandate (binding)
 
-1. **All durable todos go through the scitex-cards MCP.** Every
+1. **All durable cards go through the scitex-cards MCP.** Every
    every worker agent, the lead, and the operator write to the same
    shared SQLite store via the wire below. There is **one**
    shared store; there are **no** parallel formats.
 
-2. **No private todo files.** Do not create
-   `GITIGNORED/FUTURE/*.md`, `GITIGNORED/TODO.md`,
+2. **No private card files.** Do not create
+   `GITIGNORED/FUTURE/*.md`, `GITIGNORED/CARD.md`,
    `GITIGNORED/RUNNING/*.md`, or any other markdown / YAML /
    JSON / SQLite stand-in for the durable backlog. The harness
    `TaskList` is in-session SCRATCH ONLY — anything that should
@@ -79,18 +79,18 @@ overwrite the file.
 
 ## Required + recommended env
 
-Every write tags the agent via env vars. **Set `SCITEX_TODO_AGENT_ID`
+Every write tags the agent via env vars. **Set `SCITEX_CARDS_AGENT_ID`
 before the MCP server starts** — a missing tag is a config bug, not
 a soft default.
 
 | Var | Required? | Value | Effect |
 |---|---|---|---|
-| `SCITEX_TODO_AGENT_ID` | **YES** | `<your-peer-name>` | Stamps every write's `_log_meta.created_by` / `updated_by`. The board's "by agent" lens, throughput stats, and notify routing all key off this. |
-| `SCITEX_TODO_SCOPE` | recommended | `agent:<your-peer-name>` | Default scope for `list_tasks` / `summarize_tasks` so the agent sees its own slice by default. Pass `scope=""` to opt out per-call. |
+| `SCITEX_CARDS_AGENT_ID` | **YES** | `<your-peer-name>` | Stamps every write's `_log_meta.created_by` / `updated_by`. The board's "by agent" lens, throughput stats, and notify routing all key off this. |
+| `SCITEX_CARDS_SCOPE` | recommended | `agent:<your-peer-name>` | Default scope for `list_tasks` / `summarize_tasks` so the agent sees its own slice by default. Pass `scope=""` to opt out per-call. |
 | `SCITEX_CARDS_DB` | only if non-default | Absolute path to the SQLite database | Pins the store. Default resolution (explicit → env → user-canonical) usually picks the right one without this. |
 
 For agent-container's `to_home/_base/.mcp.json` rollout, the per-agent
-`SCITEX_TODO_AGENT_ID` value is templated from the agent's name; see the
+`SCITEX_CARDS_AGENT_ID` value is templated from the agent's name; see the
 P3a wiring on the agent-container side.
 
 ## Tool surface — 15 today (CLI parity reached via PR #144)
@@ -110,8 +110,8 @@ P3a wiring on the agent-container side.
 | `set_edge` | `scitex_cards.set_edge` | Add / remove a `depends_on` / `blocks` edge. |
 | `resolve_task` | `scitex_cards.resolve_task` | Mark a blocker resolved. |
 | `reopen_task` | `scitex_cards.reopen_task` | Reopen a `done` / `failed` task. |
-| `todo_skills_list` | (skills introspection) | List bundled skills. |
-| `todo_skills_get` | (skills introspection) | Get one bundled skill by name. |
+| `cards_skills_list` | (skills introspection) | List bundled skills. |
+| `cards_skills_get` | (skills introspection) | Get one bundled skill by name. |
 | `add_comment` *(deferred)* | `scitex_cards.add_comment` | Convention-A alias for `comment_task`. PR #64 not yet merged; CLI parity was reached via PR #144 (`scitex-cards comment`) which wraps the existing `comment_task` MCP tool — agents needing the activity-append do NOT have to wait. |
 
 Discover the live set at runtime:
@@ -145,10 +145,10 @@ scitex-cards mcp doctor
 # (PR #64 would add `add_comment` as #16; deferred — CLI parity reached via PR #144)
 
 # 2. The MCP wire reaches the live store.
-SCITEX_TODO_AGENT_ID=<you> scitex-cards list-tasks --by-agent --json | head
+SCITEX_CARDS_AGENT_ID=<you> scitex-cards list-tasks --by-agent --json | head
 
 # 3. The agent can write.
-SCITEX_TODO_AGENT_ID=<you> scitex-cards add \
+SCITEX_CARDS_AGENT_ID=<you> scitex-cards add \
     <you>-mcp-smoke-$(date +%s) \
     '[P2] smoke: confirm MCP wire' \
     --scope agent:<you> \
@@ -156,7 +156,7 @@ SCITEX_TODO_AGENT_ID=<you> scitex-cards add \
     --agent <you>
 
 # 4. Tear it down.
-SCITEX_TODO_AGENT_ID=<you> scitex-cards done <you>-mcp-smoke-<stamp>
+SCITEX_CARDS_AGENT_ID=<you> scitex-cards done <you>-mcp-smoke-<stamp>
 ```
 
 Pass all four = wire is live. Any failure: post the exact command +
@@ -167,10 +167,10 @@ full stderr to your lead via a2a, then stop. Do NOT retry-loop.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `mcp doctor` → "fastmcp: MISSING" | `[mcp]` extra not installed | `pip install -U 'scitex-cards[all]>=0.7.1'` |
-| Writes land but `_log_meta.created_by` is unset / wrong | `SCITEX_TODO_AGENT_ID` missing or stale in the agent's env | Set it BEFORE the MCP server boots; restart the harness. |
+| Writes land but `_log_meta.created_by` is unset / wrong | `SCITEX_CARDS_AGENT_ID` missing or stale in the agent's env | Set it BEFORE the MCP server boots; restart the harness. |
 | `mcp doctor` → "tools: 0" | FastMCP version skew | Bump fastmcp to ≥ 3.0; rebuild the venv. |
-| `list_tasks` returns the whole store, not your slice | `SCITEX_TODO_SCOPE` unset | Export `SCITEX_TODO_SCOPE=agent:<you>`. |
-| Your `SCITEX_TODO_TASKS_YAML_SHARED` points at a stale file | precedence chain picked an earlier tier | `scitex-cards resolve-store` prints the resolved path + the chain. |
+| `list_tasks` returns the whole store, not your slice | `SCITEX_CARDS_SCOPE` unset | Export `SCITEX_CARDS_SCOPE=agent:<you>`. |
+| Your `SCITEX_CARDS_TASKS_YAML_SHARED` points at a stale file | precedence chain picked an earlier tier | `scitex-cards resolve-store` prints the resolved path + the chain. |
 
 ## Cross-references
 

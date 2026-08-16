@@ -8,7 +8,7 @@ ownership guard refuse EVERY write, correctly, but the symptom is a total write
 outage with no monitor.
 
 On 2026-07-19 the MCP server resolved ~/.scitex/cards/tasks.yaml (deleted during
-the cutover) while the DB was stamped ~/.scitex/todo/tasks.yaml. Every write
+the cutover) while the DB was stamped ~/.scitex/cards/tasks.yaml. Every write
 through the surface other agents use was refused and nothing reported it:
 `store_canonical` answers "does a parseable file exist there", not "can this
 process write".
@@ -66,7 +66,6 @@ def two_stores(tmp_path, env):
     b.write_text(_SEED)
     db = tmp_path / "cards.db"
     env.set("SCITEX_CARDS_DB", str(db))
-    env.set("SCITEX_TODO_DB", str(db))
     _seed_and_stamp(db, a)
     return a, b
 
@@ -165,7 +164,6 @@ def test_a_missing_db_is_not_an_alarm(tmp_path, env):
     store = tmp_path / "tasks.yaml"
     store.write_text(_SEED)
     env.set("SCITEX_CARDS_DB", str(tmp_path / "absent.db"))
-    env.set("SCITEX_TODO_DB", str(tmp_path / "absent.db"))
 
     # Act
     check = _check(health(store=str(store)), "store_identity")

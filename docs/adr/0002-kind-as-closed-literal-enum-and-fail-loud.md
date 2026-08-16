@@ -37,14 +37,14 @@ This sits inside the broader **fail-loud principle** the operator + lead
 explicitly named on 2026-06-06:
 
 - Operator TG 9517 (translated): "promise the shape" — and ENFORCE it.
-  scitex-todo should be a high-quality package; the defined schema must
+  scitex-cards should be a high-quality package; the defined schema must
   be structurally enforceable, not just documented.
 - Lead a2a `2c7a431d` (compute-state-deps design nod): "kind: use a
   CLOSED, VALIDATED set (Literal['task','compute']) that RAISES on an
   unknown value — fail-loud per today's principle (free-string would
   let a 'comput' typo silently create an unrecognized kind)."
 - The same principle drives scitex-io's recent `fail-loud` pass and the
-  fleet's STX-NM / PA-306 no-silent-degradation rules. scitex-todo
+  fleet's STX-NM / PA-306 no-silent-degradation rules. scitex-cards
   schema validation joins the same family.
 
 ## Decision
@@ -114,7 +114,7 @@ default, ordinary-task path. The validator only raises on a
   trust the shape — no `kind not in known` defensive paths.
 - The validator pattern (`Literal[…]` + closed tuple + raise-with-context)
   becomes the **seed for the full schema-validator pass** scoped to
-  task `proj-scitex-todo-quality-hygiene` (operator TG 9517 / lead a2a
+  task `proj-scitex-cards-quality-hygiene` (operator TG 9517 / lead a2a
   `28967019` / `2bd37bd2`). The same fail-loud treatment extends
   schema-wide: `depends_on` / `blocks` reference integrity + cycle
   detection + a typed `Task` dataclass as the single schema source.
@@ -145,7 +145,7 @@ default, ordinary-task path. The validator only raises on a
 
 ## Notes
 
-- Surfaced 2026-06-06 by proj-scitex-todo during the lead's design nod
+- Surfaced 2026-06-06 by proj-scitex-cards during the lead's design nod
   on the compute-state-deps proposal (a2a `2c7a431d`).
 - Reinforced 2026-06-06 by operator TG 9517 (high-quality-package
   ask) and lead a2a `28967019` (full schema-validator audit).
@@ -153,10 +153,10 @@ default, ordinary-task path. The validator only raises on a
   9511 / lead a2a `dd1da069`) is `tasks/<id>/adr.md` for task-scoped
   entries; this ADR sits at `<pkg>/docs/adr/NNNN-…md` because the
   decision is repo-architectural per the two-tier placement rule in
-  HANDOFF.md. The per-task `tasks/proj-scitex-todo-compute-state-deps/
+  HANDOFF.md. The per-task `tasks/proj-scitex-cards-compute-state-deps/
   adr.md` ADR-0001 carries a one-line cross-link to this file.
 - Cross-link: ADR-0001 in this directory (`0001-universal-task-layer.md`)
-  defined scitex-todo as the fleet's universal task layer; this ADR is
+  defined scitex-cards as the fleet's universal task layer; this ADR is
   the first concrete schema-shape decision inside that layer.
 - Cross-link forward: the full schema-validator pass will be ADR-0003
   (or similar) when `feat/task-dataclass-and-strict-validators` lands.

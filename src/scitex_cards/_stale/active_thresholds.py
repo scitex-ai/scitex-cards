@@ -45,7 +45,7 @@ __all__ = [
 #: Env override + default for the staleness threshold (hours). 2 h is
 #: tight on purpose: an in_progress/blocked card untouched for >2 h is
 #: very likely forgotten, not mid-keystroke.
-ENV_STALE_ACTIVE_HOURS = "SCITEX_TODO_STALE_ACTIVE_HOURS"
+ENV_STALE_ACTIVE_HOURS = "SCITEX_CARDS_STALE_ACTIVE_HOURS"
 DEFAULT_STALE_ACTIVE_HOURS = 2.0
 
 #: Env override + default for the EXTERNALLY-BLOCKED re-check (hours).
@@ -56,17 +56,17 @@ DEFAULT_STALE_ACTIVE_HOURS = 2.0
 #: compute job died, the operator answered elsewhere), and a card can rot for
 #: weeks behind a blocker that cleared long ago. A daily check catches that
 #: rot without the alert fatigue of the 2 h clock.
-ENV_BLOCKED_NUDGE_HOURS = "SCITEX_TODO_BLOCKED_NUDGE_HOURS"
+ENV_BLOCKED_NUDGE_HOURS = "SCITEX_CARDS_BLOCKED_NUDGE_HOURS"
 DEFAULT_BLOCKED_NUDGE_HOURS = 24.0
 
 #: Env override + default for the BACKLOG threshold (hours). 24 h is
 #: deliberately MUCH more lenient than the 2 h stale-active clock: a deferred
 #: card is work the owner consciously has not begun, so a forgotten one only
 #: becomes worth a nudge after a full day of no triage / no start.
-ENV_BACKLOG_NUDGE_HOURS = "SCITEX_TODO_BACKLOG_NUDGE_HOURS"
+ENV_BACKLOG_NUDGE_HOURS = "SCITEX_CARDS_BACKLOG_NUDGE_HOURS"
 #: Deprecated alias for the env knob. Both names are honoured (see
 #: :func:`_pending_nudge_hours`) so existing crontabs keep working.
-ENV_PENDING_NUDGE_HOURS = "SCITEX_TODO_PENDING_NUDGE_HOURS"
+ENV_PENDING_NUDGE_HOURS = "SCITEX_CARDS_PENDING_NUDGE_HOURS"
 DEFAULT_PENDING_NUDGE_HOURS = 24.0
 DEFAULT_BACKLOG_NUDGE_HOURS = DEFAULT_PENDING_NUDGE_HOURS
 
@@ -99,8 +99,8 @@ def _stale_active_hours(stale_hours: float | None) -> float:
 def _pending_nudge_hours(pending_hours: float | None) -> float:
     """Resolve the backlog threshold, honoring either env override.
 
-    ``SCITEX_TODO_BACKLOG_NUDGE_HOURS`` is the current name;
-    ``SCITEX_TODO_PENDING_NUDGE_HOURS`` still works so live crontabs written
+    ``SCITEX_CARDS_BACKLOG_NUDGE_HOURS`` is the current name;
+    ``SCITEX_CARDS_PENDING_NUDGE_HOURS`` still works so live crontabs written
     against the old name do not silently revert to the 24 h default.
     """
     if pending_hours is not None:

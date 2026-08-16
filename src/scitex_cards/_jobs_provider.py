@@ -66,13 +66,13 @@ def provide_jobs() -> list[JobSpec]:
       can grep ``systemctl --user list-units 'scitex-cards.*'`` to see
       every scitex-cards-owned unit at a glance.
 
-    These names carried the old ``scitex-todo.`` prefix until 2026-08-15.
+    These names carried the old ``scitex-cards.`` prefix until 2026-08-15.
     Changing them was safe to do outright, rather than as a staged unit
     migration, for a measured reason: NOTHING MATERIALISES THEM TODAY.
     ``ecosystem up`` runs one supervisor that spawns children — it does
     not write a unit file per JobSpec — and on both reachable hosts
     (scitex-compute-04, scitex-nas-03) no unit file matched
-    ``scitex-todo*`` and no unit file's TEXT contained ``scitex-todo``.
+    ``scitex-cards*`` and no unit file's TEXT contained ``scitex-cards``.
     So there were no old units left running under the old names, which
     is the failure this would otherwise have caused.
 
@@ -111,7 +111,7 @@ def provide_jobs() -> list[JobSpec]:
             schedule="",
             # --interval 30 (was 2): a 2s interval re-parsed the ~9 MB store
             # faster than the tick finished on a slow host and death-spiraled
-            # the fleet on 2026-07-08 (incident-todo-wake-watcher-interval2-
+            # the fleet on 2026-07-08 (incident-cards-wake-watcher-interval2-
             # spiral). The `watch` command additionally CLAMPS anything below
             # a 10s hard floor, so this value can never foot-gun again.
             command="scitex-cards watch --push --interval 30",
@@ -130,13 +130,13 @@ def provide_jobs() -> list[JobSpec]:
         # a per-agent body summary (RUNNABLE-first list + recent done)
         # via scitex-cards' self-contained HTTP push wire (`_push.deliver`),
         # plus a separate quiet-nudge if any open in_progress task has
-        # gone untouched for > SCITEX_TODO_NUDGE_QUIET_MIN minutes
+        # gone untouched for > SCITEX_CARDS_NUDGE_QUIET_MIN minutes
         # (default 10). Structural feedback loop: silence + in_progress
         # → escalation, no manual lead intervention required.
         #
         # The --nudge-quiet path ALSO runs the stale-active sweep
         # (_stale_active_nudge.sweep_and_nudge): per-OWNER nudge for
-        # in_progress/blocked cards untouched > SCITEX_TODO_STALE_ACTIVE_HOURS
+        # in_progress/blocked cards untouched > SCITEX_CARDS_STALE_ACTIVE_HOURS
         # (default 2 h) over the same push wire. Replaces the manual
         # card-freshness campaign; no new cron — it rides this */10 one.
         JobSpec(
@@ -163,8 +163,8 @@ def provide_jobs() -> list[JobSpec]:
         # diff against ci-state.json, log per-repo transitions, update
         # the cache. No bus emission, no a2a sends — SAC owns the
         # delivery side via its OWN independent poller. Two pollers,
-        # different cadences, each STANDALONE: todo down → sac still
-        # delivers; sac down → todo still records.
+        # different cadences, each STANDALONE: card down → sac still
+        # delivers; sac down → card still records.
         JobSpec(
             # NOTE: the NAME says `ci-watch` while the COMMAND says
             # `watch-ci`. Not a typo — the verb was renamed in the
@@ -181,7 +181,7 @@ def provide_jobs() -> list[JobSpec]:
             description=(
                 "scitex-cards watch-ci — record-only CI poller. Polls "
                 "the configured fleet repos every 5 min, diffs vs "
-                "~/.scitex/todo/ci-state.json, logs per-repo "
+                "~/.scitex/cards/ci-state.json, logs per-repo "
                 "transitions (newly-green / newly-red / still-pending). "
                 "Operator decoupled-pollers lane (no SAC dependency)."
             ),

@@ -63,7 +63,7 @@ def postgres_mode() -> Iterator[None]:
     exists to pin down — a fixture that rewrote the resolver instead would prove
     nothing about the deployment the bug was found in.
     """
-    keys = {"SCITEX_TODO_INBOX_BACKEND": "postgres", "SCITEX_CARDS_INBOX_DSN": _DSN}
+    keys = {"SCITEX_CARDS_INBOX_BACKEND": "postgres", "SCITEX_CARDS_INBOX_DSN": _DSN}
     before = {key: os.environ.get(key) for key in keys}
     os.environ.update(keys)
     try:

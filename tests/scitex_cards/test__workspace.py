@@ -79,7 +79,7 @@ def test_slug_shaped_identities_are_accepted(ok):
         "_acme",
         "acme.db",  # looks like a file
         "acme.yaml",
-        "base/acme/.scitex/todo/tasks.yaml",  # exactly what hub used to inject
+        "base/acme/.scitex/cards/tasks.yaml",  # exactly what hub used to inject
         "",  # empty
         "a" * 64,  # over length
     ],

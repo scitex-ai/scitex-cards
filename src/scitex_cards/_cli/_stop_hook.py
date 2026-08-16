@@ -252,7 +252,7 @@ def evaluate(
 @click.option(
     "--agent",
     default=None,
-    help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_TODO_AGENT_ID).",
+    help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
 )
 def stop_hook_cmd(agent):
     """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work."""

@@ -35,7 +35,7 @@ Design
   so the core stays unit-testable with plain list-of-dicts inputs.
 * Threshold default is :data:`DEFAULT_STALE_ACTIVE_HOURS` (2 h),
   env-overridable via :data:`ENV_STALE_ACTIVE_HOURS`. Deliberately
-  shorter than the 24 h ``SCITEX_TODO_STALE_HOURS`` used for the stats
+  shorter than the 24 h ``SCITEX_CARDS_STALE_HOURS`` used for the stats
   ``stale_count`` pill — *active* cards (in_progress / blocked) should
   move on a tighter clock than the general open backlog.
 * Timestamp parsing reuses :mod:`scitex_cards._throughput`'s lenient
@@ -95,7 +95,7 @@ STALE_ACTIVE_STATUSES = frozenset({"in_progress", "blocked"})
 #: move any of those. 12 identical nudges a day about work you are powerless
 #: to advance is not a signal, it is training to ignore the channel — and a
 #: channel that cries wolf is exactly how the REAL nudge gets missed. (Found
-#: 2026-07-12: all 8 of scitex-todo's own "stale" cards were blocked on an
+#: 2026-07-12: all 8 of scitex-cards's own "stale" cards were blocked on an
 #: external blocker; not one was actionable.)
 #:
 #: So: a card blocked on one of these is NOT owner-stale on the tight clock.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo watch-ci` — record-only CI poller (renamed from `ci-watch`).
+"""`scitex-cards watch-ci` — record-only CI poller (renamed from `ci-watch`).
 
 Lead a2a (operator decoupled-pollers override, dev msg `96afacc7`,
 2026-06-15). Tests the pure-function transition classifier, the
@@ -150,7 +150,7 @@ def test_save_state_is_atomic_tmp_then_replace(tmp_path: Path):
 def test_state_path_honors_env_override(env, tmp_path: Path):
     # Arrange
     override = tmp_path / "custom-ci-state.json"
-    env.set("SCITEX_TODO_CI_STATE", str(override))
+    env.set("SCITEX_CARDS_CI_STATE", str(override))
     # Act
     p = state_path()
     # Assert
@@ -162,12 +162,12 @@ def test_state_path_honors_env_override(env, tmp_path: Path):
 
 def test_ci_watch_dry_run_with_no_repos_configured(tmp_path: Path, env):
     # Arrange — point the state cache at tmp, leave the FE config
-    # empty (no SCITEX_TODO_FLEET_CI_REPOS, no dashboard.yaml under HOME).
-    env.set("SCITEX_TODO_CI_STATE", str(tmp_path / "ci-state.json"))
+    # empty (no SCITEX_CARDS_FLEET_CI_REPOS, no dashboard.yaml under HOME).
+    env.set("SCITEX_CARDS_CI_STATE", str(tmp_path / "ci-state.json"))
     # Force a hermetic HOME so the test doesn't pick up the operator's
-    # actual ~/.scitex/todo/dashboard.yaml.
+    # actual ~/.scitex/cards/dashboard.yaml.
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
     runner = CliRunner()
     # Act
     result = runner.invoke(main, ["watch-ci", "--once", "--dry-run"])
@@ -178,9 +178,9 @@ def test_ci_watch_dry_run_with_no_repos_configured(tmp_path: Path, env):
 
 def test_ci_watch_dry_run_summary_line_present(tmp_path: Path, env):
     # Arrange
-    env.set("SCITEX_TODO_CI_STATE", str(tmp_path / "ci-state.json"))
+    env.set("SCITEX_CARDS_CI_STATE", str(tmp_path / "ci-state.json"))
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
     runner = CliRunner()
     # Act
     result = runner.invoke(main, ["watch-ci", "--once", "--dry-run"])
@@ -192,9 +192,9 @@ def test_ci_watch_dry_run_summary_line_present(tmp_path: Path, env):
 def test_ci_watch_dry_run_does_not_write_state(tmp_path: Path, env):
     # Arrange
     state_file = tmp_path / "ci-state.json"
-    env.set("SCITEX_TODO_CI_STATE", str(state_file))
+    env.set("SCITEX_CARDS_CI_STATE", str(state_file))
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
     runner = CliRunner()
     # Act
     runner.invoke(main, ["watch-ci", "--once", "--dry-run"])

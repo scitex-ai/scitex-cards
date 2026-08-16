@@ -108,7 +108,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # Measured on develop 2026-08-12, WITH the connect-door guards of #815
     # already merged:
     #     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/…'
-    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/todo.db
+    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/cards.db
     #     and the directory tree was created under the process's CWD.
     # The guards were downstream: runtime_dir() mkdirs during PATH DERIVATION,
     # before any connect happens, so a check at the connect door cannot see it.
@@ -131,7 +131,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
         #
         # The failure was a silent SUCCESS, which is why it survived. Measured
         # 2026-08-02: enqueue(store=<DSN>) returned a notification id and left a
-        # phantom store at ``<CWD>/postgresql:/…/runtime/todo.db``. Nothing
+        # phantom store at ``<CWD>/postgresql:/…/runtime/cards.db``. Nothing
         # raised, so the fail-soft caller logged nothing, and the notification
         # was unreachable because nobody polls a directory named after a DSN.
         #

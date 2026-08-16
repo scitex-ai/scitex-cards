@@ -87,9 +87,9 @@ def warn_markers_isolated(env, tmp_path):
 @pytest.fixture
 def ci_env(env, tmp_path):
     """Empty fleet config under a tmp HOME; CI state cache in tmp."""
-    env.set("SCITEX_TODO_CI_STATE", str(tmp_path / "ci-state.json"))
+    env.set("SCITEX_CARDS_CI_STATE", str(tmp_path / "ci-state.json"))
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
 
 
 # === canonical names work ==================================================

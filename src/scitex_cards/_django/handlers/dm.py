@@ -101,7 +101,7 @@ def _write_store_of(request: HttpRequest):
     fallback existed because removing it would have dropped the hub's tenancy
     injection for a release window, and the board would then have fallen back
     to its ambient canonical store — ONE store for every tenant. That is no
-    longer the situation: scitex-hub's ``TodoBoardTenancyMiddleware`` sets
+    longer the situation: scitex-hub's ``CardsBoardTenancyMiddleware`` sets
     ``request.scitex_store`` directly (its own comment calls that the PRIMARY
     CHANNEL and marks the query injection as the legacy one to delete once
     this side stops reading it). Both halves of the migration were in place

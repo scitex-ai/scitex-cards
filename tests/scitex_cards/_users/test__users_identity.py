@@ -5,7 +5,7 @@
 Real fakes only — no mocks (Req STX-NM / PA-306). The pure
 :func:`canonical_identity` is exercised with plain ``User`` snapshots; the
 store-aware :func:`resolve_identity` round-trips against a ``tmp_path`` YAML
-store; the ``SCITEX_TODO_STRICT_IDENTITY`` env gate is flipped via
+store; the ``SCITEX_CARDS_STRICT_IDENTITY`` env gate is flipped via
 ``monkeypatch.setenv``.
 """
 

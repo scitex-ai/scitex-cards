@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""URL patterns for the scitex-todo board Django app."""
+"""URL patterns for the scitex-cards board Django app."""
 
 from django.urls import path
 

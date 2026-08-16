@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side Python API for the scitex-todo task store.
+"""Mutation-side Python API for the scitex-cards task store.
 
 THIN ORCHESTRATOR. The verbs themselves now live in focused siblings; this
 module owns the SHARED helpers they all pull on (identity resolution, the
@@ -34,7 +34,7 @@ Design constraints
   resolved by ``$SCITEX_CARDS_DB``; callers can override with an
   explicit ``store=`` path. The user-scope default
   (``~/.scitex/cards/cards.db``) covers Req 7.
-- **Shared with scopes** (Req 1): ``$SCITEX_TODO_SCOPE`` provides the
+- **Shared with scopes** (Req 1): ``$SCITEX_CARDS_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
   default and see everything.
@@ -114,16 +114,16 @@ from ._store_list import (  # noqa: F401  (re-export: preserve the public surfac
 
 #: Env var name carrying the agent's identity. Used as the default
 #: `completed_by` when :func:`complete_task` doesn't get an explicit `by=`.
-ENV_AGENT = "SCITEX_TODO_AGENT_ID"
+ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
 
 #: previous name of :data:`ENV_AGENT`. Renamed 2026-07-02. We fail LOUD (never
 #: silently honour it) if it is still set, so a stale export can't quietly
 #: mis-attribute a write — the operator must migrate to the new name.
-ENV_AGENT_DEPRECATED = "SCITEX_TODO_AGENT"
+ENV_AGENT_DEPRECATED = "SCITEX_CARDS_AGENT"
 
 
 def _reject_deprecated_agent_env() -> None:
-    """Fail loud if the old ``SCITEX_TODO_AGENT`` var is still set.
+    """Fail loud if the old ``SCITEX_CARDS_AGENT`` var is still set.
 
     No silent fallback: a leftover export of the old name is a configuration
     error the operator must fix, not something we quietly translate.
@@ -145,7 +145,7 @@ class TaskNotFoundError(KeyError):
 def _default_agent(arg: str | None) -> str:
     """Resolve an ACTOR/AUTHOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``
     (the former lenient chain): the operator mandate (constitution rule 2
     "fail fast and fail loud, NO silent fallbacks") requires completion /
@@ -168,7 +168,7 @@ def _default_agent(arg: str | None) -> str:
 def _resolve_creator_or_raise(arg: str | None) -> str:
     """Resolve a card CREATOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``:
     the operator mandate (constitution rule 2 "fail fast and fail loud, NO
     silent fallbacks") requires a card to record a REAL creator, never a blank
@@ -180,7 +180,7 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     Raises
     ------
     RuntimeError
-        When the deprecated ``$SCITEX_TODO_AGENT`` is still exported (renamed
+        When the deprecated ``$SCITEX_CARDS_AGENT`` is still exported (renamed
         away — see :func:`_reject_deprecated_agent_env`).
     TaskValidationError
         When the creator resolves to empty or the ``"unknown"`` sentinel,
@@ -190,7 +190,7 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     resolved = (arg or os.environ.get(ENV_AGENT) or "").strip()
     if not resolved or resolved == "unknown":
         raise TaskValidationError(
-            "creator unresolved — set SCITEX_TODO_AGENT_ID=<your-agent> or pass "
+            "creator unresolved — set SCITEX_CARDS_AGENT_ID=<your-agent> or pass "
             "created_by=/by= (creator+assignee are mandatory; no silent "
             "fallback to a blank/'unknown' creator; see constitution)."
         )
@@ -281,7 +281,7 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
 def resolve_store(store: str | Path | None = None) -> dict:
     """Return the resolved task store path and the precedence chain.
 
-    Mirrors the data the `scitex-todo resolve-store` CLI verb and the
+    Mirrors the data the `scitex-cards resolve-store` CLI verb and the
     `resolve_store` MCP tool emit. Keeping a Python API by the same name
     as the MCP tool satisfies audit §6 (Convention A: tool_name == api_name).
 

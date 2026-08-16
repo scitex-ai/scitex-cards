@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 #: How long an UNCHANGED digest stays suppressed before it is re-sent anyway.
 #: The floor exists so an owner who is simply stuck still gets nudged; without
 #: it, deliver-on-change would go silent forever on a frozen backlog.
-ENV_DIGEST_FLOOR_HOURS = "SCITEX_TODO_DIGEST_FLOOR_HOURS"
+ENV_DIGEST_FLOOR_HOURS = "SCITEX_CARDS_DIGEST_FLOOR_HOURS"
 DEFAULT_DIGEST_FLOOR_HOURS = 24.0
 
 

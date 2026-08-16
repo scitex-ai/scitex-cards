@@ -440,7 +440,7 @@ def touch_user(
     UNREGISTERED actor has no record to stamp — the caller decides whether
     that is tolerable; the heartbeat itself never raises for that case).
 
-    This is scitex-todo's OWN liveness signal — a local write to the local
+    This is scitex-cards's OWN liveness signal — a local write to the local
     registry, NEVER an external-runtime probe.
     """
     if not (isinstance(name_or_id, str) and name_or_id.strip()):

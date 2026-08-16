@@ -9,15 +9,15 @@ service itself — that is a deliberate human gate (mirrors the dashboard unit
 convention: ``Type=simple`` + ``Restart=on-failure`` + ``WantedBy=default.
 target``).
 
-The unit is fully STANDALONE — its ``ExecStart`` is the ``scitex-todo notifyd``
+The unit is fully STANDALONE — its ``ExecStart`` is the ``scitex-cards notifyd``
 entry point (the foreground run), with no external federation dependency.
 
 ExecStart MUST BE ABSOLUTE
 --------------------------
 systemd does not run the unit through a login shell and does not inherit the
-user's ``PATH``. A BARE ``ExecStart=scitex-todo notifyd`` therefore dies at
+user's ``PATH``. A BARE ``ExecStart=scitex-cards notifyd`` therefore dies at
 ``status=203/EXEC`` whenever the console script lives in a venv (it does:
-``~/.env-3.11/bin/scitex-todo``) — i.e. the shipped template could not start at
+``~/.env-3.11/bin/scitex-cards``) — i.e. the shipped template could not start at
 all, and the operator had to hand-patch the path before the service would run.
 :func:`resolve_exec_start` resolves the real path at GENERATION time (the
 running interpreter's own ``bin/`` first, then ``$PATH``), and RAISES rather
@@ -52,11 +52,11 @@ from .._systemd_unit import (  # noqa: F401  (re-export: import surface)
 )
 
 #: The systemd user-unit filename. Package-prefixed so the operator can grep
-#: ``systemctl --user list-units 'scitex-todo*'`` to see every owned unit.
-UNIT_NAME = "scitex-todo-notifyd.service"
+#: ``systemctl --user list-units 'scitex-cards*'`` to see every owned unit.
+UNIT_NAME = "scitex-cards-notifyd.service"
 
 #: The console script the unit must launch, and the verb it runs.
-CONSOLE_SCRIPT = "scitex-todo"
+CONSOLE_SCRIPT = "scitex-cards"
 EXEC_VERB = "notifyd"
 
 #: The notify daemon's unit. ``Type=simple`` (long-running foreground process),
@@ -69,7 +69,7 @@ EXEC_VERB = "notifyd"
 #: however it went away.
 NOTIFYD_SPEC = UnitSpec(
     unit_name=UNIT_NAME,
-    description="scitex-todo notify daemon — standalone notification-delivery loop",
+    description="scitex-cards notify daemon — standalone notification-delivery loop",
     console_script=CONSOLE_SCRIPT,
     args=(EXEC_VERB,),
     restart="on-failure",
@@ -80,7 +80,7 @@ UNIT_TEMPLATE = unit_template(NOTIFYD_SPEC)
 
 
 def console_script_path() -> Path:
-    """Absolute path to the ``scitex-todo`` console script.
+    """Absolute path to the ``scitex-cards`` console script.
 
     Prefers the RUNNING interpreter's own ``bin/`` (so a venv install writes a
     unit pointing at that venv — the common and correct case), then falls back

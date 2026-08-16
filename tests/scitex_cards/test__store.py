@@ -87,8 +87,8 @@ def test_add_task_appends_preserves_order(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -108,8 +108,8 @@ def test_add_task_appends_status(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -129,8 +129,8 @@ def test_add_task_appends_scope(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -138,7 +138,7 @@ def test_add_task_appends_scope(tmp_path):
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
-    assert b["scope"] == "agent:proj-scitex-todo"
+    assert b["scope"] == "agent:proj-scitex-cards"
 
 
 def test_add_task_appends_assignee(tmp_path):
@@ -150,8 +150,8 @@ def test_add_task_appends_assignee(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -159,7 +159,7 @@ def test_add_task_appends_assignee(tmp_path):
     # Act
     b = _model.load_tasks(store)[1]
     # Assert
-    assert b["assignee"] == "agent:proj-scitex-todo"
+    assert b["assignee"] == "agent:proj-scitex-cards"
 
 
 def test_add_task_appends_priority(tmp_path):
@@ -171,8 +171,8 @@ def test_add_task_appends_priority(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -192,8 +192,8 @@ def test_add_task_appends_parent(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -213,8 +213,8 @@ def test_add_task_appends_note(tmp_path):
         id="b",
         title="B",
         status="in_progress",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
         priority=2,
         parent="a",
         note="b is under a",
@@ -278,27 +278,27 @@ def test_add_task_accepts_project_via_extras(tmp_path):
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
     _store.add_task(
-        store, id="a", title="A", project="scitex-todo", assignee="agent:test-suite"
+        store, id="a", title="A", project="scitex-cards", assignee="agent:test-suite"
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["project"] == "scitex-todo"
+    assert on_disk["project"] == "scitex-cards"
 
 
 def test_add_task_accepts_agent_via_extras(tmp_path):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # Act
-    _store.add_task(store, id="a", title="A", agent="proj-scitex-todo")
+    _store.add_task(store, id="a", title="A", agent="proj-scitex-cards")
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["agent"] == "proj-scitex-todo"
+    assert on_disk["agent"] == "proj-scitex-cards"
 
 
 def test_add_task_accepts_pr_url_via_extras(tmp_path):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    url = "https://github.com/ywatanabe1989/scitex-todo/pull/65"
+    url = "https://github.com/ywatanabe1989/scitex-cards/pull/65"
     # Act
     _store.add_task(store, id="a", title="A", pr_url=url, assignee="agent:test-suite")
     on_disk = _model.load_tasks(store)[0]
@@ -473,7 +473,7 @@ def test_update_task_passing_none_clears_field_in_return(tmp_path):
         store,
         id="a",
         title="A",
-        scope="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
         assignee="agent:test-suite",
     )
     # Act
@@ -489,7 +489,7 @@ def test_update_task_passing_none_clears_field_on_disk(tmp_path):
         store,
         id="a",
         title="A",
-        scope="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
         assignee="agent:test-suite",
     )
     # Act
@@ -527,7 +527,7 @@ def test_update_task_empty_id_typeerror(tmp_path):
 def test_complete_task_sets_status_done(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -538,7 +538,7 @@ def test_complete_task_sets_status_done(tmp_path, env):
 def test_complete_task_stamps_completed_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -549,7 +549,7 @@ def test_complete_task_stamps_completed_by(tmp_path, env):
 def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -560,7 +560,7 @@ def test_complete_task_stamps_completed_at_z_suffix(tmp_path, env):
 def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a")
@@ -571,7 +571,7 @@ def test_complete_task_stamps_completed_at_iso_format(tmp_path, env):
 def test_complete_task_persists_completed_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
     # Act
@@ -583,7 +583,7 @@ def test_complete_task_persists_completed_by(tmp_path, env):
 def test_complete_task_persists_completed_at(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:test")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     done = _store.complete_task(store, "a")
     stamp = done["_log_meta"]["completed_at"]
@@ -596,7 +596,7 @@ def test_complete_task_persists_completed_at(tmp_path, env):
 def test_complete_task_explicit_by_overrides_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     done = _store.complete_task(store, "a", by="agent:cli")
@@ -607,10 +607,10 @@ def test_complete_task_explicit_by_overrides_env(tmp_path, env):
 def test_complete_task_is_idempotent_timestamp(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:first")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     first = _store.complete_task(store, "a")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:second")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:second")
     # Act
     second = _store.complete_task(store, "a")
     # Assert
@@ -620,10 +620,10 @@ def test_complete_task_is_idempotent_timestamp(tmp_path, env):
 def test_complete_task_is_idempotent_preserves_original_by(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:first")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:first")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     _store.complete_task(store, "a")
-    env.set("SCITEX_TODO_AGENT_ID", "agent:second")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:second")
     # Act
     second = _store.complete_task(store, "a")
     # Assert
@@ -654,8 +654,8 @@ def populated_store(tmp_path):
         store,
         id="b",
         title="B",
-        scope="agent:proj-scitex-todo",
-        assignee="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
+        assignee="agent:proj-scitex-cards",
     )
     _store.add_task(
         store, id="c", title="C", status="done", assignee="agent:test-suite"
@@ -664,7 +664,7 @@ def populated_store(tmp_path):
         store,
         id="d",
         title="D",
-        scope="agent:proj-scitex-todo",
+        scope="agent:proj-scitex-cards",
         status="in_progress",
         assignee="agent:test-suite",
     )
@@ -684,7 +684,7 @@ def test_list_tasks_filters_by_scope(populated_store):
     # Arrange
     store = populated_store
     # Act
-    rows = _store.list_tasks(store, scope="agent:proj-scitex-todo")
+    rows = _store.list_tasks(store, scope="agent:proj-scitex-cards")
     # Assert
     assert {r["id"] for r in rows} == {"b", "d"}
 
@@ -693,7 +693,7 @@ def test_list_tasks_filters_by_assignee(populated_store):
     # Arrange
     store = populated_store
     # Act
-    rows = _store.list_tasks(store, scope="", assignee="agent:proj-scitex-todo")
+    rows = _store.list_tasks(store, scope="", assignee="agent:proj-scitex-cards")
     # Assert
     assert {r["id"] for r in rows} == {"b"}
 
@@ -710,7 +710,7 @@ def test_list_tasks_filters_by_status(populated_store):
 def test_list_tasks_env_scope_is_default(populated_store, env):
     # Arrange
     store = populated_store
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
     # Act
     rows = _store.list_tasks(store)
     # Assert
@@ -720,7 +720,7 @@ def test_list_tasks_env_scope_is_default(populated_store, env):
 def test_list_tasks_explicit_empty_string_overrides_env(populated_store, env):
     # Arrange
     store = populated_store
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
     # Act
     rows = _store.list_tasks(store, scope="")
     # Assert
@@ -977,7 +977,7 @@ def test_summary_by_scope_proj_count(populated_store):
     # Act
     info = _store.summarize_tasks(store, scope="")
     # Assert
-    assert info["by_scope"]["agent:proj-scitex-todo"] == 2
+    assert info["by_scope"]["agent:proj-scitex-cards"] == 2
 
 
 def test_summary_by_scope_empty_count(populated_store):
@@ -995,7 +995,7 @@ def test_summary_by_assignee_proj_count(populated_store):
     # Act
     info = _store.summarize_tasks(store, scope="")
     # Assert
-    assert info["by_assignee"]["agent:proj-scitex-todo"] == 1
+    assert info["by_assignee"]["agent:proj-scitex-cards"] == 1
 
 
 #: Assignee is now MANDATORY (no card can have an empty assignee via
@@ -1025,7 +1025,7 @@ def test_summary_respects_scope_filter_total(populated_store):
     # Arrange
     store = populated_store
     # Act
-    info = _store.summarize_tasks(store, scope="agent:proj-scitex-todo")
+    info = _store.summarize_tasks(store, scope="agent:proj-scitex-cards")
     # Assert
     assert info["total"] == 2
 
@@ -1034,7 +1034,7 @@ def test_summary_respects_scope_filter_deferred(populated_store):
     # Arrange
     store = populated_store
     # Act
-    info = _store.summarize_tasks(store, scope="agent:proj-scitex-todo")
+    info = _store.summarize_tasks(store, scope="agent:proj-scitex-cards")
     # Assert
     assert info["by_status"]["deferred"] == 1
 
@@ -1043,7 +1043,7 @@ def test_summary_respects_scope_filter_in_progress(populated_store):
     # Arrange
     store = populated_store
     # Act
-    info = _store.summarize_tasks(store, scope="agent:proj-scitex-todo")
+    info = _store.summarize_tasks(store, scope="agent:proj-scitex-cards")
     # Assert
     assert info["by_status"]["in_progress"] == 1
 
@@ -1178,10 +1178,10 @@ def test_add_task_stores_created_by_explicit(tmp_path):
 def test_add_task_returns_created_by_from_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     # Act
     inserted = _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
-    # Assert — no explicit author resolves from $SCITEX_TODO_AGENT_ID, the
+    # Assert — no explicit author resolves from $SCITEX_CARDS_AGENT_ID, the
     # same chain comment authorship uses.
     assert inserted["created_by"] == "agent:fromenv"
 
@@ -1189,7 +1189,7 @@ def test_add_task_returns_created_by_from_env(tmp_path, env):
 def test_add_task_defaults_created_by_from_env(tmp_path, env):
     # Arrange
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
-    env.set("SCITEX_TODO_AGENT_ID", "agent:fromenv")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:fromenv")
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
     # Act
     on_disk = _model.load_tasks(store)

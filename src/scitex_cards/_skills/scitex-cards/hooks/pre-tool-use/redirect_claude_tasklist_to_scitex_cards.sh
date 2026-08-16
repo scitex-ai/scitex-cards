@@ -1,16 +1,16 @@
 #!/bin/bash
 # -*- coding: utf-8 -*-
-# Timestamp: "2026-06-14 (proj-scitex-todo)"
-# File: src/scitex_cards/_skills/scitex-todo/hooks/pre-tool-use/redirect_claude_tasklist_to_scitex_cards.sh
+# Timestamp: "2026-06-14 (proj-scitex-cards)"
+# File: src/scitex_cards/_skills/scitex-cards/hooks/pre-tool-use/redirect_claude_tasklist_to_scitex_cards.sh
 #
 # Description: PreToolUse hook — when ANY Claude-Code agent calls the
 # built-in `TaskCreate` / `TaskUpdate` / `TaskList` tool, BLOCK the call
-# and instruct the agent to use scitex-todo's shared YAML store
+# and instruct the agent to use scitex-cards's shared YAML store
 # instead. Realizes the operator's single-shared-store doctrine
-# (op-12038): fleet tasks live in scitex-todo, NOT in Claude's
+# (op-12038): fleet tasks live in scitex-cards, NOT in Claude's
 # per-session list.
 #
-# Install: drop into ~/.claude/hooks/pre-tool-use/ (the `scitex-todo
+# Install: drop into ~/.claude/hooks/pre-tool-use/ (the `scitex-cards
 # skills install` verb symlinks the whole skill tree, so this hook
 # ships with the bundle automatically).
 #

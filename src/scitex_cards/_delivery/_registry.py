@@ -33,11 +33,6 @@ logger = logging.getLogger(__name__)
 #: Entry-point group external + built-in channel providers register under.
 ENTRY_POINT_GROUP = "scitex_cards.delivery_channels"
 
-#: Pre-rename group name (package renamed 2026-07-16). External channels
-#: registered under the old group stay discoverable until they re-release;
-#: drop together with the ``scitex_todo`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_todo.delivery_channels"
-
 
 def _iter_entry_points(group: str):
     """Yield entry points for ``group`` (Python 3.9+ compatible)."""
@@ -57,7 +52,7 @@ def _warn(msg: str) -> None:
     silently stops receiving notifications.
     """
     logger.warning("%s", msg)
-    print(f"[scitex-todo delivery] WARNING: {msg}", file=sys.stderr)
+    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
 
 
 def _load_entry_point_channels() -> list[tuple[str, DeliveryChannel]]:
@@ -68,10 +63,7 @@ def _load_entry_point_channels() -> list[tuple[str, DeliveryChannel]]:
     broken package never wedges discovery of the rest.
     """
     out: list[tuple[str, DeliveryChannel]] = []
-    eps = [
-        *_iter_entry_points(ENTRY_POINT_GROUP),
-        *_iter_entry_points(LEGACY_ENTRY_POINT_GROUP),
-    ]
+    eps = list(_iter_entry_points(ENTRY_POINT_GROUP))
     for ep in eps:
         ep_name = getattr(ep, "name", "?")
         try:

@@ -9,7 +9,7 @@ Measured on develop with #815 already merged:
 
     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/scitex_cards'
     inbox_db_path()
-      -> postgresql:/scitex_cards@127.0.0.1:55432/runtime/todo.db
+      -> postgresql:/scitex_cards@127.0.0.1:55432/runtime/cards.db
     and the directory tree was CREATED under the process's working directory.
 
 The inbox rail never reaches either guarded door. It calls
@@ -53,7 +53,9 @@ MALFORMED = [
     "127.0.0.1:55432",
 ]
 
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 @pytest.fixture()

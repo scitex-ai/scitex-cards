@@ -41,9 +41,9 @@ is closed-on-evidence the next time the pass runs, NOT closed-by-luck.
 ## Python API equivalent
 
 ```python
-import scitex_cards as todo
+import scitex_cards as card
 
-todo.update_task(
+card.update_task(
     task_id="<card-id>",
     pr_url="https://github.com/<org>/<repo>/pull/<N>",
     status="done",

@@ -1,7 +1,7 @@
-scitex_todo — Python API
+scitex_cards — Python API
 =========================
 
-.. automodule:: scitex_todo
+.. automodule:: scitex_cards
    :members:
    :undoc-members:
    :show-inheritance:

@@ -49,7 +49,7 @@ def rig(tmp_path, env):
     for a DIFFERENT store, and refuses. Pinning them to the same path makes the
     round trips land. The rig starts empty because the bootstrapped DB is empty.
     """
-    env.set("SCITEX_TODO_AGENT_ID", "rpc-tester")
+    env.set("SCITEX_CARDS_AGENT_ID", "rpc-tester")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     tokens_dir = tmp_path / "tokens"
     audit_path = tmp_path / "logs" / "hub_access.jsonl"

@@ -33,7 +33,7 @@ never confirmed stays visible forever instead of vanishing.
 
 WHY THIS MATTERS (the incident, 2026-07-29)
 -------------------------------------------
-An agent's spec allowlisted ``server:scitex-todo`` while ``.mcp.json`` registers
+An agent's spec allowlisted ``server:scitex-cards`` while ``.mcp.json`` registers
 this server as ``scitex-cards``. Every push was discarded on arrival; the drain
 ack'd on ``send()`` returning; 228 rows were enqueued and consumed, ZERO unseen.
 Weeks of operator DMs were destroyed with every check green. With a receipt on
@@ -108,7 +108,7 @@ def _existing_columns(conn: sqlite3.Connection) -> set[str]:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Add the receipt columns if this DB predates them. Idempotent + racy-safe.
 
-    ~21 agents share one ``todo.db``; two of them can reach the ``ALTER`` at the
+    ~21 agents share one ``cards.db``; two of them can reach the ``ALTER`` at the
     same instant and the loser sees ``duplicate column name``. That is the
     winner having done our job, not a failure, so it is swallowed — anything
     else and a health check could take down a drain.
@@ -224,7 +224,7 @@ def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# File backend (break-glass, SCITEX_TODO_INBOX_BACKEND=yaml)                   #
+# File backend (break-glass, SCITEX_CARDS_INBOX_BACKEND=yaml)                   #
 # --------------------------------------------------------------------------- #
 def _file_stamp(
     recipient_id: str,

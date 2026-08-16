@@ -141,7 +141,7 @@ test("parseSearchQuery: known qualifier (project alias)", () => {
 });
 
 test("parseSearchQuery: repo alias collapses to project canonical", () => {
-  const p = parseSearchQuery("repo:scitex-todo");
+  const p = parseSearchQuery("repo:scitex-cards");
   assert.equal(p.qualifiers[0].canonical, "project");
   assert.equal(p.hints[0].label, "project");
 });

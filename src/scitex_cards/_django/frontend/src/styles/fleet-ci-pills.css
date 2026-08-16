@@ -8,14 +8,14 @@
  *     marker and the back-end error message is in the tooltip.
  *
  * All colors come from scitex-ui design tokens declared on the board
- * root (see board.css `.stx-todo-board`):
+ * root (see board.css `.stx-cards-board`):
  *   --status-success / --status-error / --status-warning / --text-muted
  *   plus board-local --stx-text / --stx-text-muted / --stx-border /
  *   --stx-panel-bg / --stx-danger.
  * No literal hex codes here — that would break dark/light theming.
  */
 
-.stx-todo-fleet-ci {
+.stx-cards-fleet-ci {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -23,13 +23,13 @@
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-.stx-todo-fleet-ci--note {
+.stx-cards-fleet-ci--note {
   font-size: 0.75rem;
   color: var(--stx-text-muted);
   font-style: italic;
 }
 
-.stx-todo-fleet-ci--loading {
+.stx-cards-fleet-ci--loading {
   /* Reserve a tiny placeholder so the toolbar doesn't reflow on first
    * paint while the initial fetch is in flight. */
   display: inline-block;
@@ -37,7 +37,7 @@
   height: 1em;
 }
 
-.stx-todo-fleet-ci__pill {
+.stx-cards-fleet-ci__pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -53,55 +53,55 @@
   transition: border-color 120ms ease;
 }
 
-.stx-todo-fleet-ci__name {
+.stx-cards-fleet-ci__name {
   font-weight: 500;
 }
 
-.stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__dot {
   display: inline-block;
   font-size: 0.85rem;
   line-height: 1;
 }
 
 /* ── success (green) ────────────────────────────────────────────────── */
-.stx-todo-fleet-ci__pill--success .stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__pill--success .stx-cards-fleet-ci__dot {
   color: var(--status-success);
 }
-.stx-todo-fleet-ci__pill--success {
+.stx-cards-fleet-ci__pill--success {
   border-color: var(--status-success);
 }
 
 /* ── failure (red) ──────────────────────────────────────────────────── */
-.stx-todo-fleet-ci__pill--failure .stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__pill--failure .stx-cards-fleet-ci__dot {
   color: var(--status-error);
 }
-.stx-todo-fleet-ci__pill--failure {
+.stx-cards-fleet-ci__pill--failure {
   border-color: var(--status-error);
 }
 
 /* ── pending (amber) ────────────────────────────────────────────────── */
-.stx-todo-fleet-ci__pill--pending .stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__pill--pending .stx-cards-fleet-ci__dot {
   color: var(--status-warning);
 }
-.stx-todo-fleet-ci__pill--pending {
+.stx-cards-fleet-ci__pill--pending {
   border-color: var(--status-warning);
 }
 
 /* ── unknown (grey) ─────────────────────────────────────────────────── */
-.stx-todo-fleet-ci__pill--unknown .stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__pill--unknown .stx-cards-fleet-ci__dot {
   color: var(--stx-text-muted);
 }
-.stx-todo-fleet-ci__pill--unknown {
+.stx-cards-fleet-ci__pill--unknown {
   border-color: var(--stx-border);
 }
 
 /* ── per-repo adapter error: muted text + red ring + ``!`` marker ──── */
-.stx-todo-fleet-ci__pill--error {
+.stx-cards-fleet-ci__pill--error {
   color: var(--stx-text-muted);
   border-color: var(--stx-danger);
   box-shadow: 0 0 0 1px var(--stx-danger);
 }
-.stx-todo-fleet-ci__pill--error .stx-todo-fleet-ci__dot {
+.stx-cards-fleet-ci__pill--error .stx-cards-fleet-ci__dot {
   color: var(--stx-danger);
   font-weight: 700;
 }

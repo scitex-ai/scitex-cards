@@ -47,7 +47,7 @@ GITIGNORED/
 # A directory literally named `postgresql:` — created when a connection DSN
 # was passed somewhere a filesystem path was expected, so the driver made
 # `postgresql:/scitex_cards@127.0.0.1:5432/` on disk and wrote a lock and a
-# todo.db into it. It is the artifact of a bug, never source. Root-anchored
+# store DB into it. It is the artifact of a bug, never source. Root-anchored
 # so the odd name cannot match anything nested.
 /postgresql:/
 
@@ -63,7 +63,7 @@ tasks.png
 # Sphinx build output (RTD builds from source; local HTML is throwaway).
 docs/sphinx/_build/
 
-# scitex-todo local state: ignore everything under .scitex/ except the
+# scitex-cards local state: ignore everything under .scitex/ except the
 # tracked dev/config.yaml (audit whitelist) and the runtime seed files.
 .scitex/*
 !.scitex/dev/
@@ -74,11 +74,15 @@ docs/sphinx/_build/
 # from `.scitex/dev/cli-audit-dict.yaml`. The file must be tracked so
 # CI sees the same whitelist as local — gitignore exception added.
 !.scitex/dev/cli-audit-dict.yaml
-# Track the todo runtime dir's seed files; ignore its actual contents.
-!.scitex/todo/
-.scitex/todo/*
-!.scitex/todo/runtime/
-.scitex/todo/runtime/*
-!.scitex/todo/runtime/.gitkeep
-!.scitex/todo/runtime/README.md
+# Track the cards runtime dir's seed files; ignore its actual contents.
+# These paths named the PRE-RENAME directory until 2026-08-16, while the
+# runtime itself moved to `.scitex/cards/` — so `.scitex/*` swallowed the
+# whole live directory and the seed files below were tracked only because
+# they predated the move. Anything added there since was silently ignored.
+!.scitex/cards/
+.scitex/cards/*
+!.scitex/cards/runtime/
+.scitex/cards/runtime/*
+!.scitex/cards/runtime/.gitkeep
+!.scitex/cards/runtime/README.md
 .peer-repos/

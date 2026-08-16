@@ -3,8 +3,8 @@ CLI Reference
 
 .. code-block:: bash
 
-    scitex-todo --help
-    scitex-todo --help-recursive    # flattened help for every subcommand
+    scitex-cards --help
+    scitex-cards --help-recursive    # flattened help for every subcommand
 
 .. list-table::
    :header-rows: 1
@@ -35,7 +35,7 @@ Universal flags
 - ``-h``, ``--help`` — usage with an example (every command).
 - ``--help-recursive`` — flatten help for all subcommands (top level).
 - ``--json`` — machine-readable output on every data-reading command.
-- ``-V``, ``--version`` — print ``scitex-todo/X.Y.Z``.
+- ``-V``, ``--version`` — print ``scitex-cards/X.Y.Z``.
 
 Every command resolves the store the same way, and there is ONE store identity:
 ``--store`` → ``$SCITEX_CARDS_DB`` (PostgreSQL on 55432). Nothing else — unset

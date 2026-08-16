@@ -4,7 +4,7 @@
 
 This file used to be the S1 dual-write mirror's test suite: a whole feature
 that mirrored every card write into SQLite while YAML stayed canonical, gated
-by ``SCITEX_TODO_DUAL_WRITE``. That feature is DELETED — not defaulted off —
+by a dual-write toggle. That feature is DELETED — not defaulted off —
 per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
 ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:
 ``cards.db`` carried a stale ``schema_meta`` row pointing at an old YAML file,
@@ -98,18 +98,17 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(env, tmp_path):
     # legacy flags are set BEFORE that bootstrap too, to prove they influence
     # neither step.
     env.set("SCITEX_CARDS_DUAL_WRITE", "1")
-    env.set("SCITEX_TODO_DUAL_WRITE", "1")
     store = tmp_path / "tasks.yaml"
     db = tmp_path / "cards.db"
     env.set(ENV_DB, str(db))
     _store_backend.write_doc_to_db({"tasks": []}, store)
 
-    # Act — the legacy dual-write env vars stay set for the actual write too.
+    # Act — the legacy dual-write env var stays set for the actual write too.
     _store.add_task(store, id="a", title="A", assignee="agent:test-suite")
 
     # Assert
     assert _db_ids(db) == {"a"}, (
-        "a write with the legacy dual-write env vars set must still reach "
+        "a write with the legacy dual-write env var set must still reach "
         "the canonical database — there is no other place left for it to go"
     )
 

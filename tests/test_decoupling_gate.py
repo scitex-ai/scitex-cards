@@ -20,7 +20,7 @@ Two layers, because each catches what the other cannot:
 
 The runtime probe deliberately does NOT assert "no forbidden module is in
 ``sys.modules``". A port PROVIDER loading is the design succeeding, not
-failing: sac registers a handler into our ``scitex_todo.hooks`` group, so a
+failing: sac registers a handler into our ``scitex_cards.hooks`` group, so a
 write legitimately imports ``scitex_agent_container`` via ``ep.load()``. The
 arrow still points at us — we never name it. Asserting on ``sys.modules``
 flagged that as a violation and failed on correct code (2026-07-22).
@@ -42,7 +42,7 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "scitex_cards"
 
-#: Root module names scitex-cards must NEVER import. ``scitex_todo`` is
+#: Root module names scitex-cards must NEVER import. ``scitex_cards`` is
 #: deliberately absent: that is our own shim, not a foreign package.
 FORBIDDEN_ROOTS = {
     "scitex_agent_container",
@@ -134,12 +134,11 @@ def _forbidden_hook_entry_points():
     """
     from scitex_cards._hooks._plugins import (
         ENTRY_POINT_GROUP,
-        LEGACY_ENTRY_POINT_GROUP,
     )
 
     eps = importlib.metadata.entry_points()
     found = []
-    for group in (ENTRY_POINT_GROUP, LEGACY_ENTRY_POINT_GROUP):
+    for group in (ENTRY_POINT_GROUP,):
         for ep in eps.select(group=group):
             if ep.value.split(".")[0].split(":")[0] in FORBIDDEN_ROOTS:
                 found.append(ep)
@@ -211,7 +210,7 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     WHY THIS, AND NOT "no forbidden module is in ``sys.modules``" (the shape
     this test had until 2026-07-22): that assertion measured the wrong thing
     and failed on correct code. ``sac`` registers a card-event delivery
-    handler into our ``scitex_todo.hooks`` entry-point group, so the FIRST
+    handler into our ``scitex_cards.hooks`` entry-point group, so the FIRST
     write loads ``scitex_agent_container`` through ``ep.load()`` — the PORTS
     mechanism working exactly as designed, with the dependency arrow still
     pointing at us (we never name sac; the AST scan above proves that, and it
@@ -231,11 +230,10 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     # that reason: add_task resolves its creator from the env).
     #
     # BOTH identity variables, because ``_env_compat`` gives the
-    # ``SCITEX_CARDS_*`` name precedence: pinning only the ``SCITEX_TODO_*``
+    # ``SCITEX_CARDS_*`` name precedence: pinning only the ``SCITEX_CARDS_*``
     # one leaves the test reading the runner's real agent id whenever
     # ``SCITEX_CARDS_AGENT_ID`` is exported — which it is for every agent in
     # this fleet, so the pin was silently inert exactly where it was needed.
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "decoupling-gate-test")
     monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
@@ -297,7 +295,6 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
     """
     # Arrange
     provided = forbidden_port_providers
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "decoupling-gate-test")
     monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store

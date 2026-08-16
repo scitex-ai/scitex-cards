@@ -97,7 +97,7 @@ def _rollup(path, by, since, fmt):
     computed the rollup ABOVE the guard (the lock only wrapped the push at
     the end), so two overlapping ``--notify`` ticks BOTH parsed the store
     concurrently at ~46 %/~30 % CPU with NO "skipping" log. See
-    incident-todo-wake-watcher-interval2-spiral-20260708.
+    incident-cards-wake-watcher-interval2-spiral-20260708.
     """
     tasks = load_tasks(path)
     rows = aggregate(tasks, by=by, since=since)
@@ -110,7 +110,7 @@ def _rollup(path, by, since, fmt):
 # — renaming is a breaking change requiring the 3-phase deprecation
 # ladder (doctrine 11_deprecation.md: Warn+forward -> Error -> Removed),
 # out of scope for the mechanical §4b CliHelp migration this pass made.
-# TODO(Phase-W): introduce `show-stats` as the canonical name, register
+# CARD(Phase-W): introduce `show-stats` as the canonical name, register
 # `print-stats` as a hidden warn-forward alias via
 # scitex_dev._ecosystem.click_compat.deprecated_alias() once that
 # helper ships, then retire `print-stats` in a later minor per the
@@ -175,7 +175,7 @@ def _rollup(path, by, since, fmt):
     is_flag=True,
     help=(
         "Per-agent structural nudge: if the agent has open in_progress "
-        "tasks AND no recent activity within SCITEX_TODO_NUDGE_QUIET_MIN "
+        "tasks AND no recent activity within SCITEX_CARDS_NUDGE_QUIET_MIN "
         "(default 10 minutes), push an additional nudge body. Designed "
         "for the hourly / 10-min cron entry — operator's standing "
         "direction is that 'silence + in_progress = escalation', not "
@@ -215,7 +215,7 @@ def stats_cmd(
         # the push at the END — the rollup ABOVE it still ran concurrently
         # (~46 %/~30 % CPU, no "skipping" log). The lock must wrap the ENTIRE
         # path (parse + rollup + push); if already held, skip WITHOUT parsing
-        # the store at all. See incident-todo-wake-watcher-interval2-spiral-
+        # the store at all. See incident-cards-wake-watcher-interval2-spiral-
         # 20260708 (analogue of #344 wake-watcher spiral / #345 drain spin).
         from .._singleflight import notify_lock_path, single_instance
 
@@ -241,13 +241,13 @@ def stats_cmd(
                     click.echo(f"  {wire:>6}  {r.name}  ({len(body)} chars)")
             if nudge_quiet:
                 click.echo("")
-                click.echo("# Quiet-nudge sweep (SCITEX_TODO_NUDGE_QUIET_MIN)")
+                click.echo("# Quiet-nudge sweep (SCITEX_CARDS_NUDGE_QUIET_MIN)")
                 _emit_quiet_nudges(tasks, rows)
                 click.echo("")
                 click.echo(
                     "# Stale-active + pending-backlog sweep "
-                    "(SCITEX_TODO_STALE_ACTIVE_HOURS / "
-                    "SCITEX_TODO_PENDING_NUDGE_HOURS)"
+                    "(SCITEX_CARDS_STALE_ACTIVE_HOURS / "
+                    "SCITEX_CARDS_PENDING_NUDGE_HOURS)"
                 )
                 _emit_stale_active_nudges(tasks, path)
         return
@@ -269,7 +269,7 @@ def _emit_quiet_nudges(tasks: list[dict], rows: list) -> None:
     """Per-agent structural nudge (PR (h) — lead a2a `19d575415a` +
     revision `9e710ab0` 2026-06-12). For each agent lane, if any
     in_progress task has not been touched in
-    ``SCITEX_TODO_NUDGE_QUIET_MIN`` minutes (default 10), push a
+    ``SCITEX_CARDS_NUDGE_QUIET_MIN`` minutes (default 10), push a
     nudge body via :func:`scitex_cards._push.deliver`.
 
     Why per-task quiet check (rather than per-agent-only)? Because a
@@ -283,7 +283,7 @@ def _emit_quiet_nudges(tasks: list[dict], rows: list) -> None:
 
     from .._push import deliver
 
-    quiet_min = float(os.environ.get("SCITEX_TODO_NUDGE_QUIET_MIN", "10"))
+    quiet_min = float(os.environ.get("SCITEX_CARDS_NUDGE_QUIET_MIN", "10"))
     quiet_seconds = quiet_min * 60.0
 
     by_agent: dict[str, list[dict]] = {}

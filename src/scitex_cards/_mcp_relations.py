@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo MCP tools — the card-RELATIONSHIP cluster.
+"""scitex-cards MCP tools — the card-RELATIONSHIP cluster.
 
 Extracted from the budget-bound :mod:`scitex_cards._mcp_server` (the split its
 ``TOOL_NAMES`` block had queued), following the same pattern as

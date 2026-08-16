@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Canonical task model + loader/validator/writer for scitex-todo.
+"""Canonical task model + loader/validator/writer for scitex-cards.
 
 The task store is the SQLite database; this module models it as a
 top-level ``tasks:`` list for the validation + adapter layers built on

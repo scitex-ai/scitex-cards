@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the scitex-todo board Django views (real requests, no mocks).
+"""Tests for the scitex-cards board Django views (real requests, no mocks).
 
 Uses Django's RequestFactory against a real tmp_path task store passed via the
 ``?store=`` query param, so handlers exercise the real ``load_tasks`` /

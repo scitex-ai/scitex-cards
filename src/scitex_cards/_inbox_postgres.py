@@ -5,7 +5,7 @@
 
 The bug this exists to fix
 --------------------------
-The inbox was a PER-HOST SQLite file at ``<store_dir>/runtime/todo.db``.
+The inbox was a PER-HOST SQLite file at ``<store_dir>/runtime/cards.db``.
 Measured 2026-08-09, the same logical inbox on two machines::
 
     laptop      4901 rows, 1981 unseen, 130 recipients
@@ -64,7 +64,6 @@ __all__ = ["ack", "enqueue", "poll_inbox", "resolve_dsn"]
 #: for the case where they genuinely differ.
 _ENV_INBOX_DSN: Final[str] = "SCITEX_CARDS_INBOX_DSN"
 _ENV_STORE: Final[str] = "SCITEX_CARDS_DB"
-_ENV_STORE_LEGACY: Final[str] = "SCITEX_TODO_DB"
 
 #: Table/column/ordering names come from the shared shape, NOT from
 #: constants here. `_inbox_shape` already measured why the three travel
@@ -96,7 +95,7 @@ def resolve_dsn(store: "str | Path | None" = None) -> str:
         text = str(store)
         if text.startswith(("postgres://", "postgresql://")):
             return text
-    for name in (_ENV_INBOX_DSN, _ENV_STORE, _ENV_STORE_LEGACY):
+    for name in (_ENV_INBOX_DSN, _ENV_STORE):
         value = (os.environ.get(name) or "").strip()
         if value.startswith(("postgres://", "postgresql://")):
             return value
@@ -104,10 +103,9 @@ def resolve_dsn(store: "str | Path | None" = None) -> str:
         "The Postgres inbox backend is selected but no DSN was found.\n"
         "\n"
         f"Looked at: store argument, ${_ENV_INBOX_DSN}, ${_ENV_STORE}, "
-        f"${_ENV_STORE_LEGACY}.\n"
         "\n"
         "Set one to a 'postgresql://...' URL, or select another backend "
-        "with SCITEX_TODO_INBOX_BACKEND=sqlite. This does NOT fall back to "
+        "with SCITEX_CARDS_INBOX_BACKEND=sqlite. This does NOT fall back to "
         "a local file on its own: a private inbox nobody else can read is "
         "the exact failure this backend was written to remove."
     )
@@ -122,7 +120,7 @@ def _connect(store: "str | Path | None"):
         raise InboxUnavailableError(
             "The Postgres inbox backend needs the 'psycopg' driver, which is "
             f"not installed ({exc}). Install psycopg[binary], or select "
-            "another backend with SCITEX_TODO_INBOX_BACKEND=sqlite."
+            "another backend with SCITEX_CARDS_INBOX_BACKEND=sqlite."
         ) from None
     try:
         return psycopg.connect(dsn, autocommit=False)

@@ -149,7 +149,6 @@ def test_add_task_succeeds_against_an_existing_store(tmp_path, env):
     import scitex_cards
     from scitex_cards._db import connect, init_schema, resolve_db_path
 
-    env.delete("SCITEX_TODO_DB")
     env.set("SCITEX_DIR", str(tmp_path / "scitex"))
     env.set(ENV_DB, str(tmp_path / "scitex" / "cards" / "cards.db"))
 
@@ -191,7 +190,6 @@ def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
     import scitex_cards
 
     env.delete(ENV_DB)
-    env.delete("SCITEX_TODO_DB")
     env.set("SCITEX_DIR", str(tmp_path / "scitex"))
     would_be = tmp_path / "scitex" / "cards" / "cards.db"
 

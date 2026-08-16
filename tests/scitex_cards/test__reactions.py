@@ -31,7 +31,7 @@ THREAD = "dm:agent-x::operator"
 @pytest.fixture()
 def store(tmp_path: Path, env) -> Path:
     """A real tmp task store; the reaction sidecar lands next to it."""
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     path = tmp_path / "tasks.yaml"
     path.write_text("tasks: []\n", encoding="utf-8")
     return path

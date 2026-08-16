@@ -10,16 +10,16 @@
 # token labelled "unknown" by §1d would emit a violation pointing here.
 
 intransitive_verbs:
-  # `scitex-todo next` — prints the next runnable task for an agent.
+  # `scitex-cards next` — prints the next runnable task for an agent.
   # Lead a2a `fb413fb038da49d1b18262b237385c33` (2026-06-12, PR #110
   # fix-forward): "next" is a temporal adverb in English and the
   # default Moby POS classifier rejects it as a verb. We whitelist it
-  # because `scitex-todo next` matches the established `git next` /
+  # because `scitex-cards next` matches the established `git next` /
   # `task next` pattern operators already expect — rename would be
   # worse UX.
   - next
 
-  # ── scitex-todo CLI leaf-verbs the Moby POS classifier rejects ──────────
+  # ── scitex-cards CLI leaf-verbs the Moby POS classifier rejects ──────────
   # Each is an intransitive verb / verb-phrase in THIS CLI's context (an
   # agent ACTS): "watch CI", "comment on a card", "close a task", "list the
   # runnable/blocked tasks". Whitelisted via the §1/§1d escape hatch the
@@ -27,19 +27,19 @@ intransitive_verbs:
   # are established + operator-facing and a rename would be worse UX.
   # (`summary`/`manifest` are the most noun-like — flagged for the operator
   # in the PR as optional future renames; whitelisted for now to green CI.)
-  - runnable   # `scitex-todo runnable` — list dispatchable tasks
-  - blocked    # `scitex-todo blocked`  — list non-dispatchable tasks + reason
-  - ci-watch   # `scitex-todo ci-watch` — poll GitHub CI (decoupled poller)
-  - comment    # `scitex-todo comment`  — append a comment to a card
-  - close      # `scitex-todo close`    — close / resolve a task
-  - watch      # `scitex-todo watch`    — follow board changes live
-  - summary    # `scitex-todo summary`  — print a task-state summary
-  - manifest   # `scitex-todo skills manifest` — emit the skills manifest
+  - runnable   # `scitex-cards runnable` — list dispatchable tasks
+  - blocked    # `scitex-cards blocked`  — list non-dispatchable tasks + reason
+  - ci-watch   # `scitex-cards ci-watch` — poll GitHub CI (decoupled poller)
+  - comment    # `scitex-cards comment`  — append a comment to a card
+  - close      # `scitex-cards close`    — close / resolve a task
+  - watch      # `scitex-cards watch`    — follow board changes live
+  - summary    # `scitex-cards summary`  — print a task-state summary
+  - manifest   # `scitex-cards skills manifest` — emit the skills manifest
 
 # §1f verb-synonym opt-outs. Every entry needs an inline `# why` — see
 # doctrine 07_audit-cli.md / 06_noun-verb-catalog.md.
 verb_exceptions:
-  - resolve  # why: `scitex-todo resolve-store` means "figure out which
+  - resolve  # why: `scitex-cards resolve-store` means "figure out which
              # config file path wins" (store-path precedence-chain
              # resolution — the debugging tool for "why is my task not
              # showing up"), NOT "close a task with a resolution". The

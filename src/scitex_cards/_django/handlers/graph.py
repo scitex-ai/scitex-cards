@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Graph + tasks handlers: thin adapters over the scitex-todo Python API.
+"""Graph + tasks handlers: thin adapters over the scitex-cards Python API.
 
 Zero task logic here — everything delegates to ``scitex_cards``: the store is
 resolved + loaded by ``services.get_board`` (which calls ``resolve_tasks_path``
@@ -176,7 +176,7 @@ def _build_graph(board) -> dict:
             "last_activity": t.get("last_activity"),
             "pr_url": t.get("pr_url"),
             "issue_url": t.get("issue_url"),
-            # USER-role fields (scitex-todo's entity is the USER;
+            # USER-role fields (scitex-cards's entity is the USER;
             # an agent is just user.kind=agent). The detail drawer renders
             # a ROLES section from these. `created_by` is the creating user
             # (absent on legacy rows — FE falls back to the earliest comment
@@ -262,7 +262,7 @@ def _build_graph(board) -> dict:
         # Fleet liveness — per-agent at-a-glance summary the operator can
         # scan from the board header to answer "who is alive + working on
         # what + blocked on me" without leaving the board (ADR-0008 design,
-        # ticket `proj-scitex-todo-fleet-liveness`, operator TG 9576 acute
+        # ticket `proj-scitex-cards-fleet-liveness`, operator TG 9576 acute
         # pain: 返事が来ない＝私にとって死んだのと同じ). FIRST SLICE — derived
         # from the already-loaded board tasks; the sidecar daemon + cross-host
         # roll-up land in follow-up PRs (no schema change today).

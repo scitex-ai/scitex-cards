@@ -40,8 +40,8 @@ def store(tmp_path):
                 "title": "First card",
                 "status": "in_progress",
                 "task": "do the thing",
-                "project": "scitex-todo",
-                "repo": "scitex-todo",
+                "project": "scitex-cards",
+                "repo": "scitex-cards",
                 "agent": "agent:alice",
                 "group": "core",
                 "priority": 3,
@@ -125,7 +125,7 @@ def store(tmp_path):
     return {
         "tasks_doc": tasks_doc,
         "threads": threads_doc["threads"],
-        "db_path": tmp_path / "todo.db",
+        "db_path": tmp_path / "cards.db",
     }
 
 
@@ -178,7 +178,6 @@ def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
     is what the second test below is about.
     """
     env.delete(_db.ENV_DB)
-    env.delete(_db.ENV_DB_DEPRECATED)
     from scitex_config._ecosystem import local_state
 
     calls = []
@@ -246,49 +245,6 @@ def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
 
     # Assert
     assert str(sentinel) in str(got)
-
-
-def _resolve_from_legacy_env_only(tmp_path, env, caplog):
-    """Set ONLY the pre-rename env name and resolve, capturing warnings."""
-    env.delete(_db.ENV_DB)
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-    with caplog.at_level("WARNING", logger="scitex_cards._db"):
-        return _db.resolve_db_path()
-
-
-def test_resolve_db_path_still_honours_the_legacy_env_name(tmp_path, env, caplog):
-    """SCITEX_TODO_DB (pre-rename) still resolves when it is the only export."""
-    # Arrange
-    # Act
-    got = _resolve_from_legacy_env_only(tmp_path, env, caplog)
-
-    # Assert
-    assert got == (tmp_path / "legacy.db")
-
-
-def test_resolve_db_path_warns_that_the_legacy_env_name_is_deprecated(
-    tmp_path, env, caplog
-):
-    """...and it resolves LOUDLY, so the export gets migrated."""
-    # Arrange
-    # Act
-    _resolve_from_legacy_env_only(tmp_path, env, caplog)
-
-    # Assert
-    assert any("deprecated" in r.message for r in caplog.records)
-
-
-def test_resolve_db_path_new_env_wins_over_legacy(tmp_path, env):
-    """When both names are set, SCITEX_CARDS_DB wins."""
-    # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "new.db"))
-    env.set(_db.ENV_DB_DEPRECATED, str(tmp_path / "legacy.db"))
-
-    # Act
-    got = _db.resolve_db_path()
-
-    # Assert
-    assert got == (tmp_path / "new.db")
 
 
 # --------------------------------------------------------------------------- #
@@ -689,7 +645,7 @@ def test_import_stores_the_repo_field(imported):
     row = _card_row(imported)
 
     # Assert
-    assert row["repo"] == "scitex-todo"
+    assert row["repo"] == "scitex-cards"
 
 
 def test_import_stores_the_priority_field(imported):
@@ -1111,21 +1067,21 @@ def test_verify_reports_an_absent_db_as_not_ok(tmp_path):
 def test_repo_field_survives_from_dict_on_the_dataclass():
     # Arrange
     # Act
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Assert
-    assert task.repo == "scitex-todo"
+    assert task.repo == "scitex-cards"
 
 
 def test_repo_field_survives_to_dict_on_the_dataclass():
     # Arrange
-    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-todo"})
+    task = _model.Task.from_dict({"id": "r1", "title": "t", "repo": "scitex-cards"})
 
     # Act
     payload = task.to_dict()
 
     # Assert
-    assert payload["repo"] == "scitex-todo"
+    assert payload["repo"] == "scitex-cards"
 
 
 def test_an_absent_repo_field_defaults_to_none():
@@ -1154,7 +1110,7 @@ def test_repo_field_round_trips_db_column(imported):
     val = imported["conn"].execute("SELECT repo FROM tasks WHERE id='c1'").fetchone()[0]
 
     # Assert
-    assert val == "scitex-todo"
+    assert val == "scitex-cards"
 
 
 # --------------------------------------------------------------------------- #
@@ -1225,7 +1181,7 @@ def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
     conn = _db.connect(store["db_path"])
     _db.init_schema(conn)
     conn.execute("BEGIN IMMEDIATE")
-    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "todo"}])
+    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "card"}])
 
     # Act — same id again, row still present: the incremental mirror's shape.
     _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v2", "status": "done"}])
@@ -1250,7 +1206,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             {
                 "id": "dup",
                 "title": "FIRST",
-                "status": "todo",
+                "status": "card",
                 "comments": [{"author": "a", "ts": "t", "text": "old"}],
             },
             {"id": "keep", "title": "Untouched", "status": "done"},
@@ -1262,7 +1218,7 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             },
         ]
     }
-    db_path = tmp_path / "todo.db"
+    db_path = tmp_path / "cards.db"
 
     with caplog.at_level("ERROR"):
         summary = seed_db_from_doc(doc, db_path)

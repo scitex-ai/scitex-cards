@@ -61,13 +61,13 @@ jobs:
       - name: Refresh in-wheel _sphinx_html (main/develop only)
         if: github.event_name == 'push'
         run: |
-          rm -rf src/scitex_todo/_sphinx_html
-          cp -rf docs/sphinx/_build/html src/scitex_todo/_sphinx_html
+          rm -rf src/scitex_cards/_sphinx_html
+          cp -rf docs/sphinx/_build/html src/scitex_cards/_sphinx_html
           # scitex-cloud serves docs from this in-wheel dir (PS-121).
-          if [ -n "$(git status --porcelain src/scitex_todo/_sphinx_html)" ]; then
+          if [ -n "$(git status --porcelain src/scitex_cards/_sphinx_html)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add src/scitex_todo/_sphinx_html
+            git add src/scitex_cards/_sphinx_html
             # The commit-message marker keeps this from triggering itself.
             git commit -m "docs(build): refresh _sphinx_html [skip-docs-rebuild]"
             git push || echo "push rejected (branch moved); skipping refresh commit"

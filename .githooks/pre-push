@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# scitex-todo git->card hook: record pushed commits on the matching board
+# scitex-cards git->card hook: record pushed commits on the matching board
 # card's ROUTE (Phase P3, card tcfb-p3-git-to-card).
 #
 # git invokes pre-push with `<remote-name> <remote-url>` as argv and feeds

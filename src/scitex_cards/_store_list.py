@@ -41,7 +41,7 @@ from ._task import _is_tombstoned
 #: Env var an agent sets to scope its default `list_tasks` / `summary` view. The
 #: CLI's `--scope` flag overrides this; pass `scope=""` in the Python API to see
 #: the unfiltered store.
-ENV_SCOPE = "SCITEX_TODO_SCOPE"
+ENV_SCOPE = "SCITEX_CARDS_SCOPE"
 
 #: The one scope spelling that names an OWNER rather than a lens. Written by
 #: ``reassign_task`` and the help-card writer as ``f"agent:{who}"``; read here.
@@ -122,7 +122,7 @@ def _resolved_store(store: str | Path | None) -> Path:
 
 
 def _default_scope(arg: str | None) -> str | None:
-    """Resolve a scope argument, honoring ``$SCITEX_TODO_SCOPE`` as the default.
+    """Resolve a scope argument, honoring ``$SCITEX_CARDS_SCOPE`` as the default.
 
     ``None`` (caller didn't pass anything) → env var if set, else ``None``
     (no filter).
@@ -252,7 +252,7 @@ def list_tasks(
 
     Filter semantics:
 
-    - ``scope=None`` (default): use ``$SCITEX_TODO_SCOPE`` if set, else
+    - ``scope=None`` (default): use ``$SCITEX_CARDS_SCOPE`` if set, else
       no filter. ``scope=""`` opts out of the env default explicitly.
       ``scope="agent:<id>"`` names an OWNER, not a lens: it returns every
       card assigned to ``<id>`` as well as those filed under that scope,

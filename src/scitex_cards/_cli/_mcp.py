@@ -48,10 +48,9 @@ _SERVER_PATH = "scitex_cards._mcp_server:mcp"
 # `mcp__scitex-cards__*`), the `command` the entry execs, and the `{prog}` in
 # scitex-dev-rendered help. All three must say the CURRENT name.
 #
-# This is NOT the same decision as the console script: `scitex-todo` stays an
+# This is NOT the same decision as the console script: `scitex-cards` stays an
 # installed alias forever (the operator's running units invoke it). Renaming
 # what we ANNOUNCE is safe; renaming what we PUBLISH is not. See
-# `_mcp_install.LEGACY_CLI_NAME` for the matching entry migration.
 _CLI_NAME = "scitex-cards"
 
 _INSTALL_HINT = (
@@ -80,7 +79,7 @@ def _run_unified_server() -> None:
     has every ``@mcp.tool()`` registered) and drives it with the channel
     module's own-the-session serve loop so the poll loop can push.
 
-    The agent id is OPTIONAL: with ``$SCITEX_TODO_AGENT_ID`` set the digest is
+    The agent id is OPTIONAL: with ``$SCITEX_CARDS_AGENT_ID`` set the digest is
     pushed; without it the server still serves tools (push disabled) rather than
     failing — the tools surface must work even with no identity configured.
     """

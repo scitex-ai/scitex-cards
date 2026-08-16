@@ -15,14 +15,14 @@
  *     and the back-end error is in the tooltip.
  *
  * All colors come from scitex-ui design tokens declared on the board
- * root (see board.css `.stx-todo-board`):
+ * root (see board.css `.stx-cards-board`):
  *   --status-success / --status-warning / --status-error / --stx-danger
  *   plus board-local --stx-text / --stx-text-muted / --stx-border /
  *   --stx-panel-bg / --stx-input-bg / --stx-accent.
  * No literal hex codes here — that would break dark/light theming.
  */
 
-.stx-todo-fleet-timing {
+.stx-cards-fleet-timing {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -40,7 +40,7 @@
   transition: border-color 120ms ease;
 }
 
-.stx-todo-fleet-timing--loading {
+.stx-cards-fleet-timing--loading {
   /* Reserve a tiny placeholder so the toolbar doesn't reflow on first
    * paint while the initial fetch is in flight. */
   display: inline-block;
@@ -51,11 +51,11 @@
   background: transparent;
 }
 
-.stx-todo-fleet-timing__label {
+.stx-cards-fleet-timing__label {
   font-weight: 500;
 }
 
-.stx-todo-fleet-timing__dot {
+.stx-cards-fleet-timing__dot {
   display: inline-block;
   font-size: 0.85rem;
   line-height: 1;
@@ -64,20 +64,20 @@
 
 /* ── collapsed pill (default state) ───────────────────────────────── */
 
-.stx-todo-fleet-timing--collapsed {
+.stx-cards-fleet-timing--collapsed {
   cursor: pointer;
   border-color: var(--status-success);
   background: var(--stx-panel-bg);
   color: var(--stx-text);
 }
 
-.stx-todo-fleet-timing--collapsed:hover {
+.stx-cards-fleet-timing--collapsed:hover {
   border-color: var(--stx-accent);
 }
 
 /* ── expanded chart panel ─────────────────────────────────────────── */
 
-.stx-todo-fleet-timing--expanded {
+.stx-cards-fleet-timing--expanded {
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
@@ -91,7 +91,7 @@
   white-space: normal;
 }
 
-.stx-todo-fleet-timing__header {
+.stx-cards-fleet-timing__header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -99,7 +99,7 @@
   color: var(--stx-text);
 }
 
-.stx-todo-fleet-timing__control {
+.stx-cards-fleet-timing__control {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -107,7 +107,7 @@
   color: var(--stx-text-muted);
 }
 
-.stx-todo-fleet-timing__select {
+.stx-cards-fleet-timing__select {
   font-size: 0.72rem;
   color: var(--stx-text);
   background: var(--stx-input-bg);
@@ -116,11 +116,11 @@
   padding: 1px 4px;
 }
 
-.stx-todo-fleet-timing__select:focus {
+.stx-cards-fleet-timing__select:focus {
   outline: 1px solid var(--stx-accent);
 }
 
-.stx-todo-fleet-timing__close {
+.stx-cards-fleet-timing__close {
   margin-left: auto;
   border: 0;
   background: transparent;
@@ -132,14 +132,14 @@
   border-radius: 4px;
 }
 
-.stx-todo-fleet-timing__close:hover {
+.stx-cards-fleet-timing__close:hover {
   color: var(--stx-text);
   background: var(--stx-hover-bg);
 }
 
 /* ── chart body ───────────────────────────────────────────────────── */
 
-.stx-todo-fleet-timing__chart {
+.stx-cards-fleet-timing__chart {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -147,7 +147,7 @@
   overflow-y: auto;
 }
 
-.stx-todo-fleet-timing__row {
+.stx-cards-fleet-timing__row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -155,7 +155,7 @@
   color: var(--stx-text);
 }
 
-.stx-todo-fleet-timing__rowlabel {
+.stx-cards-fleet-timing__rowlabel {
   flex: 0 0 90px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -163,7 +163,7 @@
   color: var(--stx-text-muted);
 }
 
-.stx-todo-fleet-timing__bars {
+.stx-cards-fleet-timing__bars {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -171,7 +171,7 @@
   min-width: 0;
 }
 
-.stx-todo-fleet-timing__bar {
+.stx-cards-fleet-timing__bar {
   display: inline-flex;
   align-items: center;
   height: 10px;
@@ -186,15 +186,15 @@
     background 120ms ease;
 }
 
-.stx-todo-fleet-timing__bar--median {
+.stx-cards-fleet-timing__bar--median {
   opacity: 0.85;
 }
 
-.stx-todo-fleet-timing__bar--p95 {
+.stx-cards-fleet-timing__bar--p95 {
   opacity: 0.6;
 }
 
-.stx-todo-fleet-timing__bartext {
+.stx-cards-fleet-timing__bartext {
   font-size: 0.6rem;
   color: var(--stx-text);
   white-space: nowrap;
@@ -208,21 +208,21 @@
  * against the scitex-ui design tokens so a future swap of
  * success / warning / error flows through automatically.
  */
-.stx-todo-fleet-timing__bar--ok {
+.stx-cards-fleet-timing__bar--ok {
   background: var(--status-success);
 }
 
-.stx-todo-fleet-timing__bar--warn {
+.stx-cards-fleet-timing__bar--warn {
   background: var(--status-warning);
 }
 
-.stx-todo-fleet-timing__bar--slow {
+.stx-cards-fleet-timing__bar--slow {
   background: var(--status-error);
 }
 
 /* ── empty state ──────────────────────────────────────────────────── */
 
-.stx-todo-fleet-timing__empty {
+.stx-cards-fleet-timing__empty {
   display: inline-block;
   font-size: 0.72rem;
   color: var(--stx-text-muted);
@@ -232,20 +232,20 @@
 
 /* ── footer (diagnostic line) ─────────────────────────────────────── */
 
-.stx-todo-fleet-timing__footer {
+.stx-cards-fleet-timing__footer {
   font-size: 0.68rem;
   color: var(--stx-text-muted);
   font-style: italic;
 }
 
 /* ── adapter error: muted text + red ring + ``!`` marker ──────────── */
-.stx-todo-fleet-timing--error {
+.stx-cards-fleet-timing--error {
   color: var(--stx-text-muted);
   border-color: var(--stx-danger);
   box-shadow: 0 0 0 1px var(--stx-danger);
 }
 
-.stx-todo-fleet-timing--error .stx-todo-fleet-timing__dot {
+.stx-cards-fleet-timing--error .stx-cards-fleet-timing__dot {
   color: var(--stx-danger);
   font-weight: 700;
 }

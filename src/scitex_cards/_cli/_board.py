@@ -8,7 +8,7 @@ a bare NOUN that launched directly — CLI noun-verb violation, and the
 operator had no clean way to restart after a card/source change ("port
 already in use" trap).
 
-Pidfile at ``~/.scitex/todo/board.pid`` so stop/restart/status are
+Pidfile at ``~/.scitex/cards/board.pid`` so stop/restart/status are
 reliable across terminals. Bare ``scitex-cards board`` (no subcommand)
 hard-errors with a redirect (operator directive TG 13316: noun-verb CLI
 convention, no bare-noun back-compat).
@@ -124,7 +124,7 @@ def _board_run_server(
             "The `board` noun REQUIRES an explicit verb — bare `{prog} "
             "board` hard-errors with a redirect (operator directive TG "
             "13316: noun-verb CLI convention, no bare-noun back-compat). "
-            "Writes a pidfile at ~/.scitex/todo/board.pid so `stop` / "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so `stop` / "
             "`restart` / `status` work reliably from any terminal. "
             "`board start --help` documents the web extra it requires."
         ),
@@ -172,7 +172,7 @@ def board_group(ctx: click.Context) -> None:
     **spec_command_kwargs(
         summary="Launch the board server (blocking, foreground).",
         description=(
-            "Writes a pidfile at ~/.scitex/todo/board.pid so other "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so other "
             "terminals can `board stop` / `board restart`. Requires the "
             "web extra: pip install scitex-cards[all]."
         ),

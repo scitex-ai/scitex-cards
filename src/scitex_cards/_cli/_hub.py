@@ -181,7 +181,7 @@ def _doctor_checks(url: str | None, agent: str | None) -> list[dict]:
                     "ok": False,
                     "detail": f"HTTP {exc.code}",
                     "hint": "401 → the token was rotated on the hub; re-provision "
-                    "this host. 400 → no identity: set SCITEX_TODO_AGENT_ID.",
+                    "this host. 400 → no identity: set SCITEX_CARDS_AGENT_ID.",
                 }
             )
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -200,7 +200,7 @@ def _doctor_checks(url: str | None, agent: str | None) -> list[dict]:
                 "name": "identity_echo",
                 "ok": False,
                 "detail": f"skipped: no {missing}",
-                "hint": "set SCITEX_TODO_AGENT_ID."
+                "hint": "set SCITEX_CARDS_AGENT_ID."
                 if missing == "agent identity"
                 else "fix the earlier checks first.",
             }
@@ -220,7 +220,7 @@ def _doctor_checks(url: str | None, agent: str | None) -> list[dict]:
 @click.option("--json", "as_json", is_flag=True, help="Raw JSON report.")
 def doctor_cmd(as_json: bool) -> None:
     url = os.environ.get("SCITEX_CARDS_HUB_URL")
-    agent = os.environ.get("SCITEX_TODO_AGENT_ID")
+    agent = os.environ.get("SCITEX_CARDS_AGENT_ID")
     checks = _doctor_checks(url, agent)
     ok = all(c["ok"] for c in checks)
     if as_json:

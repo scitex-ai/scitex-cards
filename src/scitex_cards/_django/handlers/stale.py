@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Stale-cards review handler — derives the standing "operator should
 archive" list from the loaded board + the SAME criteria as the
-``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-todo
+``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-cards
 2026-06-13, operator-direct via lead a2a).
 
 Two endpoints:
@@ -208,7 +208,7 @@ def handle_archive(request, board):
       3. Flip ``status`` to ``"deferred"`` (sentinel — no new enum
          value cascading into FE / tests today).
       4. Stamp ``_log_meta.closed_{at,by}`` (UTC ISO-8601 + author
-         precedence chain: body ``by`` -> ``$SCITEX_TODO_AGENT_ID`` ->
+         precedence chain: body ``by`` -> ``$SCITEX_CARDS_AGENT_ID`` ->
          ``$USER`` -> ``"user"``).
       5. Persist via the board's existing save path.
 
@@ -235,7 +235,7 @@ def handle_archive(request, board):
 
     by = payload.get("by")
     if not isinstance(by, str) or not by.strip():
-        by = os.environ.get("SCITEX_TODO_AGENT_ID") or os.environ.get("USER") or "user"
+        by = os.environ.get("SCITEX_CARDS_AGENT_ID") or os.environ.get("USER") or "user"
     by = by.strip()
 
     from scitex_cards import TaskValidationError
@@ -284,7 +284,7 @@ def handle_archive(request, board):
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
     logger.info(
-        "[scitex-todo] archive %s by %s (reason: %.80s) in %s",
+        "[scitex-cards] archive %s by %s (reason: %.80s) in %s",
         task_id,
         by,
         reason,

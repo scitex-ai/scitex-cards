@@ -162,7 +162,7 @@ def queued_message_ids(
 
     THE INBOX IS A DIFFERENT STORE, which is why it is passed rather than taken
     from the caller's connection. Notifications live in a SQLite sidecar at
-    ``runtime/todo.db`` while the messages live in the card store, so this is a
+    ``runtime/cards.db`` while the messages live in the card store, so this is a
     cross-store question today. Schema v8 adds these columns to the store's own
     ``notifications`` table; when the rail moves, this becomes one query and
     this function collapses into the main one.

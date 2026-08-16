@@ -10,7 +10,7 @@
  * the public surface so a refactor that drops one trips CI on either
  * side.
  *
- * Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のToDo UI."
+ * Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のカード UI."
  */
 
 /** A task row's recency class. Drives the row's NEW badge + left-border

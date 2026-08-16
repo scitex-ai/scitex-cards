@@ -5,8 +5,8 @@
 The dual-write mirror was DELETED as a feature, not defaulted off (operator
 ruling: 「データベースしか書く場所なんてありえない。デュアルライトっていうオ
 プションがあること自体がおかしい」). The root cause it answers: `cards.db`
-carried a stale `schema_meta` row (`yaml_path` pointing at an old
-`~/.scitex/todo/tasks.yaml`), and an agent whose environment still carried
+carried a stale `schema_meta` row (`yaml_path` pointing at a `tasks.yaml`
+under the pre-rename store directory), and an agent whose environment still carried
 the dual-write flag had every MCP/CLI write silently routed to that dead YAML
 instead of the canonical database — every call returned SUCCESS and `health`
 stayed green while an entire session of card writes never reached the board.
@@ -71,36 +71,16 @@ def test_ok_when_no_legacy_env_var_is_set(env):
     assert res["ok"] is True
 
 
-# === the pre-rename toggle name — still a footgun though nothing reads it ===
-
-
-def test_a_lingering_scitex_todo_dual_write_is_not_ok(env):
-    # Arrange
-    # Act
-    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
-    # Assert
-    assert res["ok"] is False
-
-
-def test_a_lingering_scitex_todo_dual_write_is_named_in_the_detail(env):
-    # Arrange
-    # Act
-    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
-    # Assert — naming the variable is the whole value of the check; a bare
-    # "not ok" leaves the reader hunting their own environment.
-    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
-
-
-def test_a_lingering_scitex_todo_dual_write_hint_says_to_unset_it(env):
-    # Arrange
-    # Act
-    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE")
-    # Assert — constitution section 2: an error that only states what broke is
-    # half-written. The hint must say what to DO.
-    assert "unset" in (res["hint"] or "")
-
-
 # === the incident's actual env var — root cause 2026-07-21 =================
+#
+# There was a SECOND section here covering the pre-rename spelling of this
+# toggle, and a third covering both being set at once (so that neither could
+# be swallowed by the other in the detail line). The retired spelling is gone
+# from the check's vocabulary, so those five tests would have pinned a name
+# `_LEGACY_DUAL_WRITE_ENV_VARS` no longer contains — a "both are named" test
+# over a one-element tuple. The one assertion in them that was NOT about the
+# retired name is the hint's remedy wording, which is kept below against the
+# surviving toggle.
 
 
 def test_a_lingering_scitex_cards_dual_write_is_not_ok(env):
@@ -119,24 +99,13 @@ def test_a_lingering_scitex_cards_dual_write_is_named_in_the_detail(env):
     assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
 
 
-# === both set at once: NEITHER may be swallowed by the other ===============
-
-
-def test_the_old_name_is_still_named_when_both_are_set(env):
+def test_a_lingering_scitex_cards_dual_write_hint_says_to_unset_it(env):
     # Arrange
     # Act
-    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
-    # Assert — split from its sibling deliberately: a check that reports only
-    # the FIRST offender it finds passes a combined assertion by accident.
-    assert "SCITEX_TODO_DUAL_WRITE" in res["detail"]
-
-
-def test_the_new_name_is_still_named_when_both_are_set(env):
-    # Arrange
-    # Act
-    res = _with_only(env, "SCITEX_TODO_DUAL_WRITE", "SCITEX_CARDS_DUAL_WRITE")
-    # Assert
-    assert "SCITEX_CARDS_DUAL_WRITE" in res["detail"]
+    res = _with_only(env, "SCITEX_CARDS_DUAL_WRITE")
+    # Assert — constitution section 2: an error that only states what broke is
+    # half-written. The hint must say what to DO.
+    assert "unset" in (res["hint"] or "")
 
 
 # === the deleted toggle stays deleted ======================================

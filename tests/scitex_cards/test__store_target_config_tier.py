@@ -24,7 +24,7 @@ import os
 import pytest
 
 from scitex_cards._config import CONFIG_NAME
-from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED, resolve_db_path
+from scitex_cards._db import ENV_DB, resolve_db_path
 from scitex_cards._store_target import (
     StoreTargetIsNotAPath,
     StoreTargetNotConfigured,
@@ -32,7 +32,7 @@ from scitex_cards._store_target import (
 )
 
 DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_MANAGED = (ENV_DB, ENV_DB_DEPRECATED, "HOME", "SCITEX_DIR")
+_MANAGED = (ENV_DB, "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def config_home(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in (ENV_DB, ENV_DB_DEPRECATED, "SCITEX_DIR"):
+    for name in (ENV_DB, "SCITEX_DIR"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     cards_dir = tmp_path / ".scitex" / "cards"

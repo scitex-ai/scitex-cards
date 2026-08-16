@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""T1.3 — blocked_tasks() introspection + `scitex-todo blocked` CLI.
+"""T1.3 — blocked_tasks() introspection + `scitex-cards blocked` CLI.
 
 Lead a2a `74db4f2d`, 2026-06-14. Inverse of `runnable_tasks`: for
 every task the dispatcher can NOT pick up, name the reason
@@ -219,12 +219,12 @@ def test_agent_filter_narrows_blocked_list():
             "id": "t-mine",
             "title": "x",
             "status": "blocked",
-            "agent": "proj-scitex-todo",
+            "agent": "proj-scitex-cards",
         },
         {"id": "t-other", "title": "y", "status": "blocked", "agent": "proj-other"},
     ]
     # Act
-    result = blocked_tasks(tasks, agent="proj-scitex-todo")
+    result = blocked_tasks(tasks, agent="proj-scitex-cards")
     # Assert
     assert [bt.id for bt in result.tasks] == ["t-mine"]
 

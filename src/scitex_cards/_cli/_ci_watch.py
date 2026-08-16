@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo watch-ci` — server-side CI poller (record-only).
+"""`scitex-cards watch-ci` — server-side CI poller (record-only).
 
 Renamed from `ci-watch` in the slice-6b verb-rename pilot (doctrine §1d:
 compounds are kebab-case and VERB-FIRST); the old name stays as a hidden
@@ -8,25 +8,25 @@ warn-phase deprecated alias until v0.9.
 
 Lead a2a (operator decoupled-pollers override, dev msg `96afacc7`,
 2026-06-15): each server polls GitHub CI INDEPENDENTLY + dedupes its
-own state. todo's lane = RECORD (the CI-pills strip + the per-repo
+own state. card's lane = RECORD (the CI-pills strip + the per-repo
 state cache); SAC's lane = DELIVERY (a2a verdict to owner +
 lineage). Neither depends on the other; either can crash without
 breaking the other.
 
-This module is todo's lane.
+This module is card's lane.
 
 ## What it does
 
 For each repo configured in
 ``~/.scitex/cards/dashboard.json`` (``fleet.ci_status.repos``) — or
-the env override ``SCITEX_TODO_FLEET_CI_REPOS=owner/name,...``:
+the env override ``SCITEX_CARDS_FLEET_CI_REPOS=owner/name,...``:
 
 1. Call the existing
    ``_django.handlers.fleet.gh_ci.fetch_repo_ci_status`` adapter
    (the SAME source the FE-driven ``/fleet/ci-status`` endpoint uses
    — ONE source of truth for the CI state).
 2. Diff the result against the local state cache at
-   ``~/.scitex/todo/ci-state.json`` keyed by repo slug. The dedupe
+   ``~/.scitex/cards/ci-state.json`` keyed by repo slug. The dedupe
    key shape matches the spec dev locked: ``(repo, head_sha,
    overall)``.
 3. Classify the transition (``first-seen`` / ``newly-green`` /
@@ -39,16 +39,16 @@ the env override ``SCITEX_TODO_FLEET_CI_REPOS=owner/name,...``:
 - No event emission on the ``scitex_cards.hooks`` bus for the
   ``ci-result`` kind. Operator's decoupled-pollers override killed
   that path; SAC has its own independent poller for delivery.
-- No a2a sends. todo records; SAC delivers. Each STANDALONE.
+- No a2a sends. card records; SAC delivers. Each STANDALONE.
 
 ## Designed for cron use
 
 JobSpec entry ``scitex-cards-ci-watch`` (registered via
 ``_jobs_provider.py``; the JobSpec NAME is a registry identity and
-keeps its historical spelling) runs ``scitex-todo watch-ci --once`` every
+keeps its historical spelling) runs ``scitex-cards watch-ci --once`` every
 5 min via ``scitex-dev ecosystem up``. The ``--once`` flag exits
 after one sweep; absence of it loops with a configurable interval
-(default 300s). Per the operator's principle: SAC + todo poll at
+(default 300s). Per the operator's principle: SAC + card poll at
 different cadences so the gh API isn't double-loaded.
 
 Failure isolation: a per-repo adapter failure is reported on
@@ -129,10 +129,10 @@ def classify_transition(
 
 def state_path() -> Path:
     """Resolve the per-repo state cache path (env > home default)."""
-    override = os.environ.get("SCITEX_TODO_CI_STATE")
+    override = os.environ.get("SCITEX_CARDS_CI_STATE")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".scitex" / "todo" / "ci-state.json"
+    return Path.home() / ".scitex" / "card" / "ci-state.json"
 
 
 def load_state(path: Path | None = None) -> dict[str, dict[str, Any]]:
@@ -177,8 +177,8 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
         description=(
             "Polls every configured repo's GitHub CI default-branch state, "
             "compares to the local state cache at "
-            "~/.scitex/todo/ci-state.json (override via env "
-            "SCITEX_TODO_CI_STATE), and logs the transition.\n\n"
+            "~/.scitex/cards/ci-state.json (override via env "
+            "SCITEX_CARDS_CI_STATE), and logs the transition.\n\n"
             "Designed for cron use: --once runs ONE sweep + exits 0; "
             "absence of --once loops with --interval (default 300s)."
         ),
@@ -186,7 +186,7 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
             ("{prog} watch-ci --once", ""),
             ("{prog} watch-ci --interval 600", ""),
             (
-                "SCITEX_TODO_FLEET_CI_REPOS=owner/a,owner/b {prog} watch-ci --once",
+                "SCITEX_CARDS_FLEET_CI_REPOS=owner/a,owner/b {prog} watch-ci --once",
                 "",
             ),
         ),

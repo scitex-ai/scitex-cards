@@ -64,6 +64,7 @@ sys.modules[_sys_modules_key] = _mod  # register BEFORE exec (py3.12 dataclass l
 _spec.loader.exec_module(_mod)
 seed_db_from_doc = _mod.seed_db_from_doc
 
+
 #: A supervisor that starts one sleeper, prints its pid, then blocks in
 #: ``wait()`` on it — so the sleeper is REAPED THE INSTANT it exits.
 _SUPERVISOR = (
@@ -133,7 +134,7 @@ class BoardProcess:
 def pidfile_path(env, tmp_path):
     """Redirect the board pidfile at a tmp path so tests never touch the real one."""
     pf = tmp_path / "board.pid"
-    env.set("SCITEX_TODO_BOARD_PIDFILE", str(pf))
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf
 
 

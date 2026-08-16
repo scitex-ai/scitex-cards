@@ -2,7 +2,7 @@
  * for the Timeline "By Agent" raster (timeline.js) and the Wall's agent
  * tiles (11-sticky-wall.js).
  *
- * Operator 2026-07-10 (todo-board-agent-icons-status-rings-20260710):
+ * Operator 2026-07-10 (cards-board-agent-icons-status-rings-20260710):
  * tracing left across the raster lane-by-lane to find the owning agent is
  * slow. This gives each agent lane a small circular icon — the fleet brand
  * colour + short label, or 2-letter initials on a deterministic hash-derived
@@ -57,12 +57,12 @@
   // operator already recognises (claude-code-telegrammer
   // docs/icons/generate_bot_icons.py: solid brand colour + short white
   // label; exact hexes for cct/writer/figrecipe/dsp come from that file,
-  // the rest are matched to the live avatars: Hub=blue, TODO=teal,
+  // the rest are matched to the live avatars: Hub=blue, CARD=teal,
   // SAC=green, NV=purple, Grant=orange, DEV=slate, pClew=teal-green).
   // Agents NOT in this map fall back to hash-hue + initials, so a new
   // agent still gets a stable, distinct icon with zero config.
   var BRAND = {
-    "scitex-todo": { label: "TODO", color: "#1f8a70" },
+    "scitex-cards": { label: "CARDS", color: "#1f8a70" },
     "scitex-hub": { label: "Hub", color: "#2f6fd0" },
     "scitex-dev": { label: "DEV", color: "#5a6472" },
     "scitex-agent-container": { label: "SAC", color: "#2fae5f" },
