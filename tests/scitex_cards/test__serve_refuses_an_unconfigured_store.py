@@ -48,7 +48,9 @@ from scitex_cards._store_target import (
 )
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_CARDS_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 @pytest.fixture()

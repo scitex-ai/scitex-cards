@@ -177,12 +177,20 @@ def scratch_store_root() -> Path:
 # reading $HOME/$SCITEX_DIR — the whole point is to catch a leak that reached
 # the store via one of those variables, so asking the same variable "were you
 # bypassed" would beg the question.
+# This listed FOUR paths: these two, plus the same two under the pre-rename
+# directory name, because that older location had held 2,117 real cards as
+# recently as the 2026-07-16 rename and a leak could still have landed there.
+# The rename swept the old dirname to the new one, which turned the extra two
+# entries into duplicates of the first two — so the guard silently stopped
+# covering the second location while its length still suggested it did.
+#
+# REMOVED RATHER THAN RE-POINTED, and checked before removing: the pre-rename
+# directory still EXISTS on both homes (which are the same bind-mounted path)
+# but is EMPTY — measured 2026-08-16, zero files, so the store file this
+# guarded is gone. Nothing can recreate it either: the env tier and the compat
+# mirror that could resolve to that dirname were deleted with the shim, so no
+# code path in this package names it any more.
 _REAL_STORE_CANDIDATES: tuple[Path, ...] = (
-    Path("/home/agent/.scitex/cards/cards.db"),
-    Path("/home/ywatanabe/.scitex/cards/cards.db"),
-    # Pre-rename dirname (package renamed scitex-cards -> scitex-cards,
-    # 2026-07-16); this path held 2,117 real cards as recently as the rename
-    # itself (see _env_compat.py's incident writeup) and may still exist.
     Path("/home/agent/.scitex/cards/cards.db"),
     Path("/home/ywatanabe/.scitex/cards/cards.db"),
 )

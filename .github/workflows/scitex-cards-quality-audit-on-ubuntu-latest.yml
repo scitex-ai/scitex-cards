@@ -15,17 +15,17 @@ name: quality
 # `.scitex/dev/config.yaml` in this checkout and are applied automatically.
 #
 # THE DISTRIBUTION ARGUMENT IS `scitex-cards`, AND IT USED TO BE WRONG.
-# It passed `scitex-todo` — the pre-rename name — so the auditor evaluated
+# It passed `scitex-cards` — the pre-rename name — so the auditor evaluated
 # this tree against a package layout that does not exist here, and every
 # project-structure finding demanded the OLD shape: PS-105 "missing
-# scitex_todo/__main__.py", PS-201 "missing tests/scitex_todo/ parent",
-# PS-302 "rename tests/scitex_cards/ to tests/scitex_todo/scitex_cards/",
+# scitex_cards/__main__.py", PS-201 "missing tests/scitex_cards/ parent",
+# PS-302 "rename tests/scitex_cards/ to tests/scitex_cards/scitex_cards/",
 # PS-203 x9 loose top-level. Findings about a package that is not here.
 #
 # That was not merely noise, it made the gate NON-DETERMINISTIC ACROSS
 # UNRELATED CHANGES. Those findings roll up into a summary line
 #
-#     ERRO: scitex-todo (<abs path>): project-structure: 14 error(s), 56 warning(s), 4 info
+#     ERRO: scitex-cards (<abs path>): project-structure: 14 error(s), 56 warning(s), 4 info
 #
 # whose subject carries a parenthesised path, which `_FINDING_RE` in
 # scitex-dev's `_cli/audit/_diff.py` cannot match. It therefore falls
@@ -39,11 +39,12 @@ name: quality
 # never be attributed. Auditing the distribution that actually exists is
 # this repo's half, and it is correct independently of that fix.
 #
-# Runner: scitex-todo's self-hosted Spartan CPU runners
-#   (spartan-cpu-todo-01 / -02). GitHub-hosted `ubuntu-latest` is
-#   unavailable on this account (Actions billing block), and todo runs
-#   ALL compute on the dedicated Spartan runners anyway. The
-#   `-on-ubuntu-latest` filename is kept for fleet naming consistency
+# Runner: `ubuntu-latest`, as the `runs-on:` below actually says. This
+#   comment used to describe self-hosted Spartan CPU runners and an Actions
+#   billing block that made GitHub-hosted runners unavailable — neither of
+#   which matches the job as configured, so it described a setup this file
+#   does not use. The `-on-ubuntu-latest` filename here is genuine, and
+#   elsewhere in the fleet it is kept for naming consistency
 #   (cf. scitex-io / scitex-app / scitex-plt); it is a naming convention,
 #   not a runtime assertion — same as rtd-sphinx-build-on-ubuntu-latest.
 #   `actions/setup-python` has no tool cache on a self-hosted runner, so
@@ -60,7 +61,7 @@ on:
       - "tests/**"
       - "pyproject.toml"
       - ".scitex/dev/config.yaml"
-      - ".github/workflows/scitex-todo-quality-audit-on-ubuntu-latest.yml"
+      - ".github/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml"
   pull_request:
     branches: [main, develop]
 
@@ -92,7 +93,7 @@ jobs:
       - name: Run scitex-dev ecosystem audit-all (net-new only)
         # .venv/bin on PATH so the auditor's `shutil.which("scitex-dev")`
         # and the per-auditor subprocess spawns resolve to THIS venv
-        # (where scitex-todo's console-script is installed).
+        # (where scitex-cards's console-script is installed).
         run: |
           set -euo pipefail
           export PATH="$PWD/.venv/bin:$PATH"

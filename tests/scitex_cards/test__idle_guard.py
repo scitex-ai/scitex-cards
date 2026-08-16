@@ -20,11 +20,22 @@ _NOW = _dt.datetime(2026, 6, 30, 12, 0, 0, tzinfo=_dt.timezone.utc)
 
 @pytest.fixture(autouse=True)
 def _hermetic_env(env):
-    for var in (
-        "SCITEX_CARDS_STALE_ACTIVE_HOURS",
-        "SCITEX_CARDS_AGENT_ID",
-        "SCITEX_CARDS_TASKS_YAML_SHARED",
-    ):
+    """Clear the ambient knobs these tests must decide for themselves.
+
+    THE STORE VARIABLE IS DELIBERATELY NOT CLEARED. This list named the RETIRED
+    twin of each of these three, so it only ever cleared legacy spellings and
+    left the current ones alone — including the store variable that the root
+    conftest pins at the scratch DB and that ``_store()`` below reads back. The
+    rename turned each entry into its current-name counterpart, so the fixture
+    began deleting the pinned store variable, and ``_store()`` raised KeyError
+    on the very value the suite had just set for it.
+
+    Clearing the other two is a real improvement over what the legacy-twin list
+    actually achieved: an ambient ``SCITEX_CARDS_AGENT_ID`` (every agent
+    container exports one) used to reach these tests untouched, because the
+    only name being deleted was a spelling nothing sets any more.
+    """
+    for var in ("SCITEX_CARDS_STALE_ACTIVE_HOURS", "SCITEX_CARDS_AGENT_ID"):
         env.delete(var)
 
 

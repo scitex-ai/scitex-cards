@@ -335,27 +335,15 @@ def test_warn_if_stale_once_warning_names_the_sibling_cli_command(monkeypatch, c
     assert "scitex-cards list-tasks" in _currency_warnings(caplog)[0].getMessage()
 
 
-def test_warn_if_stale_once_warning_names_both_console_script_forms(
-    monkeypatch, caplog
-):
-    """The command that ACTUALLY refused in the 2026-07-29 incident was
-    `scitex-cards list-tasks` — the legacy console script, still installed
-    (pyproject ships both, same `_cli:main`) and still what much of the fleet
-    types. A reader who types that name must recognise the warning as being
-    about the command they are running, so BOTH forms are named."""
-    # Arrange
-    _stale_fake(monkeypatch)
-    caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
-
-    # Act
-    warn_if_stale_once()
-
-    # Assert
-    message = _currency_warnings(caplog)[0].getMessage()
-    assert all(
-        form in message
-        for form in ("scitex-cards list-tasks", "scitex-cards list-tasks")
-    )
+# REMOVED: test_warn_if_stale_once_warning_names_both_console_script_forms.
+#
+# It existed because pyproject shipped TWO console scripts onto the same
+# `_cli:main`, and the one that actually refused in the 2026-07-29 incident was
+# the pre-rename name — so the warning had to name both forms or a reader would
+# not recognise it as being about the command they had typed. Only one console
+# script is shipped now, which left the test asserting the SAME string is
+# present twice: `all(form in message for form in (x, x))`, a tautology over a
+# one-element set that the test immediately above already covers.
 
 
 def test_warn_if_stale_once_warning_names_the_cli_and_mcp_rail(monkeypatch, caplog):

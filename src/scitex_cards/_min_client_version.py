@@ -54,9 +54,13 @@ from pathlib import Path
 #: ``schema_meta`` key holding the store's minimum-client-version floor.
 KEY_MIN_CLIENT_VERSION = "min_client_version"
 
-#: Distribution names to try, in order — the current name first, then the
-#: pre-rename name (mirrors ``scitex_cards.__version__``'s own fallback).
-_DIST_NAMES = ("scitex-cards", "scitex-cards")
+#: The distribution to read this client's version from. This was a two-name
+#: fallback (current, then pre-rename) mirroring ``scitex_cards.__version__``;
+#: both entries collapsed onto the same string when the retired name went, so
+#: the "fallback" could only re-raise the first lookup's error. That matters
+#: more here than in a version banner: a floor check that cannot determine its
+#: own version falls back to ``_UNKNOWN_VERSION`` and reads as too old.
+_DIST_NAMES = ("scitex-cards",)
 
 #: Version used when NEITHER importlib.metadata NOR a pyproject.toml can be
 #: found. Deliberately the smallest possible version — an install this

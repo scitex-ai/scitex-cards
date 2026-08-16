@@ -67,16 +67,15 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
     the session. This is the honest end-to-end check, and it needs no mocks.
     """
     env = dict(os.environ)
-    # The identity now resolves from the post-rename $SCITEX_CARDS_AGENT_ID,
-    # which `_env_compat` mirrors onto $SCITEX_CARDS_AGENT_ID at import (new
-    # name wins). An ambient SCITEX_CARDS_AGENT_ID would therefore clobber
-    # whatever we set on the old name, so normalise BOTH prefixes (and both
-    # deprecated twins) to a known state before driving the one we want.
-    for var in (
-        "SCITEX_CARDS_AGENT_ID",
-        "SCITEX_CARDS_AGENT",  # deprecated twin: fails loud if set
-        "SCITEX_CARDS_AGENT",
-    ):
+    # The identity resolves from $SCITEX_CARDS_AGENT_ID. This loop used to
+    # normalise FOUR names — two prefixes and their deprecated twins — because
+    # a compat module mirrored one onto the other at import, so an ambient
+    # value under either spelling could clobber what the test set. That module
+    # and the retired prefix are gone; the loop was left popping the same two
+    # names, one of them twice. Both surviving names are still cleared: an
+    # ambient $SCITEX_CARDS_AGENT (the deprecated twin, which fails loud when
+    # set) would otherwise decide the outcome instead of the test.
+    for var in ("SCITEX_CARDS_AGENT_ID", "SCITEX_CARDS_AGENT"):
         env.pop(var, None)
     if env_agent_id is not None:
         env["SCITEX_CARDS_AGENT_ID"] = env_agent_id
@@ -259,7 +258,7 @@ def _agent_facing_files(root: Path) -> list[Path]:
     files += list((pkg / "_skills").rglob("*.md"))
     files += [
         p
-        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-card.md")
+        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-cards.md")
         if p.exists()
     ]
     return files

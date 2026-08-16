@@ -4,10 +4,10 @@ Installation
 .. code-block:: bash
 
     # Recommended -- uv resolver
-    uv pip install "scitex-todo[all]"
+    uv pip install "scitex-cards[all]"
 
     # Plain pip also works
-    pip install scitex-todo
+    pip install scitex-cards
 
 Requires Python >= 3.10.
 
@@ -21,7 +21,7 @@ Extras
    * - Extra
      - Adds
    * - ``web``
-     - Django + scitex-app / scitex-ui for ``scitex-todo board``
+     - Django + scitex-app / scitex-ui for ``scitex-cards board``
    * - ``docs``
      - Sphinx + RTD theme for building this documentation
    * - ``dev``
@@ -32,12 +32,12 @@ Extras
 Rendering backends
 ------------------
 
-PNG output from ``scitex-todo render-graph`` needs **one** of:
+PNG output from ``scitex-cards render-graph`` needs **one** of:
 
 - ``mmdc`` (mermaid-cli, with a puppeteer/playwright chromium) on ``PATH``, or
 - outbound access to ``kroki.io`` (the automatic fallback).
 
-Printing the mermaid source (``scitex-todo render-graph --print-mermaid``)
+Printing the mermaid source (``scitex-cards render-graph --print-mermaid``)
 needs neither.
 
 Verify
@@ -45,5 +45,5 @@ Verify
 
 .. code-block:: bash
 
-    python -c "import scitex_todo; print(scitex_todo.__version__)"
-    scitex-todo --help
+    python -c "import scitex_cards; print(scitex_cards.__version__)"
+    scitex-cards --help

@@ -3,9 +3,9 @@
 """Tests for the ``channel_reaches_session`` health check.
 
 Regression cover for the 2026-07-24 fleet-wide silent-deafness outage: the
-scitex-cards -> scitex-cards rename re-registered the MCP server as
-``scitex-cards`` while agent launch lines still allowlisted the pre-rename
-``scitex-cards``. Every channel push was discarded on arrival, and because the
+package rename re-registered the MCP server under its new name while agent
+launch lines still allowlisted the pre-rename one, and the two never met.
+Every channel push was discarded on arrival, and because the
 drain marks records seen regardless, card events and DMs were consumed and lost.
 ``channel_capable`` and ``channel_drain`` were GREEN throughout.
 
@@ -187,17 +187,33 @@ class TestRegisteredServerNames:
         assert result == set()
 
 
+#: Stands in for the allowlist entry that caused the 2026-07-24 outage: a
+#: STALE spelling of this package's own name, left behind by a rename. The
+#: literal string no longer matters and is deliberately not the retired
+#: product name — what the check turns on is that the name we REGISTER under
+#: is absent from the allowlist, however it came to be absent.
+STALE_ALLOWLIST_ENTRY = "scitex-cards-under-its-previous-name"
+
+
 @pytest.fixture
 def rename_outage_result():
-    """The verbatim shape of the 2026-07-24 live incident.
+    """The shape of the 2026-07-24 live incident.
 
-    Registered under the NEW name, allowlisted under the OLD one. Shared by the
-    four tests below so each can pin exactly one fact about the same verdict —
-    when the first `assert` fails the rest never run, so a verdict with four
-    separate obligations needs four separate tests.
+    Registered under the name we actually use, allowlisted only under a stale
+    spelling of it — so every push we make is discarded and nothing says so.
+    Shared by the four tests below so each can pin exactly one fact about the
+    same verdict — when the first `assert` fails the rest never run, so a
+    verdict with four separate obligations needs four separate tests.
+
+    THE STALE ENTRY IS A PLACEHOLDER, NOT THE HISTORICAL STRING. It used to be
+    the pre-rename product name, which made this fixture silently STOP
+    REPRODUCING THE OUTAGE the moment that name was swept: both sides became
+    the same string, the allowlist matched, and the test asserting ``ok is
+    False`` got ``True``. A regression test for a name MISMATCH must not be
+    written out of two names that a future rename can merge into one.
     """
     registered = {"scitex-cards"}
-    allowed = {"scitex-cards", "sac", "claude-code-telegrammer"}
+    allowed = {STALE_ALLOWLIST_ENTRY, "sac", "claude-code-telegrammer"}
     return evaluate_reachability(allowed, registered)
 
 
@@ -246,11 +262,17 @@ class TestReachabilityDecision:
         # Assert
         assert result["hint"] is None
 
-    def test_transitional_both_names_allowlisted_is_ok(self):
-        # Arrange — during the migration both names are allowlisted.
+    def test_a_stale_entry_alongside_ours_is_still_ok(self):
+        # Arrange — this replaces `test_transitional_both_names_allowlisted`,
+        # which allowlisted "both names" during the migration. The migration is
+        # over and there is no second name, so that set literal collapsed to a
+        # SINGLE element and the test silently became a copy of
+        # `test_matching_name_is_ok` — same inputs, same assertion, no extra
+        # fact. What is still worth pinning is the surviving half: a leftover
+        # stale entry must not make a correct allowlist look wrong.
         # Act
         result = evaluate_reachability(
-            {"scitex-cards", "scitex-cards"}, {"scitex-cards"}
+            {"scitex-cards", STALE_ALLOWLIST_ENTRY}, {"scitex-cards"}
         )
         # Assert
         assert result["ok"] is True

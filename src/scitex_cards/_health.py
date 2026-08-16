@@ -356,8 +356,9 @@ def health(
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
-        # scitex-cards -> scitex-cards rename left agent launch lines allowlisting
-        # the OLD server name, so every push was discarded on arrival while the
+        # package rename left agent launch lines allowlisting the OLD server
+        # name while we registered under the new one, so every push was
+        # discarded on arrival while the
         # drain kept marking records seen. Delivery here is fire-and-forget, so
         # a name the client does not know does not delay a notification, it
         # destroys it — silently. This is the only check that asks the far end.

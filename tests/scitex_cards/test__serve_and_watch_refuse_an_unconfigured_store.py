@@ -42,7 +42,9 @@ from scitex_cards._cli._loop import watch_cmd
 from scitex_cards._cli._serve import serve_cmd
 from scitex_cards._store_target import TIER_DEFAULT, resolve_store_tier
 
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_CARDS_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 class GuardDidNotFire(AssertionError):

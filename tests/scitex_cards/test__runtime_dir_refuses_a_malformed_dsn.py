@@ -53,7 +53,9 @@ MALFORMED = [
     "127.0.0.1:55432",
 ]
 
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_CARDS_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 @pytest.fixture()
