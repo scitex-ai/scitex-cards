@@ -13,7 +13,7 @@ tags: [scitex-cards-adopting-from-a-project]
 # Adopting the shared task store from your project
 
 You are a project agent. The operator's board lives at
-`http://127.0.0.1:8051/` and renders from the shared SQLite store
+`http://127.0.0.1:8051/` and renders from the shared store
 (`$SCITEX_CARDS_DB`). This skill is the SHORTEST useful adoption path
 so your tasks show up as your own column on the operator's board
 within 5 seconds of your first write. The full convention +

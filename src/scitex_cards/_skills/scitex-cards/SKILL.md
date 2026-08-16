@@ -1,7 +1,7 @@
 ---
 name: scitex-cards
 description: |
-  [WHAT] Canonical SQLite task store with pluggable adapters — validate
+  [WHAT] Canonical task store with pluggable adapters — validate
   task rows (id/title/status + depends_on/blocks/priority/parent) and
   render them as a mermaid dependency graph (PNG), a read-only React-Flow web
   board, or a plain task listing.
@@ -28,12 +28,12 @@ interfaces:
 
 # scitex-cards
 
-A canonical SQLite task store with pluggable adapters. The DB (one
-`tasks` table) is the single source of truth; adapters render or import it.
-Store identity is `$SCITEX_CARDS_DB` — run `scitex-cards resolve-store` to
-see what this process resolved and which tier supplied it. There is no
-zero-config default: an unconfigured target REFUSES rather than inventing a
-file.
+A canonical task store with pluggable adapters. One `tasks` table is the
+single source of truth; adapters render or import it. Store identity is
+`$SCITEX_CARDS_DB`, and the deployment picks the BACKEND — never assume
+one. Run `scitex-cards resolve-store` to see what this process resolved.
+No zero-config default: an unconfigured target REFUSES rather than
+inventing a file.
 
 ## ⚑ THE THREE MANDATES
 

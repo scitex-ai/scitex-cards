@@ -177,8 +177,8 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 
 ## 8. Gotchas
 
-1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` (the SQLite database path). Check with `scitex-cards resolve-store`. Many agents bind only the user database; a project-scoped database can shadow it silently.
-2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the SQLite migration; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
+1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
+2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the migration off per-project files; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
 3. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
 4. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
 5. **Close uses `deferred` today.** If/when `VALID_STATUSES` grows a dedicated `closed` value, `close` will switch over — the verb shape stays the same.
