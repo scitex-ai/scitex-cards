@@ -21,18 +21,49 @@ from ._task import (
 )
 
 
-def _warn_tolerated(msg: str) -> None:
+#: The ``source`` :func:`_validate_tasks` is given on the WRITE side. Every
+#: other source is a store being read. Kept as a constant because two places
+#: now depend on the exact spelling, and a silent drift between them would
+#: reintroduce the mislabel this constant exists to prevent.
+WRITE_SOURCE = "<save_tasks>"
+
+
+def _side_of(source: str) -> str:
+    """``"write-side"`` when THIS caller is producing the row, else ``"read-side"``.
+
+    The gate is shared — :func:`_validate_tasks`'s own docstring calls itself
+    "the single gate shared by load_tasks (read side) and save_tasks (write
+    side)" — so which side we are on is knowable and was simply being thrown
+    away. See :func:`_warn_tolerated` for why that mattered.
+    """
+    return "write-side" if source == WRITE_SOURCE else "read-side"
+
+
+def _warn_tolerated(msg: str, side: str = "read-side") -> None:
     """Shout about a value this build does not understand, but keep going.
 
-    Read-side only. Loud on stderr AND through ``warnings`` so a human, a log
-    scraper, and ``-W error`` all see it. Deliberately NOT silent: the point
-    is that one row from a newer writer must not take the fleet's board down,
-    not that the problem should be hidden.
+    Loud on stderr AND through ``warnings`` so a human, a log scraper, and
+    ``-W error`` all see it. Deliberately NOT silent: the point is that one row
+    from a newer writer must not take the fleet's board down, not that the
+    problem should be hidden.
+
+    ``side`` IS NOT COSMETIC, and this function used to hard-code ``read-side``
+    while its only caller ran on BOTH sides. A reader who sees "read-side" is
+    told that somebody else's row came past them; on a write that is false —
+    they minted it themselves a microsecond ago. Measured 2026-08-16: three
+    cards carrying the ABOLISHED status ``pending`` were created after its
+    abolition by the maintainer of the package that abolished it, and a
+    several-hundred-card sweep set a status (``archived``) that no build knows.
+    The one line that could have stopped either pointed away from the writer.
+
+    The default stays ``read-side`` so a caller that does not pass a side is
+    treated as the tolerant-read case it historically was, rather than silently
+    accusing a reader of writing.
     """
     import sys as _sys
     import warnings as _warnings
 
-    banner = f"[scitex-cards] TOLERATED (read-side): {msg}"
+    banner = f"[scitex-cards] TOLERATED ({side}): {msg}"
     print(banner, file=_sys.stderr, flush=True)
     _warnings.warn(banner, stacklevel=3)
 
@@ -93,6 +124,10 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
     if not isinstance(tasks, list):
         raise TaskValidationError(f"{source}: top-level 'tasks' must be a list")
 
+    # Resolved ONCE, not per row: `source` is fixed for the whole call, and
+    # deriving it inside the loop would invite a future edit to derive it from
+    # the row instead — which is the row's provenance, not this caller's side.
+    side = _side_of(source)
     seen: set[str] = set()
     for task in tasks:
         if not isinstance(task, dict):
@@ -116,16 +151,34 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
             # An ABOLISHED status gets a message that says what to do instead,
             # not just "invalid" — the caller is mid-write and needs the fix.
             hint = ABOLISHED_STATUSES.get(status)
-            msg = (
-                f"{source}: task {tid!r}: {hint}"
-                if hint
-                else (
+            # AND THE UNKNOWN-STATUS ADVICE DEPENDS ON WHICH SIDE WE ARE ON,
+            # because on a write the read-side explanation is not merely
+            # unhelpful, it is FALSE. "If another agent wrote it, your
+            # scitex-cards is older than the writer's — upgrade rather than
+            # rewriting the card" is sound counsel to a READER who has just
+            # met a row from a newer build. Said to a WRITER it blames an
+            # absent third party for a value the caller is setting right now,
+            # and tells them to upgrade instead of to fix their own input.
+            # Measured 2026-08-16: a several-hundred-card sweep set the unknown
+            # status `archived`, and this is the sentence its author would have
+            # been shown.
+            if hint:
+                msg = f"{source}: task {tid!r}: {hint}"
+            elif side == "write-side":
+                msg = (
+                    f"{source}: task {tid!r} is being written with unknown status "
+                    f"{status!r}; this build knows {VALID_STATUSES}. YOU are "
+                    f"setting it — no other writer is involved. Use a value this "
+                    f"build knows, or land the new value in VALID_STATUSES first "
+                    f"so every reader can interpret it."
+                )
+            else:
+                msg = (
                     f"{source}: task {tid!r} has unknown status {status!r}; "
                     f"this build knows {VALID_STATUSES}. If another agent wrote "
                     f"it, your scitex-cards is older than the writer's — upgrade "
                     f"rather than rewriting the card."
                 )
-            )
             # WARN, never raise — on BOTH the read and the write side.
             #
             # Operator ruling 2026-07-10: "カードが書けないということはなしで
@@ -142,7 +195,7 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
             # and board no longer offer abolished values — and this warning
             # names the row so it gets migrated. Nothing is silently accepted;
             # nothing is destructively refused.
-            _warn_tolerated(msg)
+            _warn_tolerated(msg, side)
         # A `blocked` card MUST name its gate. "Blocked with no blocker" is
         # stuck-and-silent: nobody can clear a gate nobody stated. Found
         # 2026-07-10 on 14 live cards, several idle for over a month.
@@ -159,7 +212,7 @@ def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
                 # WARN, never raise — same ruling as the status enum above. A
                 # missing blocker is a quality problem worth shouting about;
                 # it is not worth destroying the caller's card over.
-                _warn_tolerated(msg)
+                _warn_tolerated(msg, side)
         priority = task.get("priority")
         # bool is an int subclass — reject it explicitly so `priority: true`
         # is a clear error rather than a silent 1.
