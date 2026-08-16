@@ -10,12 +10,14 @@ Verbs:
     install-fleet  Apply the entry to every agent's to_home/.mcp.json.
     channel        Run the standalone channel-notification server (stdio).
 
-We prefer ``scitex_dev._mcp_cli.attach_mcp_subcommands`` when available
-(keeps every scitex package's `mcp` group identical) and fall back to a
-hand-rolled group when scitex-dev isn't installed (so a fresh
-``pip install scitex-cards[all]`` still works). The ``channel`` verb is
-scitex-cards' OWN feature (no scitex-dev parallel) and is wired onto the
-group in BOTH paths.
+This group is built HERE, by one builder, with no alternative path. It once
+preferred ``scitex_dev._mcp_cli.attach_mcp_subcommands`` and fell back to a
+local group when that import failed. scitex-dev retired that helper (measured
+2026-08-16: the symbol survives only in one of their skill markdowns, with no
+Python implementation and no replacement — each package attaches its own), so
+the preferred branch had been dead while a guarded ``except ImportError``
+kept it invisible. The ``channel`` verb is scitex-cards' OWN feature and has
+never had a scitex-dev parallel.
 
 The ``install`` / ``install-fleet`` verbs and the FastMCP tool-introspection
 helpers were extracted to ``_mcp_install`` / ``_mcp_tools`` to keep this
@@ -171,13 +173,17 @@ def _attach_unified_start(group: click.Group) -> None:
         _run_unified_server()
 
 
-def _fallback_mcp_group() -> click.Group:
-    """Hand-rolled `mcp` group used when scitex-dev's helper isn't present.
+def _build_mcp_group() -> click.Group:
+    """Build scitex-cards' `mcp` group. This is THE builder, not a fallback.
 
     Implements §3's required four (``start``, ``doctor``, ``list-tools``,
-    ``install``) plus ``install-fleet`` and the ``channel`` verb. Keeps
-    behavior parity with the scitex-dev helper so users see the same
-    surface either way.
+    ``install``) plus ``install-fleet`` and the ``channel`` verb.
+
+    It was named ``_fallback_mcp_group`` while a scitex-dev helper was the
+    preferred path. That helper is retired (see :func:`register`), so there is
+    nothing left for this to be a fallback FROM — and a name that describes a
+    relationship which no longer exists sends every reader looking for the
+    other half. Constitution §3: rename rather than re-explain.
     """
 
     @click.group(
@@ -299,44 +305,26 @@ def _fallback_mcp_group() -> click.Group:
 
 
 def register(main: click.Group) -> None:
-    """Attach the `mcp` subgroup to `main`. Prefers the scitex-dev helper."""
-    try:
-        from scitex_dev._mcp_cli import attach_mcp_subcommands  # type: ignore
+    """Attach the `mcp` subgroup to `main`.
 
-        @click.group(
-            "mcp",
-            **spec_group_kwargs(
-                summary="MCP server subcommands (SciTeX §3 required four).",
-                command_categories=(
-                    (
-                        "Core",
-                        (
-                            "start",
-                            "doctor",
-                            "list-tools",
-                            "install",
-                            "install-fleet",
-                            "channel",
-                        ),
-                    ),
-                ),
-            ),
-        )
-        def mcp_group() -> None:
-            pass
+    THERE IS ONE PATH. This used to prefer ``scitex_dev._mcp_cli.
+    attach_mcp_subcommands`` and fall back to the local builder on
+    ImportError. That helper is RETIRED — confirmed by scitex-dev 2026-08-16,
+    who measured their own tree and found the symbol only in a skill markdown,
+    with no Python implementation anywhere and no replacement to point at:
+    each package now attaches its own subcommands.
 
-        attach_mcp_subcommands(mcp_group, server_path=_SERVER_PATH, cli_name=_CLI_NAME)
-        # Override scitex-dev's tools-only `start` with scitex-cards' UNIFIED
-        # server (tools + digest push) — one `scitex-cards` MCP integration.
-        _attach_unified_start(mcp_group)
-        # scitex-cards' OWN channel verb has no scitex-dev parallel — wire it
-        # on regardless of which path built the group (kept for back-compat).
-        attach_channel_verb(mcp_group)
-        main.add_command(mcp_group, name="mcp")
-        return
-    except ImportError:
-        # scitex-dev not available — use the hand-rolled fallback.
-        main.add_command(_fallback_mcp_group(), name="mcp")
+    So the preferred branch had been dead for some time and the fallback was
+    the only path that ever ran. Because the import sat inside ``try:`` /
+    ``except ImportError``, nothing said so — the CLI worked, the branch
+    evaporated silently, and the only visible trace was a cross-package import
+    gate that SKIPPED the missing module instead of failing on it.
+
+    Deleting the dead branch rather than repointing it, per constitution §3:
+    a vocabulary word no implementation stands behind is a promise the code
+    will break, and one dish beats a menu whose second item does not exist.
+    """
+    main.add_command(_build_mcp_group(), name="mcp")
 
 
 # EOF
