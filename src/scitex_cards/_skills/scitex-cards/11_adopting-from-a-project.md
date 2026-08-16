@@ -2,11 +2,10 @@
 description: |
   [TOPIC] Adopting the shared task store from your project
   [DETAILS] How a project agent (clew / neurovista / scitex-dev / scitex-hub
-  / ripple-wm / scitex-orochi / scitex-agent-container / etc.) writes its
-  own tasks into the shared fleet board (the SQLite store) so the operator's
-  board (http://127.0.0.1:8051/) auto-renders your tasks as a labeled column.
-  [HOW] Set `project` + `agent` on every task you create + write via the
-  scitex-cards CLI or Python API. Three fields is the minimum for your work
+  / ripple-wm / scitex-orochi / etc.) writes its own tasks into the shared
+  fleet board so the operator's board auto-renders them as a labeled column.
+  [HOW] Set `project` + `agent` on every task you create, and write via the
+  scitex-cards CLI or Python API. Those fields are the minimum for your work
   to surface on the live board.
 tags: [scitex-cards-adopting-from-a-project]
 ---

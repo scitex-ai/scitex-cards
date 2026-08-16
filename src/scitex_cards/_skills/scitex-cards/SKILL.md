@@ -62,11 +62,10 @@ card is NOT done until its completion is recorded WITH the evidence link:
 scitex-cards done <card-id> --pr-url <merged-PR-URL>
 ```
 
-`--pr-url` is REQUIRED — a bare `done <id>` is a recording gap the reconcile
-pass cannot verify later. No PR? Record a `comment_task` naming the evidence
-just before the flip. Do it as part of the merge, not as a follow-up card.
-Bulk catch-up: `scitex-cards sync-github --since <date> -y`. Rationale and
-per-wire verbs:
+`--pr-url` is REQUIRED — a bare `done <id>` is a gap the reconcile pass
+cannot verify later. No PR? Record a `comment_task` naming the evidence just
+before the flip, as part of the merge rather than a follow-up card. Bulk
+catch-up: `scitex-cards sync-github --since <date> -y`. Rationale:
 [60_pr-merge-recording-mandate.md](60_pr-merge-recording-mandate.md).
 
 ## Who writes what
@@ -87,26 +86,28 @@ work queue — the 7-step wake loop is in 32.
 - [05_mcp-tools.md](05_mcp-tools.md) — the MCP tool surface (Convention A)
 
 **Workflows (10+)**
-- [10_campaign-tracking.md](10_campaign-tracking.md) — release / audit campaigns
-- [11_adopting-from-a-project.md](11_adopting-from-a-project.md) — 30-second adoption path. **READ FIRST** if you are not on the board yet
+- [10_campaign-tracking.md](10_campaign-tracking.md) — release campaigns
+- [11_adopting-from-a-project.md](11_adopting-from-a-project.md) — 30-second adoption. **READ FIRST** if you are not on the board
 
 **Meta (20+)**
 - [20_env-vars.md](20_env-vars.md) — env vars and local state
-- [21_fleet-mcp-rollout.md](21_fleet-mcp-rollout.md) — canonical `.mcp.json` block + the MCP-only mandate
-- [22_pretooluse-hook-redirect.md](22_pretooluse-hook-redirect.md) — the hook redirecting private task files into the store
+- [21_fleet-mcp-rollout.md](21_fleet-mcp-rollout.md) — canonical `.mcp.json` block + MCP-only mandate
+- [22_pretooluse-hook-redirect.md](22_pretooluse-hook-redirect.md) — redirects private task files into the store
 - [22_skills-propagation.md](22_skills-propagation.md) — fleet-wide `required_skills` propagation
 - [23_stop-hook-second-delivery-rail.md](23_stop-hook-second-delivery-rail.md) — the Stop hook, second delivery rail
 
 **Architecture (30+)**
-- [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md) — tiers, store resolution, write protocol (for the how-to use 11)
+- [30_two-tier-conventions-and-write-protocol.md](30_two-tier-conventions-and-write-protocol.md) — tiers, store resolution, write protocol (how-to: 11)
 - [31_fleet-ports-sync-and-citation.md](31_fleet-ports-sync-and-citation.md) — ports, cross-host sync, citation, auto-merge poll
 - [32_agent-self-consumption-loop.md](32_agent-self-consumption-loop.md) — the 7-step agent loop; every agent reads this
 
 **Operations (40+)**
 - [40_task-harvest.md](40_task-harvest.md) — blocker-driven backlog consumption
-- [41_cli-mcp-gap-analysis.md](41_cli-mcp-gap-analysis.md) — CLI / MCP / Python gap audit (several items shipped)
-- [42_for-consuming-agents.md](42_for-consuming-agents.md) — **start here if told "use scitex-cards for your cards"**
-- [43_consuming-agent-schema-and-crud.md](43_consuming-agent-schema-and-crud.md) — closed-enum schema + CRUD verbs, in full
+- [45_blocker-taxonomy.md](45_blocker-taxonomy.md) — the four blocker values and their obligations
+- [46_task-harvest-cadence-and-routing.md](46_task-harvest-cadence-and-routing.md) — cron cadence + funnel routing
+- [41_cli-mcp-gap-analysis.md](41_cli-mcp-gap-analysis.md) — CLI / MCP / Python gap audit (partly shipped)
+- [42_for-consuming-agents.md](42_for-consuming-agents.md) — **start here if told to use scitex-cards**
+- [43_consuming-agent-schema-and-crud.md](43_consuming-agent-schema-and-crud.md) — closed-enum schema + CRUD verbs
 - [44_consuming-agent-coordination.md](44_consuming-agent-coordination.md) — board coordination + the lead-worker wire
 - [50_board-reconciliation-runbook.md](50_board-reconciliation-runbook.md) — reconciliation verbs and sweep
 - [60_pr-merge-recording-mandate.md](60_pr-merge-recording-mandate.md) — long-form of mandate 3
