@@ -21,7 +21,7 @@ tags: [scitex-cards-task-harvest, scitex-cards-blockers, scitex-cards-throughput
 
 # Task harvest — blocker-driven backlog consumption
 
-The shared board (the SQLite task store, rendered live at
+The shared board (the shared task store, rendered live at
 `http://127.0.0.1:8051/`) is only valuable when **consumption rate >
 arrival rate**. Otherwise old entries drift away from the live codebase,
 the operator stops trusting the map, and the SSoT decays. This skill
