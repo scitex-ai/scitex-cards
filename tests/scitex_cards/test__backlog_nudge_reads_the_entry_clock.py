@@ -36,6 +36,22 @@ LONG_AGO = "2026-07-01T00:00:00Z"
 JUST_NOW = "2026-08-16T11:59:00Z"
 
 
+class _StubCard:
+    """The minimum the line formatter reads — a hand-rolled fake, not a mock.
+
+    ``pending_backlog_nudge_line`` only needs ``id`` for ``_cap_ids``. Building
+    the real ``StaleCard`` here would couple these assertions to a constructor
+    that has nothing to do with what they check.
+    """
+
+    def __init__(self, card_id: str) -> None:
+        self.id = card_id
+        self.age_hours = 999.0
+        self.priority = 3
+        self.status = "deferred"
+        self.title = "stub"
+
+
 @pytest.fixture()
 def rotting_card() -> dict:
     """Deferred since July, but commented on a minute ago — the defect's shape."""
@@ -122,6 +138,53 @@ def test_the_backlog_sweep_is_wired_to_the_entry_clock():
     source = inspect.getsource(active.detect_pending_backlog)
     # Assert
     assert "clock=_deferred_age_hours" in source
+
+
+def test_the_digest_names_the_field_it_ages_by():
+    # Arrange — one question produced four true answers on one database
+    # (62 / 103 / 163 / 583) because the sentence never said which predicate
+    # it meant. The line must state the clock it used.
+    from scitex_cards._stale.active_clocks import BACKLOG_AGE_FIELD
+    from scitex_cards._stale.active_lines import pending_backlog_nudge_line
+
+    cards = [_StubCard("c1")]
+    # Act
+    line = pending_backlog_nudge_line("someone", cards)
+    # Assert
+    assert BACKLOG_AGE_FIELD in line
+
+
+def test_the_digest_names_the_owner_field_it_resolved_by():
+    # Arrange — for one owner, agent/assignee/scope held 645/656/549 cards.
+    # Three populations, one word "owner"; the count is meaningless without it.
+    from scitex_cards._stale.active_lines import pending_backlog_nudge_line
+
+    cards = [_StubCard("c1")]
+    # Act
+    line = pending_backlog_nudge_line("someone", cards)
+    # Assert
+    assert "owner by agent" in line
+
+
+def test_the_stated_field_is_the_one_the_clock_reads():
+    # Arrange — THE ANTI-DRIFT PIN. A hand-written label would let the message
+    # keep naming `deferred_at` after someone changed the clock, which is the
+    # exact shape of the _inbox.py docstrings that still claim a SQLite
+    # default. Prove the printed name is the key the clock actually looks up.
+    import datetime as _d
+
+    from scitex_cards._stale.active_clocks import (
+        BACKLOG_AGE_FIELD,
+        _deferred_age_hours,
+    )
+
+    now = _d.datetime(2026, 8, 16, 12, 0, 0, tzinfo=_d.timezone.utc)
+    task = {BACKLOG_AGE_FIELD: LONG_AGO, "created_at": JUST_NOW}
+    # Act — if the clock read some OTHER field it would fall back to
+    # created_at (a minute old) instead of seeing the July stamp.
+    age = _deferred_age_hours(task, now)
+    # Assert
+    assert age > 1000
 
 
 def test_the_blocked_sweep_still_uses_its_own_clock():

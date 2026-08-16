@@ -130,17 +130,39 @@ def pending_backlog_nudge_line(
 
     Shape (single line; caller wraps / delivers):
 
-        BACKLOG: N untouched deferred card(s) (>Nh) — start or triage
-        (begin, re-prioritise, or close): <id>, <id>, …
+        BACKLOG: N deferred card(s) untouched >Nh [aged by <field>; owner by
+        agent] — start or triage (begin, re-prioritise, or close): <id>, …
 
     The wording names ``deferred`` — the backlog status since the pending
     abolition. A nudge telling an agent about "pending cards" it cannot find
     (or write) is an instruction it cannot follow.
+
+    IT STATES ITS OWN PREDICATE, and that bracket is not decoration. On
+    2026-08-16 one question — "how many backlog cards does this owner have" —
+    produced four different true answers on ONE database: 62 from the sweep,
+    103 from ``last_activity > 24h``, 163 from ``deferred_at > 24h``, and 583
+    from a reader on a stale replica. Two agents spent an hour discovering that
+    none of them disagreed; they were four different predicates wearing one
+    sentence. A count is not a fact until it says what it counted.
+
+    The two axes it names are exactly the two that differed. The CLOCK, because
+    "untouched" meant `last_activity` in this sweep and `deferred_at` in the CLI
+    triage surface. And the OWNER field, because :func:`_owner_of` resolves
+    ``agent`` before ``assignee``, and for one owner that day those fields held
+    656, 645 and 549 cards — three populations, one word.
+
+    The field name is READ FROM THE CLOCK the sweep actually uses rather than
+    written here as prose, so the two cannot drift apart. A hand-written label
+    is the failure this docstring is describing, one level up: it would be
+    documentation asserting something the code stopped doing, which is how
+    ``_inbox.py`` came to tell readers the inbox defaults to SQLite.
     """
     from .active import _pending_nudge_hours
+    from .active_clocks import BACKLOG_AGE_FIELD
 
     thr = f"{_pending_nudge_hours(pending_hours):g}"
     return (
-        f"BACKLOG: {len(cards)} untouched deferred card(s) (>{thr}h) — "
+        f"BACKLOG: {len(cards)} deferred card(s) untouched >{thr}h "
+        f"[aged by {BACKLOG_AGE_FIELD}; owner by agent] — "
         f"start or triage (begin, re-prioritise, or close): {_cap_ids(cards)}"
     )

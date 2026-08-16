@@ -41,6 +41,7 @@ __all__ = [
     "_age_hours",
     "_blocked_age_hours",
     "_deferred_age_hours",
+    "BACKLOG_AGE_FIELD",
 ]
 
 #: When the card entered its CURRENT ``(status, blocker)`` pair — the
@@ -118,6 +119,14 @@ def _blocked_age_hours(task: dict, now: _dt.datetime) -> float | None:
     return (now - parsed).total_seconds() / 3600.0
 
 
+#: The field :func:`_deferred_age_hours` ages by, named ONCE so the nudge text
+#: can quote the clock instead of describing it. ``pending_backlog_nudge_line``
+#: prints this, so changing the clock changes the message in the same edit —
+#: a hand-written label is how a doc comes to assert what the code stopped
+#: doing, which is the defect this whole change is about.
+BACKLOG_AGE_FIELD = "deferred_at"
+
+
 def _deferred_age_hours(task: dict, now: _dt.datetime) -> float | None:
     """Hours since the card ENTERED the backlog. The backlog clock.
 
@@ -141,9 +150,7 @@ def _deferred_age_hours(task: dict, now: _dt.datetime) -> float | None:
     never remove it, because a card's entry into the backlog cannot be later
     than its last touch. That is what makes it safe to land in one step.
     """
-    from .._backlog_triage import FIELD_DEFERRED_AT
-
-    ts = task.get(FIELD_DEFERRED_AT) or task.get("created_at")
+    ts = task.get(BACKLOG_AGE_FIELD) or task.get("created_at")
     parsed = _parse_iso(ts)
     if parsed is None:
         return None
