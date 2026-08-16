@@ -60,7 +60,7 @@ def _isolated_store(tmp_path, monkeypatch):
         conn.commit()
     finally:
         conn.close()
-    return db
+    yield db
 
 
 @contextlib.contextmanager

@@ -252,10 +252,22 @@ def evaluate(
 @click.option(
     "--agent",
     default=None,
-    help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
+    help=(
+        "Agent to check. Defaults to $SCITEX_CARDS_AGENT_ID; there is NO "
+        "fallback — an unresolvable identity fails loudly rather than "
+        "guessing (see _store._default_agent)."
+    ),
 )
 def stop_hook_cmd(agent):
-    """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work."""
+    """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work.
+
+    Reads the hook payload on stdin; Claude Code invokes it, not a human.
+
+    Example:
+
+      $ echo '{"session_id": "abc123"}' | scitex-cards stop-hook --agent scitex-cards
+      {"decision": "block", "reason": "3 runnable item(s) on ..."}
+    """
     try:
         from .._store import _default_agent
 

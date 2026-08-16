@@ -110,6 +110,20 @@ def install_stop_hook_cmd(settings_path, command, apply_):
 
     Refuses a stop while the agent's board holds runnable work. Dry-run
     unless --apply is passed.
+
+    Example:
+
+      $ scitex-cards install-stop-hook
+      # would add Stop hook 'scitex-cards stop-hook' to ~/.claude/settings.json
+      $ scitex-cards install-stop-hook --apply
+      # wrote ~/.claude/settings.json (backup: settings.json.bak-1)
+
+    NOTE ON `--dry-run`: this command has none ON PURPOSE, and the CLI audit's
+    §2 finding to add one is wrong here. Dry-run is the DEFAULT and `--apply`
+    is the affirmative gate, which is strictly safer than the rule requires.
+    Adding a `--dry-run` flag would create two spellings for one behaviour and
+    imply that omitting it mutates — the opposite of what happens. Same for
+    `--yes`: `--apply` already IS the confirmation.
     """
     path = (
         Path(settings_path).expanduser()
