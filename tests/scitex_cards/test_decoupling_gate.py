@@ -40,7 +40,22 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parents[1] / "src" / "scitex_cards"
+#: The tree this gate scans. ``parents[2]`` is the REPO ROOT from
+#: ``tests/scitex_cards/`` — count it from THIS file's depth, not from memory.
+#:
+#: THIS CONSTANT IS THE GATE'S SINGLE POINT OF SILENT FAILURE, which is why it
+#: is guarded below rather than merely commented. ``rglob`` on a path that does
+#: not exist raises nothing and yields NOTHING, so a wrong depth here does not
+#: fail the test — it empties the test. The scan then inspects zero modules,
+#: ``offenders`` stays empty, and the assertion PASSES while proving nothing.
+#:
+#: That is not hypothetical. This file sat loose at ``tests/`` for exactly this
+#: reason and tripped the PS-203 loose-top-level-test rule; the obvious fix —
+#: ``git mv`` and nothing else — would have left ``parents[1]`` pointing at
+#: ``tests/``, resolved SRC to the non-existent ``tests/src/scitex_cards``, and
+#: turned an operator HARD RULE into a gate that cannot fail. Measured before
+#: the move: ``exists() -> False``, ``len(list(rglob('*.py'))) -> 0``.
+SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 
 #: Root module names scitex-cards must NEVER import. ``scitex_cards`` is
 #: deliberately absent: that is our own shim, not a foreign package.
@@ -76,6 +91,37 @@ def test_no_module_imports_sac_or_telegrammer_anywhere():
     assert not offenders, (
         "scitex-cards must stay decoupled (operator hard rule); "
         "forbidden imports found:\n" + "\n".join(offenders)
+    )
+
+
+def test_the_ast_scan_actually_inspects_the_package():
+    """POSITIVE CONTROL for the scan above, which cannot fail on its own.
+
+    The scan asserts an ABSENCE (no offenders). An absence assertion passes
+    just as happily when there was nothing to look at, so on its own it cannot
+    distinguish "no module imports sac" from "no modules were read". ``rglob``
+    on a wrong path raises nothing and yields nothing, which makes the second
+    case silent and permanent.
+
+    So this test asserts the scan's INPUT was non-empty and really is this
+    package. It is the half that can go red when :data:`SRC` is wrong, and it
+    is why the gate as a whole cannot report success while inspecting zero
+    files — the constitution's rule that a green run is worthless until it is
+    proved it can go red.
+
+    It anchors on ``__init__.py`` rather than a file count: a count has to be
+    revised every time the package grows, and a threshold nobody maintains
+    drifts down to something that passes vacuously again.
+    """
+    # Arrange
+    anchor = SRC / "__init__.py"
+    # Act
+    scanned = sorted(SRC.rglob("*.py"))
+    # Assert
+    assert anchor in scanned, (
+        f"the decoupling scan read {len(scanned)} file(s) from {SRC}, which "
+        f"does not look like scitex_cards (exists={SRC.is_dir()}). The scan "
+        f"above is therefore vacuous — fix SRC, do not silence this."
     )
 
 
@@ -204,7 +250,7 @@ def test_the_blocker_is_removed_when_the_context_exits(canary_root):
     assert raised is None, f"the blocker leaked: {root} is still unimportable"
 
 
-def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatch):
+def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, env):
     """The CRUD surface must complete with sac/the telegrammer UNINSTALLABLE.
 
     WHY THIS, AND NOT "no forbidden module is in ``sys.modules``" (the shape
@@ -229,12 +275,21 @@ def test_crud_surface_survives_absence_of_forbidden_modules(tmp_path, monkeypatc
     # of whoever runs it (it passed locally and failed on CI for exactly
     # that reason: add_task resolves its creator from the env).
     #
-    # BOTH identity variables, because ``_env_compat`` gives the
-    # ``SCITEX_CARDS_*`` name precedence: pinning only the ``SCITEX_CARDS_*``
-    # one leaves the test reading the runner's real agent id whenever
-    # ``SCITEX_CARDS_AGENT_ID`` is exported — which it is for every agent in
-    # this fleet, so the pin was silently inert exactly where it was needed.
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
+    # ONE variable, and it is the only one: measured 2026-08-16, the sole
+    # identity name in src/ is ``SCITEX_CARDS_AGENT_ID`` (43 files, no second
+    # spelling). The pin below is therefore complete.
+    #
+    # This comment used to say "BOTH identity variables, because ``_env_compat``
+    # gives the ``SCITEX_CARDS_*`` name precedence: pinning only the
+    # ``SCITEX_CARDS_*`` one leaves the test reading the runner's real agent
+    # id whenever ``SCITEX_CARDS_AGENT_ID`` is exported" — the same name on
+    # both sides of a precedence rule, which cannot mean anything. The rename
+    # sweep collapsed a genuine two-name distinction into one name and left the
+    # sentence explaining a choice that no longer exists. Rewritten rather than
+    # deleted, because a reader who noticed only ONE setenv under a comment
+    # promising TWO would reasonably "fix" it by adding a pin for a variable
+    # that does not exist.
+    env.set("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
 
@@ -278,7 +333,7 @@ def forbidden_port_providers():
 
 
 def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
-    tmp_path, monkeypatch, caplog, forbidden_port_providers
+    tmp_path, env, caplog, forbidden_port_providers
 ):
     """Prove the CRUD cycle REALLY reaches the coupling surface and tolerates it.
 
@@ -295,7 +350,7 @@ def test_port_provider_failure_is_swallowed_by_the_hook_dispatcher(
     """
     # Arrange
     provided = forbidden_port_providers
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "decoupling-gate-test")
     store = tmp_path / "tasks.yaml"
     from scitex_cards import _store
 
