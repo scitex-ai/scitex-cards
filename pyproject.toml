@@ -308,10 +308,14 @@ scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 # `scitex_cards._store_plugin` declares the card table's merge semantics, and
 # that declaration lands as DOCUMENTATION first. Registering the entry-point
 # group here is what makes the federation actually resolve and merge the live
-# board, and several field rules are still open (`card_json` vs the columns it
-# duplicates, `row_order`'s missing DERIVED role, `status`'s lack of a
-# transition-aware rule). Wiring it before those are settled would put an
-# admittedly incomplete declaration in charge of real data.
+# board, and several field rules are still open. ADR-0018 D1 settled the first
+# of them — `card_json` vs the columns it duplicates: the document is
+# canonical, the columns are derived — but `row_order` still has no DERIVED
+# role upstream, `status` still has no transition-aware rule (so a merge can
+# resurrect a terminal card), and D3's delete tombstone has not yet left the
+# document it would be replaced wholesale with. Wiring it before those are
+# settled would put an admittedly incomplete declaration in charge of real
+# data.
 #
 # So the module states the semantics and nothing calls it — which is exactly
 # what its own docstring claims, and the claim has to stay TRUE. Add the block

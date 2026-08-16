@@ -12,15 +12,55 @@ machinery (HLC, oplog, replay, `merge_field`); it cannot know that a card's
 `created_at` is written once, that `last_activity` is stamped automatically but
 can also be SET by any caller, or that `status` is a lifecycle rather than a
 free scalar. Only this package knows that. There is NO DEFAULT merge rule, and
-a wrong one loses data WITHOUT RAISING — so every field below states its rule
-and its reason, and the reason is the deliverable.
+a wrong one loses data WITHOUT RAISING — so every field states its rule and its
+reason, and the reason is the deliverable.
 
-THE REASON IS THE PART THAT GETS CHECKED. Two rules here were wrong in the
-first draft for the same reason: a field was described by what it OUGHT to be
-rather than by what the code does to it. `last_activity` "only ever moves
-forward" was a plausible sentence about a timestamp and a false statement about
-this column (`_store_mutate.py:379` — see its entry). When a rule's reason
-names a line of code, it can be checked; when it names an intuition, it cannot.
+THE REASON IS THE PART THAT GETS CHECKED. Two rules were wrong in the first
+draft for the same reason: a field was described by what it OUGHT to be rather
+than by what the code does to it. `last_activity` "only ever moves forward" was
+a plausible sentence about a timestamp and a false statement about this column
+(`_store_mutate.py:403` — see its entry in `_store_plugin_promotions`). When a
+rule's reason names a line of code it can be checked; when it names an
+intuition it cannot.
+
+═══ WHAT IS DECLARED: THE DOCUMENT, NOT THE COLUMNS (ADR-0018 D1) ═══
+
+`TASK_FIELDS` has TWO entries and only one of them carries card data: the
+record key, and the card document. ADR-0018 D1 settles the question an earlier
+draft of this file left open — "either it is derived (recompute after merge) or
+it is canonical (and the columns are derived) … a schema decision this package
+has not made yet" — in the second direction. The document is CANONICAL; the ~30
+typed columns beside it are the INDEX (`_db_payload.py:23`), rebuilt from the
+card on every write, and so are not separately replicated data.
+
+The hazard that decides it is the draft's own, unchanged by the resolution: a
+denormalised copy merged per-field BESIDE the document it duplicates lets the
+two representations disagree — host A's `status` column beside host B's
+`card_json.status` — producing a row that is internally inconsistent while
+every field merged "correctly".
+
+Declaring the columns INSTEAD of the document is the other direction, and it
+loses data rather than merely confusing it: 22 distinct card keys have no
+column at all (`_db_payload.py:9-18`, measured 2026-07-13 on 1,452 cards) —
+including `parked`, whose absence on the receiving host makes the backlog sweep
+propose CANCELLATION for cards nobody abandoned (ADR-0018:58-64).
+
+THE COST, stated here rather than buried. Two agents editing DIFFERENT scalar
+fields of the SAME card concurrently WILL clobber each other: the later HLC
+wins the whole document, so an edit to `note` on host A and an edit to
+`priority` on host B do not merge, and nothing raises. That is accepted
+deliberately, as a comparison of failure modes — the losing value is still in
+the append-only oplog (`_merge.py:11-18`: "'losing' a merge is not data loss —
+it is a view"), whereas the 22 dropped keys would be gone on every host,
+forever, silently. Silence is the failure mode this store cannot afford; three
+board wipes are why ADR-0016 exists.
+
+THE ~30 COLUMN RULES SURVIVE, IN A REGISTER RATHER THAN IN THE SCHEMA.
+ADR-0018's escape hatch is to promote a genuinely contended field to its own
+column "with a stated reason, one at a time" (:162-167), and
+`_store_plugin_promotions.PROMOTION_CANDIDATES` is where those stated reasons
+live until each promotion happens. It is re-exported here for callers, but it
+is NOT a declaration: `task_schema()` reads `TASK_FIELDS` alone.
 
 ═══ WHY `provide()` RAISES INSTEAD OF DEGRADING ═══
 
@@ -61,6 +101,7 @@ from typing import Any
 from scitex_dev.store import FieldKind, FieldPolicy, FieldRole, MergeRule, Schema
 
 from ._paths import PKG_SHORT
+from ._store_plugin_promotions import PROMOTION_CANDIDATES, Promotion
 
 #: The table this package owns. `name == schema.name` is the federation's dedup
 #: key, so it must stay stable once declared.
@@ -85,6 +126,17 @@ STORE_NAME = "scitex_cards_tasks"
 #: import exists to prevent.
 PACKAGE = "scitex-cards"
 
+#: The column holding the verbatim card — THE one declared payload. Named once
+#: here rather than spelled at each use, because ADR-0018 N1 recommends
+#: renaming it to `canonical_card`: `card_json` says how the value is ENCODED
+#: and says nothing about the property a reader must not get wrong, that this
+#: is the truth and the columns beside it are derived from it. The operator had
+#: to ask what `card_json` was, which is the bug report. That rename is a
+#: MIGRATION over a live store rather than a rename (ADR-0018:265-297), so it
+#: has not happened; routing the declaration through one constant is what makes
+#: it cheap when it does.
+DOCUMENT_COL = "card_json"
+
 
 def _p(kind, role, required, merge, indexed=False) -> FieldPolicy:
     """Every attribute keyword-only and stated — the primitive has no defaults."""
@@ -94,7 +146,7 @@ def _p(kind, role, required, merge, indexed=False) -> FieldPolicy:
 
 
 # --------------------------------------------------------------------------- #
-# The card. Every field states a rule and the reason it is that rule.          #
+# The declaration. Two entries: the record key, and the card itself.           #
 # --------------------------------------------------------------------------- #
 TASK_FIELDS: "dict[str, FieldPolicy]" = {
     # IDENTITY — a card id is the card. It MUST also be IMMUTABLE, and the
@@ -103,92 +155,50 @@ TASK_FIELDS: "dict[str, FieldPolicy]" = {
     # "changing one does not update the record, it names a different record".
     # That is the validator earning its place — the one field where a wrong
     # rule would have silently merged two different cards into one.
+    #
+    # IT IS THE ONE TYPED COLUMN THAT STAYS DECLARED UNDER D1, and not by
+    # preference. `Schema.build` REFUSES a schema with no IDENTITY field —
+    # "without one there is no record key, so single-writer-per-record
+    # ownership and oplog replay have nothing to attach to" (`_policy.py`) — so
+    # this entry is structural: it is the record KEY, not replicated payload.
+    # It is also the one duplicated column that CANNOT produce the internal
+    # inconsistency D1 exists to prevent: the column and `card_json["id"]` are
+    # both immutable, so they have no way to diverge. Being declared already,
+    # it is not a promotion candidate — there is nothing to promote it to.
     "id": _p(FieldKind.TEXT, FieldRole.IDENTITY, True, MergeRule.IMMUTABLE),
-    # IMMUTABLE — written once at creation. Two hosts cannot disagree about
-    # when a card was created unless one of them is wrong, and picking the
-    # later value would let a re-import rewrite history.
-    "created_at": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.IMMUTABLE),
-    "created_by": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.IMMUTABLE),
-    # NOT MAX, and the reason is not taste. An earlier draft wrote MAX here on
-    # the claim that `last_activity` "only ever moves forward". THAT CLAIM IS
-    # FALSE: `_store_mutate.py:379` auto-stamps only `if "last_activity" not in
-    # fields` — a caller who passes the field explicitly keeps their own value,
-    # and it IS public, on `add_task`/`update_task` (`_mcp_write.py:63,180`) and
-    # on the CLI (`_cli/_write.py:190`). Any agent can write any string.
+    # THE CARD ITSELF, WHOLE, UNDER LAST_WRITER_WINS. This is ADR-0018 D1.
     #
-    # MAX IS UNREPAIRABLE FOR A FIELD WITH A PUBLIC SETTER. `merge_field`
-    # compares the VALUES, not the stamps (`_merge.py:121-138`: `wins = incoming
-    # > current`), so one writer setting "9999-01-01" replicates that value to
-    # every host and then every real timestamp loses to it FOREVER — including
-    # the repair, because a corrected timestamp is a LOWER value and MAX
-    # rejects it by construction. There is no in-band fix; you would be editing
-    # rows on every host by hand.
+    # kind=JSON describes the VALUE, not the storage class: the column is
+    # `card_json TEXT` in SQLite (`_db_schema_sql.py`) and what it holds is a
+    # document. FieldKind is dialect-independent by construction.
     #
-    # LAST_WRITER_WINS is repairable: the repair is simply the newest write, and
-    # the HLC makes it win everywhere. It buys that at the cost of letting a
-    # stale-but-later write move the stamp backwards — a wrong recency colour on
-    # the board, which is visible and self-correcting on the next real edit. A
-    # recoverable wrong pixel beats a permanent unfixable one.
-    "last_activity": _p(
-        FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS
-    ),
-    # `finished_at` HAS THE SAME SHAPE, and the conclusion is the same. It is
-    # public on the same two surfaces (`_mcp_write.py:73,190`,
-    # `_cli/_write.py:218`) and, unlike `last_activity`, the package NEVER
-    # derives it — `_validate.py:344` classes it compute-only, so a
-    # caller-supplied string is its ONLY source. That makes it strictly less
-    # monotonic than `last_activity`, not more, so MAX is at least as
-    # unrepairable here. It is also legitimately re-written lower when a card is
-    # reopened and finished again, which MAX would silently refuse.
-    "finished_at": _p(
-        FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS
-    ),
-    # LAST_WRITER_WINS, FLAGGED: `status` is a LIFECYCLE with legal
-    # transitions, not a free scalar. LWW can resurrect a `cancelled` card into
-    # `blocked` — sac measured exactly that split on the live board. It is the
-    # least-bad rule AVAILABLE, not a correct one, and it should be revisited
-    # if the primitive ever grows a transition-aware rule.
-    "status": _p(FieldKind.TEXT, FieldRole.DATA, True, MergeRule.LAST_WRITER_WINS, True),
-    "blocker": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    # Ordinary scalars: the most recent edit is the intended one.
-    "title": _p(FieldKind.TEXT, FieldRole.DATA, True, MergeRule.LAST_WRITER_WINS),
-    "kind": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "task": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "note": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "goal": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "project": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS, True),
-    "repo": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "agent": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS, True),
-    "assignee": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS, True),
-    "scope": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS, True),
-    "grp": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "priority": _p(FieldKind.INTEGER, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "parent": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "pr_url": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "issue_url": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "deadline": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "scheduled": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "job_id": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "command": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "deadlines_json": _p(FieldKind.JSON, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    "log_meta_json": _p(FieldKind.JSON, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    # `host` is the SUBJECT of the row, not its provenance — sac's distinction,
-    # 2026-08-12: `_origin` is "which node told me"; a host column is "which
-    # machine this row is ABOUT". They coincide only while one writer owns each
-    # record and diverge the moment a row is relayed. Populating this from "the
-    # node that wrote it" would be right until exactly the cross-host case it
-    # exists for, so it merges as ordinary data and is never derived from
-    # `_origin`.
-    "host": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
-    # `started_at` is NOT MAX, deliberately. The truthful value is the EARLIEST
-    # observation (work began when it began), and the primitive has no MIN
-    # rule. LWW is the honest placeholder; MAX would be actively wrong, quietly
-    # moving a start time later every time a second host reports one.
-    "started_at": _p(FieldKind.TEXT, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
+    # LAST_WRITER_WINS rather than a collection rule: the card is a mapping one
+    # agent edits as a unit, not a set two hosts extend independently. The
+    # genuinely multi-writer parts are ADR-0018 D2 and live in their own tables
+    # — `comments[]` under APPEND, edges and roles under UNION. `comments[]`
+    # additionally CANNOT be declared yet: its elements carry no minted id, and
+    # the autoincrement key the schema does have is "worse than no id at all"
+    # (`_merge.py:214-219`) because two hosts both mint id=8 and replay drops
+    # one comment while every count still looks right (ADR-0018 Q2).
+    #
+    # TWO LIFECYCLE FACTS MUST LEAVE THIS DOCUMENT BEFORE IT GOVERNS LIVE DATA
+    # (ADR-0018 D3), and they are among the reasons the entry point stays
+    # unregistered. `_log_meta.deleted_at` is the SOLE delete marker
+    # (`_task.py:183-186`), so under LWW a later `defer` on another host brings
+    # its whole document, the tombstone is simply not in it, and the card is
+    # LIVE AGAIN on every host — a resurrection with no error and no conflict,
+    # because from the merge's point of view the rule worked. The fix is
+    # upstream's `FieldRole.HIDE_FLAG` as a real BOOL column; `completed_at`,
+    # "the SOLE input to the throughput/timeline aggregates" which never
+    # consult `status` (`_store_lifecycle.py:37-42`), promotes beside it.
+    DOCUMENT_COL: _p(FieldKind.JSON, FieldRole.DATA, False, MergeRule.LAST_WRITER_WINS),
 }
 
-#: Fields DELIBERATELY NOT DECLARED, each for a stated reason. Absence here is a
-#: decision, not an oversight — see `undeclared_fields_and_why()`.
+#: Fields DELIBERATELY NOT DECLARED AND NOT PROMOTABLE EITHER, each for a
+#: stated reason. Absence here is a decision, not an oversight — see
+#: `undeclared_fields_and_why()`. What separates this dict from
+#: `PROMOTION_CANDIDATES` is that promotion is not the answer for these: no
+#: per-field rule describes them, so giving them a column would not help.
 UNDECLARED: "dict[str, str]" = {
     "row_order": (
         "DERIVED, NOT A VALUE. Board order is a projection over the whole "
@@ -198,26 +208,28 @@ UNDECLARED: "dict[str, str]" = {
         "NOT_REPLICATED role upstream; until then it must be recomputed "
         "locally after merge, never replicated. Raised with scitex-dev."
     ),
-    "card_json": (
-        "A DENORMALISED COPY OF EVERY OTHER COLUMN. Merging it per-field "
-        "alongside the columns it duplicates lets the two representations "
-        "disagree — host A's `status` column beside host B's `card_json.status` "
-        "— producing a row that is internally inconsistent while every field "
-        "merged 'correctly'. Either it is derived (recompute after merge) or it "
-        "is canonical (and the columns are derived). That is a schema decision "
-        "this package has not made yet, and guessing it silently corrupts rows."
-    ),
     "revision": (
         "OWNED BY THE PRIMITIVE. scitex_dev.store reserves `_revision`; cards' "
         "own `revision` column is the pre-federation hand-rolled equivalent and "
         "must not be merged as data. It is dropped when the primitive takes "
-        "over, not declared alongside it."
+        "over, not declared alongside it. CONTESTED, and flagged rather than "
+        "quietly settled: ADR-0016:215-217 says the opposite in as many words "
+        "— that preserving `revision` across a store copy is necessary because "
+        "'it is user-visible causal state and belongs in the checksummed "
+        "column set, not treated as backend bookkeeping'. Both cannot be true. "
+        "ADR-0018 Q1 records the disagreement without resolving it."
     ),
 }
 
 
 def task_schema() -> Schema:
-    """The cards table as a declared schema — built, so errors surface here."""
+    """The cards table as a declared schema — built, so errors surface here.
+
+    Reads `TASK_FIELDS` and nothing else. `PROMOTION_CANDIDATES` is a register
+    of reasoning, not a second declaration, and must not reach the schema by
+    accident: a candidate that merged would be exactly the denormalised
+    per-field copy beside the document that ADR-0018 D1 exists to keep out.
+    """
     return Schema.build(STORE_NAME, TASK_FIELDS)
 
 
@@ -264,8 +276,8 @@ def provide() -> "list[Any]":
             # for a record, so divergence cannot arise — which is a stronger
             # guarantee cards CANNOT make: any agent may comment on, reassign
             # or complete any card, from any host. Declaring SINGLE_WRITER
-            # would promise an invariant the board breaks hourly, and every
-            # merge rule above exists precisely because it does.
+            # would promise an invariant the board breaks hourly, and the
+            # document rule above exists precisely because it does.
             writer_policy=WriterPolicy.MULTI_WRITER,
             # PROVENANCE — the declaring pip distribution, which is what a
             # federation listing prints and what a duplicate-name collision
@@ -278,9 +290,13 @@ def provide() -> "list[Any]":
 
 
 __all__ = [
+    "DOCUMENT_COL",
     "PACKAGE",
+    "PROMOTION_CANDIDATES",
     "STORE_NAME",
     "TASK_FIELDS",
+    "UNDECLARED",
+    "Promotion",
     "provide",
     "task_schema",
     "undeclared_fields_and_why",
