@@ -78,10 +78,29 @@ def _digest_body(cards: list, attempt: int) -> str:
     if remaining > 0:
         # The total is a FOOTNOTE, not the headline. It says "there is more" and
         # how to see it, without drowning the three cards that matter.
+        #
+        # THE COUNT DESCRIBES THIS DIGEST'S SET, NOT THE OPEN SET, and the
+        # wording must not equate them. It used to read "… for all {total}"
+        # beside a `--status in_progress,blocked,deferred` command that returns
+        # a DIFFERENT population: measured for scitex-hpc 2026-08-16, this
+        # digest counted 15 while that command returned 47.
+        #
+        # Both numbers were right and the sentence made each one evidence about
+        # the other. scitex-hpc read a drop from 20 to 7 across a 531-card
+        # migration and a daemon restart — the exact shape of data loss — and
+        # had to query the store to find out their board had not shrunk. A
+        # reader who trusts the line concludes they lost two thirds of their
+        # work; a reader who runs the command concludes the digest is broken.
+        #
+        # `list-tasks` CANNOT express this digest's predicate — it has
+        # `--status` and `--overdue` and no age filter — so the command is
+        # offered as what it is (the full open list, a different and larger
+        # question) rather than as a way to reproduce {total}.
         body += (
-            f"\n  ({remaining} more open — the point is these {len(shown)}, not "
-            f"the pile; `scitex-cards list-tasks --status in_progress,blocked,"
-            f"deferred` for all {total}.)"
+            f"\n  ({remaining} more in this digest — the point is these "
+            f"{len(shown)}, not the pile. `scitex-cards list-tasks --status "
+            f"in_progress,blocked,deferred` lists your full open set, which is "
+            f"a different and usually larger count.)"
         )
     return body
 
