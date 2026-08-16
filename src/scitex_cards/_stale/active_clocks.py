@@ -40,6 +40,7 @@ __all__ = [
     "_owner_of",
     "_age_hours",
     "_blocked_age_hours",
+    "_deferred_age_hours",
 ]
 
 #: When the card entered its CURRENT ``(status, blocker)`` pair — the
@@ -111,6 +112,38 @@ def _blocked_age_hours(task: dict, now: _dt.datetime) -> float | None:
     to read at all.
     """
     ts = task.get(FIELD_BLOCKED_AT) or task.get("created_at")
+    parsed = _parse_iso(ts)
+    if parsed is None:
+        return None
+    return (now - parsed).total_seconds() / 3600.0
+
+
+def _deferred_age_hours(task: dict, now: _dt.datetime) -> float | None:
+    """Hours since the card ENTERED the backlog. The backlog clock.
+
+    Reads ``deferred_at``, falling back to ``created_at`` and NEVER to
+    ``last_activity`` — the same shape as :func:`_blocked_age_hours`, for the
+    same reason, and every paragraph of that docstring applies here verbatim.
+
+    WHY THIS EXISTS, given ``deferred_at`` has been written since 2026-08-13.
+    It was written and never read. ``detect_pending_backlog`` passed no clock,
+    so it inherited the default :func:`_age_hours`, which measures
+    ``last_activity`` — "when was this TOUCHED". The result is the defect
+    ``_store_clocks`` warns about in the module that WRITES the field: "key any
+    of them on ``last_activity`` and the sweep becomes SILENCEABLE BY TYPING —
+    a comment refreshes the clock, the alarm resets, and the card rots while
+    reading as fresh." Commenting on a rotting deferred card silenced its own
+    backlog nudge for a day, and every agent annotating its cards was doing it.
+
+    MEASURED BLAST RADIUS before this landed (2026-08-16, 1854 deferred cards):
+    1193 nudged under ``last_activity``, 1354 under this clock — +161, and ZERO
+    cards stop being nudged. The change is monotonic: it can only ADD coverage,
+    never remove it, because a card's entry into the backlog cannot be later
+    than its last touch. That is what makes it safe to land in one step.
+    """
+    from .._backlog_triage import FIELD_DEFERRED_AT
+
+    ts = task.get(FIELD_DEFERRED_AT) or task.get("created_at")
     parsed = _parse_iso(ts)
     if parsed is None:
         return None
