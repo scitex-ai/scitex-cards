@@ -303,6 +303,23 @@ scitex-cards = "scitex_cards"
 [project.entry-points."scitex_dev.jobs"]
 scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 
+# DELIBERATELY NOT REGISTERED: `scitex_dev.store.plugins`.
+#
+# `scitex_cards._store_plugin` declares the card table's merge semantics, and
+# that declaration lands as DOCUMENTATION first. Registering the entry-point
+# group here is what makes the federation actually resolve and merge the live
+# board, and several field rules are still open (`card_json` vs the columns it
+# duplicates, `row_order`'s missing DERIVED role, `status`'s lack of a
+# transition-aware rule). Wiring it before those are settled would put an
+# admittedly incomplete declaration in charge of real data.
+#
+# So the module states the semantics and nothing calls it — which is exactly
+# what its own docstring claims, and the claim has to stay TRUE. Add the block
+# below only together with the decisions above:
+#
+#     [project.entry-points."scitex_dev.store.plugins"]
+#     scitex-cards = "scitex_cards._store_plugin:provide"
+
 # Hook-consumer entry-point contract (lead a2a `6fff33d6` +
 # `fbffb879`, 2026-06-14, operator-mandated). External producers
 # (SAC's push-hook, dev's merge-Action, future federated producers)
