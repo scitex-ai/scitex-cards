@@ -13,7 +13,7 @@ description: |
   `scitex-cards mcp doctor`.
 tags:
   [
-    scitex-cards-fleet-rollout,
+    scitex-cards-fleet-mcp-rollout,
     scitex-cards-mcp-canonical,
     scitex-cards-p3a,
   ]

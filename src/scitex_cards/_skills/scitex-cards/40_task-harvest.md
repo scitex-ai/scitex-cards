@@ -34,10 +34,10 @@ RIGHT NOW.
 
 Every task on the shared board is **either**:
 
-| state    | meaning                                                          |
-| -------- | ---------------------------------------------------------------- |
-| BLOCKED  | A specific, named blocker prevents progress. Record it.          |
-| RUNNABLE | No live blocker. The task can start now → escalate it.           |
+| state | meaning |
+|---|---|
+| BLOCKED | A specific, named blocker prevents progress. Record it. |
+| RUNNABLE | No live blocker. The task can start now → escalate it. |
 
 "Runnable" is the **default**. A task that cannot point at a concrete
 blocker is RUNNABLE — and therefore eligible for immediate escalation.
@@ -56,12 +56,12 @@ The operator's framing (TG 21:53):
 When a task IS blocked, the blocker must come from one of these four
 categories so the lead can route it without per-task interpretation:
 
-| `blocker:` value     | meaning                                                                  | escalation route                                |
-| -------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
-| `compute`            | No live compute resource (SIF build pending, GPU lane full, Spartan job queued, host down). | wait on the resource; record `depends_on: [<job-or-job-task-id>]`. |
-| `quota`              | API quota / account credit exhausted (PyPI throttle, GH PAT scope, an account that hit its quota cap). | operator action: top up / change account.       |
-| `user-pending`       | Awaiting a human decision (operator, collaborator, external reviewer).   | operator action (the LOUD `operator-decision` blocker family in the board's "BLOCKING YOU" panel). |
-| `task-dependency`    | Another task in the graph must finish first; `depends_on` carries the id. | wait — clears automatically when the dep flips to `done`. |
+| `blocker:` value | meaning | escalation route |
+|---|---|---|
+| `compute` | No live compute resource (SIF build pending, GPU lane full, Spartan job queued, host down). | wait on the resource; record `depends_on: [<job-or-job-task-id>]`. |
+| `quota` | API quota / account credit exhausted (PyPI throttle, GH PAT scope, an account that hit its quota cap). | operator action: top up / change account. |
+| `user-pending` | Awaiting a human decision (operator, collaborator, external reviewer). | operator action (the LOUD `operator-decision` blocker family in the board's "BLOCKING YOU" panel). |
+| `task-dependency` | Another task in the graph must finish first; `depends_on` carries the id. | wait — clears automatically when the dep flips to `done`. |
 
 Any blocker that doesn't fit one of these four MUST be coerced into
 one (or surfaced as a fleet bug — the lead extends the enum, not the
@@ -255,10 +255,10 @@ All escalation flows through the lead:
 
 ### Where each role writes / reads
 
-| Role  | Reads                       | Writes                                                          |
-| ----- | --------------------------- | --------------------------------------------------------------- |
+| Role | Reads | Writes |
+|---|---|---|
 | Agent | own project's tasks (filter `agent: <self>`) | own tasks' status + `comments[]`; a2a lead when reporting a new blocker. |
-| Lead  | the whole board             | every task during sweeps; a2a each owning agent with ESCALATE notices. |
+| Lead | the whole board | every task during sweeps; a2a each owning agent with ESCALATE notices. |
 | Operator | the board UI + the lead's daily summary | resolves `user-pending` / `operator-decision` blockers via the "BLOCKING YOU" panel. |
 
 ## Cadence — register with `scitex-dev cron`
@@ -274,13 +274,13 @@ fleet has ONE source of scheduled-job truth (alongside `watch-ci`,
 The supervisor ships in `scitex-dev` (read by every agent container
 via `/opt/venv-sac/lib/python3.12/site-packages/scitex_dev/_cli/cron/`):
 
-| CLI verb                     | What it does                                                   |
-| ---------------------------- | -------------------------------------------------------------- |
-| `scitex-dev cron list`       | show the JobSpec registry + the currently-installed crontab lines |
-| `scitex-dev cron install <n>`| materialize JobSpec `<n>` into the user crontab (idempotent — marker `# scitex-dev cron: <n>` pins exactly one line) |
-| `scitex-dev cron remove <n>` | strip the named job from the crontab                           |
-| `scitex-dev cron exec <n>`   | execute the job body (this is what cron itself calls)          |
-| `scitex-dev cron status`     | last-run / next-run hints for each registered job              |
+| CLI verb | What it does |
+|---|---|
+| `scitex-dev cron list` | show the JobSpec registry + the currently-installed crontab lines |
+| `scitex-dev cron install <n>` | materialize JobSpec `<n>` into the user crontab (idempotent — marker `# scitex-dev cron: <n>` pins exactly one line) |
+| `scitex-dev cron remove <n>` | strip the named job from the crontab |
+| `scitex-dev cron exec <n>` | execute the job body (this is what cron itself calls) |
+| `scitex-dev cron status` | last-run / next-run hints for each registered job |
 
 Cadence format: **standard Unix cron** (5-field `minute hour
 day-of-month month day-of-week`). Log location:
@@ -419,13 +419,13 @@ Starting state (267 tasks):
 
 ### Phase 1 (re-check blockers)
 
-| id                              | blocker          | depends_on           | re-check result                | action     |
-| ------------------------------- | ---------------- | -------------------- | ------------------------------ | ---------- |
-| paper-clew/sle-pac-fanout       | compute          | sif-build-202606     | `sif-build-202606.status=done` | UNBLOCK    |
-| scitex-dev/audit-wave-2         | task-dependency  | scitex-dev/audit-1   | dep still in_progress          | leave      |
-| neurovista/onsets-pull          | quota            | (none)               | gh PAT reset overnight         | UNBLOCK    |
-| ripple-wm/recompute             | compute          | sac-base.sif rebuild | rebuild still pending          | leave      |
-| paper-clew/figure-3             | user-pending     | operator-decision    | no reply 4d                    | bump to `operator-decision` (loud halo) |
+| id | blocker | depends_on | re-check result | action |
+|---|---|---|---|---|
+| paper-clew/sle-pac-fanout | compute | sif-build-202606 | `sif-build-202606.status=done` | UNBLOCK |
+| scitex-dev/audit-wave-2 | task-dependency | scitex-dev/audit-1 | dep still in_progress | leave |
+| neurovista/onsets-pull | quota | (none) | gh PAT reset overnight | UNBLOCK |
+| ripple-wm/recompute | compute | sac-base.sif rebuild | rebuild still pending | leave |
+| paper-clew/figure-3 | user-pending | operator-decision | no reply 4d | bump to `operator-decision` (loud halo) |
 
 → 2 unblocked, 1 bumped LOUD, 2 still blocked.
 

@@ -169,28 +169,9 @@ REGISTER MCP SERVER   scitex-cards mcp install --apply -y
 REGISTER PROJECT MCP  scitex-cards mcp install --apply --to ./.mcp.json -y
 ```
 
-## 7.5. Fleet MCP enablement (P3a, lead-coordinated rollout)
-
-Each agent's `.mcp.json` needs the `scitex-cards` MCP server registered so the 16 board tools (`add_task` / `update_task` / `comment_task` / `list_tasks` / `delete_task` / `restore_task` / `resolve_task` / etc., see `21_fleet-mcp-rollout.md`) appear in its session. **PR #155** shipped a one-command idempotent enabler:
-
-```sh
-# Preview (dry-run; does not touch the file):
-scitex-cards mcp install --apply --dry-run
-
-# Commit (idempotent merge into ~/.mcp.json; preserves sibling servers):
-scitex-cards mcp install --apply -y
-
-# Project-scope target (when the agent works inside a repo with its own .mcp.json):
-scitex-cards mcp install --apply --to ./.mcp.json -y
-```
-
-Behavior guarantees:
-- **Idempotent** — re-running prints `# noop: target already has the scitex-cards entry`.
-- **Non-destructive** — sibling MCP server entries are preserved.
-- **Safe** — a `.mcp.json.bak` backup is created before overwriting an existing file.
-- **Fail-loud** — invalid JSON or a non-object root in the target raises a `ClickException` (clean non-zero exit, no traceback).
-
-Lead-driven coordination (broadcast-rollout shape): the lead a2a's every agent with the dry-run line first (each agent reports the diff back), then the commit line. The skill bundle (PR #149) is already shipped, so consuming agents have `21_fleet-mcp-rollout.md` locally to confirm the verb shape before they run `--apply`.
+Fleet MCP enablement (the `mcp install --apply` rollout, its idempotence and
+non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
+`21_fleet-mcp-rollout.md`. It was duplicated here in full; one copy drifts.
 
 ---
 

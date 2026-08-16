@@ -154,23 +154,19 @@ def test_resolver_prefers_scitex_cards_dist(monkeypatch):
     assert resolved == "9.9.9"
 
 
-def test_resolver_falls_back_to_scitex_cards_dist(monkeypatch):
-    """Un-cutover editable installs still only carry the old dist name."""
-    # Arrange
-    import importlib.metadata as md
-
-    def _version(dist):
-        if dist == "scitex-cards":
-            raise md.PackageNotFoundError(dist)
-        return "8.8.8"
-
-    monkeypatch.setattr(md, "version", _version)
-
-    # Act
-    resolved = scitex_cards._resolve_version()
-
-    # Assert
-    assert resolved == "8.8.8"
+# REMOVED: test_resolver_falls_back_to_scitex_cards_dist.
+#
+# It pinned the SECOND tier of `_resolve_version()`: when the current dist name
+# was not installed, fall back to the pre-rename one, so an un-cutover editable
+# install still reported a version. That tier is gone with the retired dist, and
+# the loop it lived in had already collapsed to iterating the SAME name twice —
+# a "fallback" whose second attempt could only re-raise the first's
+# PackageNotFoundError. Its own fake made that visible: `_version` raised for
+# "scitex-cards" and returned 8.8.8 for anything else, so post-rename it was
+# asserting that a name nothing asks for supplies the version.
+#
+# The tier below it — neither dist installed, report the local sentinel — is
+# still real and is still covered by the test immediately following.
 
 
 def test_resolver_falls_back_to_local_when_uninstalled(monkeypatch):
