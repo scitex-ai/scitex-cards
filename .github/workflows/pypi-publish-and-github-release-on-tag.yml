@@ -182,17 +182,21 @@ jobs:
           # wheel, which is the same silent failure this change removes, one
           # layer down. The previous mechanism had no check at this layer at
           # all; that is why it went two months undetected.
+          #
+          # SHELL, NOT AN EMBEDDED PYTHON HEREDOC. The first version of this
+          # check inlined `python3 -c "` with the script body at column 0,
+          # which TERMINATES the YAML block scalar — the whole workflow then
+          # failed to parse and would not have run at all. Caught by the audit
+          # (PS-224, "workflow does not parse as a YAML mapping"), which is the
+          # net-new gate doing exactly its job. Keep every line of this step
+          # indented inside the block; no column-0 continuations.
+          # ONE LINE, and python rather than `unzip`. `unzip` is not guaranteed
+          # on every runner image, and its absence would fail this step CLOSED —
+          # blocking every release with a false alarm about missing docs, which
+          # is a worse failure than the one being prevented. python3 is already
+          # a hard dependency of this job.
           whl=$(ls dist/scitex_cards-*.whl | head -1)
-          python3 -c "
-import sys, zipfile
-names = zipfile.ZipFile('$whl').namelist()
-hit = [n for n in names if n.endswith('_sphinx_html/index.html')]
-if not hit:
-    sys.exit('::error::$whl ships no _sphinx_html/index.html — '
-             'scitex-cloud would serve nothing for this package (PS-121). '
-             'Check [tool.hatch.build.targets.wheel] artifacts in pyproject.toml.')
-print(f'in-wheel docs OK: {hit[0]}')
-"
+          python3 -c "import zipfile,sys; ns=zipfile.ZipFile('$whl').namelist(); hit=[n for n in ns if n.endswith('_sphinx_html/index.html')]; print('in-wheel docs OK:', hit[0]) if hit else sys.exit('::error::$whl ships no _sphinx_html/index.html - scitex-cloud would serve nothing for this package (PS-121). Check [tool.hatch.build.targets.wheel] artifacts in pyproject.toml.')"
       # upload-artifact is a JS action — runs fine on the self-hosted runner.
       - uses: actions/upload-artifact@v4
         with:
