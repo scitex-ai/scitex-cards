@@ -36,7 +36,7 @@ from scitex_cards._inbox_confirm import confirm_notifications
 
 
 @pytest.fixture()
-def store(tmp_path, monkeypatch):
+def store(tmp_path, env):
     """An isolated store + inbox DB, so the live fleet store is never touched.
 
     The SQLite inbox is selected EXPLICITLY. ``tests/scitex_cards/conftest.py``
@@ -46,9 +46,9 @@ def store(tmp_path, monkeypatch):
     the shipped configuration this feature runs in, so pinning sqlite here
     tests the real thing rather than the break-glass path.
     """
-    monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
-    monkeypatch.setenv("SCITEX_CARDS_INBOX_DB", str(tmp_path / "inbox.db"))
-    monkeypatch.setenv("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
+    env.set("SCITEX_CARDS_INBOX_DB", str(tmp_path / "inbox.db"))
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
     return tmp_path / "cards.db"
 
 
