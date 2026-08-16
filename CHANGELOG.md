@@ -2,6 +2,70 @@
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-16
+
+### Removed — BREAKING
+
+- **The pre-rename compatibility surface is gone.** The import shim, the stub
+  distribution, the second console script, the deprecated env-var prefix and
+  the legacy skills directory are all deleted. Operator directive, verbatim:
+  the old name「なんて使いません」and the migration is to be hard rather than
+  incremental. Anything still importing the retired module, invoking the
+  retired console script, or exporting the retired env prefix now FAILS rather
+  than silently resolving.
+
+  Consumers must import `scitex_cards`, invoke `scitex-cards`, and export
+  `SCITEX_CARDS_*`. There is no transition window; that was the point.
+
+### Fixed — defects the removal exposed
+
+A mechanical rename leaves no mechanical trace: it produces code that reads
+correctly and means less. Across roughly 1300 replacements, 37 were wrong and
+exactly ONE announced itself as a test failure. These were found by asking what
+each string used to DISTINGUISH.
+
+- **`mcp install --apply` deleted the entry it had just written.** The retire
+  step's `LEGACY_CLI_NAME` collapsed onto the current name, so `del
+  servers[LEGACY_CLI_NAME]` removed the live server. A config-destroying bug,
+  invisible to a search for the old name because the old name was what had gone.
+- **Plugins and delivery channels were discovered twice.** Two
+  `LEGACY_ENTRY_POINT_GROUP` constants collapsed onto their current
+  counterparts, so each scan ran over the same group twice.
+- **The git→card hooks had silently stopped recording.** `.githooks/_lib.sh`
+  invoked a console script deleted in the same sweep; the hooks fail soft by
+  design, so nothing said so.
+- **`.gitignore` whitelisted the pre-rename runtime directory** while the live
+  one is `.scitex/cards/`, so `.scitex/*` swallowed it whole — git does not
+  descend into an excluded directory, so no `!` rule underneath could apply.
+- **A version fallback that could not fall back**, in `__init__.py` and
+  `_min_client_version.py`: both name lists collapsed to one string repeated,
+  so the second lookup could only re-raise the first's error. In the floor
+  check that resolves to "too old" against any minimum.
+- **The reachability fixture stopped reproducing the outage it pins.** It was
+  built from two names a rename merged into one, so `ok is False` became `True`.
+- **A leak guard silently narrowed.** `tests/conftest.py`'s real-store
+  candidate list collapsed to two duplicated paths.
+- **The JobSpec gate added in #858 inverted.** It held the retired name in a
+  constant; the sweep rewrote it, so it began asserting that no JobSpec
+  contains the CURRENT name. Rewritten from a blocklist to an allowlist — every
+  `scitex-<pkg>` token in a load-bearing field must name THIS package — which
+  is rename-proof, also catches a typo'd sibling package, and now carries the
+  positive control the blocklist lacked.
+
+### Changed
+
+- **The skill bundle fits its budget.** `SKILL.md` is an index again (318 → 113
+  lines); it had inlined a whole leaf that the audit separately flagged as
+  unreferenced. Oversized leaves split into `31_fleet-ports-sync-and-citation`,
+  `43_consuming-agent-schema-and-crud`, `44_consuming-agent-coordination`,
+  `45_blocker-taxonomy` and `46_task-harvest-cadence-and-routing`, all linked.
+- **A lossy pattern removed from the docs agents read.** The consuming-agent
+  guide said there was no `comment` verb and told agents to hand-roll the
+  append through `update_task(comments=[...])` — which drops any comment
+  another agent added between the read and the write. The verb has existed
+  since #144.
+
+
 ## [0.40.0] - 2026-08-15
 
 ### Added
