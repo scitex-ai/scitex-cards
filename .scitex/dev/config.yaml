@@ -138,10 +138,25 @@ audit:
     #     head_combined = drop_masked_lines(head_combined, _head_report)
     #
     # The fourth element is CAPTURED, and the mask is applied before the diff.
-    # So `skip-rules` is no longer disqualified on the CI path, and the choice
+    # So `skip-rules` is no longer DISQUALIFIED on the CI path, and the choice
     # of `audit.skip` below is now a PENDING MIGRATION rather than a deliberate
-    # workaround. It stays for now only because scitex-dev has not yet verified
-    # the skip-rules COUNTERS, and moving twice is worse than moving late.
+    # workaround.
+    #
+    # BUT "not disqualified" IS NOT "verified", and the distinction is the whole
+    # reason this entry has not moved. scitex-dev narrowed their own report
+    # after sending it: `drop_masked_lines` has a unit test that calls it
+    # directly on a constructed MaskReport, and the CALL SITE at
+    # `_audit_all.py:358` is covered by NO test. The unit is pinned; the WIRING
+    # is not — both endpoints correct with the middle never exercised, which is
+    # the same shape as their #652. What would settle it is a skip-rules entry
+    # for a rule that FIRES at HEAD, run with `--new-only` against a baseline,
+    # asserting the declared rule is absent from the net-new set AND an
+    # undeclared one is still present. The negative half is not decoration:
+    # masking that hides everything is as wrong as masking that hides nothing,
+    # and only the pair tells them apart.
+    #
+    # So: migrate when that test exists and the skip-rules counters are
+    # verified. Not before. Moving twice is worse than moving late.
     #
     # THE LESSON THIS ENTRY PAID FOR, worth more than the entry: the note ended
     # "Verified by running the audit both ways before this landed, not
