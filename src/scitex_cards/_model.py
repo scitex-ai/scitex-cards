@@ -197,6 +197,8 @@ from ._task import (  # noqa: E402,F401
     Task,
 )
 from ._validate import (  # noqa: E402,F401
+    WRITE_SOURCE,
+    _side_of,
     _warn_tolerated,
 )
 
