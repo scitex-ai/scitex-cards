@@ -223,7 +223,14 @@ def add_task(
 
         enforce_wip_gate(new, tasks, now_iso=_stamp)
         tasks.append(new)
-        _save_doc_unlocked(doc, resolved, tasks=tasks)
+        # DECLARE THE ROW — same reasoning as `update_task` below, and the
+        # enumeration is simpler: the only dict mutated here is `new`.
+        # `enforce_wip_gate` READS `tasks` to count the agent's open cards but
+        # its docstring is explicit that it "Mutates `new` in place (appends
+        # the audit comment)", so no other card is written. Without this, a
+        # single `add_task` re-asserts the caller's entire snapshot and reverts
+        # anything committed between its read and its write.
+        _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[new["id"]])
     # C5: emit a canonical `created` card-event AFTER the card is durably
     # persisted + the lock released. Fail-soft (the mutation already
     # succeeded). Actor = the resolved creating user (same chain that
@@ -412,7 +419,24 @@ def update_task(
                 # Same lesson, the blocked-check's clock: stamp when the
                 # (status, blocker) PAIR moves, never on a passing comment.
                 _stamp_blocked_at(task, prior_status, prior_blocker)
-                _save_doc_unlocked(doc, resolved, tasks=tasks)
+                # DECLARE THE ROW. Without `touched_ids` the mirror treats
+                # "differs from the database" as "the caller meant to write
+                # it" — so this whole-document write re-asserts every card in
+                # the caller's snapshot, silently reverting anything another
+                # agent committed since the read. Both writers are told they
+                # succeeded. Measured by figrecipe 2026-08-10: a
+                # `complete_task` that RETURNED `status=done` was later found
+                # back at `status=blocked`.
+                #
+                # `[task_id]` is sufficient here and that is verified, not
+                # assumed: this function mutates exactly one dict — the card
+                # matched by id — through `fields`, the `last_activity`
+                # auto-stamp, and the three lifecycle clocks, every one of
+                # which takes `task` and writes only `task[...]`. Contrast
+                # `_store_rescore`, which shifts NEIGHBOURING rows and
+                # therefore must declare them too; under-declaring is the way
+                # this parameter goes wrong (see `_store_relations:181`).
+                _save_doc_unlocked(doc, resolved, tasks=tasks, touched_ids=[task_id])
                 result = dict(task)
                 transitioned_to_done = (
                     fields.get("status") == "done" and prior_status != "done"
