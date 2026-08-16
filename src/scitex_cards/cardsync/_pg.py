@@ -25,9 +25,13 @@ every update — a correct optimistic lock, fully installed. No writer in
 scitex-cards reads it (measured across both the installed 0.33.0 wheel and
 the repo at develop; ``revision`` appears only in migrations, schema-shape
 checks and the trigger DDL). Card
-``cards-revision-lock-installed-but-no-writer-asserts-it`` asks its owner to
-expose it as ``update_task(..., expected_revision=N)``. When that lands,
-reconciliation writes through THAT verb — one owner for the projection, and
+``cards-revision-lock-installed-but-no-writer-asserts-it`` originally asked
+for it on ``update_task``. PR #790 RULED THAT OUT and the verb now raises a
+TypeError naming the real path: update_task is a whole-document
+read-modify-write, so a per-row revision guard there would silently overwrite
+concurrent edits to OTHER cards. The compare-and-set lives on
+``_db_mirror._write_card(conn, card, *, expected_revision=N)``, which exists
+today — reconciliation writes through THAT, one owner for the projection, and
 a real compare-and-set instead of one bolted on from outside.
 
 Until then this store measures, and a caller that tries to write gets an
@@ -99,8 +103,9 @@ class PgCardStore:
             f"{self.name}: writing cards is not implemented here on purpose. "
             "A card spans 28 derived columns plus three child tables, and the "
             "projection belongs to scitex-cards. Reconciliation will write "
-            "through update_task(expected_revision=...) once that verb exists "
-            "(card cards-revision-lock-installed-but-no-writer-asserts-it)."
+            "through _db_mirror._write_card(conn, card, expected_revision=N), "
+            "which EXISTS today; update_task refuses expected_revision by "
+            "design (PR #790 -- it is a whole-document read-modify-write)."
         )
 
 # EOF
