@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-08-16
+
+### Fixed — two alarms that could not fire, and one that fired on the wrong clock
+
+- **The backlog nudge measured the last touch, not entry into the backlog.**
+  `detect_pending_backlog` passed no `clock` and silently inherited
+  `_age_hours`, which reads `last_activity`. So commenting on a rotting
+  deferred card reset its own backlog alarm for a day — the exact hazard
+  `_store_clocks` names in the module that WRITES `deferred_at`: "key any of
+  them on `last_activity` and the sweep that reads it becomes SILENCEABLE BY
+  TYPING."
+
+  The ruling already existed forty lines above: `detect_blocked_external`
+  passes `clock=_blocked_age_hours` and its docstring spells out the same
+  reasoning. The backlog sweep sat below that paragraph and kept the touch
+  clock, while `deferred_at` was written on every entry and read only by the
+  CLI triage surface — the right fact in the wrong lane.
+
+  Adds `_deferred_age_hours`. An unstamped card is aged by
+  `min(created_at, last_activity)` — the OLDEST evidence, which is not a
+  fallback: a fallback lets a touch make a card look FRESHER, a minimum can
+  only make it look OLDER, so typing still cannot silence the alarm while
+  genuinely old cards stop being dropped.
+
+  Measured across 1854 deferred cards before landing: 1193 nudged under the
+  old clock, 1354 under the new, **and zero cards lost coverage**. Monotonic
+  by construction — entry into the backlog cannot postdate the last touch.
+
+- **A card leaving `done` kept its completion stamp.**
+  `clear_completion_stamp` had exactly one production caller (`reopen_task`)
+  while its own docstring said "call this from ANY transition that takes a
+  card OUT of `done`". Every other exit went through `update_task`, which
+  never called it. Since the throughput surfaces aggregate solely on
+  `completed_at` and never read `status`, a stamped-open card counted as
+  delivered work forever WHILE ALSO nagging its owner as backlog.
+
+### Changed — the digest states the predicate it counted
+
+- **`BACKLOG: N …` now names its clock and its owner field.** One question —
+  "how many backlog cards does this owner have" — produced four different true
+  answers on one database: 62 from the sweep, 103 from `last_activity > 24h`,
+  163 from `deferred_at > 24h`, and 583 from a reader on a stale replica. None
+  of them disagreed; they were four predicates wearing one sentence.
+
+  The field name is READ from the clock (`BACKLOG_AGE_FIELD`) rather than
+  written as prose, and a test pins the printed name to the key the clock
+  looks up, so the message cannot outlive the behaviour it describes.
+
+### Fixed — gates and guidance
+
+- The quality gate no longer passes `--no-version-check`; measured
+  byte-identical output with and without it, so the flag silenced "is the rule
+  corpus current?" and bought nothing.
+- The PS-140 cross-package gate covered 3 of 7 cases and skipped what it
+  exists to catch.
+- The cardsync compare-and-set advice named the one door that is locked.
+- Ten boot-read skill files told every agent the store is "a SQLite database"
+  while `resolve_store` reports `backend: postgresql`. They now name no engine
+  and point at `resolve-store`, because naming an engine in prose is a guess
+  about someone else's deployment.
+
 ## [0.41.0] - 2026-08-16
 
 ### Removed — BREAKING
