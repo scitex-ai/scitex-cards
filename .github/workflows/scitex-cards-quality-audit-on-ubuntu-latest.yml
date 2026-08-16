@@ -6,13 +6,38 @@ name: quality
 # standalone gate so an audit regression is visible even when the matrix
 # is skipped.
 #
-# `--new-only` is the key flag: this package carries a known body of
-# pre-existing findings that are being retired in their own focused PRs.
-# `--new-only` diffs against the base ref (default `develop`) and reports
-# ONLY net-new violations, so the existing backlog is ratcheted as the
-# baseline (0 net-new -> GREEN) while still failing CI the instant a NEW
-# violation is introduced. Project-type + rule skips live in
-# `.scitex/dev/config.yaml` in this checkout and are applied automatically.
+# `--no-version-check` WAS HERE AND IS NOW GONE. It silenced "is the rule
+# corpus current?" — the one check that reports the auditor having grown
+# rules this config has never seen. Measured 2026-08-16 on this tree: the
+# run WITH the flag and the run WITHOUT it are byte-identical (both exit 0,
+# both "0 net-new finding(s)"). It was buying nothing and hiding a signal,
+# so removing it costs nothing and is not a judgement call.
+#
+# `--new-only` REMAINS, AND IT IS A KNOWN HOLE — read this before trusting
+# a green badge here. It diffs against the base ref and reports ONLY
+# net-new violations, so the existing backlog is ratcheted as the baseline
+# (0 net-new -> GREEN) while a NEW violation still fails CI. That is the
+# constitution's own §2 worked example of a gate configured so it cannot
+# fail, and it behaved exactly as §2 predicts: the PS-140 cross-package
+# gate sat at 3-of-7 coverage for weeks while THIS required check ran,
+# passed, and reported nothing — because "already stale" is not "new".
+#
+# MEASURED AT HEAD 2026-08-16, i.e. what this green badge is not telling
+# you: keyed 51 findings, unkeyed 84. One hundred and thirty-five findings
+# live behind the flag.
+#
+# The exit is NOT to keep widening the flag. Per §2, grandfathering is a
+# reasonable intent and a blanket flag is the wrong mechanism, because it
+# hides every NEW instance of the same class too. Burn the backlog down
+# (card cards-strict-audit-burndown-114-errors-20260815), then drop
+# `--new-only`; anything that genuinely must stay is exempted PER FILE WITH
+# A WRITTEN REASON in `.scitex/dev/config.yaml`, which is reviewable and
+# individually retirable — `scitex-dev ecosystem list-exemptions` shows
+# them. An exemption is a decision someone made and signed; `--new-only` is
+# a decision nobody made about violations nobody enumerated.
+#
+# Project-type + rule skips live in `.scitex/dev/config.yaml` in this
+# checkout and are applied automatically.
 #
 # THE DISTRIBUTION ARGUMENT IS `scitex-cards`, AND IT USED TO BE WRONG.
 # It passed `scitex-cards` — the pre-rename name — so the auditor evaluated
@@ -97,4 +122,4 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$PWD/.venv/bin:$PATH"
-          scitex-dev ecosystem audit-all scitex-cards --path "$PWD" --new-only --no-version-check
+          scitex-dev ecosystem audit-all scitex-cards --path "$PWD" --new-only
