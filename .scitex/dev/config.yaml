@@ -97,7 +97,75 @@ audit:
     # for tally-bearing summary lines; reported upstream so the KEYING gets
     # fixed. This entry is the bridge until then.
     - PS-108b
+    # PS-128 — `sphinx-build-broken`. The rule says .gitignore MUST NOT exclude
+    # src/<pkg>/_sphinx_html/, because "CI's hatchling force-include will fail
+    # otherwise". THAT PREMISE DOES NOT HOLD HERE: the rule assumes
+    # `force-include`; this package uses `artifacts`, which exists precisely to
+    # ship VCS-IGNORED files. Measured — two builds, same tree, only the
+    # directory's presence differing:
+    #     no _sphinx_html present  -> wheel carries 0 entries, build SUCCEEDS
+    #     gitignored dir present   -> wheel carries index.html + sub/style.css
+    # The second row is the one the rule calls impossible.
     #
+    # And gitignoring it is LOAD-BEARING, not preference. Tracking this
+    # directory is what produced a two-month outage: the `docs` workflow
+    # committed 99 files to develop and pushed, develop is protected, every
+    # push was refused (GH006), the rejection was swallowed by
+    # `git push || echo` under `continue-on-error: true`, and the step reported
+    # SUCCESS. Last refresh that landed: 2026-06-17. Satisfying this rule by
+    # re-tracking the directory would restore exactly that failure.
+    #
+    # The property the rule protects — docs actually reach the wheel — is now
+    # enforced MECHANICALLY and more strictly: the release workflow asserts on
+    # the BUILT WHEEL and fails the release if _sphinx_html/index.html is
+    # absent. "The directory is tracked" never checked the wheel at all.
+    #
+    # `skip` rather than a per-site `exemption` because PS-128's finding line is
+    # UNKEYABLE by the violation-key parser (it puts a path where <dist> is
+    # expected), so keyed exemptions cannot match it — measured, see the
+    # PS-128 record under `exemptions` below. Raised with scitex-dev; if the
+    # rule learns about `artifacts`, DELETE this entry rather than keep it.
+    - PS-128
+    #
+    # ── STALE AS OF 2026-08-16, CORRECTED IN PLACE. The paragraph below is
+    # kept because its reasoning is still the right shape, but its central
+    # factual claim — that `skip-rules` cannot work under `--new-only` — WAS
+    # FIXED, in response to this repo's own 2026-08-10 bug report. Today
+    # `_cli/ecosystem/_cmds/_audit_all.py:353-358` reads:
+    #
+    #     _, _head_exit, head_results, _head_report = _run_one(distribution)
+    #     head_combined = "\n".join(...)
+    #     head_combined = drop_masked_lines(head_combined, _head_report)
+    #
+    # The fourth element is CAPTURED, and the mask is applied before the diff.
+    # So `skip-rules` is no longer DISQUALIFIED on the CI path, and the choice
+    # of `audit.skip` below is now a PENDING MIGRATION rather than a deliberate
+    # workaround.
+    #
+    # BUT "not disqualified" IS NOT "verified", and the distinction is the whole
+    # reason this entry has not moved. scitex-dev narrowed their own report
+    # after sending it: `drop_masked_lines` has a unit test that calls it
+    # directly on a constructed MaskReport, and the CALL SITE at
+    # `_audit_all.py:358` is covered by NO test. The unit is pinned; the WIRING
+    # is not — both endpoints correct with the middle never exercised, which is
+    # the same shape as their #652. What would settle it is a skip-rules entry
+    # for a rule that FIRES at HEAD, run with `--new-only` against a baseline,
+    # asserting the declared rule is absent from the net-new set AND an
+    # undeclared one is still present. The negative half is not decoration:
+    # masking that hides everything is as wrong as masking that hides nothing,
+    # and only the pair tells them apart.
+    #
+    # So: migrate when that test exists and the skip-rules counters are
+    # verified. Not before. Moving twice is worse than moving late.
+    #
+    # THE LESSON THIS ENTRY PAID FOR, worth more than the entry: the note ended
+    # "Verified by running the audit both ways before this landed, not
+    # assumed" — the exact phrasing that stops the next reader re-checking it,
+    # attached to no date and no commit. A verification note without a date is
+    # a claim about a code state nobody can identify. Date them, or expect them
+    # to outlive the code they describe, as this one did by six days.
+    #
+    # ── ORIGINAL NOTE (accurate when written, 2026-08-10 or earlier) ──
     # Both entries use `audit.skip` rather than the newer, reason-carrying
     # `audit.skip-rules`, and that is deliberate — `skip-rules` DOES NOT WORK
     # on the path CI actually runs. `skip-rules` masking is applied in
@@ -129,6 +197,58 @@ audit:
   # gate" (constitution §2). One site, one reason, still enforced everywhere
   # else.
   exemptions:
+    PS-128:
+      # `sphinx-build-broken` — the rule says: ".gitignore excludes
+      # src/<pkg>/_sphinx_html/ — but scitex-cloud serves docs from the in-wheel
+      # bundle, so it MUST be tracked. Remove the line; CI's hatchling
+      # force-include will fail otherwise."
+      #
+      # THE RULE'S PREMISE DOES NOT HOLD FOR THIS DESIGN, and the difference is
+      # which hatchling feature carries the files. The rule assumes
+      # `force-include`. This package uses `artifacts`, which exists precisely
+      # to ship VCS-IGNORED files, so "gitignored" and "reaches the wheel" are
+      # not in conflict here. Measured before relying on it — two builds, same
+      # tree, only the directory's presence differing:
+      #
+      #     no _sphinx_html present  -> wheel carries 0 entries, build SUCCEEDS
+      #     gitignored dir present   -> wheel carries index.html + sub/style.css
+      #
+      # The second row is the one the rule says is impossible.
+      #
+      # WHY GITIGNORED IS LOAD-BEARING RATHER THAN A PREFERENCE: tracking this
+      # directory is what created the two-month outage this exemption's own PR
+      # fixes. The `docs` workflow committed 99 files to develop and pushed;
+      # develop is protected, so every push was refused (GH006), swallowed by
+      # `git push || echo` under `continue-on-error: true`, and reported
+      # SUCCESS. Last refresh that landed: 2026-06-17. Re-tracking the
+      # directory to satisfy this rule would restore exactly that failure.
+      #
+      # The property the rule protects — docs actually reach the wheel — is now
+      # enforced MECHANICALLY rather than by tracking: the release workflow
+      # asserts on the BUILT WHEEL and fails the release if
+      # `_sphinx_html/index.html` is absent. That is a stronger guarantee than
+      # "the directory is tracked", which never checked the wheel at all.
+      #
+      # NOTE — THIS PER-SITE ENTRY DOES NOT SUPPRESS PS-128, and it is kept
+      # only as the record of why. Measured: with this exemption in place the
+      # `--new-only` run still reports the finding, and says why itself —
+      # "2 net-new ERROR finding(s) NOT READABLE BY THE VIOLATION-KEY PARSER".
+      # PS-128 emits `[PS-128 ...] <path>: <msg>`, putting a PATH where the
+      # parser expects `<dist>`, so the line cannot be keyed; unkeyed lines are
+      # diffed as RAW TEXT and a keyed exemption has nothing to match against.
+      # The actual suppression is the `audit.skip: PS-128` entry above, which
+      # is honoured INSIDE audit-project so the finding never reaches the diff
+      # at all — the same reason the PS-108/PS-108b entries use `skip`.
+      - path: .gitignore
+        line: 0
+        reason: >-
+          RECORD ONLY, does not suppress (PS-128 lines are unkeyable by the
+          violation-key parser, so keyed exemptions cannot match); the working
+          suppression is the audit.skip entry. Docs ship via hatchling
+          `artifacts`, verified present in the built wheel by an assertion in
+          the release workflow; tracking this directory is what caused the
+          2026-06-17..08-16 outage, because pushing it to protected `develop`
+          could never succeed
     PS-224:
       # `runner-destination-unregistered` — cla.yml::CLAssistant targets
       # ubuntu-latest, which no registered machine serves.

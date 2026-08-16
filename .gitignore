@@ -63,6 +63,21 @@ tasks.png
 # Sphinx build output (RTD builds from source; local HTML is throwaway).
 docs/sphinx/_build/
 
+# In-wheel docs, GENERATED at release time — never committed.
+#
+# scitex-cloud serves package docs from this directory inside the wheel
+# (PS-121). It used to be committed to develop by the `docs` workflow, which
+# could not work: develop is protected, so the push was rejected on every
+# merge, swallowed by `git push || echo` under `continue-on-error: true`, and
+# the directory sat empty from 2026-06-17 while the step reported success.
+#
+# It is now built in the release workflow and carried into the wheel by
+# `artifacts` in pyproject.toml — which is hatchling's mechanism for shipping
+# exactly this, a VCS-ignored generated tree. Ignoring it here is therefore
+# load-bearing, not hygiene: if it becomes tracked again, the old
+# push-to-protected-branch failure returns.
+src/scitex_cards/_sphinx_html/
+
 # scitex-cards local state: ignore everything under .scitex/ except the
 # tracked dev/config.yaml (audit whitelist) and the runtime seed files.
 .scitex/*

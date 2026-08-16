@@ -343,6 +343,13 @@ artifacts = [
     "src/scitex_cards/_django/static/**/*",
     # Agent-facing skills — read at runtime by `scitex-cards skills get/install`.
     "src/scitex_cards/_skills/**/*",
+    # Sphinx HTML, GENERATED at release time and gitignored on purpose (see the
+    # release workflow's "Build docs into the package" step). `artifacts` is
+    # exactly hatchling's mechanism for shipping VCS-ignored files, so this
+    # line is what carries the docs into the wheel — without it the build stays
+    # green and the wheel ships no docs. The release workflow asserts on the
+    # built wheel for that reason.
+    "src/scitex_cards/_sphinx_html/**/*",
 ]
 
 [tool.pytest.ini_options]
