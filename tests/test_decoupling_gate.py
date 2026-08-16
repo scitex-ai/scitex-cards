@@ -134,12 +134,11 @@ def _forbidden_hook_entry_points():
     """
     from scitex_cards._hooks._plugins import (
         ENTRY_POINT_GROUP,
-        LEGACY_ENTRY_POINT_GROUP,
     )
 
     eps = importlib.metadata.entry_points()
     found = []
-    for group in (ENTRY_POINT_GROUP, LEGACY_ENTRY_POINT_GROUP):
+    for group in (ENTRY_POINT_GROUP,):
         for ep in eps.select(group=group):
             if ep.value.split(".")[0].split(":")[0] in FORBIDDEN_ROOTS:
                 found.append(ep)

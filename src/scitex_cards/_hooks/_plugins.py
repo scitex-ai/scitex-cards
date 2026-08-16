@@ -65,11 +65,6 @@ logger = logging.getLogger(__name__)
 #: Entry-point group external producers register their plugins under.
 ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
-#: Pre-rename group name (package renamed 2026-07-16). External producers
-#: that registered under the old group keep firing until they re-release
-#: against the new name; drop together with the ``scitex_cards`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_cards.hooks"
-
 #: Default per-plugin wall-time budget (seconds). Each entry-point
 #: handler runs in a worker thread joined with this timeout, so a
 #: slow/hung plugin can NEVER hang the producer/request that drove
@@ -310,15 +305,9 @@ def _iter_entry_points() -> Iterable:
     # 3.10+: eps is an EntryPoints, supports .select(group=)
     select = getattr(eps, "select", None)
     if callable(select):
-        return [
-            *select(group=ENTRY_POINT_GROUP),
-            *select(group=LEGACY_ENTRY_POINT_GROUP),
-        ]
+        return list(select(group=ENTRY_POINT_GROUP))
     # 3.9 fallback: dict-like keyed by group.
-    return [
-        *eps.get(ENTRY_POINT_GROUP, []),
-        *eps.get(LEGACY_ENTRY_POINT_GROUP, []),
-    ]
+    return list(eps.get(ENTRY_POINT_GROUP, []))
 
 
 # EOF

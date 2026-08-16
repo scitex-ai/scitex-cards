@@ -44,13 +44,6 @@ def test_fallback_help_renders_the_current_prog():
     assert "scitex-cards list-tasks" in text
 
 
-def test_fallback_help_does_not_teach_the_old_prog():
-    # Arrange
-    # Act
-    text = _fallback_example()
-    # Assert
-    assert "scitex-cards" not in text
-
 
 def test_board_redirect_error_names_the_current_cli():
     # Arrange

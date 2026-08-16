@@ -22,14 +22,10 @@ from ._compat import spec_command_kwargs
 #: so it must say the current name.
 _CLI_NAME = "scitex-cards"
 
-#: The key we used to write. Kept ONLY so we can RETIRE it — see
-#: :func:`_retire_legacy_entry`. This is not a fallback we ever write.
-LEGACY_CLI_NAME = "scitex-cards"
-
 #: Commands that mark an `.mcp.json` entry as OURS. Both console scripts are
 #: installed (``scitex-cards`` stays a permanent alias), so a legacy entry may
 #: exec either one.
-_OUR_COMMANDS = frozenset({"scitex-cards", "scitex-cards"})
+_OUR_COMMANDS = frozenset({"scitex-cards"})
 
 
 def _is_our_entry(entry: object) -> bool:
@@ -50,24 +46,6 @@ def _is_our_entry(entry: object) -> bool:
     args = entry.get("args")
     return isinstance(args, list) and bool(args) and args[0] == "mcp"
 
-
-def _retire_legacy_entry(servers: dict) -> bool:
-    """Drop OUR stale ``scitex-cards`` entry from ``servers``. Returns whether it did.
-
-    Renaming the key we write is only half a migration. Left alone, a config
-    that already had ``scitex-cards`` would end up with BOTH keys pointing at the
-    same server — the agent would load two copies of every tool
-    (``mcp__scitex-cards__add_task`` *and* ``mcp__scitex-cards__add_task``),
-    both writing the same store. So writing the new key RETIRES the old one.
-
-    Only OUR entry is retired (see :func:`_is_our_entry`); a third-party server
-    that happens to be keyed ``scitex-cards`` is left exactly as found.
-    """
-    legacy = servers.get(LEGACY_CLI_NAME)
-    if legacy is None or not _is_our_entry(legacy):
-        return False
-    del servers[LEGACY_CLI_NAME]
-    return True
 
 
 def attach_install_verbs(mcp_group: click.Group) -> None:
@@ -208,18 +186,15 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         servers = dict(merged.get("mcpServers") or {})
         before_entry = servers.get(_CLI_NAME)
         servers[_CLI_NAME] = snippet["mcpServers"][_CLI_NAME]
-        retired = _retire_legacy_entry(servers)
         merged["mcpServers"] = servers
 
         # A retirement alone is a real change: the file already had the new key
         # but ALSO the stale one, and leaving it would double every tool.
-        changed = before_entry != servers[_CLI_NAME] or retired
+        changed = before_entry != servers[_CLI_NAME]
         if not changed:
             action = "noop (entry already present)"
         else:
             action = "would update" if before_entry is not None else "would create"
-            if retired:
-                action += f" (retiring the legacy {LEGACY_CLI_NAME} entry)"
 
         new_text = json.dumps(merged, indent=2) + "\n"
 
@@ -361,15 +336,12 @@ def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
     servers = dict(merged.get("mcpServers") or {})
     before_entry = servers.get(_CLI_NAME)
     servers[_CLI_NAME] = entry
-    retired = _retire_legacy_entry(servers)
     merged["mcpServers"] = servers
-    changed = before_entry != entry or retired
+    changed = before_entry != entry
     if not changed:
         action = "noop (entry already present)"
     else:
         action = "would-update" if before_entry is not None else "would-create"
-        if retired:
-            action += f" (retiring the legacy {LEGACY_CLI_NAME} entry)"
     if dry_run or not changed:
         return action, changed
     if target.exists():
@@ -389,9 +361,7 @@ def _fleet_apply_one(target, entry: dict, *, dry_run: bool):
 __all__ = [
     "attach_install_verbs",
     "_fleet_apply_one",
-    "_retire_legacy_entry",
     "_is_our_entry",
-    "LEGACY_CLI_NAME",
 ]
 
 # EOF

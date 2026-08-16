@@ -51,7 +51,6 @@ _SERVER_PATH = "scitex_cards._mcp_server:mcp"
 # This is NOT the same decision as the console script: `scitex-cards` stays an
 # installed alias forever (the operator's running units invoke it). Renaming
 # what we ANNOUNCE is safe; renaming what we PUBLISH is not. See
-# `_mcp_install.LEGACY_CLI_NAME` for the matching entry migration.
 _CLI_NAME = "scitex-cards"
 
 _INSTALL_HINT = (
