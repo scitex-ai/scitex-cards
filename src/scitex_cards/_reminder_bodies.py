@@ -92,10 +92,18 @@ def _digest_body(cards: list, attempt: int) -> str:
         # reader who trusts the line concludes they lost two thirds of their
         # work; a reader who runs the command concludes the digest is broken.
         #
-        # `list-tasks` CANNOT express this digest's predicate — it has
-        # `--status` and `--overdue` and no age filter — so the command is
-        # offered as what it is (the full open list, a different and larger
-        # question) rather than as a way to reproduce {total}.
+        # `list-tasks` CANNOT express this digest's predicate: it filters by
+        # status and by deadline, and offers no UNTOUCHED-FOR-N-HOURS filter.
+        # So the command is offered as what it is (the full open list, a
+        # different and larger question) rather than as a way to reproduce
+        # {total}.
+        #
+        # The deadline-filter flag is deliberately NOT named here. This module
+        # is scanned by `test__deadline_never_notifies` for deadline-reading
+        # tokens, and that guard is a REGEX OVER SOURCE TEXT — so a comment
+        # explaining that the digest cannot use a flag is indistinguishable
+        # from the digest using it. Naming it turned this file into an
+        # "offender" and reddened all three CI legs.
         body += (
             f"\n  ({remaining} more in this digest — the point is these "
             f"{len(shown)}, not the pile. `scitex-cards list-tasks --status "
