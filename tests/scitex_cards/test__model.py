@@ -391,13 +391,13 @@ def test_load_accepts_scope(tmp_path):
         "  - id: a\n"
         "    title: A\n"
         "    status: pending\n"
-        "    scope: agent:proj-scitex-todo\n"
+        "    scope: agent:proj-scitex-cards\n"
         "    assignee: agent:lead\n",
     )
     # Act
     tasks = load_tasks(store)
     # Assert
-    assert tasks[0]["scope"] == "agent:proj-scitex-todo"
+    assert tasks[0]["scope"] == "agent:proj-scitex-cards"
 
 
 def test_load_accepts_assignee(tmp_path):
@@ -408,7 +408,7 @@ def test_load_accepts_assignee(tmp_path):
         "  - id: a\n"
         "    title: A\n"
         "    status: pending\n"
-        "    scope: agent:proj-scitex-todo\n"
+        "    scope: agent:proj-scitex-cards\n"
         "    assignee: agent:lead\n",
     )
     # Act
@@ -979,13 +979,13 @@ _OPERATOR_FIELDS_PAYLOAD = {
     "id": "x",
     "title": "X",
     "task": "the BIG line",
-    "project": "scitex-todo",
+    "project": "scitex-cards",
     "host": "ywata-note-win",
     "created_at": "2026-06-07T01:00:00Z",
     "goal": "make the board the fleet's shared SSoT",
-    "agent": "proj-scitex-todo",
+    "agent": "proj-scitex-cards",
     "last_activity": "12s ago",
-    "pr_url": "https://github.com/ywatanabe1989/scitex-todo/pull/54",
+    "pr_url": "https://github.com/ywatanabe1989/scitex-cards/pull/54",
     "issue_url": "https://github.com/ywatanabe1989/scitex-agent-container/issues/324",
 }
 
@@ -1007,7 +1007,7 @@ def test_task_dataclass_from_dict_carries_project_field():
     # Act
     t = Task.from_dict(_OPERATOR_FIELDS_PAYLOAD)
     # Assert
-    assert t.project == "scitex-todo"
+    assert t.project == "scitex-cards"
 
 
 def test_task_dataclass_from_dict_carries_host_field():
@@ -1109,9 +1109,9 @@ _ROUND_TRIP_PAYLOAD = {
     "id": "x",
     "title": "X",
     "task": "do the thing",
-    "project": "scitex-todo",
+    "project": "scitex-cards",
     "host": "ywata",
-    "agent": "proj-scitex-todo",
+    "agent": "proj-scitex-cards",
     "status": "blocked",
     "blocker": "operator-decision",
     "goal": "ship the board",
@@ -1236,13 +1236,13 @@ def _all_operator_fields_yaml() -> str:
         "    title: X\n"
         "    status: pending\n"
         "    task: 'PR #54 in CI'\n"
-        "    project: scitex-todo\n"
+        "    project: scitex-cards\n"
         "    host: ywata-note-win\n"
         "    created_at: '2026-06-07T01:00:00Z'\n"
         "    goal: ship the board\n"
-        "    agent: proj-scitex-todo\n"
+        "    agent: proj-scitex-cards\n"
         "    last_activity: '12s ago'\n"
-        "    pr_url: https://github.com/ywatanabe1989/scitex-todo/pull/54\n"
+        "    pr_url: https://github.com/ywatanabe1989/scitex-cards/pull/54\n"
         "    issue_url: https://github.com/ywatanabe1989/scitex-agent-container/issues/324\n"
     )
 
@@ -1302,7 +1302,7 @@ def test_load_tasks_raises_on_empty_goal_string():
 
 # ---------------------------------------------------------------------------
 # kind="status" — non-actionable status-tracking rows (e.g. q-* quality-CI
-# cards). Per board card `scitex-todo-relocate-q-status-tracking` + lead
+# cards). Per board card `scitex-cards-relocate-q-status-tracking` + lead
 # a2a `60a1a93d`: option (b) — flag the rows with this axis so the board
 # can filter them out of the actionable default lens (separate frontend
 # PR). Just a flag — no compute-fields constraint, no cross-imply.

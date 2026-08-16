@@ -36,7 +36,7 @@ def comment_task(
     """Append an entry to ``task.comments[]`` (the established Issue-
     activity-log shape from skill 30, Gitea-compatible field).
 
-    `by` overrides the $SCITEX_TODO_AGENT_ID → $USER precedence used by
+    `by` overrides the $SCITEX_CARDS_AGENT_ID → $USER precedence used by
     add_task / complete_task.
 
     `kind` is an optional feedback-ring / event tag (e.g. ``push`` /

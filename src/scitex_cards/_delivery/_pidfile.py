@@ -281,8 +281,8 @@ def _by_freshness(
         ),
         "hint": (
             "notifyd stopped ticking — on the host that runs it: "
-            "`systemctl --user status scitex-todo-notifyd` and "
-            "`systemctl --user restart scitex-todo-notifyd` "
+            "`systemctl --user status scitex-cards-notifyd` and "
+            "`systemctl --user restart scitex-cards-notifyd` "
             "(or run `scitex-cards notifyd` in the foreground)"
         ),
     }

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Per-edge INTEGRATION + DEGRADATION tests for scitex-todo's OPTIONAL peers.
+"""Per-edge INTEGRATION + DEGRADATION tests for scitex-cards's OPTIONAL peers.
 
-scitex-todo's Django board (``scitex_cards._django``) wires into two *optional*
+scitex-cards's Django board (``scitex_cards._django``) wires into two *optional*
 sibling SciTeX packages. Both edges are guarded in source so a lean
-``pip install scitex-todo`` (no ``[web]``/``[dev]`` extras) still works:
+``pip install scitex-cards`` (no ``[web]``/``[dev]`` extras) still works:
 
 Edge 1 — ``scitex-app`` (``_django/apps.py``)
-    ``ScitexTodoConfig`` inherits ``scitex_app._django.ScitexAppConfig`` when
+    ``ScitexCardsConfig`` inherits ``scitex_app._django.ScitexAppConfig`` when
     scitex-app is installed (so the board registers as a scitex-hub module),
     and falls back to Django's plain ``AppConfig`` on ``ImportError`` otherwise.
 
@@ -37,7 +37,7 @@ Conventions honoured (kept consistent with the rest of the suite):
 
 Discovered degradation contracts (empirically verified against the installed
 peers via the project's interpreter):
-  - scitex-app absent -> ``ScitexTodoConfig`` is a subclass of Django's plain
+  - scitex-app absent -> ``ScitexCardsConfig`` is a subclass of Django's plain
     ``django.apps.AppConfig`` (NOT of any scitex_app class). The board still
     registers as an ordinary Django app.
   - scitex-ui present but ``context_processors`` submodule absent -> settings
@@ -79,10 +79,10 @@ def test_board_appconfig_subclasses_scitex_app_when_present():
     """With scitex-app installed, the board AppConfig is a ScitexAppConfig."""
     # Arrange
     scitex_app_django = pytest.importorskip("scitex_app._django")
-    from scitex_cards._django.apps import ScitexTodoConfig
+    from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act
-    is_subclass = issubclass(ScitexTodoConfig, scitex_app_django.ScitexAppConfig)
+    is_subclass = issubclass(ScitexCardsConfig, scitex_app_django.ScitexAppConfig)
     # Assert
     assert is_subclass
 
@@ -141,13 +141,13 @@ def test_scitex_app_absent_fixture_blocks_the_import(scitex_app_absent):
 
 
 def test_board_appconfig_falls_back_to_plain_django_appconfig(scitex_app_absent):
-    """Without scitex-app, ScitexTodoConfig subclasses Django's plain AppConfig."""
+    """Without scitex-app, ScitexCardsConfig subclasses Django's plain AppConfig."""
     # Arrange
     from django.apps import AppConfig
 
     # Act
     is_plain_django_appconfig = issubclass(
-        scitex_app_absent.ScitexTodoConfig, AppConfig
+        scitex_app_absent.ScitexCardsConfig, AppConfig
     )
     # Assert
     assert is_plain_django_appconfig
@@ -156,7 +156,7 @@ def test_board_appconfig_falls_back_to_plain_django_appconfig(scitex_app_absent)
 def test_board_appconfig_keeps_board_label_without_scitex_app(scitex_app_absent):
     """The degraded AppConfig still carries the board's registration label."""
     # Arrange
-    config = scitex_app_absent.ScitexTodoConfig
+    config = scitex_app_absent.ScitexCardsConfig
     # Act
     label = config.label
     # Assert

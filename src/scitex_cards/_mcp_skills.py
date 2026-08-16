@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo MCP tools extracted from the budget-bound server module.
+"""scitex-cards MCP tools extracted from the budget-bound server module.
 
 :mod:`scitex_cards._mcp_server` sat at its line budget, so two cohesive tool
 clusters live here instead and register on the SAME shared ``mcp`` FastMCP
@@ -10,11 +10,11 @@ continues to expose every tool.
 
 Clusters:
 
-  - Skills (Convention B, ``todo_<verb>_<noun>``) — audit §5 required pair;
+  - Skills (Convention B, ``cards_<verb>_<noun>``) — audit §5 required pair;
     file-system introspection on the bundled ``_skills/`` dir.
   - Help-wait (``help_wait`` / ``help_clear``) — the "agent is stuck waiting
     on the operator" card, lifted out of the dotfiles Notification hook so
-    scitex-todo owns the semantics. 1:1 with :mod:`scitex_cards._help_wait`.
+    scitex-cards owns the semantics. 1:1 with :mod:`scitex_cards._help_wait`.
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ from ._mcp_app import mcp  # the LEAF — importing _mcp_server here would cycle
 
 
 def _skills_dir():
-    """Return the path to the bundled scitex-todo skill files."""
+    """Return the path to the bundled scitex-cards skill files."""
     from pathlib import Path
 
-    return Path(__file__).parent / "_skills" / "scitex-todo"
+    return Path(__file__).parent / "_skills" / "scitex-cards"
 
 
 @mcp.tool()
-async def todo_skills_list() -> str:
-    """List bundled scitex-todo skill files. Returns a JSON array of names."""
+async def cards_skills_list() -> str:
+    """List bundled scitex-cards skill files. Returns a JSON array of names."""
     skills_dir = _skills_dir()
     if not skills_dir.exists():
         return json.dumps([])
@@ -46,8 +46,8 @@ async def todo_skills_list() -> str:
 
 
 @mcp.tool()
-async def todo_skills_get(name: str) -> str:
-    """Return the content of one bundled scitex-todo skill file.
+async def cards_skills_get(name: str) -> str:
+    """Return the content of one bundled scitex-cards skill file.
 
     `name` must match a file in the bundled skills dir (e.g.
     `"01_installation.md"`). Returns a JSON object
@@ -83,7 +83,7 @@ async def reassign_task(
     Args:
       task_id: the card id.
       new_owner: the new owning agent.
-      by: the actor ($SCITEX_TODO_AGENT_ID → $USER precedence).
+      by: the actor ($SCITEX_CARDS_AGENT_ID → $USER precedence).
     """
     result = await anyio.to_thread.run_sync(
         functools.partial(
@@ -145,7 +145,7 @@ async def poll_notifications(
     The standalone (zero external runtime) delivery read path: the C4
     dispatcher ENQUEUEs each card-event into the recipient's per-recipient
     pull-inbox (a sibling ``inboxes:`` section in the shared store); this
-    tool returns that inbox so any agent's scitex-todo client can poll it
+    tool returns that inbox so any agent's scitex-cards client can poll it
     WITHOUT any external runtime. The optional out-of-band push rail stays a
     parallel accelerator, not a dependency.
 
@@ -238,7 +238,7 @@ async def health(tasks_path: str | None = None) -> str:
     (which only checks the fastmcp install). Runs the checks in
     :func:`scitex_cards._health.health`: ``store_canonical`` (resolved store is
     the canonical, readable+writable, parses with a ``tasks`` key — no
-    project shadow), ``agent_id`` ($SCITEX_TODO_AGENT_ID resolvable),
+    project shadow), ``agent_id`` ($SCITEX_CARDS_AGENT_ID resolvable),
     ``notifyd_alive`` (delivery-daemon pidfile probe), ``channel_drain`` (this
     agent's unseen vs seen inbox backlog), and ``channel_capable``
     (``_mcp_channel`` importable). Returns the cross-package standard shape
@@ -267,9 +267,9 @@ def _dm_sender_or_error() -> "tuple[str | None, str | None]":
         return None, json.dumps(
             {
                 "error": "dm: no agent identity configured. Set "
-                "SCITEX_TODO_AGENT_ID=<your-agent> in the MCP server env "
-                '(.mcp.json: "SCITEX_TODO_AGENT_ID": '
-                "\"${SCITEX_TODO_AGENT_ID}\") so the DM 'from' field names a "
+                "SCITEX_CARDS_AGENT_ID=<your-agent> in the MCP server env "
+                '(.mcp.json: "SCITEX_CARDS_AGENT_ID": '
+                "\"${SCITEX_CARDS_AGENT_ID}\") so the DM 'from' field names a "
                 "real agent."
             }
         )
@@ -289,7 +289,7 @@ async def dm_send(
     ``dm:<a>::<b>``, peers sorted) and enqueues a ``dm`` notification into the
     recipient's pull-inbox so the unified channel server delivers it into
     their live session. ``from`` is THIS agent's resolved identity
-    ($SCITEX_TODO_AGENT_ID). The operator's reserved peer name is
+    ($SCITEX_CARDS_AGENT_ID). The operator's reserved peer name is
     ``"operator"`` — the operator reads the thread on the board's /chat view.
     Returns the stored record as JSON.
 
@@ -422,8 +422,8 @@ __all__ = [
     "help_wait",
     "poll_notifications",
     "reassign_task",
-    "todo_skills_get",
-    "todo_skills_list",
+    "cards_skills_get",
+    "cards_skills_list",
 ]
 
 # EOF

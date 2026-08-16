@@ -34,7 +34,7 @@ from scitex_cards._threads import append_message, get_thread
 @pytest.fixture()
 def store(tmp_path: Path, env) -> Path:
     """A real tmp tasks.yaml (threads sidecar lands next to it)."""
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     path = tmp_path / "tasks.yaml"
     path.write_text("tasks: []\n", encoding="utf-8")
     return path
@@ -308,7 +308,6 @@ def test_a_query_store_does_not_become_the_write_target(store, tmp_path, env):
     attacker.parent.mkdir(parents=True, exist_ok=True)
     attacker.write_text("tasks: []\n", encoding="utf-8")
     env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))
-    env.set("SCITEX_TODO_STORE", str(store))
     env.set("SCITEX_CARDS_STORE", str(store))
     request = RequestFactory().post(
         f"/dm/thread/agent-x?store={attacker}",

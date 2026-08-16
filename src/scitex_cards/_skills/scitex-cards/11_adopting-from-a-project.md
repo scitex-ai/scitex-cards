@@ -2,13 +2,12 @@
 description: |
   [TOPIC] Adopting the shared task store from your project
   [DETAILS] How a project agent (clew / neurovista / scitex-dev / scitex-hub
-  / ripple-wm / scitex-orochi / scitex-agent-container / etc.) writes its
-  own tasks into the shared fleet board (the SQLite store) so the operator's
-  board (http://127.0.0.1:8051/) auto-renders your tasks as a labeled column.
-  [HOW] Set `project` + `agent` on every task you create + write via the
-  scitex-cards CLI or Python API. Three fields is the minimum for your work
+  / ripple-wm / scitex-orochi / etc.) writes its own tasks into the shared
+  fleet board so the operator's board auto-renders them as a labeled column.
+  [HOW] Set `project` + `agent` on every task you create, and write via the
+  scitex-cards CLI or Python API. Those fields are the minimum for your work
   to surface on the live board.
-tags: [scitex-cards-adopting]
+tags: [scitex-cards-adopting-from-a-project]
 ---
 
 # Adopting the shared task store from your project
@@ -107,12 +106,12 @@ poll). No further action on your side.
 
 ## What goes in `task` vs `title` vs `note` vs `goal`
 
-| Field    | What it carries                                                 | UI placement        |
-| -------- | --------------------------------------------------------------- | ------------------- |
-| `title`  | short scannable label (the operator's table-view tag line)      | always              |
-| `task`   | ONE-LINE BIG-TEXT description of what you're doing RIGHT NOW    | huge text on card   |
-| `goal`   | the WHY — parent goal / why this matters                        | 🎯 italic line above task |
-| `note`   | optional markdown detail (long-form context)                    | drawer body         |
+| Field | What it carries | UI placement |
+|---|---|---|
+| `title` | short scannable label (the operator's table-view tag line) | always |
+| `task` | ONE-LINE BIG-TEXT description of what you're doing RIGHT NOW | huge text on card |
+| `goal` | the WHY — parent goal / why this matters | 🎯 italic line above task |
+| `note` | optional markdown detail (long-form context) | drawer body |
 
 Set `task` SHORT (it's the eye-magnet); set `goal` to the higher-order
 intent; use `note` for long-form (or use the per-task-dir
@@ -193,9 +192,9 @@ your project's color rail + the BIG text.
 
 ## Cross-references
 
-- [`02_quick-start.md`](02_quick-start.md) — `import scitex_cards as todo`.
+- [`02_quick-start.md`](02_quick-start.md) — `import scitex_cards as card`.
 - [`03_python-api.md`](03_python-api.md) — full Python API surface.
 - [`04_cli-reference.md`](04_cli-reference.md) — full CLI verbs.
 - [`05_mcp-tools.md`](05_mcp-tools.md) — MCP tool surface for agent callers.
-- [`30_two-tier-conventions-and-write-protocol.md`](30_two-tier-conventions-and-write-protocol.md) — full fleet spec: project tier / global tier / write-protocol / cross-host sync / citation / push-notification / Core-vs-Ports-vs-Adapters.
-- `docs/adr/0006-full-board-ui-spec-*.md` + `0007-task-dataclass-*.md` — the dataclass + board UI ADRs the live board renders from.
+- [`30_two-tier-conventions-and-write-protocol.md`](30_two-tier-conventions-and-write-protocol.md) — fleet spec: tiers, write protocol, store resolution (ports, cross-host sync and citation moved to 31).
+- `docs/adr/0006-*` + `0007-*` — the dataclass and board-UI ADRs the live board renders from.

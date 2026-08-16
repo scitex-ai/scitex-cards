@@ -3,9 +3,9 @@
 """Tests for the SQLite derived-index (PR-B of the lead-approved
 Stage 2 plan, lead a2a `aa02fb0e` / `e5243003`).
 
-Real `tmp_path` SQLite files via the ``SCITEX_TODO_INDEX_PATH`` env
+Real `tmp_path` SQLite files via the ``SCITEX_CARDS_INDEX_PATH`` env
 override; no mocks (STX-NM / PA-306). The lane-discovery glob env
-(``SCITEX_TODO_LANE_GLOBS``) is overridden per test so we don't pick
+(``SCITEX_CARDS_LANE_GLOBS``) is overridden per test so we don't pick
 up the host's `~/proj/*` lanes.
 
 Covers:
@@ -40,10 +40,10 @@ from scitex_cards._cli import main
 
 @pytest.fixture
 def index_target(env, tmp_path):
-    """Point ``SCITEX_TODO_INDEX_PATH`` at a tmp file so the real
-    ``~/.scitex/todo/.tasks.index.sqlite`` is never touched."""
+    """Point ``SCITEX_CARDS_INDEX_PATH`` at a tmp file so the real
+    ``~/.scitex/cards/.tasks.index.sqlite`` is never touched."""
     target = tmp_path / "tasks.index.sqlite"
-    env.set("SCITEX_TODO_INDEX_PATH", str(target))
+    env.set("SCITEX_CARDS_INDEX_PATH", str(target))
     yield target
 
 
@@ -250,7 +250,7 @@ class TestQueryTasks:
 
 
 class TestCliRebuildAndInfo:
-    """`scitex-todo index rebuild` + `info` round-trip via CliRunner."""
+    """`scitex-cards index rebuild` + `info` round-trip via CliRunner."""
 
     def test_rebuild_then_info_reports_rows(
         self,
@@ -266,7 +266,7 @@ class TestCliRebuildAndInfo:
             store,
             "tasks:\n  - {id: a, title: A, status: pending}\n",
         )
-        # The autouse fixture already sets SCITEX_TODO_LANE_GLOBS="".
+        # The autouse fixture already sets SCITEX_CARDS_LANE_GLOBS="".
         runner = CliRunner()
         # Act
         rb = runner.invoke(main, ["index", "rebuild", "-y"])
@@ -296,7 +296,7 @@ class TestCliRebuildAndInfo:
 def test_env_override_changes_index_path(env, tmp_path):
     # Arrange
     target = tmp_path / "custom" / "i.sqlite"
-    env.set("SCITEX_TODO_INDEX_PATH", str(target))
+    env.set("SCITEX_CARDS_INDEX_PATH", str(target))
     # Act
     p = _idx.index_path()
     # Assert

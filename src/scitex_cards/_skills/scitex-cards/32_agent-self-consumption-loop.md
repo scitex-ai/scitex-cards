@@ -3,7 +3,7 @@
 **The board IS your work queue.** Every fleet agent — `lead` and every
 worker — runs the same loop: on wake, pick the top task from the
 board, work it, comment progress, update status, repeat. Local
-TODO/FUTURE files are scratch only (operator + lead 2026-06-12
+CARD/FUTURE files are scratch only (operator + lead 2026-06-12
 doctrine, see SKILL.md MANDATE).
 
 This sub-skill documents the 7-step loop, the supporting CLI verbs
@@ -32,7 +32,7 @@ task_id="$(echo "$task_json" | jq -r .id)"
 
 # 2. Read the task body — for richer context, the agent harness loads
 #    the JSON via `--json` AND opens the per-task README.md if any:
-#    ~/.scitex/todo/tasks/<task_id>/README.md
+#    ~/.scitex/cards/tasks/<task_id>/README.md
 
 # 3. Work the task. As progress happens, comment back:
 scitex-cards update "$task_id" --add-comment "step 1 done, starting step 2"
@@ -43,7 +43,7 @@ scitex-cards update "$task_id" --status done --pr-url "$pr_url" \
 
 # 5. If blocked, name the blocker:
 scitex-cards update "$task_id" --status blocked --blocker dependency \
-  --add-comment "blocked on todo-pXX (a2a relay)"
+  --add-comment "blocked on cards-pXX (a2a relay)"
 
 # 6. Loop back to step 1 until the backlog is empty.
 
@@ -104,7 +104,7 @@ same):
 {
   "trigger": "scitex-cards-watcher",
   "trigger_kind": "task_added" | "comment" | "status_changed",
-  "task_id": "todo-pXX-...",
+  "task_id": "cards-pXX-...",
   "task_title": "...",
   "summary": "comment by lead: please pick this up",
   "store_path": "/scitex-cards/cards.db"

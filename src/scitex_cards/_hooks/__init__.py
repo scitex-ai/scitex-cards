@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Hook-consumer entry-point contract for the scitex-todo board.
+"""Hook-consumer entry-point contract for the scitex-cards board.
 
 Lead a2a `6fff33d6` + `fbffb879`, 2026-06-14 — operator-mandated. Loose
-coupling between scitex-todo (the board / SSoT) and event PRODUCERS
+coupling between scitex-cards (the board / SSoT) and event PRODUCERS
 (SAC's push-hook, dev's merge-Action, future federated producers).
 The board never knows what produces an event; it just accepts the
 canonical wire shape and records it.
@@ -150,8 +150,8 @@ whichever is closest to the producer's process model:
 1. **HTTP** — ``POST /hooks/push`` / ``POST /hooks/done`` with the
    payload as JSON body. Used by SAC's push-hook + dev's GitHub
    Action.
-2. **CLI** — ``scitex-todo hook push --payload <FILE_OR_->`` and
-   ``scitex-todo hook done --payload <FILE_OR_->`` (``-`` reads the
+2. **CLI** — ``scitex-cards hook push --payload <FILE_OR_->`` and
+   ``scitex-cards hook done --payload <FILE_OR_->`` (``-`` reads the
    payload from stdin). Used by shell scripts that already have shell
    access (e.g. the bundled ``.githooks/`` git → card hooks).
 3. **Python** — ``from scitex_cards._hooks import dispatch_event;

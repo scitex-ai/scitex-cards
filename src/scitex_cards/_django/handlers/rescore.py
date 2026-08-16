@@ -99,7 +99,7 @@ def handle_rescore(request, board):
         return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
     logger.info(
-        "[scitex-todo] rescored %s -> u=%s i=%s rank=%s/%s in %s",
+        "[scitex-cards] rescored %s -> u=%s i=%s rank=%s/%s in %s",
         task_id,
         urgency,
         importance,

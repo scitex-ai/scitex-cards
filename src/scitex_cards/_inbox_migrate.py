@@ -189,7 +189,7 @@ def migrate_to_sqlite(store: str | Path | None = None) -> dict:
     )
 
     # THE DESTINATION IS THE RAIL'S TARGET, not the per-host file. Carrying
-    # records into `runtime/todo.db` after the rail moved to the canonical store
+    # records into `runtime/cards.db` after the rail moved to the canonical store
     # would write them where nothing reads — the same write-here-read-there
     # shape this whole change exists to remove, and it would look like a
     # successful migration while losing every record it "migrated".

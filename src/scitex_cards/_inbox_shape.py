@@ -5,7 +5,7 @@
 The rail is moving from its own SQLite file to the canonical store, and the two
 ends do not merely differ in location. Measured on the live stores 2026-08-02:
 
-    SQLite  runtime/todo.db   table ``inbox``          3496 rows
+    SQLite  runtime/cards.db   table ``inbox``          3496 rows
     Postgres (cards store)    table ``notifications``     0 rows
 
     inbox.recipient   ->  notifications.recipient_id     a RENAME

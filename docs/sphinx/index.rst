@@ -1,16 +1,17 @@
-.. scitex-todo documentation master file
+.. scitex-cards documentation master file
 
-scitex-todo — canonical YAML task store with pluggable adapters
+scitex-cards — canonical YAML task store with pluggable adapters
 ===============================================================
 
-**scitex-todo** keeps your tasks in one validated YAML store (a top-level
+**scitex-cards** keeps your tasks in one validated YAML store (a top-level
 ``tasks:`` list) and renders that single source of truth through pluggable
 adapters: a mermaid dependency-graph PNG, a read-only React-Flow web board,
 and a plain task listing. Part of `SciTeX <https://scitex.ai>`_.
 
-The store is resolved in precedence order: an explicit ``--tasks`` path →
-``$SCITEX_TODO_TASKS`` → project ``<git-root>/.scitex/todo/tasks.yaml`` → user
-``~/.scitex/todo/tasks.yaml`` → the bundled generic example.
+The store is **PostgreSQL on 55432** and there is ONE store identity: an explicit
+``store`` argument → ``$SCITEX_CARDS_DB``. Nothing else — unset RAISES. There is
+deliberately no SQLite tier, no project scope and no bundled-example fallback: an
+unconfigured store is a configuration error, not a cue to invent a board.
 
 Interfaces
 ----------
@@ -22,13 +23,13 @@ Interfaces
    * - Interface
      - Description
    * - Python API
-     - ``import scitex_todo as todo`` — :doc:`api/scitex_todo`
+     - ``import scitex_cards as cards`` — :doc:`api/scitex_cards`
    * - CLI
-     - ``scitex-todo <command>`` — :doc:`cli_reference`
+     - ``scitex-cards <command>`` — :doc:`cli_reference`
    * - MCP
      - AI-agent tools via fastmcp *(on the roadmap)*
    * - Skills
-     - AI-agent knowledge pages bundled at ``_skills/scitex-todo/``
+     - AI-agent knowledge pages bundled at ``_skills/scitex-cards/``
 
 .. toctree::
    :maxdepth: 2
@@ -47,7 +48,7 @@ Interfaces
    :maxdepth: 2
    :caption: API Reference
 
-   api/scitex_todo
+   api/scitex_cards
 
 Quick example
 -------------
@@ -56,20 +57,20 @@ Python API:
 
 .. code-block:: python
 
-    import scitex_todo as todo
+    import scitex_cards as cards
 
-    tasks = todo.load_tasks("tasks.yaml")    # validates id / title / status
-    mermaid_src = todo.build_mermaid(tasks)  # YAML -> flowchart TB
-    engine = todo.render(mermaid_src, "tasks.png")
+    tasks = cards.load_tasks("tasks.yaml")    # validates id / title / status
+    mermaid_src = cards.build_mermaid(tasks)  # YAML -> flowchart TB
+    engine = cards.render(mermaid_src, "tasks.png")
     print(f"rendered via {engine}")
 
 CLI:
 
 .. code-block:: bash
 
-    scitex-todo render-graph -o tasks.png      # YAML -> dependency PNG
-    scitex-todo list-tasks --json              # resolved tasks, machine-readable
-    scitex-todo board --port 8051              # read-only web board (needs [web])
+    scitex-cards render-graph -o tasks.png      # YAML -> dependency PNG
+    scitex-cards list-tasks --json              # resolved tasks, machine-readable
+    scitex-cards board --port 8051              # read-only web board (needs [web])
 
 Four Freedoms for Research
 --------------------------

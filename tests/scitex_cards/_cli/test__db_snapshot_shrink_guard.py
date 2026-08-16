@@ -65,6 +65,23 @@ def test_a_collapsed_card_count_is_refused(rail):
 
     # Assert
     assert result.exit_code != 0, "a wipe must not be snapshotted silently"
+
+
+def test_the_collapse_refusal_reports_the_before_and_after_counts(rail):
+    """Split under STX-TQ007, and it is the half that makes the refusal usable.
+
+    A non-zero exit tells the operator the rail stopped; only the counts tell
+    them WHY and how bad it is. Merged, this could never be the reported
+    failure — it ran only once the exit-code claim had already passed.
+    """
+    # Arrange
+    snaps = rail
+    _seed(3)
+
+    # Act
+    result = CliRunner().invoke(db_group, ["snapshot", "--dir", str(snaps)])
+
+    # Assert
     assert "collapsed from 100 to 3" in result.output
 
 

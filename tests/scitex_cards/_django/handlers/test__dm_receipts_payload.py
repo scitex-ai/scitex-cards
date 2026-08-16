@@ -32,7 +32,7 @@ from scitex_cards._threads import append_message, mark_read, thread_key
 @pytest.fixture()
 def store(tmp_path: Path, env) -> Path:
     """A real tmp tasks.yaml (the database lands next to it)."""
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     path = tmp_path / "tasks.yaml"
     path.write_text("tasks: []\n", encoding="utf-8")
     return path

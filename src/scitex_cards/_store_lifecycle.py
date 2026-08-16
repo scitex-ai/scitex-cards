@@ -81,7 +81,7 @@ def complete_task(
     Idempotent per ``GITIGNORED/QUESTIONS.md`` #3: re-completing a
     ``done`` task is a no-op (timestamps stay frozen from the first
     completion). Pass ``by=`` to override the
-    ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
+    ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` precedence chain.
 
     Returns the (post-mutation) task mapping.
 

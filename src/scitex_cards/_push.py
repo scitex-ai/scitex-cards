@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""scitex-todo's self-contained push delivery wire.
+"""scitex-cards's self-contained push delivery wire.
 
 Operator standing direction (lead a2a `8e51b1e072d14e2a81f5171cb5aca9f8`
 + `ffc6629c80e4462a8401fb7e4ebb7240`, 2026-06-12, operator TG12617): the
 package must NOT depend on any external agent-runtime CLI for outbound
-notifications. Push delivery lives inside scitex-todo itself; the
+notifications. Push delivery lives inside scitex-cards itself; the
 contract is HTTP, not Python imports (ecosystem doctrine).
 
 Operator TG12618 follow-up: the long-term architecture is a dedicated
 stdio MCP channel + a board-event poller per agent, wired via per-agent
-`.mcp.json`, all owned by scitex-todo. That is queued as
+`.mcp.json`, all owned by scitex-cards. That is queued as
 PR (j) in the implementation roadmap. THIS module is the v1
 **HTTP-push** half: a one-shot wake of the agent's turn URL with the
 board-event body. Agents that read MCP inbox first (via the future
@@ -18,20 +18,20 @@ channel) will pick up the same event from both sides.
 
 Configuration
 -------------
-``SCITEX_TODO_AGENT_TURN_URLS`` — JSON object mapping agent ids to
+``SCITEX_CARDS_AGENT_TURN_URLS`` — JSON object mapping agent ids to
 their turn URLs (any HTTP endpoint that accepts a JSON ``POST``):
 
-    SCITEX_TODO_AGENT_TURN_URLS='{
-        "scitex-todo": "https://agents.example/v1/turn/scitex-todo",
+    SCITEX_CARDS_AGENT_TURN_URLS='{
+        "scitex-cards": "https://agents.example/v1/turn/scitex-cards",
         "lead": "https://agents.example/v1/turn/lead"
     }'
 
-Per-agent fallback ``SCITEX_TODO_TURN_URL_<AGENT_SLUG>`` (agent slug
-upper-case + hyphens → underscores) — scitex-todo's own per-agent
+Per-agent fallback ``SCITEX_CARDS_TURN_URL_<AGENT_SLUG>`` (agent slug
+upper-case + hyphens → underscores) — scitex-cards's own per-agent
 turn-url env contract.
 
 When neither env nor the user registry resolves a URL, delivery
-returns ``no-turn-url-configured`` (fail-loud); scitex-todo has no
+returns ``no-turn-url-configured`` (fail-loud); scitex-cards has no
 external-runtime fallback.
 
 Loud-but-not-fatal policy (lead-confirmed)
@@ -45,7 +45,7 @@ Loud-but-not-fatal policy (lead-confirmed)
   status: <code>}``; never raise out into the request handler.
 * Network exception / timeout → same shape, ``reason:
   "transport-error", error: <str>``.
-* ``SCITEX_TODO_PUSH_DRY_RUN=1`` → no network; print the body to
+* ``SCITEX_CARDS_PUSH_DRY_RUN=1`` → no network; print the body to
   stdout for dev / test; returns ``ok=True, wire="dry-run"``.
 
 Boot-time announcement (``announce_missing_at_boot``) lists the
@@ -76,7 +76,7 @@ from ._turn_url import (
 
 logger = logging.getLogger(__name__)
 
-ENV_DRY_RUN = "SCITEX_TODO_PUSH_DRY_RUN"
+ENV_DRY_RUN = "SCITEX_CARDS_PUSH_DRY_RUN"
 
 #: Default per-POST timeout in seconds. Env-overridable.
 #:
@@ -100,7 +100,7 @@ ENV_DRY_RUN = "SCITEX_TODO_PUSH_DRY_RUN"
 #:
 #: Callers can override per-call with ``deliver(..., timeout=120.0)``
 #: when they need the receiver's full response payload.
-ENV_PUSH_TIMEOUT_S = "SCITEX_TODO_PUSH_TIMEOUT_S"
+ENV_PUSH_TIMEOUT_S = "SCITEX_CARDS_PUSH_TIMEOUT_S"
 DEFAULT_TIMEOUT_S = 30.0
 
 #: Short per-POST timeout for INTERACTIVE callers (the board's comment
@@ -148,7 +148,7 @@ def _timeout_result(
     """
     reason = "dispatched" if dispatched_is_ok else "timeout"
     logger.warning(
-        "[scitex-todo._push] %s read-timeout after %.1fs for agent=%s → reason=%s. %s",
+        "[scitex-cards._push] %s read-timeout after %.1fs for agent=%s → reason=%s. %s",
         url,
         timeout,
         agent,
@@ -180,7 +180,7 @@ def deliver(
     """Deliver ``body`` to ``agent`` via the configured turn URL.
 
     ``timeout`` defaults to :data:`DEFAULT_TIMEOUT_S` (env-overridable
-    via ``SCITEX_TODO_PUSH_TIMEOUT_S``). The receiver's ``/v1/turn``
+    via ``SCITEX_CARDS_PUSH_TIMEOUT_S``). The receiver's ``/v1/turn``
     runs the turn synchronously, so a client read-timeout does NOT
     imply the request was lost — the receiver may still be processing
     it. We treat the timeout case as DISPATCHED success (``ok=True,
@@ -216,7 +216,7 @@ def deliver(
     # Dev / test escape hatch.
     if os.environ.get(ENV_DRY_RUN) == "1":
         print(
-            f"\n=== scitex-todo PUSH dry-run → {agent} ({kind}) ===\n"
+            f"\n=== scitex-cards PUSH dry-run → {agent} ({kind}) ===\n"
             f"{body}\n=== end {agent} ===\n",
             flush=True,
         )
@@ -233,7 +233,7 @@ def deliver(
     url = turn_url_for(agent)
     if not url:
         logger.error(
-            "[scitex-todo._push] no turn URL configured for agent=%r (set %s or %s%s)",
+            "[scitex-cards._push] no turn URL configured for agent=%r (set %s or %s%s)",
             agent,
             ENV_MAP,
             PER_AGENT_PREFIX,
@@ -250,17 +250,17 @@ def deliver(
         }
 
     # ``text`` is the field the turn-url receiver expects; ``body`` is
-    # scitex-todo's historical name. We send BOTH so the wire is
+    # scitex-cards's historical name. We send BOTH so the wire is
     # back-compat: consumers that key off ``text`` succeed, and any older
     # consumer keying off ``body`` still works. Without this alias a
     # text-keyed receiver returns
     # ``HTTP 400 missing or empty 'text' field`` and the whole nudge chain
-    # is dead on arrival (proj-scitex-todo P3a(c) pilot, 2026-06-13 — see
+    # is dead on arrival (proj-scitex-cards P3a(c) pilot, 2026-06-13 — see
     # lead a2a ``8afe659e``).
     payload = {
         "agent": agent,
         "kind": kind,
-        "source": "scitex-todo",
+        "source": "scitex-cards",
         "text": body,
         "body": body,
         "task_id": task_id,
@@ -274,7 +274,7 @@ def deliver(
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "scitex-todo/_push (channel)",
+            "User-Agent": "scitex-cards/_push (channel)",
         },
     )
     try:
@@ -282,7 +282,7 @@ def deliver(
             status = resp.getcode()
     except urllib.error.HTTPError as e:
         logger.error(
-            "[scitex-todo._push] HTTP %s from %s for agent=%s: %s",
+            "[scitex-cards._push] HTTP %s from %s for agent=%s: %s",
             e.code,
             url,
             agent,
@@ -315,7 +315,7 @@ def deliver(
         if isinstance(nested, TimeoutError) or "timed out" in str(e):
             return _timeout_result(agent, kind, url, e, timeout, dispatched_is_ok)
         logger.error(
-            "[scitex-todo._push] transport error to %s for agent=%s: %s",
+            "[scitex-cards._push] transport error to %s for agent=%s: %s",
             url,
             agent,
             e,
@@ -360,7 +360,7 @@ def announce_missing_at_boot(tasks: list[dict]) -> list[str]:
     missing = [a for a in agents if turn_url_for(a) is None]
     if missing:
         logger.warning(
-            "[scitex-todo._push] %d agent(s) without turn URL — "
+            "[scitex-cards._push] %d agent(s) without turn URL — "
             "nudge + comment-relay will return ok=False for them: %s",
             len(missing),
             ", ".join(missing),

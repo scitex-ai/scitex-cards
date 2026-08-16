@@ -32,11 +32,11 @@ from scitex_cards._db import ENV_DB
 from scitex_cards._inbox import enqueue as real_enqueue
 from scitex_cards._inbox import poll_inbox
 from scitex_cards._push import ENV_DRY_RUN
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     ENV_PENDING_NUDGE_HOURS,
     ENV_STALE_ACTIVE_HOURS,
 )
-from scitex_cards._stale_active_nudge import (
+from scitex_cards._stale.active_nudge import (
     ENV_NUDGE_FLOOR_HOURS,
     ENV_NUDGE_PUSH,
     KIND_PENDING_BACKLOG,
@@ -680,7 +680,7 @@ class TestFailSoftAndFailLoud:
 #: excuse appears anywhere in the log.
 def _sweep_with_no_push_configured(monkeypatch):
     monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_TODO_AGENT_TURN_URLS", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
     monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
     return sweep_and_nudge([_stale("a1", "nourlowner")])
 
@@ -690,11 +690,11 @@ def _sweep_with_no_push_configured(monkeypatch):
 #: fire — the echo is secondary, never a substitute for the inbox.
 def _sweep_with_opt_in_echo(monkeypatch):
     monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_TODO_AGENT_TURN_URLS", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
     monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
     monkeypatch.setenv(ENV_NUDGE_PUSH, "1")
     with _local_receiver() as (url, received):
-        monkeypatch.setenv("SCITEX_TODO_TURN_URL_ECHOOWNER", url)
+        monkeypatch.setenv("SCITEX_CARDS_TURN_URL_ECHOOWNER", url)
         lines = sweep_and_nudge([_stale("s1", "echoowner")])
     return received, lines
 
@@ -705,10 +705,10 @@ def _sweep_with_opt_in_echo(monkeypatch):
 #: as UPPER with '-'→'_'; a URL with no scheme makes the echo raise.
 def _sweep_with_a_broken_echo(monkeypatch):
     monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_TODO_AGENT_TURN_URLS", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
     monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
     monkeypatch.setenv(ENV_NUDGE_PUSH, "1")
-    monkeypatch.setenv("SCITEX_TODO_TURN_URL_BADECHO", "noscheme-url")
+    monkeypatch.setenv("SCITEX_CARDS_TURN_URL_BADECHO", "noscheme-url")
     return sweep_and_nudge([_stale("s1", "badecho")])
 
 

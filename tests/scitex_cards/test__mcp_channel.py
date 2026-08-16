@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for scitex-todo's OWN standalone channel-notification server.
+"""Tests for scitex-cards's OWN standalone channel-notification server.
 
 Real round-trips, NO mocks (STX-NM / PA-306): a real ``tmp_path`` store, real
 :mod:`scitex_cards._inbox` enqueue/poll/ack, and a real (in-process) async
@@ -240,7 +240,7 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
 
     recorder = _SendRecorder()
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, state, source="stodo", store=store)
+        gated_drain_once(agent, recorder, state, source="scards", store=store)
     )
     return {
         "seeded": seeded,
@@ -270,7 +270,7 @@ def gated_drain_after_change(tmp_path):
     )
     state = _DrainState()
     first_pushed = asyncio.run(
-        gated_drain_once(agent, _SendRecorder(), state, source="stodo", store=store)
+        gated_drain_once(agent, _SendRecorder(), state, source="scards", store=store)
     )
     _inbox.enqueue(
         agent,
@@ -291,7 +291,7 @@ def gated_drain_after_change(tmp_path):
     os.utime(gated_file, (bumped, bumped))
     recorder = _SendRecorder()
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, state, source="stodo", store=store)
+        gated_drain_once(agent, recorder, state, source="scards", store=store)
     )
     return {
         "first_pushed": first_pushed,
@@ -312,15 +312,15 @@ def test_build_channel_params_content_is_the_record_body():
     assert params["content"] == rec["body"]
 
 
-def test_build_channel_params_source_defaults_to_stodo():
+def test_build_channel_params_source_defaults_to_scards():
     # Arrange
     rec = _FULL_RECORD
     # Act
     params = build_channel_params(rec)
-    # Assert — source drives the `<- stodo` render (the fleet's short
-    # sender-identity label — distinct from the scitex-todo agent id so the TUI
+    # Assert — source drives the `<- scards` render (the fleet's short
+    # sender-identity label — distinct from the scitex-cards agent id so the TUI
     # doesn't confuse system pushes with the agent's own messages).
-    assert params["meta"]["source"] == "stodo"
+    assert params["meta"]["source"] == "scards"
 
 
 def test_build_channel_params_all_meta_strings():
@@ -462,7 +462,7 @@ def test_drain_once_stamps_the_default_source(drained_two_records):
     # Act
     sources = {c["meta"]["source"] for c in recorder.calls}
     # Assert
-    assert sources == {"stodo"}
+    assert sources == {"scards"}
 
 
 def test_drain_once_meta_values_are_all_strings(drained_two_records):
@@ -769,7 +769,7 @@ def test_gated_drain_first_tick_delivers_pending(tmp_path):
     recorder = _SendRecorder()
     # Act
     pushed = asyncio.run(
-        gated_drain_once(agent, recorder, _DrainState(), source="stodo", store=store)
+        gated_drain_once(agent, recorder, _DrainState(), source="scards", store=store)
     )
     # Assert
     assert pushed == 1
@@ -791,7 +791,7 @@ def test_gated_drain_first_tick_delivers_the_body(tmp_path):
     recorder = _SendRecorder()
     # Act
     asyncio.run(
-        gated_drain_once(agent, recorder, _DrainState(), source="stodo", store=store)
+        gated_drain_once(agent, recorder, _DrainState(), source="scards", store=store)
     )
     # Assert
     assert recorder.calls[0]["content"] == "seed me"
@@ -838,7 +838,7 @@ def test_resolve_agent_id_explicit_arg():
 
 def test_resolve_agent_id_from_env(monkeypatch):
     # Arrange
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "env-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
     # Act
     resolved = resolve_agent_id()
     # Assert
@@ -847,7 +847,7 @@ def test_resolve_agent_id_from_env(monkeypatch):
 
 def test_resolve_agent_id_unresolved_raises(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
@@ -856,16 +856,16 @@ def test_resolve_agent_id_unresolved_raises(monkeypatch):
 
 def test_resolve_agent_id_unresolved_message_names_the_env_var(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the failure must name the var the operator has to set.
-    with pytest.raises(RuntimeError, match="SCITEX_TODO_AGENT_ID"):
+    with pytest.raises(RuntimeError, match="SCITEX_CARDS_AGENT_ID"):
         resolve_agent_id()
 
 
 def test_resolve_agent_id_unknown_sentinel_raises(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
@@ -874,7 +874,7 @@ def test_resolve_agent_id_unknown_sentinel_raises(monkeypatch):
 
 def test_resolve_agent_id_blank_raises(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
@@ -890,34 +890,34 @@ def test_resolve_agent_id_blank_raises(monkeypatch):
 
 def test_resolve_agent_id_unexpanded_placeholder_arg_raises(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
-        resolve_agent_id("$SCITEX_TODO_AGENT_ID")
+        resolve_agent_id("$SCITEX_CARDS_AGENT_ID")
 
 
 def test_resolve_agent_id_placeholder_message_says_placeholder(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the message must name the diagnosis, not just fail.
     with pytest.raises(RuntimeError, match="placeholder"):
-        resolve_agent_id("$SCITEX_TODO_AGENT_ID")
+        resolve_agent_id("$SCITEX_CARDS_AGENT_ID")
 
 
 def test_resolve_agent_id_unexpanded_placeholder_braces_arg_raises(monkeypatch):
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
-        resolve_agent_id("${SCITEX_TODO_AGENT_ID}")
+        resolve_agent_id("${SCITEX_CARDS_AGENT_ID}")
 
 
 def test_resolve_agent_id_unexpanded_placeholder_from_env_raises(monkeypatch):
     # Arrange
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "$SCITEX_TODO_AGENT_ID")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "$SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
@@ -925,13 +925,13 @@ def test_resolve_agent_id_unexpanded_placeholder_from_env_raises(monkeypatch):
 
 
 def test_resolve_agent_id_current_var_wins_over_stale_deprecated(monkeypatch):
-    """The CURRENT var wins: a valid $SCITEX_TODO_AGENT_ID must NOT be disabled
-    by a leftover stale $SCITEX_TODO_AGENT. This is the incident fix — fleet
+    """The CURRENT var wins: a valid $SCITEX_CARDS_AGENT_ID must NOT be disabled
+    by a leftover stale $SCITEX_CARDS_AGENT. This is the incident fix — fleet
     agents carry a stale ambient old-name export baked in by an old injector;
     a correctly configured AGENT_ID must still resolve (so the poll loop runs)."""
     # Arrange — a valid NEW-name id AND the stale old name both set.
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "env-agent")
-    monkeypatch.setenv("SCITEX_TODO_AGENT", "legacy-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id()
     # Assert — the current var wins, no raise.
@@ -939,15 +939,15 @@ def test_resolve_agent_id_current_var_wins_over_stale_deprecated(monkeypatch):
 
 
 def test_resolve_agent_id_only_deprecated_env_var_fails_loud(monkeypatch):
-    """With NO current $SCITEX_TODO_AGENT_ID but the renamed-away
-    $SCITEX_TODO_AGENT still exported, resolution fails LOUD pointing at the new
+    """With NO current $SCITEX_CARDS_AGENT_ID but the renamed-away
+    $SCITEX_CARDS_AGENT still exported, resolution fails LOUD pointing at the new
     name — a genuine reliance on the old var the operator must migrate."""
     # Arrange — only the deprecated old name is set.
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
-    monkeypatch.setenv("SCITEX_TODO_AGENT", "legacy-agent")
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
-    with pytest.raises(RuntimeError, match="SCITEX_TODO_AGENT_ID"):
+    with pytest.raises(RuntimeError, match="SCITEX_CARDS_AGENT_ID"):
         resolve_agent_id()
 
 
@@ -957,7 +957,7 @@ def test_resolve_agent_id_only_deprecated_env_var_fails_loud(monkeypatch):
 def test_resolve_agent_id_optional_returns_id_when_set(monkeypatch):
     """With an identity, the unified server enables the digest push."""
     # Arrange
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "env-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
@@ -968,7 +968,7 @@ def test_resolve_agent_id_optional_returns_none_when_unset(monkeypatch):
     """No identity ⇒ the unified server serves tools ONLY (push disabled).
     It must NOT raise — the tools surface has to work without an agent id."""
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
@@ -976,12 +976,12 @@ def test_resolve_agent_id_optional_returns_none_when_unset(monkeypatch):
 
 
 def test_resolve_agent_id_optional_none_on_deprecated_env(monkeypatch):
-    """ONLY the deprecated $SCITEX_TODO_AGENT set (no current AGENT_ID) makes
+    """ONLY the deprecated $SCITEX_CARDS_AGENT set (no current AGENT_ID) makes
     resolve fail loud; the optional variant swallows it to None (tools-only)
     rather than crashing the server — the loud warning still surfaces it."""
     # Arrange
-    monkeypatch.delenv("SCITEX_TODO_AGENT_ID", raising=False)
-    monkeypatch.setenv("SCITEX_TODO_AGENT", "legacy-agent")
+    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
@@ -990,20 +990,20 @@ def test_resolve_agent_id_optional_none_on_deprecated_env(monkeypatch):
 
 def test_resolve_agent_id_optional_returns_id_when_both_vars_set(monkeypatch):
     """THE key regression that re-enables the poll loop: a valid AGENT_ID plus a
-    stale deprecated $SCITEX_TODO_AGENT must return the id (NOT None). Before the
+    stale deprecated $SCITEX_CARDS_AGENT must return the id (NOT None). Before the
     fix the mere presence of the old var made resolve fail loud → optional
     returned None → the digest poll loop never started (server connected, tools
     worked, but no channel notifications were ever pushed)."""
     # Arrange
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "env-agent")
-    monkeypatch.setenv("SCITEX_TODO_AGENT", "legacy-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
+    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
     assert resolved == "env-agent"
 
 
-# === unified server: one scitex-todo serves tools AND declares the channel ====
+# === unified server: one scitex-cards serves tools AND declares the channel ====
 
 #: WHY the two `unified_server` tests below are split but share one story: the
 #: unified `mcp start` runs FastMCP's underlying low-level server (which has the
@@ -1039,7 +1039,7 @@ def test_unified_server_declares_the_channel_capability():
 
 
 def test_unified_start_wiring_present():
-    """`scitex-todo mcp start` is wired to the unified server (tools + push)."""
+    """`scitex-cards mcp start` is wired to the unified server (tools + push)."""
     # Arrange
     from scitex_cards._cli import _mcp
 

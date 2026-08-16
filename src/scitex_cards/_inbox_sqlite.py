@@ -16,14 +16,14 @@ whole file repeatedly (a store-lock convoy).
 This module moves ONLY the inbox read/write path onto SQLite so a poll
 no longer parses all cards. The SciTeX runtime-DB convention places
 package runtime databases at ``<store_dir>/runtime/<pkg-short>.db`` —
-here ``<store_dir>/runtime/todo.db``. WAL mode lets the ~21 concurrent
+here ``<store_dir>/runtime/cards.db``. WAL mode lets the ~21 concurrent
 pollers read without blocking the writer.
 
 Scope
 -----
 INBOXES ONLY. This is now the DEFAULT backend (see
 :mod:`scitex_cards._inbox`'s ``_use_sqlite``); the file-backed
-break-glass backend (``SCITEX_TODO_INBOX_BACKEND=yaml``, its own
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``, its own
 ``inboxes.json`` sidecar) is the non-default fallback. Semantics —
 dedup key ``(event_type, card_id, ts, actor)``, ``supersede`` dropping
 UNSEEN ``(event_type, card_id)`` predecessors, ``poll_inbox(unseen_only,

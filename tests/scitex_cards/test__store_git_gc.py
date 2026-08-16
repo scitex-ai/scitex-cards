@@ -49,7 +49,8 @@ def test_a_card_write_is_durable():
     """A write PERSISTS — the surviving rule the old 'a write is committed'
     test pinned, now against the canonical SQLite store rather than a git
     commit."""
-    # Arrange / Act — one card write via the store API.
+    # Arrange
+    # Act — one card write via the store API.
     _store.add_task(None, id="c1", title="t", status="deferred", agent="a")
     # Assert — the write round-trips through the canonical DB.
     got = _store.get_task(None, task_id="c1")
@@ -64,7 +65,8 @@ def test_a_write_creates_no_per_store_git_repo():
     its absence guards the deliberate removal against a well-meaning
     reintroduction.
     """
-    # Arrange / Act — one card write.
+    # Arrange
+    # Act — one card write.
     _store.add_task(None, id="c1", title="t", status="deferred", agent="a")
     # Assert — no per-store recovery repo is created on the write path.
     assert not (_store_dir() / ".git").exists()

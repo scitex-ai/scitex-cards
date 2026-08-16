@@ -78,7 +78,7 @@ from ._reminder_enqueue import (
 )
 from ._reminder_liveness import _card_creator, _owner_liveness
 from ._reminder_cadence import resolve_owner_interval
-from ._stale_active import detect_pending_backlog, detect_stale_active
+from ._stale.active import detect_pending_backlog, detect_stale_active
 from ._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)
@@ -89,33 +89,33 @@ REMINDER_SIDECAR_NAME = "reminders.yaml"
 #: Digests to an owner before a HIGH-PRIORITY card also escalates to the
 #: operator. Escalation fires once per stale streak (reset when the card
 #: leaves the stale set).
-ENV_ESCALATE_AFTER = "SCITEX_TODO_REMINDER_ESCALATE_AFTER"
+ENV_ESCALATE_AFTER = "SCITEX_CARDS_REMINDER_ESCALATE_AFTER"
 DEFAULT_ESCALATE_AFTER = 3
 
 #: A card with ``priority <= this`` is "high priority" (lower int = higher
 #: priority, matching the card model). Cards without a priority never
 #: escalate (only the owner is nagged).
-ENV_ESCALATE_PRIORITY = "SCITEX_TODO_REMINDER_ESCALATE_PRIORITY"
+ENV_ESCALATE_PRIORITY = "SCITEX_CARDS_REMINDER_ESCALATE_PRIORITY"
 DEFAULT_ESCALATE_PRIORITY = 1
 
 #: Liveness TTL (seconds) for the creator-escalation path: a card's owner
 #: whose registry ``last_seen`` is older than this (or absent) is "not alive"
 #: and the card escalates to its CREATOR. Mirrors the users-layer default;
 #: overridable per-sweep via the ``liveness_ttl`` arg or this env knob.
-ENV_LIVENESS_TTL = "SCITEX_TODO_REMINDER_LIVENESS_TTL"
+ENV_LIVENESS_TTL = "SCITEX_CARDS_REMINDER_LIVENESS_TTL"
 DEFAULT_LIVENESS_TTL = 600
 
 #: The operator identity escalations are addressed to (resolved like any
 #: other recipient). Delivery to Telegram is operator-gated config
 #: (recipients.yaml + token); the engine only enqueues.
-ENV_OPERATOR = "SCITEX_TODO_OPERATOR"
+ENV_OPERATOR = "SCITEX_CARDS_OPERATOR"
 DEFAULT_OPERATOR = "operator"
 
 #: Optional owner ALLOWLIST for a phased rollout. Comma-separated owner
 #: names; when set, ONLY those owners are nagged (every other owner is left
 #: untouched). Empty / unset = nag every owner. Lets the engine start scoped
 #: to one agent and widen deliberately, with no fleet-wide first-sweep storm.
-ENV_REMINDER_OWNERS = "SCITEX_TODO_REMINDER_OWNERS"
+ENV_REMINDER_OWNERS = "SCITEX_CARDS_REMINDER_OWNERS"
 
 #: Event types (also the inbox dedup discriminator + the ledger key prefix).
 EVENT_DIGEST = "reminder"

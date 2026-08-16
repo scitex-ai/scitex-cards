@@ -33,7 +33,7 @@ import os
 from pathlib import Path
 from typing import NoReturn
 
-from ._db import DEFAULT_DB_FILENAME, ENV_DB, ENV_DB_DEPRECATED, PKG_SHORT
+from ._db import DEFAULT_DB_FILENAME, ENV_DB, PKG_SHORT
 from ._store_url import BACKEND_SQLITE, backend_of, is_postgres_url
 
 __all__ = [
@@ -83,7 +83,7 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     """The store target AS WRITTEN -- a path or a URL, never coerced.
 
     Mirrors ``_db.resolve_db_path``'s precedence exactly (explicit argument,
-    then ``$SCITEX_CARDS_DB``, then the deprecated ``$SCITEX_TODO_DB``, then the
+    then ``$SCITEX_CARDS_DB``, then the deprecated ``$SCITEX_CARDS_DB``, then the
     config file) and differs only in refusing to turn the answer into a
     ``Path``.
 
@@ -98,10 +98,9 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     """
     if explicit is not None:
         return str(explicit)
-    for env_name in (ENV_DB, ENV_DB_DEPRECATED):
-        value = os.environ.get(env_name)
-        if value:
-            return value
+    value = os.environ.get(ENV_DB)
+    if value:
+        return value
     # CONFIG TIER — below the environment, above the hardcoded default.
     #
     # Below env, so a per-agent or per-test override still wins and nothing that
@@ -222,9 +221,8 @@ def resolve_store_tier(explicit: str | Path | None = None) -> str:
     """
     if explicit is not None:
         return TIER_EXPLICIT
-    for env_name in (ENV_DB, ENV_DB_DEPRECATED):
-        if os.environ.get(env_name):
-            return TIER_ENV
+    if os.environ.get(ENV_DB):
+        return TIER_ENV
     from ._config import store_config_target
 
     if store_config_target():

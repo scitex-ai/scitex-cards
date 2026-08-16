@@ -1,4 +1,4 @@
-/* timeline.js — board_v3 "Timeline" layout (operator TODO 2026-06-17).
+/* timeline.js — board_v3 "Timeline" layout (operator CARD 2026-06-17).
  *
  * An own-data layout (sibling of the Stale layout) with three views,
  * chosen via a selector, over a day / week / month window:
@@ -81,8 +81,8 @@
   var TL = {
     cache: null, // last /timeline payload (raster views only)
     error: null,
-    view: _ls("scitex-todo:tl-view", "agent"), // agent | project | simple
-    windowKey: _ls("scitex-todo:tl-window", "1d"), // 1d | 1w | 1m
+    view: _ls("scitex-cards:tl-view", "agent"), // agent | project | simple
+    windowKey: _ls("scitex-cards:tl-window", "1d"), // 1d | 1w | 1m
   };
   // Expose for the inline autoRefresh hook (read-only use there).
   window._TL = TL;
@@ -459,7 +459,7 @@
     TL.view = v;
     if (_gate) _gate.reset(); // user-driven change → force a redraw
     try {
-      localStorage.setItem("scitex-todo:tl-view", v);
+      localStorage.setItem("scitex-cards:tl-view", v);
     } catch (e) {}
     if (v === "simple") render();
     else {
@@ -472,7 +472,7 @@
     TL.windowKey = k;
     if (_gate) _gate.reset(); // user-driven change → force a redraw
     try {
-      localStorage.setItem("scitex-todo:tl-window", k);
+      localStorage.setItem("scitex-cards:tl-window", k);
     } catch (e) {}
     if (TL.view === "simple") render();
     else {

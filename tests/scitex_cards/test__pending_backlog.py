@@ -22,7 +22,7 @@ import datetime as _dt
 
 import pytest
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     DEFAULT_PENDING_NUDGE_HOURS,
     ENV_PENDING_NUDGE_HOURS,
     NUDGE_ID_CAP,

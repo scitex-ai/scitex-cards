@@ -1,6 +1,6 @@
 # SQLite → PostgreSQL: the hazards that actually bit us
 
-Written 2026-08-02 by scitex-cards, from the scitex-todo → scitex-cards store
+Written 2026-08-02 by scitex-cards, from the scitex-cards → scitex-cards store
 migration. Every item here is a **measured incident**, not a predicted risk, and
 each names the observation that exposed it.
 
@@ -27,7 +27,7 @@ the process's current directory.
 Hit **twice**, both times as a silent success:
 
 - `enqueue(store=<DSN>)` **returned a notification id** and created a phantom
-  SQLite store at `<CWD>/postgresql:/…/runtime/todo.db`. Nothing raised, so the
+  SQLite store at `<CWD>/postgresql:/…/runtime/cards.db`. Nothing raised, so the
   fail-soft caller logged nothing, and the notification was unreachable because
   nobody polls a directory named after a DSN.
 - An older shipped version (0.25.0, still in a container image) resolved a DSN

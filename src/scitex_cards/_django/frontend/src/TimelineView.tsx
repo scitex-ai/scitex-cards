@@ -13,7 +13,7 @@
  * Click a bar -> open the existing NodeDetailPanel drawer (reuses the
  * TableView selectNode flow).
  *
- * Deferred (operator-future asks, NOT this PR — flagged with TODOs):
+ * Deferred (operator-future asks, NOT this PR — flagged with CARDs):
  *   - Pan / zoom / pinch (kept static; window dropdown changes scope).
  *   - Click-and-drag to reschedule (update is the side-channel today).
  *   - Live WebSocket stream (polling is the floor).
@@ -221,16 +221,16 @@ export function TimelineView({
   }, [payload, drawWidth]);
 
   return (
-    <div className="stx-todo-timeline" ref={containerRef}>
-      <div className="stx-todo-timeline__bar">
-        <div className="stx-todo-timeline__title">
+    <div className="stx-cards-timeline" ref={containerRef}>
+      <div className="stx-cards-timeline__bar">
+        <div className="stx-cards-timeline__title">
           Time View — live raster ({payload?.events.length ?? 0} events)
         </div>
-        <div className="stx-todo-timeline__controls">
-          <label className="stx-todo-timeline__ctl-label">
+        <div className="stx-cards-timeline__controls">
+          <label className="stx-cards-timeline__ctl-label">
             Window
             <select
-              className="stx-todo-timeline__select"
+              className="stx-cards-timeline__select"
               value={windowKey}
               onChange={(e) => setWindowKey(e.target.value as WindowKey)}
               aria-label="Window length"
@@ -242,10 +242,10 @@ export function TimelineView({
               <option value="7d">7d</option>
             </select>
           </label>
-          <label className="stx-todo-timeline__ctl-label">
+          <label className="stx-cards-timeline__ctl-label">
             Lane by
             <select
-              className="stx-todo-timeline__select"
+              className="stx-cards-timeline__select"
               value={laneBy}
               onChange={(e) => setLaneBy(e.target.value as LaneBy)}
               aria-label="Lane projection"
@@ -257,7 +257,7 @@ export function TimelineView({
           </label>
           {error && (
             <span
-              className="stx-todo-timeline__error"
+              className="stx-cards-timeline__error"
               role="alert"
               title={error}
             >
@@ -267,19 +267,19 @@ export function TimelineView({
         </div>
       </div>
       {!payload && !error && (
-        <div className="stx-todo-timeline__loading">Loading timeline…</div>
+        <div className="stx-cards-timeline__loading">Loading timeline…</div>
       )}
       {layout && (
-        <div className="stx-todo-timeline__scroll">
+        <div className="stx-cards-timeline__scroll">
           <svg
-            className="stx-todo-timeline__svg"
+            className="stx-cards-timeline__svg"
             width={LANE_LABEL_WIDTH + drawWidth}
             height={layout.totalHeight}
             role="img"
             aria-label="Fleet timeline raster"
           >
             {/* Time-axis tick labels along the top. */}
-            <g className="stx-todo-timeline__axis">
+            <g className="stx-cards-timeline__axis">
               {layout.ticks.map((tk, i) => (
                 <g
                   key={i}
@@ -290,13 +290,13 @@ export function TimelineView({
                     x2={0}
                     y1={AXIS_HEIGHT - 4}
                     y2={layout.totalHeight}
-                    className="stx-todo-timeline__tickline"
+                    className="stx-cards-timeline__tickline"
                   />
                   <text
                     x={0}
                     y={AXIS_HEIGHT - 8}
                     textAnchor="middle"
-                    className="stx-todo-timeline__ticktext"
+                    className="stx-cards-timeline__ticktext"
                   >
                     {tk.label}
                   </text>
@@ -304,7 +304,7 @@ export function TimelineView({
               ))}
             </g>
             {/* Lane labels + lane background stripes. */}
-            <g className="stx-todo-timeline__lanes">
+            <g className="stx-cards-timeline__lanes">
               {layout.lanes.map((lane, i) => {
                 const yTop = AXIS_HEIGHT + i * LANE_HEIGHT;
                 return (
@@ -314,14 +314,14 @@ export function TimelineView({
                       y={yTop}
                       width={LANE_LABEL_WIDTH + drawWidth}
                       height={LANE_HEIGHT}
-                      className={`stx-todo-timeline__lane-bg${
-                        i % 2 === 0 ? " stx-todo-timeline__lane-bg--even" : ""
+                      className={`stx-cards-timeline__lane-bg${
+                        i % 2 === 0 ? " stx-cards-timeline__lane-bg--even" : ""
                       }`}
                     />
                     <text
                       x={8}
                       y={yTop + LANE_HEIGHT / 2 + 4}
-                      className="stx-todo-timeline__lane-label"
+                      className="stx-cards-timeline__lane-label"
                     >
                       {lane}
                     </text>
@@ -333,7 +333,7 @@ export function TimelineView({
              * on top. The line endpoints are the right edge of the source
              * bar and the left edge of the target bar (depends_on: dep ->
              * dependent). */}
-            <g className="stx-todo-timeline__edges">
+            <g className="stx-cards-timeline__edges">
               {payload?.edges.map((e, i) => {
                 const src = layout.barIndexById.get(e.source);
                 const tgt = layout.barIndexById.get(e.target);
@@ -349,7 +349,7 @@ export function TimelineView({
                     y1={y1}
                     x2={x2}
                     y2={y2}
-                    className={`stx-todo-timeline__edge stx-todo-timeline__edge--${e.kind}`}
+                    className={`stx-cards-timeline__edge stx-cards-timeline__edge--${e.kind}`}
                   />
                 );
               })}
@@ -357,7 +357,7 @@ export function TimelineView({
             {/* Event bars — one rect per visible event. Click opens the
              * detail drawer; right-click could open the context menu in a
              * future PR. */}
-            <g className="stx-todo-timeline__bars">
+            <g className="stx-cards-timeline__bars">
               {layout.bars.map((bar) => {
                 const c = colorFor(bar.event.status, statusColors);
                 const completed = bar.event.ended_at != null;
@@ -365,8 +365,8 @@ export function TimelineView({
                   <g
                     key={bar.event.id}
                     transform={`translate(${LANE_LABEL_WIDTH + bar.x}, ${bar.y})`}
-                    className={`stx-todo-timeline__bar${
-                      completed ? " stx-todo-timeline__bar--completed" : ""
+                    className={`stx-cards-timeline__bar${
+                      completed ? " stx-cards-timeline__bar--completed" : ""
                     }`}
                     onClick={() => selectNode(bar.event.id)}
                   >

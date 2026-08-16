@@ -7,7 +7,7 @@ Operator directive 2026-08-02: "fail fast, fail loud, no fallbacks", and
 
 TWO RAILS, AND THEY CAN DISAGREE. The card store follows ``$SCITEX_CARDS_DB``
 and may be a PostgreSQL server. The notification inbox does NOT: it is a SQLite
-sidecar at ``runtime_dir(store)/todo.db``, chosen by a path derived from the
+sidecar at ``runtime_dir(store)/cards.db``, chosen by a path derived from the
 store rather than by the store's own backend. So a fleet pointed at PostgreSQL
 runs its cards on PostgreSQL and its notifications on SQLite, and nothing said
 so anywhere.
@@ -125,7 +125,7 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
             return POSTGRES, f"unresolved ({type(exc).__name__}: {exc})"
     if active == INBOX_SQLITE:
         # `inbox_target`, not `inbox_db_path`: the doctor must name WHERE THE
-        # RAIL ACTUALLY IS. Naming `runtime/todo.db` after the rail moved would
+        # RAIL ACTUALLY IS. Naming `runtime/cards.db` after the rail moved would
         # send a reader to inspect an empty file and conclude the notifications
         # were lost — which is the same "report about a database nobody is
         # using" this function exists to prevent.
@@ -200,7 +200,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             "sidecar is the only inbox implementation that exists, so any "
             "toggle would be a fallback wearing a switch. The remedy is to move "
             "the inbox table INTO the card store, tracked on "
-            "cards-inbox-rail-must-live-in-postgres-drop-todo-db-20260802. "
+            "cards-inbox-rail-must-live-in-postgres-drop-cards-db-20260802. "
             "Until then, treat notification delivery as unverified by this "
             "doctor and confirm it end to end."
         ),

@@ -52,7 +52,7 @@ from typing import Callable, Iterable, Optional
 #: Actor stamped on an UNATTENDED reconcile — a cron run with no ambient
 #: identity. This closes a card because a pull request merged, not because a
 #: person decided anything, so naming the reconciler is more truthful than
-#: borrowing whichever agent happened to export SCITEX_TODO_AGENT_ID.
+#: borrowing whichever agent happened to export SCITEX_CARDS_AGENT_ID.
 #:
 #: Measured 2026-08-01: the */15 cron entry runs with no identity in its
 #: environment, so every close raised "creator unresolved" and the job closed
@@ -389,7 +389,7 @@ def reconcile_merged_prs(
     from ._store import ENV_AGENT
 
     # PRECEDENCE, widened only at the end: an explicit `by` wins, then an
-    # ambient $SCITEX_TODO_AGENT_ID, and only when NEITHER exists do we stamp
+    # ambient $SCITEX_CARDS_AGENT_ID, and only when NEITHER exists do we stamp
     # the reconciler itself. Previously that last case raised, so an unattended
     # cron run closed nothing; this adds a floor without changing either of the
     # two cases that already worked.

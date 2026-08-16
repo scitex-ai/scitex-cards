@@ -1,4 +1,4 @@
-# ADR-0008: Adopt `scitex-todo` as the fleet's central task-management substrate
+# ADR-0008: Adopt `scitex-cards` as the fleet's central task-management substrate
 
 ## Status
 
@@ -16,7 +16,7 @@ heads, scattered `GITIGNORED/{FUTURE,RUNNING,DONE}/*.md` notes,
 and operator memory. The "did anyone tell me?" failure mode burns
 operator trust on every reload.
 
-`scitex-todo` ships the floor of a single canonical store:
+`scitex-cards` ships the floor of a single canonical store:
 
 - Closed-enum `Task` dataclass (`_model.Task`) with fail-loud
   validators (`status`/`kind`/`blocker`) raising
@@ -26,7 +26,7 @@ operator trust on every reload.
 - Web board at `:8051` (board-v3 server-rendered kanban + legacy
   React-Flow drill-down at `/legacy/`) with AutoRefresh 5s mtime
   poll.
-- 270 tasks in the fleet-shared `~/.scitex/todo/tasks.yaml` today
+- 270 tasks in the fleet-shared `~/.scitex/cards/tasks.yaml` today
   (267 + the 3 proxy-written for proj-scitex-agent-container,
   2026-06-07).
 
@@ -37,8 +37,8 @@ truth, one wire, zero memory.
 
 ### Requirements (operator brief, batched 2026-06-07)
 
-1. **Two-root scope**: `<git-root>/.scitex/todo/` (project-local)
-   vs `~/.scitex/todo/` (user-global, fleet-shared) — when to use
+1. **Two-root scope**: `<git-root>/.scitex/cards/` (project-local)
+   vs `~/.scitex/cards/` (user-global, fleet-shared) — when to use
    which.
 2. **Agent linking**: how an agent attaches to its tasks; how the
    lead filters "show me agent X's open tasks."
@@ -48,7 +48,7 @@ truth, one wire, zero memory.
 5. **SAC dependency**: hard vs optional from agent-container's
    spec.yaml.
 6. **Task-creation hook**: Claude Code hook so creation
-   auto-lands in `.scitex/todo/`.
+   auto-lands in `.scitex/cards/`.
 7. **Periodic reminders / nudges**: a kick-in-the-pants daemon for stale
    in_progress + assignee digests.
 8. **Push-notif inter-agent status**: state changes notify
@@ -66,7 +66,7 @@ truth, one wire, zero memory.
 
 ## Decision
 
-`scitex-todo` is **THE** fleet task-management substrate. Every
+`scitex-cards` is **THE** fleet task-management substrate. Every
 agent (workers + the lead) reads and writes through its CLI /
 MCP / Python API surface; direct YAML edits are forbidden.
 Adoption is gated by a per-agent `required_skills` reference to
@@ -79,9 +79,9 @@ markers (the audit the lead asked for):
 
 Use the package's existing precedence chain:
 
-  1. `$SCITEX_TODO_TASKS` (explicit override)
-  2. `<git-root>/.scitex/todo/tasks.yaml` (PROJECT-LOCAL)
-  3. `~/.scitex/todo/tasks.yaml` (USER-GLOBAL, fleet-shared)
+  1. `$SCITEX_CARDS_TASKS` (explicit override)
+  2. `<git-root>/.scitex/cards/tasks.yaml` (PROJECT-LOCAL)
+  3. `~/.scitex/cards/tasks.yaml` (USER-GLOBAL, fleet-shared)
   4. bundled examples (read-only fallback)
 
 Plain-language rule (taught in `40_for-consuming-agents.md`): _"Is
@@ -93,7 +93,7 @@ project-local — the aggregator rolls up.
 
 **Primary linking field = `assignee`** (str, free-form, convention
 `proj-<repo>` for workers, `scitex-lead` for the lead).
-**Empirical evidence** (lead dogfood 2026-06-07): `scitex-todo
+**Empirical evidence** (lead dogfood 2026-06-07): `scitex-cards
 list-tasks --assignee proj-X` filters correctly today.
 
 Forward-compat: the `Task` dataclass also has an `agent` field
@@ -112,10 +112,10 @@ GitHub-as-SSoT, no peer rsync.
 
 **Spec** (replaces the `sync-store` Phase-1 stub):
 
-- Dedicated `scitex-todo-store` GitHub repo holds the canonical
-  `~/.scitex/todo/tasks.yaml` + `tasks/<id>/` subtree. NOT
-  vendored inside `scitex-todo` source repo (data ≠ code).
-- Wire: `scitex-todo sync-store --apply` ≡ `git -C ~/.scitex/todo
+- Dedicated `scitex-cards-store` GitHub repo holds the canonical
+  `~/.scitex/cards/tasks.yaml` + `tasks/<id>/` subtree. NOT
+  vendored inside `scitex-cards` source repo (data ≠ code).
+- Wire: `scitex-cards sync-store --apply` ≡ `git -C ~/.scitex/cards
   pull --rebase --autostash && git push`.
 - **Conflict handling**: ruamel writer is comment-preserving +
   line-stable so per-row edits diff cleanly. Merge conflicts on
@@ -130,11 +130,11 @@ GitHub-as-SSoT, no peer rsync.
 
 **systemd-user** (not cron). Two units, separate concerns:
 
-1. `scitex-todo-sync.{service,timer}` — every 60s, runs
-   `scitex-todo sync-store --apply`. `Restart=on-failure`,
+1. `scitex-cards-sync.{service,timer}` — every 60s, runs
+   `scitex-cards sync-store --apply`. `Restart=on-failure`,
    structured logs via `journalctl --user`.
-2. `scitex-todo-nudge.{service,timer}` — every 6h (default), runs
-   `scitex-todo nudge` (new verb, see D7).
+2. `scitex-cards-nudge.{service,timer}` — every 6h (default), runs
+   `scitex-cards nudge` (new verb, see D7).
 
 Register unit specs in the operator's `scitex-dev cron registry`
 (lead's domain; ADR records the pattern, scitex-dev owns the
@@ -143,18 +143,18 @@ process, not a separate unit.
 
 ### D5. SAC dependency — HARD dep recommended
 
-Recommend `scitex-agent-container` HARD-deps `scitex-todo` (not
+Recommend `scitex-agent-container` HARD-deps `scitex-cards` (not
 optional). Three reasons:
 
 1. **Operator's fail-loud rule** — optional means agents silently
-   skip the SSoT path. Hard dep makes "no scitex-todo installed"
+   skip the SSoT path. Hard dep makes "no scitex-cards installed"
    a build-time error.
 2. **Light footprint** — core deps = `ruamel.yaml` + `click`;
    `[mcp]` extra = `fastmcp` (already universal via venv-sac);
    `[web]` extra = operator-side only. ~2 MB to the image.
 3. **Skill auto-load depends on it** — the `@path` propagation
    (PR #63 § Propagation) reads from `<site-packages>/
-   scitex_cards/_skills/scitex-todo/`. No install = no skill load
+   scitex_cards/_skills/scitex-cards/`. No install = no skill load
    = consuming agents fall back to memory.
 
 Needs agent-container's buy-in (lead is looping; the 2026-06-07
@@ -164,19 +164,19 @@ proxy-write exercise is dogfood evidence of the friction).
 
 Wire as `~/.claude/hooks/pre-tool-use/` that intercepts Claude
 Code's built-in `TaskCreate` tool + MIRRORS each call into
-`scitex-todo add` (id/title/status + `assignee=$SCITEX_TODO_AGENT`).
+`scitex-cards add` (id/title/status + `assignee=$SCITEX_CARDS_AGENT`).
 Why mirror not replace: agents already know `TaskCreate`; the
 hook is free auto-persistence.
 
 Risk: hook bypass when agents silence `TaskCreate`. Acceptable
 v1; v2 closes by ALSO accepting an MCP path
-(`scitex-todo mcp start` → agents use `add_task` tool directly).
+(`scitex-cards mcp start` → agents use `add_task` tool directly).
 **Either** path lands a row; neither is "agents type chat about
 tasks."
 
 ### D7. Periodic reminders / nudges — GAP (new CLI verb)
 
-New CLI verb `scitex-todo nudge` (idempotent; side-effect = post
+New CLI verb `scitex-cards nudge` (idempotent; side-effect = post
 to sac channel). The systemd-user timer (D4) runs it on cadence:
 
 - Each `status: in_progress` row with `last_activity` older than
@@ -195,19 +195,19 @@ receipts.
 Event wire designed in `30_two-tier-conventions-and-write-protocol.md`
 (§ "Update → subscriber notification") + ADR-0006:
 
-- Channel name: `scitex-todo:task:<project>/<local-id>`
+- Channel name: `scitex-cards:task:<project>/<local-id>`
 - Payload: `{task_id, changes, ts, actor}`
 - Subscribers: owning agent (its own `*`), dependent agents (each
   of its `depends_on` ids), board UI (firehose), lead (firehose).
 
 What's missing: the IMPLEMENTATION. `NotificationPort` (ADR-0006)
-needs an impl in the `scitex-todo-fleet` glue package (NOT in the
+needs an impl in the `scitex-cards-fleet` glue package (NOT in the
 core — operator's standalone-vs-fleet split). The glue translates
 `_store.update_task` writes into sac publishes. The CORE stays
 oblivious.
 
 Coordinates with agent-container's `empty-beacon-fix` arc —
-scitex-todo will be one of the loadiest consumers of the same
+scitex-cards will be one of the loadiest consumers of the same
 wire.
 
 ### D9. CI/automation integration — GAP (existing task #15)
@@ -233,17 +233,17 @@ The `Task` dataclass already carries:
 What's missing: CLI flags + MCP fields + the writer stamping
 behaviour. Convention:
 
-- `_log_meta.last_writer` = the value of `$SCITEX_TODO_AGENT`
+- `_log_meta.last_writer` = the value of `$SCITEX_CARDS_AGENT`
   (the writing agent's name).
 - `_log_meta.last_writer_host` = `socket.gethostname()` at
   write time.
 - `_log_meta.last_written_at` = ISO-8601 UTC `now()` at write
   time.
-- `_log_meta.created_by` = `$SCITEX_TODO_AGENT` at `add_task`.
+- `_log_meta.created_by` = `$SCITEX_CARDS_AGENT` at `add_task`.
 - `_log_meta.created_by_host` = `socket.gethostname()` at
   `add_task`.
 
-Stamps fall back to `$USER` → `"unknown"` if `$SCITEX_TODO_AGENT`
+Stamps fall back to `$USER` → `"unknown"` if `$SCITEX_CARDS_AGENT`
 is unset.
 
 Operator-facing readout: every row carries a "who/where/when"
@@ -300,7 +300,7 @@ ULID/UUID can come later if collisions matter).
 renders threading via a tree fold. NO change to the existing
 flat reads — legacy code keeps working.
 
-CLI gap closure: new verb `scitex-todo comment <task-id> <text>
+CLI gap closure: new verb `scitex-cards comment <task-id> <text>
 [--in-reply-to <ts>]`. Highest-priority gap closure per PR #63
 (the lead's review starts with this PR).
 
@@ -314,11 +314,11 @@ Concrete events the assignee gets notified about:
 - Resolve / reopen events (already partially wired via the
   Resolve button + `/reopen` HTTP).
 
-Wire: same channel as D8 (`scitex-todo:task:<project>/<id>`).
+Wire: same channel as D8 (`scitex-cards:task:<project>/<id>`).
 Payload includes `event_kind ∈ {comment, status_change,
 dep_added, resolve, reopen}` so subscribers can filter.
 
-NotificationPort impl lives in `scitex-todo-fleet` (D8); the
+NotificationPort impl lives in `scitex-cards-fleet` (D8); the
 event-kind discrimination is in the CORE writer (close to where
 the change is detected) so the port stays a thin transport.
 
@@ -343,15 +343,15 @@ the change is detected) so the port stays a thin transport.
 
 ### Negative / trade-offs
 
-- **Hard dep on `scitex-todo`** in every container (D5) ≈ ~2 MB
+- **Hard dep on `scitex-cards`** in every container (D5) ≈ ~2 MB
   per image. Operator-accepted.
 - **`history: list[dict]`** (D11) grows the per-row payload. ~5
   KB for a heavily-edited row; truncation path reserved.
-- **`scitex-todo-store` GitHub repo** (D3) is a new asset to
+- **`scitex-cards-store` GitHub repo** (D3) is a new asset to
   back up + monitor. Operator's git → GitHub policy already
   covers it; no new infra.
 - **NotificationPort impl** (D8/D13) lives in a SEPARATE glue
-  package (`scitex-todo-fleet`), not the core. Preserves the
+  package (`scitex-cards-fleet`), not the core. Preserves the
   operator's standalone-vs-fleet split (TG 9678, ADR-0006) but
   means the wire requires a deployment step (install the glue +
   configure the port).
@@ -378,14 +378,14 @@ F`, with the new D-numbered decisions folded in:
   5. PR — `sync-store --apply` wire + systemd-user `sync.timer`
      unit spec (D3, D4 sync half).
   6. PR — CI-completion handler (D9, existing task #15).
-  7. PR — `scitex-todo nudge` verb + nudge unit (D7, D4 nudge
+  7. PR — `scitex-cards nudge` verb + nudge unit (D7, D4 nudge
      half).
   8. PR — `history: list[dict]` schema + validator + writer
      append-on-update (D11 schema GAP).
   9. PR — Claude Code `TaskCreate` mirror hook (D6).
- 10. PR — `NotificationPort` impl in `scitex-todo-fleet` glue
-     package (D8, D13). NOT in `scitex-todo` core.
- 11. Agent-container HARD-deps `scitex-todo>=<that-version>` (D5,
+ 10. PR — `NotificationPort` impl in `scitex-cards-fleet` glue
+     package (D8, D13). NOT in `scitex-cards` core.
+ 11. Agent-container HARD-deps `scitex-cards>=<that-version>` (D5,
      their PR not mine).
  12. Lead propagates the skill via `required_skills:` into every
      agent's `spec.yaml` (operator's discretion on when).

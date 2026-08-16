@@ -43,7 +43,7 @@ export function KeyboardShortcuts() {
         case "/": {
           e.preventDefault();
           const input = document.querySelector<HTMLInputElement>(
-            ".stx-todo-toolbar__search",
+            ".stx-cards-toolbar__search",
           );
           input?.focus();
           input?.select();

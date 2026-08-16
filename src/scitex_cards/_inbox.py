@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Standalone per-recipient pull-inbox for card-message delivery.
 
-scitex-todo MUST deliver card-messages to its members with ZERO dependency
+scitex-cards MUST deliver card-messages to its members with ZERO dependency
 on any external agent runtime. The existing push rail
 (:func:`scitex_cards._push.deliver`) POSTs directly to an agent's turn URL —
 which CANNOT reach a *containerized* agent (the agent subscribes outbound to
 a bus; a direct inbound POST is refused). The standalone-safe delivery model
 is therefore **PULL**: the C4 dispatcher ENQUEUEs a notification record into
-the recipient's inbox here, and the recipient's scitex-todo client POLLs the
+the recipient's inbox here, and the recipient's scitex-cards client POLLs the
 board (via the ``poll_notifications`` MCP tool or, later, an HTTP endpoint)
 for its pending notifications. The out-of-band push rail stays an OPTIONAL
 parallel ACCELERATOR for host-reachable agents — never a dependency.
@@ -16,7 +16,7 @@ parallel ACCELERATOR for host-reachable agents — never a dependency.
 Storage
 -------
 This module is the (non-default, break-glass) file-backed inbox
-implementation, selected only via ``SCITEX_TODO_INBOX_BACKEND=yaml``
+implementation, selected only via ``SCITEX_CARDS_INBOX_BACKEND=yaml``
 (the default is SQLite — see :mod:`scitex_cards._inbox_sqlite`).
 Inboxes live in their own ``inboxes.json`` SIDECAR next to the task
 store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
@@ -53,10 +53,10 @@ _INBOXES_KEY = "inboxes"
 #: Env var selecting the inbox storage backend. The DEFAULT is now ``sqlite``
 #: (the Phase-1 backend in :mod:`scitex_cards._inbox_sqlite`): a 5 s digest poll
 #: is then an indexed ``(recipient, seen)`` lookup on
-#: ``<store_dir>/runtime/todo.db`` instead of a full sidecar parse. This
+#: ``<store_dir>/runtime/cards.db`` instead of a full sidecar parse. This
 #: module (the file-backed break-glass backend, its own ``inboxes.json``
 #: sidecar — see the module docstring) is selected ONLY by
-#: ``SCITEX_TODO_INBOX_BACKEND=yaml`` (the value is a historical name for
+#: ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a historical name for
 #: "not sqlite"; the on-disk format itself is JSON — see the module
 #: docstring); unset (or any other value) uses SQLite. There is NO silent
 #: fallback: when the SQLite backend raises, the error PROPAGATES
@@ -64,7 +64,7 @@ _INBOXES_KEY = "inboxes"
 #: auto-migrates legacy embedded ``inboxes:`` records on first access, so
 #: flipping the default never loses unseen notifications. See the incident
 #: card ``store-sqlite-migration-o1-writes-future-20260701``.
-_ENV_INBOX_BACKEND = "SCITEX_TODO_INBOX_BACKEND"
+_ENV_INBOX_BACKEND = "SCITEX_CARDS_INBOX_BACKEND"
 
 
 def _use_sqlite() -> bool:

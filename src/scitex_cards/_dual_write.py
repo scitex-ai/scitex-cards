@@ -7,7 +7,7 @@ SQLite is the ONLY write target (operator ruling 2026-07-21): 「データベー
 おかしい」 — there is no such thing as a second place to write; the mere
 EXISTENCE of a dual-write option is the bug. What used to live in this module
 alongside the guard below — an env-gated mirror-to-YAML path
-(``SCITEX_TODO_DUAL_WRITE`` / ``ENV_DUAL_WRITE``, ``enabled()``,
+(``SCITEX_CARDS_DUAL_WRITE`` / ``ENV_DUAL_WRITE``, ``enabled()``,
 ``mirror_after_save()``, the failure counter, ``check_mirror_healthy()``) — is
 DELETED, not defaulted off. A toggle that can be flipped is a second write
 target that merely happens to be switched off today; deleting the code that
@@ -16,7 +16,7 @@ reach?" stop being a live question.
 
 THE INCIDENT THIS ANSWERS (root cause, diagnosed 2026-07-21). ``cards.db``
 carried a stale ``schema_meta`` row (``yaml_path`` pointing at an old
-``~/.scitex/todo/tasks.yaml``). An agent whose environment still carried the
+``~/.scitex/cards/tasks.yaml``). An agent whose environment still carried the
 dual-write flag had every MCP/CLI write silently routed to that YAML instead
 of the canonical database: every call returned SUCCESS, ``health`` stayed
 green, and an entire session of card writes never reached the board. The flag

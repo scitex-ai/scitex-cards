@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-todo migration`` — directory-card migration verbs.
+"""CLI noun group ``scitex-cards migration`` — directory-card migration verbs.
 
 PR-D. Operator directive 2026-06-13 (via lead a2a ``3cf31901``): canonical
 card = ``tasks/<id>/`` directory; flat tasks.yaml writes forbidden. Two-phase
@@ -76,8 +76,8 @@ def migration_plan_cmd(as_json: bool, as_md: bool) -> None:
     """Read-side dry-run scanner.
 
     Example:
-      $ scitex-todo migration plan --json
-      $ scitex-todo migration plan --markdown
+      $ scitex-cards migration plan --json
+      $ scitex-cards migration plan --markdown
     """
     import json as _json
 
@@ -145,8 +145,8 @@ def migration_apply_cmd(
     """Run the migration across every discovered lane + global store.
 
     Example:
-      $ scitex-todo migration apply --dry-run
-      $ scitex-todo migration apply -y
+      $ scitex-cards migration apply --dry-run
+      $ scitex-cards migration apply -y
     """
     import json as _json
     import sys as _sys

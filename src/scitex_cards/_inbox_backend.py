@@ -10,7 +10,7 @@ testable without importing the whole inbox surface.
 
 The default is the fix
 ----------------------
-When ``SCITEX_TODO_INBOX_BACKEND`` is unset, the inbox FOLLOWS THE STORE:
+When ``SCITEX_CARDS_INBOX_BACKEND`` is unset, the inbox FOLLOWS THE STORE:
 a Postgres DSN selects the shared inbox, anything else selects SQLite.
 
 That is deliberate, not a convenience. Measured 2026-08-09, the inbox was a
@@ -43,7 +43,7 @@ YAML: Final[str] = "yaml"
 
 #: The explicit override. Any of the three names selects that backend
 #: outright; anything else falls through to the store-following default.
-ENV_INBOX_BACKEND: Final[str] = "SCITEX_TODO_INBOX_BACKEND"
+ENV_INBOX_BACKEND: Final[str] = "SCITEX_CARDS_INBOX_BACKEND"
 
 #: Store settings consulted when the backend is not named. A Postgres store
 #: means the CARDS are shared, and an inbox that is not shared alongside
@@ -51,7 +51,6 @@ ENV_INBOX_BACKEND: Final[str] = "SCITEX_TODO_INBOX_BACKEND"
 ENV_STORE_SETTINGS: Final[tuple[str, ...]] = (
     "SCITEX_CARDS_INBOX_DSN",
     "SCITEX_CARDS_DB",
-    "SCITEX_TODO_DB",
 )
 
 _DSN_PREFIXES: Final[tuple[str, ...]] = ("postgres://", "postgresql://")
@@ -73,7 +72,7 @@ def store_is_shared() -> bool:
 def backend() -> str:
     """``postgres`` | ``sqlite`` | ``yaml`` — the backend in force.
 
-    An explicit ``SCITEX_TODO_INBOX_BACKEND`` always wins; otherwise the
+    An explicit ``SCITEX_CARDS_INBOX_BACKEND`` always wins; otherwise the
     inbox follows the store. See the module docstring for why the default
     is not "sqlite unless told otherwise".
     """

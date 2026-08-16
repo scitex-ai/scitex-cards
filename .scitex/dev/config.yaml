@@ -6,7 +6,7 @@ project-type:
 
 audit:
   # PS-103 root-whitelist. `stub/` is not junk and not scratch: it holds the
-  # `scitex-todo` DEPRECATION STUB, a SEPARATE distribution published to PyPI
+  # `scitex-cards` DEPRECATION STUB, a SEPARATE distribution published to PyPI
   # from the same tag as this package (see tests/test_stub_version_sync.py,
   # which pins the two versions together). The rule offers three remedies —
   # move into ./src/<pkg>/ (wrong: it is its own wheel, not part of ours),
@@ -22,11 +22,11 @@ audit:
   # schema (`audit.skip`) is read by
   # scitex_dev/_cli/audit/_config/_loader.py::load_config.
   skip:
-    # PS-204 — `orphan-test-file`. Six tests in tests/scitex_todo/ are
+    # PS-204 — `orphan-test-file`. Six tests in tests/scitex_cards/ are
     # tied to non-Python surfaces (board_v3.html template signatures,
     # search-query.js + search-suggest.js + recent_view JS modules,
     # deadline / deadline_multi_recurring server endpoints) so they
-    # have no 1:1 mirror under src/scitex_todo/. Restructuring or
+    # have no 1:1 mirror under src/scitex_cards/. Restructuring or
     # splitting them is its own PR.
     - PS-204
     # PS-140 — `cross-package-imports-test-missing`. The
@@ -58,7 +58,7 @@ audit:
     # above), so it silences exactly the job it is meant to.
     - PS-169
     # PS-168 — `secret-env-prefix-missing`. cla.yml uses
-    # `GH_PERSONAL_ACCESS_TOKEN` without the SCITEX_TODO_ per-package
+    # `GH_PERSONAL_ACCESS_TOKEN` without the SCITEX_CARDS_ per-package
     # prefix. The rule was codified after cla.yml shipped and the
     # secret is shared across the fleet — renaming requires cross-repo
     # rotation.
@@ -155,7 +155,7 @@ audit:
       # `quality-audit::audit` targets ubuntu-latest for the same class of
       # reason, but a different one: RUNNER RELIABILITY, not credentials.
       # See the PS-169 entry below for the measurement.
-      - path: .github/workflows/scitex-todo-quality-audit-on-ubuntu-latest.yml::audit
+      - path: .github/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml::audit
         line: 0
         reason: >-
           moved to a hosted runner because several self-hosted runners share one

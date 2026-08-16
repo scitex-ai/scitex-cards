@@ -48,7 +48,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
-<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator TODO 2026-06-17) #}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
@@ -103,7 +103,7 @@
   deterministic hash-hue + initials fallback) + status ring for the Timeline
   raster. MUST load BEFORE timeline.js: publishes window.STX.agentAvatar,
   captured like _pack/_geo; timeline.js falls back to plain-text lane labels
-  when absent. Operator 2026-07-10 (todo-board-agent-icons-status-rings).
+  when absent. Operator 2026-07-10 (cards-board-agent-icons-status-rings).
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/10-agent-avatar.js' %}"></script>
 {% comment %}
@@ -113,7 +113,7 @@
   Loads AFTER 10-agent-avatar.js (it reuses window.STX.agentAvatar for the
   note avatar) and publishes window.STX.stickyWall; render() falls back to the
   column layout when absent. Operator design, card
-  todo-board-sticky-wall-view-20260710.
+  cards-board-sticky-wall-view-20260710.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/11-sticky-wall.js' %}"></script>
 {% comment %}
@@ -145,6 +145,17 @@
   (hook-bypass: line-limit — pre-existing over-cap template.)
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/16-card-helpers.js' %}"></script>
+{% comment %}
+  17-graph-builders.js — the Graph layout's PURE string builders
+  (_graphSrc / _graphHintHtml / _graphEmptyHtml), extracted VERBATIM from
+  the inline <script> as split PR-3. Publishes window.STX.graphBuilders;
+  node-tested against the shipped file. The DOM half (_mountGraphSvg,
+  toggleGraphFit, _ensureMermaid, _renderGraphSvg) deliberately stayed in
+  the template — a module that touches the DOM at import time cannot be
+  require()d by node, so moving it would be churn, not testability.
+  (hook-bypass: line-limit — pre-existing over-cap template.)
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/17-graph-builders.js' %}"></script>
 {% comment %}
   12-hover-tip.js — cursor-OFFSET hover tooltip for any [data-tip] element.
   Replaces the browser's native tooltip (SVG <title> / title=""), which
@@ -190,7 +201,7 @@
   a rich per-task "simple" list). Classic <script defer> so it shares the
   page globals (STATE / escapeHtml / openDetail / render); it
   exposes its entry points on window for the inline render() dispatch.
-  Operator TODO 2026-06-17.
+  Operator CARD 2026-06-17.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/timeline.js' %}"></script>
 <style>
@@ -271,7 +282,7 @@
       <span class="small"><span class="live-dot"></span>LIVE</span>
     </div>
 
-    <div class="fb-center stx-todo-filterbar__group stx-todo-filterbar__group--search">
+    <div class="fb-center stx-cards-filterbar__group stx-cards-filterbar__group--search">
       <!-- SEARCH/FILTER group (board UI overhaul part 2, 2026-06-14): the
            search input + Filters popover share the center band so the
            operator's two query-narrowing tools live next to each other.
@@ -300,7 +311,7 @@
          STATUS  = recent-count + Reload + hide-project + blocking-me + hidden
          PRIMARY = + Add Task (separated by a divider, brand-accent)
        The legacy `.fb-right` keeps its wrap-friendly flex; the new
-       `.stx-todo-filterbar__group--*` wrappers add the breathing room
+       `.stx-cards-filterbar__group--*` wrappers add the breathing room
        + dividers.
 
        NB: this MUST be a `comment` block, not `{# #}` — Django's `{# #}`
@@ -310,7 +321,7 @@
        PR); fix-forward in this PR per lead a2a
        `f7a5d37930b9479ca7e53a7e316c132d`, 2026-06-14, after the operator
        reported it live. {% endcomment %}
-    <div class="stx-todo-filterbar__group stx-todo-filterbar__group--view"
+    <div class="stx-cards-filterbar__group stx-cards-filterbar__group--view"
          role="group" aria-label="View controls — layout, sort, group">
     <!-- P9 (lead brief 2026-06-12) — sort-by control. The headline use
          is "sort by deadline" (pairs with the P4 deadline schema landing
@@ -366,9 +377,9 @@
     </span>
     </div>{# end VIEW group #}
 
-    <span class="stx-todo-filterbar__divider" aria-hidden="true"></span>
+    <span class="stx-cards-filterbar__divider" aria-hidden="true"></span>
 
-    <div class="stx-todo-filterbar__primary" role="group"
+    <div class="stx-cards-filterbar__primary" role="group"
          aria-label="Primary action — add a new task">
     <!-- Add Task — operator-CRUD wiring (TG 344): one-click new-task
          entry from the filterbar. Opens the #add-task-backdrop modal
@@ -507,7 +518,7 @@
             {% comment %}
               TIMESCALE — the SAME d/w/m window the Timeline raster uses
               (timeline.js `WINDOWS = {1d:24, 1w:168, 1m:720}` hours, stored
-              under localStorage["scitex-todo:tl-window"]). Clicking here
+              under localStorage["scitex-cards:tl-window"]). Clicking here
               calls the timeline's own setTimelineWindow(), so there is ONE
               definition of "week" on the board, not two that can drift.
             {% endcomment %}
@@ -717,7 +728,7 @@
         <div style="flex: 1;">
           <label for="at-project">Project</label>
           <input class="at-input" id="at-project" list="at-project-list" type="text"
-                 placeholder="e.g. scitex-todo">
+                 placeholder="e.g. scitex-cards">
           <datalist id="at-project-list"></datalist>
         </div>
         <div style="flex: 1;">
@@ -785,10 +796,10 @@
                  // `b9d135c1ea8348dea80f027ba66a0079` 2026-06-12).
                  // `status: done` cards drop from every layout unless
                  // the popover toggle is flipped on. Sticky via
-                 // localStorage["scitex-todo:show-done"].
+                 // localStorage["scitex-cards:show-done"].
                  showDone: (function () {
                    try {
-                     return localStorage.getItem("scitex-todo:show-done") === "1";
+                     return localStorage.getItem("scitex-cards:show-done") === "1";
                    } catch { return false; }
                  })(),
                  search: "", date: "" },
@@ -804,26 +815,26 @@
       // stored value so the coercion happens exactly once.
       layout: (function () {
         let stored = null;
-        try { stored = localStorage.getItem("scitex-todo:layout"); } catch {}
+        try { stored = localStorage.getItem("scitex-cards:layout"); } catch {}
         const m = normalizeLayout(stored);
         if (stored !== m) {
-          try { localStorage.setItem("scitex-todo:layout", m); } catch {}
+          try { localStorage.setItem("scitex-cards:layout", m); } catch {}
         }
         return m;
       })() };
 
     // === Hide (per-user soft-hide, localStorage-backed) ====================
-    // Stored as an array of task ids under "scitex-todo:hidden". Per-user/per-
+    // Stored as an array of task ids under "scitex-cards:hidden". Per-user/per-
     // browser only — fine for the single-host MBA today; cross-device sync
     // would need a schema field, deferred. Operator TG 256.
     function hiddenSet() {
       try {
-        const raw = localStorage.getItem("scitex-todo:hidden") || "[]";
+        const raw = localStorage.getItem("scitex-cards:hidden") || "[]";
         return new Set(JSON.parse(raw));
       } catch { return new Set(); }
     }
     function saveHidden(s) {
-      localStorage.setItem("scitex-todo:hidden", JSON.stringify([...s]));
+      localStorage.setItem("scitex-cards:hidden", JSON.stringify([...s]));
     }
     function hideTask(id) {
       const s = hiddenSet(); s.add(id); saveHidden(s);
@@ -1286,10 +1297,18 @@
     }
 
     // Delegates to 16-card-helpers.js (split PR-2), which holds the real
-    // implementation and its tests. Kept as a declaration so window.escapeHtml
-    // stays a function for the ~47 call sites below and the four extracted
-    // modules that read it off `window`; the lookup is at CALL time because
-    // this inline script parses before the deferred module loads.
+    // implementation and its tests.
+    //
+    // THIS MUST STAY A `function` DECLARATION. Do not "simplify" it to
+    // `const escapeHtml = ...`. const/let create bindings in the global
+    // LEXICAL environment, NOT properties of the global object; only a
+    // function declaration (or var) puts the name on `window`. Four extracted
+    // modules read it off `window` — timeline.js, 14-matrix.js,
+    // 10-agent-avatar.js, timelineSelect.js — so an assignment form strips
+    // their escaping unconditionally. Secondarily, the declaration resolves
+    // STX at CALL time, which this inline script needs because it parses
+    // before the deferred module loads.
+    // Pinned by test_the_template_alias_is_a_function_declaration_not_an_assignment.
     // hook-bypass: line-limit (board_v3.html split in progress — this IS it)
     function escapeHtml(s) {
       return STX.cardHelpers.escapeHtml(s);
@@ -1744,8 +1763,8 @@
     // "切り口"), `selected` = the expanded island. Sticky across reloads so
     // picking your own lane once is remembered. (hook-bypass: line-limit.)
     const WALL = {
-      groupBy: (() => { try { return localStorage.getItem("scitex-todo:wall-group") || "assignee"; } catch { return "assignee"; } })(),
-      selected: (() => { try { return localStorage.getItem("scitex-todo:wall-selected") || null; } catch { return null; } })(),
+      groupBy: (() => { try { return localStorage.getItem("scitex-cards:wall-group") || "assignee"; } catch { return "assignee"; } })(),
+      selected: (() => { try { return localStorage.getItem("scitex-cards:wall-selected") || null; } catch { return null; } })(),
     };
     // Matrix layout (ADR-0011 §8). RENDERS the urgency/importance axes the
     // store carries and the rank the engine computed; it does NOT score — a
@@ -1775,7 +1794,7 @@
       if (head) {
         const k = head.getAttribute("data-key");
         WALL.selected = WALL.selected === k ? null : k;
-        try { localStorage.setItem("scitex-todo:wall-selected", WALL.selected || ""); } catch {}
+        try { localStorage.setItem("scitex-cards:wall-selected", WALL.selected || ""); } catch {}
         render();
         return;
       }
@@ -2011,7 +2030,7 @@
     }
 
     async function archiveStaleCard(id, title) {
-      // Operator confirm + reason. Verb: scitex-todo close TASK_ID
+      // Operator confirm + reason. Verb: scitex-cards close TASK_ID
       // --reason TEXT (PR #151) — same behavior server-side here.
       // For v1 we use the browser-native window.prompt; a styled modal
       // is a follow-up. The reason is REQUIRED (server returns 400 on
@@ -2067,7 +2086,9 @@
     // (hook-bypass: line-limit.)
     //
     // Now:
-    //   1. `_graphSrc(visible)` is a PURE string build (cheap, no DOM).
+    //   1. `STX.graphBuilders._graphSrc(visible, STATE.graph)` is a PURE
+    //      string build (cheap, no DOM) — 17-graph-builders.js, split PR-3.
+    //      STATE.graph is PASSED, not read ambiently, so it is testable.
     //   2. `_prewarmGraph()` runs on requestIdleCallback after every paint:
     //      it loads mermaid once and renders the SVG OFF-DOM via the
     //      promise API `mermaid.render(id, src)` — mermaid hangs its own
@@ -2081,86 +2102,9 @@
     const GRAPH_CACHE = { key: null, svg: null, pending: null, failed: false };
     // Fit-to-width (default) vs 1:1 natural size. Sticky across reloads.
     let GRAPH_FIT = (function () {
-      try { return localStorage.getItem("scitex-todo:graph-fit") !== "0"; }
+      try { return localStorage.getItem("scitex-cards:graph-fit") !== "0"; }
       catch { return true; }
     })();
-
-    // Pure: task set -> mermaid source (or null when nothing is connected).
-    function _graphSrc(visible) {
-      const visibleIds = new Set(visible.map(t => t.id));
-      const _esc = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, "_");
-      const _safe = (s) => String(s || "").replace(/[\[\]\"]/g, " ").slice(0, 60);
-
-      // Pull EDGES from the canonical server payload, not per-node.
-      const rawEdges = (STATE.graph && STATE.graph.edges) || [];
-      const depEdges = [];
-      for (const e of rawEdges) {
-        // `kind` is "depends_on" or "blocks"; the server already emits
-        // source=dep, target=tid (handlers/graph.py:121) so the arrow
-        // points prereq → consumer either way.
-        if (!e || !visibleIds.has(e.source) || !visibleIds.has(e.target)) continue;
-        depEdges.push({ src: e.source, dst: e.target, kind: e.kind || "depends_on" });
-      }
-      // Hierarchical `parent` edges are a separate axis (not in `edges[]`).
-      // Dashed so hierarchy reads differently from a blocking dependency.
-      const parentEdges = [];
-      for (const t of visible) {
-        const p = t.parent;
-        if (p && visibleIds.has(p) && p !== t.id) {
-          parentEdges.push({ src: p, dst: t.id, kind: "parent" });
-        }
-      }
-      const allEdges = depEdges.concat(parentEdges);
-      const touched = new Set();
-      for (const e of allEdges) { touched.add(e.src); touched.add(e.dst); }
-      const connected = visible.filter(t => touched.has(t.id));
-      if (!connected.length) return null;
-
-      // Each node carries its RAW status class (st-<status>) so the in-board
-      // mermaid matches the python build_mermaid() artifacts — no 4-bucket
-      // color collapse.
-      const nodeLines = connected.map(t => {
-        const label = `${(t.project || "—").slice(0, 18)}<br>${_safe(t.task || t.title)}`;
-        return `  ${_esc(t.id)}["${label}"]:::st-${(t.status || "deferred").replace(/[^a-z_]/gi, "")}`;
-      });
-      const edgeLines = allEdges.map(e => (e.kind === "parent")
-        ? `  ${_esc(e.src)} -.-> ${_esc(e.dst)}`
-        : `  ${_esc(e.src)} --> ${_esc(e.dst)}`);
-      // classDefs from the SSOT status_colors (STATUS_STYLE, projected into
-      // the /graph payload) — never a second color table.
-      const sc = (STATE.graph && STATE.graph.status_colors) || {};
-      const classDefLines = Object.keys(sc).map(s => {
-        const c = sc[s];
-        let style = `fill:${c.fill},stroke:${c.stroke},stroke-width:1px,color:#222`;
-        if (c.dashed) style += ",stroke-dasharray:5 3";
-        return `  classDef st-${s} ${style};`;
-      });
-      const src = ["flowchart LR", ...classDefLines, ...nodeLines, ...edgeLines]
-        .join("\n");
-      return {
-        src,
-        stats: {
-          connected: connected.length,
-          dep: depEdges.length,
-          parent: parentEdges.length,
-          hidden: visible.length - connected.length,
-        },
-      };
-    }
-
-    function _graphHintHtml(stats, note) {
-      const s = stats;
-      return `<div class="graph-hint">
-        <span>Graph: <strong>${s.connected}</strong> connected node${s.connected === 1 ? "" : "s"} /
-        <strong>${s.dep}</strong> depends_on / blocks edge${s.dep === 1 ? "" : "s"} /
-        <strong>${s.parent}</strong> parent edge${s.parent === 1 ? "" : "s"} (dashed).
-        ${s.hidden} disconnected card${s.hidden === 1 ? "" : "s"} not drawn.${note ? " " + note : ""}</span>
-        <button type="button" class="graph-fit-btn" onclick="toggleGraphFit()"
-                title="Fit the diagram to the panel width, or show it at 1:1 and scroll">
-          ${GRAPH_FIT ? "⤢ 1:1" : "⤡ Fit"}
-        </button>
-      </div>`;
-    }
 
     // SIZE (operator: "サイズも調整して表示される"). mermaid emits the SVG with
     // hard width/height attributes (useMaxWidth:false) — dropped into the
@@ -2171,7 +2115,7 @@
     // the wrapper so the toggle needs no re-render.
     function _mountGraphSvg(canvas, svg, stats, note) {
       canvas.innerHTML = `<div class="graph-wrap${GRAPH_FIT ? " graph-wrap--fit" : ""}">
-        ${_graphHintHtml(stats, note)}
+        ${STX.graphBuilders._graphHintHtml(stats, note, GRAPH_FIT)}
         <div class="graph-canvas">${svg}</div>
       </div>`;
       const el = canvas.querySelector(".graph-canvas svg");
@@ -2192,7 +2136,7 @@
 
     function toggleGraphFit() {
       GRAPH_FIT = !GRAPH_FIT;
-      try { localStorage.setItem("scitex-todo:graph-fit", GRAPH_FIT ? "1" : "0"); } catch {}
+      try { localStorage.setItem("scitex-cards:graph-fit", GRAPH_FIT ? "1" : "0"); } catch {}
       const wrap = document.querySelector(".graph-wrap");
       if (!wrap) return;
       wrap.classList.toggle("graph-wrap--fit", GRAPH_FIT);
@@ -2200,27 +2144,20 @@
       if (btn) btn.textContent = GRAPH_FIT ? "⤢ 1:1" : "⤡ Fit";
     }
 
-    function _graphEmptyHtml(visibleCount) {
-      return `<div class="graph-wrap">
-        <div class="graph-empty">
-          <h3>No dependencies in the current scope</h3>
-          <p>The Graph layout draws <code>depends_on</code> / <code>blocks</code>
-          edges (from the server's <code>edges[]</code> payload) plus
-          <code>parent</code> edges (per-node) among the currently-visible cards.
-          Right now <strong>${visibleCount} card${visibleCount === 1 ? "" : "s"}</strong>
-          match the filters but none of them are connected to each other.</p>
-          <p class="graph-empty__hint">Encode dependencies in <code>tasks.yaml</code> like this:
-          <code>depends_on: [other-task-id]</code>, <code>blocks: [downstream-id]</code>,
-          or <code>parent: hub-task-id</code>. The <strong>⏱ Timeline</strong> and
-          <strong>🗒 Wall</strong> layouts show every card, connected or not.</p>
-        </div>
-      </div>`;
-    }
-
     // Render `src` to an SVG string OFF-DOM. Cached by source, so a repeat
     // call with unchanged data resolves instantly. Never rejects — a CDN
     // failure resolves to null and the caller shows an honest message.
-    function _renderGraphSvg(src) {
+    //
+    // A RESOLVED PROMISE IS NOT A DRAWN DIAGRAM. Over its size ceiling
+    // mermaid does not throw — it returns a VALID one-node flowchart whose
+    // label is its own complaint, so this function used to resolve happily
+    // with that graphic and cache it as the board's dependency map.
+    // `_graphRenderFailed(svg, expected)` is the assertion about WHAT CAME
+    // BACK that was missing: `expected` is the node count we asked for, and
+    // a render that produced fewer did not draw our diagram. The result is
+    // never cached, and `GRAPH_CACHE.reason` tells the caller which failure
+    // it was. (hook-bypass: line-limit.)
+    function _renderGraphSvg(src, expectedNodes) {
       if (GRAPH_CACHE.key === src && GRAPH_CACHE.svg) {
         return Promise.resolve(GRAPH_CACHE.svg);
       }
@@ -2230,9 +2167,11 @@
       GRAPH_CACHE.key = src;
       GRAPH_CACHE.svg = null;
       GRAPH_CACHE.failed = false;
+      GRAPH_CACHE.reason = null;
       const p = _ensureMermaid().then(async () => {
         if (!window.mermaid || !window.mermaid.render) {
           GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "bundle";
           return null;
         }
         try {
@@ -2242,11 +2181,21 @@
           const id = "stx-mermaid-" + Math.random().toString(36).slice(2, 10);
           const out = await window.mermaid.render(id, src);
           const svg = (out && out.svg) ? out.svg : String(out || "");
+          // Verify WHAT CAME BACK. mermaid answers a diagram it refuses with
+          // a one-node graphic and a resolved promise, so without this check
+          // the pink box is cached and shown as if it were the graph.
+          if (STX.graphBuilders._graphRenderFailed(svg, expectedNodes)) {
+            console.warn("[scitex-cards] mermaid drew fewer nodes than asked");
+            GRAPH_CACHE.failed = true;
+            GRAPH_CACHE.reason = "render";
+            return null;
+          }
           if (GRAPH_CACHE.key === src) { GRAPH_CACHE.svg = svg; }
           return svg;
         } catch (e) {
-          console.warn("[scitex-todo] mermaid render failed:", e);
+          console.warn("[scitex-cards] mermaid render failed:", e);
           GRAPH_CACHE.failed = true;
+          GRAPH_CACHE.reason = "render";
           return null;
         }
       }).finally(() => {
@@ -2257,20 +2206,31 @@
     }
 
     function _renderGraphView(canvas, visible) {
-      const built = _graphSrc(visible);
-      if (!built) { canvas.innerHTML = _graphEmptyHtml(visible.length); return; }
+      const built = STX.graphBuilders._graphSrc(visible, STATE.graph);
+      if (!built) {
+        canvas.innerHTML = STX.graphBuilders._graphEmptyHtml(visible.length);
+        return;
+      }
       // Cache hit → paint the ready diagram immediately (the whole point).
       if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) {
         _mountGraphSvg(canvas, GRAPH_CACHE.svg, built.stats);
         return;
       }
+      // Never hand mermaid a source it will refuse. Over the ceiling it does
+      // not fail — it draws an error image — so the only way to keep the
+      // panel honest is to measure BEFORE asking and explain instead.
+      if (STX.graphBuilders._exceedsMermaidLimit(built.src)) {
+        canvas.innerHTML = STX.graphBuilders._graphOversizeHtml(
+          built.stats, built.src.length);
+        return;
+      }
       // Cache miss → show the numbers + a spinner line NOW (never a blank
       // canvas), and mount the SVG when the off-DOM render resolves.
       canvas.innerHTML = `<div class="graph-wrap">
-        ${_graphHintHtml(built.stats, "")}
+        ${STX.graphBuilders._graphHintHtml(built.stats, "", GRAPH_FIT)}
         <div class="graph-canvas graph-canvas--loading">drawing the diagram…</div>
       </div>`;
-      _renderGraphSvg(built.src).then((svg) => {
+      _renderGraphSvg(built.src, built.stats.nodes).then((svg) => {
         // The operator may have switched layouts or the data may have moved
         // on while we were rendering — only paint if BOTH are still current.
         if (normalizeLayout(STATE.layout) !== "graph") return;
@@ -2280,13 +2240,12 @@
           const host = c.querySelector(".graph-canvas");
           if (host) {
             host.classList.remove("graph-canvas--loading");
-            host.innerHTML = `<p class="graph-empty__hint">Could not draw the
-              diagram — the mermaid bundle failed to load (offline?). The card
-              data is fine; try Timeline or Wall.</p>`;
+            host.innerHTML = STX.graphBuilders._graphFailureHtml(
+              GRAPH_CACHE.reason);
           }
           return;
         }
-        const fresh = _graphSrc(_visibleTasks());
+        const fresh = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
         if (!fresh || fresh.src !== built.src) return;  // stale render
         _mountGraphSvg(c, svg, built.stats);
       });
@@ -2312,10 +2271,14 @@
       _prewarmHandle = idle(() => {
         _prewarmHandle = null;
         if (GRAPH_CACHE.failed) return;
-        const built = _graphSrc(_visibleTasks());
+        const built = STX.graphBuilders._graphSrc(_visibleTasks(), STATE.graph);
         if (!built) return;                                   // nothing to draw
         if (GRAPH_CACHE.key === built.src && GRAPH_CACHE.svg) return;  // warm
-        _renderGraphSvg(built.src);
+        // Same measurement the view makes: a source over the ceiling can only
+        // come back as an error image, so spending idle time on it is worse
+        // than useless — it would poison the cache with a failure.
+        if (STX.graphBuilders._exceedsMermaidLimit(built.src)) return;
+        _renderGraphSvg(built.src, built.stats.nodes);
       }, { timeout: 3000 });
     }
 
@@ -2330,6 +2293,13 @@
           try {
             window.mermaid.initialize({
               startOnLoad: false, theme: "dark", securityLevel: "loose",
+              // Pin the ceiling we guard against rather than inheriting
+              // whatever the library defaults to. This is not raising the
+              // limit — it is the same 50,000 mermaid 10 already uses — but
+              // it makes _exceedsMermaidLimit's constant true by
+              // construction, so a library default change cannot silently
+              // put the guard and the renderer on different numbers.
+              maxTextSize: STX.graphBuilders.MERMAID_MAX_TEXT,
               // useMaxWidth:false → mermaid emits the diagram at its natural
               // px size + a viewBox; _mountGraphSvg() then does the scaling
               // (fit-to-panel by default, 1:1 on demand). Letting mermaid do
@@ -2351,7 +2321,7 @@
     // Accordion behaviour lifted from scitex-writer's details-panel.ts: an
     // open-set persisted in localStorage, sections closed by default except
     // the ones we open here. (hook-bypass: line-limit.)
-    const DETAILS_PANE_KEY = "scitex-todo:details-collapsed";
+    const DETAILS_PANE_KEY = "scitex-cards:details-collapsed";
     function toggleDetailsPane() {
       const pane = document.getElementById("details-panel");
       if (!pane) return;
@@ -2379,7 +2349,7 @@
       }
     }
 
-    const DETAILS_OPEN_KEY = "scitex-todo:details-open";
+    const DETAILS_OPEN_KEY = "scitex-cards:details-open";
     function _detailsOpenSet() {
       try {
         const raw = localStorage.getItem(DETAILS_OPEN_KEY);
@@ -2428,7 +2398,7 @@
       if (typeof window.setTimelineWindow === "function") {
         window.setTimelineWindow(key);   // persists + re-renders the raster
       } else {
-        try { localStorage.setItem("scitex-todo:tl-window", key); } catch {}
+        try { localStorage.setItem("scitex-cards:tl-window", key); } catch {}
         if (window._TL) window._TL.windowKey = key;
       }
       renderStats();
@@ -2719,7 +2689,7 @@
       const on = !!(e && e.target && e.target.checked);
       STATE.filters.showDone = on;
       try {
-        localStorage.setItem("scitex-todo:show-done", on ? "1" : "0");
+        localStorage.setItem("scitex-cards:show-done", on ? "1" : "0");
       } catch {}
       render();
     }
@@ -2740,7 +2710,7 @@
     function onLayoutChange(mode) {
       const m = normalizeLayout(mode);
       STATE.layout = m;
-      try { localStorage.setItem("scitex-todo:layout", m); } catch {}
+      try { localStorage.setItem("scitex-cards:layout", m); } catch {}
       // Repaint the segment buttons' active state without a full render.
       document.querySelectorAll(".filt-layout-btn").forEach(btn => {
         const active = btn.getAttribute("data-layout") === m;
@@ -2769,7 +2739,7 @@
     // ESC closes the open modal — operator TG 265: "popup は常に esc 有効
     // なように." HIG / WAI-ARIA universal expectation. Long-term home is
     // the scitex-ui Modal primitive (so every scitex-app gets it for free);
-    // this local handler is the short-term scitex-todo fix until that lands.
+    // this local handler is the short-term scitex-cards fix until that lands.
     // Listens on document so the focus can be anywhere (the modal contents,
     // an input field, the body) and ESC still closes.
     document.addEventListener("keydown", (e) => {
@@ -2818,7 +2788,7 @@
       const t = (STATE.graph?.nodes || []).find(x => x.id === id);
       if (!t) return;
       document.getElementById("d-title").textContent = t.task || t.title;
-      // scitex-todo's entity is the USER (an agent is just user.kind=agent),
+      // scitex-cards's entity is the USER (an agent is just user.kind=agent),
       // so the meta line names the ASSIGNEE in user terms, not "agent".
       // (hook-bypass: line-limit — board_v3.html split still queued.)
       const assignee = t.assignee || t.agent || "—";

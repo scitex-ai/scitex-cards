@@ -17,7 +17,7 @@ first and falls back to the second.
 
 THE PREFERENCE IS THE POINT, not the fallback. Before this module, reads
 consulted the QUERY ONLY, in two hand-copied lines (``views.py`` and
-``handlers/dm.py``). scitex-hub's ``TodoBoardTenancyMiddleware`` therefore had
+``handlers/dm.py``). scitex-hub's ``CardsBoardTenancyMiddleware`` therefore had
 to keep OVERWRITING ``request.GET["store"]`` with its server-resolved value,
 and its own comment (middleware.py:191) names the cost exactly:
 

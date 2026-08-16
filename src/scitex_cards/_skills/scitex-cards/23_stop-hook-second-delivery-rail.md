@@ -7,7 +7,7 @@ notifications itself** and requires an acknowledgement before the turn may end.
 ## Why a second rail exists
 
 Delivery had exactly **one** rail: the MCP channel push. An agent spec
-whitelisted `server:scitex-todo` while `.mcp.json` registered the server as
+whitelisted `server:scitex-cards` while `.mcp.json` registered the server as
 `scitex-cards` (renamed during the migration), so Claude Code **silently
 discarded every push**. `send()` returned normally, the drain acked on that
 success, and the message was gone. Measured on the affected agent: **228 inbox

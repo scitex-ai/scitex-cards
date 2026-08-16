@@ -8,9 +8,9 @@ push. Standalone installs need nothing more than this default.
 
 Channel glob semantics (default impl scope, minimal):
 
-- literal match: ``"scitex-todo:task:scitex-todo/quality-hygiene"`` matches itself only.
-- suffix-``*`` glob: ``"scitex-todo:task:scitex-todo/*"`` matches every task
-  in the ``scitex-todo`` project.
+- literal match: ``"scitex-cards:task:scitex-cards/quality-hygiene"`` matches itself only.
+- suffix-``*`` glob: ``"scitex-cards:task:scitex-cards/*"`` matches every task
+  in the ``scitex-cards`` project.
 - bare ``"*"`` matches everything.
 
 More elaborate glob/pattern matching is the fleet adapter's
@@ -39,8 +39,8 @@ class InProcessPubSub:
     --------
     >>> bus = InProcessPubSub()
     >>> seen = []
-    >>> bus.subscribe("scitex-todo:task:demo/*", seen.append)
-    >>> bus.publish("scitex-todo:task:demo/foo", {"task_id": "demo/foo", "changes": {}})
+    >>> bus.subscribe("scitex-cards:task:demo/*", seen.append)
+    >>> bus.publish("scitex-cards:task:demo/foo", {"task_id": "demo/foo", "changes": {}})
     >>> seen[0]["task_id"]
     'demo/foo'
     """

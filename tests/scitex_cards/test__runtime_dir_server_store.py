@@ -13,7 +13,7 @@ branch fell straight through to ``Path(explicit)``, which does not reject a DSN
 That is a RELATIVE path, so everything derived from it resolved against the
 writer's current directory. ``runtime_dir`` then yielded
 ``postgresql:/scitex_cards@127.0.0.1:5432/runtime`` and ``inbox_db_path`` put
-``todo.db`` inside it.
+``cards.db`` inside it.
 
 THE FAILURE WAS A SILENT SUCCESS, which is why it survived. Measured 2026-08-02:
 ``enqueue(store=<DSN>)`` RETURNED a notification id and created a phantom store

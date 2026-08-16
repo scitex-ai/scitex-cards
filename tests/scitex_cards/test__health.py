@@ -325,14 +325,14 @@ def test_the_unknown_agent_id_hint_names_the_env_var_to_set(tmp_path):
     c = _check(_healthy_report(tmp_path, agent_id="unknown"), "agent_id")
 
     # Assert
-    assert c["hint"] and "SCITEX_TODO_AGENT_ID" in c["hint"]
+    assert c["hint"] and "SCITEX_CARDS_AGENT_ID" in c["hint"]
 
 
 def test_agent_id_fails_on_unexpanded_placeholder(tmp_path):
     # Arrange
     # Act
     c = _check(
-        _healthy_report(tmp_path, agent_id="${SCITEX_TODO_AGENT_ID}"), "agent_id"
+        _healthy_report(tmp_path, agent_id="${SCITEX_CARDS_AGENT_ID}"), "agent_id"
     )
 
     # Assert
@@ -343,7 +343,7 @@ def test_an_unexpanded_placeholder_agent_id_carries_a_hint(tmp_path):
     # Arrange
     # Act
     c = _check(
-        _healthy_report(tmp_path, agent_id="${SCITEX_TODO_AGENT_ID}"), "agent_id"
+        _healthy_report(tmp_path, agent_id="${SCITEX_CARDS_AGENT_ID}"), "agent_id"
     )
 
     # Assert
@@ -398,7 +398,7 @@ def undrained_backlog_check(tmp_path_factory):
     notifications through the real store — expensive to repeat per assertion.
     """
     # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
-    # itself rather than a `runtime/todo.db` beside it, so handing it a YAML
+    # itself rather than a `runtime/cards.db` beside it, so handing it a YAML
     # path makes sqlite refuse with "file is not a database" — correctly. The
     # operator's ruling the same day was that no cards store is ever a file
     # like this; a fixture that builds one is testing a store that must not

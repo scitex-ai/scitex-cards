@@ -41,11 +41,11 @@ def test_fix_branch_yields_multi_token_card_id():
 
 def test_chore_branch_yields_card_id():
     # Arrange
-    branch = "chore/full-green-todo"
+    branch = "chore/full-green-card"
     # Act
     card_id = extract_card_id(branch)
     # Assert
-    assert card_id == "full-green-todo"
+    assert card_id == "full-green-card"
 
 
 def test_refactor_branch_yields_card_id():

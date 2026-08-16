@@ -72,7 +72,7 @@ UNSEEN_BACKLOG_THRESHOLD = 50
 #: The exact drain-stuck remediation (kept verbatim per the cross-package spec).
 _DRAIN_HINT = (
     "channel not draining — ensure `scitex-cards mcp start` is running for this "
-    "agent with SCITEX_TODO_AGENT_ID set (needs >=0.7.32 where the poll loop no "
+    "agent with SCITEX_CARDS_AGENT_ID set (needs >=0.7.32 where the poll loop no "
     "longer starves the handshake)"
 )
 
@@ -111,8 +111,8 @@ def _check_agent_id(agent_id: str | None) -> dict[str, Any]:
             "ok": False,
             "detail": f"agent id unresolved ({exc})",
             "hint": (
-                "set SCITEX_TODO_AGENT_ID=<your-agent-id> (not blank / 'unknown'); "
-                'in .mcp.json use the brace form "${SCITEX_TODO_AGENT_ID}" — '
+                "set SCITEX_CARDS_AGENT_ID=<your-agent-id> (not blank / 'unknown'); "
+                'in .mcp.json use the brace form "${SCITEX_CARDS_AGENT_ID}" — '
                 "Claude Code does not expand bare $VAR"
             ),
         }
@@ -277,7 +277,7 @@ def health(
         (and enables project-shadow detection); an explicit path is taken as the
         intended store (hermetic tests, ``--tasks``).
     agent_id : str | None
-        Agent identity override. ``None`` resolves ``$SCITEX_TODO_AGENT_ID``.
+        Agent identity override. ``None`` resolves ``$SCITEX_CARDS_AGENT_ID``.
     unseen_threshold : int
         Unseen-backlog ceiling for :func:`_check_channel_drain`.
 
@@ -356,8 +356,9 @@ def health(
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
-        # scitex-cards -> scitex-cards rename left agent launch lines allowlisting
-        # the OLD server name, so every push was discarded on arrival while the
+        # package rename left agent launch lines allowlisting the OLD server
+        # name while we registered under the new one, so every push was
+        # discarded on arrival while the
         # drain kept marking records seen. Delivery here is fire-and-forget, so
         # a name the client does not know does not delay a notification, it
         # destroys it — silently. This is the only check that asks the far end.

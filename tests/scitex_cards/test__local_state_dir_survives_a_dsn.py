@@ -32,7 +32,7 @@ import os
 
 import pytest
 
-from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED
+from scitex_cards._db import ENV_DB
 from scitex_cards._paths import _user_root, resolve_tasks_path, runtime_dir
 
 DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
@@ -41,8 +41,8 @@ DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB, ENV_DB_DEPRECATED)}
-    for v in (ENV_DB, ENV_DB_DEPRECATED):
+    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
+    for v in (ENV_DB,):
         os.environ.pop(v, None)
     try:
         yield

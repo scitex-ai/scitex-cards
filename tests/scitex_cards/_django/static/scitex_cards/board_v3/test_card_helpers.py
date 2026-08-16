@@ -304,6 +304,24 @@ def test_the_template_alias_delegates_rather_than_reimplementing():
     assert "return STX.cardHelpers.escapeHtml(s);" in template
 
 
+def test_the_template_alias_is_a_function_declaration_not_an_assignment():
+    # THE FORM IS LOAD-BEARING, and the delegation test above does NOT pin it.
+    # `const escapeHtml = function (s) { return STX.cardHelpers.escapeHtml(s); }`
+    # satisfies that test verbatim and still breaks the page: const/let create
+    # bindings in the global LEXICAL environment, NOT properties of the global
+    # object, so only a `function` declaration (or `var`) puts the name on
+    # `window`. Four already-extracted modules read it off `window` —
+    # timeline.js, 14-matrix.js, 10-agent-avatar.js, timelineSelect.js — so an
+    # assignment form breaks their escaping UNCONDITIONALLY, not intermittently.
+    # A comment asking the next reader not to "simplify" this is not a barrier;
+    # this assertion is. (Found in review of #847 by scitex-cards.)
+    # Arrange
+    template = TEMPLATE.read_text(encoding="utf-8")
+    # Act
+    # Assert
+    assert "\n    function escapeHtml(s) {" in template
+
+
 def test_the_template_no_longer_carries_its_own_escape_table():
     # Arrange
     template = TEMPLATE.read_text(encoding="utf-8")

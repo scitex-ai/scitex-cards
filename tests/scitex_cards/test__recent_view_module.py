@@ -10,7 +10,7 @@ The JS module's own behaviour is covered by
 test class is a static-content pin so a refactor that drops the public
 API surface or the ViewToggle wiring trips CI on the Python side too.
 
-Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のToDo UI."
+Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のカード UI."
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ RECENT_SORT_JS = (
 )
 RECENT_SORT_TS = PKG_ROOT / "_django" / "frontend" / "src" / "recentSort.ts"
 RECENT_VIEW_TSX = PKG_ROOT / "_django" / "frontend" / "src" / "RecentView.tsx"
-TODO_BOARD_TSX = PKG_ROOT / "_django" / "frontend" / "src" / "TodoBoard.tsx"
+CARDS_BOARD_TSX = PKG_ROOT / "_django" / "frontend" / "src" / "CardsBoard.tsx"
 STORE_TS = PKG_ROOT / "_django" / "frontend" / "src" / "store" / "useBoardStore.ts"
 
 
@@ -49,7 +49,7 @@ def tsx_text() -> str:
 
 @pytest.fixture(scope="module")
 def board_text() -> str:
-    return TODO_BOARD_TSX.read_text(encoding="utf-8")
+    return CARDS_BOARD_TSX.read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -147,7 +147,7 @@ class TestRecencyCutoffsLockedDown:
 
 class TestViewToggleWiring:
     """The Recent view must be reachable via the segmented ViewToggle
-    in TodoBoard.tsx. Pin the third button + the routing branch."""
+    in CardsBoard.tsx. Pin the third button + the routing branch."""
 
     def test_view_enum_extended_in_store(self, store_text):
         # The PersistedView / store enum carries the 3-value type.
@@ -168,7 +168,7 @@ class TestViewToggleWiring:
         # Assert
         assert 'view === "recent"' in board_text
 
-    def test_recent_view_imported_into_todoboard(self, board_text):
+    def test_recent_view_imported_into_cardsboard(self, board_text):
         # Arrange
         # Act
         # Assert
@@ -184,7 +184,7 @@ class TestRecentViewLoadBearingUX:
         # Arrange
         # Act
         # Assert
-        assert "Recent — 最近のToDo (新着が上)" in tsx_text
+        assert "Recent — 最近のカード (新着が上)" in tsx_text
 
     def test_new_in_24h_count_label_present(self, tsx_text):
         # Arrange
@@ -220,7 +220,7 @@ class TestRecentViewLoadBearingUX:
         # Arrange
         # Act
         # Assert
-        assert "scitex-todo update" in tsx_text
+        assert "scitex-cards update" in tsx_text
 
 
 class TestQualifierSearchReused:

@@ -43,8 +43,10 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 #: broken and every result below is meaningless.
 CONTROL_VERBS = ("list-tasks", "add", "update", "health")
 
-#: Program names our hints may print. Both are shipped console scripts.
-_PROGRAMS = ("scitex-cards", "scitex-todo")
+#: Program names our hints may print. There is exactly one shipped console
+#: script; this tuple named two until the second was retired, after which both
+#: entries were the same string.
+_PROGRAMS = ("scitex-cards",)
 
 #: A single clean command token: lowercase letters, digits, hyphens, starting
 #: with a letter. Every real CLI verb matches (``list-tasks``, ``db``,

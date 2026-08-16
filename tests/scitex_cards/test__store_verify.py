@@ -135,7 +135,7 @@ def promoted_store(env):
     throwaway ``tmp_path`` here would stamp the DB for a store nothing reads,
     so every round-trip below would raise "stamped for a DIFFERENT store".
     """
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     with _model._store_lock(store):
         _model._save_doc_unlocked(_valid_doc(3), store)

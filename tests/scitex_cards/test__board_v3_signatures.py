@@ -207,7 +207,7 @@ class TestP1SearchAsLauncher:
 
     def test_search_input_min_width_filterbar_scale(self, css_text):
         # Operator 2026-07-10 (でかすぎ,
-        # todo-board-search-box-oversized-20260710): the P1-era 320px /
+        # cards-board-search-box-oversized-20260710): the P1-era 320px /
         # 1rem / permanent-glow search input dwarfed the sibling .filt
         # controls; resized to the filterbar baseline (220px min-width,
         # 0.85rem, glow on :focus only). Still wider than the pre-P1
@@ -774,7 +774,7 @@ class TestSearchQualifierSyntax:
 
 # -----------------------------------------------------------------------------
 # PR(h) Stage 1 — multi-select + bulk status change
-# (board card todo-multiselect-batch-ops, lead a2a 1ebc792c)
+# (board card cards-multiselect-batch-ops, lead a2a 1ebc792c)
 # -----------------------------------------------------------------------------
 
 
@@ -845,7 +845,7 @@ class TestMultiselectBatchOpsRemoved:
 
 # -----------------------------------------------------------------------------
 # Activity bucket badge — render side of working-status decay
-# (board card `scitex-todo-working-status-decay-tg12739`, render half of PR #122)
+# (board card `scitex-cards-working-status-decay-tg12739`, render half of PR #122)
 # -----------------------------------------------------------------------------
 
 
@@ -891,7 +891,7 @@ class TestStaleReviewPanel:
 
     Backend half is PR #153 (/stale + /archive endpoints). The layout
     BUTTON was removed 2026-07-10 (operator, card
-    todo-board-remove-stale-view-timeline-first-20260710 — "Stale view
+    cards-board-remove-stale-view-timeline-first-20260710 — "Stale view
     要らない"): the first two pins now assert the button stays GONE and
     the layout unreachable, while the fetch+render helpers, per-row
     Archive button (HTTP twin of CLI `close --reason` PR #151) and the
@@ -934,7 +934,7 @@ class TestStaleReviewPanel:
 
     def test_stale_fetch_target_endpoint(self, board_js):
         # Mount-aware (P1 sub-path fix): the dispatcher registers plain
-        # "stale" — the old "/scitex-todo/stale" literal 404'd even at a
+        # "stale" — the old "/scitex-cards/stale" literal 404'd even at a
         # root mount, and every fetch is API_BASE-prefixed now.
         # Arrange
         # Act
@@ -949,7 +949,7 @@ class TestStaleReviewPanel:
 
     def test_archive_post_target_endpoint(self, board_js):
         # Mount-aware (P1 sub-path fix): the dispatcher registers plain
-        # "archive" — the old "/scitex-todo/archive" literal 404'd even at
+        # "archive" — the old "/scitex-cards/archive" literal 404'd even at
         # a root mount, and every fetch is API_BASE-prefixed now.
         # Arrange
         # Act

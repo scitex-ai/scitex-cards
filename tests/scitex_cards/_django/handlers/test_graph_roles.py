@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for the USER-role fields on each GET /graph node payload.
 
-scitex-todo's entity is the USER (an agent is just ``user.kind=agent``).
+scitex-cards's entity is the USER (an agent is just ``user.kind=agent``).
 The board's detail drawer renders a ROLES section — Creator / Assignee /
 Collaborators / Subscribers — straight off the ``/graph`` node dict, so
 the node payload MUST emit those fields. This covers the wire contract:

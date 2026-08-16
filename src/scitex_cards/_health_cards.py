@@ -73,7 +73,7 @@ def _check_terminal_state_honest(store: str | Path | None) -> dict[str, Any]:
 
     *** THIS EXISTS BECAUSE IT ALREADY HAPPENED, TWICE, AND NOBODY NOTICED FOR
     TWO DAYS. *** (2026-07-13: `selftest-card-20260701` and
-    `todo-board-reads-stale-project-store-not-canonical-20260706` both carried
+    `cards-board-reads-stale-project-store-not-canonical-20260706` both carried
     `closed_at` and both sat in `deferred`. Both had COMMENTS saying they had
     been moved to a terminal state — the prose claimed the change; the FIELD
     never took it. They were found only by hand-scanning all 1,467 rows.)

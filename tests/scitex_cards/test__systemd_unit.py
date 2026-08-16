@@ -6,7 +6,7 @@ The notify daemon and the board GUI both render and install their units
 through this module. Its one hard-won rule — never write a unit whose
 ``ExecStart`` cannot possibly run — is asserted here once, on behalf of both.
 
-REGRESSION (203/EXEC): a unit shipped with a BARE ``ExecStart=scitex-todo
+REGRESSION (203/EXEC): a unit shipped with a BARE ``ExecStart=scitex-cards
 notifyd``. systemd does not use the user's login ``PATH`` and the console
 script lives in a venv, so the unit died at ``status=203/EXEC`` and had to be
 hand-patched before it would start. Installing a unit that is GUARANTEED not

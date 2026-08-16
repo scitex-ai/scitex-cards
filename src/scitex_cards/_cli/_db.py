@@ -165,7 +165,7 @@ _DB_OPTION = click.option(
     "path",
     help=(
         "Print the resolved DB path.\n\n"
-        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_TODO_DB "
+        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_CARDS_DB "
         "(deprecated, warned) > the `store.target` key in the config file. "
         "There is NO tier below that: it used to fall back to "
         "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "

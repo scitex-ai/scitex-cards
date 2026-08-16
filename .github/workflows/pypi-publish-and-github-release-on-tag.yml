@@ -130,14 +130,14 @@ jobs:
         run: |
           set -euo pipefail
           uv build
-          # The scitex-todo DEPRECATION STUB publishes from the same tag
+          # The scitex-cards DEPRECATION STUB publishes from the same tag
           # (metadata-only dist depending on scitex-cards; PyPI has no
           # rename, so old pins must keep resolving). Same dist/, same
           # OIDC exchange — both projects' trusted publishers key on this
           # repo + this workflow file + the pypi environment. Version sync
           # is enforced by tests/test_stub_version_sync.py.
-          if [ -d stub/scitex-todo ]; then
-            uv build stub/scitex-todo --out-dir dist
+          if [ -d stub/scitex-cards ]; then
+            uv build stub/scitex-cards --out-dir dist
           fi
           ls -la dist/
           [ -n "$(ls -A dist 2>/dev/null)" ] || { echo "::error::uv build produced an empty dist/"; exit 1; }
@@ -152,7 +152,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","Linux","X64","scitex-ci"]') }}
     environment:
       name: pypi
-      url: https://pypi.org/p/scitex-todo
+      url: https://pypi.org/p/scitex-cards
     # id-token: write is what populates ACTIONS_ID_TOKEN_REQUEST_{TOKEN,URL},
     # which publish-in-sif.sh uses to mint the OIDC JWT. Keep it.
     # contents: read is REQUIRED for actions/checkout to clone this PRIVATE

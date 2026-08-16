@@ -58,7 +58,7 @@ def store(tmp_path: Path, env) -> Path:
     Git autocommit is disabled so the inbox write path stays fast and
     deterministic under test.
     """
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
     path = tmp_path / "tasks.yaml"
     path.write_text("tasks: []\n", encoding="utf-8")
     return path

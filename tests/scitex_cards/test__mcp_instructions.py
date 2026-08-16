@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Tests for the MCP server's agent-facing instructions (`_mcp_instructions`).
 
-The bug these lock down: the instructions hard-coded ``'agent:proj-scitex-todo'``
+The bug these lock down: the instructions hard-coded ``'agent:proj-scitex-cards'``
 as the example scope. That identity does not exist — ``proj-`` is a dead legacy
 prefix (the one :data:`scitex_cards._users.IDENTITY_PREFIXES` exists to STRIP).
 Measured against the live store on 2026-07-11:
 
-    cards under the TAUGHT scope  agent:proj-scitex-todo :  2
-    cards under the REAL   scope  agent:scitex-todo      : 63
+    cards under the TAUGHT scope  agent:proj-scitex-cards :  2
+    cards under the REAL   scope  agent:scitex-cards      : 63
 
 So every agent that followed its own MCP instructions saw ~3% of its cards and
 concluded the board had nothing for it. The instructions must therefore name the
@@ -41,11 +41,11 @@ DEAD_PREFIX = "proj-"
 # --------------------------------------------------------------------------- #
 def test_instructions_name_the_resolved_identity():
     # Arrange
-    agent_id = "scitex-todo"
+    agent_id = "scitex-cards"
     # Act
     text = build_instructions(agent_id)
     # Assert
-    assert "agent:scitex-todo" in text
+    assert "agent:scitex-cards" in text
 
 
 def test_instructions_name_whatever_identity_is_resolved():
@@ -54,7 +54,7 @@ def test_instructions_name_whatever_identity_is_resolved():
     # Act
     text = build_instructions(agent_id)
     # Assert
-    assert "agent:ripple-wm" in text and "scitex-todo`" not in text
+    assert "agent:ripple-wm" in text and "scitex-cards`" not in text
 
 
 def _server_instructions_under(env_agent_id: str | None) -> str:
@@ -67,17 +67,15 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
     the session. This is the honest end-to-end check, and it needs no mocks.
     """
     env = dict(os.environ)
-    # The identity now resolves from the post-rename $SCITEX_CARDS_AGENT_ID,
-    # which `_env_compat` mirrors onto $SCITEX_TODO_AGENT_ID at import (new
-    # name wins). An ambient SCITEX_CARDS_AGENT_ID would therefore clobber
-    # whatever we set on the old name, so normalise BOTH prefixes (and both
-    # deprecated twins) to a known state before driving the one we want.
-    for var in (
-        "SCITEX_CARDS_AGENT_ID",
-        "SCITEX_TODO_AGENT_ID",
-        "SCITEX_CARDS_AGENT",  # deprecated twin: fails loud if set
-        "SCITEX_TODO_AGENT",
-    ):
+    # The identity resolves from $SCITEX_CARDS_AGENT_ID. This loop used to
+    # normalise FOUR names — two prefixes and their deprecated twins — because
+    # a compat module mirrored one onto the other at import, so an ambient
+    # value under either spelling could clobber what the test set. That module
+    # and the retired prefix are gone; the loop was left popping the same two
+    # names, one of them twice. Both surviving names are still cleared: an
+    # ambient $SCITEX_CARDS_AGENT (the deprecated twin, which fails loud when
+    # set) would otherwise decide the outcome instead of the test.
+    for var in ("SCITEX_CARDS_AGENT_ID", "SCITEX_CARDS_AGENT"):
         env.pop(var, None)
     if env_agent_id is not None:
         env["SCITEX_CARDS_AGENT_ID"] = env_agent_id
@@ -97,9 +95,9 @@ def _server_instructions_under(env_agent_id: str | None) -> str:
 
 
 def test_live_server_instructions_carry_the_env_identity():
-    """The REAL server string, built at import, names $SCITEX_TODO_AGENT_ID."""
+    """The REAL server string, built at import, names $SCITEX_CARDS_AGENT_ID."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     # Act
     text = _server_instructions_under("test-agent-xyz")
     # Assert
@@ -109,7 +107,7 @@ def test_live_server_instructions_carry_the_env_identity():
 def test_live_server_instructions_name_no_scope_without_an_identity():
     """With the identity unset the REAL server fabricates no `agent:` example."""
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     # Act
     text = _server_instructions_under(None)
     # Assert
@@ -167,7 +165,7 @@ def test_unresolved_identity_admits_the_identity_is_unresolved(unresolved):
 @pytest.mark.parametrize("unresolved", [None, ""])
 def test_unresolved_identity_names_the_env_var_that_fixes_it(unresolved):
     # Arrange
-    env_var = "SCITEX_TODO_AGENT_ID"
+    env_var = "SCITEX_CARDS_AGENT_ID"
     # Act
     text = build_instructions(unresolved)
     # Assert — the agent is told WHICH knob turns the absence into an identity.
@@ -204,7 +202,7 @@ def test_no_dead_prefix_anywhere_in_the_mcp_surface():
     list. One dead identity in there mis-teaches the whole fleet.
     """
     # Arrange
-    pytest.importorskip("fastmcp", reason="scitex-todo[mcp] extra not installed")
+    pytest.importorskip("fastmcp", reason="scitex-cards[mcp] extra not installed")
     from scitex_cards._mcp_server import mcp  # noqa: PLC0415
 
     # Act
@@ -231,7 +229,7 @@ DEAD_IDENTITY_EXAMPLE = re.compile(
             ["']?(?:agent:)?proj-                               # CLI flag
       | \b(?:agent|assignee|author|scope|owner)\s*[:=]\s*
             ["']?(?:agent:)?proj-                               # field / kwarg
-      | SCITEX_TODO_AGENT_ID\s*=\s*["']?proj-                   # the env var
+      | SCITEX_CARDS_AGENT_ID\s*=\s*["']?proj-                   # the env var
     )
     """
 )
@@ -260,7 +258,7 @@ def _agent_facing_files(root: Path) -> list[Path]:
     files += list((pkg / "_skills").rglob("*.md"))
     files += [
         p
-        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-todo.md")
+        for p in (root / "README.md", root / "docs" / "CHEATSHEET-fleet-cards.md")
         if p.exists()
     ]
     return files

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """T1.4 — /runnable + /blocked-batch Django endpoints.
 
-Lead a2a `74db4f2d`, 2026-06-14. HTTP twins of `scitex-todo runnable`
-+ `scitex-todo blocked` so the parallelism dispatcher consumes JSON
+Lead a2a `74db4f2d`, 2026-06-14. HTTP twins of `scitex-cards runnable`
++ `scitex-cards blocked` so the parallelism dispatcher consumes JSON
 over HTTP.
 
 Django RequestFactory; no mocks (STX-NM / PA-306). AAA pattern, one

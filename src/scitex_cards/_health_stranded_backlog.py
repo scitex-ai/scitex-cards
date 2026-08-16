@@ -6,7 +6,7 @@ THE INCIDENT THIS EXISTS FOR, measured 2026-08-14. The notification rail cut
 over from SQLite to PostgreSQL on 2026-08-11. The cutover moved the RAIL and
 left the BACKLOG behind:
 
-    todo.db      365 rows, frozen, newest 2026-08-11T07:05:27Z
+    cards.db      365 rows, frozen, newest 2026-08-11T07:05:27Z
     of those     149 UNSEEN, and 0 of 149 present in PostgreSQL
     addressed to operator (130), scitex-dev (6), sac-04 (5), and five others
     134 of the 149 were `dm` — messages to people, not card churn

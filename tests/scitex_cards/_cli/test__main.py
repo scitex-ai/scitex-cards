@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the scitex-todo root CLI group + core verbs (no mocks; CliRunner)."""
+"""Tests for the scitex-cards root CLI group + core verbs (no mocks; CliRunner)."""
 
 from __future__ import annotations
 

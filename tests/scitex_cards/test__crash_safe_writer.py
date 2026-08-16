@@ -352,6 +352,7 @@ def _append_task_and_save() -> Path:
 
 
 def test_append_save_writes_a_complete_task_list():
+    # Arrange
     # Act
     store = _append_task_and_save()
 
@@ -360,6 +361,7 @@ def test_append_save_writes_a_complete_task_list():
 
 
 def test_append_save_keeps_the_users_section_present():
+    # Arrange
     # Act
     store = _append_task_and_save()
 

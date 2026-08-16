@@ -43,7 +43,7 @@ from ._tick import fault_text
 logger = logging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Cadence (MINUTES) of the fleet-liveness sweep. ``<= 0`` disables it.
-ENV_NUDGE_SWEEP_MINUTES = "SCITEX_TODO_NUDGE_SWEEP_MINUTES"
+ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
 DEFAULT_NUDGE_SWEEP_MINUTES = 30.0
 
 
@@ -130,7 +130,7 @@ def _run_stale_nudge_sweep(*, store, now) -> "str | None":
     """
     try:
         from .._model import load_tasks
-        from .._stale_active_nudge import sweep_and_nudge
+        from .._stale.active_nudge import sweep_and_nudge
 
         resolved = _resolved_store(store)
         tasks = load_tasks(resolved)

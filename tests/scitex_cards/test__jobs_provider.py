@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Pin the shape of scitex-todo's ``scitex_dev.jobs`` leaf entry point.
+"""Pin the shape of scitex-cards' ``scitex_dev.jobs`` leaf entry point.
 
 The provider is a one-line contract — but it is the single declaration
-``scitex-dev ecosystem up`` reads to know that scitex-todo's board
+``scitex-dev ecosystem up`` reads to know that scitex-cards' board
 needs to be a long-running ``--user`` systemd unit on TCP 8051. A
 typo in the schedule / kind / command / port silently breaks the
 operator's primary daily UI surface, so we pin every field.
@@ -30,15 +30,15 @@ def test_provide_jobs_includes_the_board_dashboard():
     # Act
     names = {j.name for j in provide_jobs()}
     # Assert
-    assert "scitex-todo.dashboard" in names
+    assert "scitex-cards-dashboard" in names
 
 
 def _board() -> object:
-    return next(j for j in provide_jobs() if j.name == "scitex-todo.dashboard")
+    return next(j for j in provide_jobs() if j.name == "scitex-cards-dashboard")
 
 
 def _snapshot() -> object:
-    return next(j for j in provide_jobs() if j.name == "scitex-cards.snapshot")
+    return next(j for j in provide_jobs() if j.name == "scitex-cards-snapshot")
 
 
 def test_board_kind_is_service():
@@ -54,7 +54,7 @@ def test_board_command_invokes_scitex_cards_board():
     # Act
     job = _board()
     # Assert
-    assert "scitex-todo board" in job.command
+    assert "scitex-cards board" in job.command
 
 
 def test_board_command_pins_port_8051():

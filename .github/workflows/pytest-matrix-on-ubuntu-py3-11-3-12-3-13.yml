@@ -2,7 +2,7 @@ name: tests
 # PILOT: org-level reusable-workflow caller (scitex-ai/.github, 2026-07-10).
 # Triggers/concurrency preserved verbatim from the prior local file.
 # New required-status-check context: "pytest-matrix / pytest-matrix-on-ubuntu-py<X.YY>"
-# NOTE: the prior local job set `strategy.max-parallel: 1` (scitex-todo has
+# NOTE: the prior local job set `strategy.max-parallel: 1` (scitex-cards has
 # only 3 dedicated spartan-cpu runners; unbounded parallel matrix legs
 # saturate the pool and starve other PRs/workflows) and used
 # `continue-on-error: true` + an isolated HOME on the Codecov upload step

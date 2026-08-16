@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for ``scitex_cards._model.is_overdue``.
 
-todo-p6-overdue-ui — backend half (the fleet liveness payload now
+cards-p6-overdue-ui — backend half (the fleet liveness payload now
 exposes a per-agent `overdue_count`, and the CLI can use this helper
 for a `--overdue` filter). No mocks — real dicts + frozen ``now``
 arg per STX-NM / PA-306.
