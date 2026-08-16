@@ -22,16 +22,47 @@ a real reaped pid whose signal the kernel really refuses.
 
 from __future__ import annotations
 
+import importlib.util as _ilu
 import os
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from pathlib import Path as _Path
 
 import pytest
 
 from scitex_cards._cli._board_proc import _board_pid_alive
+
+# === `seed_db_from_doc` re-export ===========================================
+#
+# THE HELPER IS DEFINED IN tests/scitex_cards/conftest.py, BUT `from conftest
+# import seed_db_from_doc` INSIDE _cli/** BINDS TO *THIS* FILE — pytest makes
+# the NEAREST ancestor conftest the `conftest` module — and would miss it.
+#
+# Without this re-export the import raises at COLLECTION, so the affected tests
+# do not fail, they never run at all:
+#
+#     test__db_snapshot_shrink_guard.py     test__db_snapshot_freshness_guard.py
+#     test__verb_renames.py                 test__stale.py
+#
+# Measured 2026-08-16: all four ERROR on collection, on develop, unmodified.
+# Each one guards something real — the snapshot rail refusing a collapsed card
+# count, and refusing a stale export — so this is four disarmed guards, not
+# four missing conveniences. A test that cannot run is the "gate that cannot
+# fail" wearing test clothes.
+#
+# `_django/conftest.py` hit this first and solved it exactly this way; the
+# pattern is copied rather than reinvented. Load the shared conftest BY PATH
+# (not by name, which is the ambiguity being fixed) and re-export the symbol.
+_shared = _Path(__file__).resolve().parent.parent / "conftest.py"
+_spec = _ilu.spec_from_file_location("_scitex_cards_shared_conftest", _shared)
+_mod = _ilu.module_from_spec(_spec)
+_sys_modules_key = _spec.name
+sys.modules[_sys_modules_key] = _mod  # register BEFORE exec (py3.12 dataclass lookup)
+_spec.loader.exec_module(_mod)
+seed_db_from_doc = _mod.seed_db_from_doc
 
 #: A supervisor that starts one sleeper, prints its pid, then blocks in
 #: ``wait()`` on it — so the sleeper is REAPED THE INSTANT it exits.
