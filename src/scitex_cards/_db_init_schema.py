@@ -29,6 +29,7 @@ import sqlite3
 
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_foreign_keys import _migrate_v10_to_v11
+from ._db_sync_columns import _migrate_v11_to_v12
 from ._db_migrations import (
     _migrate_v1_to_v2,
     _migrate_v2_to_v3,
@@ -156,6 +157,15 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v7_to_v8(conn)
     _migrate_v8_to_v9(conn)
     _migrate_v9_to_v10(conn)
+    # v11 -> v12 RUNS HERE, BEFORE THE LOWER-NUMBERED RUNG BELOW, AND THAT IS
+    # NOT A MISTAKE. This chain is ordered by COST, not by number: the comment
+    # under `_migrate_v10_to_v11` says it runs "LAST, and after every column
+    # rung" precisely so its advisory lock does not serialise the cheap ones.
+    # v11 -> v12 is a plain additive ADD COLUMN rung, so it belongs with the
+    # cheap ones. The chain already carries a numbering irregularity for a
+    # different reason (there is no _migrate_v3_to_v4, noted above), so the
+    # invariant to preserve is the ordering rule, not the arithmetic.
+    _migrate_v11_to_v12(conn)
     # LAST, and after every column rung, because it is the only rung that takes
     # locks on tables the fleet is actively writing. It also SERIALISES ~90
     # clients on an advisory lock rather than letting them race — the same width
