@@ -171,7 +171,14 @@ def update_task(
     # so we can emit the matching card-event AFTER the lock. None = no flip.
     # (hook-bypass: line-limit)
     status_change: tuple[str | None, str | None] | None = None
-    with _store_lock(resolved):
+    # COLLECT the tolerated-value warnings this write raises, so they reach the
+    # caller rather than only the server's stderr. See `_tolerated`: three
+    # `pending` cards were created after that status was abolished, by the
+    # maintainer of the package that abolished it, each firing this warning into
+    # a place they never looked.
+    from ._tolerated import collect as _collect_tolerated
+
+    with _collect_tolerated(task_id) as _tolerated, _store_lock(resolved):
         doc, tasks = _read_write_doc(resolved)
         for task in tasks:
             # See `_task._is_tombstoned`: a deleted card's row is retained
@@ -301,6 +308,11 @@ def update_task(
         _liveness = _assignee_liveness(_owner, resolved)
         if _liveness is not None:
             result["assignee_liveness"] = _liveness
+    # Same shape as `assignee_liveness` above and for the same reason: a fact the
+    # caller needs, attached to the result rather than logged past them. Only
+    # when non-empty, so an ordinary write is byte-identical to before.
+    if _tolerated:
+        result["warnings"] = list(_tolerated)
     return result
 
 

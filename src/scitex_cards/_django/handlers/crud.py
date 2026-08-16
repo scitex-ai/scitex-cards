@@ -270,9 +270,12 @@ def handle_update(request, board):
     except TaskValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
-    # Transport-only annotation (owner-liveness) — not part of the persisted
-    # task, and not part of this endpoint's response contract.
+    # Transport-only annotations — facts the CALLER needs, never part of the
+    # persisted task. They must be stripped here or a client that round-trips
+    # this dict back into a write would store them as card DATA, which is the
+    # `tasks_path` defect (`_CONTROL_KWARGS`) arriving by a different door.
     task.pop("assignee_liveness", None)
+    task.pop("warnings", None)
     logger.info("[scitex-cards] updated task %s in %s", task_id, board.store_path)
     return JsonResponse({"task": task, "store_path": str(board.store_path)})
 

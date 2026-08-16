@@ -63,9 +63,17 @@ def _warn_tolerated(msg: str, side: str = "read-side") -> None:
     import sys as _sys
     import warnings as _warnings
 
+    from ._tolerated import record as _record
+
     banner = f"[scitex-cards] TOLERATED ({side}): {msg}"
     print(banner, file=_sys.stderr, flush=True)
     _warnings.warn(banner, stacklevel=3)
+    # AND BACK TO THE CALLER, when one is collecting. stderr and `warnings`
+    # reach a log scraper and a human reading the server's output; neither
+    # reaches the agent whose write caused this. See `_tolerated` for the three
+    # `pending` cards and the several-hundred-card `archived` sweep that every
+    # fired this warning and that nobody saw. No-op when nobody is collecting.
+    _record(banner, side)
 
 
 def _validate_tasks(tasks: object, source: str, strict: bool = True) -> None:
