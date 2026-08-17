@@ -169,3 +169,32 @@ def test_a_refused_card_write_leaves_the_unreadable_user_intact(
     # Assert — THE GUARD, and the one that caught the real hazard. Measured
     # under the tolerant change: the write succeeded and this row was gone.
     assert _UNREADABLE_USER in _user_ids(store_after_an_attempted_write)
+
+
+def test_the_write_back_owns_exactly_the_sections_this_file_guards():
+    """The guard above covers `users`. This fails if that stops being enough.
+
+    `_SECTION_KEYS` is the blast radius: `_sync_sections` issues
+    `DELETE FROM <section>` and re-inserts from the document, so every section
+    listed there loses any row a tolerated read drops. The guard above proves
+    that for `users` — the only member today — and proves nothing about a
+    section added later.
+
+    IF THIS TEST FAILS, someone widened the set of sections the write-back
+    owns. That is allowed, but it widens the deletion hazard with it: add a
+    guard for the new section FIRST, then update this assertion. Do not simply
+    edit the expected value — that is how a barrier becomes decoration.
+
+    Kept deliberately as a test rather than a comment at the tuple: a comment
+    is read by whoever happens to look, and this must fire for whoever does
+    not. `inboxes` was removed from this set in #780 exactly because an
+    ordinary card write had been rebuilding the delivery rail, erasing
+    `msg_id` / `pushed_at` / `confirmed_at` and renumbering `seq` — the cost
+    of that membership going unnoticed is the precedent.
+    """
+    # Arrange
+    from scitex_cards._db_mirror import _SECTION_KEYS
+
+    # Act
+    # Assert
+    assert set(_SECTION_KEYS) == {"users"}
