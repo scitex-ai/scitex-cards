@@ -354,6 +354,35 @@ telegram = "scitex_cards._delivery._channels.telegram:TelegramChannel"
 # dispatch_event (not via the plugin loop). External producers add
 # their plugins under this group in their own pyproject.toml.
 
+[tool.hatch.build.targets.sdist]
+# THE SDIST MUST NEVER CARRY A VIRTUAL ENVIRONMENT, and this exclude is a
+# MECHANICAL barrier rather than a restatement of `.gitignore`.
+#
+# Measured 2026-08-17, v0.43.0: the release workflow builds the in-wheel Sphinx
+# HTML in a throwaway `.venv-docs/` (#876), `.gitignore` carried `.venv/` which
+# matches only that exact name, so `.venv-docs/` was neither tracked nor
+# ignored — hatchling swept it into the sdist and `uv build` refused the result:
+#
+#     Caused by: Invalid tar file
+#     Caused by: failed to unpack .../scitex_cards-0.43.0/.venv-docs/bin/python
+#     Caused by: symlink path `/usr/bin/python3.12` is absolute, but external
+#                symlinks are not allowed
+#     hint: The source distribution includes a virtual environment.
+#
+# The `.gitignore` glob was widened in the same change, and that alone would
+# have fixed THIS instance. It is not enough on its own: it makes build
+# correctness depend on an ignore file that exists for a different purpose and
+# that anyone may narrow without knowing the sdist reads it. This exclude states
+# the build's own requirement in the build's own file.
+#
+# WHY IT ONLY FIRED AT RELEASE: no pull request builds an sdist, and the docs
+# venv is created only by the release job. So the defect was invisible on every
+# green PR and appeared on the first tag after #876 landed.
+exclude = [
+    ".venv*",
+    "venv",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/scitex_cards"]
 # Bundle the Django app's non-Python assets (manifest, templates, built
