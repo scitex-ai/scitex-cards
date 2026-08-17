@@ -185,63 +185,39 @@ def _sidecar_path(store: str | Path | None) -> Path:
 
 
 def load_nudge_state(store: str | Path | None = None) -> dict[str, dict]:
-    """Load the nudge sidecar → ``{kind: {owner: {fingerprint, delivered_at}}}``.
+    """Load nudge dedup state from the DATABASE → ``{kind: {owner: {...}}}``.
 
-    Missing / unreadable / malformed sidecar → empty sections (fail-soft: a bad
-    sidecar must never break a sweep — the worst case is one re-push).
+    Was a ``nudges.yaml`` sidecar; moved to the store 2026-08-17. The dedup is
+    what stops an owner being re-nudged, and the thing deduplicated is a
+    message to a PERSON — they do not care which host sent it, so holding this
+    per host means one nudge per machine per card.
+
+    Fail-soft is UNCHANGED: worst case on failure is one re-push, which is far
+    cheaper than a sweep that raises.
     """
-    import yaml
+    from scitex_cards._db_sweep_state import SCOPE_NUDGES, load_sections
 
-    from scitex_cards._yaml import safe_load
-
-    path = _sidecar_path(store)
-    empty: dict[str, dict] = {
-        KIND_STALE_ACTIVE: {},
-        KIND_PENDING_BACKLOG: {},
-        KIND_BLOCKED_CHECK: {},
-    }
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return empty
-    except OSError as exc:  # noqa: BLE001 — unreadable sidecar must not break the sweep
-        logger.warning("stale-nudge: cannot read %s: %s", path, exc)
-        return empty
-    try:
-        data = safe_load(text) or {}
-    except yaml.YAMLError as exc:
-        logger.warning("stale-nudge: malformed %s: %s", path, exc)
-        return empty
-    if not isinstance(data, dict):
-        return empty
-    for kind in empty:
-        section = data.get(kind)
-        if isinstance(section, dict):
-            empty[kind] = section
-    return empty
+    return load_sections(
+        SCOPE_NUDGES,
+        (KIND_STALE_ACTIVE, KIND_PENDING_BACKLOG, KIND_BLOCKED_CHECK),
+        store,
+    )
 
 
 def save_nudge_state(
     state: dict[str, dict], store: str | Path | None = None
 ) -> None:
-    """Atomically persist the nudge sidecar (temp + ``os.replace``)."""
-    import yaml
+    """Persist nudge dedup state to the DATABASE (row per owner, versioned)."""
+    from scitex_cards._db_sweep_state import SCOPE_NUDGES, save_sections
 
-    path = _sidecar_path(store)
-    payload = {
-        kind: state.get(kind) or {}
-        for kind in (KIND_STALE_ACTIVE, KIND_PENDING_BACKLOG, KIND_BLOCKED_CHECK)
-    }
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(
-            yaml.safe_dump(payload, sort_keys=True, allow_unicode=True),
-            encoding="utf-8",
-        )
-        os.replace(tmp, path)
-    except OSError as exc:  # noqa: BLE001 — a failed state write must not break delivery
-        logger.warning("stale-nudge: cannot write %s: %s", path, exc)
+    save_sections(
+        SCOPE_NUDGES,
+        {
+            kind: state.get(kind) or {}
+            for kind in (KIND_STALE_ACTIVE, KIND_PENDING_BACKLOG, KIND_BLOCKED_CHECK)
+        },
+        store,
+    )
 
 
 def _push_echo(owner: str, body: str, *, kind: str, lines: list[str]) -> None:
