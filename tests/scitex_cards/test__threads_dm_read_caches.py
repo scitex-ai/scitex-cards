@@ -24,6 +24,7 @@ import pytest
 
 from scitex_cards import _threads
 from scitex_cards._threads import append_message, list_threads, mark_read, thread_key
+from scitex_cards import _db_users
 from scitex_cards._users import _store_read
 from scitex_cards._users._store_read import list_users
 from scitex_cards._users._store_write import register_user
@@ -35,10 +36,12 @@ def store(tmp_path):
     path = tmp_path / "tasks.yaml"
     path.write_text("tasks: []\n", encoding="utf-8")
     _store_read._READ_CACHE.clear()
+    _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
     _threads._SUMMARY_CACHE.clear()
     yield str(path)
     _store_read._READ_CACHE.clear()
+    _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
     _threads._SUMMARY_CACHE.clear()
 
@@ -59,17 +62,24 @@ def _count_calls(monkeypatch, module, name):
 # === users registry read cache =============================================
 
 
-def test_list_users_parses_once_while_the_store_file_is_unchanged(store, monkeypatch):
-    # Arrange — one registered user; count section parses on the READ path.
+def test_list_users_reads_the_registry_once_for_two_reads(store, monkeypatch):
+    """The cache still collapses repeat reads — now over the DATABASE.
+
+    This counted `_load_users_section`, the YAML section parser, which the
+    registry no longer reaches. The PROPERTY is unchanged and still the point:
+    `list_users` sits on ordinary card paths, and the underlying read costs a
+    ~4.8 ms connection, so two calls must not cost two of them.
+    """
+    # Arrange — one registered user; count registry reads on the READ path.
     register_user(kind="agent", names=["alice"], store=store)
-    parses = _count_calls(monkeypatch, _store_read, "_load_users_section")
+    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
 
-    # Act — two reads against the identical file state.
+    # Act — two reads inside one TTL window.
     list_users(store)
     list_users(store)
 
-    # Assert — one parse served both reads.
-    assert parses["n"] == 1
+    # Assert — one read served both.
+    assert reads["n"] == 1
 
 
 def test_two_cached_user_reads_return_identical_content(store):
@@ -112,17 +122,23 @@ def test_a_registry_write_costs_exactly_one_cache_refill(store, monkeypatch):
     # Arrange — warm the cache with one user, then start counting.
     register_user(kind="agent", names=["alice"], store=store)
     list_users(store)
-    parses = _count_calls(monkeypatch, _store_read, "_load_users_section")
+    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
 
-    # Act — a write rolls the file's (mtime, size); then read again.
+    # Act — a write retires the entry; then read again.
     register_user(kind="agent", names=["bob"], store=store)
     list_users(store)
 
-    # Assert — exactly ONE re-parse, the cache refill. (The write path's own
-    # uncached read is invisible to this counter: _store_write binds
-    # _load_users_section at import time, so patching _store_read's attribute
-    # counts only the cached read path.)
-    assert parses["n"] == 1
+    # Assert — TWO, and the second one is not waste. The write path performs
+    # its own UNCACHED read under the store lock (a read-modify-write must
+    # never be served from a cache), and the following read then refills.
+    #
+    # The old expectation here was ONE, because the write's read was invisible
+    # to the counter: `_store_write` bound `_load_users_section` at import
+    # time, so patching `_store_read`'s attribute could not see it. The
+    # dispatch resolves at call time now, so the counter sees both. The number
+    # changed because the INSTRUMENT got better, not because the code got
+    # worse — worth stating, since a rising count normally means the opposite.
+    assert reads["n"] == 2
 
 
 def test_mutating_a_returned_user_does_not_poison_the_cache(store):
