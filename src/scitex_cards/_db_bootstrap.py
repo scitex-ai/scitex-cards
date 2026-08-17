@@ -28,7 +28,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
-from ._db_payload import CARD_JSON_COL, card_payload_json
+from ._db_payload import CARD_JSON_COL, card_payload_json_or_raise
 from ._db_payload import json_or_none as _json_or_none
 from ._db_sections import (  # re-exported: _db_mirror imports these from here
     _gen_id,  # noqa: F401
@@ -290,7 +290,15 @@ def _insert_tasks(
         # The VERBATIM card — the payload an S2 read reconstructs from, exactly as
         # it appeared in the source document (unknown keys, key order, types and
         # all). The typed columns above are only the INDEX. See :mod:`_db_payload`.
-        values.append(card_payload_json(row))
+        #
+        # _or_raise, NOT the None-returning encoder: a row stored with a NULL
+        # payload is UNREADABLE, and the read refuses the whole store on it, so
+        # one bad card takes the board down for every agent until somebody
+        # unrelated rewrites it. Measured 2026-08-17 — `add_task(note=<datetime>)`
+        # planted exactly that, and it is the tasks-variant outage of 2026-08-11.
+        # The writer already knows the payload cannot be serialised at this point;
+        # refusing costs this one call, storing it costs everyone else.
+        values.append(card_payload_json_or_raise(row))
         if expected_revision is None:
             conn.execute(insert_sql, values)
         else:
