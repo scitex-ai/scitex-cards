@@ -19,8 +19,15 @@ server::
 That path is the container's PRIVATE overlay, so even a working write would
 have produced a registry only one agent could read. The defect was not a
 missing test for a known behaviour — it was that NO test looked at the
-backend where the behaviour was wrong. Every test below is therefore AMBIENT
-(``store=None``), which is the only form that resolves to the shared board.
+backend where the behaviour was wrong.
+
+Most tests below are therefore AMBIENT (``store=None``), the form the
+deployment actually uses. The three that DO name a store are there because
+naming one is where I broke this twice: first by giving an explicit store a
+YAML branch (which split the registry across two homes), then by handing its
+label to ``open_db`` raw (which made SQLite create a phantom database named
+``tasks.yaml``). They pin the outcome — no file, and the rows land in the
+named store's sibling database — rather than either mechanism.
 
 THE WIPE GUARD IS THE ONE TO KEEP
 
@@ -184,7 +191,9 @@ def test_an_explicit_store_writes_no_yaml_file(
     # Arrange
     from scitex_cards import _users
 
-    named = tmp_path / "tasks.yaml"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    named = elsewhere / "tasks.yaml"
     # Act
     _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert
@@ -198,11 +207,13 @@ def test_an_explicit_store_reaches_its_sibling_database(
     # Arrange
     from scitex_cards import _users
 
-    named = tmp_path / "tasks.yaml"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    named = elsewhere / "tasks.yaml"
     # Act
     user = _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert
-    assert user.id in _registry_ids(tmp_path / "cards.db")
+    assert user.id in _registry_ids(elsewhere / "cards.db")
 
 
 def test_an_explicit_store_stays_out_of_the_database(
@@ -212,7 +223,9 @@ def test_an_explicit_store_stays_out_of_the_database(
     # Arrange
     from scitex_cards import _users
 
-    named = tmp_path / "tasks.yaml"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    named = elsewhere / "tasks.yaml"
     # Act
     _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert
