@@ -64,7 +64,11 @@ has none, and that -- not a missing receipt -- is what "cannot tell" means.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 from pathlib import Path
 
 from .read import CURRENT_MEMBERS_SQL, _open
@@ -113,7 +117,7 @@ def state_for(recipients: set[str], confirmed: set[str]) -> str:
     return STATE_PENDING
 
 
-def _current_members(conn: sqlite3.Connection, thread_id: str) -> set[str]:
+def _current_members(conn: StoreConnection, thread_id: str) -> set[str]:
     """Peers currently joined to ``thread_id``, folded from the event log."""
     rows = conn.execute(
         f"SELECT member FROM ({CURRENT_MEMBERS_SQL}) "
@@ -124,7 +128,7 @@ def _current_members(conn: sqlite3.Connection, thread_id: str) -> set[str]:
 
 
 def _readers_by_message(
-    conn: sqlite3.Connection, thread_id: str
+    conn: StoreConnection, thread_id: str
 ) -> dict[str, set[str]]:
     """``{message_id: {reader}}`` for one thread, joined ONLY on ``message_id``.
 
@@ -183,7 +187,7 @@ def queued_message_ids(
 
 
 def receipt_state_for_conn(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     thread_id: str,
     store: str | Path | None = None,
 ) -> dict[str, dict]:

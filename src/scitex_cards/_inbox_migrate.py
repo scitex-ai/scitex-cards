@@ -19,8 +19,12 @@ changed in the move.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -109,7 +113,7 @@ def gather_migratable_inboxes(store: str | Path | None) -> dict[str, list]:
     return inboxes
 
 
-def _migrate_into_conn(conn: sqlite3.Connection, store: str | Path | None) -> dict:
+def _migrate_into_conn(conn: StoreConnection, store: str | Path | None) -> dict:
     """Copy pre-existing file-backed inbox records into ``conn``'s ``inbox`` table.
 
     The shared body of :func:`migrate_to_sqlite` (explicit CLI verb) and the

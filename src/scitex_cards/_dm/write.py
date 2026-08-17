@@ -36,8 +36,12 @@ what makes a cross-host merge a pure union.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 import json
-import sqlite3
 from pathlib import Path
 
 from .ids import (
@@ -272,7 +276,7 @@ def remove_member(
     return _member_change(thread_id, who, "leave", db, store, actor)
 
 
-def _known_messages(conn: sqlite3.Connection, message_ids: list[str]) -> list[str]:
+def _known_messages(conn: StoreConnection, message_ids: list[str]) -> list[str]:
     """Those of ``message_ids`` the store actually holds, order preserved."""
     placeholders = ", ".join("?" for _ in message_ids)
     rows = conn.execute(

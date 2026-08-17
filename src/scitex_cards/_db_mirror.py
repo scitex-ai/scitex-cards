@@ -46,7 +46,11 @@ deploy against an existing DB with no migration step.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 from pathlib import Path
 
 from ._db_bootstrap import (
@@ -142,7 +146,7 @@ def mirror_doc_incremental(
     doc: dict,
     db_path: str | Path,
     *,
-    conn: sqlite3.Connection | None = None,
+    conn: StoreConnection | None = None,
     store_path: str | Path | None = None,
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
@@ -402,7 +406,7 @@ def _section_key(name: str) -> str:
     return "__section__:%s" % name
 
 
-def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
+def _remember_sections(conn: StoreConnection, doc: dict) -> None:
     conn.executemany(
         f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
         f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
@@ -410,7 +414,7 @@ def _remember_sections(conn: sqlite3.Connection, doc: dict) -> None:
     )
 
 
-def _sync_sections(conn: sqlite3.Connection, doc: dict) -> None:
+def _sync_sections(conn: StoreConnection, doc: dict) -> None:
     """Rebuild ``users`` only when its section changed.
 
     A whole-section table (no per-row identity we can diff cheaply), so it keeps

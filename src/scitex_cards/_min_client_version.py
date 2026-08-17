@@ -47,8 +47,14 @@ only the LEADING digits of the segment that carries it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import re
-import sqlite3
 from pathlib import Path
 
 #: ``schema_meta`` key holding the store's minimum-client-version floor.
@@ -165,7 +171,7 @@ def resolve_running_version() -> str:
     return pyproject_version or _UNKNOWN_VERSION
 
 
-def read_floor(conn: sqlite3.Connection) -> str | None:
+def read_floor(conn: StoreConnection) -> str | None:
     """The stamped ``min_client_version`` floor, or ``None`` if unset.
 
     ``None`` covers BOTH "the key is absent" and "the ``schema_meta`` table
@@ -192,7 +198,7 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     ).fetchone()
     if row is None:
         return None
-    # BY NAME, NOT BY POSITION. ``sqlite3.Row`` accepts both ``row[0]`` and
+    # BY NAME, NOT BY POSITION. ``Mapping[str, Any]`` accepts both ``row[0]`` and
     # ``row["value"]``; psycopg's ``dict_row`` accepts only the latter and
     # raises on the former. ``_backend_connect.connect`` deliberately leaves
     # that asymmetry visible rather than papering over it, so that the port
@@ -201,7 +207,7 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     return str(row["value"])
 
 
-def stamp_floor(conn: sqlite3.Connection, version: str) -> None:
+def stamp_floor(conn: StoreConnection, version: str) -> None:
     """Set (or replace) the store's ``min_client_version`` floor.
 
     Call inside the caller's own write transaction — this does not commit.
@@ -218,7 +224,7 @@ def stamp_floor(conn: sqlite3.Connection, version: str) -> None:
     )
 
 
-def enforce_min_client_version(conn: sqlite3.Connection) -> None:
+def enforce_min_client_version(conn: StoreConnection) -> None:
     """RAISE :class:`ClientTooOldError` if this client is below the store's floor.
 
     A no-op when no floor is stamped (:func:`read_floor` returns ``None``)

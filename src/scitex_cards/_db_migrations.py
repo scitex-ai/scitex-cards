@@ -24,7 +24,11 @@ Consequence for anything reading the stamp: check the COLUMNS
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 
 from ._ddl import execute_ddl
 
@@ -47,7 +51,7 @@ __all__ = [
 
 
 def record_migration_provenance(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     prior_version: int,
     new_version: int,
     now_iso: str,
@@ -116,7 +120,7 @@ END;
 """
 
 
-def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
+def _migrate_v6_to_v7(conn: StoreConnection) -> None:
     """Install ``tasks_bump_revision``. Idempotent, additive, no rewrite.
 
     WHY THE INCREMENT IS DB-SIDE AND NOT IN ``_store_mutate``: an
@@ -161,7 +165,7 @@ NOTIFICATION_RAIL_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+def _migrate_v7_to_v8(conn: StoreConnection) -> None:
     """Give ``notifications`` the three columns the sidecar rail needs.
 
     Idempotent, additive, no rewrite — each column is added only if absent, and
@@ -206,7 +210,7 @@ NOTIFICATION_ORDER_COLUMN = ("seq", "BIGINT")
 _SEQ_NAME = "notifications_seq_seq"
 
 
-def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+def _migrate_v8_to_v9(conn: StoreConnection) -> None:
     """Give ``notifications`` an ARRIVAL-ORDER column. Idempotent, additive.
 
     WHY A COLUMN AND NOT AN ORDER BY. The SQLite inbox delivers and acks by
@@ -320,7 +324,7 @@ NOTIFICATION_SYNC_COLUMNS: tuple[tuple[str, str], ...] = (
 NOTIFICATION_PAYLOAD_TRIGGER = "notifications_fill_payload"
 
 
-def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
+def _migrate_v9_to_v10(conn: StoreConnection) -> None:
     """Sync columns on ``notifications``, and a payload no client can omit.
 
     TWO CHANGES, ONE REASON: a fact that MUST be on every row cannot be left to
@@ -399,7 +403,7 @@ $$ LANGUAGE plpgsql
 """
 
 
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+def table_columns(conn: StoreConnection, table: str) -> set[str]:
     """The column names actually present on ``table`` in THIS database file.
 
     The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
@@ -417,7 +421,7 @@ def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(name) for name in column_names(conn, table)}
 
 
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+def _migrate_v1_to_v2(conn: StoreConnection) -> None:
     """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
 
     ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
@@ -437,7 +441,7 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
 
 
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
+def _migrate_v2_to_v3(conn: StoreConnection) -> None:
     """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
 
     Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
@@ -450,7 +454,7 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
 
 
-def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
+def _migrate_v5_to_v6(conn: StoreConnection) -> None:
     """Add ``tasks.revision`` to a pre-v6 DB. Idempotent, additive, no rewrite.
 
     ``DEFAULT 0`` back-fills every existing row, and unlike the ``card_json``

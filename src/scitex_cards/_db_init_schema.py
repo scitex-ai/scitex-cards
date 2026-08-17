@@ -25,7 +25,11 @@ last passenger getting off.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_foreign_keys import _migrate_v10_to_v11
@@ -52,7 +56,7 @@ from ._store_retirement import RETIREMENT_TRIGGER_SQL
 __all__ = ["init_schema"]
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn: StoreConnection) -> None:
     """Create the schema idempotently + stamp version. Commits on success.
 
     Runs the ``CREATE TABLE/INDEX IF NOT EXISTS`` script, applies the additive
