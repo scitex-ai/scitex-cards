@@ -74,13 +74,84 @@ def card_payload_json(row: dict) -> str | None:
         return json.dumps(row, ensure_ascii=False)
     except (TypeError, ValueError):
         logger.error(
-            "!! CARD %r DOES NOT ROUND-TRIP THROUGH JSON — storing a NULL payload. "
-            "The SQLite READ backend will REFUSE this DB (falling back to YAML) "
-            "rather than serve a lossy copy of it. Your card is fine and the "
-            "canonical YAML store is untouched.",
+            "!! CARD %r DOES NOT ROUND-TRIP THROUGH JSON. A row stored with this "
+            "NULL payload is UNREADABLE, and the read refuses the WHOLE store "
+            "rather than serve a lossy copy — so every agent loses the board "
+            "until the row is rewritten. Writers must use "
+            "card_payload_json_or_raise and refuse instead.",
             row.get("id"),
         )
         return None
+
+
+class CardNotSerialisableError(TypeError):
+    """A card carries a value JSON cannot represent, so it must not be stored."""
+
+
+def _unserialisable_fields(row: dict) -> list[str]:
+    """``["note (datetime)", …]`` — the fields to blame, with their types.
+
+    The whole point of this error over a bare ``TypeError`` from ``json``: the
+    caller passed one bad value among a dozen fields and needs to know WHICH.
+    ``json.dumps``'s own message names the type and not the key.
+    """
+    blamed = []
+    for key, value in row.items():
+        try:
+            json.dumps({key: value}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            blamed.append(f"{key} ({type(value).__name__})")
+    return blamed
+
+
+def card_payload_json_or_raise(row: dict) -> str:
+    """The card as JSON, or REFUSE THE WRITE. For every writer of a card row.
+
+    THE DIFFERENCE FROM :func:`card_payload_json`, AND WHY IT IS NOT A STYLE
+    CHOICE. That function answers ``None`` for a card JSON cannot carry, and the
+    ``NULL`` it produces is documented as load-bearing — it is what makes the
+    read refuse rather than hand back a card whose fields changed shape.
+
+    That reasoning is sound for a payload which is ALREADY MISSING. It is not
+    sound as a WRITE policy, and the difference was measured on 2026-08-17:
+
+        add_task(..., note=datetime(...))  ->  row stored, card_json NULL
+        any next store operation           ->  ExportRefused naming that row
+
+    One ``add_task`` with an ordinary Python value, and the next unrelated
+    operation by ANY agent is dead — that is the tasks-variant outage first seen
+    on 2026-08-11 and unexplained for five days. The writer had already
+    discovered the payload could not be serialised and stored the row anyway.
+
+        refusing the write   the caller gets one message naming the field, and
+                             fixes their own call
+        storing the NULL     everyone else loses the whole board until somebody
+                             unrelated happens to rewrite that row
+
+    Same information, discovered at the same instant; the only difference is who
+    pays for it. Today it is everyone except the caller who caused it.
+
+    NOT A LICENCE TO TOLERATE ON READ. This refuses EARLIER, on the way in. The
+    read-modify-write door must keep refusing (see
+    ``tests/.../test__rmw_refusal_must_not_become_tolerance.py`` — skipping a row
+    there DELETES it), and only a pure read that never writes back may skip.
+    """
+    try:
+        return json.dumps(row, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        blamed = _unserialisable_fields(row) or ["(no single field — the card "
+                                                 "as a whole is not encodable)"]
+        raise CardNotSerialisableError(
+            f"card {row.get('id')!r} carries a value JSON cannot represent, so "
+            f"it was NOT written: {', '.join(blamed)}.\n"
+            "  Storing it would leave a row with a NULL payload, and the read "
+            "refuses the WHOLE store on such a row — one bad card makes the "
+            "board unreadable for every agent until it is rewritten. Refusing "
+            "here costs you this one call instead.\n"
+            "  NEXT STEP: pass a JSON-representable value — a datetime as an "
+            "ISO-8601 string, a set as a list, a tuple-keyed mapping as a "
+            "string-keyed one. Nothing was written; the store is unchanged."
+        ) from exc
 
 
 def card_from_payload(blob: str) -> dict:
@@ -90,8 +161,10 @@ def card_from_payload(blob: str) -> dict:
 
 __all__ = [
     "CARD_JSON_COL",
+    "CardNotSerialisableError",
     "card_from_payload",
     "card_payload_json",
+    "card_payload_json_or_raise",
     "json_or_none",
 ]
 

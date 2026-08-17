@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-08-17
+
+### One `add_task` with a datetime took the whole board down for everyone
+
+**Install this together with 0.43.0's fix, not after it.** 0.43.0 ends the DDL
+storm; a fleet on 0.43.0 is still a fleet where any agent passing a
+non-JSON value to a card field makes the store unreadable for every other agent.
+
+Measured 2026-08-17, through the public API, no internal path required:
+
+    add_task(..., note="x")            -> payload OK
+    add_task(..., note=datetime(...))  -> row stored, card_json NULL
+    add_task(..., note={1, 2})         -> ExportRefused naming 't-datetime'
+
+The third call never reached its own value. It was refused by the row the
+SECOND call had just planted. `json.dumps` raises `TypeError`,
+`card_payload_json` swallows it and returns `None`, and `_db_bootstrap` writes
+the row anyway — so one call with one bad field disables every subsequent card
+read AND write, for every agent, until something unrelated rewrites that row.
+
+This is the "tasks-variant writer" that had been unidentified since
+2026-08-12. It also explains the original incident exactly: that row was
+written by CURRENT code, was SECONDS old, and SELF-HEALED when its owner
+rewrote the card — because the rewrite carried a serialisable value. The
+"one-minute window" was never a race; it was one call with one bad field.
+
+**The write now refuses**, naming the offending field and its type
+(`note (datetime)`), and plants no row at all:
+
+    good-str       written -> payload OK
+    bad-datetime   REFUSED, row state ABSENT      <- nothing to clean up
+    after-bad      written -> payload OK          <- the board still works
+
+The NULL payload remains load-bearing on READ — it is what makes the reader
+refuse rather than serve a card whose fields changed shape. It was never
+defensible on WRITE: the writer has already discovered the payload cannot be
+serialised, and stored a row it knew to be unreadable. Refusing costs the
+caller one message; storing it cost everyone else the board.
+
+### An error message that told you to ignore an outage you had just caused
+
+`card_payload_json` logged *"falling back to YAML … your card is fine and the
+canonical YAML store is untouched."* Both clauses were false — there is no YAML
+fallback and nothing catches the refusal. Rewritten to say what is true.
+
+### Also
+
+- A card WRITE refusing an unreadable row is now pinned by tests, including
+  that a refused write leaves the row INTACT. Skipping a row on the
+  read-modify-write path does not omit it from a result, it DELETES it — one
+  named tuple (`_db_mirror._SECTION_KEYS`) is the blast radius, and widening it
+  now fails a test rather than passing silently.
+
 ## [0.43.0] - 2026-08-17
 
 ### Cut to end a live incident, and the incident is the reason to install it
