@@ -88,8 +88,13 @@ and `_inbox.py:20` still documents "the default is SQLite".
 **Removal hazard, measured:** `src/scitex_cards/_health_stranded_backlog.py:54`
 does `from ._inbox_sqlite import inbox_db_path`. Deleting `_inbox_sqlite` breaks
 the very health check that detects notifications stranded in a legacy SQLite
-inbox — and §Phase 2 below shows 149 such rows exist right now. `inbox_db_path`
-must be extracted before the module goes. Other importers that would strand:
+inbox — and §Phase 2 below shows 149 such rows exist right now.
+
+The extraction is cheaper than it looks: `inbox_db_path` is not defined in
+`_inbox_sqlite` at all. It lives in `_inbox_sqlite_schema.py:97` (beside
+`inbox_target` at `:60`) and is merely re-exported. So the health probe can be
+repointed at `_inbox_sqlite_schema` in one line, before the backend module goes
+— it is a *path* helper, not a driver user. Other importers that would strand:
 `_dm/receipt_state.py:173`, `_health_backend_mode.py:132`, `_cli/_inbox.py:99,176`.
 
 ---
