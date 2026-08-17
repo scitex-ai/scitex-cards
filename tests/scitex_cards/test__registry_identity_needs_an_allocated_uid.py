@@ -48,10 +48,31 @@ re-derived or re-assigned at each point of use.
 
     {host}/{name}       WHERE-dependent: the key changes when an agent relocates.
 
-    instances.id (uuid7) WHEN-dependent, and worse, the WRONG NOUN — it identifies
-                        an INSTANCE. Relocation writes a new instances row with a
-                        new uuid7, so an agent's identity would change when it
-                        moves. Same defect as {host}/{name}, better disguised.
+    instances.id (uuid7) WHEN-dependent, and the WRONG NOUN — it identifies a RUN.
+                        I first argued "relocation mints a new row", INFERRING it
+                        from three duplicates that looked sequential. sac MEASURED
+                        it and the fact is worse: EVERY RESTART mints one.
+                            scitex-hub          24 rows -> 24 DISTINCT ids, 2 hosts
+                            figrecipe           19 rows -> 19 distinct ids, 2 hosts
+                            scitex-ui           11 rows -> 11 distinct ids, 2 hosts
+                            canary-resume-test  11 rows -> 11 distinct ids, 2 hosts
+                        So keying on it would change an agent's identity every time
+                        it RESTARTS — strictly worse than the relocation problem I
+                        raised, and worse than the {host}/{name} form it was offered
+                        to replace. Withdrawn by the agent who proposed it.
+
+    definition_id       THE NEAR MISS, recorded so nobody re-discovers it as an
+                        answer. Empirically stable across restart AND relocation
+                        with zero collisions (24 rows -> 1 definition_id spanning
+                        two hosts; 0 definition_ids shared by two names). But its
+                        natural key is UNIQUE(yaml_path, yaml_sha256) — content-
+                        addressed over the SPEC FILE — so it identifies THIS VERSION
+                        OF THIS AGENT'S CONFIG, not the agent. Edit the spec and the
+                        identity changes. The row also carries first_seen_at (WHEN)
+                        and yaml_path (WHERE): both forbidden axes. Whether `id` is
+                        DERIVED from that pair or minted alongside it is UNKNOWN —
+                        the generation site was not found in a bounded search, and
+                        that unknown is recorded rather than rounded up.
 
     identity from       `instances` is an OBSERVATION table. A per-host
     STATE generally     observation table structurally cannot answer a
