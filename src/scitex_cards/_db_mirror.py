@@ -107,7 +107,33 @@ from ._schema_probe import _sole_value
 #:
 #: The export still EMITS ``inboxes`` (the backup rail in ADR-0010 must contain
 #: the notifications); it is only the write-back that no longer owns them.
-_SECTION_KEYS = ("users",)
+#: ``users`` IS NOW ABSENT TOO, and for the identical reason — the registry
+#: acquired a live producer (``_db_users.save_users_rows``), so the document
+#: write-back must stop owning it. A TABLE IS OWNED BY EXACTLY THE THING THAT
+#: PRODUCES IT.
+#:
+#: While it was listed here the gate was harmless ONLY because the table was
+#: empty, and it was a fixed point rather than a safe design: an empty table
+#: makes ``_db_export`` omit the key entirely (``if users:``), so every doc
+#: hashed as ``None``, matched the stored ``hash(None)``, and never rebuilt.
+#: The first real registration breaks that, and then the gate compares a
+#: WRITER'S DOCUMENT SNAPSHOT against the last one — never against the table:
+#:
+#:   t1  targeted write   -> users = [u1];  stored hash still hash(None)
+#:   t3  writer w/ fresh doc -> mismatch -> rebuild [u1], stores hash([u1])
+#:   t4  writer w/ doc from BEFORE t1 (no users key)
+#:       -> hash(None) != hash([u1]) -> DELETE FROM users; DELETE FROM
+#:          user_names; _insert_users(conn, None) -> 0 rows -> REGISTRY GONE
+#:
+#: Any process holding a document older than a registration silently deletes
+#: the registry on its next ORDINARY CARD WRITE. ``touch_user`` is the
+#: liveness heartbeat, so ``last_seen`` moves the section hash constantly and
+#: keeps this path hot rather than rare.
+#:
+#: The tuple is now EMPTY, which makes :func:`_sync_sections` a no-op. It is
+#: left in place rather than deleted because its callers and its recorded
+#: history are the documentation for why neither section may come back.
+_SECTION_KEYS = ()
 
 
 

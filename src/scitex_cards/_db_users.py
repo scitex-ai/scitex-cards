@@ -156,12 +156,19 @@ def save_users_rows(users: list[dict]) -> None:
     TARGETED, AND THAT IS WHAT MAKES THIS AFFORDABLE ON THE HOT PATH.
     ``_insert_users`` is a per-row ``ON CONFLICT(id) DO UPDATE``, not a
     delete-then-insert, so writing one user disturbs no other row and no
-    document is assembled. The YAML implementation this replaces had to
-    rewrite the entire store to change one field, and its own docstring
-    records what that cost on the liveness heartbeat: **46 s/write on 0.9.4,
-    171 s/write on 0.13.x**, the root cause of the board's write timeouts.
-    Routing the registry through the document reader would have reproduced
-    that regression exactly; a single-row write cannot.
+    document is assembled.
+
+    MEASURED 2026-08-17 on the live 4982-card board, read-only: the document
+    path costs ``export_doc`` 0.361 s + a full-board rehash 0.242 s + the
+    hash select 0.003 s = **0.607 s per write**, plus ``_assert_no_shrink``'s
+    own ``SELECT id FROM tasks``. A targeted upsert is one statement.
+
+    Do NOT cite the 46-171 s/write figure in ``_save_users_unlocked``'s
+    docstring for this — I did, and it is stale. It measured a ruamel
+    round-trip of a 6.5 MB YAML file, and ``_save_doc_unlocked`` no longer
+    writes YAML at all. The preference for a targeted write survives the
+    correction; that particular justification for it does not, and a number
+    quoted from a docstring is not a measurement of the code as it stands.
 
     UPSERT-ONLY, so a user absent from ``users`` is NOT deleted. This differs
     from the YAML path, which wrote the section wholesale and therefore

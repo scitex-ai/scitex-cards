@@ -417,7 +417,22 @@ def _insert_roles(conn, task_id, row) -> int:
 #: restore them from, because the rail is now their only copy. The sibling
 #: neutralisation is ``_db_mirror._SECTION_KEYS``, which no longer rebuilds
 #: ``notifications`` on the INCREMENTAL path; this closes the FULL one.
-_DOC_OWNED_ELSEWHERE = ("messages", "notifications", "inbox_recipients")
+#: ``users`` / ``user_names`` joined this tuple when the registry acquired a
+#: live producer (``_db_users.save_users_rows``): the document is no longer
+#: the thing that makes them, so a doc-only rebuild must not DELETE them.
+#:
+#: The upsert at ``_insert_users(conn, doc.get("users"))`` below still runs,
+#: so a doc carrying a registry section still contributes its rows — this
+#: removes the WIPE, not the merge. The full-restore path is unaffected: it
+#: passes ``threads`` and therefore uses ``_CLEAR_ORDER``, where clearing the
+#: registry is exactly right because a restore is meant to replace it.
+_DOC_OWNED_ELSEWHERE = (
+    "messages",
+    "notifications",
+    "inbox_recipients",
+    "users",
+    "user_names",
+)
 _DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t not in _DOC_OWNED_ELSEWHERE)
 
 
