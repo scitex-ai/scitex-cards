@@ -382,6 +382,35 @@ exclude = [
     ".venv*",
     "venv",
 ]
+# AND THE SDIST MUST CARRY THE DOCS, BECAUSE THE WHEEL IS BUILT FROM IT.
+#
+# `uv build` does not build the two targets independently. Its own log:
+#
+#     Building source distribution...
+#     Building wheel from source distribution...
+#
+# So the wheel inherits exactly what the sdist contains. `_sphinx_html/` is
+# GENERATED at release time and gitignored on purpose, hatchling excludes
+# gitignored files, and `artifacts` was declared only on the WHEEL target — so
+# the docs never reached the sdist, and the wheel built from it shipped none:
+#
+#     ::error:: dist/scitex_cards-0.43.0-py3-none-any.whl ships no
+#     _sphinx_html/index.html - scitex-cloud would serve nothing for this
+#     package (PS-121)
+#
+# This was never observed before because #876 (which added the docs step) has
+# not been through a successful release: v0.42.0 predates it, and the first tag
+# after it died earlier in the same job on the docs VENV being swept into the
+# sdist. Fixing that exposed this. Two defects in one release path, the second
+# hidden behind the first.
+#
+# The list is deliberately identical to the wheel target's `artifacts` for the
+# docs entry. They are not redundant — one carries the files into the sdist, the
+# other keeps them in a wheel built directly — and the release job asserts on
+# the BUILT WHEEL, which is the only check that spans both.
+artifacts = [
+    "src/scitex_cards/_sphinx_html/**/*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/scitex_cards"]
