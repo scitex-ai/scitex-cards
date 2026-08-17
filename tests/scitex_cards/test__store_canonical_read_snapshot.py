@@ -125,6 +125,25 @@ def store_db(tmp_path):
 #: A REAL second process hammering the same database. Separate OS process on
 #: its own connection deliberately: the bug is about two snapshots of one WAL
 #: database, which an in-process writer sharing our connection cannot produce.
+#: Rows the fixture waits for before it opens the read window — and the SAME
+#: number the vacuity control freezes its writer at.
+#:
+#: THE TWO USES MUST AGREE, AND THIS CONSTANT IS WHY THEY CANNOT DRIFT. They
+#: were two literals — a barrier at 5 and a freeze after 6 — one row apart. The
+#: writer covers that row in 2 ms while the barrier polls every 50 ms, so the
+#: poll almost always landed after the freeze and the control passed. Almost.
+#: Measured 2026-08-17: FOUR failures across four pull requests in ninety
+#: minutes, on py3.11 and py3.12 alternately, each one `DID NOT RAISE Failed` —
+#: the barrier had observed row 5 while the writer still had row 6 in hand, that
+#: commit landed inside the read window, the trial legitimately SUCCEEDED, and
+#: a control asserting it must fail therefore failed itself.
+#:
+#: Freezing AT the threshold rather than one past it removes the race by
+#: construction: when the barrier is satisfied there is no further commit in
+#: existence for the window to catch. Deriving both from one constant is what
+#: makes that a property of the program instead of a property of the machine.
+_BARRIER_ROWS = 5
+
 _WRITER_SRC = textwrap.dedent(
     """
     import json, sqlite3, sys, time
@@ -212,7 +231,7 @@ def _run_overlap_trial(
         # Wait until the writer is demonstrably committing, so the reads below
         # really do overlap concurrent writes rather than racing an idle DB.
         deadline = time.time() + 30
-        while _writer_rows(db) < 5:
+        while _writer_rows(db) < _BARRIER_ROWS:
             if writer.poll() is not None:
                 err = writer.stderr.read().decode(errors="replace")
                 pytest.fail(f"the concurrent writer died: {err}")
@@ -342,18 +361,34 @@ def test_a_non_overlapping_trial_fails_rather_than_passing_vacuously(tmp_path):
     loop could only ever succeed it would silently mask a dead writer rather
     than catch a race, which is the exact failure this file argues against.
 
-    Forced deterministically rather than by luck: a writer slowed so far below
-    the read cadence that no commit can land in the window, and a wait bound
-    short enough to fire in seconds. Both are PARAMETERS of the real trial
-    function — no patching of anything, and the code under test is still the
-    real guard against a real database with a real second process.
+    Forced by CONSTRUCTION rather than by luck, and that wording was earned the
+    hard way. It previously said "deterministically" while the writer froze one
+    row PAST the fixture's barrier — so the barrier could observe the last row
+    it needed while the writer still had one commit in hand, that commit landed
+    inside the read window, the trial legitimately succeeded, and this control
+    failed with `DID NOT RAISE`. Four times across four pull requests on
+    2026-08-17, alternating between py3.11 and py3.12; the margin was 2 ms
+    against a 50 ms poll. A comment asserting a property the code does not have
+    is worse than no comment: an auditor looking for exactly this hazard reads
+    it and moves on.
+
+    Now the writer freezes AT `_BARRIER_ROWS`, the same constant the barrier
+    waits for, so when the window opens no further commit EXISTS. The wait bound
+    is still a real parameter of the trial function — no patching of anything,
+    and the code under test is still the real guard against a real database with
+    a real second process.
     """
-    # Arrange — commit fast enough to clear the fixture's own start barrier
-    # (>=5 rows), then stop dead, so the READ WINDOW specifically sees nothing.
+    # Arrange — commit exactly enough rows to satisfy the fixture's start
+    # barrier and then stop dead, so the READ WINDOW specifically sees nothing.
     # A uniformly-slow writer would trip the earlier barrier instead and this
     # test would pass for the wrong reason.
+    #
+    # `i` is incremented BEFORE each insert, so `i < _BARRIER_ROWS` freezes the
+    # writer immediately after committing row `_BARRIER_ROWS` — the very row
+    # that satisfies the barrier. One greater, and the freeze is a race.
     never_commits_again = _WRITER_SRC.replace(
-        "time.sleep(0.002)", "time.sleep(0.002 if i < 6 else 600)"
+        "time.sleep(0.002)",
+        f"time.sleep(0.002 if i < {_BARRIER_ROWS} else 600)",
     )
     trial = functools.partial(
         _run_overlap_trial,
