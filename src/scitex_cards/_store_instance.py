@@ -205,10 +205,19 @@ class IdentityVerdict(str, Enum):
     """Whether the connected store is the one the caller expected.
 
     THREE-VALUED, and the third value is the reason this enum exists rather
-    than a bool. ``expected_uuid`` reads ``None`` when unset, so the comparison
-    it feeds has no right-hand side and cannot fail — a gate that cannot fail
-    is not a gate. ``CANNOT_TELL`` gives that state a name so a caller must
-    handle it rather than inherit it as a pass.
+    than a bool. An unset expectation reads ``None``, so the comparison it feeds
+    has no right-hand side and cannot fail — a gate that cannot fail is not a
+    gate. ``CANNOT_TELL`` gives that state a name so a caller must handle it
+    rather than inherit it as a pass.
+
+    THIS DOCSTRING USED TO SAY ``expected_uuid``, IN THE MODULE THAT COMPARES
+    THE INSTANCE, and that lie did real damage. It read as though the uuid were
+    the value being checked here; it never was. dotfiles found the consequence
+    on 2026-08-17 by mutation-testing rather than reading — a garbage uuid with
+    a correct instance returned ``MATCHES``, with observed and expected printed
+    different on adjacent lines. Two readers (its author and them) had read this
+    file closely and both missed it, because the words agreed with the intent
+    instead of the code. Constitution §3: a name that lies becomes architecture.
     """
 
     MATCHES = "matches"
@@ -226,16 +235,43 @@ class IdentityCheck:
     observed : StoreInstance
         What the connection actually reached.
     expected : str or None
-        What the caller pinned, verbatim, so an error message can print both
-        sides rather than asserting a mismatch the reader cannot check.
+        The pinned INSTANCE, verbatim, so an error message can print both sides
+        rather than asserting a mismatch the reader cannot check.
+    expected_uuid : str or None
+        The pinned STORE UUID, verbatim. A SEPARATE FIELD ON PURPOSE — see
+        below.
+    observed_uuid : str or None
+        The uuid this database actually carries, or ``None`` if it carries none.
     reason : str or None
         Why the answer is not ``MATCHES``. ``None`` only on ``MATCHES``.
+
+    WHY TWO EXPECTATION FIELDS AND NOT ONE
+    --------------------------------------
+    They answer DIFFERENT questions and catch DIFFERENT failures:
+
+        instance   WHICH SERVER am I talking to (PostgreSQL system_identifier)
+        uuid       WHICH DATABASE on it (schema_meta.store_uuid)
+
+    A restored or frozen database on the SAME physical server keeps its
+    ``system_identifier`` and gets a NEW ``store_uuid`` — the instance check
+    waves it through and only the uuid catches it. That is the 2026-08-09
+    incident this pin exists to prevent. Conversely ``_store_pin`` records three
+    databases once answering the same ``store_uuid``, which is the argument for
+    the instance check. Neither substitutes for the other.
+
+    Before 2026-08-17 both were funnelled through ONE ``expected`` field, every
+    caller passed the instance, and the uuid was read, reported, and never
+    compared. Keeping them as separate fields is what stops that collapse from
+    being re-created: a future edit cannot "add the uuid check" to a field that
+    is already carrying something else.
     """
 
     verdict: IdentityVerdict
     observed: StoreInstance
     expected: Optional[str] = None
     reason: Optional[str] = None
+    expected_uuid: Optional[str] = None
+    observed_uuid: Optional[str] = None
 
     def __post_init__(self) -> None:
         """A non-matching verdict must say why; a matching one must not."""
@@ -263,13 +299,50 @@ class IdentityCheck:
         return self.verdict is IdentityVerdict.MATCHES
 
 
-def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
-    """Compare the connected instance against the identity the caller pinned.
+def _read_observed_uuid(conn) -> Optional[str]:
+    """This database's own ``schema_meta.store_uuid``, or ``None``.
 
-    ``expected`` is the value an operator recorded from a store they trust.
-    ``None`` means nothing was pinned, which is ``CANNOT_TELL`` and NOT a pass:
-    an unpinned client is exactly the one that reads a three-day-stale replica
-    and reports a confident match.
+    Delegated to :func:`scitex_cards._store_uuid.read_store_uuid`, which already
+    handles the psycopg dict-row case and never raises. Imported lazily for the
+    same import-cycle reason every other cross-module read here is.
+    """
+    from ._store_uuid import read_store_uuid  # noqa: PLC0415 -- import cycle
+
+    try:
+        return read_store_uuid(conn)
+    except Exception:  # noqa: BLE001 — an unreadable uuid is "none", never a raise
+        return None
+
+
+def check_store_identity(
+    conn,
+    expected: Optional[str],
+    expected_uuid: Optional[str] = None,
+) -> IdentityCheck:
+    """Compare the connected store against BOTH identities the caller pinned.
+
+    ``expected`` is the pinned INSTANCE and ``expected_uuid`` the pinned STORE
+    UUID, each a value an operator recorded from a store they trust. ``None``
+    means that half was not pinned.
+
+    FAIL-CLOSED ACROSS BOTH AXES, AND A HALF-PIN IS ``CANNOT_TELL``:
+
+        neither pinned                     CANNOT_TELL   nothing to check against
+        one pinned, it differs             DIFFERS       wrong store, say so
+        one pinned and satisfied, other
+          not pinned                       CANNOT_TELL   half a question answered
+        both pinned, both satisfied        MATCHES       the only pass
+        either pinned but unreadable       CANNOT_TELL   cannot answer
+
+    THE HALF-PIN ROW IS THE DESIGN DECISION AND IT WAS DELIBERATE. ``MATCHES``
+    must mean "this is the board you pinned". Satisfying the instance while the
+    uuid is undeclared has not answered that — it has answered which SERVER,
+    never which DATABASE — so reporting a pass there is a confident half-truth,
+    and a restored database on that same server would sail through it.
+    ``CANNOT_TELL`` is also the more useful answer because it is actionable: its
+    reason names the missing half, so the operator knows what to add. Settled
+    with dotfiles 2026-08-17 before either of us wrote a test, precisely so the
+    test would not be written against the wrong contract.
 
     DIFFERS AND CANNOT_TELL BOTH REFUSE, WITH DIFFERENT REASONS. "You are
     pointed at the wrong store" and "I cannot tell which store this is" call
@@ -277,11 +350,90 @@ def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
     would throw away the only part a human acts on.
     """
     observed = store_instance(conn)
+    observed_uuid = _read_observed_uuid(conn)
+
+    # UUID FIRST, and not for style: it is the half that was inert until
+    # 2026-08-17, and the half that catches a restored database on the pinned
+    # server. Checking it before the instance means a mismatch here can never
+    # again be masked by the instance agreeing.
+    if expected_uuid and observed_uuid and observed_uuid != expected_uuid:
+        return IdentityCheck(
+            verdict=IdentityVerdict.DIFFERS,
+            observed=observed,
+            expected=expected,
+            expected_uuid=expected_uuid,
+            observed_uuid=observed_uuid,
+            reason=(
+                f"this database carries store_uuid {observed_uuid!r}, but "
+                f"{expected_uuid!r} was pinned. A database restored or rebuilt "
+                "on the SAME server keeps its instance id and takes a NEW "
+                "uuid, so the instance agreeing is not evidence. Point the "
+                "client at the pinned store, or re-pin deliberately if the "
+                "move was intended."
+            ),
+        )
+    if expected_uuid and observed_uuid is None:
+        return IdentityCheck(
+            verdict=IdentityVerdict.CANNOT_TELL,
+            observed=observed,
+            expected=expected,
+            expected_uuid=expected_uuid,
+            observed_uuid=None,
+            reason=(
+                f"a store_uuid is pinned ({expected_uuid!r}) but this database "
+                "carries none, so the pin cannot be checked. An unstamped "
+                "store is not a matching store."
+            ),
+        )
+    if expected and expected_uuid is None and observed.certainty is Certainty.KNOWN:
+        # HALF-PIN. The instance is checked below on its own merits; this guard
+        # exists so a satisfied instance cannot RETURN MATCHES while the uuid
+        # half is undeclared. Placed before the instance comparison so the
+        # refusal names the gap rather than the agreement.
+        if observed.instance_id == expected:
+            return IdentityCheck(
+                verdict=IdentityVerdict.CANNOT_TELL,
+                observed=observed,
+                expected=expected,
+                expected_uuid=None,
+                observed_uuid=observed_uuid,
+                reason=(
+                    "the pinned instance matches, but no store_uuid is pinned, "
+                    "so this is HALF a verification: it confirms which server "
+                    "answered and not which database on it. A database "
+                    "restored on this same server would pass this check. Pin "
+                    f"SCITEX_CARDS_STORE_UUID (this store carries "
+                    f"{observed_uuid!r}) to complete it."
+                ),
+            )
     if not expected:
+        # THE OTHER HALF-PIN, and it needs its own sentence. Reaching here with
+        # `expected_uuid` set means the uuid was pinned AND satisfied (the guards
+        # above would have returned otherwise) — so "nothing is pinned" would be
+        # a false statement about a caller who pinned half. Same verdict, honest
+        # reason.
+        if expected_uuid:
+            return IdentityCheck(
+                verdict=IdentityVerdict.CANNOT_TELL,
+                observed=observed,
+                expected=None,
+                expected_uuid=expected_uuid,
+                observed_uuid=observed_uuid,
+                reason=(
+                    "the pinned store_uuid matches, but no instance is pinned, "
+                    "so this is HALF a verification: it confirms which database "
+                    "answered and not which server it lives on. Two servers can "
+                    "carry the same store_uuid — measured 2026-08-10, 180 cards "
+                    "and three days apart. Pin SCITEX_CARDS_STORE_INSTANCE "
+                    f"(this server reports {observed.instance_id!r}) to "
+                    "complete it."
+                ),
+            )
         return IdentityCheck(
             verdict=IdentityVerdict.CANNOT_TELL,
             observed=observed,
             expected=None,
+            observed_uuid=observed_uuid,
             reason=(
                 "no expected store identity is pinned, so this connection "
                 "cannot be checked against anything. Record the identity of "
@@ -294,6 +446,8 @@ def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
             verdict=IdentityVerdict.CANNOT_TELL,
             observed=observed,
             expected=expected,
+            expected_uuid=expected_uuid,
+            observed_uuid=observed_uuid,
             reason=(
                 f"an identity is pinned ({expected!r}) but this store cannot "
                 f"report one: {observed.reason}"
@@ -304,6 +458,8 @@ def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
             verdict=IdentityVerdict.DIFFERS,
             observed=observed,
             expected=expected,
+            expected_uuid=expected_uuid,
+            observed_uuid=observed_uuid,
             reason=(
                 f"this connection reached instance "
                 f"{observed.instance_id!r}, but {expected!r} was pinned. Two "
@@ -314,10 +470,16 @@ def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
                 "intended."
             ),
         )
+    # BOTH PINNED AND BOTH SATISFIED — the only path to MATCHES. Every other
+    # combination returned above, which is what makes this fail-closed: a new
+    # expectation added later must add its own guard, and forgetting to leaves
+    # it falling into a refusal rather than into this pass.
     return IdentityCheck(
         verdict=IdentityVerdict.MATCHES,
         observed=observed,
         expected=expected,
+        expected_uuid=expected_uuid,
+        observed_uuid=observed_uuid,
     )
 
 
