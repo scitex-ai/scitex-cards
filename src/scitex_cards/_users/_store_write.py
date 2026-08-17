@@ -18,7 +18,8 @@ from pathlib import Path
 
 from .._model import _store_lock
 from ._model import User, UserValidationError, validate_user
-from ._store_read import _load_users_section, _resolved_store
+from ._registry_home import _read_users, _write_users
+from ._store_read import _resolved_store
 
 #: Stable user-id prefix. See package docstring for the full format.
 _USER_ID_PREFIX = "u_"
@@ -311,7 +312,7 @@ def register_user(
     path = _resolved_store(store)
     path.parent.mkdir(parents=True, exist_ok=True)
     with _store_lock(path):
-        users = _load_users_section(path)
+        users = _read_users(store)
         existing_ids = {u.get("id") for u in users if u.get("id")}
         name_owner = _names_index(users)
         if id is not None and id in existing_ids:
@@ -352,7 +353,7 @@ def register_user(
         )
         validate_user(new)
         users.append(new.to_dict())
-        _save_users_unlocked(users, path)
+        _write_users(users, store)
     return new
 
 
@@ -380,7 +381,7 @@ def add_alias(
         )
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _load_users_section(path)
+        users = _read_users(store)
         name_owner = _names_index(users)
         owner = name_owner.get(name)
         if owner is not None and owner != user_id:
@@ -396,7 +397,7 @@ def add_alias(
             current.append(name)
             target["names"] = current
             validate_user(target)
-            _save_users_unlocked(users, path)
+            _write_users(users, store)
         return User.from_dict(target)
 
 
@@ -417,13 +418,13 @@ def set_notify(
         )
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _load_users_section(path)
+        users = _read_users(store)
         target = next((u for u in users if u.get("id") == user_id), None)
         if target is None:
             raise UserValidationError(f"set_notify: unknown user id {user_id!r}")
         target["notify"] = dict(notify)
         validate_user(target)
-        _save_users_unlocked(users, path)
+        _write_users(users, store)
         return User.from_dict(target)
 
 
@@ -448,7 +449,7 @@ def touch_user(
     key = name_or_id.strip()
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _load_users_section(path)
+        users = _read_users(store)
         target = None
         # Resolution order mirrors resolve_user: exact id → name alias →
         # host_at_name join key. One identity seam, no second path.
@@ -465,7 +466,7 @@ def touch_user(
             return None
         target["last_seen"] = _utc_now_iso()
         validate_user(target)
-        _save_users_unlocked(users, path)
+        _write_users(users, store)
         return User.from_dict(target)
 
 

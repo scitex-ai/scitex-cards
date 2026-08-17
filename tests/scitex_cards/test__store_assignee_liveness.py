@@ -28,23 +28,27 @@ def _register_seen(store, name, *, seconds_ago):
     seen = _iso(_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=seconds_ago))
     # Stamp directly via the registry write path (touch_user always stamps
     # "now"; here we need a controlled age, so set it through set-like write).
-    users = _users.load_users(store=store)
-    for u in users:
-        if u.id == user.id:
-            u.last_seen = seen
-    # Persist the controlled stamp using the same round-trip writer.
+    # Persist the controlled stamp through the registry's OWN read/write pair,
+    # not through the YAML internals. This used to call
+    # `_load_users_section` / `_save_users_unlocked` directly, which silently
+    # stopped working when the registry moved to the database: the reader
+    # returned [] for a store with no YAML file, so the stamp was written into
+    # nothing and every assignee came back `unknown` despite being registered.
+    # Reaching past the public API to a specific backend's functions is what
+    # made a backend change able to break a test's ARRANGEMENT rather than its
+    # assertion.
     from pathlib import Path
 
     from scitex_cards._model import _store_lock
-    from scitex_cards._users import _store as _users_store
+    from scitex_cards._users._registry_home import _read_users, _write_users
 
     path = Path(store)
     with _store_lock(path):
-        rows = _users_store._load_users_section(path)
+        rows = _read_users(store)
         for row in rows:
             if row.get("id") == user.id:
                 row["last_seen"] = seen
-        _users_store._save_users_unlocked(rows, path)
+        _write_users(rows, store)
     return user
 
 
