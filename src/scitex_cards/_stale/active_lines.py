@@ -130,8 +130,33 @@ def pending_backlog_nudge_line(
 
     Shape (single line; caller wraps / delivers):
 
-        BACKLOG: N deferred card(s) untouched >Nh [aged by <field>; owner by
+        BACKLOG: N deferred card(s) waiting >Nh [aged by <field>; owner by
         agent] — start or triage (begin, re-prioritise, or close): <id>, …
+
+    THE VERB MUST MATCH THE CLOCK. It said "untouched" until 2026-08-17, beside
+    a bracket reading ``[aged by deferred_at]`` — two different predicates in one
+    sentence, the second contradicting the first. ``deferred_at`` is when a card
+    ENTERED deferred; ``last_activity`` is when it was last touched, and a card
+    can be deferred for a month and worked an hour ago.
+
+    Reported by dotfiles with a counterexample, verified here before acting:
+    ``dotfiles-absolute-symlink-debt-20260712`` had ``deferred_at``
+    2026-07-16 and ``last_activity`` 4.5 hours before the nudge that called it
+    untouched — and that activity was a full triage pass, not a token edit.
+
+    "Waiting" is what ``deferred_at`` actually measures, so the sentence now
+    corroborates its own bracket instead of arguing with it. Note the shape of
+    the original defect: the bracket was ADDED to fix an ambiguity and the stale
+    word was left standing next to it. A correction applied ADDITIVELY to prose
+    leaves the falsehood in place — the reader now has two claims and no way to
+    know which the code honours.
+
+    THE CLOCK ITSELF IS DELIBERATE AND WAS NOT CHANGED. Ageing by
+    ``last_activity`` instead — or by both — would silence exactly the card this
+    sweep exists to find: one deferred long ago and revisited with a comment
+    every few weeks without ever being started. A touch is not a start.
+    ``last_activity`` measures whether anyone LOOKED; ``deferred_at`` measures
+    how long it has WAITED, and waiting is the subject.
 
     The wording names ``deferred`` — the backlog status since the pending
     abolition. A nudge telling an agent about "pending cards" it cannot find
@@ -162,7 +187,7 @@ def pending_backlog_nudge_line(
 
     thr = f"{_pending_nudge_hours(pending_hours):g}"
     return (
-        f"BACKLOG: {len(cards)} deferred card(s) untouched >{thr}h "
+        f"BACKLOG: {len(cards)} deferred card(s) waiting >{thr}h "
         f"[aged by {BACKLOG_AGE_FIELD}; owner by agent] — "
         f"start or triage (begin, re-prioritise, or close): {_cap_ids(cards)}"
     )
