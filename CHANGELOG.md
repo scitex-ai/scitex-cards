@@ -2,6 +2,90 @@
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-08-17
+
+### Cut to end a live incident, and the incident is the reason to install it
+
+**Every client older than this release runs the full schema DDL on every
+connection against a store that has been migrated to rung 12, and a resulting
+`pg_proc` deadlock LOSES THE WRITE.**
+
+Measured 2026-08-17 on the live store, with the package's own connection:
+
+    client SCHEMA_VERSION    11        (0.42.0)
+    shape.observed           11
+    agreement                STAMP_IS_HIGH      <- AGREES? False
+    triggers present         10, MISSING: []
+    schema_already_current   False              <- DOES NOT SKIP
+
+`schema_already_current` refuses the fast path whenever the stamp and the
+physical shape disagree — correctly, since that is the state the migration
+chain exists to repair. Rung 12 raised the stamp to 12 while every installed
+client's ladder tops out at 11, so the disagreement went from rare to
+UNIVERSAL and the skip stopped firing for the whole fleet. Each open then
+issues `CREATE OR REPLACE FUNCTION` ten times, taking `ShareRowExclusiveLock`
+on `pg_proc`; the 2026-08-01 curve is 4 concurrent opens -> at least 1
+deadlock, 12 -> 11 of 12 failed.
+
+**And there is no retry.** `DeadlockDetected` appears five times in the package
+and all five are comments; there is no `except` clause for it and no call site
+retries. `_store_tx` states the intent: "a serialization failure, which every
+call site would then have to retry." So a deadlocked write raises to the caller
+and is lost unless a human or an agent happens to notice — two were observed on
+2026-08-17 and both were recovered only because someone was watching.
+
+Installing this release restores `AGREES` for the client and ends its
+participation in the storm. A rung bump is therefore a fleet-wide availability
+event, not a schema change, and that is now written into the rung's own module.
+
+### Added
+
+- **Schema rung v11 -> v12: the SYNCED tables get their sync columns** (#882).
+  `tasks` and `task_comments` now carry `origin_node`, `row_uuid`, `revision`,
+  `updated_at` and `deleted_at` FROM CREATION, per the operator's rule that any
+  syncable table carries them from the start and that a blind
+  `ON CONFLICT DO UPDATE` is prohibited. Purely additive — `ALTER TABLE ADD
+  COLUMN` only, no trigger and no function — so the columns EXIST and are not
+  yet populated; population is deliberately separate, because `origin_node` is
+  SUBJECT (which machine the row is about) and never PROVENANCE (which node
+  relayed it), and those coincide only until the first relay.
+- **`update_task` accepts `expected_revision`, an opt-in compare-and-set**
+  (#880). A caller that opts in and loses leaves the row untouched.
+
+### Fixed
+
+- **A failed board load says why instead of painting a blank canvas** (#883).
+  The board was rendering the server's complete store-resolution diagnosis as
+  one unreadable red line, which reads as "nothing displayed". It now leads
+  with the server's own first sentence and keeps the full text behind a
+  disclosure. A correct diagnosis rendered as a wall is indistinguishable from
+  silence. Also: a zero-card payload gets a NAMED state that distinguishes "the
+  store is empty" from "cards exist and none are scoped to you" — the server
+  already separates those and the page was discarding the distinction.
+- **The BACKLOG nudge said "untouched" while ageing by `deferred_at`** (#884).
+  Two different predicates in one sentence, so a card deferred a month ago and
+  worked an hour ago was reported as untouched for over a day. The clock is
+  deliberately unchanged: `last_activity` measures whether anyone LOOKED,
+  `deferred_at` measures how long it has WAITED, and the sweep is about
+  waiting. A touch is not a start.
+- **Tolerated-value warnings reach the writer who caused them** (#881), and
+  name the side they fired on (#878).
+- **`update_task` and `add_task` declare the row they touched** (#872).
+- **A snapshot whose DM export disagrees with the live sidecar is refused**
+  (#585).
+
+### Changed
+
+- **The store plugin declares the card document and registers the column
+  rules** (ADR-0018 D1, #877, building on #835). `TASK_FIELDS` declares exactly
+  the card document (JSON / LAST_WRITER_WINS) and `id` (IDENTITY / IMMUTABLE);
+  the ~29 typed columns that duplicated the document moved to a promotion
+  register that keeps every rationale, so "promote one at a time, with a stated
+  reason" has something to promote FROM.
+- `_db_mirror` and `_store_mutate` split at the 512-line ceiling (#879).
+- In-wheel docs are built at release instead of pushed to a protected branch
+  (#876).
+
 ## [0.42.0] - 2026-08-16
 
 ### Fixed — two alarms that could not fire, and one that fired on the wrong clock
