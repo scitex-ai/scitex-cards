@@ -90,119 +90,22 @@ __all__ = [
     "stamp_schema_version",
 ]
 
-#: Named so a guard can assert the ENGINE carries the rule rather than trust
-#: that the DDL was ever run -- the same reason ``DM_TRIGGERS`` is named.
-SCHEMA_VERSION_FLOOR_TRIGGER = "schema_meta_version_never_regresses"
 
-# ON CONFLICT DO UPDATE fires this; INSERT OR REPLACE would not, because that
-# is a DELETE followed by an INSERT and there is no OLD row left to restore
-# from. No writer in this codebase uses OR REPLACE on schema_meta (checked
-# across _db.py, _db_bootstrap.py and the installed 0.18.0 client), and the
-# gap is covered by a test so a future one cannot open it silently.
-#
-# Re-entrancy: the inner UPDATE cannot loop. With the SQLite default
-# (recursive_triggers OFF) it does not re-fire at all; with it ON it re-fires
-# once with NEW=high and OLD=low, where the WHEN clause is false. Safe under
-# both settings, and both are tested rather than assumed from the default.
-#
-# IT ALSO RECORDS THE ATTEMPT, and that half is not decoration.
-#
-# A self-healing guard has a specific failure mode: it makes the thing it
-# defends against INVISIBLE. Measured 2026-07-31 -- with the floor installed,
-# `schema_meta` held at 7 through every sample while `user_version` kept
-# dropping to 5 and once to 6, and after eliminating three separate
-# hypotheses (the fleet, my own container, the host daemons) the writer was
-# STILL unidentified. The store could say it had been migrated and by whom
-# (`schema_migrated_by`), but the DESTRUCTIVE event was the one event with no
-# audit trail at all.
-#
-# So the trigger writes what it can see: how many downgrades were refused,
-# when the last one was, and what value was attempted. A trigger cannot name
-# the process -- SQLite has no view of the caller -- but a count and a
-# timestamp turn "something invisible is happening" into a signal that can be
-# correlated against process activity, which is exactly what was missing
-# while three wrong hypotheses were being formed.
-SCHEMA_VERSION_DOWNGRADE_KEYS = (
-    "schema_version_downgrades_refused",
-    "schema_version_downgrade_last_at",
-    "schema_version_downgrade_last_attempt",
+# Re-exported so every existing ``from ._schema_shape import ...`` keeps
+# resolving. These are FORWARDS, not copies -- the identity of each object is
+# asserted by a test, because a re-export that shadows rather than forwards is
+# indistinguishable from one that works until two callers compare instances.
+from ._schema_floor import (  # noqa: E402
+    SCHEMA_VERSION_DOWNGRADE_KEYS,
+    SCHEMA_VERSION_FLOOR_TRIGGER,
+    SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
+    DowngradeReport,
+    downgrade_report,
+    stamp_schema_version,
 )
-
-SCHEMA_VERSION_FLOOR_TRIGGER_SQL = f"""
-CREATE TRIGGER IF NOT EXISTS {SCHEMA_VERSION_FLOOR_TRIGGER}
-AFTER UPDATE OF value ON schema_meta
-WHEN NEW.key = 'schema_version'
- AND CAST(NEW.value AS INTEGER) < CAST(OLD.value AS INTEGER)
-BEGIN
-    UPDATE schema_meta SET value = OLD.value WHERE key = 'schema_version';
-    INSERT INTO schema_meta(key, value)
-        VALUES('schema_version_downgrades_refused', '1')
-        ON CONFLICT(key) DO UPDATE SET
-            value = CAST(CAST(schema_meta.value AS INTEGER) + 1 AS TEXT);
-    INSERT INTO schema_meta(key, value)
-        VALUES('schema_version_downgrade_last_at',
-               strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-    INSERT INTO schema_meta(key, value)
-        VALUES('schema_version_downgrade_last_attempt',
-               CAST(OLD.value AS TEXT) || ' -> ' || CAST(NEW.value AS TEXT))
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-END;
-"""
-
-#: version -> the physical artifact that migration installed.
-#:
-#: This is a LADDER, not a lookup: version N is observed only when every rung
-#: up to N is present. A store carrying v7's trigger but missing v6's column
-#: is not "v7 with a gap", it is a store whose migration chain broke, and
-#: reporting 7 for it would hide exactly the corruption worth finding.
-#:
-#: It starts at 5 deliberately. v1-v4 left no artifact this can distinguish
-#: (v4's changes went into the fresh-database-only script -- see the NOTE in
-#: ``init_schema``), so a store below 5 reads as UNKNOWN rather than being
-#: assigned a number this module cannot actually justify.
-SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
-    (5, "table", "dm_messages", ""),
-    (5, "table", "dm_threads", ""),
-    (5, "table", "dm_receipts", ""),
-    (5, "table", "dm_thread_member_events", ""),
-    (6, "column", "tasks", "revision"),
-    (7, "trigger", "tasks_bump_revision", ""),
-    # v8 — the notification rail's columns. `msg_id` is the rung rather than
-    # `confirmed_at` only because it is the first of the three; all three land in
-    # one migration, so any of them would place the store equally well.
-    (8, "column", "notifications", "msg_id"),
-    (9, "column", "notifications", "seq"),
-    # v10 — the sync columns. `row_uuid` is the rung rather than any of the
-    # other four because it is the one that cannot plausibly be added by
-    # something else: `revision` and `updated_at` are names a future table might
-    # acquire for local reasons, and a rung that another change could satisfy
-    # would place a store at v10 that never ran this migration.
-    (10, "column", "notifications", "row_uuid"),
-    # v11 — the foreign keys a MIGRATED store never received. The rung is the
-    # constraint itself rather than a column or a trigger because the constraint
-    # IS what that migration installs, and this ladder is deliberately built on
-    # physical artifacts rather than stamps.
-    #
-    # THIS RUNG IS NOT OPTIONAL AND ITS ABSENCE IS NOT COSMETIC. `SCHEMA_VERSION`
-    # became 11 in the same change; without a rung to match, `observed` would
-    # stop at 10 while both stamps read 11, giving STAMP_IS_HIGH forever. That is
-    # not a stale number — `schema_already_current` treats any disagreement as
-    # "not current", so EVERY open from ~90 containers would re-run the full DDL,
-    # which is precisely the pg_proc contention this module's own measurements
-    # record as 11 of 12 concurrent opens failing with DeadlockDetected. A
-    # missing ladder rung would have converted a version bump into a fleet-wide
-    # deadlock generator.
-    #
-    # `task_comments.task_id` is the rung rather than any of the other three
-    # because it is the constraint over the largest child table (8421 rows on
-    # 2026-08-10), so it is the one whose absence matters most and the one no
-    # unrelated change would install by coincidence.
-    (11, "foreign_key", "task_comments", "task_id"),
-)
-
-#: The lowest version this module can justify from physical evidence.
-LADDER_FLOOR = 5
+from ._schema_ladder import LADDER_FLOOR, SHAPE_LADDER  # noqa: E402
+from ._schema_ladder import _rung_present  # noqa: E402
+from ._schema_probe import has_table as _has_table  # noqa: E402
 
 
 class ShapeAgreement(enum.Enum):
@@ -256,150 +159,6 @@ class SchemaShape:
         """
         return self.observed
 
-
-@dataclass(frozen=True)
-class DowngradeReport:
-    """What the store knows about attempts to move its version backwards.
-
-    ``refused`` is a COUNT OF REFUSALS, not of writers: one process looping
-    contributes many, and a caller must not read it as a population size.
-    That distinction is stated here because reading a count as a population
-    is precisely the error that produced two wrong diagnoses on 2026-07-31.
-    """
-
-    refused: int
-    last_at: str = ""
-    last_attempt: str = ""
-
-    def __post_init__(self) -> None:
-        if self.refused < 0:
-            raise ValueError(f"refused must be >= 0, got {self.refused}")
-
-    @property
-    def ever_attempted(self) -> bool:
-        """True if the store has ever refused a downgrade.
-
-        A False here means "no downgrade has been refused SINCE THE TRIGGER
-        WAS INSTALLED" -- never "this store was always consistent". A store
-        that was downgraded before the guard existed reports False.
-        """
-        return self.refused > 0
-
-
-def downgrade_report(conn) -> DowngradeReport:
-    """Read the refusal counters the floor trigger maintains. Read-only."""
-    if not _has_table(conn, "schema_meta"):
-        return DowngradeReport(refused=0)
-    rows = dict(
-        conn.execute(
-            "SELECT key, value FROM schema_meta WHERE key IN (?, ?, ?)",
-            SCHEMA_VERSION_DOWNGRADE_KEYS,
-        ).fetchall()
-    )
-    try:
-        refused = int(rows.get("schema_version_downgrades_refused", 0) or 0)
-    except (TypeError, ValueError):
-        refused = 0
-    return DowngradeReport(
-        refused=refused,
-        last_at=rows.get("schema_version_downgrade_last_at", "") or "",
-        last_attempt=rows.get("schema_version_downgrade_last_attempt", "") or "",
-    )
-
-
-def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
-    """Record the schema version as a FLOOR, never as a reassignment.
-
-    Extracted from ``init_schema`` so both halves of the floor rule live
-    together: this one, and :data:`SCHEMA_VERSION_FLOOR_TRIGGER_SQL`.
-
-    This used to write ``schema_version`` unconditionally, which let an OLDER
-    client stamp a NEWER store as older. Measured on the live store
-    2026-07-30, four read-only connections seconds apart::
-
-        user_version=6  schema_meta=6  revision_col=True  trigger=True
-        user_version=6  schema_meta=6  revision_col=True  trigger=True
-        user_version=6  schema_meta=6  revision_col=True  trigger=True
-        user_version=5  schema_meta=5  revision_col=True  trigger=True   <-- !
-
-    The recorded version OSCILLATED while the physical schema (revision
-    column, bump trigger) never regressed. ~90 fleet containers run 0.17.5 /
-    0.18.0 / 0.23.0 / 0.24.0 SIMULTANEOUSLY, so whichever version opened the
-    store last decided what it claimed to be. The stamp was a race, not a
-    fact -- and it read LOWER than the store's real shape, which is the
-    dangerous direction: a reader can conclude a column is absent when it is
-    physically there.
-
-    Migrations are additive (``ADD COLUMN``, ``CREATE ... IF NOT EXISTS``), so
-    applied schema never goes backwards. ``max()`` therefore describes
-    reality; a bare assignment describes only the last writer. A stamp encodes
-    the WRITER's version, not the object's history, so never trust one writer
-    to speak for a store ~90 processes share.
-    """
-    stamp = max(prior_version, schema_version)
-    # SQLite ONLY. PostgreSQL has no `user_version` and rejects PRAGMA outright
-    # (`syntax error at or near "PRAGMA"`, measured on the live server), so on
-    # that backend the schema_meta upsert below is the WHOLE stamp -- which is
-    # the direction this function's own docstring argues for anyway: the row is
-    # trigger-protected and the PRAGMA structurally cannot be.
-    if not _is_postgres(conn):
-        conn.execute(f"PRAGMA user_version={stamp}")
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = "
-        # The max is taken IN SQL, not in Python: another process may have
-        # raised it between our PRAGMA read and this statement, and CAST makes
-        # the comparison numeric rather than lexicographic ('10' < '9' as text).
-        #
-        # SPELT AS A CASE RATHER THAN MAX(a, b). SQLite's two-argument MAX is a
-        # scalar; PostgreSQL's MAX is an AGGREGATE ONLY, and the two-argument
-        # call is not a subtle behaviour difference there but a hard
-        # `function max(integer, integer) does not exist`. GREATEST() is the
-        # PostgreSQL spelling and SQLite does not have it, so neither engine's
-        # native form is portable -- but CASE is, and it is standard SQL.
-        # Verified on both: max(7,5)=7, max(5,7)=7, max(10,9)=10.
-        "  CAST(CASE WHEN CAST(schema_meta.value AS INTEGER) "
-        "                 > CAST(excluded.value AS INTEGER) "
-        "            THEN CAST(schema_meta.value AS INTEGER) "
-        "            ELSE CAST(excluded.value AS INTEGER) END AS TEXT)",
-        (str(stamp),),
-    )
-
-
-def _has_table(conn, name: str) -> bool:
-    """Delegated so the ladder reads the right catalogue on either backend."""
-    return has_table(conn, name)
-
-
-def _has_trigger(conn, name: str) -> bool:
-    """Delegated: sqlite_master does not exist on PostgreSQL, and a rung that
-    cannot be seen is reported ABSENT -- which downgrades the observed version
-    rather than erroring, the quiet direction."""
-    return has_trigger(conn, name)
-
-
-def _has_column(conn, table: str, column: str) -> bool:
-    """Delegated for the same reason as the two above: ``PRAGMA table_info``
-    does not exist on PostgreSQL, so every COLUMN rung of the ladder was
-    unreadable there -- and an unreadable rung reads as ABSENT, which reports
-    the store OLDER than it physically is."""
-    if not _has_table(conn, table):
-        return False
-    return has_column(conn, table, column)
-
-
-def _rung_present(conn, kind: str, name: str, extra: str) -> bool:
-    if kind == "table":
-        return _has_table(conn, name)
-    if kind == "trigger":
-        return _has_trigger(conn, name)
-    if kind == "column":
-        return _has_column(conn, name, extra)
-    if kind == "foreign_key":
-        from ._db_foreign_keys import foreign_key_is_deferred  # noqa: PLC0415
-
-        return foreign_key_is_deferred(conn, name, extra)
-    raise ValueError(f"unknown ladder rung kind: {kind!r}")
 
 
 def _read_stamps(conn) -> tuple[int | None, int | None]:

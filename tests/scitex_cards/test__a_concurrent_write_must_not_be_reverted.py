@@ -60,6 +60,7 @@ import pytest
 
 from scitex_cards._model import load_tasks, save_tasks
 from scitex_cards._store_comment import comment_task
+from scitex_cards._store_mutate import add_task, update_task
 from scitex_cards._store_lifecycle import (
     complete_task,
     delete_task,
@@ -299,6 +300,69 @@ def test_deleting_a_card_still_scrubs_inbound_references(two_cards):
     # Assert
     after = {c["id"]: c for c in load_tasks(store)}
     assert "card-a" not in (after["card-b"].get("depends_on") or [])
+
+
+def test_updating_one_card_does_not_rewrite_another(two_cards):
+    """THE VERB THAT RUNS MOST, and the last one to get the guard.
+
+    `comment_task`, `complete_task`, `resolve_task`, `reopen_task`,
+    `delete_task` and `rescore_task` all declared `touched_ids`; `update_task`
+    did not, so every other verb's protection was undone by the one that runs
+    constantly. Six converted siblings and the two central verbs left out is
+    the fix-never-reached-its-second-site shape, at the worst possible site.
+    """
+    # Arrange
+    store = two_cards
+    _commit_b_in_progress(store)
+    # Act
+    update_task(store, "card-a", status="blocked", blocker="operator-decision")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_the_update_itself_still_lands(two_cards):
+    """POSITIVE CONTROL: narrowing the write must not narrow it to nothing.
+
+    Not decoration. `touched_ids` filters which rows reach the database, so the
+    failure mode of over-narrowing is a verb that reports success and writes
+    NOTHING — indistinguishable from working, exactly like the defect it fixes.
+    """
+    # Arrange
+    store = two_cards
+    # Act
+    update_task(store, "card-a", status="blocked", blocker="operator-decision")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-a"]["status"] == "blocked"
+
+
+def test_adding_a_card_does_not_rewrite_another(two_cards):
+    """`add_task` had the same gap, and an insert is not exempt from it.
+
+    The new row is what the caller MEANT to write, but the whole-document save
+    carried its entire stale snapshot alongside — so creating a card could
+    revert an unrelated one committed since the read.
+    """
+    # Arrange
+    store = two_cards
+    _commit_b_in_progress(store)
+    # Act
+    add_task(store, id="card-c", title="C", status="deferred", assignee="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert after["card-b"]["status"] == "in_progress"
+
+
+def test_the_added_card_itself_lands(two_cards):
+    """POSITIVE CONTROL for the insert path."""
+    # Arrange
+    store = two_cards
+    # Act
+    add_task(store, id="card-c", title="C", status="deferred", assignee="tester")
+    # Assert
+    after = {c["id"]: c for c in load_tasks(store)}
+    assert "card-c" in after
 
 
 # EOF

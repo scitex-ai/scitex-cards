@@ -126,6 +126,40 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           cache-dependency-glob: pyproject.toml
+      # THE DOCS ARE BUILT INTO THE WHEEL HERE, not committed to the branch.
+      #
+      # scitex-cloud serves package docs from the in-wheel `_sphinx_html/`
+      # (audit rule PS-121); without it the package is invisible at
+      # https://scitex.ai/apps/docs/. The previous mechanism built the HTML in
+      # the `docs` workflow, committed 99 files to `develop`, and pushed —
+      # which CANNOT SUCCEED, because `develop` is a protected branch requiring
+      # a pull request and 6 status checks. Measured on run 31945230744:
+      #
+      #   remote: error: GH006: Protected branch update failed for refs/heads/develop.
+      #   remote: - Changes must be made through a pull request.
+      #    ! [remote rejected] develop -> develop (protected branch hook declined)
+      #
+      # That rejection was swallowed by `git push || echo` under
+      # `continue-on-error: true`, so the step reported SUCCESS on every merge
+      # while the directory stayed empty from 2026-06-17 to 2026-08-16.
+      #
+      # Building it here removes the impossible push instead of working around
+      # it: the artifact reaches the wheel, git never tracks 15k lines of
+      # generated HTML, and no branch protection has to be weakened.
+      - name: Build docs into the package (in-wheel _sphinx_html, PS-121)
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 .venv-docs
+          uv pip install --python .venv-docs/bin/python -e .
+          uv pip install --python .venv-docs/bin/python -r docs/sphinx/requirements.txt
+          .venv-docs/bin/python -m sphinx -b html -W --keep-going \
+            docs/sphinx docs/sphinx/_build/html
+          rm -rf src/scitex_cards/_sphinx_html
+          cp -rf docs/sphinx/_build/html src/scitex_cards/_sphinx_html
+          # Fail LOUD here rather than shipping a wheel with no docs: this is
+          # the step whose predecessor reported success while producing nothing.
+          [ -f src/scitex_cards/_sphinx_html/index.html ] \
+            || { echo "::error::sphinx produced no index.html — the wheel would ship without docs"; exit 1; }
       - name: Build wheel + sdist (uv build)
         run: |
           set -euo pipefail
@@ -141,6 +175,28 @@ jobs:
           fi
           ls -la dist/
           [ -n "$(ls -A dist 2>/dev/null)" ] || { echo "::error::uv build produced an empty dist/"; exit 1; }
+          # ASSERT ON THE WHEEL, NOT ON THE WORKING TREE. The docs are now
+          # gitignored, and a gitignored path reaches the wheel ONLY via
+          # hatchling's `artifacts` list — so a correct sphinx build plus a
+          # wrong packaging config produces a green build and a docs-less
+          # wheel, which is the same silent failure this change removes, one
+          # layer down. The previous mechanism had no check at this layer at
+          # all; that is why it went two months undetected.
+          #
+          # SHELL, NOT AN EMBEDDED PYTHON HEREDOC. The first version of this
+          # check inlined `python3 -c "` with the script body at column 0,
+          # which TERMINATES the YAML block scalar — the whole workflow then
+          # failed to parse and would not have run at all. Caught by the audit
+          # (PS-224, "workflow does not parse as a YAML mapping"), which is the
+          # net-new gate doing exactly its job. Keep every line of this step
+          # indented inside the block; no column-0 continuations.
+          # ONE LINE, and python rather than `unzip`. `unzip` is not guaranteed
+          # on every runner image, and its absence would fail this step CLOSED —
+          # blocking every release with a false alarm about missing docs, which
+          # is a worse failure than the one being prevented. python3 is already
+          # a hard dependency of this job.
+          whl=$(ls dist/scitex_cards-*.whl | head -1)
+          python3 -c "import zipfile,sys; ns=zipfile.ZipFile('$whl').namelist(); hit=[n for n in ns if n.endswith('_sphinx_html/index.html')]; print('in-wheel docs OK:', hit[0]) if hit else sys.exit('::error::$whl ships no _sphinx_html/index.html - scitex-cloud would serve nothing for this package (PS-121). Check [tool.hatch.build.targets.wheel] artifacts in pyproject.toml.')"
       # upload-artifact is a JS action — runs fine on the self-hosted runner.
       - uses: actions/upload-artifact@v4
         with:

@@ -46,33 +46,37 @@ deploy against an existing DB with no migration step.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 from pathlib import Path
 
 from ._db_bootstrap import (
-    _insert_tasks,
     _insert_users,
     _rebuild_from_doc,
 )
 from ._db_freshness import stamp_store_provenance
 
+# RE-EXPORTS, and they are load-bearing rather than tidiness. `_write_card` is
+# reached as `_db_mirror._write_card` from cardsync/__init__.py, cardsync/_pg.py,
+# `_store_mutate`'s refusal message and a test that resolves the attribute to
+# prove that message names a door that opens. The split below must be invisible
+# to every one of them, which is the same standard the `_store_write` split met
+# when it came out of `_model`. `_HASH_DDL` and `_drop_card_rows` are unused in
+# THIS module and kept deliberately: they were importable here before the move.
+from ._mirror_hashes import (  # noqa: F401
+    _HASH_DDL,
+    HASH_TABLE,
+    _card_hash,
+    _existing_hashes,
+    _section_hash,
+)
+from ._mirror_rows import _delete_card, _drop_card_rows, _write_card  # noqa: F401
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from ._schema_probe import _sole_value, row_values
+from ._schema_probe import _sole_value
 
-#: Per-card content hashes, so a write can tell what actually changed.
-HASH_TABLE = "mirror_hashes"
-
-_HASH_DDL = f"""
-CREATE TABLE IF NOT EXISTS {HASH_TABLE} (
-    task_id TEXT PRIMARY KEY,
-    hash    TEXT NOT NULL
-)
-"""
 
 #: Sections of the doc that are NOT per-card. They change rarely, so they get one
 #: hash each and are only rebuilt when that hash moves.
@@ -106,116 +110,6 @@ CREATE TABLE IF NOT EXISTS {HASH_TABLE} (
 _SECTION_KEYS = ("users",)
 
 
-def _card_hash(card: dict) -> str:
-    """Stable content hash of one card. ``default=str`` so a stray datetime or
-    ruamel scalar cannot make an unchanged card look changed every write."""
-    blob = json.dumps(card, sort_keys=True, default=str, ensure_ascii=False)
-    return hashlib.sha1(blob.encode("utf-8")).hexdigest()  # noqa: S324
-
-
-def _section_hash(value) -> str:
-    blob = json.dumps(value, sort_keys=True, default=str, ensure_ascii=False)
-    return hashlib.sha1(blob.encode("utf-8")).hexdigest()  # noqa: S324
-
-
-def _existing_hashes(conn: sqlite3.Connection) -> dict[str, str]:
-    conn.execute(_HASH_DDL)
-    rows = conn.execute(f"SELECT task_id, hash FROM {HASH_TABLE}").fetchall()
-    # row_values, NOT r[0]/r[1]: the annotation says sqlite3.Connection, but an
-    # annotation is a claim, not a guarantee -- this takes the CALLER's
-    # connection, and since #693 that caller can be holding a psycopg one, whose
-    # dict_row raises KeyError on a positional index.
-
-    return {v[0]: v[1] for v in (row_values(r) for r in rows)}
-
-
-def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
-    """Remove one card's derived rows so it can be re-inserted cleanly.
-
-    ``_insert_comments`` INSERTs (it does not REPLACE — comments carry a
-    sequence), so re-inserting a card without clearing first would DUPLICATE
-    every comment on it, on every write. That is the sharpest edge in this file
-    and it has a test.
-
-    NOTE the columns: ``task_edges`` keys on ``src_task_id`` / ``dst_task_id``,
-    NOT ``task_id``. I assumed otherwise and the tests caught it — an assumption
-    about a schema is exactly the kind of thing that silently corrupts a mirror.
-    """
-    conn.execute("DELETE FROM task_comments WHERE task_id = ?", (task_id,))
-    conn.execute("DELETE FROM task_roles WHERE task_id = ?", (task_id,))
-    # Edges are written from the SOURCE card's own depends_on/blocks, so
-    # re-writing that card owns exactly its outbound edges.
-    conn.execute("DELETE FROM task_edges WHERE src_task_id = ?", (task_id,))
-
-
-def _write_card(
-    conn: sqlite3.Connection,
-    card: dict,
-    *,
-    expected_revision: int | None = None,
-) -> dict[str, int]:
-    """Upsert ONE card and its derived rows. Returns the insert counts.
-
-    ``expected_revision`` makes the whole sequence a COMPARE-AND-SET, and the
-    ORDER here is the entire point — get it wrong and the guard destroys data on
-    the path it refuses to take.
-
-    `_drop_card_rows` DELETES this card's comments, roles and outbound edges
-    before the upsert, because comments key on a sequence and re-inserting
-    without clearing would duplicate every one of them on every write. That drop
-    is load-bearing and cannot simply be removed.
-
-    But it means a naive compare-and-set — drop first, then let `_insert_tasks`
-    check the revision — would:
-
-        1. delete the card's comments, roles and outbound edges
-        2. hit the guard, skip the upsert
-        3. report revision_skipped=1, i.e. "I changed nothing"
-
-    while the WINNER's comments are already gone. A lock that silently destroys
-    the data it was protecting, and then reports success at protecting it, is
-    strictly worse than no lock: the caller has no reason to look.
-
-    So the revision is read and compared BEFORE anything is dropped. The `WHERE`
-    clause inside `_insert_tasks` remains the real guard against the race
-    between that read and the write — this pre-check is not a substitute for it,
-    it only ensures the DESTRUCTIVE half never runs for a write that was always
-    going to be refused.
-    """
-    tid = str(card.get("id"))
-    if expected_revision is not None:
-        row = conn.execute(
-            "SELECT revision FROM tasks WHERE id = ?", (tid,)
-        ).fetchone()
-        found = None if row is None else row[0]
-        if found != expected_revision:
-            # Refuse BEFORE the drop. Nothing has been touched.
-            return {
-                "tasks": 0,
-                "comments": 0,
-                "edges": 0,
-                "roles": 0,
-                "revision_skipped": 1,
-                "revision_found": found,
-            }
-    _drop_card_rows(conn, tid)
-    # _insert_tasks handles the task row + comments + edges + roles for each
-    # card it is given, so a one-element list is exactly one card's worth.
-    return _insert_tasks(conn, [card], expected_revision=expected_revision)
-
-
-def _delete_card(conn: sqlite3.Connection, task_id: str) -> None:
-    """A card that left the doc must leave the mirror COMPLETELY.
-
-    Also drops edges pointing AT it, which ``_drop_card_rows`` deliberately does
-    not (that one is for re-writing a card, which owns only its OUTBOUND edges).
-    A dangling inbound edge to a card that no longer exists is exactly the kind
-    of rot an equivalence check on PRESENT cards would never notice.
-    """
-    _drop_card_rows(conn, task_id)
-    conn.execute("DELETE FROM task_edges WHERE dst_task_id = ?", (task_id,))
-    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    conn.execute(f"DELETE FROM {HASH_TABLE} WHERE task_id = ?", (task_id,))
 
 
 def mirror_doc_incremental(
@@ -226,12 +120,24 @@ def mirror_doc_incremental(
     store_path: str | Path | None = None,
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
+    expected_revision: int | None = None,
 ) -> dict:
     """Mirror ``doc`` by writing ONLY what changed. Raises on failure.
 
     Returns a summary: ``{"changed": n, "removed": n, "unchanged": n, "full": bool}``.
     ``full`` is True when it fell back to a full rebuild (first run on a DB that
-    has no hash table yet).
+    has no hash table yet). A refused compare-and-set adds ``revision_skipped``
+    -- a LIST OF CARD IDS, never a count, because a caller who cannot name the
+    row it lost cannot retry it and must re-read the whole batch every round.
+
+    ``expected_revision`` makes the ONE write a compare-and-set. It REQUIRES
+    exactly one changed row and is refused on the first-run full rebuild: a guard
+    that cannot name the row it guarded is not a guard.
+
+    A REFUSED WRITE MUST NOT HAVE ITS HASH RECORDED -- the subtle half. Stamping a
+    refused card's NEW hash would make the retry that a refusal invites compute
+    that same hash, be judged unchanged, and write nothing, forever, silently. So
+    hashes are recorded for cards actually WRITTEN.
 
     ``store_path`` is the canonical YAML this doc was just written to. Pass it and
     the mirror stamps its provenance (path + mtime + size + card count) inside the
@@ -305,6 +211,18 @@ def mirror_doc_incremental(
         # no hashes to diff against, so do the full rebuild ONCE and record them.
         # This is what makes the change safe to deploy with no migration step.
         if not prior:
+            # A FULL REBUILD CANNOT HONOUR A PER-ROW GUARD -- it rewrites every
+            # card from the caller's doc. Silently ignoring the guard would be the
+            # worst outcome available: the caller believes they hold a
+            # compare-and-set on one row while the whole board is overwritten from
+            # their snapshot, which is the failure the guard exists to prevent.
+            # Only the tests found this; reading did not.
+            if expected_revision is not None:
+                raise ValueError(
+                    "expected_revision cannot be honoured on a first-run full "
+                    "rebuild (no hash table yet, so every card is rewritten from "
+                    "this doc). Mirror once without the guard, then retry."
+                )
             summary = _rebuild_from_doc(conn, doc)
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
@@ -378,14 +296,31 @@ def mirror_doc_incremental(
         # longer propagated here, so rows accumulate. That is the trade the
         # ruling makes, and it is the right one — unbounded growth is a
         # storage cost, and this was data loss.
-        for tid in changed:
-            _write_card(conn, by_id[tid])
+        if expected_revision is not None and len(changed) != 1:
+            raise ValueError(
+                f"expected_revision guards exactly one row, but this write would "
+                f"touch {len(changed)}: {sorted(changed)!r}. Name the single card "
+                f"via touched_ids, or omit expected_revision for last-writer-wins."
+            )
 
-        if changed:
+        # `written`, never `changed` -- see the docstring. A refused card was NOT
+        # written, and stamping its hash would strand it permanently.
+        written: list[str] = []
+        refused: list[str] = []
+        found: dict[str, int | None] = {}
+        for tid in changed:
+            counts = _write_card(conn, by_id[tid], expected_revision=expected_revision)
+            if counts.get("revision_skipped"):
+                refused.append(tid)
+                found[tid] = counts.get("revision_found")
+                continue
+            written.append(tid)
+
+        if written:
             conn.executemany(
                 f"INSERT INTO {HASH_TABLE}(task_id, hash) VALUES (?, ?)"
                 f" ON CONFLICT(task_id) DO UPDATE SET hash = excluded.hash",
-                [(tid, now_hashes[tid]) for tid in changed],
+                [(tid, now_hashes[tid]) for tid in written],
             )
 
         # EXPLICIT, CALLER-NAMED deletes — the ONE way a row leaves the mirror.
@@ -408,14 +343,27 @@ def mirror_doc_incremental(
         _stamp()
 
         conn.commit()
-        return {
-            "changed": len(changed),
+        summary = {
+            # `written`, not `changed`: a card the compare-and-set refused was a
+            # candidate, not a change, and counting it would tell the caller their
+            # write landed.
+            "changed": len(written),
             # Reconcile still never INFERS a delete; this counts only the
             # explicit, caller-named removals (0 on an ordinary write).
             "removed": len(removed),
-            "unchanged": len(cards) - len(changed),
+            "unchanged": len(cards) - len(written),
             "full": False,
         }
+        if refused:
+            # IDS, NOT A COUNT. A reconciler retries the losers; one that knows
+            # only HOW MANY it lost must re-read the whole batch every round,
+            # which gives back most of what a per-row guard was for.
+            summary["revision_skipped"] = refused
+            # ...and what the store actually holds, so the caller can log the gap
+            # without a second query. `None` means the row was absent entirely,
+            # which is a different failure from losing a race.
+            summary["revision_found"] = found
+        return summary
     except Exception:
         conn.rollback()
         raise

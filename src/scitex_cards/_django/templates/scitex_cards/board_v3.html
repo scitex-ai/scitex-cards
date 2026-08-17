@@ -47,6 +47,7 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/05-responsive.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/06-layout-and-recent.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/07-toolbar-groups.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/08-board-states.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/13-details-pane.css' %}">{# 13-details-pane.css: right-hand Details column (filters + legend-aligned stats), scitex-writer convention #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/09-timeline.css' %}">{# 09-timeline.css: Timeline layout — raster + per-task simple cards (operator CARD 2026-06-17) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
@@ -69,6 +70,14 @@
   any multi-line note inside a template (board v0.5.4 fix — PR #105).
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/searchQuery.js' %}"></script>
+{% comment %}
+  boardStates.js — the load / empty / error panels. When /graph does not hand
+  back a card list, these turn the reason into words on the board surface.
+  Extracted from this template 2026-08-17 after the operator reported the
+  mounted board as 「何も表示されない」 while it was in fact displaying a complete
+  server diagnosis as a single unreadable red line.
+{% endcomment %}
+<script defer src="{% static 'scitex_cards/board_v3/boardStates.js' %}"></script>
 {% comment %}
   searchSuggest.js — autocomplete/Tab-completion engine, extends PR #102.
   Pure module; the inline script in extra_js below wires it to the
@@ -890,38 +899,11 @@
       }
     }
 
-    // === Load-failure UI states (hub-mount integration) ===================
-    // A failed /graph is not always an ERROR — on the hub it can be a STATE:
-    // signed-out (auth middleware 401s with {"error":"signed-out","login_url"})
-    // or no-active-project (tenancy middleware 404s with an {"error", "hint"}
-    // payload). Read the body BEFORE giving up so the server's named reason
-    // drives a helpful panel; anything unrecognized keeps the loud red error
-    // (the catch below), now carrying the server's `error` field + the HTTP
-    // status. The empty-store case never reaches here: the server answers 200
-    // with `empty_store: true` + 0 nodes → the normal zero-card board renders.
-    // (hook-bypass: line-limit — pre-existing oversized template; split queued.)
-    async function _readJsonBody(r) {
-      try { return await r.json(); } catch (_e) { return null; }
-    }
-    // Render a recognized non-OK state; false → caller escalates loudly.
-    function renderLoadState(status, payload) {
-      if (status === 401 && payload && payload.error === "signed-out" && payload.login_url) {
-        document.getElementById("columns").innerHTML =
-          `<div class="loading board-state board-state--signed-out">` +
-          `<p>Signed out — the board needs a session.</p>` +
-          `<p><a href="${escapeHtml(payload.login_url)}">Sign in to continue</a></p></div>`;
-        return true;
-      }
-      const err = payload && payload.error ? String(payload.error) : "";
-      if (status === 404 && payload && payload.hint && /^no active project/i.test(err)) {
-        document.getElementById("columns").innerHTML =
-          `<div class="loading board-state board-state--no-project">` +
-          `<p>No active project — the board shows your project&#39;s cards.</p>` +
-          `<p><a href="${escapeHtml(payload.hint)}">Create or open a project</a></p></div>`;
-        return true;
-      }
-      return false;
-    }
+    // === Load / empty / error UI states ===================================
+    // `_readJsonBody`, `renderLoadState`, `renderEmptyState` and
+    // `renderLoadError` now live in board_v3/boardStates.js (loaded above) —
+    // one cohesive job: turn a non-card answer into words a person can act on.
+    // Moved out rather than grown here; see GITIGNORED/REFACTORING.md.
 
     async function loadGraph(opts) {
       const { preserveScroll = false, skipIfUnchanged = false } = opts || {};
@@ -931,7 +913,12 @@
           const payload = await _readJsonBody(r);
           if (renderLoadState(r.status, payload)) return;
           const err = payload && payload.error ? String(payload.error) : "";
-          throw new Error(`HTTP ${r.status}` + (err ? ` — ${escapeHtml(err)}` : ""));
+          // NOT escaped here. An Error message is a STRING, not markup — the
+          // render layer escapes it once, at the point it becomes HTML. Escaping
+          // here too produced `&#39;` and `&quot;` VISIBLE in the panel, because
+          // the text was escaped on the way into the Error and again on the way
+          // out. Escape where you interpolate, exactly once.
+          throw new Error(`HTTP ${r.status}` + (err ? ` — ${err}` : ""));
         }
         STATE.graph = await r.json();
         // Change-detection: if the fresh payload is byte-identical to the
@@ -944,6 +931,16 @@
         }
         const _scrollSnap = preserveScroll ? captureScroll() : null;
         document.getElementById("store-path").textContent = STATE.graph.store_path || "—";
+        // A zero-card payload gets a SENTENCE, not a blank canvas. After
+        // store-path is set, so the footer still names WHICH store answered —
+        // "no cards visible" plus the store identity is a diagnosis; the same
+        // words without it are an apology. LAST_GRAPH_JSON is recorded so the
+        // refresh tick can skip an unchanged empty payload rather than
+        // repainting this panel every few seconds.
+        if (renderEmptyState(STATE.graph)) {
+          LAST_GRAPH_JSON = _freshJson;
+          return;
+        }
         populateFilters();
         // Sync the filterbar UI to the persisted STATE on first paint:
         // the Layout segment buttons reflect STATE.layout (sticky across
@@ -971,8 +968,11 @@
         // instead of freezing the UI for seconds (operator 2026-07-13).
         _prewarmGraph();
       } catch (e) {
-        document.getElementById("columns").innerHTML =
-          `<div class="loading" style="color: var(--red);">load error: ${e.message}</div>`;
+        // Cause first, full text in a disclosure — see boardStates.js for why.
+        // This used to dump `e.message` as one red line, which turned the
+        // server's complete, correct diagnosis into a screen the operator read
+        // as "nothing displayed" (2026-08-17).
+        renderLoadError(e);
       }
     }
 

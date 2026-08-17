@@ -40,6 +40,7 @@ import subprocess
 from pathlib import Path
 
 from ._model import (
+    WRITE_SOURCE as _WRITE_SOURCE,
     StaleStoreError,
     TaskValidationError,
     _validate_tasks,
@@ -265,7 +266,8 @@ def _save_doc_unlocked(
     deleted_ids: list[str] | None = None,
     touched_ids: list[str] | None = None,
     allow_shrink: bool = False,
-) -> None:
+    expected_revision: int | None = None,
+) -> dict | None:
     """Validate-and-write an ALREADY-PARSED full doc WITHOUT the store lock.
 
     The doc-based write primitive. The read-modify-write callers in
@@ -297,7 +299,10 @@ def _save_doc_unlocked(
     if not isinstance(tasks, list):
         tasks = []
         doc["tasks"] = tasks
-    _validate_tasks(tasks, source="<save_tasks>")  # hook-bypass: line-limit
+    # WRITE_SOURCE, not the literal: `_validate._side_of` compares against it to
+    # decide whether a tolerated warning says "write-side" or "read-side", so a
+    # drift between the two spellings would silently restore the mislabel.
+    _validate_tasks(tasks, source=_WRITE_SOURCE)  # hook-bypass: line-limit
 
     # SQLite IS the store. This is the whole write path — there is no second
     # branch, and that is the point of the change rather than a side effect of
@@ -320,12 +325,13 @@ def _save_doc_unlocked(
     # of the board — which is the exact defect this cutover exists to remove.
     from ._store_backend import write_doc_to_db
 
-    write_doc_to_db(
+    return write_doc_to_db(
         doc,
         path,
         deleted_ids=deleted_ids,
         touched_ids=touched_ids,
         allow_shrink=allow_shrink,
+        expected_revision=expected_revision,
     )
 
 

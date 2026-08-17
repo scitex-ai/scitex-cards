@@ -95,7 +95,8 @@ ENV_DB = "SCITEX_CARDS_DB"
 #:
 #: v6 (the optimistic lock) adds ``tasks.revision``. It is incremented by every
 #: row-level write (v7's trigger, below) and it CAN be asserted in a write's
-#: WHERE clause — but only by a caller that opts in, and no public verb does.
+#: WHERE clause — but only by a caller that opts in, which now includes
+#: ``update_task``.
 #:
 #: THAT DISTINCTION IS LOAD-BEARING AND THIS COMMENT USED TO ERASE IT. It read
 #: "incremented by every row-level write and asserted in the write's WHERE
@@ -106,19 +107,25 @@ ENV_DB = "SCITEX_CARDS_DB"
 #: otherwise. A comment that overstates a guard is worse than no comment: it
 #: converts a reader's diligence into a reason to skip the check.
 #:
-#: WHAT IS TRUE TODAY — one SQL site, two callers, no public entry:
+#: WHAT IS TRUE TODAY — one SQL site, and one public entry that must be asked:
 #:   * ``_db_bootstrap._insert_tasks(..., expected_revision=N)`` appends
 #:     ``WHERE tasks.revision = ?`` — the only such clause in the package.
 #:   * ``_db_mirror._write_card(..., expected_revision=N)`` forwards to it.
-#:   * ``update_task`` / ``add_task`` accept no such argument, so every write
-#:     through the public surface remains LAST-WRITE-WINS, deliberately —
+#:   * ``update_task(..., expected_revision=N)`` reaches it through the doc write
+#:     path and RAISES :class:`RevisionConflictError` when the row moved. This
+#:     became possible only with #872: update_task declares ``touched_ids``, so
+#:     the write reaches exactly one row and a per-row guard is no longer a lie.
+#:   * ``add_task`` accepts no such argument — an INSERT has no prior revision to
+#:     compare against.
+#:   * OMITTING it emits no clause at all, so an un-opted write is byte-identical
+#:     to before and remains LAST-WRITE-WINS. That default is deliberate:
 #:     :func:`_migrate_v6_to_v7` ruled REJECT-by-default unusable across a fleet
 #:     that cannot be made uniformly current.
-#: So ``revision`` is a CAPABILITY, not a PROTECTION. Pinned by
-#: ``tests/scitex_cards/test__revision_is_opt_in.py`` so this text cannot drift
-#: again in EITHER direction: it fails if the WHERE clause disappears, and it
-#: fails if a public verb starts accepting the argument while this still says
-#: none does.
+#: So ``revision`` is still a CAPABILITY rather than a PROTECTION — what changed
+#: is that a caller can now ask for it without reaching into a private module.
+#: Pinned by ``tests/scitex_cards/test__revision_is_opt_in.py`` so this text
+#: cannot drift again in EITHER direction: it fails if the WHERE clause
+#: disappears, and it fails if the DEFAULT stops being opt-in.
 #:
 #: The counter exists so a
 #: writer can tell "the row is there" (which ``rowcount == 1`` already answers)
@@ -174,7 +181,7 @@ ENV_DB = "SCITEX_CARDS_DB"
 #: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
 #: each case the artifact exists and its effect does not yet, which is a state
 #: worth being able to name.
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:

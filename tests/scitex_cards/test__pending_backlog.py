@@ -263,6 +263,42 @@ class TestPendingNudgeLine:
         # Assert — the two sweeps must stay distinguishable in the channel.
         assert "STALE-ACTIVE" not in summary
 
+    def test_the_verb_does_not_claim_a_clock_the_sweep_does_not_use(
+        self, nudge_line
+    ):
+        # THE DEFECT THIS PINS, reported by dotfiles 2026-08-17 with a
+        # counterexample. The line read "N deferred card(s) untouched >24h
+        # [aged by deferred_at; …]" — two different predicates in one sentence.
+        # `deferred_at` is when a card ENTERED deferred; "untouched" is
+        # `last_activity`. A card deferred a month ago and worked an hour ago
+        # was reported as untouched for over a day.
+        #
+        # Asserting on the ABSENCE of the wrong verb rather than the presence of
+        # the right one: any future rewording is free, but reinstating a
+        # last_activity word beside a deferred_at clock goes red.
+        # Arrange
+        line = nudge_line
+        # Act
+        summary = line
+        # Assert
+        assert "untouched" not in summary
+
+    def test_the_verb_matches_the_field_named_in_the_bracket(self, nudge_line):
+        # The bracket is READ from BACKLOG_AGE_FIELD, so it cannot drift; the
+        # prose beside it CAN, and did. This is the seam between them — split
+        # from the test above so "the wrong word is gone" and "the right word
+        # agrees with the clock" fail separately.
+        # Arrange
+        from scitex_cards._stale.active_clocks import BACKLOG_AGE_FIELD
+
+        verb = {"deferred_at": "waiting", "last_activity": "untouched"}[
+            BACKLOG_AGE_FIELD
+        ]
+        # Act
+        summary = nudge_line
+        # Assert
+        assert f"card(s) {verb} >" in summary
+
     def test_id_cap_collapses_remainder(self):
         # Arrange
         cards = detect_pending_backlog(
