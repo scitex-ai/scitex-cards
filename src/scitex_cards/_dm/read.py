@@ -23,6 +23,13 @@ hosts the log merges by union with no arbitration — where a mutable
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
@@ -30,7 +37,6 @@ from __future__ import annotations
 from .._schema_probe import _sole_value
 
 import json
-import sqlite3
 from pathlib import Path
 
 #: Current membership: the LATEST event per ``(thread_id, member)``.
@@ -74,7 +80,7 @@ SELECT e.thread_id AS thread_id,
 MESSAGE_ORDER_SQL = "ORDER BY seq, ts, origin_host, id"
 
 
-def row_to_message(row: sqlite3.Row) -> dict:
+def row_to_message(row: Mapping[str, Any]) -> dict:
     """One ``dm_messages`` row as a plain dict, payload merged back in.
 
     ``record_json`` is the VERBATIM payload the source carried (the v2/v3
@@ -98,7 +104,7 @@ def row_to_message(row: sqlite3.Row) -> dict:
     return merged
 
 
-def current_members(conn: sqlite3.Connection, thread_id: str) -> list[str]:
+def current_members(conn: StoreConnection, thread_id: str) -> list[str]:
     """Peers currently in ``thread_id``, sorted. Folds the event log."""
     rows = conn.execute(
         f"SELECT member FROM ({CURRENT_MEMBERS_SQL}) "
@@ -109,7 +115,7 @@ def current_members(conn: sqlite3.Connection, thread_id: str) -> list[str]:
 
 
 def messages_in_conn(
-    conn: sqlite3.Connection, thread_id: str, *, include_deleted: bool = False
+    conn: StoreConnection, thread_id: str, *, include_deleted: bool = False
 ) -> list[dict]:
     """Every live message of ``thread_id``, in the total order.
 
@@ -126,7 +132,7 @@ def messages_in_conn(
 
 
 def unread_for_conn(
-    conn: sqlite3.Connection, reader: str, *, thread_id: str | None = None
+    conn: StoreConnection, reader: str, *, thread_id: str | None = None
 ) -> list[dict]:
     """Messages ``reader`` can see, did not send, and has no receipt for.
 
@@ -208,7 +214,7 @@ def list_members(
         conn.close()
 
 
-def threads_summary_conn(conn: sqlite3.Connection, reader: str) -> dict[str, dict]:
+def threads_summary_conn(conn: StoreConnection, reader: str) -> dict[str, dict]:
     """Per-thread summary FROM THE STORE, shaped like the sidecar's version.
 
     Returns ``{thread_id: {"peers": (a, b), "last": <message|None>,

@@ -34,8 +34,12 @@ membership event is a fact that happened.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 import json
-import sqlite3
 
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
@@ -50,7 +54,7 @@ from .ids import (
 from .._schema_probe import _sole_value
 
 
-def _open(db, store) -> sqlite3.Connection:
+def _open(db, store) -> StoreConnection:
     """Open the DM store for WRITING, refusing a retired one.
 
     THE REFUSAL IS HERE, NOT IN ``open_db``. Card writes reach the retirement
@@ -93,7 +97,7 @@ def _dumps(payload: dict) -> str:
 
 
 def ensure_thread(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     thread_id: str,
     *,
     kind: str = "pair",
@@ -128,7 +132,7 @@ def ensure_thread(
 
 
 def record_member_event(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     thread_id: str,
     member: str,
     action: str,
@@ -172,7 +176,7 @@ def record_member_event(
     return cur.rowcount > 0
 
 
-def next_member_seq(conn: sqlite3.Connection, thread_id: str, member: str) -> int:
+def next_member_seq(conn: StoreConnection, thread_id: str, member: str) -> int:
     """``1 + MAX(seq)`` for this ``(thread, member)`` — the membership counter.
 
     Read inside the caller's ``BEGIN IMMEDIATE``, so two writers cannot observe
@@ -187,7 +191,7 @@ def next_member_seq(conn: sqlite3.Connection, thread_id: str, member: str) -> in
     return int(_sole_value(row)) + 1
 
 
-def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
+def next_seq(conn: StoreConnection, thread_id: str) -> int:
     """``1 + MAX(seq)`` for the thread — the per-thread logical counter.
 
     Read inside the caller's ``BEGIN IMMEDIATE`` so two appenders cannot both
@@ -203,7 +207,7 @@ def next_seq(conn: sqlite3.Connection, thread_id: str) -> int:
 
 
 def insert_message(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     *,
     message_id: str,
     thread_id: str,
@@ -225,7 +229,7 @@ def insert_message(
 
 
 def insert_receipt(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     message_id: str,
     reader: str,
     *,

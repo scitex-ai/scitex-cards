@@ -23,8 +23,12 @@ Field mapping (see :mod:`scitex_cards._db` for the schema rationale):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
-import sqlite3
 from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
@@ -174,7 +178,7 @@ class RevisionOutcome:
 
 
 def _insert_tasks(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     tasks: list,
     *,
     replace: bool = True,
@@ -437,7 +441,7 @@ _DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t not in _DOC_OWNED_ELSEWHER
 
 
 def _rebuild_from_doc(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     doc: dict,
     *,
     threads: dict[str, list[dict]] | None = None,
@@ -478,7 +482,7 @@ def _rebuild_from_doc(
     return summary
 
 
-def _stamp_meta(conn: sqlite3.Connection, source: str) -> None:
+def _stamp_meta(conn: StoreConnection, source: str) -> None:
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('source', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

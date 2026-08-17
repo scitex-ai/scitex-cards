@@ -24,9 +24,13 @@ import-time snapshot of those flags.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
 import os
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -258,7 +262,7 @@ def _omit_or_raise(exc: "ExportRefused", policy: str, table: str, row_id) -> Non
 def export_doc(
     db_path: str | Path | None = None,
     *,
-    conn: sqlite3.Connection | None = None,
+    conn: StoreConnection | None = None,
     repair: bool = True,
     on_unrebuildable: str = "raise",
 ) -> tuple[dict, dict]:

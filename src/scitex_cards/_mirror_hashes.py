@@ -16,9 +16,13 @@ the comments that explain it.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import hashlib
 import json
-import sqlite3
 
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
@@ -50,10 +54,10 @@ def _section_hash(value) -> str:
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()  # noqa: S324
 
 
-def _existing_hashes(conn: sqlite3.Connection) -> dict[str, str]:
+def _existing_hashes(conn: StoreConnection) -> dict[str, str]:
     conn.execute(_HASH_DDL)
     rows = conn.execute(f"SELECT task_id, hash FROM {HASH_TABLE}").fetchall()
-    # row_values, NOT r[0]/r[1]: the annotation says sqlite3.Connection, but an
+    # row_values, NOT r[0]/r[1]: the annotation says StoreConnection, but an
     # annotation is a claim, not a guarantee -- this takes the CALLER's
     # connection, and since #693 that caller can be holding a psycopg one, whose
     # dict_row raises KeyError on a positional index.

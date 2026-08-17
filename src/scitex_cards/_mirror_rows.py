@@ -15,14 +15,18 @@ prevent had already happened.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 
 from ._db_bootstrap import _insert_tasks
 from ._mirror_hashes import HASH_TABLE
 
 
 
-def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
+def _drop_card_rows(conn: StoreConnection, task_id: str) -> None:
     """Remove one card's derived rows so it can be re-inserted cleanly.
 
     ``_insert_comments`` INSERTs (it does not REPLACE — comments carry a
@@ -42,7 +46,7 @@ def _drop_card_rows(conn: sqlite3.Connection, task_id: str) -> None:
 
 
 def _write_card(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     card: dict,
     *,
     expected_revision: int | None = None,
@@ -97,7 +101,7 @@ def _write_card(
     return _insert_tasks(conn, [card], expected_revision=expected_revision)
 
 
-def _delete_card(conn: sqlite3.Connection, task_id: str) -> None:
+def _delete_card(conn: StoreConnection, task_id: str) -> None:
     """A card that left the doc must leave the mirror COMPLETELY.
 
     Also drops edges pointing AT it, which ``_drop_card_rows`` deliberately does
