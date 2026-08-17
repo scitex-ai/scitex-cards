@@ -15,9 +15,18 @@ board must render helpfully instead of the red banner:
 - **anything else**: the loud red error stays, now carrying the server's
   ``error`` field and the HTTP status (the body is READ before giving up).
 
-Source-pin tests over the template JS, following the repo's
+Source-pin tests over the board's CLIENT source, following the repo's
 ``test__board_v3_signatures.py`` convention (the fetch logic is browser-side;
 the pins keep the contract from silently regressing in a squash-merge).
+
+WHY THE FIXTURE READS TWO FILES. These states used to live in the template's
+inline JS and the pins read only ``board_v3.html``. On 2026-08-17 the four
+renderers moved into ``board_v3/boardStates.js`` and all five location-bound
+pins went red at once — correctly: they asserted WHERE the contract lived, not
+THAT it held. The contract is a property of the board's client code, so the
+fixture is the concatenation of the template and the extracted module. A pin
+that matches in either file is satisfied, because either file is shipped to the
+same browser.
 """
 
 from __future__ import annotations
@@ -30,18 +39,21 @@ pytest.importorskip("django")
 
 from scitex_cards._django import views  # noqa: E402
 
-_TEMPLATE = (
-    Path(views.__file__).resolve().parent
-    / "templates"
-    / "scitex_cards"
-    / "board_v3.html"
+_DJANGO_DIR = Path(views.__file__).resolve().parent
+
+_TEMPLATE = _DJANGO_DIR / "templates" / "scitex_cards" / "board_v3.html"
+
+_BOARD_STATES_JS = (
+    _DJANGO_DIR / "static" / "scitex_cards" / "board_v3" / "boardStates.js"
 )
 
 
 @pytest.fixture
 def board_source():
-    """The template source (the load states live in its inline JS)."""
-    return _TEMPLATE.read_text(encoding="utf-8")
+    """The board's client source: the template plus the extracted states module."""
+    return "\n".join(
+        p.read_text(encoding="utf-8") for p in (_TEMPLATE, _BOARD_STATES_JS)
+    )
 
 
 def test_load_graph_reads_body_before_giving_up(board_source):
@@ -107,11 +119,61 @@ def test_unrecognized_failure_keeps_loud_error_with_server_error_field(
     source = board_source
     # Act
     escalates_with_error_field = (
-        'throw new Error(`HTTP ${r.status}` + (err ? ` — ${escapeHtml(err)}` : ""))'
-        in source
+        'throw new Error(`HTTP ${r.status}` + (err ? ` — ${err}` : ""))' in source
     )
     # Assert
     assert escalates_with_error_field
+
+
+def test_the_thrown_message_is_not_escaped_on_the_way_into_the_error(
+    board_source,
+):
+    """An Error message is a STRING, not markup, so the throw must NOT escape.
+
+    This pin previously required ``escapeHtml(err)`` INSIDE the throw. That was
+    pinning a defect: the render layer escapes too, so the text was escaped
+    twice and `&#39;` appeared literally in the panel — observed in a browser
+    2026-08-17, not deduced. Escape where you interpolate, exactly once. The
+    pin is inverted rather than deleted so the double-escape cannot come back
+    unnoticed.
+    """
+    # Arrange
+    throw_line = [
+        line for line in board_source.splitlines() if "throw new Error(`HTTP" in line
+    ]
+    # Act
+    escapes_on_the_way_in = any("escapeHtml" in line for line in throw_line)
+    # Assert
+    assert not escapes_on_the_way_in
+
+
+def test_the_render_layer_escapes_the_message_exactly_once(board_source):
+    """The escape belongs at the point the string becomes HTML — and there
+    the FULL text is escaped, so nothing reaches the DOM unescaped."""
+    # Arrange
+    source = board_source
+    # Act
+    escapes_at_interpolation = "<pre>${escapeHtml(full)}</pre>" in source
+    # Assert
+    assert escapes_at_interpolation
+
+
+def test_the_error_lead_strips_the_http_status_prefix(board_source):
+    """The headline must be the server's own first sentence, never a status code.
+
+    MEASURED, NOT GUESSED: the first version cut at the first em-dash, which on
+    the real message "HTTP 500 — Cannot read the task store: …" produced the
+    headline "HTTP 500" — the uninformative lead the whole panel exists to
+    remove. Found by rendering it and reading the screen.
+    """
+    # Arrange
+    source = board_source
+    # Act
+    strips_transport_prefix = (
+        r'm.replace(/^HTTP\s+\d{3}\s*(?:—|-|:)?\s*/i, "")' in source
+    )
+    # Assert
+    assert strips_transport_prefix
 
 
 # EOF

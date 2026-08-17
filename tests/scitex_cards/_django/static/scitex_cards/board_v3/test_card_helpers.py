@@ -323,11 +323,26 @@ def test_the_template_alias_is_a_function_declaration_not_an_assignment():
 
 
 def test_the_template_no_longer_carries_its_own_escape_table():
+    # COMMENTS ARE STRIPPED FIRST, and that is not a loosening.
+    # This assertion read the RAW text, so a `//` line explaining WHY the
+    # double-escape bug happened — which necessarily quotes `&quot;` — failed it
+    # (2026-08-17). Prose ABOUT an entity is indistinguishable from the entity
+    # to a substring search, so the gate fired on the documentation of the fix
+    # rather than on a regression. An escape table is CODE; it cannot hide
+    # inside a line comment, so stripping comments narrows what the test sees to
+    # exactly what it is about and it can still go red on a real table.
+    # Only WHOLE-LINE comments are dropped, never a trailing `//`: cutting at
+    # the first `//` anywhere would also truncate any line containing an
+    # "https://" literal, and truncation can only ever HIDE a table — a false
+    # pass. Dropping whole comment lines cannot.
     # Arrange
-    template = TEMPLATE.read_text(encoding="utf-8")
+    extra_js = TEMPLATE.read_text(encoding="utf-8").split("{% block extra_js %}", 1)[1]
     # Act
+    code_only = "\n".join(
+        line for line in extra_js.splitlines() if not line.lstrip().startswith("//")
+    )
     # Assert
-    assert "&quot;" not in template.split("{% block extra_js %}", 1)[1]
+    assert "&quot;" not in code_only
 
 
 def test_the_module_touches_no_dom_at_import_time():
