@@ -172,29 +172,41 @@ def test_a_refused_card_write_leaves_the_unreadable_user_intact(
 
 
 def test_the_write_back_owns_exactly_the_sections_this_file_guards():
-    """The guard above covers `users`. This fails if that stops being enough.
+    """The set is now EMPTY. This fails the moment anything rejoins it.
 
     `_SECTION_KEYS` is the blast radius: `_sync_sections` issues
     `DELETE FROM <section>` and re-inserts from the document, so every section
-    listed there loses any row a tolerated read drops. The guard above proves
-    that for `users` — the only member today — and proves nothing about a
-    section added later.
+    listed there loses any row a tolerated read drops.
 
-    IF THIS TEST FAILS, someone widened the set of sections the write-back
-    owns. That is allowed, but it widens the deletion hazard with it: add a
-    guard for the new section FIRST, then update this assertion. Do not simply
-    edit the expected value — that is how a barrier becomes decoration.
+    IT HELD `users` UNTIL THE REGISTRY GOT A LIVE PRODUCER, and this test
+    fired when that changed — which is what it is for, though not in the
+    direction its previous wording expected. It anticipated WIDENING and said
+    "do not simply edit the expected value". That instruction stands and is
+    the reason for this rewrite rather than a one-word edit:
+
+      * NARROWING (what happened here) REMOVES a deletion hazard. `users`
+        left the set because `_db_users.save_users_rows` now produces that
+        table, and A TABLE IS OWNED BY EXACTLY THE THING THAT PRODUCES IT.
+        With the tuple empty, `_sync_sections` is a no-op and an ordinary
+        card write can no longer delete a registry row at all.
+      * WIDENING still requires a guard for the new section FIRST. The
+        `users` guards above are KEPT rather than deleted with the
+        membership: the read-modify-write door they cover is still open
+        (`help_wait` and friends still travel it), so a tolerated read
+        dropping a row is still the hazard — the write-back is simply no
+        longer a second way to lose it.
 
     Kept deliberately as a test rather than a comment at the tuple: a comment
     is read by whoever happens to look, and this must fire for whoever does
     not. `inboxes` was removed from this set in #780 exactly because an
     ordinary card write had been rebuilding the delivery rail, erasing
-    `msg_id` / `pushed_at` / `confirmed_at` and renumbering `seq` — the cost
-    of that membership going unnoticed is the precedent.
+    `msg_id` / `pushed_at` / `confirmed_at` and renumbering `seq`; `users`
+    left for the same reason before it could repeat the same incident. The
+    empty tuple is the endpoint of that argument, not an accident.
     """
     # Arrange
     from scitex_cards._db_mirror import _SECTION_KEYS
 
     # Act
     # Assert
-    assert set(_SECTION_KEYS) == {"users"}
+    assert set(_SECTION_KEYS) == set()
