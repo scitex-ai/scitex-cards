@@ -14,7 +14,18 @@ build/
 # libcairo, …). Runtime artifacts re-fetched via apt; never source.
 *.deb
 
-.venv/
+# `.venv*/`, not `.venv/`. The release workflow creates `.venv-docs/` to build
+# the in-wheel Sphinx HTML (#876), and `.venv/` matches ONLY the directory named
+# exactly `.venv` — so `.venv-docs/` was untracked-but-not-ignored, hatchling
+# swept it into the sdist, and `uv build` refused the tarball because a venv's
+# `bin/python` is an absolute symlink to the interpreter. Measured 2026-08-17 on
+# the v0.43.0 release build:
+#     Caused by: failed to unpack .../scitex_cards-0.43.0/.venv-docs/bin/python
+#     Caused by: symlink path `/usr/bin/python3.12` is absolute, but external
+#                symlinks are not allowed
+# A glob rather than a second literal line, so the next differently-suffixed
+# venv is covered without anyone remembering to add it.
+.venv*/
 venv/
 env/
 .env
