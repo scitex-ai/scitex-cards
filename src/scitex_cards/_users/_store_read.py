@@ -102,23 +102,22 @@ def load_users(store: str | Path | None = None) -> list[User]:
     :meth:`User.from_dict` so mutating a returned user (or its nested lists)
     can never poison a cache.
 
-    AMBIENT CALLS READ THE SHARED DATABASE; an explicit ``store`` keeps the
-    local file. See :func:`scitex_cards._db_users.registry_is_database` for
-    why the split falls there — in short, the registry is fleet identity, and
-    the local path it used to resolve to is a per-container private overlay,
-    so the answer it gave was never shared with anyone.
+    READS THE DATABASE, ALWAYS. ``store`` selects WHICH database; it never
+    selects a different KIND of home. The registry is fleet identity, and the
+    local path it used to resolve to is a per-container private overlay — so
+    the answer it gave was never shared with anyone. See
+    :mod:`scitex_cards._db_users` for the measurement, and
+    :mod:`._registry_home` for why an earlier ``explicit -> file`` branch had
+    to go (it split the registry across two homes and broke notify dispatch).
 
-    The mtime-guarded cache below applies to the FILE path only. It is keyed
-    on ``(mtime_ns, size)``, which a database has no equivalent of, and the
-    thing it exists to skip — a multi-MB full-store YAML parse per call — is
-    not what a one-table ``SELECT`` costs.
+    The mtime-guarded cache above is now unreachable from this function. It
+    is keyed on ``(mtime_ns, size)``, which a database has no equivalent of,
+    and the thing it existed to skip — a multi-MB full-store YAML parse per
+    call — is not what a one-table ``SELECT`` costs.
     """
-    from .._db_users import load_users_rows, registry_is_database
+    from .._db_users import load_users_rows
 
-    if registry_is_database(store):
-        return [User.from_dict(copy.deepcopy(d)) for d in load_users_rows()]
-    path = _resolved_store(store)
-    return [User.from_dict(copy.deepcopy(d)) for d in _load_users_section_cached(path)]
+    return [User.from_dict(copy.deepcopy(d)) for d in load_users_rows(store)]
 
 
 def list_users(store: str | Path | None = None) -> list[User]:

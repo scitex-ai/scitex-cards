@@ -312,7 +312,7 @@ def register_user(
     path = _resolved_store(store)
     path.parent.mkdir(parents=True, exist_ok=True)
     with _store_lock(path):
-        users = _read_users(store, path)
+        users = _read_users(store)
         existing_ids = {u.get("id") for u in users if u.get("id")}
         name_owner = _names_index(users)
         if id is not None and id in existing_ids:
@@ -353,7 +353,7 @@ def register_user(
         )
         validate_user(new)
         users.append(new.to_dict())
-        _write_users(users, store, path)
+        _write_users(users, store)
     return new
 
 
@@ -381,7 +381,7 @@ def add_alias(
         )
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _read_users(store, path)
+        users = _read_users(store)
         name_owner = _names_index(users)
         owner = name_owner.get(name)
         if owner is not None and owner != user_id:
@@ -397,7 +397,7 @@ def add_alias(
             current.append(name)
             target["names"] = current
             validate_user(target)
-            _write_users(users, store, path)
+            _write_users(users, store)
         return User.from_dict(target)
 
 
@@ -418,13 +418,13 @@ def set_notify(
         )
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _read_users(store, path)
+        users = _read_users(store)
         target = next((u for u in users if u.get("id") == user_id), None)
         if target is None:
             raise UserValidationError(f"set_notify: unknown user id {user_id!r}")
         target["notify"] = dict(notify)
         validate_user(target)
-        _write_users(users, store, path)
+        _write_users(users, store)
         return User.from_dict(target)
 
 
@@ -449,7 +449,7 @@ def touch_user(
     key = name_or_id.strip()
     path = _resolved_store(store)
     with _store_lock(path):
-        users = _read_users(store, path)
+        users = _read_users(store)
         target = None
         # Resolution order mirrors resolve_user: exact id → name alias →
         # host_at_name join key. One identity seam, no second path.
@@ -466,7 +466,7 @@ def touch_user(
             return None
         target["last_seen"] = _utc_now_iso()
         validate_user(target)
-        _write_users(users, store, path)
+        _write_users(users, store)
         return User.from_dict(target)
 
 

@@ -161,10 +161,26 @@ def test_a_stale_document_write_leaves_the_registry_intact(registered) -> None:
     assert user.id in _registry_ids(db)
 
 
-def test_an_explicit_store_still_writes_the_file(
+def test_an_explicit_store_writes_no_yaml_file(
     ambient_db_store: Path, tmp_path: Path
 ) -> None:
-    """Naming a store keeps the file behaviour the existing suite relies on."""
+    """Naming a store NEVER produces a file. It selects a database.
+
+    This assertion is the inverse of the one it replaces, deliberately. I
+    first wrote `test_an_explicit_store_still_writes_the_file`, which passed
+    against a design where an explicit store kept the YAML behaviour — and
+    that design was wrong: it split the registry across two homes, so a
+    registration made with `store=` was invisible to a resolution made
+    without it. The test did not catch that, because it asserted on the
+    branch rather than on the outcome.
+
+    A `…/tasks.yaml` store is a display LABEL (`_paths` builds it as
+    `resolve_db_path(None).parent / "tasks.yaml"`; the YAML tier died in
+    #512), so the registry inverts it to the sibling database. If this file
+    ever appears again, either a file branch came back or a label reached
+    `open_db` raw and SQLite created a phantom store at the label's path —
+    both of which have already happened once each on this branch.
+    """
     # Arrange
     from scitex_cards import _users
 
@@ -172,7 +188,21 @@ def test_an_explicit_store_still_writes_the_file(
     # Act
     _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert
-    assert named.exists()
+    assert not named.exists()
+
+
+def test_an_explicit_store_reaches_its_sibling_database(
+    ambient_db_store: Path, tmp_path: Path
+) -> None:
+    """...and the registration is retrievable from that database."""
+    # Arrange
+    from scitex_cards import _users
+
+    named = tmp_path / "tasks.yaml"
+    # Act
+    user = _users.register_user(kind="agent", names=["file-probe"], store=named)
+    # Assert
+    assert user.id in _registry_ids(tmp_path / "cards.db")
 
 
 def test_an_explicit_store_stays_out_of_the_database(

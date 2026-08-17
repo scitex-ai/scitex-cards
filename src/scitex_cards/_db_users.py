@@ -41,6 +41,40 @@ away from it::
 So this module is where the registry's SQL lives, and it lives here rather
 than under ``_users/`` because that is a leaf package and leaf packages do
 not hold SQL.
+
+THERE IS NO FILE BRANCH, and the first version of this module was wrong
+to have one.
+
+I originally routed an EXPLICIT ``store`` to the YAML file and only an
+AMBIENT one to the database, reasoning that naming a path is a caller
+stating where the registry lives. That rule SPLIT THE REGISTRY IN HALF the
+moment one call named a store and another did not — which is not a corner
+case, it is what the notify dispatch does:
+
+    alice = register_user(names=["alice"], store=store)   -> file
+    emit(Event(...))            -> resolve_user("alice")  -> database
+    enqueued ['alice'] instead of ['u_181ec73bb85f']
+
+The registration landed in one home and the resolution looked in the other,
+so identity resolution silently degraded to the raw name string. Caught by
+``test_emit_result_reports_the_enqueued_owner``.
+
+The premise was also simply false. A store path is not a file — the YAML
+tier was DELETED in #512, and ``tests/.../test__notify_dispatch.py`` says so
+where it builds one: *"Store is SQLite; reads/writes hit the canonical DB
+and the path survives only as the store IDENTITY stamp."* So an explicit
+store names WHICH DATABASE, never a different KIND of home, and the file the
+registry used to write was a phantom sitting beside the real one.
+
+Operator ruling, 2026-08-17, which settles it independently of the bug:
+「データベースを使わないで状態を表しているファイルがあるならばそれは失格です」
+— a file representing state outside the database is disqualified.
+
+So ``store`` selects WHICH database and never a different KIND of home. It
+still cannot be handed to :func:`open_db` raw, because a ``tasks.yaml``
+store is a display LABEL that nothing downstream normalises — see
+:func:`_db_target`, which inverts it to the sibling database rather than
+letting SQLite create a phantom store at the label's path.
 """
 
 from __future__ import annotations
@@ -56,33 +90,50 @@ from typing import Any
 _REPAIR = True
 
 
-def registry_is_database(store: str | Path | None) -> bool:
-    """Whether THIS call's registry home is the shared database.
+def _db_target(store: str | Path | None) -> str | Path | None:
+    """Map a store argument to a DATABASE, because a label is not one.
 
-    An EXPLICIT ``store`` keeps the YAML behaviour, deliberately. Naming a
-    path is a caller stating where the registry is, and three groups of
-    callers do exactly that: the test suite (every store under
-    ``tests/scitex_cards/_users/`` is a ``tmp_path / "tasks.yaml"``),
-    deliberate imports/bootstraps, and any pre-database deployment. None of
-    them should be silently redirected to a server.
+    A ``…/tasks.yaml`` store is a DISPLAY LABEL, not a file. ``_paths``
+    builds it as ``resolve_db_path(None).parent / "tasks.yaml"`` and
+    ``_store_add`` says what happens when it is mistaken for a location:
+    *"`_resolved_store` returns a DISPLAY LABEL … good enough to name a
+    store in a message, never a thing on disk. Guard the database, not the
+    label."* The YAML tier itself was deleted in #512.
 
-    Only an AMBIENT call — ``store=None``, i.e. "wherever the board is" —
-    resolves to the configured store, because that is the only form that was
-    ever asking for the fleet's registry rather than a named file.
+    Passing that label straight to :func:`open_db` is not harmless, because
+    nothing downstream normalises it — ``resolve_store_target`` returns an
+    explicit argument AS WRITTEN, and ``resolve_db_path`` and ``connect``
+    likewise. SQLite then CREATES a database at that path. Measured while
+    building this module::
 
-    No configured store target means no shared home, so the caller keeps the
-    local file: that is the zero-config and pre-migration case, and it is a
-    working configuration rather than an error.
+        store            .../store0/tasks.yaml     r(store)  .../store0/tasks.yaml
+        $SCITEX_CARDS_DB .../store0/cards.db       r(None)   .../store0/cards.db
+        users@store      [['alice']]     <- a database named tasks.yaml
+        users@None       []              <- the real board, empty
+        resolve_user("alice") -> None
+
+    i.e. the registration went into a PHANTOM STORE beside the real one and
+    identity resolution degraded to the raw name — the same shape as the
+    2026-08-02 incident where a DSN collapsed to a relative path and callers
+    wrote a tree named after it.
+
+    So the label is inverted back to its sibling database. A DSN passes
+    through untouched (a server target is already a database), and ``None``
+    stays ``None`` so the ambient chain resolves it.
     """
-    if store is not None:
-        return False
-    from ._store_target import StoreTargetNotConfigured, resolve_store_target
+    if store is None:
+        return None
+    text = str(store)
+    from ._store_url import is_postgres_url
 
-    try:
-        resolve_store_target(None)
-    except StoreTargetNotConfigured:
-        return False
-    return True
+    if is_postgres_url(text):
+        return text
+    path = Path(text).expanduser()
+    if path.suffix in (".yaml", ".yml"):
+        from ._db import DEFAULT_DB_FILENAME
+
+        return path.parent / DEFAULT_DB_FILENAME
+    return path
 
 
 def _refuse_unserialisable(users: list[dict]) -> None:
@@ -126,7 +177,7 @@ def _refuse_unserialisable(users: list[dict]) -> None:
         )
 
 
-def load_users_rows() -> list[dict]:
+def load_users_rows(store: str | Path | None = None) -> list[dict]:
     """Return every registry row from the shared database.
 
     Targeted read: one ``SELECT`` against ``users``, NOT a document
@@ -137,7 +188,7 @@ def load_users_rows() -> list[dict]:
     from ._db import open_db
     from ._db_export import _record
 
-    conn = open_db(None)
+    conn = open_db(_db_target(store))
     try:
         rows = conn.execute(
             "SELECT * FROM users ORDER BY created_at, id"
@@ -150,7 +201,7 @@ def load_users_rows() -> list[dict]:
     return out
 
 
-def save_users_rows(users: list[dict]) -> None:
+def save_users_rows(users: list[dict], store: str | Path | None = None) -> None:
     """Upsert registry rows into the shared database.
 
     TARGETED, AND THAT IS WHAT MAKES THIS AFFORDABLE ON THE HOT PATH.
@@ -185,7 +236,7 @@ def save_users_rows(users: list[dict]) -> None:
     from ._db import open_db
     from ._db_sections import _insert_users
 
-    conn = open_db(None)
+    conn = open_db(_db_target(store))
     try:
         _insert_users(conn, users)
         conn.commit()
@@ -195,7 +246,6 @@ def save_users_rows(users: list[dict]) -> None:
 
 __all__ = [
     "load_users_rows",
-    "registry_is_database",
     "save_users_rows",
 ]
 

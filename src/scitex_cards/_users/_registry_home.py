@@ -1,18 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Which home the user registry reads and writes — database or local file.
+"""Where the user registry reads and writes: the database, always.
 
 The four registry mutations (``register_user``, ``add_alias``, ``set_notify``,
-``touch_user``) all share one shape: take the store lock, read the rows,
-mutate them, write them back. This module is the single place that shape
-learns the registry may not be a file at all.
+``touch_user``) share one shape — take the store lock, read the rows, mutate
+them, write them back. This module is the seam where that shape reaches its
+home, and it exists as a module rather than two lines in ``_store_write``
+because that file sits one line under the 512 ceiling.
 
-Split out of ``_store_write`` rather than added to it: that module sits one
-line under the 512 ceiling, and a dispatch pair is a distinct responsibility
-from the YAML writer it dispatches to. Keeping it here also keeps the leaf
-package free of SQL — the database half lives in
-:mod:`scitex_cards._db_users`, which carries the full reasoning for why an
-ambient registry belongs on the shared board.
+THERE IS DELIBERATELY NO BRANCH HERE, and the first version of this change
+had one. I routed an EXPLICIT ``store`` to the YAML file and only an AMBIENT
+one to the database, on the reasoning that naming a path is a caller saying
+where the registry lives. That SPLITS THE REGISTRY the moment one call names
+a store and another does not, which is exactly what the notify dispatch
+does::
+
+    alice = register_user(names=["alice"], store=store)   -> file
+    emit(Event(...))            -> resolve_user("alice")  -> database
+    enqueued ['alice'] instead of ['u_181ec73bb85f']
+
+The registration landed in one home, the resolution looked in the other, and
+identity resolution degraded silently to the raw name string.
+
+The premise was false as well as dangerous: a store path is not a file. The
+YAML tier was deleted in #512, and the notify test says so where it builds
+one — *"Store is SQLite; reads/writes hit the canonical DB and the path
+survives only as the store IDENTITY stamp."* An explicit store names WHICH
+database, never a different KIND of home. So ``store`` is threaded through to
+``open_db`` and nothing branches on it.
+
+``path`` is gone from these signatures for the same reason: there is no file
+to name.
 """
 
 from __future__ import annotations
@@ -20,46 +38,25 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def _read_users(store: str | Path | None, path: Path) -> list[dict]:
-    """Registry rows for a read-modify-write, from whichever home applies.
+def _read_users(store: str | Path | None) -> list[dict]:
+    """Registry rows for a read-modify-write."""
+    from .._db_users import load_users_rows
 
-    An AMBIENT registry (``store=None``) is fleet identity and reads from the
-    shared board. An EXPLICIT ``store`` names a file and keeps the file — the
-    whole test suite, deliberate imports and pre-migration deployments all
-    take that branch, and none of them should be silently redirected to a
-    server.
+    return load_users_rows(store)
+
+
+def _write_users(users: list[dict], store: str | Path | None) -> None:
+    """Persist registry rows to the home :func:`_read_users` read from.
+
+    Both halves take the SAME ``store`` and must keep doing so. Reading from
+    one home and writing to another is a lost update in one direction and a
+    silent truncation in the other — and it is not hypothetical, it is the
+    bug described above, caught only because a notify test asserted on a
+    resolved id rather than on a name.
     """
-    from .._db_users import load_users_rows, registry_is_database
-    from ._store_read import _load_users_section
+    from .._db_users import save_users_rows
 
-    if registry_is_database(store):
-        return load_users_rows()
-    return _load_users_section(path)
-
-
-def _write_users(
-    users: list[dict], store: str | Path | None, path: Path
-) -> None:
-    """Persist registry rows to whichever home :func:`_read_users` read from.
-
-    BOTH HALVES DISPATCH ON THE SAME PREDICATE AND MUST KEEP DOING SO. A read
-    from one home followed by a write to the other is not a half-applied fix,
-    it is a LOST UPDATE in one direction and a silent truncation in the
-    other: the file writer replaces the ``users:`` section wholesale, so rows
-    read from the database would overwrite whatever the file held, while rows
-    read from the file would upsert stale copies onto the shared board.
-
-    That is why the predicate is a function both call rather than a condition
-    written twice — the two spellings could drift apart, and this is a pair
-    where drift destroys data rather than degrading behaviour.
-    """
-    from .._db_users import registry_is_database, save_users_rows
-    from ._store_write import _save_users_unlocked
-
-    if registry_is_database(store):
-        save_users_rows(users)
-        return
-    _save_users_unlocked(users, path)
+    save_users_rows(users, store)
 
 
 __all__ = [
