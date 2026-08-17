@@ -115,9 +115,10 @@ def load_users(store: str | Path | None = None) -> list[User]:
     and the thing it existed to skip — a multi-MB full-store YAML parse per
     call — is not what a one-table ``SELECT`` costs.
     """
-    from .._db_users import load_users_rows
+    from .._db_users import load_users_rows_cached
 
-    return [User.from_dict(copy.deepcopy(d)) for d in load_users_rows(store)]
+    rows = load_users_rows_cached(store)
+    return [User.from_dict(copy.deepcopy(d)) for d in rows]
 
 
 def list_users(store: str | Path | None = None) -> list[User]:

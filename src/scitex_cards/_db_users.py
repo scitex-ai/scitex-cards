@@ -177,13 +177,101 @@ def _refuse_unserialisable(users: list[dict]) -> None:
         )
 
 
+#: Lock-free reads are served from here for this long. See
+#: :func:`load_users_rows_cached` for why the number is small and why the
+#: write path must never touch it.
+_CACHE_TTL_S = 1.0
+
+#: ``{db target: (monotonic stamp, rows)}``.
+_ROW_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _cache_key(store: str | Path | None) -> str:
+    """The RESOLVED database, so two spellings of one board share an entry.
+
+    Keying on the raw argument is not a smaller version of this — it is
+    wrong, and it broke notify dispatch a second time. An ambient read keys
+    on ``None`` while a write naming the same board keys on its path, so the
+    write never retires the entry the reader is being served from:
+
+        register_user(store=<label>)  ->  invalidates ".../cards.db"
+        resolve_user()                 <-  still served from "None"
+
+    which is a stale-read bug wearing a cache's clothing. The ambient chain
+    is resolved here instead; it reads the environment and the config file
+    and opens nothing, so it costs nothing next to the 4.8 ms connection the
+    cache exists to avoid.
+    """
+    target = _db_target(store)
+    if target is not None:
+        return str(target)
+    from ._store_target import StoreTargetNotConfigured, resolve_store_target
+
+    try:
+        return str(resolve_store_target(None))
+    except StoreTargetNotConfigured:
+        return "<no store configured>"
+
+
+def _forget_cached_rows(store: str | Path | None) -> None:
+    """Drop this store's cached rows (called after every registry write)."""
+    _ROW_CACHE.pop(_cache_key(store), None)
+
+
+def load_users_rows_cached(store: str | Path | None = None) -> list[dict]:
+    """:func:`load_users_rows` behind a short TTL — for LOCK-FREE READS ONLY.
+
+    THE CONNECTION IS THE COST, NOT THE QUERY. Measured 2026-08-17::
+
+        connect() only              4.78 ms
+        connect() + init_schema()   4.63 ms
+        open_db()                   4.82 ms
+        connect() + SELECT users    4.28 ms
+
+    So a registry read costs ~4.8 ms of connection setup regardless of how
+    small the table is, and ``resolve_user`` sits on ordinary card paths.
+    Without this the full suite went from 3m36s to a projected ~16m — a 4.5x
+    regression I introduced by replacing an mtime-guarded cache with a fresh
+    connection per call. The old file path was not merely cached by accident;
+    the cache was load-bearing and I dropped it.
+
+    THE TTL IS THE PRICE OF LOSING mtime. A file could be revalidated for
+    free by stat-ing it; a database cannot, and any freshness probe needs a
+    connection — the very thing being avoided. So staleness is bounded by
+    time instead: a peer's registration becomes visible within a second.
+    That is acceptable for name -> id resolution specifically, because the
+    fallback while stale is the RAW NAME, which is what the entire
+    pre-registry world used and what every caller still handles.
+
+    NEVER SERVE A READ-MODIFY-WRITE FROM HERE. ``_registry_home._read_users``
+    calls the UNCACHED :func:`load_users_rows` under the store lock, and the
+    old implementation carried the same warning for the same reason: a stale
+    read followed by a full write back is a lost update. Rows are returned by
+    reference, so a caller that mutates them would poison the cache too —
+    another reason the mutating path must not come through here.
+    """
+    import time
+
+    key = _cache_key(store)
+    now = time.monotonic()
+    hit = _ROW_CACHE.get(key)
+    if hit is not None and (now - hit[0]) < _CACHE_TTL_S:
+        return hit[1]
+    rows = load_users_rows(store)
+    _ROW_CACHE[key] = (now, rows)
+    return rows
+
+
 def load_users_rows(store: str | Path | None = None) -> list[dict]:
-    """Return every registry row from the shared database.
+    """Return every registry row from the shared database. UNCACHED.
 
     Targeted read: one ``SELECT`` against ``users``, NOT a document
     assembly. ``resolve_user`` runs on ordinary card paths, and routing it
     through the whole-document reader would rebuild every card on the board
     to answer a question about names.
+
+    This is the form the WRITE path uses, deliberately — see
+    :func:`load_users_rows_cached`.
     """
     from ._db import open_db
     from ._db_export import _record
@@ -242,10 +330,15 @@ def save_users_rows(users: list[dict], store: str | Path | None = None) -> None:
         conn.commit()
     finally:
         conn.close()
+    # The cache is only ever a read accelerator, so a write must retire it
+    # immediately — a registration this process cannot see is worse than one
+    # a peer sees a second late.
+    _forget_cached_rows(store)
 
 
 __all__ = [
     "load_users_rows",
+    "load_users_rows_cached",
     "save_users_rows",
 ]
 
