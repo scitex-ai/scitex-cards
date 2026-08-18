@@ -49,15 +49,20 @@ def xdg_home(tmp_path, env):
 
 
 @pytest.fixture
-def broken_console_script_env(tmp_path, env, monkeypatch):
+def broken_console_script_env(tmp_path, env):
     """A real interpreter path with an EMPTY bin dir and an empty ``$PATH``.
 
     Nothing to find beside the interpreter, and nothing on $PATH either, so
     the console script is genuinely unresolvable.
+
+    The interpreter is NAMED to the verb rather than swapped into ``sys``:
+    ``sys.executable`` is process-wide state that outlives a test which fails
+    to restore it, and the directory here is real, empty and on disk, so what
+    the resolver searches is a genuine dead end rather than a rewritten
+    attribute.
     """
     empty_bin = tmp_path / "empty-venv" / "bin"
     empty_bin.mkdir(parents=True)
-    monkeypatch.setattr(sys, "executable", str(empty_bin / "python"))
     env.set("PATH", str(tmp_path / "nowhere"))
     env.set("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     return empty_bin
@@ -77,10 +82,10 @@ def subprocess_run_calls(monkeypatch):
     return calls
 
 
-def _resolve_exec_start_error():
+def _resolve_exec_start_error(empty_bin):
     """Return the ``ExecStartUnresolved`` raised by ``resolve_exec_start``."""
     try:
-        _systemd.resolve_exec_start()
+        _systemd.resolve_exec_start(str(empty_bin / "python"))
     except _systemd.ExecStartUnresolved as exc:
         return exc
     raise AssertionError("resolve_exec_start() did not fail")
@@ -222,7 +227,7 @@ def test_unresolvable_console_script_raises_exec_start_unresolved(
     # Act
     # Assert
     with pytest.raises(_systemd.ExecStartUnresolved):
-        _systemd.resolve_exec_start()
+        _systemd.resolve_exec_start(str(broken_console_script_env / "python"))
 
 
 def test_unresolvable_error_names_the_absolute_exec_start_requirement(
@@ -230,7 +235,7 @@ def test_unresolvable_error_names_the_absolute_exec_start_requirement(
 ):
     # Arrange
     # Act
-    error = _resolve_exec_start_error()
+    error = _resolve_exec_start_error(broken_console_script_env)
     # Assert
     # the message must name the problem.
     assert "ABSOLUTE ExecStart" in str(error)
@@ -241,7 +246,7 @@ def test_unresolvable_error_names_the_pip_install_remedy(
 ):
     # Arrange
     # Act
-    error = _resolve_exec_start_error()
+    error = _resolve_exec_start_error(broken_console_script_env)
     # Assert
     # ...and the remedy.
     assert "pip install" in str(error)
@@ -254,13 +259,13 @@ def test_install_unit_aborts_when_exec_start_is_unresolvable(
     # Act
     # Assert
     with pytest.raises(_systemd.ExecStartUnresolved):
-        _systemd.install_unit()
+        _systemd.install_unit(interpreter=str(broken_console_script_env / "python"))
 
 
 def test_aborted_install_leaves_no_half_written_unit(broken_console_script_env):
     # Arrange
     with contextlib.suppress(_systemd.ExecStartUnresolved):
-        _systemd.install_unit()
+        _systemd.install_unit(interpreter=str(broken_console_script_env / "python"))
     # Act
     exists = _systemd.unit_path().exists()
     # Assert

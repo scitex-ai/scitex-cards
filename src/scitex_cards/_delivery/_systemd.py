@@ -89,9 +89,13 @@ def console_script_path() -> Path:
     return _console_script_path(CONSOLE_SCRIPT)
 
 
-def resolve_exec_start() -> str:
-    """The ``ExecStart=`` body: an ABSOLUTE console-script path + the verb."""
-    return _resolve_exec_start(NOTIFYD_SPEC)
+def resolve_exec_start(interpreter: str | None = None) -> str:
+    """The ``ExecStart=`` body: an ABSOLUTE console-script path + the verb.
+
+    ``interpreter`` forwards to :func:`.._systemd_unit.console_script_path` —
+    ``None`` (every real caller) searches the running interpreter's bin dir.
+    """
+    return _resolve_exec_start(NOTIFYD_SPEC, interpreter)
 
 
 def unit_path() -> Path:
@@ -113,6 +117,7 @@ def install_unit(
     *,
     exec_start: str | None = None,
     force: bool = False,
+    interpreter: str | None = None,
 ) -> dict:
     """Write the unit file to the user-unit dir. Does NOT run systemctl.
 
@@ -132,7 +137,9 @@ def install_unit(
         ``{path, written, existed, exec_start, enable_commands}`` — caller
         prints the commands for the operator to run.
     """
-    return _install_unit(NOTIFYD_SPEC, exec_start=exec_start, force=force)
+    return _install_unit(
+        NOTIFYD_SPEC, exec_start=exec_start, force=force, interpreter=interpreter
+    )
 
 
 __all__ = [
