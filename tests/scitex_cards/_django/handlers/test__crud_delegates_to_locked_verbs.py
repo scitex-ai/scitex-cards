@@ -139,36 +139,21 @@ def _stale_board_with_concurrent_write(store_path):
     return board
 
 
-def _spy_on_update_task(monkeypatch):
-    """Record every ``_store.update_task`` call; return the call log."""
-    calls = []
+# NO SPY ON `_store.update_task` HERE ANY MORE, and no new read helper either:
+# `_load(store_path)` above already reads cards back through the canonical
+# store, and the end-to-end tests below were already using it.
+#
+# The spy proved the handler CALLED the verb with certain arguments. Reading
+# the card back proves the verb's EFFECT landed in the store the handler
+# resolved — which is what "delegates to the locked verb" exists to guarantee.
+# A spy cannot tell a delegation that worked from one whose arguments were
+# accepted and discarded.
 
-    def spy(store_arg, task_id, **fields):
-        calls.append((store_arg, task_id, fields))
-        return {"id": task_id, "title": "Build It", "status": "in_progress"}
 
-    monkeypatch.setattr("scitex_cards._store.update_task", spy)
-    return calls
-
-
-def _spy_on_set_edge(monkeypatch):
-    """Record every ``_store.set_edge`` call; return the call log."""
-    calls = []
-
-    def spy(store_arg, action=None, kind=None, source=None, target=None):
-        calls.append(
-            {"action": action, "kind": kind, "source": source, "target": target}
-        )
-        return {
-            "action": action,
-            "kind": kind,
-            "source": source,
-            "target": target,
-            "subscribed": None,
-        }
-
-    monkeypatch.setattr("scitex_cards._store.set_edge", spy)
-    return calls
+# NO SPY ON `_store.set_edge` EITHER. The edge tests below assert which CARD
+# the link landed on, which is what the depends_on swap actually decides. A
+# spy comparing the delegated dict to the GUI dict cannot distinguish "not
+# swapped" from "swapped twice"; the card can.
 
 
 # ── 1. lost-update survival, one test per converted handler ───────────────
@@ -371,51 +356,52 @@ _UPDATE_BODY = {
 }
 
 
-def test_update_delegating_to_the_verb_returns_ok(store, monkeypatch):
+def test_update_delegating_to_the_verb_returns_ok(store):
     # Arrange
-    _spy_on_update_task(monkeypatch)
     # Act
     response = _post("update", store, dict(_UPDATE_BODY))
     # Assert
     assert response.status_code == 200
 
 
-def test_update_passes_the_resolved_store_to_the_verb(store, monkeypatch):
+def test_update_lands_in_the_resolved_store(store):
     # Arrange
-    calls = _spy_on_update_task(monkeypatch)
+    _post("update", store, dict(_UPDATE_BODY))
+    # Act — read back from the store the handler was pointed at
+    card = _load(store)["build"]
+    # Assert
+    assert card.get("title") == "Renamed"
+
+
+def test_update_changes_the_card_named_in_the_body(store):
+    # Arrange
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    store_arg, _task_id, _fields = calls[0]
-    # Assert
-    assert str(store_arg) == store
+    card = _load(store)["build"]
+    # Assert — the id in the body is the card that moved
+    assert card.get("id") == "build"
 
 
-def test_update_passes_the_card_id_to_the_verb(store, monkeypatch):
+def test_update_translates_gui_clears_into_real_deletions(store):
     # Arrange
-    calls = _spy_on_update_task(monkeypatch)
+    # the GUI's None/""/[] clears must become ACTUAL absences on the card,
+    # not merely arrive at the verb as None — the spy this replaces could
+    # only see the argument, never whether the field was really removed.
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    _store_arg, task_id, _fields = calls[0]
+    build = _load(store)["build"]
     # Assert
-    assert task_id == "build"
+    assert not {"note", "repo", "blocks"} & set(build)
 
 
-def test_update_translates_gui_clears_into_verb_none_deletes(store, monkeypatch):
+def test_update_passes_real_values_through_to_the_card(store):
     # Arrange
-    # the GUI's None/""/[] clears must all arrive as the verb's
-    # None-deletes, and real values must pass through verbatim.
-    calls = _spy_on_update_task(monkeypatch)
+    # the other half of the same translation: a non-clear must survive it.
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    _store_arg, _task_id, fields = calls[0]
+    build = _load(store)["build"]
     # Assert
-    assert fields == {
-        "title": "Renamed",
-        "note": None,
-        "repo": None,
-        "blocks": None,
-        "priority": 2,
-    }
+    assert (build.get("title"), build.get("priority")) == ("Renamed", 2)
 
 
 def test_update_clears_an_empty_string_field_through_the_verb(store):
@@ -507,76 +493,72 @@ def test_update_invalid_status_still_400(store):
 # ── 2b. handle_edge delegates to set_edge with the depends_on SWAP ────────
 
 
+_DEPENDS_BODY = {
+    "action": "add",
+    "kind": "depends_on",
+    "source": "north",
+    "target": "build",
+}
+
+
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_depends_on_delegation_returns_ok(store, monkeypatch, action):
+def test_edge_depends_on_delegation_returns_ok(store, action):
     # Arrange
-    _spy_on_set_edge(monkeypatch)
-    body = {
-        "action": action,
-        "kind": "depends_on",
-        "source": "north",
-        "target": "build",
-    }
     # Act
-    response = _post("edge", store, body)
+    response = _post("edge", store, {**_DEPENDS_BODY, "action": action})
     # Assert
     assert response.status_code == 200
 
 
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_depends_on_swaps_source_and_target_for_set_edge(
-    store, monkeypatch, action
-):
+def test_edge_depends_on_hangs_the_link_on_the_gui_target(store, action):
     # Arrange
-    # set_edge hangs the field on ITS source; the GUI's depends_on
-    # payload hangs it on the GUI target. The handler must SWAP.
-    calls = _spy_on_set_edge(monkeypatch)
-    body = {
-        "action": action,
-        "kind": "depends_on",
-        "source": "north",
-        "target": "build",
-    }
-    _post("edge", store, body)
+    # set_edge hangs the field on ITS source; the GUI's depends_on payload
+    # names the dependency on the GUI TARGET, so the handler must SWAP. The
+    # swap is observable on the card: `build` ends up depending on `north`.
+    # `remove` is arranged by adding first — against the seed (`build` has no
+    # depends_on) a bare remove is a no-op and would pass while proving
+    # nothing, which is what a call-recording spy could not have told us.
+    if action == "remove":
+        _post("edge", store, _DEPENDS_BODY)
     # Act
-    delegated = calls[0]
+    _post("edge", store, {**_DEPENDS_BODY, "action": action})
+    linked = "north" in (_load(store)["build"].get("depends_on") or [])
     # Assert
-    # verb source = GUI target, verb target = GUI source.
-    assert delegated == {
-        "action": action,
-        "kind": "depends_on",
-        "source": "build",
-        "target": "north",
-    }
+    assert linked is (action == "add")
+
+
+_BLOCKS_BODY = {
+    "action": "add",
+    "kind": "blocks",
+    "source": "north",
+    "target": "build",
+}
 
 
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_blocks_delegation_returns_ok(store, monkeypatch, action):
+def test_edge_blocks_delegation_returns_ok(store, action):
     # Arrange
-    _spy_on_set_edge(monkeypatch)
-    body = {"action": action, "kind": "blocks", "source": "north", "target": "build"}
     # Act
-    response = _post("edge", store, body)
+    response = _post("edge", store, {**_BLOCKS_BODY, "action": action})
     # Assert
     assert response.status_code == 200
 
 
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_blocks_passes_source_and_target_through(store, monkeypatch, action):
+def test_edge_blocks_hangs_the_link_on_the_gui_source(store, action):
     # Arrange
-    # for kind=blocks the two orientations already agree.
-    calls = _spy_on_set_edge(monkeypatch)
-    body = {"action": action, "kind": "blocks", "source": "north", "target": "build"}
-    _post("edge", store, body)
+    # for kind=blocks the two orientations already agree, so NO swap: the
+    # link lands on the GUI SOURCE. Asserting the card rather than the call
+    # is what distinguishes "no swap" from "swapped twice" — a spy comparing
+    # the delegated dict to the GUI dict cannot tell those apart.
+    if action == "remove":
+        _post("edge", store, _BLOCKS_BODY)
     # Act
-    delegated = calls[0]
+    _post("edge", store, {**_BLOCKS_BODY, "action": action})
+    linked = "build" in (_load(store)["north"].get("blocks") or [])
     # Assert
-    assert delegated == {
-        "action": action,
-        "kind": "blocks",
-        "source": "north",
-        "target": "build",
-    }
+    assert linked is (action == "add")
 
 
 # ── 2c. edge-orientation ON-DISK parity with the old handler ──────────────
