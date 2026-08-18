@@ -24,9 +24,13 @@ import-time snapshot of those flags.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
 import os
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -220,11 +224,47 @@ def _repair(row, table: str) -> dict[str, Any]:
     return rebuilt
 
 
+#: Policy for a row that carries no payload AND cannot be rebuilt.
+#:
+#: ``"raise"`` (the default) refuses the WHOLE export. That is correct for two
+#: of this function's three callers and MUST stay the default:
+#:
+#:   backup rail   ADR-0010 says a snapshot is exact or absent.
+#:   READ-MODIFY-WRITE  whatever this returns is written back as the whole
+#:                      store, so omitting a row DELETES it. Measured
+#:                      2026-08-17: making the users loop tolerant and running
+#:                      one `comment_task` reported SUCCESS and left the row
+#:                      gone. Pinned by
+#:                      tests/…/test__rmw_refusal_must_not_become_tolerance.py.
+#:
+#: ``"omit"`` is for a PURE read — one that never writes the document back.
+#: There, refusing the whole result set over a row the caller does not even
+#: return is the larger harm: an unreadable `users` row blanks `list_tasks`,
+#: and `help_wait` (the card an agent files to say it is stuck) is refused at
+#: exactly the moment it is needed.
+_ON_UNREBUILDABLE = ("raise", "omit")
+
+
+def _omit_or_raise(exc: "ExportRefused", policy: str, table: str, row_id) -> None:
+    """Re-raise, or NAME the row being skipped. Never drop one in silence."""
+    if policy != "omit":
+        raise exc
+    logger.warning(
+        "[scitex-cards] SKIPPED an unreadable %s row %r on a read-only query: "
+        "%s — the rest of the result is complete. This row is NOT deleted and "
+        "a WRITE will still refuse until its payload is repaired.",
+        table,
+        row_id,
+        exc,
+    )
+
+
 def export_doc(
     db_path: str | Path | None = None,
     *,
-    conn: sqlite3.Connection | None = None,
+    conn: StoreConnection | None = None,
     repair: bool = True,
+    on_unrebuildable: str = "raise",
 ) -> tuple[dict, dict]:
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
@@ -268,7 +308,7 @@ def export_doc(
             if r["card_json"] is None:
                 stamp = r["last_activity"]
                 when = f" (last activity {stamp})" if stamp else ""
-                raise ExportRefused(
+                _omit_or_raise(ExportRefused(
                     f"task {r['id']!r}{when} has no card_json payload, and a "
                     "card CANNOT be rebuilt from its columns: 22 distinct card "
                     "keys measured on the live store are not columns at all, "
@@ -284,7 +324,8 @@ def export_doc(
                     "\n"
                     "Nothing was deleted or modified. Inspect the row with:\n"
                     f"  SELECT * FROM tasks WHERE id = '{r['id']}';"
-                )
+                ), on_unrebuildable, "tasks", r["id"])
+                continue
             tasks.append(card_from_payload(r["card_json"]))
 
         # ORDERED BY REAL COLUMNS, NOT ``rowid``. ``rowid`` is a SQLite
@@ -300,12 +341,14 @@ def export_doc(
         # produced. The tie-break is not decorative: timestamps here have
         # one-second resolution, so same-second rows would otherwise order
         # arbitrarily and the export would differ run to run.
-        users = [
-            _record(r, "users", repair=repair)
-            for r in conn.execute(
-                "SELECT * FROM users ORDER BY created_at, id"
-            ).fetchall()
-        ]
+        users = []
+        for r in conn.execute(
+            "SELECT * FROM users ORDER BY created_at, id"
+        ).fetchall():
+            try:
+                users.append(_record(r, "users", repair=repair))
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "users", r["id"])
 
         # Seed from the recipients table first so a DRAINED inbox (a
         # key with zero rows) still appears as an empty list (v4).
@@ -316,13 +359,21 @@ def export_doc(
             ).fetchall()
         }
         for r in conn.execute("SELECT * FROM notifications ORDER BY ts, id").fetchall():
-            inboxes.setdefault(r["recipient_id"], []).append(
-                _record(r, "notifications", repair=repair)
-            )
+            try:
+                rec = _record(r, "notifications", repair=repair)
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "notifications", r["id"])
+                continue
+            inboxes.setdefault(r["recipient_id"], []).append(rec)
 
         threads: dict[str, list[dict]] = {}
         for r in conn.execute("SELECT * FROM messages ORDER BY ts, id").fetchall():
-            threads.setdefault(r["thread_key"], []).append(_record(r, "messages", repair=repair))
+            try:
+                rec = _record(r, "messages", repair=repair)
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "messages", r["id"])
+                continue
+            threads.setdefault(r["thread_key"], []).append(rec)
     finally:
         if owned:
             conn.close()

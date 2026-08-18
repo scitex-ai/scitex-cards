@@ -23,8 +23,12 @@ Field mapping (see :mod:`scitex_cards._db` for the schema rationale):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
-import sqlite3
 from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
@@ -174,7 +178,7 @@ class RevisionOutcome:
 
 
 def _insert_tasks(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     tasks: list,
     *,
     replace: bool = True,
@@ -417,12 +421,27 @@ def _insert_roles(conn, task_id, row) -> int:
 #: restore them from, because the rail is now their only copy. The sibling
 #: neutralisation is ``_db_mirror._SECTION_KEYS``, which no longer rebuilds
 #: ``notifications`` on the INCREMENTAL path; this closes the FULL one.
-_DOC_OWNED_ELSEWHERE = ("messages", "notifications", "inbox_recipients")
+#: ``users`` / ``user_names`` joined this tuple when the registry acquired a
+#: live producer (``_db_users.save_users_rows``): the document is no longer
+#: the thing that makes them, so a doc-only rebuild must not DELETE them.
+#:
+#: The upsert at ``_insert_users(conn, doc.get("users"))`` below still runs,
+#: so a doc carrying a registry section still contributes its rows — this
+#: removes the WIPE, not the merge. The full-restore path is unaffected: it
+#: passes ``threads`` and therefore uses ``_CLEAR_ORDER``, where clearing the
+#: registry is exactly right because a restore is meant to replace it.
+_DOC_OWNED_ELSEWHERE = (
+    "messages",
+    "notifications",
+    "inbox_recipients",
+    "users",
+    "user_names",
+)
 _DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t not in _DOC_OWNED_ELSEWHERE)
 
 
 def _rebuild_from_doc(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     doc: dict,
     *,
     threads: dict[str, list[dict]] | None = None,
@@ -463,7 +482,7 @@ def _rebuild_from_doc(
     return summary
 
 
-def _stamp_meta(conn: sqlite3.Connection, source: str) -> None:
+def _stamp_meta(conn: StoreConnection, source: str) -> None:
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('source', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

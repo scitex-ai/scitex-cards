@@ -29,7 +29,7 @@ from ._task import VALID_STATUSES, TaskValidationError  # noqa: F401
 from ._validate import _validate_tasks  # noqa: F401
 
 
-def load_tasks(path: str | Path) -> list[dict]:
+def load_tasks(path: str | Path, *, tolerant: bool = False) -> list[dict]:
     """Load and validate the task list from the store.
 
     Parameters
@@ -58,11 +58,13 @@ def load_tasks(path: str | Path) -> list[dict]:
     >>> tasks[0]["id"]                     # doctest: +SKIP
     'design'
     """
-    data = load_doc(path, validate=True)
+    data = load_doc(path, validate=True, tolerant=tolerant)
     return data.get("tasks")
 
 
-def load_doc(path: str | Path, *, validate: bool = False) -> dict:
+def load_doc(
+    path: str | Path, *, validate: bool = False, tolerant: bool = False
+) -> dict:
     """Load the FULL store document from the database.
 
     The single-read primitive that both :func:`load_tasks` and the ``_store``
@@ -115,9 +117,20 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
     # nothing over everything". Delegated to the one fail-loud reader so every
     # caller shares a single policy — one sibling expression being fixed and
     # another not is exactly how that survived the last time.
-    from ._store import _read_canonical_db_or_raise
+    # `tolerant` is for callers that NEVER write the document back. The
+    # comment above is exactly why it must not become the default: the
+    # read-modify-write verbs hand this doc to the writer, and a row omitted
+    # here would be DELETED there. See `_store_tolerant_read` for the door,
+    # and `test__rmw_refusal_must_not_become_tolerance.py` for the guard that
+    # fails if the mutate path ever acquires this behaviour.
+    if tolerant:
+        from ._store_tolerant_read import read_doc_tolerating_unreadable_rows
 
-    data = _read_canonical_db_or_raise()
+        data = read_doc_tolerating_unreadable_rows()
+    else:
+        from ._store import _read_canonical_db_or_raise
+
+        data = _read_canonical_db_or_raise()
     if validate:
         _validate_tasks(
             data.get("tasks"),

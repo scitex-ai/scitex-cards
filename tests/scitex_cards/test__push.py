@@ -184,16 +184,28 @@ class TestTurnUrlFor:
 
 
 class TestUserRegistryResolution:
-    """scitex-cards's OWN ``users:`` registry as the file-local, NO-bearer
-    PRIMARY source (step 0). Real temp store via ``register_user`` + the
-    ``SCITEX_CARDS_TASKS_YAML_SHARED`` env so ``turn_url_for(agent)`` (which resolves the
-    DEFAULT store) reads the same file (no mocks per STX-NM / PA-306).
+    """scitex-cards's OWN registry as the NO-bearer PRIMARY source (step 0).
+
+    Real store via ``register_user`` against the AMBIENT board — the same one
+    ``turn_url_for`` resolves — so no mock is needed (STX-NM / PA-306). The
+    conftest points that board at a deliberately EMPTY database, which is what
+    makes the registry the only path able to win.
     """
 
-    def _isolate(self, env, store):
-        """Point the default store at ``store`` and strip env precedence.
+    def _isolate(self, env):
+        """Strip the env precedence so only the registry can win.
 
-        So the user registry is the only resolution path that can win.
+        It never pointed the default store anywhere, despite an earlier
+        docstring here saying it did — it only deletes env vars. The tests
+        passed regardless because `register_user(store=tmp_path/"tasks.yaml")`
+        wrote a YAML file, and the ambient registry path was DERIVED from the
+        configured database's directory (`resolve_db_path(None).parent /
+        "tasks.yaml"`), which resolved to that same temp file. A coincidence
+        of layout, not a wiring.
+
+        The registry is in the database now, so the coincidence is gone and
+        the registrations below are AMBIENT — they land in the store
+        `turn_url_for` actually reads, which is what production does.
         """
         env.delete(ENV_MAP)
         for k in list(os.environ):
@@ -202,14 +214,12 @@ class TestUserRegistryResolution:
 
     def test_explicit_turn_url_from_registry_is_returned(self, env, tmp_path):
         # Arrange
-        store = tmp_path / "tasks.yaml"
         register_user(
             kind="agent",
             names=["proj-reg"],
             turn_url="https://reg/v1/turn/proj-reg",
-            store=store,
         )
-        self._isolate(env, store)
+        self._isolate(env)
         # Act
         url = turn_url_for("proj-reg")
         # Assert
@@ -217,15 +227,13 @@ class TestUserRegistryResolution:
 
     def test_a2a_port_from_registry_derives_turn_url(self, env, tmp_path):
         # Arrange
-        store = tmp_path / "tasks.yaml"
         register_user(
             kind="agent",
             names=["proj-port"],
             host_at_name="my-host@proj-port",
             a2a_port=19007,
-            store=store,
         )
-        self._isolate(env, store)
+        self._isolate(env)
         # Act
         url = turn_url_for("proj-port")
         # Assert
@@ -233,15 +241,13 @@ class TestUserRegistryResolution:
 
     def test_registry_resolves_by_host_at_name(self, env, tmp_path):
         # Arrange — the card owner string may be the host@name join key.
-        store = tmp_path / "tasks.yaml"
         register_user(
             kind="agent",
             names=["display-only"],
             host_at_name="h@proj-join",
             turn_url="https://join/turn",
-            store=store,
         )
-        self._isolate(env, store)
+        self._isolate(env)
         # Act
         url = turn_url_for("h@proj-join")
         # Assert
@@ -250,12 +256,10 @@ class TestUserRegistryResolution:
     def test_registry_wins_over_env_map(self, env, tmp_path):
         # Arrange — both the user registry AND the env map resolve; the
         # file-local registry (step 0) must win over the env map (step 1).
-        store = tmp_path / "tasks.yaml"
         register_user(
             kind="agent",
             names=["proj-both"],
             turn_url="https://registry/turn",
-            store=store,
         )
         env.set(ENV_MAP, json.dumps({"proj-both": "https://env-map/turn"}))
         # Act
@@ -266,8 +270,7 @@ class TestUserRegistryResolution:
     def test_user_without_endpoint_falls_through_to_env(self, env, tmp_path):
         # Arrange — a registered user with NO endpoint must not short-circuit;
         # resolution falls through to the env map (step 1).
-        store = tmp_path / "tasks.yaml"
-        register_user(kind="agent", names=["proj-noep"], store=store)
+        register_user(kind="agent", names=["proj-noep"])
         env.set(ENV_MAP, json.dumps({"proj-noep": "https://env-fallback/turn"}))
         # Act
         url = turn_url_for("proj-noep")
@@ -276,9 +279,8 @@ class TestUserRegistryResolution:
 
     def test_unregistered_agent_still_returns_none_loud(self, env, tmp_path):
         # Arrange — nothing resolves anywhere → loud None preserved.
-        store = tmp_path / "tasks.yaml"
-        register_user(kind="agent", names=["someone-else"], store=store)
-        self._isolate(env, store)
+        register_user(kind="agent", names=["someone-else"])
+        self._isolate(env)
         # Act
         url = turn_url_for("ghost")
         # Assert

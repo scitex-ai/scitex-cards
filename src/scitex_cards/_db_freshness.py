@@ -60,13 +60,17 @@ guard on the write path needs.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
 from ._schema_probe import row_values
 
-import sqlite3
 from pathlib import Path
 
 #: ``schema_meta`` key holding the resolved path of the store this database IS.
@@ -90,7 +94,7 @@ def canonical_path(store_path: str | Path) -> str:
     return str(Path(store_path).expanduser().resolve())
 
 
-def stamp_store_provenance(conn: sqlite3.Connection, store_path: str | Path) -> None:
+def stamp_store_provenance(conn: StoreConnection, store_path: str | Path) -> None:
     """Record WHICH store this database is the database of. Call inside the write txn.
 
     THE STAMP IS CLAIMED ONCE, NOT REWRITTEN PER WRITE::
@@ -175,7 +179,7 @@ def stamp_store_provenance(conn: sqlite3.Connection, store_path: str | Path) -> 
     )
 
 
-def read_provenance(conn: sqlite3.Connection) -> dict[str, str]:
+def read_provenance(conn: StoreConnection) -> dict[str, str]:
     """The stamped provenance rows (missing keys simply absent)."""
     placeholders = ", ".join("?" for _ in _KEYS)
     rows = conn.execute(
@@ -189,13 +193,13 @@ def read_provenance(conn: sqlite3.Connection) -> dict[str, str]:
     return {str(v[0]): str(v[1]) for v in (row_values(r) for r in rows)}
 
 
-def stamped_store_path(conn: sqlite3.Connection) -> str | None:
+def stamped_store_path(conn: StoreConnection) -> str | None:
     """The store path this database is stamped for, or ``None`` if unstamped."""
     return read_provenance(conn).get(KEY_STORE_PATH)
 
 
 def check_fresh(
-    conn: sqlite3.Connection, store_path: str | Path
+    conn: StoreConnection, store_path: str | Path
 ) -> tuple[bool, str | None]:
     """Is this database USABLE as the database of ``store_path``? ``(ok, reason)``.
 

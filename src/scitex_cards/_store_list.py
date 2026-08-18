@@ -285,7 +285,10 @@ def list_tasks(
     """
     resolved = _resolved_store(store)
     scope_eff = _default_scope(scope)
-    tasks = load_tasks(resolved)
+    # tolerant=True: this is a PURE read — nothing it returns is written back,
+    # so one unreadable row must not blank the whole board. The mutate verbs
+    # keep the strict door, where omitting a row would DELETE it.
+    tasks = load_tasks(resolved, tolerant=True)
     return [
         dict(t)
         for t in tasks
@@ -347,7 +350,10 @@ def summarize_tasks(
     intentional rather than wrong.)
     """
     resolved = _resolved_store(store)
-    tasks = load_tasks(resolved)
+    # tolerant=True: this is a PURE read — nothing it returns is written back,
+    # so one unreadable row must not blank the whole board. The mutate verbs
+    # keep the strict door, where omitting a row would DELETE it.
+    tasks = load_tasks(resolved, tolerant=True)
     scope_eff = _default_scope(scope)
     by_status: dict[str, int] = {s: 0 for s in VALID_STATUSES}
     by_scope: dict[str, int] = {}

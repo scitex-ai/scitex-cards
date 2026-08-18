@@ -224,6 +224,43 @@ def _default_inbox_backend_yaml():
         helper.restore()
 
 
+def _refuse_swapped_args(doc, db_path) -> None:
+    """Fail loudly when the two positional arguments are swapped.
+
+    THE ARGUMENT ORDER IS (doc, db_path) AND GETTING IT BACKWARDS USED TO BE
+    SILENT — measured 2026-08-17, by me, in this repo. `seed_db_from_doc(db,
+    {"tasks": []})` handed the DICT to SQLite as a path, and SQLite did exactly
+    what it is asked to: it CREATED A DATABASE at a path whose name is the
+    repr of the dict. A 225 KB file called `{'tasks': []}` landed at the repo
+    root, `git add -A` committed it, and it was the CI quality gate that
+    noticed — three commits later, on a PR whose test suite was green.
+
+    The shape is the one this branch exists to fix, one layer up: a store
+    argument that is not a path gets USED as a path and manufactures a store,
+    quietly. `_db_users._db_target` prevents it in the product; nothing
+    prevented it in the harness, so the harness got it.
+
+    Two sanity conditions, both cheap:
+      * a doc is a mapping — a Path or str here means the args are swapped;
+      * a db_path is a path — a mapping here means the same.
+    Either way the call is wrong in a way no assertion downstream would
+    attribute correctly, so it dies here naming the fix.
+    """
+    from pathlib import Path as _Path
+
+    if isinstance(doc, (str, _Path)) or isinstance(db_path, dict):
+        raise TypeError(
+            "seed_db_from_doc(doc, db_path) — the arguments look SWAPPED.\n"
+            f"  doc     = {type(doc).__name__}\n"
+            f"  db_path = {type(db_path).__name__}\n"
+            "Passing a mapping as db_path makes SQLite CREATE a database at a "
+            "path named after the dict's repr (measured: a 225 KB file called "
+            "\"{'tasks': []}\" at the repo root, committed, caught only by the "
+            "CI quality gate). Call it as seed_db_from_doc({'tasks': [...]}, "
+            "tmp_path / 'cards.db')."
+        )
+
+
 def seed_db_from_doc(doc, db_path, *, threads=None):
     """Populate a fresh database from an IN-MEMORY document. Returns the summary.
 
@@ -250,6 +287,7 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     from scitex_cards._db import connect, init_schema
     from scitex_cards._db_bootstrap import _rebuild_from_doc, _stamp_meta
 
+    _refuse_swapped_args(doc, db_path)
     conn = connect(str(db_path))
     try:
         init_schema(conn)
