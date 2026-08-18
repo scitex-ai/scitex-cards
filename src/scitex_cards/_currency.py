@@ -179,8 +179,12 @@ def _running_over_overlay() -> bool:
     return best_fstype == "overlay"
 
 
-def check_currency() -> None:
+def check_currency(staleness_module=None) -> None:
     """Raise (bare host) or warn (overlay) when this install is stale or broken.
+
+    ``staleness_module`` defaults to importing ``scitex_dev.staleness``; see
+    :func:`currency_verdict` for why it is a parameter rather than something a
+    test reaches into ``sys.modules`` to replace.
 
     Provided by scitex-dev >= 0.34.0; silently a no-op when scitex-dev is
     absent so scitex-cards stays standalone (decoupling rule).
@@ -197,8 +201,11 @@ def check_currency() -> None:
       scitex-dev's verbatim message.
     """
     try:
-        from scitex_dev.staleness import ensure_current
-    except ImportError:
+        if staleness_module is None:
+            from scitex_dev.staleness import ensure_current
+        else:
+            ensure_current = staleness_module.ensure_current
+    except (ImportError, AttributeError):
         return
     try:
         ensure_current(_DIST_NAME)
@@ -240,8 +247,16 @@ class CurrencyVerdict:
     checked: bool
 
 
-def currency_verdict() -> CurrencyVerdict:
+def currency_verdict(staleness_module=None) -> CurrencyVerdict:
     """Report this install's currency WITHOUT raising — the Python-rail read.
+
+    ``staleness_module`` defaults to importing ``scitex_dev.staleness``. It is
+    a PARAMETER so a caller can hand in the checker it wants measured — which
+    a test needs, and which is the only honest way to exercise the stale and
+    malfunctioning branches: scitex-dev is INSTALLED here and current, so the
+    refusal path is otherwise unreachable without editing ``sys.modules``,
+    i.e. mutating the interpreter to fake an import that really succeeds
+    (audit PA-306 `no-mocks`). Nothing about the default path changes.
 
     The non-raising sibling of :func:`check_currency`. Same underlying
     measurement (scitex-dev's ``ensure_current``), opposite failure mode: a
@@ -271,7 +286,11 @@ def currency_verdict() -> CurrencyVerdict:
     try:
         import importlib
 
-        staleness = importlib.import_module("scitex_dev.staleness")
+        staleness = (
+            importlib.import_module("scitex_dev.staleness")
+            if staleness_module is None
+            else staleness_module
+        )
         ensure_current = staleness.ensure_current
         # The ``StalenessError`` lookup belongs INSIDE the guard: on a PEP-562
         # module it runs scitex-dev's own ``__getattr__``, i.e. third-party
@@ -302,14 +321,39 @@ def currency_verdict() -> CurrencyVerdict:
 # does real work (payload validation, a freshness lookup) and the Python rail
 # calls this on every DM — so the measurement is taken at most ONCE per
 # process, not once per message. The lock keeps "exactly once" true when two
-# threads send concurrently. Tests reset both via ``monkeypatch.setattr``.
+# threads send concurrently. Clear it with :func:`reset_currency_state`.
 _STATE_LOCK = threading.Lock()
 _CACHED_VERDICT: CurrencyVerdict | None = None
 _WARNED_STALE = False
 
 
-def warn_if_stale_once() -> CurrencyVerdict:
+def reset_currency_state() -> None:
+    """Forget the memoised verdict and the warn-once flag.
+
+    THE MEMO IS PER-PROCESS AND A PROCESS CAN OUTLIVE THE FACT. A long-running
+    agent that is upgraded in place keeps answering with the verdict it took at
+    boot — "merged is not live; fresh on disk is not fresh in memory" — so the
+    only way to re-measure without a restart is to drop the cache. That is a
+    real operator-facing need, not a test hook: the delivery daemon runs for
+    days across rebakes.
+
+    It also replaces the two `monkeypatch.setattr` calls tests used to make on
+    ``_CACHED_VERDICT`` / ``_WARNED_STALE``. Reaching into private globals to
+    arrange a test is how a rename of an internal breaks a suite that was
+    never about that internal; a named verb is the supported way to say
+    "measure again".
+    """
+    global _CACHED_VERDICT, _WARNED_STALE
+    with _STATE_LOCK:
+        _CACHED_VERDICT = None
+        _WARNED_STALE = False
+
+
+def warn_if_stale_once(staleness_module=None) -> CurrencyVerdict:
     """Warn ONCE per process that the sibling CLI/MCP rail is refusing.
+
+    ``staleness_module`` is passed through to :func:`currency_verdict` and
+    defaults to the real import; see there for why it exists.
 
     This is what the PYTHON rail calls. Contract, in order of importance:
 
@@ -341,7 +385,7 @@ def warn_if_stale_once() -> CurrencyVerdict:
         with _STATE_LOCK:
             verdict = _CACHED_VERDICT
             if verdict is None:
-                verdict = currency_verdict()
+                verdict = currency_verdict(staleness_module)
                 _CACHED_VERDICT = verdict
             should_warn = verdict.state == "stale" and not _WARNED_STALE
             if should_warn:
