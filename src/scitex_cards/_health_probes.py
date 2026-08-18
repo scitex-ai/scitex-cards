@@ -35,6 +35,17 @@ _DRAIN_HINT = (
     "longer starves the handshake)"
 )
 
+#: For the UNKNOWN verdict: a backlog over threshold on an inbox that HAS been
+#: drained at some point. Names the reason the evidence is inconclusive rather
+#: than implying a fault, because either reading may be right.
+_DRAIN_UNKNOWN_HINT = (
+    "cannot tell whether the drain is alive: the backlog is over threshold but "
+    "this inbox has drained before, and `seen` is lifetime-cumulative — it "
+    "cannot distinguish 'draining now' from 'drained last week'. Check "
+    "`delivery_liveness` for the last successful tick and `delivery_confirmed` "
+    "for pushes that were never acknowledged; both measure the CURRENT rail."
+)
+
 
 def _check_agent_id(agent_id: str | None) -> dict[str, Any]:
     """Resolve the agent identity; fail on unset / 'unknown' / bare ``$VAR``."""
@@ -97,10 +108,53 @@ def _check_delivery_liveness(store: str | Path | None) -> dict[str, Any]:
     return assess_delivery(store)
 
 
+def _confirmation_split(
+    agent_id: str, store: str | Path | None
+) -> tuple[int, int] | None:
+    """``(confirmed, seen_but_unconfirmed)`` across this agent's inbox keys.
+
+    COUNTED PER ROW, never derived as ``seen - confirmed``. The subtraction
+    looks equivalent and is not: it silently reports a negative as a small
+    positive if the two reads disagree, and a metric about trustworthiness
+    that can lie about its own arithmetic is worse than no metric.
+
+    ``None`` means the receipts could not be read at all — the caller must
+    then say "not measured" rather than print a zero, which is the shape of
+    good news.
+    """
+    from ._inbox_receipt import CONFIRMED_AT, receipts
+
+    confirmed = 0
+    seen_unconfirmed = 0
+    try:
+        for key in recipient_keys(agent_id, store=store):
+            for row in receipts(key, store=store):
+                if row.get(CONFIRMED_AT):
+                    confirmed += 1
+                elif row.get("seen"):
+                    seen_unconfirmed += 1
+    except Exception:  # noqa: BLE001 — a doctor must not raise on a read
+        return None
+    return confirmed, seen_unconfirmed
+
+
 def _check_channel_drain(
     agent_id: str | None, store: str | Path | None, threshold: int
 ) -> dict[str, Any]:
-    """Report unseen vs seen inbox counts for THIS agent; flag a stuck drain."""
+    """Report unseen vs seen inbox counts for THIS agent; flag a stuck drain.
+
+    THREE-VALUED, because ``seen`` cannot answer the question this check is
+    named for. ``record_push`` marks a row seen at PUSH time, so ``seen > 0``
+    latches true on an agent's first push and never goes back — treating it
+    as a pass made this check unable to fail for the rest of that agent's
+    life, however large the backlog grew. It is now an UNKNOWN: real evidence
+    that something once drained, and no evidence about now.
+
+    The detail splits ``seen`` into confirmed and seen-but-unconfirmed for the
+    same reason. A flat ``seen=801`` reads as 801 delivered when it means 801
+    cursors advanced; on a real agent 109 of those had never been acknowledged
+    by anyone while this line still said the inbox was fine.
+    """
     if not agent_id:
         return {
             "ok": True,
@@ -118,11 +172,19 @@ def _check_channel_drain(
             _inbox.poll_inbox(key, unseen_only=False, mark_seen=False, store=store)
         )
     seen = total - unseen
-    detail = f"unseen={unseen} seen={seen} (keys={keys})"
-    # Working (or merely busy) when the backlog is small OR anything was ever
-    # drained. Stuck only when a large backlog has NEVER been drained.
-    if unseen <= threshold or seen > 0:
+    split = _confirmation_split(agent_id, store)
+    if split is None:
+        breakdown = "confirmation not measured"
+    else:
+        breakdown = f"confirmed={split[0]} seen-but-unconfirmed={split[1]}"
+    detail = f"unseen={unseen} seen={seen} ({breakdown}) (keys={keys})"
+    # Small backlog: working, or merely busy. Either way nothing is piling up.
+    if unseen <= threshold:
         return {"ok": True, "detail": detail, "hint": None}
+    # Over threshold. `seen` says something drained ONCE, which is not the
+    # question — see this function's docstring.
+    if seen > 0:
+        return {"ok": None, "detail": detail, "hint": _DRAIN_UNKNOWN_HINT}
     return {"ok": False, "detail": detail, "hint": _DRAIN_HINT}
 
 
