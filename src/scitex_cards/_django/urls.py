@@ -5,7 +5,6 @@
 from django.urls import path
 
 from . import views
-from ._me_page import me_page
 from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
@@ -15,7 +14,6 @@ from .handlers.fleet import (
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
-from .handlers.mine import mine_view
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -51,25 +49,20 @@ urlpatterns = [
     # consumes these instead of shelling out to the CLI verbs.
     path("runnable", runnable_view, name="runnable"),
     path("blocked-batch", blocked_batch_view, name="blocked_batch"),
-    # "My Cards" — the phone view of the viewer's OWN cards (card
-    # cards-gui-phone-view-own-cards-20260814; operator 2026-08-14 wants his
-    # cards from his phone via scitex.ai). `/me` is the PAGE and `/me/cards`
-    # is the JSON it polls — the same page/data shape `/dm` and `/dm/threads`
-    # already use, and the reason the JSON is NOT a sibling `/mine`: one
-    # letter between a page and an API is a footgun in every log and bug
-    # report that quotes either.
+    # NO "My Cards" ROUTES HERE — `/me`, `/me/` and `/me/cards` were REMOVED
+    # 2026-08-19 on the operator's instruction, given twice on the DM rail
+    # (2026-08-16 「この Mine というのは使わないので削除してください」, then
+    # 「はい、つかわないのでさくじょで」). The feature shipped 2026-08-14 in
+    # PR #833 and was not used.
     #
-    # Identity comes from `_board_identity.resolve_viewer`; a caller the
-    # board cannot identify gets a typed 403, never the whole board.
-    #
-    # Both the slashed and unslashed page spellings are registered for the
-    # same reason `legacy/`, `board-v3/` and `chat/` carry theirs: a trailing
-    # slash is the most natural thing in the world to type, and without it
-    # the catch-all `<path:endpoint>` answers "Unknown endpoint: me/". All
-    # three sit BEFORE that catch-all for exactly that reason.
-    path("me", me_page, name="me_page"),
-    path("me/", me_page, name="me_page_slash"),
-    path("me/cards", mine_view, name="me_cards"),
+    # The whole feature went, not just the switcher link: 使わない says the
+    # PAGE is unwanted, and unlinking a page that still answers its URL is
+    # the exact complaint that created the switcher component in the first
+    # place (a page reachable only by typing its address). `_me_page`,
+    # `handlers/mine.py` and `_board_identity` all went with it — the last
+    # because `handlers/mine.py:147` was its only production caller, and
+    # scitex-hub confirmed on 2026-08-18 that they have no consumer and never
+    # asked for one, contrary to a third-party report that had kept it alive.
     # Time View — operator-direct ask (TG, relayed by lead a2a `d0f7a0e3`,
     # 2026-06-14). Live raster timeline so the operator watches ONE screen
     # and sees the whole fleet in motion. Polled by the FE TimelineView
