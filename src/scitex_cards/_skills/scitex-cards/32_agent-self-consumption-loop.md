@@ -4,7 +4,7 @@ description: |
   [DETAILS] Every fleet agent, lead and worker alike, runs the same loop: on
   wake, take the top card from the board rather than from a private plan, so
   what is in flight stays visible to the whole fleet.
-tags: [scitex-cards-self-consumption]
+tags: [scitex-cards-agent-self-consumption-loop]
 ---
 
 # 32. Agent self-consumption loop

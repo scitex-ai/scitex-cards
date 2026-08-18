@@ -4,7 +4,7 @@ description: |
   [DETAILS] Operator doctrine op-12038: every fleet agent uses ONE shared task
   store, so TaskCreate/TaskUpdate/TaskList are redirected rather than allowed to
   build a private list nobody else on the fleet can see.
-tags: [scitex-cards-hook-redirect]
+tags: [scitex-cards-pretooluse-hook-redirect]
 ---
 
 # PreToolUse hook — redirect Claude `TaskCreate`/`TaskUpdate`/`TaskList` to scitex-cards

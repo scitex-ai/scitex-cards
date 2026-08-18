@@ -5,7 +5,7 @@ description: |
   agent's board holds runnable work, AND it delivers pending notifications
   itself, requiring an acknowledgement before the turn may end — so delivery
   never depends on the push rail alone.
-tags: [scitex-cards-stop-hook]
+tags: [scitex-cards-stop-hook-second-delivery-rail]
 ---
 
 # The Stop hook as a SECOND delivery rail

@@ -4,7 +4,7 @@ description: |
   [DETAILS] Audience is every fleet agent; owner is scitex-cards. Which verb to
   reach for when the board and reality disagree, so reconciliation goes through
   the package's own API rather than raw edits to the store.
-tags: [scitex-cards-reconciliation]
+tags: [scitex-cards-board-reconciliation-runbook]
 ---
 
 # Board Reconciliation Runbook — Canonical Verbs
