@@ -811,22 +811,46 @@ def test_reassign_through_to_thread_actually_mutated_the_owner(
 #: the wrong card is not a fix, and a correct card fetched by freezing the
 #: loop is the bug itself.
 @pytest.fixture()
-def slow_store_handler_run(tmp_path, monkeypatch):
-    """Drive the `get_task` handler over a 0.3 s store call; return (result, ticks)."""
+def slow_store_handler_run(tmp_path):
+    """Drive the `get_task` handler while the store lock is REALLY held.
+
+    THE SLOWNESS IS THE PRODUCTION SLOWNESS, not a sleep spliced into
+    `_store.get_task`. The comment above says the 0.3 s stood in for "the
+    flock-guarded multi-MB load" — so this holds that very flock from another
+    thread and lets the REAL `get_task` block on it. `_store_lock` is an
+    fcntl flock, and a fresh fd to the same path blocks even within one
+    process (`_save_tasks_unlocked` documents exactly that, as the reason
+    `save_tasks` must not be called recursively).
+
+    That makes the test measure the thing it claims to: a genuinely blocking
+    store call, offloaded or not. A patched sleep would keep passing if
+    `get_task` stopped taking the lock at all, which is precisely the change
+    that would make the offload unnecessary — and this arrangement would then
+    fail and say so.
+    """
+    import threading
     import time
 
-    from scitex_cards import _store
+    from scitex_cards import _model, _store
     from scitex_cards._mcp_server import get_task
+    from scitex_cards._paths import resolve_tasks_path
 
     _store.add_task(None, id="a", title="A", assignee="agent:test")
+    store_path = resolve_tasks_path(None)
 
-    real_get_task = _store.get_task
+    holding = threading.Event()
 
-    def _slow_get_task(*args, **kwargs):
-        time.sleep(0.3)
-        return real_get_task(*args, **kwargs)
+    def _hold_the_store_lock():
+        with _model._store_lock(store_path):
+            holding.set()
+            time.sleep(0.3)
 
-    monkeypatch.setattr(_store, "get_task", _slow_get_task)
+    holder = threading.Thread(target=_hold_the_store_lock, daemon=True)
+    holder.start()
+    # Do not start driving until the lock is genuinely held, or the handler
+    # may sail through before the contention exists and the test would be
+    # measuring nothing.
+    assert holding.wait(timeout=5), "the store lock was never acquired"
 
     async def _drive():
         ticks = 0
@@ -844,14 +868,19 @@ def slow_store_handler_run(tmp_path, monkeypatch):
         ticker.cancel()
         return result, ticks
 
-    return asyncio.run(_drive())
+    try:
+        started = time.monotonic()
+        result, ticks = asyncio.run(_drive())
+        return result, ticks, time.monotonic() - started
+    finally:
+        holder.join(timeout=5)
 
 
 def test_slow_handler_still_returns_the_correct_task(slow_store_handler_run):
     # Arrange
     expected_id = "a"
     # Act
-    result, _ticks = slow_store_handler_run
+    result, _ticks, _elapsed = slow_store_handler_run
     # Assert
     assert json.loads(result)["id"] == expected_id
 
@@ -860,6 +889,26 @@ def test_slow_handler_does_not_block_the_event_loop(slow_store_handler_run):
     # Arrange
     minimum_ticks = 5
     # Act
-    _result, ticks = slow_store_handler_run
+    _result, ticks, _elapsed = slow_store_handler_run
     # Assert — the loop stayed live during the 0.3 s store call.
     assert ticks >= minimum_ticks, f"event loop appeared blocked (only {ticks} ticks)"
+
+
+def test_the_store_call_really_did_block(slow_store_handler_run):
+    """The control: prove the handler actually waited on the held lock.
+
+    Both tests above pass trivially against a store call that returned
+    IMMEDIATELY — a fast call keeps the loop live and returns the right card
+    without exercising the offload at all. So the arrangement has to be shown
+    to have bitten: the handler cannot have finished before the lock holder
+    released it.
+    """
+    # Arrange
+    lock_hold_seconds = 0.3
+    # Act
+    _result, _ticks, elapsed = slow_store_handler_run
+    # Assert
+    assert elapsed >= lock_hold_seconds * 0.8, (
+        f"handler returned in {elapsed:.3f}s — it never waited on the lock, "
+        "so the offload was not exercised"
+    )
