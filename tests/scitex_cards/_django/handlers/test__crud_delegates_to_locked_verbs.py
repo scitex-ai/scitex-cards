@@ -510,22 +510,29 @@ def test_edge_depends_on_delegation_returns_ok(store, action):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_depends_on_hangs_the_link_on_the_gui_target(store, action):
+def test_edge_depends_on_add_hangs_the_link_on_the_gui_target(store):
     # Arrange
     # set_edge hangs the field on ITS source; the GUI's depends_on payload
     # names the dependency on the GUI TARGET, so the handler must SWAP. The
     # swap is observable on the card: `build` ends up depending on `north`.
-    # `remove` is arranged by adding first — against the seed (`build` has no
-    # depends_on) a bare remove is a no-op and would pass while proving
-    # nothing, which is what a call-recording spy could not have told us.
-    if action == "remove":
-        _post("edge", store, _DEPENDS_BODY)
     # Act
-    _post("edge", store, {**_DEPENDS_BODY, "action": action})
-    linked = "north" in (_load(store)["build"].get("depends_on") or [])
+    _post("edge", store, _DEPENDS_BODY)
     # Assert
-    assert linked is (action == "add")
+    assert "north" in (_load(store)["build"].get("depends_on") or [])
+
+
+def test_edge_depends_on_remove_clears_the_link_from_the_gui_target(store):
+    # Arrange
+    # The link must EXIST before removing it: against the seed (`build` has
+    # no depends_on) a bare remove is a no-op that would pass while proving
+    # nothing — which is what a call-recording spy could not have told us.
+    # Split from the add case because arranging one and asserting the
+    # opposite outcome is two tests sharing a signature (STX-TQ006).
+    _post("edge", store, _DEPENDS_BODY)
+    # Act
+    _post("edge", store, {**_DEPENDS_BODY, "action": "remove"})
+    # Assert
+    assert "north" not in (_load(store)["build"].get("depends_on") or [])
 
 
 _BLOCKS_BODY = {
@@ -545,20 +552,27 @@ def test_edge_blocks_delegation_returns_ok(store, action):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_blocks_hangs_the_link_on_the_gui_source(store, action):
+def test_edge_blocks_add_hangs_the_link_on_the_gui_source(store):
     # Arrange
     # for kind=blocks the two orientations already agree, so NO swap: the
     # link lands on the GUI SOURCE. Asserting the card rather than the call
     # is what distinguishes "no swap" from "swapped twice" — a spy comparing
     # the delegated dict to the GUI dict cannot tell those apart.
-    if action == "remove":
-        _post("edge", store, _BLOCKS_BODY)
     # Act
-    _post("edge", store, {**_BLOCKS_BODY, "action": action})
-    linked = "build" in (_load(store)["north"].get("blocks") or [])
+    _post("edge", store, _BLOCKS_BODY)
     # Assert
-    assert linked is (action == "add")
+    assert "build" in (_load(store)["north"].get("blocks") or [])
+
+
+def test_edge_blocks_remove_clears_the_link_from_the_gui_source(store):
+    # Arrange — same reason as the depends_on pair: a remove against a link
+    # that was never added is a no-op, and a no-op passes an absence check
+    # without exercising anything.
+    _post("edge", store, _BLOCKS_BODY)
+    # Act
+    _post("edge", store, {**_BLOCKS_BODY, "action": "remove"})
+    # Assert
+    assert "build" not in (_load(store)["north"].get("blocks") or [])
 
 
 # ── 2c. edge-orientation ON-DISK parity with the old handler ──────────────
