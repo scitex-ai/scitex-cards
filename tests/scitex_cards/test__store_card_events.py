@@ -222,6 +222,34 @@ def test_status_flip_emits_status_changed_with_from_to(tmp_path: Path):
     assert (e["from"], e["to"]) == ("pending", "in_progress")
 
 
+#: WHO made the transition, which `update_task` hardcoded as `actor=None` until
+#: 2026-08-18. `created` / `commented` / `reassigned` each have their actor
+#: pinned by a test above; these two events did not, and that is precisely how
+#: the omission survived — nothing asserted the field, so nothing noticed it was
+#: always empty. Measured on the live board: ALL 60 `status_changed`
+#: notifications ever recorded carried no actor. It cost a real investigation —
+#: a migration moved 398 cards into `deferred` in nine minutes and left no trace
+#: of the hand that did it, so two agents each invented a data-corruption story
+#: to explain the shape of the result.
+#:
+#: `update_task` takes no `by=`, so the expectation is the ambient identity the
+#: suite runs under (conftest sets it for every test) — read from the
+#: environment rather than restated as a literal, so this asserts the value that
+#: was actually resolved rather than a copy of it.
+def test_status_flip_names_the_acting_agent(tmp_path: Path):
+    # Arrange
+    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    add_task(
+        store=store, id="c-1", title="x", status="pending", assignee="agent:test-suite"
+    )
+    sink = _Capturing()
+    # Act
+    update_task(store, "c-1", status="in_progress", entry_points=_eps(sink))
+    # Assert — an unattributed transition is a transition nobody can trace back.
+    e = _card_events(sink, "status_changed")[0]
+    assert e["actor"] == os.environ["SCITEX_CARDS_AGENT_ID"]
+
+
 #: A flip to done is modelled as a `completed` event ONLY. The pair of tests
 #: below split that into its two halves — the `completed` DID fire, and no
 #: duplicate `status_changed` came with it. A consumer that acted on both would
@@ -257,6 +285,20 @@ def test_update_to_done_emits_no_status_changed(tmp_path: Path):
     status_changed = _card_events(sink, "status_changed")
     # Assert — no duplicate event, or every completion counts twice.
     assert status_changed == []
+
+
+#: The SAME omission on the other branch. `complete_task` names its actor from
+#: an explicit `by=` and is covered below, but a flip to done through
+#: `update_task` takes no `by=` and was emitting an anonymous `completed` — so
+#: the throughput readers that aggregate on completion could say a card was
+#: finished without being able to say by whom.
+def test_update_to_done_names_the_acting_agent(tmp_path: Path):
+    # Arrange
+    sink = _flip_to_done_sink(tmp_path)
+    # Act
+    completed = _card_events(sink, "completed")[0]
+    # Assert
+    assert completed["actor"] == os.environ["SCITEX_CARDS_AGENT_ID"]
 
 
 #: Touching a non-status field must emit NEITHER status event. Split so a
