@@ -327,6 +327,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
     from ._store_url import (  # noqa: PLC0415 -- import cycle
         is_postgres_url,
         reject_attempted_dsn,
+        reject_unexpanded_variable,
     )
 
     target = str(path)
@@ -343,6 +344,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
     # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
     # which collapses "//" to "/", then mkdir(parents=True) below built the
     # directories and the inbox migration filled in the file. Moved to .old/.
+    reject_unexpanded_variable(target)
     reject_attempted_dsn(target)
     if is_postgres_url(target):
         from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
