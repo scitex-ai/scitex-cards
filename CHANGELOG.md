@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-08-18
+
+### BREAKING: the retired `scitex_todo.hooks` entry-point group is no longer called
+
+A card-event consumer registered only under `scitex_todo.hooks` is not invoked.
+Re-register under `scitex_cards.hooks` in your own pyproject and reinstall.
+
+The group was aliased for one day and the alias is removed on the operator's
+ruling: 「そんなものすぐ壊せばいい；ハードに todo から cards に行かないから
+ずるずると壊れっぱなし」 — break it now, because without a hard cut from todo
+to cards the half-migrated state drags on indefinitely. An alias removes the
+*pressure* to migrate while leaving the old name load-bearing forever.
+
+**The break is loud, not silent.** The 2026-08-17 failure this replaces was not
+that a consumer broke — it was that dispatch looked in an empty group, called
+nobody, raised nothing, and every health check stayed green. So the dead group
+is still detected, reported at ERROR naming each straggler, and now fails a
+health check. Breaking hard and breaking quietly are different things; only the
+second one is a bug.
+
+### An unexpanded `${VAR}` can no longer be persisted as a card's author
+
+The creator door accepted `${SCITEX_CARDS_AGENT_ID}` — the shape of a
+substitution that did not happen — and wrote it into `created_by`. This was
+asked for on 2026-07-19 and never built:
+
+    _channel_identity.resolve_agent_id   rejects a leading '$'   <- existed
+    _store._resolve_creator_or_raise     empty + "unknown" only  <- did not
+
+which is exactly the asymmetry the incident recorded in its own words:
+"dm_send FAILS LOUD, add_task FAILS SILENT". 15 rows on the live board still
+carry that literal; their authorship is unrecoverable.
+
+The predicate is deliberately broader than the store-target one — `${` and `$(`
+there, because a bare `$` is legal in a POSIX filename; any leading `$` here,
+because no agent is named `$`-anything.
+
+### Two conditions that had no reader now have instruments
+
+- `hook_consumers_registered` (delivery) — a consumer stranded in the dead
+  group. **Per-host**: it reads installed metadata, so every verdict names the
+  machine and says so, the passing line included, because a green result is the
+  one nobody re-measures.
+- `no_placeholder_authors` (advisory) — cards whose author is an unexpanded
+  placeholder. **Fleet-wide**: it queries the shared store. The rows are
+  reported, never rewritten: replacing a non-answer with a plausible guess is
+  worse, since afterwards it is indistinguishable from a real answer.
+
+The second exists because the 2026-07-19 rows were repaired on 07-21, the card
+closed on "0 rows carry the literal env var", and a **restore** brought them
+back — uncounted for a month behind a closed card. The useful artifact is the
+detector, not the repair.
+
+Both suggested by scitex-agent-container, whose argument for the first was that
+the ERROR-level log added earlier the same day was insufficient: "an ERROR with
+no reader is the same silence in a louder font."
+
 ## [0.47.0] - 2026-08-18
 
 ### A store target that was never resolved is refused instead of created
