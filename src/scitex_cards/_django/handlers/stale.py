@@ -279,7 +279,13 @@ def handle_archive(request, board):
         task["_log_meta"] = log_meta
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
+            # Single-card handler, so it must NAME its card: without
+            # `touched_ids` the mirror writes every card that differs from the
+            # database, which includes every card this request holds a stale
+            # copy of. See test__stale_copy_clobber.py.
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=tasks, touched_ids=[task_id]
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()

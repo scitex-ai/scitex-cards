@@ -226,8 +226,19 @@ def edit_tasks(path: str | Path):
         _save_doc_unlocked(doc, path, tasks=tasks)
 
 
-def _save_tasks_unlocked(tasks: list[dict], path: Path) -> None:
+def _save_tasks_unlocked(
+    tasks: list[dict], path: Path, *, touched_ids: list[str] | None = None
+) -> None:
     """Validate-and-write a task list WITHOUT acquiring the store lock.
+
+    ``touched_ids`` forwards to :func:`_save_doc_unlocked` — SINGLE-CARD
+    CALLERS MUST PASS IT. This wrapper takes a whole task list, so by default
+    it declares the whole document, and the mirror then writes every card that
+    differs from the database including ones the caller holds a stale copy of.
+    That is correct for a genuine bulk write and is a silent lost update for a
+    verb that changed one card (``help_wait`` / ``help_clear`` are exactly
+    that shape). ``tests/scitex_cards/test__stale_copy_clobber.py``
+    reproduces the failure deterministically.
 
     Thin back-compat wrapper over :func:`_save_doc_unlocked`. Callers that
     only hold a mutated ``tasks`` list (not the full doc) land here; it does
@@ -255,7 +266,7 @@ def _save_tasks_unlocked(tasks: list[dict], path: Path) -> None:
     # hit that.
     loaded = load_doc(path, validate=False)
     doc: dict = loaded if isinstance(loaded, dict) else {"tasks": []}
-    _save_doc_unlocked(doc, path, tasks=tasks)
+    _save_doc_unlocked(doc, path, tasks=tasks, touched_ids=touched_ids)
 
 
 def _save_doc_unlocked(

@@ -113,7 +113,7 @@ def help_wait(
             existing["host"] = host_eff
             existing["note"] = note
             existing["last_activity"] = _utc_now_iso()
-            _save_tasks_unlocked(tasks, resolved)
+            _save_tasks_unlocked(tasks, resolved, touched_ids=[card_id])
             return dict(existing)
         stamp = _utc_now_iso()
         new = {
@@ -129,7 +129,7 @@ def help_wait(
             "last_activity": stamp,
         }
         tasks.append(new)
-        _save_tasks_unlocked(tasks, resolved)
+        _save_tasks_unlocked(tasks, resolved, touched_ids=[card_id])
         return dict(new)
 
 
@@ -163,7 +163,7 @@ def help_clear(
         target["status"] = "done"
         target.pop("blocker", None)
         target["last_activity"] = _utc_now_iso()
-        _save_tasks_unlocked(tasks, resolved)
+        _save_tasks_unlocked(tasks, resolved, touched_ids=[card_id])
         return {"task_id": card_id, "cleared": True, "task": dict(target)}
 
 

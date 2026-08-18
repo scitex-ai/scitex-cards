@@ -129,6 +129,13 @@ def handle_restore(request, board):
         if tid not in by_id:
             tasks.append(dict(task))
 
+        # The restored card plus every card whose back-reference we re-add —
+        # this write must name ALL of them and NOTHING else. Undo touches more
+        # than one card, which is exactly why it cannot simply omit the
+        # argument: without it the mirror also re-asserts our stale copy of
+        # every card we did not touch. See test__stale_copy_clobber.py.
+        touched = [tid]
+
         for ref in payload.get("refs") or []:
             if not isinstance(ref, dict):
                 continue
@@ -144,9 +151,14 @@ def handle_restore(request, board):
                 if tid not in lst:
                     lst.append(tid)
                 owner[field] = lst
+            else:
+                continue
+            touched.append(str(ref.get("id")))
 
         try:
-            _save_doc_unlocked(doc, board.store_path, tasks=tasks)
+            _save_doc_unlocked(
+                doc, board.store_path, tasks=tasks, touched_ids=touched
+            )
         except TaskValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()

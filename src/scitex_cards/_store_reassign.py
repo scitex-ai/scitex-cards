@@ -140,7 +140,13 @@ def reassign_all(
             if tid:
                 moved.append(str(tid))
         if moved:
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+            # NAMES WHAT IT TOUCHED. Without `touched_ids` the mirror treats
+            # "differs from the database" as "I meant to write this", so this
+            # write re-asserts our copy of every OTHER card on the board as it
+            # looked at our read — reverting anyone who committed in between,
+            # and telling both of us we succeeded. `moved` is exactly the set
+            # this verb changed, so it is already the right answer.
+            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=moved)
     count = len(moved)
     # ONE batch event, AFTER the write is durable + the lock released
     # (fail-soft). The event models the ACT — one emit for the whole cohort,
@@ -279,7 +285,14 @@ def reassign_task(
             if subs:
                 target["subscribers"] = subs
             target["last_activity"] = _utc_now_iso()
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+            # See the sibling write above: naming the one card this verb
+            # changed stops the mirror re-asserting our stale copy of every
+            # other card. A single-card verb that writes the whole document
+            # is the shape that ate a completion on 2026-08-10 and a park on
+            # 2026-08-18 (test__stale_copy_clobber.py reproduces it).
+            _model._save_doc_unlocked(
+                doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+            )
             result_task = dict(target)
             changed = True
     # C5: emit `reassigned` ONLY on a real owner change, AFTER the write is
