@@ -2,6 +2,10 @@
 description: |
   [TOPIC] Fleet-wide scitex-cards MCP rollout — the canonical `.mcp.json`
   block and the binding "MCP-only for durable cards" mandate.
+  [DETAILS] One canonical `.mcp.json` block, one env var
+  (`SCITEX_CARDS_AGENT_ID`), one smoke test (`scitex-cards mcp doctor`).
+  Durable cards go over MCP and nowhere else, so a card that exists is a
+  card the whole fleet can see.
   [WHEN] Read on every agent boot. This is the leaf that locks in WHY
   scitex-cards is the single durable-card wire AND HOW to wire it from a
   Claude-Code container — one copy-pasteable JSON block, one env var,
