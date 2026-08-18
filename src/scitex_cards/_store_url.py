@@ -46,7 +46,9 @@ __all__ = [
     "is_attempted_dsn",
     "is_postgres_conninfo",
     "is_postgres_url",
+    "is_unexpanded_variable",
     "reject_attempted_dsn",
+    "reject_unexpanded_variable",
     "to_paramstyle",
 ]
 
@@ -256,6 +258,82 @@ def reject_attempted_dsn(target: object) -> None:
         "    /an/absolute/path/to/cards.db\n"
         "Check $SCITEX_CARDS_DB, and note a DSN that has been through Path() "
         "loses one slash: 'postgresql:/host/db' is this error, not a directory."
+    )
+
+
+#: Shell constructs a shell would already have consumed. Their SURVIVAL into a
+#: store target is the whole signal: the value reached us through a reader that
+#: does not expand -- a JSON or YAML config, a single-quoted assignment, a spec
+#: template rendered without substitution -- so what we hold is the RECIPE for a
+#: target, not a target.
+_UNEXPANDED_VARIABLE = re.compile(r"\$\{|\$\(")
+
+
+def is_unexpanded_variable(target: object) -> bool:
+    """True iff ``target`` still carries an unexpanded shell expansion.
+
+    THE THIRD SHAPE THAT IS NOT A FILENAME, and the one that threaded between
+    the two guards already here. Measured 2026-08-18: with
+    ``SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'`` -- the literal, brace and all --
+    :func:`~scitex_cards._store_target.resolve_store_target` returned that
+    string as a legitimate store target, because
+
+      * it is NON-EMPTY, so ``refuse_zero_config_default`` never fires; and
+      * it is NOT DSN-SHAPED -- no path anchor, no ``://``, no libpq keyword,
+        not bare ``host:port`` -- so :func:`is_attempted_dsn` returns False and
+        :func:`reject_attempted_dsn` never inspects it.
+
+    Two correct checks with a gap between them. Both were written by asking
+    "does this look like a server?"; neither asks "did this value ever get
+    resolved at all?".
+
+    WHAT IT COST. Eight handyman agents on scitex-compute-03 held exactly this
+    literal in their environment, so every cards client resolved to one SQLite
+    file named ``${SCITEX_CARDS_DB}`` in the project directory. Four direct
+    messages addressed to the operator were written into it and delivered to
+    nobody. Two of those agents diagnosed the defect themselves, at 00:20 and
+    00:41, and declined to redirect the store -- citing the 2026-07-19 board
+    destruction by name. Their escalation went into the store it was about.
+
+    BRACED AND COMMAND FORMS ONLY -- ``$FOO`` IS DELIBERATELY NOT MATCHED, and
+    that gap is chosen rather than overlooked. ``$`` is a legal character in a
+    POSIX filename, so a bare-``$`` rule could refuse a store that works today,
+    and this module's standing promise is that no deployment in service breaks
+    (see :func:`is_attempted_dsn`: "a path wins first"). ``${`` and ``$(``
+    cannot survive any shell that ran, which is what makes them decidable.
+    A bare ``$FOO`` target is still a defect; it is simply one this predicate
+    reports as False rather than guess about.
+    """
+    if not isinstance(target, str):
+        return False
+    return _UNEXPANDED_VARIABLE.search(target) is not None
+
+
+def reject_unexpanded_variable(target: object) -> None:
+    """Raise if ``target`` is an unexpanded expansion, else return.
+
+    Call this at any door that OPENS a store, beside
+    :func:`reject_attempted_dsn` -- same placement, same reason. Resolution
+    stays total and silent so a caller that merely REPORTS a target can show
+    the ambiguity instead of raising on it.
+    """
+    if not is_unexpanded_variable(target):
+        return
+    raise UnrecognisedStoreTarget(
+        f"the cards database target {target!r} still contains an UNEXPANDED "
+        "shell variable, so it names no store and will NOT be opened.\n"
+        "Something read this value without expanding it -- a JSON/YAML config, "
+        "a single-quoted assignment, or a spec template rendered literally -- "
+        "so it is the recipe for a target, not a target.\n"
+        "Refusing is deliberate: treated as a path it creates a NEW and EMPTY "
+        "cards database, named after the variable, that answers every query. "
+        "On 2026-08-18 that silently collected four undelivered operator "
+        "messages on scitex-compute-03.\n"
+        "Fix the SOURCE of the value, never the symptom: repointing a live "
+        "store at a fresh target is how the board was destroyed 2026-07-19.\n"
+        "Check $SCITEX_CARDS_DB and the config that sets it; the intended "
+        "value looks like\n"
+        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
     )
 
 
