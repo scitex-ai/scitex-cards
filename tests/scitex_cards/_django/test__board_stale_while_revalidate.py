@@ -126,13 +126,33 @@ def _append_card(store, cid: str, status: str = "deferred") -> None:
         fh.write(f"# {cid}\n")
 
 
-def _break_the_rebuild(monkeypatch) -> None:
-    """Make the background rebuild raise, as an unreadable store would."""
+#: How many times :func:`_boom` was actually reached. See the fixture below.
+_BOOM_CALLS = {"n": 0}
 
-    def _boom(path):
-        raise RuntimeError("store unreadable")
 
-    monkeypatch.setattr(services, "_load_global_tasks", _boom)
+@pytest.fixture(autouse=True)
+def _reset_boom_calls():
+    _BOOM_CALLS["n"] = 0
+    yield
+
+
+def _boom(path):
+    """A card reader that fails the way an unreadable store fails.
+
+    Passed to ``get_board(loader=...)`` rather than bound over
+    ``services._load_global_tasks``: the rebuild runs on a BACKGROUND THREAD,
+    so a module-attribute swap stays in place for whatever else the suite
+    touches while that thread runs, and its teardown races the very thread it
+    is meant to control.
+
+    IT COUNTS ITS OWN CALLS BECAUSE THE FAILURE TESTS CANNOT SEE IT OTHERWISE.
+    They assert that the previous board is still served — which is ALSO what
+    happens if the refresh quietly SUCCEEDED, i.e. if the injected reader
+    never reached the background thread at all. Without the tally those tests
+    would pass whether or not they arranged anything.
+    """
+    _BOOM_CALLS["n"] += 1
+    raise RuntimeError("store unreadable")
 
 
 def _rewrite_same_length(store, before) -> None:
@@ -203,9 +223,12 @@ def test_the_background_refresh_actually_lands(store):
     assert {t["id"] for t in services.get_board(store).tasks} == {"a", "b", "c"}
 
 
-def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
+def test_a_poll_storm_starts_only_one_refresh(store):
     # Arrange
-    # Make the rebuild slow enough that polls overlap it.
+    # Make the rebuild slow enough that polls overlap it. The counter lives on
+    # a reader we OWN and hand in, so nothing about `services` is rewritten
+    # while a background thread is reading it — and the REAL loader still does
+    # the work, so this measures the refresh guard rather than a stub.
     services.get_board(store, allow_stale=True)
     calls = {"n": 0}
     real = services._load_global_tasks
@@ -215,38 +238,56 @@ def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
         time.sleep(0.4)
         return real(path)
 
-    monkeypatch.setattr(services, "_load_global_tasks", _slow)
     # Act — ten rapid reads against a changed store (the operator's browser
     # polling while a rebuild is in flight).
     _bump_mtime(store)
     for _ in range(10):
-        services.get_board(store, allow_stale=True)
+        services.get_board(store, allow_stale=True, loader=_slow)
     _settle()
     # Assert — one rebuild, not ten.
     assert calls["n"] == 1
 
 
-def test_a_failing_refresh_keeps_serving_the_previous_board(store, monkeypatch):
+def test_a_failing_refresh_keeps_serving_the_previous_board(store):
     # Arrange
     good = services.get_board(store, allow_stale=True)
-    _break_the_rebuild(monkeypatch)
     # Act — the store changes and the background rebuild blows up.
     _bump_mtime(store)
-    served = services.get_board(store, allow_stale=True)
+    served = services.get_board(store, allow_stale=True, loader=_boom)
     _settle()
     # Assert — the operator still has a board; it is never blanked.
     assert len(served.tasks) == len(good.tasks)
 
 
-def test_a_further_stale_read_after_a_failed_refresh_still_serves(store, monkeypatch):
+def test_the_failing_refresh_was_actually_attempted(store):
+    """The control for the two tests around it.
+
+    "Still serving the previous board" is what a SUCCESSFUL refresh looks like
+    too, so without this the failure tests cannot tell a caught exception from
+    an arrangement that never took effect. This also pins that the injected
+    reader reaches the BACKGROUND thread — the part being tested — and not
+    merely the request path.
+    """
     # Arrange
     services.get_board(store, allow_stale=True)
-    _break_the_rebuild(monkeypatch)
+
+    # Act
     _bump_mtime(store)
+    services.get_board(store, allow_stale=True, loader=_boom)
+    _settle()
+
+    # Assert
+    assert _BOOM_CALLS["n"] == 1
+
+
+def test_a_further_stale_read_after_a_failed_refresh_still_serves(store):
+    # Arrange
     services.get_board(store, allow_stale=True)
+    _bump_mtime(store)
+    services.get_board(store, allow_stale=True, loader=_boom)
     _settle()
     # Act
-    served_again = services.get_board(store, allow_stale=True)
+    served_again = services.get_board(store, allow_stale=True, loader=_boom)
     # Assert — a further stale read keeps serving the last good board rather
     # than surfacing the failure. (A STRICT read would rightly raise here: the
     # store really is unreadable, and fail-loud is correct when the caller

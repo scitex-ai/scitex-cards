@@ -215,8 +215,16 @@ def _swr_enabled() -> bool:
     }
 
 
-def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
+def _kick_board_refresh(
+    key, resolved, effective_mtime, effective_sig, loader=None
+) -> None:
     """Rebuild this board off the request path, once at a time.
+
+    ``loader`` is the card reader, defaulting to :func:`_load_global_tasks`.
+    It is forwarded from :func:`get_board` so the BACKGROUND read uses the
+    same reader the foreground one did — a seam that stopped at the request
+    path would leave this thread, the part that actually revalidates, on the
+    real loader and untestable.
 
     Fail-soft by construction: if the rebuild raises, the cache keeps the
     older board and the next request tries again — a background refresh must
@@ -239,7 +247,8 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
             # cached, serve it silently forever on /graph and /timeline. A
             # background refresh must never be able to blank the board; the way
             # to guarantee that is to have no empty-fallback here at all.
-            tasks = _load_global_tasks(resolved)
+            read_tasks = _load_global_tasks if loader is None else loader
+            tasks = read_tasks(resolved)
             task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
             groups = _load_sidecar_groups(resolved, task_ids)
             fresh = BoardState(
@@ -312,7 +321,7 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
 
 
 def get_board(
-    tasks_path: Optional[str] = None, *, allow_stale: bool = False
+    tasks_path: Optional[str] = None, *, allow_stale: bool = False, loader=None
 ) -> BoardState:
     """Resolve the task store, load + validate it, and cache by mtime.
 
@@ -436,7 +445,9 @@ def get_board(
         # through the store API, never here) — an agent deciding what to work
         # on must not act on a stale slice. This is the human-view path only.
         if allow_stale and _swr_enabled():
-            _kick_board_refresh(key, resolved, effective_mtime, effective_sig)
+            _kick_board_refresh(
+                key, resolved, effective_mtime, effective_sig, loader
+            )
             return board
 
     # THE CARD READ — UNCONDITIONAL, AND THERE IS NO ELSE BRANCH. Every way this
@@ -446,7 +457,7 @@ def get_board(
     # the reason. That is the point: a refusal is recoverable and visible, a
     # believable empty board is neither. An ``else []`` here would be a second
     # read target that merely happens to be unreachable today.
-    tasks = _load_global_tasks(resolved)
+    tasks = (_load_global_tasks if loader is None else loader)(resolved)
 
     task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
     groups = _load_sidecar_groups(resolved, task_ids)
