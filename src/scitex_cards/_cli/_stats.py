@@ -88,6 +88,11 @@ def _push_notify(agent: str, body: str) -> str:
     return result.get("reason") or "error"
 
 
+#: This path's name in :mod:`.._cache_stats`. A MISS is a rollup that RAN (the
+#: ~9 MB parse); a HIT is a notify tick the single-instance guard skipped.
+ROLLUP_NAME = "stats_rollup"
+
+
 def _rollup(path, by, since, fmt):
     """Parse the store + compute the per-group rollup + formatted output.
 
@@ -98,7 +103,16 @@ def _rollup(path, by, since, fmt):
     the end), so two overlapping ``--notify`` ticks BOTH parsed the store
     concurrently at ~46 %/~30 % CPU with NO "skipping" log. See
     incident-cards-wake-watcher-interval2-spiral-20260708.
+
+    Records a MISS in :mod:`.._cache_stats` under :data:`ROLLUP_NAME` — "the
+    expensive work RAN" — counted HERE rather than at the guard on purpose.
+    A counter on the guard would say a tick was skipped; only a counter on the
+    parse can say the parse did not happen anyway, which is the whole content
+    of the 0.7.47 regression.
     """
+    from .._cache_stats import record_miss
+
+    record_miss(ROLLUP_NAME)
     tasks = load_tasks(path)
     rows = aggregate(tasks, by=by, since=since)
     out = _format_json(rows) if fmt == "json" else _format_text(rows)
@@ -219,8 +233,18 @@ def stats_cmd(
         # 20260708 (analogue of #344 wake-watcher spiral / #345 drain spin).
         from .._singleflight import notify_lock_path, single_instance
 
+        from .._cache_stats import record_hit
+
         with single_instance(notify_lock_path(None)) as acquired:
             if not acquired:
+                # HIT = a tick whose expensive rollup was AVOIDED. Paired with
+                # the MISS recorded inside `_rollup`, so the two together say
+                # what a skip line alone cannot: whether the parse ran anyway.
+                # The 0.7.47 bug was exactly that — the rollup sat ABOVE this
+                # guard, so overlapping ticks both parsed the ~9 MB store while
+                # only the push was serialised, and every visible symptom
+                # (exit 0, skip line, no push section) looked correct.
+                record_hit(ROLLUP_NAME)
                 click.echo(
                     "print-stats --notify: a prior run still holds the lock, "
                     "skipping this tick to avoid stacking (store-size incident "

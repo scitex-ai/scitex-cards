@@ -11,22 +11,39 @@ is a NON-BLOCKING ``flock`` on the side-effecting notify path only — the
 cron/one-shot analogue of the wake-watcher lock (#344) and the MCP inbox
 drain guard (#345).
 
-Real fakes, NO mocks (STX-NM): a real ``tmp_path`` YAML store, a REAL
-``flock`` held by the test, and a plain call-counter SPY wrapping the real
-``scitex_cards._push.deliver`` to prove whether the notify path was entered.
-AAA structure.
+NO MOCKS, and now none of the wrappers either. The two questions this file
+asks are "did the push go out?" and "did the expensive rollup run?", and both
+are answered by things that SHIP:
+
+* a REAL local HTTP receiver on ``proj-x``'s turn URL, so a push is observed
+  as a request LANDING rather than as a call being recorded;
+* the rollup's own tally in ``_cache_stats`` (``_stats.ROLLUP_NAME``) — a MISS
+  per parse, a HIT per tick the flock guard skipped.
+
+The tally is why the counter moved into production rather than staying a
+test wrapper: the 0.7.47 bug put the ~9 MB parse ABOVE the guard, so
+overlapping ticks both parsed while every visible symptom looked correct. A
+skipped tick that parsed anyway now shows a HIT and a MISS together, on a
+live host, not only under a test that thought to wrap ``load_tasks``.
+
+Still real: a ``tmp_path`` store and a REAL ``flock`` held by the test. AAA
+structure.
 """
 
 from __future__ import annotations
+
+import contextlib
 
 import pytest
 from click.testing import CliRunner
 
 import scitex_cards._cli._stats as _stats
-import scitex_cards._push as _push
+from scitex_cards._cache_stats import cache_stats, reset_cache_stats
 from scitex_cards._cli._main import main
 from scitex_cards._singleflight import notify_lock_path, single_instance
 from scitex_cards._store import add_task
+
+from conftest import local_receiver
 
 
 def _seed_store() -> None:
@@ -39,46 +56,39 @@ def _seed_store() -> None:
     add_task(id="t1", title="Task one", status="in_progress", agent="proj-x")
 
 
-def _deliver_spy(monkeypatch):
-    """Install a call-counter that WRAPS the real ``deliver`` (no mock).
+@contextlib.contextmanager
+def _delivery_observed(env):
+    """Give ``proj-x`` a REAL turn URL and yield the bodies that arrive.
 
-    Returns the mutable ``calls`` list so a test can assert whether the
-    notify/push path was entered. ``proj-x`` has no configured turn URL, so
-    the wrapped real ``deliver`` returns ``no-turn-url-configured`` WITHOUT
-    any network I/O — the spy observes real behaviour, it does not fake it.
+    Replaces a counter wrapped around ``_push.deliver``. ``deliver`` resolves
+    the URL from ``SCITEX_CARDS_TURN_URL_PROJ_X``, so "was the notify path
+    entered?" becomes an HTTP REQUEST LANDING on a real local server — an
+    observation of the whole path rather than of one function having been
+    called.
     """
-    calls: list = []
-    real = _push.deliver
-
-    def spy(agent, body, **kwargs):
-        calls.append(agent)
-        return real(agent, body, **kwargs)
-
-    monkeypatch.setattr(_push, "deliver", spy)
-    return calls
+    with local_receiver() as (url, received):
+        env.set("SCITEX_CARDS_TURN_URL_PROJ_X", url)
+        yield received
 
 
-def _load_tasks_spy(monkeypatch):
-    """Install a call-counter that WRAPS the real store parse (``load_tasks``).
+def _rollups_run() -> int:
+    """How many times the EXPENSIVE rollup actually parsed the store.
 
-    This is the assertion the 0.7.47 test was MISSING. The bug was that the
-    expensive per-agent rollup — which begins by parsing the ~9 MB store via
-    ``load_tasks`` — ran ABOVE the flock guard, so two overlapping ``--notify``
-    ticks BOTH parsed the store concurrently even though the push at the end
-    was serialized. A spy on the PUSH cannot catch that (the push is skipped
-    either way once the lock is held); only a spy on the STORE PARSE proves the
-    expensive work did not run. Wraps the real ``_stats.load_tasks`` (the name
-    ``_rollup`` calls) — no mock, real parse still happens when it is invoked.
+    This is the assertion the 0.7.47 test was MISSING, and it is now a
+    production number rather than a spy. The bug was that the per-agent
+    rollup — which parses the ~9 MB store — ran ABOVE the flock guard, so two
+    overlapping ``--notify`` ticks BOTH parsed concurrently even though the
+    push at the end was serialised. A count of PUSHES cannot catch that (the
+    push is skipped either way once the lock is held); only a count of PARSES
+    can.
+
+    `_rollup` records a MISS on every parse and the guard records a HIT on
+    every skipped tick (`_cache_stats`, keyed on `_stats.ROLLUP_NAME`), so a
+    skipped tick that parsed anyway shows BOTH — which is exactly the shape of
+    the regression, and is now visible in production instead of only under a
+    test's wrapper.
     """
-    loads: list = []
-    real = _stats.load_tasks
-
-    def spy(path):
-        loads.append(str(path))
-        return real(path)
-
-    monkeypatch.setattr(_stats, "load_tasks", spy)
-    return loads
+    return cache_stats(_stats.ROLLUP_NAME)["misses"]
 
 
 # --------------------------------------------------------------------------- #
@@ -94,14 +104,21 @@ def _load_tasks_spy(monkeypatch):
 #: nothing wrong. Only the store-parse claim catches it, which is exactly why
 #: it must not sit behind five earlier asserts.
 @pytest.fixture()
-def notify_run_while_lock_held(monkeypatch):
+def notify_run_while_lock_held(env):
     """Run the cron path while a prior run's flock is still held."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
-    with single_instance(notify_lock_path(None)) as acquired:
-        result = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
-    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
+    reset_cache_stats()
+    with _delivery_observed(env) as received:
+        with single_instance(notify_lock_path(None)) as acquired:
+            result = CliRunner().invoke(
+                main, ["print-stats", "--by", "agent", "--notify"]
+            )
+    return {
+        "acquired": acquired,
+        "result": result,
+        "calls": received,
+        "loads": _rollups_run(),
+    }
 
 
 def test_the_test_itself_acquires_the_notify_lock(notify_run_while_lock_held):
@@ -145,7 +162,7 @@ def test_notify_skip_never_calls_deliver(notify_run_while_lock_held):
     scenario = notify_run_while_lock_held
     # Act
     calls = scenario["calls"]
-    # Assert — the spy proves deliver() was never called.
+    # Assert — nothing reached the real receiver, so no push went out.
     assert calls == []
 
 
@@ -158,7 +175,7 @@ def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
     # rollup must NOT run when the lock is held. The 0.7.47 bug computed the
     # rollup ABOVE the guard, so this would have been >= 1. The guard now
     # wraps the parse → ZERO.
-    assert loads == []
+    assert loads == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -170,14 +187,15 @@ def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
 #: push for the agent, and actually parse the store. A guard that always skips
 #: would pass the whole lock-held group and fail only here.
 @pytest.fixture()
-def notify_run_with_lock_free(monkeypatch):
+def notify_run_with_lock_free(env):
     """Run the cron path with no prior holder."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
-
-    result = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
-    return {"result": result, "calls": calls, "loads": loads}
+    reset_cache_stats()
+    with _delivery_observed(env) as received:
+        result = CliRunner().invoke(
+            main, ["print-stats", "--by", "agent", "--notify"]
+        )
+    return {"result": result, "calls": received, "loads": _rollups_run()}
 
 
 def test_notify_runs_when_lock_is_free(notify_run_with_lock_free):
@@ -203,8 +221,9 @@ def test_notify_run_pushes_for_the_owning_agent(notify_run_with_lock_free):
     scenario = notify_run_with_lock_free
     # Act
     calls = scenario["calls"]
-    # Assert
-    assert "proj-x" in calls
+    # Assert — a real HTTP body landed on the receiver, so the push for the
+    # owning agent genuinely went out rather than merely being attempted.
+    assert len(calls) == 1
 
 
 def test_notify_run_parses_the_store(notify_run_with_lock_free):
@@ -213,7 +232,7 @@ def test_notify_run_parses_the_store(notify_run_with_lock_free):
     # Act
     loads = scenario["loads"]
     # Assert — the rollup DID parse the store (the lock was free).
-    assert loads != []
+    assert loads == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -227,15 +246,19 @@ def test_notify_run_parses_the_store(notify_run_with_lock_free):
 #: perform no push. Scoping a lock too widely is the classic over-fix, and it
 #: shows up as exactly one of these claims flipping.
 @pytest.fixture()
-def plain_read_while_lock_held(monkeypatch):
+def plain_read_while_lock_held(env):
     """Hold the notify lock, then run a PLAIN print-stats (no --notify)."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
-
-    with single_instance(notify_lock_path(None)) as acquired:
-        result = CliRunner().invoke(main, ["print-stats", "--by", "agent"])
-    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
+    reset_cache_stats()
+    with _delivery_observed(env) as received:
+        with single_instance(notify_lock_path(None)) as acquired:
+            result = CliRunner().invoke(main, ["print-stats", "--by", "agent"])
+    return {
+        "acquired": acquired,
+        "result": result,
+        "calls": received,
+        "loads": _rollups_run(),
+    }
 
 
 def test_plain_read_scenario_really_holds_the_lock(plain_read_while_lock_held):
@@ -299,7 +322,7 @@ def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
     loads = scenario["loads"]
     # Assert — the plain read is UNGUARDED: it parses the store even while the
     # notify lock is held (interactive reads must never be blocked/skipped).
-    assert loads != []
+    assert loads == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -312,13 +335,13 @@ def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
 #: --notify acquires cleanly (runs the push, prints no skip line), and the
 #: test can itself take the flock afterwards.
 @pytest.fixture()
-def two_notify_runs_then_a_manual_lock(monkeypatch):
+def two_notify_runs_then_a_manual_lock(env):
     """Run --notify twice, then try to take the flock from the test itself."""
     _seed_store()
-    _deliver_spy(monkeypatch)
-
-    first = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
-    second = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
+    reset_cache_stats()
+    with _delivery_observed(env):
+        first = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
+        second = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
     with single_instance(notify_lock_path(None)) as acquired:
         pass
     return {"first": first, "second": second, "acquired": acquired}
