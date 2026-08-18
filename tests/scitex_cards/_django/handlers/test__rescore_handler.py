@@ -134,24 +134,13 @@ def _rescore_over_a_concurrent_write(store_path):
     )
 
 
-def _install_rescore_spy(monkeypatch):
-    """Record every ``rescore_task`` call the handler makes; return the log."""
-    calls = []
-
-    def spy(store_arg, task_id, *, urgency, importance, by=None):
-        calls.append(
-            {
-                "store": str(store_arg),
-                "task_id": task_id,
-                "urgency": urgency,
-                "importance": importance,
-                "by": by,
-            }
-        )
-        return {"task": {"id": task_id}, "rank": 1, "of": 1}
-
-    monkeypatch.setattr("scitex_cards._store.rescore_task", spy)
-    return calls
+# NO SPY ON `rescore_task`. What the spy recorded — the store, the card id, the
+# two axes and the actor — is all observable on the card AFTER the real verb
+# runs, and this file was already asserting most of it that way (the axes at
+# `..._writes_the_urgency` / `..._writes_the_importance`, the actor at
+# `..._audit_entry_is_authored_by_the_operator`). Reading the card proves the
+# values LANDED; the spy proved only that they were passed to a function that
+# then returned a canned result.
 
 
 def _audit_entry(store_path, task_id="build"):
@@ -201,31 +190,35 @@ def test_rescore_over_a_concurrent_write_keeps_the_other_write(store):
 # ── 2. delegation — axes + actor forwarded verbatim, no client-set rank ───
 
 
-def test_rescore_delegating_to_the_verb_answers_200(store, monkeypatch):
+def test_rescore_delegating_to_the_verb_answers_200(store):
     # Arrange
-    _install_rescore_spy(monkeypatch)
     # Act
     response = _post(store, {"id": "build", "urgency": 2, "importance": 4})
     # Assert
     assert response.status_code == 200
 
 
-def test_rescore_forwards_axes_and_actor_to_the_verb(store, monkeypatch):
+def test_rescore_forwards_both_axes_to_the_verb(store):
     # Arrange
-    calls = _install_rescore_spy(monkeypatch)
+    # the handler must pass BOTH axes through unchanged. Asserting the card
+    # rather than the call also proves they were honoured, which the spy this
+    # replaces could not: it recorded the arguments and then returned a canned
+    # result, so a verb that ignored them entirely kept the test green.
     # Act
     _post(store, {"id": "build", "urgency": 2, "importance": 4})
-    # Assert — the two axes and the operator actor reach the verb; the handler
-    # never computes or forwards a rank.
-    assert calls == [
-        {
-            "store": store,
-            "task_id": "build",
-            "urgency": 2,
-            "importance": 4,
-            "by": "operator",
-        }
-    ]
+    build = _load(store)["build"]
+    # Assert
+    assert (build["urgency"], build["importance"]) == (2, 4)
+
+
+def test_rescore_records_the_transition_the_handler_sent(store):
+    # Arrange
+    # the audit payload carries old->new for each axis, so it is where "the
+    # handler forwarded exactly these values" is observable end to end.
+    # Act
+    _post(store, {"id": "build", "urgency": 2, "importance": 4})
+    # Assert
+    assert _audit_entry(store)["rescore"]["urgency"] == [None, 2]
 
 
 # ── 3a. end-to-end through the real verb ──────────────────────────────────
