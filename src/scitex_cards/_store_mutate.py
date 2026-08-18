@@ -26,8 +26,11 @@ already used for ``from . import _model``.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+from ._db_card import read_card
 
 from ._model import (
     TaskValidationError,
@@ -266,6 +269,39 @@ def update_task(
         from ._store import _not_found_message
 
         raise TaskNotFoundError(_not_found_message(task_id))
+    # *** RETURN WHAT PERSISTED, NOT WHAT WE ASKED TO WRITE. ***
+    # `result` above is the in-memory MERGE, captured before the write was
+    # durable and previously returned unchanged — so a caller was handed their
+    # own input back as confirmation. Measured on the live board 2026-08-18: a
+    # `parked` value echoed back and absent 30 minutes later (dotfiles), and 14
+    # of 178 writes reporting success without persisting (sac). An echo of the
+    # request is the most convincing possible wrong answer, because it matches
+    # what the caller expects exactly.
+    #
+    # ONE INDEXED ROW, not a board rebuild — `read_card` exists for this; going
+    # through `load_tasks` would re-parse every card to answer a question about
+    # one, which is the cost this package's caches exist to avoid.
+    #
+    # NO COMPARISON AND NO MISMATCH-RAISE. Between our commit and this read a
+    # concurrent writer may legitimately have changed the card; raising on a
+    # difference would manufacture failures for writes that succeeded, and
+    # false alarms on a write path are how people learn to ignore write errors.
+    # The caller gets the truth as of now, which is the most any post-commit
+    # read can offer.
+    _persisted = read_card(task_id, resolved)
+    if _persisted:
+        result = _persisted
+    else:
+        # The row is gone immediately after our own successful write. Do not
+        # invent a raise (a tombstoned or concurrently-deleted card can reach
+        # here legitimately) and do not stay silent either — silence here is
+        # the exact defect this block was added to end.
+        logging.getLogger(__name__).warning(
+            "update_task(%r): the write reported success but the card could "
+            "not be read back; returning the in-memory merge, which may not "
+            "be what the store holds",
+            task_id,
+        )
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path
