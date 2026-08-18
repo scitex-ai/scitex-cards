@@ -92,7 +92,7 @@ def test_default_interval_when_nothing_set(tmp_path, monkeypatch):
     assert interval == _config.DEFAULT_INTERVAL_MINUTES
 
 
-def test_config_interval_used_when_no_card_override(tmp_path, monkeypatch):
+def test_config_interval_used_when_no_card_override(tmp_path, env):
     # Arrange
     cfg = {"interval_minutes": 2}
     # Act
@@ -101,7 +101,7 @@ def test_config_interval_used_when_no_card_override(tmp_path, monkeypatch):
     assert interval == 2.0
 
 
-def test_card_override_beats_config(tmp_path, monkeypatch):
+def test_card_override_beats_config(tmp_path, env):
     # Arrange
     cfg = {"interval_minutes": 5}
     card = {"id": "c1", "reminder_interval_minutes": 1}
@@ -111,7 +111,7 @@ def test_card_override_beats_config(tmp_path, monkeypatch):
     assert interval == 1.0
 
 
-def test_non_positive_values_fall_through(tmp_path, monkeypatch):
+def test_non_positive_values_fall_through(tmp_path, env):
     # Arrange
     cfg = {"interval_minutes": 0}  # invalid → ignored
     card = {"id": "c1", "reminder_interval_minutes": -3}  # invalid → ignored
@@ -121,7 +121,7 @@ def test_non_positive_values_fall_through(tmp_path, monkeypatch):
     assert interval == _config.DEFAULT_INTERVAL_MINUTES
 
 
-def test_bool_is_not_a_valid_interval_number(tmp_path, monkeypatch):
+def test_bool_is_not_a_valid_interval_number(tmp_path, env):
     # Arrange — bool is an int subclass; it must NOT be accepted.
     cfg = {"interval_minutes": True}
     # Act
