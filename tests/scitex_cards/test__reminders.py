@@ -27,11 +27,28 @@ from scitex_cards._reminders import (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine(env, monkeypatch):
-    """Strip env knobs AND detach config resolution so a deployed container's
-    settings (``SCITEX_CARDS_REMINDER_OWNERS`` from the spec, a real
-    ``~/.scitex/cards/config.yaml``) can never leak into these unit tests.
-    Each test sets only what it needs via args."""
+def user_config_path(env, tmp_path):
+    """Strip env knobs AND point config resolution at an empty tmp root.
+
+    A deployed container's settings (``SCITEX_CARDS_REMINDER_OWNERS`` from the
+    spec, a real ``~/.scitex/cards/config.json``) must never leak into these
+    unit tests. Each test sets only what it needs.
+
+    The config half is arranged FOR REAL rather than by stubbing
+    ``config_paths``: ``SCITEX_DIR`` names an empty root, and cwd moves out of
+    any git repo so no project config is appended either. ``_read_one`` is
+    fail-soft, so real discovery over an empty directory yields the empty
+    config a stub used to fake — and a NEW config source added later is picked
+    up here instead of staying invisible to this suite.
+
+    RETURNS the user config path, so a test that OPTS IN writes a real file at
+    the location discovery actually reads (``$SCITEX_DIR/cards/config.json``)
+    rather than handing ``config_paths`` a path of its own choosing.
+
+    The store is unaffected: conftest pins it via ``SCITEX_CARDS_DB``, which
+    ``SCITEX_DIR`` does not override — its own comment says a test's override
+    wins for that test's duration.
+    """
     for var in (
         "SCITEX_CARDS_REMINDER_OWNERS",
         "SCITEX_CARDS_REMINDER_ESCALATE_AFTER",
@@ -41,8 +58,11 @@ def _isolate_engine(env, monkeypatch):
         "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
-    # No config files contribute anything unless a test opts in.
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    empty_root = tmp_path / "scitex-dir"
+    (empty_root / "cards").mkdir(parents=True, exist_ok=True)
+    env.set("SCITEX_DIR", str(empty_root))
+    env.chdir(empty_root)
+    return empty_root / "cards" / "config.json"
 
 
 # === helpers ===============================================================
@@ -526,12 +546,12 @@ def test_the_card_level_override_sends_a_second_note(tmp_path):
     assert sent == 2
 
 
-def test_config_interval_knob_is_honored(tmp_path, monkeypatch):
-    """reminders.interval_minutes in config.yaml sets the cadence."""
-    # Arrange
-    cfg = tmp_path / "config.json"
-    cfg.write_text('{"reminders": {"interval_minutes": 2}}', encoding="utf-8")
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [cfg])
+def test_config_interval_knob_is_honored(tmp_path, user_config_path):
+    """reminders.interval_minutes in config.json sets the cadence."""
+    # Arrange — a REAL file at the path discovery reads, not a stubbed path list
+    user_config_path.write_text(
+        '{"reminders": {"interval_minutes": 2}}', encoding="utf-8"
+    )
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
@@ -977,11 +997,11 @@ def test_owner_allowlist_env_scopes_the_sweep(tmp_path, env):
     assert out["digested"] == ["alice"]
 
 
-def test_owner_allowlist_config_scopes_the_sweep(tmp_path, monkeypatch):
-    # Arrange
-    cfg = tmp_path / "config.json"
-    cfg.write_text('{"reminders": {"owners": ["alice"]}}', encoding="utf-8")
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [cfg])
+def test_owner_allowlist_config_scopes_the_sweep(tmp_path, user_config_path):
+    # Arrange — a REAL file at the path discovery reads, not a stubbed path list
+    user_config_path.write_text(
+        '{"reminders": {"owners": ["alice"]}}', encoding="utf-8"
+    )
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
     tasks = [
