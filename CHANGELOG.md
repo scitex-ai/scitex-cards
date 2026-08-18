@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-08-18
+
+### A store target that was never resolved is refused instead of created
+
+`${SCITEX_CARDS_DB}` — the literal, unexpanded — was a valid store target.
+Reproduced against 0.44.0 in an isolated directory:
+
+    connect(tmpdir / "${SCITEX_CARDS_DB}")
+      -> OPENED, no refusal
+      -> left ${SCITEX_CARDS_DB}, -shm, -wal
+
+A live WAL-mode SQLite board named after the variable, answering every query.
+
+It threaded between two correct guards. The value is NON-EMPTY, so the
+zero-config refusal never fired; it is NOT DSN-SHAPED, so `is_attempted_dsn`
+returned False and `reject_attempted_dsn` never inspected it. Both guards ask
+"does this look like a server?". Neither asks "did this value ever get
+resolved at all?".
+
+Measured cost, scitex-compute-03, 2026-08-18: eight agents held this literal
+in their environment, so every cards client resolved to one file named
+`${SCITEX_CARDS_DB}` in the project directory. Four direct messages addressed
+to the operator were written into it and delivered to nobody. Two of those
+agents diagnosed the defect themselves, at 00:20 and 00:41, and declined to
+redirect the store — citing the 2026-07-19 board destruction by name. Their
+escalation went into the store it was about.
+
+`_store_url` gains `is_unexpanded_variable` and `reject_unexpanded_variable`,
+both exported so a peer package reuses this guard rather than writing a second
+spelling of it. They are wired at the four doors that already call
+`reject_attempted_dsn` — both branches of `resolve_tasks_path`, and both
+`connect` functions — and placed BEFORE the DSN check, because provenance is a
+different question from shape: `"${DSN}://x"` carries `://` and would
+otherwise be refused as a malformed server address, sending the reader hunting
+a typo in a hostname nobody wrote.
+
+`${` and `$(` only. A bare `$FOO` is deliberately NOT matched, and a test
+asserts that: `$` is legal in a POSIX filename, and no store in service may
+break. `${` and `$(` cannot survive any shell that actually ran.
+
+**Upgrade note.** An agent still holding an unexpanded literal now fails to
+start rather than quietly writing to a store named after a variable. That is
+the intended failure. Verify before rolling out by reading
+`/proc/<pid>/environ` of the RUNNING processes — a spec file describes what an
+agent was started with, not what it holds now.
+
 ## [0.46.0] - 2026-08-17
 
 ### The fleet's only card-event consumer was registered, importable, and never called
