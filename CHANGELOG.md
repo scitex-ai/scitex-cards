@@ -2,6 +2,127 @@
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-08-17
+
+### The fleet's only card-event consumer was registered, importable, and never called
+
+**Install this if anything in your deployment consumes card events.** An
+entry-point group is a PUBLISHED CONTRACT: the string lives in OTHER packages'
+installed metadata, not in this package's source. Renaming it is therefore a
+MIGRATION — alias first, remove later — and that step was skipped when this
+package was renamed from `scitex_todo` to `scitex_cards`.
+
+Measured 2026-08-17 in the live fleet venv:
+
+    entry_points(group="scitex_cards.hooks")  ->  []
+    entry_points(group="scitex_todo.hooks")   ->  [scitex-agent-container
+        = scitex_agent_container._listen._card_event_delivery:deliver_card_event]
+
+Discovery read the new group and found nobody. The one registered card-event
+consumer in the fleet sat in the group dispatch had stopped reading — it was
+registered, it was importable, and it was never called. Nothing raised and
+nothing went red, because a rename cannot fail loudly when the failure mode is
+an empty iterator. The push rail was simply silent.
+
+**Both groups are now read**, and the union is deduped on `(name, value)`. That
+dedupe is not tidiness: a producer migrating CORRECTLY registers under both
+groups for one release, and dispatching it once per group would deliver every
+card event TWICE — turning a delivery repair into duplicate operator
+notifications. A `DeprecationWarning` names the straggler and its replacement
+group, so the retired group can actually empty instead of silently absorbing
+the debt.
+
+Two cheaper fixes were rejected. Flipping the constant back to the old name
+breaks any future CORRECT registration. Asking the one producer we happen to
+know about to re-register repairs exactly that producer, and leaves every other
+one dead AND invisible.
+
+`merge_hook_entry_points()` takes the discovered set as an argument, so the
+alias and dedupe decisions are tested by handing them a real object rather than
+by patching production internals. Six new tests, one assertion each, including
+a positive control against an implementation that returned every entry point
+regardless of group — without it the other five could pass vacuously.
+
+**NOT CLAIMED:** that this is the root cause of the silent doorbell (1823 DM
+bodies delivered, 125 badges unfired). A dead group would independently produce
+that signature, but no event has been traced end-to-end yet, and the board
+records a second, separate rail defect.
+
+### SQLite eradication, stage 1: `import sqlite3` under `src/`, 30 -> 15
+
+Operator ruling, 2026-08-17: SQLite is abolished — removed from source,
+migrated to PostgreSQL, and confirmed unable to be recreated. This release
+carries the SAFE SUBSET of that sweep, plus the barrier that keeps it from
+regressing.
+
+**THE MEASUREMENT THAT MADE IT SAFE.** 38 files under `src/` carry the token
+`sqlite3`; 30 bound the driver. An AST walk sorted every use into four buckets
+and found ZERO `isinstance(..., sqlite3....)` checks anywhere — no guard in this
+package uses the driver to DETECT SQLite. `_store_url.py`, which holds
+`is_attempted_dsn`, `reject_attempted_dsn` and every refusal, does not contain
+the token AT ALL; it recognises a SQLite-shaped target from a STRING. So driving
+the import toward zero removes the ability to CREATE a database without
+weakening a single REFUSAL. That asymmetry is the whole reason this stage is
+tractable, and it is why the sweep is not a keyword sweep: most SQLite
+vocabulary in this package IS the abolition guard — prose whose only job is to
+NAME SQLite in order to REFUSE it.
+
+**WHAT MOVED.** 15 modules imported the driver solely to write
+`sqlite3.Connection` / `sqlite3.Row` in a signature. Every one of them carries
+`from __future__ import annotations`, so the annotation was a string that is
+never evaluated: the import bought nothing at runtime, and the annotation was
+actively WRONG — on PostgreSQL `_db.connect()` returns a `StoreConnection`, so
+those signatures named a type the caller does not receive. Retyped under
+`if TYPE_CHECKING:`, which is zero runtime import.
+
+**THE BARRIER.** `tests/scitex_cards/test__no_sqlite3_import_in_src.py` parses
+every module and asserts none imports the driver, with a SHRINK-ONLY allowlist
+naming the 15 remaining offenders and why each still holds it. A module off the
+list that starts importing fails; a module ON the list that stops importing
+ALSO fails until its entry is deleted, so the allowlist cannot decay into a
+permanent exemption. AST, not grep — a textual check would report the refusal
+machinery as the offence it exists to prevent.
+
+**RED-PROOFED, not assumed.** A guard that has never failed is not a guard.
+Eight offending spellings (aliased, from-import, submodule, comma,
+function-local, conditional, try-guarded) and five innocent ones (docstring,
+comment, string literal, string annotation) run through the real detector, and
+the barrier itself was driven red against a deliberately planted offending
+module before being restored.
+
+**WHAT DID NOT MOVE**, and why, is written down in
+`docs/design/sqlite-eradication-classification.md`: the three create-capable
+doors (`_backend_connect:186`, `_db:365`, `_index:67`), the live SQLite inbox
+backend, and the nine `mode=ro` legacy readers. The legacy readers stay because
+the Phase-2 measurement returned CANNOT PROVE — the retired store `0bb1395b`
+could not be located on this host at all (172 files reference the uuid, none of
+them is a SQLite database), so losslessness cannot be certified. A separate,
+real gap did surface on the way: four surviving legacy `todo.db` inboxes hold
+149 notification ids absent from PostgreSQL (all `seen=1`, all payloads present
+in PG). That is precisely what `_health_stranded_backlog` exists to detect, and
+precisely what removing its reader would silently drop.
+
+### Also
+
+- **`main` reaches 0.46.0 from 0.44.0 in one step, and the skipped step is
+  named rather than absorbed.** The 0.45.0 `develop` -> `main` promotion never
+  happened, so PyPI served 0.45.0 while `main`'s `pyproject.toml` still read
+  0.44.0 — `main` has been two releases stale, not one. The 0.46.0 promotion
+  carries `main` across both releases at once.
+
+  **The missing promotion is the defect — NOT the fact that v0.45.0 was tagged
+  on a `develop` commit.** Tagging the release-bump commit on `develop` is the
+  ritual adopted 2026-08-16, and 0.45.0 was the first release to follow it. The
+  promotion merge then makes that same commit an ancestor of `main` too, so the
+  tag is reachable from BOTH branches by construction. The older habit of
+  tagging `main`'s merge commit strands the tag on a commit `develop` never
+  receives, and `git describe --tags --abbrev=0 origin/develop` answers with a
+  stale version — confidently, and without an error: measured `v0.38.0` while
+  `v0.42.0` existed, four releases behind. Any tool deriving a version from
+  local `HEAD` inherits that. v0.46.0 is therefore tagged on this release's
+  bump commit on `develop`, and the promotion lands FIRST so the ancestry the
+  ritual depends on actually holds when the tag is cut.
+
 ## [0.45.0] - 2026-08-17
 
 ### State that was in files is now in the database
