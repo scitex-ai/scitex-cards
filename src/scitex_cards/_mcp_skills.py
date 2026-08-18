@@ -151,9 +151,37 @@ async def poll_notifications(
 
     READING NEVER CONFIRMS. This call hands notifications over; it does NOT
     advance the cursor. Confirm what you ACTUALLY DELIVERED with
-    ``ack_notifications(agent, ids)``. Anything you never confirm is still
-    unseen and COMES BACK on the next poll — so a consumer that dies between
-    read and confirm loses nothing.
+    ``ack_notifications(agent, ids)``.
+
+    *** THE REDELIVERY GUARANTEE IS NOT UNIVERSAL, AND THIS DOCSTRING USED TO
+    SAY IT WAS. *** It held only for records that reach you through THIS pull
+    path. It does NOT hold for anything the MCP channel already pushed:
+
+        pulled here          the cursor moves only when you confirm, so an
+                             unconfirmed record comes back on the next poll and
+                             a consumer that dies between read and confirm
+                             loses nothing.
+        pushed by the        ``record_push`` advances the cursor AT PUSH TIME
+        channel              (``UPDATE inbox SET seen = 1, pushed_at = ...`` in
+                             one statement, deliberately, so a record is never
+                             re-pushed). Those rows are already OUT of the
+                             unseen set. They never come back, confirmed or
+                             not, and the ``unconfirmed`` list is the only
+                             remaining evidence that they were not answered.
+
+    Every agent runs the channel, so in practice the second row is the common
+    case and ``unseen_only=True`` is EMPTY BY CONSTRUCTION on a live agent.
+
+    *** WHAT THAT MEANS AFTER A RESTART, which is where it actually bites: ***
+    polling ``unseen_only=True`` cannot fail to look clean, so "no new
+    notifications" is not evidence that nothing was missed — it is the shape of
+    the answer whether or not anything was. Poll with ``unseen_only=False`` and
+    read the ``unconfirmed`` list instead: that is the only place a record
+    pushed into a session that was going down is still visible.
+
+    Measured 2026-08-18 on two live agents: 801/801 and 298/298 records marked
+    seen, zero unseen, 109 and 10 unconfirmed respectively. Both agents had
+    reported a clean recovery on the strength of the empty unseen set.
 
     ``agent`` is resolved to its stable user-id via
     :func:`scitex_cards._users.resolve_user` (so a rename still finds the
