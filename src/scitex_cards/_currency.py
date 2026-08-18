@@ -179,12 +179,24 @@ def _running_over_overlay() -> bool:
     return best_fstype == "overlay"
 
 
-def check_currency(staleness_module=None) -> None:
+def check_currency(staleness_module=None, over_overlay=None) -> None:
     """Raise (bare host) or warn (overlay) when this install is stale or broken.
 
-    ``staleness_module`` defaults to importing ``scitex_dev.staleness``; see
-    :func:`currency_verdict` for why it is a parameter rather than something a
-    test reaches into ``sys.modules`` to replace.
+    THE GATE IS A DECISION OVER TWO FACTS, and both are parameters so a caller
+    can state them instead of arranging the world to imply them:
+
+      * ``staleness_module`` — is this install refused? Defaults to importing
+        ``scitex_dev.staleness``.
+      * ``over_overlay`` — can the actor remediate? Defaults to
+        :func:`_running_over_overlay`.
+
+    Both default to the real measurement, so every existing caller is
+    unchanged. They exist because NEITHER branch is reachable in a test
+    otherwise: scitex-dev is installed and current here, and this interpreter's
+    site-packages really is on an overlay — so the bare-host branch could only
+    be reached by rebinding a private function and the stale branch by editing
+    ``sys.modules`` (audit PA-306 `no-mocks`). A test that has to rewrite the
+    module to reach a branch is testing the rewrite.
 
     Provided by scitex-dev >= 0.34.0; silently a no-op when scitex-dev is
     absent so scitex-cards stays standalone (decoupling rule).
@@ -210,7 +222,8 @@ def check_currency(staleness_module=None) -> None:
     try:
         ensure_current(_DIST_NAME)
     except Exception as exc:  # noqa: BLE001 - re-raised or warned below
-        if not _running_over_overlay():
+        layered = _running_over_overlay() if over_overlay is None else over_overlay
+        if not layered:
             raise
         _LOGGER.warning("%s", overlay_warning_text(_stale_detail(exc)))
 
