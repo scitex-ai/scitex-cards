@@ -99,6 +99,19 @@ class LocalBackend:
 
     name = "local"
 
+    def __init__(self, staleness_module=None) -> None:
+        """``staleness_module`` is the currency oracle this backend consults.
+
+        ``None`` — every real caller, including :func:`get_backend` — imports
+        ``scitex_dev.staleness`` the usual way. A caller may pass a module-like
+        object exposing ``ensure_current`` instead, which is how the
+        stale-install behaviour is exercised without INSERTING A FAKE INTO
+        ``sys.modules``: that insertion is global, survives for as long as the
+        entry is in place, and any other code importing scitex-dev during that
+        window silently gets the fake too.
+        """
+        self._staleness_module = staleness_module
+
     # -- task verbs (1:1 with _store) ----------------------------------- #
 
     def add_task(self, tasks_path: Any = None, **fields: Any) -> dict:
@@ -239,7 +252,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
         # cursor at handover, so a consumer that dies before delivering has
         # destroyed the message. Deprecated, NOT changed — sac reads this path.
@@ -335,7 +348,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         return confirm_notifications(agent, ids, store=store)
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
@@ -344,7 +357,7 @@ class LocalBackend:
         # CURRENCY VISIBILITY (module docstring): the confirmed entry point
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         return _threads.append_message(sender, to, body, store=store)
 
     def dm_list(
@@ -355,7 +368,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:
