@@ -105,12 +105,23 @@ precisely what removing its reader would silently drop.
 ### Also
 
 - **`main` reaches 0.46.0 from 0.44.0 in one step, and the skipped step is
-  named rather than absorbed.** v0.45.0 was tagged on a `develop` commit
-  (`13c09b9f`) instead of on a `develop` -> `main` merge, so the promotion PR
-  that v0.43.0 and v0.44.0 both had was never opened: PyPI served 0.45.0 while
-  `main`'s `pyproject.toml` still read 0.44.0. The 0.46.0 promotion carries
-  `main` across both releases at once, and v0.46.0 is tagged on the main merge
-  commit, restoring the established pattern.
+  named rather than absorbed.** The 0.45.0 `develop` -> `main` promotion never
+  happened, so PyPI served 0.45.0 while `main`'s `pyproject.toml` still read
+  0.44.0 — `main` has been two releases stale, not one. The 0.46.0 promotion
+  carries `main` across both releases at once.
+
+  **The missing promotion is the defect — NOT the fact that v0.45.0 was tagged
+  on a `develop` commit.** Tagging the release-bump commit on `develop` is the
+  ritual adopted 2026-08-16, and 0.45.0 was the first release to follow it. The
+  promotion merge then makes that same commit an ancestor of `main` too, so the
+  tag is reachable from BOTH branches by construction. The older habit of
+  tagging `main`'s merge commit strands the tag on a commit `develop` never
+  receives, and `git describe --tags --abbrev=0 origin/develop` answers with a
+  stale version — confidently, and without an error: measured `v0.38.0` while
+  `v0.42.0` existed, four releases behind. Any tool deriving a version from
+  local `HEAD` inherits that. v0.46.0 is therefore tagged on this release's
+  bump commit on `develop`, and the promotion lands FIRST so the ancestry the
+  ritual depends on actually holds when the tag is cut.
 
 ## [0.45.0] - 2026-08-17
 
