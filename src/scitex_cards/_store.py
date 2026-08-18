@@ -132,6 +132,41 @@ class TaskNotFoundError(KeyError):
     """Raised when an update/complete target id is not in the store."""
 
 
+def _not_found_message(task_id: str) -> str:
+    """Name the store that was ACTUALLY SEARCHED, not the path used to lock it.
+
+    These messages used to interpolate ``_resolved_store(store)``, a filesystem
+    path from the legacy layout (``.../cards/tasks.yaml``). On a Postgres
+    deployment — the normal one — that file is not the board and need not
+    exist, so the message sent the reader somewhere the card was never going
+    to be. Reported by scitex-ui 2026-08-18, with a control proving the LOOKUP
+    was fine: only the failure text was wrong.
+
+    Worth more than its size, because this package's own MCP instructions warn
+    that "opening a store file directly is how an abandoned one gets mistaken
+    for the live board" — and this message was sending people to do exactly
+    that, at the moment they were debugging a missing card, while serving as
+    their evidence.
+
+    *** THE LABEL COMES FROM THE READER, NOT FROM A SECOND RESOLUTION. ***
+    :func:`_model._canonical_source_label` is what the tolerated-validation
+    warnings already use, and it was written after scitex-app hit this same
+    class of bug from the other side. Computing a parallel answer here — even
+    a better one — would just create a second thing that can disagree with the
+    read. It takes NO store argument on purpose: the canonical read resolves
+    the ambient chain and does not honour an explicit ``store=`` (measured
+    2026-08-18; carded as cards-store-param-ignored-no-isolation-route-
+    20260818), so naming the caller's argument would state a search that did
+    not happen. Sharing one label means that when the read path changes, the
+    message follows it instead of drifting behind it.
+
+    Never raises: a caption must not be able to fail the operation it captions.
+    """
+    from ._model import _canonical_source_label
+
+    return f"task id {task_id!r} not found in {_canonical_source_label()}"
+
+
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
@@ -380,7 +415,7 @@ def get_task(
         for t in tasks:
             if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise TaskNotFoundError(_not_found_message(task_id))
 
 
 # --------------------------------------------------------------------------- #

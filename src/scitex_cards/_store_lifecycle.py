@@ -147,7 +147,9 @@ def complete_task(
                 transitioned = True
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        from ._store import _not_found_message
+
+        raise TaskNotFoundError(_not_found_message(task_id))
     # Active-unblock DRIVE (ADR-0009) — OUTSIDE the file lock (the emit
     # re-loads the store + may comment on dependents, which take the
     # same lock). Only on a real pending→done transition.
@@ -206,7 +208,9 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         doc, tasks = _read_write_doc(tasks_path)
         target = _task._find_live_task(tasks, task_id)
         if target is None:
-            raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+            from ._store import _not_found_message
+
+            raise TaskNotFoundError(_not_found_message(task_id))
         original = dict(target)  # pre-tombstone snapshot: the Undo payload
         refs: list[str] = []
         for t in tasks:

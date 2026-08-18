@@ -158,7 +158,9 @@ def rescore_task(
         # forever but must behave as ABSENT here.
         target = _task._find_live_task(tasks, task_id)
         if target is None:
-            raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+            from ._store import _not_found_message
+
+            raise TaskNotFoundError(_not_found_message(task_id))
 
         now = _utc_now_iso()
         old_u = target.get("urgency")

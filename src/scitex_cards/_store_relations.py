@@ -232,7 +232,11 @@ def _set_list_member(
                     doc, tasks_path, tasks=tasks, touched_ids=[task_id]
                 )
                 return dict(task)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    from ._store import _not_found_message
+
+    # `store`, not `tasks_path`: the caller resolved that path for LOCKING,
+    # and on a Postgres deployment it names a file the card was never in.
+    raise TaskNotFoundError(_not_found_message(task_id))
 
 
 def set_collaborator(
@@ -255,9 +259,13 @@ def set_collaborator(
     if action not in ("add", "remove"):
         raise ValueError("set_collaborator: action must be 'add' or 'remove'")
     tasks_path = _resolved_store(store)
-    task = _set_list_member(tasks_path, task_id, "collaborators", who, action)
+    task = _set_list_member(
+        tasks_path, task_id, "collaborators", who, action
+    )
     if action == "add":
-        task = _set_list_member(tasks_path, task_id, "subscribers", who, "add")
+        task = _set_list_member(
+            tasks_path, task_id, "subscribers", who, "add"
+        )
     return task
 
 
@@ -281,7 +289,9 @@ def set_subscriber(
     if action not in ("add", "remove"):
         raise ValueError("set_subscriber: action must be 'add' or 'remove'")
     tasks_path = _resolved_store(store)
-    return _set_list_member(tasks_path, task_id, "subscribers", who, action)
+    return _set_list_member(
+        tasks_path, task_id, "subscribers", who, action
+    )
 
 
 __all__ = [

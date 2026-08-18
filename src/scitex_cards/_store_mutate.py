@@ -263,7 +263,9 @@ def update_task(
                     status_change = (prior_status, new_status)
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        from ._store import _not_found_message
+
+        raise TaskNotFoundError(_not_found_message(task_id))
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path
