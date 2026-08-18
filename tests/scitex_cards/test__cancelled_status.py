@@ -300,14 +300,35 @@ class _EnqueueRecorder:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine(env, monkeypatch):
+def _isolate_engine(env, tmp_path):
+    """No env and no config file may reach the reminder engine.
+
+    The config half used to be `monkeypatch.setattr(config_paths, lambda: [])`.
+    It is now arranged FOR REAL, because `config_paths()` is exactly the
+    behaviour under isolation and stubbing it asserts against the stub:
+
+      * `SCITEX_DIR` -> a fresh tmp root, so the USER config path names a file
+        that does not exist;
+      * cwd -> that same tmp dir, so `_find_git_root` finds no repo and the
+        PROJECT config path is not appended at all.
+
+    `_read_one` is fail-soft (missing file -> {}), so real discovery over an
+    empty directory yields the empty config the stub used to fake. The
+    difference matters: if `config_paths` later gained a third source — a
+    site-wide file, an env override — the stub would keep returning [] and
+    this suite would stay green while the engine read real config. Real
+    discovery picks the new source up.
+    """
     for var in (
         "SCITEX_CARDS_REMINDER_OWNERS",
         "SCITEX_CARDS_STALE_ACTIVE_HOURS",
         "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    empty_root = tmp_path / "no-config"
+    empty_root.mkdir()
+    env.set("SCITEX_DIR", str(empty_root))
+    env.chdir(empty_root)
 
 
 def _sweep(tasks, store):
