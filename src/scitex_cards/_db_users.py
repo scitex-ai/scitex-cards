@@ -185,6 +185,9 @@ _CACHE_TTL_S = 1.0
 #: ``{db target: (monotonic stamp, rows)}``.
 _ROW_CACHE: dict[str, tuple[float, list[dict]]] = {}
 
+#: This cache's name in :mod:`._cache_stats` — where its hit rate is legible.
+CACHE_NAME = "users_rows"
+
 
 def _cache_key(store: str | Path | None) -> str:
     """The RESOLVED database, so two spellings of one board share an entry.
@@ -252,11 +255,15 @@ def load_users_rows_cached(store: str | Path | None = None) -> list[dict]:
     """
     import time
 
+    from ._cache_stats import record_hit, record_miss
+
     key = _cache_key(store)
     now = time.monotonic()
     hit = _ROW_CACHE.get(key)
     if hit is not None and (now - hit[0]) < _CACHE_TTL_S:
+        record_hit(CACHE_NAME)
         return hit[1]
+    record_miss(CACHE_NAME)
     rows = load_users_rows(store)
     _ROW_CACHE[key] = (now, rows)
     return rows

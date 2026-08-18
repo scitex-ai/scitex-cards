@@ -198,6 +198,9 @@ NEVER be served from here — see the module docstring.
 """
 _READ_CACHE: dict[str, tuple[int, int, dict[str, list[dict]]]] = {}
 
+#: This cache's name in :mod:`._cache_stats` — where its hit rate is legible.
+CACHE_NAME = "dm_threads"
+
 
 def _load_threads_cached(path: Path) -> dict[str, list[dict]]:
     """:func:`_load_threads` memoized on the file's ``(mtime_ns, size)``.
@@ -210,6 +213,8 @@ def _load_threads_cached(path: Path) -> dict[str, list[dict]]:
     they hand out (:func:`get_thread` and :func:`list_threads` both do).
     Writers use the uncached :func:`_load_threads` under the lock instead.
     """
+    from ._cache_stats import record_hit, record_miss
+
     try:
         stat = path.stat()
     except OSError:
@@ -221,7 +226,9 @@ def _load_threads_cached(path: Path) -> dict[str, list[dict]]:
         and cached[0] == stat.st_mtime_ns
         and cached[1] == stat.st_size
     ):
+        record_hit(CACHE_NAME)
         return cached[2]
+    record_miss(CACHE_NAME)
     threads = _load_threads(path)
     _READ_CACHE[key] = (stat.st_mtime_ns, stat.st_size, threads)
     return threads
