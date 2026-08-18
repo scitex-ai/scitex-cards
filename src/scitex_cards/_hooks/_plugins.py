@@ -65,22 +65,31 @@ logger = logging.getLogger(__name__)
 #: Entry-point group external producers register their plugins under.
 ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
-#: The PRE-RENAME group, still honoured. An entry-point group is a
-#: PUBLISHED CONTRACT held by OTHER packages' metadata, so renaming it
-#: is a MIGRATION and not a rename: "alias first, then remove"
-#: (constitution §3). That step was skipped when this package was
-#: renamed, and the cost was measured on 2026-08-17 — the ONLY
-#: registered card-event consumer in the fleet,
-#: ``scitex_agent_container._listen._card_event_delivery``, sits in
-#: this group, so dispatch looked in an empty group and called nobody.
+#: The PRE-RENAME group. DEAD: detected, reported at ERROR level, and
+#: NEVER CALLED. The string survives for exactly one purpose — so a
+#: straggler still registered there is NAMED instead of silently
+#: dropped.
+#:
+#: This was an alias for one day. An entry-point group is a PUBLISHED
+#: CONTRACT held in OTHER packages' metadata, so the rename skipped the
+#: "alias first, then remove" step (constitution §3) and the cost landed
+#: on 2026-08-17: the fleet's ONLY registered card-event consumer,
+#: ``scitex_agent_container._listen._card_event_delivery``, sits in this
+#: group, so dispatch looked in an empty group and called nobody.
 #: Nothing failed; the push rail was simply silent.
 #:
-#: Do NOT "fix" a dead consumer by flipping the constant above, and do
-#: NOT ask one producer to re-register: either repairs exactly the
-#: consumer you know about and leaves every other one dead AND
-#: invisible. Reading both groups repairs all of them at once and makes
-#: the stragglers announce themselves via the warning below.
-RETIRED_ENTRY_POINT_GROUP = "scitex_todo.hooks"
+#: THE ALIAS WAS REMOVED ON THE OPERATOR'S RULING, 2026-08-18: "そんな
+#: ものすぐ壊せばいい；ハードに todo から cards に行かないからずるずる
+#: と壊れっぱなし" — break it immediately, because without a hard cut
+#: from todo to cards the half-migrated state drags on indefinitely. He
+#: is describing this constant: an alias removes the PRESSURE to migrate
+#: while leaving the old name load-bearing forever.
+#:
+#: What is deliberately NOT reproduced is the 2026-08-17 failure mode.
+#: That consumer died SILENTLY. A straggler here now dies LOUDLY, named,
+#: with the pyproject edit that fixes it. Breaking hard and breaking
+#: quietly are different things, and only the second one is the bug.
+DEAD_ENTRY_POINT_GROUP = "scitex_todo.hooks"
 
 #: Default per-plugin wall-time budget (seconds). Each entry-point
 #: handler runs in a worker thread joined with this timeout, so a
@@ -323,37 +332,32 @@ def _iter_entry_points() -> Iterable:
 
 
 def merge_hook_entry_points(eps: Any) -> list:
-    """Hooks from the current group PLUS the retired one, de-duplicated.
+    """Hooks from the current group ONLY — the dead group is reported, never run.
 
     Takes the discovered entry-point set as an ARGUMENT rather than
     calling ``importlib.metadata`` itself, so this — the part carrying
-    the alias and dedupe decisions — is exercised by handing it a real
-    object, with no patching of production internals.
+    the dead-group decision — is exercised by handing it a real object,
+    with no patching of production internals.
     """
     current = _select_group(eps, ENTRY_POINT_GROUP)
-    retired = _select_group(eps, RETIRED_ENTRY_POINT_GROUP)
-    if not retired:
+    dead = _select_group(eps, DEAD_ENTRY_POINT_GROUP)
+    if not dead:
         return current
 
-    # DEDUPE ACROSS THE TWO GROUPS. A producer migrating correctly
-    # registers in BOTH for one release, and dispatching such a plugin
-    # once per group would deliver every card event TWICE — turning an
-    # alias meant to repair delivery into a duplicate-notification bug.
-    # Identity is (name, value): the same callable under the same name
-    # is the same handler however many groups advertise it.
-    seen = {(ep.name, ep.value) for ep in current}
-    extra = [ep for ep in retired if (ep.name, ep.value) not in seen]
-
-    logger.warning(
-        "card-event hooks found in the retired entry-point group %r: %s. "
-        "These still run, but the group is deprecated — re-register them "
-        "under %r. Registering under BOTH during the migration is safe; "
-        "duplicates are collapsed by (name, value).",
-        RETIRED_ENTRY_POINT_GROUP,
-        ", ".join(sorted(ep.name for ep in retired)) or "<none>",
+    # A PRODUCER STILL IN THE DEAD GROUP IS NOT CALLED, AND IS TOLD SO
+    # AT ERROR LEVEL. Naming every straggler — not a count — because the
+    # operator's fix is per-producer: each one edits its own pyproject.
+    logger.error(
+        "card-event hooks are registered under the DEAD entry-point group "
+        "%r and were NOT called: %s. That group was retired with the "
+        "scitex-todo -> scitex-cards rename and is no longer read. "
+        "Re-register each of them under %r in its own pyproject and "
+        "reinstall; until then their card events are not delivered.",
+        DEAD_ENTRY_POINT_GROUP,
+        ", ".join(sorted(ep.name for ep in dead)) or "<none>",
         ENTRY_POINT_GROUP,
     )
-    return current + extra
+    return current
 
 
 def _select_group(eps: Any, group: str) -> list:
