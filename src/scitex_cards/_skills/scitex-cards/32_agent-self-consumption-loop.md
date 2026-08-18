@@ -1,3 +1,12 @@
+---
+description: |
+  [TOPIC] Agent self-consumption loop — the board IS the work queue
+  [DETAILS] Every fleet agent, lead and worker alike, runs the same loop: on
+  wake, take the top card from the board rather than from a private plan, so
+  what is in flight stays visible to the whole fleet.
+tags: [scitex-cards-self-consumption]
+---
+
 # 32. Agent self-consumption loop
 
 **The board IS your work queue.** Every fleet agent — `lead` and every
