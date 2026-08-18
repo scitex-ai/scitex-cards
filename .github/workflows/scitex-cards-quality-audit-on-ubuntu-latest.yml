@@ -13,28 +13,57 @@ name: quality
 # both "0 net-new finding(s)"). It was buying nothing and hiding a signal,
 # so removing it costs nothing and is not a judgement call.
 #
-# `--new-only` REMAINS, AND IT IS A KNOWN HOLE — read this before trusting
-# a green badge here. It diffs against the base ref and reports ONLY
-# net-new violations, so the existing backlog is ratcheted as the baseline
-# (0 net-new -> GREEN) while a NEW violation still fails CI. That is the
-# constitution's own §2 worked example of a gate configured so it cannot
-# fail, and it behaved exactly as §2 predicts: the PS-140 cross-package
-# gate sat at 3-of-7 coverage for weeks while THIS required check ran,
-# passed, and reported nothing — because "already stale" is not "new".
+# `--new-only` IS GONE, BY OPERATOR RULING 2026-08-18: 「--new-only は禁止
+# です！！！」 followed by 「いかなるパッケージも、です。」 — forbidden, for
+# ANY package. Ecosystem-wide, not a scitex-cards decision.
 #
-# MEASURED AT HEAD 2026-08-16, i.e. what this green badge is not telling
-# you: keyed 51 findings, unkeyed 84. One hundred and thirty-five findings
-# live behind the flag.
+# It is not reinstated by a backlog, and the plan that used to live here —
+# "burn the backlog down, THEN drop the flag" — is withdrawn. That ordering
+# was backwards: it kept the gate blind for exactly as long as the backlog
+# took, which is the period the gate was most needed.
 #
-# The exit is NOT to keep widening the flag. Per §2, grandfathering is a
-# reasonable intent and a blanket flag is the wrong mechanism, because it
-# hides every NEW instance of the same class too. Burn the backlog down
-# (card cards-strict-audit-burndown-114-errors-20260815), then drop
-# `--new-only`; anything that genuinely must stay is exempted PER FILE WITH
-# A WRITTEN REASON in `.scitex/dev/config.yaml`, which is reviewable and
-# individually retirable — `scitex-dev ecosystem list-exemptions` shows
-# them. An exemption is a decision someone made and signed; `--new-only` is
-# a decision nobody made about violations nobody enumerated.
+# WHAT THIS COSTS, re-measured 2026-08-18 at HEAD rather than quoted from
+# the 08-16 note that used to sit here (that note said "keyed 51 + unkeyed
+# 84" and is now wrong in the unsafe direction):
+#
+#     summary: 318 unmasked error(s) (+47 warning/info), 0 masked by
+#              skip-rules (0 declared); 380 line(s) inspected
+#     of which Python API: 278 violation(s); skills: 8
+#
+# This job now reports all of it and FAILS until it is fixed. That red is
+# the true state of this package and has been all along — the flag was the
+# only thing making it look otherwise.
+#
+# TWO THINGS ABOUT READING THAT OUTPUT, both learned the hard way tonight.
+# The per-section prefix is `ERRO:`, not `ERROR`, so a grep for '^ERROR'
+# returns 0 against a run holding 318 of them. And the `summary:` line is a
+# TALLY, not the verdict — the auditor says so itself. Read the findings,
+# and trust the exit status over any count you derived yourself.
+#
+# The 08-16 figure being nearly 3x too low is itself evidence for the
+# operator's other ruling: the corpus grew between then and now, so a
+# remembered number decays even when the code does not change.
+#
+# WHY THE RULING IS RIGHT, measured the same night it was made. sac and
+# scitex-cards hit the same auditor-corpus drift within an hour:
+#
+#     sac     floor, full audit    -> RED on a 5-line pyproject change
+#     cards   floor, --new-only    -> GREEN through FIVE auditor releases
+#
+# Same corpus, same drift, opposite signals — and the one that stayed green
+# is the one that had stopped measuring. The operator's other ruling that
+# night makes it sharper: 「最新のdevで監査してください、これは全ての
+# パッケージ共通の約束事です」. If the audit is a promise common to every
+# package, a gate configured never to fail is a package that has quietly
+# stopped making the promise while still displaying a green check.
+#
+# Anything that genuinely must stay is exempted PER FILE WITH A WRITTEN
+# REASON in `.scitex/dev/config.yaml` — reviewable and individually
+# retirable (`scitex-dev ecosystem list-exemptions` shows them). An
+# exemption is a decision someone made and signed; `--new-only` was a
+# decision nobody made about violations nobody enumerated.
+#
+# Backlog card: cards-strict-audit-burndown-114-errors-20260815.
 #
 # Project-type + rule skips live in `.scitex/dev/config.yaml` in this
 # checkout and are applied automatically.
@@ -103,7 +132,11 @@ jobs:
         with:
           cache-dependency-glob: pyproject.toml
 
-      - name: Fetch develop ref for --new-only baseline
+      # Kept although --new-only is gone: the auditor still reports the
+      # branch/base it graded, and a missing develop ref makes that line
+      # read "via explicit" with no baseline named. Cheap, and it keeps the
+      # provenance in the log honest.
+      - name: Fetch develop ref so the audit can name what it graded
         run: git fetch origin develop:develop || true
 
       - name: Install package + audit tooling
@@ -115,11 +148,11 @@ jobs:
             || uv pip install --python .venv/bin/python -e .
           uv pip install --python .venv/bin/python "scitex-dev[cli-audit]>=0.17.14"
 
-      - name: Run scitex-dev ecosystem audit-all (net-new only)
+      - name: Run scitex-dev ecosystem audit-all (FULL — no --new-only)
         # .venv/bin on PATH so the auditor's `shutil.which("scitex-dev")`
         # and the per-auditor subprocess spawns resolve to THIS venv
         # (where scitex-cards's console-script is installed).
         run: |
           set -euo pipefail
           export PATH="$PWD/.venv/bin:$PATH"
-          scitex-dev ecosystem audit-all scitex-cards --path "$PWD" --new-only
+          scitex-dev ecosystem audit-all scitex-cards --path "$PWD"
