@@ -252,11 +252,11 @@ def test_doctor_human_output_exits_zero(rig):
 #: token is still on disk.
 
 
-def test_provision_unreachable_host_exits_nonzero(tmp_path, monkeypatch):
-    # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+def test_provision_unreachable_host_exits_nonzero():
+    # Arrange — `default_tokens_dir()` resolves through `_user_root()`, which
+    # honours $SCITEX_DIR, and the suite conftest pins that at a scratch dir.
+    # So the real function already points somewhere disposable; rebinding it
+    # was only ever hiding that it did not (it used to hardcode Path.home()).
     # Act
     result = CliRunner().invoke(
         provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False
@@ -265,11 +265,11 @@ def test_provision_unreachable_host_exits_nonzero(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
-def test_provision_unreachable_host_fails_loud_with_the_ssh_hint(tmp_path, monkeypatch):
-    # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+def test_provision_unreachable_host_fails_loud_with_the_ssh_hint():
+    # Arrange — `default_tokens_dir()` resolves through `_user_root()`, which
+    # honours $SCITEX_DIR, and the suite conftest pins that at a scratch dir.
+    # So the real function already points somewhere disposable; rebinding it
+    # was only ever hiding that it did not (it used to hardcode Path.home()).
     # Act
     result = CliRunner().invoke(
         provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False
@@ -278,14 +278,17 @@ def test_provision_unreachable_host_fails_loud_with_the_ssh_hint(tmp_path, monke
     assert "ssh no-such-host-xyzzy" in result.output
 
 
-def test_provision_mints_the_token_before_the_copy_fails(tmp_path, monkeypatch):
-    # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+def test_provision_mints_the_token_before_the_copy_fails():
+    # Arrange — read the location from production rather than assuming it. The
+    # old test asserted against `tmp_path / "tokens"`, which was only correct
+    # because it had rebound the function to return exactly that; it asserted
+    # on its own arrangement. Asking `default_tokens_dir()` means a change to
+    # where tokens live fails this test instead of sliding past it.
+    from scitex_cards._server import default_tokens_dir
+
     # Act
     CliRunner().invoke(provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False)
-    minted = tmp_path / "tokens" / "no-such-host-xyzzy.token"
+    minted = default_tokens_dir() / "no-such-host-xyzzy.token"
     # Assert — mint precedes the copy, so the hub-side half DID succeed.
     assert minted.exists()
 

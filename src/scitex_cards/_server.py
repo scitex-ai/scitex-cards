@@ -61,11 +61,25 @@ _TOKEN_BYTES = 32
 
 
 def default_tokens_dir() -> Path:
-    return Path.home() / ".scitex" / "cards" / "tokens"
+    """``<user root>/tokens``, honouring ``$SCITEX_DIR`` like every other path.
+
+    THIS USED TO HARDCODE ``Path.home() / ".scitex" / "cards"``, which is the
+    same location only when ``$SCITEX_DIR`` is unset. Every other user-scope
+    path in the package resolves through :func:`._paths._user_root`, so on a
+    container that relocates the root this one wrote its tokens OUTSIDE it —
+    silently, into a directory nothing else reads. A relocated root that one
+    module ignores is a root that is not relocated.
+    """
+    from ._paths import _user_root
+
+    return _user_root() / "tokens"
 
 
 def default_audit_path() -> Path:
-    return Path.home() / ".scitex" / "cards" / "logs" / "hub_access.jsonl"
+    """``<user root>/logs/hub_access.jsonl``. Same reasoning as the tokens dir."""
+    from ._paths import _user_root
+
+    return _user_root() / "logs" / "hub_access.jsonl"
 
 
 def mint_token(tokens_dir: Path, name: str = "hub") -> Path:
