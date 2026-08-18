@@ -35,7 +35,7 @@ extra hop. Second, that nothing is MANUFACTURED on disk: a refusal issued after
 creating an empty board has already done the damage the refusal exists to
 prevent.
 
-NO ``monkeypatch`` OF PRODUCTION INTERNALS, per the ecosystem rule and for the
+NO ``env`` OF PRODUCTION INTERNALS, per the ecosystem rule and for the
 same reason as the neighbouring files: the defect WAS an environment state, so
 these tests move the real environment, write real files, and restore both on
 teardown. A test that patched the resolver would assert a belief about the

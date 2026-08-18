@@ -18,7 +18,7 @@ Covers the three deliverables that have NO mocks anywhere (PA-306 / STX-NM):
   in ``queued``. No network.
 
 The store tests drive the env directly via the ``env`` fixture (the
-PA-306-compliant monkeypatch replacement from ``conftest.py``), never a mock.
+PA-306-compliant env replacement from ``conftest.py``), never a mock.
 """
 
 from __future__ import annotations

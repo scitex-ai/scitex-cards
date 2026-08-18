@@ -32,7 +32,7 @@ This file mirrors the canonical reference template
 Conventions honoured (kept consistent with the rest of the suite):
   - One assertion per test; shared setup lifted into fixtures.
   - Explicit Arrange / Act / Assert markers.
-  - No ``monkeypatch`` / ``mocker``: the absent-peer fixtures hand-swap
+  - No ``env`` / ``mocker``: the absent-peer fixtures hand-swap
     ``sys.modules`` / ``__path__`` and restore them on teardown.
 
 Discovered degradation contracts (empirically verified against the installed

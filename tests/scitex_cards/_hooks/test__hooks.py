@@ -322,7 +322,7 @@ def test_done_is_idempotent_when_already_done_with_same_pr_url(
 def test_dispatch_event_handles_plugin_error_gracefully(tmp_path: Path, env):
     # Arrange — register a real fake entry point whose handler raises,
     # injected through the dispatcher's `entry_points=` seam (no mock /
-    # no monkeypatch; the PRODUCTION code path is what's being tested).
+    # no env; the PRODUCTION code path is what's being tested).
     class _FakeEP:
         name = "fake-failing"
 

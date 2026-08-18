@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Django view tests for ``GET /fleet/ci-status``.
 
-No mocks (STX-NM/PA-306) and no monkeypatch (PA-306). Drives the view
+No mocks (STX-NM/PA-306) and no env (PA-306). Drives the view
 via Django's RequestFactory against the real ``fleet_config_load`` +
 ``fetch_repo_ci_status`` path; env / cwd manipulation routes through the
 suite's :func:`env` fixture (``tests/scitex_cards/conftest.py``).

@@ -25,7 +25,7 @@ landing there is a deployment that lost its target and will now serve whatever
 sits at that filename, to everyone, for as long as it runs. Same value,
 different consequence -- so the refusal belongs where the consequence is.
 
-NO ``monkeypatch`` ANYWHERE IN THIS FILE, per the ecosystem rule: these tests
+NO ``env`` ANYWHERE IN THIS FILE, per the ecosystem rule: these tests
 move the REAL environment and restore it, because the defect WAS an environment
 state. A test that patched the resolver would have asserted my belief about the
 resolver, and the resolver was never wrong -- the environment was.

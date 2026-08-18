@@ -30,7 +30,7 @@ and truer one, and it is the one the deployment actually violated:
 A pass therefore means "you cannot end up on the wrong store without being
 told", not "there is only one store".
 
-NO ``monkeypatch`` ANYWHERE (STX-NM002). The defect under test WAS an
+NO ``env`` ANYWHERE (STX-NM002). The defect under test WAS an
 environment disagreement, so a test that patched the environment would be
 testing the patch. The :func:`environment` fixture writes real values into the
 real ``os.environ`` the resolver reads and restores them on teardown.
@@ -85,7 +85,7 @@ def environment():
     """Set REAL process env vars; restore the prior values on teardown.
 
     Yield-based and ``os.environ``-backed on purpose (STX-NM002 forbids
-    ``monkeypatch``): the resolver reads the process environment, so the test
+    ``env``): the resolver reads the process environment, so the test
     must write the process environment or it is not exercising the precedence
     chain that broke.
     """

@@ -39,7 +39,7 @@ the parent directory and the very next resolve raised, which its own first test
 run caught.
 
 Real tmp directories, real environment, a real SQLite store. No mocks and no
-``monkeypatch`` (STX-NM): the env fixtures below set and restore
+``env`` (STX-NM): the env fixtures below set and restore
 ``os.environ`` themselves, so what the code reads is the same object production
 reads.
 """

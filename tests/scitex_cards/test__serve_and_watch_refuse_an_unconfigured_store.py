@@ -24,7 +24,7 @@ rejected on that card:
 The guards therefore sit in different places relative to each verb's early
 returns, and each placement is argued at its call site rather than here.
 
-Real ``os.environ`` mutation with restore, no monkeypatch: the defect WAS an
+Real ``os.environ`` mutation with restore, no env: the defect WAS an
 environment state, so a test that patched the resolver would assert a belief
 about the resolver, which was never the thing that was wrong.
 """

@@ -14,8 +14,8 @@ Covers BOTH the config loader and the gh-CLI adapter:
   RAISES (skipped cleanly if the test runner has no ``gh`` auth — we
   refuse to hardcode test-only credentials).
 
-No mocks AND no ``monkeypatch`` — PA-306 forbids the latter (audit
-treats pytest's monkeypatch as a mock). Env / cwd manipulation goes
+No mocks AND no ``env`` — PA-306 forbids the latter (audit
+treats pytest's env as a mock). Env / cwd manipulation goes
 through the suite's :func:`env` fixture
 (see ``tests/scitex_cards/conftest.py``).
 """
@@ -68,7 +68,7 @@ def _isolate_home(env, tmp_path):
 
     Each test owns its own HOME so we never read the operator's real
     ``~/.scitex/cards/dashboard.json``. Uses the PA-306-compliant ``env``
-    helper from the shared conftest (NOT monkeypatch).
+    helper from the shared conftest (NOT env).
     """
     env.set("HOME", str(tmp_path))
     env.delete("SCITEX_CARDS_FLEET_CI_REPOS")

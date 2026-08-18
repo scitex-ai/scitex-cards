@@ -139,7 +139,7 @@ class _Bus:
     Tests pass ``entry_points=bus.entry_points`` to ``comment_task`` so the
     emitted ``card-message`` event is delivered to ``sink`` and recorded in
     ``bus.events`` — a real in-process handler via the dispatcher's
-    injection seam, no monkeypatch (PA-306).
+    injection seam, no env (PA-306).
     """
 
     def __init__(self):
@@ -353,7 +353,7 @@ def test_card_message_collaborators_lists_prior_commenters(
 
 def test_comment_task_save_succeeds_even_when_bus_raises(tmp_path: Path):
     # Arrange — a real fake handler that raises, injected via the
-    # `entry_points=` seam (no monkeypatch). The comment must still land
+    # `entry_points=` seam (no env). The comment must still land
     # on disk because comment_task swallows bus errors.
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(store=store, id="c-1", title="x", assignee="agent:test-suite")
