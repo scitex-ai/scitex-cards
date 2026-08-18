@@ -48,6 +48,7 @@ def list_tasks_filtered(
     id_prefix: str | None = None,
     blocking_me: bool = False,
     overdue: bool = False,
+    lister=None,
 ) -> None:
     """Filter the store and print the matching tasks.
 
@@ -60,10 +61,20 @@ def list_tasks_filtered(
     / kind / id_prefix / blocking_me + multi-status via ``statuses``)
     per ADR-0008 D2 / D10. Legacy callers passing only the original four
     positional/keyword args still work; new args default to "no filter".
+
+    ``lister`` is the in-process injection seam (same shape as
+    ``comment_task(entry_points=...)``): a callable with ``_store.list_tasks``'
+    signature, defaulting to the real verb. It exists because the CAPTION
+    below is what broke on a DSN — ``store_label`` raised while naming where
+    the rows came from — and reaching that line requires a store read that
+    SUCCEEDS. A DSN pointing at a database the test process cannot reach fails
+    the read long before the caption runs, so the defect's own conditions are
+    unreproducible without either a live Postgres or this.
     """
     from .. import _store
 
-    rows = _store.list_tasks(
+    read_tasks = _store.list_tasks if lister is None else lister
+    rows = read_tasks(
         tasks_path,
         scope=scope,
         assignee=assignee,
@@ -88,7 +99,9 @@ def list_tasks_filtered(
         click.echo(f"{task['id']:<24} {task['status']:<12} {sc:<28} {task['title']}")
 
 
-def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
+def list_blocking_operator(
+    tasks_path: str | None, as_json: bool, lister=None
+) -> None:
     """Print the operator's decision queue — a glanceable, project-grouped view.
 
     Surfaces the tasks the OPERATOR is blocking (the ``blocking_me`` predicate:
@@ -98,10 +111,15 @@ def list_blocking_operator(tasks_path: str | None, as_json: bool) -> None:
     ``note`` as the WHY / how-to-unblock context. A card with no note is
     flagged so the owner knows to add the decision context (the common reason a
     block is un-actionable). ``--json`` emits the raw matching rows for tooling.
+
+    ``lister`` is the same injection seam :func:`list_tasks_filtered` carries,
+    for the same reason: this function also captions its output with
+    ``store_label``, and that caption is what a DSN used to break.
     """
     from .. import _store
 
-    rows = _store.list_tasks(tasks_path, blocking_me=True)
+    read_tasks = _store.list_tasks if lister is None else lister
+    rows = read_tasks(tasks_path, blocking_me=True)
     if as_json:
         click.echo(json.dumps(rows))
         return
