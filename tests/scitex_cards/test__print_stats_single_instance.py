@@ -43,8 +43,6 @@ from scitex_cards._cli._main import main
 from scitex_cards._singleflight import notify_lock_path, single_instance
 from scitex_cards._store import add_task
 
-from conftest import local_receiver
-
 
 def _seed_store() -> None:
     """One owned card in the store ``load_tasks`` reads.
@@ -57,7 +55,7 @@ def _seed_store() -> None:
 
 
 @contextlib.contextmanager
-def _delivery_observed(env):
+def _delivery_observed(env, local_receiver):
     """Give ``proj-x`` a REAL turn URL and yield the bodies that arrive.
 
     Replaces a counter wrapped around ``_push.deliver``. ``deliver`` resolves
@@ -104,11 +102,11 @@ def _rollups_run() -> int:
 #: nothing wrong. Only the store-parse claim catches it, which is exactly why
 #: it must not sit behind five earlier asserts.
 @pytest.fixture()
-def notify_run_while_lock_held(env):
+def notify_run_while_lock_held(env, local_receiver):
     """Run the cron path while a prior run's flock is still held."""
     _seed_store()
     reset_cache_stats()
-    with _delivery_observed(env) as received:
+    with _delivery_observed(env, local_receiver) as received:
         with single_instance(notify_lock_path(None)) as acquired:
             result = CliRunner().invoke(
                 main, ["print-stats", "--by", "agent", "--notify"]
@@ -187,11 +185,11 @@ def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
 #: push for the agent, and actually parse the store. A guard that always skips
 #: would pass the whole lock-held group and fail only here.
 @pytest.fixture()
-def notify_run_with_lock_free(env):
+def notify_run_with_lock_free(env, local_receiver):
     """Run the cron path with no prior holder."""
     _seed_store()
     reset_cache_stats()
-    with _delivery_observed(env) as received:
+    with _delivery_observed(env, local_receiver) as received:
         result = CliRunner().invoke(
             main, ["print-stats", "--by", "agent", "--notify"]
         )
@@ -246,11 +244,11 @@ def test_notify_run_parses_the_store(notify_run_with_lock_free):
 #: perform no push. Scoping a lock too widely is the classic over-fix, and it
 #: shows up as exactly one of these claims flipping.
 @pytest.fixture()
-def plain_read_while_lock_held(env):
+def plain_read_while_lock_held(env, local_receiver):
     """Hold the notify lock, then run a PLAIN print-stats (no --notify)."""
     _seed_store()
     reset_cache_stats()
-    with _delivery_observed(env) as received:
+    with _delivery_observed(env, local_receiver) as received:
         with single_instance(notify_lock_path(None)) as acquired:
             result = CliRunner().invoke(main, ["print-stats", "--by", "agent"])
     return {
@@ -335,11 +333,11 @@ def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
 #: --notify acquires cleanly (runs the push, prints no skip line), and the
 #: test can itself take the flock afterwards.
 @pytest.fixture()
-def two_notify_runs_then_a_manual_lock(env):
+def two_notify_runs_then_a_manual_lock(env, local_receiver):
     """Run --notify twice, then try to take the flock from the test itself."""
     _seed_store()
     reset_cache_stats()
-    with _delivery_observed(env):
+    with _delivery_observed(env, local_receiver):
         first = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
         second = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
     with single_instance(notify_lock_path(None)) as acquired:

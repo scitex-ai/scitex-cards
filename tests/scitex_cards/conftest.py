@@ -302,8 +302,23 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     return summary
 
 
-@contextlib.contextmanager
+@pytest.fixture
 def local_receiver():
+    """The :func:`open_local_receiver` factory, as a FIXTURE.
+
+    Handed over through pytest's conftest resolution rather than imported.
+    `from conftest import ...` binds whichever conftest.py happens to hold the
+    module name `conftest` at that moment — with several in this tree the
+    winner depends on collection order, so the same import can resolve to
+    `tests/scitex_cards/_django/conftest.py` in a full run and to this file
+    when one test file runs alone. Measured: the single-file run passed and
+    the full suite failed at collection.
+    """
+    return open_local_receiver
+
+
+@contextlib.contextmanager
+def open_local_receiver():
     """A REAL local turn-url receiver: answers 200 and records the bodies.
 
     The mock-free way to observe "did the push path actually fire?". `deliver`
