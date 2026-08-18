@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import json
+import logging
 
+import click
+import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli import _main as _main_module
@@ -95,12 +98,36 @@ def test_help_recursive_json_emits_command_tree():
 # (see `scitex_cards._currency.check_currency`, `tests/scitex_cards/          #
 # test__currency.py` for the gate's own no-op/pass/raise behavior).           #
 # --------------------------------------------------------------------------- #
-def test_main_passes_through_when_the_currency_check_is_a_no_op(monkeypatch):
-    # Arrange — the real `check_currency()` is already a no-op whenever
-    # scitex-dev is absent or lacks the staleness module; pin that
-    # explicitly here so this test does not depend on what happens to be
-    # installed in the environment.
-    monkeypatch.setattr(_main_module, "check_currency", lambda: None)
+@pytest.fixture()
+def gate_bypassed(env):
+    """The REAL gate, told to stand down through its own documented switch.
+
+    `SCITEX_DEV_NO_CURRENCY_GATE=1` is scitex-dev's published bypass, and it
+    is a better arrangement than a stubbed no-op for a reason worth stating:
+    a stub proves the CLI survives a gate that does nothing, while this proves
+    the CLI survives THE gate, running, taking its own no-op path.
+    """
+    env.set("SCITEX_DEV_NO_CURRENCY_GATE", "1")
+    yield
+
+
+#: What scitex-dev's refusal looks like: a message carrying the remedy.
+_REMEDY = "pip install -U scitex-cards"
+
+
+def _refusing_gate():
+    """A gate with `check_currency`'s refusing contract, for the translation.
+
+    NOT a stand-in for the real gate's DECISION — `test__currency.py` owns
+    that, through `check_currency`'s own `staleness_module` / `over_overlay`
+    parameters. What is exercised here is the CLI's half: whatever comes out
+    of the gate as an exception must reach the user as a clean error line.
+    """
+    raise RuntimeError(f"scitex-cards is stale — run: {_REMEDY}")
+
+
+def test_main_passes_through_when_the_currency_check_is_a_no_op(gate_bypassed):
+    # Arrange
     runner = CliRunner()
     _seed()
 
@@ -109,47 +136,91 @@ def test_main_passes_through_when_the_currency_check_is_a_no_op(monkeypatch):
 
     # Assert
     assert result.exit_code == 0
-    assert "design" in result.output
 
 
-def test_main_surfaces_a_stale_install_as_a_clean_click_exception(monkeypatch):
-    # Arrange — fake a stale/broken-install verdict the way scitex-dev's
-    # `ensure_current` would raise it, remedy command included.
-    remedy = "pip install -U scitex-cards"
-
-    def _boom():
-        raise RuntimeError(f"scitex-cards is stale — run: {remedy}")
-
-    monkeypatch.setattr(_main_module, "check_currency", _boom)
+def test_the_passing_gate_does_not_swallow_the_subcommands_output(gate_bypassed):
+    # Arrange
     runner = CliRunner()
+    _seed()
 
     # Act
     result = runner.invoke(main, ["list-tasks"])
 
-    # Assert — a clean CLI error (not a raw traceback), remedy preserved.
-    assert result.exit_code != 0
-    assert remedy in result.output
+    # Assert — the gate ran and got out of the way, rather than the command
+    # exiting 0 without having done anything.
+    assert "design" in result.output
 
 
-def test_main_does_not_swallow_the_currency_check_for_an_unrelated_subcommand(
-    monkeypatch,
-):
-    """The gate must fire for a subcommand unrelated to the one exercised
-    above — proving it runs unconditionally in the group callback, not only
-    on some code path one particular command happens to hit. (`--version` is
-    NOT usable here: click's `version_option` is an eager flag that exits
-    during option parsing, before the group callback body ever runs.)"""
-
+def test_a_refused_install_becomes_a_click_exception_not_a_raw_error():
     # Arrange
-    def _boom():
-        raise RuntimeError("scitex-cards is stale")
+    gate = _refusing_gate
 
-    monkeypatch.setattr(_main_module, "check_currency", _boom)
+    # Act
+    # Assert — a RuntimeError reaching the user is a traceback; a
+    # ClickException is the error line Click prints and exits 1 on.
+    with pytest.raises(click.ClickException):
+        _main_module._run_currency_gate(gate=gate)
+
+
+def test_a_refused_install_keeps_the_remedy_in_the_message():
+    # Arrange
+    # Act
+    try:
+        _main_module._run_currency_gate(gate=_refusing_gate)
+    except click.ClickException as exc:
+        message = str(exc)
+
+    # Assert — the remedy IS the payload; a translation that drops it leaves
+    # the user refused and uninstructed.
+    assert _REMEDY in message
+
+
+def test_a_click_exception_from_the_gate_passes_through_unwrapped():
+    """A gate that already speaks Click must not be re-wrapped.
+
+    Double-wrapping would nest the message inside another exception's str()
+    and is the reason the `except click.ClickException: raise` arm exists.
+    """
+    # Arrange
+    def _already_click():
+        raise click.ClickException("already formatted")
+
+    # Act
+    try:
+        _main_module._run_currency_gate(gate=_already_click)
+    except click.ClickException as exc:
+        message = str(exc)
+
+    # Assert
+    assert message == "already formatted"
+
+
+def test_a_passing_gate_lets_the_callback_continue():
+    # Arrange
+    # Act
+    result = _main_module._run_currency_gate(gate=lambda: None)
+
+    # Assert — no exception, nothing returned; the callback proceeds.
+    assert result is None
+
+
+def test_the_gate_actually_runs_for_an_unrelated_subcommand(gate_bypassed, caplog):
+    """The gate fires in the group callback, not on one command's code path.
+
+    Proven with the REAL gate rather than a stub: scitex-dev's documented
+    bypass logs a loud "CURRENCY GATE BYPASSED" precisely so an exercised
+    bypass is never silent, and that log line is only emitted if the gate was
+    entered. So the record is evidence the callback ran it for THIS command.
+
+    (`--version` is NOT usable here: click's `version_option` is an eager flag
+    that exits during option parsing, before the group callback body runs.)
+    """
+    # Arrange
     runner = CliRunner()
 
     # Act
-    result = runner.invoke(main, ["render-graph", "--print-mermaid"])
+    with caplog.at_level(logging.WARNING):
+        runner.invoke(main, ["render-graph", "--print-mermaid"])
 
     # Assert
-    assert result.exit_code != 0
-    assert "scitex-cards is stale" in result.output
+    assert "CURRENCY GATE BYPASSED" in caplog.text

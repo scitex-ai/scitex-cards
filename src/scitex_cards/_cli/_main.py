@@ -100,6 +100,35 @@ _COMMAND_CATEGORIES = (
 )
 
 
+def _run_currency_gate(gate=None) -> None:
+    """Run the currency gate and translate a refusal into a CLI error.
+
+    Extracted from :func:`main`'s callback so the TRANSLATION can be executed
+    directly. It is the part this package owns — scitex-dev decides whether
+    the install is stale; all we do is make sure its refusal reaches the user
+    as an error line with the remedy intact, instead of a raw traceback.
+
+    IT COULD NOT BE REACHED THROUGH THE CLI IN THIS ENVIRONMENT, which is why
+    it is a function now. `check_currency` WARNS instead of raising whenever
+    the actor is on a read-only overlay (they cannot run the install command,
+    so refusing would strand them), and `_running_over_overlay` reads
+    ``/proc/mounts`` — every agent container here genuinely is an overlay. So
+    the raising branch is unreachable from `CliRunner` no matter what the
+    environment says, and the old tests reached it by rebinding
+    `check_currency` on this module (audit PA-306 `no-mocks`).
+
+    ``gate`` defaults to the real :func:`check_currency`; a caller passing one
+    supplies a callable with the same contract (return, or raise carrying the
+    remedy).
+    """
+    try:
+        (check_currency if gate is None else gate)()
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 # --------------------------------------------------------------------------- #
 # Top-level group (--help-recursive / --json universal flags)                 #
 # --------------------------------------------------------------------------- #
@@ -134,12 +163,7 @@ def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
     # `check_currency()` is a no-op when scitex-dev is absent; when present it
     # raises with the exact remedy command, which we surface as a clean
     # ClickException rather than a raw traceback. See `_currency.py`.
-    try:
-        check_currency()
-    except click.ClickException:
-        raise
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+    _run_currency_gate()
     if help_recursive or as_json:
         _emit_help_recursive(ctx, as_json=as_json)
         ctx.exit(0)
