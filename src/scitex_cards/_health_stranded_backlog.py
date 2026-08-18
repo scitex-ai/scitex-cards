@@ -49,9 +49,18 @@ _HINT = (
 
 
 def _legacy_inbox_path(store) -> "Path | None":
-    """The SQLite inbox path, or None when this build cannot name one."""
+    """The SQLite inbox path, or None when this build cannot name one.
+
+    IMPORTS FROM ``_inbox_sqlite_schema``, WHICH DEFINES IT — not from
+    ``_inbox_sqlite``, which only re-exports it. The distinction is the whole
+    point of this line: ``_inbox_sqlite`` is the SQLite inbox BACKEND and is
+    being removed under the 2026-08-17 abolition ruling, while this health
+    check must outlive it. A health check that names a path is not a reason to
+    keep a backend alive, and importing through the re-export made this module
+    a dependency that would have blocked the removal.
+    """
     try:
-        from ._inbox_sqlite import inbox_db_path
+        from ._inbox_sqlite_schema import inbox_db_path
 
         return Path(inbox_db_path(store))
     except Exception:  # noqa: BLE001 — a health check must not raise
