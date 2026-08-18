@@ -57,7 +57,7 @@ from scitex_cards._users._model import UserValidationError  # noqa: E402
 
 def _as(name: str):
     """A request identified as ``name`` through a REAL signed board cookie."""
-    request = RequestFactory().get("/me/cards")
+    request = RequestFactory().get("/board")
     request.COOKIES[COOKIE_NAME] = signing.dumps(
         {"v": 2, "sub": name}, salt=SIGNING_SALT
     )
@@ -203,7 +203,7 @@ class _SignedInUser:
 
 def _signed_in_as(email: str):
     """A request carrying an authenticated session for ``email``."""
-    request = RequestFactory().get("/me/cards")
+    request = RequestFactory().get("/board")
     request.user = _SignedInUser(email)
     return request
 

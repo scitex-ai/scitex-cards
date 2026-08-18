@@ -5,7 +5,6 @@
 from django.urls import path
 
 from . import views
-from ._me_page import me_page
 from .handlers.attachments import serve_view as attachments_serve_view
 from .handlers.attachments import upload_view as attachments_upload_view
 from .handlers.chat import chat_view
@@ -15,7 +14,6 @@ from .handlers.fleet import (
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
-from .handlers.mine import mine_view
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -51,25 +49,20 @@ urlpatterns = [
     # consumes these instead of shelling out to the CLI verbs.
     path("runnable", runnable_view, name="runnable"),
     path("blocked-batch", blocked_batch_view, name="blocked_batch"),
-    # "My Cards" — the phone view of the viewer's OWN cards (card
-    # cards-gui-phone-view-own-cards-20260814; operator 2026-08-14 wants his
-    # cards from his phone via scitex.ai). `/me` is the PAGE and `/me/cards`
-    # is the JSON it polls — the same page/data shape `/dm` and `/dm/threads`
-    # already use, and the reason the JSON is NOT a sibling `/mine`: one
-    # letter between a page and an API is a footgun in every log and bug
-    # report that quotes either.
+    # `/me`, `/me/` and `/me/cards` USED TO BE HERE and were REMOVED at the
+    # operator's request on 2026-08-16 (「この Mine というのは使わないので削除
+    # してください」, then 「はい、つかわないのでさくじょで」). They served the
+    # "My Cards" phone view from card cards-gui-phone-view-own-cards-20260814,
+    # which shipped 2026-08-14 and was wanted for two days.
     #
-    # Identity comes from `_board_identity.resolve_viewer`; a caller the
-    # board cannot identify gets a typed 403, never the whole board.
-    #
-    # Both the slashed and unslashed page spellings are registered for the
-    # same reason `legacy/`, `board-v3/` and `chat/` carry theirs: a trailing
-    # slash is the most natural thing in the world to type, and without it
-    # the catch-all `<path:endpoint>` answers "Unknown endpoint: me/". All
-    # three sit BEFORE that catch-all for exactly that reason.
-    path("me", me_page, name="me_page"),
-    path("me/", me_page, name="me_page_slash"),
-    path("me/cards", mine_view, name="me_cards"),
+    # THE DELETION INCLUDES THE ROUTES ON PURPOSE, and that is worth stating
+    # because this file argues the opposite for `/chat`: a published URL is a
+    # MIGRATION, not a label, so `/chat` is still served after being relabelled
+    # DM. The rules do not conflict — that one governs RENAMING a surface
+    # someone still uses, this one is a surface the operator says nobody uses.
+    # Keeping the doors open to a page that no longer exists would leave the
+    # catch-all `<path:endpoint>` answering "Unknown endpoint: me" anyway, which
+    # is what an unregistered path already does, so nothing is gained by a stub.
     # Time View — operator-direct ask (TG, relayed by lead a2a `d0f7a0e3`,
     # 2026-06-14). Live raster timeline so the operator watches ONE screen
     # and sees the whole fleet in motion. Polled by the FE TimelineView
