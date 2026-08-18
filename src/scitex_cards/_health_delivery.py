@@ -50,6 +50,21 @@ PUSH_CONFIRM_GRACE_SECONDS = 900
 #: Ids listed verbatim in the failure detail before it switches to a count.
 _SAMPLE_IDS = 5
 
+#: Event types the producer RE-SENDS on a schedule. An unconfirmed one of
+#: these is superseded within a sweep interval, so losing it costs a delay;
+#: everything else is a ONE-SHOT and losing it is permanent.
+#:
+#: THE TWO ARE WORTH COUNTING SEPARATELY BECAUSE THEY DEMAND DIFFERENT
+#: URGENCY. A backlog of unconfirmed digests says the consumer is not
+#: confirming — a real fault, but one where the CONTENT survives, because the
+#: next digest carries the same facts. A single unconfirmed `dm` says a
+#: message a human or a peer sent is gone, and no later notification will
+#: reproduce it. Reporting one number for both invites reading the common,
+#: recoverable case and concluding the rare, unrecoverable one is fine too.
+_REPEATING_EVENTS = frozenset(
+    {"reminder", "stale-active", "pending-backlog", "blocked-check"}
+)
+
 #: The remediation. Names BOTH causes because the reader cannot tell them apart
 #: from the symptom, and says how to CHECK each one — a failing check that only
 #: states what broke is half-written.
@@ -191,15 +206,24 @@ def check_delivery_confirmed(
     ages = [_age_seconds(r.get(PUSHED_AT), moment) for r in overdue]
     oldest = max((a for a in ages if a is not None), default=None)
     oldest_text = f"{int(oldest)}s" if oldest is not None else "unknown"
-    sample = [str(r.get("id")) for r in overdue[:_SAMPLE_IDS]]
+    # ONE-SHOTS FIRST, in the count AND in the sample. A digest that was never
+    # confirmed is replaced by the next sweep; a `dm` that was never confirmed
+    # is gone. When the ids have to be truncated it must be the recoverable
+    # ones that fall off the end.
+    one_shot = [r for r in overdue if r.get("event_type") not in _REPEATING_EVENTS]
+    repeating = len(overdue) - len(one_shot)
+    sample = [str(r.get("id")) for r in (one_shot + overdue)[:_SAMPLE_IDS]]
     return {
         "ok": False,
         "detail": (
             f"{len(overdue)} notification(s) were PUSHED and never CONFIRMED "
-            f"({counts}); oldest unconfirmed push {oldest_text} ago; ids "
-            f"{sample}{' ...' if len(overdue) > len(sample) else ''}. The "
-            f"transport accepted them, which proves only that our own stdout "
-            f"writer took the bytes — nobody has said they arrived."
+            f"— {len(one_shot)} ONE-SHOT (unrecoverable: a dm/comment/event "
+            f"nothing will re-send) and {repeating} repeating (a later sweep "
+            f"carries the same facts) ({counts}); oldest unconfirmed push "
+            f"{oldest_text} ago; ids {sample}"
+            f"{' ...' if len(overdue) > len(sample) else ''}. The transport "
+            f"accepted them, which proves only that our own stdout writer took "
+            f"the bytes — nobody has said they arrived."
         ),
         "hint": _UNCONFIRMED_HINT,
     }
