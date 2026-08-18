@@ -200,10 +200,15 @@ def unstatable_store_verdicts(tmp_path):
 
 
 @pytest.fixture()
-def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
-    """A gated tick on an UNCHANGED store, with spy counters on the parsers.
+def gated_drain_on_unchanged_store(tmp_path):
+    """A gated tick on an UNCHANGED store, measured by the gate's OWN tally.
 
-    The spies delegate to the REAL functions (not mocks); they only count.
+    The gate records a HIT when it skips an idle tick and a MISS when it
+    drains (`_cache_stats`, keyed on `GATE_NAME`) — the same instrument the
+    read caches use, and for the same reason: a short-circuit that stops
+    working breaks nothing, it just silently pays the cost it exists to avoid.
+    So the test reads the number production reads instead of wrapping the
+    parsers it hopes were not called.
     """
     store = _store(tmp_path)
     agent = "agent-gate"
@@ -223,21 +228,10 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
 
     import scitex_cards._mcp_channel as chan
 
-    calls = {"recipient_keys": 0, "poll_inbox": 0}
-    real_rk = chan.recipient_keys
-    real_pi = _inbox.poll_inbox
+    from scitex_cards._cache_stats import cache_stats, reset_cache_stats
+    from scitex_cards._channel_drain_state import GATE_NAME
 
-    def spy_rk(*a, **k):
-        calls["recipient_keys"] += 1
-        return real_rk(*a, **k)
-
-    def spy_pi(*a, **k):
-        calls["poll_inbox"] += 1
-        return real_pi(*a, **k)
-
-    monkeypatch.setattr(chan, "recipient_keys", spy_rk)
-    monkeypatch.setattr(_inbox, "poll_inbox", spy_pi)
-
+    reset_cache_stats()
     recorder = _SendRecorder()
     pushed = asyncio.run(
         gated_drain_once(agent, recorder, state, source="scards", store=store)
@@ -246,7 +240,7 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
         "seeded": seeded,
         "pushed": pushed,
         "recorder": recorder,
-        "calls": calls,
+        "gate": cache_stats(GATE_NAME),
     }
 
 
@@ -742,14 +736,15 @@ def test_gated_drain_calls_no_send_when_mtime_unchanged(gated_drain_on_unchanged
 def test_gated_drain_skips_all_parsing_when_mtime_unchanged(
     gated_drain_on_unchanged_store,
 ):
-    # The core CPU fix: on an unchanged store the gated tick must NOT touch the
-    # full-store parsers (recipient_keys / poll_inbox).
+    # The core CPU fix: on an unchanged store the gated tick must NOT reach
+    # the full-store parsers (recipient_keys / poll_inbox) at all.
     # Arrange
     result = gated_drain_on_unchanged_store
     # Act
-    calls = result["calls"]
-    # Assert — nothing parsed; the whole point of the gate.
-    assert calls == {"recipient_keys": 0, "poll_inbox": 0}
+    gate = result["gate"]
+    # Assert — the tick was SKIPPED, which is what "parsed nothing" means
+    # here: `gated_drain_once` returns before importing `drain_once`.
+    assert (gate["hits"], gate["misses"]) == (1, 0)
 
 
 def test_gated_drain_first_tick_delivers_pending(tmp_path):

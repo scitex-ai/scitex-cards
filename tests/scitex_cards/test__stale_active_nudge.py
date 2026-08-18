@@ -47,19 +47,32 @@ from scitex_cards._stale.active_nudge import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _isolated_store(tmp_path, env):
-    """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir."""
+def _bootstrap_schema(db) -> None:
+    """Create the schema in ``db``, opening and closing one connection.
+
+    Split out of the fixture so the connection's whole lifetime is this
+    function: it is opened, used and closed here, and nothing about it can
+    escape to a caller. The fixture below hands back a PATH, never a live
+    handle — which is what STX-TQ005 is about, and what a `connect(...)` and a
+    `return` sitting in one fixture body cannot be distinguished from by
+    reading.
+    """
     from scitex_cards._db import connect, init_schema
 
-    db = tmp_path / "cards.db"
-    env.set(ENV_DB, str(db))
     conn = connect(str(db))
     try:
         init_schema(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_store(tmp_path, env):
+    """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir."""
+    db = tmp_path / "cards.db"
+    env.set(ENV_DB, str(db))
+    _bootstrap_schema(db)
     return db
 
 

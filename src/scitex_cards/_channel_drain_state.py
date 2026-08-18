@@ -81,6 +81,11 @@ def _resolve_store_file(store: str | Path | None) -> Optional[Path]:
         return None
 
 
+#: This gate's name in :mod:`._cache_stats`, where its hit rate is legible.
+#: A HIT is an idle tick the gate skipped; a MISS is a tick that drained.
+GATE_NAME = "drain_gate"
+
+
 def should_drain(state: _DrainState, *, store: str | Path | None = None) -> bool:
     """Decide whether this tick should actually drain (parse) the store.
 
@@ -133,14 +138,23 @@ async def gated_drain_once(
     preserving ALL its behavior (recipient-key fan-out, unseen read,
     ack-after-push, ``MAX_PUSH_PER_DRAIN`` burst cap, fail-soft).
     """
+    from ._cache_stats import record_hit, record_miss
+
     if not should_drain(state, store=store):
+        # HIT = the gate did its job: an idle tick that cost no parse. Tallied
+        # for the same reason the read caches are — this gate exists purely to
+        # avoid work, so when it stops working nothing breaks and nothing says
+        # so; the poll loop simply pays a full-store parse every tick forever.
+        # A rate is the only place that is visible. See :mod:`._cache_stats`.
+        record_hit(GATE_NAME)
         return 0
+    record_miss(GATE_NAME)
     # Lazy import breaks the _mcp_channel ↔ _channel_drain_state cycle.
     from ._mcp_channel import drain_once
 
     return await drain_once(agent_id, send, source=source, store=store)
 
 
-__all__ = ["_DrainState", "gated_drain_once", "should_drain"]
+__all__ = ["GATE_NAME", "_DrainState", "gated_drain_once", "should_drain"]
 
 # EOF
