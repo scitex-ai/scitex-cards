@@ -95,7 +95,11 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
     aware), the same ambient default a fresh install uses.
     """
-    from ._store_url import is_postgres_url, reject_attempted_dsn
+    from ._store_url import (
+        is_postgres_url,
+        reject_attempted_dsn,
+        reject_unexpanded_variable,
+    )
 
     # A MALFORMED DSN IS NOT A PATH EITHER, and the paragraph below is the
     # reason this line exists rather than an extra spelling in that predicate.
@@ -119,6 +123,12 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # error with no correct interpretation -- there is no deployment for which
     # SCITEX_CARDS_DB=":55432" is right -- and quietly serving it a local
     # directory would hide the misconfiguration behind working software.
+    # AN UNRESOLVED TARGET IS CHECKED FIRST, because it is a question about the
+    # value's PROVENANCE rather than its shape, and the shape rules would
+    # misreport it: "${DSN}://x" carries "://" and would be refused as a
+    # malformed server address, sending the reader to look for a typo in a
+    # hostname that was never written.
+    reject_unexpanded_variable(explicit)
     reject_attempted_dsn(explicit)
 
     if explicit is not None:
@@ -172,6 +182,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # malformed $SCITEX_CARDS_DB reaches here with explicit=None, so guarding
     # only the argument would leave the commonest configuration mistake --
     # a typo in the environment -- on the unguarded path.
+    reject_unexpanded_variable(ambient)
     reject_attempted_dsn(ambient)
     if is_postgres_url(ambient):
         return _user_root() / "tasks.yaml"

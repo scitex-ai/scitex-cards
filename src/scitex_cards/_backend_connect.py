@@ -49,6 +49,7 @@ from ._store_url import (
     BACKEND_POSTGRES,
     backend_of,
     reject_attempted_dsn,
+    reject_unexpanded_variable,
     to_paramstyle,
 )
 
@@ -178,6 +179,7 @@ def connect(
     # opening is where a malformed DSN stops being a wrong string and becomes a
     # real, empty cards database that answers queries. Checked before the
     # dispatch below, because the SQLite branch CREATES its target.
+    reject_unexpanded_variable(target)
     reject_attempted_dsn(target)
 
     backend = backend_of(target)
