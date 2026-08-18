@@ -122,14 +122,28 @@ def _describe(target: Path, subdir: str, token: str, name: str, mime: str) -> di
     }
 
 
-def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) -> dict:
+def store_chunks(
+    chunks,
+    filename: str,
+    *,
+    mime: str | None = None,
+    store=None,
+    max_bytes: "int | None" = None,
+) -> dict:
     """Write an iterable of byte chunks into a fresh slot.
 
     The size ceiling is enforced AS THE BYTES ARRIVE, not from a
     caller-declared length: a declared size is a claim, and this is the layer
     that has to be right about it. An over-size stream is aborted and its
     partial directory removed, so a refusal leaves nothing behind.
+
+    ``max_bytes`` defaults to :data:`MAX_UPLOAD_BYTES`. It is a PARAMETER so a
+    caller can exercise the refusal without a 25 MB fixture — and so a test
+    does not have to reach in and rebind the module constant, which asserts
+    against the test's own edit rather than against this function (audit
+    PA-306 `no-mocks`).
     """
+    ceiling = MAX_UPLOAD_BYTES if max_bytes is None else max_bytes
     name = safe_name(filename)
     subdir, token, target_dir = _new_slot(store)
     target = target_dir / name
@@ -138,9 +152,9 @@ def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) 
         with target.open("wb") as handle:
             for chunk in chunks:
                 written += len(chunk)
-                if written > MAX_UPLOAD_BYTES:
+                if written > ceiling:
                     raise AttachmentError(
-                        f"file exceeds the {MAX_UPLOAD_BYTES}-byte limit"
+                        f"file exceeds the {ceiling}-byte limit"
                     )
                 handle.write(chunk)
     except Exception:
@@ -153,7 +167,11 @@ def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) 
 
 
 def store_local_file(
-    source: str | Path, *, filename: str | None = None, store=None
+    source: str | Path,
+    *,
+    filename: str | None = None,
+    store=None,
+    max_bytes: "int | None" = None,
 ) -> dict:
     """COPY a file the caller can already read into the attachment store.
 
@@ -165,15 +183,16 @@ def store_local_file(
     regular file, or is over :data:`MAX_UPLOAD_BYTES` — all of which are the
     caller's to fix, and none of which should look like a server fault.
     """
+    ceiling = MAX_UPLOAD_BYTES if max_bytes is None else max_bytes
     path = Path(source).expanduser()
     if not path.exists():
         raise AttachmentError(f"no such file: {path}")
     if not path.is_file():
         raise AttachmentError(f"not a regular file: {path}")
     size = path.stat().st_size
-    if size > MAX_UPLOAD_BYTES:
+    if size > ceiling:
         raise AttachmentError(
-            f"file is {size} bytes, over the {MAX_UPLOAD_BYTES}-byte limit"
+            f"file is {size} bytes, over the {ceiling}-byte limit"
         )
 
     def _read():

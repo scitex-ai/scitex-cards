@@ -187,9 +187,15 @@ def test_the_shipped_ceiling_is_25_mib():
 
 
 @pytest.fixture
-def tiny_ceiling(monkeypatch):
-    """Lower the ceiling so the ENFORCEMENT is testable at any value."""
-    monkeypatch.setattr(_attachments, "MAX_UPLOAD_BYTES", 64)
+def tiny_ceiling():
+    """A small ceiling PASSED IN, so enforcement is testable without a 25MB file.
+
+    Both store verbs take `max_bytes`, so the limit under test is an argument
+    rather than a rebound module constant. That matters beyond the no-mocks
+    rule: patching `_attachments.MAX_UPLOAD_BYTES` asserts against the test's
+    own edit, so the test stays green if a verb later stops consulting the
+    constant. Passing it exercises the parameter production actually reads.
+    """
     return 64
 
 
@@ -201,7 +207,7 @@ def test_a_file_over_the_ceiling_is_refused(store, tmp_path, tiny_ceiling):
 
     # Act
     def send():
-        store_local_file(fat, store=store)
+        store_local_file(fat, store=store, max_bytes=tiny_ceiling)
 
     # Assert
     with pytest.raises(AttachmentError):
@@ -214,7 +220,7 @@ def test_a_file_at_the_ceiling_is_accepted(store, tmp_path, tiny_ceiling):
     exact = tmp_path / "exact.bin"
     exact.write_bytes(b"\0" * tiny_ceiling)
     # Act
-    meta = store_local_file(exact, store=store)
+    meta = store_local_file(exact, store=store, max_bytes=tiny_ceiling)
     # Assert
     assert meta["size"] == tiny_ceiling
 
@@ -231,7 +237,9 @@ def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
 
     # Act
     def send():
-        _attachments.store_chunks(iter(chunks), "over.bin", store=store)
+        _attachments.store_chunks(
+            iter(chunks), "over.bin", store=store, max_bytes=tiny_ceiling
+        )
 
     # Assert
     with pytest.raises(AttachmentError):
@@ -247,7 +255,9 @@ def after_an_over_size_refusal(store, tiny_ceiling):
     alongside the leftovers check would make this two assertions in one test.
     """
     with pytest.raises(AttachmentError):
-        _attachments.store_chunks(iter([b"\0" * 32] * 4), "over.bin", store=store)
+        _attachments.store_chunks(
+            iter([b"\0" * 32] * 4), "over.bin", store=store, max_bytes=tiny_ceiling
+        )
     return attachments_root(store)
 
 
