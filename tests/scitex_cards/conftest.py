@@ -15,6 +15,7 @@ The fixture is intentionally minimal: just ``set(key, value)`` and
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass, field
 
@@ -299,6 +300,58 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     finally:
         conn.close()
     return summary
+
+
+@pytest.fixture
+def local_receiver():
+    """The :func:`open_local_receiver` factory, as a FIXTURE.
+
+    Handed over through pytest's conftest resolution rather than imported.
+    `from conftest import ...` binds whichever conftest.py happens to hold the
+    module name `conftest` at that moment — with several in this tree the
+    winner depends on collection order, so the same import can resolve to
+    `tests/scitex_cards/_django/conftest.py` in a full run and to this file
+    when one test file runs alone. Measured: the single-file run passed and
+    the full suite failed at collection.
+    """
+    return open_local_receiver
+
+
+@contextlib.contextmanager
+def open_local_receiver():
+    """A REAL local turn-url receiver: answers 200 and records the bodies.
+
+    The mock-free way to observe "did the push path actually fire?". `deliver`
+    resolves an agent's turn URL from `SCITEX_CARDS_TURN_URL_<AGENT>` (upper,
+    `-` → `_`), so pointing that at this server makes delivery observable as
+    an HTTP REQUEST ARRIVING rather than as a counter on a rebound function.
+
+    Yields ``(url, received)``; ``received`` fills in as requests land.
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    received: list[bytes] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 — BaseHTTPRequestHandler's contract.
+            length = int(self.headers.get("Content-Length") or 0)
+            received.append(self.rfile.read(length))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args):  # keep the test output clean
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1/turn", received
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 # EOF

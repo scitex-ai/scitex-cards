@@ -150,37 +150,46 @@ class TestSqliteIsUnaffected:
         assert label == str(db)
 
 
+def _no_rows(*args, **kwargs):
+    """A real reader that finds nothing — `_store.list_tasks`' empty answer.
+
+    The store is NOT what these tests are about. The defect was in the CAPTION
+    printed after the read, and reaching that line needs a read that SUCCEEDS;
+    a DSN pointing at a database this process cannot reach fails long before
+    the caption runs. Passing this through the verbs' `lister` seam reproduces
+    the defect's conditions — a Postgres DSN configured, rows in hand, caption
+    still to print — without rebinding `_store.list_tasks` for the process.
+
+    An empty result is the RIGHT arrangement here rather than a convenience:
+    the caption is printed on every path, including the no-rows one, so an
+    empty store exercises it with the least unrelated machinery in the way.
+    """
+    return []
+
+
 class TestTheCliCaptionExecutesTheDefect:
     """Drive the real verb, because the helper is not where the bug was."""
 
-    def test_list_tasks_filtered_does_not_raise_on_a_dsn(
-        self, store_env, monkeypatch, capsys
-    ):
+    def test_list_tasks_filtered_does_not_raise_on_a_dsn(self, store_env, capsys):
         # Arrange
-        from scitex_cards import _store
         from scitex_cards._cli import _admin
 
         store_env(PG_URL)
-        monkeypatch.setattr(_store, "list_tasks", lambda *a, **k: [])
 
         # Act
-        _admin.list_tasks_filtered(None, None, None, False, None)
+        _admin.list_tasks_filtered(None, None, None, False, None, lister=_no_rows)
 
         # Assert
         assert PG_URL in capsys.readouterr().out
 
-    def test_list_blocking_operator_does_not_raise_on_a_dsn(
-        self, store_env, monkeypatch, capsys
-    ):
+    def test_list_blocking_operator_does_not_raise_on_a_dsn(self, store_env, capsys):
         # Arrange
-        from scitex_cards import _store
         from scitex_cards._cli import _admin
 
         store_env(PG_URL)
-        monkeypatch.setattr(_store, "list_tasks", lambda *a, **k: [])
 
         # Act
-        _admin.list_blocking_operator(None, as_json=False)
+        _admin.list_blocking_operator(None, as_json=False, lister=_no_rows)
 
         # Assert
         assert PG_URL in capsys.readouterr().out

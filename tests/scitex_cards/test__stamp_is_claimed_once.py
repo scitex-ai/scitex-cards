@@ -192,7 +192,7 @@ def test_a_stamp_naming_the_same_file_by_another_name_is_not_rewritten(tmp_path)
 
 
 def test_the_claimed_name_survives_successive_writes_through_the_real_write_door(
-    tmp_path, monkeypatch
+    tmp_path, env
 ):
     """Stability, not a single lucky call — and through the door production uses.
 
@@ -206,7 +206,7 @@ def test_the_claimed_name_survives_successive_writes_through_the_real_write_door
     # writes through its own.
     opened_as, other_name = _one_file_two_names(tmp_path)
     _stamp(opened_as, other_name)
-    monkeypatch.setenv(ENV_DB, str(opened_as))
+    env.set(ENV_DB, str(opened_as))
 
     # Act — five ordinary, growing card writes (a shrink is refused by a
     # different guard, and is not what this test is about).
@@ -223,7 +223,7 @@ def test_the_claimed_name_survives_successive_writes_through_the_real_write_door
 
 
 def test_a_genuinely_different_store_is_still_refused_at_the_write_door(
-    tmp_path, monkeypatch
+    tmp_path, env
 ):
     """The control: leaving stamps alone must not open the door it was guarding.
 
@@ -242,7 +242,7 @@ def test_a_genuinely_different_store_is_still_refused_at_the_write_door(
     foreign = tmp_path / "theirs.db"
     seed_db_from_doc(_EMPTY, str(foreign))
     _stamp(db, foreign)
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
 
     # Act
     # Assert

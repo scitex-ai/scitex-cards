@@ -15,7 +15,7 @@ including the precondition control and the positive control, because the failure
 that file caught -- a guard that refuses EVERYTHING, which satisfies every
 refusal test ever written -- is available here in exactly the same way.
 
-Real ``os.environ`` mutation with restore, no monkeypatch: the defect WAS an
+Real ``os.environ`` mutation with restore, no env: the defect WAS an
 environment state, and a test that patched the resolver would assert a belief
 about the resolver, which was never the thing that was wrong.
 

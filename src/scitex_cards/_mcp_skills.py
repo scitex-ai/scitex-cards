@@ -151,9 +151,37 @@ async def poll_notifications(
 
     READING NEVER CONFIRMS. This call hands notifications over; it does NOT
     advance the cursor. Confirm what you ACTUALLY DELIVERED with
-    ``ack_notifications(agent, ids)``. Anything you never confirm is still
-    unseen and COMES BACK on the next poll — so a consumer that dies between
-    read and confirm loses nothing.
+    ``ack_notifications(agent, ids)``.
+
+    *** THE REDELIVERY GUARANTEE IS NOT UNIVERSAL, AND THIS DOCSTRING USED TO
+    SAY IT WAS. *** It held only for records that reach you through THIS pull
+    path. It does NOT hold for anything the MCP channel already pushed:
+
+        pulled here          the cursor moves only when you confirm, so an
+                             unconfirmed record comes back on the next poll and
+                             a consumer that dies between read and confirm
+                             loses nothing.
+        pushed by the        ``record_push`` advances the cursor AT PUSH TIME
+        channel              (``UPDATE inbox SET seen = 1, pushed_at = ...`` in
+                             one statement, deliberately, so a record is never
+                             re-pushed). Those rows are already OUT of the
+                             unseen set. They never come back, confirmed or
+                             not, and the ``unconfirmed`` list is the only
+                             remaining evidence that they were not answered.
+
+    Every agent runs the channel, so in practice the second row is the common
+    case and ``unseen_only=True`` is EMPTY BY CONSTRUCTION on a live agent.
+
+    *** WHAT THAT MEANS AFTER A RESTART, which is where it actually bites: ***
+    polling ``unseen_only=True`` cannot fail to look clean, so "no new
+    notifications" is not evidence that nothing was missed — it is the shape of
+    the answer whether or not anything was. Poll with ``unseen_only=False`` and
+    read the ``unconfirmed`` list instead: that is the only place a record
+    pushed into a session that was going down is still visible.
+
+    Measured 2026-08-18 on two live agents: 801/801 and 298/298 records marked
+    seen, zero unseen, 109 and 10 unconfirmed respectively. Both agents had
+    reported a clean recovery on the strength of the empty unseen set.
 
     ``agent`` is resolved to its stable user-id via
     :func:`scitex_cards._users.resolve_user` (so a rename still finds the
@@ -161,10 +189,23 @@ async def poll_notifications(
     the dispatcher enqueued under). Returns a JSON object::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store these rows were read from>,
          "notifications": [ {id, event_type, card_id, body, actor, ts, seen},
                             ... ],
          "unconfirmed": [<ids still awaiting ack_notifications>],
          "confirm_with": "ack_notifications"}
+
+    ``store`` names the target this poll actually read. ``ack_notifications``
+    reports the same field, and COMPARING THE TWO is the point: if you poll
+    one store and confirm against another, every call still succeeds — this
+    one returns nothing and the confirmation answers ``unknown`` for every id,
+    which is indistinguishable from "there was nothing to deliver". Two labels
+    that disagree name that fault outright.
+
+    Two that AGREE do not clear you. They cover only your own read and write;
+    the delivery daemon resolves its target separately and stamps nothing, so
+    notifications can be arriving from a store neither label mentions. Equal
+    is CANNOT-TELL.
 
     Args:
       agent: the recipient name / id / host@name to poll for.
@@ -214,10 +255,23 @@ async def ack_notifications(
     never held is likewise a no-op. The payload distinguishes the cases::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store this confirmation was applied to>,
          "requested": [...],           # what you asked to confirm
          "confirmed": [...],           # flipped unseen -> seen by THIS call
          "already_confirmed": [...],   # were already seen (a fine retry)
          "unknown": [...]}             # no such id in this inbox
+
+    ``unknown`` SAYS NOTHING ABOUT THE DATABASE. It reads as "those ids do not
+    exist", but a confirmation sent to the WRONG STORE answers exactly the
+    same way — every id unknown, no error, nothing to retry. That is why
+    ``store`` is here: compare it with the ``store`` your poll reported.
+
+    THE COMPARISON IS ONE-SIDED. DIFFERENT means you are confirming somewhere
+    you never read — a split, positively identified. EQUAL means only that
+    YOUR read and YOUR write went to the same place; it does NOT mean no
+    split exists, because the daemon that pushes notifications to you
+    resolves its own target and reports nothing. A third store can be feeding
+    your inbox while these two labels agree. Treat equal as CANNOT-TELL.
 
     Args:
       agent: the recipient name / id / host@name whose inbox to confirm in.

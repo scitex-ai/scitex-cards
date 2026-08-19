@@ -5,7 +5,7 @@
 Phase P3 of the task-driven-feedback epic (card tcfb-p3-git-to-card).
 Every function under test is pure, so the tests need neither env fixtures
 nor tmp repos -- just real string inputs. STRICT scitex doctrine: no
-unittest.mock, no monkeypatch, AAA markers each on its own line, one
+unittest.mock, no env, AAA markers each on its own line, one
 assertion per test.
 """
 

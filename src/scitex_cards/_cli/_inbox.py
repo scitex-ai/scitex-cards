@@ -193,6 +193,83 @@ def inbox_info_cmd(as_json: bool) -> None:
 
 
 @inbox_group.command(
+    "list",
+    help=(
+        "ENUMERATE this agent's notifications, without advancing anything.\n\n"
+        "The read half of `inbox ack`. `ack` takes ids; before this verb the "
+        "only way to LEARN an id was the MCP `poll_notifications`, so when the "
+        "MCP server dropped the inbox became unclearable from the CLI even "
+        "though `ack` itself kept working.\n\n"
+        "Reads only: it never marks anything seen and never confirms.\n\n"
+        "Example:\n"
+        "  $ scitex-cards inbox list --unconfirmed\n"
+        "  $ scitex-cards inbox list --json"
+    ),
+)
+@click.option(
+    "--agent",
+    default=None,
+    help="Whose inbox to read (default: $SCITEX_CARDS_AGENT_ID).",
+)
+@click.option(
+    "--unconfirmed",
+    is_flag=True,
+    help="Only records with no confirmation — exactly what `ack` still needs.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit machine-readable JSON. Required by SciTeX §2 audit on read verbs.",
+)
+def inbox_list_cmd(agent: str | None, unconfirmed: bool, as_json: bool) -> None:
+    """Enumerate notifications so their ids can be fed to `inbox ack`.
+
+    IT FILTERS ON *CONFIRMED*, NOT ON *SEEN*, AND THAT IS THE WHOLE POINT.
+    `seen` is set at PUSH time by the MCP channel, so on any live agent the
+    unseen set is empty by construction and an `--unseen` filter would print
+    nothing while records sat unconfirmed. `confirmed_at` is the field `ack`
+    moves, so `--unconfirmed` lists precisely the work that remains.
+
+    Example:
+      $ scitex-cards inbox list --unconfirmed
+      $ scitex-cards inbox list --json
+    """
+    import json as _json
+
+    from scitex_cards._inbox_confirm import recipient_keys
+    from scitex_cards._inbox_receipt import CONFIRMED_AT, receipts
+    from scitex_cards._store import _default_agent
+
+    who = _default_agent(agent)
+    rows: list[dict] = []
+    for key in recipient_keys(who):
+        rows.extend(receipts(key))
+    if unconfirmed:
+        rows = [r for r in rows if not r.get(CONFIRMED_AT)]
+    payload = {"agent": who, "count": len(rows), "notifications": rows}
+    if as_json:
+        click.echo(_json.dumps(payload, default=str))
+        return
+    if not rows:
+        scope = "unconfirmed " if unconfirmed else ""
+        click.echo(f"# no {scope}notifications for {who}")
+        return
+    click.echo(f"# {len(rows)} notification(s) for {who}")
+    for row in rows:
+        mark = "ack'd" if row.get(CONFIRMED_AT) else "OPEN "
+        click.echo(
+            f"{mark} {str(row.get('id')):<18} {str(row.get('event_type')):<18} "
+            f"{str(row.get('ts'))[:19]}  {str(row.get('card_id') or '')}"
+        )
+    if unconfirmed:
+        click.echo(
+            "# confirm what you ACTUALLY READ:\n"
+            f"#   scitex-cards inbox ack --agent {who} <id> [<id> ...]"
+        )
+
+
+@inbox_group.command(
     "ack",
     help=(
         "CONFIRM delivery of specific notification ids (the only "

@@ -200,10 +200,15 @@ def unstatable_store_verdicts(tmp_path):
 
 
 @pytest.fixture()
-def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
-    """A gated tick on an UNCHANGED store, with spy counters on the parsers.
+def gated_drain_on_unchanged_store(tmp_path):
+    """A gated tick on an UNCHANGED store, measured by the gate's OWN tally.
 
-    The spies delegate to the REAL functions (not mocks); they only count.
+    The gate records a HIT when it skips an idle tick and a MISS when it
+    drains (`_cache_stats`, keyed on `GATE_NAME`) — the same instrument the
+    read caches use, and for the same reason: a short-circuit that stops
+    working breaks nothing, it just silently pays the cost it exists to avoid.
+    So the test reads the number production reads instead of wrapping the
+    parsers it hopes were not called.
     """
     store = _store(tmp_path)
     agent = "agent-gate"
@@ -223,21 +228,10 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
 
     import scitex_cards._mcp_channel as chan
 
-    calls = {"recipient_keys": 0, "poll_inbox": 0}
-    real_rk = chan.recipient_keys
-    real_pi = _inbox.poll_inbox
+    from scitex_cards._cache_stats import cache_stats, reset_cache_stats
+    from scitex_cards._channel_drain_state import GATE_NAME
 
-    def spy_rk(*a, **k):
-        calls["recipient_keys"] += 1
-        return real_rk(*a, **k)
-
-    def spy_pi(*a, **k):
-        calls["poll_inbox"] += 1
-        return real_pi(*a, **k)
-
-    monkeypatch.setattr(chan, "recipient_keys", spy_rk)
-    monkeypatch.setattr(_inbox, "poll_inbox", spy_pi)
-
+    reset_cache_stats()
     recorder = _SendRecorder()
     pushed = asyncio.run(
         gated_drain_once(agent, recorder, state, source="scards", store=store)
@@ -246,7 +240,7 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
         "seeded": seeded,
         "pushed": pushed,
         "recorder": recorder,
-        "calls": calls,
+        "gate": cache_stats(GATE_NAME),
     }
 
 
@@ -742,14 +736,15 @@ def test_gated_drain_calls_no_send_when_mtime_unchanged(gated_drain_on_unchanged
 def test_gated_drain_skips_all_parsing_when_mtime_unchanged(
     gated_drain_on_unchanged_store,
 ):
-    # The core CPU fix: on an unchanged store the gated tick must NOT touch the
-    # full-store parsers (recipient_keys / poll_inbox).
+    # The core CPU fix: on an unchanged store the gated tick must NOT reach
+    # the full-store parsers (recipient_keys / poll_inbox) at all.
     # Arrange
     result = gated_drain_on_unchanged_store
     # Act
-    calls = result["calls"]
-    # Assert — nothing parsed; the whole point of the gate.
-    assert calls == {"recipient_keys": 0, "poll_inbox": 0}
+    gate = result["gate"]
+    # Assert — the tick was SKIPPED, which is what "parsed nothing" means
+    # here: `gated_drain_once` returns before importing `drain_once`.
+    assert (gate["hits"], gate["misses"]) == (1, 0)
 
 
 def test_gated_drain_first_tick_delivers_pending(tmp_path):
@@ -836,45 +831,45 @@ def test_resolve_agent_id_explicit_arg():
     assert resolved == "my-agent"
 
 
-def test_resolve_agent_id_from_env(monkeypatch):
+def test_resolve_agent_id_from_env(env):
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "env-agent")
     # Act
     resolved = resolve_agent_id()
     # Assert
     assert resolved == "env-agent"
 
 
-def test_resolve_agent_id_unresolved_raises(monkeypatch):
+def test_resolve_agent_id_unresolved_raises(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
         resolve_agent_id()
 
 
-def test_resolve_agent_id_unresolved_message_names_the_env_var(monkeypatch):
+def test_resolve_agent_id_unresolved_message_names_the_env_var(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the failure must name the var the operator has to set.
     with pytest.raises(RuntimeError, match="SCITEX_CARDS_AGENT_ID"):
         resolve_agent_id()
 
 
-def test_resolve_agent_id_unknown_sentinel_raises(monkeypatch):
+def test_resolve_agent_id_unknown_sentinel_raises(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
         resolve_agent_id("unknown")
 
 
-def test_resolve_agent_id_blank_raises(monkeypatch):
+def test_resolve_agent_id_blank_raises(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
@@ -888,63 +883,63 @@ def test_resolve_agent_id_blank_raises(monkeypatch):
 #: for both spellings and from both the argument and the environment.
 
 
-def test_resolve_agent_id_unexpanded_placeholder_arg_raises(monkeypatch):
+def test_resolve_agent_id_unexpanded_placeholder_arg_raises(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
         resolve_agent_id("$SCITEX_CARDS_AGENT_ID")
 
 
-def test_resolve_agent_id_placeholder_message_says_placeholder(monkeypatch):
+def test_resolve_agent_id_placeholder_message_says_placeholder(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the message must name the diagnosis, not just fail.
     with pytest.raises(RuntimeError, match="placeholder"):
         resolve_agent_id("$SCITEX_CARDS_AGENT_ID")
 
 
-def test_resolve_agent_id_unexpanded_placeholder_braces_arg_raises(monkeypatch):
+def test_resolve_agent_id_unexpanded_placeholder_braces_arg_raises(env):
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
         resolve_agent_id("${SCITEX_CARDS_AGENT_ID}")
 
 
-def test_resolve_agent_id_unexpanded_placeholder_from_env_raises(monkeypatch):
+def test_resolve_agent_id_unexpanded_placeholder_from_env_raises(env):
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "$SCITEX_CARDS_AGENT_ID")
+    env.set("SCITEX_CARDS_AGENT_ID", "$SCITEX_CARDS_AGENT_ID")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError):
         resolve_agent_id()
 
 
-def test_resolve_agent_id_current_var_wins_over_stale_deprecated(monkeypatch):
+def test_resolve_agent_id_current_var_wins_over_stale_deprecated(env):
     """The CURRENT var wins: a valid $SCITEX_CARDS_AGENT_ID must NOT be disabled
     by a leftover stale $SCITEX_CARDS_AGENT. This is the incident fix — fleet
     agents carry a stale ambient old-name export baked in by an old injector;
     a correctly configured AGENT_ID must still resolve (so the poll loop runs)."""
     # Arrange — a valid NEW-name id AND the stale old name both set.
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
-    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "env-agent")
+    env.set("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id()
     # Assert — the current var wins, no raise.
     assert resolved == "env-agent"
 
 
-def test_resolve_agent_id_only_deprecated_env_var_fails_loud(monkeypatch):
+def test_resolve_agent_id_only_deprecated_env_var_fails_loud(env):
     """With NO current $SCITEX_CARDS_AGENT_ID but the renamed-away
     $SCITEX_CARDS_AGENT still exported, resolution fails LOUD pointing at the new
     name — a genuine reliance on the old var the operator must migrate."""
     # Arrange — only the deprecated old name is set.
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
-    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
+    env.delete("SCITEX_CARDS_AGENT_ID")
+    env.set("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     # Assert — the raise IS the behaviour; act and assert are one statement.
     with pytest.raises(RuntimeError, match="SCITEX_CARDS_AGENT_ID"):
@@ -954,49 +949,49 @@ def test_resolve_agent_id_only_deprecated_env_var_fails_loud(monkeypatch):
 # === resolve_agent_id_optional — the unified server's tools-only fallback =====
 
 
-def test_resolve_agent_id_optional_returns_id_when_set(monkeypatch):
+def test_resolve_agent_id_optional_returns_id_when_set(env):
     """With an identity, the unified server enables the digest push."""
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "env-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
     assert resolved == "env-agent"
 
 
-def test_resolve_agent_id_optional_returns_none_when_unset(monkeypatch):
+def test_resolve_agent_id_optional_returns_none_when_unset(env):
     """No identity ⇒ the unified server serves tools ONLY (push disabled).
     It must NOT raise — the tools surface has to work without an agent id."""
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
+    env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
     assert resolved is None
 
 
-def test_resolve_agent_id_optional_none_on_deprecated_env(monkeypatch):
+def test_resolve_agent_id_optional_none_on_deprecated_env(env):
     """ONLY the deprecated $SCITEX_CARDS_AGENT set (no current AGENT_ID) makes
     resolve fail loud; the optional variant swallows it to None (tools-only)
     rather than crashing the server — the loud warning still surfaces it."""
     # Arrange
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_ID", raising=False)
-    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
+    env.delete("SCITEX_CARDS_AGENT_ID")
+    env.set("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert
     assert resolved is None
 
 
-def test_resolve_agent_id_optional_returns_id_when_both_vars_set(monkeypatch):
+def test_resolve_agent_id_optional_returns_id_when_both_vars_set(env):
     """THE key regression that re-enables the poll loop: a valid AGENT_ID plus a
     stale deprecated $SCITEX_CARDS_AGENT must return the id (NOT None). Before the
     fix the mere presence of the old var made resolve fail loud → optional
     returned None → the digest poll loop never started (server connected, tools
     worked, but no channel notifications were ever pushed)."""
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "env-agent")
-    monkeypatch.setenv("SCITEX_CARDS_AGENT", "legacy-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "env-agent")
+    env.set("SCITEX_CARDS_AGENT", "legacy-agent")
     # Act
     resolved = resolve_agent_id_optional()
     # Assert

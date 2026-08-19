@@ -9,9 +9,14 @@ with the parse cached). Both hot paths are now memoized on the backing file's
 ``(mtime_ns, size)`` — the ``services.get_board`` pattern already used by
 ``_threads._READ_CACHE`` — so a click re-parses only after a real write.
 
-Pinned here, with real files and no mocks (counters wrap the real loaders):
+Pinned here with real files and no mocks. Cache EFFECTIVENESS is read from
+``_cache_stats`` — the tally production keeps — because a cache that quietly
+stops serving returns the right answer every time and only costs more, so the
+hit rate is the sole place its failure is visible:
 
 * one parse per file state — a second read with an unchanged file hits cache;
+* a write is never SERVED from the cache (a read-modify-write that were would
+  be a lost update);
 * a WRITE (register / append / mark_read) rolls the key and is visible on the
   very next read — the cache can never mask a store mutation;
 * returned structures do not alias the cache — caller mutation cannot poison
@@ -22,6 +27,7 @@ from __future__ import annotations
 
 import pytest
 
+from scitex_cards._cache_stats import cache_stats, reset_cache_stats
 from scitex_cards import _threads
 from scitex_cards._threads import append_message, list_threads, mark_read, thread_key
 from scitex_cards import _db_users
@@ -39,47 +45,55 @@ def store(tmp_path):
     _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
     _threads._SUMMARY_CACHE.clear()
+    reset_cache_stats()
     yield str(path)
     _store_read._READ_CACHE.clear()
     _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
     _threads._SUMMARY_CACHE.clear()
-
-
-def _count_calls(monkeypatch, module, name):
-    """Wrap ``module.name`` with a call counter (the real function still runs)."""
-    real = getattr(module, name)
-    counter = {"n": 0}
-
-    def _wrapped(*args, **kwargs):
-        counter["n"] += 1
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(module, name, _wrapped)
-    return counter
+    reset_cache_stats()
 
 
 # === users registry read cache =============================================
 
 
-def test_list_users_reads_the_registry_once_for_two_reads(store, monkeypatch):
+def test_a_second_user_read_inside_the_ttl_is_served_from_the_cache(store):
     """The cache still collapses repeat reads — now over the DATABASE.
 
-    This counted `_load_users_section`, the YAML section parser, which the
-    registry no longer reaches. The PROPERTY is unchanged and still the point:
-    `list_users` sits on ordinary card paths, and the underlying read costs a
-    ~4.8 ms connection, so two calls must not cost two of them.
+    The PROPERTY is unchanged and still the point: `list_users` sits on
+    ordinary card paths and the underlying read costs a ~4.8 ms connection,
+    so two calls must not cost two of them.
+
+    Measured through the cache's OWN tally rather than a counter wrapped
+    around the loader. That is not just rule compliance: the tally is what
+    production reads too, so this test now fails for the same reason an
+    operator would notice, and the instrument it exercises is one that ships.
     """
-    # Arrange — one registered user; count registry reads on the READ path.
+    # Arrange — one registered user, cache warmed by a first read.
     register_user(kind="agent", names=["alice"], store=store)
-    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
-
-    # Act — two reads inside one TTL window.
     list_users(store)
+    before = cache_stats(_db_users.CACHE_NAME)
+
+    # Act — a second read inside the same TTL window.
     list_users(store)
 
-    # Assert — one read served both.
-    assert reads["n"] == 1
+    # Assert — that read was SERVED, not performed.
+    assert cache_stats(_db_users.CACHE_NAME)["hits"] == before["hits"] + 1
+
+
+def test_a_second_user_read_inside_the_ttl_costs_no_registry_read(store):
+    # Arrange — one registered user, cache warmed by a first read.
+    register_user(kind="agent", names=["alice"], store=store)
+    list_users(store)
+    before = cache_stats(_db_users.CACHE_NAME)
+
+    # Act — a second read inside the same TTL window.
+    list_users(store)
+
+    # Assert — the other half of "served": no connection was opened. A hit
+    # tally that rose while misses ALSO rose would mean a cache that reports
+    # success and reads anyway, which is the failure this pair rules out.
+    assert cache_stats(_db_users.CACHE_NAME)["misses"] == before["misses"]
 
 
 def test_two_cached_user_reads_return_identical_content(store):
@@ -118,27 +132,46 @@ def test_list_users_sees_a_registry_write_on_the_very_next_read(store):
     assert names == ["alice", "bob"]
 
 
-def test_a_registry_write_costs_exactly_one_cache_refill(store, monkeypatch):
-    # Arrange — warm the cache with one user, then start counting.
+def test_a_registry_write_is_never_served_from_the_cache(store):
+    """A read-modify-write served from a cache is a LOST UPDATE.
+
+    `load_users_rows_cached` carries this as a warning ("NEVER SERVE A
+    READ-MODIFY-WRITE FROM HERE") and the write path obeys it by calling the
+    uncached `load_users_rows` under the store lock. Until the cache kept a
+    tally that was a comment; it is now a check.
+
+    The old test approached this by counting loader calls and asserting TWO,
+    spending ten lines explaining why two is correct and not waste. That
+    number conflated the write's own read with the reader's refill, so it
+    would also have been 2 if the WRITE had been served from cache and
+    something else had missed. Asking the cache directly separates them.
+    """
+    # Arrange — warm the cache so there is an entry a write could be served.
     register_user(kind="agent", names=["alice"], store=store)
     list_users(store)
-    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
+    before = cache_stats(_db_users.CACHE_NAME)
+
+    # Act — a write, with a warm entry sitting right there.
+    register_user(kind="agent", names=["bob"], store=store)
+
+    # Assert — it took nothing from the cache.
+    assert cache_stats(_db_users.CACHE_NAME)["hits"] == before["hits"]
+
+
+def test_the_read_after_a_registry_write_misses_and_refills(store):
+    # Arrange — warm the cache, then note the tallies.
+    register_user(kind="agent", names=["alice"], store=store)
+    list_users(store)
+    before = cache_stats(_db_users.CACHE_NAME)
 
     # Act — a write retires the entry; then read again.
     register_user(kind="agent", names=["bob"], store=store)
     list_users(store)
 
-    # Assert — TWO, and the second one is not waste. The write path performs
-    # its own UNCACHED read under the store lock (a read-modify-write must
-    # never be served from a cache), and the following read then refills.
-    #
-    # The old expectation here was ONE, because the write's read was invisible
-    # to the counter: `_store_write` bound `_load_users_section` at import
-    # time, so patching `_store_read`'s attribute could not see it. The
-    # dispatch resolves at call time now, so the counter sees both. The number
-    # changed because the INSTRUMENT got better, not because the code got
-    # worse — worth stating, since a rising count normally means the opposite.
-    assert reads["n"] == 2
+    # Assert — the reader paid for a real read, which is the cost of never
+    # being served a stale registry. `test_list_users_sees_a_registry_write_
+    # on_the_very_next_read` is what that purchase buys.
+    assert cache_stats(_db_users.CACHE_NAME)["misses"] == before["misses"] + 1
 
 
 def test_mutating_a_returned_user_does_not_poison_the_cache(store):
@@ -156,18 +189,24 @@ def test_mutating_a_returned_user_does_not_poison_the_cache(store):
 # === thread summary cache ==================================================
 
 
-def test_list_threads_scans_once_while_the_sidecar_is_unchanged(store, monkeypatch):
-    # Arrange — a two-message thread, then count raw sidecar parses.
+def test_list_threads_does_not_reparse_while_the_sidecar_is_unchanged(store):
+    """The 10.7 s -> cached property: a click re-parses only after a write.
+
+    The old assertion was `parses <= 1`, which a cache that never served
+    would also satisfy at zero — an upper bound cannot detect a cache doing
+    nothing. Asking for a HIT states the thing the bound was gesturing at.
+    """
+    # Arrange — a two-message thread, parsed once to fill the cache.
     append_message("operator", "agent-a", "hello", store=store)
     append_message("agent-a", "operator", "hi back", store=store)
-    parses = _count_calls(monkeypatch, _threads, "_load_threads")
-
-    # Act — two summary reads against the identical file state.
     list_threads(store=store)
+    before = cache_stats(_threads.CACHE_NAME)
+
+    # Act — a second summary read against the identical file state.
     list_threads(store=store)
 
-    # Assert — at most one parse (cache fill) served both; zero on the second.
-    assert parses["n"] <= 1
+    # Assert — the sidecar was not parsed again.
+    assert cache_stats(_threads.CACHE_NAME)["misses"] == before["misses"]
 
 
 def test_two_cached_thread_reads_report_the_same_message_count(store):

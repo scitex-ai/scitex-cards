@@ -291,4 +291,13 @@ def _store_env_stays_pinned(tmp_path_factory) -> None:
     os.environ["SCITEX_DEV_CURRENCY_SEVERITY"] = "silent"
 
 
+# NO `env` FIXTURE HERE ON PURPOSE. One already exists in
+# `tests/scitex_cards/conftest.py`, backed by `_EnvHelper` (set / delete /
+# chdir) and already PA-306-compliant. A second one here would shadow-collide
+# with it — I added one on 2026-08-18 before looking, and every converted test
+# failed with "'_EnvHelper' object is not callable", which is the cheap version
+# of this lesson. Use the existing fixture; extend `_EnvHelper` if it lacks
+# something.
+
+
 # EOF

@@ -441,9 +441,15 @@ def test_the_undrained_backlog_hint_names_the_command_that_fixes_it(
     assert "mcp start" in c["hint"]
 
 
-def test_channel_drain_ok_when_some_seen_even_if_unseen_large(tmp_path):
-    # Arrange — a busy-but-working inbox: drain one batch so seen > 0, then
-    # pile a fresh unseen backlog on top.
+@pytest.fixture()
+def drained_then_piled_check(tmp_path):
+    """A big backlog on an inbox that HAS drained at some point.
+
+    Drain one batch so seen > 0, then pile a fresh unseen backlog on top.
+    This arrangement is deliberately ambiguous from the counts alone: it is
+    what a busy-but-working inbox looks like, AND what an inbox whose drain
+    died five minutes ago looks like.
+    """
     store = _healthy_store(tmp_path)
     agent = "agent-x"
     _enqueue_backlog(store, agent, UNSEEN_BACKLOG_THRESHOLD + 5)
@@ -451,12 +457,58 @@ def test_channel_drain_ok_when_some_seen_even_if_unseen_large(tmp_path):
     _enqueue_backlog(
         store, agent, UNSEEN_BACKLOG_THRESHOLD + 5, prefix="d", day="29", actor="alice"
     )
+    return _check(health(store=store, agent_id=agent), "channel_drain")
 
+
+def test_a_large_backlog_on_a_previously_drained_inbox_is_unknown(
+    drained_then_piled_check,
+):
+    """Was ``ok is True``: "seen > 0 keeps it healthy however big the pile".
+
+    That made the check UNABLE TO FAIL. `record_push` marks a row seen at push
+    time, so `seen > 0` latches true on an agent's first push and stays true
+    for the rest of its life — after which no backlog, of any size, could turn
+    this red. `seen` is lifetime-cumulative and cannot tell "draining now"
+    from "drained last week", so the honest verdict is that it does not know.
+
+    UNKNOWN rather than False on purpose: the drain really may be alive, and
+    `_health.health` keeps None out of the failure count while naming it in
+    the summary, so this reports doubt without inventing an incident.
+    """
+    # Arrange
     # Act
-    c = _check(health(store=store, agent_id=agent), "channel_drain")
+    c = drained_then_piled_check
 
-    # Assert — seen > 0 keeps it healthy however big the unseen pile is.
-    assert c["ok"] is True
+    # Assert
+    assert c["ok"] is None
+
+
+def test_the_unknown_drain_verdict_says_why_it_cannot_tell(
+    drained_then_piled_check,
+):
+    # Arrange
+    # Act
+    c = drained_then_piled_check
+
+    # Assert — an unknown that does not say what would settle it is just a
+    # shrug; this one points at the two checks that measure the CURRENT rail.
+    assert "lifetime-cumulative" in c["hint"]
+
+
+def test_the_drain_detail_separates_confirmed_from_merely_seen(
+    drained_then_piled_check,
+):
+    """The flat `seen=N` is what let a real outage read as health.
+
+    These rows were drained by a poll that marked them seen and nothing ever
+    acknowledged them, so they are exactly the population a flat count hides.
+    """
+    # Arrange
+    # Act
+    c = drained_then_piled_check
+
+    # Assert
+    assert f"seen-but-unconfirmed={UNSEEN_BACKLOG_THRESHOLD + 5}" in c["detail"]
 
 
 # --------------------------------------------------------------------------- #

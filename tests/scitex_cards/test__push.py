@@ -61,7 +61,7 @@ def _hermetic_resolution(tmp_path):
     / per-agent env as the only resolution path unless a test opts back in:
       * user-registry tests override ``SCITEX_CARDS_TASKS_YAML_SHARED`` with their own
         populated ``tmp_path`` store.
-    PA-306-compliant: plain os.environ save/restore, no monkeypatch.
+    PA-306-compliant: plain os.environ save/restore, no env.
     """
     from scitex_cards._db import connect, init_schema
 

@@ -286,6 +286,7 @@ def run_notifyd(
     terminal_report_every: int = DEFAULT_TERMINAL_REPORT_EVERY,
     nudge_sweep_minutes: float | None = None,
     escalate_after: int = DEFAULT_ESCALATE_AFTER,
+    nudge_sweep=None,
 ) -> dict:
     """Run the always-on delivery loop until stopped.
 
@@ -337,6 +338,12 @@ def run_notifyd(
     """
     stop = stop or threading.Event()
     now_fn = now_fn or (lambda: _dt.datetime.now(_dt.timezone.utc))
+    # The liveness sweep, injectable for the same reason as `now_fn` and
+    # `channels` above: a test needs to drive the loop's behaviour when the
+    # sweep RAISES, and patching the module attribute asserts against the
+    # patch rather than against this loop (audit PA-306 `no-mocks`). Default
+    # is the real sweep, so nothing about production changes.
+    sweep_fn = nudge_sweep or _run_stale_nudge_sweep
     sweep_minutes = (
         nudge_sweep_minutes
         if nudge_sweep_minutes is not None
@@ -413,7 +420,7 @@ def run_notifyd(
                     # sweep escaped, which is precisely the coupling the sweep
                     # must never have. Delivery runs even when detection dies.
                     try:
-                        faults.append(_run_stale_nudge_sweep(store=store, now=tick_now))
+                        faults.append(sweep_fn(store=store, now=tick_now))
                     except Exception as exc:  # noqa: BLE001 — never block delivery
                         logger.exception(
                             "notifyd liveness sweep raised; continuing to delivery"

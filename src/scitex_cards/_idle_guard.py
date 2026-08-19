@@ -141,14 +141,23 @@ def evaluate(
     return (True, _reason(agent, cards))
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, stdin=None) -> int:
     """Stop-hook entry point. Exit 2 (block) when claimed work is abandoned, else 0.
 
     Resolves the agent from ``--agent`` or :data:`ENV_AGENT`; reads the store from
     the standard precedence (``$SCITEX_CARDS_TASKS_YAML_SHARED`` …). Reads — but does not
     require — the Stop-hook JSON on stdin. Fail-soft: any error allows the stop.
+
+    ``stdin`` is the payload stream, defaulting to the real ``sys.stdin``. It is
+    a PARAMETER so a caller can hand in a real stream instead of the process's
+    own — which is what a test needs, and the reason it exists: patching
+    ``sys.stdin`` from a test encodes the author's assumption about the
+    collaborator (audit PA-306 `no-mocks`, hook STX-NM002), while passing one in
+    exercises this function exactly as production calls it. Nothing about the
+    default path changes.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
+    stream = sys.stdin if stdin is None else stdin
     agent = ""
     if "--agent" in argv:
         i = argv.index("--agent")
@@ -159,8 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     # Drain stdin (the Stop-hook payload) so the hook never blocks on a full pipe;
     # we do not need its contents — the decision is purely the board state.
     try:
-        if not sys.stdin.isatty():
-            sys.stdin.read()
+        if not stream.isatty():
+            stream.read()
     except Exception:  # noqa: BLE001 — stdin quirks must not break the guard
         pass
 

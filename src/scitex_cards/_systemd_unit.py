@@ -86,14 +86,21 @@ class UnitSpec:
     timeout_start_sec: int = 30
 
 
-def console_script_path(console_script: str) -> Path:
+def console_script_path(console_script: str, interpreter: str | None = None) -> Path:
     """Absolute path to ``console_script``.
 
     Prefers the RUNNING interpreter's own ``bin/`` (so a venv install writes a
     unit pointing at that venv — the common and correct case), then falls back
     to ``$PATH``. Raises :class:`ExecStartUnresolved` if neither resolves.
+
+    ``interpreter`` overrides which interpreter's ``bin/`` is searched;
+    ``None`` — every real caller — uses the running one. It exists so the
+    unresolvable case can be reached by NAMING an empty venv rather than
+    rebinding ``sys.executable``, which is process-wide state that outlives
+    any test that fails to restore it (audit PA-306 `no-mocks`).
     """
-    candidate = Path(sys.executable).parent / console_script
+    interpreter = sys.executable if interpreter is None else interpreter
+    candidate = Path(interpreter).parent / console_script
     if candidate.is_file() and os.access(candidate, os.X_OK):
         return candidate
     found = shutil.which(console_script)
@@ -102,20 +109,25 @@ def console_script_path(console_script: str) -> Path:
         if not path.is_absolute():
             path = path.resolve()
         return path
+    # Names the interpreter ACTUALLY searched, not `sys.executable` — with an
+    # override in play those differ, and a message reporting a directory it
+    # never looked in sends the reader to the wrong place.
     raise ExecStartUnresolved(
         f"cannot locate the `{console_script}` console script — looked in the "
-        f"running interpreter's bin dir ({Path(sys.executable).parent}) and on "
+        f"running interpreter's bin dir ({Path(interpreter).parent}) and on "
         "$PATH. systemd does NOT use your login PATH, so the unit needs an "
         "ABSOLUTE ExecStart and one cannot be derived here. Install the package "
         "into the environment you are generating the unit from (e.g. "
-        f"`{sys.executable} -m pip install -U scitex-cards`), or pass an explicit "
+        f"`{interpreter} -m pip install -U scitex-cards`), or pass an explicit "
         "exec_start."
     )
 
 
-def resolve_exec_start(spec: UnitSpec) -> str:
+def resolve_exec_start(spec: UnitSpec, interpreter: str | None = None) -> str:
     """The ``ExecStart=`` body: an ABSOLUTE console-script path + the args."""
-    return " ".join((str(console_script_path(spec.console_script)), *spec.args))
+    return " ".join(
+        (str(console_script_path(spec.console_script, interpreter)), *spec.args)
+    )
 
 
 def unit_template(spec: UnitSpec) -> str:
@@ -179,6 +191,7 @@ def install_unit(
     *,
     exec_start: str | None = None,
     force: bool = False,
+    interpreter: str | None = None,
 ) -> dict:
     """Write ``spec``'s unit file to the user-unit dir. Does NOT run systemctl.
 
@@ -213,7 +226,12 @@ def install_unit(
         }
     # Resolve BEFORE touching the filesystem: an unresolvable ExecStart must
     # abort the install, not leave a half-written unit behind.
-    resolved = exec_start or resolve_exec_start(spec)
+    # `interpreter` reaches the resolution THIS function performs. Without
+    # it the seam would only cover direct `resolve_exec_start` calls, and the
+    # abort-on-unresolvable path here — the one that matters, because it is
+    # what stops a unit being written that is guaranteed to die at 203/EXEC —
+    # would be untestable without rebinding `sys.executable`.
+    resolved = exec_start or resolve_exec_start(spec, interpreter)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_unit(spec, resolved), encoding="utf-8")
     return {

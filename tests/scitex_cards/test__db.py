@@ -168,36 +168,34 @@ def test_resolve_db_path_env_over_userpath(tmp_path, env):
     assert got == (tmp_path / "env.db")
 
 
-def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
-    """Neutralise both env tiers and record how `local_state.user_path` is called.
+def _resolve_with_delegated_user_path(env):
+    """Neutralise the env tier and resolve through the REAL delegation.
 
-    Returns ``(outcome, calls, sentinel)``, where ``outcome`` is the raised
-    exception rather than a path. It could not be a path since 2026-08-13:
-    the final tier no longer RETURNS the delegated filename, it REFUSES and
-    names it. The delegation itself is unchanged and still observable, which
-    is what the second test below is about.
+    Returns ``(outcome, expected)``, where ``outcome`` is the raised exception
+    rather than a path. It could not be a path since 2026-08-13: the final tier
+    no longer RETURNS the delegated filename, it REFUSES and names it.
+
+    ``expected`` is computed by calling the SAME resolver production calls,
+    `local_state.user_path("cards", "cards.db")`, instead of substituting a
+    sentinel. That is what makes the delegation observable without a spy: a
+    refusal naming this exact path can only have been produced by delegating
+    with the ("cards", "cards.db") key, because any other key yields a
+    different path. Asserting the VALUE therefore proves the CALL, and it also
+    proves the value survives into the message — which a call-recording spy
+    never checked.
     """
     env.delete(_db.ENV_DB)
     from scitex_config._ecosystem import local_state
 
-    calls = []
-    sentinel = tmp_path / "delegated" / "cards.db"
-
-    def fake_user_path(pkg_short, *parts):
-        calls.append((pkg_short, parts))
-        return sentinel
-
-    monkeypatch.setattr(local_state, "user_path", fake_user_path)
+    expected = local_state.user_path("cards", "cards.db")
     try:
         outcome = _db.resolve_db_path()
     except StoreTargetNotConfigured as exc:
         outcome = exc
-    return outcome, calls, sentinel
+    return outcome, expected
 
 
-def test_resolve_db_path_refuses_instead_of_returning_the_user_path(
-    tmp_path, env, monkeypatch
-):
+def test_resolve_db_path_refuses_instead_of_returning_the_user_path(env):
     """Final tier REFUSES. It used to return the delegated filename.
 
     The abolished behaviour was ``got == sentinel``: a SQLite path nobody
@@ -207,44 +205,33 @@ def test_resolve_db_path_refuses_instead_of_returning_the_user_path(
     """
     # Arrange
     # Act
-    got, _calls, _sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
+    got, _expected = _resolve_with_delegated_user_path(env)
 
     # Assert
     assert isinstance(got, StoreTargetNotConfigured)
 
 
-def test_resolve_db_path_delegates_with_the_cards_package_key(
-    tmp_path, env, monkeypatch
-):
-    """The delegation passes the package short-name and the db filename.
+def test_the_refusal_names_the_path_the_cards_key_resolves_to(env):
+    """The refusal names the path the ecosystem resolver gives for our key.
 
     UNCHANGED BY THE ABOLITION, and deliberately still pinned: the filename is
     still resolved through the ecosystem resolver, now to NAME the store in the
     refusal rather than to serve it. A refusal that guessed the path itself
     would send the reader to a file this package does not actually use.
+
+    This replaces a pair of tests that shared a call-recording spy — one
+    asserting the CALL `("cards", ("cards.db",))`, one asserting the returned
+    sentinel appeared in the message. Against the real resolver those are one
+    fact: only the ("cards", "cards.db") key produces this path, so naming it
+    proves the delegation AND proves the value reaches the message. The spy
+    checked the first and assumed the second.
     """
     # Arrange
     # Act
-    _got, calls, _sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
+    got, expected = _resolve_with_delegated_user_path(env)
 
     # Assert
-    assert calls == [("cards", ("cards.db",))]
-
-
-def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
-    """And the name it reports is the one the delegation returned."""
-    # Arrange
-    # Act
-    got, _calls, sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
-
-    # Assert
-    assert str(sentinel) in str(got)
+    assert str(expected) in str(got)
 
 
 # --------------------------------------------------------------------------- #

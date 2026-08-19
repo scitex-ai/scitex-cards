@@ -9,7 +9,7 @@ options stay stable.
 
 Env-precedence coverage for ``_apply_tasks_env`` is included so a regression
 that reverts to the pre-2026-06-05 behaviour (``--tasks`` ignored, project
-store wins) is caught by the suite. Following the "No ``monkeypatch`` /
+store wins) is caught by the suite. Following the "No ``env`` /
 ``mocker``" convention of the rest of the suite, env mutation is restored
 by hand on teardown.
 """
@@ -35,7 +35,7 @@ _ENV_KEY = "SCITEX_CARDS_DB"
 def env_isolated():
     """Save/restore ``$SCITEX_CARDS_DB`` around a test.
 
-    We deliberately do NOT use ``monkeypatch`` (see suite-wide convention in
+    We deliberately do NOT use ``env`` (see suite-wide convention in
     ``tests/integration/test_peer_edges.py``). The fixture pops the key on
     entry so each test starts with a clean slate, and restores the original
     value (or absence) on teardown.

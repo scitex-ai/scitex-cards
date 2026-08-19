@@ -1,3 +1,12 @@
+---
+description: |
+  [TOPIC] PR-merge recording mandate — the recording-gap fix
+  [DETAILS] Long-form rationale and the exact steps behind SKILL.md's mandate to
+  record evidence at PR-merge / issue-close time, so a merge that HAPPENED stays
+  distinguishable from a merge that was merely reported.
+tags: [scitex-cards-pr-merge-recording-mandate]
+---
+
 # 60 — PR-merge recording mandate (the recording-gap fix)
 
 Sister doc to the **⚑ MANDATE — record evidence at PR-merge / issue-close

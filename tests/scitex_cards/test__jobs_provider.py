@@ -9,7 +9,7 @@ typo in the schedule / kind / command / port silently breaks the
 operator's primary daily UI surface, so we pin every field.
 
 Real fakes only (PA-306 / STX-NM*) — no ``unittest.mock``,
-no ``monkeypatch``.
+no ``env``.
 """
 
 from __future__ import annotations

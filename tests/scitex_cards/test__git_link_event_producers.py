@@ -14,7 +14,7 @@ onto the hook bus on a GENUINELY NEW link:
 EMIT-ONLY: there is intentionally NO consumer yet (C4 dispatcher is a
 separate card). Tests capture the emitted card-event via the documented
 in-process ``entry_points=`` injection seam (a real fake handler) — no
-mocks, no monkeypatch (STX-NM / PA-306). AAA pattern.
+mocks, no env (STX-NM / PA-306). AAA pattern.
 """
 
 from __future__ import annotations

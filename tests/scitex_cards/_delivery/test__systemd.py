@@ -49,38 +49,55 @@ def xdg_home(tmp_path, env):
 
 
 @pytest.fixture
-def broken_console_script_env(tmp_path, env, monkeypatch):
+def broken_console_script_env(tmp_path, env):
     """A real interpreter path with an EMPTY bin dir and an empty ``$PATH``.
 
     Nothing to find beside the interpreter, and nothing on $PATH either, so
     the console script is genuinely unresolvable.
+
+    The interpreter is NAMED to the verb rather than swapped into ``sys``:
+    ``sys.executable`` is process-wide state that outlives a test which fails
+    to restore it, and the directory here is real, empty and on disk, so what
+    the resolver searches is a genuine dead end rather than a rewritten
+    attribute.
     """
     empty_bin = tmp_path / "empty-venv" / "bin"
     empty_bin.mkdir(parents=True)
-    monkeypatch.setattr(sys, "executable", str(empty_bin / "python"))
     env.set("PATH", str(tmp_path / "nowhere"))
     env.set("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     return empty_bin
 
 
 @pytest.fixture
-def subprocess_run_calls(monkeypatch):
-    """Record every ``subprocess.run`` call so we can PROVE none was made."""
-    calls: list = []
-    real_run = subprocess.run
+def planted_systemctl(tmp_path, env):
+    """A REAL ``systemctl`` first on ``$PATH`` that records being invoked.
 
-    def _spy_run(*args, **kwargs):
-        calls.append((args, kwargs))
-        return real_run(*args, **kwargs)
+    Replaces a ``subprocess.run`` spy. Nothing is patched: the sentinel is an
+    executable script, so a shell-out by name reaches it and leaves a file
+    behind. That watches the DOOR rather than one Python function, and so it
+    also catches ``os.system`` / ``Popen`` / anything that never touches
+    ``subprocess.run``.
 
-    monkeypatch.setattr(subprocess, "run", _spy_run)
-    return calls
+    Yields the marker path. ``test_the_planted_systemctl_is_reachable`` is the
+    positive control: an absence-assertion is worthless unless the thing whose
+    absence is asserted could have appeared.
+    """
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir(parents=True, exist_ok=True)
+    marker = tmp_path / "systemctl-was-invoked"
+    sentinel = fake_bin / "systemctl"
+    sentinel.write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{marker}"\n', encoding="utf-8"
+    )
+    sentinel.chmod(0o755)
+    env.set("PATH", f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}")
+    return marker
 
 
-def _resolve_exec_start_error():
+def _resolve_exec_start_error(empty_bin):
     """Return the ``ExecStartUnresolved`` raised by ``resolve_exec_start``."""
     try:
-        _systemd.resolve_exec_start()
+        _systemd.resolve_exec_start(str(empty_bin / "python"))
     except _systemd.ExecStartUnresolved as exc:
         return exc
     raise AssertionError("resolve_exec_start() did not fail")
@@ -202,16 +219,30 @@ def test_rendered_unit_exec_start_program_exists_on_disk():
     assert Path(program).is_file()
 
 
-def test_console_script_prefers_the_running_interpreters_bin_dir():
-    # Arrange
-    # a venv install must point the unit at THAT venv.
+@pytest.fixture
+def console_script_beside_interpreter():
+    """The console script in THIS interpreter's bin dir, or skip.
+
+    The precondition lives here rather than inside the test because a
+    ``pytest.skip`` guard in the body counts toward the one-assertion rule and,
+    more usefully, because a skipped PRECONDITION and a failed ASSERTION are
+    different outcomes that should not share a function.
+    """
     candidate = Path(sys.executable).parent / "scitex-cards"
     if not (candidate.is_file() and os.access(candidate, os.X_OK)):
         pytest.skip("no console script beside this interpreter to prefer")
+    return candidate
+
+
+def test_console_script_prefers_the_running_interpreters_bin_dir(
+    console_script_beside_interpreter,
+):
+    # Arrange
+    # a venv install must point the unit at THAT venv.
     # Act
     resolved = _systemd.console_script_path()
     # Assert
-    assert resolved == candidate
+    assert resolved == console_script_beside_interpreter
 
 
 def test_unresolvable_console_script_raises_exec_start_unresolved(
@@ -222,7 +253,7 @@ def test_unresolvable_console_script_raises_exec_start_unresolved(
     # Act
     # Assert
     with pytest.raises(_systemd.ExecStartUnresolved):
-        _systemd.resolve_exec_start()
+        _systemd.resolve_exec_start(str(broken_console_script_env / "python"))
 
 
 def test_unresolvable_error_names_the_absolute_exec_start_requirement(
@@ -230,7 +261,7 @@ def test_unresolvable_error_names_the_absolute_exec_start_requirement(
 ):
     # Arrange
     # Act
-    error = _resolve_exec_start_error()
+    error = _resolve_exec_start_error(broken_console_script_env)
     # Assert
     # the message must name the problem.
     assert "ABSOLUTE ExecStart" in str(error)
@@ -241,7 +272,7 @@ def test_unresolvable_error_names_the_pip_install_remedy(
 ):
     # Arrange
     # Act
-    error = _resolve_exec_start_error()
+    error = _resolve_exec_start_error(broken_console_script_env)
     # Assert
     # ...and the remedy.
     assert "pip install" in str(error)
@@ -254,13 +285,13 @@ def test_install_unit_aborts_when_exec_start_is_unresolvable(
     # Act
     # Assert
     with pytest.raises(_systemd.ExecStartUnresolved):
-        _systemd.install_unit()
+        _systemd.install_unit(interpreter=str(broken_console_script_env / "python"))
 
 
 def test_aborted_install_leaves_no_half_written_unit(broken_console_script_env):
     # Arrange
     with contextlib.suppress(_systemd.ExecStartUnresolved):
-        _systemd.install_unit()
+        _systemd.install_unit(interpreter=str(broken_console_script_env / "python"))
     # Act
     exists = _systemd.unit_path().exists()
     # Assert
@@ -342,14 +373,28 @@ def test_install_unit_returns_the_enable_now_command(xdg_home):
 
 
 def test_install_unit_never_spawns_a_systemctl_subprocess(
-    xdg_home, subprocess_run_calls
+    xdg_home, planted_systemctl
 ):
     # Arrange
     # Act
     _systemd.install_unit()
     # Assert
     # host-enablement is operator-gated, never executed here.
-    assert subprocess_run_calls == []
+    assert not planted_systemctl.exists()
+
+
+def test_the_planted_systemctl_is_reachable(xdg_home, planted_systemctl):
+    """The control for the test above — proof the trap is armed.
+
+    Without it, a sentinel that was never executable or never on $PATH would
+    report the installer as well-behaved regardless of what it did.
+    """
+    # Arrange
+    # Act
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+
+    # Assert
+    assert planted_systemctl.exists()
 
 
 def test_first_install_without_force_writes_the_unit(xdg_home):

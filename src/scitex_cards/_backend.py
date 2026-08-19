@@ -99,6 +99,19 @@ class LocalBackend:
 
     name = "local"
 
+    def __init__(self, staleness_module=None) -> None:
+        """``staleness_module`` is the currency oracle this backend consults.
+
+        ``None`` — every real caller, including :func:`get_backend` — imports
+        ``scitex_dev.staleness`` the usual way. A caller may pass a module-like
+        object exposing ``ensure_current`` instead, which is how the
+        stale-install behaviour is exercised without INSERTING A FAKE INTO
+        ``sys.modules``: that insertion is global, survives for as long as the
+        entry is in place, and any other code importing scitex-dev during that
+        window silently gets the fake too.
+        """
+        self._staleness_module = staleness_module
+
     # -- task verbs (1:1 with _store) ----------------------------------- #
 
     def add_task(self, tasks_path: Any = None, **fields: Any) -> dict:
@@ -239,7 +252,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
         # cursor at handover, so a consumer that dies before delivering has
         # destroyed the message. Deprecated, NOT changed — sac reads this path.
@@ -293,10 +306,34 @@ class LocalBackend:
                     seen_ids.add(rid)
                 notifications.append(record)
         from ._inbox_receipt import unconfirmed_ids
+        from ._store_target import store_label
 
         payload = {
             "agent": agent,
             "recipient_id": recipient_id,
+            # WHICH STORE THESE ROWS CAME FROM. The confirm side reports the
+            # same field, and the pair is the point: an empty poll and a
+            # confirmation that answers `unknown` are BOTH what a correct call
+            # against the wrong database looks like, and neither is
+            # distinguishable on its own from "there is simply nothing here".
+            # Two labels that disagree name the fault outright.
+            #
+            # ONE-SIDED, AND THE LIMIT IS NOT A DETAIL. Agreement covers only
+            # the CLIENT's own read and write. The delivery daemon resolves
+            # its target independently and stamps nothing, so the carded
+            # incident — daemon on :5442, this poll AND the ack both on
+            # :55432 — produces two AGREEING labels while the messages keep
+            # arriving from a third store. Reading agreement as "no split"
+            # is the false-reassurance this field must not manufacture.
+            #
+            # Resolved from `store`, the argument this poll actually read
+            # through, so it cannot caption a target the read did not use.
+            # A LABEL, deliberately, not an identity: `instance_id` would be
+            # stronger — it separates two databases behind one loopback DSN —
+            # but obtaining it OPENS A CONNECTION, and this is the poll/ack
+            # path, run in a loop by every agent. See the card for why the
+            # cheap half ships first.
+            "store": store_label(store),
             "notifications": notifications,
             # The ids still awaiting confirmation, and the verb that confirms
             # them: the safe loop must be the OBVIOUS one to write from here.
@@ -335,7 +372,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         return confirm_notifications(agent, ids, store=store)
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
@@ -344,7 +381,7 @@ class LocalBackend:
         # CURRENCY VISIBILITY (module docstring): the confirmed entry point
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         return _threads.append_message(sender, to, body, store=store)
 
     def dm_list(
@@ -355,7 +392,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        warn_if_stale_once(self._staleness_module)
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:

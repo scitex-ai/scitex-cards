@@ -353,4 +353,74 @@ def test_an_unknown_delivery_check_does_not_mark_the_run_unhealthy(store):
     assert _named_check(report, "delivery_confirmed")["ok"] is None
 
 
+# --------------------------------------------------------------------------- #
+# one-shot vs repeating — losing a DM is not losing a digest                   #
+# --------------------------------------------------------------------------- #
+def _push_unconfirmed(store, event_type, index):
+    """One record of ``event_type``, pushed long ago, confirmed by nobody."""
+    record = _inbox.enqueue(
+        AGENT,
+        event_type=event_type,
+        card_id=f"card-{index}",
+        body=f"body {index}",
+        actor="operator",
+        ts=f"2026-07-29T06:0{index}:00Z",
+        store=store,
+    )
+    record_push(AGENT, [record["id"]], at=PUSHED_AT_STAMP, store=store)
+    return record["id"]
+
+
+@pytest.fixture()
+def one_dm_lost_among_many_digests(store):
+    """One unconfirmed `dm` plus enough digests to crowd it out of a sample.
+
+    The realistic shape: sweeps fire every few minutes and a DM arrives once,
+    so on any real inbox the recoverable records vastly outnumber the
+    unrecoverable one. That is exactly when a single blended count, and a
+    sample truncated in arrival order, hide the record that matters.
+    """
+    dm_id = _push_unconfirmed(store, "dm", 1)
+    for index in range(2, 9):
+        _push_unconfirmed(store, "reminder", index)
+    return {"dm_id": dm_id, "report": health(store=store, agent_id=AGENT)}
+
+
+def test_the_unrecoverable_one_shot_is_counted_separately(
+    one_dm_lost_among_many_digests,
+):
+    # Arrange
+    check = _named_check(one_dm_lost_among_many_digests["report"], "delivery_confirmed")
+    # Act
+    detail = check["detail"]
+    # Assert
+    assert "1 ONE-SHOT" in detail
+
+
+def test_the_repeating_ones_are_counted_separately(one_dm_lost_among_many_digests):
+    # Arrange
+    check = _named_check(one_dm_lost_among_many_digests["report"], "delivery_confirmed")
+    # Act
+    detail = check["detail"]
+    # Assert — seven sweeps, each superseded by the next; a delay, not a loss.
+    assert "7 repeating" in detail
+
+
+def test_the_lost_dm_survives_the_sample_truncation(one_dm_lost_among_many_digests):
+    """The reason the split exists, not a formatting preference.
+
+    The sample is capped at five ids out of eight overdue. Truncating in
+    arrival order would be a coin flip on whether the one id worth chasing is
+    printed; ordering one-shots first makes it certain. An operator who reads
+    only the ids must be handed the unrecoverable one.
+    """
+    # Arrange
+    scenario = one_dm_lost_among_many_digests
+    check = _named_check(scenario["report"], "delivery_confirmed")
+    # Act
+    detail = check["detail"]
+    # Assert
+    assert scenario["dm_id"] in detail
+
+
 # EOF

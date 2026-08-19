@@ -2,6 +2,174 @@
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-08-18
+
+### BREAKING: the retired `scitex_todo.hooks` entry-point group is no longer called
+
+A card-event consumer registered only under `scitex_todo.hooks` is not invoked.
+Re-register under `scitex_cards.hooks` in your own pyproject and reinstall.
+
+The group was aliased for one day and the alias is removed on the operator's
+ruling: 「そんなものすぐ壊せばいい；ハードに todo から cards に行かないから
+ずるずると壊れっぱなし」 — break it now, because without a hard cut from todo
+to cards the half-migrated state drags on indefinitely. An alias removes the
+*pressure* to migrate while leaving the old name load-bearing forever.
+
+**The break is loud, not silent.** The 2026-08-17 failure this replaces was not
+that a consumer broke — it was that dispatch looked in an empty group, called
+nobody, raised nothing, and every health check stayed green. So the dead group
+is still detected, reported at ERROR naming each straggler, and now fails a
+health check. Breaking hard and breaking quietly are different things; only the
+second one is a bug.
+
+### An unexpanded `${VAR}` can no longer be persisted as a card's author
+
+The creator door accepted `${SCITEX_CARDS_AGENT_ID}` — the shape of a
+substitution that did not happen — and wrote it into `created_by`. This was
+asked for on 2026-07-19 and never built:
+
+    _channel_identity.resolve_agent_id   rejects a leading '$'   <- existed
+    _store._resolve_creator_or_raise     empty + "unknown" only  <- did not
+
+which is exactly the asymmetry the incident recorded in its own words:
+"dm_send FAILS LOUD, add_task FAILS SILENT". 15 rows on the live board still
+carry that literal; their authorship is unrecoverable.
+
+The predicate is deliberately broader than the store-target one — `${` and `$(`
+there, because a bare `$` is legal in a POSIX filename; any leading `$` here,
+because no agent is named `$`-anything.
+
+### Two conditions that had no reader now have instruments
+
+- `hook_consumers_registered` (delivery) — a consumer stranded in the dead
+  group. **Per-host**: it reads installed metadata, so every verdict names the
+  machine and says so, the passing line included, because a green result is the
+  one nobody re-measures.
+- `no_placeholder_authors` (advisory) — cards whose author is an unexpanded
+  placeholder. **Fleet-wide**: it queries the shared store. The rows are
+  reported, never rewritten: replacing a non-answer with a plausible guess is
+  worse, since afterwards it is indistinguishable from a real answer.
+
+The second exists because the 2026-07-19 rows were repaired on 07-21, the card
+closed on "0 rows carry the literal env var", and a **restore** brought them
+back — uncounted for a month behind a closed card. The useful artifact is the
+detector, not the repair.
+
+Both suggested by scitex-agent-container, whose argument for the first was that
+the ERROR-level log added earlier the same day was insufficient: "an ERROR with
+no reader is the same silence in a louder font."
+### A poll and a confirm each name the store they used
+
+A consumer that polls one store and confirms against another gets no error from
+either call: the poll returns nothing, and the confirmation answers `unknown`
+for every id. Both are indistinguishable from an ordinary empty inbox, and
+`unknown` reads as a statement about the IDS when the truth is a statement
+about the DATABASE.
+
+`poll_notifications` and `ack_notifications` now both return `store` — the
+target that call actually read or wrote through, rendered by `store_label` so
+DSN credentials never reach a transcript.
+
+The comparison is ONE-SIDED, and the docstrings say so: two labels that DIFFER
+identify a split; two that AGREE mean only that this client read and wrote in
+one place. The delivery daemon resolves its own target and stamps nothing, so a
+third store can be feeding the inbox while both labels agree. Agreement is
+CANNOT-TELL, not MATCHES.
+
+### The store identity pin checks BOTH halves (BREAKING for anyone who pinned one)
+
+`SCITEX_CARDS_STORE_UUID` was read, reported, and never compared. Found by
+dotfiles on 2026-08-17 by mutation-testing the gate rather than reading it —
+setting a deliberately wrong value and checking whether the gate noticed.
+Reproduced on shipped 0.48.0:
+
+    SCITEX_CARDS_STORE_UUID=deadbeef-1111-4222-8333-444455556666 \
+    SCITEX_CARDS_STORE_INSTANCE=7672112238472680366 \
+      scitex-cards resolve-store --json
+
+    "store_uuid":       "1d55dd6e-3d2a-4c24-a429-a78835ab988f"
+    "expected_uuid":    "deadbeef-1111-4222-8333-444455556666"
+    "identity_verdict": "matches"       <-- differing values on adjacent lines
+    "may_proceed":      true
+
+Both call sites passed the INSTANCE into a single `expected` field, so the uuid
+never reached a comparison. The collapse of two independent expectations into
+one field was the defect, so `IdentityCheck` now carries them separately.
+
+**Both halves are now required for a pass**, and an instance-only pin answers
+`cannot-tell` rather than `matches`. That is deliberate: the instance identifies
+the SERVER, and a database restored onto that same server keeps its
+`system_identifier` while getting a NEW `store_uuid` — the 2026-08-09
+frozen-store incident this pin exists to catch. The uuid alone is equally
+insufficient: three databases once answered the same `store_uuid` ~300 cards
+apart, because a uuid is a row and a dump carries rows.
+
+**Alongside, never instead of.** Only the instance half was live, so the
+two-ports-on-one-host case (measured on nas-03, same uuid, different
+`system_identifier`, one seven days stale) was being caught by accident; a
+repair that simplified toward the uuid would have converted a working guard
+into one that passes a week-old board.
+
+The comparison moved to a new `_store_identity_decision.decide_identity` and
+both guards now probe-then-delegate. They previously carried two bodies "kept
+IDENTICAL by discipline" — which is the arrangement that drifted, and is why
+one of them stopped checking the uuid. `IdentityVerdict` and `IdentityCheck`
+are re-exported from `_store_instance`, so existing imports are unaffected.
+
+`StoreIdentityRefused` now names BOTH environment variables; the old hint sent
+the reader to pin one and hit the same refusal again.
+### Reassign narrows its write to the cards it touched
+
+`_db_mirror` documents a lost-write mechanism distinct from the deadlock
+rollback: a caller writing card A re-asserts its STALE copy of card B over
+another agent's committed change, "and both are told they succeeded". Measured
+on the live board 2026-08-10 — a `complete_task` that RETURNED status=done was
+later found back at `blocked`, reverted by writes to unrelated cards.
+
+`touched_ids` is the built mitigation. An AST audit of all 21
+`_save_doc_unlocked` call sites found the two reassign verbs were the only card
+verbs omitting it — and they are the worst to omit, because a stale-copy
+overwrite there reverts another agent's OWNERSHIP change rather than a field.
+
+The two sites need DIFFERENT sets, which a careless fix gets wrong:
+
+    reassign_all    BULK    -> touched_ids=moved       (every card it moved)
+    reassign_task   SINGLE  -> touched_ids=[task_id]
+
+`reassign_all` has no `task_id`. Narrowing it to a single id would persist one
+ownership change and silently drop the other N-1 — worse than the broad write,
+which at least keeps everything it touched.
+
+Neither verb touches a peer card: every field written (`agent`, `assignee`,
+`scope`, the audit comment, `subscribers`, `last_activity`) belongs to the card
+being moved, so the touched set is exactly the moved ids.
+### A "no such card" error names the store it searched
+
+All seven raise sites interpolated their own local `tasks_path` / `resolved`
+variable — the LOCAL sidecar path — while the lookup that had just failed ran
+against the resolved store. Measured on the deployed 0.48.0:
+
+    resolve_store().resolved  ->  postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+    comment_task(bad_id)      ->  task id '...' not found in
+                                  /home/agent/.scitex/cards/tasks.yaml
+
+The named value played no part in the search. `_read_write_doc(path)` ignores
+its argument entirely — its body is `_read_canonical_db_or_raise()`, which takes
+none — so that path served the file lock and this one string, and nothing else.
+`_paths` already said so in prose: "interpolates the path into an error message
+only".
+
+That is worse than a vague message because it is actionable in the WRONG
+DIRECTION: it sent a peer hunting a second store that does not exist, and cost
+them a conclusion they had to retract to another agent.
+
+One builder, `_task_not_found(task_id)`, now replaces seven copies of the
+sentence, and reaches for the existing `store_label()` — which strips DSN
+credentials before this reaches a log and never routes a URL through `Path`.
+A source scan pins it: the test fails on the eighth site written the old way,
+which is how the first six survived.
+
+
 ## [0.48.0] - 2026-08-19
 
 ### The forgetting horizon is 7 days, not 30 (BREAKING)

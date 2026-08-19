@@ -140,15 +140,15 @@ def test_unknown_attribute_still_raises():
     assert raised is not None
 
 
-def test_resolver_prefers_scitex_cards_dist(monkeypatch):
-    """Both dists installed during the transition — the new name wins."""
-    # Arrange
-    import importlib.metadata as md
-
-    monkeypatch.setattr(md, "version", lambda dist: {"scitex-cards": "9.9.9"}[dist])
+def test_resolver_reads_the_scitex_cards_dist():
+    """The resolver asks for THIS dist by name and returns what it is told."""
+    # Arrange — a real reader with importlib.metadata.version's contract. The
+    # dict lookup is the assertion's other half: a resolver that asked for a
+    # different dist name raises KeyError here rather than quietly passing.
+    asked = {"scitex-cards": "9.9.9"}
 
     # Act
-    resolved = scitex_cards._resolve_version()
+    resolved = scitex_cards._resolve_version(version_of=lambda dist: asked[dist])
 
     # Assert
     assert resolved == "9.9.9"
@@ -169,18 +169,22 @@ def test_resolver_prefers_scitex_cards_dist(monkeypatch):
 # still real and is still covered by the test immediately following.
 
 
-def test_resolver_falls_back_to_local_when_uninstalled(monkeypatch):
-    """Running from a source tree with neither dist installed."""
+def test_resolver_falls_back_to_local_when_uninstalled():
+    """Running from a source tree with the dist not installed.
+
+    The reader here RAISES the error the stdlib raises, rather than the
+    module attribute being swapped — so this exercises the same `except
+    PackageNotFoundError` branch by making the failure happen, which is what
+    an uninstalled tree actually does to the resolver.
+    """
     # Arrange
     import importlib.metadata as md
 
-    def _version(dist):
+    def _uninstalled(dist):
         raise md.PackageNotFoundError(dist)
 
-    monkeypatch.setattr(md, "version", _version)
-
     # Act
-    resolved = scitex_cards._resolve_version()
+    resolved = scitex_cards._resolve_version(version_of=_uninstalled)
 
     # Assert
     assert resolved == "0.0.0+local"

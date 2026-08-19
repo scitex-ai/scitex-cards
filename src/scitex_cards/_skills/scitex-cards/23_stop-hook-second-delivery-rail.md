@@ -1,3 +1,13 @@
+---
+description: |
+  [TOPIC] The Stop hook as a SECOND delivery rail
+  [DETAILS] `scitex-cards stop-hook` does two jobs: it refuses a stop while the
+  agent's board holds runnable work, AND it delivers pending notifications
+  itself, requiring an acknowledgement before the turn may end — so delivery
+  never depends on the push rail alone.
+tags: [scitex-cards-stop-hook-second-delivery-rail]
+---
+
 # The Stop hook as a SECOND delivery rail
 
 `scitex-cards stop-hook` now does two jobs. It still refuses a stop while the
@@ -132,4 +142,4 @@ scitex-agent-container or claude-code-telegrammer. This rail imports neither and
 assumes no sac-managed environment. It works for an agent that installed
 scitex-cards and nothing else.
 
-<!-- EOF -->
+

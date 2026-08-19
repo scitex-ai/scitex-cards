@@ -14,13 +14,12 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from .._paths import resolve_tasks_path
+from .._paths import local_store_path
 from ._model import User, UserValidationError, validate_user
 
-
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path through the same chain the task API uses."""
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path — see :func:`scitex_cards._paths.local_store_path`.
+#: Third of three byte-identical copies of this resolver; now one definition.
+_resolved_store = local_store_path
 
 
 def _load_users_section(path: Path) -> list[dict]:

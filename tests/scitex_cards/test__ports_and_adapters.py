@@ -288,7 +288,7 @@ def test_open_acl_allows_write_any_field():
 # Agent career (ADR-0009) — host@name identity helpers, AgentDirectoryPort,
 # EmptyAgentDirectory default, resolver injection seam, dedup-by-join-key.
 #
-# No mocks / no monkeypatch: the resolver is exercised through its
+# No mocks / no env: the resolver is exercised through its
 # `entry_points=` injection seam with real fake entry-point objects
 # (`.name` + `.load()`), exactly like tests/scitex_cards/test__hooks.py.
 # ===========================================================================

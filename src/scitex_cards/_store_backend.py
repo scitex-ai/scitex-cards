@@ -47,6 +47,8 @@ can do.
 
 from __future__ import annotations
 
+import time
+
 
 def _current_stored_ids(db_target) -> set[str]:
     """The ids the ``tasks`` table ALREADY has, read fresh from the store.
@@ -72,6 +74,82 @@ def _current_stored_ids(db_target) -> set[str]:
         return {str(r["id"]) for r in rows}
     finally:
         conn.close()
+
+
+#: SQLSTATEs a transaction may lose through NO FAULT OF ITS OWN, where the
+#: whole transaction is rolled back and re-running it is the documented cure:
+#: 40P01 deadlock_detected, 40001 serialization_failure.
+#:
+#: MEASURED, WHICH IS WHY THIS EXISTS. handyman-03 hit 40P01 on two concurrent
+#: `scitex-cards comment` calls (2026-08-18 09:08Z, tasks vs task_comments taken
+#: in opposite order) and the identical write succeeded on retry seven minutes
+#: later. sac lost 14 of 178 serial writes the same day and ALL 14 persisted on
+#: retry with unchanged input. A deadlock victim is safe to retry BY DEFINITION
+#: — Postgres rolls the loser back entirely — and this mirror is an upsert keyed
+#: by card id, so a repeat is idempotent even where the first attempt got part
+#: way.
+_RETRYABLE_SQLSTATES = frozenset({"40P01", "40001"})
+
+#: Attempts INCLUDING the first. Three, not more: if a card cannot be written
+#: in three tries the contention is a problem to report, not to outwait.
+_WRITE_ATTEMPTS = 3
+
+#: Seconds before retry N (multiplied by the attempt number). Short — the
+#: contention window here is one transaction, not a queue.
+_WRITE_RETRY_BACKOFF_S = 0.05
+
+
+def _is_retryable_conflict(exc: BaseException) -> bool:
+    """True for a lost-race SQLSTATE, WITHOUT importing the driver.
+
+    Reads ``exc.sqlstate``, which psycopg sets on every database error and
+    which SQLite errors simply do not have. Matching on the code rather than
+    on an exception CLASS keeps this file free of a psycopg import it would
+    otherwise need at module scope on a sqlite-only install — and keeps it
+    honest: it retries a documented transient condition, never "an error that
+    looked like it might go away".
+    """
+    return getattr(exc, "sqlstate", None) in _RETRYABLE_SQLSTATES
+
+
+def _retrying_mirror_write(
+    mirror,
+    doc,
+    db_target,
+    *,
+    deleted_ids,
+    touched_ids,
+    expected_revision,
+):
+    """Run ``mirror``, retrying ONLY a transaction that lost a race.
+
+    NOTHING IS SWALLOWED, which matters more here than the retry does. This
+    module's docstring is explicit that the write path "must NOT take the
+    mirror's best-effort, never-raise posture: a failed write MUST raise and
+    the caller MUST see it." So an error without a retryable SQLSTATE is
+    re-raised on the spot, and a retryable one is re-raised too once the
+    attempts are spent. The only thing this changes is how many times a
+    doomed-by-contention write is attempted before the caller hears about it.
+
+    ``mirror`` is a parameter so the retry can be exercised against a
+    collaborator that fails on demand. Every real caller passes
+    :func:`_db_mirror.mirror_doc_incremental`.
+    """
+    for attempt in range(_WRITE_ATTEMPTS):
+        try:
+            return mirror(
+                doc,
+                db_target,
+                store_path=db_target,
+                deleted_ids=deleted_ids,
+                touched_ids=touched_ids,
+                expected_revision=expected_revision,
+            )
+        except Exception as exc:  # noqa: BLE001 — re-raised unless retryable
+            if not _is_retryable_conflict(exc) or attempt == _WRITE_ATTEMPTS - 1:
+                raise
+            time.sleep(_WRITE_RETRY_BACKOFF_S * (attempt + 1))
+    raise AssertionError("unreachable: the loop above always returns or raises")
 
 
 def _assert_no_shrink(
@@ -201,11 +279,12 @@ def write_doc_to_db(
 
     # `mirror_doc_incremental` already raises on failure — no try/except here
     # ON PURPOSE. Adding one could only make this quieter, which is the one
-    # direction this function must never move.
-    return mirror_doc_incremental(
+    # direction this function must never move. The retry is NOT such a
+    # try/except; see `_retrying_mirror_write`.
+    return _retrying_mirror_write(
+        mirror_doc_incremental,
         doc,
         db_target,
-        store_path=db_target,
         deleted_ids=deleted_ids,
         touched_ids=touched_ids,
         expected_revision=expected_revision,

@@ -2,6 +2,9 @@
 description: |
   [TOPIC] Fleet-wide propagation of the scitex-cards skill IDs into every
   agent's spec.yaml so every agent reads the usage skill on boot.
+  [DETAILS] The manifest names which skill IDs belong in every spec, and the
+  propagate verb writes them there. Without it a new agent boots without the
+  usage skill and improvises its own card conventions.
   [WHEN] Read on every agent-container update wave + every time a new
   agent is added to the fleet. This leaf documents WHY the propagation
   exists, WHAT the manifest is, and HOW to run the propagate CLI verb.

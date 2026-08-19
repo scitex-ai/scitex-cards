@@ -30,7 +30,7 @@ again and served an empty board instead).
 
 Together they say the thing that matters: the guard DISCRIMINATES.
 
-No mocks and no ``monkeypatch``: a real temp SQLite database, real cards, real
+No mocks and no ``env``: a real temp SQLite database, real cards, real
 second processes, and the real guard.
 """
 

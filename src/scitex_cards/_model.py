@@ -173,9 +173,24 @@ def _canonical_source_label() -> str:
     except Exception:  # noqa: BLE001 -- a label must never break the read
         return "<store:unresolved>"
     if is_postgres_url(target):
-        # Strip any query string: DSNs carry credentials there, and this label
-        # is written into warnings that land in logs.
-        return f"<postgres:{str(target).split('?', 1)[0]}>"
+        # *** THE QUERY STRING IS NOT THE ONLY PLACE CREDENTIALS LIVE. ***
+        # This stripped `?...` and stopped, so a DSN's USERINFO went straight
+        # through: `postgresql://cards_user:hunter2@10.0.0.7:55432/scitex_cards`
+        # rendered verbatim into every tolerated-validation warning — and those
+        # warnings land in logs and agent transcripts. Caught 2026-08-19 by
+        # test__task_not_found_names_the_store.py::test_the_error_does_not_leak
+        # _the_password when this label was routed into the not-found error.
+        # The old comment asserted the safety it did not implement, which is
+        # why nothing noticed: it named credentials and handled one of the two
+        # places they occur.
+        #
+        # `store_label` OWNS the stripping (userinfo AND query) and is the
+        # single rendering point for it. Reusing it rather than repeating the
+        # partition logic means a future fix to either lands in both, which is
+        # the whole reason this package keeps consolidating these labels.
+        from ._store_target import store_label  # noqa: PLC0415
+
+        return f"<postgres:{store_label(target)}>"
     return f"<sqlite:{target}>"
 
 

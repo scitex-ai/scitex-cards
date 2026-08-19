@@ -118,10 +118,21 @@ class StoreIdentityRefused(RuntimeError):
         self.target = target
         super().__init__(
             f"REFUSING to use {target!r}: {check.reason}\n"
-            f"Pin the store you trust with ${ENV_PINNED_INSTANCE}=<instance id>, "
-            f"and read the instance id of any store with "
-            f"`scitex-cards resolve-store --json` (field `instance_id`)."
+            # NAMES BOTH HALVES, because as of 2026-08-19 pinning one is not
+            # enough and a hint that names one sends the reader to do half the
+            # work and hit this same refusal again. An error message outlives
+            # the contract it describes unless it is changed with the contract.
+            f"Pin the store you trust with ${ENV_PINNED_INSTANCE}=<instance id> "
+            f"AND ${_ENV_EXPECTED_STORE_UUID}=<store uuid> — BOTH are required: "
+            f"the instance says which server, the uuid says which board. Read "
+            f"both for any store with `scitex-cards resolve-store --json` "
+            f"(fields `instance_id` and `store_uuid`)."
         )
+
+
+#: The uuid half's env name, imported rather than re-spelled so the two
+#: modules cannot drift on the string an operator has to type.
+from ._store_uuid import ENV_EXPECTED_STORE_UUID as _ENV_EXPECTED_STORE_UUID
 
 
 def pinned_instance(explicit: str | None = None) -> Optional[str]:
@@ -215,65 +226,59 @@ def check_resolution(
     """
     from ._store_target import resolve_store_target
 
+    from ._store_uuid import expected_store_uuid, store_uuid_at
+
     _arg = store if isinstance(store, (str, type(None))) else str(store)
     target = resolve_store_target(_arg)
     observed = instance_at(target)
-    return _check_against(observed, pinned_instance(expected))
+    # BOTH HALVES, for the reason on `decide_identity`: the instance answers
+    # which SERVER and the uuid answers which BOARD, and a caller that supplies
+    # one gets `CANNOT_TELL` rather than a half-checked pass. `store_uuid_at`
+    # never raises, same as `instance_at`, so this stays a reporting primitive.
+    return _check_against(
+        observed,
+        pinned_instance(expected),
+        observed_uuid=store_uuid_at(target),
+        expected_uuid=expected_store_uuid(),
+    )
 
 
 def _check_against(
-    observed: StoreInstance, expected: Optional[str]
+    observed: StoreInstance,
+    expected: Optional[str],
+    *,
+    observed_uuid: Optional[str] = None,
+    expected_uuid: Optional[str] = None,
 ) -> IdentityCheck:
-    """Compare an ALREADY-PROBED instance against an expectation.
+    """Compare an ALREADY-PROBED store against an expectation.
 
     Split out so :func:`check_resolution` and ``resolve_store`` can share one
     probe instead of opening the store twice. ``check_store_identity`` takes a
     live connection, which is exactly what this layer no longer has by the time
-    it needs the verdict, so the comparison is re-expressed here over the
-    probed value. The three outcomes and their reason strings are kept
-    IDENTICAL to ``check_store_identity``'s — two guards that disagree about
-    what "cannot tell" means is the collapse this whole family prevents.
+    it needs the verdict, so the values arrive already probed.
+
+    THE OUTCOMES ARE NO LONGER RE-EXPRESSED HERE. This function used to carry
+    its own copy of the comparison, "kept IDENTICAL to ``check_store_identity``'s"
+    by discipline — and the two drifted: THIS one never compared the uuid at
+    all, so ``resolve-store`` answered "matches" to a mismatched uuid while
+    printing both values on adjacent lines (found by dotfiles 2026-08-17 by
+    mutation-testing the gate). Both bodies now delegate to
+    :func:`._store_identity_decision.decide_identity`, which is the only way two
+    guards cannot disagree.
+
+    THE UUID MUST BE PASSED IN. This layer has no connection and deliberately
+    does not open one — ``resolve_store`` already probes it via ``store_uuid_at``
+    on the line above the call, which is precisely why the omission was
+    invisible: the value was in scope and simply never handed over.
     """
-    if not expected:
-        return IdentityCheck(
-            verdict=IdentityVerdict.CANNOT_TELL,
-            observed=observed,
-            expected=None,
-            reason=(
-                "no expected store identity is pinned, so this resolution "
-                "cannot be checked against anything. Record the identity of "
-                "the store you trust and pin it; an unpinned client cannot "
-                "tell a stale replica from the store it meant to reach."
-            ),
-        )
-    if observed.certainty is Certainty.UNKNOWN:
-        return IdentityCheck(
-            verdict=IdentityVerdict.CANNOT_TELL,
-            observed=observed,
-            expected=expected,
-            reason=(
-                f"an identity is pinned ({expected!r}) but this store cannot "
-                f"report one: {observed.reason}"
-            ),
-        )
-    if observed.instance_id != expected:
-        return IdentityCheck(
-            verdict=IdentityVerdict.DIFFERS,
-            observed=observed,
-            expected=expected,
-            reason=(
-                f"this resolution reached instance {observed.instance_id!r}, "
-                f"but {expected!r} was pinned. Two stores can carry the SAME "
-                "store_uuid and different data — measured 2026-08-12 on THREE "
-                "databases sharing 1d55dd6e-3d2a-4c24-a429-a78835ab988f — so a "
-                "matching uuid is not evidence. Point $SCITEX_CARDS_DB at the "
-                "pinned store, or re-pin deliberately if the move was intended."
-            ),
-        )
-    return IdentityCheck(
-        verdict=IdentityVerdict.MATCHES,
-        observed=observed,
-        expected=expected,
+    from ._store_identity_decision import decide_identity
+
+    return decide_identity(
+        observed,
+        expected,
+        observed_uuid=observed_uuid,
+        expected_uuid=expected_uuid,
+        subject="this resolution",
     )
 
 
@@ -304,10 +309,19 @@ def require_pinned_store(
         can print both sides rather than assert a mismatch nobody can verify.
     """
     from ._store_target import resolve_store_target
+    from ._store_uuid import expected_store_uuid, store_uuid_at
 
     _arg = store if isinstance(store, (str, type(None))) else str(store)
     target = resolve_store_target(_arg)
-    check = _check_against(instance_at(target), pinned_instance(expected))
+    # BOTH HALVES — see `decide_identity`. This is the REFUSING door, so a
+    # half-checked pass here is the one that would let a write reach the wrong
+    # store.
+    check = _check_against(
+        instance_at(target),
+        pinned_instance(expected),
+        observed_uuid=store_uuid_at(target),
+        expected_uuid=expected_store_uuid(),
+    )
     if not check.may_proceed:
         raise StoreIdentityRefused(check, target)
     return target

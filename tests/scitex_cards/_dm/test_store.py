@@ -101,20 +101,23 @@ def test_the_sidecar_still_receives_the_message(sent, store):
     assert [r["id"] for r in records] == [expected]
 
 
-def test_a_database_failure_is_not_swallowed(store, monkeypatch):
+def test_a_database_failure_is_not_swallowed(store, db_path):
     """The DB write is AUTHORITATIVE: if it fails, the send fails.
 
     Degrading to a sidecar-only write would look like success while putting
     the message back exactly where this migration is taking it from — and
     nobody would find out until the next time the sidecar was the only copy
     of something that mattered.
+
+    THE FAILURE IS REAL: the database path is occupied by a DIRECTORY, so
+    sqlite raises ``OperationalError: unable to open database file`` from its
+    own open. A raising stub would assert that `append_message` propagates
+    whatever `append_pair` raises; this asserts that it propagates what the
+    DATABASE actually does when it cannot be written — which is the claim the
+    test's name makes.
     """
-
     # Arrange
-    def _boom(*_args, **_kwargs):
-        raise sqlite3.OperationalError("disk I/O error")
-
-    monkeypatch.setattr("scitex_cards._dm.write.append_pair", _boom)
+    db_path.mkdir()
 
     # Act
     refusal = pytest.raises(sqlite3.OperationalError)
@@ -124,19 +127,25 @@ def test_a_database_failure_is_not_swallowed(store, monkeypatch):
         append_message("operator", "agent-x", "hello", store=store)
 
 
-def test_a_sidecar_failure_does_not_lose_the_message(store, db_path, monkeypatch):
+def test_a_sidecar_failure_does_not_lose_the_message(store, db_path):
     """The mirror is best-effort: its failure must not fail the send.
 
     By the time the mirror runs the message is already durable in the store of
     record, so raising here would report as lost a message that was not lost —
     and would hand the caller a reason to retry, duplicating it.
+
+    THE FAILURE IS REAL, not a raising stub. The sidecar path
+    (``<store_dir>/threads.json``) is occupied by a DIRECTORY, so the writer's
+    own `open(...)` raises a genuine ``IsADirectoryError`` — an ``OSError``,
+    from the filesystem, at the line that really writes.
+
+    Chosen over making the directory read-only because that would also break
+    the DATABASE write, which must succeed for this test to mean anything: the
+    whole claim is "the store of record kept the message even though the mirror
+    failed". The fault has to land on the mirror and nowhere else.
     """
-
     # Arrange
-    def _boom(*_args, **_kwargs):
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr("scitex_cards._threads_io._save_threads_unlocked", _boom)
+    (store.parent / "threads.json").mkdir()
     append_message("operator", "agent-x", "hello", store=store)
 
     # Act

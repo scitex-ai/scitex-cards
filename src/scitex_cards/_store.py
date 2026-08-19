@@ -112,91 +112,86 @@ from ._store_list import (  # noqa: F401  (re-export: preserve the public surfac
     summarize_tasks,
 )
 
-#: Env var name carrying the agent's identity. Used as the default
-#: `completed_by` when :func:`complete_task` doesn't get an explicit `by=`.
-ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
-
-#: previous name of :data:`ENV_AGENT`. Renamed 2026-07-02. We fail LOUD (never
-#: silently honour it) if it is still set, so a stale export can't quietly
-#: mis-attribute a write — the operator must migrate to the new name.
-ENV_AGENT_DEPRECATED = "SCITEX_CARDS_AGENT"
-
-
-def _reject_deprecated_agent_env() -> None:
-    """Fail loud if the old ``SCITEX_CARDS_AGENT`` var is still set.
-
-    No silent fallback: a leftover export of the old name is a configuration
-    error the operator must fix, not something we quietly translate.
-    """
-    if os.environ.get(ENV_AGENT_DEPRECATED) is not None:
-        raise RuntimeError(
-            f"{ENV_AGENT_DEPRECATED} was renamed to {ENV_AGENT}; "
-            f"unset the old var (it is no longer honoured)."
-        )
+# IDENTITY RESOLUTION now lives in its own module — the guard that refuses a
+# non-answer, the 2026-07-19 placeholder incident behind it, and its tests
+# belong together rather than buried among the mutation helpers (the same
+# reasoning that moved `_read_canonical_db_or_raise` below). Re-exported here
+# so every historical `from ._store import ENV_AGENT` / `_default_agent`
+# keeps working, and so there is still exactly ONE resolver behind the
+# creator, the completion actor and the comment author.
+from ._store_identity import (  # noqa: F401  (re-export)
+    ENV_AGENT,
+    ENV_AGENT_DEPRECATED,
+    _default_agent,
+    _reject_deprecated_agent_env,
+    _resolve_creator_or_raise,
+)
 
 
 class TaskNotFoundError(KeyError):
     """Raised when an update/complete target id is not in the store."""
 
 
+def _task_not_found(task_id: str) -> TaskNotFoundError:
+    """Build the "no such card" error, naming THE STORE THAT WAS SEARCHED.
+
+    ONE BUILDER FOR SEVEN RAISE SITES, because seven copies of a sentence is
+    how the wrong one survived this long. Each site used to interpolate its
+    own ``tasks_path`` / ``resolved`` local -- the LOCAL sidecar path -- while
+    the lookup that had just failed ran against the resolved store. On a
+    PostgreSQL deployment the message therefore named a YAML file::
+
+        task id 'x' not found in /home/agent/.scitex/cards/tasks.yaml
+
+    and it named it for a value THAT PLAYED NO PART IN THE SEARCH.
+    ``_read_write_doc(path)`` ignores its argument entirely -- its body is
+    ``_read_canonical_db_or_raise()``, which takes none -- so that path served
+    the file lock and this one string, and nothing else. ``_paths`` already
+    said so in prose: "interpolates the path into an error message only".
+
+    That is worse than a vague message, because it is actionable in the WRONG
+    DIRECTION: it sent a peer hunting a second store that does not exist, and
+    cost them a conclusion they had to retract to another agent.
+
+    *** THE LABEL COMES FROM THE READER, NOT FROM A SECOND RESOLUTION. ***
+    This used ``_store_target.store_label()``, which resolves the ambient
+    env/config chain independently. That is a SECOND answer to "which store",
+    and a second answer is a thing that can disagree with the first -- which is
+    the entire defect this builder exists to end, one level up.
+
+    They DO disagree, and a test caught it during the #907 merge::
+
+        _canonical_source_label()   <sqlite:/…/cards.db>    names the BACKEND
+        store_label()               /…/cards.db             bare path
+
+    The backend prefix is not decoration: the original incident was a message
+    naming a YAML path while the rows came from PostgreSQL, so the one fact the
+    reader most needs is WHICH ENGINE answered. A bare path cannot carry it.
+
+    :func:`_model._canonical_source_label` is what the canonical read and the
+    tolerated-validation warnings already use, so sharing it means that when
+    the read path moves, this message follows instead of drifting behind. It
+    takes NO store argument on purpose -- the canonical read resolves the
+    ambient chain and does not honour an explicit ``store=`` (measured
+    2026-08-18; cards-store-param-ignored-no-isolation-route-20260818) -- so
+    naming a caller's argument here would state a search that did not happen.
+
+    Credentials: ``_canonical_source_label`` is the label the read path already
+    prints into warnings, so it is held to the same no-secrets bar as the
+    string it replaces. Never raises: a caption must not be able to fail the
+    operation it captions, and reaching this line means the canonical read
+    ALREADY SUCCEEDED.
+    """
+    from ._model import _canonical_source_label
+
+    return TaskNotFoundError(
+        f"task id {task_id!r} not found in {_canonical_source_label()}"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
-def _default_agent(arg: str | None) -> str:
-    """Resolve an ACTOR/AUTHOR — FAIL LOUD when it cannot be resolved.
-
-    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_CARDS_AGENT_ID``.
-    Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``
-    (the former lenient chain): the operator mandate (constitution rule 2
-    "fail fast and fail loud, NO silent fallbacks") requires completion /
-    comment authorship to record a REAL acting agent, never a blank or
-    ``"unknown"`` placeholder that mis-attributes the action on the board.
-
-    Now identical in behaviour to :func:`_resolve_creator_or_raise` — it
-    simply delegates to keep a single source of truth (DRY) while preserving
-    this public name for the completion/comment callers.
-
-    Raises
-    ------
-    TaskValidationError
-        When the actor resolves to empty or the ``"unknown"`` sentinel, with
-        an ACTIONABLE hint naming both fixes.
-    """
-    return _resolve_creator_or_raise(arg)
-
-
-def _resolve_creator_or_raise(arg: str | None) -> str:
-    """Resolve a card CREATOR — FAIL LOUD when it cannot be resolved.
-
-    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_CARDS_AGENT_ID``.
-    Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``:
-    the operator mandate (constitution rule 2 "fail fast and fail loud, NO
-    silent fallbacks") requires a card to record a REAL creator, never a blank
-    or ``"unknown"`` placeholder. A card whose creator can't be resolved must
-    not be born. This is the SSOT resolver — :func:`_default_agent` (actor /
-    author for completion & comments) now delegates here so both share the
-    identical fail-loud behaviour.
-
-    Raises
-    ------
-    RuntimeError
-        When the deprecated ``$SCITEX_CARDS_AGENT`` is still exported (renamed
-        away — see :func:`_reject_deprecated_agent_env`).
-    TaskValidationError
-        When the creator resolves to empty or the ``"unknown"`` sentinel,
-        with an ACTIONABLE hint naming both fixes.
-    """
-    _reject_deprecated_agent_env()
-    resolved = (arg or os.environ.get(ENV_AGENT) or "").strip()
-    if not resolved or resolved == "unknown":
-        raise TaskValidationError(
-            "creator unresolved — set SCITEX_CARDS_AGENT_ID=<your-agent> or pass "
-            "created_by=/by= (creator+assignee are mandatory; no silent "
-            "fallback to a blank/'unknown' creator; see constitution)."
-        )
-    return resolved
-
-
 # THE ONE FAIL-LOUD READER now lives in its own module — the guard, the
 # incident history behind each of its checks, and its tests belong
 # together rather than buried among the mutation helpers. Re-exported
@@ -359,6 +354,10 @@ def resolve_store(store: str | Path | None = None) -> dict:
     target = resolve_store_target(_arg)
     on_server = is_postgres_url(target)
     resolved = target if on_server else str(resolve_db_path(_arg))
+    # Read ONCE, then used for BOTH the report and the comparison. Two call
+    # sites reading the same value independently is how they come to disagree.
+    observed_uuid = store_uuid_at(resolved)
+    pinned_uuid = expected_store_uuid()
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
@@ -382,14 +381,29 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # pure reporting — it never opens anything). Read `backend` to know
         # which question was asked.
         "exists": None if on_server else Path(resolved).exists(),
-        "store_uuid": store_uuid_at(resolved),
-        "expected_uuid": expected_store_uuid(),
+        "store_uuid": observed_uuid,
+        "expected_uuid": pinned_uuid,
         # Probed ONCE and compared in-process. `check_resolution` would re-run
         # the whole resolution and open a second connection to say the same
         # thing, and a diagnostic that costs two round-trips to a store that may
         # be down is a diagnostic that hangs twice as long on the case it exists
         # to explain.
-        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+        #
+        # BOTH HALVES ARE HANDED TO THE COMPARISON, and until 2026-08-19 they
+        # were not: the two uuid values were computed for the REPORT on the
+        # lines above and never passed into `_check_against`, which compared the
+        # instance alone. So this verb printed `expected_uuid` and `store_uuid`
+        # differing on adjacent lines and answered `"identity_verdict":
+        # "matches"` beneath them. The values being in scope is what made the
+        # omission invisible.
+        **_identity_fields(
+            _check_against(
+                instance_at(resolved),
+                pinned_instance(),
+                observed_uuid=observed_uuid,
+                expected_uuid=pinned_uuid,
+            )
+        ),
     }
 
 
@@ -442,7 +456,7 @@ def get_task(
         for t in tasks:
             if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise _task_not_found(task_id)
 
 
 # --------------------------------------------------------------------------- #

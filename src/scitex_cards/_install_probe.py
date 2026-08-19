@@ -237,10 +237,20 @@ def probe_install(
     module: str | None = None,
     *,
     features: dict[str, str] | None = None,
+    version_of=None,
 ) -> InstallProbe:
     """Probe ``dist``'s install and report whether its version string can be trusted.
 
     ``module`` defaults to ``dist`` with ``-`` mapped to ``_``.
+
+    ``version_of`` defaults to :func:`importlib.metadata.version` and is the
+    function asked what version the METADATA claims. It is a parameter because
+    this probe exists to catch a metadata version that DISAGREES with the code
+    on disk — and that disagreement cannot be arranged in a test without
+    controlling the metadata side. Rebinding ``_install_probe._md.version``
+    edits this module to test this module (audit PA-306 `no-mocks`); passing
+    the lookup in states which claim is under test. The default path is
+    unchanged.
 
     ``features`` optionally maps a label to a ``"module:attribute"`` path that
     should exist in the claimed version — a CONTENT probe. Use it to answer "is
@@ -256,8 +266,9 @@ def probe_install(
     mod_name = module or dist.replace("-", "_")
     probe = InstallProbe(dist=dist, kind=KIND_ORPHANED)
 
+    read_version = _md.version if version_of is None else version_of
     try:
-        probe.metadata_version = _md.version(dist)
+        probe.metadata_version = read_version(dist)
     except _md.PackageNotFoundError:
         probe.metadata_version = None
     except Exception as exc:  # noqa: BLE001 - a probe must never crash its caller
@@ -484,14 +495,16 @@ def _has_feature(target: str) -> bool:
     return hasattr(mod, attr)
 
 
-def check_install_honest(dist: str = "scitex-cards") -> dict[str, object]:
+def check_install_honest(dist: str = "scitex-cards", version_of=None) -> dict[str, object]:
     """Health-doctor check: is ``dist``'s reported version actually true?
 
     Returns the doctor's ``{ok, detail, hint}`` contract. ``ok`` is False exactly
     when the version string cannot be trusted — an orphaned install, or metadata
     that has drifted from the code it claims to describe.
+
+    ``version_of`` is passed through to :func:`probe_install`; see there.
     """
-    probe = probe_install(dist)
+    probe = probe_install(dist, version_of=version_of)
     return {
         "ok": probe.trustworthy,
         "detail": probe.detail,

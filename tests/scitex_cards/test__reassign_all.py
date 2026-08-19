@@ -13,7 +13,7 @@ EXACTLY: ``agent = assignee = new_owner``, ``scope = "agent:<new>"``, an
 audit comment ``"reassigned <old> -> <new> by <actor>"``.
 
 The event is captured via the documented in-process ``entry_points=``
-injection seam (a real fake handler) — no mocks, no monkeypatch
+injection seam (a real fake handler) — no mocks, no env
 (STX-NM / PA-306). AAA pattern.
 """
 

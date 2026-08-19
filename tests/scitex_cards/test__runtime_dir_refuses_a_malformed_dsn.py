@@ -128,7 +128,7 @@ class TestNoDirectoryIsManufactured:
 
 @pytest.fixture()
 def monkeypatch_free_chdir(tmp_path):
-    """chdir into tmp_path and back, without monkeypatch (banned ecosystem-wide).
+    """chdir into tmp_path and back, without env (banned ecosystem-wide).
 
     The defect materialises RELATIVE TO THE WORKING DIRECTORY -- that is why the
     artifacts landed in repository roots rather than anywhere a store belongs --

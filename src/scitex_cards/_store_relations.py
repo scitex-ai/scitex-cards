@@ -210,7 +210,7 @@ def _set_list_member(
     the YAML stays sparse). Stamps ``last_activity``. Returns the task.
     """
     from . import _task
-    from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import _read_write_doc, _task_not_found, _utc_now_iso
 
     with _store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
@@ -232,7 +232,7 @@ def _set_list_member(
                     doc, tasks_path, tasks=tasks, touched_ids=[task_id]
                 )
                 return dict(task)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise _task_not_found(task_id)
 
 
 def set_collaborator(
@@ -255,9 +255,13 @@ def set_collaborator(
     if action not in ("add", "remove"):
         raise ValueError("set_collaborator: action must be 'add' or 'remove'")
     tasks_path = _resolved_store(store)
-    task = _set_list_member(tasks_path, task_id, "collaborators", who, action)
+    task = _set_list_member(
+        tasks_path, task_id, "collaborators", who, action
+    )
     if action == "add":
-        task = _set_list_member(tasks_path, task_id, "subscribers", who, "add")
+        task = _set_list_member(
+            tasks_path, task_id, "subscribers", who, "add"
+        )
     return task
 
 
@@ -281,7 +285,9 @@ def set_subscriber(
     if action not in ("add", "remove"):
         raise ValueError("set_subscriber: action must be 'add' or 'remove'")
     tasks_path = _resolved_store(store)
-    return _set_list_member(tasks_path, task_id, "subscribers", who, action)
+    return _set_list_member(
+        tasks_path, task_id, "subscribers", who, action
+    )
 
 
 __all__ = [

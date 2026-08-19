@@ -26,8 +26,11 @@ already used for ``from . import _model``.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+from ._db_card import read_card
 
 from ._model import (
     TaskValidationError,
@@ -85,6 +88,35 @@ _CONTROL_KWARGS: dict[str, str] = {
         "would write it onto the card as data"
     ),
 }
+
+
+def _acting_agent() -> str | None:
+    """Who is performing this write, or ``None`` when that cannot be resolved.
+
+    ``update_task`` has no ``by`` parameter, so the actor comes from the same
+    env identity seam every other attributed verb uses —
+    :func:`_default_agent`, the SSOT resolver behind ``comment_task``'s author
+    and ``reassign_task``'s actor. Routing through it rather than reading
+    ``$SCITEX_CARDS_AGENT_ID`` directly is deliberate: the resolver also
+    REJECTS an unexpanded ``${VAR}`` placeholder, and a literal
+    ``"${SCITEX_CARDS_AGENT_ID}"`` recorded as the actor of a status flip is
+    the same defect PR #907 exists to close on the creator field.
+
+    IT MUST NOT RAISE, which is why the fail-loud resolver is wrapped here.
+    The two callers pass the result as an ARGUMENT to ``_emit_card_event``,
+    whose own try/except cannot help — an exception raised while evaluating
+    its arguments propagates before the call is ever entered, and would turn
+    an unresolvable identity into a failed write on the most-called write verb
+    in the package. An unattributed event is a small loss; a mutation that
+    raises because nobody exported an env var is a large one.
+    """
+    from ._store import _default_agent
+
+    try:
+        return _default_agent(None)
+    except (TaskValidationError, RuntimeError):
+        # Genuinely unknown — say so with None rather than inventing a name.
+        return None
 
 
 def update_task(
@@ -145,7 +177,7 @@ def update_task(
         was passed the ``""`` clear-sentinel (status cannot be cleared).
     """
     from . import _task
-    from ._store import ENV_AGENT, TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import ENV_AGENT, _read_write_doc, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("update_task() requires a non-empty task_id")
@@ -263,7 +295,40 @@ def update_task(
                     status_change = (prior_status, new_status)
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        raise _task_not_found(task_id)
+    # *** RETURN WHAT PERSISTED, NOT WHAT WE ASKED TO WRITE. ***
+    # `result` above is the in-memory MERGE, captured before the write was
+    # durable and previously returned unchanged — so a caller was handed their
+    # own input back as confirmation. Measured on the live board 2026-08-18: a
+    # `parked` value echoed back and absent 30 minutes later (dotfiles), and 14
+    # of 178 writes reporting success without persisting (sac). An echo of the
+    # request is the most convincing possible wrong answer, because it matches
+    # what the caller expects exactly.
+    #
+    # ONE INDEXED ROW, not a board rebuild — `read_card` exists for this; going
+    # through `load_tasks` would re-parse every card to answer a question about
+    # one, which is the cost this package's caches exist to avoid.
+    #
+    # NO COMPARISON AND NO MISMATCH-RAISE. Between our commit and this read a
+    # concurrent writer may legitimately have changed the card; raising on a
+    # difference would manufacture failures for writes that succeeded, and
+    # false alarms on a write path are how people learn to ignore write errors.
+    # The caller gets the truth as of now, which is the most any post-commit
+    # read can offer.
+    _persisted = read_card(task_id, resolved)
+    if _persisted:
+        result = _persisted
+    else:
+        # The row is gone immediately after our own successful write. Do not
+        # invent a raise (a tombstoned or concurrently-deleted card can reach
+        # here legitimately) and do not stay silent either — silence here is
+        # the exact defect this block was added to end.
+        logging.getLogger(__name__).warning(
+            "update_task(%r): the write reported success but the card could "
+            "not be read back; returning the in-memory merge, which may not "
+            "be what the store holds",
+            task_id,
+        )
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path
@@ -274,13 +339,25 @@ def update_task(
     # write is durable + lock released (fail-soft). A flip TO `done` is a
     # `completed` event (NOT also a `status_changed` — avoids double-fire);
     # every other flip is a `status_changed` with {from,to}.
+    #
+    # THE ACTOR IS NAMED, and it used to be a hardcoded `actor=None` on both
+    # branches. Measured on the live board 2026-08-18: ALL 60 `status_changed`
+    # notifications ever recorded carry `actor=None`, while `created` /
+    # `commented` / `reassigned` all name theirs — those three are each pinned
+    # by a test in test__store_card_events.py and these two were not, which is
+    # how the omission survived. The cost was real: a card-store migration
+    # moved 398 cards into `deferred` in nine minutes on 2026-08-16 and left
+    # nothing saying who; two agents then independently invented a data-
+    # corruption story to explain the distribution, and both were wrong. The
+    # transition was recorded and the hand that made it was not.
     if status_change is not None:
         _from, _to = status_change
+        _actor = _acting_agent()
         if _to == "done":
             _emit_card_event(
                 "completed",
                 task_id,
-                actor=None,
+                actor=_actor,
                 store=resolved,
                 entry_points=entry_points,
             )
@@ -288,7 +365,7 @@ def update_task(
             _emit_card_event(
                 "status_changed",
                 task_id,
-                actor=None,
+                actor=_actor,
                 extra={"from": _from, "to": _to},
                 store=resolved,
                 entry_points=entry_points,

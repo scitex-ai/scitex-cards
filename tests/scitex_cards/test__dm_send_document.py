@@ -48,7 +48,7 @@ def agent_id(env):
     """A resolvable sender identity; the DM 'from' must name a real agent.
 
     Uses the `env` fixture (tests/scitex_cards/conftest.py) rather than
-    `monkeypatch`: PA-306 forbids the fixture ecosystem-wide, and `env` is its
+    `env`: PA-306 forbids the fixture ecosystem-wide, and `env` is its
     sanctioned replacement — it saves each touched key, sets it for the test,
     and restores the prior value on teardown. Same guarantee, real os.environ.
     """
