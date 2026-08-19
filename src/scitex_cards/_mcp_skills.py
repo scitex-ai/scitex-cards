@@ -161,10 +161,18 @@ async def poll_notifications(
     the dispatcher enqueued under). Returns a JSON object::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store these rows were read from>,
          "notifications": [ {id, event_type, card_id, body, actor, ts, seen},
                             ... ],
          "unconfirmed": [<ids still awaiting ack_notifications>],
          "confirm_with": "ack_notifications"}
+
+    ``store`` names the target this poll actually read. ``ack_notifications``
+    reports the same field, and COMPARING THE TWO is the point: if you poll
+    one store and confirm against another, every call still succeeds — this
+    one returns nothing and the confirmation answers ``unknown`` for every id,
+    which is indistinguishable from "there was nothing to deliver". Two labels
+    that disagree name that fault outright.
 
     Args:
       agent: the recipient name / id / host@name to poll for.
@@ -214,10 +222,18 @@ async def ack_notifications(
     never held is likewise a no-op. The payload distinguishes the cases::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store this confirmation was applied to>,
          "requested": [...],           # what you asked to confirm
          "confirmed": [...],           # flipped unseen -> seen by THIS call
          "already_confirmed": [...],   # were already seen (a fine retry)
          "unknown": [...]}             # no such id in this inbox
+
+    ``unknown`` SAYS NOTHING ABOUT THE DATABASE. It reads as "those ids do not
+    exist", but a confirmation sent to the WRONG STORE answers exactly the
+    same way — every id unknown, no error, nothing to retry. That is why
+    ``store`` is here: compare it with the ``store`` your poll reported. Equal
+    means the loop closed on one store and ``unknown`` really is about the
+    ids; DIFFERENT means you are confirming somewhere you never read.
 
     Args:
       agent: the recipient name / id / host@name whose inbox to confirm in.

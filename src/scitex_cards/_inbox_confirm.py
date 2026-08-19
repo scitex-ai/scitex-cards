@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from . import _inbox
+from ._store_target import store_label
 
 logger = logging.getLogger(__name__)
 
@@ -208,9 +209,16 @@ def confirm_notifications(
     Returns
     -------
     dict
-        ``{"agent", "recipient_id", "requested", "confirmed",
+        ``{"agent", "recipient_id", "store", "requested", "confirmed",
         "already_confirmed", "unknown"}`` — ``confirmed`` holds the ids this
         call actually flipped unseen -> seen.
+
+        ``store`` names the target this confirmation was applied to. Compare
+        it with the ``store`` the poll reported: they agree when the loop
+        closed on one store, and DISAGREE when the consumer is polling one
+        and confirming against another — a split in which every call
+        succeeds, this verb answers ``unknown`` for every id, and that answer
+        is indistinguishable from "those ids do not exist".
     """
     from ._inbox_receipt import record_confirmation, unconfirmed_ids
 
@@ -268,6 +276,14 @@ def confirm_notifications(
     return {
         "agent": agent,
         "recipient_id": primary,
+        # WHICH STORE THIS CONFIRMATION LANDED IN. A consumer that polls one
+        # store and confirms against another gets `unknown` for every id — a
+        # reply indistinguishable from "those ids do not exist", which is the
+        # one reading that makes the caller stop looking. Naming the target on
+        # both sides is what turns that into a comparison the caller can make.
+        # Resolved from `store`, the same argument the ack itself used, so this
+        # cannot name a target the write did not go to.
+        "store": store_label(store),
         "requested": requested,
         # Both keyed on CONFIRMATION, not on the cursor, and both ordered by
         # `requested` so a caller can zip them against what it asked for.
