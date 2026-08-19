@@ -29,18 +29,37 @@ CORRECTING THE 0.48.0 ENTRY BELOW, which is left intact as the record: it ends
 "a standing goal must not be auto-cancelled at the horizon for the crime of
 standing". Nothing auto-cancels; the park exempts a card from being PROPOSED
 for cancellation. The false framing reached the release notes of the very
-change that made it expensive — 935 cards now sit past a line that proposes
-cancellation and delivers nothing.
+change that made it expensive: measured tonight, 839 cards sat past that line
+with nothing in the package able to act on them.
 
 `test__expiry_is_a_report_not_a_mechanism.py` reads the docstrings by AST, and
 `test_no_jobspec_schedules_triage` pins the fact the prose depends on, so
 scheduling triage turns the docs red instead of letting them rot.
 
-Unchanged on purpose: `_cli/_stale.py` and `_django/handlers/stale.py` both
-still hard-code a 14-day horizon (two copies, no single source). The Django one
-feeds the board's Archive button, so widening it to 7 would arm an existing
-consumer against more of everyone's cards — an operator decision, not a
-maintainer one.
+### The stale horizon is 7 days too, and the forgetting was executed (BREAKING)
+
+`_cli/_stale.py` and `_django/handlers/stale.py` each hard-coded **14** days —
+two copies, no shared source — while the forgetting horizon was 7. A card aged
+7-14 days was forgotten by the rule and invisible to the stale sweep.
+
+Both are now 7, on the operator's instruction 「はい7日でお願いします」, given
+after he was told the cost: the Django copy feeds the board's Archive button, so
+the change offers about a week more of everyone's cards for archiving on a shared
+board. `test_the_cli_and_django_stale_horizons_are_equal` keeps the two literals
+from drifting apart; there is still no shared source, only a test that says they
+must agree.
+
+AND THE FORGETTING WAS ACTUALLY RUN, once, by hand — 「忘却実行してください」.
+839 deferred cards past 7 days, across 39 owners, driven to `status=cancelled`.
+Parked (147) and undatable (32) were exempt. Ages 7.3 to 68.8 days, median 28.3.
+A full undo record was written and verified BEFORE the first write
+(`~/.scitex/cards/archive/forget-7d-20260819-undo-ids.txt`, 838 ids), and the
+restore path was tested end-to-end on one card rather than assumed.
+
+THE PACKAGE STILL DOES NOT DO THIS BY ITSELF, which is why the docstring fix
+above stands unchanged: no sweep, daemon, verb or JobSpec cancels anything. The
+execution was an operator-authorised manual run, and a reader of this package
+must still not expect the board to clean itself up.
 
 ## [0.48.0] - 2026-08-19
 
