@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### A "no such card" error names the store it searched
+
+All seven raise sites interpolated their own local `tasks_path` / `resolved`
+variable — the LOCAL sidecar path — while the lookup that had just failed ran
+against the resolved store. Measured on the deployed 0.48.0:
+
+    resolve_store().resolved  ->  postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+    comment_task(bad_id)      ->  task id '...' not found in
+                                  /home/agent/.scitex/cards/tasks.yaml
+
+The named value played no part in the search. `_read_write_doc(path)` ignores
+its argument entirely — its body is `_read_canonical_db_or_raise()`, which takes
+none — so that path served the file lock and this one string, and nothing else.
+`_paths` already said so in prose: "interpolates the path into an error message
+only".
+
+That is worse than a vague message because it is actionable in the WRONG
+DIRECTION: it sent a peer hunting a second store that does not exist, and cost
+them a conclusion they had to retract to another agent.
+
+One builder, `_task_not_found(task_id)`, now replaces seven copies of the
+sentence, and reaches for the existing `store_label()` — which strips DSN
+credentials before this reaches a log and never routes a URL through `Path`.
+A source scan pins it: the test fails on the eighth site written the old way,
+which is how the first six survived.
+
+
 ## [0.48.0] - 2026-08-19
 
 ### The forgetting horizon is 7 days, not 30 (BREAKING)
