@@ -87,6 +87,46 @@ def _jobspec_names() -> list[str]:
     return names
 
 
+def _module_int(rel_path: str, name: str) -> int:
+    """Read an int module-level assignment from source (no import required)."""
+    tree = ast.parse((_SRC / rel_path).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if getattr(target, "id", None) == name:
+                return int(node.value.value)
+    raise AssertionError(f"{name} not found in {rel_path}")
+
+
+class TestTheStaleHorizonsMoveTogether:
+    """`_DEFAULT_DAYS` is duplicated. Neither copy may drift alone.
+
+    Both are 14 while the forgetting horizon is 7. That gap is a known,
+    recorded disagreement awaiting an operator decision — the Django copy
+    feeds the board's Archive button, so it cannot be widened unilaterally.
+    What must NOT happen is one copy moving and the other staying, which
+    would make the CLI and the board silently disagree about what is stale.
+    """
+
+    def test_the_cli_and_django_stale_horizons_are_equal(self):
+        # Arrange
+        cli = _module_int("_cli/_stale.py", "_DEFAULT_DAYS")
+        # Act
+        django = _module_int("_django/handlers/stale.py", "_DEFAULT_DAYS")
+        # Assert — change one, change both.
+        assert cli == django
+
+    def test_the_stale_horizon_is_not_shorter_than_the_expiry_horizon(self):
+        # Arrange
+        from scitex_cards._backlog_triage import DEFAULT_EXPIRY_DAYS
+
+        # Act
+        cli = _module_int("_cli/_stale.py", "_DEFAULT_DAYS")
+        # Assert — stale may be more generous than expiry, never stricter.
+        assert cli >= DEFAULT_EXPIRY_DAYS
+
+
 class TestTheDetectorItself:
     def test_the_detector_would_have_caught_the_sentence_that_shipped(self):
         # Arrange

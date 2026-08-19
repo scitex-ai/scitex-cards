@@ -39,6 +39,17 @@ from .._store import load_tasks
 from ._compat import deprecated_alias, spec_command_kwargs
 from ._write import _emit
 
+#: Age cutoff for `list-stale`. This is NOT the forgetting horizon, and the
+#: numbers disagree — recorded here rather than smoothed over:
+#:      constitution §5             7 days   (operator, 2026-08-19)
+#:      _backlog_triage.py          7 days   DEFAULT_EXPIRY_DAYS
+#:      THIS                       14 days
+#:      _django/handlers/stale.py  14 days   a SECOND COPY of this number
+#: A card aged 7-14 days is FORGOTTEN by the rule and INVISIBLE to this verb,
+#: which is §2's gate-that-cannot-fail in another costume. Moving THIS one is
+#: safe (the verb only prints). Moving the Django copy is not — it feeds the
+#: board's Archive button, so widening it acts on everyone's cards. Decide
+#: them together or not at all: cards-auto-expiry-is-a-report-nothing-schedules-and-three-horizons-disagree-20260817
 _DEFAULT_DAYS = 14
 
 
