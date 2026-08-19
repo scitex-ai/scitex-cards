@@ -391,6 +391,10 @@ def resolve_store(store: str | Path | None = None) -> dict:
     target = resolve_store_target(_arg)
     on_server = is_postgres_url(target)
     resolved = target if on_server else str(resolve_db_path(_arg))
+    # Read ONCE, then used for BOTH the report and the comparison. Two call
+    # sites reading the same value independently is how they come to disagree.
+    observed_uuid = store_uuid_at(resolved)
+    pinned_uuid = expected_store_uuid()
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
@@ -414,14 +418,29 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # pure reporting — it never opens anything). Read `backend` to know
         # which question was asked.
         "exists": None if on_server else Path(resolved).exists(),
-        "store_uuid": store_uuid_at(resolved),
-        "expected_uuid": expected_store_uuid(),
+        "store_uuid": observed_uuid,
+        "expected_uuid": pinned_uuid,
         # Probed ONCE and compared in-process. `check_resolution` would re-run
         # the whole resolution and open a second connection to say the same
         # thing, and a diagnostic that costs two round-trips to a store that may
         # be down is a diagnostic that hangs twice as long on the case it exists
         # to explain.
-        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+        #
+        # BOTH HALVES ARE HANDED TO THE COMPARISON, and until 2026-08-19 they
+        # were not: the two uuid values were computed for the REPORT on the
+        # lines above and never passed into `_check_against`, which compared the
+        # instance alone. So this verb printed `expected_uuid` and `store_uuid`
+        # differing on adjacent lines and answered `"identity_verdict":
+        # "matches"` beneath them. The values being in scope is what made the
+        # omission invisible.
+        **_identity_fields(
+            _check_against(
+                instance_at(resolved),
+                pinned_instance(),
+                observed_uuid=observed_uuid,
+                expected_uuid=pinned_uuid,
+            )
+        ),
     }
 
 
