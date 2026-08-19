@@ -170,6 +170,23 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     if db is not None:
         return Path(db).expanduser()
     if store is not None:
+        from .._store_url import BACKEND_POSTGRES, backend_of, reject_attempted_dsn
+
+        # A DSN IS NOT A CONTAINER PATH, and the tier below assumes it is one:
+        # it takes ``store.parent``. Run that on a server URL and ``Path``
+        # collapses the "//" into a RELATIVE directory that gets created on the
+        # first write. Reproduced 2026-08-19 -- a store of
+        # "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards" came back as
+        # "postgresql:/scitex_cards@127.0.0.1:55432/cards.db", which is both the
+        # phantom tree seen on disk and a FOURTH spelling of the regrowth that
+        # :func:`is_attempted_dsn` already records three of.
+        reject_attempted_dsn(store)
+        if backend_of(store) == BACKEND_POSTGRES:
+            # The DM tables belong IN that server, not in a file beside it.
+            # Handing the target back verbatim is what the ambient tier below
+            # already does, and ``open_db`` re-resolves through
+            # ``resolve_store_target`` so ``connect`` dispatches the URL.
+            return store
         return Path(store).expanduser().parent / DEFAULT_DB_FILENAME
 
     # THE AMBIENT TIER RETURNS THE TARGET AS WRITTEN, path or server URL.
