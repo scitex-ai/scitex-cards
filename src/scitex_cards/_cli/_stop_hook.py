@@ -127,11 +127,20 @@ def _inbox_section(agent: str, text: str, ids: list[str]) -> str:
     )
 
 
-def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tuple:
+def _gather_inbox(
+    agent: str,
+    session_id,
+    stop_hook_active: bool,
+    store,
+    dry_run: bool = False,
+) -> tuple:
     """Return ``(section_text, warnings)`` for the unconfirmed-message rail.
 
     Fails open in every branch: an empty section means this rail contributes no
     block at all, and the warnings explain the silence on stderr.
+
+    ``dry_run=True`` previews the delivery without persisting: the presentation
+    counter is computed in memory and the state file is left untouched.
     """
     from .._inbox_present import pending, present
     from .._stop_hook_bound import (
@@ -139,6 +148,7 @@ def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tupl
         counts_for,
         exhausted,
         record_presented,
+        state_path,
     )
 
     warnings: list[str] = []
@@ -175,7 +185,20 @@ def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tupl
         )
         return "", warnings
 
-    state = record_presented(session_id, ids, store)
+    if dry_run:
+        # A preview must not charge the counter: persisting here would burn
+        # the retry budget on a turn nothing was delivered by. Report the
+        # WOULD-BE counts in memory, with the same shape record_presented
+        # returns, and write nothing.
+        prior = counts_for(session_id, store)
+        state = {
+            "counts": {str(i): prior.get(str(i), 0) + 1 for i in ids},
+            # durable = "a real run would persist here" — so the previewed
+            # decision is the decision a real run would make.
+            "durable": state_path(store) is not None,
+        }
+    else:
+        state = record_presented(session_id, ids, store)
     if not state.get("durable") and stop_hook_active:
         warnings.append(
             "cannot persist the presentation counter AND this turn is already a"
@@ -196,6 +219,7 @@ def evaluate(
     session_id=None,
     stop_hook_active: bool = False,
     store=None,
+    dry_run: bool = False,
 ) -> dict:
     """Decide the Stop hook's answer. Returns ``{"decision", "warnings"}``.
 
@@ -205,13 +229,16 @@ def evaluate(
 
     Each rail is guarded on its own, so a broken board still lets a pending
     message through, and a broken inbox still lets runnable cards through.
+
+    ``dry_run=True`` previews the decision without persisting: the presentation
+    counter is computed in memory and the state file is left untouched.
     """
     warnings: list[str] = []
     sections: list[str] = []
 
     try:
         section, inbox_warnings = _gather_inbox(
-            agent, session_id, stop_hook_active, store
+            agent, session_id, stop_hook_active, store, dry_run
         )
         warnings.extend(inbox_warnings)
         if section:
@@ -254,8 +281,25 @@ def evaluate(
     default=None,
     help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
 )
-def stop_hook_cmd(agent):
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help=(
+        "Evaluate and print the decision a real run would make, WITHOUT "
+        "persisting the presentation counter (stop_hook_presented.json is "
+        "left untouched)."
+    ),
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation (no-op today — stop-hook is non-interactive;"
+    " reserved for §2 compliance).",
+)
+def stop_hook_cmd(agent, dry_run, yes):
     """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work."""
+    _ = yes  # accepted for §2 compliance
     try:
         from .._store import _default_agent
 
@@ -264,9 +308,15 @@ def stop_hook_cmd(agent):
             _default_agent(agent),
             session_id=payload.get("session_id"),
             stop_hook_active=bool(payload.get("stop_hook_active")),
+            dry_run=dry_run,
         )
         for warning in result.get("warnings") or []:
             print(f"scitex-cards stop-hook: {warning}", file=sys.stderr)
+        if dry_run:
+            click.echo(
+                "# dry-run: the decision below is what a real run would emit;"
+                " the presentation counter was NOT persisted"
+            )
         click.echo(json.dumps(result["decision"]))
     except Exception as exc:  # noqa: BLE001 — fail-open is the whole design
         # Never block on our own failure. Say so on stderr so the silence is

@@ -155,9 +155,49 @@ def notifyd_group(
     is_flag=True,
     help="Overwrite an existing unit file (default: leave it untouched).",
 )
-def install_unit_cmd(force: bool) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the intended unit install and exit 0 without writing the unit file.",
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation (no-op today — install is non-interactive; reserved for §2).",
+)
+def install_unit_cmd(force: bool, dry_run: bool, yes: bool) -> None:
     """Write the unit file (operator-gated) and print the enable commands."""
+    _ = yes  # accepted for §2 compliance
     from .._delivery._systemd import ExecStartUnresolved, install_unit
+
+    if dry_run:
+        # Read-only preview: resolve everything a real run would — including
+        # the ABSOLUTE-path fail-loud on an unresolvable venv — then print it
+        # without writing a single byte.
+        from .._delivery._systemd import (
+            enable_commands,
+            resolve_exec_start,
+            unit_path,
+        )
+
+        try:
+            exec_start = resolve_exec_start()
+        except ExecStartUnresolved as exc:
+            raise click.ClickException(str(exc)) from exc
+        path = unit_path()
+        if not path.is_file():
+            action = "write"
+        elif force:
+            action = "OVERWRITE the existing"
+        else:
+            action = "NOT overwrite the existing (no --force)"
+        click.echo(f"# DRY RUN — would {action} systemd user unit: {path}")
+        click.echo(f"#   ExecStart={exec_start}")
+        click.echo("#")
+        click.echo("# To enable + start it, the OPERATOR runs (this tool does NOT):")
+        click.echo(f"#   {enable_commands()}")
+        return
 
     try:
         result = install_unit(force=force)

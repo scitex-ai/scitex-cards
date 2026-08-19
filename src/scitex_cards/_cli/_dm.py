@@ -118,17 +118,33 @@ def verify_cmd(sidecar, db_path, store) -> None:
 @click.option("--db", "db_path", default=None, help="Database to read.")
 @click.option("--store", default=None, help="Task-store container path.")
 @click.option("--out", default=None, help="Write here instead of stdout.")
-def export_cmd(db_path, store, out) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the intended export (counts and target) without writing the file.",
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation (no-op today — export is non-interactive; reserved for §2).",
+)
+def export_cmd(db_path, store, out, dry_run, yes) -> None:
     """Dump every DM table in the shape ``dm merge`` consumes."""
+    _ = yes  # accepted for §2 compliance
     from pathlib import Path
 
     from .._dm.migrate import export_dm
 
     payload = export_dm(db=db_path, store=store)
+    counts = {k: len(v) for k, v in payload.items()}
+    if dry_run:
+        target = out or "<stdout>"
+        click.echo(f"# DRY RUN - would write {target}  {json.dumps(counts, sort_keys=True)}")
+        return
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     if out:
         Path(out).expanduser().write_text(text, encoding="utf-8")
-        counts = {k: len(v) for k, v in payload.items()}
         click.echo(f"{out}  {json.dumps(counts, sort_keys=True)}")
         return
     click.echo(text)
@@ -138,7 +154,18 @@ def export_cmd(db_path, store, out) -> None:
 @click.argument("payload_path")
 @click.option("--db", "db_path", default=None, help="Database to write.")
 @click.option("--store", default=None, help="Task-store container path.")
-def merge_cmd(payload_path, db_path, store) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Apply the merge, verify it, then roll back - nothing is committed.",
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation (no-op today — merge is non-interactive; reserved for §2).",
+)
+def merge_cmd(payload_path, db_path, store, dry_run, yes) -> None:
     """Union a peer host's export into this store. Never overwrites, never shrinks.
 
     Every row carries a globally-unique primary key and every table is
@@ -147,13 +174,16 @@ def merge_cmd(payload_path, db_path, store) -> None:
     than what is here — receiving a subset must keep the local extras, and any
     post-state with fewer rows raises rather than committing.
     """
+    _ = yes  # accepted for §2 compliance
     from pathlib import Path
 
     from .._dm.migrate import merge_dm
 
     payload = json.loads(Path(payload_path).expanduser().read_text(encoding="utf-8"))
-    report = merge_dm(payload, db=db_path, store=store)
+    report = merge_dm(payload, db=db_path, store=store, dry_run=dry_run)
     click.echo(json.dumps(report, indent=2, sort_keys=True))
+    if dry_run:
+        click.echo("# DRY RUN - nothing was committed.")
 
 
 __all__ = ["dm_group", "register"]

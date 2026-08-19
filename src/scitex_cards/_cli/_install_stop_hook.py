@@ -105,12 +105,40 @@ def _backup(path: Path) -> Path | None:
     is_flag=True,
     help="Actually write. Without this the command only reports what it would do.",
 )
-def install_stop_hook_cmd(settings_path, command, apply_):
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help=(
+        "Report what would be written and exit without touching the file "
+        "(already the default; pass it to make the default explicit). "
+        "Mutually exclusive with --apply."
+    ),
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help=(
+        "Skip confirmation (no-op today — install-stop-hook is "
+        "non-interactive; reserved for §2)."
+    ),
+)
+def install_stop_hook_cmd(
+    settings_path,
+    command,
+    apply_,
+    dry_run,
+    yes,
+):
     """Register `scitex-cards stop-hook` as a Claude Code Stop hook.
 
     Refuses a stop while the agent's board holds runnable work. Dry-run
     unless --apply is passed.
     """
+    _ = yes  # accepted for §2 compliance
+    if apply_ and dry_run:
+        raise click.UsageError("--apply and --dry-run are mutually exclusive.")
     path = (
         Path(settings_path).expanduser()
         if settings_path
@@ -123,7 +151,7 @@ def install_stop_hook_cmd(settings_path, command, apply_):
         click.echo(f"  command: {command}")
         return
 
-    if not apply_:
+    if not apply_ or dry_run:
         click.echo(f"# DRY RUN — would register the Stop hook in {path}")
         click.echo(f"  command: {command}")
         click.echo(

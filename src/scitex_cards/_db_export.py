@@ -412,6 +412,7 @@ def export_json(
     db_path: str | Path | None = None,
     out: str | Path | None = None,
     threads_out: str | Path | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Export the DB to JSON text files; return a count report.
 
@@ -419,6 +420,10 @@ def export_json(
     defaults to ``threads.json`` beside it. The report carries the counts so
     a caller (or the snapshot rail) prints what was exported — a silent
     export is a bulk operation with no dry-run trace.
+
+    ``dry_run=True`` resolves everything and measures the full report but
+    writes NO file; the ``tasks_json`` / ``threads_json`` keys still name the
+    paths a real run would write.
     """
     import json
 
@@ -450,16 +455,18 @@ def export_json(
         else out_path.parent / "threads.json"
     )
 
-    _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
-    # The sidecar contract is a top-level ``threads:`` mapping
-    # (scitex_cards._threads._load_threads reads exactly that key) — an
-    # export must be loadable by the same reader as the live sidecar.
-    _atomic_write(
-        threads_path, json.dumps({"threads": threads}, indent=2, ensure_ascii=False)
-    )
+    if not dry_run:
+        _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
+        # The sidecar contract is a top-level ``threads:`` mapping
+        # (scitex_cards._threads._load_threads reads exactly that key) — an
+        # export must be loadable by the same reader as the live sidecar.
+        _atomic_write(
+            threads_path, json.dumps({"threads": threads}, indent=2, ensure_ascii=False)
+        )
 
     return {
         "db": str(db),
+        "dry_run": bool(dry_run),
         "tasks_json": str(out_path),
         "threads_json": str(threads_path),
         "tasks": len(doc.get("tasks", [])),

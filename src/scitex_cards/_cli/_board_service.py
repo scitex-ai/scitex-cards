@@ -64,14 +64,54 @@ def register(board_group: click.Group) -> None:
     is_flag=True,
     help="Overwrite an existing unit file (default: leave it untouched).",
 )
-def board_install_service_cmd(port: int, host: str, force: bool) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the intended unit install and exit 0 without writing the unit file.",
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Skip confirmation (no-op today — install is non-interactive; reserved for §2).",
+)
+def board_install_service_cmd(
+    port: int, host: str, force: bool, dry_run: bool, yes: bool
+) -> None:
     """Write the systemd user unit (operator-gated) and print the enable commands.
 
     Example:
       $ scitex-cards board install-service
     """
+    _ = yes  # accepted for §2 compliance
     from .._systemd_gui import install_gui_unit
     from .._systemd_unit import ExecStartUnresolved
+
+    if dry_run:
+        # Read-only preview: resolve everything a real run would — including
+        # the ABSOLUTE-path fail-loud on an unresolvable venv — then print it
+        # without writing a single byte.
+        from .._systemd_gui import gui_unit_spec
+        from .._systemd_unit import enable_commands, resolve_exec_start, unit_path
+
+        spec = gui_unit_spec(host=host, port=port)
+        try:
+            exec_start = resolve_exec_start(spec)
+        except ExecStartUnresolved as exc:
+            raise click.ClickException(str(exc)) from exc
+        path = unit_path(spec)
+        if not path.is_file():
+            action = "write"
+        elif force:
+            action = "OVERWRITE the existing"
+        else:
+            action = "NOT overwrite the existing (no --force)"
+        click.echo(f"# DRY RUN — would {action} systemd user unit: {path}")
+        click.echo(f"#   ExecStart={exec_start}")
+        click.echo("#")
+        click.echo("# To enable + start it, the OPERATOR runs (this tool does NOT):")
+        click.echo(f"#   {enable_commands(spec)}")
+        return
 
     try:
         result = install_gui_unit(host=host, port=port, force=force)

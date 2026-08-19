@@ -236,6 +236,7 @@ def merge_dm(
     *,
     db: str | Path | None = None,
     store: str | Path | None = None,
+    dry_run: bool = False,
 ) -> dict:
     """Union a peer host's DM export into this store. Never overwrites.
 
@@ -244,9 +245,13 @@ def merge_dm(
     last-write-wins, no clock comparison, no vector clocks. It is commutative,
     associative and idempotent, which is what removes the need for a
     coordinator and makes merge ORDER irrelevant.
+
+    ``dry_run=True`` runs the whole merge inside the transaction and ROLLS it
+    back: the report is exactly what a real run would commit, and nothing
+    reaches the database. Same shape as ``backfill_from_sidecar``'s dry-run.
     """
     conn = _open(db, store)
-    report = {"merged": {}, "db": str(resolve_dm_db(db, store=store))}
+    report = {"merged": {}, "db": str(resolve_dm_db(db, store=store)), "dry_run": bool(dry_run)}
     try:
         begin_write_transaction(conn)
         before = _count(conn)
@@ -257,7 +262,10 @@ def merge_dm(
         _assert_no_shrink(before, after)
         report["db_messages_before"] = before
         report["db_messages_after"] = after
-        conn.commit()
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
     except Exception:
         conn.rollback()
         raise

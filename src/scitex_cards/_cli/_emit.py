@@ -174,7 +174,13 @@ def emit_event_cmd(
 @click.option(
     "--status", default=None, help="Optional card-status filter (closed enum)."
 )
-def find_card_cmd(repo, kind, status) -> None:
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the matched cards as a JSON array instead of one id per line.",
+)
+def find_card_cmd(repo, kind, status, as_json) -> None:
     """Print ids of cards with ``repo == <R>`` (one per line; empty when none)."""
     # `scope=""` opts out of the $SCITEX_CARDS_SCOPE env default — a producer
     # resolving repo->card must see EVERY matching card, not just its own
@@ -186,6 +192,12 @@ def find_card_cmd(repo, kind, status) -> None:
         kind=kind,
         status=status,
     )
+    if as_json:
+        # The text form is id-only by contract (the producer hands the id to
+        # emit-event); the JSON form hands over the full matched rows so a
+        # machine caller keeps id AND context.
+        click.echo(json.dumps(cards, default=str))
+        return
     for card in cards:
         cid = card.get("id")
         if cid:
