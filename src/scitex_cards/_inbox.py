@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from ._model import _store_lock
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +97,11 @@ _NOTIFY_ID_TOKEN_HEX = 12
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path through the same chain the task/user API uses."""
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path — see :func:`scitex_cards._paths.local_store_path`.
+#: The sidecars resolved below (``inboxes.json`` and friends) are genuine
+#: filesystem neighbours of the store, so they are correct users of it even when
+#: the authoritative store is a server.
+_resolved_store = local_store_path
 
 
 #: Sidecar filename, sibling of the resolved task store.
