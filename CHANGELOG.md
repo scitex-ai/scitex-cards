@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### A poll and a confirm each name the store they used
+
+A consumer that polls one store and confirms against another gets no error from
+either call: the poll returns nothing, and the confirmation answers `unknown`
+for every id. Both are indistinguishable from an ordinary empty inbox, and
+`unknown` reads as a statement about the IDS when the truth is a statement
+about the DATABASE.
+
+`poll_notifications` and `ack_notifications` now both return `store` — the
+target that call actually read or wrote through, rendered by `store_label` so
+DSN credentials never reach a transcript.
+
+The comparison is ONE-SIDED, and the docstrings say so: two labels that DIFFER
+identify a split; two that AGREE mean only that this client read and wrote in
+one place. The delivery daemon resolves its own target and stamps nothing, so a
+third store can be feeding the inbox while both labels agree. Agreement is
+CANNOT-TELL, not MATCHES.
+
 ### The store identity pin checks BOTH halves (BREAKING for anyone who pinned one)
 
 `SCITEX_CARDS_STORE_UUID` was read, reported, and never compared. Found by
@@ -44,6 +62,31 @@ are re-exported from `_store_instance`, so existing imports are unaffected.
 
 `StoreIdentityRefused` now names BOTH environment variables; the old hint sent
 the reader to pin one and hit the same refusal again.
+### Reassign narrows its write to the cards it touched
+
+`_db_mirror` documents a lost-write mechanism distinct from the deadlock
+rollback: a caller writing card A re-asserts its STALE copy of card B over
+another agent's committed change, "and both are told they succeeded". Measured
+on the live board 2026-08-10 — a `complete_task` that RETURNED status=done was
+later found back at `blocked`, reverted by writes to unrelated cards.
+
+`touched_ids` is the built mitigation. An AST audit of all 21
+`_save_doc_unlocked` call sites found the two reassign verbs were the only card
+verbs omitting it — and they are the worst to omit, because a stale-copy
+overwrite there reverts another agent's OWNERSHIP change rather than a field.
+
+The two sites need DIFFERENT sets, which a careless fix gets wrong:
+
+    reassign_all    BULK    -> touched_ids=moved       (every card it moved)
+    reassign_task   SINGLE  -> touched_ids=[task_id]
+
+`reassign_all` has no `task_id`. Narrowing it to a single id would persist one
+ownership change and silently drop the other N-1 — worse than the broad write,
+which at least keeps everything it touched.
+
+Neither verb touches a peer card: every field written (`agent`, `assignee`,
+`scope`, the audit comment, `subscribers`, `last_activity`) belongs to the card
+being moved, so the touched set is exactly the moved ids.
 ### A "no such card" error names the store it searched
 
 All seven raise sites interpolated their own local `tasks_path` / `resolved`
