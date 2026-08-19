@@ -141,10 +141,36 @@ def live_store_uuid(pg_dsn):
     """
     from scitex_cards._store_uuid import store_uuid_at
 
+    # SKIPS, rather than FAILS, when the declared server carries no store uuid —
+    # and the asymmetry with `live_instance_id` above is the point.
+    #
+    # `system_identifier` is a property of any live PostgreSQL CLUSTER, so its
+    # absence really is a broken declaration and failing is right. `store_uuid`
+    # is a `schema_meta` ROW: it exists only once a store has been bootstrapped.
+    # A bare `postgres:16` service container — exactly what the postgres-backend
+    # CI job spins up — has an instance and NO store, which is a legitimate
+    # state. My first version called `pytest.fail` here and turned that
+    # legitimate state into a red leg on the first CI run.
+    #
+    # WHY A SKIP IS ACCEPTABLE HERE, WHICH IT USUALLY IS NOT. A skipped POSITIVE
+    # CONTROL is normally indistinguishable from a passing one — that is the
+    # defect this very file is about. It is acceptable ONLY because the positive
+    # control for the both-halves contract does not live here any more:
+    # `test__identity_decision_both_halves.py` proves MATCH is reachable with no
+    # database at all, and runs everywhere. What is skipped here is the
+    # INTEGRATION check that `resolve_store` wires the pair through — which
+    # genuinely cannot be demonstrated against a server with no store on it.
+    #
+    # To make these run in CI, the job must bootstrap a store at the DSN. That
+    # is a change to the workflow's contract, not to this fixture, and it is
+    # carded rather than smuggled in here.
     observed = store_uuid_at(pg_dsn)
     if not observed:
-        pytest.fail(
-            f"{_ENV_PG_DSN} is declared but its store_uuid is unreadable"
+        pytest.skip(
+            f"{_ENV_PG_DSN} names a server with no store on it (no "
+            "schema_meta.store_uuid), so a BOTH-HALVES pin cannot be satisfied "
+            "against it. The contract's positive control lives in "
+            "test__identity_decision_both_halves.py and needs no server."
         )
     return observed
 
