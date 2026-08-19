@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Reassign narrows its write to the cards it touched
+
+`_db_mirror` documents a lost-write mechanism distinct from the deadlock
+rollback: a caller writing card A re-asserts its STALE copy of card B over
+another agent's committed change, "and both are told they succeeded". Measured
+on the live board 2026-08-10 — a `complete_task` that RETURNED status=done was
+later found back at `blocked`, reverted by writes to unrelated cards.
+
+`touched_ids` is the built mitigation. An AST audit of all 21
+`_save_doc_unlocked` call sites found the two reassign verbs were the only card
+verbs omitting it — and they are the worst to omit, because a stale-copy
+overwrite there reverts another agent's OWNERSHIP change rather than a field.
+
+The two sites need DIFFERENT sets, which a careless fix gets wrong:
+
+    reassign_all    BULK    -> touched_ids=moved       (every card it moved)
+    reassign_task   SINGLE  -> touched_ids=[task_id]
+
+`reassign_all` has no `task_id`. Narrowing it to a single id would persist one
+ownership change and silently drop the other N-1 — worse than the broad write,
+which at least keeps everything it touched.
+
+Neither verb touches a peer card: every field written (`agent`, `assignee`,
+`scope`, the audit comment, `subscribers`, `last_activity`) belongs to the card
+being moved, so the touched set is exactly the moved ids.
 ### A "no such card" error names the store it searched
 
 All seven raise sites interpolated their own local `tasks_path` / `resolved`
