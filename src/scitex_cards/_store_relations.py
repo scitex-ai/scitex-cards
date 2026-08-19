@@ -210,7 +210,7 @@ def _set_list_member(
     the YAML stays sparse). Stamps ``last_activity``. Returns the task.
     """
     from . import _task
-    from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import _read_write_doc, _task_not_found, _utc_now_iso
 
     with _store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
@@ -232,11 +232,7 @@ def _set_list_member(
                     doc, tasks_path, tasks=tasks, touched_ids=[task_id]
                 )
                 return dict(task)
-    from ._store import _not_found_message
-
-    # `store`, not `tasks_path`: the caller resolved that path for LOCKING,
-    # and on a Postgres deployment it names a file the card was never in.
-    raise TaskNotFoundError(_not_found_message(task_id))
+    raise _task_not_found(task_id)
 
 
 def set_collaborator(

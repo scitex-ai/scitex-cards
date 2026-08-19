@@ -53,7 +53,7 @@ def comment_task(
     observe the emitted event via a real fake handler.
     """
     from . import _model, _task
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
+    from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
 
     tasks_path = _resolved_store(store)
     if not task_id:
@@ -76,9 +76,7 @@ def comment_task(
         # forever but must behave as ABSENT here.
         target = _task._find_live_task(tasks, task_id)
         if target is None:
-            from ._store import _not_found_message
-
-            raise TaskNotFoundError(_not_found_message(task_id))
+            raise _task_not_found(task_id)
         comments = target.setdefault("comments", [])
         # Pre-append snapshot of comment authors — forms the
         # `collaborators` list of the card-message event below.

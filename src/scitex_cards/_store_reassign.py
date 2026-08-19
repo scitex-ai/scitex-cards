@@ -140,13 +140,21 @@ def reassign_all(
             if tid:
                 moved.append(str(tid))
         if moved:
-            # NAMES WHAT IT TOUCHED. Without `touched_ids` the mirror treats
-            # "differs from the database" as "I meant to write this", so this
-            # write re-asserts our copy of every OTHER card on the board as it
-            # looked at our read — reverting anyone who committed in between,
-            # and telling both of us we succeeded. `moved` is exactly the set
-            # this verb changed, so it is already the right answer.
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks, touched_ids=moved)
+            # NARROWED TO WHAT THIS CALL ACTUALLY MOVED. Without `touched_ids`
+            # the write re-asserts this caller's whole in-memory copy, so a card
+            # another agent changed between our read and our write is silently
+            # reverted — "and both are told they succeeded" (`_db_mirror`).
+            # Measured on the live board 2026-08-10: a `complete_task` that
+            # RETURNED status=done was later found back at blocked, reverted by
+            # writes to UNRELATED cards.
+            #
+            # `moved`, NOT `[task_id]`: this verb is BULK and has no single
+            # task_id. Narrowing to one id here would persist one ownership
+            # change and drop the other N-1 — a worse defect than the broad
+            # write, which at least keeps everything it touched.
+            _model._save_doc_unlocked(
+                doc, tasks_path, tasks=tasks, touched_ids=moved
+            )
     count = len(moved)
     # ONE batch event, AFTER the write is durable + the lock released
     # (fail-soft). The event models the ACT — one emit for the whole cohort,
@@ -285,11 +293,11 @@ def reassign_task(
             if subs:
                 target["subscribers"] = subs
             target["last_activity"] = _utc_now_iso()
-            # See the sibling write above: naming the one card this verb
-            # changed stops the mirror re-asserting our stale copy of every
-            # other card. A single-card verb that writes the whole document
-            # is the shape that ate a completion on 2026-08-10 and a park on
-            # 2026-08-18 (test__stale_copy_clobber.py reproduces it).
+            # Genuinely single-card: every field written above belongs to
+            # `target`, and no peer card is touched. Same guard as every other
+            # card verb — reassign was the only one missing it, and it is the
+            # worst one to miss, because a stale-copy overwrite here reverts
+            # another agent's OWNERSHIP change while both callers see success.
             _model._save_doc_unlocked(
                 doc, tasks_path, tasks=tasks, touched_ids=[task_id]
             )

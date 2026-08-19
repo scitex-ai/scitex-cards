@@ -269,4 +269,40 @@ def runtime_dir(store: str | Path | None = None, *, create: bool = True) -> Path
     return d
 
 
+def local_store_path(store: str | Path | None) -> Path:
+    """The LOCAL TASK-FILE PATH for ``store`` — not the resolved store target.
+
+    ``None`` runs the full precedence chain; an explicit value is taken as-is
+    (expanded), because a caller naming a path means that path.
+
+    THE NAME IS THE POINT. This function was called ``_resolved_store`` in three
+    separate modules, and the name was a lie on every PostgreSQL deployment:
+
+        resolve_store().resolved   postgresql://scitex_cards@127.0.0.1:55432/...
+        _resolved_store(None)      /home/agent/.scitex/cards/tasks.yaml
+
+    Two answers to "which store am I on", in the package that warns harder about
+    store identity than about anything else. The error strings that interpolated
+    the second one sent scitex-hub hunting a phantom second store, and cost them
+    a conclusion they had to retract to another agent — an error naming the wrong
+    store is worse than a vague one, because it is actionable in the WRONG
+    direction. So: whatever this returns, it is not "the resolved store", and the
+    name now says which of the two it is.
+
+    IT IS STILL THE RIGHT VALUE FOR SOME CALLERS, which is why it survives rather
+    than being deleted. The per-host file lock, the ``inboxes.json`` sidecar, the
+    attachments root and the ``runtime/`` directory are all genuinely local
+    filesystem neighbours of the store, and they must keep resolving locally even
+    when the authoritative store is a server. Use this when you mean the local
+    file; use ``resolve_store()`` when you mean the store the data is in.
+
+    ONE DEFINITION ON PURPOSE. It previously existed as three byte-identical
+    copies (``_store_list``, ``_inbox``, ``_users._store_read``). Each module
+    keeps importing it under the old private name so no call site changes here,
+    but there is now a single place to correct — a triplicated resolver is the
+    shape that starts answering three different ways.
+    """
+    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+
+
 # EOF

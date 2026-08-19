@@ -1,14 +1,16 @@
 {% comment %}
-Board | Mine | DM page switcher — rendered on EVERY top-level page so none of
+Board | DM page switcher — rendered on EVERY top-level page so neither of
 them is reachable only by typing its URL.
 
-MINE was added 2026-08-14 with the "My Cards" phone view (card
-cards-gui-phone-view-own-cards-20260814), and it belongs HERE rather than
-being linked from the board, for the reason this whole component exists: the
-operator's complaint that started it was that /chat 「隠し URL みたいになって
-しまっている」. A page reachable only by typing its address is the same failure
-whatever the page is, so a new one joins the switcher on the day it ships
-instead of waiting to be complained about.
+MINE WAS HERE AND IS GONE, 2026-08-19. It arrived 2026-08-14 with the "My
+Cards" phone view (card cards-gui-phone-view-own-cards-20260814, PR #833) and
+the operator asked for it deleted twice on the DM rail two days later
+(「この Mine というのは使わないので削除してください」, then 「はい、つかわない
+のでさくじょで」). The whole feature went — page, JSON handler, routes and the
+identity resolver behind it — not just this link. Unlinking a page that still
+answers its URL would have recreated 「隠し URL みたいになってしまっている」,
+the complaint that created this component; the rule that a shipped page joins
+the switcher has the same rule in reverse when the page is withdrawn.
 
 THE LABEL AND THE LINK BOTH READ DM NOW — and the ORDER that happened in is the
 whole point. Operator, 2026-07-29 (TG): 「あと、"chat" となってますが、"DM" で
@@ -62,8 +64,7 @@ Callers pass the page they are on:
 Styling lives in static/scitex_cards/page-switcher.css; each host page feeds
 its own palette into that component's `--sw-*` tokens.
 {% endcomment %}
-<nav class="stx-cards-switcher" aria-label="Board, Mine or DM">
+<nav class="stx-cards-switcher" aria-label="Board or DM">
   <a class="stx-cards-switcher__item{% if active == 'board' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}board" {% if active == 'board' %}aria-current="page" {% endif %}title="Board — every card in the fleet">Board</a>
-  <a class="stx-cards-switcher__item{% if active == 'mine' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}me" {% if active == 'mine' %}aria-current="page" {% endif %}title="My Cards — just the ones that are yours">Mine</a>
   <a class="stx-cards-switcher__item{% if active == 'chat' %} stx-cards-switcher__item--on{% endif %}" href="{{ api_base }}dm" {% if active == 'chat' %}aria-current="page" {% endif %}title="Direct messages with the agents">DM</a>
 </nav>

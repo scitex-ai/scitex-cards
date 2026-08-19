@@ -34,7 +34,7 @@ import os
 from pathlib import Path
 
 from ._model import VALID_STATUSES, load_tasks
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 from ._store_target import resolve_store_target
 from ._task import _is_tombstoned
 
@@ -111,14 +111,12 @@ def _in_scope(task: dict, scope: str) -> bool:
     return task.get("assignee") == owner or task.get("agent") == owner
 
 
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path argument through the precedence chain.
-
-    ``None`` ⇒ apply the full resolution chain (`_paths.resolve_tasks_path`).
-    Explicit path ⇒ used as-is (must exist for reads; will be created for
-    fresh writes by :func:`_model.save_tasks`).
-    """
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path for a store, NOT the resolved store target (which
+#: may be a PostgreSQL DSN). Defined once in :mod:`scitex_cards._paths`; this
+#: private alias keeps every existing call site and the ``_store`` re-export
+#: working unchanged. See that function's docstring for why the old name was
+#: wrong and why the value is still needed.
+_resolved_store = local_store_path
 
 
 def _default_scope(arg: str | None) -> str | None:
