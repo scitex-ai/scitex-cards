@@ -293,10 +293,34 @@ class LocalBackend:
                     seen_ids.add(rid)
                 notifications.append(record)
         from ._inbox_receipt import unconfirmed_ids
+        from ._store_target import store_label
 
         payload = {
             "agent": agent,
             "recipient_id": recipient_id,
+            # WHICH STORE THESE ROWS CAME FROM. The confirm side reports the
+            # same field, and the pair is the point: an empty poll and a
+            # confirmation that answers `unknown` are BOTH what a correct call
+            # against the wrong database looks like, and neither is
+            # distinguishable on its own from "there is simply nothing here".
+            # Two labels that disagree name the fault outright.
+            #
+            # ONE-SIDED, AND THE LIMIT IS NOT A DETAIL. Agreement covers only
+            # the CLIENT's own read and write. The delivery daemon resolves
+            # its target independently and stamps nothing, so the carded
+            # incident — daemon on :5442, this poll AND the ack both on
+            # :55432 — produces two AGREEING labels while the messages keep
+            # arriving from a third store. Reading agreement as "no split"
+            # is the false-reassurance this field must not manufacture.
+            #
+            # Resolved from `store`, the argument this poll actually read
+            # through, so it cannot caption a target the read did not use.
+            # A LABEL, deliberately, not an identity: `instance_id` would be
+            # stronger — it separates two databases behind one loopback DSN —
+            # but obtaining it OPENS A CONNECTION, and this is the poll/ack
+            # path, run in a loop by every agent. See the card for why the
+            # cheap half ships first.
+            "store": store_label(store),
             "notifications": notifications,
             # The ids still awaiting confirmation, and the verb that confirms
             # them: the safe loop must be the OBVIOUS one to write from here.
