@@ -74,14 +74,32 @@ jobs:
 
             # Combined check-run conclusions for the PR head. We ignore advisory
             # codecov/readthedocs checks (by name) and count anything that is not
-            # already success/neutral/skipped as still-pending. Mirrors the old
-            # statusCheckRollup logic exactly.
+            # already success/neutral/skipped as still-pending.
+            #
+            # PENDING IS DECIDED BY `.status`, NEVER BY AN ABSENT CONCLUSION.
+            # The previous predicate ended with `and . != ""` after mapping a
+            # missing conclusion to "" via `(.conclusion // "")`. A queued or
+            # in_progress check-run has conclusion `null` (REST) — so `//` turned
+            # the one value meaning "WE DO NOT KNOW YET" into "", and `!= ""`
+            # then DISCARDED IT. Exactly the checks that should have blocked the
+            # merge were the checks removed from the count, and `pending` came
+            # back 0 for a PR whose CI had not started. Measured elsewhere in the
+            # fleet: 9 queued checks -> 0 pending.
+            #
+            # `(.conclusion // .state // "")` does not fix it either: jq's `//`
+            # falls back on null and false, never on "".
+            #
+            # So: a run is pending if it has not COMPLETED, full stop; only a
+            # completed run is judged by its conclusion. An unknown state now
+            # counts toward `pending` rather than vanishing from it.
             pending=$(api_get "repos/$REPO/commits/$pr_head/check-runs?per_page=100" \
               | jq '[ .check_runs[]
                       | select(((.name // "") | ascii_downcase | test("codecov|readthedocs")) | not)
-                      | (.conclusion // "")
-                      | ascii_upcase
-                      | select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED" and . != "") ] | length') || exit 1
+                      | select(
+                          ((.status // "") | ascii_downcase) != "completed"
+                          or (((.conclusion // "") | ascii_upcase)
+                              | . != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED")
+                        ) ] | length') || exit 1
 
             if [ "$pending" = "0" ]; then
               # Merge attempt: PUT /repos/{repo}/pulls/{number}/merge with the

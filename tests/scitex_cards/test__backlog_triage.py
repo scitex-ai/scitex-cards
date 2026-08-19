@@ -180,11 +180,25 @@ class TestCandidatesAndExpiry:
         assert got == []
 
     def test_cooldown_expires_and_the_card_is_drawable_again(self):
+        """A card off cooldown is drawable again — ISOLATED from the horizon.
+
+        `expiry_days` is passed explicitly so this stays a COOLDOWN test. It
+        went red on 2026-08-19 when the default horizon moved 30d -> 7d: the
+        10-day-old card became EXPIRED, so `candidates` dropped it for a reason
+        that has nothing to do with the cooldown under test. The assertion was
+        correct and the arrangement was not — `days=10` had silently meant
+        "old enough to be off cooldown, still inside the horizon", and only the
+        first half of that was written down.
+
+        Pinning both knobs is the fix rather than picking a new number: a test
+        whose setup depends on an unrelated default is one config change away
+        from a red that points at the wrong mechanism.
+        """
         # Arrange
         t = _card("c", days=10)
         t[FIELD_LAST_TRIAGED_AT] = _iso(5)
         # Act
-        got = candidates([t], now=NOW, cooldown_hours=72.0)
+        got = candidates([t], now=NOW, cooldown_hours=72.0, expiry_days=365.0)
         # Assert
         assert [x["id"] for x in got] == ["c"]
 

@@ -49,8 +49,22 @@ ENV_TRIAGE_SAMPLE = "SCITEX_CARDS_TRIAGE_SAMPLE"
 DEFAULT_TRIAGE_SAMPLE = 10
 
 #: Recency half-life. A card deferred this many hours ago is half as likely to
-#: be drawn as one deferred just now. 7 days keeps roughly the last fortnight
-#: in play and lets the rest drift toward expiry.
+#: be drawn as one deferred just now.
+#:
+#: KEPT AT 7 DAYS DELIBERATELY, now that the expiry horizon is also 7 days: a
+#: card is drawn at full weight the day it is deferred and at HALF weight by
+#: the day it expires, so attention fades across the window instead of falling
+#: off a cliff at the end. That IS the operator's 「7日間の間でもう忘れるように
+#: 重み付け」 — the forgetting curve is this decay, and the horizon below is
+#: where it stops mattering.
+#:
+#: SHORTENING IT IS THE INTUITIVE MOVE AND IT BACKFIRES. The weight feeds
+#: `u ** (1/w)`, an A-Res weighted-reservoir key: it is a SELECTION
+#: PROBABILITY, not a lifetime. A shorter half-life makes the draw favour
+#: recent cards MORE sharply, so old cards are shown LESS while continuing to
+#: count — "work the last N days and never see the rest", which is the failure
+#: the horizon exists to prevent. Change the HORIZON to forget; change this
+#: only to re-balance which live cards get offered.
 ENV_HALF_LIFE_HOURS = "SCITEX_CARDS_TRIAGE_HALF_LIFE_HOURS"
 DEFAULT_HALF_LIFE_HOURS = 24.0 * 7
 
@@ -62,8 +76,35 @@ DEFAULT_COOLDOWN_HOURS = 72.0
 
 #: Past this age a deferred card is expired: proposed for cancellation rather
 #: than offered for action.
+#:
+#: SEVEN DAYS, ON THE OPERATOR'S INSTRUCTION, 2026-08-19 (TG), verbatim:
+#: 「期限はそうですね。じゃあ1週間したら完全に赤い風にしようしましょうか？なので、
+#: 3日ルールは7日ルールにしてください。」 — and the reason, in his words:
+#: 「カードが多すぎるとその管理コストが増える割に実際にはうまくワークしない…
+#: アクションの方が大事…忘れたもので本当に必要なものはもう一回私から必要に応じて
+#: 必ず上がってくる」.
+#:
+#: WAS 30. THAT IS A 4.3x SHORTENING AND THE BLAST RADIUS IS DELIBERATE, not a
+#: side effect — DRY-RUN against the live board 2026-08-19, 1748 deferred cards
+#: (141 parked and therefore exempt), aged by this same clock:
+#:      30d -> 356 expired     14d -> 800 expired     7d -> 935 expired
+#: So this moves 579 MORE cards from "offered for action" to "proposed for
+#: cancellation", spread across every owner — dev 248, hub 222, cards 181,
+#: neurovista 81, clew 40, todo 39. That is the POINT: he asked for fewer
+#: cards, not for a gentler number. Whoever revisits this must re-measure
+#: rather than quote these figures; they are a reading, not a constant.
+#:
+#: EXPIRY IS A PROPOSAL, NOT A DELETION, and that is what makes the change safe
+#: to ship at this size. `expired()` feeds a nudge whose text is "Default is
+#: cancellation. Rescue any you still want"; nothing in this package writes
+#: `status=cancelled` on its own. Verified 2026-08-18: `expired()`'s only
+#: consumer is `_cli/_triage.py` building nudge text.
+#:
+#: PARKED CARDS ARE STILL EXEMPT (`is_expired` returns False for them), so a
+#: standing goal does not get swept up by the shorter horizon. That exemption
+#: matters MORE at 7 days than it did at 30.
 ENV_EXPIRY_DAYS = "SCITEX_CARDS_DEFERRED_EXPIRY_DAYS"
-DEFAULT_EXPIRY_DAYS = 30.0
+DEFAULT_EXPIRY_DAYS = 7.0
 
 #: Field names. ``deferred_at`` is the age clock (stamped once, never reset);
 #: ``last_triaged_at`` is the cooldown clock.
