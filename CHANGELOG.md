@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-08-19
+
+### The forgetting horizon is 7 days, not 30 (BREAKING)
+
+The operator asked for this directly: 「じゃあ1週間したら完全に赤い風にしようしましょうか？
+なので、3日ルールは7日ルールにしてください」, and the reason he gave matters more than
+the number — 「カードが多すぎるとその管理コストが増える割に実際にはうまくワークしない」,
+and 「忘れたもので本当に必要なものはもう一回私から必要に応じて必ず上がってくる」.
+Forgetting is the mechanism, not the failure.
+
+`DEFAULT_EXPIRY_DAYS` moves 30.0 to 7.0. Dry-run against the live board, 1748
+deferred cards and 141 parked, before anything was written:
+
+    30 days  ->  356 cards expire
+    14 days  ->  800
+     7 days  ->  935
+
+`DEFAULT_HALF_LIFE_HOURS` is deliberately UNCHANGED at 24*7. It is a sampling
+weight in an A-Res weighted reservoir (`u ** (1/w)`), not a lifetime, so
+shortening it does not make the board forget faster — it concentrates the draw
+on the newest cards and makes the older ones *less* likely to ever surface for
+triage, which is the opposite of the intent.
+
+Parked cards are exempt, as before: a park is a stated reason, and a standing
+goal must not be auto-cancelled at the horizon for the crime of standing.
+
+### The "Mine" page is removed (BREAKING)
+
+The operator asked twice, three days apart, and it had not happened. Removes
+`_me_page.py`, `handlers/mine.py`, `_board_identity.py`, the `me.html` template,
+the `me/` JS assets, and their tests; drops three routes from `urls.py` and the
+nav item from the page switcher. Any bookmark to `/me/` now 404s.
+
+### A PostgreSQL store no longer resolves the DM tables to a file
+
+`resolve_dm_db` derived the DM database from `store.parent`, which assumes
+`store` names a FILE. Every DM caller threads `store=` through and
+`$SCITEX_CARDS_DB` is a DSN, so the assumption was false in production:
+
+    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+      -> postgresql:/scitex_cards@127.0.0.1:55432/cards.db
+
+`Path()` collapses the doubled slash. That is not a near-miss but a NEW SQLite
+database: `open_db` creates it, `init_schema` fills it, and it answers every
+query with an empty board. The regrown file measured on disk held 15 tables and
+3 rows, all of them `schema_meta` — created and initialised, never written to.
+A fourth spelling of the regrowth `is_attempted_dsn` already records three of.
+
+The tier is KEPT — falling through to the ambient chain would send a test's DMs
+into the live fleet database — and now asks `_store_url` what it holds. A server
+target is returned verbatim, which is what the ambient tier below already does
+and what `open_db` re-resolves for `connect` to dispatch. A mangled DSN is
+refused rather than guessed at.
+
+The libpq keyword form (`host=… port=… dbname=…`) is covered and pinned
+separately: it carries no scheme, and had it fallen to the path arm its parent
+would have been `.`, putting a relative `cards.db` in the caller's working
+directory — the 2026-07-31 incident exactly.
+
+`resolve_dm_db` had no test anywhere; the gap in the tests and the gap in the
+code were the same gap. All five shapes are now pinned.
+
 ## [0.47.0] - 2026-08-18
 
 ### A store target that was never resolved is refused instead of created
