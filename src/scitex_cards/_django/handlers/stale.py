@@ -119,7 +119,7 @@ def handle_stale(request, board):
 
     Query params:
 
-    - ``days`` (int, default 14): age cutoff in days for created_at /
+    - ``days`` (int, default 7): age cutoff in days for created_at /
       last_activity. Smaller value surfaces more cards.
     - ``include_no_timestamp`` (bool, default ``true``): set to
       ``false`` to HIDE rows whose ONLY reason is missing timestamps

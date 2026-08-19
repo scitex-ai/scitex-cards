@@ -14,7 +14,7 @@ operators / agents working from a shell who want a one-line answer to
 Criteria mirror the server-side derivation (kept in sync):
     - ``status == "deferred"`` (the backlog status; ``pending`` was abolished
       2026-07-10) AND
-        - ``created_at > N days`` (default 14), OR
+        - ``created_at > N days`` (default 7), OR
         - no ``created_at`` and no ``last_activity``, OR
         - title is empty/very-short AND there's no assignee / repo /
           project anchor (vague/orphaned heuristic).
@@ -110,7 +110,7 @@ def _age_days(task: dict, now):
         description=(
             "Mirrors the board's `/stale` endpoint (PR #153) + the "
             "🧹 Stale Review panel (PR #154) so the operator can sweep "
-            "from a shell. Default cutoff: 14 days."
+            "from a shell. Default cutoff: 7 days."
         ),
         examples=(
             ("{prog} list-stale", ""),

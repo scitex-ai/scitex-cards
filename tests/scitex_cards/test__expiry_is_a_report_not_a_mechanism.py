@@ -127,6 +127,22 @@ class TestTheStaleHorizonsMoveTogether:
         assert cli >= DEFAULT_EXPIRY_DAYS
 
 
+    def test_the_documented_default_matches_the_constant(self):
+        # Arrange — the help text states a number; it must be THE number.
+        days = _module_int("_cli/_stale.py", "_DEFAULT_DAYS")
+        # Act
+        source = (_SRC / "_cli" / "_stale.py").read_text(encoding="utf-8")
+        # Assert — prose cannot fail a test unless something pins it.
+        assert f"Default cutoff: {days} days" in source
+
+    def test_the_django_docstring_matches_its_constant(self):
+        # Arrange
+        days = _module_int("_django/handlers/stale.py", "_DEFAULT_DAYS")
+        # Act
+        source = (_SRC / "_django" / "handlers" / "stale.py").read_text(encoding="utf-8")
+        # Assert
+        assert f"(int, default {days})" in source
+
 class TestTheDetectorItself:
     def test_the_detector_would_have_caught_the_sentence_that_shipped(self):
         # Arrange
