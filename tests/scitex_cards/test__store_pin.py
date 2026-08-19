@@ -48,6 +48,7 @@ import pytest
 from scitex_cards._db import ENV_DB, connect
 from scitex_cards._store import resolve_store
 from scitex_cards._store_instance import Certainty, IdentityVerdict
+from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
 from scitex_cards._store_pin import (
     ENV_PINNED_INSTANCE,
     StoreIdentityRefused,
@@ -127,6 +128,25 @@ def live_instance_id(pg_dsn):
             f"{observed.reason}"
         )
     return observed.instance_id
+
+
+@pytest.fixture
+def live_store_uuid(pg_dsn):
+    """The declared server's REAL store_uuid, read from the server.
+
+    The SECOND half of the identity. Added 2026-08-19 because a pin is now only
+    satisfied when BOTH halves agree: the instance says which SERVER and the
+    uuid says which BOARD, and a client that pins one gets ``CANNOT_TELL``
+    rather than a half-checked pass.
+    """
+    from scitex_cards._store_uuid import store_uuid_at
+
+    observed = store_uuid_at(pg_dsn)
+    if not observed:
+        pytest.fail(
+            f"{_ENV_PG_DSN} is declared but its store_uuid is unreadable"
+        )
+    return observed
 
 
 def _create_sqlite_store(path: Path) -> str:
@@ -367,20 +387,49 @@ def test_a_sqlite_target_says_why_it_cannot_answer(two_sqlite_stores):
 # ---------------------------------------------------------------------------
 # Against a real server
 # ---------------------------------------------------------------------------
-def test_a_correct_pin_matches_a_live_server(environment, pg_dsn, live_instance_id):
-    """The happy path is reachable — a pinned client can still work."""
+def test_a_correct_pin_matches_a_live_server(
+    environment, pg_dsn, live_instance_id, live_store_uuid
+):
+    """The happy path is reachable — a pinned client can still work.
+
+    PINS BOTH HALVES, a DELIBERATE update made 2026-08-19 rather than a repair.
+    Until then this pinned the instance alone and expected ``MATCHES``; an
+    instance-only pin is now ``CANNOT_TELL``, because the instance identifies
+    the SERVER and a database restored onto that same server keeps it while
+    getting a new uuid. This test's PURPOSE is unchanged, which is why it was
+    updated rather than deleted: it is the case asserting a PASS, and without
+    it a guard that refuses everything would look correct.
+    """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
+    environment(
+        **{
+            ENV_DB: pg_dsn,
+            ENV_PINNED_INSTANCE: live_instance_id,
+            ENV_EXPECTED_STORE_UUID: live_store_uuid,
+        }
+    )
     # Act
     check = check_resolution()
     # Assert
     assert check.verdict is IdentityVerdict.MATCHES
 
 
-def test_a_correct_pin_permits_the_resolution(environment, pg_dsn, live_instance_id):
-    """A guard that only ever refuses is not a guard, it is an outage."""
+def test_a_correct_pin_permits_the_resolution(
+    environment, pg_dsn, live_instance_id, live_store_uuid
+):
+    """A guard that only ever refuses is not a guard, it is an outage.
+
+    Both halves pinned, for the reason on
+    ``test_a_correct_pin_matches_a_live_server``.
+    """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
+    environment(
+        **{
+            ENV_DB: pg_dsn,
+            ENV_PINNED_INSTANCE: live_instance_id,
+            ENV_EXPECTED_STORE_UUID: live_store_uuid,
+        }
+    )
     # Act
     check = check_resolution()
     # Assert
@@ -449,11 +498,22 @@ def test_require_pinned_store_raises_when_nothing_is_pinned(environment, pg_dsn)
 
 
 def test_require_pinned_store_returns_the_target_when_the_pin_holds(
-    environment, pg_dsn, live_instance_id
+    environment, pg_dsn, live_instance_id, live_store_uuid
 ):
-    """The permitted path returns the target every write should then use."""
+    """The permitted path returns the target every write should then use.
+
+    Both halves pinned, for the reason on
+    ``test_a_correct_pin_matches_a_live_server``. This is the REFUSING door's
+    positive control, so it is the one that proves the door can still open.
+    """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
+    environment(
+        **{
+            ENV_DB: pg_dsn,
+            ENV_PINNED_INSTANCE: live_instance_id,
+            ENV_EXPECTED_STORE_UUID: live_store_uuid,
+        }
+    )
     # Act
     got = require_pinned_store()
     # Assert
@@ -477,16 +537,26 @@ def test_resolve_store_reports_a_live_servers_instance(
 
 
 def test_a_correctly_pinned_resolution_may_proceed(
-    environment, pg_dsn, live_instance_id
+    environment, pg_dsn, live_instance_id, live_store_uuid
 ):
     """The AGREE branch of the property, against a real server.
 
     The disjunction is only meaningful if both branches occur: this pins that a
     correctly-configured environment is permitted, so the headline test cannot
     be satisfied by a guard that simply refuses everything.
+
+    "Correctly configured" now means BOTH halves pinned (2026-08-19). A
+    deliberate contract change, not a repair — see
+    ``test_a_correct_pin_matches_a_live_server``.
     """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
+    environment(
+        **{
+            ENV_DB: pg_dsn,
+            ENV_PINNED_INSTANCE: live_instance_id,
+            ENV_EXPECTED_STORE_UUID: live_store_uuid,
+        }
+    )
     # Act
     report = resolve_store()
     # Assert

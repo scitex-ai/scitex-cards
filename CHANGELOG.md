@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### The store identity pin checks BOTH halves (BREAKING for anyone who pinned one)
+
+`SCITEX_CARDS_STORE_UUID` was read, reported, and never compared. Found by
+dotfiles on 2026-08-17 by mutation-testing the gate rather than reading it —
+setting a deliberately wrong value and checking whether the gate noticed.
+Reproduced on shipped 0.48.0:
+
+    SCITEX_CARDS_STORE_UUID=deadbeef-1111-4222-8333-444455556666 \
+    SCITEX_CARDS_STORE_INSTANCE=7672112238472680366 \
+      scitex-cards resolve-store --json
+
+    "store_uuid":       "1d55dd6e-3d2a-4c24-a429-a78835ab988f"
+    "expected_uuid":    "deadbeef-1111-4222-8333-444455556666"
+    "identity_verdict": "matches"       <-- differing values on adjacent lines
+    "may_proceed":      true
+
+Both call sites passed the INSTANCE into a single `expected` field, so the uuid
+never reached a comparison. The collapse of two independent expectations into
+one field was the defect, so `IdentityCheck` now carries them separately.
+
+**Both halves are now required for a pass**, and an instance-only pin answers
+`cannot-tell` rather than `matches`. That is deliberate: the instance identifies
+the SERVER, and a database restored onto that same server keeps its
+`system_identifier` while getting a NEW `store_uuid` — the 2026-08-09
+frozen-store incident this pin exists to catch. The uuid alone is equally
+insufficient: three databases once answered the same `store_uuid` ~300 cards
+apart, because a uuid is a row and a dump carries rows.
+
+**Alongside, never instead of.** Only the instance half was live, so the
+two-ports-on-one-host case (measured on nas-03, same uuid, different
+`system_identifier`, one seven days stale) was being caught by accident; a
+repair that simplified toward the uuid would have converted a working guard
+into one that passes a week-old board.
+
+The comparison moved to a new `_store_identity_decision.decide_identity` and
+both guards now probe-then-delegate. They previously carried two bodies "kept
+IDENTICAL by discipline" — which is the arrangement that drifted, and is why
+one of them stopped checking the uuid. `IdentityVerdict` and `IdentityCheck`
+are re-exported from `_store_instance`, so existing imports are unaffected.
+
+`StoreIdentityRefused` now names BOTH environment variables; the old hint sent
+the reader to pin one and hit the same refusal again.
+
+
 ## [0.48.0] - 2026-08-19
 
 ### The forgetting horizon is 7 days, not 30 (BREAKING)

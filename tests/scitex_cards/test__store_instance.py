@@ -259,11 +259,35 @@ def test_a_known_identity_carries_no_reason():
 # failing finding.
 # ---------------------------------------------------------------------------
 def test_a_pinned_identity_that_matches_proceeds(pg_conn):
-    """The positive control: without it, a guard that refuses everything passes."""
+    """The positive control: without it, a guard that refuses everything passes.
+
+    BOTH HALVES ARE PINNED HERE, and that is a DELIBERATE CHANGE made
+    2026-08-19 rather than a repair to a broken test. Until then this passed
+    the instance alone and expected ``may_proceed is True``; it now supplies a
+    uuid pair as well, because an instance-only pin answers ``CANNOT_TELL``
+    under the corrected contract.
+
+    WHY THE CONTRACT CHANGED: the instance identifies the SERVER. A database
+    frozen and restored onto that same server keeps its ``system_identifier``
+    and gets a NEW ``store_uuid``, so an instance-only pin passes exactly the
+    2026-08-09 frozen-store incident the pin exists to catch. See
+    ``_store_identity_decision.decide_identity`` for all nine rows and
+    ``test__identity_decision_both_halves.py`` for the per-half mutation table.
+
+    THE PURPOSE OF THIS TEST IS UNCHANGED and is why it was updated rather than
+    deleted: it is the one case asserting a PASS, so it is what stops a guard
+    that refuses everything from looking correct.
+    """
     # Arrange
     pinned = store_instance(pg_conn).instance_id
+    pinned_uuid = "1d55dd6e-3d2a-4c24-a429-a78835ab988f"
     # Act
-    check = check_store_identity(pg_conn, pinned)
+    check = check_store_identity(
+        pg_conn,
+        pinned,
+        observed_uuid=pinned_uuid,
+        expected_uuid=pinned_uuid,
+    )
     # Assert
     assert check.may_proceed is True
 
