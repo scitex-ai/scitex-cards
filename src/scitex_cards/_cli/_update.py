@@ -80,7 +80,8 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
     default=None,
     help=(
         "WHY this card deliberately stands (free text), OR '' to UN-PARK it. "
-        "A park exempts the card from the backlog nudge and from auto-expiry, "
+        "A park exempts the card from the backlog nudge and from the triage "
+        "report's expiry proposal (nothing cancels it automatically), "
         "so a card that could be parked but not un-parked was a state you "
         "could enter and not leave — while invisible to the sweep that exists "
         "to catch exactly that. Every other clearable field had a CLI form; "

@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Expiry is a REPORT, not a mechanism — every surface now says so
+
+Nothing in this package expires a card. `is_expired` is an age predicate and
+`expired()` feeds a body that gets PRINTED; no sweep, daemon or verb writes
+`status=cancelled`, and none of the six JobSpecs in `_jobs_provider` runs
+`scitex-cards triage`. Four user-facing surfaces claimed otherwise:
+
+* `add_task` / `update_task` on the MCP surface — the one every agent in the
+  fleet reads before writing a card — promised that a park exempts a card
+  "from the backlog nudge AND from auto-expiry".
+* the `--parked` CLI help repeated it verbatim.
+* `is_expired`'s own docstring said expiry "cancels on silence", while the
+  module header 300 lines above correctly said the opposite.
+* worst, the triage nudge told its HUMAN reader "Rescue any you still want;
+  silence cancels them". Silence cancels nothing. That promise was read by the
+  person whose actual complaint is that the board has too many cards, and
+  whose 「忘れたもので本当に必要なものは…必ず上がってくる」 presupposes that
+  forgetting really happens.
+
+All four now describe what runs. The nudge names `status=cancelled` as an
+explicit step. `add_task` states the horizon, the env var, and the six jobs
+that exist instead.
+
+CORRECTING THE 0.48.0 ENTRY BELOW, which is left intact as the record: it ends
+"a standing goal must not be auto-cancelled at the horizon for the crime of
+standing". Nothing auto-cancels; the park exempts a card from being PROPOSED
+for cancellation. The false framing reached the release notes of the very
+change that made it expensive — 935 cards now sit past a line that proposes
+cancellation and delivers nothing.
+
+`test__expiry_is_a_report_not_a_mechanism.py` reads the docstrings by AST, and
+`test_no_jobspec_schedules_triage` pins the fact the prose depends on, so
+scheduling triage turns the docs red instead of letting them rot.
+
+Unchanged on purpose: `_cli/_stale.py` and `_django/handlers/stale.py` both
+still hard-code a 14-day horizon (two copies, no single source). The Django one
+feeds the board's Archive button, so widening it to 7 would arm an existing
+consumer against more of everyone's cards — an operator decision, not a
+maintainer one.
+
 ## [0.48.0] - 2026-08-19
 
 ### The forgetting horizon is 7 days, not 30 (BREAKING)

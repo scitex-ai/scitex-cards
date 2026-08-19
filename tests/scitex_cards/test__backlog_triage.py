@@ -245,8 +245,16 @@ class TestNudgeBody:
         rotten = [_card("old", days=DEFAULT_EXPIRY_DAYS + 1)]
         # Act
         body = build_triage_body([], rotten)
-        # Assert
-        assert "cancellation" in body
+        # Assert — case-insensitive: this pins the WORD, not its capitalisation.
+        assert "cancellation" in body.lower()
+
+    def test_body_says_plainly_that_nothing_cancels_them_for_you(self):
+        # Arrange
+        rotten = [_card("old", days=DEFAULT_EXPIRY_DAYS + 1)]
+        # Act
+        body = build_triage_body([], rotten)
+        # Assert — it once read "silence cancels them". Nothing cancels them.
+        assert "NOTHING CANCELS THESE FOR YOU" in body
 
     def test_body_names_each_expired_card(self):
         # Arrange
