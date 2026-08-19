@@ -139,6 +139,38 @@ class TaskNotFoundError(KeyError):
     """Raised when an update/complete target id is not in the store."""
 
 
+def _task_not_found(task_id: str) -> TaskNotFoundError:
+    """Build the "no such card" error, naming THE STORE THAT WAS SEARCHED.
+
+    ONE BUILDER FOR SEVEN RAISE SITES, because seven copies of a sentence is
+    how the wrong one survived this long. Each site used to interpolate its
+    own ``tasks_path`` / ``resolved`` local -- the LOCAL sidecar path -- while
+    the lookup that had just failed ran against the resolved store. On a
+    PostgreSQL deployment the message therefore named a YAML file::
+
+        task id 'x' not found in /home/agent/.scitex/cards/tasks.yaml
+
+    and it named it for a value THAT PLAYED NO PART IN THE SEARCH.
+    ``_read_write_doc(path)`` ignores its argument entirely -- its body is
+    ``_read_canonical_db_or_raise()``, which takes none -- so that path served
+    the file lock and this one string, and nothing else. ``_paths`` already
+    said so in prose: "interpolates the path into an error message only".
+
+    That is worse than a vague message, because it is actionable in the WRONG
+    DIRECTION: it sent a peer hunting a second store that does not exist, and
+    cost them a conclusion they had to retract to another agent.
+
+    ``store_label`` rather than ``resolve_store_target``: the label strips
+    credentials before this reaches a log, and never routes a DSN through
+    ``Path`` (which collapses ``//`` and mangles it). Calling it here cannot
+    fail the caller it is captioning -- reaching this line means the canonical
+    read ALREADY SUCCEEDED, so the store is resolvable by construction.
+    """
+    from ._store_target import store_label
+
+    return TaskNotFoundError(f"task id {task_id!r} not found in {store_label()}")
+
+
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
@@ -461,7 +493,7 @@ def get_task(
         for t in tasks:
             if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise _task_not_found(task_id)
 
 
 # --------------------------------------------------------------------------- #

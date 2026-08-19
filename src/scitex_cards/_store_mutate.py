@@ -174,7 +174,7 @@ def update_task(
         was passed the ``""`` clear-sentinel (status cannot be cleared).
     """
     from . import _task
-    from ._store import ENV_AGENT, TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import ENV_AGENT, _read_write_doc, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("update_task() requires a non-empty task_id")
@@ -292,7 +292,7 @@ def update_task(
                     status_change = (prior_status, new_status)
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        raise _task_not_found(task_id)
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path

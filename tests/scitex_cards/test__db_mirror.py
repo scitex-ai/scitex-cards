@@ -157,6 +157,58 @@ class TestTheDocumentDoesNotOwnTheRail:
         # Assert
         assert "inboxes" not in rebuilt
 
+    def test_users_is_not_a_rebuilt_section_either(self):
+        """The OTHER half. Nothing pinned this until 2026-08-19.
+
+        `inboxes` left `_SECTION_KEYS` in #780 and the test above pins that it
+        stays out. `users` left later, and its absence was pinned by NOTHING —
+        so re-adding it would restore a P0 with every test still green, which
+        is a repair with no detector.
+
+        WHAT RE-ADDING IT COSTS, from `_db_mirror`'s own comment, because the
+        sequence is not obvious and a future reader deserves it here:
+
+            t1  targeted write        -> users = [u1]; stored hash still hash(None)
+            t3  writer w/ fresh doc   -> mismatch -> rebuild [u1], store hash([u1])
+            t4  writer w/ doc from BEFORE t1
+                -> hash(None) != hash([u1]) -> DELETE FROM users;
+                   DELETE FROM user_names; _insert_users(None) -> REGISTRY GONE
+
+        "Any process holding a document older than a registration silently
+        deletes the registry on its next ORDINARY CARD WRITE." And `touch_user`
+        is the liveness heartbeat, so `last_seen` moves the section hash
+        constantly — which keeps that path HOT rather than rare.
+        """
+        # Arrange
+        owned_by_the_document = _SECTION_KEYS
+
+        # Act
+        rebuilt = set(owned_by_the_document)
+
+        # Assert
+        assert "users" not in rebuilt
+
+    def test_no_section_is_owned_by_the_document_at_all(self):
+        """The general form, so a THIRD section cannot be added silently.
+
+        The two tests above name the sections that have already cost something.
+        This one closes the class: `_sync_sections` is a no-op today, and any
+        key added to it — named or not — re-arms a DELETE-and-reinsert whose
+        gate cannot tell "I changed this" from "someone else did".
+
+        Deliberately strict. If a section ever genuinely SHOULD be
+        document-owned again, this test must be changed with a stated reason,
+        which is the point of it failing.
+        """
+        # Arrange
+        owned_by_the_document = _SECTION_KEYS
+
+        # Act
+        rebuilt = tuple(owned_by_the_document)
+
+        # Assert
+        assert rebuilt == ()
+
     def test_a_full_rebuild_does_not_clear_notifications(self):
         """The first-run path DELETEs every table it lists."""
         # Arrange
