@@ -31,9 +31,17 @@ outage the tolerance was meant to cure: an outage is loud and recoverable.
 WHICH SECTIONS ARE ACTUALLY DANGEROUS — the useful part
 
 Exactly those the write-back OWNS, and that is one named tuple:
-`_db_mirror._SECTION_KEYS`, today `("users",)`. `_sync_sections` issues
+`_db_mirror._SECTION_KEYS`, TODAY EMPTY `()`. `_sync_sections` issues
 `DELETE FROM <section>` and re-inserts from the doc, so a row missing from the
-doc is a row deleted from the table.
+doc is a row deleted from the table — and with the tuple empty that loop has no
+iterations, so no section is document-owned at all right now.
+
+(This paragraph said `("users",)` until 2026-08-19. It was accurate when
+written and stopped being so when `users` left the tuple, which is exactly the
+way a comment decays: silently, while still reading as a measurement. The
+CURRENT value is pinned by `test__db_mirror.py`'s
+`test_no_section_is_owned_by_the_document_at_all`, so this prose can no longer
+be the only thing asserting it.)
 
 The same mutation applied to the NOTIFICATIONS loop does NOT delete: measured,
 the row survived, because `inboxes` was removed from `_SECTION_KEYS` in #780
