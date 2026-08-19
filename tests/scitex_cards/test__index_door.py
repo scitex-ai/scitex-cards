@@ -40,23 +40,39 @@ from scitex_cards._store_url import UnrecognisedStoreTarget
 
 
 @pytest.fixture
-def index_env():
+def index_env(tmp_path):
     """Set the real ``SCITEX_CARDS_INDEX_PATH``, restoring it on teardown.
 
     A real environment variable rather than a patched one: the override is read
     by production code through ``os.environ`` at call time, and that lookup is
     the thing under test. Yields a setter so each test names its own value.
+
+    ALSO RUNS THE TEST FROM A TMP DIRECTORY, and that is not tidiness. The
+    values under test are UNANCHORED — ``${SCITEX_CARDS_DB}``, ``:55432`` — so
+    against unguarded code they resolve RELATIVE TO THE WORKING DIRECTORY and
+    the database lands wherever pytest was started. That is not hypothetical:
+    the first control run of this suite left a 4 KB, zero-table SQLite file
+    named ``${SCITEX_CARDS_DB}`` in the repository root, untracked and not
+    ignored — one ``git add -A`` from being committed, which is precisely the
+    2026-08-02 incident this guard exists to prevent.
+
+    The guard makes that unreachable, but a bisect, a revert, or anyone running
+    this file against an older tree would reproduce it. A test that demonstrates
+    a defect must not be able to inflict it.
     """
-    saved = os.environ.get(ENV_INDEX_PATH)
+    saved_env = os.environ.get(ENV_INDEX_PATH)
+    saved_cwd = os.getcwd()
+    os.chdir(tmp_path)
 
     def _set(value: str) -> None:
         os.environ[ENV_INDEX_PATH] = value
 
     yield _set
-    if saved is None:
+    os.chdir(saved_cwd)
+    if saved_env is None:
         os.environ.pop(ENV_INDEX_PATH, None)
     else:
-        os.environ[ENV_INDEX_PATH] = saved
+        os.environ[ENV_INDEX_PATH] = saved_env
 
 
 class TestIndexDoorRefusesANonFileTarget:
