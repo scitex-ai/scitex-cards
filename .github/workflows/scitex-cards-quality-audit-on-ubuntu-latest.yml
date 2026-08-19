@@ -13,7 +13,6 @@ name: quality
 # both "0 net-new finding(s)"). It was buying nothing and hiding a signal,
 # so removing it costs nothing and is not a judgement call.
 #
-<<<<<<< HEAD
 # `--new-only` IS GONE, BY OPERATOR RULING 2026-08-18: 「--new-only は禁止
 # です！！！」 followed by 「いかなるパッケージも、です。」 — forbidden, for
 # ANY package. Ecosystem-wide, not a scitex-cards decision.
@@ -65,43 +64,6 @@ name: quality
 # decision nobody made about violations nobody enumerated.
 #
 # Backlog card: cards-strict-audit-burndown-114-errors-20260815.
-=======
-# `--new-only` IS GONE (#909, 2026-08-19). This paragraph used to say it
-# REMAINED and was a known hole, and it kept saying so after the flag was
-# removed — the text outlived the thing it described, which is worse than
-# no comment: a reader learned the opposite of the truth from the file that
-# configures the gate.
-#
-# What the flag did, for anyone reading the history: it diffed against the
-# base ref and reported ONLY net-new violations, so the existing backlog
-# was ratcheted in as the baseline (0 net-new -> GREEN) while a new
-# violation still failed CI. That is the constitution's own §2 worked
-# example of a gate configured so it cannot fail, and it behaved exactly as
-# §2 predicts — the PS-140 cross-package gate sat at 3-of-7 coverage for
-# weeks while THIS required check ran, passed, and reported nothing,
-# because "already stale" is not "new".
-#
-# WHAT THE GATE REPORTS NOW, measured 2026-08-19 on this tree:
-#
-#     317 unmasked error(s) (+47 warning/info), 0 masked by skip-rules
-#     (0 declared); 379 line(s) inspected
-#
-# That is red, and it is MEANT to be red — it is the first honest count of
-# the population. The number quoted before the flag came out was 40, which
-# was the filtered view, not the backlog.
-#
-# THE EXIT IS TO FIX THEM, NOT TO EXEMPT THEM. This comment previously
-# recommended per-file exemptions with written reasons as the sanctioned
-# alternative. The operator has since ruled otherwise, directly and
-# without qualification: 「audit の除外はだめです。守るべきルールです、
-# 従うように訂正してください」. So `audit.exemptions` is not the exit here,
-# and `0 declared` above is a state to preserve, not a gap to fill.
-# Burndown card: cards-strict-audit-burndown-114-errors-20260815.
-#
-# Note this gate is NOT a required status context on main (required there:
-# the three pytest-matrix legs). It is red today and does not block merges;
-# that is a deliberate red start, not an oversight to be silenced.
->>>>>>> origin/main
 #
 # Project-type + rule skips live in `.scitex/dev/config.yaml` in this
 # checkout and are applied automatically.
@@ -170,15 +132,11 @@ jobs:
         with:
           cache-dependency-glob: pyproject.toml
 
-<<<<<<< HEAD
       # Kept although --new-only is gone: the auditor still reports the
       # branch/base it graded, and a missing develop ref makes that line
       # read "via explicit" with no baseline named. Cheap, and it keeps the
       # provenance in the log honest.
       - name: Fetch develop ref so the audit can name what it graded
-=======
-      - name: Fetch develop ref for baseline
->>>>>>> origin/main
         run: git fetch origin develop:develop || true
 
       - name: Install package + audit tooling
@@ -190,11 +148,7 @@ jobs:
             || uv pip install --python .venv/bin/python -e .
           uv pip install --python .venv/bin/python "scitex-dev[cli-audit]>=0.17.14"
 
-<<<<<<< HEAD
       - name: Run scitex-dev ecosystem audit-all (FULL — no --new-only)
-=======
-      - name: Run scitex-dev ecosystem audit-all (full, no grandfathering)
->>>>>>> origin/main
         # .venv/bin on PATH so the auditor's `shutil.which("scitex-dev")`
         # and the per-auditor subprocess spawns resolve to THIS venv
         # (where scitex-cards's console-script is installed).
