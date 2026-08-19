@@ -174,6 +174,11 @@ async def poll_notifications(
     which is indistinguishable from "there was nothing to deliver". Two labels
     that disagree name that fault outright.
 
+    Two that AGREE do not clear you. They cover only your own read and write;
+    the delivery daemon resolves its target separately and stamps nothing, so
+    notifications can be arriving from a store neither label mentions. Equal
+    is CANNOT-TELL.
+
     Args:
       agent: the recipient name / id / host@name to poll for.
       unseen_only: when true (default) return only unseen notifications;
@@ -231,9 +236,14 @@ async def ack_notifications(
     ``unknown`` SAYS NOTHING ABOUT THE DATABASE. It reads as "those ids do not
     exist", but a confirmation sent to the WRONG STORE answers exactly the
     same way — every id unknown, no error, nothing to retry. That is why
-    ``store`` is here: compare it with the ``store`` your poll reported. Equal
-    means the loop closed on one store and ``unknown`` really is about the
-    ids; DIFFERENT means you are confirming somewhere you never read.
+    ``store`` is here: compare it with the ``store`` your poll reported.
+
+    THE COMPARISON IS ONE-SIDED. DIFFERENT means you are confirming somewhere
+    you never read — a split, positively identified. EQUAL means only that
+    YOUR read and YOUR write went to the same place; it does NOT mean no
+    split exists, because the daemon that pushes notifications to you
+    resolves its own target and reports nothing. A third store can be feeding
+    your inbox while these two labels agree. Treat equal as CANNOT-TELL.
 
     Args:
       agent: the recipient name / id / host@name whose inbox to confirm in.

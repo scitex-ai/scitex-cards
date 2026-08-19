@@ -17,9 +17,23 @@ when the truth is a statement about the DATABASE.
 WHAT THESE PIN. Both replies carry ``store``: the target the call actually
 used, resolved from the same argument the read/write went through. One label
 alone is a value with nothing to compare against; the PAIR is the instrument.
-Two labels that agree mean the loop closed on one store. Two that DISAGREE
-name the fault outright, which is the only thing the consumer could not
-previously learn.
+Two that DISAGREE name the fault outright, which is the only thing the
+consumer could not previously learn.
+
+AND THE INSTRUMENT IS ONE-SIDED, which is pinned here because it is easy to
+forget and dangerous to forget:
+
+    DIFFER -> a split, positively identified
+    AGREE  -> only that THIS CLIENT read and wrote in one place
+
+Agreement is NOT proof that no split exists. The carded incident had the
+delivery daemon on ``:5442`` while the client's poll and its acks were BOTH on
+``:55432`` — two agreeing labels, four notifications still arriving from a
+third store. The daemon resolves its own target and stamps nothing, so no
+comparison available here can see it. Agreement is CANNOT-TELL, and
+``test_a_poll_and_a_confirm_on_one_store_agree`` is therefore the WEAKEST test
+in this file: it passes even against an implementation that reports the
+ambient store for both. The disagreement test is the one with teeth.
 
 DELIBERATELY A LABEL, NOT AN IDENTITY. ``instance_id`` would be strictly
 stronger — it separates two different databases reached through one identical

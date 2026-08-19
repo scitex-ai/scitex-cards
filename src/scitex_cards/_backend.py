@@ -305,6 +305,14 @@ class LocalBackend:
             # distinguishable on its own from "there is simply nothing here".
             # Two labels that disagree name the fault outright.
             #
+            # ONE-SIDED, AND THE LIMIT IS NOT A DETAIL. Agreement covers only
+            # the CLIENT's own read and write. The delivery daemon resolves
+            # its target independently and stamps nothing, so the carded
+            # incident — daemon on :5442, this poll AND the ack both on
+            # :55432 — produces two AGREEING labels while the messages keep
+            # arriving from a third store. Reading agreement as "no split"
+            # is the false-reassurance this field must not manufacture.
+            #
             # Resolved from `store`, the argument this poll actually read
             # through, so it cannot caption a target the read did not use.
             # A LABEL, deliberately, not an identity: `instance_id` would be

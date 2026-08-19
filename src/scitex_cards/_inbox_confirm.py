@@ -214,11 +214,22 @@ def confirm_notifications(
         call actually flipped unseen -> seen.
 
         ``store`` names the target this confirmation was applied to. Compare
-        it with the ``store`` the poll reported: they agree when the loop
-        closed on one store, and DISAGREE when the consumer is polling one
-        and confirming against another — a split in which every call
-        succeeds, this verb answers ``unknown`` for every id, and that answer
-        is indistinguishable from "those ids do not exist".
+        it with the ``store`` the poll reported — but note the comparison is
+        ONE-SIDED:
+
+            DIFFERENT -> a split, positively identified. The consumer is
+                         polling one store and confirming against another;
+                         every call succeeds and this verb answers
+                         ``unknown`` for every id, which is indistinguishable
+                         from "those ids do not exist".
+            EQUAL     -> only that THIS CLIENT's read and write went to one
+                         store. It does NOT establish that delivery came from
+                         there: the daemon that pushes notifications resolves
+                         its own target and stamps nothing, so a third store
+                         can be feeding the inbox while these two agree.
+
+        Equal is therefore CANNOT-TELL, not MATCHES. Do not read it as proof
+        that no split exists.
     """
     from ._inbox_receipt import record_confirmation, unconfirmed_ids
 
