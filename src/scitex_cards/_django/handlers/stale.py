@@ -45,10 +45,11 @@ logger = logging.getLogger(__name__)
 
 #: A SECOND COPY of `_cli/_stale.py`'s `_DEFAULT_DAYS`. Same number, no shared
 #: source: change one and the board and the CLI disagree silently.
-#: THIS copy feeds the /stale panel behind the ARCHIVE BUTTON, so widening it
-#: (14 -> 7, to match the constitution's forgetting horizon) acts on everyone's
-#: cards — an operator decision, not a maintainer one. See: cards-auto-expiry-is-a-report-nothing-schedules-and-three-horizons-disagree-20260817
-_DEFAULT_DAYS = 14
+#: 14 -> 7 ON THE OPERATOR'S INSTRUCTION, 2026-08-19 (「はい7日でお願いします」),
+#: after he was told what it costs: THIS copy feeds the /stale panel behind the
+#: ARCHIVE BUTTON, so the widening offers ~a week more of everyone's cards for
+#: archiving. He decided with that in front of him. See: cards-auto-expiry-is-a-report-nothing-schedules-and-three-horizons-disagree-20260817
+_DEFAULT_DAYS = 7
 
 
 def _parse_iso(s):
