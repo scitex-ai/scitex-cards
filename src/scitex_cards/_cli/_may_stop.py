@@ -30,7 +30,12 @@ from .._may_stop import may_stop
     help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
 )
 def may_stop_cmd(agent):
-    """Exit 0 iff the agent has NO runnable work; else exit 2 + hints."""
+    """Exit 0 iff the agent has NO runnable work; else exit 2 + hints.
+
+    Example:
+      $ scitex-cards may-stop
+      $ scitex-cards may-stop --agent scitex-cards
+    """
     from .._store import _default_agent
 
     verdict = may_stop(_default_agent(agent), None)

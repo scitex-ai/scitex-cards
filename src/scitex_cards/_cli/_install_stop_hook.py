@@ -110,6 +110,10 @@ def install_stop_hook_cmd(settings_path, command, apply_):
 
     Refuses a stop while the agent's board holds runnable work. Dry-run
     unless --apply is passed.
+
+    Example:
+      $ scitex-cards install-stop-hook
+      $ scitex-cards install-stop-hook --apply
     """
     path = (
         Path(settings_path).expanduser()
