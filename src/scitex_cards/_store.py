@@ -153,15 +153,40 @@ def _task_not_found(task_id: str) -> TaskNotFoundError:
     DIRECTION: it sent a peer hunting a second store that does not exist, and
     cost them a conclusion they had to retract to another agent.
 
-    ``store_label`` rather than ``resolve_store_target``: the label strips
-    credentials before this reaches a log, and never routes a DSN through
-    ``Path`` (which collapses ``//`` and mangles it). Calling it here cannot
-    fail the caller it is captioning -- reaching this line means the canonical
-    read ALREADY SUCCEEDED, so the store is resolvable by construction.
-    """
-    from ._store_target import store_label
+    *** THE LABEL COMES FROM THE READER, NOT FROM A SECOND RESOLUTION. ***
+    This used ``_store_target.store_label()``, which resolves the ambient
+    env/config chain independently. That is a SECOND answer to "which store",
+    and a second answer is a thing that can disagree with the first -- which is
+    the entire defect this builder exists to end, one level up.
 
-    return TaskNotFoundError(f"task id {task_id!r} not found in {store_label()}")
+    They DO disagree, and a test caught it during the #907 merge::
+
+        _canonical_source_label()   <sqlite:/…/cards.db>    names the BACKEND
+        store_label()               /…/cards.db             bare path
+
+    The backend prefix is not decoration: the original incident was a message
+    naming a YAML path while the rows came from PostgreSQL, so the one fact the
+    reader most needs is WHICH ENGINE answered. A bare path cannot carry it.
+
+    :func:`_model._canonical_source_label` is what the canonical read and the
+    tolerated-validation warnings already use, so sharing it means that when
+    the read path moves, this message follows instead of drifting behind. It
+    takes NO store argument on purpose -- the canonical read resolves the
+    ambient chain and does not honour an explicit ``store=`` (measured
+    2026-08-18; cards-store-param-ignored-no-isolation-route-20260818) -- so
+    naming a caller's argument here would state a search that did not happen.
+
+    Credentials: ``_canonical_source_label`` is the label the read path already
+    prints into warnings, so it is held to the same no-secrets bar as the
+    string it replaces. Never raises: a caption must not be able to fail the
+    operation it captions, and reaching this line means the canonical read
+    ALREADY SUCCEEDED.
+    """
+    from ._model import _canonical_source_label
+
+    return TaskNotFoundError(
+        f"task id {task_id!r} not found in {_canonical_source_label()}"
+    )
 
 
 # --------------------------------------------------------------------------- #
