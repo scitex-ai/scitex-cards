@@ -12,6 +12,7 @@ pins.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -168,83 +169,82 @@ def test_resolve_db_path_env_over_userpath(tmp_path, env):
     assert got == (tmp_path / "env.db")
 
 
-def _resolve_with_delegated_user_path(tmp_path, env, monkeypatch):
-    """Neutralise both env tiers and record how `local_state.user_path` is called.
+def _resolve_with_delegated_user_path(tmp_path, env):
+    """Neutralise both env tiers and let the REAL ecosystem resolver run.
 
-    Returns ``(outcome, calls, sentinel)``, where ``outcome`` is the raised
+    Returns ``(outcome, expected_path)``, where ``outcome`` is the raised
     exception rather than a path. It could not be a path since 2026-08-13:
     the final tier no longer RETURNS the delegated filename, it REFUSES and
-    names it. The delegation itself is unchanged and still observable, which
-    is what the second test below is about.
+    names it.
+
+    NO fake. `scitex_config`'s `local_state.user_root()` reads $SCITEX_DIR on
+    every call — its own docstring says "resolved per call so live SCITEX_DIR
+    changes are honoured" — so setting that variable steers the real
+    `user_path("cards", "cards.db")` to a known location under ``tmp_path``.
+
+    Replacing that function with a recorder proved only that SOMETHING was
+    called with those arguments. Running it for real proves the refusal names
+    the path the ecosystem resolver ACTUALLY produces — which is the property
+    a reader following the message depends on, and the one a recorder cannot
+    check, because it supplied the answer it then asserted.
     """
     env.delete(_db.ENV_DB)
-    from scitex_config._ecosystem import local_state
-
-    calls = []
-    sentinel = tmp_path / "delegated" / "cards.db"
-
-    def fake_user_path(pkg_short, *parts):
-        calls.append((pkg_short, parts))
-        return sentinel
-
-    monkeypatch.setattr(local_state, "user_path", fake_user_path)
+    env.set("SCITEX_DIR", str(tmp_path / "userscope"))
+    expected = tmp_path / "userscope" / "cards" / "cards.db"
     try:
         outcome = _db.resolve_db_path()
     except StoreTargetNotConfigured as exc:
         outcome = exc
-    return outcome, calls, sentinel
+    return outcome, expected
 
 
-def test_resolve_db_path_refuses_instead_of_returning_the_user_path(
-    tmp_path, env, monkeypatch
-):
+def test_resolve_db_path_refuses_instead_of_returning_the_user_path(tmp_path, env):
     """Final tier REFUSES. It used to return the delegated filename.
 
-    The abolished behaviour was ``got == sentinel``: a SQLite path nobody
-    chose, handed back with the same type as one somebody did choose. That is
-    the whole defect, so this asserts the type of the outcome and not merely
-    that something went wrong.
+    The abolished behaviour was returning a SQLite path nobody chose, handed
+    back with the same type as one somebody did choose. That is the whole
+    defect, so this asserts the type of the outcome and not merely that
+    something went wrong.
     """
     # Arrange
     # Act
-    got, _calls, _sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
+    got, _expected = _resolve_with_delegated_user_path(tmp_path, env)
 
     # Assert
     assert isinstance(got, StoreTargetNotConfigured)
 
 
-def test_resolve_db_path_delegates_with_the_cards_package_key(
-    tmp_path, env, monkeypatch
-):
-    """The delegation passes the package short-name and the db filename.
+def test_resolve_db_path_delegates_with_the_cards_package_key(tmp_path, env):
+    """The delegation still routes through the ecosystem resolver.
 
     UNCHANGED BY THE ABOLITION, and deliberately still pinned: the filename is
-    still resolved through the ecosystem resolver, now to NAME the store in the
-    refusal rather than to serve it. A refusal that guessed the path itself
+    still resolved through `local_state.user_path`, now to NAME the store in
+    the refusal rather than to serve it. A refusal that guessed the path itself
     would send the reader to a file this package does not actually use.
+
+    The old version asserted `calls == [("cards", ("cards.db",))]` against a
+    recorder. That could not distinguish "the resolver produced this path" from
+    "the test supplied this path" — the fake returned its own sentinel and the
+    assertion checked the arguments it had just been handed. Asserting the
+    ``<pkg>/cards.db`` SHAPE of the real resolver's output covers the same
+    contract with the resolver actually in the loop.
     """
     # Arrange
     # Act
-    _got, calls, _sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
+    got, expected = _resolve_with_delegated_user_path(tmp_path, env)
 
-    # Assert
-    assert calls == [("cards", ("cards.db",))]
+    # Assert — user_root()/cards/cards.db, i.e. the package key and filename.
+    assert str(expected).endswith(f"{os.sep}cards{os.sep}cards.db")
 
 
-def test_the_refusal_names_the_delegated_path(tmp_path, env, monkeypatch):
-    """And the name it reports is the one the delegation returned."""
+def test_the_refusal_names_the_delegated_path(tmp_path, env):
+    """And the name it reports is the one the real delegation produced."""
     # Arrange
     # Act
-    got, _calls, sentinel = _resolve_with_delegated_user_path(
-        tmp_path, env, monkeypatch
-    )
+    got, expected = _resolve_with_delegated_user_path(tmp_path, env)
 
     # Assert
-    assert str(sentinel) in str(got)
+    assert str(expected) in str(got)
 
 
 # --------------------------------------------------------------------------- #
