@@ -48,12 +48,12 @@ from scitex_cards._stale.active_nudge import (
 
 
 @pytest.fixture(autouse=True)
-def _isolated_store(tmp_path, monkeypatch):
+def _isolated_store(tmp_path, env):
     """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir."""
     from scitex_cards._db import connect, init_schema
 
     db = tmp_path / "cards.db"
-    monkeypatch.setenv(ENV_DB, str(db))
+    env.set(ENV_DB, str(db))
     conn = connect(str(db))
     try:
         init_schema(conn)
@@ -188,24 +188,24 @@ def _failing_enqueue(*owners):
 #: their own. The two cross-contamination checks are the load-bearing ones: a
 #: sweep that fanned every owner's cards to every owner would sail through a
 #: bare "did alpha get something?" and be worthless in production.
-def _sweep_two_owners(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_two_owners(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     sweep_and_nudge([_stale("a1", "alpha"), _stale("b1", "beta")])
 
 
-def _sweep_one_pending(monkeypatch):
-    monkeypatch.setenv(ENV_PENDING_NUDGE_HOURS, "24")
+def _sweep_one_pending(env):
+    env.set(ENV_PENDING_NUDGE_HOURS, "24")
     sweep_and_nudge([_pending("p1", "alpha")])
     return poll_inbox("alpha", unseen_only=True)
 
 
-def _sweep_one_fresh_owner(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_one_fresh_owner(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     return sweep_and_nudge([_fresh("a1", "alpha")])
 
 
-def _sweep_one_unassigned(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_one_unassigned(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     tasks = [
         {
             "id": "x",
@@ -220,123 +220,123 @@ def _sweep_one_unassigned(monkeypatch):
 class TestNudgeLandsInTheOwnerInbox:
     """The whole point: the nudge must REACH the owner, on the rail they drain."""
 
-    def test_stale_nudge_lands_in_that_owners_inbox(self, monkeypatch):
+    def test_stale_nudge_lands_in_that_owners_inbox(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         alpha = poll_inbox("alpha", unseen_only=True)
         # Assert — one record, not zero and not a per-card storm.
         assert len(alpha) == 1
 
-    def test_the_stale_nudge_carries_the_stale_active_kind(self, monkeypatch):
+    def test_the_stale_nudge_carries_the_stale_active_kind(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         rec = poll_inbox("alpha", unseen_only=True)[0]
         # Assert
         assert rec["event_type"] == KIND_STALE_ACTIVE
 
-    def test_the_stale_nudge_uses_the_canonical_card_id(self, monkeypatch):
+    def test_the_stale_nudge_uses_the_canonical_card_id(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         rec = poll_inbox("alpha", unseen_only=True)[0]
         # Assert — a stable id is what lets the next nudge supersede this one.
         assert rec["card_id"] == NUDGE_CARD_ID[KIND_STALE_ACTIVE]
 
-    def test_the_stale_nudge_names_that_owners_card(self, monkeypatch):
+    def test_the_stale_nudge_names_that_owners_card(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         rec = poll_inbox("alpha", unseen_only=True)[0]
         # Assert
         assert "a1" in rec["body"]
 
-    def test_the_stale_nudge_omits_another_owners_card(self, monkeypatch):
+    def test_the_stale_nudge_omits_another_owners_card(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         rec = poll_inbox("alpha", unseen_only=True)[0]
         # Assert — it went to ALPHA about ALPHA, not to everybody about everybody.
         assert "b1" not in rec["body"]
 
-    def test_each_owner_gets_their_own_stale_nudge(self, monkeypatch):
+    def test_each_owner_gets_their_own_stale_nudge(self, env):
         # Arrange
-        _sweep_two_owners(monkeypatch)
+        _sweep_two_owners(env)
         # Act
         beta = poll_inbox("beta", unseen_only=True)
         # Assert
         assert len(beta) == 1 and "b1" in beta[0]["body"]
 
-    def test_pending_backlog_nudge_lands_in_the_owner_inbox(self, monkeypatch):
+    def test_pending_backlog_nudge_lands_in_the_owner_inbox(self, env):
         # Arrange
-        recs = _sweep_one_pending(monkeypatch)
+        recs = _sweep_one_pending(env)
         # Act
         kinds = [r["event_type"] for r in recs]
         # Assert
         assert kinds == [KIND_PENDING_BACKLOG]
 
-    def test_the_pending_nudge_uses_its_own_card_id(self, monkeypatch):
+    def test_the_pending_nudge_uses_its_own_card_id(self, env):
         # Arrange
-        recs = _sweep_one_pending(monkeypatch)
+        recs = _sweep_one_pending(env)
         # Act
         card_id = recs[0]["card_id"]
         # Assert — a separate id, so the two kinds supersede independently.
         assert card_id == NUDGE_CARD_ID[KIND_PENDING_BACKLOG]
 
-    def test_the_pending_nudge_names_the_backlog_card(self, monkeypatch):
+    def test_the_pending_nudge_names_the_backlog_card(self, env):
         # Arrange
-        recs = _sweep_one_pending(monkeypatch)
+        recs = _sweep_one_pending(env)
         # Act
         body = recs[0]["body"]
         # Assert
         assert "p1" in body
 
-    def test_both_kinds_are_distinct_records(self, monkeypatch):
+    def test_both_kinds_are_distinct_records(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-        monkeypatch.setenv(ENV_PENDING_NUDGE_HOURS, "24")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_PENDING_NUDGE_HOURS, "24")
         sweep_and_nudge([_stale("s1", "alpha"), _pending("p1", "alpha")])
         # Act
         kinds = sorted(r["event_type"] for r in poll_inbox("alpha"))
         # Assert — one owner, two concerns, two records.
         assert kinds == [KIND_PENDING_BACKLOG, KIND_STALE_ACTIVE]
 
-    def test_fresh_owner_gets_nothing(self, monkeypatch):
+    def test_fresh_owner_gets_nothing(self, env):
         # Arrange
-        _sweep_one_fresh_owner(monkeypatch)
+        _sweep_one_fresh_owner(env)
         # Act
         recs = poll_inbox("alpha")
         # Assert
         assert recs == []
 
-    def test_a_fresh_only_sweep_reports_zero_delivered(self, monkeypatch):
+    def test_a_fresh_only_sweep_reports_zero_delivered(self, env):
         # Arrange
-        lines = _sweep_one_fresh_owner(monkeypatch)
+        lines = _sweep_one_fresh_owner(env)
         # Act
         zero_lines = [ln for ln in lines if "0 delivered" in ln]
         # Assert — silence on the rail is still reported in the summary.
         assert zero_lines != []
 
-    def test_unassigned_surfaced_not_delivered(self, monkeypatch):
+    def test_unassigned_surfaced_not_delivered(self, env):
         # Arrange
-        _sweep_one_unassigned(monkeypatch)
+        _sweep_one_unassigned(env)
         # Act
         recs = poll_inbox("(unassigned)")
         # Assert — there is no owner to drain that inbox, so nothing is queued.
         assert recs == []
 
-    def test_unassigned_cards_are_surfaced_in_the_summary(self, monkeypatch):
+    def test_unassigned_cards_are_surfaced_in_the_summary(self, env):
         # Arrange
-        lines = _sweep_one_unassigned(monkeypatch)
+        lines = _sweep_one_unassigned(env)
         # Act
         joined = "\n".join(lines)
         # Assert — undeliverable must not mean invisible.
         assert "(unassigned)" in joined and "no owner" in joined
 
-    def test_summary_counts_the_inbox_rail(self, monkeypatch):
+    def test_summary_counts_the_inbox_rail(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         # Act
         lines = sweep_and_nudge([_stale("a1", "alpha"), _stale("b1", "beta")])
         # Assert
@@ -352,8 +352,8 @@ class TestNudgeLandsInTheOwnerInbox:
 #: below would be indistinguishable from a sweep that never worked), the second
 #: delivered nothing new, the owner is still NAMED with a reason, and the
 #: summary counts it as suppressed rather than as a silent zero.
-def _two_sweeps_unchanged(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _two_sweeps_unchanged(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     tasks = [_stale_at("a1", "alpha")]
     sweep_and_nudge(tasks, now=T0)
     first_drain = _drain("alpha")
@@ -364,9 +364,9 @@ def _two_sweeps_unchanged(monkeypatch):
 #: A genuinely stuck owner must still be nudged once the FLOOR elapses, even
 #: though nothing about their card set changed. Returns the unseen inbox at
 #: three points: after the first sweep + drain, inside the floor, and past it.
-def _three_sweeps_across_the_floor(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-    monkeypatch.setenv(ENV_NUDGE_FLOOR_HOURS, "24")
+def _three_sweeps_across_the_floor(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
+    env.set(ENV_NUDGE_FLOOR_HOURS, "24")
     tasks = [_stale_at("a1", "alpha")]
 
     sweep_and_nudge(tasks, now=T0)
@@ -383,41 +383,41 @@ def _three_sweeps_across_the_floor(monkeypatch):
 class TestDeliverOnChange:
     """The sweep is SCHEDULED, so an unchanged stale set must not re-deliver."""
 
-    def test_the_first_sweep_delivers_one_nudge(self, monkeypatch):
+    def test_the_first_sweep_delivers_one_nudge(self, env):
         # Arrange
-        first_drain, _lines = _two_sweeps_unchanged(monkeypatch)
+        first_drain, _lines = _two_sweeps_unchanged(env)
         # Act
         delivered = len(first_drain)
         # Assert — the agent read it, so the suppression below means something.
         assert delivered == 1
 
-    def test_unchanged_set_is_suppressed_on_second_sweep(self, monkeypatch):
+    def test_unchanged_set_is_suppressed_on_second_sweep(self, env):
         # Arrange
-        _first_drain, _lines = _two_sweeps_unchanged(monkeypatch)
+        _first_drain, _lines = _two_sweeps_unchanged(env)
         # Act
         pending = poll_inbox("alpha", unseen_only=True)
         # Assert — nothing new landed on the second sweep.
         assert pending == []
 
-    def test_a_suppressed_owner_is_still_named_with_a_reason(self, monkeypatch):
+    def test_a_suppressed_owner_is_still_named_with_a_reason(self, env):
         # Arrange
-        _first_drain, lines = _two_sweeps_unchanged(monkeypatch)
+        _first_drain, lines = _two_sweeps_unchanged(env)
         # Act
         joined = "\n".join(lines)
         # Assert — suppressed, but NOT silent.
         assert "alpha" in joined and "suppressed (unchanged since" in joined
 
-    def test_the_summary_counts_the_suppression(self, monkeypatch):
+    def test_the_summary_counts_the_suppression(self, env):
         # Arrange
-        _first_drain, lines = _two_sweeps_unchanged(monkeypatch)
+        _first_drain, lines = _two_sweeps_unchanged(env)
         # Act
         joined = "\n".join(lines)
         # Assert — a suppressed 0 must be distinguishable from a failed 0.
         assert "0 delivered (inbox), 1 suppressed" in joined
 
-    def test_added_card_redelivers(self, monkeypatch):
+    def test_added_card_redelivers(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         sweep_and_nudge([_stale_at("a1", "alpha")], now=T0)
         _drain("alpha")
         # Act
@@ -426,9 +426,9 @@ class TestDeliverOnChange:
         fresh = poll_inbox("alpha", unseen_only=True)
         assert len(fresh) == 1 and "a2" in fresh[0]["body"]
 
-    def test_removed_card_redelivers(self, monkeypatch):
+    def test_removed_card_redelivers(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         sweep_and_nudge([_stale_at("a1", "alpha"), _stale_at("a2", "alpha")], now=T0)
         _drain("alpha")
         # Act
@@ -436,9 +436,9 @@ class TestDeliverOnChange:
         # Assert — shrinking is a change too.
         assert len(poll_inbox("alpha", unseen_only=True)) == 1
 
-    def test_touched_card_leaving_the_bucket_redelivers(self, monkeypatch):
+    def test_touched_card_leaving_the_bucket_redelivers(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         sweep_and_nudge([_stale_at("a1", "alpha"), _stale_at("a2", "alpha")], now=T0)
         _drain("alpha")
         # Act
@@ -448,42 +448,42 @@ class TestDeliverOnChange:
         # Assert — a2 was touched, so it drops out and the set CHANGED.
         assert len(poll_inbox("alpha", unseen_only=True)) == 1
 
-    def test_owner_state_pruned_when_no_cards_left(self, monkeypatch):
+    def test_owner_state_pruned_when_no_cards_left(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         sweep_and_nudge([_stale_at("a1", "alpha")], now=T0)
         # Act
         sweep_and_nudge([_fresh_at("a1", "alpha", base=T1)], now=T1)
         # Assert — no stale cards left, so the sidecar keeps no entry either.
         assert "alpha" not in load_nudge_state()[KIND_STALE_ACTIVE]
 
-    def test_the_sweep_before_the_floor_delivers_once(self, monkeypatch):
+    def test_the_sweep_before_the_floor_delivers_once(self, env):
         # Arrange
-        first_drain, _inside, _past = _three_sweeps_across_the_floor(monkeypatch)
+        first_drain, _inside, _past = _three_sweeps_across_the_floor(env)
         # Act
         delivered = len(first_drain)
         # Assert
         assert delivered == 1
 
-    def test_inside_the_floor_an_unchanged_set_stays_suppressed(self, monkeypatch):
+    def test_inside_the_floor_an_unchanged_set_stays_suppressed(self, env):
         # Arrange
-        _first, inside_floor, _past = _three_sweeps_across_the_floor(monkeypatch)
+        _first, inside_floor, _past = _three_sweeps_across_the_floor(env)
         # Act
         pending = inside_floor
         # Assert — six hours is not yet worth re-waking a stuck owner.
         assert pending == []
 
-    def test_floor_elapsed_redelivers_the_unchanged_set(self, monkeypatch):
+    def test_floor_elapsed_redelivers_the_unchanged_set(self, env):
         # Arrange
-        _first, _inside, past_floor = _three_sweeps_across_the_floor(monkeypatch)
+        _first, _inside, past_floor = _three_sweeps_across_the_floor(env)
         # Act
         pending = past_floor
         # Assert — suppression has a ceiling; a stuck owner is nudged again.
         assert len(pending) == 1
 
-    def test_unseen_nudge_is_superseded_not_stacked(self, monkeypatch):
+    def test_unseen_nudge_is_superseded_not_stacked(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
         sweep_and_nudge([_stale_at("a1", "alpha")], now=T0)
         # Act
         sweep_and_nudge([_stale_at("a1", "alpha"), _stale_at("a2", "alpha")], now=T1)
@@ -491,10 +491,10 @@ class TestDeliverOnChange:
         pending = poll_inbox("alpha", unseen_only=True)
         assert len(pending) == 1 and "a2" in pending[0]["body"]
 
-    def test_pending_backlog_is_suppressed_independently(self, monkeypatch):
+    def test_pending_backlog_is_suppressed_independently(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-        monkeypatch.setenv(ENV_PENDING_NUDGE_HOURS, "24")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_PENDING_NUDGE_HOURS, "24")
         tasks = [_stale_at("s1", "alpha"), _pending_at("p1", "alpha")]
         sweep_and_nudge(tasks, now=T0)
         _drain("alpha")
@@ -510,8 +510,8 @@ class TestDeliverOnChange:
 #: got nothing, the failure is LOUD in the log, and the summary counts one of
 #: each. The last two are the fail-LOUD half — a batch that swallowed the error
 #: and reported a bland zero is the shipped bug this file exists for.
-def _sweep_with_one_bad_owner(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_with_one_bad_owner(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     return sweep_and_nudge(
         [_stale("s1", "badowner"), _stale("s2", "goodowner")],
         enqueue=_failing_enqueue("badowner"),
@@ -520,8 +520,8 @@ def _sweep_with_one_bad_owner(monkeypatch):
 
 #: A failed enqueue must NOT arm the suppression, so the NEXT sweep retries.
 #: Returns ``(armed_after_failure, retry_lines)``.
-def _failed_then_retried(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _failed_then_retried(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     tasks = [_stale_at("a1", "alpha")]
     sweep_and_nudge(tasks, now=T0, enqueue=_failing_enqueue("alpha"))
     armed = "alpha" in load_nudge_state()[KIND_STALE_ACTIVE]
@@ -532,8 +532,8 @@ def _failed_then_retried(monkeypatch):
 #: The exact shape of the shipped bug: detected > 0, delivered == 0. It must be
 #: UNMISTAKABLE in the log, not a bland "0 sent" — hence three separate checks
 #: on the alert's wording.
-def _sweep_with_every_owner_failing(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_with_every_owner_failing(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     return sweep_and_nudge(
         [_stale("a1", "alpha"), _stale("b1", "beta")],
         enqueue=_failing_enqueue("alpha", "beta"),
@@ -542,8 +542,8 @@ def _sweep_with_every_owner_failing(monkeypatch):
 
 #: 0 delivered because everyone is SUPPRESSED is the healthy steady state — it
 #: must NOT cry wolf, and it must still say why it was zero.
-def _sweep_twice_all_suppressed(monkeypatch):
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_twice_all_suppressed(env):
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     tasks = [_stale("a1", "alpha")]
     sweep_and_nudge(tasks)
     return sweep_and_nudge(tasks)
@@ -552,106 +552,106 @@ def _sweep_twice_all_suppressed(monkeypatch):
 class TestFailSoftAndFailLoud:
     """A bad owner never aborts the batch — and never passes for delivered."""
 
-    def test_one_owner_raising_does_not_starve_the_other(self, monkeypatch):
+    def test_one_owner_raising_does_not_starve_the_other(self, env):
         # Arrange
-        _sweep_with_one_bad_owner(monkeypatch)
+        _sweep_with_one_bad_owner(env)
         # Act
         good = poll_inbox("goodowner", unseen_only=True)
         # Assert — the healthy owner is delivered, read back off the real inbox.
         assert len(good) == 1 and "s2" in good[0]["body"]
 
-    def test_the_failing_owner_receives_nothing(self, monkeypatch):
+    def test_the_failing_owner_receives_nothing(self, env):
         # Arrange
-        _sweep_with_one_bad_owner(monkeypatch)
+        _sweep_with_one_bad_owner(env)
         # Act
         bad = poll_inbox("badowner")
         # Assert — a raising enqueue must not half-land a record.
         assert bad == []
 
-    def test_the_failing_owner_is_reported_loudly(self, monkeypatch):
+    def test_the_failing_owner_is_reported_loudly(self, env):
         # Arrange
-        lines = _sweep_with_one_bad_owner(monkeypatch)
+        lines = _sweep_with_one_bad_owner(env)
         # Act
         joined = "\n".join(lines)
         # Assert — the loss is named, not swallowed into a quiet 0.
         assert "ERR" in joined and "badowner" in joined
 
-    def test_the_summary_counts_delivered_and_failed_apart(self, monkeypatch):
+    def test_the_summary_counts_delivered_and_failed_apart(self, env):
         # Arrange
-        lines = _sweep_with_one_bad_owner(monkeypatch)
+        lines = _sweep_with_one_bad_owner(env)
         # Act
         joined = "\n".join(lines)
         # Assert
         assert "1 delivered (inbox)" in joined and "1 failed" in joined
 
-    def test_failed_enqueue_does_not_arm_suppression(self, monkeypatch):
+    def test_failed_enqueue_does_not_arm_suppression(self, env):
         # Arrange
-        armed, _lines = _failed_then_retried(monkeypatch)
+        armed, _lines = _failed_then_retried(env)
         # Act
         suppression_armed = armed
         # Assert — nothing delivered means no state, so the next sweep RETRIES.
         assert suppression_armed is False
 
-    def test_the_retry_sweep_reports_a_fresh_delivery(self, monkeypatch):
+    def test_the_retry_sweep_reports_a_fresh_delivery(self, env):
         # Arrange
-        _armed, lines = _failed_then_retried(monkeypatch)
+        _armed, lines = _failed_then_retried(env)
         # Act
         joined = "\n".join(lines)
         # Assert — the retry is a delivery, not a suppressed repeat.
         assert "1 delivered (inbox), 0 suppressed" in joined
 
-    def test_the_retry_sweep_lands_in_the_owner_inbox(self, monkeypatch):
+    def test_the_retry_sweep_lands_in_the_owner_inbox(self, env):
         # Arrange
-        _failed_then_retried(monkeypatch)
+        _failed_then_retried(env)
         # Act
         pending = poll_inbox("alpha", unseen_only=True)
         # Assert
         assert len(pending) == 1
 
-    def test_every_owner_failing_screams(self, monkeypatch):
+    def test_every_owner_failing_screams(self, env):
         # Arrange
-        lines = _sweep_with_every_owner_failing(monkeypatch)
+        lines = _sweep_with_every_owner_failing(env)
         # Act
         joined = "\n".join(lines)
         # Assert
         assert "!! ALERT stale-active" in joined
 
-    def test_the_total_failure_alert_says_it_reached_nobody(self, monkeypatch):
+    def test_the_total_failure_alert_says_it_reached_nobody(self, env):
         # Arrange
-        lines = _sweep_with_every_owner_failing(monkeypatch)
+        lines = _sweep_with_every_owner_failing(env)
         # Act
         joined = "\n".join(lines)
         # Assert — plain English, not a number the reader has to interpret.
         assert "reached NOBODY" in joined
 
-    def test_the_total_failure_alert_counts_the_attempts(self, monkeypatch):
+    def test_the_total_failure_alert_counts_the_attempts(self, env):
         # Arrange
-        lines = _sweep_with_every_owner_failing(monkeypatch)
+        lines = _sweep_with_every_owner_failing(env)
         # Act
         joined = "\n".join(lines)
         # Assert
         assert "0 of 2 attempted" in joined
 
-    def test_all_suppressed_is_not_an_alert(self, monkeypatch):
+    def test_all_suppressed_is_not_an_alert(self, env):
         # Arrange
-        lines = _sweep_twice_all_suppressed(monkeypatch)
+        lines = _sweep_twice_all_suppressed(env)
         # Act
         joined = "\n".join(lines)
         # Assert — the healthy steady state must not cry wolf.
         assert "ALERT" not in joined
 
-    def test_an_all_suppressed_sweep_still_says_why(self, monkeypatch):
+    def test_an_all_suppressed_sweep_still_says_why(self, env):
         # Arrange
-        lines = _sweep_twice_all_suppressed(monkeypatch)
+        lines = _sweep_twice_all_suppressed(env)
         # Act
         joined = "\n".join(lines)
         # Assert — quiet, but never unexplained.
         assert "1 suppressed" in joined
 
-    def test_sweep_never_raises_on_a_broken_enqueue(self, monkeypatch):
+    def test_sweep_never_raises_on_a_broken_enqueue(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-        monkeypatch.setenv(ENV_PENDING_NUDGE_HOURS, "24")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_PENDING_NUDGE_HOURS, "24")
         # Act
         lines = sweep_and_nudge(
             [_stale("s1", "alpha"), _pending("p1", "alpha")],
@@ -660,10 +660,10 @@ class TestFailSoftAndFailLoud:
         # Assert — the call returned, and the stale-active kind still summarised.
         assert any(ln.startswith("# stale-active:") for ln in lines)
 
-    def test_a_broken_enqueue_does_not_abort_the_other_kind(self, monkeypatch):
+    def test_a_broken_enqueue_does_not_abort_the_other_kind(self, env):
         # Arrange
-        monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-        monkeypatch.setenv(ENV_PENDING_NUDGE_HOURS, "24")
+        env.set(ENV_STALE_ACTIVE_HOURS, "2")
+        env.set(ENV_PENDING_NUDGE_HOURS, "24")
         # Act
         lines = sweep_and_nudge(
             [_stale("s1", "alpha"), _pending("p1", "alpha")],
@@ -678,23 +678,23 @@ class TestFailSoftAndFailLoud:
 #: `reason=no-turn-url-configured` and delivered to nobody. Four tests: the
 #: inbox landed, the summary says so, and NEITHER the push wording nor the old
 #: excuse appears anywhere in the log.
-def _sweep_with_no_push_configured(monkeypatch):
-    monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
+def _sweep_with_no_push_configured(env):
+    env.delete(ENV_DRY_RUN)
+    env.delete("SCITEX_CARDS_AGENT_TURN_URLS")
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
     return sweep_and_nudge([_stale("a1", "nourlowner")])
 
 
 #: The opt-in echo, against a REAL local receiver. Returns
 #: ``(received_bodies, lines)`` once the receiver has shut down. Both rails must
 #: fire — the echo is secondary, never a substitute for the inbox.
-def _sweep_with_opt_in_echo(monkeypatch):
-    monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-    monkeypatch.setenv(ENV_NUDGE_PUSH, "1")
+def _sweep_with_opt_in_echo(env):
+    env.delete(ENV_DRY_RUN)
+    env.delete("SCITEX_CARDS_AGENT_TURN_URLS")
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
+    env.set(ENV_NUDGE_PUSH, "1")
     with _local_receiver() as (url, received):
-        monkeypatch.setenv("SCITEX_CARDS_TURN_URL_ECHOOWNER", url)
+        env.set("SCITEX_CARDS_TURN_URL_ECHOOWNER", url)
         lines = sweep_and_nudge([_stale("s1", "echoowner")])
     return received, lines
 
@@ -703,101 +703,101 @@ def _sweep_with_opt_in_echo(monkeypatch):
 #: inbox nudge look failed, must still be reported, and must not disturb the
 #: suppression state the inbox delivery armed. ``deliver`` slugs the agent name
 #: as UPPER with '-'→'_'; a URL with no scheme makes the echo raise.
-def _sweep_with_a_broken_echo(monkeypatch):
-    monkeypatch.delenv(ENV_DRY_RUN, raising=False)
-    monkeypatch.delenv("SCITEX_CARDS_AGENT_TURN_URLS", raising=False)
-    monkeypatch.setenv(ENV_STALE_ACTIVE_HOURS, "2")
-    monkeypatch.setenv(ENV_NUDGE_PUSH, "1")
-    monkeypatch.setenv("SCITEX_CARDS_TURN_URL_BADECHO", "noscheme-url")
+def _sweep_with_a_broken_echo(env):
+    env.delete(ENV_DRY_RUN)
+    env.delete("SCITEX_CARDS_AGENT_TURN_URLS")
+    env.set(ENV_STALE_ACTIVE_HOURS, "2")
+    env.set(ENV_NUDGE_PUSH, "1")
+    env.set("SCITEX_CARDS_TURN_URL_BADECHO", "noscheme-url")
     return sweep_and_nudge([_stale("s1", "badecho")])
 
 
 class TestOptionalPushEcho:
     """``_push`` survives ONLY as an opt-in, strictly-secondary echo."""
 
-    def test_no_push_by_default(self, monkeypatch):
+    def test_no_push_by_default(self, env):
         # Arrange
-        lines = _sweep_with_no_push_configured(monkeypatch)
+        lines = _sweep_with_no_push_configured(env)
         # Act
         joined = "\n".join(lines)
         # Assert — the push rail is not mentioned because it was not used.
         assert "push echo" not in joined
 
-    def test_an_owner_with_no_turn_url_still_gets_the_inbox_nudge(self, monkeypatch):
+    def test_an_owner_with_no_turn_url_still_gets_the_inbox_nudge(self, env):
         # Arrange
-        _sweep_with_no_push_configured(monkeypatch)
+        _sweep_with_no_push_configured(env)
         # Act
         pending = poll_inbox("nourlowner", unseen_only=True)
         # Assert — the whole 2026-07-12 fix, in one assertion.
         assert len(pending) == 1
 
-    def test_the_summary_reports_the_inbox_delivery(self, monkeypatch):
+    def test_the_summary_reports_the_inbox_delivery(self, env):
         # Arrange
-        lines = _sweep_with_no_push_configured(monkeypatch)
+        lines = _sweep_with_no_push_configured(env)
         # Act
         joined = "\n".join(lines)
         # Assert
         assert "1 delivered (inbox)" in joined
 
-    def test_the_old_no_turn_url_excuse_is_gone(self, monkeypatch):
+    def test_the_old_no_turn_url_excuse_is_gone(self, env):
         # Arrange
-        lines = _sweep_with_no_push_configured(monkeypatch)
+        lines = _sweep_with_no_push_configured(env)
         # Act
         joined = "\n".join(lines)
         # Assert — the exact string the broken sweep used to log for every owner.
         assert "no-turn-url-configured" not in joined
 
-    def test_opt_in_echo_reaches_a_real_receiver(self, monkeypatch):
+    def test_opt_in_echo_reaches_a_real_receiver(self, env):
         # Arrange
-        received, _lines = _sweep_with_opt_in_echo(monkeypatch)
+        received, _lines = _sweep_with_opt_in_echo(env)
         # Act
         posted = len(received)
         # Assert — a real HTTP body reached a real listening socket.
         assert posted == 1
 
-    def test_opt_in_echo_reaches_a_real_receiver_and_the_inbox(self, monkeypatch):
+    def test_opt_in_echo_reaches_a_real_receiver_and_the_inbox(self, env):
         # Arrange
-        _sweep_with_opt_in_echo(monkeypatch)
+        _sweep_with_opt_in_echo(env)
         # Act
         recs = poll_inbox("echoowner")
         # Assert — the echo is additive; the inbox still landed.
         assert len(recs) == 1
 
-    def test_the_summary_reports_the_successful_echo(self, monkeypatch):
+    def test_the_summary_reports_the_successful_echo(self, env):
         # Arrange
-        _received, lines = _sweep_with_opt_in_echo(monkeypatch)
+        _received, lines = _sweep_with_opt_in_echo(env)
         # Act
         joined = "\n".join(lines)
         # Assert
         assert "push echo ok=True" in joined
 
-    def test_a_broken_echo_never_fails_the_inbox_delivery(self, monkeypatch):
+    def test_a_broken_echo_never_fails_the_inbox_delivery(self, env):
         # Arrange
-        _sweep_with_a_broken_echo(monkeypatch)
+        _sweep_with_a_broken_echo(env)
         # Act
         pending = poll_inbox("badecho", unseen_only=True)
         # Assert — the primary rail is untouched by the secondary one's failure.
         assert len(pending) == 1
 
-    def test_a_broken_echo_is_not_counted_as_a_failed_delivery(self, monkeypatch):
+    def test_a_broken_echo_is_not_counted_as_a_failed_delivery(self, env):
         # Arrange
-        lines = _sweep_with_a_broken_echo(monkeypatch)
+        lines = _sweep_with_a_broken_echo(env)
         # Act
         joined = "\n".join(lines)
         # Assert — a landed nudge must not be reported as failed.
         assert "1 delivered (inbox)" in joined and "0 failed" in joined
 
-    def test_a_broken_echo_is_still_reported(self, monkeypatch):
+    def test_a_broken_echo_is_still_reported(self, env):
         # Arrange
-        lines = _sweep_with_a_broken_echo(monkeypatch)
+        lines = _sweep_with_a_broken_echo(env)
         # Act
         joined = "\n".join(lines)
         # Assert — secondary does not mean invisible.
         assert "push echo raised" in joined
 
-    def test_a_broken_echo_leaves_the_suppression_armed(self, monkeypatch):
+    def test_a_broken_echo_leaves_the_suppression_armed(self, env):
         # Arrange
-        _sweep_with_a_broken_echo(monkeypatch)
+        _sweep_with_a_broken_echo(env)
         # Act
         state = load_nudge_state()[KIND_STALE_ACTIVE]
         # Assert — the inbox delivery armed it; the echo must not disarm it.

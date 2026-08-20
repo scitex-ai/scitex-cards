@@ -207,10 +207,10 @@ def test_export_keeps_unknown_notification_keys_under_the_overlay(seeded):
     assert record["unknown_notif_key"] == 42
 
 
-def test_resolve_db_path_still_delegates_to_the_chain(monkeypatch, tmp_path):
+def test_resolve_db_path_still_delegates_to_the_chain(env, tmp_path):
     """Guard: the exporter's default path rides the S4a resolution chain."""
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "x.db"))
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "x.db"))
 
     # Act
     resolved = resolve_db_path()
@@ -318,7 +318,7 @@ def test_snapshot_commits_the_export_into_a_git_repo(tmp_path):
     assert (snap / ".git").exists()
 
 
-def _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch):
+def _run_snapshot_push_to_a_bare_remote(tmp_path, env):
     """Bootstrap a snapshot repo wired to a bare origin, then `--push` to it.
 
     Returns (first_result, push_result, bare).
@@ -357,32 +357,32 @@ def _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch):
     return first, pushed, bare
 
 
-def test_snapshot_push_bootstrap_run_exits_clean(tmp_path, monkeypatch):
+def test_snapshot_push_bootstrap_run_exits_clean(tmp_path, env):
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    first, _pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+    first, _pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
 
     # Assert — the bootstrap snapshot the push builds on succeeded.
     assert first.exit_code == 0, first.output
 
 
-def test_snapshot_push_run_exits_clean(tmp_path, monkeypatch):
+def test_snapshot_push_run_exits_clean(tmp_path, env):
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    _first, pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+    _first, pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
 
     # Assert
     assert pushed.exit_code == 0, pushed.output
 
 
-def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, monkeypatch):
+def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, env):
     """--push delivers the commit to origin — verified by reading the BARE
     repo back, not by exit code (the rail's job is the off-site copy)."""
     import subprocess
 
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    _first, _pushed, bare = _run_snapshot_push_to_a_bare_remote(tmp_path, monkeypatch)
+    _first, _pushed, bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
 
     # Assert — the BARE side has the snapshot commit.
     log = subprocess.run(
@@ -394,7 +394,7 @@ def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, monkeypatch
     assert "snapshot:" in log.stdout
 
 
-def _run_snapshot_push_without_a_remote(tmp_path, monkeypatch):
+def _run_snapshot_push_without_a_remote(tmp_path, env):
     """`--push --json` against a snapshot dir that has no origin configured."""
     from click.testing import CliRunner
 
@@ -416,22 +416,22 @@ def _run_snapshot_push_without_a_remote(tmp_path, monkeypatch):
     )
 
 
-def test_snapshot_push_without_remote_still_exits_zero(tmp_path, monkeypatch):
+def test_snapshot_push_without_remote_still_exits_zero(tmp_path, env):
     """No remote yet = legitimate local-only, exit 0, said out loud."""
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env)
 
     # Assert
     assert result.exit_code == 0, result.output
 
 
-def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, monkeypatch):
+def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, env):
     import json as _json
 
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env)
 
     # Assert — local-only is reported honestly, not claimed as a push.
     report = _json.loads(result.output.strip().splitlines()[-1])
@@ -439,13 +439,13 @@ def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, monkeypatch
 
 
 def test_snapshot_push_without_remote_explains_why_it_was_local_only(
-    tmp_path, monkeypatch
+    tmp_path, env
 ):
     import json as _json
 
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, monkeypatch)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env)
 
     # Assert — the reason is said out loud, not left to guesswork.
     report = _json.loads(result.output.strip().splitlines()[-1])

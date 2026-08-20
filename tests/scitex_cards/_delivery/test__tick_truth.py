@@ -58,7 +58,7 @@ def _rising_clock():
     return _now
 
 
-def _break_the_canonical_store(monkeypatch, tmp_path) -> None:
+def _break_the_canonical_store(env, tmp_path) -> None:
     """Point the canonical database at a path that does not exist.
 
     A REAL refusal, not a fake: ``load_tasks`` reaches
@@ -66,7 +66,7 @@ def _break_the_canonical_store(monkeypatch, tmp_path) -> None:
     database as an empty board. This is the same class of fault the live daemon
     hit ("REFUSING TO READ ... as the store") and it recurs on EVERY tick.
     """
-    monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
 
 
 def _break_the_inbox(tmp_path) -> None:
@@ -132,9 +132,9 @@ def _healthy_run(tmp_path, caplog, **kw) -> dict:
     return _run_ticks(tmp_path, caplog, **kw)
 
 
-def _broken_store_run(monkeypatch, tmp_path, caplog, **kw) -> dict:
+def _broken_store_run(env, tmp_path, caplog, **kw) -> dict:
     """A tick whose STORE READ raises on every iteration."""
-    _break_the_canonical_store(monkeypatch, tmp_path)
+    _break_the_canonical_store(env, tmp_path)
     return _run_ticks(tmp_path, caplog, **kw)
 
 
@@ -148,41 +148,41 @@ def _broken_inbox_run(tmp_path, caplog, **kw) -> dict:
 # (1) a tick whose store read raises reports FAILED, not zero-work            #
 # --------------------------------------------------------------------------- #
 class TestStoreReadFailureIsCounted:
-    def test_the_tick_reports_failed(self, tmp_path, caplog, monkeypatch):
+    def test_the_tick_reports_failed(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog)
+        run = _broken_store_run(env, tmp_path, caplog)
         # Assert
         assert "FAILED" in run["ticks"][0].getMessage()
 
-    def test_the_tick_is_not_reported_as_idle(self, tmp_path, caplog, monkeypatch):
+    def test_the_tick_is_not_reported_as_idle(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog)
+        run = _broken_store_run(env, tmp_path, caplog)
         # Assert
         # the exact lie the old line told: sent=0 with an exception.
         assert "IDLE" not in run["ticks"][0].getMessage()
 
-    def test_the_tick_names_the_underlying_reason(self, tmp_path, caplog, monkeypatch):
+    def test_the_tick_names_the_underlying_reason(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog)
+        run = _broken_store_run(env, tmp_path, caplog)
         # Assert
         assert "reminder_sweep:" in run["ticks"][0].getMessage()
 
-    def test_the_failing_tick_is_louder_than_info(self, tmp_path, caplog, monkeypatch):
+    def test_the_failing_tick_is_louder_than_info(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog)
+        run = _broken_store_run(env, tmp_path, caplog)
         # Assert
         assert run["ticks"][0].levelno > logging.INFO
 
     def test_the_failure_is_persisted_for_another_process_to_read(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog)
+        run = _broken_store_run(env, tmp_path, caplog)
         # Assert
         assert read_liveness(run["store"]).consecutive_failures == 1
 
@@ -251,45 +251,45 @@ class TestPendingIsThreeValued:
 # (3) consecutive failures escalate                                           #
 # --------------------------------------------------------------------------- #
 class TestConsecutiveFailuresEscalate:
-    def test_the_first_failure_is_only_a_warning(self, tmp_path, caplog, monkeypatch):
+    def test_the_first_failure_is_only_a_warning(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert run["ticks"][0].levelno == logging.WARNING
 
     def test_the_threshold_failure_escalates_to_error(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert run["ticks"][2].levelno == logging.ERROR
 
     def test_the_escalated_line_carries_the_consecutive_count(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert "consecutive_failures=3" in run["ticks"][2].getMessage()
 
     def test_the_escalated_line_says_how_long_it_has_been_failing(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert "failing_for=" in run["ticks"][2].getMessage()
 
-    def test_the_streak_survives_a_daemon_restart(self, tmp_path, caplog, monkeypatch):
+    def test_the_streak_survives_a_daemon_restart(self, tmp_path, caplog, env):
         # Arrange
         # a bounce must not reset the alarm to zero — the outage
         # outlives the process.
-        _break_the_canonical_store(monkeypatch, tmp_path)
+        _break_the_canonical_store(env, tmp_path)
         _run_ticks(tmp_path, caplog, ticks=2)
         # Act
         run = _run_ticks(tmp_path, caplog, ticks=1)
@@ -362,39 +362,39 @@ class TestDeliveryLivenessIsExposed:
         # Assert
         assert verdict["state"] == "delivering"
 
-    def test_a_broken_run_reports_failing(self, tmp_path, caplog, monkeypatch):
+    def test_a_broken_run_reports_failing(self, tmp_path, caplog, env):
         # Arrange
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Act
         verdict = assess_delivery(run["store"])
         # Assert
         assert verdict["state"] == "failing"
 
     def test_a_sustained_outage_fails_the_health_check(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Act
         verdict = assess_delivery(run["store"], escalate_after=3)
         # Assert
         assert not verdict["ok"]
 
     def test_the_failing_verdict_carries_an_actionable_hint(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Act
         verdict = assess_delivery(run["store"])
         # Assert
         assert "systemctl --user restart scitex-cards-notifyd" in verdict["hint"]
 
     def test_the_failing_verdict_names_the_underlying_reason(
-        self, tmp_path, caplog, monkeypatch
+        self, tmp_path, caplog, env
     ):
         # Arrange
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Act
         verdict = assess_delivery(run["store"])
         # Assert
@@ -405,19 +405,19 @@ class TestDeliveryLivenessIsExposed:
 # (6) resilience is preserved — the daemon still survives every fault         #
 # --------------------------------------------------------------------------- #
 class TestResilienceIsUnchanged:
-    def test_a_broken_store_does_not_stop_the_loop(self, tmp_path, caplog, monkeypatch):
+    def test_a_broken_store_does_not_stop_the_loop(self, tmp_path, caplog, env):
         # Arrange
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert run["result"]["iterations"] == 3
 
-    def test_every_failing_tick_still_emits_a_line(self, tmp_path, caplog, monkeypatch):
+    def test_every_failing_tick_still_emits_a_line(self, tmp_path, caplog, env):
         # Arrange
         # the old code logged the summary INSIDE the tick guard, so a
         # tick that raised printed nothing at all.
         # Act
-        run = _broken_store_run(monkeypatch, tmp_path, caplog, ticks=3)
+        run = _broken_store_run(env, tmp_path, caplog, ticks=3)
         # Assert
         assert len(run["ticks"]) == 3
 
