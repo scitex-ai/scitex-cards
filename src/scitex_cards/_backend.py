@@ -99,6 +99,22 @@ class LocalBackend:
 
     name = "local"
 
+    def __init__(self, *, warn_currency=warn_if_stale_once) -> None:
+        """Bind the CURRENCY NOTICE this backend emits on every rail entry.
+
+        Defaults to the real :func:`warn_if_stale_once`, so ``LocalBackend()``
+        behaves exactly as before this parameter existed and no caller
+        changes. It is a parameter at all because the property the notice must
+        hold — A FAILING CURRENCY CHECK CANNOT TAKE THIS RAIL DOWN — is only
+        observable by handing the backend a notice that FAILS, and the audit's
+        no-mocks rule (PA-306 §3) names passing the collaborator in as the
+        remedy for exactly this shape.
+
+        Pass ``lambda: warn_if_stale_once(load_checker=...)`` to keep the REAL
+        notice, with its real text, over an injected scitex-dev.
+        """
+        self._warn_currency = warn_currency
+
     # -- task verbs (1:1 with _store) ----------------------------------- #
 
     def add_task(self, tasks_path: Any = None, **fields: Any) -> dict:
@@ -239,7 +255,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        self._warn_currency()
         # HANDOVER IS NOT CONFIRMATION (_inbox_confirm): ack=True advances the
         # cursor at handover, so a consumer that dies before delivering has
         # destroyed the message. Deprecated, NOT changed — sac reads this path.
@@ -359,7 +375,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        self._warn_currency()
         return confirm_notifications(agent, ids, store=store)
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
@@ -368,7 +384,7 @@ class LocalBackend:
         # CURRENCY VISIBILITY (module docstring): the confirmed entry point
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
-        warn_if_stale_once()
+        self._warn_currency()
         return _threads.append_message(sender, to, body, store=store)
 
     def dm_list(
@@ -379,7 +395,7 @@ class LocalBackend:
         store: Any = None,
     ) -> dict:
         # CURRENCY VISIBILITY (module docstring): non-raising, warn-once.
-        warn_if_stale_once()
+        self._warn_currency()
         other = peer or _threads.OPERATOR_NAME
         key = _threads.thread_key(sender, other)
         if ack:
