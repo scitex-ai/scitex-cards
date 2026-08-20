@@ -59,25 +59,26 @@ def test_two_terminal_states_are_never_auto_picked(merge):
     assert verdict == "CONFLICT"
 
 
-def test_blocked_beats_the_unchosen_default(merge):
-    # Arrange: `deferred` is what add_task writes when nobody chose.
+def test_deferred_and_blocked_conflict_rather_than_ranking(merge):
+    # Arrange: the upstream tuple MEASURED these non-monotone — cards move both
+    # ways — so any order between them would be imposed, not observed.
     values = ["blocked", "deferred"]
     # Act
-    result = merge("status", values)
+    verdict, _ = merge("status", values)
     # Assert
-    assert result == ("AUTO", "blocked")
+    assert verdict == "CONFLICT"
 
 
-def test_in_progress_beats_the_unchosen_default(merge):
+def test_deferred_and_in_progress_conflict_rather_than_ranking(merge):
     # Arrange
     values = ["deferred", "in_progress"]
     # Act
-    result = merge("status", values)
+    verdict, _ = merge("status", values)
     # Assert
-    assert result == ("AUTO", "in_progress")
+    assert verdict == "CONFLICT"
 
 
-def test_two_engaged_statuses_still_need_a_human(merge):
+def test_two_active_statuses_still_need_a_human(merge):
     # Arrange: blocked vs in_progress are two decisions, not a tier gap.
     values = ["blocked", "in_progress"]
     # Act
@@ -86,13 +87,42 @@ def test_two_engaged_statuses_still_need_a_human(merge):
     assert verdict == "CONFLICT"
 
 
-def test_unknown_status_does_not_lose_to_the_default(merge):
-    # Arrange: a value this rule has never seen must not rank below `deferred`.
-    values = ["deferred", "some_future_state"]
+def test_abolished_pending_loses_to_a_live_status(merge):
+    # Arrange: `pending` was abolished 2026-07-10 and live cards still carry
+    # it — the wake-watcher journal logs it as TOLERATED on read right now.
+    values = ["pending", "deferred"]
     # Act
     result = merge("status", values)
     # Assert
-    assert result == ("AUTO", "some_future_state")
+    assert result == ("AUTO", "deferred")
+
+
+def test_abolished_pending_loses_to_a_terminal_status(merge):
+    # Arrange
+    values = ["pending", "done"]
+    # Act
+    result = merge("status", values)
+    # Assert
+    assert result == ("AUTO", "done")
+
+
+def test_unranked_status_is_a_named_conflict_not_a_guessed_tier(merge):
+    # Arrange: the status domain is deliberately OPEN, so the tuple always lags
+    # the data. Guessing a tier is how `pending` outranked `deferred` before.
+    values = ["deferred", "some_future_state"]
+    # Act
+    verdict, _ = merge("status", values)
+    # Assert
+    assert verdict == "CONFLICT"
+
+
+def test_unranked_status_conflict_names_the_offending_value(merge):
+    # Arrange: a conflict nobody can act on is only half a refusal.
+    values = ["deferred", "some_future_state"]
+    # Act
+    _, payload = merge("status", values)
+    # Assert
+    assert payload["unranked"] == ["some_future_state"]
 
 
 # ── threads: losing a comment loses a record nobody restated ──

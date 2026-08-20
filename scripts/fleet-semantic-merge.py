@@ -60,16 +60,42 @@ PEERS = [
 # make the LATCH below destructive.
 TERMINAL = frozenset({"done", "cancelled", "failed", "completed"})
 
-# The tiers the LATCH ranks by. Higher = more evidence that a human decided.
-TIER_DEFAULT, TIER_ENGAGED, TIER_TERMINAL = 1, 2, 3
+# THE TIERS, TAKEN FROM THE GRANTED UPSTREAM DESIGN — not invented here.
+#
+# The mission card records what scitex-dev GRANTED for MergeRule.LATCH, and
+# this must agree with it or the one-shot merge and the eventual StorePlugin
+# will disagree about the same cards:
+#
+#   ("pending",)                                            MEASURED lowest
+#   ("archived","goal","deferred","blocked","in_progress")  MEASURED NOT
+#                                                           monotone — these
+#                                                           move BOTH ways, so
+#                                                           any order among them
+#                                                           is IMPOSED
+#   ("cancelled","failed","completed","done")               MEASURED terminal,
+#                                                           149 in / 1 out
+#
+# MY FIRST VERSION DIVERGED AND IT WAS A LIVE BUG. I ranked `deferred` alone at
+# the bottom (reasoning: it is the writer default, so it may never have been
+# chosen) and left `pending` UNRANKED — which fell through to the middle tier
+# and therefore OUTRANKED `deferred`. `pending` was ABOLISHED 2026-07-10 and
+# cards still carry it: the wake-watcher journal on ywata-note-win logs
+# "TOLERATED (read-side): status 'pending' was abolished" for real ids right
+# now. So the merge would have promoted an abolished status over a valid one.
+#
+# The "deferred is the default" observation still stands as an argument, but it
+# is an argument for changing the UPSTREAM tuple, not for diverging from it
+# here. Recorded, not acted on unilaterally.
+TIER_ABOLISHED, TIER_ACTIVE, TIER_TERMINAL = 1, 2, 3
 STATUS_TIER = {
-    # Unchosen: what `add_task` writes when the caller says nothing.
-    "deferred": TIER_DEFAULT,
-    # Chosen: someone picked the work up, or recorded an obstacle.
-    "in_progress": TIER_ENGAGED,
-    "blocked": TIER_ENGAGED,
-    # Concluded. MEASURED terminal on this board (149 transitions in, 1 out) —
-    # a state terminal only by name would make this latch destructive.
+    # Abolished 2026-07-10. Lowest: it is not a decision, it is a leftover.
+    "pending": TIER_ABOLISHED,
+    # Not monotone — cards move both ways through these, so a difference here
+    # is two real positions and the within-tier CONFLICT below is the answer.
+    **{v: TIER_ACTIVE for v in
+       ("archived", "goal", "deferred", "blocked", "in_progress")},
+    # Concluded. MEASURED terminal on this board — a state terminal only by
+    # name would make this latch destructive.
     **{v: TIER_TERMINAL for v in ("done", "cancelled", "failed", "completed")},
 }
 
@@ -184,12 +210,21 @@ def merge_field(field: str, values: list) -> tuple[str, object]:
         #
         # WITHIN a tier, differing values are two real decisions that disagree
         # about what happened — never auto-picked.
-        best = max((STATUS_TIER.get(str(v), TIER_ENGAGED) for v in present), default=None)
-        if best is None:
-            return "CONFLICT", present
-        winners = {str(v) for v in present if STATUS_TIER.get(str(v), TIER_ENGAGED) == best}
+        # AN UNRANKED VALUE IS A NAMED CONFLICT, NEVER A GUESSED TIER. The
+        # status domain is deliberately OPEN (operator ruling 2026-07-10: a
+        # card must always be writable, warning is enough), so the tuple will
+        # ALWAYS lag the data. Assigning an unknown value a default tier is
+        # how `pending` silently outranked `deferred` in my first version.
+        unranked = sorted({str(v) for v in present if str(v) not in STATUS_TIER})
+        if unranked:
+            return "CONFLICT", {"unranked": unranked, "values": sorted({str(v) for v in present})}
+
+        best = max(STATUS_TIER[str(v)] for v in present)
+        winners = {str(v) for v in present if STATUS_TIER[str(v)] == best}
         if len(winners) == 1:
             return "AUTO", next(iter(winners))
+        # Same tier, different values: two real positions on a non-monotone
+        # axis. Never auto-picked.
         return "CONFLICT", sorted(winners)
 
     # Free text and scalars. One side empty is an absence, not a disagreement.
