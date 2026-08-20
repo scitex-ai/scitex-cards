@@ -11,8 +11,12 @@ deterministically without a clock or network. AAA pattern.
 from __future__ import annotations
 
 import datetime as _dt
+import os
+from pathlib import Path
 
 import pytest
+
+from scitex_cards._paths import PKG_SHORT
 
 from scitex_cards._reminders import (
     DIGEST_CARD_ID,
@@ -27,11 +31,23 @@ from scitex_cards._reminders import (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine(env, monkeypatch):
-    """Strip env knobs AND detach config resolution so a deployed container's
+def _isolate_engine(env, tmp_path_factory):
+    """Strip env knobs AND redirect config resolution so a deployed container's
     settings (``SCITEX_CARDS_REMINDER_OWNERS`` from the spec, a real
-    ``~/.scitex/cards/config.yaml``) can never leak into these unit tests.
-    Each test sets only what it needs via args."""
+    ``~/.scitex/cards/config.json``) can never leak into these unit tests.
+    Each test sets only what it needs via args.
+
+    The config layer is REDIRECTED, not replaced. `config_paths()` builds its
+    list from `_user_root()` (which honours $SCITEX_DIR) and a walk up from the
+    cwd for a `.git`; pointing both at empty scratch directories makes the real
+    resolver return real paths to files that do not exist. The old version
+    substituted `lambda: []`, which detached the resolver entirely — so a bug
+    in `config_paths` itself (wrong filename, layers reversed) could not fail a
+    single test in this file, and every "config knob" test below was asserting
+    against a list the test supplied.
+
+    Tests that WANT a config write one via `_write_user_config`.
+    """
     for var in (
         "SCITEX_CARDS_REMINDER_OWNERS",
         "SCITEX_CARDS_REMINDER_ESCALATE_AFTER",
@@ -41,8 +57,19 @@ def _isolate_engine(env, monkeypatch):
         "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
-    # No config files contribute anything unless a test opts in.
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    scope = tmp_path_factory.mktemp("cfgscope")
+    (scope / "userscope" / PKG_SHORT).mkdir(parents=True, exist_ok=True)
+    env.set("SCITEX_DIR", str(scope / "userscope"))
+    norepo = scope / "norepo"
+    norepo.mkdir(parents=True, exist_ok=True)
+    env.chdir(norepo)
+
+
+def _write_user_config(text: str) -> None:
+    """Put a REAL config.json where `config_paths()` actually looks for it."""
+    target = Path(os.environ["SCITEX_DIR"]) / PKG_SHORT / "config.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
 
 
 # === helpers ===============================================================
@@ -526,12 +553,10 @@ def test_the_card_level_override_sends_a_second_note(tmp_path):
     assert sent == 2
 
 
-def test_config_interval_knob_is_honored(tmp_path, monkeypatch):
-    """reminders.interval_minutes in config.yaml sets the cadence."""
+def test_config_interval_knob_is_honored(tmp_path):
+    """reminders.interval_minutes in config.json sets the cadence."""
     # Arrange
-    cfg = tmp_path / "config.json"
-    cfg.write_text('{"reminders": {"interval_minutes": 2}}', encoding="utf-8")
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [cfg])
+    _write_user_config('{"reminders": {"interval_minutes": 2}}')
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
     tasks = [_t(id="c1", owner="alice", hours_ago=10.0)]
@@ -977,11 +1002,9 @@ def test_owner_allowlist_env_scopes_the_sweep(tmp_path, env):
     assert out["digested"] == ["alice"]
 
 
-def test_owner_allowlist_config_scopes_the_sweep(tmp_path, monkeypatch):
+def test_owner_allowlist_config_scopes_the_sweep(tmp_path):
     # Arrange
-    cfg = tmp_path / "config.json"
-    cfg.write_text('{"reminders": {"owners": ["alice"]}}', encoding="utf-8")
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [cfg])
+    _write_user_config('{"reminders": {"owners": ["alice"]}}')
     store = tmp_path / "tasks.yaml"
     rec = _EnqueueRecorder()
     tasks = [
