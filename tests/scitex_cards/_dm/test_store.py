@@ -22,6 +22,7 @@ store. Nothing here resolves the ambient store or touches the live fleet.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from functools import partial
 from pathlib import Path
@@ -31,7 +32,12 @@ import pytest
 from scitex_cards._dm import store as _dm_store
 from scitex_cards._db import SCHEMA_VERSION, open_db
 from scitex_cards._dm.read import current_members
-from scitex_cards._threads import append_message, get_thread, mark_read
+from scitex_cards._threads import (
+    append_message,
+    get_thread,
+    mark_read,
+    threads_path,
+)
 
 
 @pytest.fixture()
@@ -101,7 +107,7 @@ def test_the_sidecar_still_receives_the_message(sent, store):
     assert [r["id"] for r in records] == [expected]
 
 
-def test_a_database_failure_is_not_swallowed(store, monkeypatch):
+def test_a_database_failure_is_not_swallowed(store, db_path):
     """The DB write is AUTHORITATIVE: if it fails, the send fails.
 
     Degrading to a sidecar-only write would look like success while putting
@@ -110,11 +116,11 @@ def test_a_database_failure_is_not_swallowed(store, monkeypatch):
     of something that mattered.
     """
 
-    # Arrange
-    def _boom(*_args, **_kwargs):
-        raise sqlite3.OperationalError("disk I/O error")
-
-    monkeypatch.setattr("scitex_cards._dm.write.append_pair", _boom)
+    # Arrange — a REAL unusable database: the path where `cards.db` must go is
+    # a DIRECTORY, so sqlite cannot open it. This IS the failure rather than a
+    # stand-in for it, so it also proves the error escapes from wherever the
+    # write actually happens — not merely from the one name a patch replaced.
+    db_path.mkdir()
 
     # Act
     refusal = pytest.raises(sqlite3.OperationalError)
@@ -124,7 +130,7 @@ def test_a_database_failure_is_not_swallowed(store, monkeypatch):
         append_message("operator", "agent-x", "hello", store=store)
 
 
-def test_a_sidecar_failure_does_not_lose_the_message(store, db_path, monkeypatch):
+def test_a_sidecar_failure_does_not_lose_the_message(store, db_path):
     """The mirror is best-effort: its failure must not fail the send.
 
     By the time the mirror runs the message is already durable in the store of
@@ -132,11 +138,11 @@ def test_a_sidecar_failure_does_not_lose_the_message(store, db_path, monkeypatch
     and would hand the caller a reason to retry, duplicating it.
     """
 
-    # Arrange
-    def _boom(*_args, **_kwargs):
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr("scitex_cards._threads_io._save_threads_unlocked", _boom)
+    # Arrange — a REAL unwritable sidecar: `threads.json` is a DIRECTORY, so
+    # the mirror write raises `IsADirectoryError` (an `OSError`) for real. The
+    # database write runs FIRST and is untouched by this, which is exactly the
+    # polarity under test.
+    threads_path(store).mkdir()
     append_message("operator", "agent-x", "hello", store=store)
 
     # Act
@@ -144,6 +150,29 @@ def test_a_sidecar_failure_does_not_lose_the_message(store, db_path, monkeypatch
 
     # Assert
     assert count == 1
+
+
+def test_the_sidecar_failure_really_happened(store, caplog):
+    """CONTROL for the test above, which is otherwise satisfiable by accident.
+
+    That test asserts the message survived a broken sidecar — but it would
+    assert exactly the same thing if the sidecar had never broken at all, so on
+    its own it cannot tell "the mirror failed and was swallowed" apart from
+    "nothing went wrong". The warning is what separates them.
+
+    It is also worth pinning for its own sake: the mirror swallowing its error
+    is correct, and swallowing it SILENTLY would be a defect of the same family
+    as the one this file exists to guard.
+    """
+    # Arrange
+    threads_path(store).mkdir()
+    caplog.set_level(logging.WARNING)
+
+    # Act
+    append_message("operator", "agent-x", "hello", store=store)
+
+    # Assert
+    assert "dm sidecar mirror failed" in caplog.text
 
 
 def test_reading_a_dm_records_a_receipt_in_the_database(store, db_path, sent):
