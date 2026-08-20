@@ -91,7 +91,28 @@ PLAN=(
     # side. That is why it holds the hub's row count exactly while being absent
     # from the hub's own hardcoded peer list: the topology is not hub-and-spoke,
     # it is hub-and-spoke PLUS a host that syncs itself.
-    "ywata-note-win:scitex-cards-sync.timer,scitex-cards-sync.service,scitex-dev-ecosystem.service,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-gui-update.timer,scitex-cards-snapshot.timer"
+    #
+    # ── THE RESURRECTOR IS STOPPED FIRST, AND IT OUTRANKS THE SYNCER ─────────
+    # `scitex-dev-ecosystem-reconcile.service` runs `scitex-dev ecosystem up
+    # --yes` and was ACTIVE and unlisted until 2026-08-20. `ecosystem up`
+    # CREATES AND STARTS UNITS. Stop the syncer while it is running and it can
+    # bring the syncer back — and the freeze record would still say "stopped",
+    # because the record is written at stop time and nothing re-reads it.
+    #
+    # That reverses the ordering rule stated at the top of this file. The
+    # syncer was stopped first so a quiesced host could not be repopulated by a
+    # live one; but a re-import is BOUNDED (additive, and re-measurable), while
+    # a silently restarted writer is UNBOUNDED and invisible. The resurrector
+    # therefore goes first, then the syncer, then the rest.
+    #
+    # gui-update.timer IS IN THE LIST AND IT DOES NOT WRITE CARDS. Measured:
+    # ~/.local/bin/scitex-cards-gui-update.sh does `git pull --ff-only`,
+    # `uv pip install -e`, and `systemctl --user restart scitex-cards-gui`,
+    # every 2 minutes. So it does something worse than write a card — it can
+    # swap the INSTALLED CODE under a live store and bounce a service that does
+    # write, mid-window. It also exits 0 on every failure path by deliberate
+    # design, so it will never read red while doing it.
+    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service"
     "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
 )
 
