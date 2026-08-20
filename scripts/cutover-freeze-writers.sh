@@ -92,6 +92,25 @@ PLAN=(
     # from the hub's own hardcoded peer list: the topology is not hub-and-spoke,
     # it is hub-and-spoke PLUS a host that syncs itself.
     #
+    # ── THE ONE WRITER NO UNIT ENUMERATION CAN EVER FIND ────────────────────
+    # `scitex-cards-hub-tunnel-spartan.service` is
+    #     ssh -N -R 127.0.0.1:48765:127.0.0.1:8765 spartan
+    # and port 8765 on THIS host is a live `scitex-cards` process (measured:
+    # pid 24216 holding 127.0.0.1:8765). So spartan reaches the board through
+    # the tunnel while running ZERO card units of its own — verified on
+    # spartan-login1: 18 user services, nothing card-shaped, no 55432, and
+    # 127.0.0.1:48765 LISTENING.
+    #
+    # That is why this script cannot be trusted to be complete, and the comment
+    # is here rather than on the card because the next person to extend it will
+    # be tempted to. A remote CLIENT is not a unit anywhere. Enumerating units
+    # on every host in the fleet — the fix for the three naming failures of
+    # 2026-08-20 — still reports "no writers on spartan", correctly, while
+    # spartan holds an open write path.
+    #
+    # Stopping this unit closes that path, because the tunnel is established
+    # FROM this side. It is the only unit that does.
+    #
     # ── THE RESURRECTOR IS STOPPED FIRST, AND IT OUTRANKS THE SYNCER ─────────
     # `scitex-dev-ecosystem-reconcile.service` runs `scitex-dev ecosystem up
     # --yes` and was ACTIVE and unlisted until 2026-08-20. `ecosystem up`
@@ -112,7 +131,7 @@ PLAN=(
     # swap the INSTALLED CODE under a live store and bounce a service that does
     # write, mid-window. It also exits 0 on every failure path by deliberate
     # design, so it will never read red while doing it.
-    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service"
+    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service,scitex-cards-hub-tunnel-spartan.service"
     "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
 )
 
