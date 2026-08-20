@@ -47,7 +47,7 @@ def _sweep_minutes_for_env_value(env, value: str) -> float:
     return _nudge_sweep_minutes()
 
 
-def _run_loop_with_raising_sweep(tmp_path, monkeypatch) -> dict:
+def _run_loop_with_raising_sweep(tmp_path) -> dict:
     """Run notifyd for two ticks with a sweep that raises OUT of the guard.
 
     The LOOP is under test, not the sweep: the real sweep swallows its own
@@ -74,7 +74,6 @@ def _run_loop_with_raising_sweep(tmp_path, monkeypatch) -> dict:
         calls.append(1)
         raise RuntimeError("sweep exploded")
 
-    monkeypatch.setattr(_daemon, "_run_stale_nudge_sweep", _boom)
 
     recorder = RecorderChannel(name="log")
     ticks = {"n": 0}
@@ -92,12 +91,13 @@ def _run_loop_with_raising_sweep(tmp_path, monkeypatch) -> dict:
         max_iterations=2,
         terminal_report_every=0,
         nudge_sweep_minutes=1.0,  # due every tick (the clock jumps 1 h)
+        nudge_sweep=_boom,
     )
     return {"calls": calls, "result": result, "recorder": recorder}
 
 
 def _run_loop_recording_sweep_calls(
-    tmp_path, monkeypatch, *, now_fn, max_iterations, nudge_sweep_minutes
+    tmp_path, *, now_fn, max_iterations, nudge_sweep_minutes
 ) -> list:
     """Run notifyd with a counting sweep; return the ``now`` of every call."""
     store = tmp_path / "tasks.yaml"
@@ -107,7 +107,6 @@ def _run_loop_recording_sweep_calls(
     def _count(*, store, now):
         calls.append(now)
 
-    monkeypatch.setattr(_daemon, "_run_stale_nudge_sweep", _count)
 
     _daemon.run_notifyd(
         store=store,
@@ -118,6 +117,7 @@ def _run_loop_recording_sweep_calls(
         max_iterations=max_iterations,
         terminal_report_every=0,
         nudge_sweep_minutes=nudge_sweep_minutes,
+        nudge_sweep=_count,
     )
     return calls
 
@@ -209,48 +209,47 @@ class TestSweepIsFailSoft:
 
 
 class TestNotifydLoop:
-    def test_raising_sweep_really_ran_during_the_loop(self, tmp_path, monkeypatch):
+    def test_raising_sweep_really_ran_during_the_loop(self, tmp_path):
         # Arrange
         # Act
-        run = _run_loop_with_raising_sweep(tmp_path, monkeypatch)
+        run = _run_loop_with_raising_sweep(tmp_path)
         # Assert
         assert run["calls"]
 
     def test_raising_sweep_does_not_cut_the_iteration_count(
-        self, tmp_path, monkeypatch
+        self, tmp_path
     ):
         # Arrange
         # Act
-        run = _run_loop_with_raising_sweep(tmp_path, monkeypatch)
+        run = _run_loop_with_raising_sweep(tmp_path)
         # Assert
         # both ticks completed despite the raise.
         assert run["result"]["iterations"] == 2
 
     def test_raising_sweep_does_not_stop_notifications_being_sent(
-        self, tmp_path, monkeypatch
+        self, tmp_path
     ):
         # Arrange
         # Act
-        run = _run_loop_with_raising_sweep(tmp_path, monkeypatch)
+        run = _run_loop_with_raising_sweep(tmp_path)
         # Assert
         assert run["result"]["totals"]["sent"] >= 1
 
     def test_raising_sweep_does_not_stop_the_channel_delivery(
-        self, tmp_path, monkeypatch
+        self, tmp_path
     ):
         # Arrange
         # Act
-        run = _run_loop_with_raising_sweep(tmp_path, monkeypatch)
+        run = _run_loop_with_raising_sweep(tmp_path)
         # Assert
         # detection dying must never stop delivery.
         assert [c["recipient"] for c in run["recorder"].calls] == ["u_alice"]
 
-    def test_sweep_disabled_by_zero_cadence(self, tmp_path, monkeypatch):
+    def test_sweep_disabled_by_zero_cadence(self, tmp_path):
         # Arrange
         # Act
         calls = _run_loop_recording_sweep_calls(
             tmp_path,
-            monkeypatch,
             now_fn=lambda: T0,
             max_iterations=3,
             nudge_sweep_minutes=0.0,
@@ -258,7 +257,7 @@ class TestNotifydLoop:
         # Assert
         assert calls == []
 
-    def test_sweep_runs_once_per_cadence_not_every_tick(self, tmp_path, monkeypatch):
+    def test_sweep_runs_once_per_cadence_not_every_tick(self, tmp_path):
         # Arrange
         # each TICK advances 10 min (now_fn is called several times
         # a tick; the sweep sees a monotonically rising clock either way).
@@ -271,7 +270,6 @@ class TestNotifydLoop:
         # Act
         calls = _run_loop_recording_sweep_calls(
             tmp_path,
-            monkeypatch,
             now_fn=_now,
             max_iterations=4,
             nudge_sweep_minutes=600.0,

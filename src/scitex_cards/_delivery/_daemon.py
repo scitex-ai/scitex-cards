@@ -285,6 +285,7 @@ def run_notifyd(
     max_iterations: int | None = None,
     terminal_report_every: int = DEFAULT_TERMINAL_REPORT_EVERY,
     nudge_sweep_minutes: float | None = None,
+    nudge_sweep=_run_stale_nudge_sweep,
     escalate_after: int = DEFAULT_ESCALATE_AFTER,
 ) -> dict:
     """Run the always-on delivery loop until stopped.
@@ -413,7 +414,7 @@ def run_notifyd(
                     # sweep escaped, which is precisely the coupling the sweep
                     # must never have. Delivery runs even when detection dies.
                     try:
-                        faults.append(_run_stale_nudge_sweep(store=store, now=tick_now))
+                        faults.append(nudge_sweep(store=store, now=tick_now))
                     except Exception as exc:  # noqa: BLE001 — never block delivery
                         logger.exception(
                             "notifyd liveness sweep raised; continuing to delivery"
