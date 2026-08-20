@@ -95,9 +95,27 @@ PLAN=(
     "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
 )
 
-state_of() { # host unit -> active|inactive|failed|UNREACHABLE
-    local out
-    if ! out=$("${SSH[@]}" "$1" "$RUNTIME systemctl --user is-active $2" 2>&1); then
+state_of() { # host unit -> active|inactive|failed|NOT-FOUND|UNREACHABLE
+    # WHY LoadState AND NOT JUST is-active. `systemctl is-active` answers
+    # "inactive" for a unit that does not exist, IDENTICALLY to one that exists
+    # and is stopped:
+    #
+    #     is-active scitex-cards-pg-alert.service   -> inactive   (real, stopped)
+    #     is-active scitex-cards-NOSUCHUNIT.service -> inactive   (does not exist)
+    #     show -p LoadState  ->  loaded            vs  not-found
+    #
+    # That collapse is not cosmetic. A typo'd or stale unit name renders as
+    # `skip`, which reads as "already stopped", so the plan prints a tidy green
+    # line for a host where the freeze covers NOTHING. It happened: this script
+    # listed three units for ywata-note-win that do not exist there, and the
+    # dry-run looked perfectly healthy.
+    #
+    # Fixing those three names fixed the INSTANCE. This fixes the CLASS: a
+    # phantom unit is now a distinct, loud verdict that --freeze refuses to run
+    # past, so the next stale name cannot manufacture false coverage.
+    local out load act
+    if ! out=$("${SSH[@]}" "$1" \
+        "$RUNTIME printf '%s %s' \"\$(systemctl --user show $2 -p LoadState --value)\" \"\$(systemctl --user is-active $2)\"" 2>&1); then
         case "$out" in
             *"No route"* | *"timed out"* | *handshake* | *"Connection closed"*)
                 echo UNREACHABLE
@@ -105,7 +123,14 @@ state_of() { # host unit -> active|inactive|failed|UNREACHABLE
                 ;;
         esac
     fi
-    echo "${out:-unknown}" | tail -1 | tr -d '[:space:]'
+    out=$(echo "$out" | tail -1)
+    load=${out%% *}
+    act=${out##* }
+    [[ $load == not-found ]] && {
+        echo NOT-FOUND
+        return
+    }
+    echo "${act:-unknown}" | tr -d '[:space:]'
 }
 
 survey() { # prints: host<TAB>unit<TAB>state<TAB>verdict
@@ -121,6 +146,9 @@ survey() { # prints: host<TAB>unit<TAB>state<TAB>verdict
             st=$(state_of "$host" "$unit")
             verdict=skip
             [[ $st == active ]] && verdict=STOP
+            # A unit that does not exist is NOT a unit that is already stopped.
+            # Its own verdict, so it can never be read as covered.
+            [[ $st == NOT-FOUND ]] && verdict=MISSING
             printf '%s\t%s\t%s\t%s\n' "$host" "$unit" "$st" "$verdict"
         done
     done
@@ -160,6 +188,21 @@ cmd_freeze() {
         echo "REFUSING: $STATE exists — thaw first, or move it aside." >&2
         exit 1
     }
+    # REFUSE ON A PHANTOM UNIT, before stopping anything. A plan naming a unit
+    # that does not exist is a BROKEN PLAN, and running it means freezing less
+    # than the operator believes while every line still reads green. Cheaper to
+    # refuse and have someone correct the list than to discover mid-window that
+    # a host was never quiesced. Fix the PLAN — do not add an override.
+    local missing
+    missing=$(survey | awk -F'\t' '$4=="MISSING" {printf "  %s  %s\n", $1, $2}')
+    if [[ -n $missing ]]; then
+        echo "REFUSING: the plan names unit(s) that do not exist on the host:" >&2
+        printf '%s\n' "$missing" >&2
+        echo "A nonexistent unit reports 'inactive' and would render as skip," >&2
+        echo "so this plan would report success while freezing nothing there." >&2
+        exit 1
+    fi
+
     local host unit st verdict n=0
     : >"$STATE"
     while IFS=$'\t' read -r host unit st verdict; do
