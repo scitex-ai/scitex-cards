@@ -154,6 +154,7 @@ def gui_serve_cmd(port: int, host: str, force: bool, dry_run: bool) -> None:
     Nothing running is therefore the NORMAL case for `--force`, not an
     error case. WITHOUT `--force` the refusal is unchanged.
 
+    \b
     Example:
       $ scitex-cards gui serve --port 8051
       $ scitex-cards gui serve --force
@@ -208,6 +209,7 @@ def gui_serve_cmd(port: int, host: str, force: bool, dry_run: bool) -> None:
 def gui_open_cmd(surface: str, port: int, host: str) -> None:
     """Serve + open a browser. Reuses a running board if there is one.
 
+    \b
     Example:
       $ scitex-cards gui open
       $ scitex-cards gui open timeline

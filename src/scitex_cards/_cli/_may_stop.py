@@ -32,6 +32,7 @@ from .._may_stop import may_stop
 def may_stop_cmd(agent):
     """Exit 0 iff the agent has NO runnable work; else exit 2 + hints.
 
+    \b
     Example:
       $ scitex-cards may-stop
       $ scitex-cards may-stop --agent scitex-cards

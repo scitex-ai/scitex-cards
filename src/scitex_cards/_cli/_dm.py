@@ -80,6 +80,7 @@ def backfill_cmd(sidecar, db_path, store, apply_) -> None:
     moved or truncated, so this stays reversible: rolling back is redeploying
     the previous version, not restoring anything.
 
+    \b
     Example:
       $ scitex-cards dm backfill
       $ scitex-cards dm backfill --apply
@@ -111,6 +112,7 @@ def verify_cmd(sidecar, db_path, store) -> None:
     flips, new DMs land in the database first, so "the database has more" is
     the healthy steady state.
 
+    \b
     Example:
       $ scitex-cards dm verify
     """

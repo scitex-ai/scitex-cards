@@ -67,6 +67,7 @@ def index_group() -> None:
 def index_rebuild_cmd(dry_run: bool, assume_yes: bool) -> None:
     """Drop + repopulate the SQLite index from the YAML source(s).
 
+    \b
     Example:
       $ scitex-cards index rebuild -y
     """
@@ -122,6 +123,7 @@ def index_rebuild_cmd(dry_run: bool, assume_yes: bool) -> None:
 def index_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite index.
 
+    \b
     Example:
       $ scitex-cards index info
       $ scitex-cards index info --json
