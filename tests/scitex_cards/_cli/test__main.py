@@ -112,20 +112,36 @@ def test_the_gate_passes_through_when_the_check_is_a_no_op():
     assert returned is None
 
 
-def test_the_gate_surfaces_a_refusal_as_a_clean_click_exception():
-    # Arrange — a gate that refuses the way scitex-dev's `ensure_current`
-    # would, remedy command included.
-    remedy = "pip install -U scitex-cards"
+#: The remedy command scitex-dev puts in its refusal. It has to survive the
+#: translation to a ClickException, or the operator is told what broke without
+#: being told what to do about it.
+_REMEDY = "pip install -U scitex-cards"
+
+
+@pytest.fixture
+def translated_refusal() -> str:
+    """The message the CLI shows when the gate refuses.
+
+    The `pytest.raises` block lives HERE: it counts as an assertion, so inline
+    it would make the test below two assertions in one (STX-TQ007).
+    """
 
     def _boom():
-        raise RuntimeError(f"scitex-cards is stale — run: {remedy}")
+        raise RuntimeError(f"scitex-cards is stale — run: {_REMEDY}")
 
-    # Act
     with pytest.raises(click.ClickException) as exc_info:
         _run_currency_gate(check=_boom)
+    return exc_info.value.format_message()
 
+
+def test_the_gate_surfaces_a_refusal_as_a_clean_click_exception(
+    translated_refusal: str,
+):
+    # Arrange (fixture)
+    # Act
+    message = translated_refusal
     # Assert — a clean CLI error rather than a raw traceback, remedy intact.
-    assert remedy in exc_info.value.format_message()
+    assert _REMEDY in message
 
 
 def test_the_group_callback_runs_the_gate_so_every_subcommand_is_covered():

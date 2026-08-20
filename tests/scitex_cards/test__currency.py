@@ -130,8 +130,11 @@ def test_check_currency_no_ops_when_scitex_dev_lacks_the_staleness_module():
     # scitex-dev happens to be installed in this environment.
 
     # Act
-    # Assert — no exception; scitex-cards stays standalone.
-    check_currency(**_ABSENT_CHECKER)
+    returned = check_currency(**_ABSENT_CHECKER)
+
+    # Assert — reaching this at all is the no-raise evidence; scitex-cards
+    # stays standalone.
+    assert returned is None
 
 
 # --------------------------------------------------------------------------- #
@@ -166,22 +169,37 @@ def test_check_currency_raises_when_the_install_is_stale():
         check_currency(**_bare_host(_fake_ensure_current))
 
 
-def test_check_currency_stale_error_message_carries_the_remedy_command():
-    # Arrange — a fake `ensure_current` that raises with the exact upgrade
-    # remedy scitex-dev would give a real caller. ON A BARE HOST that command
-    # IS the repair, so it must reach the reader untouched; the overlay rail
-    # scrubs it precisely because there it is not a repair.
-    remedy = "pip install -U scitex-cards"
+#: The exact upgrade remedy scitex-dev would give a real caller. ON A BARE HOST
+#: that command IS the repair, so it must reach the reader untouched; the
+#: overlay rail scrubs it precisely because there it is not one.
+_REMEDY = "pip install -U scitex-cards"
+
+
+@pytest.fixture
+def bare_host_refusal() -> str:
+    """The message a caller sees when the gate refuses on a bare host.
+
+    The `pytest.raises` block lives HERE rather than in the test body: it
+    counts as an assertion, so keeping it inline would make the test below two
+    assertions in one (STX-TQ007).
+    """
 
     def _fake_ensure_current(dist_name):
-        raise RuntimeError(f"{dist_name} is stale — run: {remedy}")
+        raise RuntimeError(f"{dist_name} is stale — run: {_REMEDY}")
 
-    # Act
     with pytest.raises(RuntimeError) as exc_info:
         check_currency(**_bare_host(_fake_ensure_current))
+    return str(exc_info.value)
 
+
+def test_check_currency_stale_error_message_carries_the_remedy_command(
+    bare_host_refusal: str,
+):
+    # Arrange (fixture)
+    # Act
+    message = bare_host_refusal
     # Assert — the remedy text is not swallowed; it propagates verbatim.
-    assert remedy in str(exc_info.value)
+    assert _REMEDY in message
 
 
 def test_check_currency_broken_payload_error_also_propagates():

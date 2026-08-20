@@ -223,12 +223,24 @@ def test_rendered_unit_exec_start_program_exists_on_disk():
     assert Path(program).is_file()
 
 
-def test_console_script_prefers_the_running_interpreters_bin_dir():
-    # Arrange
-    # a venv install must point the unit at THAT venv.
+@pytest.fixture
+def console_script_beside_this_interpreter() -> Path:
+    """The console script next to the running interpreter, or skip.
+
+    The precondition lives HERE rather than in the test body so the test is a
+    single Arrange/Act/Assert with one assertion (STX-TQ007).
+    """
     candidate = Path(sys.executable).parent / "scitex-cards"
     if not (candidate.is_file() and os.access(candidate, os.X_OK)):
         pytest.skip("no console script beside this interpreter to prefer")
+    return candidate
+
+
+def test_console_script_prefers_the_running_interpreters_bin_dir(
+    console_script_beside_this_interpreter: Path,
+):
+    # Arrange — a venv install must point the unit at THAT venv.
+    candidate = console_script_beside_this_interpreter
     # Act
     resolved = _systemd.console_script_path()
     # Assert

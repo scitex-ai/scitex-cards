@@ -49,7 +49,14 @@ from scitex_cards._stale.active_nudge import (
 
 @pytest.fixture(autouse=True)
 def _isolated_store(tmp_path, env):
-    """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir."""
+    """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir.
+
+    Yields rather than returns (STX-TQ005). The connection opened here is
+    already closed before the test runs — the `finally` sees to that — so this
+    is a SHAPE change, not a leak fix: a fixture that opens a connection and
+    `return`s is the pattern the rule watches for, and a generator fixture is
+    where any future teardown would have to live anyway.
+    """
     from scitex_cards._db import connect, init_schema
 
     db = tmp_path / "cards.db"
@@ -60,7 +67,7 @@ def _isolated_store(tmp_path, env):
         conn.commit()
     finally:
         conn.close()
-    return db
+    yield db
 
 
 @contextlib.contextmanager
