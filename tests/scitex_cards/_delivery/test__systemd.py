@@ -5,9 +5,10 @@
 The install helper must WRITE the unit file to ``$XDG_CONFIG_HOME/systemd/user``
 and NEVER invoke systemctl (host-enablement is operator-gated). We assert by
 pointing ``$XDG_CONFIG_HOME`` at a tmp dir + verifying the file content, and by
-confirming no ``systemctl`` subprocess is ever spawned (a real
-``subprocess.run`` spy installed as a sentinel, NOT a mock of our code under
-test — the helper simply has no subprocess call to intercept).
+confirming no ``systemctl`` subprocess is ever spawned — proved with a REAL
+``systemctl`` executable placed first on ``$PATH`` that records having been run,
+so the claim is about what the process did rather than about whether one module
+attribute was called.
 
 REGRESSION (203/EXEC): the shipped template used a BARE
 ``ExecStart=scitex-cards notifyd``. systemd does not use the user's login PATH,
@@ -49,32 +50,52 @@ def xdg_home(tmp_path, env):
 
 
 @pytest.fixture
-def broken_console_script_env(tmp_path, env, monkeypatch):
+def broken_console_script_env(tmp_path, env):
     """A real interpreter path with an EMPTY bin dir and an empty ``$PATH``.
 
     Nothing to find beside the interpreter, and nothing on $PATH either, so
     the console script is genuinely unresolvable.
+
+    ``sys.executable`` is set and restored directly rather than through
+    ``monkeypatch`` (PA-306 §3). It is an ordinary documented mutable that the
+    resolver really reads — the same category as ``$PATH``, which this fixture
+    already steers through ``env``.
     """
     empty_bin = tmp_path / "empty-venv" / "bin"
     empty_bin.mkdir(parents=True)
-    monkeypatch.setattr(sys, "executable", str(empty_bin / "python"))
+    real_executable = sys.executable
+    sys.executable = str(empty_bin / "python")
     env.set("PATH", str(tmp_path / "nowhere"))
     env.set("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    return empty_bin
+    try:
+        yield empty_bin
+    finally:
+        sys.executable = real_executable
 
 
 @pytest.fixture
-def subprocess_run_calls(monkeypatch):
-    """Record every ``subprocess.run`` call so we can PROVE none was made."""
-    calls: list = []
-    real_run = subprocess.run
+def systemctl_marker(tmp_path, env):
+    """A REAL ``systemctl`` first on ``$PATH`` that records being run.
 
-    def _spy_run(*args, **kwargs):
-        calls.append((args, kwargs))
-        return real_run(*args, **kwargs)
+    Returns the marker path it would create. The claim under test is a
+    NEGATIVE — host enablement is operator-gated and must never be executed —
+    and a spy on ``subprocess.run`` could only see calls routed through that one
+    attribute: ``os.system``, ``Popen``, or ``from subprocess import run`` would
+    all have passed while it reported "never shelled out".
 
-    monkeypatch.setattr(subprocess, "run", _spy_run)
-    return calls
+    An executable on ``$PATH`` is what ANY of those paths would actually reach,
+    so its absence is evidence about the process rather than about one binding.
+    """
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    marker = tmp_path / "systemctl-was-run"
+    script = bin_dir / "systemctl"
+    script.write_text(
+        f'#!/bin/sh\necho "$@" > {marker}\nexit 0\n', encoding="utf-8"
+    )
+    script.chmod(0o755)
+    env.set("PATH", f"{bin_dir}:{os.environ.get('PATH', '')}")
+    return marker
 
 
 def _resolve_exec_start_error():
@@ -341,15 +362,36 @@ def test_install_unit_returns_the_enable_now_command(xdg_home):
     assert "enable --now scitex-cards-notifyd.service" in result["enable_commands"]
 
 
+def test_the_systemctl_marker_fires_when_something_really_shells_out(
+    systemctl_marker,
+):
+    """POSITIVE CONTROL for the test below, and it is not optional.
+
+    That test proves a negative from an ABSENT file, which is worth nothing
+    unless the file appears when the thing DOES happen — an instrument that has
+    never returned a known answer is not a measurement. Here the test itself
+    shells out, so the marker must exist.
+
+    It also bounds the claim honestly: this detects a ``systemctl`` resolved
+    through ``$PATH``, which is what a bare command name reaches by any of the
+    spawn APIs. A hard-coded ``/bin/systemctl`` would slip past it.
+    """
+    # Arrange
+    # Act
+    subprocess.run(["systemctl", "daemon-reload"], check=False)
+    # Assert
+    assert systemctl_marker.exists()
+
+
 def test_install_unit_never_spawns_a_systemctl_subprocess(
-    xdg_home, subprocess_run_calls
+    xdg_home, systemctl_marker
 ):
     # Arrange
     # Act
     _systemd.install_unit()
     # Assert
     # host-enablement is operator-gated, never executed here.
-    assert subprocess_run_calls == []
+    assert not systemctl_marker.exists()
 
 
 def test_first_install_without_force_writes_the_unit(xdg_home):
