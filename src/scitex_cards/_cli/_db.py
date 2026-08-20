@@ -25,6 +25,8 @@ import re
 
 import click
 
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
+
 #: A snapshot holding less than this FRACTION of the previous one's cards is
 #: treated as a catastrophe rather than churn, and refused. Cards are deleted
 #: routinely; HALF of them vanishing between two hourly fires is not deletion,
@@ -312,6 +314,7 @@ def _echo_export_report(report: dict) -> None:
         "payload.\n\n"
         "Example:\n"
         "  scitex-cards db export\n"
+        "  scitex-cards db export --dry-run\n"
         "  scitex-cards db export --out /tmp/tasks.json --json"
     ),
 )
@@ -329,15 +332,40 @@ def _echo_export_report(report: dict) -> None:
     help="threads.json output path (default: beside --out).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the export report as JSON.")
+@mutating_options
 def db_export_cmd(
     db_path: str | None,
     out_path: str | None,
     threads_out: str | None,
     as_json: bool,
+    dry_run: bool,
+    assume_yes: bool,
 ) -> None:
-    """Export the DB to JSON snapshot files."""
-    from .._db_export import export_json
+    """Export the DB to JSON snapshot files.
 
+    This verb ALWAYS writes files — unlike `dm export` there is no stdout
+    path — so both flags apply unconditionally. `--dry-run` names the targets
+    it would write without touching them; `--yes` skips the confirmation asked
+    when a target already exists, because an export somebody is holding should
+    not be replaced silently.
+    """
+    from pathlib import Path
+
+    from .._db_export import export_json, export_targets
+
+    targets = export_targets(db_path=db_path, out=out_path, threads_out=threads_out)
+    if dry_run:
+        for label, target in targets.items():
+            exists = " (would OVERWRITE)" if Path(target).exists() else ""
+            click.echo(f"{DRY_RUN_PREFIX} would write {label}: {target}{exists}")
+        click.echo(f"{DRY_RUN_PREFIX} nothing written")
+        return
+    existing = [t for t in targets.values() if Path(t).exists()]
+    if existing:
+        confirm_or_abort(
+            f"Overwrite {len(existing)} existing export file(s)?",
+            assume_yes=assume_yes,
+        )
     report = export_json(db_path=db_path, out=out_path, threads_out=threads_out)
     if as_json:
         click.echo(json.dumps(report))

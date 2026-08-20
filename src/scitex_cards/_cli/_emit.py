@@ -164,6 +164,7 @@ def emit_event_cmd(
         examples=(
             ("{prog} find-card --repo owner/repo", ""),
             ("{prog} find-card --repo owner/repo --status pending", ""),
+            ("{prog} find-card --repo owner/repo --json", ""),
         ),
     ),
 )
@@ -174,8 +175,22 @@ def emit_event_cmd(
 @click.option(
     "--status", default=None, help="Optional card-status filter (closed enum)."
 )
-def find_card_cmd(repo, kind, status) -> None:
-    """Print ids of cards with ``repo == <R>`` (one per line; empty when none)."""
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Emit the ids as a JSON array instead of one per line.",
+)
+def find_card_cmd(repo, kind, status, as_json) -> None:
+    """Print ids of cards with ``repo == <R>`` (one per line; empty when none).
+
+    ``--json`` emits the SAME answer as a JSON array, not a richer one. A
+    producer shelling out here wants the ids it will pass to ``--card-id``, and
+    a machine-readable form that returned whole cards would invite callers to
+    depend on fields this verb does not promise. No match is ``[]``, which a
+    caller can branch on without the empty-string ambiguity the line form has.
+    """
     # `scope=""` opts out of the $SCITEX_CARDS_SCOPE env default — a producer
     # resolving repo->card must see EVERY matching card, not just its own
     # scope slice.
@@ -186,10 +201,12 @@ def find_card_cmd(repo, kind, status) -> None:
         kind=kind,
         status=status,
     )
-    for card in cards:
-        cid = card.get("id")
-        if cid:
-            click.echo(cid)
+    ids = [cid for cid in (card.get("id") for card in cards) if cid]
+    if as_json:
+        click.echo(json.dumps(ids))
+        return
+    for cid in ids:
+        click.echo(cid)
 
 
 def register(main: click.Group) -> None:

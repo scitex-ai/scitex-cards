@@ -28,6 +28,8 @@ import json
 
 import click
 
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
+
 
 def register(main: click.Group) -> None:
     """Attach the ``dm`` noun group to the root group."""
@@ -125,11 +127,22 @@ def verify_cmd(sidecar, db_path, store) -> None:
 @click.option("--db", "db_path", default=None, help="Database to read.")
 @click.option("--store", default=None, help="Task-store container path.")
 @click.option("--out", default=None, help="Write here instead of stdout.")
-def export_cmd(db_path, store, out) -> None:
+@mutating_options
+def export_cmd(db_path, store, out, dry_run, assume_yes) -> None:
     """Dump every DM table in the shape ``dm merge`` consumes.
 
+    THE FLAGS ONLY BITE ON THE `--out` PATH, which is the only one that
+    changes anything. Dumping to stdout is a read: there is no preview
+    distinct from the output, and nothing to confirm.
+
+    With `--out`: `--dry-run` reports the row counts and the target without
+    writing, and `--yes` skips the confirmation asked before an EXISTING file
+    is overwritten — somebody may be holding that export.
+
+    \b
     Example:
       $ scitex-cards dm export --out dms.json
+      $ scitex-cards dm export --out dms.json --dry-run
     """
     from pathlib import Path
 
@@ -138,7 +151,19 @@ def export_cmd(db_path, store, out) -> None:
     payload = export_dm(db=db_path, store=store)
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     if out:
-        Path(out).expanduser().write_text(text, encoding="utf-8")
+        target = Path(out).expanduser()
+        counts_preview = {k: len(v) for k, v in payload.items()}
+        if dry_run:
+            click.echo(
+                f"{DRY_RUN_PREFIX} would write {target}  "
+                f"{json.dumps(counts_preview, sort_keys=True)}"
+            )
+            if target.exists():
+                click.echo(f"{DRY_RUN_PREFIX}   (would OVERWRITE an existing file)")
+            return
+        if target.exists():
+            confirm_or_abort(f"Overwrite {target}?", assume_yes=assume_yes)
+        target.write_text(text, encoding="utf-8")
         counts = {k: len(v) for k, v in payload.items()}
         click.echo(f"{out}  {json.dumps(counts, sort_keys=True)}")
         return
@@ -149,7 +174,8 @@ def export_cmd(db_path, store, out) -> None:
 @click.argument("payload_path")
 @click.option("--db", "db_path", default=None, help="Database to write.")
 @click.option("--store", default=None, help="Task-store container path.")
-def merge_cmd(payload_path, db_path, store) -> None:
+@mutating_options
+def merge_cmd(payload_path, db_path, store, dry_run, assume_yes) -> None:
     """Union a peer host's export into this store. Never overwrites, never shrinks.
 
     Every row carries a globally-unique primary key and every table is
@@ -158,14 +184,30 @@ def merge_cmd(payload_path, db_path, store) -> None:
     than what is here — receiving a subset must keep the local extras, and any
     post-state with fewer rows raises rather than committing.
 
+    \b
     Example:
       $ scitex-cards dm merge peer-dms.json
+      $ scitex-cards dm merge peer-dms.json --dry-run
     """
     from pathlib import Path
 
     from .._dm.migrate import merge_dm
 
     payload = json.loads(Path(payload_path).expanduser().read_text(encoding="utf-8"))
+    if dry_run:
+        counts = {k: len(v) for k, v in payload.items() if isinstance(v, list)}
+        click.echo(
+            f"{DRY_RUN_PREFIX} would union {payload_path} into this store: "
+            f"{json.dumps(counts, sort_keys=True)}"
+        )
+        click.echo(
+            f"{DRY_RUN_PREFIX} INSERT OR IGNORE — existing rows are never "
+            "overwritten and the row count cannot shrink"
+        )
+        return
+    confirm_or_abort(
+        f"Union {payload_path} into this store?", assume_yes=assume_yes
+    )
     report = merge_dm(payload, db=db_path, store=store)
     click.echo(json.dumps(report, indent=2, sort_keys=True))
 

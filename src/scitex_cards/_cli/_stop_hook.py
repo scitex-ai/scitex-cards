@@ -48,6 +48,8 @@ import sys
 
 import click
 
+from ._mutating import dry_run_option
+
 #: Cap on items named in the reason. The reason becomes the agent's next
 #: instruction, and an instruction listing forty cards is not an instruction.
 _MAX_ITEMS = 5
@@ -127,11 +129,18 @@ def _inbox_section(agent: str, text: str, ids: list[str]) -> str:
     )
 
 
-def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tuple:
+def _gather_inbox(
+    agent: str, session_id, stop_hook_active: bool, store, *, record: bool = True
+) -> tuple:
     """Return ``(section_text, warnings)`` for the unconfirmed-message rail.
 
     Fails open in every branch: an empty section means this rail contributes no
     block at all, and the warnings explain the silence on stderr.
+
+    ``record=False`` is the dry-run path: build the same section but do NOT
+    spend a presentation. Presentations are bounded (``MAX_PRESENTATIONS``), so
+    a preview that recorded one would consume the agent's real retry budget to
+    answer a question nobody acted on.
     """
     from .._inbox_present import pending, present
     from .._stop_hook_bound import (
@@ -175,6 +184,8 @@ def _gather_inbox(agent: str, session_id, stop_hook_active: bool, store) -> tupl
         )
         return "", warnings
 
+    if not record:
+        return _inbox_section(agent, text, ids), warnings
     state = record_presented(session_id, ids, store)
     if not state.get("durable") and stop_hook_active:
         warnings.append(
@@ -196,6 +207,7 @@ def evaluate(
     session_id=None,
     stop_hook_active: bool = False,
     store=None,
+    record: bool = True,
 ) -> dict:
     """Decide the Stop hook's answer. Returns ``{"decision", "warnings"}``.
 
@@ -211,7 +223,7 @@ def evaluate(
 
     try:
         section, inbox_warnings = _gather_inbox(
-            agent, session_id, stop_hook_active, store
+            agent, session_id, stop_hook_active, store, record=record
         )
         warnings.extend(inbox_warnings)
         if section:
@@ -254,11 +266,25 @@ def evaluate(
     default=None,
     help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
 )
-def stop_hook_cmd(agent):
+@dry_run_option
+def stop_hook_cmd(agent, dry_run):
     """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work.
 
+    `--dry-run` prints the same decision WITHOUT spending a presentation, so an
+    operator asking "why is my agent refusing to stop?" does not consume the
+    bounded retry budget to find out.
+
+    NO `--yes` HERE, DELIBERATELY. The harness invokes this as
+    `echo '{}' | scitex-cards stop-hook` on a fixed contract, with nobody to
+    answer a prompt, so the flag could only ever be accepted and ignored — the
+    audit's §2 asks for it because it reads a mutating verb out of the compound
+    noun "stop-hook". Reported upstream rather than satisfied with a flag that
+    would lie.
+
+    \b
     Example:
       $ echo '{}' | scitex-cards stop-hook
+      $ echo '{}' | scitex-cards stop-hook --dry-run
     """
     try:
         from .._store import _default_agent
@@ -268,6 +294,7 @@ def stop_hook_cmd(agent):
             _default_agent(agent),
             session_id=payload.get("session_id"),
             stop_hook_active=bool(payload.get("stop_hook_active")),
+            record=not dry_run,
         )
         for warning in result.get("warnings") or []:
             print(f"scitex-cards stop-hook: {warning}", file=sys.stderr)

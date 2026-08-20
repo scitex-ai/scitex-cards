@@ -26,6 +26,8 @@ import logging
 
 import click
 
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
+
 
 def register(main: click.Group) -> None:
     """Attach the ``notifyd`` group to the root group."""
@@ -147,6 +149,7 @@ def notifyd_group(
         "the service.\n\n"
         "Example:\n"
         "  scitex-cards notifyd install-unit\n"
+        "  scitex-cards notifyd install-unit --dry-run  # say what it would do\n"
         "  scitex-cards notifyd install-unit --force   # overwrite existing"
     ),
 )
@@ -155,16 +158,33 @@ def notifyd_group(
     is_flag=True,
     help="Overwrite an existing unit file (default: leave it untouched).",
 )
-def install_unit_cmd(force: bool) -> None:
-    """Write the unit file (operator-gated) and print the enable commands."""
+@mutating_options
+def install_unit_cmd(force: bool, dry_run: bool, assume_yes: bool) -> None:
+    """Write the unit file (operator-gated) and print the enable commands.
+
+    `--dry-run` resolves ExecStart and reports the target path without writing.
+    The resolution is the step that fails, so previewing it is worth more than
+    previewing the write.
+    """
     from .._delivery._systemd import ExecStartUnresolved, install_unit
 
+    if not dry_run:
+        confirm_or_abort(
+            "Write the notifyd systemd user unit?", assume_yes=assume_yes
+        )
     try:
-        result = install_unit(force=force)
+        result = install_unit(force=force, dry_run=dry_run)
     except ExecStartUnresolved as exc:
         # Fail LOUDLY: a unit with an unresolvable ExecStart would install fine
         # and then die at 203/EXEC the moment the operator enables it.
         raise click.ClickException(str(exc)) from exc
+    if result.get("dry_run"):
+        click.echo(f"{DRY_RUN_PREFIX} would write systemd user unit: {result['path']}")
+        click.echo(f"{DRY_RUN_PREFIX}   ExecStart={result['exec_start']}")
+        if result["existed"] and not force:
+            click.echo(f"{DRY_RUN_PREFIX}   (exists; --force would be needed)")
+        click.echo(f"{DRY_RUN_PREFIX} nothing written")
+        return
     if result["written"]:
         click.echo(f"# wrote systemd user unit: {result['path']}")
         click.echo(f"#   ExecStart={result['exec_start']}")

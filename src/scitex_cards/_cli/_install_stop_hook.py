@@ -31,6 +31,8 @@ from pathlib import Path
 
 import click
 
+from ._mutating import confirm_or_abort, mutating_options
+
 #: The command the hook runs. Absolute-path resolution is deliberately NOT
 #: baked in: the whole point is that whichever `scitex-cards` is on the
 #: runtime's PATH answers, and pinning a venv path here would rot the moment
@@ -105,16 +107,31 @@ def _backup(path: Path) -> Path | None:
     is_flag=True,
     help="Actually write. Without this the command only reports what it would do.",
 )
-def install_stop_hook_cmd(settings_path, command, apply_):
+@mutating_options
+def install_stop_hook_cmd(settings_path, command, apply_, dry_run, assume_yes):
     """Register `scitex-cards stop-hook` as a Claude Code Stop hook.
 
     Refuses a stop while the agent's board holds runnable work. Dry-run
     unless --apply is passed.
 
+    THIS VERB WAS ALREADY SAFER THAN `--dry-run`: previewing is the DEFAULT and
+    writing needs an explicit `--apply`. `--dry-run` is accepted anyway, and
+    wins over `--apply`, so the conventional flag does the conventional thing
+    on every mutating verb in this CLI instead of erroring here alone.
+
+    `--yes` skips the confirmation shown before this edits your
+    `settings.json`. That file belongs to the operator, not to us, so an
+    interactive run asks once; see `_cli/_mutating.py` for why the prompt is
+    TTY-gated and therefore cannot break a scripted caller.
+
+    \b
     Example:
       $ scitex-cards install-stop-hook
       $ scitex-cards install-stop-hook --apply
+      $ scitex-cards install-stop-hook --apply --yes
     """
+    if dry_run:
+        apply_ = False
     path = (
         Path(settings_path).expanduser()
         if settings_path
@@ -136,6 +153,7 @@ def install_stop_hook_cmd(settings_path, command, apply_):
         click.echo("  re-run with --apply to write (a backup is made first)")
         return
 
+    confirm_or_abort(f"Register the Stop hook in {path}?", assume_yes=assume_yes)
     backup = _backup(path)
     updated = _with_hook(data, command)
     path.parent.mkdir(parents=True, exist_ok=True)
