@@ -87,6 +87,35 @@ _CONTROL_KWARGS: dict[str, str] = {
 }
 
 
+def _acting_agent() -> str | None:
+    """Who is performing this write, or ``None`` when that cannot be resolved.
+
+    ``update_task`` has no ``by`` parameter, so the actor comes from the same
+    env identity seam every other attributed verb uses —
+    :func:`_default_agent`, the SSOT resolver behind ``comment_task``'s author
+    and ``reassign_task``'s actor. Routing through it rather than reading
+    ``$SCITEX_CARDS_AGENT_ID`` directly is deliberate: the resolver also
+    REJECTS an unexpanded ``${VAR}`` placeholder, and a literal
+    ``"${SCITEX_CARDS_AGENT_ID}"`` recorded as the actor of a status flip is
+    the same defect PR #907 exists to close on the creator field.
+
+    IT MUST NOT RAISE, which is why the fail-loud resolver is wrapped here.
+    The two callers pass the result as an ARGUMENT to ``_emit_card_event``,
+    whose own try/except cannot help — an exception raised while evaluating
+    its arguments propagates before the call is ever entered, and would turn
+    an unresolvable identity into a failed write on the most-called write verb
+    in the package. An unattributed event is a small loss; a mutation that
+    raises because nobody exported an env var is a large one.
+    """
+    from ._store import _default_agent
+
+    try:
+        return _default_agent(None)
+    except (TaskValidationError, RuntimeError):
+        # Genuinely unknown — say so with None rather than inventing a name.
+        return None
+
+
 def update_task(
     store: str | Path | None = None,
     task_id: str | None = None,
@@ -145,7 +174,7 @@ def update_task(
         was passed the ``""`` clear-sentinel (status cannot be cleared).
     """
     from . import _task
-    from ._store import ENV_AGENT, TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import ENV_AGENT, _read_write_doc, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("update_task() requires a non-empty task_id")
@@ -263,7 +292,7 @@ def update_task(
                     status_change = (prior_status, new_status)
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        raise _task_not_found(task_id)
     # Active-unblock DRIVE (ADR-0009) — a direct status→done via
     # update_task() drives the same unblock as complete_task(). Outside
     # the lock; the handler's per-card token dedupe makes a double-path
@@ -274,13 +303,25 @@ def update_task(
     # write is durable + lock released (fail-soft). A flip TO `done` is a
     # `completed` event (NOT also a `status_changed` — avoids double-fire);
     # every other flip is a `status_changed` with {from,to}.
+    #
+    # THE ACTOR IS NAMED, and it used to be a hardcoded `actor=None` on both
+    # branches. Measured on the live board 2026-08-18: ALL 60 `status_changed`
+    # notifications ever recorded carry `actor=None`, while `created` /
+    # `commented` / `reassigned` all name theirs — those three are each pinned
+    # by a test in test__store_card_events.py and these two were not, which is
+    # how the omission survived. The cost was real: a card-store migration
+    # moved 398 cards into `deferred` in nine minutes on 2026-08-16 and left
+    # nothing saying who; two agents then independently invented a data-
+    # corruption story to explain the distribution, and both were wrong. The
+    # transition was recorded and the hand that made it was not.
     if status_change is not None:
         _from, _to = status_change
+        _actor = _acting_agent()
         if _to == "done":
             _emit_card_event(
                 "completed",
                 task_id,
-                actor=None,
+                actor=_actor,
                 store=resolved,
                 entry_points=entry_points,
             )
@@ -288,7 +329,7 @@ def update_task(
             _emit_card_event(
                 "status_changed",
                 task_id,
-                actor=None,
+                actor=_actor,
                 extra={"from": _from, "to": _to},
                 store=resolved,
                 entry_points=entry_points,

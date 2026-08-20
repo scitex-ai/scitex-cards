@@ -139,6 +139,38 @@ class TaskNotFoundError(KeyError):
     """Raised when an update/complete target id is not in the store."""
 
 
+def _task_not_found(task_id: str) -> TaskNotFoundError:
+    """Build the "no such card" error, naming THE STORE THAT WAS SEARCHED.
+
+    ONE BUILDER FOR SEVEN RAISE SITES, because seven copies of a sentence is
+    how the wrong one survived this long. Each site used to interpolate its
+    own ``tasks_path`` / ``resolved`` local -- the LOCAL sidecar path -- while
+    the lookup that had just failed ran against the resolved store. On a
+    PostgreSQL deployment the message therefore named a YAML file::
+
+        task id 'x' not found in /home/agent/.scitex/cards/tasks.yaml
+
+    and it named it for a value THAT PLAYED NO PART IN THE SEARCH.
+    ``_read_write_doc(path)`` ignores its argument entirely -- its body is
+    ``_read_canonical_db_or_raise()``, which takes none -- so that path served
+    the file lock and this one string, and nothing else. ``_paths`` already
+    said so in prose: "interpolates the path into an error message only".
+
+    That is worse than a vague message, because it is actionable in the WRONG
+    DIRECTION: it sent a peer hunting a second store that does not exist, and
+    cost them a conclusion they had to retract to another agent.
+
+    ``store_label`` rather than ``resolve_store_target``: the label strips
+    credentials before this reaches a log, and never routes a DSN through
+    ``Path`` (which collapses ``//`` and mangles it). Calling it here cannot
+    fail the caller it is captioning -- reaching this line means the canonical
+    read ALREADY SUCCEEDED, so the store is resolvable by construction.
+    """
+    from ._store_target import store_label
+
+    return TaskNotFoundError(f"task id {task_id!r} not found in {store_label()}")
+
+
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
@@ -359,6 +391,10 @@ def resolve_store(store: str | Path | None = None) -> dict:
     target = resolve_store_target(_arg)
     on_server = is_postgres_url(target)
     resolved = target if on_server else str(resolve_db_path(_arg))
+    # Read ONCE, then used for BOTH the report and the comparison. Two call
+    # sites reading the same value independently is how they come to disagree.
+    observed_uuid = store_uuid_at(resolved)
+    pinned_uuid = expected_store_uuid()
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
@@ -382,14 +418,29 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # pure reporting — it never opens anything). Read `backend` to know
         # which question was asked.
         "exists": None if on_server else Path(resolved).exists(),
-        "store_uuid": store_uuid_at(resolved),
-        "expected_uuid": expected_store_uuid(),
+        "store_uuid": observed_uuid,
+        "expected_uuid": pinned_uuid,
         # Probed ONCE and compared in-process. `check_resolution` would re-run
         # the whole resolution and open a second connection to say the same
         # thing, and a diagnostic that costs two round-trips to a store that may
         # be down is a diagnostic that hangs twice as long on the case it exists
         # to explain.
-        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+        #
+        # BOTH HALVES ARE HANDED TO THE COMPARISON, and until 2026-08-19 they
+        # were not: the two uuid values were computed for the REPORT on the
+        # lines above and never passed into `_check_against`, which compared the
+        # instance alone. So this verb printed `expected_uuid` and `store_uuid`
+        # differing on adjacent lines and answered `"identity_verdict":
+        # "matches"` beneath them. The values being in scope is what made the
+        # omission invisible.
+        **_identity_fields(
+            _check_against(
+                instance_at(resolved),
+                pinned_instance(),
+                observed_uuid=observed_uuid,
+                expected_uuid=pinned_uuid,
+            )
+        ),
     }
 
 
@@ -442,7 +493,7 @@ def get_task(
         for t in tasks:
             if t.get("id") == task_id and not _task._is_tombstoned(t):
                 return dict(t)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise _task_not_found(task_id)
 
 
 # --------------------------------------------------------------------------- #

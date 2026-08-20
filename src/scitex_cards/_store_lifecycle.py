@@ -91,7 +91,7 @@ def complete_task(
         If no task matches ``task_id``.
     """
     from . import _task  # hook-bypass: line-limit — verb-module split still queued
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
+    from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
 
     if not task_id:
         raise TypeError("complete_task() requires a non-empty task_id")
@@ -147,7 +147,7 @@ def complete_task(
                 transitioned = True
                 break
     if result is None:
-        raise TaskNotFoundError(f"task id {task_id!r} not found in {resolved}")
+        raise _task_not_found(task_id)
     # Active-unblock DRIVE (ADR-0009) — OUTSIDE the file lock (the emit
     # re-loads the store + may comment on dependents, which take the
     # same lock). Only on a real pending→done transition.
@@ -197,7 +197,7 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     passes ``removed`` back to ``restore_task`` to lossless-revert).
     """
     from . import _model, _task
-    from ._store import TaskNotFoundError, _default_agent, _read_write_doc, _utc_now_iso
+    from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
 
     tasks_path = _resolved_store(store)
     if not task_id:
@@ -206,7 +206,7 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
         doc, tasks = _read_write_doc(tasks_path)
         target = _task._find_live_task(tasks, task_id)
         if target is None:
-            raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+            raise _task_not_found(task_id)
         original = dict(target)  # pre-tombstone snapshot: the Undo payload
         refs: list[str] = []
         for t in tasks:
