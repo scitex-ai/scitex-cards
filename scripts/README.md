@@ -13,6 +13,26 @@ a CLI verb; it does earn a home that survives a reboot.
 |---|---|
 | `install-cards-git-hooks.sh` | Install this repo's git hooks into a checkout. |
 | `cutover-freeze-writers.sh` | Freeze / thaw the fleet's card-store writers for the multi-host cutover. |
+| `fleet-divergence-census.py` | READ-ONLY: measure field-level divergence between the fleet's card stores. |
+
+## `fleet-divergence-census.py`
+
+Run it with `/home/ywatanabe/.env-sac/bin/python` — the only venv on compute-04
+carrying both `scitex` (for the session decorator) and `psycopg`.
+
+Every connection sets `default_transaction_read_only`, so a mistake here cannot
+mutate a store. It diffs `card_json` — the document ADR-0018 D1 declares as the
+truth — rather than the ~29 typed columns that duplicate it, because diffing
+those would measure the copy.
+
+It reports, per peer: rows unique to each side, rows differing, status forks,
+and the subset where one side is terminal and the other still active. That last
+number is the one that matters — it is the class `MergeRule.MAX` gets wrong,
+since on TEXT `MAX` is lexicographic and picks `in_progress` over `done`.
+
+Its status-fork counts were cross-checked against the running peer sync's own
+independently-computed figures and matched exactly, which is what makes it a
+measurement rather than an opinion.
 
 ## `cutover-freeze-writers.sh`
 
