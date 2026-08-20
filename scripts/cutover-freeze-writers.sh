@@ -92,6 +92,41 @@ PLAN=(
     # from the hub's own hardcoded peer list: the topology is not hub-and-spoke,
     # it is hub-and-spoke PLUS a host that syncs itself.
     #
+    # ── THREE LIVE UNITS UNDER THE RETIRED PRODUCT NAME ─────────────────────
+    # Found by sac 2026-08-20 by enumerating with NO filter, after I told them
+    # their previous enumeration still carried one. My own display filter was
+    # `grep -Ei "cards|scitex-dev"` and would have hidden all three, exactly as
+    # their `sync-peers` grep hid `snapshot` from them.
+    #
+    #     A NAME FILTER CANNOT SEE A THING RENAMED OUT OF ITS VOCABULARY.
+    #
+    # THEY ARE NOT STALE LEFTOVERS. Measured — every one runs the CURRENT
+    # binary against the CURRENT store, started today 12:30:
+    #
+    #   scitex-todo-notifyd.service       scitex-cards notifyd
+    #   scitex-todo.wake-watcher.service  scitex-cards watch --push --interval 2
+    #   scitex-todo.dashboard.service     scitex-cards gui serve --port 8051
+    #   all three:  SCITEX_CARDS_DB=postgresql://...127.0.0.1:55432/scitex_cards
+    #               scitex_cards 0.48.0
+    #
+    # So the migration REACHED this host in substance — current code, current
+    # env var, Postgres backend, and no tasks.yaml left in ~/.scitex/todo. Only
+    # the unit NAMES are retired. That is the dangerous half: an operator or
+    # agent who stops "the notifyd" by name will not find this one, so a fix
+    # can land, be verified on compute-04, and leave this daemon running the
+    # old behaviour under a name nobody greps for.
+    #
+    # wake-watcher is the hottest of the three: `--interval 2` POSTs to owning
+    # agents on every new/commented/changed task, twice a second-ish. It must
+    # be stopped for a window of any length.
+    #
+    # AND THE DESCRIPTION IS WORSE THAN THE NAME. dashboard's unit description
+    # still reads "read-only live view of the shared ~/.scitex/todo/tasks.yaml"
+    # while its ExecStart serves the Django GUI from Postgres. `systemctl
+    # list-units` DISPLAYS the description, so the enumeration everyone trusts
+    # renders a false claim about the store for the one unit whose store
+    # changed. Renaming these is the operator's call, not mine — carded.
+    #
     # ── THE ONE WRITER NO UNIT ENUMERATION CAN EVER FIND ────────────────────
     # `scitex-cards-hub-tunnel-spartan.service` is
     #     ssh -N -R 127.0.0.1:48765:127.0.0.1:8765 spartan
@@ -131,7 +166,7 @@ PLAN=(
     # swap the INSTALLED CODE under a live store and bounce a service that does
     # write, mid-window. It also exits 0 on every failure path by deliberate
     # design, so it will never read red while doing it.
-    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service,scitex-cards-hub-tunnel-spartan.service"
+    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service,scitex-cards-hub-tunnel-spartan.service,scitex-todo.wake-watcher.service,scitex-todo-notifyd.service,scitex-todo.dashboard.service"
     "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
 )
 
