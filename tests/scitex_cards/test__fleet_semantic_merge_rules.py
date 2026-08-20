@@ -18,6 +18,20 @@ from pathlib import Path
 
 import pytest
 
+# THE SCRIPT NEEDS scitex + psycopg AND NOT EVERY VENV HAS THEM, so this file
+# skips rather than erroring. It errored first: the project venv carries neither,
+# and because pytest is configured with `-x`, ONE unimportable test file stopped
+# the entire suite. A test that reddens 7,000 unrelated tests over a missing
+# optional dependency is a worse defect than the one it guards against.
+#
+# STATED SO THE SKIP IS NOT A SILENT GAP: in a venv without scitex these rules
+# are NOT exercised. They are mutation-tested (7 mutants, all killed) in
+# /home/ywatanabe/.env-sac, which is the venv that can run them, and that is
+# where a change to the merge rules must be verified. A green run in a venv that
+# skipped this file says nothing about them.
+pytest.importorskip("scitex", reason="fleet-semantic-merge.py imports scitex")
+pytest.importorskip("psycopg", reason="fleet-semantic-merge.py imports psycopg")
+
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "fleet-semantic-merge.py"
 
 

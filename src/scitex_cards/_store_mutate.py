@@ -38,6 +38,7 @@ from ._store_add import add_task  # noqa: F401 -- re-export, see module docstrin
 from ._store_clocks import (
     _clear_completion_stamp_on_leaving_done,
     _stamp_blocked_at,
+    _stamp_cancellation_attribution,
     _stamp_deferred_at,
 )
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
@@ -245,6 +246,26 @@ def update_task(
                 # Same lesson, the blocked-check's clock: stamp when the
                 # (status, blocker) PAIR moves, never on a passing comment.
                 _stamp_blocked_at(task, prior_status, prior_blocker)
+                # WHO cancelled this, and when. Added 2026-08-20 after 844
+                # cards — including one titled "three live vulns" and 213 at
+                # priority 1 — were cancelled in a single unattributed
+                # operation that the store cannot identify, because it keeps
+                # no mutation audit at all.
+                #
+                # BEST-EFFORT, DELIBERATELY, and NOT the fail-loud resolver.
+                # `_resolve_creator_or_raise` raises "creator unresolved" —
+                # the exact error a supervisor process with no agent id in its
+                # environment hit 347 times on 2026-08-20. Using it here would
+                # make cancels FAIL for precisely the unattended callers whose
+                # cancellations most need attributing, and the operator has
+                # ruled that a card must always be writable. An unresolvable
+                # actor is therefore WRITTEN DOWN as `unresolved` rather than
+                # omitted: an absent field means the card predates this stamp,
+                # a present `unresolved` means somebody cancelled it and did
+                # not sign. Those are different facts.
+                _stamp_cancellation_attribution(
+                    task, prior_status, os.environ.get(ENV_AGENT)
+                )
                 # DECLARE THE ROW. Without `touched_ids` the mirror treats
                 # "differs from the database" as "the caller meant to write
                 # it" — so this whole-document write re-asserts every card in
