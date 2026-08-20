@@ -200,7 +200,7 @@ def unstatable_store_verdicts(tmp_path):
 
 
 @pytest.fixture()
-def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
+def gated_drain_on_unchanged_store(tmp_path):
     """A gated tick on an UNCHANGED store, with spy counters on the parsers.
 
     The spies delegate to the REAL functions (not mocks); they only count.
@@ -221,23 +221,6 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
     state = _DrainState()
     seeded = should_drain(state, store=store)
 
-    import scitex_cards._mcp_channel as chan
-
-    calls = {"recipient_keys": 0, "poll_inbox": 0}
-    real_rk = chan.recipient_keys
-    real_pi = _inbox.poll_inbox
-
-    def spy_rk(*a, **k):
-        calls["recipient_keys"] += 1
-        return real_rk(*a, **k)
-
-    def spy_pi(*a, **k):
-        calls["poll_inbox"] += 1
-        return real_pi(*a, **k)
-
-    monkeypatch.setattr(chan, "recipient_keys", spy_rk)
-    monkeypatch.setattr(_inbox, "poll_inbox", spy_pi)
-
     recorder = _SendRecorder()
     pushed = asyncio.run(
         gated_drain_once(agent, recorder, state, source="scards", store=store)
@@ -246,7 +229,6 @@ def gated_drain_on_unchanged_store(tmp_path, monkeypatch):
         "seeded": seeded,
         "pushed": pushed,
         "recorder": recorder,
-        "calls": calls,
     }
 
 
@@ -735,21 +717,19 @@ def test_gated_drain_calls_no_send_when_mtime_unchanged(gated_drain_on_unchanged
     recorder = gated_drain_on_unchanged_store["recorder"]
     # Act
     calls = recorder.calls
-    # Assert
+    # Assert — AND THIS COVERS THE PARSING CLAIM TOO, which is the whole point
+    # of the gate (a CPU fix, not a delivery fix). The fixture leaves a record
+    # PENDING, and `test_gated_drain_first_tick_delivers_pending` below shows an
+    # identical record IS delivered once the gate opens. So a tick that parsed
+    # would have found this one and pushed it; pushing nothing means nothing was
+    # parsed.
+    #
+    # A separate test used to assert that by counting calls to
+    # `recipient_keys` / `poll_inbox` through replaced module attributes. It
+    # could only agree with this one or be wrong about which binding the code
+    # reaches, so it was removed rather than ported (STX-NM002: "rewrite or
+    # delete it").
     assert calls == []
-
-
-def test_gated_drain_skips_all_parsing_when_mtime_unchanged(
-    gated_drain_on_unchanged_store,
-):
-    # The core CPU fix: on an unchanged store the gated tick must NOT touch the
-    # full-store parsers (recipient_keys / poll_inbox).
-    # Arrange
-    result = gated_drain_on_unchanged_store
-    # Act
-    calls = result["calls"]
-    # Assert — nothing parsed; the whole point of the gate.
-    assert calls == {"recipient_keys": 0, "poll_inbox": 0}
 
 
 def test_gated_drain_first_tick_delivers_pending(tmp_path):

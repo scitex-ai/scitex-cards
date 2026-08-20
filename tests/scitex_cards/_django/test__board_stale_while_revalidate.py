@@ -224,9 +224,12 @@ def test_the_background_refresh_actually_lands(store):
     assert {t["id"] for t in services.get_board(store).tasks} == {"a", "b", "c"}
 
 
-def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
-    # Arrange
-    # Make the rebuild slow enough that polls overlap it.
+def test_a_poll_storm_starts_only_one_refresh(store):
+    # Arrange — a rebuild slow enough that the polls overlap it, passed in as
+    # `load` rather than written over the module attribute. The delay is the
+    # POINT of the scenario, not a stand-in for one: without an in-flight
+    # rebuild there is no storm to guard against, and nothing outside this
+    # process can make a database read take 0.4 s on demand.
     services.get_board(store, allow_stale=True)
     calls = {"n": 0}
     real = services._load_global_tasks
@@ -236,12 +239,11 @@ def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
         time.sleep(0.4)
         return real(path)
 
-    monkeypatch.setattr(services, "_load_global_tasks", _slow)
     # Act — ten rapid reads against a changed store (the operator's browser
     # polling while a rebuild is in flight).
     _bump_mtime(store)
     for _ in range(10):
-        services.get_board(store, allow_stale=True)
+        services.get_board(store, allow_stale=True, load=_slow)
     _settle()
     # Assert — one rebuild, not ten.
     assert calls["n"] == 1
