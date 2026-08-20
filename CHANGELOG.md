@@ -113,6 +113,64 @@ credentials before this reaches a log and never routes a URL through `Path`.
 A source scan pins it: the test fails on the eighth site written the old way,
 which is how the first six survived.
 
+### Expiry is a REPORT, not a mechanism — every surface now says so
+
+Nothing in this package expires a card. `is_expired` is an age predicate and
+`expired()` feeds a body that gets PRINTED; no sweep, daemon or verb writes
+`status=cancelled`, and none of the six JobSpecs in `_jobs_provider` runs
+`scitex-cards triage`. Four user-facing surfaces claimed otherwise:
+
+* `add_task` / `update_task` on the MCP surface — the one every agent in the
+  fleet reads before writing a card — promised that a park exempts a card
+  "from the backlog nudge AND from auto-expiry".
+* the `--parked` CLI help repeated it verbatim.
+* `is_expired`'s own docstring said expiry "cancels on silence", while the
+  module header 300 lines above correctly said the opposite.
+* worst, the triage nudge told its HUMAN reader "Rescue any you still want;
+  silence cancels them". Silence cancels nothing. That promise was read by the
+  person whose actual complaint is that the board has too many cards, and
+  whose 「忘れたもので本当に必要なものは…必ず上がってくる」 presupposes that
+  forgetting really happens.
+
+All four now describe what runs. The nudge names `status=cancelled` as an
+explicit step. `add_task` states the horizon, the env var, and the six jobs
+that exist instead.
+
+CORRECTING THE 0.48.0 ENTRY BELOW, which is left intact as the record: it ends
+"a standing goal must not be auto-cancelled at the horizon for the crime of
+standing". Nothing auto-cancels; the park exempts a card from being PROPOSED
+for cancellation. The false framing reached the release notes of the very
+change that made it expensive: measured tonight, 839 cards sat past that line
+with nothing in the package able to act on them.
+
+`test__expiry_is_a_report_not_a_mechanism.py` reads the docstrings by AST, and
+`test_no_jobspec_schedules_triage` pins the fact the prose depends on, so
+scheduling triage turns the docs red instead of letting them rot.
+
+### The stale horizon is 7 days too, and the forgetting was executed (BREAKING)
+
+`_cli/_stale.py` and `_django/handlers/stale.py` each hard-coded **14** days —
+two copies, no shared source — while the forgetting horizon was 7. A card aged
+7-14 days was forgotten by the rule and invisible to the stale sweep.
+
+Both are now 7, on the operator's instruction 「はい7日でお願いします」, given
+after he was told the cost: the Django copy feeds the board's Archive button, so
+the change offers about a week more of everyone's cards for archiving on a shared
+board. `test_the_cli_and_django_stale_horizons_are_equal` keeps the two literals
+from drifting apart; there is still no shared source, only a test that says they
+must agree.
+
+AND THE FORGETTING WAS ACTUALLY RUN, once, by hand — 「忘却実行してください」.
+839 deferred cards past 7 days, across 39 owners, driven to `status=cancelled`.
+Parked (147) and undatable (32) were exempt. Ages 7.3 to 68.8 days, median 28.3.
+A full undo record was written and verified BEFORE the first write
+(`~/.scitex/cards/archive/forget-7d-20260819-undo-ids.txt`, 838 ids), and the
+restore path was tested end-to-end on one card rather than assumed.
+
+THE PACKAGE STILL DOES NOT DO THIS BY ITSELF, which is why the docstring fix
+above stands unchanged: no sweep, daemon, verb or JobSpec cancels anything. The
+execution was an operator-authorised manual run, and a reader of this package
+must still not expect the board to clean itself up.
 
 ## [0.48.0] - 2026-08-19
 

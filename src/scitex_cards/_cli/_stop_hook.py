@@ -255,7 +255,11 @@ def evaluate(
     help="Agent to check (default: $SCITEX_CARDS_AGENT_ID / $SCITEX_CARDS_AGENT_ID).",
 )
 def stop_hook_cmd(agent):
-    """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work."""
+    """Emit Claude Code Stop-hook JSON: deliver pending messages, block on work.
+
+    Example:
+      $ echo '{}' | scitex-cards stop-hook
+    """
     try:
         from .._store import _default_agent
 

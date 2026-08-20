@@ -77,6 +77,10 @@ def backfill_cmd(sidecar, db_path, store, apply_) -> None:
     The sidecar is opened read-only under its own flock and is never written,
     moved or truncated, so this stays reversible: rolling back is redeploying
     the previous version, not restoring anything.
+
+    Example:
+      $ scitex-cards dm backfill
+      $ scitex-cards dm backfill --apply
     """
     from .._dm.migrate import backfill_from_sidecar
 
@@ -104,6 +108,9 @@ def verify_cmd(sidecar, db_path, store) -> None:
     rows in the store are reported but are not a failure: once the write path
     flips, new DMs land in the database first, so "the database has more" is
     the healthy steady state.
+
+    Example:
+      $ scitex-cards dm verify
     """
     from .._dm.migrate import verify_against_sidecar
 
@@ -119,7 +126,11 @@ def verify_cmd(sidecar, db_path, store) -> None:
 @click.option("--store", default=None, help="Task-store container path.")
 @click.option("--out", default=None, help="Write here instead of stdout.")
 def export_cmd(db_path, store, out) -> None:
-    """Dump every DM table in the shape ``dm merge`` consumes."""
+    """Dump every DM table in the shape ``dm merge`` consumes.
+
+    Example:
+      $ scitex-cards dm export --out dms.json
+    """
     from pathlib import Path
 
     from .._dm.migrate import export_dm
@@ -146,6 +157,9 @@ def merge_cmd(payload_path, db_path, store) -> None:
     associative, idempotent. A peer's export is a SNAPSHOT and may be older
     than what is here — receiving a subset must keep the local extras, and any
     post-state with fewer rows raises rather than committing.
+
+    Example:
+      $ scitex-cards dm merge peer-dms.json
     """
     from pathlib import Path
 

@@ -36,6 +36,20 @@ intransitive_verbs:
   - summary    # `scitex-cards summary`  — print a task-state summary
   - manifest   # `scitex-cards skills manifest` — emit the skills manifest
 
+# §1d vocabulary the Moby POS classifier does not carry. Each is a real name
+# in THIS CLI, not a token that would read better renamed — which is the test
+# the auditor's own hint asks you to apply ("add to the dict or rename").
+nouns:
+  - inbox      # `scitex-cards inbox ack` — an ordinary English noun that Moby
+               # simply lacks. Renaming the pull-inbox to satisfy a wordlist
+               # would rename the concept the whole delivery rail is named for.
+  - notifyd    # `scitex-cards notifyd install-unit` — a daemon, named by the
+               # oldest convention in Unix (sshd, httpd, systemd). The `d`
+               # suffix is the meaning; stripping it to please a classifier
+               # would make it look like a verb, which is worse.
+  - cardsync   # `scitex-cards dev cardsync` — the card-synchronisation job.
+               # A coined compound, so no dictionary will ever have it.
+
 # §1f verb-synonym opt-outs. Every entry needs an inline `# why` — see
 # doctrine 07_audit-cli.md / 06_noun-verb-catalog.md.
 verb_exceptions:
