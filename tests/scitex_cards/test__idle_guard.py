@@ -175,32 +175,45 @@ def test_evaluate_reason_is_empty_when_allowing(tmp_path):
 # === main — Stop-hook exit codes =============================================
 
 
-def _silence_stdin(monkeypatch):
-    monkeypatch.setattr(_idle_guard.sys, "stdin", io.StringIO(""))
+@pytest.fixture
+def silent_stdin():
+    """Point `sys.stdin` at a REAL empty stream for the duration of a test.
+
+    `main()` reads the Stop-hook payload from stdin; under pytest that is a
+    captured object whose read blocks or errors. An empty `io.StringIO` is a
+    genuine stream, not a stand-in that fakes behaviour — this is the same
+    shape as the `redirect_stdout` / `redirect_stderr` context managers the
+    standard library ships, which is why it needs no patching fixture. Prior
+    stdin is restored on teardown.
+    """
+    prior = _idle_guard.sys.stdin
+    _idle_guard.sys.stdin = io.StringIO("")
+    try:
+        yield
+    finally:
+        _idle_guard.sys.stdin = prior
 
 
-def test_main_blocks_with_exit_2(tmp_path, env, monkeypatch, capsys):
+def test_main_blocks_with_exit_2(tmp_path, env, silent_stdin, capsys):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
     )
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     env.set("SCITEX_CARDS_STALE_ACTIVE_HOURS", "2")
-    _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
     # Assert — exit 2 is the Stop hook's "refuse to stop" code.
     assert rc == 2
 
 
-def test_main_names_the_stale_card_on_stderr(tmp_path, env, monkeypatch, capsys):
+def test_main_names_the_stale_card_on_stderr(tmp_path, env, silent_stdin, capsys):
     # Arrange
     store = _store(
         tmp_path, [_t(id="c1", owner="alice", status="in_progress", hours_ago=10)]
     )
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     env.set("SCITEX_CARDS_STALE_ACTIVE_HOURS", "2")
-    _silence_stdin(monkeypatch)
     # Act
     _idle_guard.main(["--agent", "alice"])
     stderr = capsys.readouterr().err
@@ -208,7 +221,7 @@ def test_main_names_the_stale_card_on_stderr(tmp_path, env, monkeypatch, capsys)
     assert "c1" in stderr
 
 
-def test_main_allows_with_exit_0(tmp_path, env, monkeypatch):
+def test_main_allows_with_exit_0(tmp_path, env, silent_stdin):
     # No in_progress card → no claimed work to abandon → allow stop. Uses only a
     # pending card so the result is independent of the wall clock (main() reads
     # the real `now`, so an in_progress fixture anchored to a fixed past time
@@ -218,24 +231,22 @@ def test_main_allows_with_exit_0(tmp_path, env, monkeypatch):
         tmp_path, [_t(id="pend", owner="alice", status="pending", hours_ago=99)]
     )
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
-    _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
     # Assert
     assert rc == 0
 
 
-def test_main_no_agent_allows(tmp_path, monkeypatch):
+def test_main_no_agent_allows(tmp_path, silent_stdin):
     # No --agent, no SCITEX_CARDS_AGENT_ID → cannot attribute work → allow stop.
     # Arrange
-    _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main([])
     # Assert
     assert rc == 0
 
 
-def test_main_failsoft_allows_on_error(env, monkeypatch):
+def test_main_failsoft_allows_on_error(env, silent_stdin):
     # A broken store makes the load raise; the guard must NOT trap (exit 0).
     # Under the SQLite store the failure mode is a MISSING canonical DB, not a
     # missing YAML file — the store path is a label now and a broken path is read
@@ -243,7 +254,6 @@ def test_main_failsoft_allows_on_error(env, monkeypatch):
     # exist; the canonical read raises RuntimeError, which the guard fails soft on.
     # Arrange
     env.set("SCITEX_CARDS_DB", "/no/such/dir/cards.db")
-    _silence_stdin(monkeypatch)
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
     # Assert — a guard that traps the agent on its own bug is worse than no guard.
