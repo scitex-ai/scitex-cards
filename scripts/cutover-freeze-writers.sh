@@ -80,7 +80,18 @@ PLAN=(
     "scitex-compute-01:scitex-dev-ecosystem.service"
     "scitex-compute-02:scitex-dev-ecosystem.service"
     "scitex-compute-03:scitex-dev-ecosystem.service"
-    "ywata-note-win:scitex-cards-sync-peers.timer,scitex-dev-ecosystem.service,scitex-cards-notifyd.service"
+    # ywata-note-win RUNS ITS OWN SYNCER AND ITS UNITS ARE NAMED DIFFERENTLY.
+    # Corrected 2026-08-20 after measuring the host directly. It was previously
+    # listed with `scitex-cards-sync-peers.timer` + `notifyd`, NEITHER of which
+    # exists there — so this entry would have reported "skip" for every unit and
+    # frozen NOTHING, while looking like it had covered the host.
+    #
+    # Its syncer is `scitex-cards-sync.timer` (with
+    # ~/.local/bin/scitex-cards-sync-with-hub.sh), pointing AT THE HUB from this
+    # side. That is why it holds the hub's row count exactly while being absent
+    # from the hub's own hardcoded peer list: the topology is not hub-and-spoke,
+    # it is hub-and-spoke PLUS a host that syncs itself.
+    "ywata-note-win:scitex-cards-sync.timer,scitex-cards-sync.service,scitex-dev-ecosystem.service,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-gui-update.timer,scitex-cards-snapshot.timer"
     "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
 )
 
