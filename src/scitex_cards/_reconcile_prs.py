@@ -61,7 +61,28 @@ from typing import Callable, Iterable, Optional
 #: This does NOT weaken _store._resolve_creator_or_raise, which still refuses
 #: to invent an author for an ordinary caller. The reconciler is entitled to
 #: this default because it KNOWS who it is; an anonymous caller does not.
-SYSTEM_ACTOR: str = "reconcile-merged-prs"
+# PACKAGE-QUALIFIED, matching the JobSpec name exactly. It was the bare slug
+# `reconcile-merged-prs` until 2026-08-20, and that bare slug broke ATTRIBUTION:
+#
+#   recorded completed_by     reconcile-merged-prs
+#   actual JobSpec name       scitex-cards-reconcile-merged-prs
+#
+# When this job wrongly closed one of sac's live P0 cards, sac did the correct
+# thing — grepped their own repository for the actor that had written to their
+# card — got zero hits, and were led from a correct action to a wrong conclusion
+# ("not mine; whose?"). They had to ask, and scitex-dev had to measure, to
+# recover something the record should simply have said.
+#
+# A card's audit trail must name a PACKAGE, not a verb. Several packages can
+# plausibly own a slug like this one, and the reader has no way to disambiguate;
+# scitex-dev's own audit rule names this shape
+# (_cli/audit/_project/_check_job_naming.py).
+#
+# Orthogonal to the closing-decision guards: those fix WHEN the job may close a
+# card, this fixes whether anyone can trace it AFTERWARDS. Both were needed here
+# — the wrong close cost sac an investigation, and the bare slug cost them a
+# second one finding out whose it was.
+SYSTEM_ACTOR: str = "scitex-cards-reconcile-merged-prs"
 
 # Statuses we consider "open work that may have merged". A card outside
 # this set (done / blocked / deferred / failed / cancelled / goal) is never

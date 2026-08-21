@@ -215,7 +215,9 @@ def _swr_enabled() -> bool:
     }
 
 
-def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
+def _kick_board_refresh(
+    key, resolved, effective_mtime, effective_sig, load=None
+) -> None:
     """Rebuild this board off the request path, once at a time.
 
     Fail-soft by construction: if the rebuild raises, the cache keeps the
@@ -239,7 +241,7 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
             # cached, serve it silently forever on /graph and /timeline. A
             # background refresh must never be able to blank the board; the way
             # to guarantee that is to have no empty-fallback here at all.
-            tasks = _load_global_tasks(resolved)
+            tasks = (load or _load_global_tasks)(resolved)
             task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
             groups = _load_sidecar_groups(resolved, task_ids)
             fresh = BoardState(
@@ -312,9 +314,18 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
 
 
 def get_board(
-    tasks_path: Optional[str] = None, *, allow_stale: bool = False
+    tasks_path: Optional[str] = None,
+    *,
+    allow_stale: bool = False,
+    load=None,
 ) -> BoardState:
     """Resolve the task store, load + validate it, and cache by mtime.
+
+    ``load`` overrides how the card list is read, on BOTH the synchronous path
+    and the background refresh. It defaults to :func:`_load_global_tasks` and
+    exists so the refresh-storm guard below is testable: proving that ten
+    overlapping polls start ONE rebuild requires a rebuild slow enough for them
+    to overlap, and that cannot be arranged from outside (PA-306 §3).
 
     ``allow_stale`` opts THIS call into stale-while-revalidate: when the store
     has moved on, the cached board is returned immediately and the rebuild
@@ -436,7 +447,9 @@ def get_board(
         # through the store API, never here) — an agent deciding what to work
         # on must not act on a stale slice. This is the human-view path only.
         if allow_stale and _swr_enabled():
-            _kick_board_refresh(key, resolved, effective_mtime, effective_sig)
+            _kick_board_refresh(
+                key, resolved, effective_mtime, effective_sig, load=load
+            )
             return board
 
     # THE CARD READ — UNCONDITIONAL, AND THERE IS NO ELSE BRANCH. Every way this
@@ -446,7 +459,7 @@ def get_board(
     # the reason. That is the point: a refusal is recoverable and visible, a
     # believable empty board is neither. An ``else []`` here would be a second
     # read target that merely happens to be unreachable today.
-    tasks = _load_global_tasks(resolved)
+    tasks = (load or _load_global_tasks)(resolved)
 
     task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
     groups = _load_sidecar_groups(resolved, task_ids)

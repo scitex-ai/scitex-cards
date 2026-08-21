@@ -122,13 +122,25 @@ def _describe(target: Path, subdir: str, token: str, name: str, mime: str) -> di
     }
 
 
-def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) -> dict:
+def store_chunks(
+    chunks,
+    filename: str,
+    *,
+    mime: str | None = None,
+    store=None,
+    max_bytes: int = MAX_UPLOAD_BYTES,
+) -> dict:
     """Write an iterable of byte chunks into a fresh slot.
 
     The size ceiling is enforced AS THE BYTES ARRIVE, not from a
     caller-declared length: a declared size is a claim, and this is the layer
     that has to be right about it. An over-size stream is aborted and its
     partial directory removed, so a refusal leaves nothing behind.
+
+    ``max_bytes`` defaults to :data:`MAX_UPLOAD_BYTES`. It is a parameter so
+    the ENFORCEMENT can be exercised at a value that does not require writing
+    25 MB to disk — a test that must move the real ceiling's worth of bytes to
+    see a refusal is one nobody runs (PA-306 §3).
     """
     name = safe_name(filename)
     subdir, token, target_dir = _new_slot(store)
@@ -138,9 +150,9 @@ def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) 
         with target.open("wb") as handle:
             for chunk in chunks:
                 written += len(chunk)
-                if written > MAX_UPLOAD_BYTES:
+                if written > max_bytes:
                     raise AttachmentError(
-                        f"file exceeds the {MAX_UPLOAD_BYTES}-byte limit"
+                        f"file exceeds the {max_bytes}-byte limit"
                     )
                 handle.write(chunk)
     except Exception:
@@ -153,7 +165,11 @@ def store_chunks(chunks, filename: str, *, mime: str | None = None, store=None) 
 
 
 def store_local_file(
-    source: str | Path, *, filename: str | None = None, store=None
+    source: str | Path,
+    *,
+    filename: str | None = None,
+    store=None,
+    max_bytes: int = MAX_UPLOAD_BYTES,
 ) -> dict:
     """COPY a file the caller can already read into the attachment store.
 
@@ -171,9 +187,9 @@ def store_local_file(
     if not path.is_file():
         raise AttachmentError(f"not a regular file: {path}")
     size = path.stat().st_size
-    if size > MAX_UPLOAD_BYTES:
+    if size > max_bytes:
         raise AttachmentError(
-            f"file is {size} bytes, over the {MAX_UPLOAD_BYTES}-byte limit"
+            f"file is {size} bytes, over the {max_bytes}-byte limit"
         )
 
     def _read():

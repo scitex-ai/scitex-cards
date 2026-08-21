@@ -237,6 +237,7 @@ def probe_install(
     module: str | None = None,
     *,
     features: dict[str, str] | None = None,
+    read_version=_md.version,
 ) -> InstallProbe:
     """Probe ``dist``'s install and report whether its version string can be trusted.
 
@@ -251,13 +252,21 @@ def probe_install(
             "blocked_check_v087": "scitex_cards._stale_active:detect_blocked_external",
         })
 
+    ``read_version`` is how the CLAIMED version is obtained — by default
+    ``importlib.metadata.version``. It is a parameter because this function's
+    whole subject is DISAGREEMENT between what the metadata claims and what the
+    code on disk actually is, and a test cannot stage that disagreement without
+    controlling the claim. Supplying it as an argument is the mock-free way
+    (PA-306 §3); it must still raise ``_md.PackageNotFoundError`` to mean "no
+    metadata", because that is the signal this function branches on.
+
     Never raises. Any internal failure comes back in ``probe_error`` with a hint.
     """
     mod_name = module or dist.replace("-", "_")
     probe = InstallProbe(dist=dist, kind=KIND_ORPHANED)
 
     try:
-        probe.metadata_version = _md.version(dist)
+        probe.metadata_version = read_version(dist)
     except _md.PackageNotFoundError:
         probe.metadata_version = None
     except Exception as exc:  # noqa: BLE001 - a probe must never crash its caller
@@ -484,14 +493,19 @@ def _has_feature(target: str) -> bool:
     return hasattr(mod, attr)
 
 
-def check_install_honest(dist: str = "scitex-cards") -> dict[str, object]:
+def check_install_honest(
+    dist: str = "scitex-cards", *, read_version=_md.version
+) -> dict[str, object]:
     """Health-doctor check: is ``dist``'s reported version actually true?
 
     Returns the doctor's ``{ok, detail, hint}`` contract. ``ok`` is False exactly
     when the version string cannot be trusted — an orphaned install, or metadata
     that has drifted from the code it claims to describe.
+
+    ``read_version`` is forwarded to :func:`probe_install`; see there for why it
+    is a parameter.
     """
-    probe = probe_install(dist)
+    probe = probe_install(dist, read_version=read_version)
     return {
         "ok": probe.trustworthy,
         "detail": probe.detail,

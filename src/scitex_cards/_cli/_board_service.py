@@ -27,6 +27,7 @@ import click
 
 from .._systemd_gui import DEFAULT_HOST, DEFAULT_PORT
 from ._compat import spec_command_kwargs
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 
 def register(board_group: click.Group) -> None:
@@ -54,6 +55,7 @@ def register(board_group: click.Group) -> None:
         examples=(
             ("{prog} board install-service", "Write the unit for 127.0.0.1:8051."),
             ("{prog} board install-service --force", "Overwrite an existing unit."),
+            ("{prog} board install-service --dry-run", "Say where it would write."),
         ),
     ),
 )
@@ -64,23 +66,49 @@ def register(board_group: click.Group) -> None:
     is_flag=True,
     help="Overwrite an existing unit file (default: leave it untouched).",
 )
-def board_install_service_cmd(port: int, host: str, force: bool) -> None:
+@mutating_options
+def board_install_service_cmd(
+    port: int, host: str, force: bool, dry_run: bool, assume_yes: bool
+) -> None:
     """Write the systemd user unit (operator-gated) and print the enable commands.
 
+    `--dry-run` reports the unit path and the ExecStart it WOULD resolve,
+    without writing. That is worth having separately from reading the output
+    afterwards: resolving ExecStart is the step that fails, and a dry run
+    surfaces that failure before anything lands on disk.
+
+    \b
     Example:
       $ scitex-cards board install-service
+      $ scitex-cards board install-service --dry-run
     """
     from .._systemd_gui import install_gui_unit
     from .._systemd_unit import ExecStartUnresolved
 
+    if not dry_run:
+        confirm_or_abort(
+            f"Write the board systemd user unit for {host}:{port}?",
+            assume_yes=assume_yes,
+        )
     try:
-        result = install_gui_unit(host=host, port=port, force=force)
+        result = install_gui_unit(
+            host=host, port=port, force=force, dry_run=dry_run
+        )
     except ExecStartUnresolved as exc:
         # Fail LOUDLY: a unit with an unresolvable ExecStart installs fine and
         # then dies at 203/EXEC the moment the operator enables it — a board
         # that is silently absent, which is the exact fault this verb exists
         # to end.
         raise click.ClickException(str(exc)) from exc
+    if result.get("dry_run"):
+        click.echo(
+            f"{DRY_RUN_PREFIX} would write systemd user unit: {result['path']}"
+        )
+        click.echo(f"{DRY_RUN_PREFIX}   ExecStart={result['exec_start']}")
+        if result["existed"] and not force:
+            click.echo(f"{DRY_RUN_PREFIX}   (exists; --force would be needed)")
+        click.echo(f"{DRY_RUN_PREFIX} nothing written")
+        return
     if result["written"]:
         click.echo(f"# wrote systemd user unit: {result['path']}")
         click.echo(f"#   ExecStart={result['exec_start']}")

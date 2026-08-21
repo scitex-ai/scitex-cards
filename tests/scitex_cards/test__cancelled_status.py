@@ -300,14 +300,29 @@ class _EnqueueRecorder:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine(env, monkeypatch):
+def _isolate_engine(env, tmp_path):
+    """No ambient configuration reaches the sweep.
+
+    Real isolation rather than replacing ``config_paths`` (PA-306 §3): BOTH
+    locations it resolves are steerable. The user file sits under
+    ``$SCITEX_DIR`` and the project file under the git root of the working
+    directory, so pointing each at an empty tmp dir makes them genuinely
+    absent — which is what ``config_paths() == []`` was standing in for.
+
+    The empty project dir gets a ``.git`` on purpose: without one,
+    ``_find_git_root`` walks UP and would find this repo, so the isolation
+    would silently depend on where the suite was run from.
+    """
     for var in (
         "SCITEX_CARDS_REMINDER_OWNERS",
         "SCITEX_CARDS_STALE_ACTIVE_HOURS",
         "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    env.set("SCITEX_DIR", str(tmp_path / "scitex-home"))
+    project = tmp_path / "no-project"
+    (project / ".git").mkdir(parents=True)
+    env.chdir(project)
 
 
 def _sweep(tasks, store):

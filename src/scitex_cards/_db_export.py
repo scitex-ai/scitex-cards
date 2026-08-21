@@ -412,6 +412,37 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def export_targets(
+    db_path: str | Path | None = None,
+    out: str | Path | None = None,
+    threads_out: str | Path | None = None,
+) -> dict[str, str]:
+    """Where :func:`export_json` WOULD write, resolved the same way it does.
+
+    Extracted so a dry run and the real export cannot disagree about their
+    targets. A preview that re-derived the paths itself would be a second
+    implementation of the defaulting rules, and the first time those two drift
+    the preview starts naming files the export does not touch — which is worse
+    than having no preview, because it reads as confirmation.
+
+    Returns ``{"tasks_json": ..., "threads_json": ...}``. Resolves paths only;
+    it does not open the database.
+    """
+    from ._paths import resolve_tasks_path
+
+    out_path = (
+        Path(out).expanduser()
+        if out
+        else resolve_tasks_path(db_path).parent / "export" / "tasks.json"
+    )
+    threads_path = (
+        Path(threads_out).expanduser()
+        if threads_out
+        else out_path.parent / "threads.json"
+    )
+    return {"tasks_json": str(out_path), "threads_json": str(threads_path)}
+
+
 def export_json(
     db_path: str | Path | None = None,
     out: str | Path | None = None,
@@ -426,7 +457,6 @@ def export_json(
     """
     import json
 
-    from ._paths import resolve_tasks_path
     from ._store_target import resolve_store_target
 
     # STRICT: a snapshot is exact or it is absent (ADR-0010). The board read
@@ -443,16 +473,9 @@ def export_json(
     # `resolve_db_path` meant a DSN raised before either was needed, which is
     # what killed the hourly off-site snapshot for ~31 hours (2026-08-02).
     db = resolve_store_target(db_path)
-    out_path = (
-        Path(out).expanduser()
-        if out
-        else resolve_tasks_path(db_path).parent / "export" / "tasks.json"
-    )
-    threads_path = (
-        Path(threads_out).expanduser()
-        if threads_out
-        else out_path.parent / "threads.json"
-    )
+    targets = export_targets(db_path=db_path, out=out, threads_out=threads_out)
+    out_path = Path(targets["tasks_json"])
+    threads_path = Path(targets["threads_json"])
 
     _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
     # The sidecar contract is a top-level ``threads:`` mapping

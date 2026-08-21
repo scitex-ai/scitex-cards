@@ -197,6 +197,13 @@ def migrate_to_sqlite(store: str | Path | None = None) -> dict:
     # would write them where nothing reads — the same write-here-read-there
     # shape this whole change exists to remove, and it would look like a
     # successful migration while losing every record it "migrated".
+    # NO SOURCE-VS-DESTINATION CHECK HERE, deliberately. The legacy
+    # `inboxes:` records live INSIDE the store document, so this migration is
+    # IN-PLACE and source == destination by construction — a guard on equality
+    # would outlaw the feature, which is exactly what the test suite said when
+    # I tried it (`test_migrate_counts_every_yaml_record`, both sides
+    # `cards.db`). The property that must hold is "the target is a database",
+    # and `inbox_target` now enforces that for every verb.
     with open_connection(inbox_target(store)) as conn:
         init_schema(conn)
         stats = _migrate_into_conn(conn, store)

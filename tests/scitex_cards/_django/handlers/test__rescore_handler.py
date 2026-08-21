@@ -134,24 +134,12 @@ def _rescore_over_a_concurrent_write(store_path):
     )
 
 
-def _install_rescore_spy(monkeypatch):
-    """Record every ``rescore_task`` call the handler makes; return the log."""
-    calls = []
-
-    def spy(store_arg, task_id, *, urgency, importance, by=None):
-        calls.append(
-            {
-                "store": str(store_arg),
-                "task_id": task_id,
-                "urgency": urgency,
-                "importance": importance,
-                "by": by,
-            }
-        )
-        return {"task": {"id": task_id}, "rank": 1, "of": 1}
-
-    monkeypatch.setattr("scitex_cards._store.rescore_task", spy)
-    return calls
+# `_install_rescore_spy` is GONE. It replaced `_store.rescore_task` with a
+# recorder returning a canned `{"task": ..., "rank": 1, "of": 1}`, so the real
+# verb never ran: no card was rescored, no audit comment written, and the rank
+# in the response was the fake's own literal rather than a computed one. Its
+# callers now read the card back through `_load`, which is what the rest of
+# this file already does.
 
 
 def _audit_entry(store_path, task_id="build"):
@@ -201,31 +189,41 @@ def test_rescore_over_a_concurrent_write_keeps_the_other_write(store):
 # ── 2. delegation — axes + actor forwarded verbatim, no client-set rank ───
 
 
-def test_rescore_delegating_to_the_verb_answers_200(store, monkeypatch):
+def test_rescore_delegating_to_the_verb_answers_200(store):
     # Arrange
-    _install_rescore_spy(monkeypatch)
     # Act
     response = _post(store, {"id": "build", "urgency": 2, "importance": 4})
     # Assert
     assert response.status_code == 200
 
 
-def test_rescore_forwards_axes_and_actor_to_the_verb(store, monkeypatch):
+def test_rescore_delegation_lands_both_axes(store):
     # Arrange
-    calls = _install_rescore_spy(monkeypatch)
     # Act
     _post(store, {"id": "build", "urgency": 2, "importance": 4})
-    # Assert — the two axes and the operator actor reach the verb; the handler
-    # never computes or forwards a rank.
-    assert calls == [
-        {
-            "store": store,
-            "task_id": "build",
-            "urgency": 2,
-            "importance": 4,
-            "by": "operator",
-        }
-    ]
+    # Assert — read the card: the axes arrived AND were written.
+    assert (_load(store)["build"]["urgency"], _load(store)["build"]["importance"]) == (
+        2,
+        4,
+    )
+
+
+# `test_rescore_forwards_axes_and_actor_to_the_verb` is DELETED, not ported. It
+# spied on `_store.rescore_task` and asserted the argument dict — store,
+# task_id, both axes, and `by="operator"`. Every one of those claims is already
+# asserted through the REAL verb elsewhere in this file:
+#
+#     axes      test_rescore_over_a_concurrent_write_persists_the_urgency
+#               ..._persists_the_importance   (and the test directly above)
+#     actor     test_rescore_audit_entry_names_the_actor — `author == "operator"`
+#               read out of the card's audit comment
+#     no rank   test_rescore_response_carries_the_documented_key_set
+#
+# The spy could only ever agree with those or be wrong, and it was strictly
+# weaker: arguments that reach a stand-in prove nothing about what was written.
+# Its canned return (`{"task": ..., "rank": 1, "of": 1}`) meant the real verb
+# never ran at all, so the rank in its response was the fake's, not a computed
+# one.
 
 
 # ── 3a. end-to-end through the real verb ──────────────────────────────────

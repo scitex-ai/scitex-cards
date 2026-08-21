@@ -35,7 +35,7 @@ from __future__ import annotations
 # The public surface is unchanged: `scitex_cards.__version__` still answers.
 # It just pays for the metadata reader when someone asks for a version, which
 # tab-completion never does.
-def _resolve_version() -> str:
+def _resolve_version(read_version=None) -> str:
     """The installed version, read on demand. See the note above for why.
 
     ONE DIST NAME. This loop used to try the current name and then fall back to
@@ -43,13 +43,20 @@ def _resolve_version() -> str:
     is gone, which left the loop iterating the SAME string twice: a second
     `version()` call that can only raise the same `PackageNotFoundError` the
     first one did, and a fallback chain with nothing to fall back to.
+
+    `read_version` defaults to `importlib.metadata.version`. It is a parameter
+    so the UNINSTALLED branch is reachable without rewriting the stdlib module
+    (PA-306 §3) — that branch is exactly the one that cannot be reached in an
+    environment where this package IS installed, which is every environment the
+    suite runs in.
     """
     try:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover — only on ancient Pythons
         return "0.0.0+local"
+    read = version if read_version is None else read_version
     try:
-        return version("scitex-cards")
+        return read("scitex-cards")
     except PackageNotFoundError:
         return "0.0.0+local"
 

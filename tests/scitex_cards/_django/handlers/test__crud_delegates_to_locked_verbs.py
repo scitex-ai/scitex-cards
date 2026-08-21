@@ -139,36 +139,15 @@ def _stale_board_with_concurrent_write(store_path):
     return board
 
 
-def _spy_on_update_task(monkeypatch):
-    """Record every ``_store.update_task`` call; return the call log."""
-    calls = []
-
-    def spy(store_arg, task_id, **fields):
-        calls.append((store_arg, task_id, fields))
-        return {"id": task_id, "title": "Build It", "status": "in_progress"}
-
-    monkeypatch.setattr("scitex_cards._store.update_task", spy)
-    return calls
-
-
-def _spy_on_set_edge(monkeypatch):
-    """Record every ``_store.set_edge`` call; return the call log."""
-    calls = []
-
-    def spy(store_arg, action=None, kind=None, source=None, target=None):
-        calls.append(
-            {"action": action, "kind": kind, "source": source, "target": target}
-        )
-        return {
-            "action": action,
-            "kind": kind,
-            "source": source,
-            "target": target,
-            "subscribed": None,
-        }
-
-    monkeypatch.setattr("scitex_cards._store.set_edge", spy)
-    return calls
+# The `_spy_on_update_task` / `_spy_on_set_edge` helpers that lived here are
+# GONE. Both replaced a locked store verb with a stand-in that recorded its
+# arguments and returned a canned dict — so the real write never ran, and every
+# test built on them passed whether or not the handler's delegation actually
+# reached the store. Their callers now assert the OUTCOME instead: post the
+# request for real, read the card back through `_load(store)`, and check what
+# the store holds. That is the property these tests were always trying to
+# express, and it fails for a reason a spy cannot see — a call that happens and
+# does not land.
 
 
 # ── 1. lost-update survival, one test per converted handler ───────────────
@@ -371,51 +350,52 @@ _UPDATE_BODY = {
 }
 
 
-def test_update_delegating_to_the_verb_returns_ok(store, monkeypatch):
+def test_update_delegating_to_the_verb_returns_ok(store):
     # Arrange
-    _spy_on_update_task(monkeypatch)
     # Act
     response = _post("update", store, dict(_UPDATE_BODY))
     # Assert
     assert response.status_code == 200
 
 
-def test_update_passes_the_resolved_store_to_the_verb(store, monkeypatch):
+def test_update_lands_in_the_resolved_store(store):
     # Arrange
-    calls = _spy_on_update_task(monkeypatch)
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    store_arg, _task_id, _fields = calls[0]
-    # Assert
-    assert str(store_arg) == store
+    tasks = _load(store)
+    # Assert — read back through the SAME store the request named; a write
+    # aimed anywhere else leaves this one unchanged.
+    assert tasks["build"]["title"] == "Renamed"
 
 
-def test_update_passes_the_card_id_to_the_verb(store, monkeypatch):
+def test_update_touches_only_the_named_card(store):
     # Arrange
-    calls = _spy_on_update_task(monkeypatch)
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    _store_arg, task_id, _fields = calls[0]
-    # Assert
-    assert task_id == "build"
+    tasks = _load(store)
+    # Assert — the card id in the body decided the target; siblings are intact.
+    assert tasks["north"]["title"] == "North Star"
 
 
-def test_update_translates_gui_clears_into_verb_none_deletes(store, monkeypatch):
-    # Arrange
-    # the GUI's None/""/[] clears must all arrive as the verb's
-    # None-deletes, and real values must pass through verbatim.
-    calls = _spy_on_update_task(monkeypatch)
+def test_update_translates_gui_clears_into_real_deletions(store):
+    # Arrange — the GUI sends None / "" / [] to mean CLEAR. The old version of
+    # this test asserted that a dict of `None`s reached a stand-in for the
+    # verb, which proves the translation and nothing about the outcome. Read
+    # the card instead: the keys must be GONE from the stored row.
     _post("update", store, dict(_UPDATE_BODY))
     # Act
-    _store_arg, _task_id, fields = calls[0]
+    card = _load(store)["build"]
     # Assert
-    assert fields == {
-        "title": "Renamed",
-        "note": None,
-        "repo": None,
-        "blocks": None,
-        "priority": 2,
-    }
+    assert not any(k in card for k in ("note", "repo", "blocks"))
+
+
+def test_update_passes_real_values_through_verbatim(store):
+    # Arrange
+    _post("update", store, dict(_UPDATE_BODY))
+    # Act
+    card = _load(store)["build"]
+    # Assert — a clear must not swallow the non-empty fields sent beside it.
+    assert card["priority"] == 2
 
 
 def test_update_clears_an_empty_string_field_through_the_verb(store):
@@ -508,9 +488,8 @@ def test_update_invalid_status_still_400(store):
 
 
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_depends_on_delegation_returns_ok(store, monkeypatch, action):
+def test_edge_depends_on_delegation_returns_ok(store, action):
     # Arrange
-    _spy_on_set_edge(monkeypatch)
     body = {
         "action": action,
         "kind": "depends_on",
@@ -524,36 +503,8 @@ def test_edge_depends_on_delegation_returns_ok(store, monkeypatch, action):
 
 
 @pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_depends_on_swaps_source_and_target_for_set_edge(
-    store, monkeypatch, action
-):
+def test_edge_blocks_delegation_returns_ok(store, action):
     # Arrange
-    # set_edge hangs the field on ITS source; the GUI's depends_on
-    # payload hangs it on the GUI target. The handler must SWAP.
-    calls = _spy_on_set_edge(monkeypatch)
-    body = {
-        "action": action,
-        "kind": "depends_on",
-        "source": "north",
-        "target": "build",
-    }
-    _post("edge", store, body)
-    # Act
-    delegated = calls[0]
-    # Assert
-    # verb source = GUI target, verb target = GUI source.
-    assert delegated == {
-        "action": action,
-        "kind": "depends_on",
-        "source": "build",
-        "target": "north",
-    }
-
-
-@pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_blocks_delegation_returns_ok(store, monkeypatch, action):
-    # Arrange
-    _spy_on_set_edge(monkeypatch)
     body = {"action": action, "kind": "blocks", "source": "north", "target": "build"}
     # Act
     response = _post("edge", store, body)
@@ -561,22 +512,19 @@ def test_edge_blocks_delegation_returns_ok(store, monkeypatch, action):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("action", ["add", "remove"])
-def test_edge_blocks_passes_source_and_target_through(store, monkeypatch, action):
-    # Arrange
-    # for kind=blocks the two orientations already agree.
-    calls = _spy_on_set_edge(monkeypatch)
-    body = {"action": action, "kind": "blocks", "source": "north", "target": "build"}
-    _post("edge", store, body)
-    # Act
-    delegated = calls[0]
-    # Assert
-    assert delegated == {
-        "action": action,
-        "kind": "blocks",
-        "source": "north",
-        "target": "build",
-    }
+# The two ARGUMENT-level tests that used to sit here are DELETED, not ported.
+# They spied on `_store.set_edge` to assert which source/target reached it —
+# the depends_on SWAP, and the blocks pass-through. Section 2c below already
+# asserts both, on disk, through the real verb:
+#
+#     test_edge_depends_on_add_lands_on_gui_target
+#     test_edge_depends_on_add_never_lands_on_gui_source
+#     test_edge_blocks_add_lands_on_gui_source
+#
+# Those are the same claims one level stronger: a swap that reached the verb
+# but did not land is a passing spy test and a failing on-disk test, so the
+# spy pair could only ever agree with 2c or be wrong. Keeping a weaker
+# duplicate would have preserved the finding count, not the coverage.
 
 
 # ── 2c. edge-orientation ON-DISK parity with the old handler ──────────────

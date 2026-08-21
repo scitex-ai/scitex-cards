@@ -85,10 +85,27 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov",
-    # >=0.17.11 for the JobSpec service|timer|cron taxonomy + new
+    # >=0.17.11 was the JobSpec floor: the service|timer|cron taxonomy + the
     # restart_policy field used by _jobs_provider.provide_jobs(). Older
-    # versions don't have the kwarg and the leaf TypeErrors on import.
-    "scitex-dev>=0.17.11",
+    # versions don't have the kwarg and the leaf TypeErrors on import. That
+    # reason still holds; it is simply no longer the BINDING constraint.
+    #
+    # THE BINDING FLOOR IS 0.49.0, and it is a COLLECTION failure, not a
+    # runtime one. tests/scitex_cards/test__store_plugin_merge_semantics.py:37
+    # imports `scitex_dev.store` at MODULE SCOPE, unguarded, so a conforming
+    # `pip install -e .[dev]` that resolved an older scitex-dev would die
+    # during collection rather than skip.
+    #
+    # Floors measured from git tags AND wheels, not from a changelog:
+    #     FieldPolicy   first exported  0.44.0
+    #     StorePlugin   first exported  0.49.0   (v0.48.0 -> 0 hits, v0.49.0 -> 4)
+    # StorePlugin is the later of the two, so it sets the floor.
+    #
+    # NOTE the currency pin at the bottom of this file (>=0.34.0) is a
+    # DIFFERENT constraint with a different purpose and is deliberately left
+    # alone, as are the core [project] dependencies — scitex-dev is correctly
+    # NOT a runtime dependency of this package.
+    "scitex-dev>=0.49.0",
     # Web-extra deps are imported (guarded) by the Django board source and its
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).
@@ -484,6 +501,18 @@ select = ["E", "F", "W", "I"]
 
 [tool.scitex-linter]
 library_dirs = ["src", "tests", "examples"]
+
+[tool.scitex_dev]
+# §6a — env vars that are NOT ours to name.
+#
+# `PUPPETEER_EXECUTABLE_PATH` is puppeteer's own variable, read by the
+# mermaid-cli child process we spawn to render diagrams. `_diagram/_render.py`
+# both READS it (so an operator can point the renderer at their own chromium)
+# and SETS it on the child's environment. Renaming it to `SCITEX_CARDS_*`
+# would not rename it inside puppeteer — it would simply stop working, which
+# is the opposite of what the rule is protecting. Exempted by name, not by
+# prefix, so a future third-party variable still has to be argued for.
+env_allowlist = ["PUPPETEER_EXECUTABLE_PATH"]
 
 [tool.scitex_dev.audit]
 # PS-168 — Per-package secret + env-var prefix in GitHub Actions workflows.

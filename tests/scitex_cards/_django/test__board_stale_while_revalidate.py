@@ -126,13 +126,34 @@ def _append_card(store, cid: str, status: str = "deferred") -> None:
         fh.write(f"# {cid}\n")
 
 
-def _break_the_rebuild(monkeypatch) -> None:
-    """Make the background rebuild raise, as an unreadable store would."""
+def _break_the_rebuild(store) -> None:
+    """Break the REBUILD for real, while the store stays readable.
 
-    def _boom(path):
-        raise RuntimeError("store unreadable")
+    The old version replaced `services._load_global_tasks` with a function
+    raising `RuntimeError("store unreadable")`. Two things were wrong with it.
 
-    monkeypatch.setattr(services, "_load_global_tasks", _boom)
+    First, it chose the exception. The guard was only ever proved against the
+    one type the test invented.
+
+    Second — and this is why the obvious replacement is WRONG — an unreadable
+    *database* is not the condition this test is about. Corrupting the DB makes
+    `store_generation()` raise at services.py:411, BEFORE the cache is even
+    consulted, so no cached board can be served. That is deliberate and
+    documented in `get_board`: "a refusal is recoverable and visible, a
+    believable empty board is neither" — an unreadable database is MEANT to
+    reach the operator as a 500. Asserting stale-serving there would have been
+    asserting against the module's stated design. (Measured: it raises
+    `sqlite3.DatabaseError: file is not a database` straight out of the view.)
+
+    The real seam is narrower. `_load_global_tasks` ALSO parses the sidecar
+    through `load_groups` -> `safe_load`, while `store_generation` reads the
+    database. Malformed YAML in the sidecar therefore breaks the rebuild with
+    the store still perfectly readable — exactly "the refresh failed, serve the
+    board you have". `_append_card` above only ever appends `#` comments for
+    this same reason: it is documented there that a non-mapping would choke the
+    group loader.
+    """
+    Path(store).write_text("{unclosed: [\n", encoding="utf-8")
 
 
 def _rewrite_same_length(store, before) -> None:
@@ -203,9 +224,12 @@ def test_the_background_refresh_actually_lands(store):
     assert {t["id"] for t in services.get_board(store).tasks} == {"a", "b", "c"}
 
 
-def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
-    # Arrange
-    # Make the rebuild slow enough that polls overlap it.
+def test_a_poll_storm_starts_only_one_refresh(store):
+    # Arrange — a rebuild slow enough that the polls overlap it, passed in as
+    # `load` rather than written over the module attribute. The delay is the
+    # POINT of the scenario, not a stand-in for one: without an in-flight
+    # rebuild there is no storm to guard against, and nothing outside this
+    # process can make a database read take 0.4 s on demand.
     services.get_board(store, allow_stale=True)
     calls = {"n": 0}
     real = services._load_global_tasks
@@ -215,21 +239,20 @@ def test_a_poll_storm_starts_only_one_refresh(store, monkeypatch):
         time.sleep(0.4)
         return real(path)
 
-    monkeypatch.setattr(services, "_load_global_tasks", _slow)
     # Act — ten rapid reads against a changed store (the operator's browser
     # polling while a rebuild is in flight).
     _bump_mtime(store)
     for _ in range(10):
-        services.get_board(store, allow_stale=True)
+        services.get_board(store, allow_stale=True, load=_slow)
     _settle()
     # Assert — one rebuild, not ten.
     assert calls["n"] == 1
 
 
-def test_a_failing_refresh_keeps_serving_the_previous_board(store, monkeypatch):
+def test_a_failing_refresh_keeps_serving_the_previous_board(store):
     # Arrange
     good = services.get_board(store, allow_stale=True)
-    _break_the_rebuild(monkeypatch)
+    _break_the_rebuild(store)
     # Act — the store changes and the background rebuild blows up.
     _bump_mtime(store)
     served = services.get_board(store, allow_stale=True)
@@ -238,10 +261,10 @@ def test_a_failing_refresh_keeps_serving_the_previous_board(store, monkeypatch):
     assert len(served.tasks) == len(good.tasks)
 
 
-def test_a_further_stale_read_after_a_failed_refresh_still_serves(store, monkeypatch):
+def test_a_further_stale_read_after_a_failed_refresh_still_serves(store):
     # Arrange
     services.get_board(store, allow_stale=True)
-    _break_the_rebuild(monkeypatch)
+    _break_the_rebuild(store)
     _bump_mtime(store)
     services.get_board(store, allow_stale=True)
     _settle()

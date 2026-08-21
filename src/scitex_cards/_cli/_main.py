@@ -103,6 +103,28 @@ _COMMAND_CATEGORIES = (
 # --------------------------------------------------------------------------- #
 # Top-level group (--help-recursive / --json universal flags)                 #
 # --------------------------------------------------------------------------- #
+def _run_currency_gate(check=check_currency) -> None:
+    """Run the CURRENCY gate, surfacing a refusal as a CLEAN CLI error.
+
+    A raw traceback is not a usable answer for an operator, and scitex-dev's
+    message carries the remedy command — so the message is preserved verbatim
+    inside the :class:`click.ClickException`. A ``ClickException`` raised by
+    the gate itself is re-raised untouched rather than re-wrapped, which would
+    double the prefix.
+
+    ``check`` is a parameter so this translation can be driven directly with a
+    hand-rolled gate (PA-306 §3). It is called from the GROUP CALLBACK, which
+    is what makes the gate unconditional: every subcommand passes through it,
+    not merely the ones some code path happens to reach.
+    """
+    try:
+        check()
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @click.group(
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -134,12 +156,7 @@ def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
     # `check_currency()` is a no-op when scitex-dev is absent; when present it
     # raises with the exact remedy command, which we surface as a clean
     # ClickException rather than a raw traceback. See `_currency.py`.
-    try:
-        check_currency()
-    except click.ClickException:
-        raise
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+    _run_currency_gate()
     if help_recursive or as_json:
         _emit_help_recursive(ctx, as_json=as_json)
         ctx.exit(0)

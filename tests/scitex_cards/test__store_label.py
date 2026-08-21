@@ -28,10 +28,14 @@ format cannot quietly turn a leak green.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import os
+import textwrap
 
 import pytest
 
+from scitex_cards._cli import _admin
 from scitex_cards._store_target import store_label
 
 ENV = "SCITEX_CARDS_DB"
@@ -151,39 +155,62 @@ class TestSqliteIsUnaffected:
 
 
 class TestTheCliCaptionExecutesTheDefect:
-    """Drive the real verb, because the helper is not where the bug was."""
+    """Pin the CLI captions themselves, because the helper is not where the bug
+    was.
 
-    def test_list_tasks_filtered_does_not_raise_on_a_dsn(
-        self, store_env, monkeypatch, capsys
-    ):
+    WHAT THE OUTAGE ACTUALLY WAS: the caption called ``resolve_db_path`` --
+    typed ``-> Path`` and correctly refusing a DSN -- purely to print where the
+    rows came from. So a working read died on its own header line. The fix was
+    to route the caption through ``store_label``, which answers for BOTH store
+    kinds.
+
+    That is a property of WHICH RESOLVER THE CAPTION USES, and it is read
+    directly here. The alternative would be to drive the verb with a store that
+    is a DSN while the read still succeeds -- and those two are the same
+    setting, so separating them needs a live PostgreSQL server. The previous
+    form bought that separation by replacing ``_store.list_tasks`` with a stub
+    returning ``[]``, which is the mock this rule forbids and which also stopped
+    the test from executing any real read at all.
+    """
+
+    def _caption_resolvers(self, func):
+        """Every resolver name the function calls to NAME the store."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        return {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+    def test_list_tasks_filtered_names_the_store_through_store_label(self):
         # Arrange
-        from scitex_cards import _store
-        from scitex_cards._cli import _admin
-
-        store_env(PG_URL)
-        monkeypatch.setattr(_store, "list_tasks", lambda *a, **k: [])
-
         # Act
-        _admin.list_tasks_filtered(None, None, None, False, None)
-
+        called = self._caption_resolvers(_admin.list_tasks_filtered)
         # Assert
-        assert PG_URL in capsys.readouterr().out
+        assert "store_label" in called
 
-    def test_list_blocking_operator_does_not_raise_on_a_dsn(
-        self, store_env, monkeypatch, capsys
-    ):
+    def test_list_tasks_filtered_never_resolves_a_path_to_caption_itself(self):
         # Arrange
-        from scitex_cards import _store
-        from scitex_cards._cli import _admin
-
-        store_env(PG_URL)
-        monkeypatch.setattr(_store, "list_tasks", lambda *a, **k: [])
-
         # Act
-        _admin.list_blocking_operator(None, as_json=False)
+        called = self._caption_resolvers(_admin.list_tasks_filtered)
+        # Assert -- `resolve_db_path` is `-> Path` and REFUSES a DSN, which is
+        # right for a read target and fatal for a caption. Its return is the
+        # outage.
+        assert "resolve_db_path" not in called
 
+    def test_list_blocking_operator_names_the_store_through_store_label(self):
+        # Arrange
+        # Act
+        called = self._caption_resolvers(_admin.list_blocking_operator)
         # Assert
-        assert PG_URL in capsys.readouterr().out
+        assert "store_label" in called
+
+    def test_list_blocking_operator_never_resolves_a_path_to_caption_itself(self):
+        # Arrange
+        # Act
+        called = self._caption_resolvers(_admin.list_blocking_operator)
+        # Assert
+        assert "resolve_db_path" not in called
 
 
 # EOF
