@@ -226,6 +226,62 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
             "created_by=/by= (creator+assignee are mandatory; no silent "
             "fallback to a blank/'unknown' creator; see constitution)."
         )
+    # AN UNEXPANDED PLACEHOLDER IS NOT AN IDENTITY — THE IDENTITY DOOR, WHICH
+    # THIS PACKAGE GUARDED EVERYWHERE EXCEPT HERE.
+    #
+    # `reject_unexpanded_variable` already guards four STORE-TARGET doors
+    # (_paths x2, _backend_connect, _db, _index). Identity had none, so until
+    # today `_default_agent("${SCITEX_CARDS_AGENT_ID}")` returned that string
+    # VERBATIM and it was persisted as an author. Measured 2026-08-21:
+    #
+    #     '${SCITEX_CARDS_AGENT_ID}'  ACCEPTED -> stored verbatim
+    #     '$SCITEX_CARDS_AGENT_ID'    ACCEPTED -> stored verbatim
+    #     'unknown'                   REFUSED
+    #
+    # This is not hypothetical. On 2026-07-18/19 fifteen `tasks` rows were
+    # written with a literal `$` in `created_by`; a card closed that incident
+    # asserting "0 rows carry the literal env var (was 7)", which was true when
+    # written and false afterwards -- a restore brought the rows back and
+    # nobody re-measured. The original incident card asked for exactly this
+    # guard, in as many words, and it was never built.
+    #
+    # WHY IT MATTERS NOW RATHER THAN EVENTUALLY: sac injects BOTH the current
+    # and the legacy env spellings today, which is the only reason a bad value
+    # does not appear. The moment that compatibility path is dropped -- and
+    # they are waiting on this guard to drop it -- an agent whose env lacks the
+    # CARDS name writes the literal again, silently. So the ordering is
+    # dotfiles' spec migration, then THIS, then sac's drop.
+    #
+    # A blank creator and a placeholder creator are the same defect wearing
+    # different clothes: neither names an agent, and the placeholder is worse
+    # because it LOOKS resolved on the board.
+    # Imported inside the function, matching the existing deferred import of
+    # this same helper further down this module — `_store_url` is pulled in
+    # lazily here to keep the import graph as it is rather than adding a new
+    # module-level edge while fixing an unrelated defect.
+    from ._store_url import is_unexpanded_variable
+
+    # THE BRACED HELPER IS NOT ENOUGH HERE, and the gap is deliberate upstream.
+    # `is_unexpanded_variable` matches `${FOO}` and NOT bare `$FOO` — a choice
+    # that is defensible for STORE TARGETS (a path beginning `$FOO` is odd) and
+    # wrong for IDENTITY, where `SCITEX_CARDS_AGENT_ID=$SCITEX_CARDS_AGENT_ID`
+    # in a non-expanding context yields exactly the bare form. Measured: the
+    # braced form was refused and the bare form sailed through, so the first
+    # version of this guard was half a guard.
+    #
+    # `startswith("$")` is the identity-specific rule and it is deliberately
+    # narrow: an agent NAME never begins with a dollar sign, while a dollar
+    # elsewhere in a name is nobody's business but the namer's. Verified that
+    # `agent-with-$-inside` still resolves, so this rejects the placeholder
+    # shape without policing legitimate names.
+    if is_unexpanded_variable(resolved) or resolved.startswith("$"):
+        raise TaskValidationError(
+            f"creator is an UNEXPANDED shell variable, not an agent: {resolved!r}. "
+            "Something exported the literal text instead of its value — check the "
+            "spec/unit that sets SCITEX_CARDS_AGENT_ID, and whether it is quoted "
+            "in a context that never expands it. Writing this would attribute the "
+            "card to a placeholder that looks like a real name on the board."
+        )
     return resolved
 
 
