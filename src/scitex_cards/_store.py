@@ -376,7 +376,12 @@ def resolve_store(store: str | Path | None = None) -> dict:
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
     from ._store_target import resolve_store_target
-    from ._store_url import backend_of, is_attempted_dsn, is_postgres_url
+    from ._store_url import (
+        backend_of,
+        is_attempted_dsn,
+        is_postgres_url,
+        is_unexpanded_variable,
+    )
     from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
@@ -411,6 +416,27 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # branch on it two-valued. So the third answer gets its own field, and
         # a diagnosing reader sees the malformation instead of inferring it.
         "target_is_malformed_dsn": is_attempted_dsn(target),
+        # THE SIBLING MALFORMATION, and it was missing from this dict while its
+        # detector sat in the same module as `is_attempted_dsn`. The argument
+        # above generalises verbatim: `backend` cannot carry it either, because
+        # an unexpanded `${SCITEX_CARDS_DB}` is not DSN-shaped, so `backend_of`
+        # answers "sqlite" and `exists` answers False -- both true of the string
+        # and neither true of the intent, exactly as ":55432" once read as a
+        # fresh install.
+        #
+        # `reject_unexpanded_variable` already guards the doors that OPEN a
+        # store (_paths, _backend_connect, _db), and its own docstring says why
+        # it does not raise here: "Resolution stays total and silent so a caller
+        # that merely REPORTS a target can SHOW the ambiguity instead of raising
+        # on it." This dict is that caller. The detector was built for this
+        # surface and this surface did not consult it.
+        #
+        # Measured 2026-08-21 by claude-code-telegrammer: with the literal
+        # `${SCITEX_CARDS_DB}` set, this verb returned backend=sqlite,
+        # target_is_malformed_dsn=False and exit 0, while an actual read refused
+        # (exit 1). The system was safe; the DIAGNOSTIC said nothing, which is
+        # the surface an agent runs precisely when it is confused.
+        "target_is_unexpanded_variable": is_unexpanded_variable(target),
         # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
         # answer for a server, and BOTH poles actively mislead: False reads as
         # "your store is missing" to every operator staring at a cutover, True
