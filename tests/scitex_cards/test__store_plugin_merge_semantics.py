@@ -107,6 +107,25 @@ def test_every_task_column_is_decided():
     )
 
 
+def test_exactly_two_fields_are_declared_and_no_more():
+    # Arrange — the MEMBERSHIP tests above cannot catch a THIRD declaration.
+    # Measured by counterexample: adding `deleted_at` to TASK_FIELDS yields
+    # three declared fields and the whole file still passes, because the other
+    # tests only ask that every column lands in exactly one bucket — moving a
+    # column between buckets satisfies them. Nothing anywhere pinned the count
+    # (`rg "len(TASK_FIELDS)"` -> 0; control: TASK_FIELDS resolves 8x here).
+    #
+    # This is not hypothetical: `deleted_at` is named in this module's own
+    # UNDECLARED text as "the obvious first promotion once HIDE_FLAG lands".
+    # Promoting a column to a typed field is an ADR-0018 D1 decision, so it
+    # must break a test and be argued, not merely pass.
+    expected = {"id", DOCUMENT_COL}
+    # Act
+    declared = set(TASK_FIELDS)
+    # Assert
+    assert declared == expected
+
+
 def test_no_rule_is_declared_for_a_column_that_does_not_exist():
     # Arrange — the register is held to the same standard as the schema: a
     # rationale for a column that does not exist is reasoning about nothing.
@@ -295,13 +314,37 @@ def test_provide_never_returns_an_empty_list():
 
 
 def _require_federation():
-    """Skip where scitex-dev is too old to construct a StorePlugin.
+    """DELETED BODY, DELIBERATELY — this guard could never have fired.
 
-    Keyed on THE SYMBOL, not on `provide()` returning empty — provide() no
-    longer has an empty branch to key on, and testing for the symbol you need
-    in the environment that will run it is the lesson this module records.
+    It used to read::
+
+        pytest.importorskip("scitex_dev.store").StorePlugin  # noqa: B018
+
+    and its docstring claimed it was "Keyed on THE SYMBOL". It was not, twice
+    over, and both are worth stating so nobody restores it:
+
+    1. UNREACHABLE. Line 37 of this module does
+       ``from scitex_dev.store import HLC, ...`` at MODULE SCOPE, unguarded.
+       If ``scitex_dev.store`` were absent, collection dies there and this
+       function never runs. A guard downstream of an unguarded import of the
+       same module cannot fire.
+
+    2. WRONG KEY ANYWAY. ``importorskip`` keys on the MODULE and then reaches
+       for the attribute, so on scitex-dev 0.44.0–0.48.0 the import SUCCEEDS
+       and ``.StorePlugin`` raises AttributeError — the tests behind it would
+       have ERRORED rather than skipped, which is the opposite of a skip
+       guard's job.
+
+    3. NOW ALSO UNNECESSARY. ``pyproject.toml`` pins ``scitex-dev>=0.49.0``
+       for exactly this module's needs (0.49.0 is the first release exporting
+       ``StorePlugin``), so a conforming install cannot be too old.
+
+    Kept as a no-op with this text rather than removed outright because the
+    call sites and this explanation are the documentation for why the guard
+    must not come back. Applying the usual root/full-path ``importorskip``
+    repair here would produce a correctly-shaped guard that still cannot fire
+    — cosmetic, and indistinguishable from a real fix to a reviewer or a grep.
     """
-    pytest.importorskip("scitex_dev.store").StorePlugin  # noqa: B018
 
 
 @pytest.fixture
