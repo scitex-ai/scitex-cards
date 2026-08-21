@@ -218,6 +218,7 @@ def enqueue(
             recipient_id=recipient_id,
             recipient_column=shape.recipient,
             payload_column=shape.payload,
+            origin_column=shape.origin,
         )
         placeholders = ", ".join(["?"] * len(columns))
         conn.execute(
