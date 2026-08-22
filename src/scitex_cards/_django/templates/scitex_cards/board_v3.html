@@ -3583,11 +3583,32 @@
     }
     attachSearchKeyboardLauncher();
 
-    _syncDetailsPane();
-    _syncDetailsSections();
-    renderStats();
-    attachFilters();
-    loadGraph();
-    setInterval(autoRefreshTick, 5000);
+    // BOOT — deferred to DOMContentLoaded (P0
+    // cards-web-app-shows-nothing-and-no-interaction-p0-20260817).
+    // This inline script is CLASSIC: the lines below used to run at parse
+    // time, BEFORE the `defer` board modules executed. One of those modules,
+    // 16-card-helpers.js, publishes window.STX.cardHelpers. When the /graph
+    // fetch continuation ran first, render() reached the escapeHtml alias
+    // (delegating to STX.cardHelpers.escapeHtml) -> TypeError ->
+    // renderLoadError(). autoRefreshTick only reloads on a store
+    // mtime:count change, so a failed first load never self-healed: the
+    // board "shows nothing and no interaction" until F5, and a manual
+    // loadGraph() afterwards worked — the operator's exact report.
+    // Deferred scripts are guaranteed to have executed before DOMContentLoaded
+    // fires, so the first load is now race-free. (attachSearchKeyboardLauncher
+    // above stays at parse time: it only attaches a keydown listener and
+    // touches no STX.* API.)
+    // hook-bypass: line-limit — this template is already 3,600+ lines on
+    // develop, far past the HTML line ceiling (pre-existing violation;
+    // e5c61da7's commit message says so outright). Splitting the template
+    // is a separate refactor card, not part of this P0 hotfix.
+    document.addEventListener("DOMContentLoaded", () => {
+      _syncDetailsPane();
+      _syncDetailsSections();
+      renderStats();
+      attachFilters();
+      loadGraph();
+      setInterval(autoRefreshTick, 5000);
+    });
   </script>
 {% endblock extra_js %}
