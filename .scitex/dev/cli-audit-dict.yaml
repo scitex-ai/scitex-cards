@@ -36,9 +36,81 @@ intransitive_verbs:
   - summary    # `scitex-cards summary`  — print a task-state summary
   - manifest   # `scitex-cards skills manifest` — emit the skills manifest
 
-# §1f verb-synonym opt-outs. Every entry needs an inline `# why` — see
-# doctrine 07_audit-cli.md / 06_noun-verb-catalog.md.
+  # ── 2026-08-23 pass. Three more leaves where the token IS the verb ───────
+  # Added only where the word is a real verb in this CLI's context. The test
+  # applied to each was the constitution's: if the name has to be explained by
+  # restating it as some OTHER verb, that other verb is the name and the leaf
+  # should be RENAMED instead. Two leaves failed that test in the same audit
+  # run and are deliberately NOT here — `db path` (explains as "SHOW the path")
+  # and `deliver` (a bare transitive verb the auditor says needs an object).
+  # They are rename work, not vocabulary.
+  - ack        # `scitex-cards inbox ack` — to ack is a verb wherever a
+               # protocol has acknowledgements, and this package's own Python
+               # API and MCP tool are `ack_notifications`. Moby carries only
+               # the noun. Renaming to `<verb>-ack` would produce
+               # "acknowledge-ack", which explains nothing the leaf did not
+               # already say.
+  - triage     # `scitex-cards triage` — to triage is a verb in its original
+               # sense (sort by urgency and act), which is exactly what the
+               # command does to the board. The noun reading ("a triage") is
+               # the derived one.
+  - serve      # `scitex-cards serve` — the hub RPC listener. Moby marks it
+               # both noun and verb and the auditor asks which is meant: the
+               # verb. `serve` is the established ecosystem-wide spelling for
+               # "run this thing as a service" and is already the leaf of
+               # `gui serve`; renaming one of the two would split a pair that
+               # currently reads consistently.
+
+# §1d vocabulary the Moby POS classifier does not carry. Each is a real name
+# in THIS CLI, not a token that would read better renamed — which is the test
+# the auditor's own hint asks you to apply ("add to the dict or rename").
+nouns:
+  - inbox      # `scitex-cards inbox ack` — an ordinary English noun that Moby
+               # simply lacks. Renaming the pull-inbox to satisfy a wordlist
+               # would rename the concept the whole delivery rail is named for.
+  - notifyd    # `scitex-cards notifyd install-unit` — a daemon, named by the
+               # oldest convention in Unix (sshd, httpd, systemd). The `d`
+               # suffix is the meaning; stripping it to please a classifier
+               # would make it look like a verb, which is worse.
+  - cardsync   # `scitex-cards dev cardsync` — the card-synchronisation job.
+               # A coined compound, so no dictionary will ever have it.
+
+# §1f verb-synonym opt-outs, and — from scitex-dev's 2026-08-23 change — the
+# §2 mutating-verb opt-outs too. One declaration, same key, same loader, same
+# `# why` requirement; both rules now consult it.
+#
+# WHY §2 NEEDED AN OPT-OUT AT ALL, since a blanket escape hatch is exactly what
+# 「audit の除外はだめです」 forbids. scitex-dev tried to fix `stop-hook`
+# STRUCTURALLY first — teach the rule that a hyphen compound is right-headed,
+# so a noun tail disarms a verb head — and reported that it cannot be done:
+#
+#     stop-hook        a compound NOUN (the Claude Code Stop hook). Read-only.
+#     stop-<anything>  a real mutating action. Genuinely needs --yes.
+#
+# Those two are STRUCTURALLY IDENTICAL — verb head, noun tail — so any
+# heuristic that exempts the first exempts the second, silently removing the
+# confirmation gate from a destructive command. That is far worse than a false
+# positive, and only the author knows which one a given leaf is. So the opt-out
+# is not laziness standing in for a real fix; it is the only place the missing
+# information exists.
 verb_exceptions:
+  - stop-hook  # why: a COMPOUND NOUN — the leaf names the Claude Code "Stop
+               # hook", and `stop` is its first half, not an imperative.
+               #
+               # NOT because it is read-only. It is NOT read-only: `_stop_hook
+               # .py:292` passes `record=not dry_run`, so a normal run SPENDS A
+               # PRESENTATION from a bounded retry budget. I nearly wrote
+               # "mutates nothing" here from the help text; the code says
+               # otherwise.
+               #
+               # The real reason is the one already in the command's docstring:
+               # the harness invokes it as `echo '{}' | scitex-cards stop-hook`
+               # on a FIXED CONTRACT with nobody to answer a prompt, so `--yes`
+               # could only ever be accepted and ignored — a flag that lies
+               # about offering a confirmation. The other half of §2 is already
+               # satisfied: `--dry-run` EXISTS (`@dry_run_option`, :269) and is
+               # the supported way to see the decision without spending the
+               # budget. 2026-08-23.
   - resolve  # why: `scitex-cards resolve-store` means "figure out which
              # config file path wins" (store-path precedence-chain
              # resolution — the debugging tool for "why is my task not

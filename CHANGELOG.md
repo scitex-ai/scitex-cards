@@ -2,6 +2,176 @@
 
 ## [Unreleased]
 
+### A poll and a confirm each name the store they used
+
+A consumer that polls one store and confirms against another gets no error from
+either call: the poll returns nothing, and the confirmation answers `unknown`
+for every id. Both are indistinguishable from an ordinary empty inbox, and
+`unknown` reads as a statement about the IDS when the truth is a statement
+about the DATABASE.
+
+`poll_notifications` and `ack_notifications` now both return `store` — the
+target that call actually read or wrote through, rendered by `store_label` so
+DSN credentials never reach a transcript.
+
+The comparison is ONE-SIDED, and the docstrings say so: two labels that DIFFER
+identify a split; two that AGREE mean only that this client read and wrote in
+one place. The delivery daemon resolves its own target and stamps nothing, so a
+third store can be feeding the inbox while both labels agree. Agreement is
+CANNOT-TELL, not MATCHES.
+
+### The store identity pin checks BOTH halves (BREAKING for anyone who pinned one)
+
+`SCITEX_CARDS_STORE_UUID` was read, reported, and never compared. Found by
+dotfiles on 2026-08-17 by mutation-testing the gate rather than reading it —
+setting a deliberately wrong value and checking whether the gate noticed.
+Reproduced on shipped 0.48.0:
+
+    SCITEX_CARDS_STORE_UUID=deadbeef-1111-4222-8333-444455556666 \
+    SCITEX_CARDS_STORE_INSTANCE=7672112238472680366 \
+      scitex-cards resolve-store --json
+
+    "store_uuid":       "1d55dd6e-3d2a-4c24-a429-a78835ab988f"
+    "expected_uuid":    "deadbeef-1111-4222-8333-444455556666"
+    "identity_verdict": "matches"       <-- differing values on adjacent lines
+    "may_proceed":      true
+
+Both call sites passed the INSTANCE into a single `expected` field, so the uuid
+never reached a comparison. The collapse of two independent expectations into
+one field was the defect, so `IdentityCheck` now carries them separately.
+
+**Both halves are now required for a pass**, and an instance-only pin answers
+`cannot-tell` rather than `matches`. That is deliberate: the instance identifies
+the SERVER, and a database restored onto that same server keeps its
+`system_identifier` while getting a NEW `store_uuid` — the 2026-08-09
+frozen-store incident this pin exists to catch. The uuid alone is equally
+insufficient: three databases once answered the same `store_uuid` ~300 cards
+apart, because a uuid is a row and a dump carries rows.
+
+**Alongside, never instead of.** Only the instance half was live, so the
+two-ports-on-one-host case (measured on nas-03, same uuid, different
+`system_identifier`, one seven days stale) was being caught by accident; a
+repair that simplified toward the uuid would have converted a working guard
+into one that passes a week-old board.
+
+The comparison moved to a new `_store_identity_decision.decide_identity` and
+both guards now probe-then-delegate. They previously carried two bodies "kept
+IDENTICAL by discipline" — which is the arrangement that drifted, and is why
+one of them stopped checking the uuid. `IdentityVerdict` and `IdentityCheck`
+are re-exported from `_store_instance`, so existing imports are unaffected.
+
+`StoreIdentityRefused` now names BOTH environment variables; the old hint sent
+the reader to pin one and hit the same refusal again.
+### Reassign narrows its write to the cards it touched
+
+`_db_mirror` documents a lost-write mechanism distinct from the deadlock
+rollback: a caller writing card A re-asserts its STALE copy of card B over
+another agent's committed change, "and both are told they succeeded". Measured
+on the live board 2026-08-10 — a `complete_task` that RETURNED status=done was
+later found back at `blocked`, reverted by writes to unrelated cards.
+
+`touched_ids` is the built mitigation. An AST audit of all 21
+`_save_doc_unlocked` call sites found the two reassign verbs were the only card
+verbs omitting it — and they are the worst to omit, because a stale-copy
+overwrite there reverts another agent's OWNERSHIP change rather than a field.
+
+The two sites need DIFFERENT sets, which a careless fix gets wrong:
+
+    reassign_all    BULK    -> touched_ids=moved       (every card it moved)
+    reassign_task   SINGLE  -> touched_ids=[task_id]
+
+`reassign_all` has no `task_id`. Narrowing it to a single id would persist one
+ownership change and silently drop the other N-1 — worse than the broad write,
+which at least keeps everything it touched.
+
+Neither verb touches a peer card: every field written (`agent`, `assignee`,
+`scope`, the audit comment, `subscribers`, `last_activity`) belongs to the card
+being moved, so the touched set is exactly the moved ids.
+### A "no such card" error names the store it searched
+
+All seven raise sites interpolated their own local `tasks_path` / `resolved`
+variable — the LOCAL sidecar path — while the lookup that had just failed ran
+against the resolved store. Measured on the deployed 0.48.0:
+
+    resolve_store().resolved  ->  postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+    comment_task(bad_id)      ->  task id '...' not found in
+                                  /home/agent/.scitex/cards/tasks.yaml
+
+The named value played no part in the search. `_read_write_doc(path)` ignores
+its argument entirely — its body is `_read_canonical_db_or_raise()`, which takes
+none — so that path served the file lock and this one string, and nothing else.
+`_paths` already said so in prose: "interpolates the path into an error message
+only".
+
+That is worse than a vague message because it is actionable in the WRONG
+DIRECTION: it sent a peer hunting a second store that does not exist, and cost
+them a conclusion they had to retract to another agent.
+
+One builder, `_task_not_found(task_id)`, now replaces seven copies of the
+sentence, and reaches for the existing `store_label()` — which strips DSN
+credentials before this reaches a log and never routes a URL through `Path`.
+A source scan pins it: the test fails on the eighth site written the old way,
+which is how the first six survived.
+
+### Expiry is a REPORT, not a mechanism — every surface now says so
+
+Nothing in this package expires a card. `is_expired` is an age predicate and
+`expired()` feeds a body that gets PRINTED; no sweep, daemon or verb writes
+`status=cancelled`, and none of the six JobSpecs in `_jobs_provider` runs
+`scitex-cards triage`. Four user-facing surfaces claimed otherwise:
+
+* `add_task` / `update_task` on the MCP surface — the one every agent in the
+  fleet reads before writing a card — promised that a park exempts a card
+  "from the backlog nudge AND from auto-expiry".
+* the `--parked` CLI help repeated it verbatim.
+* `is_expired`'s own docstring said expiry "cancels on silence", while the
+  module header 300 lines above correctly said the opposite.
+* worst, the triage nudge told its HUMAN reader "Rescue any you still want;
+  silence cancels them". Silence cancels nothing. That promise was read by the
+  person whose actual complaint is that the board has too many cards, and
+  whose 「忘れたもので本当に必要なものは…必ず上がってくる」 presupposes that
+  forgetting really happens.
+
+All four now describe what runs. The nudge names `status=cancelled` as an
+explicit step. `add_task` states the horizon, the env var, and the six jobs
+that exist instead.
+
+CORRECTING THE 0.48.0 ENTRY BELOW, which is left intact as the record: it ends
+"a standing goal must not be auto-cancelled at the horizon for the crime of
+standing". Nothing auto-cancels; the park exempts a card from being PROPOSED
+for cancellation. The false framing reached the release notes of the very
+change that made it expensive: measured tonight, 839 cards sat past that line
+with nothing in the package able to act on them.
+
+`test__expiry_is_a_report_not_a_mechanism.py` reads the docstrings by AST, and
+`test_no_jobspec_schedules_triage` pins the fact the prose depends on, so
+scheduling triage turns the docs red instead of letting them rot.
+
+### The stale horizon is 7 days too, and the forgetting was executed (BREAKING)
+
+`_cli/_stale.py` and `_django/handlers/stale.py` each hard-coded **14** days —
+two copies, no shared source — while the forgetting horizon was 7. A card aged
+7-14 days was forgotten by the rule and invisible to the stale sweep.
+
+Both are now 7, on the operator's instruction 「はい7日でお願いします」, given
+after he was told the cost: the Django copy feeds the board's Archive button, so
+the change offers about a week more of everyone's cards for archiving on a shared
+board. `test_the_cli_and_django_stale_horizons_are_equal` keeps the two literals
+from drifting apart; there is still no shared source, only a test that says they
+must agree.
+
+AND THE FORGETTING WAS ACTUALLY RUN, once, by hand — 「忘却実行してください」.
+839 deferred cards past 7 days, across 39 owners, driven to `status=cancelled`.
+Parked (147) and undatable (32) were exempt. Ages 7.3 to 68.8 days, median 28.3.
+A full undo record was written and verified BEFORE the first write
+(`~/.scitex/cards/archive/forget-7d-20260819-undo-ids.txt`, 838 ids), and the
+restore path was tested end-to-end on one card rather than assumed.
+
+THE PACKAGE STILL DOES NOT DO THIS BY ITSELF, which is why the docstring fix
+above stands unchanged: no sweep, daemon, verb or JobSpec cancels anything. The
+execution was an operator-authorised manual run, and a reader of this package
+must still not expect the board to clean itself up.
+
 ## [0.48.0] - 2026-08-19
 
 ### The forgetting horizon is 7 days, not 30 (BREAKING)

@@ -80,11 +80,54 @@ _ENUM_FIELDS: frozenset[str] = frozenset(
     default=None,
     help=(
         "WHY this card deliberately stands (free text), OR '' to UN-PARK it. "
-        "A park exempts the card from the backlog nudge and from auto-expiry, "
+        "A park exempts the card from the backlog nudge and from the triage "
+        "report's expiry proposal (nothing cancels it automatically), "
         "so a card that could be parked but not un-parked was a state you "
         "could enter and not leave — while invisible to the sweep that exists "
-        "to catch exactly that. Every other clearable field had a CLI form; "
-        "this one was simply never wired."
+        "to catch exactly that."
+    ),
+)
+# THE DEADLINE GROUP. Added 2026-08-20 after scitex-agent-container measured
+# that the CLI could READ these and not WRITE them, while a stop hook says
+# "scheduled time reached — start it, or RE-SCHEDULE with a reason". The only
+# exit that hook accepts was a field no CLI verb set, so the cheapest way to
+# silence it was to flip `status` and misstate the work — a nudge whose only
+# affordable silencer is a false claim.
+#
+# This help text used to assert, on --parked above, that "every other clearable
+# field had a CLI form; this one was simply never wired". THAT WAS FALSE WHEN
+# WRITTEN: these three had no CLI form either. The sentence is removed rather
+# than corrected, because the claim it makes is one nobody needs and the next
+# person to add a field would have to re-verify it.
+@click.option(
+    "--scheduled",
+    default=None,
+    help=(
+        "When to START this card (ISO date or datetime), OR '' to CLEAR. "
+        "This is the field the stale-active hook reads, so it is the "
+        "mechanism behind 're-schedule with a reason' — put the reason in a "
+        "comment, and move the date here."
+    ),
+)
+@click.option(
+    "--deadline",
+    default=None,
+    help=(
+        "When this card is DUE (ISO date/datetime, optionally with a +1d/+1w/"
+        "+1m/+1y repeater), OR '' to CLEAR. A DEADLINE IS A VIEW, NOT AN "
+        "ALARM: nothing fires when one arrives; it feeds `list-tasks "
+        "--overdue` and the board. A repeater rolls forward, so a recurring "
+        "deadline is never overdue and reaches no alarm at all."
+    ),
+)
+@click.option(
+    "--deadlines",
+    "deadlines",
+    multiple=True,
+    help=(
+        "REPLACE the multi-deadline list. Repeat the flag per value; pass "
+        "once with '' to clear. Mutually exclusive with --deadline (the "
+        "store refuses both)."
     ),
 )
 @click.option("--pr-url", "pr_url", default=None)
@@ -145,6 +188,9 @@ def update_cmd(
     last_activity,
     blocker,
     parked,
+    scheduled,
+    deadline,
+    deadlines,
     pr_url,
     issue_url,
     kind,
@@ -191,6 +237,13 @@ def update_cmd(
         # Free text, NOT a closed enum — so `--parked ''` reaches the store as
         # None and un-parks the card, via the generic ""-clears rule below.
         ("parked", parked),
+        # Free text with a schema the STORE validates (ISO date/datetime, plus
+        # an optional +1d/+1w/+1m/+1y repeater on `deadline`). Deliberately not
+        # parsed here: a second implementation of the date grammar in the CLI
+        # would drift from the one the store enforces, and the store's error
+        # already names the bad value and the accepted shapes.
+        ("scheduled", scheduled),
+        ("deadline", deadline),
         ("pr_url", pr_url),
         ("issue_url", issue_url),
         ("kind", kind),
@@ -216,7 +269,11 @@ def update_cmd(
     # --depends-on / --blocks: click's `multiple=True` returns a tuple.
     # Empty tuple = flag not passed → don't touch. Tuple of one empty
     # string = explicit "clear list". Otherwise REPLACE the list.
-    for key, multi in (("depends_on", depends_on), ("blocks", blocks)):
+    for key, multi in (
+        ("depends_on", depends_on),
+        ("blocks", blocks),
+        ("deadlines", deadlines),
+    ):
         if not multi:
             continue
         if len(multi) == 1 and multi[0] == "":

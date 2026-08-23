@@ -33,10 +33,12 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ENV_INBOX_DB",
     "SCHEMA_VERSION",
+    "InboxTargetIsADocument",
     "inbox_db_path",
     "inbox_target",
     "init_schema",
     "open_connection",
+    "refuse_document_as_database",
 ]
 
 #: Env override for the inbox DB path (full path to the ``.db`` file). Default
@@ -88,10 +90,117 @@ def inbox_target(store: str | Path | None = None):
     """
     override = os.environ.get(ENV_INBOX_DB)
     if override:
-        return Path(override).expanduser()
-    from ._store_target import resolve_store_target  # noqa: PLC0415 -- cycle
+        # The override still WINS, but it may not name a document. It is the
+        # one route that bypasses the inversion below, so guarding it here
+        # covers every verb (`enqueue` / `poll_inbox` / `ack` / the migration)
+        # from one place, rather than each call site remembering to ask.
+        target = Path(override).expanduser()
+        refuse_document_as_database(target)
+        return target
+    from ._store_target import (  # noqa: PLC0415 -- cycle
+        database_for,
+        resolve_store_target,
+    )
 
-    return resolve_store_target(store)
+    # `database_for` IS LOAD-BEARING, not defensive tidying. Without it this
+    # returned `resolve_store_target(store)`, which hands back an explicit
+    # argument AS WRITTEN — so a caller passing the `…/tasks.yaml` DISPLAY
+    # LABEL got that label back as the DB path, and every verb below opened
+    # the card store itself as a SQLite database and wrote schema into it.
+    # `_cli/_inbox.py` does exactly that (`store = resolve_tasks_path(None)`),
+    # which is how this deployment ended up with a 122880-byte file named
+    # tasks.yaml whose magic bytes read "SQLite format 3".
+    #
+    # The DESTINATION was computed FROM THE SOURCE, so source == destination.
+    # On a populated store SQLite then refuses ("file is not a database"); on
+    # an absent or empty path — this deployment — it creates one, which is how
+    # the phantom above appeared. `refuse_document_as_database` covers what
+    # this cannot: the ENV_INBOX_DB override, which bypasses the inversion.
+    return database_for(resolve_store_target(store))
+
+
+class InboxTargetIsADocument(RuntimeError):
+    """The inbox DB resolved to a path whose name says document, not database."""
+
+
+def refuse_document_as_database(target) -> None:
+    """Refuse an inbox target named like a document (``.yaml`` / ``.yml``).
+
+    THE INVARIANT IS "THE TARGET IS A DATABASE", NOT "SOURCE != DESTINATION",
+    and the difference is the whole design of this guard. I wrote the
+    source-vs-destination version first and the test suite rejected it
+    immediately, correctly::
+
+        test_migrate_counts_every_yaml_record
+        InboxOverwritesItsSource: ... are the same file (.../cards.db)
+
+    Both sides were ``cards.db``, and that is not a collision — it is the
+    NORMAL case. The legacy ``inboxes:`` records live INSIDE the store
+    document, so migrating them into the ``inbox`` table of that same database
+    is an IN-PLACE migration and source == destination by construction. A guard
+    on equality outlaws the feature. What actually went wrong was never that
+    the two paths matched; it was that the target was a LABEL.
+
+    So this asks the one question that separates the incident from the feature:
+    does the resolved target name a document? ``cards.db`` == ``cards.db``
+    passes; ``tasks.yaml`` is refused whichever side produced it.
+
+    AFTER THE INVERSION IN :func:`inbox_target`, ONLY ONE ROUTE REACHES HERE —
+    an explicit ``SCITEX_CARDS_INBOX_DB``, which wins outright over the
+    inversion by design and would otherwise re-create the incident with the fix
+    in place. That is exactly why the guard is separate from the resolution:
+    the inversion fixes the path that was observed going wrong, this fixes the
+    property regardless of who resolved it.
+
+    WHAT IT PREVENTS, measured 2026-08-20 rather than assumed — the first
+    answer was wrong, so the measurement is recorded here::
+
+        target file state          sqlite3 CREATE TABLE on it     file after
+        absent                     CREATED TABLE                  12288 b  <- phantom DB
+        empty (0 bytes)            CREATED TABLE                  12288 b  <- phantom DB
+        real YAML (1800 bytes)     DatabaseError: not a database  1800 b, intact
+
+    A POPULATED store is never destroyed — SQLite's own header check refuses
+    it. The harm is confined to an ABSENT or EMPTY path, where a database is
+    created under a name that says YAML: not data loss, a PHANTOM STORE, the
+    same failure ``_db_users`` documents for the user registry, and silent in
+    exactly the way data loss is not.
+
+    Both outcomes are worth refusing, for different reasons. On an absent path
+    the phantom appears silently and readers then poll a file nothing writes.
+    On a populated one the caller gets ``DatabaseError: file is not a
+    database`` — the symptom, not the cause, reading as a corrupt DB rather
+    than as "you pointed the inbox at your card store".
+
+    The live residue: ``/home/agent/.scitex/cards/tasks.yaml``, 122880 bytes,
+    magic ``SQLite format 3``, an ``inbox`` table of 150 rows and a ``meta``
+    row ``migrated_from_yaml`` — a phantom created on an absent path.
+
+    A DSN is already a database and returns immediately.
+    """
+    from ._store_url import is_postgres_url  # noqa: PLC0415 -- cycle
+
+    if target is None:
+        return
+    text = str(target)
+    if is_postgres_url(text):
+        return
+    path = Path(text).expanduser()
+    if path.suffix not in (".yaml", ".yml"):
+        return
+    raise InboxTargetIsADocument(
+        f"refusing to use {path} as the inbox database: its name says "
+        f"document, and the inbox is a database.\n"
+        f"  If that path holds a real store, SQLite would reject it with "
+        f"'file is not a database'; if it is absent or empty, a database "
+        f"would be created there under a name that says YAML, and readers "
+        f"would then poll a file nothing writes.\n"
+        f"  Fix: point the inbox DB at a real database file, e.g.\n"
+        f"    {path.parent / _DB_FILENAME}\n"
+        f"  {ENV_INBOX_DB} wins over the normal resolution, so if it is set "
+        f"this is where the document name came from — unset it or give it a "
+        f".db path."
+    )
 
 
 def inbox_db_path(store: str | Path | None = None) -> Path:

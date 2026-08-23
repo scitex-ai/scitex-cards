@@ -35,7 +35,7 @@ from __future__ import annotations
 # The public surface is unchanged: `scitex_cards.__version__` still answers.
 # It just pays for the metadata reader when someone asks for a version, which
 # tab-completion never does.
-def _resolve_version() -> str:
+def _resolve_version(read_version=None) -> str:
     """The installed version, read on demand. See the note above for why.
 
     ONE DIST NAME. This loop used to try the current name and then fall back to
@@ -43,13 +43,20 @@ def _resolve_version() -> str:
     is gone, which left the loop iterating the SAME string twice: a second
     `version()` call that can only raise the same `PackageNotFoundError` the
     first one did, and a fallback chain with nothing to fall back to.
+
+    `read_version` defaults to `importlib.metadata.version`. It is a parameter
+    so the UNINSTALLED branch is reachable without rewriting the stdlib module
+    (PA-306 §3) — that branch is exactly the one that cannot be reached in an
+    environment where this package IS installed, which is every environment the
+    suite runs in.
     """
     try:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover — only on ancient Pythons
         return "0.0.0+local"
+    read = version if read_version is None else read_version
     try:
-        return version("scitex-cards")
+        return read("scitex-cards")
     except PackageNotFoundError:
         return "0.0.0+local"
 
@@ -112,6 +119,25 @@ _LAZY_IMPORTS = {
     "set_subscriber": ("._store", "set_subscriber"),
     "summarize_tasks": ("._store", "summarize_tasks"),
     "update_task": ("._store", "update_task"),
+    # MCP tools whose Python function already existed at module level under
+    # exactly this name and was simply never exported (audit §6 parity). An
+    # MCP tool with no Python API is a capability only an AGENT can reach:
+    # not callable from a script, a cron job, or another package, and not
+    # testable without standing up a transport. These four cost nothing to
+    # publish because the function is already there.
+    "health": ("._health", "health"),
+    "help_clear": ("._help_wait", "help_clear"),
+    "help_wait": ("._help_wait", "help_wait"),
+    "rescore_task": ("._store_rescore", "rescore_task"),
+    # The messaging rail. These five DID NOT have a function to publish — they
+    # existed only as async MCP tool bodies, so the logic was welded to the
+    # transport and no script could reach it. `_messaging` is that extraction:
+    # the MCP tools now delegate to these and keep their JSON contract.
+    "ack_notifications": ("._messaging", "ack_notifications"),
+    "dm_list": ("._messaging", "dm_list"),
+    "dm_send": ("._messaging", "dm_send"),
+    "dm_send_document": ("._messaging", "dm_send_document"),
+    "poll_notifications": ("._messaging", "poll_notifications"),
 }
 
 
@@ -154,17 +180,26 @@ __all__ = [
     "ENV_SCOPE",
     "TaskNotFoundError",
     "TaskValidationError",
+    "ack_notifications",
     "add_task",
     "canonical_agent_id",
     "comment_task",
     "complete_task",
     "dedup_agents",
     "delete_task",
+    "dm_list",
+    "dm_send",
+    "dm_send_document",
     "get_task",
+    "health",
+    "help_clear",
+    "help_wait",
     "list_tasks",
     "parse_agent_id",
+    "poll_notifications",
     "reassign_task",
     "reopen_task",
+    "rescore_task",
     "resolve_agent_directory",
     "resolve_store",
     "resolve_task",

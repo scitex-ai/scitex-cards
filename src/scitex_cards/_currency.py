@@ -18,10 +18,20 @@ dependency.
 
 WHERE THE WORDS LIVE. Every constant and pure text function this module emits
 is in :mod:`scitex_cards._currency_text` and re-exported here. The split line
-is STATE, not topic: this module keeps everything that holds module state or is
-a test patch point (``_running_over_overlay``, the warn-once sentinels), because
-``monkeypatch.setattr`` on a RE-EXPORTED name does not change what the DEFINING
-module reads — a split along any other line would silently neuter those tests.
+is STATE, not topic: this module keeps everything that holds module state (the
+warn-once sentinels and the cached verdict), while ``_currency_text`` holds only
+pure functions of their arguments. The split therefore says something true about
+each side and survives being read from either one.
+
+IT USED TO SAY SOMETHING ELSE, and the difference is worth keeping: the line was
+originally drawn around what ``monkeypatch.setattr`` could reach, because
+patching a RE-EXPORTED name does not change what the DEFINING module reads. That
+rationale is GONE — the collaborators are now parameters
+(:func:`check_currency`'s ``is_overlay`` and ``load_ensure_current``,
+:func:`currency_verdict`'s ``load_checker``), so no test needs to rewrite this
+module's attributes and no future split can neuter one. A structure justified by
+a test mechanism outlives the mechanism silently; this one is now justified by
+what the code IS.
 
 BLOCK WHERE THE ACTOR CAN REMEDIATE, WARN WHERE THEY CANNOT
 -----------------------------------------------------------
@@ -78,6 +88,7 @@ import logging
 import os
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -179,7 +190,50 @@ def _running_over_overlay() -> bool:
     return best_fstype == "overlay"
 
 
-def check_currency() -> None:
+def _load_ensure_current():
+    """Return scitex-dev's ``ensure_current``, or ``None`` when it is ABSENT.
+
+    The seam :func:`check_currency` obtains its checker through, so a test can
+    supply a hand-rolled one as an ARGUMENT instead of rewriting
+    ``sys.modules`` (PA-306 §3). Catches ``ImportError`` and nothing else,
+    deliberately: an absent scitex-dev is the documented no-op, but a scitex-dev
+    that is PRESENT and malfunctioning must still propagate out of the gate
+    rather than be silently downgraded to "no opinion".
+    """
+    try:
+        from scitex_dev.staleness import ensure_current
+    except ImportError:
+        return None
+    return ensure_current
+
+
+def _load_currency_checker():
+    """Return ``(ensure_current, stale_error)`` from scitex-dev, or ``None``.
+
+    The seam :func:`currency_verdict` obtains its checker through. BOTH lookups
+    stay inside this one guard on purpose: on a PEP-562 module the
+    ``StalenessError`` lookup runs scitex-dev's own ``__getattr__``, i.e.
+    third-party code that can fail exactly like ``ensure_current`` can. Unlike
+    :func:`_load_ensure_current` this swallows the whole rail-safe set, because
+    its caller answers UNKNOWN rather than raising.
+    """
+    try:
+        import importlib
+
+        staleness = importlib.import_module("scitex_dev.staleness")
+        return staleness.ensure_current, getattr(
+            staleness, "StalenessError", Exception
+        )
+    except _RAIL_SAFE_ERRORS:  # absent/broken tooling is UNKNOWN, not OK
+        return None
+
+
+def check_currency(
+    *,
+    is_overlay: Callable[[], bool] = _running_over_overlay,
+    load_ensure_current: Callable[[], Callable[[str], None] | None]
+    = _load_ensure_current,
+) -> None:
     """Raise (bare host) or warn (overlay) when this install is stale or broken.
 
     Provided by scitex-dev >= 0.34.0; silently a no-op when scitex-dev is
@@ -196,14 +250,13 @@ def check_currency() -> None:
       emitted text is scrubbed of every in-place install command, INCLUDING
       scitex-dev's verbatim message.
     """
-    try:
-        from scitex_dev.staleness import ensure_current
-    except ImportError:
+    ensure_current = load_ensure_current()
+    if ensure_current is None:  # scitex-dev absent: the documented no-op
         return
     try:
         ensure_current(_DIST_NAME)
     except Exception as exc:  # noqa: BLE001 - re-raised or warned below
-        if not _running_over_overlay():
+        if not is_overlay():
             raise
         _LOGGER.warning("%s", overlay_warning_text(_stale_detail(exc)))
 
@@ -240,7 +293,10 @@ class CurrencyVerdict:
     checked: bool
 
 
-def currency_verdict() -> CurrencyVerdict:
+def currency_verdict(
+    *,
+    load_checker: Callable[[], tuple | None] = _load_currency_checker,
+) -> CurrencyVerdict:
     """Report this install's currency WITHOUT raising — the Python-rail read.
 
     The non-raising sibling of :func:`check_currency`. Same underlying
@@ -268,17 +324,10 @@ def currency_verdict() -> CurrencyVerdict:
     that :func:`check_currency` already relies on.
     """
     unknown = CurrencyVerdict(state="unknown", detail=None, checked=False)
-    try:
-        import importlib
-
-        staleness = importlib.import_module("scitex_dev.staleness")
-        ensure_current = staleness.ensure_current
-        # The ``StalenessError`` lookup belongs INSIDE the guard: on a PEP-562
-        # module it runs scitex-dev's own ``__getattr__``, i.e. third-party
-        # code that can fail exactly like ``ensure_current`` can.
-        stale_error = getattr(staleness, "StalenessError", Exception)
-    except _RAIL_SAFE_ERRORS:  # absent/broken tooling is UNKNOWN, not OK
+    loaded = load_checker()
+    if loaded is None:  # absent/broken tooling is UNKNOWN, not OK
         return unknown
+    ensure_current, stale_error = loaded
 
     # NESTED ON PURPOSE. The outer guard covers three things the inner
     # ``except`` clause cannot: a non-verdict raise out of ``ensure_current``,
@@ -302,13 +351,36 @@ def currency_verdict() -> CurrencyVerdict:
 # does real work (payload validation, a freshness lookup) and the Python rail
 # calls this on every DM — so the measurement is taken at most ONCE per
 # process, not once per message. The lock keeps "exactly once" true when two
-# threads send concurrently. Tests reset both via ``monkeypatch.setattr``.
+# threads send concurrently. :func:`reset_currency_cache` clears both.
 _STATE_LOCK = threading.Lock()
 _CACHED_VERDICT: CurrencyVerdict | None = None
 _WARNED_STALE = False
 
 
-def warn_if_stale_once() -> CurrencyVerdict:
+def reset_currency_cache() -> None:
+    """Forget the cached verdict and the warn-once flag.
+
+    The measurement in :func:`warn_if_stale_once` is taken at most ONCE per
+    process, which is what makes it cheap enough for the Python rail to call on
+    every DM — and which also makes a process that has already measured unable
+    to measure again. This verb is that "again": it exists so a test can run a
+    second, independent scenario in the SAME interpreter without rewriting this
+    module's attributes (PA-306 §3).
+
+    Takes the same lock as the writer, so a concurrent
+    :func:`warn_if_stale_once` sees the cache either whole or cleared, never
+    half of each.
+    """
+    global _CACHED_VERDICT, _WARNED_STALE
+    with _STATE_LOCK:
+        _CACHED_VERDICT = None
+        _WARNED_STALE = False
+
+
+def warn_if_stale_once(
+    *,
+    load_checker: Callable[[], tuple | None] = _load_currency_checker,
+) -> CurrencyVerdict:
     """Warn ONCE per process that the sibling CLI/MCP rail is refusing.
 
     This is what the PYTHON rail calls. Contract, in order of importance:
@@ -335,13 +407,19 @@ def warn_if_stale_once() -> CurrencyVerdict:
 
     Returns the :class:`CurrencyVerdict` so a caller that wants to reason
     about the state, rather than merely surface it, need not measure twice.
+
+    ``load_checker`` is forwarded verbatim to :func:`currency_verdict` — the
+    one seam a test injects through, so no test has to rewrite ``sys.modules``
+    to reach this path (PA-306 §3). Pair it with
+    :func:`reset_currency_cache`, or the FIRST scenario's verdict is the only
+    one this process will ever compute.
     """
     global _CACHED_VERDICT, _WARNED_STALE
     try:
         with _STATE_LOCK:
             verdict = _CACHED_VERDICT
             if verdict is None:
-                verdict = currency_verdict()
+                verdict = currency_verdict(load_checker=load_checker)
                 _CACHED_VERDICT = verdict
             should_warn = verdict.state == "stale" and not _WARNED_STALE
             if should_warn:
@@ -367,6 +445,7 @@ __all__ = [
     "CurrencyVerdict",
     "check_currency",
     "currency_verdict",
+    "reset_currency_cache",
     "overlay_warning_text",
     "scrub_install_commands",
     "stale_warning_text",

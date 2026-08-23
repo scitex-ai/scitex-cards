@@ -1,9 +1,59 @@
 name: auto-merge-to-develop
 # Merge green PRs that TARGET develop, the moment their checks complete.
+#
 # GitHub reads check_suite-triggered workflows from the DEFAULT branch (main),
-# so this file lives on main but acts ONLY on PRs whose base is develop.
-# codecov + readthedocs checks are ignored (advisory). Fail-safe: if a merge
-# is blocked by branch policy the PR simply stays open.
+# so this file must reach main to have any effect. It acts ONLY on PRs whose
+# base is develop.
+#
+# ── CALLER, not a copy (PS-231) ────────────────────────────────────────────
+# The body used to be ~150 lines of inlined curl re-implementing the org
+# workflow. A local copy does not track fixes made org-side, which is the
+# whole point of the rule: the `scitex-ci` runner-label defect was fixed
+# org-side on 2026-08-15 and every private copy kept it.
+#
+# ── WHY ubuntu-latest AND NOT THE SPARTAN POOL ─────────────────────────────
+# `runs_on` is passed EXPLICITLY, per PS-231's own instruction, so the runner
+# decision stays visible in this file instead of silently moving upstream.
+# It must be a JSON ARRAY STRING — the input is consumed by `fromJSON`, and a
+# YAML list decodes to something fromJSON rejects, producing a label mismatch
+# that makes the job QUEUE FOREVER rather than fail.
+#
+# The value is ubuntu-latest for three measured reasons, all of which reverse
+# the old `runs-on: [self-hosted, Linux, X64, spartan-cpu]`:
+#
+#   1. THE ORG BODY NEEDS `gh`. It calls `gh pr view` / `gh api` / `gh pr
+#      merge` at nine sites. The comment this file used to carry states that
+#      the Spartan runners have NO `gh` CLI — which is exactly why the old
+#      body was hand-rewritten to curl. Worse, nearly every `gh` call in the
+#      org body ends `|| true` or `|| echo ""`, so on a runner without `gh`
+#      it would not fail: it would merge NOTHING and report success.
+#   2. THIS REPO IS PUBLIC. The old comment justified Spartan as "the
+#      no-paid-runner rule for this private repo" — measured 2026-08-23,
+#      `visibility: PUBLIC`. GitHub-hosted minutes are free for public
+#      repositories, so the cost argument that chose Spartan does not apply
+#      and never did.
+#   3. THE SPARTAN POOL HAS BEEN WHOLLY OFFLINE. All four runners were
+#      `status=offline` on 2026-08-13 (see rtd-sphinx-build-on-ubuntu-latest
+#      .yml), which is why the org default itself moved to GitHub-hosted on
+#      2026-08-15. A job pinned to an offline pool queues silently.
+#
+# ── BEHAVIOUR CHANGE, STATED LOUDLY ────────────────────────────────────────
+# The org body requires an `automerge-ok` LABEL on the PR (opt-in, added
+# org-side 2026-07-22). The inlined body did not. So after this change a green
+# PR targeting develop DOES NOT auto-merge unless it carries that label.
+#
+# That is a safety improvement, not a regression — without it an ungated body
+# merges any green develop-PR the moment a third-party check suite fires, and
+# the only thing that historically prevented it was GitHub's GITHUB_TOKEN
+# recursion prevention, which is incidental rather than designed. But it does
+# mean auto-merge is silent until labels are applied, so it is recorded here
+# rather than discovered.
+#
+# ── PERMISSIONS ────────────────────────────────────────────────────────────
+# `actions: write` is REQUIRED and is not inherited by wishing: the org body
+# dispatches post-merge gate workflows on develop, and without this scope
+# every dispatch 403s — which lands un-CI'd commits on develop, the exact
+# failure the gates exist to stop.
 on:
   check_suite:
     types: [completed]
@@ -12,131 +62,15 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   automerge:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion == 'success' }}
-    # Runs self-hosted (Spartan CPU) per the no-paid-runner rule for this private
-    # repo. The Spartan runners have NO `gh` CLI, so every `gh` call below is
-    # rewritten to a `curl` against the GitHub REST API. This therefore depends on
-    # a Spartan runner being online for green PRs to be auto-merged.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
-    steps:
-      - name: merge green PRs targeting develop
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.check_suite.head_sha }}
-        run: |
-          set -uo pipefail
-          API="https://api.github.com"
-
-          # api_get <path>  -> body on stdout; fatal (exit 1) on unexpected
-          # HTTP error so failures are LOUD. Used for read-only GETs where a
-          # non-2xx is genuinely unexpected (the repo/commit must exist).
-          api_get() {
-            local path="$1" out status body
-            out=$(curl -sS -w '\n%{http_code}' \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$API/$path")
-            status="${out##*$'\n'}"
-            body="${out%$'\n'*}"
-            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-              echo "::error::GET $path -> HTTP $status" >&2
-              echo "$body" >&2
-              return 1
-            fi
-            printf '%s' "$body"
-          }
-
-          # Find candidate PRs. On check_suite events use the head SHA's PRs
-          # (GET /repos/{repo}/commits/{sha}/pulls); on manual dispatch fall back
-          # to listing open PRs that already target develop.
-          if [ -n "${HEAD_SHA:-}" ]; then
-            prs=$(api_get "repos/$REPO/commits/$HEAD_SHA/pulls" \
-              | jq -r '.[] | select(.state=="open") | .number') || exit 1
-          else
-            prs=$(api_get "repos/$REPO/pulls?base=develop&state=open&per_page=100" \
-              | jq -r '.[].number') || exit 1
-          fi
-          [ -z "${prs:-}" ] && { echo "no open PRs"; exit 0; }
-
-          for pr in $prs; do
-            # Pull the full PR object once: base branch, draft flag, head SHA.
-            pr_json=$(api_get "repos/$REPO/pulls/$pr") || exit 1
-            base=$(printf '%s' "$pr_json" | jq -r '.base.ref // ""')
-            [ "$base" = "develop" ] || { echo "skip #$pr (base=$base, not develop)"; continue; }
-            draft=$(printf '%s' "$pr_json" | jq -r '.draft // true')
-            [ "$draft" = "true" ] && continue
-            pr_head=$(printf '%s' "$pr_json" | jq -r '.head.sha')
-
-            # Combined check-run conclusions for the PR head. We ignore advisory
-            # codecov/readthedocs checks (by name) and count anything that is not
-            # already success/neutral/skipped as still-pending.
-            #
-            # PENDING IS DECIDED BY `.status`, NEVER BY AN ABSENT CONCLUSION.
-            # The previous predicate ended with `and . != ""` after mapping a
-            # missing conclusion to "" via `(.conclusion // "")`. A queued or
-            # in_progress check-run has conclusion `null` (REST) — so `//` turned
-            # the one value meaning "WE DO NOT KNOW YET" into "", and `!= ""`
-            # then DISCARDED IT. Exactly the checks that should have blocked the
-            # merge were the checks removed from the count, and `pending` came
-            # back 0 for a PR whose CI had not started. Measured elsewhere in the
-            # fleet: 9 queued checks -> 0 pending.
-            #
-            # `(.conclusion // .state // "")` does not fix it either: jq's `//`
-            # falls back on null and false, never on "".
-            #
-            # So: a run is pending if it has not COMPLETED, full stop; only a
-            # completed run is judged by its conclusion. An unknown state now
-            # counts toward `pending` rather than vanishing from it.
-            pending=$(api_get "repos/$REPO/commits/$pr_head/check-runs?per_page=100" \
-              | jq '[ .check_runs[]
-                      | select(((.name // "") | ascii_downcase | test("codecov|readthedocs")) | not)
-                      | select(
-                          ((.status // "") | ascii_downcase) != "completed"
-                          or (((.conclusion // "") | ascii_upcase)
-                              | . != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED")
-                        ) ] | length') || exit 1
-
-            if [ "$pending" = "0" ]; then
-              # Merge attempt: PUT /repos/{repo}/pulls/{number}/merge with the
-              # merge-commit method. Fail-safe — if branch policy blocks the
-              # merge GitHub returns 405/409 and the PR simply stays open; that
-              # is NOT a workflow failure (no silent fallback, just non-fatal).
-              merge_out=$(curl -sS -w '\n%{http_code}' -X PUT \
-                -H "Authorization: Bearer $GH_TOKEN" \
-                -H "Accept: application/vnd.github+json" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "$API/repos/$REPO/pulls/$pr/merge" \
-                -d '{"merge_method":"merge"}')
-              merge_status="${merge_out##*$'\n'}"
-              merge_body="${merge_out%$'\n'*}"
-              if [ "$merge_status" = "200" ]; then
-                echo "MERGED #$pr -> develop"
-                # Best-effort branch delete (matches old --delete-branch). Never
-                # fatal: it is housekeeping, not part of the merge contract.
-                head_ref=$(printf '%s' "$pr_json" | jq -r '.head.ref // ""')
-                if [ -n "$head_ref" ]; then
-                  curl -sS -o /dev/null -X DELETE \
-                    -H "Authorization: Bearer $GH_TOKEN" \
-                    -H "Accept: application/vnd.github+json" \
-                    -H "X-GitHub-Api-Version: 2022-11-28" \
-                    "$API/repos/$REPO/git/refs/heads/$head_ref" || true
-                fi
-              elif [ "$merge_status" = "405" ] || [ "$merge_status" = "409" ]; then
-                # 405 = not mergeable / blocked by branch policy; 409 = head moved.
-                # Fail-safe: leave the PR open, report, but do not fail the run.
-                echo "blocked #$pr (HTTP $merge_status): $merge_body"
-              else
-                # Any other status is an unexpected API error — be LOUD and fail.
-                echo "::error::merge #$pr -> HTTP $merge_status" >&2
-                echo "$merge_body" >&2
-                exit 1
-              fi
-            else
-              echo "PR #$pr not green ($pending) — skip"
-            fi
-          done
+    uses: scitex-ai/.github/.github/workflows/auto-merge-to-develop.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    with:
+      # JSON array string — NOT a YAML list. See the note above.
+      runs_on: '["ubuntu-latest"]'

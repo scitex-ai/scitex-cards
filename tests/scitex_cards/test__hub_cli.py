@@ -24,6 +24,7 @@ from click.testing import CliRunner
 
 from scitex_cards import _server
 from scitex_cards._cli._hub import doctor_cmd, provision_cmd
+from scitex_cards._paths import PKG_SHORT
 
 
 @pytest.fixture()
@@ -252,11 +253,9 @@ def test_doctor_human_output_exits_zero(rig):
 #: token is still on disk.
 
 
-def test_provision_unreachable_host_exits_nonzero(tmp_path, monkeypatch):
+def test_provision_unreachable_host_exits_nonzero(tmp_path, env):
     # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+    env.set("SCITEX_DIR", str(tmp_path / "scitex"))
     # Act
     result = CliRunner().invoke(
         provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False
@@ -265,11 +264,9 @@ def test_provision_unreachable_host_exits_nonzero(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
-def test_provision_unreachable_host_fails_loud_with_the_ssh_hint(tmp_path, monkeypatch):
+def test_provision_unreachable_host_fails_loud_with_the_ssh_hint(tmp_path, env):
     # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+    env.set("SCITEX_DIR", str(tmp_path / "scitex"))
     # Act
     result = CliRunner().invoke(
         provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False
@@ -278,14 +275,14 @@ def test_provision_unreachable_host_fails_loud_with_the_ssh_hint(tmp_path, monke
     assert "ssh no-such-host-xyzzy" in result.output
 
 
-def test_provision_mints_the_token_before_the_copy_fails(tmp_path, monkeypatch):
+def test_provision_mints_the_token_before_the_copy_fails(tmp_path, env):
     # Arrange
-    monkeypatch.setattr(
-        "scitex_cards._server.default_tokens_dir", lambda: tmp_path / "tokens"
-    )
+    env.set("SCITEX_DIR", str(tmp_path / "scitex"))
     # Act
     CliRunner().invoke(provision_cmd, ["no-such-host-xyzzy"], catch_exceptions=False)
-    minted = tmp_path / "tokens" / "no-such-host-xyzzy.token"
+    minted = (
+        tmp_path / "scitex" / PKG_SHORT / "tokens" / "no-such-host-xyzzy.token"
+    )
     # Assert — mint precedes the copy, so the hub-side half DID succeed.
     assert minted.exists()
 

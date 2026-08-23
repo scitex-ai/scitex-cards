@@ -55,14 +55,67 @@ def index_path() -> Path:
     return Path.home() / ".scitex" / "card" / ".tasks.index.sqlite"
 
 
+def _reject_a_target_that_is_not_a_file(target: Path) -> None:
+    """Raise unless ``target`` names a filesystem location.
+
+    THE DOOR WHERE A GUESS DOES DAMAGE, and until 2026-08-19 it had no guard at
+    all: this module contained zero references to ``reject_*``, ``backend_of``
+    or ``_store_url``, while :func:`index_path` honours ``$SCITEX_CARDS_INDEX_PATH``
+    verbatim. Every store-target incident the package has already been fixed
+    for was therefore still reachable HERE, because each fix was applied to the
+    store doors and never to this one:
+
+        ${SCITEX_CARDS_DB}          a file named after the variable   (0.47.0)
+        postgresql://host:55432/db  the phantom tree, "//" collapsed  (08-02)
+        :55432                      a file named ":55432"             (08-12)
+        host=... port=... dbname=   a file named after the DSN        (07-31)
+
+    STRICTER THAN THE STORE'S GUARD, on purpose. ``reject_attempted_dsn`` only
+    catches a target that is TRYING to name a server and failing; a well-formed
+    ``postgresql://`` URL passes it, because for the store that is a legitimate
+    backend choice. The index is not a backend choice — it is a derived local
+    file by construction (see the module docstring: a separate read-cache,
+    rebuildable, never the store) — so a target naming a server is a
+    misconfiguration whichever way it is spelled. Hence ``backend_of`` as well.
+
+    Placed BEFORE ``mkdir``. Refusing after the tree exists is not refusing:
+    the phantom store found untracked in the source repo was a DIRECTORY, and
+    it was created by exactly this sequence one line earlier.
+    """
+    from ._store_url import (  # noqa: PLC0415
+        BACKEND_POSTGRES,
+        UnrecognisedStoreTarget,
+        backend_of,
+        reject_attempted_dsn,
+        reject_unexpanded_variable,
+    )
+
+    reject_unexpanded_variable(str(target))
+    reject_attempted_dsn(str(target))
+    if backend_of(str(target)) == BACKEND_POSTGRES:
+        raise UnrecognisedStoreTarget(
+            f"the cards index target {str(target)!r} names a PostgreSQL server, "
+            "and the index is a local file.\n"
+            "The index is a DERIVED read-cache of the store, not the store: it "
+            "is dropped and rebuilt by `scitex-cards index rebuild`, so it "
+            "cannot live in the server the store lives in.\n"
+            "Check $SCITEX_CARDS_INDEX_PATH — it is probably holding the value "
+            "meant for $SCITEX_CARDS_DB."
+        )
+
+
 @contextmanager
 def open_connection(path: Optional[Path] = None):
     """Open the index DB (WAL, isolation level autocommit).
 
     Caller-managed: closes on context exit. Creates the parent dir
     if missing — friendly for first-run.
+
+    Refuses a target that does not name a file before creating anything; see
+    :func:`_reject_a_target_that_is_not_a_file`.
     """
     target = path or index_path()
+    _reject_a_target_that_is_not_a_file(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target))
     try:

@@ -113,6 +113,7 @@ def install_unit(
     *,
     exec_start: str | None = None,
     force: bool = False,
+    dry_run: bool = False,
 ) -> dict:
     """Write the unit file to the user-unit dir. Does NOT run systemctl.
 
@@ -125,6 +126,10 @@ def install_unit(
     force : bool
         Overwrite an existing unit file. Without it, an existing file is left
         untouched and the result reports ``written=False``.
+    dry_run : bool
+        Do everything except the write. Forwarded to the shared installer, so
+        the preview resolves ``ExecStart`` through the same call the real
+        install uses and fails identically when it cannot.
 
     Returns
     -------
@@ -132,7 +137,9 @@ def install_unit(
         ``{path, written, existed, exec_start, enable_commands}`` — caller
         prints the commands for the operator to run.
     """
-    return _install_unit(NOTIFYD_SPEC, exec_start=exec_start, force=force)
+    return _install_unit(
+        NOTIFYD_SPEC, exec_start=exec_start, force=force, dry_run=dry_run
+    )
 
 
 __all__ = [

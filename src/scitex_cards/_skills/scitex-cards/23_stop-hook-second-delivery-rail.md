@@ -1,3 +1,17 @@
+---
+description: |
+  [TOPIC] The Stop hook as a SECOND delivery rail — it refuses a stop while
+  the board holds runnable work, AND delivers pending notifications itself.
+  [DETAILS] Delivery used to have exactly one rail, the MCP channel push,
+  and a server-name mismatch made Claude Code discard every push silently:
+  `send()` returned normally, the drain acked on that success, and the
+  message was gone. Measured on the affected agent: 228 inbox rows, ZERO
+  unseen, roughly three weeks of operator DMs. The Stop hook now requires
+  an acknowledgement before the turn may end, so one dead rail cannot
+  swallow delivery unnoticed.
+tags: [scitex-cards-stop-hook-second-delivery-rail, scitex-cards-delivery-rail]
+---
+
 # The Stop hook as a SECOND delivery rail
 
 `scitex-cards stop-hook` now does two jobs. It still refuses a stop while the
@@ -131,5 +145,3 @@ than guessed at.
 scitex-agent-container or claude-code-telegrammer. This rail imports neither and
 assumes no sac-managed environment. It works for an agent that installed
 scitex-cards and nothing else.
-
-<!-- EOF -->

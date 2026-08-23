@@ -215,7 +215,9 @@ def _swr_enabled() -> bool:
     }
 
 
-def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
+def _kick_board_refresh(
+    key, resolved, effective_mtime, effective_sig, load=None
+) -> None:
     """Rebuild this board off the request path, once at a time.
 
     Fail-soft by construction: if the rebuild raises, the cache keeps the
@@ -239,7 +241,7 @@ def _kick_board_refresh(key, resolved, effective_mtime, effective_sig) -> None:
             # cached, serve it silently forever on /graph and /timeline. A
             # background refresh must never be able to blank the board; the way
             # to guarantee that is to have no empty-fallback here at all.
-            tasks = _load_global_tasks(resolved)
+            tasks = (load or _load_global_tasks)(resolved)
             task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
             groups = _load_sidecar_groups(resolved, task_ids)
             fresh = BoardState(
@@ -303,18 +305,77 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
     helper exists to keep separated. It is a named function rather than an
     inline ``if resolved.exists()`` so the next reader cannot mistake one for
     the other, or extend the guard from groups to tasks by moving a line.
+
+    A SIDECAR THAT IS NOT A YAML DOCUMENT DEGRADES THE SAME WAY AS AN ABSENT
+    ONE, and that is the same positive reading rather than a new hedge: a file
+    that cannot be parsed as YAML defines no groups, exactly as a missing file
+    defines none. Measured 2026-08-23 — on TWO hosts the sidecar path held a
+    SQLite database (the phantom of
+    ``cards-sqlite-inbox-overwrote-tasks-yaml-board-500-p0-20260823``), so
+    ``yaml.safe_load`` raised ``UnicodeDecodeError`` on the header's first
+    high byte and the WHOLE board answered 500::
+
+        GET /tasks -> 500  "Cannot read the task store: 'utf-8' codec can't
+                            decode byte 0xf8 in position 102"
+
+    A viewer concern took the cards down with it. The existence test above was
+    already the statement that this read may not be load-bearing; it just
+    tested the wrong property. ``exists()`` answers "is there a file", and the
+    property actually required is "is there a YAML document".
+
+    NARROW ON PURPOSE. Only the two failures that mean "this is not a YAML
+    document" are absorbed. A ``TaskValidationError`` from
+    :func:`_validate_groups` still propagates: that is a REAL yaml file with a
+    malformed ``groups:`` block, an authoring mistake with a fixable line
+    number, and swallowing it would hide a defect the author can act on.
+
+    WHAT THE ``logger.error`` IS AND IS NOT. It is a RECORD, not a gate —
+    nothing branches on it, and calling it a check would be the exact
+    mislabelling the constitution warns about. It exists so that an operator
+    reading the journal during an incident finds the path and the remedy
+    instead of silence, because the failure this replaces was LOUD (a 500 on
+    every request) and the fix must not buy quiet at the price of invisibility.
+    The instrument that should FIND a phantom before anyone looks at the board
+    belongs in the health doctor, and is tracked on the card above.
     """
+    import yaml
+
     from scitex_cards._groups import load_groups
 
     if not resolved.exists():
         return []
-    return load_groups(resolved, task_ids=task_ids)
+    try:
+        return load_groups(resolved, task_ids=task_ids)
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        logger.error(
+            "[scitex-cards] the groups sidecar %s is not a YAML document (%s): "
+            "serving the board with NO GROUPS rather than failing the whole "
+            "read. The cards below are unaffected — they come from the "
+            "database, not from this file. To fix: inspect the file (`file "
+            "%s`); if it reads 'SQLite format 3' it is a phantom store written "
+            "by a caller that handed this DISPLAY LABEL to a database opener, "
+            "and the file should be MOVED ASIDE (never deleted — it may hold "
+            "undelivered inbox rows), not repaired.",
+            resolved,
+            exc,
+            resolved,
+        )
+        return []
 
 
 def get_board(
-    tasks_path: Optional[str] = None, *, allow_stale: bool = False
+    tasks_path: Optional[str] = None,
+    *,
+    allow_stale: bool = False,
+    load=None,
 ) -> BoardState:
     """Resolve the task store, load + validate it, and cache by mtime.
+
+    ``load`` overrides how the card list is read, on BOTH the synchronous path
+    and the background refresh. It defaults to :func:`_load_global_tasks` and
+    exists so the refresh-storm guard below is testable: proving that ten
+    overlapping polls start ONE rebuild requires a rebuild slow enough for them
+    to overlap, and that cannot be arranged from outside (PA-306 §3).
 
     ``allow_stale`` opts THIS call into stale-while-revalidate: when the store
     has moved on, the cached board is returned immediately and the rebuild
@@ -436,7 +497,9 @@ def get_board(
         # through the store API, never here) — an agent deciding what to work
         # on must not act on a stale slice. This is the human-view path only.
         if allow_stale and _swr_enabled():
-            _kick_board_refresh(key, resolved, effective_mtime, effective_sig)
+            _kick_board_refresh(
+                key, resolved, effective_mtime, effective_sig, load=load
+            )
             return board
 
     # THE CARD READ — UNCONDITIONAL, AND THERE IS NO ELSE BRANCH. Every way this
@@ -446,7 +509,7 @@ def get_board(
     # the reason. That is the point: a refusal is recoverable and visible, a
     # believable empty board is neither. An ``else []`` here would be a second
     # read target that merely happens to be unreachable today.
-    tasks = _load_global_tasks(resolved)
+    tasks = (load or _load_global_tasks)(resolved)
 
     task_ids = {t["id"] for t in tasks if isinstance(t, dict) and t.get("id")}
     groups = _load_sidecar_groups(resolved, task_ids)

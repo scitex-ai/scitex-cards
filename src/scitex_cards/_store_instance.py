@@ -201,70 +201,46 @@ def store_instance(conn) -> StoreInstance:
     )
 
 
-class IdentityVerdict(str, Enum):
-    """Whether the connected store is the one the caller expected.
-
-    THREE-VALUED, and the third value is the reason this enum exists rather
-    than a bool. ``expected_uuid`` reads ``None`` when unset, so the comparison
-    it feeds has no right-hand side and cannot fail — a gate that cannot fail
-    is not a gate. ``CANNOT_TELL`` gives that state a name so a caller must
-    handle it rather than inherit it as a pass.
-    """
-
-    MATCHES = "matches"
-    DIFFERS = "differs"
-    CANNOT_TELL = "cannot-tell"
-
-
-@dataclass(frozen=True)
-class IdentityCheck:
-    """The answer to "am I connected to the store I think I am".
-
-    Attributes
-    ----------
-    verdict : IdentityVerdict
-    observed : StoreInstance
-        What the connection actually reached.
-    expected : str or None
-        What the caller pinned, verbatim, so an error message can print both
-        sides rather than asserting a mismatch the reader cannot check.
-    reason : str or None
-        Why the answer is not ``MATCHES``. ``None`` only on ``MATCHES``.
-    """
-
-    verdict: IdentityVerdict
-    observed: StoreInstance
-    expected: Optional[str] = None
-    reason: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        """A non-matching verdict must say why; a matching one must not."""
-        if self.verdict is IdentityVerdict.MATCHES:
-            if self.reason is not None:
-                raise ValueError(
-                    f"IdentityCheck(MATCHES) carries a reason — a reason "
-                    f"explains a refusal: {self.reason!r}"
-                )
-            return
-        if not self.reason:
-            raise ValueError(
-                f"IdentityCheck({self.verdict.value}) with no reason — a "
-                "refusal a caller cannot print is a refusal nobody can act on"
-            )
-
-    @property
-    def may_proceed(self) -> bool:
-        """Only ``MATCHES`` proceeds. ``CANNOT_TELL`` refuses like ``DIFFERS``.
-
-        Named as a question about permission rather than exposed as the raw
-        verdict, so no call site can accidentally treat "cannot tell" as a
-        pass by testing ``verdict is not DIFFERS``.
-        """
-        return self.verdict is IdentityVerdict.MATCHES
+# THE IDENTITY TYPES AND THE DECISION NOW LIVE IN ONE PLACE.
+# `IdentityVerdict`, `IdentityCheck` and the comparison itself moved to
+# `_store_identity_decision` on 2026-08-19, and are re-exported here so every
+# existing `from ._store_instance import IdentityCheck` keeps working.
+#
+# WHY THEY MOVED: this module and `_store_pin` each carried a comparison body
+# with the same four outcomes, kept identical BY DISCIPLINE — and they drifted
+# apart exactly as that arrangement invites. One of the two omitted the uuid
+# comparison entirely, so `resolve-store` answered "matches" to a mismatched
+# uuid. Two guards that disagree is the collapse this family exists to prevent,
+# so the fix was not to write the comparison twice but to stop there being a
+# both.
+from ._store_identity_decision import (  # noqa: F401  (re-exported)
+    IdentityCheck,
+    IdentityVerdict,
+    decide_identity,
+)
 
 
-def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
-    """Compare the connected instance against the identity the caller pinned.
+def check_store_identity(
+    conn,
+    expected: Optional[str],
+    *,
+    observed_uuid: Optional[str] = None,
+    expected_uuid: Optional[str] = None,
+) -> IdentityCheck:
+    """Compare the connected store against the identity the caller pinned.
+
+    PROBES, THEN DELEGATES. The outcomes live in
+    :func:`._store_identity_decision.decide_identity` — this function's only job
+    is obtaining the observed values from a live connection. It used to carry
+    its own copy of the comparison, and its twin in ``_store_pin`` carried
+    another; the two drifted and one of them stopped checking the uuid.
+
+    BOTH HALVES ARE REQUIRED FOR A PASS, which is a deliberate change from the
+    behaviour this function had until 2026-08-19. An instance-only pin now
+    answers ``CANNOT_TELL`` rather than ``MATCHES``: the instance identifies the
+    SERVER, and a database restored onto that same server keeps it while
+    getting a new uuid — the 2026-08-09 frozen-store incident this pin exists to
+    catch. See ``decide_identity``'s table for all nine rows.
 
     ``expected`` is the value an operator recorded from a store they trust.
     ``None`` means nothing was pinned, which is ``CANNOT_TELL`` and NOT a pass:
@@ -276,48 +252,12 @@ def check_store_identity(conn, expected: Optional[str]) -> IdentityCheck:
     for different actions from whoever reads the message, so collapsing them
     would throw away the only part a human acts on.
     """
-    observed = store_instance(conn)
-    if not expected:
-        return IdentityCheck(
-            verdict=IdentityVerdict.CANNOT_TELL,
-            observed=observed,
-            expected=None,
-            reason=(
-                "no expected store identity is pinned, so this connection "
-                "cannot be checked against anything. Record the identity of "
-                "the store you trust and pin it; an unpinned client cannot "
-                "tell a stale replica from the store it meant to reach."
-            ),
-        )
-    if observed.certainty is Certainty.UNKNOWN:
-        return IdentityCheck(
-            verdict=IdentityVerdict.CANNOT_TELL,
-            observed=observed,
-            expected=expected,
-            reason=(
-                f"an identity is pinned ({expected!r}) but this store cannot "
-                f"report one: {observed.reason}"
-            ),
-        )
-    if observed.instance_id != expected:
-        return IdentityCheck(
-            verdict=IdentityVerdict.DIFFERS,
-            observed=observed,
-            expected=expected,
-            reason=(
-                f"this connection reached instance "
-                f"{observed.instance_id!r}, but {expected!r} was pinned. Two "
-                "stores can carry the SAME store_uuid and different data — "
-                "measured 2026-08-10, 180 cards and three days apart — so a "
-                "matching uuid is not evidence. Point the client at the "
-                "pinned store, or re-pin deliberately if the move was "
-                "intended."
-            ),
-        )
-    return IdentityCheck(
-        verdict=IdentityVerdict.MATCHES,
-        observed=observed,
-        expected=expected,
+    return decide_identity(
+        store_instance(conn),
+        expected,
+        observed_uuid=observed_uuid,
+        expected_uuid=expected_uuid,
+        subject="this connection",
     )
 
 

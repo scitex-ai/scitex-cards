@@ -18,14 +18,34 @@ import json
 
 import click
 
+from ._compat import deprecated_alias
+
 
 def register(main: click.Group) -> None:
-    """Attach the ``deliver`` verb to the root group."""
+    """Attach ``deliver-notifications``, with ``deliver`` forwarding.
+
+    RENAMED because a bare transitive verb at the top level does not say what
+    it acts on. Audit §1: "bare transitive verb at top level — needs an object;
+    use 'deliver-<object>' or nest under a noun, OR add a required positional
+    argument that IS the object". `deliver` alone reads as a question — deliver
+    WHAT? — and the answer was only in the help text.
+
+    The object is notifications: this runs one pass over every recipient's
+    pending notifications. So the leaf says so.
+
+    `deliver` stays as a Phase-W alias because it is a published contract —
+    the command is documented as cron/loop-runnable, so it may sit in a
+    crontab or a unit file on any host, where a rename is invisible until the
+    timer fires and does nothing.
+    """
     main.add_command(deliver_cmd)
+    deprecated_alias(
+        main, "deliver", target="deliver-notifications", remove_in="0.52"
+    )
 
 
 @click.command(
-    "deliver",
+    "deliver-notifications",
     help=(
         "Run ONE notification-delivery pass (cron/loop-runnable).\n\n"
         "Reads each configured recipient's pending notifications "

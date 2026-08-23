@@ -19,6 +19,8 @@ import json
 
 import click
 
+from ._mutating import confirm_or_abort, mutating_options
+
 from .._paths import resolve_tasks_path
 from .._reconcile_prs import reconcile_merged_prs
 
@@ -33,6 +35,7 @@ from .._reconcile_prs import reconcile_merged_prs
         "audit comment. DRY-RUN by default; pass --apply to mutate.\n\n"
         "Examples:\n"
         "  scitex-cards reconcile-merged-prs            # dry-run report\n"
+        "  scitex-cards reconcile-merged-prs --dry-run  # same, said explicitly\n"
         "  scitex-cards reconcile-merged-prs --apply    # actually close\n"
         "  scitex-cards reconcile-merged-prs --json"
     ),
@@ -53,8 +56,28 @@ from .._reconcile_prs import reconcile_merged_prs
     is_flag=True,
     help="Emit the summary as JSON (machine-readable).",
 )
-def reconcile_merged_prs_cmd(apply: bool, as_json: bool) -> None:
-    """Run the reconcile pass and print the summary (dry-run by default)."""
+@mutating_options
+def reconcile_merged_prs_cmd(
+    apply: bool, as_json: bool, dry_run: bool, assume_yes: bool
+) -> None:
+    """Run the reconcile pass and print the summary (dry-run by default).
+
+    THIS VERB PREVIEWED BEFORE `--dry-run` EXISTED: `--apply` is the opt-in and
+    reporting is the default. `--dry-run` is accepted as the conventional name
+    for that default and WINS over `--apply`, so the habit works here as it
+    does on every other mutating verb rather than erroring on this one alone.
+
+    `--yes` skips the confirmation before cards are actually flipped to `done`.
+    This closes cards in BULK, which is precisely what the constitution's
+    dry-run-every-bulk-operation rule is about, so an interactive `--apply`
+    asks once first.
+    """
+    if dry_run:
+        apply = False
+    if apply:
+        confirm_or_abort(
+            "Close every card whose linked PR has merged?", assume_yes=assume_yes
+        )
     resolved = resolve_tasks_path(None)
     result = reconcile_merged_prs(resolved, apply=apply)
 

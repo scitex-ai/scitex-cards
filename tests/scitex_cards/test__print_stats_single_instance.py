@@ -11,9 +11,17 @@ is a NON-BLOCKING ``flock`` on the side-effecting notify path only — the
 cron/one-shot analogue of the wake-watcher lock (#344) and the MCP inbox
 drain guard (#345).
 
-Real fakes, NO mocks (STX-NM): a real ``tmp_path`` YAML store, a REAL
-``flock`` held by the test, and a plain call-counter SPY wrapping the real
-``scitex_cards._push.deliver`` to prove whether the notify path was entered.
+Real objects, NO mocks (STX-NM002): a real store, a REAL ``flock`` held by
+the test, and — where a claim is about what the run DID NOT do — the command's
+own output plus an UNREADABLE store.
+
+The spies that used to stand in for those two claims are gone. Each could only
+see calls routed through the one module attribute it was installed on, and this
+file's own history is the argument against them: the 0.7.47 regression computed
+the rollup ABOVE the guard while the push stayed serialized, so a push-only spy
+reported everything fine. What the command PRINTS, and whether it can survive a
+store it cannot read, are properties of the run rather than of one binding.
+
 AAA structure.
 """
 
@@ -22,8 +30,6 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-import scitex_cards._cli._stats as _stats
-import scitex_cards._push as _push
 from scitex_cards._cli._main import main
 from scitex_cards._singleflight import notify_lock_path, single_instance
 from scitex_cards._store import add_task
@@ -39,46 +45,36 @@ def _seed_store() -> None:
     add_task(id="t1", title="Task one", status="in_progress", agent="proj-x")
 
 
-def _deliver_spy(monkeypatch):
-    """Install a call-counter that WRAPS the real ``deliver`` (no mock).
+#: What ``deliver`` RETURNS for an agent with no configured turn URL. The CLI
+#: echoes this token next to the agent name for every push it attempts, so its
+#: presence in the output is direct evidence that ``deliver`` ran — and its
+#: absence that it did not. That replaced a spy wrapping ``_push.deliver``: the
+#: spy could only see calls routed through that one module attribute, while the
+#: output reports what the command actually did.
+_DELIVER_RESULT = "no-turn-url-configured"
 
-    Returns the mutable ``calls`` list so a test can assert whether the
-    notify/push path was entered. ``proj-x`` has no configured turn URL, so
-    the wrapped real ``deliver`` returns ``no-turn-url-configured`` WITHOUT
-    any network I/O — the spy observes real behaviour, it does not fake it.
+
+def _run_over_an_unreadable_store(env, tmp_path, argv, *, hold_lock):
+    """Run ``argv`` against a store that CANNOT be read, and return the result.
+
+    THE UNREADABLE STORE IS THE INSTRUMENT, and it is what replaced the counter
+    wrapped around ``load_tasks``. "Did this run parse the store" is not
+    directly observable from the outside — but "could this run have survived
+    WITHOUT parsing it" is: point the canonical database at a path that does
+    not exist and the parse becomes fatal. A run that still exits 0 provably
+    never reached it; a run that fails provably tried.
+
+    That is strictly better than the counter it replaces. The counter answered
+    only whether one particular module attribute was called, so a parse reached
+    by any other binding was invisible to it — the exact blind spot that let
+    the 0.7.47 regression (rollup computed ABOVE the guard) hide behind a
+    push-only spy.
     """
-    calls: list = []
-    real = _push.deliver
-
-    def spy(agent, body, **kwargs):
-        calls.append(agent)
-        return real(agent, body, **kwargs)
-
-    monkeypatch.setattr(_push, "deliver", spy)
-    return calls
-
-
-def _load_tasks_spy(monkeypatch):
-    """Install a call-counter that WRAPS the real store parse (``load_tasks``).
-
-    This is the assertion the 0.7.47 test was MISSING. The bug was that the
-    expensive per-agent rollup — which begins by parsing the ~9 MB store via
-    ``load_tasks`` — ran ABOVE the flock guard, so two overlapping ``--notify``
-    ticks BOTH parsed the store concurrently even though the push at the end
-    was serialized. A spy on the PUSH cannot catch that (the push is skipped
-    either way once the lock is held); only a spy on the STORE PARSE proves the
-    expensive work did not run. Wraps the real ``_stats.load_tasks`` (the name
-    ``_rollup`` calls) — no mock, real parse still happens when it is invoked.
-    """
-    loads: list = []
-    real = _stats.load_tasks
-
-    def spy(path):
-        loads.append(str(path))
-        return real(path)
-
-    monkeypatch.setattr(_stats, "load_tasks", spy)
-    return loads
+    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+    if not hold_lock:
+        return CliRunner().invoke(main, argv)
+    with single_instance(notify_lock_path(None)):
+        return CliRunner().invoke(main, argv)
 
 
 # --------------------------------------------------------------------------- #
@@ -94,14 +90,12 @@ def _load_tasks_spy(monkeypatch):
 #: nothing wrong. Only the store-parse claim catches it, which is exactly why
 #: it must not sit behind five earlier asserts.
 @pytest.fixture()
-def notify_run_while_lock_held(monkeypatch):
+def notify_run_while_lock_held():
     """Run the cron path while a prior run's flock is still held."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
     with single_instance(notify_lock_path(None)) as acquired:
         result = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
-    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
+    return {"acquired": acquired, "result": result}
 
 
 def test_the_test_itself_acquires_the_notify_lock(notify_run_while_lock_held):
@@ -140,25 +134,31 @@ def test_notify_skip_prints_no_push_section(notify_run_while_lock_held):
     assert "# Notify push" not in result.output
 
 
-def test_notify_skip_never_calls_deliver(notify_run_while_lock_held):
+def test_notify_skip_never_delivers(notify_run_while_lock_held):
     # Arrange
     scenario = notify_run_while_lock_held
     # Act
-    calls = scenario["calls"]
-    # Assert — the spy proves deliver() was never called.
-    assert calls == []
+    result = scenario["result"]
+    # Assert — the CLI echoes deliver()'s return value next to every agent it
+    # pushes to, so the token's absence is the run reporting no delivery.
+    assert _DELIVER_RESULT not in result.output
 
 
-def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
+def test_notify_skip_never_parses_the_store(env, tmp_path):
+    """CRITICAL regression (0.7.48): the EXPENSIVE store parse / rollup must
+    NOT run when the lock is held.
+
+    The 0.7.47 bug computed the rollup ABOVE the guard. Here the store cannot
+    be read at all, so a run that reaches the parse CANNOT exit 0 — surviving
+    is the proof the guard sits above it.
+    """
     # Arrange
-    scenario = notify_run_while_lock_held
     # Act
-    loads = scenario["loads"]
-    # Assert — CRITICAL regression (0.7.48): the EXPENSIVE store parse /
-    # rollup must NOT run when the lock is held. The 0.7.47 bug computed the
-    # rollup ABOVE the guard, so this would have been >= 1. The guard now
-    # wraps the parse → ZERO.
-    assert loads == []
+    result = _run_over_an_unreadable_store(
+        env, tmp_path, ["print-stats", "--by", "agent", "--notify"], hold_lock=True
+    )
+    # Assert
+    assert result.exit_code == 0, result.output
 
 
 # --------------------------------------------------------------------------- #
@@ -170,14 +170,11 @@ def test_notify_skip_never_parses_the_store(notify_run_while_lock_held):
 #: push for the agent, and actually parse the store. A guard that always skips
 #: would pass the whole lock-held group and fail only here.
 @pytest.fixture()
-def notify_run_with_lock_free(monkeypatch):
+def notify_run_with_lock_free():
     """Run the cron path with no prior holder."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
-
     result = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
-    return {"result": result, "calls": calls, "loads": loads}
+    return {"result": result}
 
 
 def test_notify_runs_when_lock_is_free(notify_run_with_lock_free):
@@ -202,18 +199,26 @@ def test_notify_run_pushes_for_the_owning_agent(notify_run_with_lock_free):
     # Arrange
     scenario = notify_run_with_lock_free
     # Act
-    calls = scenario["calls"]
-    # Assert
-    assert "proj-x" in calls
+    result = scenario["result"]
+    # Assert — the push line names the agent it pushed for.
+    assert "proj-x" in result.output
 
 
-def test_notify_run_parses_the_store(notify_run_with_lock_free):
+def test_notify_run_parses_the_store(env, tmp_path):
+    """The complement of the skip case, and the reason the guard is not just a
+    mute button: with no prior holder the rollup MUST reach the store.
+
+    An unreadable store makes that reach fatal, so failing here is the
+    evidence it was attempted. Without this test the guard could sit above
+    everything unconditionally and the whole lock-held group would still pass.
+    """
     # Arrange
-    scenario = notify_run_with_lock_free
     # Act
-    loads = scenario["loads"]
-    # Assert — the rollup DID parse the store (the lock was free).
-    assert loads != []
+    result = _run_over_an_unreadable_store(
+        env, tmp_path, ["print-stats", "--by", "agent", "--notify"], hold_lock=False
+    )
+    # Assert
+    assert result.exit_code != 0
 
 
 # --------------------------------------------------------------------------- #
@@ -227,15 +232,12 @@ def test_notify_run_parses_the_store(notify_run_with_lock_free):
 #: perform no push. Scoping a lock too widely is the classic over-fix, and it
 #: shows up as exactly one of these claims flipping.
 @pytest.fixture()
-def plain_read_while_lock_held(monkeypatch):
+def plain_read_while_lock_held():
     """Hold the notify lock, then run a PLAIN print-stats (no --notify)."""
     _seed_store()
-    calls = _deliver_spy(monkeypatch)
-    loads = _load_tasks_spy(monkeypatch)
-
     with single_instance(notify_lock_path(None)) as acquired:
         result = CliRunner().invoke(main, ["print-stats", "--by", "agent"])
-    return {"acquired": acquired, "result": result, "calls": calls, "loads": loads}
+    return {"acquired": acquired, "result": result}
 
 
 def test_plain_read_scenario_really_holds_the_lock(plain_read_while_lock_held):
@@ -283,23 +285,32 @@ def test_plain_read_prints_no_skip_line(plain_read_while_lock_held):
     assert "a prior run still holds the lock" not in result.output
 
 
-def test_plain_read_never_calls_deliver(plain_read_while_lock_held):
+def test_plain_read_never_delivers(plain_read_while_lock_held):
     # Arrange
     scenario = plain_read_while_lock_held
     # Act
-    calls = scenario["calls"]
+    result = scenario["result"]
+    # Assert — a read is a read: no push is attempted, so deliver's return
+    # token never appears.
+    assert _DELIVER_RESULT not in result.output
+
+
+def test_plain_read_still_parses_the_store(env, tmp_path):
+    """The plain read is UNGUARDED: it parses the store even while the notify
+    lock is held, because an interactive read must never be blocked or skipped
+    by a cron's lock.
+
+    Scoping the lock too widely is the classic over-fix; with an unreadable
+    store, a plain read that had been swept under the guard would exit 0 here
+    instead of failing.
+    """
+    # Arrange
+    # Act
+    result = _run_over_an_unreadable_store(
+        env, tmp_path, ["print-stats", "--by", "agent"], hold_lock=True
+    )
     # Assert
-    assert calls == []
-
-
-def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
-    # Arrange
-    scenario = plain_read_while_lock_held
-    # Act
-    loads = scenario["loads"]
-    # Assert — the plain read is UNGUARDED: it parses the store even while the
-    # notify lock is held (interactive reads must never be blocked/skipped).
-    assert loads != []
+    assert result.exit_code != 0
 
 
 # --------------------------------------------------------------------------- #
@@ -312,11 +323,9 @@ def test_plain_read_still_parses_the_store(plain_read_while_lock_held):
 #: --notify acquires cleanly (runs the push, prints no skip line), and the
 #: test can itself take the flock afterwards.
 @pytest.fixture()
-def two_notify_runs_then_a_manual_lock(monkeypatch):
+def two_notify_runs_then_a_manual_lock():
     """Run --notify twice, then try to take the flock from the test itself."""
     _seed_store()
-    _deliver_spy(monkeypatch)
-
     first = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
     second = CliRunner().invoke(main, ["print-stats", "--by", "agent", "--notify"])
     with single_instance(notify_lock_path(None)) as acquired:

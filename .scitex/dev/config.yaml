@@ -197,6 +197,43 @@ audit:
   # gate" (constitution §2). One site, one reason, still enforced everywhere
   # else.
   exemptions:
+    PS-231:
+      # `workflow-duplication` — the rule says this workflow re-implements the
+      # org reusable `rtd-sphinx-build` and should call it instead.
+      #
+      # CONVERTING IT WOULD DELETE THE ONLY THING IT STILL DOES. This workflow
+      # no longer commits anything: the in-wheel docs are BUILT at release time
+      # (pypi-publish-and-github-release-on-tag.yml) and carried by hatchling
+      # `artifacts`. What remains is one job — `sphinx-build -W --keep-going`,
+      # i.e. proving the docs build clean with warnings-as-errors — and that is
+      # what gates the PR.
+      #
+      # PS-231's OWN TEXT NAMES THIS CASE: "Check the PR gate too: leaves that
+      # run `sphinx-build -W` lose it, because the org build does not." So a
+      # bare `uses:` here does not move the gate upstream, it removes it, and
+      # leaves a green check standing where the gate used to be. That is the
+      # constitution's "a gate that cannot fail is not a gate ... the same as
+      # deleting it, except worse: the config still lists it and everyone
+      # believes it is working."
+      #
+      # BLOCKER 2 DOES NOT APPLY and is recorded so nobody re-derives it: this
+      # leaf does not vendor `_sphinx_html` back into the tree. That was true
+      # once and caused the 2026-06-17..08-16 outage documented in the PS-128
+      # entry below; the commit-and-push step is gone, deliberately.
+      #
+      # REVISIT WHEN: the org reusable grows warnings-as-errors, at which point
+      # the gate moves upstream honestly and this entry should be deleted.
+      - path: .github/workflows/rtd-sphinx-build-on-ubuntu-latest.yml
+        line: 0
+        reason: >-
+          Converting to the org reusable would DELETE this workflow's only
+          remaining job — `sphinx-build -W`, the warnings-as-errors PR gate —
+          because the org build does not run it, a loss PS-231's own remedy
+          text warns about. Nothing is vendored back into the tree here
+          (BLOCKER 2 does not apply; the commit-and-push step was removed after
+          it caused a two-month silent-failure outage). Delete this entry once
+          the org reusable enforces warnings-as-errors itself.
+
     PS-128:
       # `sphinx-build-broken` — the rule says: ".gitignore excludes
       # src/<pkg>/_sphinx_html/ — but scitex-cloud serves docs from the in-wheel

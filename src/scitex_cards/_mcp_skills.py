@@ -24,6 +24,7 @@ import json
 
 import anyio
 
+from . import _messaging
 from ._backend import get_backend
 from ._mcp_app import mcp  # the LEAF — importing _mcp_server here would cycle
 
@@ -161,10 +162,23 @@ async def poll_notifications(
     the dispatcher enqueued under). Returns a JSON object::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store these rows were read from>,
          "notifications": [ {id, event_type, card_id, body, actor, ts, seen},
                             ... ],
          "unconfirmed": [<ids still awaiting ack_notifications>],
          "confirm_with": "ack_notifications"}
+
+    ``store`` names the target this poll actually read. ``ack_notifications``
+    reports the same field, and COMPARING THE TWO is the point: if you poll
+    one store and confirm against another, every call still succeeds — this
+    one returns nothing and the confirmation answers ``unknown`` for every id,
+    which is indistinguishable from "there was nothing to deliver". Two labels
+    that disagree name that fault outright.
+
+    Two that AGREE do not clear you. They cover only your own read and write;
+    the delivery daemon resolves its target separately and stamps nothing, so
+    notifications can be arriving from a store neither label mentions. Equal
+    is CANNOT-TELL.
 
     Args:
       agent: the recipient name / id / host@name to poll for.
@@ -184,7 +198,7 @@ async def poll_notifications(
     # lives in the backend so a remote backend can make it ONE round trip.
     result = await anyio.to_thread.run_sync(
         functools.partial(
-            get_backend().poll_notifications,
+            _messaging.poll_notifications,
             agent,
             unseen_only=unseen_only,
             ack=ack,
@@ -214,10 +228,23 @@ async def ack_notifications(
     never held is likewise a no-op. The payload distinguishes the cases::
 
         {"agent": <input>, "recipient_id": <resolved id/name>,
+         "store": <the store this confirmation was applied to>,
          "requested": [...],           # what you asked to confirm
          "confirmed": [...],           # flipped unseen -> seen by THIS call
          "already_confirmed": [...],   # were already seen (a fine retry)
          "unknown": [...]}             # no such id in this inbox
+
+    ``unknown`` SAYS NOTHING ABOUT THE DATABASE. It reads as "those ids do not
+    exist", but a confirmation sent to the WRONG STORE answers exactly the
+    same way — every id unknown, no error, nothing to retry. That is why
+    ``store`` is here: compare it with the ``store`` your poll reported.
+
+    THE COMPARISON IS ONE-SIDED. DIFFERENT means you are confirming somewhere
+    you never read — a split, positively identified. EQUAL means only that
+    YOUR read and YOUR write went to the same place; it does NOT mean no
+    split exists, because the daemon that pushes notifications to you
+    resolves its own target and reports nothing. A third store can be feeding
+    your inbox while these two labels agree. Treat equal as CANNOT-TELL.
 
     Args:
       agent: the recipient name / id / host@name whose inbox to confirm in.
@@ -225,14 +252,14 @@ async def ack_notifications(
         were successfully delivered.
     """
     result = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().ack_notifications, agent, ids, store=tasks_path)
+        functools.partial(_messaging.ack_notifications, agent, ids, store=tasks_path)
     )
     return json.dumps(result)
 
 
 @mcp.tool()
 async def health(tasks_path: str | None = None) -> str:
-    """Package-level HEALTH check (the ``health`` doctor). Returns a JSON report.
+    """Package-level HEALTH check (the health doctor). Returns a JSON report.
 
     Broad store / identity / delivery diagnosis — NOT the narrow ``mcp doctor``
     (which only checks the fastmcp install). Runs the checks in
@@ -253,27 +280,15 @@ async def health(tasks_path: str | None = None) -> str:
     return json.dumps(result)
 
 
-def _dm_sender_or_error() -> "tuple[str | None, str | None]":
-    """Resolve the calling agent's identity for the dm_* tools.
+def _refusal(exc: Exception, prefix: str = "") -> str:
+    """Render a messaging-layer refusal as this tool's ``{"error": ...}`` string.
 
-    Returns ``(sender, None)`` on success or ``(None, <json error>)`` with an
-    actionable hint when no identity is configured — the DM record's ``from``
-    field must be a REAL agent name, never a blank/'unknown' fallback.
+    The Python API in :mod:`scitex_cards._messaging` RAISES; the MCP contract
+    RETURNS an error object. Converting in ONE place is deliberate — a per-tool
+    ``except`` that builds its own dict is how two tools start reporting the
+    same refusal in two shapes.
     """
-    from ._mcp_channel import resolve_agent_id_optional
-
-    sender = resolve_agent_id_optional()
-    if sender is None:
-        return None, json.dumps(
-            {
-                "error": "dm: no agent identity configured. Set "
-                "SCITEX_CARDS_AGENT_ID=<your-agent> in the MCP server env "
-                '(.mcp.json: "SCITEX_CARDS_AGENT_ID": '
-                "\"${SCITEX_CARDS_AGENT_ID}\") so the DM 'from' field names a "
-                "real agent."
-            }
-        )
-    return sender, None
+    return json.dumps({"error": f"{prefix}{exc}"})
 
 
 @mcp.tool()
@@ -300,47 +315,13 @@ async def dm_send(
     not something they can open. ``dm_send_document`` copies the bytes into
     the board's attachment store so the file itself arrives.
     """
-    sender, err = _dm_sender_or_error()
-    if err is not None:
-        return err
-    record = await anyio.to_thread.run_sync(
-        functools.partial(get_backend().dm_send, sender, to, body, store=tasks_path)
-    )
-    return json.dumps(record)
-
-
-def _attach_and_compose(
-    file_path: str, caption: str | None, tasks_path: str | None
-) -> "tuple[dict | None, str | None]":
-    """Copy ``file_path`` into the attachment store; return ``(parts, error)``.
-
-    ``parts`` is ``{"body", "attachment"}``. The message body IS the
-    reference: the stored url goes on its own line, which is exactly what the
-    operator's own uploads produce and what the chat pane already knows how
-    to render. No new record field, no second convention, and an older client
-    still shows something meaningful instead of nothing.
-    """
-    import os
-
-    from ._attachments import AttachmentError, store_local_file
-    from ._backend import _HUB_URL_ENV
-
-    if os.environ.get(_HUB_URL_ENV):
-        return None, json.dumps(
-            {
-                "error": "dm_send_document: a remote hub is configured "
-                f"({_HUB_URL_ENV}), so the file would be copied into the "
-                "LOCAL attachment store while the message went to the hub — "
-                "the operator would receive a link to nothing. Upload through "
-                "the hub's /dm/upload endpoint instead."
-            }
-        )
     try:
-        meta = store_local_file(file_path, store=tasks_path)
-    except AttachmentError as exc:
-        return None, json.dumps({"error": f"dm_send_document: {exc}"})
-    label = (caption or "").strip() or meta["filename"]
-    return {"body": f"{label}\n{meta['url']}", "attachment": meta}, None
+        record = await anyio.to_thread.run_sync(
+            functools.partial(_messaging.dm_send, to, body, store=tasks_path)
+        )
+    except _messaging.AgentIdentityUnresolved as exc:
+        return _refusal(exc)
+    return json.dumps(record)
 
 
 @mcp.tool()
@@ -373,18 +354,27 @@ async def dm_send_document(
     mime_type, size}}``. Refusals (missing file, not a regular file, over the
     25 MB ceiling) come back as ``{"error": ...}`` naming what to fix.
     """
-    sender, err = _dm_sender_or_error()
-    if err is not None:
-        return err
-    parts, err = _attach_and_compose(file_path, caption, tasks_path)
-    if err is not None:
-        return err
-    record = await anyio.to_thread.run_sync(
-        functools.partial(
-            get_backend().dm_send, sender, to, parts["body"], store=tasks_path
+    from ._attachments import AttachmentError
+
+    try:
+        result = await anyio.to_thread.run_sync(
+            functools.partial(
+                _messaging.dm_send_document,
+                to,
+                file_path,
+                caption=caption,
+                store=tasks_path,
+            )
         )
-    )
-    return json.dumps({"message": record, "attachment": parts["attachment"]})
+    except _messaging.AgentIdentityUnresolved as exc:
+        return _refusal(exc)
+    except _messaging.RemoteHubAttachmentUnsupported as exc:
+        return _refusal(exc)
+    except AttachmentError as exc:
+        # The attachment layer's messages name the file and the limit but not
+        # the caller, and this tool's refusals have always been prefixed.
+        return _refusal(exc, prefix="dm_send_document: ")
+    return json.dumps(result)
 
 
 @mcp.tool()
@@ -400,15 +390,15 @@ async def dm_list(
     addressed to this agent as read (advances the unread cursor the board's
     /chat view displays).
     """
-    sender, err = _dm_sender_or_error()
-    if err is not None:
-        return err
     # Thread-key + ack + read composition lives in the backend (one RPC later).
-    result = await anyio.to_thread.run_sync(
-        functools.partial(
-            get_backend().dm_list, sender, peer=peer, ack=ack, store=tasks_path
+    try:
+        result = await anyio.to_thread.run_sync(
+            functools.partial(
+                _messaging.dm_list, peer=peer, ack=ack, store=tasks_path
+            )
         )
-    )
+    except _messaging.AgentIdentityUnresolved as exc:
+        return _refusal(exc)
     return json.dumps(result)
 
 

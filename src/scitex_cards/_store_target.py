@@ -43,6 +43,7 @@ __all__ = [
     "TIER_DEFAULT",
     "TIER_ENV",
     "TIER_EXPLICIT",
+    "database_for",
     "refuse_zero_config_default",
     "require_configured_store_target",
     "resolve_store_target",
@@ -139,6 +140,50 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     # error-prone option is better off not existing -- fewer choices is the
     # feature. So the tier itself stops answering.
     refuse_zero_config_default()
+
+
+def database_for(target: str | Path) -> str | Path:
+    """Map a resolved store target to a DATABASE, because a label is not one.
+
+    A ``…/tasks.yaml`` target is a DISPLAY LABEL. ``_paths`` builds it as
+    ``resolve_db_path(None).parent / "tasks.yaml"`` — good enough to NAME a
+    store in a message, never a thing on disk. The YAML tier itself was deleted
+    in #512, so nothing reads that file; the name outlived the format.
+
+    HANDING THE LABEL STRAIGHT TO A CONNECTION IS DESTRUCTIVE, not merely
+    wrong, and that is why this function exists rather than a comment asking
+    callers to be careful. Nothing downstream normalises it —
+    :func:`resolve_store_target` returns an explicit argument AS WRITTEN, and so
+    do ``resolve_db_path`` and ``connect`` — so SQLite CREATES a database at
+    that path, on top of whatever was there.
+
+    MEASURED TWICE, in two subsystems, from the same missing guard:
+
+    * 2026-08-17, the user registry: a registration landed in a PHANTOM STORE
+      named ``tasks.yaml`` beside the real board, and ``resolve_user`` degraded
+      to the raw name string for every peer.
+    * 2026-08-20, the notification inbox: ``inbox_target`` had no guard at all,
+      so ``inbox info`` — a verb named *info* — opened the card store as a
+      SQLite database and wrote an ``inbox`` table into it. The live artifact:
+      ``/home/agent/.scitex/cards/tasks.yaml``, 122880 bytes, magic
+      ``SQLite format 3``, holding 150 rows. A file whose extension says YAML
+      and whose contents are a database.
+
+    The second one is the reason this moved OUT of ``_db_users`` and into the
+    module that owns store-target resolution. The registry grew a private fix,
+    the inbox never got one, and a guard that each subsystem must remember is a
+    guard the next subsystem will be missing — the same argument the zero-config
+    tier above was abolished on.
+
+    A DSN passes through untouched: a server target is already a database.
+    """
+    text = str(target)
+    if is_postgres_url(text):
+        return text
+    path = Path(text).expanduser()
+    if path.suffix in (".yaml", ".yml"):
+        return path.parent / DEFAULT_DB_FILENAME
+    return path
 
 
 class StoreTargetNotConfigured(RuntimeError):

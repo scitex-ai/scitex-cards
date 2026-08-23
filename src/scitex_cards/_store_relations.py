@@ -210,7 +210,7 @@ def _set_list_member(
     the YAML stays sparse). Stamps ``last_activity``. Returns the task.
     """
     from . import _task
-    from ._store import TaskNotFoundError, _read_write_doc, _utc_now_iso
+    from ._store import _read_write_doc, _task_not_found, _utc_now_iso
 
     with _store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
@@ -232,7 +232,7 @@ def _set_list_member(
                     doc, tasks_path, tasks=tasks, touched_ids=[task_id]
                 )
                 return dict(task)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    raise _task_not_found(task_id)
 
 
 def set_collaborator(

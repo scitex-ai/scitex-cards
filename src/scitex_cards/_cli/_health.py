@@ -17,14 +17,38 @@ import json
 
 import click
 
+from ._compat import deprecated_alias
+
 
 def register(main: click.Group) -> None:
-    """Attach the ``health`` verb to the root group."""
+    """Attach ``validate-health`` to the root group, with ``health`` forwarding.
+
+    RENAMED, NOT DICTIONARY-PATCHED. ``health`` alone failed audit §1 ("leaf
+    token looks like a noun — transitive action implied") and MCP §2
+    ("single-token tool names are forbidden"). The rule offers an escape
+    hatch — declare the word an intransitive verb in
+    ``.scitex/dev/cli-audit-dict.yaml`` — and taking it here would have been a
+    lie: `scitex-cards health` does not mean "to health", it means RUN THE
+    HEALTH DOCTOR. The constitution's own test settles it — if you must
+    explain a name by restating it as something else, that something else IS
+    the name — so the verb goes in the name.
+
+    THE OLD NAME KEEPS WORKING BECAUSE IT IS A PUBLISHED CONTRACT. Agents,
+    shell gates and CI probes call `scitex-cards health` today; a rename that
+    breaks them to quiet a linter trades a working capability for a quieter
+    report. Phase W: the alias forwards, warns once per shell, and carries the
+    metadata the static auditor reads.
+    """
     main.add_command(health_cmd)
+    # remove_in is deliberately NEAR (current version is 0.48.0), not the 0.9
+    # this repo's older aliases carry — those were written when the version
+    # was below 0.9 and are now long overdue, which is what an alias with a
+    # target nobody revisits turns into.
+    deprecated_alias(main, "health", target="validate-health", remove_in="0.52")
 
 
 @click.command(
-    "health",
+    "validate-health",
     help=(
         "Run the scitex-cards health doctor: store / agent-id / notifyd / "
         "channel checks.\n\n"
@@ -35,8 +59,8 @@ def register(main: click.Group) -> None:
         "ticks), this agent's channel inbox is draining, and the channel server "
         "is present. Exit 0 when all checks pass, else 1.\n\n"
         "Examples:\n"
-        "  scitex-cards health\n"
-        "  scitex-cards health --json"
+        "  scitex-cards validate-health\n"
+        "  scitex-cards validate-health --json"
     ),
 )
 @click.option(

@@ -7,6 +7,10 @@ description: |
   exists, WHAT the manifest is, and HOW to run the propagate CLI verb.
   [HOW] `scitex-cards skills manifest` to inspect; `scitex-cards skills
   propagate --agents-dir <dir> --dry-run` to preview; `-y` to apply.
+  [DETAILS] Propagation edits each agent's `spec.yaml` skill list in place,
+  so it is a bulk write across the fleet: preview with `--dry-run` and read
+  the affected set before applying. A spec that names a skill id the
+  manifest does not carry is the failure this exists to prevent.
 tags:
   [
     scitex-cards-skills-propagation,

@@ -11,8 +11,6 @@ cost is paid ONCE per process, not per write.
 
 from __future__ import annotations
 
-import importlib.metadata
-
 import pytest
 
 from scitex_cards._hooks import _plugins
@@ -27,44 +25,32 @@ def _clear_cache():
     _plugins._iter_entry_points.cache_clear()
 
 
-def test_entry_points_scanned_only_once_across_many_calls(monkeypatch):
-    # Arrange — count how many times the expensive stdlib scan actually runs.
-    calls = {"n": 0}
-    real = importlib.metadata.entry_points
-
-    def counting_entry_points(*a, **k):
-        calls["n"] += 1
-        return real(*a, **k)
-
-    monkeypatch.setattr(importlib.metadata, "entry_points", counting_entry_points)
-
+def test_entry_points_scanned_only_once_across_many_calls():
+    # Arrange — `_iter_entry_points` is `lru_cache`-wrapped, so it already
+    # COUNTS its own misses. A miss is a real scan; asking the cache is a
+    # direct reading rather than a counter wrapped around the stdlib, which
+    # could only have seen calls routed through that one module attribute.
     # Act — call it many times, as a busy fleet writing many cards would.
     for _ in range(50):
         _plugins._iter_entry_points()
 
     # Assert — the ~126-file scan happened ONCE, not 50 times.
-    assert calls["n"] == 1
+    assert _plugins._iter_entry_points.cache_info().misses == 1
 
 
-def test_cache_clear_forces_rediscovery(monkeypatch):
-    # Arrange — the escape hatch must work: a live plugin reload / a test can
-    # force a fresh scan. Without this, caching would be a one-way door.
-    calls = {"n": 0}
-    real = importlib.metadata.entry_points
-
-    def counting_entry_points(*a, **k):
-        calls["n"] += 1
-        return real(*a, **k)
-
-    monkeypatch.setattr(importlib.metadata, "entry_points", counting_entry_points)
-
+def test_cache_clear_forces_rediscovery():
+    # Arrange — the escape hatch must work: a live plugin reload, or a test,
+    # can force a fresh scan. Without it, caching would be a one-way door.
     # Act — scan, drop the cache, scan again.
     _plugins._iter_entry_points()
     _plugins._iter_entry_points.cache_clear()
     _plugins._iter_entry_points()
 
-    # Assert
-    assert calls["n"] == 2
+    # Assert — `cache_clear()` resets the COUNTERS as well as the entry, so
+    # the reading after it starts from zero: one miss means the following
+    # call really went back to disk. Had the clear not worked, that call
+    # would have been served from cache and this would read zero.
+    assert _plugins._iter_entry_points.cache_info().misses == 1
 
 
 def test_cached_result_is_stable_across_calls():

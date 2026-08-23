@@ -95,8 +95,8 @@ DEFAULT_COOLDOWN_HOURS = 72.0
 #: rather than quote these figures; they are a reading, not a constant.
 #:
 #: EXPIRY IS A PROPOSAL, NOT A DELETION, and that is what makes the change safe
-#: to ship at this size. `expired()` feeds a nudge whose text is "Default is
-#: cancellation. Rescue any you still want"; nothing in this package writes
+#: to ship at this size. `expired()` feeds a nudge whose text says plainly
+#: that nothing cancels them for you; nothing in this package writes
 #: `status=cancelled` on its own. Verified 2026-08-18: `expired()`'s only
 #: consumer is `_cli/_triage.py` building nudge text.
 #:
@@ -209,8 +209,9 @@ def is_expired(
     on the basis of a timestamp we could not read.
 
     A PARKED card is never expired, and this is the exemption that matters most.
-    Expiry proposes CANCELLATION by default and cancels on silence — so without
-    this line a standing north-star card would be auto-cancelled at the horizon
+    Expiry PROPOSES cancellation as the default outcome; nothing in this
+    module performs it (see the horizon note above) — so without this line a
+    standing north-star card would be proposed for cancellation at the horizon
     for the sole crime of being a north star, which is the exact opposite of
     what its owner asked for. Age is a reason to discard work nobody is doing;
     it is not a reason to discard a goal nobody has abandoned.
@@ -386,8 +387,10 @@ def build_triage_body(
     if expired_cards:
         lines.append("")
         lines.append(
-            f"EXPIRED — deferred > {horizon:.0f}d. Default is cancellation. "
-            f"Rescue any you still want; silence cancels them:"
+            f"EXPIRED — deferred > {horizon:.0f}d. Cancellation is the "
+            f"INTENDED default, but NOTHING CANCELS THESE FOR YOU: silence "
+            f"leaves them exactly where they are. Rescue the ones you want, "
+            f"and set the rest to status=cancelled explicitly:"
         )
         for t in expired_cards:
             lines.append(f"  - {t.get('id', '')} {str(t.get('title', ''))[:70]}")

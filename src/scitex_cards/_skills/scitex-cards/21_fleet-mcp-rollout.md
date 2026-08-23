@@ -2,6 +2,11 @@
 description: |
   [TOPIC] Fleet-wide scitex-cards MCP rollout — the canonical `.mcp.json`
   block and the binding "MCP-only for durable cards" mandate.
+  [DETAILS] The wire is MCP, not the CLI: durable cards go through the MCP
+  server so every write carries an agent identity and reaches the shared
+  store. Requires `SCITEX_CARDS_AGENT_ID` and `SCITEX_CARDS_DB` in the
+  server env — the latter is the SOLE store identity, with no default and
+  no fallback.
   [WHEN] Read on every agent boot. This is the leaf that locks in WHY
   scitex-cards is the single durable-card wire AND HOW to wire it from a
   Claude-Code container — one copy-pasteable JSON block, one env var,
