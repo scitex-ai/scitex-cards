@@ -36,6 +36,31 @@ intransitive_verbs:
   - summary    # `scitex-cards summary`  — print a task-state summary
   - manifest   # `scitex-cards skills manifest` — emit the skills manifest
 
+  # ── 2026-08-23 pass. Three more leaves where the token IS the verb ───────
+  # Added only where the word is a real verb in this CLI's context. The test
+  # applied to each was the constitution's: if the name has to be explained by
+  # restating it as some OTHER verb, that other verb is the name and the leaf
+  # should be RENAMED instead. Two leaves failed that test in the same audit
+  # run and are deliberately NOT here — `db path` (explains as "SHOW the path")
+  # and `deliver` (a bare transitive verb the auditor says needs an object).
+  # They are rename work, not vocabulary.
+  - ack        # `scitex-cards inbox ack` — to ack is a verb wherever a
+               # protocol has acknowledgements, and this package's own Python
+               # API and MCP tool are `ack_notifications`. Moby carries only
+               # the noun. Renaming to `<verb>-ack` would produce
+               # "acknowledge-ack", which explains nothing the leaf did not
+               # already say.
+  - triage     # `scitex-cards triage` — to triage is a verb in its original
+               # sense (sort by urgency and act), which is exactly what the
+               # command does to the board. The noun reading ("a triage") is
+               # the derived one.
+  - serve      # `scitex-cards serve` — the hub RPC listener. Moby marks it
+               # both noun and verb and the auditor asks which is meant: the
+               # verb. `serve` is the established ecosystem-wide spelling for
+               # "run this thing as a service" and is already the leaf of
+               # `gui serve`; renaming one of the two would split a pair that
+               # currently reads consistently.
+
 # §1d vocabulary the Moby POS classifier does not carry. Each is a real name
 # in THIS CLI, not a token that would read better renamed — which is the test
 # the auditor's own hint asks you to apply ("add to the dict or rename").

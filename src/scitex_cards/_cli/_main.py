@@ -77,7 +77,13 @@ _COMMAND_CATEGORIES = (
             "reconcile-merged-prs",
         ),
     ),
-    ("Data & Sync", ("db", "dm", "store", "sync-github", "sync-store", "deliver")),
+    # `deliver-notifications`, not `deliver` — the bare verb is a hidden
+    # Phase-W alias now, and a deprecated name in the help advertises the
+    # spelling we want callers to stop using.
+    (
+        "Data & Sync",
+        ("db", "dm", "store", "sync-github", "sync-store", "deliver-notifications"),
+    ),
     (
         "Service",
         ("board", "gui", "hub", "mcp", "notifyd", "serve", "watch", "watch-ci"),

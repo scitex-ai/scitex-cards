@@ -25,6 +25,7 @@ import re
 
 import click
 
+from ._compat import deprecated_alias
 from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 #: A snapshot holding less than this FRACTION of the previous one's cards is
@@ -206,17 +207,35 @@ def _previous_snapshot_count(git) -> int | None:
 
 
 def register(main: click.Group) -> None:
-    """Attach the ``db`` noun group to the root group."""
+    """Attach the ``db`` noun group, with the two renamed leaves aliased.
+
+    ``path`` -> ``get-path`` and ``snapshot`` -> ``create-snapshot``. Audit §1
+    flagged both as noun leaves implying a transitive action, and both fail the
+    constitution's own test: each had to be explained by restating it with a
+    verb ("PRINT the resolved path", "COMMIT the export"), so that verb is the
+    name. The verbs come from the canonical catalog rather than invention —
+    `get` is the data-first fetch (the catalog also records that `show-<x>`
+    compounds are migrating to `get`), and `create` brings a new object into
+    existence ("Never `new`, `make`, `gen`").
+
+    Both old spellings stay as Phase-W aliases: `db path` in particular is the
+    documented way to answer "which store am I actually on", so it turns up in
+    people's notes and in other packages' troubleshooting steps.
+    """
     main.add_command(db_group)
+    deprecated_alias(db_group, "path", target="get-path", remove_in="0.52")
+    deprecated_alias(
+        db_group, "snapshot", target="create-snapshot", remove_in="0.52"
+    )
 
 
 @click.group(
     "db",
     help=(
-        "SQLite store verbs. SQLite is the store.\n\n"
-        "`db path` prints the resolved database location, `db verify` checks "
+        "Card-store verbs.\n\n"
+        "`db get-path` prints the resolved store location, `db verify` checks "
         "schema health, `db export` writes the store out as YAML text (a "
-        "backup, never a source), and `db snapshot` commits that export "
+        "backup, never a source), and `db create-snapshot` commits that export "
         "off-site."
     ),
 )
@@ -233,7 +252,7 @@ _DB_OPTION = click.option(
 
 
 @db_group.command(
-    "path",
+    "get-path",
     help=(
         "Print the resolved DB path.\n\n"
         "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_CARDS_DB "
@@ -247,11 +266,28 @@ _DB_OPTION = click.option(
     ),
 )
 @_DB_OPTION
-def db_path_cmd(db_path: str | None) -> None:
-    """Print the resolved DB path."""
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit the resolved target as JSON."
+)
+def db_path_cmd(db_path: str | None, as_json: bool) -> None:
+    """Print the resolved store target, as text or JSON.
+
+    `--json` ARRIVED WITH THE VERB. Renaming this leaf from `path` to the
+    canonical `get-path` raised audit §2 immediately: a read verb owes
+    machine-readable output. That is right for this command specifically —
+    "which store am I actually on" is the question a SCRIPT asks while
+    diagnosing a wrong-store read, and making it parse a bare line is how a
+    DSN containing a colon becomes somebody's split() bug.
+
+    The plain form is unchanged, so anything already piping this keeps working.
+    """
     from .._db import resolve_db_path
 
-    click.echo(str(resolve_db_path(db_path)))
+    resolved = str(resolve_db_path(db_path))
+    if as_json:
+        click.echo(json.dumps({"target": resolved}))
+        return
+    click.echo(resolved)
 
 
 @db_group.command(
@@ -374,7 +410,7 @@ def db_export_cmd(
 
 
 @db_group.command(
-    "snapshot",
+    "create-snapshot",
     help=(
         "Export the DB to the snapshot dir and git-commit the export.\n\n"
         "The ADR-0010 backup rail: git tracks an EXPORT, never live data, so "
@@ -415,14 +451,25 @@ def db_export_cmd(
 @click.option(
     "--json", "as_json", is_flag=True, help="Emit the snapshot report as JSON."
 )
+@mutating_options
 def db_snapshot_cmd(
     db_path: str | None,
     snap_dir: str | None,
     push: bool,
     allow_shrink: bool,
     as_json: bool,
+    dry_run: bool,
+    assume_yes: bool,
 ) -> None:
-    """Export to the snapshot dir and commit the export in its own git repo."""
+    """Export to the snapshot dir and commit the export in its own git repo.
+
+    THE GUARDS CAME WITH THE VERB. This leaf was `db snapshot` until audit §1
+    called it a noun; renaming it to the canonical `create` immediately raised
+    §2 — a mutating verb owes `--dry-run` and `--yes`. That is the naming
+    system working rather than nagging: `create-snapshot` PROMISES those flags
+    to anyone who has learned them on any other scitex verb, and the promise
+    has to be kept. The rename was half the change.
+    """
     import subprocess
     from pathlib import Path
 
@@ -449,6 +496,21 @@ def db_snapshot_cmd(
         if snap_dir
         else resolve_tasks_path(db_path).parent / "snapshots"
     )
+    # BOTH GUARDS SIT IN FRONT OF THE FIRST WRITE, which is the mkdir below —
+    # not in front of the git commit. A dry run that had already created the
+    # directory and written two export files would have changed the filesystem
+    # while reporting that it changed nothing, and that is the failure the flag
+    # exists to prevent.
+    if dry_run:
+        click.echo(f"{DRY_RUN_PREFIX} snapshot dir: {root}")
+        click.echo(f"{DRY_RUN_PREFIX} would export : tasks.json, threads.json")
+        click.echo(
+            f"{DRY_RUN_PREFIX} would git-commit the export"
+            + (" and push it" if push else " (no push)")
+        )
+        return
+    confirm_or_abort(f"Snapshot the store into {root}?", assume_yes=assume_yes)
+
     root.mkdir(parents=True, exist_ok=True)
 
     report = export_json(
