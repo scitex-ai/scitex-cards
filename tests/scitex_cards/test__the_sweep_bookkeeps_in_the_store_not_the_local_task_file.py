@@ -58,13 +58,15 @@ def test_an_explicitly_named_store_is_honoured_verbatim(tmp_path):
     assert actual == explicit
 
 
+@pytest.mark.skipif(
+    "://" not in str(resolve_store_target(None)),
+    reason="ambient store is a file; both resolvers agree by construction",
+)
 def test_on_a_database_deployment_it_differs_from_the_local_task_file():
     # Arrange
-    target = resolve_store_target(None)
-    if "://" not in str(target):
-        pytest.skip("ambient store is a file; both resolvers agree by construction")
+    local_file = local_store_path(None)
     # Act
-    agrees_with_local_file = _sweep_store(None) == local_store_path(None)
+    agrees_with_local_file = _sweep_store(None) == local_file
     # Assert
     assert not agrees_with_local_file
 
