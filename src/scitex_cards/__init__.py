@@ -129,6 +129,15 @@ _LAZY_IMPORTS = {
     "help_clear": ("._help_wait", "help_clear"),
     "help_wait": ("._help_wait", "help_wait"),
     "rescore_task": ("._store_rescore", "rescore_task"),
+    # The messaging rail. These five DID NOT have a function to publish — they
+    # existed only as async MCP tool bodies, so the logic was welded to the
+    # transport and no script could reach it. `_messaging` is that extraction:
+    # the MCP tools now delegate to these and keep their JSON contract.
+    "ack_notifications": ("._messaging", "ack_notifications"),
+    "dm_list": ("._messaging", "dm_list"),
+    "dm_send": ("._messaging", "dm_send"),
+    "dm_send_document": ("._messaging", "dm_send_document"),
+    "poll_notifications": ("._messaging", "poll_notifications"),
 }
 
 
@@ -171,18 +180,23 @@ __all__ = [
     "ENV_SCOPE",
     "TaskNotFoundError",
     "TaskValidationError",
+    "ack_notifications",
     "add_task",
     "canonical_agent_id",
     "comment_task",
     "complete_task",
     "dedup_agents",
     "delete_task",
+    "dm_list",
+    "dm_send",
+    "dm_send_document",
     "get_task",
     "health",
     "help_clear",
     "help_wait",
     "list_tasks",
     "parse_agent_id",
+    "poll_notifications",
     "reassign_task",
     "reopen_task",
     "rescore_task",
