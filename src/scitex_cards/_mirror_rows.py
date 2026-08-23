@@ -85,7 +85,7 @@ def _write_card(
         row = conn.execute(
             "SELECT revision FROM tasks WHERE id = ?", (tid,)
         ).fetchone()
-        found = None if row is None else row[0]
+        found = None if row is None else row["revision"]
         if found != expected_revision:
             # Refuse BEFORE the drop. Nothing has been touched.
             return {
@@ -103,6 +103,25 @@ def _write_card(
     # _insert_tasks handles the task row + comments + edges + roles for each
     # card it is given, so a one-element list is exactly one card's worth.
     return _insert_tasks(conn, [card], expected_revision=expected_revision)
+
+
+def _comment_fields(row) -> tuple:
+    """Read a ``task_comments`` row BY NAME. The row TYPE varies by backend.
+
+    POSITIONAL INDEXING IS A BUG HERE, and it shipped in 0.49.0. ``_db.py`` sets
+    ``row_factory = sqlite3.Row``, which supports ``row[0]``, so every SQLite test
+    passed. The PostgreSQL path (``_db_mirror.mirror_doc_incremental``) uses
+    psycopg's DICT row factory, where ``row[0]`` is a lookup of the integer KEY
+    ``0`` and raises ``KeyError: 0``. Production is PostgreSQL.
+
+    It hid because ``_merge_unseen_comment_rows`` returns early when a card has no
+    comment rows: the FIRST comment on a fresh card worked and every comment on a
+    card with history failed, so a smoke test that comments once was green.
+
+    Name-based access is the one form both row types accept, so this needs no
+    backend branch. A source-scanning guard keeps positional access out.
+    """
+    return row["author"], row["ts"], row["kind"], row["text"]
 
 
 def _merge_unseen_comment_rows(conn: StoreConnection, task_id: str, card: dict) -> int:
@@ -191,7 +210,8 @@ def _merge_unseen_comment_rows(conn: StoreConnection, task_id: str, card: dict) 
     merged = []
     recovered = 0
     for row in rows:
-        key = _key(row[0], row[1], row[2], row[3])
+        author, ts, kind, text = _comment_fields(row)
+        key = _key(author, ts, kind, text)
         pending = by_key.get(key)
         if pending:
             merged.append(pending.pop(0))
@@ -212,7 +232,7 @@ def _merge_unseen_comment_rows(conn: StoreConnection, task_id: str, card: dict) 
             # id included.
             merged.append(
                 stamp_comment_id(
-                    {"author": row[0], "ts": row[1], "kind": row[2], "text": row[3]}
+                    {"author": author, "ts": ts, "kind": kind, "text": text}
                 )
             )
             recovered += 1

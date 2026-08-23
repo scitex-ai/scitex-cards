@@ -121,6 +121,82 @@ jobs:
         with:
           ref: ${{ steps.ver.outputs.version }}
           fetch-depth: 0
+      # THE TAG MUST BE REACHABLE FROM BOTH BRANCHES, AND UNTIL NOW NOTHING
+      # CHECKED IT.
+      #
+      # A release tag that only one branch can reach means `git describe` on the
+      # other branch never names the release, and anyone bisecting or asking
+      # "which release contains this commit?" from that branch gets the wrong
+      # answer. The rule is on card
+      # cards-gate-the-release-tag-must-be-an-ancestor-of-both-develop-and-main.
+      #
+      # IT WAS A RULE WITH NO DETECTOR, AND IT WAS VIOLATED BY FOLLOWING IT.
+      # Cutting v0.49.0 (2026-08-23) the release was promoted develop -> main by
+      # PULL REQUEST and then tagged on main, deliberately, to satisfy this very
+      # rule. Measured immediately afterwards:
+      #
+      #     v0.49.0 -> 5a4f0d1c   ancestor of main: YES   of develop: NO
+      #     git log origin/develop..origin/main
+      #       5a4f0d1c  Merge pull request #929 from scitex-ai/develop
+      #
+      # Merging develop INTO main creates a MERGE COMMIT that exists only on
+      # main — develop's tip is the commit that was merged in, not the merge.
+      # So "promote, then tag main" lands the tag on the one commit that is
+      # structurally main-only, and the more carefully the procedure is followed
+      # the more reliably it breaks. Fixed after the fact by back-merging main
+      # into develop (#930), NOT by moving the tag: a pushed tag is a published
+      # contract and anything that already resolved it would silently get
+      # different bytes.
+      #
+      # This step turns that from a rule someone has to remember into a job that
+      # goes red. It runs in `build`, before publish, so a mis-anchored tag
+      # cannot reach PyPI.
+      #
+      # THREE-VALUED, AND CANNOT-DETERMINE REFUSES. This is the card's explicit
+      # requirement and my first version got it wrong:
+      #
+      #   "Three-valued per §2: PASS / FAIL / CANNOT-DETERMINE, and
+      #    cannot-determine must refuse. 'I could not check ancestry' collapsing
+      #    to a pass is the same defect one level up."
+      #
+      # The version merged in #931 SKIPPED an unresolvable branch and let the
+      # job pass, and its commit message called that "absence is not failure" as
+      # if it were a virtue. It is the failure the card warned about: a fetch
+      # that silently failed, a shallow clone, or a typo'd branch name all
+      # produced a green gate. A guard that cannot see is not a guard that
+      # approves.
+      #
+      # A repo that genuinely has no `develop` must therefore say so OUT LOUD via
+      # RELEASE_ANCESTOR_BRANCHES rather than be inferred from a missing ref.
+      # An ABSENT EXPECTATION and an UNVERIFIABLE ONE look identical to the
+      # process and are opposites in meaning; only the first is safe, and only a
+      # human can declare it.
+      - name: The release tag must be an ancestor of both develop and main
+        env:
+          # Override for a repo with a different branch model. Space-separated.
+          RELEASE_ANCESTOR_BRANCHES: ${{ vars.RELEASE_ANCESTOR_BRANCHES || 'main develop' }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.version }}"
+          if ! git fetch --quiet origin 'refs/heads/*:refs/remotes/origin/*'; then
+            echo "::error::could not fetch branch refs from origin, so ancestry is UNVERIFIABLE. Refusing rather than assuming."
+            exit 1
+          fi
+          rc=0
+          for br in $RELEASE_ANCESTOR_BRANCHES; do
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$br" >/dev/null; then
+              echo "::error::branch '$br' is required by RELEASE_ANCESTOR_BRANCHES but does not exist on origin. Ancestry against it is UNVERIFIABLE, which refuses — it does not pass. If this repo genuinely has no '$br', set the repo variable RELEASE_ANCESTOR_BRANCHES to the branches it does have."
+              rc=1
+              continue
+            fi
+            if git merge-base --is-ancestor "$tag" "refs/remotes/origin/$br"; then
+              echo "  $br: OK — $tag is an ancestor"
+            else
+              echo "::error::$tag is NOT an ancestor of origin/$br. A release tag must be reachable from every branch in RELEASE_ANCESTOR_BRANCHES. The correct ritual (adopted 2026-08-16) is to TAG THE RELEASE-BUMP MERGE COMMIT ON DEVELOP, which satisfies both by construction once the promotion has happened. Tagging main's merge commit does NOT: that commit exists only on main. Repair by back-merging main into develop — never by moving the tag, which is a published contract."
+              rc=1
+            fi
+          done
+          exit "$rc"
       # Build via uv's native frontend — wheel + sdist into dist/.
       # fail-loud on empty dist.
       - uses: astral-sh/setup-uv@v3
