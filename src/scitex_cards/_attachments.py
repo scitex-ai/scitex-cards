@@ -44,6 +44,7 @@ from __future__ import annotations
 import mimetypes
 import re
 import shutil
+import socket
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,12 +114,32 @@ def _new_slot(store) -> tuple[str, str, Path]:
 
 
 def _describe(target: Path, subdir: str, token: str, name: str, mime: str) -> dict:
-    """The metadata block both entry points return, one shape."""
+    """The metadata block both entry points return, one shape.
+
+    ``host`` NAMES THE ONLY MACHINE THAT CAN SERVE THESE BYTES, and it is not
+    decoration. :func:`attachments_root` is a LOCAL directory, while the DM
+    record carrying the url replicates to every seat — so the reference
+    outruns the thing it references, and a reader on any other host resolves
+    it to nothing.
+
+    Measured 2026-08-23: an 84KB file was sent from compute-04 to an agent on
+    compute-03. The record arrived, the bytes did not, and BOTH SIDES SAW
+    SUCCESS — the sender got a url and a byte count, the recipient got a
+    message ending in a url. Nothing reported a failure, because nothing in
+    the returned shape had anywhere to say "this is readable from one host".
+
+    ``replicated`` is a literal ``False`` on purpose rather than omitted: it
+    is a property of this storage LAYOUT, so a caller can branch on it today,
+    and the day the bytes travel it flips in exactly one place instead of
+    every call site having to learn that they now do.
+    """
     return {
         "url": url_for(subdir, token, name),
         "filename": name,
         "mime_type": mime,
         "size": target.stat().st_size,
+        "host": socket.gethostname(),
+        "replicated": False,
     }
 
 
@@ -221,6 +242,46 @@ def resolve_stored(subdir: str, token: str, name: str, store=None) -> Path | Non
     return path
 
 
+def attachment_status(url: str, store=None) -> dict:
+    """Can THIS host serve ``url``? The read side of ``_describe``'s ``host``.
+
+    Always returns the same four keys — ``{"url", "present", "host",
+    "reason"}`` — so a caller never has to guess which are set. ``present`` is
+    ``False`` both for a url this seat cannot resolve and for one that was
+    never an attachment url; ``reason`` says which, because those need
+    different responses and a bare ``False`` conflates them.
+
+    THIS EXISTS BECAUSE A DEAD LINK IS INDISTINGUISHABLE FROM NO LINK. An
+    attachment sent from another seat leaves a url in a replicated record with
+    no bytes behind it (see :func:`_describe`), and the reader's only signal
+    today is a fetch that quietly returns nothing. Calling this turns that
+    into "the bytes are on some other host", which is a fact the reader can
+    act on — ask the sender to paste inline, or go and get them.
+
+    It answers for the CALLING host only. ``present: False`` means *not here*,
+    never *nowhere*: the file may be perfectly intact one seat away, which is
+    exactly the case that produced this function.
+    """
+    here = socket.gethostname()
+    parts = (url or "").split("/")
+    if len(parts) != 4 or parts[0] != URL_PREFIX:
+        return {
+            "url": url,
+            "present": False,
+            "host": here,
+            "reason": "not an attachment url",
+        }
+    path = resolve_stored(parts[1], parts[2], parts[3], store=store)
+    if path is None:
+        return {
+            "url": url,
+            "present": False,
+            "host": here,
+            "reason": f"no bytes for this url on {here}",
+        }
+    return {"url": url, "present": True, "host": here, "reason": ""}
+
+
 def guess_mime(name: str) -> str:
     """Content type for a stored name, defaulting to opaque bytes."""
     return mimetypes.guess_type(safe_name(name))[0] or "application/octet-stream"
@@ -230,6 +291,7 @@ __all__ = [
     "MAX_UPLOAD_BYTES",
     "URL_PREFIX",
     "AttachmentError",
+    "attachment_status",
     "attachments_root",
     "guess_mime",
     "resolve_stored",

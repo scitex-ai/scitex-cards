@@ -148,16 +148,30 @@ def dm_send_document(
     store: Any = None,
     sender: str | None = None,
 ) -> dict:
-    """Send a FILE to ``to`` as a direct message.
+    """Send a FILE to ``to`` as a direct message — READABLE ON THIS HOST ONLY.
 
     Copies the bytes into the board's attachment store — the same store, url
     shape and renderer the operator's own uploads use — so a file the caller
-    later moves or deletes still arrives. Returns ``{"message": <DM record>,
-    "attachment": {url, filename, mime_type, size}}``.
+    later moves or deletes is still served. Returns ``{"message": <DM record>,
+    "attachment": {url, filename, mime_type, size, host, replicated}}``.
+
+    THE BYTES DO NOT CROSS HOSTS AND THE RECORD DOES. The attachment root is a
+    local directory; the DM record replicates to every seat. So a recipient
+    reading from another host receives a message ending in a url that resolves
+    to nothing, and neither side is told. Measured 2026-08-23 against a peer on
+    another seat: 84KB "sent", nothing received, success reported both ways.
+
+    ``attachment["host"]`` therefore names the ONE machine that can serve the
+    result, and the caller is expected to read it rather than to read ``size``
+    as delivery. For a recipient elsewhere, paste the content inline instead —
+    an ugly message that arrives beats a tidy one that does not. The reader's
+    counterpart is ``_attachments.attachment_status(url)``, which answers
+    whether the bytes are reachable from where IT is standing.
 
     Raises :class:`RemoteHubAttachmentUnsupported` when a remote hub is
-    configured, and ``_attachments.AttachmentError`` for a missing file, a
-    non-regular file, or one over the size ceiling.
+    configured — the same divergence, caught for the one topology the process
+    can actually detect — and ``_attachments.AttachmentError`` for a missing
+    file, a non-regular file, or one over the size ceiling.
     """
     import os
 
