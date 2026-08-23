@@ -1,8 +1,16 @@
+---
+description: |
+  [TOPIC] Board reconciliation runbook — the canonical verbs every fleet
+  agent runs to drain its own lane, so the lead broadcasts one sweep.
+  [DETAILS] Two honest outcomes only: mark done WITH a PR pointer, or close
+  stale WITH a reason — never a silent drop. Each agent reconciles the cards
+  it owns. Landed 2026-06-13 by operator directive via lead.
+tags: [scitex-cards-board-reconciliation-runbook, scitex-cards-runbook]
+---
+
 # Board Reconciliation Runbook — Canonical Verbs
 
-**Audience:** every fleet agent (scitex-* workers, hub, journal, ripple-wm, dev, agent-container, lead, …).
-**Owner:** scitex-cards.
-**First landed:** 2026-06-13 (operator directive via lead).
+**Audience:** every fleet agent. **Owner:** scitex-cards.
 
 ## Why this exists
 
@@ -178,10 +186,9 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 ## 8. Gotchas
 
 1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
-2. **Container store divergence (historical).** Older containers could bind from a different host snapshot than the operator's canonical store before the migration off per-project files; that failure class no longer applies now that `$SCITEX_CARDS_DB` is the single store identity.
-3. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
-4. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
-5. **Close uses `deferred` today.** If/when `VALID_STATUSES` grows a dedicated `closed` value, `close` will switch over — the verb shape stays the same.
+2. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
+3. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
+4. **Close uses `deferred` today.** If/when `VALID_STATUSES` grows a dedicated `closed` value, `close` will switch over — the verb shape stays the same.
 
 ---
 
@@ -189,11 +196,5 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 
 - Operator directive 2026-06-13 (via lead a2a) — "make every agent reconcile their project's cards; 85 merges / 56 marked done is the drift signal".
 - Operator "all agents use scitex-cards, no parallel card formats" → P3a fleet MCP rollout.
-- Verb gap closure: PR #151 (`feat(cli): close verb`).
-- Comment verb: PR #144.
-- Skill bundle refresh: PR #149.
-- Recurring stale-review board panel: PR #153 (backend `/stale` + `/archive`) + PR #154 (FE 🧹 Stale layout + Archive button).
-- Fleet MCP enabler: PR #155 (`mcp install --apply`).
-- Stale-list generator: ad-hoc Python at `scitex-cards` (CLI verb is a follow-up).
-
-End-of-file.
+- Verbs and bundle: #144 (comment verb), #149 (skill bundle refresh), #151 (`close` verb), #155 (`mcp install --apply`, the fleet MCP enabler).
+- Stale review: #153 (backend `/stale` + `/archive`) + #154 (FE 🧹 Stale layout + Archive button). The stale-list generator is still ad-hoc Python; a CLI verb is a follow-up.
