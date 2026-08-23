@@ -103,6 +103,11 @@ _COMMAND_CATEGORIES = (
             # the help text advertises the thing we want callers to stop using.
             "validate-health",
             "resolve-store",
+            # Answers "who must restart for a fix to take effect". Sits beside
+            # resolve-store because both diagnose the same class of question —
+            # not "what does the config say" but "what is this process
+            # actually using".
+            "list-importers",
         ),
     ),
     ("Introspection", ("list-python-apis", "skills")),
