@@ -29,21 +29,23 @@ jobs:
   postgres-backend:
     runs-on: ubuntu-latest
 
-    env:
-      # Defined once at job level so the run step and the guard step below
-      # cannot drift apart. A guard that checks a different set of files than
-      # the one that actually ran is worse than no guard: it reports on a run
-      # that did not happen.
-      #
-      # ADD EVERY FILE WITH A POSTGRES-DEPENDENT TEST HERE. A test that needs a
-      # server and is not listed does not fail — it simply never runs in CI,
-      # which is this workflow's own failure mode reappearing one level up.
-      PG_TEST_FILES: >-
-        tests/scitex_cards/test__sql_null_safe.py
-        tests/scitex_cards/test__inbox_carry.py
-        tests/scitex_cards/test__schema_v9_arrival_order.py
-        tests/scitex_cards/test__store_instance.py
-        tests/scitex_cards/test__store_pin.py
+    # THE FILE LIST IS DISCOVERED, NOT MAINTAINED. It was a hand-written allowlist
+    # here, carrying its own warning that a Postgres-dependent test not on the
+    # list "does not fail — it simply never runs in CI, which is this workflow's
+    # own failure mode reappearing one level up."
+    #
+    # That is what happened. Measured 2026-08-23: SEVEN files declared
+    # SCITEX_CARDS_TEST_PG_DSN and FIVE were listed; test__db_foreign_keys and
+    # test__inbox_shape had never run against a server. And the defect that made
+    # every commented card read-only fleet-wide that day — positional access on a
+    # dict row, a behaviour THIS FILE'S HEADER NAMES BY NAME — shipped green,
+    # because the card-write funnel had no Postgres-backed test to be omitted
+    # from at all.
+    #
+    # A registry that must be remembered is not a mechanism. Discovery keys on
+    # the marker this job already switches on, so a new Postgres test is included
+    # by being written, and the empty-set refusal below turns a renamed marker
+    # into a loud failure instead of a green run over zero files.
 
     services:
       postgres:
@@ -80,6 +82,29 @@ jobs:
         # honest about what actually broke.
         run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
 
+      - name: Discover every Postgres-dependent test file
+        id: discover
+        # THE EMPTY-SET REFUSAL IS THE LOAD-BEARING HALF. If the marker were
+        # renamed, the search would select nothing, pytest would receive no
+        # arguments, and the leg would pass having tested nothing — the same
+        # "green because it never ran" failure this job exists to remove, one
+        # level further up again.
+        #
+        # find|xargs rather than a recursive grep: identical result, and it keeps
+        # the searched file set explicit.
+        run: |
+          set -euo pipefail
+          files=$(find tests -name '*.py' -print0 \
+                    | xargs -0 grep -l 'SCITEX_CARDS_TEST_PG_DSN' \
+                    | sort | tr '\n' ' ' || true)
+          if [ -z "$files" ]; then
+            echo "::error::no test file references SCITEX_CARDS_TEST_PG_DSN -- the marker was renamed or the tests moved. Refusing to run zero Postgres tests and report success."
+            exit 1
+          fi
+          echo "discovered:"
+          for f in $files; do echo "  $f"; done
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
       - name: Run the Postgres-backed tests
         env:
           # Declaring the DSN is what makes an unreachable server a FAILURE
@@ -94,7 +119,7 @@ jobs:
           # credit to scitex-hpc, who measured it on three commands piped to
           # `head` the same day this was written.)
           set -o pipefail
-          python -m pytest $PG_TEST_FILES -v -rs | tee result.txt
+          python -m pytest ${{ steps.discover.outputs.files }} -v -rs | tee result.txt
 
       - name: Assert the Postgres tests actually exercised Postgres
         # The guard on the guard. A leg that is green because every Postgres
