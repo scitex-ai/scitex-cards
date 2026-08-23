@@ -305,12 +305,62 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
     helper exists to keep separated. It is a named function rather than an
     inline ``if resolved.exists()`` so the next reader cannot mistake one for
     the other, or extend the guard from groups to tasks by moving a line.
+
+    A SIDECAR THAT IS NOT A YAML DOCUMENT DEGRADES THE SAME WAY AS AN ABSENT
+    ONE, and that is the same positive reading rather than a new hedge: a file
+    that cannot be parsed as YAML defines no groups, exactly as a missing file
+    defines none. Measured 2026-08-23 — on TWO hosts the sidecar path held a
+    SQLite database (the phantom of
+    ``cards-sqlite-inbox-overwrote-tasks-yaml-board-500-p0-20260823``), so
+    ``yaml.safe_load`` raised ``UnicodeDecodeError`` on the header's first
+    high byte and the WHOLE board answered 500::
+
+        GET /tasks -> 500  "Cannot read the task store: 'utf-8' codec can't
+                            decode byte 0xf8 in position 102"
+
+    A viewer concern took the cards down with it. The existence test above was
+    already the statement that this read may not be load-bearing; it just
+    tested the wrong property. ``exists()`` answers "is there a file", and the
+    property actually required is "is there a YAML document".
+
+    NARROW ON PURPOSE. Only the two failures that mean "this is not a YAML
+    document" are absorbed. A ``TaskValidationError`` from
+    :func:`_validate_groups` still propagates: that is a REAL yaml file with a
+    malformed ``groups:`` block, an authoring mistake with a fixable line
+    number, and swallowing it would hide a defect the author can act on.
+
+    WHAT THE ``logger.error`` IS AND IS NOT. It is a RECORD, not a gate —
+    nothing branches on it, and calling it a check would be the exact
+    mislabelling the constitution warns about. It exists so that an operator
+    reading the journal during an incident finds the path and the remedy
+    instead of silence, because the failure this replaces was LOUD (a 500 on
+    every request) and the fix must not buy quiet at the price of invisibility.
+    The instrument that should FIND a phantom before anyone looks at the board
+    belongs in the health doctor, and is tracked on the card above.
     """
+    import yaml
+
     from scitex_cards._groups import load_groups
 
     if not resolved.exists():
         return []
-    return load_groups(resolved, task_ids=task_ids)
+    try:
+        return load_groups(resolved, task_ids=task_ids)
+    except (UnicodeDecodeError, yaml.YAMLError) as exc:
+        logger.error(
+            "[scitex-cards] the groups sidecar %s is not a YAML document (%s): "
+            "serving the board with NO GROUPS rather than failing the whole "
+            "read. The cards below are unaffected — they come from the "
+            "database, not from this file. To fix: inspect the file (`file "
+            "%s`); if it reads 'SQLite format 3' it is a phantom store written "
+            "by a caller that handed this DISPLAY LABEL to a database opener, "
+            "and the file should be MOVED ASIDE (never deleted — it may hold "
+            "undelivered inbox rows), not repaired.",
+            resolved,
+            exc,
+            resolved,
+        )
+        return []
 
 
 def get_board(
