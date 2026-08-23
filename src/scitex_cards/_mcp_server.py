@@ -307,6 +307,17 @@ TOOL_NAMES: tuple[str, ...] = (
     "ack_notifications",
     # Package-level health doctor (1:1 `_health.health`; in _mcp_skills). Broad
     # store/notifyd/channel diagnosis — distinct from the narrow `mcp doctor`.
+    # THE MCP TOOL KEEPS THE SINGLE-TOKEN NAME `health` DELIBERATELY, and audit
+    # §2 flags it. It is a CROSS-PACKAGE STANDARD — sac and
+    # claude-code-telegrammer expose the same verb under the same name, so an
+    # operator asks any package for its health identically. Renaming ours to
+    # satisfy §2 would break the uniformity the standard exists to provide, for
+    # one package only. `tests/scitex_cards/test__mcp_server.py::_STANDARD_NAMES`
+    # already pins this decision; the §2 finding is raised with scitex-dev,
+    # whose rule (`if "_" not in raw`) has no notion of a standard name.
+    #
+    # The CLI is a different surface and DID move: `validate-health`, with
+    # `health` kept as a Phase-W deprecated_alias.
     "health",
     "cards_skills_list",
     "cards_skills_get",

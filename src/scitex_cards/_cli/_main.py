@@ -90,7 +90,12 @@ _COMMAND_CATEGORIES = (
             "stop-hook",
             "install-stop-hook",
             "print-stats",
-            "health",
+            # Renamed from `health` (audit §1: a noun leaf implies a transitive
+            # action) using the ecosystem's canonical checking verb — §1f names
+            # `validate`, not `check`. The old `health` is a hidden Phase-W
+            # alias, so it is deliberately NOT listed here: a deprecated name in
+            # the help text advertises the thing we want callers to stop using.
+            "validate-health",
             "resolve-store",
         ),
     ),

@@ -258,7 +258,7 @@ async def ack_notifications(
 
 @mcp.tool()
 async def health(tasks_path: str | None = None) -> str:
-    """Package-level HEALTH check (the ``health`` doctor). Returns a JSON report.
+    """Package-level HEALTH check (the health doctor). Returns a JSON report.
 
     Broad store / identity / delivery diagnosis — NOT the narrow ``mcp doctor``
     (which only checks the fastmcp install). Runs the checks in
