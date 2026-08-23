@@ -56,11 +56,18 @@ def phantom(tmp_path):
     """
     path = tmp_path / "tasks.yaml"
     conn = sqlite3.connect(path)
-    conn.execute("create table inbox (id text primary key, body text)")
-    conn.execute("insert into inbox values ('n_1', 'an undelivered row')")
-    conn.commit()
-    conn.close()
-    return path
+    try:
+        conn.execute("create table inbox (id text primary key, body text)")
+        conn.execute("insert into inbox values ('n_1', 'an undelivered row')")
+        conn.commit()
+    finally:
+        # Closed in a `finally` and handed over by `yield`, not `return`
+        # (STX-TQ005). The connection is an external resource, and a fixture
+        # that acquires one owes the suite a teardown even when the value it
+        # hands out is only the path — an exception between connect() and
+        # close() would otherwise leak the handle into every later test.
+        conn.close()
+    yield path
 
 
 def test_the_fixture_really_is_undecodable_as_utf8(phantom):
