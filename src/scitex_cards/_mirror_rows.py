@@ -21,6 +21,7 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
 
+from ._comment_ids import stamp_comment_id
 from ._db_bootstrap import _insert_tasks
 from ._mirror_hashes import HASH_TABLE
 
@@ -195,8 +196,24 @@ def _merge_unseen_comment_rows(conn: StoreConnection, task_id: str, card: dict) 
         if pending:
             merged.append(pending.pop(0))
         else:
+            # MINTED, not hand-built. `task_comments` has no id column, so a
+            # recovered row arrives WITHOUT one, and an id-less element is
+            # exactly what `comments[]` may not contain: APPEND unions by
+            # element id, and an element with no id can only be matched by
+            # POSITION — which is what diverges when two hosts append at once
+            # (card cards-comments-need-globally-unique-ids-before-append).
+            # A source-scanning guard in test__comment_ids.py caught this
+            # dict literal escaping the helper, which is the guard working.
+            #
+            # The id is fresh rather than the writer's original, because the
+            # original never crossed — the table does not carry it. It is
+            # stable from then on: once this heal lands in card_json, later
+            # merges match on (author, ts, kind, text) and keep the doc's dict,
+            # id included.
             merged.append(
-                {"author": row[0], "ts": row[1], "kind": row[2], "text": row[3]}
+                stamp_comment_id(
+                    {"author": row[0], "ts": row[1], "kind": row[2], "text": row[3]}
+                )
             )
             recovered += 1
 
