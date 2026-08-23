@@ -121,6 +121,63 @@ jobs:
         with:
           ref: ${{ steps.ver.outputs.version }}
           fetch-depth: 0
+      # THE TAG MUST BE REACHABLE FROM BOTH BRANCHES, AND UNTIL NOW NOTHING
+      # CHECKED IT.
+      #
+      # A release tag that only one branch can reach means `git describe` on the
+      # other branch never names the release, and anyone bisecting or asking
+      # "which release contains this commit?" from that branch gets the wrong
+      # answer. The rule is on card
+      # cards-gate-the-release-tag-must-be-an-ancestor-of-both-develop-and-main.
+      #
+      # IT WAS A RULE WITH NO DETECTOR, AND IT WAS VIOLATED BY FOLLOWING IT.
+      # Cutting v0.49.0 (2026-08-23) the release was promoted develop -> main by
+      # PULL REQUEST and then tagged on main, deliberately, to satisfy this very
+      # rule. Measured immediately afterwards:
+      #
+      #     v0.49.0 -> 5a4f0d1c   ancestor of main: YES   of develop: NO
+      #     git log origin/develop..origin/main
+      #       5a4f0d1c  Merge pull request #929 from scitex-ai/develop
+      #
+      # Merging develop INTO main creates a MERGE COMMIT that exists only on
+      # main — develop's tip is the commit that was merged in, not the merge.
+      # So "promote, then tag main" lands the tag on the one commit that is
+      # structurally main-only, and the more carefully the procedure is followed
+      # the more reliably it breaks. Fixed after the fact by back-merging main
+      # into develop (#930), NOT by moving the tag: a pushed tag is a published
+      # contract and anything that already resolved it would silently get
+      # different bytes.
+      #
+      # This step turns that from a rule someone has to remember into a job that
+      # goes red. It runs in `build`, before publish, so a mis-anchored tag
+      # cannot reach PyPI.
+      #
+      # NON-BLOCKING BY DESIGN for a branch that does not exist: a repo without
+      # `develop`, or a tag cut before either branch existed, must not fail here
+      # — absence is reported and skipped. What fails is a branch that EXISTS
+      # and cannot reach the tag.
+      - name: The release tag must be an ancestor of both develop and main
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.version }}"
+          git fetch --quiet origin 'refs/heads/*:refs/remotes/origin/*' || true
+          rc=0
+          for br in main develop; do
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$br" >/dev/null; then
+              echo "::notice::branch '$br' does not exist on origin — skipped"
+              continue
+            fi
+            if git merge-base --is-ancestor "$tag" "refs/remotes/origin/$br"; then
+              echo "  $br: OK — $tag is an ancestor"
+            else
+              echo "::error::$tag is NOT an ancestor of origin/$br. A release tag must be reachable from both develop and main. If this followed a develop->main merge PR, the tag is on the merge commit, which lives only on main — back-merge main into develop rather than moving the tag."
+              echo "  commits on origin/$br that the other branch lacks:"
+              git log --oneline -5 "refs/remotes/origin/$br" \
+                --not $(git for-each-ref --format='%(refname)' refs/remotes/origin/main refs/remotes/origin/develop | grep -v "origin/$br") || true
+              rc=1
+            fi
+          done
+          exit "$rc"
       # Build via uv's native frontend — wheel + sdist into dist/.
       # fail-loud on empty dist.
       - uses: astral-sh/setup-uv@v3
