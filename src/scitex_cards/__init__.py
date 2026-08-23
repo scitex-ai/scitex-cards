@@ -119,6 +119,16 @@ _LAZY_IMPORTS = {
     "set_subscriber": ("._store", "set_subscriber"),
     "summarize_tasks": ("._store", "summarize_tasks"),
     "update_task": ("._store", "update_task"),
+    # MCP tools whose Python function already existed at module level under
+    # exactly this name and was simply never exported (audit §6 parity). An
+    # MCP tool with no Python API is a capability only an AGENT can reach:
+    # not callable from a script, a cron job, or another package, and not
+    # testable without standing up a transport. These four cost nothing to
+    # publish because the function is already there.
+    "health": ("._health", "health"),
+    "help_clear": ("._help_wait", "help_clear"),
+    "help_wait": ("._help_wait", "help_wait"),
+    "rescore_task": ("._store_rescore", "rescore_task"),
 }
 
 
@@ -168,10 +178,14 @@ __all__ = [
     "dedup_agents",
     "delete_task",
     "get_task",
+    "health",
+    "help_clear",
+    "help_wait",
     "list_tasks",
     "parse_agent_id",
     "reassign_task",
     "reopen_task",
+    "rescore_task",
     "resolve_agent_directory",
     "resolve_store",
     "resolve_task",
