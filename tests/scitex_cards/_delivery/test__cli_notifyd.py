@@ -11,7 +11,7 @@ Uses click's ``CliRunner`` against the real root group — no mocks. Covers:
 from __future__ import annotations
 
 import json
-import subprocess
+import os
 
 from click.testing import CliRunner
 
@@ -74,65 +74,83 @@ def test_notifyd_once_runs_single_pass():
     assert "sent=1" in result.output
 
 
-def _run_install_unit(tmp_path, env, monkeypatch):
+def _run_install_unit(tmp_path, env):
     """Install the systemd unit under a tmp $XDG_CONFIG_HOME.
 
-    Returns ``(result, target_path, subprocess_calls)``.
+    Returns ``(result, target_path, systemctl_marker)``.
+
+    NO subprocess patch. `install-unit` must WRITE the unit and PRINT the
+    `systemctl --user` commands for the operator, never shell out itself — so
+    instead of wrapping `subprocess.run` we put a REAL `systemctl` first on
+    $PATH. It is an ordinary shell script that appends its argv to
+    ``systemctl_marker``. If the command ever shells out, the script really
+    runs and the marker really appears; the absence of that file is evidence
+    from the system rather than from a recorded call list.
+
+    This is stronger than the wrapper it replaces: the old spy only saw calls
+    routed through `subprocess.run`, so an `os.system`, a `Popen`, or a
+    `run` imported directly into the module would have slipped past it.
     """
     env.set("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    calls: list = []
-    real_run = subprocess.run
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: (calls.append((a, k)), real_run(*a, **k))[1],
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    marker = tmp_path / "systemctl-invocations.log"
+    shim = bin_dir / "systemctl"
+    shim.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "' + str(marker) + '"\n',
+        encoding="utf-8",
     )
+    shim.chmod(0o755)
+    env.set("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
     result = CliRunner().invoke(main, ["notifyd", "install-unit"])
     target = tmp_path / "cfg" / "systemd" / "user" / "scitex-cards-notifyd.service"
-    return result, target, calls
+    return result, target, marker
 
 
-def test_notifyd_install_unit_exits_zero(tmp_path, env, monkeypatch):
+def test_notifyd_install_unit_exits_zero(tmp_path, env):
     # Arrange
     # Act
-    result, _target, _calls = _run_install_unit(tmp_path, env, monkeypatch)
+    result, _target, _calls = _run_install_unit(tmp_path, env)
     # Assert
     assert result.exit_code == 0, result.output
 
 
-def test_notifyd_install_unit_writes_the_unit_file(tmp_path, env, monkeypatch):
+def test_notifyd_install_unit_writes_the_unit_file(tmp_path, env):
     # Arrange
     # Act
-    _result, target, _calls = _run_install_unit(tmp_path, env, monkeypatch)
+    _result, target, _calls = _run_install_unit(tmp_path, env)
     # Assert
     assert target.exists()
 
 
-def test_notifyd_install_unit_reports_what_it_wrote(tmp_path, env, monkeypatch):
+def test_notifyd_install_unit_reports_what_it_wrote(tmp_path, env):
     # Arrange
     # Act
-    result, _target, _calls = _run_install_unit(tmp_path, env, monkeypatch)
+    result, _target, _calls = _run_install_unit(tmp_path, env)
     # Assert
     assert "wrote systemd user unit" in result.output
 
 
-def test_notifyd_install_unit_prints_the_enable_commands(tmp_path, env, monkeypatch):
+def test_notifyd_install_unit_prints_the_enable_commands(tmp_path, env):
     # Arrange
     # Act
-    result, _target, _calls = _run_install_unit(tmp_path, env, monkeypatch)
+    result, _target, _calls = _run_install_unit(tmp_path, env)
     # Assert — the operator-gated commands are printed for them to run.
     assert "systemctl --user daemon-reload" in result.output
 
 
-def test_notifyd_install_unit_never_runs_systemctl(tmp_path, env, monkeypatch):
+def test_notifyd_install_unit_never_runs_systemctl(tmp_path, env):
     # Arrange
     # Act
-    _result, _target, calls = _run_install_unit(tmp_path, env, monkeypatch)
-    # Assert — the tool printed the commands but never SHELLED OUT.
-    assert calls == []
+    _result, _target, systemctl_log = _run_install_unit(tmp_path, env)
+    # Assert — a real `systemctl` sat first on $PATH throughout. If the command
+    # had shelled out, that script would have run and written this file.
+    assert not systemctl_log.exists()
 
 
-def _sweep_with_none_store(env, monkeypatch):
+def _sweep_with_none_store(env, tmp_path):
     """Run the reminder sweep with ``store=None`` over one stale card.
 
     Regression: the notifyd tick calls ``_run_reminder_sweep(store=None)`` (the
@@ -154,10 +172,22 @@ def _sweep_with_none_store(env, monkeypatch):
         last_activity="2026-01-01T00:00:00Z",
     )
     # Hermetic: a deployed container scopes the nag to one agent via
-    # SCITEX_CARDS_REMINDER_OWNERS / a real config.yaml; neutralise both so this
+    # SCITEX_CARDS_REMINDER_OWNERS / a real config file; neutralise both so this
     # owner ("alice") is nagged regardless of the host's settings.
+    #
+    # The config layer is neutralised by REDIRECTING it, not by replacing
+    # `config_paths` with `lambda: []`. `_user_root()` honours $SCITEX_DIR and
+    # the project layer is found by walking up from the cwd for a `.git`, so
+    # pointing both at empty tmp dirs makes the real resolver return real paths
+    # to files that genuinely do not exist — an empty config for the same
+    # reason production would see one.
     env.delete("SCITEX_CARDS_REMINDER_OWNERS")
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    empty = tmp_path / "no-config"
+    (empty / "cards").mkdir(parents=True, exist_ok=True)
+    env.set("SCITEX_DIR", str(empty))
+    norepo = tmp_path / "norepo"
+    norepo.mkdir(parents=True, exist_ok=True)
+    env.chdir(norepo)
 
     _run_reminder_sweep(store=None, now=_now_utc())  # must NOT raise
 
@@ -165,18 +195,18 @@ def _sweep_with_none_store(env, monkeypatch):
     return [n for n in notes if n["event_type"] == "reminder"]
 
 
-def test_run_reminder_sweep_resolves_none_store_and_enqueues(env, monkeypatch):
+def test_run_reminder_sweep_resolves_none_store_and_enqueues(env, tmp_path):
     # Arrange
     # Act
-    digest = _sweep_with_none_store(env, monkeypatch)
+    digest = _sweep_with_none_store(env, tmp_path)
     # Assert — the owner gets ONE digest (event_type "reminder").
     assert len(digest) == 1
 
 
-def test_the_reminder_digest_names_the_stale_card(env, monkeypatch):
+def test_the_reminder_digest_names_the_stale_card(env, tmp_path):
     # Arrange
     # Act
-    digest = _sweep_with_none_store(env, monkeypatch)
+    digest = _sweep_with_none_store(env, tmp_path)
     # Assert
     assert "c1" in digest[0]["body"]
 

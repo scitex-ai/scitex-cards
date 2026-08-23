@@ -112,3 +112,14 @@ src/scitex_cards/_sphinx_html/
 !.scitex/cards/runtime/.gitkeep
 !.scitex/cards/runtime/README.md
 .peer-repos/
+
+# scitex session run directories: `@stx.session` writes `<script>_out/` next to
+# the script it decorates (FINISHED_SUCCESS/<timestamp>/{CONFIGS,logs}). That is
+# the PROVENANCE artifact the decorator exists to produce, so it is kept on disk
+# and NOT deleted — but it is regenerable local run state, not design, so it does
+# not belong in git.
+#
+# Added after `scripts/fleet-divergence-census.py` was run from the repo root and
+# left one behind. Verified before adding that no tracked path matches `_out/`,
+# so this shadows nothing that exists today.
+*_out/

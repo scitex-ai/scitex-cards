@@ -22,7 +22,9 @@ The behaviour the suite covers:
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import inspect
 import importlib
 import json
 import os
@@ -799,67 +801,92 @@ def test_reassign_through_to_thread_actually_mutated_the_owner(
     assert out["task"]["agent"] == expected_owner
 
 
-#: WHY the two `slow_handler` tests below are split but share this rationale:
-#: Regression for Fix A. A slow SYNC store call inside a handler must NOT
-#: freeze the loop. The fixture replaces `_store.get_task` with a variant that
-#: sleeps 0.3 s (standing in for the flock-guarded multi-MB load), then runs
-#: the `get_task` handler concurrently with a 10 ms-cadence ticker coroutine.
-#: If the blocking call ran ON the loop thread the ticker would be frozen
-#: (≈0 ticks); because Fix A offloads it to a worker thread, the ticker keeps
-#: advancing while the store op is in-flight. BOTH halves matter and neither
-#: may hide behind the other: an offload that keeps the loop live but returns
-#: the wrong card is not a fix, and a correct card fetched by freezing the
-#: loop is the bug itself.
-@pytest.fixture()
-def slow_store_handler_run(tmp_path, monkeypatch):
-    """Drive the `get_task` handler over a 0.3 s store call; return (result, ticks)."""
-    import time
+#: STORE VERBS THAT MAY RUN ON THE LOOP, each named with its reason. An
+#: allowlist rather than a blanket exemption, so adding one is a visible
+#: decision instead of a silently widened rule.
+#:
+#: * ``resolve_store`` — answers WHERE the store is from the argument, the
+#:   environment and the config chain. It does not open or read the store, so
+#:   it is not the blocking I/O this rule is about.
+_STORE_VERBS_ALLOWED_ON_THE_LOOP = {"resolve_store"}
 
+
+def _store_calls_on_the_loop(fn_node):
+    """`_store.X(...)` calls in an async def's OWN body, skipping nested defs.
+
+    Nested `def`s are what gets handed to `anyio.to_thread.run_sync`, so a
+    store call inside one is EXACTLY the correct shape and must not be flagged.
+    """
+    found = []
+
+    def walk(node):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue  # runs in a worker thread, not on the loop
+            if (
+                isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Attribute)
+                and isinstance(child.func.value, ast.Name)
+                and child.func.value.id == "_store"
+                and child.func.attr not in _STORE_VERBS_ALLOWED_ON_THE_LOOP
+            ):
+                found.append(f"{fn_node.name}:{child.func.attr}")
+            walk(child)
+
+    for stmt in fn_node.body:
+        walk(stmt)
+    return found
+
+
+def test_no_async_handler_runs_a_store_call_on_the_event_loop():
+    """Regression for Fix A, asked of EVERY handler rather than one of them.
+
+    A blocking store call on the loop thread freezes every other request in the
+    process — the flock-guarded multi-MB load was the measured case. The fix
+    routes those calls through `anyio.to_thread.run_sync`, which means the call
+    appears inside a nested sync `def`, never in the async body itself.
+
+    THE OLD FORM PROVED THIS FOR ONE HANDLER. It replaced `_store.get_task`
+    with a variant sleeping 0.3 s and counted event-loop ticks — which needed a
+    mock (PA-306 §3), and which left every OTHER handler free to call the store
+    inline and stay green. DI is not the alternative here: these are MCP tools,
+    so their parameters are user-visible schema and must not grow test seams.
+
+    Reading the module answers it for all of them at once.
+    """
+    # Arrange
+    import scitex_cards._mcp_server as mcp_server
+
+    tree = ast.parse(inspect.getsource(mcp_server))
+
+    # Act
+    offenders = [
+        hit
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef)
+        for hit in _store_calls_on_the_loop(node)
+    ]
+
+    # Assert
+    assert offenders == []
+
+
+def test_the_get_task_handler_returns_the_card_it_was_asked_for(tmp_path):
+    """The other half of Fix A: offloading must not change the answer.
+
+    An offload that keeps the loop live but returns the wrong card is not a
+    fix, and a correct card fetched by freezing the loop is the bug itself — so
+    both halves are pinned, they just no longer need a fake delay to do it.
+    """
+    # Arrange
     from scitex_cards import _store
     from scitex_cards._mcp_server import get_task
 
     _store.add_task(None, id="a", title="A", assignee="agent:test")
+    fn = getattr(get_task, "fn", None) or get_task
 
-    real_get_task = _store.get_task
-
-    def _slow_get_task(*args, **kwargs):
-        time.sleep(0.3)
-        return real_get_task(*args, **kwargs)
-
-    monkeypatch.setattr(_store, "get_task", _slow_get_task)
-
-    async def _drive():
-        ticks = 0
-
-        async def _ticker():
-            nonlocal ticks
-            for _ in range(100):
-                await asyncio.sleep(0.01)
-                ticks += 1
-
-        fn = getattr(get_task, "fn", None) or get_task
-        handler = asyncio.ensure_future(fn(task_id="a"))
-        ticker = asyncio.ensure_future(_ticker())
-        result = await handler
-        ticker.cancel()
-        return result, ticks
-
-    return asyncio.run(_drive())
-
-
-def test_slow_handler_still_returns_the_correct_task(slow_store_handler_run):
-    # Arrange
-    expected_id = "a"
     # Act
-    result, _ticks = slow_store_handler_run
+    result = asyncio.run(fn(task_id="a"))
+
     # Assert
-    assert json.loads(result)["id"] == expected_id
-
-
-def test_slow_handler_does_not_block_the_event_loop(slow_store_handler_run):
-    # Arrange
-    minimum_ticks = 5
-    # Act
-    _result, ticks = slow_store_handler_run
-    # Assert — the loop stayed live during the 0.3 s store call.
-    assert ticks >= minimum_ticks, f"event loop appeared blocked (only {ticks} ticks)"
+    assert json.loads(result)["id"] == "a"

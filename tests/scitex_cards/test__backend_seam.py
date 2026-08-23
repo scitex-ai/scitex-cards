@@ -21,16 +21,16 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import types
 
 import pytest
 
-from scitex_cards import _currency, _store
+from scitex_cards import _store
 from scitex_cards._backend import (
     BACKEND_VERBS,
     LocalBackend,
     get_backend,
 )
+from scitex_cards._currency import reset_currency_cache, warn_if_stale_once
 
 
 @pytest.fixture
@@ -384,24 +384,66 @@ def test_poll_notifications_through_the_seam_returns_a_list(store):
 # calls the NON-RAISING `warn_if_stale_once()`: it must warn, name the        #
 # sibling rail, and above all NOT take this rail down too.                    #
 # --------------------------------------------------------------------------- #
-def _arrange_stale_scitex_dev(monkeypatch):
-    """A scitex-dev whose `ensure_current` refuses, plus a cleared warn-once
-    sentinel — i.e. exactly the world the incident happened in."""
-    monkeypatch.setattr(_currency, "_CACHED_VERDICT", None)
-    monkeypatch.setattr(_currency, "_WARNED_STALE", False)
+@pytest.fixture(autouse=True)
+def _fresh_currency_cache():
+    """The warn-once state is REAL module state and survives a test.
 
-    class _FakeStalenessError(RuntimeError):
-        pass
+    Cleared on the way in AND out, so one stale scenario cannot silence the
+    next — the measurement is taken at most once per process by design.
+    """
+    reset_currency_cache()
+    yield
+    reset_currency_cache()
 
-    def _fake_ensure_current(dist_name):
+
+class _FakeStalenessError(RuntimeError):
+    """What the injected scitex-dev publishes as its ``StalenessError``.
+
+    ONE class shared by every arrangement below, and that is load-bearing: the
+    verdict tells a staleness VERDICT from a malfunctioning scitex-dev by
+    catching exactly this type, so a second, look-alike class defined
+    elsewhere would be caught by nothing, degrade to ``unknown``, and silently
+    emit no warning at all.
+    """
+
+
+def _seam_over(ensure_current):
+    """A backend whose currency notice runs over the given ``ensure_current``.
+
+    The notice stays the REAL :func:`warn_if_stale_once` — only the scitex-dev
+    underneath it is supplied, through the loader seam the verdict obtains its
+    checker from. That matters for the text assertions below: a hand-rolled
+    warner would emit whatever the test wrote, which is no evidence at all
+    about what an agent actually reads.
+    """
+
+    def _load():
+        return ensure_current, _FakeStalenessError
+
+    return LocalBackend(warn_currency=lambda: warn_if_stale_once(load_checker=_load))
+
+
+def _stale_seam():
+    """The world the 2026-07-29 incident happened in: scitex-dev REFUSES."""
+
+    def _refuses(dist_name):
         raise _FakeStalenessError(f"{dist_name} 0.17.7 is behind latest 0.17.9")
 
-    fake_package = types.ModuleType("scitex_dev")
-    fake_module = types.ModuleType("scitex_dev.staleness")
-    fake_module.ensure_current = _fake_ensure_current
-    fake_module.StalenessError = _FakeStalenessError
-    monkeypatch.setitem(sys.modules, "scitex_dev", fake_package)
-    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", fake_module)
+    return _seam_over(_refuses)
+
+
+def _exiting_seam():
+    """A scitex-dev whose ``ensure_current`` calls ``sys.exit()``.
+
+    The LIBRARY BUG the currency guard must absorb: ``SystemExit`` is a
+    ``BaseException``, not an ``Exception``, so the pre-fix ``except
+    Exception`` did not stop it.
+    """
+
+    def _exits(dist_name):
+        sys.exit(f"scitex-dev exited while checking {dist_name}")
+
+    return _seam_over(_exits)
 
 
 def _currency_warning_texts(caplog):
@@ -413,88 +455,67 @@ def _currency_warning_texts(caplog):
 
 
 def test_dm_send_through_the_seam_warns_that_the_cli_rail_is_refusing(
-    store, monkeypatch, caplog
+    store, caplog
 ):
     # Arrange
-    _arrange_stale_scitex_dev(monkeypatch)
+    seam = _stale_seam()
     caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
     # Act
-    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
+    seam.dm_send("seam-alice", "seam-bob", "hello", store=store)
     # Assert
     assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
 
 
 def test_dm_send_through_the_seam_still_delivers_when_the_install_is_stale(
-    store, monkeypatch
+    store
 ):
     """The warn path must never become the thing that takes the last working
     rail down — that is the failure this whole change refuses to ship."""
     # Arrange
-    _arrange_stale_scitex_dev(monkeypatch)
+    seam = _stale_seam()
     # Act
-    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
-    thread = get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    seam.dm_send("seam-alice", "seam-bob", "hello", store=store)
+    thread = seam.dm_list("seam-bob", peer="seam-alice", store=store)
     # Assert
     assert [m["body"] for m in thread["messages"]] == ["hello"]
 
 
 def test_dm_list_through_the_seam_warns_that_the_cli_rail_is_refusing(
-    store, monkeypatch, caplog
+    store, caplog
 ):
     # Arrange
-    _arrange_stale_scitex_dev(monkeypatch)
+    seam = _stale_seam()
     caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
     # Act
-    get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    seam.dm_list("seam-bob", peer="seam-alice", store=store)
     # Assert
     assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
 
 
 def test_poll_notifications_through_the_seam_warns_that_the_cli_rail_is_refusing(
-    store, monkeypatch, caplog
+    store, caplog
 ):
     # Arrange
-    _arrange_stale_scitex_dev(monkeypatch)
+    seam = _stale_seam()
     caplog.set_level(logging.WARNING, logger="scitex_cards._currency")
     # Act
-    get_backend().poll_notifications("seam-bob", store=store)
+    seam.poll_notifications("seam-bob", store=store)
     # Assert
     assert "scitex-cards list-tasks" in "\n".join(_currency_warning_texts(caplog))
 
 
-def _arrange_scitex_dev_that_exits(monkeypatch):
-    """A scitex-dev whose `ensure_current` calls `sys.exit()` — the LIBRARY BUG
-    the currency guard must absorb. `SystemExit` is a BaseException, not an
-    Exception, so the pre-fix `except Exception` did not stop it."""
-    monkeypatch.setattr(_currency, "_CACHED_VERDICT", None)
-    monkeypatch.setattr(_currency, "_WARNED_STALE", False)
-
-    class _FakeStalenessError(RuntimeError):
-        pass
-
-    def _fake_ensure_current(dist_name):
-        sys.exit(f"scitex-dev exited while checking {dist_name}")
-
-    fake_package = types.ModuleType("scitex_dev")
-    fake_module = types.ModuleType("scitex_dev.staleness")
-    fake_module.ensure_current = _fake_ensure_current
-    fake_module.StalenessError = _FakeStalenessError
-    monkeypatch.setitem(sys.modules, "scitex_dev", fake_package)
-    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", fake_module)
-
-
 def test_dm_send_through_the_seam_still_delivers_when_the_currency_check_exits(
-    store, monkeypatch
+    store
 ):
     """THE REFUTED PROPERTY, measured where it broke. Before the fix the
     `SystemExit` propagated out of `dm_send`, the store was never touched, and
     the DM did not go out — the currency DIAGNOSTIC killed the last working
     rail. Reading the body back is the proof the write actually landed."""
     # Arrange
-    _arrange_scitex_dev_that_exits(monkeypatch)
+    seam = _exiting_seam()
     # Act
-    get_backend().dm_send("seam-alice", "seam-bob", "hello", store=store)
-    thread = get_backend().dm_list("seam-bob", peer="seam-alice", store=store)
+    seam.dm_send("seam-alice", "seam-bob", "hello", store=store)
+    thread = seam.dm_list("seam-bob", peer="seam-alice", store=store)
     # Assert
     assert [m["body"] for m in thread["messages"]] == ["hello"]
 

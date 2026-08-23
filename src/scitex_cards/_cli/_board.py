@@ -227,6 +227,7 @@ def board_start_cmd(
     Django app, and the last guard written for one door only (the
     unconfigured-store refusal) left the other open for three days.
 
+    \b
     Example:
       $ scitex-cards board start --port 8051
       $ scitex-cards board start --force
@@ -329,6 +330,7 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
     copy. Every message below is unchanged from when the sequence was
     inline; the wording is the contract this verb's tests pin.
 
+    \b
     Example:
       $ scitex-cards board stop
     """
@@ -404,6 +406,7 @@ def board_restart_cmd(
 ) -> None:
     """Stop then start. Both go through the same pidfile contract.
 
+    \b
     Example:
       $ scitex-cards board restart
     """
@@ -467,6 +470,7 @@ def board_restart_cmd(
 def board_status_cmd(port: int, as_json: bool) -> None:
     """One-line status: pidfile first, port fallback if it's stale.
 
+    \b
     Example:
       $ scitex-cards board status
       $ scitex-cards board status --json

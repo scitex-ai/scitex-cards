@@ -1,3 +1,14 @@
+---
+description: |
+  [TOPIC] The agent self-consumption loop — the board IS the work queue,
+  and every fleet agent runs the same 7 steps against it.
+  [DETAILS] On wake: take the top card, work it, comment progress, update
+  status, repeat. Local CARD/FUTURE files are scratch only. Covers the
+  supporting verbs (`scitex-cards next`, `scitex-cards update`) and how
+  `scitex-cards watch --push` hands a fresh request to the owning agent.
+tags: [scitex-cards-agent-self-consumption-loop, scitex-cards-agent-loop]
+---
+
 # 32. Agent self-consumption loop
 
 **The board IS your work queue.** Every fleet agent — `lead` and every

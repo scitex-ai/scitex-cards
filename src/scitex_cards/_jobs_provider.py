@@ -248,12 +248,44 @@ def provide_jobs() -> list[JobSpec]:
             kind="cron",
             # 5-field cron (min hour dom mon dow): every 15 min.
             schedule="*/15 * * * *",
-            command="scitex-cards reconcile-merged-prs --apply",
+            # `--apply` REMOVED 2026-08-20. This now REPORTS and closes nothing.
+            #
+            # WHY, measured rather than argued. The job infers "the work is done"
+            # from "a linked PR merged", and those are different claims:
+            #
+            #  * 2026-08-20, sac's P0 `sac-listen-ci-poller-burns-2x-the-graphql-
+            #    pool`: auto-closed on PR 1149 — which is the change that CAUSED
+            #    the burn (it moved it from the GraphQL pool to REST without
+            #    reducing volume). The merge of a CAUSE is indistinguishable from
+            #    the merge of a FIX if you only read the link. The card had been
+            #    written to NINE MINUTES earlier, mid-investigation, and a
+            #    mitigation (CI verdict ring off fleet-wide) still stands because
+            #    of it.
+            #  * 2026-08-05, scitex-dev: three closes on one card in one hour,
+            #    the third re-processing a PR it had already acted on 15 minutes
+            #    before. The job has NO IDEMPOTENCE — it re-derives "links a
+            #    merged PR" every tick, so a REOPEN is reverted on the next
+            #    sweep. Agents were reduced to clearing `pr_url` to keep their
+            #    own cards open, giving up the card->PR link to escape the job.
+            #
+            # THE DIRECTION IS ASYMMETRIC, which is what settles it: closing a
+            # live card removes it from the runnable set, so the work becomes
+            # invisible and the automation overrides a human decision on a timer.
+            # Leaving a done card open costs one manual close, once. Reporting
+            # keeps every bit of the signal and gives up only the presumption.
+            #
+            # Restoring `--apply` requires ALL of: idempotence per (card, pr);
+            # never re-closing a card reopened since the job last acted; refusing
+            # to close a card whose last_activity is NEWER than the merge; and an
+            # explicit completion marker the owner sets. See
+            # reconcile-merged-prs-closes-live-multistep-cards-20260805.
+            command="scitex-cards reconcile-merged-prs",
             description=(
                 "scitex-cards reconcile-merged-prs — periodic card-freshness "
-                "automation. Every 15 min, auto-close cards whose linked PR "
-                "(pr_url) has merged so nobody hand-updates the board. "
-                "Fail-soft: unknown merge-state is skipped, never closed."
+                "REPORT. Every 15 min, list cards whose linked PR (pr_url) has "
+                "merged, so an owner can decide. Deliberately does NOT close: a "
+                "merged PR records that a change referenced the card, not that "
+                "the card's problem is solved."
             ),
             restart_policy="no",
             timeout_sec=300,

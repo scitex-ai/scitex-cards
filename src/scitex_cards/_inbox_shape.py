@@ -76,6 +76,30 @@ class InboxShape:
     #: consults, so a future backend cannot be added without answering "does it
     #: carry a payload, and under what name".
     payload: str | None = None
+    #: Column recording WHICH NODE WROTE THE ROW, or ``None`` where the table
+    #: has no such column. Same reasoning as ``payload``, one incident later.
+    #:
+    #: THIS FIELD EXISTS BECAUSE ITS ABSENCE COST TWO AGENTS TWO SESSIONS.
+    #: `notifications.origin_node` has been in the schema since the sync-column
+    #: migration, declared for the stated purpose of surviving a host boundary
+    #: (`_db_sync_columns`: "crosses a host boundary carries origin_node,
+    #: row_uuid, revision, updated_at, deleted_at"). Measured 2026-08-21:
+    #:
+    #:     sweep_state      598 rows   origin_node populated 598  ['scitex-compute-04']
+    #:     notifications  7,737 rows   origin_node populated   0
+    #:     task_comments 13,191 rows   origin_node populated   0
+    #:     tasks          5,719 rows   origin_node populated   0
+    #:
+    #: One writer of four filled it in. So when stale digests began arriving
+    #: from an unidentified producer, the rows could not say where they came
+    #: from and the question had to be chased by ELIMINATION instead: a
+    #: six-host unit sweep, a sequence analysis, and two hypotheses refuted —
+    #: across two agents — for a fact the row was designed to carry.
+    #:
+    #: The value is not a new concept: `_db_sweep_state._origin_node()` already
+    #: computes it, and `sweep_state` proves the shape is a plain host name.
+    #: What was missing was calling it here.
+    origin: str | None = None
 
     def order(self) -> str:
         """``ORDER BY <arrival order>`` — spelled once so call sites cannot drift."""
@@ -87,8 +111,15 @@ class InboxShape:
 #: nine-column INSERT was correct here and lethal on the store. ``payload`` is
 #: passed EXPLICITLY rather than left to the default: this is the shape whose
 #: missing payload caused the outage, so "it has none" is stated, not implied.
+#: ``origin`` is likewise stated rather than defaulted: the ``inbox`` table has
+#: no sync columns at all, because it is a single-host file that never crosses
+#: a boundary. "It has none, and here is why" beats an implicit ``None``.
 SQLITE_SHAPE = InboxShape(
-    table="inbox", recipient="recipient", order_by="rowid", payload=None
+    table="inbox",
+    recipient="recipient",
+    order_by="rowid",
+    payload=None,
+    origin=None,
 )
 
 #: The rail in the canonical store. ``seq`` is schema v9's arrival-order column,
@@ -100,6 +131,7 @@ POSTGRES_SHAPE = InboxShape(
     recipient="recipient_id",
     order_by="seq",
     payload="record_json",
+    origin="origin_node",
 )
 
 

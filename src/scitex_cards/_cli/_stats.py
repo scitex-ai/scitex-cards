@@ -249,7 +249,20 @@ def stats_cmd(
                     "(SCITEX_CARDS_STALE_ACTIVE_HOURS / "
                     "SCITEX_CARDS_PENDING_NUDGE_HOURS)"
                 )
-                _emit_stale_active_nudges(tasks, path)
+                # STORE, NOT PATH — and they are not the same value here.
+                # `path` is a DISPLAY LABEL (`…/tasks.yaml`) that `load_tasks`
+                # above resolves correctly. This callee does something else
+                # with it: the sweep-state writer runs it through `_db_target`,
+                # which derives a SIBLING DATABASE from the label's directory.
+                # Measured 2026-08-23 on compute-04:
+                #     resolve_store_target(_db_target(None))
+                #       -> postgresql://scitex_cards@127.0.0.1:55432/…
+                #     resolve_store_target(_db_target('…/cards/tasks.yaml'))
+                #       -> /home/…/.scitex/cards/cards.db        <- SQLite
+                # so passing `path` sent every nudge-dedup write into a local
+                # SQLite file while the Postgres copy froze on 2026-08-18.
+                # None is the backend-agnostic value; each consumer resolves it.
+                _emit_stale_active_nudges(tasks, None)
         return
 
     # Plain, read-only path: an interactive `print-stats` (no --notify, or

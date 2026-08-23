@@ -9,7 +9,14 @@ with the parse cached). Both hot paths are now memoized on the backing file's
 ``(mtime_ns, size)`` — the ``services.get_board`` pattern already used by
 ``_threads._READ_CACHE`` — so a click re-parses only after a real write.
 
-Pinned here, with real files and no mocks (counters wrap the real loaders):
+Pinned here with real files and no mocks. The instrument is CACHE POISONING:
+warm the cache, overwrite the cached value with a sentinel no store contains,
+then read again. A result carrying the sentinel was served from cache; one
+without it went to the store. That answers "did this read reach the database"
+directly, where the call counters this file used to install answered only "was
+this attribute called" — a weaker question, and one this file had already been
+bitten by (a loader bound at import time was invisible to the counter, so the
+expected count silently changed meaning).
 
 * one parse per file state — a second read with an unchanged file hits cache;
 * a WRITE (register / append / mark_read) rolls the key and is visible on the
@@ -46,23 +53,49 @@ def store(tmp_path):
     _threads._SUMMARY_CACHE.clear()
 
 
-def _count_calls(monkeypatch, module, name):
-    """Wrap ``module.name`` with a call counter (the real function still runs)."""
-    real = getattr(module, name)
-    counter = {"n": 0}
+#: A name no store contains, so its presence in a result can ONLY come from
+#: the cache. Poisoning is what replaced the call counters here — see below.
+SENTINEL = "poisoned-from-cache"
 
-    def _wrapped(*args, **kwargs):
-        counter["n"] += 1
-        return real(*args, **kwargs)
+#: Same idea for the thread summary: a count no real thread has.
+SENTINEL_COUNT = 9999
 
-    monkeypatch.setattr(module, name, _wrapped)
-    return counter
+
+def _poison_cached_user_names() -> None:
+    """Rewrite every CACHED registry row's names to :data:`SENTINEL`.
+
+    WHY POISON RATHER THAN COUNT. A counter answers "was this function called",
+    and only through the ONE module attribute it was installed on — this very
+    file records the counter missing the write path's own read for exactly that
+    reason (``_store_write`` had bound the loader at import time). Poisoning
+    answers the question actually being asked, "did this read reach the
+    database", and it cannot be fooled by how the loader is imported: the
+    sentinel exists ONLY in the cache, so a result carrying it was served from
+    cache and a result without it was not.
+
+    The fixture above already clears these caches directly, so reaching into
+    them is this file's established idiom, not a new liberty.
+    """
+    for key, (ts, rows) in list(_db_users._ROW_CACHE.items()):
+        poisoned = [dict(row) for row in rows]
+        for row in poisoned:
+            row["names"] = [SENTINEL]
+        _db_users._ROW_CACHE[key] = (ts, poisoned)
+
+
+def _poison_cached_thread_counts() -> None:
+    """Rewrite every CACHED thread summary's message count to a sentinel."""
+    for key, (mtime, size, summary) in list(_threads._SUMMARY_CACHE.items()):
+        poisoned = {k: dict(v) for k, v in summary.items()}
+        for entry in poisoned.values():
+            entry["count"] = SENTINEL_COUNT
+        _threads._SUMMARY_CACHE[key] = (mtime, size, poisoned)
 
 
 # === users registry read cache =============================================
 
 
-def test_list_users_reads_the_registry_once_for_two_reads(store, monkeypatch):
+def test_a_second_user_read_inside_the_ttl_is_served_from_cache(store):
     """The cache still collapses repeat reads — now over the DATABASE.
 
     This counted `_load_users_section`, the YAML section parser, which the
@@ -70,16 +103,18 @@ def test_list_users_reads_the_registry_once_for_two_reads(store, monkeypatch):
     `list_users` sits on ordinary card paths, and the underlying read costs a
     ~4.8 ms connection, so two calls must not cost two of them.
     """
-    # Arrange — one registered user; count registry reads on the READ path.
+    # Arrange — one registered user, one read to warm the cache, then poison
+    # the cached rows so a cached answer becomes recognisable on sight.
     register_user(kind="agent", names=["alice"], store=store)
-    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
-
-    # Act — two reads inside one TTL window.
     list_users(store)
-    list_users(store)
+    _poison_cached_user_names()
 
-    # Assert — one read served both.
-    assert reads["n"] == 1
+    # Act — a second read inside the same TTL window.
+    names = list_users(store)[0].names
+
+    # Assert — the sentinel exists ONLY in the cache and was never written to
+    # the database, so getting it back proves this read never went there.
+    assert names == [SENTINEL]
 
 
 def test_two_cached_user_reads_return_identical_content(store):
@@ -118,27 +153,34 @@ def test_list_users_sees_a_registry_write_on_the_very_next_read(store):
     assert names == ["alice", "bob"]
 
 
-def test_a_registry_write_costs_exactly_one_cache_refill(store, monkeypatch):
-    # Arrange — warm the cache with one user, then start counting.
+def test_a_registry_write_retires_the_entry_and_is_never_served_a_stale_one(
+    store,
+):
+    """One assertion covering BOTH halves of the write path, because the same
+    sentinel answers both questions.
+
+    The write performs its OWN uncached read under the store lock — a
+    read-modify-write must never be served from a cache — and the following
+    read must then refill from the database. If the write had read the poisoned
+    cache instead, it would have written the sentinel back as alice's name and
+    it would still be here. If the read had been served the poisoned entry, the
+    sentinel would be here too. Seeing the real names is the proof that neither
+    happened.
+
+    The old form asserted a call count of two and needed a paragraph explaining
+    why two was not a regression. This asks about the data instead.
+    """
+    # Arrange — warm the cache, then poison it.
     register_user(kind="agent", names=["alice"], store=store)
     list_users(store)
-    reads = _count_calls(monkeypatch, _db_users, "load_users_rows")
+    _poison_cached_user_names()
 
-    # Act — a write retires the entry; then read again.
+    # Act — a write, then a read.
     register_user(kind="agent", names=["bob"], store=store)
-    list_users(store)
+    names = sorted(name for user in list_users(store) for name in user.names)
 
-    # Assert — TWO, and the second one is not waste. The write path performs
-    # its own UNCACHED read under the store lock (a read-modify-write must
-    # never be served from a cache), and the following read then refills.
-    #
-    # The old expectation here was ONE, because the write's read was invisible
-    # to the counter: `_store_write` bound `_load_users_section` at import
-    # time, so patching `_store_read`'s attribute could not see it. The
-    # dispatch resolves at call time now, so the counter sees both. The number
-    # changed because the INSTRUMENT got better, not because the code got
-    # worse — worth stating, since a rising count normally means the opposite.
-    assert reads["n"] == 2
+    # Assert
+    assert names == ["alice", "bob"]
 
 
 def test_mutating_a_returned_user_does_not_poison_the_cache(store):
@@ -156,18 +198,22 @@ def test_mutating_a_returned_user_does_not_poison_the_cache(store):
 # === thread summary cache ==================================================
 
 
-def test_list_threads_scans_once_while_the_sidecar_is_unchanged(store, monkeypatch):
-    # Arrange — a two-message thread, then count raw sidecar parses.
+def test_list_threads_does_not_rescan_while_the_sidecar_is_unchanged(store):
+    # Arrange — a two-message thread, one read to warm the summary cache, then
+    # poison the cached counts.
     append_message("operator", "agent-a", "hello", store=store)
     append_message("agent-a", "operator", "hi back", store=store)
-    parses = _count_calls(monkeypatch, _threads, "_load_threads")
-
-    # Act — two summary reads against the identical file state.
     list_threads(store=store)
-    list_threads(store=store)
+    _poison_cached_thread_counts()
 
-    # Assert — at most one parse (cache fill) served both; zero on the second.
-    assert parses["n"] <= 1
+    # Act — a second read against the identical sidecar state.
+    key = thread_key("operator", "agent-a")
+    count = list_threads(store=store)[key]["count"]
+
+    # Assert — the sentinel count is only in the cache, so the second read did
+    # not rescan the sidecar. The old form allowed `<= 1` parses, which is also
+    # satisfied by ZERO — this cannot be.
+    assert count == SENTINEL_COUNT
 
 
 def test_two_cached_thread_reads_report_the_same_message_count(store):

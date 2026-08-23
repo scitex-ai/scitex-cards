@@ -264,6 +264,7 @@ def enqueue(
                 recipient_id=recipient_id,
                 recipient_column=_RECIPIENT,
                 payload_column=_SHAPE.payload,
+                origin_column=_SHAPE.origin,
             )
             placeholders = ", ".join(["%s"] * len(columns))
             # ON CONFLICT DO NOTHING makes a retried insert idempotent even

@@ -57,6 +57,7 @@ def inbox_group() -> None:
         "Copy the YAML `inboxes:` records into the SQLite inbox DB. "
         "Idempotent (dedups on notification id) and reversible (never "
         "deletes the YAML section).\n\n"
+        "\b\n"
         "Example:\n"
         "  $ scitex-cards inbox migrate-to-sqlite --dry-run\n"
         "  $ scitex-cards inbox migrate-to-sqlite -y"
@@ -89,6 +90,7 @@ def inbox_migrate_cmd(
 ) -> None:
     """Copy YAML inbox records into SQLite.
 
+    \b
     Example:
       $ scitex-cards inbox migrate-to-sqlite --dry-run
       $ scitex-cards inbox migrate-to-sqlite -y
@@ -153,6 +155,7 @@ def inbox_migrate_cmd(
     help=(
         "Print status of the SQLite inbox DB (row count, unseen count, "
         "path).\n\n"
+        "\b\n"
         "Example:\n"
         "  $ scitex-cards inbox info\n"
         "  $ scitex-cards inbox info --json"
@@ -167,6 +170,7 @@ def inbox_migrate_cmd(
 def inbox_info_cmd(as_json: bool) -> None:
     """Read-side report on the SQLite inbox DB.
 
+    \b
     Example:
       $ scitex-cards inbox info
       $ scitex-cards inbox info --json
@@ -199,6 +203,7 @@ def inbox_info_cmd(as_json: bool) -> None:
         "cursor-advancing verb, reachable without MCP).\n\n"
         "Idempotent: re-acking an id is a no-op, never an error. Anything you "
         "do not ack stays unseen and is redelivered.\n\n"
+        "\b\n"
         "Example:\n"
         "  $ scitex-cards inbox ack --agent scitex-cards n_abc n_def"
     ),
@@ -218,6 +223,7 @@ def inbox_info_cmd(as_json: bool) -> None:
 def inbox_ack_cmd(agent: str | None, as_json: bool, ids: tuple) -> None:
     """Confirm notification ids for an agent.
 
+    \b
     Example:
       $ scitex-cards inbox ack --agent scitex-cards n_abc n_def
     """

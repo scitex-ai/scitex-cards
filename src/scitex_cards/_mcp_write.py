@@ -111,14 +111,24 @@ async def add_task(
     ``parked`` is the one way OUT of that backlog nudge, and it is a REASON,
     not a flag: free text saying WHY this card deliberately stands (a
     north-star umbrella whose real work lives in its children, say). A
-    non-empty reason exempts the card from the backlog nudge AND from
-    auto-expiry — a standing goal must not be auto-cancelled at the horizon
-    for the crime of standing. Whitespace-only is NOT a park: a park with no
+    non-empty reason exempts the card from the backlog nudge AND from the
+    triage report's EXPIRY PROPOSAL — a standing goal must not be proposed
+    for cancellation at the horizon for the crime of standing. Whitespace-only is NOT a park: a park with no
     stated reason is exactly the abandonment the sweep should still catch.
     It hides a card from the ALARM, never from the BOARD.
     You may park work you are NOT doing; you may NOT park work you claim to
     BE doing — the stale-active guard over ``in_progress`` ignores this field
-    on purpose. (hook-bypass: line-limit.)
+    on purpose.
+
+    NOTHING EXPIRES A CARD BY ITSELF, so weigh that exemption accordingly.
+    Past the horizon (``SCITEX_CARDS_DEFERRED_EXPIRY_DAYS``, default 7 days)
+    the aged set is merely PRINTED by ``scitex-cards triage`` as a proposal
+    for a human to act on. No sweep, daemon or verb in
+    this package writes ``status=cancelled``, and no scheduled job runs that
+    command — the six JobSpecs in ``_jobs_provider`` are dashboard,
+    wake-watcher, notify, ci-watch, snapshot and reconcile-merged-prs.
+    Expiry is a REPORT a human reads, not a mechanism that fires; the board
+    does not clean itself up. (hook-bypass: line-limit.)
     """
     _call = functools.partial(
         get_backend().add_task,
@@ -220,9 +230,11 @@ async def update_task(
     must carry a decision — so ``status=""`` raises with the valid set.
 
     ``parked`` follows the free-text rule: ``parked="<why>"`` parks the card
-    (exempt from the backlog nudge and from auto-expiry, still fully visible on
-    the board), and ``parked=""`` UN-parks it — the card rejoins the sweep, which
-    is exactly what you want when a standing goal becomes real work again. A
+    (exempt from the backlog nudge and from the triage report's expiry
+    proposal — nothing cancels it for you; see ``add_task`` — still fully
+    visible on the board), and ``parked=""`` UN-parks it — the card rejoins
+    the sweep, which is exactly what you want when a standing goal becomes
+    real work again. A
     whitespace-only reason is not a park; a park must say WHY, because a park
     with no stated reason is the abandonment the sweep exists to catch.
 

@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+# Freeze / thaw the card-store WRITERS across the fleet, reversibly.
+#
+# One-shot cutover tooling for
+# cards-quiesce-state-refuses-writes-during-cutover-20260731. Deliberately a
+# throwaway script in the scratchpad rather than a CLI verb: a migration that
+# happens once does not earn a permanent surface.
+#
+# WHY SHELL AND NOT PYTHON. The job is "run systemctl over ssh", which is
+# shell's native domain. The Python draft bought nothing but a JSON state file
+# and dragged in a provenance/CONFIG/RNG decorator meant for data-lineage
+# scripts. Fewer moving parts, and it runs on any host without a venv.
+#
+# ── WHAT IT WILL NOT TOUCH, which is the whole safety story ──────────────────
+# scitex-cards-pg.service is the PostgreSQL server holding the board. It must
+# stay UP or there is nothing to pg_dump and the migration has no input. Its
+# name shares the `scitex-cards-` prefix with every writer, so the obvious
+#     systemctl --user stop 'scitex-cards-*'
+# would take the database down with the writers. That glob is exactly why this
+# script names units EXPLICITLY and re-checks the deny-list immediately before
+# each stop rather than trusting the plan it built a moment earlier.
+#
+# ── ORDER, measured not guessed ──────────────────────────────────────────────
+# scitex-cards-sync-peers.timer exists on compute-04 ONLY: cross-host
+# propagation is hub-and-spoke, not a mesh, and the sync is ADDITIVE-ONLY. It
+# is stopped FIRST. Stopping it last would let it re-import rows from hosts
+# already quiesced, so the last host stopped would repopulate the first.
+#
+# ── REVERSAL IS FROM RECORDED STATE, NOT FROM THIS LIST ──────────────────────
+# --freeze records each unit it actually stopped; --thaw restarts only those.
+# Restarting "everything in the plan" would start units that were already dead
+# for their own reasons, turning a reversal into a change. Without the record
+# --thaw refuses rather than guessing.
+
+set -uo pipefail
+
+# THE THAW RECORD MUST OUTLIVE THIS MACHINE'S /tmp.
+#
+# It answers "what must be restarted", and that answer must be the same for
+# anyone performing the restore — which is precisely the state the operator's
+# 2026-08-17 ruling disqualifies from living in a private file: 「データベースを
+# 使わないで状態を表しているファイルがあるならばそれは失格です」.
+#
+# It is not hypothetical here. On 2026-08-20 an accidental --freeze wrote this
+# record and my own cleanup `rm -f` deleted it in the same command, so --thaw
+# had nothing to restore from; the two stopped services were recovered only
+# because their names were still on screen. A record that dies with the shell
+# that wrote it is not a record.
+#
+# So: keep the local file as the operational cursor (cheap, no dependency mid
+# window), and MIRROR every freeze to the card as a comment, which lives in
+# PostgreSQL 55432 and is readable by any agent on any host. `--freeze` prints
+# the exact mirror command; run it, do not rely on this file surviving.
+STATE="${CUTOVER_STATE:-$HOME/.scitex/cards/runtime/cutover_writers_state.tsv}"
+SSH=(ssh -o BatchMode=yes -o ConnectTimeout=8)
+RUNTIME='export XDG_RUNTIME_DIR=/run/user/$(id -u);'
+
+# NEVER stopped, at any stage, on any host.
+is_protected() {
+    case "$1" in
+        scitex-cards-pg.service | scitex-cards-pg-alert.service) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# host:unit,unit,...  — order within a host is the stop order.
+#
+# ywata-note-win IS LISTED DELIBERATELY, THOUGH IT IS CURRENTLY UNREACHABLE.
+# Omitting it would have been the worse bug: --dry-run would print four healthy
+# hosts and read as full fleet coverage, so the one host nobody can stop would
+# be the one host nobody SEES. An enumeration that excludes the problem case
+# reports "all clear" for the wrong reason. Listed, it shows UNREACHABLE and
+# verdict=skip, which is the honest answer.
+#
+# It also bounds a claim I overstated on the card: "sync-peers runs on
+# compute-04 ONLY" was measured across the four REACHABLE hosts. Whether
+# ywata-note-win also runs a sync timer is UNMEASURED, so "hub-and-spoke, not a
+# mesh" holds for four of five hosts and is a hypothesis for the fifth.
+PLAN=(
+    "scitex-compute-01:scitex-dev-ecosystem.service"
+    "scitex-compute-02:scitex-dev-ecosystem.service"
+    "scitex-compute-03:scitex-dev-ecosystem.service"
+    # ywata-note-win RUNS ITS OWN SYNCER AND ITS UNITS ARE NAMED DIFFERENTLY.
+    # Corrected 2026-08-20 after measuring the host directly. It was previously
+    # listed with `scitex-cards-sync-peers.timer` + `notifyd`, NEITHER of which
+    # exists there — so this entry would have reported "skip" for every unit and
+    # frozen NOTHING, while looking like it had covered the host.
+    #
+    # Its syncer is `scitex-cards-sync.timer` (with
+    # ~/.local/bin/scitex-cards-sync-with-hub.sh), pointing AT THE HUB from this
+    # side. That is why it holds the hub's row count exactly while being absent
+    # from the hub's own hardcoded peer list: the topology is not hub-and-spoke,
+    # it is hub-and-spoke PLUS a host that syncs itself.
+    #
+    # ── THREE LIVE UNITS UNDER THE RETIRED PRODUCT NAME ─────────────────────
+    # Found by sac 2026-08-20 by enumerating with NO filter, after I told them
+    # their previous enumeration still carried one. My own display filter was
+    # `grep -Ei "cards|scitex-dev"` and would have hidden all three, exactly as
+    # their `sync-peers` grep hid `snapshot` from them.
+    #
+    #     A NAME FILTER CANNOT SEE A THING RENAMED OUT OF ITS VOCABULARY.
+    #
+    # THEY ARE NOT STALE LEFTOVERS. Measured — every one runs the CURRENT
+    # binary against the CURRENT store, started today 12:30:
+    #
+    #   scitex-todo-notifyd.service       scitex-cards notifyd
+    #   scitex-todo.wake-watcher.service  scitex-cards watch --push --interval 2
+    #   scitex-todo.dashboard.service     scitex-cards gui serve --port 8051
+    #   all three:  SCITEX_CARDS_DB=postgresql://...127.0.0.1:55432/scitex_cards
+    #               scitex_cards 0.48.0
+    #
+    # So the migration REACHED this host in substance — current code, current
+    # env var, Postgres backend, and no tasks.yaml left in ~/.scitex/todo. Only
+    # the unit NAMES are retired. That is the dangerous half: an operator or
+    # agent who stops "the notifyd" by name will not find this one, so a fix
+    # can land, be verified on compute-04, and leave this daemon running the
+    # old behaviour under a name nobody greps for.
+    #
+    # wake-watcher is the hottest of the three: `--interval 2` POSTs to owning
+    # agents on every new/commented/changed task, twice a second-ish. It must
+    # be stopped for a window of any length.
+    #
+    # AND THE DESCRIPTION IS WORSE THAN THE NAME. dashboard's unit description
+    # still reads "read-only live view of the shared ~/.scitex/todo/tasks.yaml"
+    # while its ExecStart serves the Django GUI from Postgres. `systemctl
+    # list-units` DISPLAYS the description, so the enumeration everyone trusts
+    # renders a false claim about the store for the one unit whose store
+    # changed. Renaming these is the operator's call, not mine — carded.
+    #
+    # ── THE ONE WRITER NO UNIT ENUMERATION CAN EVER FIND ────────────────────
+    # `scitex-cards-hub-tunnel-spartan.service` is
+    #     ssh -N -R 127.0.0.1:48765:127.0.0.1:8765 spartan
+    # and port 8765 on THIS host is a live `scitex-cards` process (measured:
+    # pid 24216 holding 127.0.0.1:8765). So spartan reaches the board through
+    # the tunnel while running ZERO card units of its own — verified on
+    # spartan-login1: 18 user services, nothing card-shaped, no 55432, and
+    # 127.0.0.1:48765 LISTENING.
+    #
+    # That is why this script cannot be trusted to be complete, and the comment
+    # is here rather than on the card because the next person to extend it will
+    # be tempted to. A remote CLIENT is not a unit anywhere. Enumerating units
+    # on every host in the fleet — the fix for the three naming failures of
+    # 2026-08-20 — still reports "no writers on spartan", correctly, while
+    # spartan holds an open write path.
+    #
+    # Stopping this unit closes that path, because the tunnel is established
+    # FROM this side. It is the only unit that does.
+    #
+    # ── THE RESURRECTOR IS STOPPED FIRST, AND IT OUTRANKS THE SYNCER ─────────
+    # `scitex-dev-ecosystem-reconcile.service` runs `scitex-dev ecosystem up
+    # --yes` and was ACTIVE and unlisted until 2026-08-20. `ecosystem up`
+    # CREATES AND STARTS UNITS. Stop the syncer while it is running and it can
+    # bring the syncer back — and the freeze record would still say "stopped",
+    # because the record is written at stop time and nothing re-reads it.
+    #
+    # That reverses the ordering rule stated at the top of this file. The
+    # syncer was stopped first so a quiesced host could not be repopulated by a
+    # live one; but a re-import is BOUNDED (additive, and re-measurable), while
+    # a silently restarted writer is UNBOUNDED and invisible. The resurrector
+    # therefore goes first, then the syncer, then the rest.
+    #
+    # gui-update.timer IS IN THE LIST AND IT DOES NOT WRITE CARDS. Measured:
+    # ~/.local/bin/scitex-cards-gui-update.sh does `git pull --ff-only`,
+    # `uv pip install -e`, and `systemctl --user restart scitex-cards-gui`,
+    # every 2 minutes. So it does something worse than write a card — it can
+    # swap the INSTALLED CODE under a live store and bounce a service that does
+    # write, mid-window. It also exits 0 on every failure path by deliberate
+    # design, so it will never read red while doing it.
+    "ywata-note-win:scitex-dev-ecosystem-reconcile.service,scitex-dev-ecosystem.service,scitex-cards-sync.timer,scitex-cards-sync.service,scitex-cards-gui-update.timer,scitex-cards-gui.service,scitex-cards-serve.service,scitex-cards-snapshot.timer,scitex-cards-board.service,scitex-cards-hub-tunnel-spartan.service,scitex-todo.wake-watcher.service,scitex-todo-notifyd.service,scitex-todo.dashboard.service"
+    "scitex-compute-04:scitex-cards-sync-peers.timer,scitex-cards-sync-peers.service,scitex-dev-ecosystem.service,scitex-cards-notifyd.service,scitex-cards-gui.service"
+)
+
+state_of() { # host unit -> active|inactive|failed|NOT-FOUND|UNREACHABLE
+    # WHY LoadState AND NOT JUST is-active. `systemctl is-active` answers
+    # "inactive" for a unit that does not exist, IDENTICALLY to one that exists
+    # and is stopped:
+    #
+    #     is-active scitex-cards-pg-alert.service   -> inactive   (real, stopped)
+    #     is-active scitex-cards-NOSUCHUNIT.service -> inactive   (does not exist)
+    #     show -p LoadState  ->  loaded            vs  not-found
+    #
+    # That collapse is not cosmetic. A typo'd or stale unit name renders as
+    # `skip`, which reads as "already stopped", so the plan prints a tidy green
+    # line for a host where the freeze covers NOTHING. It happened: this script
+    # listed three units for ywata-note-win that do not exist there, and the
+    # dry-run looked perfectly healthy.
+    #
+    # Fixing those three names fixed the INSTANCE. This fixes the CLASS: a
+    # phantom unit is now a distinct, loud verdict that --freeze refuses to run
+    # past, so the next stale name cannot manufacture false coverage.
+    local out load act
+    if ! out=$("${SSH[@]}" "$1" \
+        "$RUNTIME printf '%s %s' \"\$(systemctl --user show $2 -p LoadState --value)\" \"\$(systemctl --user is-active $2)\"" 2>&1); then
+        case "$out" in
+            *"No route"* | *"timed out"* | *handshake* | *"Connection closed"*)
+                echo UNREACHABLE
+                return
+                ;;
+        esac
+    fi
+    out=$(echo "$out" | tail -1)
+    load=${out%% *}
+    act=${out##* }
+    [[ $load == not-found ]] && {
+        echo NOT-FOUND
+        return
+    }
+    echo "${act:-unknown}" | tr -d '[:space:]'
+}
+
+survey() { # prints: host<TAB>unit<TAB>state<TAB>verdict
+    local entry host units unit st verdict
+    for entry in "${PLAN[@]}"; do
+        host="${entry%%:*}"
+        units="${entry#*:}"
+        for unit in ${units//,/ }; do
+            if is_protected "$unit"; then
+                printf '%s\t%s\t%s\tREFUSED-PROTECTED\n' "$host" "$unit" "-"
+                continue
+            fi
+            st=$(state_of "$host" "$unit")
+            verdict=skip
+            [[ $st == active ]] && verdict=STOP
+            # A unit that does not exist is NOT a unit that is already stopped.
+            # Its own verdict, so it can never be read as covered.
+            [[ $st == NOT-FOUND ]] && verdict=MISSING
+            printf '%s\t%s\t%s\t%s\n' "$host" "$unit" "$st" "$verdict"
+        done
+    done
+}
+
+cmd_dry_run() {
+    echo "=== PLAN (nothing is being stopped) ==="
+    survey | awk -F'\t' '{printf "  [%-4s] %-22s %-38s currently=%s\n",$4,$1,$2,$3}'
+    echo
+    echo "PROTECTED, never stopped: scitex-cards-pg.service scitex-cards-pg-alert.service"
+}
+
+cmd_freeze() {
+    # THE CONFIRMATION GATE, added after --freeze fired by accident.
+    #
+    # 2026-08-20: I ran `--freeze` on a modified copy as a "positive control"
+    # for the deny-list, expecting a protected unit in the plan to ABORT the
+    # run. It does not, and should not: the deny-list refuses THAT UNIT and
+    # correctly proceeds with the rest. So the control stopped two live
+    # scitex-dev-ecosystem services on two hosts. They were restarted within
+    # the minute and the fleet verified healthy, but nothing about the script
+    # made the mutation hard to trigger.
+    #
+    # The read-only --dry-run had ALREADY printed REFUSED-PROTECTED one line
+    # earlier -- the question was answered before the mutating verb ran. When a
+    # read and a write both settle a question, the read cannot change the
+    # subject, so the write is not a second opinion; it is only a risk.
+    #
+    # Hence a token that cannot be typed by momentum. --dry-run stays free.
+    if [[ ${CUTOVER_I_MEAN_IT:-} != "yes" ]]; then
+        echo "REFUSING: --freeze stops LIVE fleet services." >&2
+        echo "Re-run with CUTOVER_I_MEAN_IT=yes if that is genuinely intended." >&2
+        echo "To inspect without mutating anything, use --dry-run." >&2
+        exit 1
+    fi
+    [[ -e $STATE ]] && {
+        echo "REFUSING: $STATE exists — thaw first, or move it aside." >&2
+        exit 1
+    }
+    # REFUSE ON A PHANTOM UNIT, before stopping anything. A plan naming a unit
+    # that does not exist is a BROKEN PLAN, and running it means freezing less
+    # than the operator believes while every line still reads green. Cheaper to
+    # refuse and have someone correct the list than to discover mid-window that
+    # a host was never quiesced. Fix the PLAN — do not add an override.
+    local missing
+    missing=$(survey | awk -F'\t' '$4=="MISSING" {printf "  %s  %s\n", $1, $2}')
+    if [[ -n $missing ]]; then
+        echo "REFUSING: the plan names unit(s) that do not exist on the host:" >&2
+        printf '%s\n' "$missing" >&2
+        echo "A nonexistent unit reports 'inactive' and would render as skip," >&2
+        echo "so this plan would report success while freezing nothing there." >&2
+        exit 1
+    fi
+
+    local host unit st verdict n=0
+    : >"$STATE"
+    while IFS=$'\t' read -r host unit st verdict; do
+        [[ $verdict == STOP ]] || continue
+        is_protected "$unit" && {
+            echo "REFUSING: $unit is protected" >&2
+            exit 1
+        }
+        if "${SSH[@]}" "$host" "$RUNTIME systemctl --user stop $unit" 2>&1; then
+            printf '%s\t%s\n' "$host" "$unit" >>"$STATE"
+            echo "  stopped $host $unit"
+            n=$((n + 1))
+        else
+            echo "  FAILED  $host $unit" >&2
+        fi
+    done < <(survey)
+    echo "recorded $n stop(s) -> $STATE"
+    mirror_to_card "$n"
+}
+
+CARD=cards-quiesce-state-refuses-writes-during-cutover-20260731
+
+mirror_to_card() { # THE MIRROR IS PERFORMED, NOT SUGGESTED.
+    # An earlier version of this function PRINTED the command for a human to
+    # run. That is a written warning standing in for a mechanical barrier, and
+    # a printed instruction during a live cutover is read at exactly the moment
+    # nobody is reading. So the freeze writes the record itself.
+    #
+    # ORDER: local cursor FIRST (already written by the caller), durable record
+    # SECOND. Never the reverse — if the card write blocks or the store is
+    # mid-restart, --thaw must still have something local to work from.
+    #
+    # A FAILED MIRROR DOES NOT UNDO THE FREEZE, and must not: the services are
+    # already stopped, and refusing after the fact would leave the fleet down
+    # with no record at all. It fails LOUD instead, printing the fallback, so
+    # "the record is missing" can never be silent.
+    local n="$1" body
+    body="FREEZE $(date -u +%FT%TZ) on $(hostname) — stopped ${n} unit(s):
+$(cat "$STATE")
+
+Restore with: cutover_writers.sh --thaw  (state: $STATE)"
+    # POSITIONAL TEXT, not --text. Verified against `scitex-cards comment
+    # --help` on the host rather than assumed: the signature is
+    # `comment [OPTIONS] TASK_ID TEXT`. The --text form I first wrote would
+    # have failed on EVERY invocation and dropped silently into the loud-fail
+    # branch below — a mirror that could never once succeed, which is the
+    # gate-that-cannot-fire in its most flattering disguise, because the
+    # fallback text would have made it look careful.
+    if command -v scitex-cards >/dev/null 2>&1 &&
+        scitex-cards comment "$CARD" "$body" >/dev/null 2>&1; then
+        echo "mirrored the freeze record to card $CARD"
+        return 0
+    fi
+    echo "!! MIRROR FAILED — the durable record was NOT written." >&2
+    echo "!! The local cursor at $STATE is now the ONLY record of what to restart." >&2
+    echo "!! Copy this onto card $CARD by hand, now:" >&2
+    printf '%s\n' "$body" >&2
+    return 1
+}
+
+cmd_thaw() {
+    [[ -e $STATE ]] || {
+        echo "REFUSING: no $STATE. Thaw restarts only what THIS script stopped;" >&2
+        echo "without the record it would start units already down for their own reasons." >&2
+        exit 1
+    }
+    tac "$STATE" | while IFS=$'\t' read -r host unit; do
+        if "${SSH[@]}" "$host" "$RUNTIME systemctl --user start $unit" 2>&1; then
+            echo "  started $host $unit"
+        else
+            echo "  FAILED  $host $unit" >&2
+        fi
+    done
+    mv "$STATE" "$STATE.done"
+}
+
+case "${1:-}" in
+    --dry-run) cmd_dry_run ;;
+    --freeze) cmd_freeze ;;
+    --thaw) cmd_thaw ;;
+    *)
+        echo "usage: $0 --dry-run | --freeze | --thaw" >&2
+        exit 2
+        ;;
+esac

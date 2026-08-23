@@ -93,47 +93,21 @@ _REPAIR = True
 def _db_target(store: str | Path | None) -> str | Path | None:
     """Map a store argument to a DATABASE, because a label is not one.
 
-    A ``…/tasks.yaml`` store is a DISPLAY LABEL, not a file. ``_paths``
-    builds it as ``resolve_db_path(None).parent / "tasks.yaml"`` and
-    ``_store_add`` says what happens when it is mistaken for a location:
-    *"`_resolved_store` returns a DISPLAY LABEL … good enough to name a
-    store in a message, never a thing on disk. Guard the database, not the
-    label."* The YAML tier itself was deleted in #512.
+    The inversion and the two incidents that motivate it live in
+    :func:`scitex_cards._store_target.database_for`, which this now delegates
+    to. Deliberately NOT restated here: this guard existed in this module
+    alone while the notification inbox had none, and a private copy is how
+    that happened. One statement, one place.
 
-    Passing that label straight to :func:`open_db` is not harmless, because
-    nothing downstream normalises it — ``resolve_store_target`` returns an
-    explicit argument AS WRITTEN, and ``resolve_db_path`` and ``connect``
-    likewise. SQLite then CREATES a database at that path. Measured while
-    building this module::
-
-        store            .../store0/tasks.yaml     r(store)  .../store0/tasks.yaml
-        $SCITEX_CARDS_DB .../store0/cards.db       r(None)   .../store0/cards.db
-        users@store      [['alice']]     <- a database named tasks.yaml
-        users@None       []              <- the real board, empty
-        resolve_user("alice") -> None
-
-    i.e. the registration went into a PHANTOM STORE beside the real one and
-    identity resolution degraded to the raw name — the same shape as the
-    2026-08-02 incident where a DSN collapsed to a relative path and callers
-    wrote a tree named after it.
-
-    So the label is inverted back to its sibling database. A DSN passes
-    through untouched (a server target is already a database), and ``None``
-    stays ``None`` so the ambient chain resolves it.
+    The only behaviour this adds is the ``None`` contract: ``None`` stays
+    ``None`` so the ambient chain resolves it downstream, rather than being
+    resolved here.
     """
     if store is None:
         return None
-    text = str(store)
-    from ._store_url import is_postgres_url
+    from ._store_target import database_for  # noqa: PLC0415 -- cycle
 
-    if is_postgres_url(text):
-        return text
-    path = Path(text).expanduser()
-    if path.suffix in (".yaml", ".yml"):
-        from ._db import DEFAULT_DB_FILENAME
-
-        return path.parent / DEFAULT_DB_FILENAME
-    return path
+    return database_for(store)
 
 
 def _refuse_unserialisable(users: list[dict]) -> None:

@@ -14,7 +14,7 @@ operators / agents working from a shell who want a one-line answer to
 Criteria mirror the server-side derivation (kept in sync):
     - ``status == "deferred"`` (the backlog status; ``pending`` was abolished
       2026-07-10) AND
-        - ``created_at > N days`` (default 14), OR
+        - ``created_at > N days`` (default 7), OR
         - no ``created_at`` and no ``last_activity``, OR
         - title is empty/very-short AND there's no assignee / repo /
           project anchor (vague/orphaned heuristic).
@@ -39,7 +39,21 @@ from .._store import load_tasks
 from ._compat import deprecated_alias, spec_command_kwargs
 from ._write import _emit
 
-_DEFAULT_DAYS = 14
+#: Age cutoff for `list-stale`. SEVEN DAYS, matching the forgetting horizon —
+#: the operator closed the gap himself on 2026-08-19 (「はい7日でお願いします」)
+#: when told the two disagreed:
+#:      constitution §5             7 days
+#:      _backlog_triage.py          7 days   DEFAULT_EXPIRY_DAYS
+#:      THIS                        7 days
+#:      _django/handlers/stale.py   7 days   a SECOND COPY of this number
+#: It was 14. A card aged 7-14 days was FORGOTTEN by the rule and INVISIBLE to
+#: this verb — a gate generous enough not to bite, which is the §2
+#: gate-that-cannot-fail in another costume.
+#: THE SECOND COPY IS STILL A SECOND COPY. There is no shared source; the two
+#: agree only because both were edited together, and
+#: `test_the_cli_and_django_stale_horizons_are_equal` is what keeps them that
+#: way. Change one, change both: cards-auto-expiry-is-a-report-nothing-schedules-and-three-horizons-disagree-20260817
+_DEFAULT_DAYS = 7
 
 
 def _parse_iso(s):
@@ -96,7 +110,7 @@ def _age_days(task: dict, now):
         description=(
             "Mirrors the board's `/stale` endpoint (PR #153) + the "
             "🧹 Stale Review panel (PR #154) so the operator can sweep "
-            "from a shell. Default cutoff: 14 days."
+            "from a shell. Default cutoff: 7 days."
         ),
         examples=(
             ("{prog} list-stale", ""),

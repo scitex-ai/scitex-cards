@@ -78,7 +78,12 @@ def _configure_django_once():
 def test_board_appconfig_subclasses_scitex_app_when_present():
     """With scitex-app installed, the board AppConfig is a ScitexAppConfig."""
     # Arrange
-    scitex_app_django = pytest.importorskip("scitex_app._django")
+    # importorskip on the ROOT, then import the submodule for real. On the
+    # full dotted path `importorskip` skips on ModuleNotFoundError — an
+    # ImportError subclass — so a RENAMED submodule reported GREEN, which is
+    # the one event this guard exists to catch.
+    pytest.importorskip("scitex_app")
+    scitex_app_django = importlib.import_module("scitex_app._django")
     from scitex_cards._django.apps import ScitexCardsConfig
 
     # Act
@@ -205,7 +210,11 @@ def test_settings_wires_element_inspector_when_context_processors_present(
 ):
     """The element-inspector context processor is wired when the submodule exists."""
     # Arrange
-    pytest.importorskip("scitex_ui.context_processors")
+    # ROOT skip, then a real import of the submodule — see the note above.
+    # `scitex_ui` genuinely absent is a lean install and skips; `scitex_ui`
+    # present with the submodule renamed away must FAIL, not skip.
+    pytest.importorskip("scitex_ui")
+    importlib.import_module("scitex_ui.context_processors")
     settings = settings_with_scitex_ui_present
     ctx_processors = settings.TEMPLATES[0]["OPTIONS"]["context_processors"]
     # Act

@@ -63,6 +63,53 @@ def _safe_resolve(resolve_key: Callable[[str], str], name: str) -> str:
         return name
 
 
+def _computing_host() -> str:
+    """The host this notification was COMPUTED ON. Never raises.
+
+    Deliberately the hostname and not the store DSN. Every daemon in this fleet
+    resolves ``127.0.0.1:55432``, so the DSN string is byte-identical on every
+    host and identifies nothing; the hostname is what differs and what a reader
+    can act on. `store_uuid` is worse than useless here — it lives in a
+    ``schema_meta`` row, so ``pg_dump`` copies it, and three of this fleet's
+    stores currently answer the same one.
+    """
+    try:
+        import socket  # noqa: PLC0415 -- import-cheap, keeps module import clean
+
+        return socket.gethostname()
+    except Exception:  # noqa: BLE001 -- a label must never break delivery
+        return "unknown-host"
+
+
+def _stamp_provenance(body: str) -> str:
+    """Append the computing host to a notification body. Never raises.
+
+    WHY EVERY NOTIFICATION AND NOT JUST THE DIGEST. Two notifyd daemons on two
+    hosts each resolve ``127.0.0.1:55432`` to their OWN database, and both are
+    correct about the store they read. Measured 2026-08-20:
+
+        16:59:51Z  backlog nudge  said  "deferred"   -- true on ywata-note-win
+        17:11:02Z  blocked-check  said  "blocked"    -- true on compute-04
+
+    One card, eleven minutes, two labels, neither wrong and neither traceable.
+    Three agents re-derived that by hand across a day; one fitted and then
+    retracted a whole predictive model against it; two proposed remedies aimed
+    at the delivery path that could not have worked, because a notification that
+    does not name its store cannot be reasoned about -- every available
+    hypothesis assumes one store and asks what happened to a row inside it.
+
+    STAMPED HERE, AT THE ENQUEUE CHOKE POINT, rather than in each body builder.
+    The digest, the escalations, the backlog nudge and the blocked-check are
+    composed in four different modules; labelling them one at a time is a rule
+    each new notification type has to remember, and the next one will not. This
+    is the single function they all pass through.
+    """
+    try:
+        return f"{body}\n  [computed on {_computing_host()}]"
+    except Exception:  # noqa: BLE001 -- never lose a notification to a label
+        return body
+
+
 def _safe_enqueue(
     enqueue: Callable[..., Any],
     recipient_key: str,
@@ -91,7 +138,7 @@ def _safe_enqueue(
             recipient_key,
             event_type=event_type,
             card_id=card_id,
-            body=body,
+            body=_stamp_provenance(body),
             actor="notifyd",
             ts=_iso(now),
             supersede=supersede,

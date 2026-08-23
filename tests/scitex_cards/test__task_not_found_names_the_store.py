@@ -103,7 +103,8 @@ def test_the_error_still_names_the_host_after_stripping(store_env):
 
 def test_the_error_is_a_task_not_found_error():
     """The builder returns the exception type every caller already catches."""
-    # Arrange / Act
+    # Arrange
+    # Act
     built = _task_not_found("no-such-card")
     # Assert
     assert isinstance(built, TaskNotFoundError)
@@ -132,7 +133,8 @@ def test_no_raise_site_interpolates_a_local_path(store_source_lines):
     known sites are fixed; this one fails the moment an eighth is written the
     old way, which is the failure mode that produced the defect.
     """
-    # Arrange / Act
+    # Arrange
+    # Act
     offenders = [
         f"{path}:{lineno}: {text.strip()}"
         for path, lineno, text in store_source_lines

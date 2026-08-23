@@ -1,7 +1,23 @@
+---
+description: |
+  [TOPIC] PreToolUse hook that BLOCKS Claude Code's built-in TaskCreate /
+  TaskUpdate / TaskList and redirects the agent to scitex-cards.
+  [DETAILS] The built-ins create per-session scratch state that vanishes at
+  end of turn, so durable work recorded through them is invisible to the
+  fleet. The hook exits non-zero (an enforced block, not a warning) and
+  names the scitex-cards verb to use instead. Installed via
+  `scitex-cards skills install --claude-symlink`.
+tags: [scitex-cards-pretooluse-hook-redirect, scitex-cards-one-store]
+---
+
 # PreToolUse hook — redirect Claude `TaskCreate`/`TaskUpdate`/`TaskList` to scitex-cards
 
 Operator op-12038 doctrine: **every fleet agent uses ONE shared task
-store** — scitex-cards's YAML. Claude Code's built-in `TaskCreate` /
+store**. (That store is whatever `$SCITEX_CARDS_DB` resolves to — the
+deployment picks the backend. This line used to say "scitex-cards's YAML",
+which stopped being true when the store moved to PostgreSQL; the doctrine is
+about there being ONE store, not about its format.) Claude Code's built-in
+`TaskCreate` /
 `TaskUpdate` / `TaskList` tools create per-session scratch state
 that disappears when the turn ends; using them for durable work
 fragments the fleet's source of truth.

@@ -75,6 +75,7 @@ def migration_group() -> None:
 def migration_plan_cmd(as_json: bool, as_md: bool) -> None:
     """Read-side dry-run scanner.
 
+    \b
     Example:
       $ scitex-cards migration plan --json
       $ scitex-cards migration plan --markdown
@@ -144,6 +145,7 @@ def migration_apply_cmd(
 ) -> None:
     """Run the migration across every discovered lane + global store.
 
+    \b
     Example:
       $ scitex-cards migration apply --dry-run
       $ scitex-cards migration apply -y
