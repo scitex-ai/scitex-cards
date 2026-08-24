@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-24
+
+### notifyd could never shut down cleanly — every stop was a SIGKILL
+
+`run_notifyd` waited between ticks with `time.sleep(interval)`. Python retries a
+sleep after a signal handler returns (PEP 475), so a stop set MID-SLEEP stayed
+invisible until the whole interval had elapsed. Measured on scitex-compute-04:
+
+    10:54:10  tick 365 logged, sleep(120) begins
+    10:54:28  SIGTERM; the handler logs "initiating graceful stop", sets the
+              stop event — and the sleep RESUMES
+    10:55:58  systemd's 90s TimeoutStopSec expires -> SIGKILL, status 9
+    10:56:10  ...when the sleep would have ended and the loop would have exited
+
+Twelve seconds. With a 120s interval against a 90s stop timeout the daemon loses
+that race EVERY time, not occasionally — and a SQLite writer killed mid-transaction
+is how a database loses data. It also leaves the pidfile behind, since the `finally`
+that removes it cannot run under SIGKILL. (The flock is released by the kernel, so a
+restart still succeeds; the stale bytes are cosmetic.)
+
+The wait is now `Event.wait(timeout)`, which behaves like sleep when nothing happens
+and returns the moment the event is set. The `sleep` seam is kept and still wins when
+injected, so no existing test changes.
+
+WHY NO TEST CAUGHT IT: `sleep` is a test seam and every existing test injects a
+no-op, so the suite covered this loop thoroughly WITH THE WAITING REMOVED — the one
+behaviour under repair was the one behaviour no test exercised. The new test
+therefore refuses that seam and waits for real. RED 12.17s, GREEN 2.11s.
+
 ### A poll and a confirm each name the store they used
 
 A consumer that polls one store and confirms against another gets no error from
