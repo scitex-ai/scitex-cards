@@ -25,81 +25,141 @@ so essentially every signal arrives mid-sleep.
 
 The fix is to wait on the event instead of sleeping blind. `Event.wait(timeout)`
 returns as soon as the event is set, so the daemon exits in milliseconds.
+
+NO MOCKS, and the seam choice is the whole point. `run_notifyd` takes a `sleep`
+seam and every existing test injects a no-op -- which is precisely what hid this
+defect, since the suite covers the loop with the WAITING REMOVED. These tests
+therefore refuse that seam and wait for real. The tick itself is made trivial
+instead (no channels, no sweep), so only the wait is exercised.
 """
 
 from __future__ import annotations
 
+import contextlib
+import os
 import threading
 import time
-
-import pytest
+from dataclasses import dataclass
 
 from scitex_cards._delivery._daemon import run_notifyd
 
+#: Long enough that a blind sleep cannot masquerade as a prompt exit.
+INTERVAL = 30.0
 
-def test_stop_set_during_the_wait_ends_the_loop_promptly(tmp_path, monkeypatch):
-    """Setting `stop` mid-wait must return in well under one interval.
+#: The window a correct implementation returns in. Generous by 20x.
+PROMPT_S = 5.0
 
-    This is the regression for the SIGKILL above. It deliberately does NOT
-    inject the `sleep` seam: injecting a no-op sleep is exactly what hid this
-    for so long -- every existing test replaces the wait with a function that
-    returns instantly, so no test ever exercised the real waiting path.
+
+@contextlib.contextmanager
+def _store_env(path):
+    """Point the store at `path` for the duration, then restore.
+
+    NOT `monkeypatch`: the repo forbids mock fixtures (PA-306 §3), and this is
+    plain save/restore of real state rather than a stand-in for it.
+
+    The ENVIRONMENT is what actually selects the store. Measured 2026-08-24:
+    passing `store=<tmp path>` to run_notifyd does NOT redirect its reads -- it
+    still loaded the production board over SCITEX_CARDS_DB (postgres, 5,962
+    cards) and validated every row, which made an earlier version of this test
+    look hung.
     """
-    # The tick itself is neutered on purpose: channels={} so delivery has
-    # nowhere to send, and the nudge sweep disabled because it runs on the FIRST
-    # tick and walks the whole board (5,962 cards on this host), which took
-    # minutes and made an earlier version of this test look hung. What is NOT
-    # neutered is the `sleep` seam -- that is the behaviour under test, and
-    # injecting a no-op there is exactly what hid this defect from every
-    # existing test.
-    # ISOLATE THE STORE VIA THE ENVIRONMENT, not via the `store=` argument.
-    # Measured 2026-08-24: passing store=<tmp path> does NOT redirect the reads --
-    # run_notifyd still loaded the production board over
-    # SCITEX_CARDS_DB (postgres, 5,962 cards) and validated every one of them,
-    # emitting a UserWarning per invalid card. That, not the delivery, is what
-    # made an earlier version of this test look hung. The env var is the control
-    # that actually works.
-    monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
-    monkeypatch.delenv("SCITEX_CARDS_INBOX_BACKEND", raising=False)
+    keys = ("SCITEX_CARDS_DB", "SCITEX_CARDS_INBOX_BACKEND")
+    saved = {k: os.environ.get(k) for k in keys}
+    os.environ["SCITEX_CARDS_DB"] = str(path)
+    os.environ.pop("SCITEX_CARDS_INBOX_BACKEND", None)
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
+
+@dataclass(frozen=True)
+class Outcome:
+    """What one stop-during-the-wait run did."""
+
+    alive: bool
+    elapsed: float
+    stopped_by: str | None
+    error: BaseException | None
+
+
+def _stop_during_the_wait(tmp_path) -> Outcome:
+    """Start the daemon, let it reach the wait, set stop, and measure."""
     stop = threading.Event()
-    interval = 30.0  # >> the assertion window, so a blind sleep cannot pass
     result: dict = {}
 
     def _run():
         try:
             result["out"] = run_notifyd(
                 store=tmp_path / "cards.db",
-                interval=interval,
+                interval=INTERVAL,
                 stop=stop,
-                channels={},          # nothing to deliver
-                nudge_sweep_minutes=0,  # <=0 disables the fleet sweep
+                channels={},
+                nudge_sweep_minutes=0,
                 nudge_sweep=lambda **_: None,
             )
-        except Exception as exc:  # surfaced below rather than lost in a thread
+        except BaseException as exc:  # surfaced, never swallowed
             result["exc"] = exc
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
+    with _store_env(tmp_path / "cards.db"):
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        # Let it get past its first tick and INTO the wait. Setting stop before
+        # the loop reaches the wait would be caught by the pre-sleep re-check,
+        # and the test would pass without exercising the path under repair.
+        time.sleep(3.0)
+        started = time.monotonic()
+        stop.set()
+        thread.join(timeout=10.0)
+        elapsed = time.monotonic() - started
 
-    # Let it get past its first tick and INTO the wait. If we set stop before
-    # the loop reaches the wait, the pre-sleep re-check would catch it and the
-    # test would pass without exercising the path under repair.
-    time.sleep(2.0)
-    started = time.monotonic()
-    stop.set()
-    t.join(timeout=10.0)
-    elapsed = time.monotonic() - started
+    return Outcome(
+        alive=thread.is_alive(),
+        elapsed=elapsed,
+        stopped_by=(result.get("out") or {}).get("stopped_by"),
+        error=result.get("exc"),
+    )
 
-    assert not t.is_alive(), (
-        f"notifyd did not exit within 10s of stop being set. This is the "
-        f"systemd SIGKILL in miniature: the wait is not interruptible."
-    )
-    if "exc" in result:
-        pytest.fail(f"run_notifyd raised: {result['exc']!r}")
-    assert elapsed < 5.0, (
-        f"notifyd took {elapsed:.1f}s to notice stop, with interval={interval}s. "
-        f"A stop set during the wait must be seen immediately, not after the "
-        f"full interval elapses."
-    )
-    assert result.get("out", {}).get("stopped_by") == "stop_event"
+
+def test_the_daemon_exits_when_stop_is_set_during_the_wait(tmp_path):
+    """It must not still be running ten seconds after stop. The SIGKILL, in miniature."""
+    # Arrange
+    target = tmp_path
+    # Act
+    outcome = _stop_during_the_wait(target)
+    # Assert
+    assert not outcome.alive
+
+
+def test_the_daemon_notices_stop_without_serving_out_the_interval(tmp_path):
+    """It must return in well under one interval, not after the full wait."""
+    # Arrange
+    target = tmp_path
+    # Act
+    outcome = _stop_during_the_wait(target)
+    # Assert
+    assert outcome.elapsed < PROMPT_S
+
+
+def test_the_daemon_reports_the_stop_event_as_its_reason(tmp_path):
+    """The recorded reason must be the stop event, not max_iterations or a crash."""
+    # Arrange
+    target = tmp_path
+    # Act
+    outcome = _stop_during_the_wait(target)
+    # Assert
+    assert outcome.stopped_by == "stop_event"
+
+
+def test_the_daemon_does_not_raise_on_a_stop_during_the_wait(tmp_path):
+    """A stop is a normal exit, so nothing may escape the loop."""
+    # Arrange
+    target = tmp_path
+    # Act
+    outcome = _stop_during_the_wait(target)
+    # Assert
+    assert outcome.error is None
