@@ -59,9 +59,12 @@ def _c(kind, required, merge, why, *, indexed=False, blocked_on=None) -> Promoti
     """One candidate. `role` is DATA for every one of them, by construction.
 
     IDENTITY is not a candidate: the record key is already declared in
-    `TASK_FIELDS` and cannot be promoted twice. HIDE_FLAG is not one either —
-    it is a column this table does not have yet (ADR-0018 D3 adds `is_deleted`;
-    it is not one of the ~30 that exist today).
+    `TASK_FIELDS` and cannot be promoted twice. HIDE_FLAG is not one either,
+    though the REASON changed in v13: the column now EXISTS (`is_deleted`,
+    added by `_migrate_v12_to_v13` per ADR-0018 D3), but this helper hard-codes
+    `role=FieldRole.DATA`, and a hide flag declared as DATA would be a
+    different field with the same name. It is recorded in `UNDECLARED`
+    instead, with the declaration it is waiting for.
     """
     return Promotion(
         policy=FieldPolicy(
@@ -263,6 +266,43 @@ PROMOTION_CANDIDATES: "dict[str, Promotion]" = {
             "promote the placeholder rather than the intended semantics, and "
             "the placeholder is only tolerable while the column is derived."
         ),
+    ),
+    # THE TWO v13 STAMPS. Added as columns by _migrate_v12_to_v13 so the
+    # lifecycle facts can be merged INDEPENDENTLY of `card_json`, which
+    # last-writer-wins replaces whole. Candidates rather than declarations
+    # because a sibling test pins TASK_FIELDS at exactly two and growing it
+    # is an ADR-0018 D1 decision in its own right.
+    "completed_at": _c(
+        FieldKind.TEXT,
+        False,
+        MergeRule.MAX,
+        "MAX, and it is sound here for the reason it is NOT sound for "
+        "`status`. _db_sync_columns measured that trap: MAX compares VALUES, "
+        "so on TEXT it is lexicographic and a locally `cancelled` card loses "
+        "to a stale peer's `in_progress` (439 status forks against one peer, "
+        "303 of them locally terminal). A TIMESTAMP escapes it because "
+        "lexicographic order over fixed-width ISO-8601 UTC IS chronological "
+        "order. That makes completion monotone: no stale peer's document can "
+        "un-record that the work finished. THE CONSTRAINT TRAVELS WITH THE "
+        "RULE — every writer must emit one fixed-width UTC format; a mixed "
+        "corpus (+09:00 offsets, variable precision, a bare date) breaks MAX "
+        "silently and in exactly the same way.",
+        indexed=True,
+    ),
+    "reopened_at": _c(
+        FieldKind.TEXT,
+        False,
+        MergeRule.MAX,
+        "THE PAIR TO `completed_at`, and the reason neither needs a rule the "
+        "primitive lacks. A monotone stamp cannot be lowered, so completion "
+        "alone would make a card unreopenable — upstream raises exactly this "
+        "objection when it forbids MAX on a hide flag ('MergeRule.MAX in "
+        "particular would make a hide permanent'). Two monotone stamps avoid "
+        "the deadlock instead of trading it: each only moves forward, and the "
+        "presented state derives from whichever is later, so reopening is an "
+        "ordinary write rather than an attempt to undo one. Same fixed-width "
+        "UTC constraint as its pair.",
+        indexed=True,
     ),
 }
 

@@ -58,6 +58,17 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # "task_edges is FK-free" has been relayed once already, and that phrasing drops
 # `src_task_id`, which is a real constraint.
 SCHEMA_SQL = """
+-- v13 lifecycle columns (`is_deleted`, `completed_at`, `reopened_at`). They MUST
+-- match _migrate_v12_to_v13 exactly; a fresh store and a migrated store must
+-- not diverge in shape. `is_deleted` is the HIDE_FLAG column -- the store
+-- primitive REFUSES a non-BOOL hide flag, so the existing `deleted_at` cannot
+-- serve as one and stays beside it as ordinary audit data.
+--
+-- THIS NOTE IS OUTSIDE THE STATEMENT ON PURPOSE. SQLite persists a CREATE
+-- TABLE verbatim in `sqlite_master.sql`, and `execute_ddl` strips `--`
+-- comments before executing, so a comment INSIDE the body makes the two DDL
+-- paths store different text for the same table. Measured: it fails
+-- test__ddl.py::test_it_builds_the_same_schema_as_executescript.
 CREATE TABLE IF NOT EXISTS tasks (
     id             TEXT PRIMARY KEY,
     title          TEXT NOT NULL,
@@ -95,7 +106,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     origin_node    TEXT,
     row_uuid       TEXT,
     updated_at     TEXT,
-    deleted_at     TEXT
+    deleted_at     TEXT,
+    is_deleted     BOOLEAN,
+    completed_at   TEXT,
+    reopened_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status   ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_agent    ON tasks(agent);

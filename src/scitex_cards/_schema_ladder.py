@@ -88,6 +88,15 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     # purely local reasons. A rung something else can satisfy does not measure
     # the migration, it measures a coincidence.
     (12, "column", "tasks", "row_uuid"),
+    # v13 is measured by `reopened_at`, NOT by `is_deleted` or `completed_at`,
+    # and the choice follows the rule the v12 note above states: a rung that
+    # something else can satisfy measures a coincidence, not the migration.
+    # `is_deleted` is exactly the family that note warns about -- a name any
+    # table might acquire for purely local reasons -- and `completed_at` is
+    # nearly as generic. `reopened_at` is specific to this rung's reason for
+    # existing (a lifecycle that must be able to go backwards without lowering
+    # a monotone stamp), so nothing else plausibly grows it by accident.
+    (13, "column", "tasks", "reopened_at"),
 )
 
 #: The lowest version this module can justify from physical evidence.
