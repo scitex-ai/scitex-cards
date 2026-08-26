@@ -137,7 +137,7 @@ def test_snapshot_command_is_the_db_snapshot_verb():
     # Act
     job = _snapshot()
     # Assert
-    assert job.command == "scitex-cards db snapshot --push"
+    assert job.command == "scitex-cards dev db create-snapshot --push"
 
 
 def test_snapshot_command_does_not_import_yaml_over_the_database():

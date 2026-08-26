@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-cards db set-min-client-version`` — deliberately raise the store's floor.
+"""``scitex-cards dev db set-min-client-version`` — deliberately raise the floor.
 
 Setting the floor is a DELIBERATE ADMIN ACT, never automatic — see
 :mod:`scitex_cards._min_client_version` for the full incident this answers
@@ -61,7 +61,7 @@ def register(main: click.Group) -> None:
         "higher than THIS client's own version, which would brick the "
         "very client setting it.\n\n"
         "Example:\n"
-        "  scitex-cards db set-min-client-version 0.17.5"
+        "  scitex-cards dev db set-min-client-version 0.17.5"
     ),
 )
 @click.argument("floor")

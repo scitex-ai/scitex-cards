@@ -82,7 +82,11 @@ _COMMAND_CATEGORIES = (
     # spelling we want callers to stop using.
     (
         "Data & Sync",
-        ("db", "dm", "store", "sync-github", "sync-store", "deliver-notifications"),
+        # `db` moved to `dev db` (operator naming standard, 2026-08-26): a verb
+        # that operates on the store as an object is upkeep, so it belongs under
+        # `dev`. The root spelling is a hidden Phase-W alias now and is
+        # deliberately NOT listed here, for the same reason `health` is not.
+        ("dm", "store", "sync-github", "sync-store", "deliver-notifications"),
     ),
     (
         "Service",

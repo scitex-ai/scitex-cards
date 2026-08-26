@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### The store verbs answer to `dev db`, and every hint says so
+
+Per-package database client commands standardize on `<package> dev db`, with
+the ecosystem-wide aggregate on `scitex-dev ecosystem dev db` (operator,
+2026-08-26). `db` was the last store-facing group still mounted at the root
+next to the card verbs people actually run, though it is upkeep by the same
+test every other `dev` verb passes: it operates on the store as an object.
+
+`scitex-cards db ...` keeps working as a Phase-W alias through v0.54, because
+that spelling is baked into cron lines, troubleshooting notes and agent
+prompts across the fleet, none of which are greppable from this repository.
+
+TWO THINGS THE MOVE BROKE THAT AN ALIAS DOES NOT COVER, both caught by the
+suite rather than by review:
+
+* The hourly snapshot rail INVOKED `scitex-cards db snapshot --push` — after
+  the move a doubly-deprecated spelling, which would have printed two
+  deprecation warnings per fire into the log that rail's red/green reading
+  comes from. It now invokes the canonical `dev db create-snapshot`.
+
+* Every hint naming the group — across seven modules — said
+  `scitex-cards db <verb>`, and `test_every_verb_named_in_a_hint_exists`
+  enforces that a hint is runnable as printed. An alias resolves at the CLI
+  but is not a verb the enumeration finds, so the hints moved with the group.
+  Three were split across source lines, in two different wrappings, and only
+  the per-substitution assertion counts caught them.
+
+The alias helper had to learn one thing first. `_compat`'s inline fallback —
+the LIVE path for an ordinary install, since scitex-dev is deliberately not a
+runtime dependency — resolved targets with `group.get_command`, which only
+finds commands on the group the alias itself sits on. Pointing the root `db`
+at a group that now lives on `dev` returned `None` there (and, spelled as a
+string, resolved to the alias itself). It now accepts a command object, as
+scitex-dev's real helper always did, and forwards `--help` to a group target.
+
 ### A poll and a confirm each name the store they used
 
 A consumer that polls one store and confirms against another gets no error from

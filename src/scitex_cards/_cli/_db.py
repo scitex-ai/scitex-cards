@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-cards db`` — SQLite operability verbs.
+"""CLI noun group ``scitex-cards dev db`` — SQLite operability verbs.
 
 SQLite is the store. These verbs are its operability surface:
 
@@ -26,6 +26,7 @@ import re
 import click
 
 from ._compat import deprecated_alias
+from ._dev import get_dev_group
 from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 #: A snapshot holding less than this FRACTION of the previous one's cards is
@@ -221,8 +222,29 @@ def register(main: click.Group) -> None:
     Both old spellings stay as Phase-W aliases: `db path` in particular is the
     documented way to answer "which store am I actually on", so it turns up in
     people's notes and in other packages' troubleshooting steps.
+
+    THE GROUP ITSELF MOVED to `dev db` (operator, 2026-08-26): per-package
+    database client commands standardize on `<package> dev db`, and the
+    ecosystem-wide aggregate on `scitex-dev ecosystem dev db`. That is the
+    same §13 split already applied to every other periodic/upkeep verb — a
+    verb that operates on the store as an object is upkeep, not product
+    surface — so `db` belongs beside `cardsync` under `dev` rather than at
+    the root next to the card verbs people actually run.
+
+    The root spelling stays as a Phase-W alias for the same reason the two
+    leaf renames did, and more urgently: the ROOT spelling of get-path is the
+    documented answer to "which store am I on", and it is baked into cron
+    lines, troubleshooting notes and agent prompts across the fleet, none of
+    which are greppable from here. Every hint inside this package was moved
+    to the new spelling in the same change, because the suite enforces that a
+    hint is runnable as printed — an alias resolves at the CLI but is not a
+    verb the enumeration will find.
     """
-    main.add_command(db_group)
+    dev = get_dev_group(main)
+    dev.add_command(db_group)
+    deprecated_alias(
+        main, "db", target=db_group, target_name="dev db", remove_in="0.54"
+    )
     deprecated_alias(db_group, "path", target="get-path", remove_in="0.52")
     deprecated_alias(
         db_group, "snapshot", target="create-snapshot", remove_in="0.52"
@@ -233,10 +255,10 @@ def register(main: click.Group) -> None:
     "db",
     help=(
         "Card-store verbs.\n\n"
-        "`db get-path` prints the resolved store location, `db verify` checks "
-        "schema health, `db export` writes the store out as YAML text (a "
-        "backup, never a source), and `db create-snapshot` commits that export "
-        "off-site."
+        "`dev db get-path` prints the resolved store location, `dev db verify` "
+        "checks schema health, `dev db export` writes the store out as YAML "
+        "text (a backup, never a source), and `dev db create-snapshot` commits "
+        "that export off-site."
     ),
 )
 def db_group() -> None:
@@ -262,7 +284,7 @@ _DB_OPTION = click.option(
         "unconfigured store REFUSES instead of naming a SQLite file nobody "
         "chose.\n\n"
         "Example:\n"
-        "  scitex-cards db path"
+        "  scitex-cards dev db get-path"
     ),
 )
 @_DB_OPTION
@@ -298,8 +320,8 @@ def db_path_cmd(db_path: str | None, as_json: bool) -> None:
         "every expected table (with row counts), and PRAGMA quick_check. "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
-        "  scitex-cards db verify\n"
-        "  scitex-cards db verify --json"
+        "  scitex-cards dev db verify\n"
+        "  scitex-cards dev db verify --json"
     ),
 )
 @_DB_OPTION
@@ -314,7 +336,7 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-cards db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards dev db verify: {status} — {report['path']}")
     if not report["exists"]:
         click.echo("[FAIL] db does not exist yet (run `init-store`)")
         raise SystemExit(1)
@@ -349,9 +371,9 @@ def _echo_export_report(report: dict) -> None:
         "export is exact by construction. REFUSES loudly if any row has no "
         "payload.\n\n"
         "Example:\n"
-        "  scitex-cards db export\n"
-        "  scitex-cards db export --dry-run\n"
-        "  scitex-cards db export --out /tmp/tasks.json --json"
+        "  scitex-cards dev db export\n"
+        "  scitex-cards dev db export --dry-run\n"
+        "  scitex-cards dev db export --out /tmp/tasks.json --json"
     ),
 )
 @_DB_OPTION
@@ -417,8 +439,8 @@ def db_export_cmd(
         "no git operation can ever roll back the live store. Initialises the "
         "snapshot dir as its own git repo on first run.\n\n"
         "Example:\n"
-        "  scitex-cards db snapshot\n"
-        "  scitex-cards db snapshot --dir ~/.scitex/cards/snapshots"
+        "  scitex-cards dev db create-snapshot\n"
+        "  scitex-cards dev db create-snapshot --dir ~/.scitex/cards/snapshots"
     ),
 )
 @_DB_OPTION
