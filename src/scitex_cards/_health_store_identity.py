@@ -63,7 +63,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": f"could not read the identity from {target!r} ({exc})",
-            "hint": "run `scitex-cards db verify` for the schema report",
+            "hint": "run `scitex-cards dev db verify` for the schema report",
         }
     finally:
         try:
@@ -262,7 +262,7 @@ def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
                 "shape. Bind the store to an identity once, deliberately: "
                 "`scitex-cards store adopt-uuid`, then record the printed uuid "
                 "in the host registry. A uuid is the same string in both mount "
-                "namespaces; a path is not. `scitex-cards db path` prints what "
+                "namespaces; a path is not. `scitex-cards dev db get-path` prints what "
                 "currently resolves."
             ),
         }
@@ -283,7 +283,7 @@ def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
             f"resolved store matches the stamp. If {resolved} is genuinely the "
             f"intended store, the database for it is a DIFFERENT file — find or "
             f"create that one rather than re-labelling this database. "
-            f"`scitex-cards db path` prints what currently resolves."
+            f"`scitex-cards dev db get-path` prints what currently resolves."
         ),
     }
 

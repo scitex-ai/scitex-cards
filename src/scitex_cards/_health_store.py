@@ -50,7 +50,7 @@ def _verify_db_store(path: Path) -> dict[str, Any]:
                 f"do NOT overwrite it — a database that fails to open may still "
                 f"hold every card, and the recovery is to COPY IT ASIDE FIRST. "
                 f"Check the snapshot repo for the newest good copy, and "
-                f"`scitex-cards db verify` for the schema report. "
+                f"`scitex-cards dev db verify` for the schema report. "
                 f"`scitex-cards init-store` creates an EMPTY store and is "
                 f"correct only when there is nothing to recover. "
                 f"{type(exc).__name__}: {exc}"
@@ -134,7 +134,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
             "detail": f"PostgreSQL store {target!r} did not open ({exc})",
             "hint": (
                 "check the server is reachable and that $SCITEX_CARDS_DB names "
-                "the right database. NOTE `scitex-cards db path` does NOT help "
+                "the right database. NOTE `scitex-cards dev db get-path` does NOT help "
                 "here -- it resolves a filesystem path and refuses a DSN. Do NOT "
                 "point the store elsewhere to make this green -- a fresh empty "
                 "target becomes a SECOND store, which is how the board was "
@@ -171,7 +171,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
             "detail": f"PostgreSQL store {target!r} did not read ({exc})",
             "hint": (
                 "do NOT re-initialise it -- a store that fails to read may still "
-                "hold every card. `scitex-cards db verify` reports the schema. "
+                "hold every card. `scitex-cards dev db verify` reports the schema. "
                 f"{type(exc).__name__}: {exc}"
             ),
         }
@@ -286,10 +286,11 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
             "if this agent should have the FLEET board, the path is wrong — "
             "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
             "empty one here becomes a SECOND store, which is how the board was "
-            "destroyed on 2026-07-19. `scitex-cards db path` shows what resolved. "
+            "destroyed on 2026-07-19. `scitex-cards dev db get-path` shows "
+            "what resolved. "
             "Only when this agent genuinely owns a new, separate store is "
             "`scitex-cards init-store` correct. Restoring from a `scitex-cards "
-            "db export` dump has NO CLI verb today — it is a Python-level "
+            "dev db export` dump has NO CLI verb today — it is a Python-level "
             "operation (see scitex_cards._db_bootstrap) — so do not go looking "
             "for an import subcommand."
         ),

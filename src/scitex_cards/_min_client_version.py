@@ -24,7 +24,7 @@ not a log line — carrying the exact upgrade command.
 MISSING KEY MEANS NO FLOOR. An old database that predates this feature (or
 one where nobody has deliberately set a floor) has no ``min_client_version``
 row, and :func:`read_floor` returns ``None`` — the gate is then a no-op. Old
-databases keep working until a floor is DELIBERATELY set (``scitex-cards db
+databases keep working until a floor is DELIBERATELY set (``scitex-cards dev db
 set-min-client-version``, see ``_cli/_min_client_version.py``); nothing in
 this module ever sets one on its own. Auto-bumping on an ordinary write is
 exactly the failure this must not become — a mid-fleet upgrade would
@@ -211,7 +211,7 @@ def stamp_floor(conn: StoreConnection, version: str) -> None:
     """Set (or replace) the store's ``min_client_version`` floor.
 
     Call inside the caller's own write transaction — this does not commit.
-    The ONLY writer should be the deliberate admin verb (``scitex-cards db
+    The ONLY writer should be the deliberate admin verb (``scitex-cards dev db
     set-min-client-version``, see ``_cli/_min_client_version.py``);
     ordinary card reads/writes must never call this, or a routine write from
     a newer agent would cascade-brick every OLDER agent still running
