@@ -53,10 +53,17 @@ def _columns(conn: sqlite3.Connection, table: str = "tasks") -> list[str]:
 
 @pytest.fixture
 def fresh_store(tmp_path):
-    """A store built from the shipped CREATE TABLE script."""
+    """A store built from the shipped CREATE TABLE script.
+
+    Yields rather than returns: the connection is an external resource, and a
+    fixture that returns one never closes it (STX-TQ005).
+    """
     conn = sqlite3.connect(tmp_path / "fresh.db")
     conn.executescript(SCHEMA_SQL)
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 @pytest.fixture
@@ -70,7 +77,10 @@ def migrated_store(tmp_path):
     conn = sqlite3.connect(tmp_path / "migrated.db")
     conn.executescript(SCHEMA_SQL.replace(_V13_BLOCK, _V12_BLOCK, 1))
     _migrate_v12_to_v13(conn)
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def test_the_v12_baseline_genuinely_lacks_the_columns(tmp_path):
@@ -80,7 +90,10 @@ def test_the_v12_baseline_genuinely_lacks_the_columns(tmp_path):
     # Act
     conn.executescript(SCHEMA_SQL.replace(_V13_BLOCK, _V12_BLOCK, 1))
     # Assert
-    assert not [c for c, _ in LIFECYCLE_COLUMNS if c in _columns(conn)]
+    try:
+        assert not [c for c, _ in LIFECYCLE_COLUMNS if c in _columns(conn)]
+    finally:
+        conn.close()
 
 
 def test_a_fresh_store_has_the_lifecycle_columns(fresh_store):
