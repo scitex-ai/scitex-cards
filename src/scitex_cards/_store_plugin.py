@@ -200,6 +200,22 @@ TASK_FIELDS: "dict[str, FieldPolicy]" = {
 #: `PROMOTION_CANDIDATES` is that promotion is not the answer for these: no
 #: per-field rule describes them, so giving them a column would not help.
 UNDECLARED: "dict[str, str]" = {
+    "is_deleted": (
+        "THE HIDE_FLAG COLUMN, ADDED BY v13 AND NOT YET DECLARED. It exists "
+        "so the delete marker can be merged INDEPENDENTLY of `card_json` — "
+        "under LWW a later edit on another host carries a whole document "
+        "WITHOUT the tombstone in it, and the card is live again everywhere. "
+        "It is not in PROMOTION_CANDIDATES because that helper hard-codes "
+        "role=DATA; a HIDE_FLAG declared as DATA is a different field wearing "
+        "the same name. Declaring it properly grows TASK_FIELDS, which a test "
+        "pins at exactly two and which ADR-0018 D1 makes a decision rather "
+        "than an edit. OPERATOR RULING 2026-08-26: once a row is in the "
+        "database it is never deleted; a flag handles it. WHEN DECLARED IT "
+        "MUST BE kind=BOOL + merge=LAST_WRITER_WINS (the primitive refuses "
+        "every other combination), and it must be WRITTEN THROUGH put() — "
+        "never Store.hide()/unhide(), whose ops skip the HLC comparison and "
+        "leave two replicas permanently disagreeing."
+    ),
     "row_order": (
         "DERIVED, NOT A VALUE. Board order is a projection over the whole "
         "table, not a fact about one card. Every MergeRule member is per-field "
