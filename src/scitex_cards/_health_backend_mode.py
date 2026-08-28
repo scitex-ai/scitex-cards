@@ -39,6 +39,12 @@ from typing import Any
 POSTGRES = "postgres"
 SQLITE = "sqlite"
 
+#: The inbox rail has NO usable backend at all — distinct from "on a
+#: different engine than the cards". SQLite is retired (operator ruling
+#: 2026-08-23), so a non-PostgreSQL store leaves the inbox with nothing to
+#: select, which is a stronger fact than a mere split.
+UNAVAILABLE = "unavailable"
+
 
 def _store_mode(store: str | Path | None) -> tuple[str, str]:
     """Return ``(mode, target)`` for the CARD store."""
@@ -109,10 +115,18 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
     one that cannot go red.
     """
     from ._inbox_backend import POSTGRES as INBOX_POSTGRES
-    from ._inbox_backend import SQLITE as INBOX_SQLITE
     from ._inbox_backend import backend
+    from ._store_errors import StoreUnavailableError
 
-    active = backend()
+    try:
+        active = backend()
+    except StoreUnavailableError as exc:
+        # NO BACKEND, NOT A THIRD ENGINE. SQLite is RETIRED (operator ruling
+        # 2026-08-23): a non-PostgreSQL store has no inbox backend to fall
+        # back to at all, which is a DIFFERENT fact from "the inbox is on a
+        # different engine than the cards" and deserves its own token rather
+        # than being folded into "yaml" or crashing the caller.
+        return UNAVAILABLE, str(exc)
     if active == INBOX_POSTGRES:
         from ._inbox_postgres import _safe_dsn, resolve_dsn
 
@@ -123,15 +137,9 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
             # rendered as the SQLite sidecar: "the rail is a file" and "the rail
             # is a server I cannot reach" call for opposite actions.
             return POSTGRES, f"unresolved ({type(exc).__name__}: {exc})"
-    if active == INBOX_SQLITE:
-        # `inbox_target`, not `inbox_db_path`: the doctor must name WHERE THE
-        # RAIL ACTUALLY IS. Naming `runtime/cards.db` after the rail moved would
-        # send a reader to inspect an empty file and conclude the notifications
-        # were lost — which is the same "report about a database nobody is
-        # using" this function exists to prevent.
-        from ._inbox_sqlite_schema import inbox_target
-
-        return SQLITE, str(inbox_target(store))
+    # SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23):
+    # `backend()` never returns it any more — it raises instead — so the only
+    # remaining live case here is the file break-glass backend.
     from ._paths import runtime_dir
 
     return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")
@@ -150,6 +158,21 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
         }
 
     source = _which_tier_won(store, target)
+
+    if inbox_mode == UNAVAILABLE:
+        return {
+            "ok": False,
+            "detail": (
+                f"the notification inbox has NO usable backend — cards are on "
+                f"{store_mode} ({target}, chosen by {source}). {inbox_where}"
+            ),
+            "hint": (
+                f"point $SCITEX_CARDS_DB at a postgresql://...:55432/... DSN. "
+                "SQLite is RETIRED as an inbox backend (operator ruling "
+                "2026-08-23) and cannot be selected as a fallback for a "
+                "non-PostgreSQL store."
+            ),
+        }
 
     if store_mode == inbox_mode:
         return {
@@ -207,6 +230,6 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
     }
 
 
-__all__ = ["check_backend_mode", "POSTGRES", "SQLITE"]
+__all__ = ["check_backend_mode", "POSTGRES", "SQLITE", "UNAVAILABLE"]
 
 # EOF

@@ -21,6 +21,7 @@ pytest-asyncio).
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
 
@@ -212,7 +213,18 @@ def burst(tmp_path_factory):
     assertion below reads a different field of the SAME run. Re-running it
     per test would multiply that cost without testing anything new — the run
     is a pure observation, nothing mutates it.
+
+    SETS ``SCITEX_CARDS_INBOX_BACKEND`` DIRECTLY rather than relying on the
+    suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
+    a FUNCTION-scoped one on the first test that needs both, so this fixture's
+    real enqueue/drain calls would otherwise run before
+    ``_default_inbox_backend_yaml`` ever pins the var — inheriting whatever
+    the ambient environment happens to hold. SQLite retired (operator ruling
+    2026-08-23): an unset var now means "no backend at all" rather than a
+    working default, so this ordering gap turned silent-but-fine into a hard
+    failure. Matches the suite-wide default; no teardown needed.
     """
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
     return _drain_a_burst_twice(tmp_path_factory.mktemp("burst"))
 
 

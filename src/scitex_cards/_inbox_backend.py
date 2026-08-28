@@ -35,6 +35,8 @@ from __future__ import annotations
 import os
 from typing import Final
 
+from ._store_errors import StoreUnavailableError
+
 __all__ = ["POSTGRES", "SQLITE", "YAML", "backend", "store_is_shared"]
 
 POSTGRES: Final[str] = "postgres"
@@ -70,11 +72,17 @@ def store_is_shared() -> bool:
 
 
 def backend() -> str:
-    """``postgres`` | ``sqlite`` | ``yaml`` — the backend in force.
+    """``postgres`` | ``yaml`` — the backend in force.
 
     An explicit ``SCITEX_CARDS_INBOX_BACKEND`` always wins; otherwise the
-    inbox follows the store. See the module docstring for why the default
-    is not "sqlite unless told otherwise".
+    inbox follows the store. A store that is not a Postgres DSN is now a
+    CONFIGURATION ERROR rather than a reason to select SQLite, and raises
+    :class:`~scitex_cards._store_errors.StoreUnavailableError`.
+
+    SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23,
+    「ポストグレスのみです」). It is not defaulted off — it is unreachable,
+    because a toggle that can be flipped is a second inbox that merely
+    happens to be switched off today.
     """
     explicit = (os.environ.get(ENV_INBOX_BACKEND) or "").strip().lower()
     if explicit in _POSTGRES_ALIASES:
@@ -82,8 +90,21 @@ def backend() -> str:
     if explicit == YAML:
         return YAML
     if explicit == SQLITE:
-        return SQLITE
-    return POSTGRES if store_is_shared() else SQLITE
+        raise StoreUnavailableError(
+            f"{ENV_INBOX_BACKEND}={explicit!r} selects SQLite, which is "
+            "RETIRED as an inbox backend: the fleet is PostgreSQL-only. "
+            f"Unset {ENV_INBOX_BACKEND}, or set it to 'postgres'."
+        )
+    if store_is_shared():
+        return POSTGRES
+    raise StoreUnavailableError(
+        "no inbox backend can be selected: the configured store is not a "
+        "Postgres DSN and SQLite is RETIRED. Point one of "
+        f"{', '.join(ENV_STORE_SETTINGS)} at a postgresql://...:55432/... "
+        "DSN. This case used to select SQLite SILENTLY, which is how a "
+        "store misconfiguration became an invisible second inbox that "
+        "nobody polled."
+    )
 
 
 # EOF

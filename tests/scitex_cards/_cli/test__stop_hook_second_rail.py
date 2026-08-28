@@ -434,31 +434,34 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 # 7. The backend PRODUCTION actually runs                                     #
 # --------------------------------------------------------------------------- #
 #
-# This suite pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test while the
-# fleet runs SQLite (see tests/scitex_cards/conftest.py and the note in
-# tests/scitex_cards/_delivery/test__tick_truth.py). A delivery rail proven
-# only on the break-glass backend is proven on a configuration nobody runs —
-# and "measured somewhere else" is how the original outage stayed invisible.
-# So the block/release pair is re-run against SQLite explicitly.
+# This suite pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test. Until
+# 2026-08-23 the fleet ran SQLite by default, so the block/release pair was
+# re-run against it explicitly here — a delivery rail proven only on the
+# break-glass backend is proven on a configuration nobody runs, and "measured
+# somewhere else" is how the original outage stayed invisible.
+#
+# SQLite is now RETIRED as an inbox backend (operator ruling 2026-08-23,
+# PR #938): selecting it explicitly raises ``StoreUnavailableError`` instead
+# of enqueuing anything, so the three behavioural round-trips this section
+# used to run against it no longer have a backend to run against. What
+# replaces them is the refusal itself — the hook must not silently swallow a
+# retired-backend selection as if the mail simply never arrived; it must
+# report the message rail as UNAVAILABLE, exactly like any other inbox
+# failure (see ``test_an_unreadable_inbox_says_why_it_is_silent`` above,
+# which already covers the generic "the hook does not wedge" contract).
 
 
-def test_a_pending_message_blocks_on_the_sqlite_backend(env):
+def test_selecting_the_retired_sqlite_backend_still_lets_the_stop_through(env):
+    """A refusal at the backend seam must still fail the hook OPEN, not silent.
+
+    ``_decide`` guards each rail with its own broad ``except Exception`` (see
+    ``_cli/_stop_hook.py``), so a ``StoreUnavailableError`` from the retired
+    SQLite selection is caught the same way an unreadable inbox file always
+    was — same fail-open decision. This pins that the retirement did not
+    quietly change that contract.
+    """
     # Arrange
     env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-    _send()
-
-    # Act
-    out = _decide()
-
-    # Assert
-    assert out["decision"].get("decision") == "block"
-
-
-def test_acking_releases_the_block_on_the_sqlite_backend(env):
-    # Arrange
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-    ids = _send()
-    confirm_notifications(AGENT, ids, store=_store())
 
     # Act
     out = _decide()
@@ -467,17 +470,26 @@ def test_acking_releases_the_block_on_the_sqlite_backend(env):
     assert out["decision"] == {}
 
 
-def test_the_sqlite_read_does_not_mark_anything_seen(env):
+def test_selecting_the_retired_sqlite_backend_reports_the_rail_unavailable(env):
     # Arrange
     env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-    _send()
-    _decide()
 
     # Act
-    still_unseen = poll_inbox(AGENT, unseen_only=True, mark_seen=False, store=_store())
+    out = _decide()
 
     # Assert
-    assert len(still_unseen) == 1
+    assert any("message rail unavailable" in w for w in out["warnings"])
+
+
+def test_the_retirement_reason_is_in_the_warning(env):
+    # Arrange
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+
+    # Act
+    out = _decide()
+
+    # Assert
+    assert any("RETIRED" in w for w in out["warnings"])
 
 
 # EOF

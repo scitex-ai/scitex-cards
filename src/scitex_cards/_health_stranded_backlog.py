@@ -34,6 +34,7 @@ ok=None (unknown), never ok=True.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -48,21 +49,38 @@ _HINT = (
 )
 
 
-def _legacy_inbox_path(store) -> "Path | None":
-    """The SQLite inbox path, or None when this build cannot name one.
+#: Mirrors the retired ``_inbox_sqlite_schema.ENV_INBOX_DB`` / ``_DB_FILENAME``
+#: constants (that module was deleted 2026-08-28, PR #938 step two — the
+#: SQLite inbox BACKEND is gone, per the 2026-08-17 abolition ruling). This
+#: health check names the path where a legacy backlog might still be
+#: sitting, which is a reason to remember the path, not a reason to keep the
+#: backend that once wrote it.
+_LEGACY_ENV_INBOX_DB = "SCITEX_CARDS_INBOX_DB"
+_LEGACY_DB_FILENAME = "cards.db"
 
-    IMPORTS FROM ``_inbox_sqlite_schema``, WHICH DEFINES IT — not from
-    ``_inbox_sqlite``, which only re-exports it. The distinction is the whole
-    point of this line: ``_inbox_sqlite`` is the SQLite inbox BACKEND and is
-    being removed under the 2026-08-17 abolition ruling, while this health
-    check must outlive it. A health check that names a path is not a reason to
-    keep a backend alive, and importing through the re-export made this module
-    a dependency that would have blocked the removal.
+
+def _legacy_inbox_path(store) -> "Path | None":
+    """The (possibly stranded) legacy SQLite inbox path, or None if unnamed.
+
+    INLINED RATHER THAN IMPORTED. It used to import ``inbox_db_path`` from
+    ``_inbox_sqlite_schema`` deliberately — not from ``_inbox_sqlite``, which
+    only re-exported it — reasoning that the schema/path half would outlive
+    the backend half under the 2026-08-17 abolition ruling. It did not: both
+    were SQLite-and-file specific and both were deleted together in the same
+    change that removed the backend (PR #938 step two). This function
+    duplicates the tiny path-resolution logic instead, so THIS health check
+    has no import that could be broken by a future SQLite-adjacent deletion.
     """
     try:
-        from ._inbox_sqlite_schema import inbox_db_path
+        override = os.environ.get(_LEGACY_ENV_INBOX_DB)
+        if override:
+            return Path(override).expanduser()
+        from ._paths import runtime_dir  # noqa: PLC0415 -- import cycle
 
-        return Path(inbox_db_path(store))
+        # `create=True` mirrors the retired `inbox_db_path`'s own behaviour
+        # exactly — preserved rather than "fixed" here, since changing it is
+        # an unrelated behavioural question this deletion should not smuggle.
+        return runtime_dir(store, create=True) / _LEGACY_DB_FILENAME
     except Exception:  # noqa: BLE001 — a health check must not raise
         return None
 

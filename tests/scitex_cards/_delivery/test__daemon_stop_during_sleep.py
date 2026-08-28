@@ -66,7 +66,11 @@ def _store_env(path):
     keys = ("SCITEX_CARDS_DB", "SCITEX_CARDS_INBOX_BACKEND")
     saved = {k: os.environ.get(k) for k in keys}
     os.environ["SCITEX_CARDS_DB"] = str(path)
-    os.environ.pop("SCITEX_CARDS_INBOX_BACKEND", None)
+    # Not popped: SQLite is RETIRED as an inbox backend (operator ruling
+    # 2026-08-23), so an unset var against this local file store would now
+    # raise StoreUnavailableError instead of falling back to a working
+    # default. `yaml` is the real non-server backend left.
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
     try:
         yield
     finally:

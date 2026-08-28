@@ -396,7 +396,17 @@ def undrained_backlog_check(tmp_path_factory):
 
     Module-scoped because building it enqueues UNSEEN_BACKLOG_THRESHOLD+1
     notifications through the real store — expensive to repeat per assertion.
+
+    SETS ``SCITEX_CARDS_INBOX_BACKEND`` DIRECTLY rather than relying on the
+    suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
+    a FUNCTION-scoped one on the first test that needs both, so this
+    fixture's real enqueue calls would otherwise run before
+    ``_default_inbox_backend_yaml`` ever pins the var. SQLite retired
+    (operator ruling 2026-08-23): an unset var now means "no backend at all"
+    rather than a working default. Matches the suite-wide default; no
+    teardown needed.
     """
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
     # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
     # itself rather than a `runtime/cards.db` beside it, so handing it a YAML
     # path makes sqlite refuse with "file is not a database" — correctly. The
