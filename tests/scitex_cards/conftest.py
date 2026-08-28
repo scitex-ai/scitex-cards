@@ -200,17 +200,21 @@ def _reject_deprecated_agent_env():
 
 # === Suite-wide: pin the YAML inbox backend by default ======================
 #
-# The inbox storage backend DEFAULT flipped to SQLite (operator decision
-# 2026-07-09: SQLite is ON, YAML is explicit break-glass). But the bulk of the
-# suite asserts the YAML on-disk inbox format / semantics (the ``inboxes:``
-# section shape, tasks:/users: coexistence, the digest-collapse maintenance
-# path, etc.). Pin the (still-supported) YAML break-glass backend for every
-# test by default so those assertions keep exercising the path they were
-# written for. The dedicated SQLite-backend tests opt BACK OUT via
-# ``env.delete("SCITEX_CARDS_INBOX_BACKEND")`` (to prove the real default) or
-# set it explicitly; this fixture restores the pre-test value on teardown, so
-# the two stack safely. Production agents set NEITHER var and therefore get the
-# real SQLite default.
+# The inbox storage backend defaulted to SQLite from 2026-07-09 until it was
+# RETIRED entirely (operator ruling 2026-08-23, PR #938 / #944): SQLite is no
+# longer a legal inbox backend under any resolution path, so an unset var now
+# means "no backend at all" against a non-shared store rather than a working
+# default. The bulk of the suite asserts the YAML on-disk inbox format /
+# semantics (the ``inboxes:`` section shape, tasks:/users: coexistence, the
+# digest-collapse maintenance path, etc.), so this fixture pins the
+# (still-supported) YAML break-glass backend for every test by default —
+# every real-store fixture needs SOME resolvable backend now, not only the
+# ones that used to assert YAML specifically. A module-scoped fixture that
+# does real inbox I/O must set this var itself rather than relying on this
+# (function-scoped) autouse fixture: pytest sets up a module-scoped fixture
+# BEFORE a function-scoped one on the first test that needs both, so this
+# fixture's pin would not yet be in effect (see e.g.
+# ``test__channel_size_guard.py``'s ``burst`` fixture).
 
 
 @pytest.fixture(autouse=True)

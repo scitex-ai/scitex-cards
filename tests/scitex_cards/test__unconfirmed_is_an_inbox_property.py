@@ -41,8 +41,8 @@ from scitex_cards._inbox_receipt import (
 
 AGENT = "unconfirmed-agent"
 
-#: Both real inbox backends. `sqlite` is what production runs.
-BACKENDS = ("sqlite", "yaml")
+#: The one real non-server inbox backend left. SQLite was retired 2026-08-23.
+BACKENDS = ("yaml",)
 
 
 @pytest.fixture(params=BACKENDS)
