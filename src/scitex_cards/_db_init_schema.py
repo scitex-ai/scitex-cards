@@ -46,6 +46,7 @@ from ._db_migrations import (
     record_migration_provenance,
 )
 from ._ddl import execute_ddl
+from ._schema_ddl_objects import _all_ddl_present
 from ._schema_shape import (
     SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
     observed_version,
@@ -55,6 +56,63 @@ from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 __all__ = ["init_schema"]
+
+
+def _run_schema_ddl(conn: StoreConnection) -> None:
+    """Run the full schema-assertion DDL: the core script, the guard triggers, and
+    the entire migration ladder.
+
+    Extracted from :func:`init_schema` so the #755 gate can skip this whole block
+    when every object it would create is already present, without re-indenting the
+    chain in place. The ordering rules in the comments are load-bearing and travel
+    with the code: the rungs are ordered by COST, and the advisory-lock rung runs
+    LAST so its serialisation does not block the cheap ones.
+    """
+    execute_ddl(conn, _SCHEMA_SQL)
+    # Separate, not folded into _SCHEMA_SQL: per the note below, that script
+    # reaches FRESH files only, and these guards must reach every store the
+    # current client opens or it cannot prove it is current (_store_retirement).
+    execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
+    # Same reason, and doubly so: the client-side floor below binds only
+    # clients that HAVE it, while 2026-07-31 measured the live store swinging
+    # 5 -> 7 -> 5 with v7's artifacts physically present the whole time. This
+    # trigger is the copy of the rule an 0.18.0 writer cannot skip.
+    execute_ddl(conn, SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
+    _migrate_v1_to_v2(conn)
+    _migrate_v2_to_v3(conn)
+    # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
+    # only, which is FRESH-database-only. `CREATE TABLE IF NOT EXISTS` is a no-op
+    # on an existing table, so a v3 file upgraded straight to v5 never received
+    # them — the exact trap _migrate_v1_to_v2's docstring warns about, present in
+    # this very chain. Not fixed here (it needs establishing what v4 added);
+    # named so the gap is visible rather than inherited as a numbering quirk.
+    _migrate_v4_to_v5(conn)
+    _migrate_v5_to_v6(conn)
+    _migrate_v6_to_v7(conn)
+    _migrate_v7_to_v8(conn)
+    _migrate_v8_to_v9(conn)
+    _migrate_v9_to_v10(conn)
+    # v11 -> v12 RUNS HERE, BEFORE THE LOWER-NUMBERED RUNG BELOW, AND THAT IS
+    # NOT A MISTAKE. This chain is ordered by COST, not by number: the comment
+    # under `_migrate_v10_to_v11` says it runs "LAST, and after every column
+    # rung" precisely so its advisory lock does not serialise the cheap ones.
+    # v11 -> v12 is a plain additive ADD COLUMN rung, so it belongs with the
+    # cheap ones. The chain already carries a numbering irregularity for a
+    # different reason (there is no _migrate_v3_to_v4, noted above), so the
+    # invariant to preserve is the ordering rule, not the arithmetic.
+    _migrate_v11_to_v12(conn)
+    # v12 -> v13 sits here for the same reason v11 -> v12 does: it is a plain
+    # additive ADD COLUMN rung with no trigger and no lock, so it belongs with
+    # the cheap ones and must not be pushed behind the advisory-lock rung below.
+    _migrate_v12_to_v13(conn)
+    # LAST, and after every column rung, because it is the only rung that takes
+    # locks on tables the fleet is actively writing. It also SERIALISES ~90
+    # clients on an advisory lock rather than letting them race — the same width
+    # that produced 11 DeadlockDetected failures out of 12 concurrent opens
+    # above, applied to ADD CONSTRAINT, which holds ShareRowExclusive on two
+    # tables while it validates. Running it last keeps that serialisation off
+    # the cheap rungs.
+    _migrate_v10_to_v11(conn)
 
 
 def init_schema(conn: StoreConnection) -> None:
@@ -138,51 +196,14 @@ def init_schema(conn: StoreConnection) -> None:
         conn.commit()
         return
 
-    execute_ddl(conn, _SCHEMA_SQL)
-    # Separate, not folded into _SCHEMA_SQL: per the note below, that script
-    # reaches FRESH files only, and these guards must reach every store the
-    # current client opens or it cannot prove it is current (_store_retirement).
-    execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
-    # Same reason, and doubly so: the client-side floor below binds only
-    # clients that HAVE it, while 2026-07-31 measured the live store swinging
-    # 5 -> 7 -> 5 with v7's artifacts physically present the whole time. This
-    # trigger is the copy of the rule an 0.18.0 writer cannot skip.
-    execute_ddl(conn, SCHEMA_VERSION_FLOOR_TRIGGER_SQL)
-    _migrate_v1_to_v2(conn)
-    _migrate_v2_to_v3(conn)
-    # NOTE there is no _migrate_v3_to_v4: v4's changes went into _SCHEMA_SQL
-    # only, which is FRESH-database-only. `CREATE TABLE IF NOT EXISTS` is a no-op
-    # on an existing table, so a v3 file upgraded straight to v5 never received
-    # them — the exact trap _migrate_v1_to_v2's docstring warns about, present in
-    # this very chain. Not fixed here (it needs establishing what v4 added);
-    # named so the gap is visible rather than inherited as a numbering quirk.
-    _migrate_v4_to_v5(conn)
-    _migrate_v5_to_v6(conn)
-    _migrate_v6_to_v7(conn)
-    _migrate_v7_to_v8(conn)
-    _migrate_v8_to_v9(conn)
-    _migrate_v9_to_v10(conn)
-    # v11 -> v12 RUNS HERE, BEFORE THE LOWER-NUMBERED RUNG BELOW, AND THAT IS
-    # NOT A MISTAKE. This chain is ordered by COST, not by number: the comment
-    # under `_migrate_v10_to_v11` says it runs "LAST, and after every column
-    # rung" precisely so its advisory lock does not serialise the cheap ones.
-    # v11 -> v12 is a plain additive ADD COLUMN rung, so it belongs with the
-    # cheap ones. The chain already carries a numbering irregularity for a
-    # different reason (there is no _migrate_v3_to_v4, noted above), so the
-    # invariant to preserve is the ordering rule, not the arithmetic.
-    _migrate_v11_to_v12(conn)
-    # v12 -> v13 sits here for the same reason v11 -> v12 does: it is a plain
-    # additive ADD COLUMN rung with no trigger and no lock, so it belongs with
-    # the cheap ones and must not be pushed behind the advisory-lock rung below.
-    _migrate_v12_to_v13(conn)
-    # LAST, and after every column rung, because it is the only rung that takes
-    # locks on tables the fleet is actively writing. It also SERIALISES ~90
-    # clients on an advisory lock rather than letting them race — the same width
-    # that produced 11 DeadlockDetected failures out of 12 concurrent opens
-    # above, applied to ADD CONSTRAINT, which holds ShareRowExclusive on two
-    # tables while it validates. Running it last keeps that serialisation off
-    # the cheap rungs.
-    _migrate_v10_to_v11(conn)
+    # THE #755 GATE (the second, narrower one). schema_already_current above
+    # reads the STAMP and the guard triggers; this reads the OBJECTS, so a store
+    # whose stamp disagrees (the measured oscillation) but whose objects are all
+    # physically present opens without re-running DDL that a non-owner role is
+    # refused. Conservative: a missing object, a missing version rung, or an
+    # unreadable catalogue all fall through to the full DDL, exactly as before.
+    if not _all_ddl_present(conn, _shape, SCHEMA_VERSION):
+        _run_schema_ddl(conn)
     # THE STAMP IS A FLOOR, NEVER A REASSIGNMENT. Both halves of that rule now
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.

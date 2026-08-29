@@ -41,9 +41,14 @@ __all__ = [
     "trigger_names",
     "table_names",
     "column_names",
+    "index_names",
+    "function_names",
     "has_trigger",
     "has_table",
     "has_column",
+    "has_index",
+    "has_function",
+    "has_sequence",
     "row_values",
 ]
 
@@ -70,6 +75,30 @@ _SQLITE_TABLES = (
 _PG_COLUMNS = (
     "SELECT column_name FROM information_schema.columns "
     "WHERE table_schema = current_schema() AND table_name = '{table}'"
+)
+# Indexes, functions and sequences are probed with the same care. All three are
+# scoped to current_schema() FROM THE START (the scitex-dev #758 lesson, baked in
+# rather than learned): unscoped, pg_indexes / pg_proc / pg_class span every
+# schema the role can see, so a same-named object in another schema would read
+# PRESENT, the DDL would be skipped, and the first read would die with
+# UndefinedTable. current_schema() is where an unqualified CREATE lands, so the
+# probe and the creator agree on which schema they mean.
+_PG_INDEXES = (
+    "SELECT indexname FROM pg_indexes "
+    "WHERE schemaname = current_schema() AND tablename = '{table}'"
+)
+_PG_FUNCTIONS = (
+    "SELECT proname FROM pg_proc p "
+    "JOIN pg_namespace n ON n.oid = p.pronamespace "
+    "WHERE n.nspname = current_schema()"
+)
+_PG_SEQUENCES = (
+    "SELECT 1 FROM pg_class c "
+    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE n.nspname = current_schema() AND c.relname = '{name}' AND c.relkind = 'S'"
+)
+_SQLITE_INDEXES = (
+    "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = '{table}'"
 )
 
 #: The table name is INTERPOLATED, not bound, because the two engines disagree
@@ -192,6 +221,67 @@ def column_names(conn, table: str) -> set[str]:
 
 def has_column(conn, table: str, column: str) -> bool:
     return column in column_names(conn, table)
+
+
+def index_names(conn, table: str) -> set[str]:
+    """Every index on ``table`` in the current schema; empty when the table is absent.
+
+    An absent table yields an empty set rather than raising, the same contract
+    :func:`column_names` documents, so a caller may ask about an index on a table
+    that does not exist yet and read "no rows" as "not there". SQLite's
+    auto-indexes (``sqlite_autoindex_*``) are included, but a caller only ever
+    asks about the named ``idx_*`` indexes the schema DDL installs, which are the
+    explicit ones and never collide with an auto-index name.
+    """
+    if not _IDENTIFIER_RE.match(table):
+        raise ValueError(
+            f"refusing to interpolate {table!r} into a catalogue query: only "
+            "a plain SQL identifier is accepted here. See _IDENTIFIER_RE."
+        )
+    if _is_postgres(conn):
+        return _query(conn, _PG_INDEXES.format(table=table))
+    return _query(conn, _SQLITE_INDEXES.format(table=table))
+
+
+def has_index(conn, table: str, index: str) -> bool:
+    return index in index_names(conn, table)
+
+
+def function_names(conn) -> set[str]:
+    """Every function in the current schema (PostgreSQL only).
+
+    SQLite has no user-defined trigger functions -- its triggers are inline -- so
+    there is nothing to enumerate there. The DDL gate only asks this on
+    PostgreSQL; on SQLite it returns an empty set rather than raising, so the
+    probe is safe to call from a backend-agnostic caller.
+    """
+    if not _is_postgres(conn):
+        return set()
+    return _query(conn, _PG_FUNCTIONS)
+
+
+def has_function(conn, name: str) -> bool:
+    return name in function_names(conn)
+
+
+def has_sequence(conn, name: str) -> bool:
+    """True when a SEQUENCE of this name exists in the current schema.
+
+    PostgreSQL only. The v9 rail's generator is a real sequence, and the
+    migration that installs it must not re-run (re-setting the column default and
+    re-``setval``-ing) once it exists -- a DML-only role cannot do either, and
+    re-running them changes nothing. SQLite has no sequences, so there is nothing
+    to check and the answer is True: "the generator is present" is vacuously true
+    for the ``rowid`` generator.
+    """
+    if not _IDENTIFIER_RE.match(name):
+        raise ValueError(
+            f"refusing to interpolate {name!r} into a catalogue query: only "
+            "a plain SQL identifier is accepted here. See _IDENTIFIER_RE."
+        )
+    if not _is_postgres(conn):
+        return True
+    return bool(_query(conn, _PG_SEQUENCES.format(name=name)))
 
 
 # EOF

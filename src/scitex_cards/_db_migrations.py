@@ -254,9 +254,19 @@ def _migrate_v8_to_v9(conn: StoreConnection) -> None:
     #
     # SQLite keeps ``rowid`` as its generator; the column is still populated by
     # the carry so a store migrated from SQLite carries its history's order.
-    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+    from ._schema_probe import _is_postgres, has_sequence  # noqa: PLC0415 -- import cycle
 
     if not _is_postgres(conn):
+        return
+    # Install the generator ONCE. Re-running it on every open rewrites the column
+    # default and re-setvals, which a DML-only role (not the owner of
+    # notifications) cannot do and which changes nothing when it is already set --
+    # so an existing store would be refused on every open. The #755 shape: probe
+    # for the generator, emit it only where genuinely absent. If the sequence is
+    # already there, this migration already ran to completion (all three
+    # statements are issued together), so skipping is exactly the no-op the
+    # unguarded version kept re-asserting.
+    if has_sequence(conn, _SEQ_NAME):
         return
     conn.execute(f"CREATE SEQUENCE IF NOT EXISTS {_SEQ_NAME}")
     conn.execute(
@@ -360,7 +370,7 @@ def _migrate_v9_to_v10(conn: StoreConnection) -> None:
         if column not in present:
             conn.execute(f"ALTER TABLE notifications ADD COLUMN {column} {sql_type}")
 
-    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
+    from ._schema_probe import _is_postgres, has_trigger  # noqa: PLC0415 -- import cycle
 
     if not _is_postgres(conn):
         # SQLite gets the columns but not the trigger. `json_object()` is only
@@ -369,6 +379,14 @@ def _migrate_v9_to_v10(conn: StoreConnection) -> None:
         # except on the one machine that mattered. The rail's SQLite writers are
         # in-process and current by construction; the multi-version fleet is on
         # PostgreSQL, which is where the guard is needed and where it works.
+        return
+    # Re-defining the payload function + trigger on every open is NOT a no-op on
+    # PostgreSQL: CREATE OR REPLACE FUNCTION rewrites the pg_proc row, and the
+    # DROP/CREATE TRIGGER pair demands table ownership, which a DML-only role
+    # lacks. When the trigger is already there, all three statements change
+    # nothing, so skip them -- the #755 shape, and it removes the pg_proc
+    # re-rewrite the per-store gate upstream was built to stop.
+    if has_trigger(conn, NOTIFICATION_PAYLOAD_TRIGGER):
         return
     conn.execute(_PAYLOAD_TRIGGER_FN_SQL)
     conn.execute(f"DROP TRIGGER IF EXISTS {NOTIFICATION_PAYLOAD_TRIGGER} ON notifications")
