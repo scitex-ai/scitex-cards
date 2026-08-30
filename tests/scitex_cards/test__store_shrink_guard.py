@@ -26,22 +26,31 @@ test, so every test here is safely isolated from the live store.
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import pytest
 
 from scitex_cards import _store
-from scitex_cards._db import resolve_db_path
+from scitex_cards._db import connect
 from scitex_cards._model import _save_doc_unlocked, load_doc
+from scitex_cards._store_target import resolve_store_target
 from scitex_cards._task import StoreShrinkRefusedError, _is_tombstoned
+
+
+def _open_ambient():
+    """A connection to the store THIS TEST is pinned to.
+
+    ``resolve_store_target``, not ``resolve_db_path``: the latter is typed
+    ``-> Path`` and REFUSES a DSN outright, so routing through it made every
+    helper here structurally unable to reach the store it was written to read.
+    """
+    return connect(resolve_store_target(None))
 
 
 def _live_row(task_id: str):
     """Raw SQL row for ``task_id``, or ``None``. Bypasses every app-level
     filter (tombstone exclusion, scope, ...) — the ground truth for "is the
     row still physically there."""
-    conn = sqlite3.connect(str(resolve_db_path(None)))
-    conn.row_factory = sqlite3.Row
+    conn = _open_ambient()
     try:
         return conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     finally:
@@ -49,9 +58,11 @@ def _live_row(task_id: str):
 
 
 def _live_task_count() -> int:
-    conn = sqlite3.connect(str(resolve_db_path(None)))
+    conn = _open_ambient()
     try:
-        return int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+        # AN EXPLICIT ALIAS: a COUNT has no column name of its own, and this
+        # driver's rows are addressed by name.
+        return int(conn.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"])
     finally:
         conn.close()
 
