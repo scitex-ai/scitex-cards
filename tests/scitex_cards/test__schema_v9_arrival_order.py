@@ -30,11 +30,9 @@ checking only one of them is how the divergence happens again.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from scitex_cards._db import SCHEMA_VERSION
+from scitex_cards._db import SCHEMA_VERSION, connect
 from scitex_cards._db_migrations import (
     NOTIFICATION_ORDER_COLUMN,
     _migrate_v8_to_v9,
@@ -66,22 +64,37 @@ CREATE TABLE notifications (
 """
 
 
+def _empty(new_store, prefix: str, script: str):
+    """An empty throwaway store with ``script`` installed through the package.
+
+    ``bootstrap=False``: the harness's per-test store is already at the current
+    shape, so a v8 fixture built on it would carry the v9 column before the
+    migration ran and every assertion below would be true before the act.
+
+    An in-memory scratch database was what these fixtures used to be. It cannot
+    stand in for the store any more, and not only on principle: every shape
+    question in this file is asked through ``table_columns``, which reads
+    ``information_schema`` and has no second dialect to fall back to — so the
+    old fixtures did not measure an old-shaped store, they errored on the probe.
+    """
+    conn = connect(new_store(prefix, bootstrap=False))
+    execute_ddl(conn, script)
+    conn.commit()
+    return conn
+
+
 @pytest.fixture
-def v8_store():
+def v8_store(new_store):
     """A store at the v8 shape -- the thing the migration must upgrade."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(_V8_NOTIFICATIONS)
+    conn = _empty(new_store, "cards_v9_v8shape", _V8_NOTIFICATIONS)
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def fresh_store():
+def fresh_store(new_store):
     """A store created by the CURRENT fresh-create script."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    execute_ddl(conn, SCHEMA_SQL)
+    conn = _empty(new_store, "cards_v9_fresh", SCHEMA_SQL)
     yield conn
     conn.close()
 
@@ -246,13 +259,21 @@ CREATE TABLE IF NOT EXISTS notifications (
 """
 
 
-class TestThePostgresGeneratorIsRealAndMonotonic:
-    """The half SQLite tests structurally cannot reach.
+class TestTheGeneratorIsRealAndMonotonic:
+    """The SEQUENCE, read through a RAW driver connection.
 
-    On SQLite the column is a plain BIGINT and ``rowid`` remains the generator,
-    so none of the tests above exercise the sequence, the DEFAULT, or ``setval``
-    -- the entire PostgreSQL-specific branch of the migration. Everything here
-    runs inside ``force_rollback``, so the live store is never mutated.
+    This class was written as "the half SQLite tests structurally cannot
+    reach", back when the fixtures above built an in-memory scratch database in
+    which the column was a plain BIGINT and no sequence existed. They now build
+    a real store, so that division is gone -- but the class is kept, and for a
+    reason the assertions below already state: it holds a RAW psycopg
+    connection, which yields TUPLES, where every other test in this file holds
+    the wrapped ``StoreConnection``, which yields dict-shaped rows. Same table,
+    two row types depending on how it was opened, and this package has already
+    paid three separate ``KeyError: 0`` crashes for assuming one of them.
+
+    Everything here runs inside ``force_rollback``, so nothing it creates
+    survives the test.
     """
 
     def test_the_migration_adds_the_column_on_postgres(self, pg_conn):
