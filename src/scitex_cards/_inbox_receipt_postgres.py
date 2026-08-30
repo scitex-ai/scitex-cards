@@ -9,7 +9,8 @@ The half of the rail that did not move
 ``notifications`` table. :mod:`scitex_cards._inbox_receipt` — the module that
 stamps ``pushed_at`` when the channel hands a record to the transport, and
 ``confirmed_at`` when the recipient confirms it by id — did not come along. It
-dispatched on ``_use_sqlite()`` (retired 2026-08-23), which was TWO-VALUED, so
+dispatched on a per-host-rail predicate (retired 2026-08-23), which was
+TWO-VALUED, so
 the shared-inbox case fell into the ``else`` and wrote a FILE.
 
 MEASURED ON THE LIVE STORE, 2026-08-11 23:30Z::
@@ -37,7 +38,7 @@ What that cost, concretely
 Why this is a separate module
 -----------------------------
 Same seam as ``_inbox_postgres``: the file half knows about paths, and this one
-knows about a server. Keeping them apart is what let the (now-deleted) SQLite
+knows about a server. Keeping them apart is what let the (now-deleted) per-host
 half be retired without surgery inside a live module.
 
 One statement per operation, deliberately
@@ -61,7 +62,7 @@ _TABLE: Final[str] = POSTGRES_SHAPE.table
 _RECIPIENT: Final[str] = POSTGRES_SHAPE.recipient
 _ORDER_COLUMN: Final[str] = POSTGRES_SHAPE.order_by
 
-#: Columns a receipt read returns, in the shape the file/SQLite readers return.
+#: Columns a receipt read returns, in the shape the file reader returns.
 _READ_COLUMNS: Final[tuple[str, ...]] = (
     "id",
     "event_type",

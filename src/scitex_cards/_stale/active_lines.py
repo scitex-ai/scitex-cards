@@ -180,7 +180,7 @@ def pending_backlog_nudge_line(
     written here as prose, so the two cannot drift apart. A hand-written label
     is the failure this docstring is describing, one level up: it would be
     documentation asserting something the code stopped doing, which is how
-    ``_inbox.py`` came to tell readers the inbox defaults to SQLite.
+    ``_inbox.py`` came to tell readers the inbox defaults to a local file.
     """
     from .active import _pending_nudge_hours
     from .active_clocks import BACKLOG_AGE_FIELD

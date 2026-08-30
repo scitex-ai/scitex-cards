@@ -10,16 +10,16 @@ and every one of its callers expects a ``Path``, so it cannot represent a
 
 a RELATIVE path, silently, with no error. A store URL that resolves to a path
 is not a slightly-wrong answer -- it is a different store, and the caller then
-creates an empty SQLite file at that name and reports a healthy, empty board.
+creates an empty database file at that name and reports a healthy, empty board.
 That is the two-stores-both-look-healthy failure this package already has scar
 tissue from.
 
-Measured 2026-07-31: the ``_backend_connect`` seam and its paramstyle layer are
-implemented and tested, and NOTHING in the package imports them -- every read
-and write still calls ``sqlite3.connect`` directly. Path resolution is the
-reason. Until the resolver can carry a URL, no call site can reach PostgreSQL
-no matter what else is ported, which makes this the smallest change that
-unblocks the rest.
+Measured 2026-07-31: the ``_backend_connect`` seam and its paramstyle layer were
+implemented and tested, and NOTHING in the package imported them -- every read
+and write opened a local file directly. Path resolution was the reason. Until
+the resolver could carry a URL, no call site could reach the server no matter
+what else was ported, which made this the smallest change that unblocked the
+rest.
 
 This module deliberately does NOT change ``resolve_db_path``. Callers that
 genuinely need a filesystem path (snapshots, backups, the on-disk health
@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from ._db import DEFAULT_DB_FILENAME, ENV_DB, PKG_SHORT
-from ._store_url import BACKEND_SQLITE, backend_of, is_postgres_url
+from ._store_url import backend_of, is_postgres_url
 
 __all__ = [
     "StoreTargetIsNotAPath",
@@ -61,7 +61,7 @@ __all__ = [
 #: answers the same TYPE for all four tiers -- a string -- so a deployment that
 #: never had a DSN and one that LOST its DSN are indistinguishable to every
 #: caller. Measured 2026-08-09: the operator's board ran with no
-#: ``SCITEX_CARDS_DB``, fell to ``TIER_DEFAULT``, and served a SQLite store
+#: ``SCITEX_CARDS_DB``, fell to ``TIER_DEFAULT``, and served a local store
 #: frozen on 2026-08-02 for a week -- rendering perfectly, raising nothing,
 #: while the fleet wrote to PostgreSQL. His words: "NO SILENT FALLBACKS, it is
 #: always the cause of troubles".
@@ -90,7 +90,7 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
 
     THERE IS NO TIER BELOW THE CONFIG FILE. Until 2026-08-13 this fell through
     to the ecosystem user-canonical default -- ``~/.scitex/cards/cards.db``, a
-    SQLite filename nobody chose. It now RAISES
+    filename nobody chose. It now RAISES
     :class:`StoreTargetNotConfigured`; see :func:`refuse_zero_config_default`.
 
     The deprecation warning is deliberately NOT re-emitted here -- ``_db``
@@ -107,7 +107,7 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     # Below env, so a per-agent or per-test override still wins and nothing that
     # worked before changes. Above the default, because the default is a
     # HARDCODED local filename: before this tier existed, every caller that did
-    # not export $SCITEX_CARDS_DB silently resolved to a private SQLite file.
+    # not export $SCITEX_CARDS_DB silently resolved to a private local file.
     # That is what let eight host-side writers keep using the old store through
     # the 2026-08-01 cutover while the fleet was believed migrated.
     #
@@ -124,7 +124,7 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     #     from scitex_config._ecosystem import local_state
     #     return str(local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME))
     #
-    # i.e. a SQLite filename nobody chose, returned as though somebody had.
+    # i.e. a filename nobody chose, returned as though somebody had.
     # `refuse_zero_config_default` still computes that filename -- but only to
     # NAME it in the refusal, never to hand it back as a store.
     #
@@ -136,7 +136,8 @@ def resolve_store_target(explicit: str | Path | None = None) -> str:
     # job, systemd unit and script on the box saw the variable EMPTY and
     # resolved this tier. A guard that must be remembered at each new call site
     # is a guard that will be missing from the next one. The operator's ruling,
-    # repeated and now final: SQLite is abolished fleet-wide, and the
+    # repeated and now final: the file-backed store is abolished fleet-wide,
+    # and the
     # error-prone option is better off not existing -- fewer choices is the
     # feature. So the tier itself stops answering.
     refuse_zero_config_default()
@@ -154,8 +155,8 @@ def database_for(target: str | Path) -> str | Path:
     wrong, and that is why this function exists rather than a comment asking
     callers to be careful. Nothing downstream normalises it —
     :func:`resolve_store_target` returns an explicit argument AS WRITTEN, and so
-    do ``resolve_db_path`` and ``connect`` — so SQLite CREATES a database at
-    that path, on top of whatever was there.
+    do ``resolve_db_path`` and ``connect`` — so a database was CREATED at that
+    path, on top of whatever was there.
 
     MEASURED TWICE, in two subsystems, from the same missing guard:
 
@@ -164,10 +165,10 @@ def database_for(target: str | Path) -> str | Path:
       to the raw name string for every peer.
     * 2026-08-20, the notification inbox: ``inbox_target`` had no guard at all,
       so ``inbox info`` — a verb named *info* — opened the card store as a
-      SQLite database and wrote an ``inbox`` table into it. The live artifact:
-      ``/home/agent/.scitex/cards/tasks.yaml``, 122880 bytes, magic
-      ``SQLite format 3``, holding 150 rows. A file whose extension says YAML
-      and whose contents are a database.
+      local database and wrote an ``inbox`` table into it. The live artifact:
+      ``/home/agent/.scitex/cards/tasks.yaml``, 122880 bytes, a database file
+      header, holding 150 rows. A file whose extension says YAML and whose
+      contents are a database.
 
     The second one is the reason this moved OUT of ``_db_users`` and into the
     module that owns store-target resolution. The registry grew a private fix,
@@ -197,7 +198,8 @@ class StoreTargetNotConfigured(RuntimeError):
 
     SINCE 2026-08-13 EVERY CALLER GETS THIS, not just the servers. The sentence
     above described the trade that justified guarding one door at a time; the
-    operator retired that trade (SQLite abolished fleet-wide) after the "fresh
+    operator retired that trade (the file-backed store abolished fleet-wide)
+    after the "fresh
     install behaving correctly" case turned out to be indistinguishable, from
     inside the process, from a cron job whose environment lost the DSN.
     :func:`refuse_zero_config_default` is now where it is raised, and both
@@ -206,7 +208,7 @@ class StoreTargetNotConfigured(RuntimeError):
 
 
 def refuse_zero_config_default() -> NoReturn:
-    """Refuse, loudly, where the zero-config SQLite default used to answer.
+    """Refuse, loudly, where the zero-config file default used to answer.
 
     THE ONE PLACE THIS TEXT LIVES, and the reason it is a function rather than
     two ``raise`` statements: the abolished tier had TWO implementations --
@@ -368,11 +370,6 @@ def store_label(explicit: str | Path | None = None) -> str:
         user = userinfo.split(":", 1)[0]
         rest = f"{user}@{hostpart}" if user else hostpart
     return f"{scheme}{sep}{rest}"
-
-
-def _assert_sqlite_default() -> str:
-    """Kept as a named check so the default cannot drift unnoticed."""
-    return BACKEND_SQLITE
 
 
 # EOF

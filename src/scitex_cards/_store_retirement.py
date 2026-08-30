@@ -4,8 +4,8 @@
 
 WHY THIS EXISTS -- identity is necessary and NOT sufficient
 -----------------------------------------------------------
-After a verified copy there are TWO stores with the SAME identity: the SQLite
-source and the PostgreSQL destination. Both are complete. Both are legitimately
+After a verified copy there are TWO stores with the SAME identity: the source
+and the destination. Both are complete. Both are legitimately
 that workspace's store. ``store_uuid`` cannot separate them, and choosing the
 wrong one is the failure that emptied this board before (2170 rows -> 18).
 
@@ -32,8 +32,9 @@ more application of it.
 
 THE UPSERT HAZARD, stated because it is not obvious
 ---------------------------------------------------
-This package's idiom for ``schema_meta`` is ``INSERT OR REPLACE``, which SQLite
-implements as DELETE-then-INSERT. A delete guard therefore fires on what looks
+This package's idiom for ``schema_meta`` was ``INSERT OR REPLACE``, which some
+engines implement as DELETE-then-INSERT. A delete guard therefore fires on what
+looks
 like a harmless upsert. Rather than weaken the guard to accommodate that, the
 retirement keys are written with UPDATE via :func:`retire_store`, and DELETE of
 a retirement key is refused outright once the store is retired. If a caller
@@ -76,7 +77,7 @@ TRIGGER_NAMES = (
 
 #: Applied by ``init_schema`` alongside the other append-only guards.
 #:
-#: ``IS NOT`` rather than ``<>`` because SQLite's ``<>`` is NULL-propagating:
+#: ``IS NOT`` rather than ``<>`` because ``<>`` is NULL-propagating:
 #: setting the value to NULL would compare as unknown, the WHEN clause would not
 #: fire, and the retirement would be erasable by writing NULL over it. ``IS NOT``
 #: treats NULL as a distinct value, which is the intent.
@@ -194,8 +195,8 @@ def retire_store(conn, *, successor_uuid: str, by: str, at: str) -> None:
     """Retire this store in favour of ``successor_uuid``. THE ONLY WAY TO DO IT.
 
     Exists so nobody has to remember the hazard at 3am during a cutover: this
-    package's idiom for ``schema_meta`` is ``INSERT OR REPLACE``, which SQLite
-    implements as DELETE-then-INSERT, so the obvious upsert trips the delete
+    package's idiom for ``schema_meta`` was ``INSERT OR REPLACE``, which some
+    engines implement as DELETE-then-INSERT, so the obvious upsert trips the delete
     guard on an already-retired store. Rather than document that and hope, the
     correct sequence is bound to a verb -- level 1 beats level 2.
 

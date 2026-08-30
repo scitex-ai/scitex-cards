@@ -47,7 +47,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sqlite3
 import uuid as _uuid_module
 from pathlib import Path
 from typing import Final
@@ -203,7 +202,7 @@ def expected_store_uuid(explicit: str | None = None) -> str | None:
     return raw
 
 
-def read_store_uuid(conn: sqlite3.Connection) -> str | None:
+def read_store_uuid(conn) -> str | None:
     """This database's own identity, or ``None`` when it carries none.
 
     ``None`` is a LEGAL, load-bearing input to :func:`identity_verdict` — rows
@@ -217,7 +216,7 @@ def read_store_uuid(conn: sqlite3.Connection) -> str | None:
         row = conn.execute(
             "SELECT value FROM schema_meta WHERE key = ?", (KEY_STORE_UUID,)
         ).fetchone()
-    except sqlite3.Error:
+    except Exception:  # noqa: BLE001 — an unreadable stamp is "no identity"
         return None
     if row is None:
         return None
@@ -242,16 +241,15 @@ def store_uuid_at(db_path: str | Path) -> str | None:
     and the health doctor use it so the identity can be put into config without
     archaeology. Absent file, unreadable file, no schema — all ``None``.
 
-    ``db_path`` may be a filesystem path OR a PostgreSQL URL. Handling the
-    server case is not a nicety: ``Path("postgresql://h/db").exists()`` is
-    False, so before this branch existed a PostgreSQL store reported
-    ``store_uuid: None`` — indistinguishable from "this store has no identity",
-    and reported by the very verb an operator runs to check identity. That is
-    the worse failure, because it does not look like one. An identity that
-    silently reads None also makes ``expected_uuid`` unfalsifiable, which is
-    how a mismatch guard passes on the wrong store.
+``db_path`` must name the store. A target
+    that is not a DSN answers ``None``, which is honest: there is no store there
+    to carry an identity. It used to be opened AS A FILE instead, and the
+    resulting ``store_uuid: None`` was indistinguishable from "this store has no
+    identity" — reported by the very verb an operator runs to check identity.
+    An identity that silently reads None also makes ``expected_uuid``
+    unfalsifiable, which is how a mismatch guard passes on the wrong store.
 
-    The server branch is TIME-BOUNDED, and that is part of the contract rather
+    The read is TIME-BOUNDED, and that is part of the contract rather
     than a tuning detail. libpq applies no connect timeout by default, so a
     server that is down (as opposed to refusing) leaves this blocked
     indefinitely — measured at over 40s against a dead port before the bound
@@ -276,10 +274,9 @@ def store_uuid_at(db_path: str | Path) -> str | None:
 
             conn = connect(str(db_path))
         except Exception:
-            # Same contract as the SQLite branch: unreachable or unreadable is
-            # None, never an exception. A server adds failure modes a file does
-            # not have (down, refused, auth), and a REPORTING call must not
-            # raise on any of them.
+            # Unreachable or unreadable is None, never an exception. A server
+            # has failure modes a caller cannot anticipate (down, refused,
+            # auth), and a REPORTING call must not raise on any of them.
             return None
         finally:
             if prior_timeout is None:
@@ -291,20 +288,13 @@ def store_uuid_at(db_path: str | Path) -> str | None:
         finally:
             conn.close()
 
-    path = Path(db_path)
-    if not path.exists():
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return None
-    try:
-        return read_store_uuid(conn)
-    finally:
-        conn.close()
+    # NOT THE STORE, so there is no identity to read. Answering None rather
+    # than opening the target is the whole point: opening it is what
+    # manufactured an empty, query-answering board three separate times.
+    return None
 
 
-def stamp_store_uuid(conn: sqlite3.Connection, identity: str) -> None:
+def stamp_store_uuid(conn, identity: str) -> None:
     """Bind this database to ``identity``. ONE ``schema_meta`` row, nothing else.
 
     Call inside the caller's write transaction. This writes the single

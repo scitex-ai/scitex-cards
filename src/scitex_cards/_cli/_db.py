@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-cards dev db`` — SQLite operability verbs.
+"""CLI noun group ``scitex-cards dev db`` — store operability verbs.
 
-SQLite is the store. These verbs are its operability surface:
+The database is the store. These verbs are its operability surface:
 
   * ``db path``     — print the resolved database path.
   * ``db verify``   — open the DB, check user_version + table counts.
@@ -59,8 +59,8 @@ def _live_task_fingerprint(db_path: str | None) -> tuple[int, str | None]:
         row = conn.execute(
             "SELECT COUNT(*) AS n, MAX(last_activity) AS newest FROM tasks"
         ).fetchone()
-        # POSITIONAL INDEXING IS NOT PORTABLE HERE. sqlite3.Row supports both
-        # row[0] and row["n"]; the PostgreSQL wrapper yields a DICT-LIKE row
+        # POSITIONAL INDEXING IS NOT PORTABLE HERE. Some drivers' rows support
+        # both row[0] and row["n"]; the PostgreSQL wrapper yields a DICT-LIKE row
         # where row[0] raises `KeyError: 0`. Measured 2026-08-02 — this line
         # was the SECOND thing to break the off-site snapshot on Postgres,
         # surfacing only once the resolve-path fix let execution reach it.
@@ -281,7 +281,7 @@ _DB_OPTION = click.option(
         "(deprecated, warned) > the `store.target` key in the config file. "
         "There is NO tier below that: it used to fall back to "
         "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "
-        "unconfigured store REFUSES instead of naming a SQLite file nobody "
+        "unconfigured store REFUSES instead of naming a file nobody "
         "chose.\n\n"
         "Example:\n"
         "  scitex-cards dev db get-path"

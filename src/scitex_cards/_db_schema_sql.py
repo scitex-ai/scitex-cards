@@ -41,10 +41,11 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
 # tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
 #
-# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths build this schema:
-# `executescript` (which SQLite records VERBATIM into sqlite_master.sql,
-# comments and all) and `_ddl.execute_ddl` (which strips comments before
-# executing, so sqlite_master records the comment-free text). A comment inside a
+# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths have built this
+# schema: a driver-level script runner, which records the statement text
+# VERBATIM in the engine's own catalogue, comments and all, and
+# `_ddl.execute_ddl`, which strips comments before executing so the catalogue
+# records the comment-free text. A comment inside a
 # CREATE TABLE therefore makes the two paths produce stores that DISAGREE about
 # their own recorded schema — the fresh-vs-migrated shape divergence this
 # package keeps getting bitten by, minted from a line of prose.
@@ -64,8 +65,8 @@ SCHEMA_SQL = """
 -- primitive REFUSES a non-BOOL hide flag, so the existing `deleted_at` cannot
 -- serve as one and stays beside it as ordinary audit data.
 --
--- THIS NOTE IS OUTSIDE THE STATEMENT ON PURPOSE. SQLite persists a CREATE
--- TABLE verbatim in `sqlite_master.sql`, and `execute_ddl` strips `--`
+-- THIS NOTE IS OUTSIDE THE STATEMENT ON PURPOSE. An engine can persist a
+-- CREATE TABLE verbatim in its own catalogue, and `execute_ddl` strips `--`
 -- comments before executing, so a comment INSIDE the body makes the two DDL
 -- paths store different text for the same table. Measured: it fails
 -- test__ddl.py::test_it_builds_the_same_schema_as_executescript.
@@ -188,9 +189,9 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 -- They MUST match _migrate_v7_to_v8 exactly; a fresh store and a migrated store
 -- disagreeing on shape is this repo's own recorded v4 failure.
 --
--- COMMENTS STAY OUTSIDE THE STATEMENT. SQLite stores the original CREATE text
--- in sqlite_master verbatim, so a comment inside the column list becomes part
--- of the stored schema and test__ddl's round-trip against executescript fails.
+-- COMMENTS STAY OUTSIDE THE STATEMENT. An engine can store the original CREATE
+-- text in its catalogue verbatim, so a comment inside the column list becomes
+-- part of the stored schema and test__ddl's round-trip fails.
 -- Measured: that test caught exactly this on the first push of v8.
 -- v10 adds the SYNC columns. They are here, on the fresh-create path, because
 -- retrofitting them onto a table that is already being replicated is a rewrite:

@@ -420,7 +420,7 @@ def summary_cmd(scope, assignee, as_json) -> None:
         return
     # `info["store"]` names the non-task sidecar container (see
     # `_paths.resolve_tasks_path`), not the store identity — the header
-    # names the real store (the SQLite database) instead.
+    # names the real store (the database itself) instead.
     click.echo(f"# {store_label(None)}  ({info['total']} tasks)")
     click.echo("by_status:")
     for s, n in info["by_status"].items():

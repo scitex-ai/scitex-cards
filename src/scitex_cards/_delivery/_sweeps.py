@@ -56,18 +56,19 @@ def _sweep_store(store: "str | Path | None"):
     lives in ``postgresql://…``. Both sweeps used to pass that label straight into
     ``sweep_reminders(store=…)`` / ``sweep_and_nudge(store=…)``, and those hand it
     to ``_db_sweep_state`` → ``_db_target`` → ``database_for``, which maps a label
-    to its SIBLING DATABASE — ``~/.scitex/cards/cards.db``, SQLite.
+    to its SIBLING DATABASE — a local ``~/.scitex/cards/cards.db``.
 
     MEASURED 2026-08-23 on compute-04, both ledgers live at once:
 
         Postgres sweep_state   612 rows   nudges    newest 15:06:31Z
                                           reminders newest 08-18 (frozen 5 days)
-        SQLite   cards.db      445 rows   reminders newest 15:06:50Z
+        local    cards.db      445 rows   reminders newest 15:06:50Z
                                           nudges    newest 14:42:42Z
 
     Nineteen seconds apart. ``_cli/_stats.py`` calls ``sweep_and_nudge(store=store)``
     with the raw argument and therefore reached Postgres, while notifyd reached
-    SQLite — so nudge dedup was split across two ledgers and a suppression recorded
+    the local file — so nudge dedup was split across two ledgers and a
+    suppression recorded
     by one driver could not suppress the other. That is the exact harm
     ``_db_sweep_state`` says it exists to prevent, happening twice on ONE host.
 

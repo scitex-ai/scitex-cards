@@ -3,31 +3,26 @@
 """Which backend is this process ACTUALLY on — and do its two rails agree?
 
 Operator directive 2026-08-02: "fail fast, fail loud, no fallbacks", and
-"sqlite モードか postgres モードか、doctor コマンドなどで検査できると良い".
+a doctor verb that can say which mode a process is in.
 
-TWO RAILS, AND THEY CAN DISAGREE. The card store follows ``$SCITEX_CARDS_DB``
-and may be a PostgreSQL server. The notification inbox does NOT: it is a SQLite
-sidecar at ``runtime_dir(store)/cards.db``, chosen by a path derived from the
-store rather than by the store's own backend. So a fleet pointed at PostgreSQL
-runs its cards on PostgreSQL and its notifications on SQLite, and nothing said
-so anywhere.
+TWO RAILS, AND THEY CAN DISAGREE. The card store follows ``$SCITEX_CARDS_DB``.
+The notification inbox used NOT to: it was a per-host sidecar file at
+``runtime_dir(store)/cards.db``, chosen by a path derived from the store rather
+than by the store's own backend. So a fleet pointed at a server ran its cards on
+the server and its notifications in a local file, and nothing said so anywhere.
 
 That split is not cosmetic. Measured 2026-08-01, it is what let the operator's
 DM reach ``dm_messages`` and never reach the agent: the inbox rail failed on its
-own, in its own database, for its own reason (a SQL spelling the host's older
-SQLite cannot parse), while every card-side check stayed green.
+own, in its own database, for its own reason (a SQL spelling the sidecar could
+not parse), while every card-side check stayed green.
 
 WHY THIS CHECK FAILS RATHER THAN INFORMS. A check that merely PRINTS the two
-modes would report today's split as normal, and "normal" is precisely the wrong
-word for it. So a disagreement is ``ok: False``. The doctor stays red for as
-long as the two rails are on different engines, and goes green when the inbox
-moves into the store — which is the actual remedy, not a configuration knob.
+modes would report a split as normal, and "normal" is precisely the wrong word
+for it. So a disagreement is ``ok: False``.
 
-WHAT THIS DOES NOT DO. It does not offer a way to "turn the old SQL off",
+WHAT THIS DOES NOT DO. It does not offer a way to select a different rail,
 because there is no toggle to turn: the inbox backend is not selected by
-configuration in postgres mode, it is the only implementation there is. A knob
-here would be a fallback wearing a switch. The honest report is that the rail is
-SQLite regardless of what you set, and the fix is to move it.
+configuration, and a knob here would be a fallback wearing a switch.
 """
 
 from __future__ import annotations
@@ -37,12 +32,14 @@ from typing import Any
 
 #: What the card store is on, and what the inbox rail is on, as short tokens.
 POSTGRES = "postgres"
-SQLITE = "sqlite"
+
+#: The CARD STORE target names no store at all — it is not a DSN, so there is
+#: nothing to be "on". Distinct from a rail disagreement, and a stronger fact.
+UNSUPPORTED = "unsupported"
 
 #: The inbox rail has NO usable backend at all — distinct from "on a
-#: different engine than the cards". SQLite is retired (operator ruling
-#: 2026-08-23), so a non-PostgreSQL store leaves the inbox with nothing to
-#: select, which is a stronger fact than a mere split.
+#: different engine than the cards". A store target that is not a DSN leaves
+#: the inbox with nothing to select, which is a stronger fact than a split.
 UNAVAILABLE = "unavailable"
 
 
@@ -52,7 +49,7 @@ def _store_mode(store: str | Path | None) -> tuple[str, str]:
     from ._store_url import is_postgres_url
 
     target = str(resolve_store_target(store))
-    return (POSTGRES if is_postgres_url(target) else SQLITE), target
+    return (POSTGRES if is_postgres_url(target) else UNSUPPORTED), target
 
 
 def _which_tier_won(store: str | Path | None, resolved: str) -> str:
@@ -101,8 +98,8 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
     Reports what the rail IS, by asking the same function the rail itself calls,
     rather than what a setting says it should be.
 
-    IT ASKS A THREE-VALUED QUESTION, because the rail has three backends. This
-    function used to ask ``_use_sqlite()`` — two-valued — and map its ``False``
+    IT ASKS A THREE-VALUED QUESTION, because the rail has three answers. This
+    function used to ask a two-valued predicate and map its ``False``
     onto "yaml". After #780 that ``False`` means POSTGRES far more often than it
     means yaml, so the doctor reported the fleet's inbox as a JSON sidecar,
     named a path that DID NOT EXIST on disk, and declared a SPLIT that had
@@ -121,11 +118,11 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
     try:
         active = backend()
     except StoreUnavailableError as exc:
-        # NO BACKEND, NOT A THIRD ENGINE. SQLite is RETIRED (operator ruling
-        # 2026-08-23): a non-PostgreSQL store has no inbox backend to fall
-        # back to at all, which is a DIFFERENT fact from "the inbox is on a
-        # different engine than the cards" and deserves its own token rather
-        # than being folded into "yaml" or crashing the caller.
+        # NO BACKEND, NOT A SECOND ENGINE. A store target that is not a DSN has
+        # no inbox backend to fall back to at all, which is a DIFFERENT fact
+        # from "the inbox is on a different engine than the cards" and deserves
+        # its own token rather than being folded into "yaml" or crashing the
+        # caller.
         return UNAVAILABLE, str(exc)
     if active == INBOX_POSTGRES:
         from ._inbox_postgres import _safe_dsn, resolve_dsn
@@ -134,12 +131,11 @@ def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
             return POSTGRES, _safe_dsn(resolve_dsn(store))
         except Exception as exc:  # noqa: BLE001 — a doctor must not crash
             # SELECTED BUT UNREACHABLE IS ITS OWN ANSWER, and it must not be
-            # rendered as the SQLite sidecar: "the rail is a file" and "the rail
-            # is a server I cannot reach" call for opposite actions.
+            # rendered as a local file: "the rail is a file" and "the rail is a
+            # server I cannot reach" call for opposite actions.
             return POSTGRES, f"unresolved ({type(exc).__name__}: {exc})"
-    # SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23):
-    # `backend()` never returns it any more — it raises instead — so the only
-    # remaining live case here is the file break-glass backend.
+    # The only remaining live case here is the file break-glass backend;
+    # `backend()` raises rather than naming anything else.
     from ._paths import runtime_dir
 
     return "yaml", str(runtime_dir(store, create=False) / "inboxes.json")
@@ -168,9 +164,8 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             ),
             "hint": (
                 f"point $SCITEX_CARDS_DB at a postgresql://...:55432/... DSN. "
-                "SQLite is RETIRED as an inbox backend (operator ruling "
-                "2026-08-23) and cannot be selected as a fallback for a "
-                "non-PostgreSQL store."
+                "There is no fallback rail to select for a store target that "
+                "names no store (operator ruling 2026-08-23)."
             ),
         }
 
@@ -209,27 +204,23 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
         "detail": (
             f"SPLIT BACKENDS — cards are on {store_mode} ({target}, chosen by "
             f"{source}) but the "
-            f"notification inbox is on {inbox_mode} ({inbox_where}). The inbox "
-            "rail is a file sidecar located from the store PATH, so pointing "
-            "the store at a server does not move it. Card writes and "
-            "notification writes therefore land in different engines, fail "
-            "independently, and a green card-side check says nothing about "
+            f"notification inbox is on {inbox_mode} ({inbox_where}). Card "
+            "writes and notification writes therefore land in different places, "
+            "fail independently, and a green card-side check says nothing about "
             "whether notifications are being delivered — measured 2026-08-01, "
             "when a DM committed to the store and no notification was ever "
             "created."
         ),
         "hint": (
-            "There is NO setting to correct this: in postgres mode the SQLite "
-            "sidecar is the only inbox implementation that exists, so any "
-            "toggle would be a fallback wearing a switch. The remedy is to move "
-            "the inbox table INTO the card store, tracked on "
-            "cards-inbox-rail-must-live-in-postgres-drop-cards-db-20260802. "
-            "Until then, treat notification delivery as unverified by this "
-            "doctor and confirm it end to end."
+            "Point $SCITEX_CARDS_DB at the store's DSN so both rails live in "
+            "one database. There is no setting that makes a split correct: a "
+            "toggle here would be a fallback wearing a switch. Until the two "
+            "agree, treat notification delivery as unverified by this doctor "
+            "and confirm it end to end."
         ),
     }
 
 
-__all__ = ["check_backend_mode", "POSTGRES", "SQLITE", "UNAVAILABLE"]
+__all__ = ["check_backend_mode", "POSTGRES", "UNAVAILABLE", "UNSUPPORTED"]
 
 # EOF

@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """STORE IDENTITY — which store is this database THE database of?
 
-SQLite is the store. There is no second document to be a mirror OF, so the old
+THE DATABASE is the store. There is no second document to be a mirror OF, so
+the old
 "is the mirror current with the YAML" freshness question is gone: nothing on
 disk moves independently of the database any more. What SURVIVES that cutover is
 the narrower, load-bearing question of IDENTITY.
@@ -74,7 +75,7 @@ from ._schema_probe import row_values
 from pathlib import Path
 
 #: ``schema_meta`` key holding the resolved path of the store this database IS.
-#: (Was ``yaml_path`` before the SQLite cutover, when the database mirrored a
+#: (Was ``yaml_path`` before the cutover, when the database mirrored a
 #: YAML file; renamed with the cutover — the identity is now the database's own
 #: ``$SCITEX_CARDS_DB`` path, not a YAML file that no longer exists.)
 KEY_STORE_PATH = "store_path"
@@ -211,7 +212,7 @@ def check_fresh(
     EVERY database created before this key (including the live ``cards.db``
     re-stamped under the pre-cutover ``yaml_path`` key) carries no
     ``store_path``. If this guard refused them while the write guard adopts them,
-    a legacy database would brick the SQLite read path on deploy — read-only
+    a legacy database would brick the read path on deploy — read-only
     board, the exact outage this rename must not re-introduce. Under DB-canonical
     there is no separate document to be stale against, so "unstamped" means
     "not yet claimed", not "wrong"; the first write claims it by stamping

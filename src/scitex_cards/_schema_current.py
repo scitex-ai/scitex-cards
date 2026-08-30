@@ -7,8 +7,8 @@ per STORE instead of once per OPEN.
 
 WHY THIS EXISTS
 ---------------
-On SQLite, re-running ``CREATE TABLE IF NOT EXISTS`` and the trigger scripts on
-every connection was very nearly free. Against a shared PostgreSQL server it is
+Against a local file, re-running ``CREATE TABLE IF NOT EXISTS`` and the trigger
+scripts on every connection was very nearly free. Against a shared server it is
 DDL against the system catalogues, and ``CREATE OR REPLACE FUNCTION`` rewrites
 the ``pg_proc`` row every time — it is NOT a no-op when the definition already
 matches.

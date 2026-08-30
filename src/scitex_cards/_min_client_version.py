@@ -16,7 +16,7 @@ string). Every process that OPENS the database — read or write, CLI, MCP,
 or library — compares its own running version against that floor
 (:func:`enforce_min_client_version`, called from
 :func:`scitex_cards._db.connect`, the ONE function both the read path
-(``_store_read_sqlite.list_tasks_sqlite``) and the write path
+(``load_tasks``) and the write path
 (``_db_mirror.mirror_doc_incremental`` via ``_db.open_db``) open every
 connection through). Below the floor: :class:`ClientTooOldError` — a RAISE,
 not a log line — carrying the exact upgrade command.
@@ -181,8 +181,8 @@ def read_floor(conn: StoreConnection) -> str | None:
     floor has ever been set, so the gate is a no-op.
     """
     # ABSENCE IS ASKED, NOT CAUGHT. This used to be a bare
-    # ``except sqlite3.OperationalError`` around the SELECT, which reads the
-    # "table does not exist yet" case off a SQLite-SPECIFIC exception type. On
+    # ``except OperationalError`` around the SELECT, which read the
+    # "table does not exist yet" case off a DRIVER-SPECIFIC exception type. On
     # PostgreSQL the same condition raises ``psycopg.errors.UndefinedTable``,
     # which that clause does not catch — so a brand-new PostgreSQL store would
     # have RAISED out of a function whose whole contract is "no floor yet, this
@@ -230,7 +230,7 @@ def enforce_min_client_version(conn: StoreConnection) -> None:
     A no-op when no floor is stamped (:func:`read_floor` returns ``None``)
     or when the running client (:func:`resolve_running_version`) meets it.
     Called from :func:`scitex_cards._db.connect` — the one function both the
-    read path and the write path open every SQLite connection through — so
+    read path and the write path open every connection through — so
     this single call site gates both.
     """
     floor = read_floor(conn)

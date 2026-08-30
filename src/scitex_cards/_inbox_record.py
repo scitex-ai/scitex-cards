@@ -12,7 +12,7 @@ typed columns, and REFUSES a row that has none. That invariant held for as long
 as the only writer of the table was the IMPORTER, which populated the payload.
 
 The shared Postgres inbox (#780) made ``notifications`` a LIVE-WRITTEN table.
-Its ``enqueue`` — and the SQLite twin, and the carry — each spelled their own
+Its ``enqueue`` — and the per-host twin, and the carry — each spelled their own
 INSERT column list, and all three listed the typed columns WITHOUT
 ``record_json``. Every notification they wrote was therefore unreadable by the
 very next read, and because the read assembles the WHOLE document, one such row
@@ -140,7 +140,7 @@ def notification_columns(
     id and the body, and it is emitted as part of the same tuple. There is no
     spelling of this call that yields the columns without the payload.
 
-    ``payload_column`` is ``None`` for the SQLite ``inbox`` table, which has no
+    ``payload_column`` is ``None`` for the retired ``inbox`` table, which had no
     payload column at all — it is not the table the export reads, so a payload
     there would be dead weight rather than an invariant. Passing ``None`` is the
     one legitimate way to get a column list without the payload, and it is named

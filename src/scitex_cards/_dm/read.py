@@ -44,7 +44,7 @@ from pathlib import Path
 #: Written as a correlated subquery rather than a window function on purpose —
 #: it is the formulation that reads the same way the rule is stated ("the last
 #: thing that happened to this member in this thread") and it does not depend
-#: on the SQLite build carrying window functions.
+#: on the engine carrying window functions.
 #:
 #: ``seq`` LEADS THE ORDER, AND IT HAD TO. Ordering by ``ts`` first looks
 #: right and is not: timestamps here are SECOND-resolution, so creating a
@@ -250,9 +250,8 @@ def threads_summary_conn(conn: StoreConnection, reader: str) -> dict[str, dict]:
         message can never become the "last" one.
 
     A fold is affordable here and a join is not worth its risk: the whole store
-    is ~4150 rows, and the dialect differences this package already carries
-    (``shape_for`` / ``null_safe_eq_for``) are exactly where a hand-written
-    window query would break between SQLite and PostgreSQL.
+    is ~4150 rows, and the dialect differences this package has already been
+    bitten by are exactly where a hand-written window query would break.
     """
     rows = conn.execute(
         "SELECT * FROM dm_messages WHERE deleted_at IS NULL"

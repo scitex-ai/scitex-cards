@@ -37,8 +37,8 @@ _help_wait_cli.register(main)
 # channel). Wired here (like help-wait) to keep the over-budget _main.py
 # untouched.
 _health_cli.register(main)
-# `db` — the shadow-SQLite operability noun group (SQLite migration S0,
-# RFC #348). Wired here (like health / help-wait) to keep _main.py untouched.
+# `db` — the store operability noun group (store migration S0, RFC #348).
+# Wired here (like health / help-wait) to keep _main.py untouched.
 _db_cli.register(main)
 # `db set-min-client-version` — attaches itself onto `db_group` via a
 # decorator at import time (see the module docstring); `register()` here is

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Open the store, whichever backend it lives in, and speak its dialect for you.
+"""Open the store and speak its dialect for you.
 
 THE DESIGN DECISION, AND WHY IT IS THE WHOLE POINT
 --------------------------------------------------
-There are 140 ``execute()`` sites across 10 modules, all written in SQLite's
-``?`` paramstyle. The obvious port is to fix each one. That is 140 chances to
+There are 140 ``execute()`` sites across 10 modules, all written in the ``?``
+paramstyle. The obvious port is to fix each one. That is 140 chances to
 miss one, and every future query is a 141st -- a defence that depends on every
 author remembering.
 
@@ -42,14 +42,11 @@ and skip -- loudly -- when it is unreachable, rather than passing on a mock.
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any, Iterable
 
 from ._store_url import (
     BACKEND_POSTGRES,
-    backend_of,
-    reject_attempted_dsn,
-    reject_unexpanded_variable,
+    reject_non_postgres_target,
     to_paramstyle,
 )
 
@@ -57,11 +54,11 @@ __all__ = ["StoreConnection", "connect"]
 
 
 class StoreConnection:
-    """A connection that accepts SQLite-dialect SQL for any backend.
+    """A connection that accepts ``?``-paramstyle SQL.
 
     Deliberately thin. It is not an ORM and not an abstraction over the schema
-    -- it translates paramstyle and otherwise gets out of the way, so a reader
-    written against SQLite keeps working and stays readable.
+    -- it translates paramstyle and otherwise gets out of the way, so the 140
+    call sites written in that paramstyle keep working and stay readable.
     """
 
     def __init__(self, raw: Any, backend: str) -> None:
@@ -83,11 +80,11 @@ class StoreConnection:
         return self._raw
 
     def execute(self, sql: str, params: Iterable[Any] = ()) -> Any:
-        """Run ``sql`` written in SQLite paramstyle, whatever the backend is."""
+        """Run ``sql`` written in the ``?`` paramstyle."""
         return self._raw.execute(to_paramstyle(sql, self._backend), tuple(params))
 
     def fetchall(self, sql: str, params: Iterable[Any] = ()) -> list[Any]:
-        """Convenience: psycopg cursors and sqlite3 cursors agree on this much."""
+        """Convenience wrapper over :meth:`execute`."""
         return self.execute(sql, params).fetchall()
 
     def fetchone(self, sql: str, params: Iterable[Any] = ()) -> Any:
@@ -105,11 +102,10 @@ class StoreConnection:
     def executemany(self, sql: str, seq_of_params: Iterable[Iterable[Any]]) -> Any:
         """Batch form of :meth:`execute`, translated once rather than per row.
 
-        GOES THROUGH A CURSOR because the two drivers disagree about where this
-        method lives: ``sqlite3.Connection`` has ``executemany``, psycopg's
-        ``Connection`` does NOT -- it is cursor-only, and calling it on the
-        connection raises ``AttributeError``. Both drivers agree on
-        ``cursor().executemany(...)``, so that is the form used.
+        GOES THROUGH A CURSOR because psycopg's ``Connection`` has no
+        ``executemany`` -- it is cursor-only, and calling it on the connection
+        raises ``AttributeError``. ``cursor().executemany(...)`` is the form
+        every driver agrees on, so that is the form used.
         """
         cur = self._raw.cursor()
         cur.executemany(
@@ -120,8 +116,9 @@ class StoreConnection:
     def executescript(self, script: str) -> int:
         """Run a multi-statement DDL script; return how many statements ran.
 
-        NOT delegated to ``sqlite3.executescript``, which psycopg does not have
-        and which would silently commit first. Goes through the shared splitter
+        NOT delegated to a driver-level script runner: psycopg has none, and the
+        one this package used to call silently committed first. Goes through the
+        shared splitter
         so a trigger body's internal semicolons do not sever it -- a severed
         trigger's first fragment still parses as a complete CREATE TRIGGER, and
         every by-name presence probe then reports the truncated guard PRESENT.
@@ -152,43 +149,33 @@ class StoreConnection:
 def connect(
     target: str, *, read_only: bool = True, rows_by_name: bool = False
 ) -> StoreConnection:
-    """Open ``target``, which is either a filesystem path or a PostgreSQL URL.
+    """Open ``target``, which must be a PostgreSQL DSN.
 
-    ``read_only`` is honoured for SQLite (``mode=ro``, so a reader cannot
-    create or modify a store by accident -- the failure mode that produced an
-    empty board before). PostgreSQL read-only-ness is a property of the ROLE,
-    not the connection, so it is not silently faked here: claiming to enforce
-    something the connection does not enforce would be worse than not claiming
-    it. Grant SELECT-only to the role if that is the guarantee you need.
+    ``read_only`` is ADVISORY and is deliberately not faked. Read-only-ness is a
+    property of the ROLE, not of the connection, so this function will not claim
+    to enforce something it does not: grant SELECT-only to the role if that is
+    the guarantee you need. The parameter is kept because call sites use it to
+    DECLARE their intent, and a declaration that is honest about its limits is
+    worth more than a flag that quietly enforces nothing.
 
-    ``rows_by_name`` makes rows indexable as ``row["column"]`` on EITHER
-    backend, which the store's callers require -- ``_db.connect`` sets
-    ``sqlite3.Row`` and mutation code reads columns by name throughout.
+    ``rows_by_name`` makes rows indexable as ``row["column"]``, which the
+    store's callers require -- mutation code reads columns by name throughout.
 
-    ONE ASYMMETRY REMAINS AND IS NOT PAPERED OVER. ``sqlite3.Row`` supports BOTH
-    ``row["col"]`` and ``row[0]``; psycopg's ``dict_row`` supports only the
-    former. So positional access keeps working on SQLite and raises on
-    PostgreSQL. Faking it (a wrapper that accepts both) would hide the
-    difference until a caller hit it on the live store; leaving it visible means
-    the port finds those call sites while it is still cheap. Use column names.
+    POSITIONAL ROW ACCESS DOES NOT WORK AND IS NOT PAPERED OVER. psycopg's
+    ``dict_row`` supports ``row["col"]`` and raises on ``row[0]``. Faking it (a
+    wrapper that accepts both) would hide the difference until a caller hit it
+    on the live store; leaving it visible means the call sites get found while
+    it is still cheap. Use column names.
 
-    ``psycopg`` is imported lazily so SQLite-only deployments -- which is every
-    deployment today -- do not need the driver installed.
+    ``psycopg`` is imported lazily so an install that never opens a store does
+    not need the driver present.
     """
     # THE DOOR WHERE A GUESS DOES DAMAGE. Resolution is total and stays total;
-    # opening is where a malformed DSN stops being a wrong string and becomes a
-    # real, empty cards database that answers queries. Checked before the
-    # dispatch below, because the SQLite branch CREATES its target.
-    reject_unexpanded_variable(target)
-    reject_attempted_dsn(target)
-
-    backend = backend_of(target)
-    if backend != BACKEND_POSTGRES:
-        uri = f"file:{target}?mode=ro" if read_only else str(target)
-        raw = sqlite3.connect(uri, uri=read_only)
-        if rows_by_name:
-            raw.row_factory = sqlite3.Row
-        return StoreConnection(raw, backend)
+    # opening is where a target that is not the store stops being a wrong string
+    # and becomes a real, empty cards database that answers queries. One refusal,
+    # before the driver, covering every shape that is not a DSN.
+    reject_non_postgres_target(target)
+    backend = BACKEND_POSTGRES
 
     try:
         import psycopg  # noqa: PLC0415 -- optional dependency, resolved on demand

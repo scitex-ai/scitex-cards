@@ -3,8 +3,8 @@
 # File: src/scitex_cards/_db_init_schema.py
 """ASSERT THE SCHEMA on an open connection — extracted from :mod:`scitex_cards._db`.
 
-``_db`` owns CONNECTIONS: resolving a target, dispatching SQLite vs PostgreSQL,
-applying PRAGMAs, gating the client version. This module owns the OTHER thing
+``_db`` owns CONNECTIONS: resolving a target, refusing one that is not the
+store, gating the client version. This module owns the OTHER thing
 that lived there: making an already-open connection carry the current shape —
 the currency gate, the DDL, the whole migration ladder, the version stamp and
 the provenance rows.
@@ -104,8 +104,8 @@ def init_schema(conn: StoreConnection) -> None:
 
     # ASSERT THE SCHEMA ONCE PER STORE, NOT ONCE PER OPEN.
     #
-    # Everything below this point is DDL. On SQLite that was very nearly free.
-    # Against a shared PostgreSQL server it is DDL against the system
+    # Everything below this point is DDL. Against a local file that was very
+    # nearly free. Against a shared PostgreSQL server it is DDL against the system
     # catalogues, and CREATE OR REPLACE FUNCTION rewrites the pg_proc row every
     # single time -- it is not a no-op when the function already matches.
     #
@@ -187,7 +187,7 @@ def init_schema(conn: StoreConnection) -> None:
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.
     stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
-    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is SQLite-only
+    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is not portable
     # syntax. The two are equivalent here -- both leave an existing row alone,
     # which is what preserves the ORIGINAL provenance on a re-init -- but only
     # this spelling parses on PostgreSQL. (`?` is fine on both: StoreConnection

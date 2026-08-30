@@ -167,18 +167,18 @@ def instance_at(target: str | Path) -> StoreInstance:
     suspect turns "I cannot tell" into a traceback at the call site least able
     to handle it. Every failure becomes an ``UNKNOWN`` carrying its cause.
     """
-    from ._store_url import BACKEND_SQLITE, is_postgres_url
+    from ._store_url import BACKEND_UNSUPPORTED, is_postgres_url
 
     if not is_postgres_url(target):
-        # Deferred to the probe rather than answered here, so the SQLite reason
-        # is written in exactly one place (``_store_instance``) and a caller
+        # Deferred to the probe rather than answered here, so the reason is
+        # written in exactly one place (``_store_instance``) and a caller
         # comparing reasons across the two entry points sees one string.
-        from ._store_instance import _SQLITE_HAS_NO_INSTANCE_ID
+        from ._store_instance import _NO_INSTANCE_ID_OFF_SERVER
 
         return StoreInstance(
-            backend=BACKEND_SQLITE,
+            backend=BACKEND_UNSUPPORTED,
             certainty=Certainty.UNKNOWN,
-            reason=_SQLITE_HAS_NO_INSTANCE_ID,
+            reason=_NO_INSTANCE_ID_OFF_SERVER,
         )
 
     from ._store_instance import store_instance

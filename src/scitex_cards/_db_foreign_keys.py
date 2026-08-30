@@ -134,9 +134,8 @@ def _column(row: Any, name: str, position: int) -> Any:
 
     THIS FUNCTION EXISTS BECAUSE ITS ABSENCE SHIPPED A FLEET-WIDE OUTAGE.
     v11 originally read ``row[0], row[1], row[2]``. That is valid on a plain
-    ``sqlite3`` cursor and on ``sqlite3.Row``, and it RAISES ``KeyError: 0`` on
-    psycopg's ``dict_row`` — which is exactly what
-    :func:`scitex_cards._db.connect` uses for PostgreSQL, because the rest of
+    driver cursor and RAISES ``KeyError: 0`` on psycopg's ``dict_row`` — which
+    is exactly what :func:`scitex_cards._db.connect` uses, because the rest of
     the store reads columns by name.
 
     The migration runs from ``init_schema``, i.e. on EVERY ``open_db``. So the
@@ -180,50 +179,20 @@ def observe_foreign_key(conn: Any, table: str, column: str) -> tuple[str, str | 
     return ForeignKeyShape.PRESENT_NOT_DEFERRED, name
 
 
-#: What a deferred FK looks like in SQLite's stored DDL. #796 verified that
-#: SQLite PRESERVES this clause verbatim in ``sqlite_master`` — declaring it and
-#: the engine storing it are two different claims, and only the second one makes
-#: a shape probe possible.
-_SQLITE_DEFERRED = "DEFERRABLE INITIALLY DEFERRED"
-
-
 def foreign_key_is_deferred(conn: Any, table: str, column: str) -> bool:
     """Is ``table.column``'s foreign key present AND initially deferred?
 
-    THE LADDER RUNG FOR v11, and it must answer on BOTH backends — a probe that
-    raised on SQLite would break every store that is not PostgreSQL, and one
-    that returned False there would strand fresh SQLite stores below their own
-    stamp forever.
-
-    PostgreSQL reads the catalogue, which is exact. SQLite reads the stored
-    ``CREATE TABLE`` text, which is LOOSER: it confirms that the table declares
-    the column and carries a deferred foreign key, without proving the two are
-    the same clause. That is acceptable here because every table this is asked
-    about declares exactly one foreign key, and it is stated rather than hidden
-    because a future second FK on one of these tables would silently weaken it.
-
-    A MIGRATED SQLITE STORE CANNOT SATISFY THIS, and that is the honest answer
-    rather than a gap: SQLite cannot ``ALTER TABLE ADD CONSTRAINT``, so its
-    foreign keys can only arrive with the ``CREATE TABLE``. Such a store reports
-    v10 against a v11 stamp — ``ShapeAgreement.STAMP_IS_HIGH`` — which names the
-    broken rung out loud and costs a redundant DDL pass per open. That is the
-    pre-gate behaviour, on a backend the operator has banned outright and on
-    which no store currently exists (both candidate paths measured ABSENT on
-    2026-08-11).
+    THE LADDER RUNG FOR v11. It reads the CATALOGUE, which is exact: the
+    constraint's own definition, not the text of a ``CREATE TABLE`` somebody
+    stored. An earlier version fell back to string-matching stored DDL when the
+    catalogue was unavailable, which confirmed that a table declared the column
+    and carried SOME deferred foreign key without proving the two were the same
+    clause — a looseness that a second FK on one of these tables would have
+    silently turned into a wrong answer.
     """
-    from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
-
-    if _is_postgres(conn):
-        return observe_foreign_key(conn, table, column)[0] == (
-            ForeignKeyShape.PRESENT_DEFERRED
-        )
-    row = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone()
-    if row is None:
-        return False
-    ddl = str(row[0] or "")
-    return column in ddl and _SQLITE_DEFERRED in ddl
+    return observe_foreign_key(conn, table, column)[0] == (
+        ForeignKeyShape.PRESENT_DEFERRED
+    )
 
 
 def _migrate_v10_to_v11(conn: Any) -> None:
@@ -266,13 +235,11 @@ def _migrate_v10_to_v11(conn: Any) -> None:
     back, which is the correct outcome and needs no help from a precondition
     that was true minutes ago.
 
-    **SQLITE GETS NOTHING HERE, AND THAT IS NOT A GAP.** SQLite cannot
-    ``ALTER TABLE ADD CONSTRAINT`` at all; its foreign keys can only arrive with
-    the ``CREATE TABLE``, which #796 already made deferrable. So on SQLite a
-    fresh store is born correct and a migrated one cannot be repaired without a
-    table rewrite — and a rewrite is the one thing every rung in this chain is
-    forbidden to do. The multi-version fleet is on PostgreSQL, which is where
-    the divergence was measured and where the repair works.
+    A CONNECTION THAT IS NOT THE STORE GETS NOTHING HERE, and the early return
+    below is a defensive no-op rather than a second code path: the repair is an
+    ``ALTER TABLE ADD CONSTRAINT``, which only the store can execute. The
+    multi-version fleet is where the divergence was measured and where the
+    repair works.
     """
     from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
 

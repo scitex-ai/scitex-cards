@@ -42,9 +42,9 @@ WHAT CAN AND CANNOT BE GUARDED -- STATED, NOT GLOSSED
 * ``schema_meta.schema_version`` is written with ``ON CONFLICT DO UPDATE``,
   which IS an UPDATE, so a trigger reaches it. That half is fixed here, for
   every client including ones that predate this code.
-* ``PRAGMA user_version`` is not a table write. NO trigger can reach it, in
-  any SQLite version. That half is NOT fixed here and cannot be; it will keep
-  oscillating until the last old client is gone.
+* ``PRAGMA user_version`` is not a table write. NO trigger can reach it. That
+  half is NOT fixed here and cannot be; it will keep oscillating until the last
+  old client is gone.
 
 Which is exactly why the second half of this module exists. If one of the two
 stamps is permanently unguardable, no consumer should be gating on stamps at

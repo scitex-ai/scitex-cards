@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """STORE OWNERSHIP GUARD — does this database belong to the store we resolved?
 
-SQLite is the ONLY write target (operator ruling 2026-07-21): 「データベースし
-か書く場所なんてありえない。デュアルライトっていうオプションがあること自体が
-おかしい」 — there is no such thing as a second place to write; the mere
+THE DATABASE IS THE ONLY WRITE TARGET (operator ruling 2026-07-21): 「データ
+ベースしか書く場所なんてありえない。デュアルライトっていうオプションがあること
+自体がおかしい」 — there is no such thing as a second place to write; the mere
 EXISTENCE of a dual-write option is the bug. What used to live in this module
 alongside the guard below — an env-gated mirror-to-YAML path
 (``SCITEX_CARDS_DUAL_WRITE`` / ``ENV_DUAL_WRITE``, ``enabled()``,
@@ -49,11 +49,11 @@ IDENTITY IS A UUID; THE PATH IS THE LEGACY FALLBACK
 A path cannot be identity when two mount namespaces both write, so the real
 answer now lives in :mod:`scitex_cards._store_uuid`: the database carries its
 own opaque ``store_uuid`` and :func:`~scitex_cards._store_uuid.identity_verdict`
-decides ownership from that alone, WITHOUT CONSULTING ANY PATH. The path
-comparison below survives only on the ``ADOPT`` branch — a database with no
-identity facing a caller with no expectation, which today is every database in
-existence, and which is exactly where a path compare is still the best evidence
-available.
+decides ownership from that alone, WITHOUT CONSULTING ANY PATH. On the
+``ADOPT`` branch — a store with no identity facing a caller with no expectation
+— there is nothing weaker left to consult: the store is a server, and a server
+carries no filesystem identity. ADOPT therefore means adoptable, and the first
+write claims it.
 
 WHY THE PATH COMPARE ASKS THE KERNEL, NOT ``realpath``
 ------------------------------------------------------
@@ -157,22 +157,28 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
 
     UUID-FIRST (design §7). The order below is the whole repair::
 
-        1. database does not exist  -> True  (unchanged: nothing to clobber)
-        2. read schema_meta.store_uuid       (MAY BE ABSENT — a legal input)
+        1. the store cannot be opened/read -> True  (nothing to clobber)
+        2. read schema_meta.store_uuid             (MAY BE ABSENT — legal)
         3. identity_verdict(store_uuid, expected_store_uuid())
              ACCEPT -> True.          THE PATH IS NOT CONSULTED AT ALL.
              REFUSE -> False, logged. THE PATH IS NOT CONSULTED AT ALL.
-             ADOPT  -> the legacy store_path comparison below.
+             ADOPT  -> True: adoptable, and the first write claims it.
 
     The verdict is consulted UNCONDITIONALLY, on an absent identity as well as
     a present one — it has to be, because "no identity, but an expectation was
     declared" is a REFUSE row that a guard which only asked when the answer was
-    already stamped could never reach. The legacy path comparison is therefore
-    not the "no uuid" branch; it is the ``ADOPT`` branch, which means no
-    identity AND no expectation, and nowhere else.
+    already stamped could never reach.
 
-    Once the database carries a ``store_uuid``, the host and the container
-    reach the SAME verdict because neither one looks at a path.
+    THE LEGACY PATH COMPARISON IS GONE, and its absence is not a weakening. It
+    was the ``ADOPT`` branch's evidence while a store was a file; a store is a
+    server, which has no filesystem identity, so there is nothing to compare and
+    a comparison that ran anyway would be answering from two values that cannot
+    be stat'd. That is the exact shape of the "CANNOT DETERMINE OWNERSHIP"
+    false alarm it used to raise across a mount-namespace boundary, on a
+    database that was in fact the caller's own.
+
+    Once the store carries a ``store_uuid``, the host and the container reach
+    the SAME verdict because neither one looks at a path.
 
     BOTH DOORS KEEP CALLING THIS SAME PREDICATE. The read door
     (:func:`scitex_cards._store_canonical_read._read_canonical_db_or_raise`) and
@@ -181,9 +187,6 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
     the write door refused a foreign store correctly all day while the read door
     returned its rows, and a packaged fixture was read AS THE BOARD for hours.
     """
-    import sqlite3
-
-    from ._db_freshness import stamped_store_path
     from ._store_uuid import (
         ACCEPT,
         ENV_EXPECTED_STORE_UUID,
@@ -193,16 +196,18 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
         read_store_uuid,
     )
 
-    if not Path(db_path).exists():
-        return True  # nothing to clobber yet
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        from ._db import connect  # noqa: PLC0415 -- import cycle
+
+        conn = connect(str(db_path))
         try:
             db_uuid = read_store_uuid(conn)
-            stamped = stamped_store_path(conn)
         finally:
             conn.close()
-    except Exception:  # noqa: BLE001 — unreadable stamp ⇒ let the mirror try
+    except Exception:  # noqa: BLE001 — unreadable stamp ⇒ let the write try
+        # FAIL-OPEN, deliberately and unchanged. An unopenable or unstamped
+        # store is not evidence of a mismatch, and refusing on "I could not
+        # look" would take the board down every time the server blinked.
         return True
 
     expected = expected_store_uuid()
@@ -228,40 +233,13 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
         )
         return False
 
-    # ADOPT — no identity AND no expectation. The legacy path comparison is the
-    # best evidence available here, and only here.
-    if not stamped:
-        return True  # unstamped ⇒ adoptable
-    if _same_file(stamped, str(store_path)):
-        return True
-    if not Path(stamped).exists() or not Path(store_path).exists():
-        # CANNOT TELL, said honestly. The old realpath string fallback answered
-        # this case with "DIFFERENT store", which is a claim about a file it
-        # could not even stat — and it fired precisely across a mount-namespace
-        # boundary, i.e. on a database that was in fact this caller's own.
-        logger.error(
-            "!! CANNOT DETERMINE OWNERSHIP of %s from a path in this mount "
-            "namespace: it is stamped for %s, this write is to %s, and at least "
-            "one of those cannot be stat'd here — so they may well be ONE file "
-            "under two names. A path is not identity when more than one view "
-            "can produce it. Bind this store to an identity once, deliberately: "
-            "`scitex-cards store adopt-uuid`.",
-            db_path,
-            stamped,
-            store_path,
-        )
-        return False
-    logger.error(
-        "!! REFUSING TO MIRROR: %s is the shadow DB of %s, but this write is to "
-        "%s. Mirroring would REPLACE that store's rows with this one's. If you "
-        "meant to repoint the mirror, point $SCITEX_CARDS_DB at the intended "
-        "store's own database; if this is a test or scratch store, point it at "
-        "a scratch DB.",
-        db_path,
-        stamped,
-        store_path,
-    )
-    return False
+    # ADOPT — no identity AND no expectation, so nothing has been claimed and
+    # nothing is in conflict. There is no weaker evidence to fall back on: a
+    # server has no filesystem identity, so the first write claims the store by
+    # stamping it. ``store_path`` is accepted for the caller's own messages and
+    # sidecar naming; it is NOT a second identity axis, and treating it as one
+    # is what let a write stamp a different value than reads compared against.
+    return True
 
 
 __all__ = [

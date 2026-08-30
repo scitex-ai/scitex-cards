@@ -258,9 +258,9 @@ def stats_cmd(
                 #     resolve_store_target(_db_target(None))
                 #       -> postgresql://scitex_cards@127.0.0.1:55432/…
                 #     resolve_store_target(_db_target('…/cards/tasks.yaml'))
-                #       -> /home/…/.scitex/cards/cards.db        <- SQLite
+                #       -> /home/…/.scitex/cards/cards.db      <- a local file
                 # so passing `path` sent every nudge-dedup write into a local
-                # SQLite file while the Postgres copy froze on 2026-08-18.
+                # file while the Postgres copy froze on 2026-08-18.
                 # None is the backend-agnostic value; each consumer resolves it.
                 _emit_stale_active_nudges(tasks, None)
         return

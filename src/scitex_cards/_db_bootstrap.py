@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite table population from an in-memory document.
+"""Table population from an in-memory document.
 
 The import entry points that used to live here (the sidecar importer /
-``mirror_doc`` / ``_load_source``) are DELETED: SQLite is the only store, so
+``mirror_doc`` / ``_load_source``) are DELETED: the database is the only store, so
 there is no external document to read and no second representation to project from.
 What remains is the low-level table-writing machinery — the column maps, the
 per-table inserters, and :func:`_rebuild_from_doc` — used by the incremental
@@ -261,8 +261,8 @@ def _insert_tasks(
         #    and NOT the AFTER UPDATE ones. v7's `tasks_bump_revision` is an
         #    AFTER UPDATE trigger, which means the revision lock has been INERT
         #    for every upsert taking this path. A true UPDATE fires it.
-        # 2. INSERT OR REPLACE is SQLite-only syntax; ON CONFLICT parses on both
-        #    engines, which is what lets this path reach PostgreSQL at all.
+        # 2. INSERT OR REPLACE is not portable syntax; ON CONFLICT is
+        #    standard, which is what lets this path reach the store at all.
         # 3. It should also be FASTER, not slower. The 42x measured against
         #    REPLACE was the DELETE half dragging the whole ON DELETE CASCADE
         #    machinery through `task_comments` / `task_edges` / `task_roles` for
@@ -470,7 +470,7 @@ def _rebuild_from_doc(
     summary: dict = {}
     tasks = doc.get("tasks") if isinstance(doc, dict) else None
     # replace=False: every row was just DELETEd above, so a conflict is impossible
-    # and REPLACE would only buy SQLite's per-row FK-cascade check — which was 6.3 s
+    # and REPLACE would only buy the per-row FK-cascade check — which was 6.3 s
     # of this rebuild's 7.3 s. See _insert_tasks.
     summary.update(
         _insert_tasks(conn, tasks if isinstance(tasks, list) else [], replace=False)

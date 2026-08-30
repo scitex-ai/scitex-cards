@@ -1,56 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite adapter — the canonical store lives here (schema, connect, resolution).
+"""Store adapter — the canonical store lives here (schema, connect, resolution).
 
 THE STORE IS THIS DATABASE
 --------------------------
-Post-cutover, the SQLite database created here is THE canonical store — not a
-shadow of a YAML file. There is no second document to reconcile to: the CRUD /
-MCP / ``load_doc`` / ``_save_doc_unlocked`` path reads and writes this database
+The PostgreSQL database opened here is THE canonical store — not a shadow of a
+YAML file. There is no second document to reconcile to: the CRUD / MCP /
+``load_doc`` / ``_save_doc_unlocked`` path reads and writes this database
 directly (see :mod:`scitex_cards._store_backend`). ``$SCITEX_CARDS_DB`` (the
-database path) is the SOLE store identity, stamped into ``schema_meta`` and
-enforced by the ownership guard (:mod:`scitex_cards._dual_write`). The YAML that
-remains in the package is a BACKUP/EXPORT rail (``db export``) and a set of
-non-card sidecars — never the task store.
+DSN) is the SOLE store identity, stamped into ``schema_meta`` and enforced by
+the ownership guard (:mod:`scitex_cards._dual_write`). The YAML that remains in
+the package is a BACKUP/EXPORT rail (``db export``) and a set of non-card
+sidecars — never the task store.
 
 Adapter scope
 -------------
-stdlib ``sqlite3`` ONLY (no scitex-db, no third-party) — keeps the
-corruption-adjacent canonical store dependency-light. On every writable connect
-we set ``journal_mode=WAL``, ``synchronous=NORMAL``, ``busy_timeout=300000``
-(5 min), ``foreign_keys=ON``. The schema is created idempotently
-(``CREATE TABLE/INDEX IF NOT EXISTS``) and stamped with ``PRAGMA user_version``
-plus ``schema_meta`` rows.
+This module owns CONNECTIONS. The schema is created idempotently
+(``CREATE TABLE/INDEX IF NOT EXISTS``) and stamped with ``schema_meta`` rows;
+the DDL itself lives in :mod:`scitex_cards._db_schema_sql` and the version
+ladder in :mod:`scitex_cards._db_init_schema`.
 
-Path resolution — DELEGATED, never re-rolled
---------------------------------------------
-Precedence: explicit arg → ``$SCITEX_CARDS_DB`` env → ``$SCITEX_CARDS_DB``
-(deprecated, warned) → the ecosystem ``local_state.user_path("cards",
-"cards.db")``. We DELEGATE the final tier to
-``scitex_config._ecosystem.local_state.user_path`` rather than re-rolling a
-project/user precedence chain. ``user_path()`` is user-canonical and CANNOT
-express a project scope — the whole point: the 2026-07-06 stale-store incident
-was caused by a rolled-own resolver that ranked a project copy above the user
-store. Resolves to ``~/.scitex/cards/cards.db``.
+Path resolution — for SIDECARS ONLY
+-----------------------------------
+:func:`resolve_db_path` is typed ``-> Path`` and exists for the callers that
+genuinely need a filesystem location beside the store (snapshots, exports,
+sidecar files). It REFUSES a server target rather than coercing one, because
+``Path("postgresql://h/d")`` silently collapses ``//`` to ``/`` and the result
+is a filename. The store itself is reached through :func:`connect` /
+:func:`open_db`, never through a path.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ._db_dm_schema import DM_TABLES as _DM_TABLES
 from ._db_migrations import table_columns
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ._backend_connect import StoreConnection
+
 logger = logging.getLogger(__name__)
 
-#: Canonical DB filename. ``.db`` (not ``.sqlite``) so a future
-#: ``stx.io.load("cards.db")`` round-trips (scitex-io registers only ``.db``).
-#: ``cards.db`` under ``~/.scitex/cards/`` is the operator-declared SSOT
-#: target (2026-07-16); the pre-rename shadow lived at ``~/.scitex/cards/cards.db``
-#: and is REBUILT by import at cutover, never moved or trusted as current.
+#: Historical filename for the retired file-backed store, kept because sidecar
+#: resolution still names it (snapshots and exports sit beside it). It is NOT a
+#: target this package will open; :func:`connect` refuses anything that is not a
+#: PostgreSQL DSN.
 DEFAULT_DB_FILENAME = "cards.db"
 
 #: package short name (``scitex-cards`` with the ``scitex-`` prefix stripped),
@@ -65,7 +63,7 @@ ENV_DB = "SCITEX_CARDS_DB"
 #:
 #: v2 (S2 read path) adds ``tasks.card_json``: the VERBATIM card mapping as JSON.
 #: The typed columns are the INDEX; ``card_json`` is the PAYLOAD. This is not
-#: redundancy — it is the only way a SQLite read can be indistinguishable from the
+#: redundancy — it is the only way a database read can be indistinguishable from the
 #: YAML read. MEASURED on the live 1,452-card store: 22 distinct card keys are NOT
 #: in the column mapping (``deferred_at`` x20, ``subagent`` x8, ``blocked_by`` x3,
 #: ``note_*`` variants, ``completed_at``, ``tasks_path``, ...), and 711 distinct key
@@ -176,11 +174,10 @@ ENV_DB = "SCITEX_CARDS_DB"
 #: bug it fixed. MERGED IS NOT PUBLISHED; PUBLISHED IS NOT DEPLOYED; AND A
 #: SCHEMA VERSION IS NOT A SCHEMA.
 #:
-#: The same shape appears twice more in this package and both are deliberate:
-#: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned,
-#: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
-#: each case the artifact exists and its effect does not yet, which is a state
-#: worth being able to name.
+#: The same shape appears once more in this package and it is deliberate:
+#: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned.
+#: The artifact exists and its effect does not yet, which is a state worth being
+#: able to name.
 SCHEMA_VERSION = 13
 
 
@@ -198,11 +195,13 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
        ``local_state.user_path("cards", "cards.db")``; an unconfigured store
        now RAISES
        :class:`scitex_cards._store_target.StoreTargetNotConfigured` instead of
-       naming a SQLite file nobody chose.
+       naming a file nobody chose.
 
-    Returns a :class:`~pathlib.Path`; does NOT create the file.
+    Returns a :class:`~pathlib.Path`; does NOT create the file. THIS IS A
+    SIDECAR RESOLVER, NOT A STORE DOOR — the store is reached through
+    :func:`connect`.
 
-    A POSTGRESQL TARGET IS REFUSED HERE, LOUDLY, RATHER THAN COERCED. This
+    A SERVER TARGET IS REFUSED HERE, LOUDLY, RATHER THAN COERCED. This
     function used to run ``Path(value)`` over whatever it was given, and
     ``Path`` accepts a DSN without complaint: ``postgresql://host/db`` becomes
     the relative path ``postgresql:/host/db`` — the ``//`` silently collapses.
@@ -210,10 +209,10 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     MEASURED 2026-07-31, and it is the worst failure this store can have.
     With ``SCITEX_CARDS_DB`` set to a PostgreSQL URL:
 
-        list_tasks()            ->     0 cards   (SQLite target: 2960)
+        list_tasks()            ->     0 cards   (the real store held 2960)
         resolve-store `exists`  ->  True         the guard reported healthy
         and on disk:  ./postgresql:/scitex_cards@127.0.0.1:5432/scitex_cards
-                      a real, freshly created, EMPTY 217 KB SQLite database
+                      a real, freshly created, EMPTY 217 KB database file
 
     So it did not merely resolve wrong. The store layer MANUFACTURED a new
     empty store at the mangled path, initialised its schema, declared it
@@ -221,11 +220,8 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     the exact outage this package's read-door and retirement guards exist to
     prevent — the one that previously took this store from 2170 rows to 18.
 
-    ``_db.connect`` learned to dispatch a PostgreSQL target in #685, but the
-    STORE reaches the database through THIS function, so closing one door left
-    the other open. Refusing is correct even once PostgreSQL is fully
-    supported: this function's contract is to return a filesystem Path, and a
-    DSN is not one. Routing a server target belongs in the caller
+    Refusing is correct: this function's contract is to return a filesystem
+    Path, and a DSN is not one. Routing a server target belongs in the caller
     (:mod:`scitex_cards._store_target` already provides
     ``resolve_store_target`` / ``resolve_store_backend`` for that).
     """
@@ -237,7 +233,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
             raise StoreTargetIsNotAPath(
                 f"{source} names a PostgreSQL server, not a file path: "
                 f"{value!r}. resolve_db_path returns a filesystem Path, and "
-                "coercing a DSN here silently creates an EMPTY SQLite store at "
+                "coercing a DSN here silently creates an EMPTY store file at "
                 "a mangled path and serves 0 cards while reporting healthy. "
                 "Use scitex_cards._store_target.resolve_store_target() to get "
                 "the target, or _db.connect() to open it."
@@ -265,8 +261,8 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     #     from scitex_config._ecosystem import local_state
     #     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
     #
-    # which is a SQLite filename nobody chose, indistinguishable at the call
-    # site from one somebody did. The refusal is the SAME object raised from the
+    # which is a filename nobody chose, indistinguishable at the call site from
+    # one somebody did. The refusal is the SAME object raised from the
     # SAME place `resolve_store_target` raises it, not a second message here:
     # this function's docstring promises its precedence mirrors that one
     # exactly, and a tier closed in one resolver but open in the other is the
@@ -283,92 +279,41 @@ from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._db_schema_sql import SCHEMA_TABLES
 
 
-def _apply_pragmas(conn: sqlite3.Connection) -> None:
-    """Apply the S0 connection PRAGMAs on a writable connection."""
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA busy_timeout=300000")
-    conn.execute("PRAGMA foreign_keys=ON")
-
-
-def connect(path: str | Path) -> sqlite3.Connection:
-    """Open (creating parent dirs) a writable connection with S0 PRAGMAs.
+def connect(path: str | Path) -> "StoreConnection":
+    """Open a writable connection to the store named by ``target``.
 
     Does NOT create the schema — call :func:`init_schema` (or the combined
-    :func:`open_db`) for that. ``row_factory`` is :class:`sqlite3.Row` so
-    callers get name-addressable rows.
+    :func:`open_db`) for that. Rows are name-addressable, because the store
+    reads columns by name throughout.
 
     THE MIN-CLIENT-VERSION GATE lives here, not in :func:`open_db`, because
-    this is the one function BOTH the read path (``_store_read_sqlite``
-    calls ``connect`` directly) and the write path (``open_db`` -> this
-    function, then :func:`init_schema`) open every connection through. See
-    :mod:`scitex_cards._min_client_version` for the full incident this
-    answers: an outdated client must ERROR the moment it opens the store,
-    not merely warn. A brand-new file (no ``schema_meta`` table yet) has no
-    floor stamped, so the gate is a no-op and :func:`init_schema` still runs
-    normally afterwards.
+    this is the one function BOTH the read path and the write path
+    (``open_db`` -> this function, then :func:`init_schema`) open every
+    connection through. See :mod:`scitex_cards._min_client_version` for the
+    full incident this answers: an outdated client must ERROR the moment it
+    opens the store, not merely warn. A store with no ``schema_meta`` table
+    yet has no floor stamped, so the gate is a no-op and :func:`init_schema`
+    still runs normally afterwards.
 
-    A POSTGRESQL TARGET IS NOT A PATH, and this is where that stops mattering to
-    callers. ``path`` may be a PostgreSQL URL or a libpq keyword/value conninfo;
-    those are dispatched to :func:`scitex_cards._backend_connect.connect` and
-    come back as a ``StoreConnection``. The SQLite branch is unchanged, so every
-    existing caller still receives the exact ``sqlite3.Connection`` it always
-    has — this widens what ``connect`` ACCEPTS without changing what it returns
-    for the only target in production today.
-
-    THE DISPATCH IS THE FIRST STATEMENT, before any ``Path`` handling, and that
-    ordering is the point. ``Path(dsn)`` on a conninfo does not raise: it yields
-    a plausible relative path, and ``mkdir`` + ``sqlite3.connect`` then
-    MANUFACTURE a SQLite file named after the DSN — which accepts writes and
+    THE REFUSAL IS THE FIRST STATEMENT, before anything touches the filesystem,
+    and that ordering is the point. ``Path(dsn)`` does not raise: it yields a
+    plausible relative path, and this function used to ``mkdir`` and open it —
+    MANUFACTURING a database file named after the DSN, which accepts writes and
     answers queries while the real server sits untouched. That file was created
-    and observed while testing #682. Nothing raised, and the store looked
-    healthy, which is exactly why the check cannot live further down.
+    and observed while testing #682, and a second one was found 2026-08-12 in
+    this repository's own root, untracked and not ignored:
+
+        postgresql:/scitex_cards@127.0.0.1:.../runtime/cards.db
+
+    24KB, created 2026-08-02, last opened 2026-08-09. Nothing raised, and the
+    store looked healthy, which is exactly why the check cannot live further
+    down. :func:`~scitex_cards._store_url.reject_non_postgres_target` now
+    refuses every shape that is not the store, not merely the mistyped ones.
     """
-    from ._store_url import (  # noqa: PLC0415 -- import cycle
-        is_postgres_url,
-        reject_attempted_dsn,
-        reject_unexpanded_variable,
-    )
+    from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
+    from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
 
-    target = str(path)
-    # AND THE DISPATCH BEING FIRST WAS STILL NOT ENOUGH, because the dispatch is
-    # TWO-VALUED: not-PostgreSQL is not the same as is-a-path, but the `if`
-    # below can only say one of them. Everything the paragraph above warns about
-    # therefore still happened to any target the predicate did not recognise.
-    #
-    # It is not hypothetical here either. Found 2026-08-12 in this repository's
-    # own root, untracked and not ignored:
-    #
-    #     postgresql:/scitex_cards@127.0.0.1:.../runtime/cards.db
-    #
-    # 24KB, created 2026-08-02, last opened 2026-08-09 — a DSN through Path(),
-    # which collapses "//" to "/", then mkdir(parents=True) below built the
-    # directories and the inbox migration filled in the file. Moved to .old/.
-    reject_unexpanded_variable(target)
-    reject_attempted_dsn(target)
-    if is_postgres_url(target):
-        from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
-        from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
-
-        # PRAGMAs are deliberately NOT applied: journal_mode / synchronous /
-        # busy_timeout / foreign_keys are SQLite storage-engine settings that the
-        # server owns instead. ``rows_by_name`` because the store reads columns
-        # by name throughout.
-        pg = _connect_backend(target, read_only=False, rows_by_name=True)
-        try:
-            enforce_min_client_version(pg)
-        except Exception:
-            pg.close()
-            raise
-        return pg
-
-    p = Path(path).expanduser()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(p))
-    conn.row_factory = sqlite3.Row
-    _apply_pragmas(conn)
-    from ._min_client_version import enforce_min_client_version
-
+    conn = _connect_backend(str(path), read_only=False, rows_by_name=True)
     try:
         enforce_min_client_version(conn)
     except Exception:
@@ -385,7 +330,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
 from ._db_init_schema import init_schema  # noqa: E402
 
 
-def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:
+def open_db(explicit: str | Path | None = None) -> "StoreConnection":
     """Resolve → connect → ensure schema. The one-call adapter entry point.
 
     Combines :func:`resolve_store_target`, :func:`connect`, and
@@ -393,19 +338,17 @@ def open_db(explicit: str | Path | None = None) -> sqlite3.Connection:
     guaranteed present (created on first open; a no-op on an existing DB).
 
     RESOLVES THE TARGET, NOT A PATH. ``resolve_db_path`` is typed ``-> Path``
-    and now refuses a DSN outright, so routing through it made this function --
+    and refuses a DSN outright, so routing through it made this function --
     the one-call entry point the canonical read path uses -- structurally unable
-    to reach PostgreSQL, no matter that :func:`connect` had already learned to
-    dispatch one. That is why ``_store_target``'s docstring could say the seam
-    existed and NOTHING imported it. Filesystem-only callers (snapshots,
-    backups, the on-disk health probes) keep ``resolve_db_path`` deliberately.
+    to reach the store. Filesystem-only callers (snapshots, backups, the sidecar
+    probes) keep ``resolve_db_path`` deliberately.
     """
     from ._store_target import resolve_store_target  # noqa: PLC0415
 
     return _open_at(resolve_store_target(explicit))
 
 
-def _open_at(path: str | Path) -> sqlite3.Connection:
+def _open_at(path: str | Path) -> "StoreConnection":
     conn = connect(path)
     init_schema(conn)
     return conn
@@ -421,7 +364,7 @@ def _utc_now_iso() -> str:
     """ISO-8601 UTC timestamp with the canonical ``Z`` suffix.
 
     Same second-resolution shape as the task / user / inbox timestamps so
-    the DB provenance stamps match the YAML store on disk.
+    the DB provenance stamps match the exported document.
     """
     import datetime as _dt
 

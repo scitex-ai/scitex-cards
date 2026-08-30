@@ -6,7 +6,8 @@ OPERATOR DIRECTIVE 2026-08-17: 「リマインダーと[ナッジ]のほうは�
 使うようにしてください。移行をお願いします」 — put reminders and nudges in the
 database. It follows his standing rule (constitution §3): state lives in the
 per-host PostgreSQL on 55432, design lives in files under git, and
-*"never SQLite, never JSON ledgers, never files that happen to exist."*
+*"never a local database file, never JSON ledgers, never files that happen to
+exist."*
 
 WHAT WAS IN THOSE FILES, measured 2026-08-17 before the move::
 
@@ -112,8 +113,8 @@ def _open(store: str | Path | None):
     """Connect to the store's DATABASE, normalising a label first.
 
     ``_db_target`` is imported rather than re-implemented: a ``…/tasks.yaml``
-    store is a DISPLAY LABEL, and handing it to ``open_db`` raw makes SQLite
-    CREATE a database at the label's path. That cost a round trip on PR #897
+    store is a DISPLAY LABEL, and handing it to ``open_db`` raw used to CREATE
+    a database at the label's path. That cost a round trip on PR #897
     and the reasoning lives with the function.
     """
     from ._db import open_db
