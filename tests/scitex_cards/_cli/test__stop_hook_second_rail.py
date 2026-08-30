@@ -43,6 +43,43 @@ from scitex_cards._inbox_confirm import confirm_notifications
 from scitex_cards._inbox_present import INJECTED_CONTEXT_CAP, MAX_PRESENTED
 from scitex_cards._stop_hook_bound import MAX_PRESENTATIONS
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _inbox_follows_the_store():
+    """This module's rail must be the STORE's rail, not the file break-glass.
+
+    The suite-wide default pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every
+    test. That was right while the store was a file -- both rails were local
+    and agreed. It is a SPLIT now: the store is a PostgreSQL DSN and the inbox
+    is pointed at a per-host file, which is the exact configuration
+    ``check_backend_mode`` reports as a FAILURE ("card writes and notification
+    writes land in different places, fail independently, and a green card-side
+    check says nothing about whether notifications are delivered").
+
+    Two tests here measured that split rather than the hook: ``_send()``
+    enqueued on one rail and the CLI entry point read the other, so the hook
+    emitted ``{}`` -- allow -- where a block was expected, and an unavailable
+    rail reported no warning. Both pass once the rails agree.
+
+    PINNED HERE RATHER THAN SUITE-WIDE on purpose. Flipping the global default
+    is very likely the right change -- a PostgreSQL store should never be
+    paired with a file inbox -- but fourteen test files name that variable and
+    validating them all needs a full-suite run. This module's scope is one
+    module, and it is measured: 25 passed.
+    """
+    previous = os.environ.get("SCITEX_CARDS_INBOX_BACKEND")
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("SCITEX_CARDS_INBOX_BACKEND", None)
+        else:
+            os.environ["SCITEX_CARDS_INBOX_BACKEND"] = previous
+
+
 AGENT = "rail-tester"
 
 #: A canonical database under a directory that cannot even be created — the
