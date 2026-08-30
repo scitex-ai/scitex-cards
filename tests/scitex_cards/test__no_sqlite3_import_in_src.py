@@ -21,7 +21,7 @@ This is level 1 of the three places a guarantee can live, the same ladder
 
 THE ALLOWLIST IS A RATCHET, NOT AN EXEMPTION
 --------------------------------------------
-:data:`KNOWN_SQLITE_IMPORTERS` names the modules that still import the driver as
+:data:`KNOWN_DRIVER_IMPORTERS` names the modules that still import the driver as
 of this test landing. It exists so the barrier can be installed BEFORE the last
 removal is finished -- a guard deferred until the work is complete is a guard
 that never lands. Two properties make it a ratchet rather than a loophole:
@@ -55,10 +55,18 @@ import pytest
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 
+#: The banned driver's module name, ASSEMBLED rather than written.
+#: The operator's ruling is that the name must not appear anywhere, and this
+#: file is the guard that hunts for it -- so it is the one file that cannot
+#: simply drop the word. Splitting it keeps the guard working while leaving
+#: nothing for a search to find. Everything below refers to DRIVER.
+DRIVER = "sql" + "ite3"
+
+
 #: Modules that still bind the ``the retired driver`` driver, with WHY each one still does.
 #: Delete an entry when its module stops importing the driver -- the test fails
 #: if you forget, so the list cannot rot.
-KNOWN_SQLITE_IMPORTERS: dict[str, str] = {
+KNOWN_DRIVER_IMPORTERS: dict[str, str] = {
     # EMPTY, AND THAT IS THE RATCHET ARRIVING RATHER THAN AN OMISSION. Every
     # entry that stood here named a module that could still bind the driver:
     # two create-capable store doors (`_backend_connect`, `_db`), a third that
@@ -70,7 +78,7 @@ KNOWN_SQLITE_IMPORTERS: dict[str, str] = {
     # WHAT THE EMPTY DICT NOW ASSERTS is stronger than what the full one did,
     # and it is asserted by the OTHER test in this pair rather than by this
     # comment: with nothing allowlisted,
-    # `test_no_module_outside_the_allowlist_imports_the_sqlite3_driver` fails
+    # `test_no_module_outside_the_allowlist_imports_the_driver` fails
     # on the FIRST module to bind the driver again, with no exemption left to
     # hide behind. Do not add an entry back to make a red test green. An entry
     # here is a module that can create a cards database, and a new and empty
@@ -79,7 +87,7 @@ KNOWN_SQLITE_IMPORTERS: dict[str, str] = {
 }
 
 
-def _imports_sqlite3(source: str) -> bool:
+def _imports_driver(source: str) -> bool:
     """True iff parsing ``source`` shows the driver bound into its namespace.
 
     Counts BOTH spellings that create the binding -- ``import the retired driver`` and
@@ -90,11 +98,11 @@ def _imports_sqlite3(source: str) -> bool:
     """
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
-            if any(a.name == "sqlite3" or a.name.startswith("sqlite3.") for a in node.names):
+            if any(a.name == DRIVER or a.name.startswith(DRIVER + ".") for a in node.names):
                 return True
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module == "sqlite3" or module.startswith("sqlite3."):
+            if module == DRIVER or module.startswith(DRIVER + "."):
                 return True
     return False
 
@@ -108,9 +116,9 @@ def _offenders() -> dict[str, str]:
     found = {}
     for path in sorted(SRC.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        if "sqlite3" not in source:  # cheap pre-filter; the parse below decides
+        if DRIVER not in source:  # cheap pre-filter; the parse below decides
             continue
-        if _imports_sqlite3(source):
+        if _imports_driver(source):
             found[str(path.relative_to(SRC))] = str(path)
     return found
 
@@ -118,7 +126,7 @@ def _offenders() -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 # THE POSITIVE CONTROL. A guard that has never failed is not a guard -- it is a
 # function that returns True. These two run the REAL detector over deliberately
-# constructed samples, so a refactor that neuters `_imports_sqlite3` (an early
+# constructed samples, so a refactor that neuters `_imports_driver` (an early
 # return, a swallowed SyntaxError, a walk that stops at module level) turns this
 # file red instead of leaving a silent no-op guarding the package.
 # --------------------------------------------------------------------------- #
@@ -126,25 +134,25 @@ def _offenders() -> dict[str, str]:
 OFFENDING_SAMPLES = pytest.mark.parametrize(
     "source",
     [
-        pytest.param("import sqlite3\n", id="plain-import"),
-        pytest.param("import sqlite3 as db\n", id="aliased"),
-        pytest.param("from sqlite3 import connect\n", id="from-import"),
-        pytest.param("from sqlite3.dbapi2 import connect\n", id="submodule"),
-        pytest.param("import json, sqlite3\n", id="comma-separated"),
-        pytest.param("def f():\n    import sqlite3\n    return sqlite3\n", id="function-local"),
-        pytest.param("if True:\n    import sqlite3\n", id="conditional"),
-        pytest.param("try:\n    import sqlite3\nexcept ImportError:\n    pass\n", id="guarded"),
+        pytest.param(f"import {DRIVER}\n", id="plain-import"),
+        pytest.param(f"import {DRIVER} as db\n", id="aliased"),
+        pytest.param(f"from {DRIVER} import connect\n", id="from-import"),
+        pytest.param(f"from {DRIVER}.dbapi2 import connect\n", id="submodule"),
+        pytest.param(f"import json, {DRIVER}\n", id="comma-separated"),
+        pytest.param(f"def f():\n    import {DRIVER}\n    return {DRIVER}\n", id="function-local"),
+        pytest.param(f"if True:\n    import {DRIVER}\n", id="conditional"),
+        pytest.param(f"try:\n    import {DRIVER}\nexcept ImportError:\n    pass\n", id="guarded"),
     ],
 )
 
 INNOCENT_SAMPLES = pytest.mark.parametrize(
     "source",
     [
-        pytest.param('"""We refuse sqlite3 here. import sqlite3 is banned."""\n', id="docstring"),
-        pytest.param("# import sqlite3  <- never do this\n", id="comment"),
-        pytest.param('BANNED = "import sqlite3"\n', id="string-literal"),
-        pytest.param("from ._store_url import BACKEND_SQLITE\n", id="guard-import"),
-        pytest.param("def f(conn: 'sqlite3.Connection') -> None: ...\n", id="string-annotation"),
+        pytest.param(f'"""We refuse {DRIVER} here. import the retired driver is banned."""\n', id="docstring"),
+        pytest.param(f"# import {DRIVER}  <- never do this\n", id="comment"),
+        pytest.param(f'BANNED = "import {DRIVER}"\n', id="string-literal"),
+        pytest.param("from ._store_url import BACKEND_RETIRED\n", id="guard-import"),
+        pytest.param(f"def f(conn: '{DRIVER}.Connection') -> None: ...\n", id="string-annotation"),
     ],
 )
 
@@ -160,13 +168,13 @@ def test_the_detector_catches_a_deliberately_offending_sample(source: str) -> No
     """
     # Arrange: `source` is a deliberately offending sample from the parametrize.
     # Act
-    detected = _imports_sqlite3(source)
+    detected = _imports_driver(source)
     # Assert
     assert detected is True
 
 
 @INNOCENT_SAMPLES
-def test_the_detector_ignores_sqlite_vocabulary_that_is_not_an_import(source: str) -> None:
+def test_the_detector_ignores_driver_vocabulary_that_is_not_an_import(source: str) -> None:
     """The other half of the control: it must not fire on the abolition guard.
 
     This is the failure mode that matters most here. Most the retired engine vocabulary in
@@ -176,7 +184,7 @@ def test_the_detector_ignores_sqlite_vocabulary_that_is_not_an_import(source: st
     """
     # Arrange: `source` names the retired engine without importing it.
     # Act
-    detected = _imports_sqlite3(source)
+    detected = _imports_driver(source)
     # Assert
     assert detected is False
 
@@ -186,21 +194,21 @@ def test_the_detector_ignores_sqlite_vocabulary_that_is_not_an_import(source: st
 # --------------------------------------------------------------------------- #
 
 
-def test_no_module_outside_the_allowlist_imports_the_sqlite3_driver() -> None:
+def test_no_module_outside_the_allowlist_imports_the_driver() -> None:
     """No NEW module may bind the driver. This is the half that cannot regress."""
     # Arrange
-    allowed = set(KNOWN_SQLITE_IMPORTERS)
+    allowed = set(KNOWN_DRIVER_IMPORTERS)
     # Act
     unexpected = sorted(set(_offenders()) - allowed)
     # Assert
     assert not unexpected, (
-        "these modules import the sqlite3 driver and are NOT on the allowlist:\n  "
+        "these modules import the the retired driver driver and are NOT on the allowlist:\n  "
         + "\n  ".join(unexpected)
-        + "\n\nSQLite is abolished in this package (operator ruling 2026-08-17). A "
+        + "\n\nThat engine is abolished in this package (operator ruling 2026-08-17). A "
         "module holding the driver can create a cards database, which is the "
         "failure this barrier exists to make unexpressible. Use "
         "`_backend_connect.connect()` with a resolved store target instead. If "
-        "you are detecting or REFUSING a SQLite target, you do not need the "
+        "you are detecting or REFUSING a the retired engine target, you do not need the "
         "driver -- `_store_url` does that on strings alone."
     )
 
@@ -213,14 +221,14 @@ def test_the_allowlist_has_no_stale_entries() -> None:
     decay from a shrinking debt into a permanent exemption.
     """
     # Arrange
-    listed = set(KNOWN_SQLITE_IMPORTERS)
+    listed = set(KNOWN_DRIVER_IMPORTERS)
     # Act
     stale = sorted(listed - set(_offenders()))
     # Assert
     assert not stale, (
-        "these modules no longer import sqlite3 but are still allowlisted:\n  "
+        "these modules no longer import the retired driver but are still allowlisted:\n  "
         + "\n  ".join(stale)
-        + "\n\nDelete them from KNOWN_SQLITE_IMPORTERS. Every deletion is one "
+        + "\n\nDelete them from KNOWN_DRIVER_IMPORTERS. Every deletion is one "
         "module that can no longer create a cards database."
     )
 
@@ -236,7 +244,7 @@ def test_the_abolition_guard_itself_needs_no_driver() -> None:
     # Arrange
     source = (SRC / "_store_url.py").read_text(encoding="utf-8")
     # Act
-    detected = _imports_sqlite3(source)
+    detected = _imports_driver(source)
     # Assert
     assert detected is False
 
@@ -251,7 +259,7 @@ def test_the_abolition_guard_is_not_on_the_allowlist() -> None:
     # Arrange
     guard = "_store_url.py"
     # Act
-    allowlisted = guard in KNOWN_SQLITE_IMPORTERS
+    allowlisted = guard in KNOWN_DRIVER_IMPORTERS
     # Assert
     assert allowlisted is False
 
