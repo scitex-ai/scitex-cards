@@ -134,12 +134,28 @@ def downgrade_report(conn) -> DowngradeReport:
     """Read the refusal counters the floor trigger maintains. Read-only."""
     if not _has_table(conn, "schema_meta"):
         return DowngradeReport(refused=0)
-    rows = dict(
-        conn.execute(
+    # BY COLUMN NAME, NOT BY UNPACKING THE ROW.
+    #
+    # This read `dict(cursor.fetchall())`, which relied on each row being a
+    # two-tuple. This driver's rows are dict-shaped, and iterating a dict yields
+    # its KEYS -- so `dict([{"key": k, "value": v}, ...])` builds the literal
+    # mapping `{"key": "value"}`. A dict of exactly the right SHAPE holding
+    # entirely the wrong thing: every `.get()` below then missed, and this
+    # function reported refused=0 / last_at="" / last_attempt="" on every store,
+    # forever, without raising.
+    #
+    # THAT IS THE ONE DIRECTION THIS FUNCTION MUST NOT FAIL IN. It exists
+    # because the 2026-07-31 downgrade was "the one event with no audit trail at
+    # all", and it was answering "no downgrade has ever been refused" while the
+    # trigger beside it was refusing them. The counters were being WRITTEN
+    # correctly the whole time; only the reader was blind.
+    rows = {
+        row["key"]: row["value"]
+        for row in conn.execute(
             "SELECT key, value FROM schema_meta WHERE key IN (?, ?, ?)",
             SCHEMA_VERSION_DOWNGRADE_KEYS,
         ).fetchall()
-    )
+    }
     try:
         refused = int(rows.get("schema_version_downgrades_refused", 0) or 0)
     except (TypeError, ValueError):
