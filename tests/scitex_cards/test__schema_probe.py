@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The guard probe must read the REAL catalogue, and must not over-count.
-
-TWO VANTAGES, DELIBERATELY. One half runs against a real store with the real
-trigger constants — nothing is asserted about the catalogue that is not read
-back out of a running server. The other half drives a hand-rolled recording
-connection, because the SQL TEXT is a property of this module that a live run
-cannot show you: a query that happened to return the right answer for the wrong
-reason (unscoped, counting internal triggers) is indistinguishable from a
-correct one when you only look at its result.
-
-THE HALF THAT USED TO BE THE OTHER BACKEND IS GONE. This file was "the the retired engine
-half runs against a real database; the PostgreSQL half uses a fake, because CI
-has no PostgreSQL". CI now has one, the store IS one, and the module has a
-single dialect — so the real-database half is the store and the recording half
-is about the query text, not about a branch.
-"""
+"""The guard probe must read the REAL catalogue, and must not over-count."""
 
 from __future__ import annotations
 

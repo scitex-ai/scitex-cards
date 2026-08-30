@@ -1,36 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`print-stats --nudge-quiet` wrote its dedup ledger into a local database file.
-
-`_cli/_stats.py` resolves ONE value and hands it to TWO consumers whose
-contracts differ:
-
-    path = resolve_tasks_path(None)          # a DISPLAY LABEL, `…/tasks.yaml`
-    load_tasks(path)                         # resolves it -> Postgres. CORRECT.
-    _emit_stale_active_nudges(tasks, path)   # runs it through `_db_target`,
-                                             # which derives a SIBLING DATABASE
-                                             # from the label's DIRECTORY.
-
-Measured on compute-04, 2026-08-23, one variable changed:
-
-    resolve_store_target(_db_target(None))            -> postgresql://…:55432/…
-    resolve_store_target(_db_target('…/tasks.yaml'))  -> …/cards/cards.db
-
-So every nudge-dedup write for the */10 cron went into `~/.scitex/cards/
-cards.db` — the retired engine, banned fleet-wide — while the Postgres copy of
-`sweep_state` froze on 2026-08-18. The file was still being appended to when
-this test was written (367 rows, newest stamp seconds old).
-
-WHY AN AST SCAN AND NOT A BEHAVIOURAL TEST. The defect is not in what the
-sweep does with a store; it is in WHICH VALUE the CLI hands it. Driving the
-real writer would mean either writing to the live store or supplying an
-explicit tmp store — and an explicit store is precisely the case that already
-worked. The only way to catch a caller passing the wrong variable, without
-`monkeypatch` (PA-306), is to read the call.
-
-The sibling precedent is `test__comment_ids.py`, which parses package source to
-assert no comment-shaped dict escapes the minting helper.
-"""
+"""`print-stats --nudge-quiet` wrote its dedup ledger into a local database file."""
 
 from __future__ import annotations
 

@@ -1,32 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Schema rung v12 -> v13 — the lifecycle columns, and the shape invariant.
-
-THE INVARIANT THAT MATTERS IS `test_fresh_and_migrated_shapes_are_identical`.
-`_db_schema_sql.py` states it in capitals for the neighbouring rungs — "They
-MUST match _migrate_v9_to_v10 exactly; a fresh store and a migrated store"
-must not diverge — because `CREATE TABLE IF NOT EXISTS` is a no-op on an
-existing table, so a column added ONLY to the fresh script never reaches a
-migrated store and a column added ONLY to the rung never reaches a fresh one.
-The chain already carries one scar from exactly that trap: there is no
-`_migrate_v3_to_v4`, because v4's changes went into the fresh script alone.
-
-A test that asserted only "the columns exist" would pass in both halves of
-that failure. Comparing the two shapes is what makes it a real check.
-
-No mocks (PA-306): these build REAL stores from the shipped SQL, on the engine
-that ships. Each fixture carves its own throwaway PostgreSQL schema, installs
-the DDL through the package's own ``execute_ddl``, and reads the shape back out
-of ``information_schema`` — which is what makes the comparison meaningful now
-that ``execute_ddl`` TRANSLATES on the way in. A scratch the retired engine file, which is
-what these fixtures used to be, exercised the untranslated text and therefore
-could not fail on a rung that is wrong for the only engine this package has.
-
-The v12 baseline is produced by substituting the exact block the change added
-back to the exact text it replaced — an assertion guards that substitution,
-so if the schema is edited without updating this test, the test ERRORS rather
-than silently comparing a store against itself.
-"""
+"""Schema rung v12 -> v13 — the lifecycle columns, and the shape invariant."""
 
 from __future__ import annotations
 

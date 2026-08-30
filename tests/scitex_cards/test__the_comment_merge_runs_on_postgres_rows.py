@@ -1,25 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The comment merge must read rows by NAME, which is all PostgreSQL allows.
-
-THE GAP THIS FILLS. 0.49.0 shipped `_merge_unseen_comment_rows` reading result
-rows by POSITION. The retired engine's row type supported `row[0]`; psycopg's dict row factory
-does not, so `row[0]` looked up the integer key ``0`` and raised ``KeyError: 0``.
-Production is PostgreSQL and the entire ~7,500-test suite ran on the retired engine, so the
-defect was not missed — it was UNREACHABLE from the harness. Every card holding
-comments became read-only in every direction for about an hour, fleet-wide.
-
-The repo already had a `postgres-backend` CI job whose header names "dict-like
-row access" as a behaviour it exists to validate. It passed on 0.49.0, because
-its `PG_TEST_FILES` is a hand-maintained allowlist and the card-write funnel is
-not on it. This file is the missing member.
-
-WHY IT IS SAFE TO POINT AT A LIVE STORE. `_merge_unseen_comment_rows` only READS
-`task_comments`; its output is a mutation of the in-memory card dict. And the
-fixture creates a session-local ``TEMP`` table of that name, which precedes
-``public`` on the search_path, so the SELECT resolves to the temporary rows and
-the real table is never touched. Nothing here writes to the database.
-"""
+"""The comment merge must read rows by NAME, which is all PostgreSQL allows."""
 
 from __future__ import annotations
 

@@ -1,32 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v9 gives ``notifications`` an arrival-order column, on BOTH creation paths.
-
-WHY THE COLUMN EXISTS. The the retired engine inbox delivers and acks by ``ORDER BY rowid``
-at five call sites, and ``rowid`` has no PostgreSQL equivalent. Moving the rail
-without replacing it loses delivery order SILENTLY -- the SQL stays valid on
-both engines and every test stays green, which is the worst shape a correctness
-regression can take.
-
-WHY NOT ``ORDER BY ts, id``, which the export path already uses for this table
-and justifies as "on append-only tables it is the same order rowid produced".
-Measured on the live rail 2026-08-02 and it is not:
-
-    3496 rows; 1256 positions differ from rowid order
-    1051 same-second ties, and 8 genuine TIMESTAMP INVERSIONS
-    e.g. a row stamped 2026-08-02T00:00:00Z followed by one stamped
-         2026-08-01T18:07:41Z -- six hours earlier
-
-``enqueue(ts=...)`` takes a CALLER-SUPPLIED timestamp, so ``ts`` is not an
-insert-time clock. The export only needs a REPRODUCIBLE order and is fine;
-delivery needs the ARRIVAL one and is not.
-
-THE TEST THAT CARRIES THE MOST WEIGHT is the fresh-vs-migrated shape agreement.
-This repo has already been bitten by a fresh store and a migrated store
-disagreeing on shape, which is why NOTIFICATION_RAIL_COLUMNS exists as one list
-consulted by both paths. A new column has to be added in two places, and
-checking only one of them is how the divergence happens again.
-"""
+"""v9 gives ``notifications`` an arrival-order column, on BOTH creation paths."""
 
 from __future__ import annotations
 

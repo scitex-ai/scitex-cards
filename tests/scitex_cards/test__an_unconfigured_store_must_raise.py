@@ -1,46 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""An UNCONFIGURED store must RAISE. There is no zero-config the retired engine default.
-
-THE TIER THIS DELETES, and why it could not be guarded door by door.
-
-Until 2026-08-13 both resolvers ended the same way::
-
-    from scitex_config._ecosystem import local_state
-    return local_state.user_path("cards", "cards.db")
-
--- a filename nobody chose, returned with the same type, at the same call sites,
-as a target somebody did choose. ``require_configured_store_target`` existed to
-refuse exactly that, and the policy was to wire it one door at a time. Measured
-on the day this landed: it had reached 1 of 31 production call sites.
-
-WHAT MADE IT REACHABLE IN PRODUCTION RATHER THAN THEORETICAL. On compute-04
-``~/.bashrc`` exports ``$SCITEX_CARDS_DB`` at line 124, BELOW the
-non-interactive early return at line 8. So an interactive shell saw the DSN and
-every cron job, systemd unit and script on that host saw it EMPTY -- entered
-this tier -- and resolved a database that does not exist. The package's own read
-door states the consequence: "the exporter answers a missing database with an
-empty document, and this value is written back as the WHOLE store -- every card
-replaced by nothing."
-
-THE OPERATOR'S RULING, repeated and final: the retired engine is abolished fleet-wide, and
-the error-prone option is better off not existing at all -- fewer choices is the
-feature, not a limitation. This file pins that the tier is GONE rather than
-merely guarded: a guard has to be remembered at every new call site, and the
-missing one is always found in production.
-
-TWO ASSERTIONS CARRY THIS FILE, and neither is "it raised". First, that BOTH
-resolvers refuse -- one closed and one open is the original fallback with an
-extra hop. Second, that nothing is MANUFACTURED on disk: a refusal issued after
-creating an empty board has already done the damage the refusal exists to
-prevent.
-
-NO ``monkeypatch`` OF PRODUCTION INTERNALS, per the ecosystem rule and for the
-same reason as the neighbouring files: the defect WAS an environment state, so
-these tests move the real environment, write real files, and restore both on
-teardown. A test that patched the resolver would assert a belief about the
-resolver; the resolver was never wrong, the environment was.
-"""
+"""An UNCONFIGURED store must RAISE."""
 
 from __future__ import annotations
 

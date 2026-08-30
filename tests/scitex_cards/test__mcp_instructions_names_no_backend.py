@@ -1,35 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The instructions must not name a storage backend or a default store path.
-
-This sentence has rotted TWICE. It said YAML, then it said "the the retired engine database
-at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db) — that path is the SOLE
-store identity". After the PostgreSQL cutover both halves were false at once:
-the backend is postgres on this fleet, and the named path is the ABANDONED
-pre-migration file — still on disk, still holding thousands of real cards.
-
-It rotted because it RESTATES something ``resolve_store`` already answers
-correctly. A restatement has to be maintained in step with the thing it
-restates, and nothing was checking it: no test asserted this text, so the claim
-survived a whole storage migration unchallenged while being injected verbatim
-into every agent's system prompt.
-
-WHAT IT COST, measured 2026-08-06. It misled the maintainer of this package.
-While measuring a fleet-wide defect I read ``~/.scitex/cards/cards.db``
-directly — because these instructions named it — and produced a full set of
-figures from a four-day-old snapshot. They reached three docstrings, a
-pull-request body and a card comment to the agent who reported the bug before a
-positive control caught it. The stale file was not obviously stale: it answered
-plausibly and reproduced the reporter's own count exactly.
-
-So this test does not check that the wording is nice. It checks that the string
-makes NO claim it would have to keep in step — which is the only version of it
-that cannot go stale.
-"""
+"""The instructions must not name a storage backend or a default store path."""
 
 from __future__ import annotations
-
-from _banned import DRIVER, ENGINE  # noqa: F401
 
 import pytest
 
@@ -37,7 +10,7 @@ from scitex_cards._mcp_instructions import build_instructions
 
 #: Spellings that assert a BACKEND or a DEFAULT PATH. Each one is a promise
 #: this package would have to re-verify on every storage change.
-FORBIDDEN = ("the retired engine", ENGINE, "PostgreSQL", "postgresql", "cards.db", "YAML")
+FORBIDDEN = ("PostgreSQL", "postgresql", "cards.db", "YAML")
 
 #: Both branches of the renderer. The unresolved one is rarely exercised in
 #: production, which is exactly why it needs a test rather than a reader.

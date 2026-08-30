@@ -1,0 +1,70 @@
+name: storage-gate
+
+# The store is PostgreSQL, and the abolished file engine must never come back.
+#
+# WHY THIS IS ITS OWN JOB rather than a step in `quality`/`audit`. That job is
+# deliberately red today (317 unmasked errors, burning down), so a guard added
+# there would fail whether or not the engine returned -- its verdict would be
+# unreadable. A gate whose signal is drowned is the constitution's "check whose
+# failure nothing reads" wearing different clothes. This job starts GREEN, so
+# red means exactly one thing.
+#
+# WHY THE NAME APPEARS BELOW AT ALL. A guard must name what it refuses; that is
+# the one legitimate occurrence, and it lives outside src/ and tests/ -- the two
+# trees the operator's directive covers. Detecting the engine WITHOUT naming it
+# is already covered from the other side by
+# tests/scitex_cards/test__no_retired_driver_import_in_src.py, which identifies
+# a driver by its PEP 249 signature (`connect` + `paramstyle`) and needs no
+# string at all. The two are complements: that test catches a driver bound
+# under any alias, this gate catches the string reappearing in prose or SQL.
+#
+# THE POSITIVE CONTROL IS NOT DECORATION. A pattern that has never returned a
+# known answer is not a measurement -- a typo'd regex greps clean forever and
+# certifies an empty result. The control plants an occurrence in a temp dir and
+# fails the job if the pattern does NOT fire, so every run proves the instrument
+# works before trusting its silence.
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  storage-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Positive control - prove the pattern can fire
+        run: |
+          set -euo pipefail
+          probe="$(mktemp -d)"
+          mkdir -p "$probe/src"
+          printf 'import sqlite3\n' > "$probe/src/planted.py"
+          if grep -rIiln -e 'sqlite' "$probe/src" >/dev/null; then
+            echo "control OK - the pattern fires on a planted occurrence"
+          else
+            echo "::error::CONTROL FAILED - this gate cannot detect a planted"
+            echo "::error::occurrence, so its silence below would mean nothing."
+            exit 1
+          fi
+          rm -rf "$probe"
+
+      - name: The abolished engine must not be named in src/ or tests/
+        run: |
+          set -euo pipefail
+          if hits="$(grep -rIin --exclude-dir=.git -e 'sqlite' src tests 2>/dev/null)"; then
+            count="$(printf '%s\n' "$hits" | wc -l)"
+            echo "::error::the abolished storage engine is named ${count} time(s)"
+            echo "::error::under src/ or tests/. The store is PostgreSQL on 55432."
+            printf '%s\n' "$hits"
+            echo
+            echo "If you are DETECTING or REFUSING the engine rather than using"
+            echo "it, do it without the name: identify a driver by its PEP 249"
+            echo "signature, as test__no_retired_driver_import_in_src.py does."
+            exit 1
+          fi
+          echo "OK - 0 occurrences under src/ and tests/"

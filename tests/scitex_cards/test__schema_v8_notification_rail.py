@@ -1,34 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v8 gives ``notifications`` the columns the inbox rail needs — on BOTH paths.
-
-The notification inbox currently lives in a the retired engine sidecar at
-``runtime/cards.db``, located from the store PATH. So pointing the store at a
-PostgreSQL server does not move it: cards go to the server and notifications
-stay on a local file. That split is what let a DM commit to the store on
-2026-08-01 while no notification was ever created, with every card-side check
-green.
-
-v8 is the first step of closing it. ``notifications`` already exists on the
-fresh-create path with the right shape and the right ``(recipient_id, seen)``
-index, and is VESTIGIAL — 0 rows on the live store, its only writers being the
-derived-mirror rebuild. It is missing exactly three columns the sidecar gained
-later: ``msg_id``, ``pushed_at``, ``confirmed_at``.
-
-THE FAILURE THIS FILE EXISTS TO PREVENT is recorded in this repo's own
-``_db_migrations`` header: *"Whatever v4 added went into ``_SCHEMA_SQL`` only …
-so a v3 file upgraded straight to v5 never received it, while its stamp said
-otherwise."* A store that reports the right schema version and does not have
-the column. So the load-bearing test here is not "does the migration add the
-columns" — it is **does a FRESH store end up identical to a MIGRATED one**.
-
-Scope, stated so nobody reads more into v8 than it does: installing the columns
-does NOT move the rail. ``_inbox_retired`` still writes ``cards.db``, and
-``_db_mirror`` still issues ``DELETE FROM notifications`` — harmless against a
-derived empty table, and data loss the moment this table becomes the store of
-record. That DELETE must be neutralised in the same change that flips the
-writers.
-"""
+"""v8 gives ``notifications`` the columns the inbox rail needs — on BOTH paths."""
 
 from __future__ import annotations
 

@@ -1,30 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-""":func:`scitex_cards._db.connect` must recognise a PostgreSQL target.
-
-THE FAILURE THIS PREVENTS WAS OBSERVED, NOT IMAGINED. While testing #682 a
-libpq keyword/value conninfo was handed to a resolver that assumed a path:
-
-    host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards
-
-``Path(...)`` on that string does not raise. It produces a plausible relative
-path, and ``mkdir`` + ``the retired driver.connect`` then CREATED a the retired engine database in the
-working directory literally named after the DSN. It reported backend "the retired engine",
-accepted writes, and answered queries, while the real PostgreSQL server sat
-untouched. Nothing raised. The file had to be deleted by hand.
-
-So the load-bearing assertion here is not "PostgreSQL works" -- it is that NO
-FILE APPEARS. A store that silently forks into a second, wrong database is the
-failure mode this whole port exists to avoid, and it looks like success from
-every angle except the one that counts.
-
-THE SERVER-BACKED TESTS TAKE THE HARNESS'S STORE AND CANNOT SKIP. They used to
-read ``$SCITEX_CARDS_TEST_PG`` -- this package's own private marker -- and skip
-when it was unset, falling back to a hardcoded ``127.0.0.1:5432`` nobody serves.
-Nothing sets that name any more, so "unset" is now always: three of the tests
-below reported green without opening a connection, which is the same silent-green
-this suite exists to refuse. ``postgres_dsn`` (tests/conftest.py) FAILS instead.
-"""
+""":func:`scitex_cards._db.connect` must recognise a PostgreSQL target."""
 
 import os
 

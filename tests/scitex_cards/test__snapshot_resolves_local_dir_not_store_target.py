@@ -1,32 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The off-site snapshot must survive a PostgreSQL store target.
-
-INCIDENT, 2026-08-02: the hourly off-site snapshot died for ~31 hours the moment
-``$SCITEX_CARDS_DB`` was pointed at PostgreSQL. Two independent defects, both
-found only by running the real command against a real server:
-
-  1. ``db_snapshot_cmd`` computed its OUTPUT DIRECTORY as
-     ``resolve_db_path(db_path).parent / "snapshots"``. With a DSN,
-     ``resolve_db_path`` raises ``StoreTargetIsNotAPath`` -- correctly, that
-     guard exists so a DSN is never coerced into a mangled file path. The guard
-     was right and the caller was wrong: STORE IDENTITY (may be a DSN) and
-     LOCAL STATE DIR (always a real directory) are independent axes, and a
-     backup needs the second.
-  2. ``_live_task_fingerprint`` read its row POSITIONALLY (``row[0]``).
-     the retired engine's row type accepted that; the PostgreSQL wrapper yields a dict-like row
-     where ``row[0]`` raises ``KeyError: 0``. This surfaced only after (1) was
-     fixed -- one defect was hiding the next.
-
-WHY NOTHING CAUGHT IT: every existing snapshot test used a local file, where
-both spellings work. The failure needs a DSN to exist at all, and the traceback
-went to a log file (``StandardOutput=append:``) rather than journald, so
-``systemctl status`` showed a bare "exit-code 1" with no reason.
-
-So these tests assert on the DSN path specifically. They do NOT need a live
-server: both defects are in path/row handling that fails before any query would
-run, which is precisely why a DSN string alone reproduces them.
-"""
+"""The off-site snapshot must survive a PostgreSQL store target."""
 
 from __future__ import annotations
 

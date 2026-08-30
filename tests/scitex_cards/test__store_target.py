@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The store target must survive resolution as written.
-
-WHY THIS FILE EXISTS. ``_db.resolve_db_path`` is typed ``-> Path``, so a
-``postgresql://`` URL cannot be represented and is coerced instead. Measured
-before the fix:
-
-    SCITEX_CARDS_DB=postgresql://h/db  ->  Path('postgresql:/h/db')
-
-A RELATIVE path, silently, with no error -- one slash lost. A caller then
-creates an empty the retired engine file at that name and reports a healthy, empty board,
-which is the two-stores-both-look-healthy failure this package already has scar
-tissue from. The control class below pins the coercion itself, so the fix is
-measured against the real defect rather than against a description of it.
-
-The env fixture sets and restores the REAL ``os.environ`` rather than patching
-it: the thing under test reads the process environment, so the test should too.
-"""
+"""The store target must survive resolution as written."""
 
 from __future__ import annotations
 

@@ -1,27 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""STORE OWNERSHIP GUARD — the mirror that survived, and the toggle that didn't.
-
-This file used to be the S1 dual-write mirror's test suite: a whole feature
-that mirrored every card write into the retired engine while YAML stayed canonical, gated
-by a dual-write toggle. That feature is DELETED — not defaulted off —
-per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
-ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:
-``cards.db`` carried a stale ``schema_meta`` row pointing at an old YAML file,
-and an agent whose env still carried the dual-write flag had every write
-silently routed there instead of the canonical database — every call
-returned SUCCESS and ``health`` stayed green while a whole session of card
-writes vanished. Deleting the toggle makes that class of bug unrepresentable:
-there is no environment variable left to read that could send a write
-anywhere but ``$SCITEX_CARDS_DB``.
-
-What SURVIVES, and is tested below, is the OWNERSHIP GUARD
-(``_dual_write._db_mirrors_this_store`` / ``_same_file``): the invariant that
-a database belongs to exactly ONE store, checked at the write chokepoint
-(:func:`scitex_cards._store_backend.write_doc_to_db`), which RAISES rather
-than returning quietly on a mismatch — a write that cannot reach the
-canonical DB must NEVER report success.
-"""
+"""STORE OWNERSHIP GUARD — the mirror that survived, and the toggle that didn't."""
 
 from __future__ import annotations
 

@@ -1,35 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""A ``task_comments`` row must be read BY NAME, not by position.
-
-0.49.0 shipped ``_key(row[0], row[1], row[2], row[3])`` and crashed in production::
-
-    File "scitex_cards/_mirror_rows.py", line 194, in _merge_unseen_comment_rows
-        key = _key(row[0], row[1], row[2], row[3])
-    KeyError: 0
-
-THE DEFECT WAS A TYPE DIFFERENCE THE SUITE COULD NOT SEE. The retired engine's
-row type accepted BOTH ``row[0]`` and ``row["author"]``, so every test against
-it passed. PostgreSQL — which is production, and now the only engine — uses
-psycopg's DICT row factory, where ``row[0]`` is a lookup of the integer KEY
-``0``, and there is no such key.
-
-WHY A SMOKE TEST MISSED IT: ``_merge_unseen_comment_rows`` returns early when the
-card has no comment rows, so the FIRST comment on a fresh card succeeded and every
-comment on a card WITH HISTORY failed. Reported by scitex-dev as a bare ``"0"``
-through MCP — which is ``str(KeyError(0))``.
-
-WHAT WAS DELETED HERE WITH THE SECOND ENGINE, and why that is not a loss of
-coverage: the round-trip through the permissive row type is gone. It asserted
-that a type nothing constructs any more still worked. What it BOUGHT — the
-knowledge that positional access is a backend-specific crash — is kept, and
-kept in the form that can still fail: the AST guard below, which refuses
-``row[<int>]`` in the module regardless of what any row object happens to
-tolerate. That guard is the half that would have caught 0.49.0.
-
-NO MOCKS: a plain ``dict`` is exactly the shape psycopg's dict row factory
-yields, which is why it is the fixture rather than a stand-in for one.
-"""
+"""A ``task_comments`` row must be read BY NAME, not by position."""
 
 import ast
 from pathlib import Path

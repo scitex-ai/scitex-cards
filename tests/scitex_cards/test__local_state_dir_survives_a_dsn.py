@@ -231,22 +231,6 @@ class TestResolveStoreReportsTheBackend:
             f"expected the target as written, got {info['resolved']!r}"
         )
 
-    def test_backend_is_the_retired_engine_for_a_path(self, clean_store_env, tmp_path):
-        # Arrange
-        from scitex_cards._store import resolve_store
-
-        db = tmp_path / "cards.db"
-        db.touch()
-        os.environ[ENV_DB] = str(db)
-
-        # Act
-        info = resolve_store()
-
-        # Assert
-        assert info["backend"] == ENGINE, (
-            f"expected backend ENGINE, got {info['backend']!r}"
-        )
-
     def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):
         # Arrange
         from scitex_cards._store import resolve_store

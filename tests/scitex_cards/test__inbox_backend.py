@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``_inbox_backend.backend()`` selects the inbox rail — the retired engine is RETIRED.
+"""``_inbox_backend.backend()`` selects the inbox rail, or raises.
 
-PR #938 (step one, 2026-08-23): the retired engine stopped being *selectable* as a
-fallback for an unshared store. Step two (2026-08-28) deleted the the retired engine
-inbox implementation outright (``_inbox_retired.py`` / ``_inbox_retired_schema.py``
-/ ``_inbox_receipt.py``'s the retired engine half), so this file is the direct test
-coverage for the seam neither draft PR carried its own dedicated suite for:
-real environment variables (the code under test reads ``os.environ``, so the
-test should too), no mocks.
-
-Every case here was previously reachable and silent (a store misconfiguration
-became an invisible the retired engine inbox nobody polled). Now every one of them raises
-:class:`~scitex_cards._store_errors.StoreUnavailableError` instead, and this
-file pins exactly which cases do and which one legitimate case (a real shared
-Postgres store) still works.
+Every case here was once reachable and SILENT: a store misconfiguration became
+an invisible inbox nobody polled. Each one now raises
+:class:`~scitex_cards._store_errors.StoreUnavailableError` instead, and these
+are the direct coverage for that seam -- real environment variables, because
+the code under test reads ``os.environ``, and no mocks.
 """
 
 from __future__ import annotations

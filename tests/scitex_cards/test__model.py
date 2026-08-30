@@ -1458,15 +1458,4 @@ def test_label_omits_a_dsn_query_string(cards_db_env):
     assert "hunter2" not in label
 
 
-def test_label_names_the_retired_engine_when_the_store_is_a_file(cards_db_env, tmp_path):
-    # Arrange
-    from scitex_cards._model import _canonical_source_label
-
-    cards_db_env(tmp_path / "cards.db")
-    # Act
-    label = _canonical_source_label()
-    # Assert
-    assert label.startswith("<the retired engine:")
-
-
 # EOF

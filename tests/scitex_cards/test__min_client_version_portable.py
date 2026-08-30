@@ -1,30 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``read_floor`` must answer, not raise, on every shape of store it can meet.
-
-TWO the retired engine-SHAPED ASSUMPTIONS LIVED IN ONE SMALL FUNCTION, and both of them
-fail CLOSED on PostgreSQL in a way that turns a no-op into a crash:
-
-1. ``except the retired driver.OperationalError`` around the SELECT was how the function
-   recognised "``schema_meta`` does not exist yet". PostgreSQL raises
-   ``psycopg.errors.UndefinedTable`` for that condition, which the clause did
-   not catch — so opening a BRAND-NEW store would raise out of a function whose
-   documented contract is "no floor stamped, gate is a no-op".
-
-2. ``row[0]`` is POSITIONAL. The previous driver's row accepted both ``row[0]``
-   and ``row["value"]``; psycopg's ``dict_row`` accepts only the latter.
-   :func:`scitex_cards._backend_connect.connect` deliberately declines to paper
-   over that asymmetry so the port finds these call sites while they are cheap.
-
-THIS FILE WAS HALF A COMPARISON AND IS NOW A CONTRACT. It ran each case twice —
-once against a scratch file, once against a server — because the function had to
-agree with itself across two engines. There is one engine, so the file-backed
-half is gone; what is kept is the three answers, asserted where they matter.
-Both former server tests ALSO never ran: they gated on ``$SCITEX_CARDS_TEST_PG``,
-a private marker nothing sets any more, and fell back to a hardcoded
-``127.0.0.1:5432`` nobody serves. So the surviving coverage was the half that
-could not fail. They take the harness's store now, which FAILS rather than skips.
-"""
+"""``read_floor`` must answer, not raise, on every shape of store it can meet."""
 
 import pytest
 

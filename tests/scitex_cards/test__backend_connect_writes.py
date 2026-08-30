@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The seam must carry a WRITE, not just a read.
-
-Until these methods existed the seam had zero importers, and that was not an
-oversight: `_db.init_schema` alone needs `executescript` and `commit`, and every
-mutation module needs `commit`/`rollback`. A connection wrapper that cannot
-close a transaction cannot carry the write path, so nothing could adopt it.
-
-THE HALVES HAVE COLLAPSED INTO ONE. This file used to say "the the retired engine half runs
-here; the PostgreSQL half was exercised against the live server -- see the PR",
-because pure logic could not catch the two defects that mattered and a mocked
-driver would reproduce exactly the assumptions under test. Both statements are
-still true and there is now only one engine to run them on, so the write tests
-open a REAL throwaway store rather than a scratch file. What is still asserted
-WITHOUT a connection is the thing a server cannot tell you: that the DSN
-classification is right BEFORE a connection is attempted.
-"""
+"""The seam must carry a WRITE, not just a read."""
 
 from __future__ import annotations
 
