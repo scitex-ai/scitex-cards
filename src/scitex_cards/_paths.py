@@ -301,8 +301,32 @@ def local_store_path(store: str | Path | None) -> Path:
     keeps importing it under the old private name so no call site changes here,
     but there is now a single place to correct — a triplicated resolver is the
     shape that starts answering three different ways.
+
+    A DSN IS NOT A LOCAL PATH, and the else-branch below used to treat it as
+    one. ``Path("postgresql://host/db")`` does not raise: it collapses the
+    doubled slash and yields the RELATIVE ``postgresql:/host/db``, whose
+    ``.parent`` the sidecar callers then create and write into. Measured
+    2026-08-30, once the test harness began pinning a real DSN:
+
+        _inboxes_path(dsn) -> postgresql:/scitex-primary:55432/inboxes.json
+
+    5,579 bytes of it, under the repository working directory, holding twelve
+    notifications that every run appended to. That is the phantom-store
+    regrowth ``is_attempted_dsn`` already records four spellings of, reached
+    through a FIFTH door -- the inbox rail -- and it is the same confusion as
+    ``_live_dm_count`` and the snapshot dir: a LOCAL NEIGHBOUR derived from
+    STORE IDENTITY instead of from the local axis.
+
+    An explicit DSN therefore resolves the way ``None`` does -- through
+    ``resolve_tasks_path``, which returns the user root for a server target.
+    An explicit PATH is still taken as written, because a caller naming a path
+    means that path.
     """
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    if store is None or is_postgres_url(store):
+        return resolve_tasks_path(store if store is None else None)
+    return Path(store).expanduser()
 
 
 # EOF
