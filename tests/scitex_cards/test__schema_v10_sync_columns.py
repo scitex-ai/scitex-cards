@@ -247,7 +247,7 @@ class TestThePayloadTriggerIsInstalled:
     """The guard the rung exists for, asserted where it actually runs.
 
     THIS REPLACES A TEST OF THE OTHER LEG. The class here was
-    ``TestTheSqliteLegDoesNotInstallTheTrigger``: the rung has a
+    ``TestTheRetiredLegDoesNotInstallTheTrigger``: the rung has a
     ``if not _is_postgres(conn): return`` branch, and that branch was checked
     by building a scratch the retired engine database and reading ``the retired catalog table`` back.
     There is one storage engine now, so that branch has no caller and no

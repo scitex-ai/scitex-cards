@@ -1421,7 +1421,7 @@ def test_label_names_postgres_when_the_store_is_postgres(cards_db_env):
     assert label.startswith("<postgres:")
 
 
-def test_label_does_not_claim_sqlite_on_a_postgres_store(cards_db_env):
+def test_label_does_not_claim_the_retired_engine_on_a_postgres_store(cards_db_env):
     # Arrange
     from scitex_cards._model import _canonical_source_label
 
@@ -1458,7 +1458,7 @@ def test_label_omits_a_dsn_query_string(cards_db_env):
     assert "hunter2" not in label
 
 
-def test_label_names_sqlite_when_the_store_is_a_file(cards_db_env, tmp_path):
+def test_label_names_the_retired_engine_when_the_store_is_a_file(cards_db_env, tmp_path):
     # Arrange
     from scitex_cards._model import _canonical_source_label
 

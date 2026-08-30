@@ -191,7 +191,7 @@ def live_store_uuid(pg_dsn):
 #: A target that is not the store. Not a fixture and not created: the point of
 #: the two tests that use it is that a target the resolver cannot open reports
 #: UNKNOWN rather than inventing an identity, and MAKING one would be the
-#: opposite of the case. (`_create_sqlite_store` used to build a real file store
+#: opposite of the case. (`_create_retired_store` used to build a real file store
 #: here; there is no such thing to build now.)
 _NOT_A_STORE = "/nonexistent/scitex-cards/cards.db"
 

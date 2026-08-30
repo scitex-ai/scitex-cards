@@ -57,7 +57,7 @@ def rendered_help() -> str:
     return CliRunner().invoke(main, ["--help"]).output
 
 
-def test_the_config_resolution_block_never_names_sqlite(resolution_text):
+def test_the_config_resolution_block_never_names_the_retired_engine(resolution_text):
     # Arrange
     banned = re.compile(rENGINE, re.IGNORECASE)
     # Act

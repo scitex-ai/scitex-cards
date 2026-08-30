@@ -92,7 +92,7 @@ class TestAnUnsharedStoreHasNoBackend:
 class TestExplicitRetiredEngineIsRefused:
     """Selecting the retired engine by name is a config error now, not a legal choice."""
 
-    def test_explicit_sqlite_raises(self, env):
+    def test_explicit_retired_engine_raises(self, env):
         # Arrange
         env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
 
@@ -104,7 +104,7 @@ class TestExplicitRetiredEngineIsRefused:
         with pytest.raises(StoreUnavailableError):
             select_the_backend()
 
-    def test_explicit_sqlite_names_the_variable_that_caused_it(self, env):
+    def test_explicit_retired_engine_names_the_variable_that_caused_it(self, env):
         # Arrange
         env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
 

@@ -120,7 +120,7 @@ def test_the_error_reports_the_target_it_was_given(psycopg_hidden):
     assert PG_URL in message
 
 
-def test_sqlite_still_opens_without_the_driver(psycopg_hidden, tmp_path):
+def test_the_retired_engine_still_opens_without_the_driver(psycopg_hidden, tmp_path):
     """The positive control: hiding psycopg must not break the the retired engine path,
     which is every deployment today and must not need a database driver."""
     # Arrange

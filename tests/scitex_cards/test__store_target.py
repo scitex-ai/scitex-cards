@@ -187,7 +187,7 @@ class TestRequireDbPathRefusesRatherThanMangles:
         assert "resolve_store_target" in message
 
 
-class TestSqliteIsUnaffected:
+class TestTheRetiredEngineIsUnaffected:
     """The regression guard: the existing backend must not change."""
 
     def test_a_path_target_still_resolves_to_that_path(self, store_env, tmp_path):
@@ -201,7 +201,7 @@ class TestSqliteIsUnaffected:
         # Assert
         assert resolved == Path(str(db))
 
-    def test_a_path_target_reports_the_sqlite_backend(self, store_env, tmp_path):
+    def test_a_path_target_reports_the_retired_backend(self, store_env, tmp_path):
         # Arrange
         store_env(str(tmp_path / "cards.db"))
 

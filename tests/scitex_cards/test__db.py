@@ -1024,7 +1024,7 @@ def test_verify_reports_the_schema_version_as_a_string(verified):
     assert report["schema_version"] == str(_db.SCHEMA_VERSION)
 
 
-# `test_verify_runs_sqlites_own_integrity_quick_check` WAS DELETED HERE. It
+# `test_verify_runs_the_engines_own_integrity_quick_check` WAS DELETED HERE. It
 # asserted `report["quick_check"] == "ok"`, i.e. that the verb had run the
 # previous engine's page-level corruption scan over a local file. The shipping
 # engine checksums its own pages and exposes no client-callable equivalent, so

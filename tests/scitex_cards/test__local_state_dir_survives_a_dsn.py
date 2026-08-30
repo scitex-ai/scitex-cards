@@ -231,7 +231,7 @@ class TestResolveStoreReportsTheBackend:
             f"expected the target as written, got {info['resolved']!r}"
         )
 
-    def test_backend_is_sqlite_for_a_path(self, clean_store_env, tmp_path):
+    def test_backend_is_the_retired_engine_for_a_path(self, clean_store_env, tmp_path):
         # Arrange
         from scitex_cards._store import resolve_store
 

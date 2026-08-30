@@ -104,7 +104,7 @@ class TestItSeesThisStoreAndNotTheServer:
     own guard had been dropped. THIS CLASS COULD NOT HAVE EXISTED ON THE PREVIOUS
     ENGINE: a file store has no schemas, so "every trigger in the database" and
     "every trigger in this store" were the same set, and the test that replaced
-    this one asked whether ``sqlite_``-prefixed internal tables were excluded —
+    this one asked whether ``the engine's``-prefixed internal tables were excluded —
     a question about a namespace this engine does not have.
     """
 
