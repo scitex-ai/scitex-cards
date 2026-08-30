@@ -249,7 +249,7 @@ nav item from the page switcher. Any bookmark to `/me/` now 404s.
     postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
       -> postgresql:/scitex_cards@127.0.0.1:55432/cards.db
 
-`Path()` collapses the doubled slash. That is not a near-miss but a NEW SQLite
+`Path()` collapses the doubled slash. That is not a near-miss but a NEW the retired engine
 database: `open_db` creates it, `init_schema` fills it, and it answers every
 query with an empty board. The regrown file measured on disk held 15 tables and
 3 rows, all of them `schema_meta` — created and initialised, never written to.
@@ -280,7 +280,7 @@ Reproduced against 0.44.0 in an isolated directory:
       -> OPENED, no refusal
       -> left ${SCITEX_CARDS_DB}, -shm, -wal
 
-A live WAL-mode SQLite board named after the variable, answering every query.
+A live WAL-mode the retired engine board named after the variable, answering every query.
 
 It threaded between two correct guards. The value is NON-EMPTY, so the
 zero-config refusal never fired; it is NOT DSN-SHAPED, so `is_attempted_dsn`
@@ -361,27 +361,27 @@ bodies delivered, 125 badges unfired). A dead group would independently produce
 that signature, but no event has been traced end-to-end yet, and the board
 records a second, separate rail defect.
 
-### SQLite eradication, stage 1: `import sqlite3` under `src/`, 30 -> 15
+### the retired engine eradication, stage 1: `import the retired driver` under `src/`, 30 -> 15
 
-Operator ruling, 2026-08-17: SQLite is abolished — removed from source,
+Operator ruling, 2026-08-17: the retired engine is abolished — removed from source,
 migrated to PostgreSQL, and confirmed unable to be recreated. This release
 carries the SAFE SUBSET of that sweep, plus the barrier that keeps it from
 regressing.
 
 **THE MEASUREMENT THAT MADE IT SAFE.** 38 files under `src/` carry the token
-`sqlite3`; 30 bound the driver. An AST walk sorted every use into four buckets
-and found ZERO `isinstance(..., sqlite3....)` checks anywhere — no guard in this
-package uses the driver to DETECT SQLite. `_store_url.py`, which holds
+`the retired driver`; 30 bound the driver. An AST walk sorted every use into four buckets
+and found ZERO `isinstance(..., the retired driver....)` checks anywhere — no guard in this
+package uses the driver to DETECT the retired engine. `_store_url.py`, which holds
 `is_attempted_dsn`, `reject_attempted_dsn` and every refusal, does not contain
-the token AT ALL; it recognises a SQLite-shaped target from a STRING. So driving
+the token AT ALL; it recognises a the retired engine-shaped target from a STRING. So driving
 the import toward zero removes the ability to CREATE a database without
 weakening a single REFUSAL. That asymmetry is the whole reason this stage is
-tractable, and it is why the sweep is not a keyword sweep: most SQLite
+tractable, and it is why the sweep is not a keyword sweep: most the retired engine
 vocabulary in this package IS the abolition guard — prose whose only job is to
-NAME SQLite in order to REFUSE it.
+NAME the retired engine in order to REFUSE it.
 
 **WHAT MOVED.** 15 modules imported the driver solely to write
-`sqlite3.Connection` / `sqlite3.Row` in a signature. Every one of them carries
+`the retired driver.Connection` / `the retired driver.Row` in a signature. Every one of them carries
 `from __future__ import annotations`, so the annotation was a string that is
 never evaluated: the import bought nothing at runtime, and the annotation was
 actively WRONG — on PostgreSQL `_db.connect()` returns a `StoreConnection`, so
@@ -404,12 +404,12 @@ the barrier itself was driven red against a deliberately planted offending
 module before being restored.
 
 **WHAT DID NOT MOVE**, and why, is written down in
-`docs/design/sqlite-eradication-classification.md`: the three create-capable
-doors (`_backend_connect:186`, `_db:365`, `_index:67`), the live SQLite inbox
+`docs/design/the retired engine-eradication-classification.md`: the three create-capable
+doors (`_backend_connect:186`, `_db:365`, `_index:67`), the live the retired engine inbox
 backend, and the nine `mode=ro` legacy readers. The legacy readers stay because
 the Phase-2 measurement returned CANNOT PROVE — the retired store `0bb1395b`
 could not be located on this host at all (172 files reference the uuid, none of
-them is a SQLite database), so losslessness cannot be certified. A separate,
+them is a the retired engine database), so losslessness cannot be certified. A separate,
 real gap did surface on the way: four surviving legacy `todo.db` inboxes hold
 149 notification ids absent from PostgreSQL (all `seen=1`, all payloads present
 in PG). That is precisely what `_health_stranded_backlog` exists to detect, and
@@ -500,7 +500,7 @@ outage.
 
 ### Also
 
-- `runtime/todo.db` archived — a SQLite database under the retired `todo`
+- `runtime/todo.db` archived — a the retired engine database under the retired `todo`
   name, measured stale (3 days, zero open file descriptors) before removal.
 - Board protective timeouts set, having all been `0`:
   `idle_in_transaction_session_timeout = 300s`, `lock_timeout = 90s`. An
@@ -509,7 +509,7 @@ outage.
   `lock_timeout` is the more important of the two — a call that waits is
   indistinguishable from a call that is merely slow.
 - Test helper `seed_db_from_doc` now refuses swapped arguments. Passing a
-  mapping as the path made SQLite CREATE a database at the dict's repr; a
+  mapping as the path made the retired engine CREATE a database at the dict's repr; a
   225 KB file named `{'tasks': []}` reached the repo root and only the CI
   quality gate noticed.
 
@@ -706,7 +706,7 @@ event, not a schema change, and that is now written into the rung's own module.
 - The PS-140 cross-package gate covered 3 of 7 cases and skipped what it
   exists to catch.
 - The cardsync compare-and-set advice named the one door that is locked.
-- Ten boot-read skill files told every agent the store is "a SQLite database"
+- Ten boot-read skill files told every agent the store is "a the retired engine database"
   while `resolve_store` reports `backend: postgresql`. They now name no engine
   and point at `resolve-store`, because naming an engine in prose is a guess
   about someone else's deployment.
@@ -906,7 +906,7 @@ a board you already started stops being a wall.**
 ### Changed
 
 - **Notifications are stored where the cards are.** The inbox rail resolved its
-  own target — `runtime_dir(store)/cards.db`, a SQLite file *per container* —
+  own target — `runtime_dir(store)/cards.db`, a the retired engine file *per container* —
   while every card write went to PostgreSQL. Two agents on two hosts therefore
   enqueued into two different files that nothing ever reconciled: measured on
   2026-08-14 the laptop's copy was 5.1 MB, compute-04's 147 KB, and the
@@ -940,7 +940,7 @@ a board you already started stops being a wall.**
 
 ### Fixed
 
-- **149 undelivered notifications were stranded by the SQLite → PostgreSQL
+- **149 undelivered notifications were stranded by the the retired engine → PostgreSQL
   cutover**, and nothing noticed for three days. The rail moved on 08-11; the
   backlog did not — 0 of the 149 unseen rows existed in PostgreSQL. 130 were
   addressed to the operator, and 134 of 149 were DMs to people rather than card
@@ -1148,8 +1148,8 @@ now being built.
 which store it is.**
 
 The operator asked twice — 2026-07-30 and again 2026-08-09 (「通知は cards.db????
-…ポスグレを使っているはずなのになぜまだ sqlite を使っているのか」) — why
-notifications were still SQLite when the card store had moved to PostgreSQL. The
+…ポスグレを使っているはずなのになぜまだ the retired engine を使っているのか」) — why
+notifications were still the retired engine when the card store had moved to PostgreSQL. The
 honest answer is that the mission card claimed the migration was COMPLETE while
 only half of it was. Measured on the live rail the day of this release:
 
@@ -1283,7 +1283,7 @@ release was held by one test, and that test was a stopwatch.
   cleaning up a dangling edge refused precisely when the edge was dangling.
 - **`gui serve` refuses an unconfigured store instead of inventing one**
   (#774). With no DSN configured the board did not fail — it silently read a
-  local SQLite file that had stopped being written on 2026-08-02 and served it
+  local the retired engine file that had stopped being written on 2026-08-02 and served it
   as current. A silent fallback to a stale store is the failure mode ADR-0016
   exists to forbid.
 - **The board's DM thread list reads the database, not `threads.json`**
@@ -1378,7 +1378,7 @@ and a test now refuses any that do.
 
 Found while verifying the fix above by *reading the rendered string* rather than
 the diff. The same instructions carried a second false claim, untouched by the
-scope work: *"The canonical store is the SQLite database at `$SCITEX_CARDS_DB`
+scope work: *"The canonical store is the the retired engine database at `$SCITEX_CARDS_DB`
 (default `~/.scitex/cards/cards.db`) — that path is the SOLE store identity."*
 After the PostgreSQL cutover both halves were false at once, and the named path
 is the **abandoned** pre-migration file — still on disk, still holding thousands
@@ -1393,7 +1393,7 @@ answered plausibly and reproduced a reporter's own count exactly, which is
 precisely what stopped the checking. A store that answers plausibly is the
 dangerous kind of wrong.
 
-The sentence had rotted twice (YAML → SQLite → PostgreSQL) because it
+The sentence had rotted twice (YAML → the retired engine → PostgreSQL) because it
 **restates** what `resolve_store` already answers correctly, and nothing
 asserted it. It now names only the question and the verb that answers it, and
 `test__mcp_instructions_names_no_backend.py` fails the build on any backend name
@@ -1402,7 +1402,7 @@ that `resolve_store` stay named, so the guard cannot be satisfied by deleting
 the sentence and leaving an agent no way to learn which store it is on.
 
 That test earned its place immediately: the first replacement sentence said "a
-SQLite path or a PostgreSQL URL, depending on the deployment" — naming both
+the retired engine path or a PostgreSQL URL, depending on the deployment" — naming both
 backends inside the sentence that says not to — and the guard caught it before
 it was committed.
 
@@ -1641,11 +1641,11 @@ proxy is enforcing, so it is gone. A test pins the gate's signature at exactly
 misconfigured Access policy stops being a breach, and standalone stays honest
 because it is the same code path with no proxy at all.
 
-**The notification rail no longer hand-rolls `sqlite3.connect`.** It was the only
+**The notification rail no longer hand-rolls `the retired driver.connect`.** It was the only
 part of the package opening its own database, and therefore the only part that
 could not be handed a PostgreSQL target — where the failure is not a clean error:
 a DSN reaching `Path(...)` does not raise, it yields a plausible relative path,
-and `mkdir` + `sqlite3.connect` then *manufacture* a SQLite file named after the
+and `mkdir` + `the retired driver.connect` then *manufacture* a the retired engine file named after the
 DSN that accepts writes while the real server sits untouched. It now opens
 through `_db.connect`, which dispatches on the target before any path handling.
 No rows move: same file, same contents, measured at 56 emitted statements
@@ -1656,7 +1656,7 @@ Supporting that move: a per-backend shape seam so every rail query reads its
 table, recipient column and ordering from one place (`rowid` → `seq` is a
 replacement, not a rename, and a pure rename would produce SQL valid on both
 engines that silently loses delivery order); the null-safe comparison resolved
-per connection, because no literal spelling parses on both SQLite 3.37 and
+per connection, because no literal spelling parses on both the retired engine 3.37 and
 PostgreSQL; schema **v9** giving `notifications` a server-assigned arrival-order
 column; row-carry verified by id rather than by count; and a PostgreSQL CI leg so
 the canonical backend has regression coverage and its absence is loud.
@@ -1671,7 +1671,7 @@ channel's own diagnostics are readable in production via an opt-in file sink.
 built to find.**
 
 `notifications` gains `msg_id`, `pushed_at` and `confirmed_at` — the three
-columns the SQLite sidecar gained and the store's own table never did. The table
+columns the the retired engine sidecar gained and the store's own table never did. The table
 already existed on the fresh-create path with the right shape and index, and was
 vestigial (0 rows on the live store), so the notification rail can move *into*
 the store rather than into a parallel table. The columns live in one list used
@@ -1693,7 +1693,7 @@ detect.
 against a 5 s interval. Nine candidates were eliminated by direct measurement —
 the wrong daemon, the mtime drain gate, the burst cap, PostgreSQL write latency,
 the drain work, an overridden interval, MCP transport backpressure (an *idle*
-session measured slower), SQLite write-lock contention, and PostgreSQL
+session measured slower), the retired engine write-lock contention, and PostgreSQL
 advisory-lock contention. Every component measured fast and the composite stayed
 slow, which is the shape outside observation cannot resolve. The loop now
 records `drain_s`, `gap_s` and `unexplained_s = gap − prev_drain − interval` —
@@ -1713,24 +1713,24 @@ jitter means a term is mismeasured. Reported at WARNING, never asserted — a ba
 assert in a long-lived delivery loop kills the task and stops the delivery it
 measures.
 
-Also documents the twelve SQLite→PostgreSQL hazards measured during the store
+Also documents the twelve the retired engine→PostgreSQL hazards measured during the store
 migration, nine of which produced no error at all.
 
 ## [0.31.4] - 2026-08-02
 
 **The doctor names the engine on both rails, and fails when they differ.**
 
-`check_single_write_target` reported the literal string "SQLite"
+`check_single_write_target` reported the literal string "the retired engine"
 *unconditionally*. True when written; a lie from the day a store could be a
 PostgreSQL server. Measured on the live store: it printed `exactly one write
-target: SQLite` while every card write went to PostgreSQL. The one line that
+target: the retired engine` while every card write went to PostgreSQL. The one line that
 looks like it answers "which engine am I on" answered it wrongly, confidently,
 on every PostgreSQL deployment. It now resolves the engine instead of asserting
 it.
 
-Nothing reported the *notification* rail's engine at all. The inbox is a SQLite
+Nothing reported the *notification* rail's engine at all. The inbox is a the retired engine
 sidecar located from the store **path**, so pointing the store at a server does
-not move it — cards go to PostgreSQL and notifications stay on SQLite. That
+not move it — cards go to PostgreSQL and notifications stay on the retired engine. That
 split is what let a DM commit to the store on 2026-08-01 while no notification
 was ever created, with every card-side check green.
 
@@ -1739,7 +1739,7 @@ check that merely printed the two modes would report the split as normal, and
 normal is the wrong word for a state in which a green card-side doctor says
 nothing about whether notifications are delivered.
 
-It deliberately offers **no toggle** to disable the SQLite rail, and the hint
+It deliberately offers **no toggle** to disable the the retired engine rail, and the hint
 says so: in postgres mode the sidecar is the only inbox implementation that
 exists, so a switch would let the split be *configured* rather than *fixed* — a
 fallback wearing a switch. The doctor goes green when the inbox moves into the
@@ -1783,12 +1783,12 @@ the board, which legitimately threads its store through to the inbox rail.
 
 ## [0.31.3] - 2026-08-02
 
-**The SQLite inbox used SQL that old SQLite cannot parse, so no notification
+**The the retired engine inbox used SQL that old the retired engine cannot parse, so no notification
 was ever delivered on the host.**
 
 `_inbox_sqlite.enqueue` spelled its null-safe comparisons
-`IS NOT DISTINCT FROM` — standard SQL, and exactly what SQLite's `IS` means.
-SQLite only accepts that spelling from **3.39** (2022-06). The host runs
+`IS NOT DISTINCT FROM` — standard SQL, and exactly what the retired engine's `IS` means.
+the retired engine only accepts that spelling from **3.39** (2022-06). The host runs
 **3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
 
 `_threads_mirror.dispatch_to_inbox` is deliberately fail-soft — the message is
@@ -1799,25 +1799,25 @@ the live store — an operator DM sat in the store and never reached the agent's
 session.
 
 It stayed hidden because the failure is **environment-dependent**. Containers
-run SQLite 3.45.1 and parse the standard spelling happily, so agent-to-agent
+run the retired engine 3.45.1 and parse the standard spelling happily, so agent-to-agent
 DMs delivered normally while board-originated ones vanished. CI ran a new
-SQLite too, so a behavioural test was green no matter which spelling the source
-used — it pinned the SQLite version, not the SQL.
+the retired engine too, so a behavioural test was green no matter which spelling the source
+used — it pinned the the retired engine version, not the SQL.
 
-Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
+Fixed by using `IS ?`, null-safe in every the retired engine that ships this module and
 needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
 standard spelling, which is correct there.
 
 **This reverses a deliberate decision from 0.31.2**, and the reasoning behind
 that decision was sound apart from one premise. It chose the standard spelling
 so the module's SQL would survive a later move to PostgreSQL, and pinned
-SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+the retired engine >= 3.39 as a floor. The floor was false where it mattered — production
 measured 3.37.2 — and it was never ours to enforce, since the package controls
 neither the CI images nor the host's system python. A requirement the package
 cannot enforce is a hope, not a floor. The premise does not hold either:
 `_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
 never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
-backend module, exactly as the YAML and SQLite backends are separate today.
+backend module, exactly as the YAML and the retired engine backends are separate today.
 
 What that decision got right is kept: rewriting the comparison to `=` parses on
 both engines and then silently stops deduplicating, because `actor = NULL` is
@@ -1825,7 +1825,7 @@ never true. That trap is still pinned by a positive-control test.
 
 The regression test reads the statements the module actually hands to
 `execute()` via AST and fails on the non-portable spelling regardless of the
-local SQLite version. It deliberately does not scan the file for a substring:
+local the retired engine version. It deliberately does not scan the file for a substring:
 the module now discusses `IS NOT DISTINCT FROM` by name, and a substring scan
 would match that prose and fail forever.
 
@@ -1909,7 +1909,7 @@ PostgreSQL cutover.
 
 Until now the only way to point a client at a non-default store was
 `$SCITEX_CARDS_DB`, exported at every invocation site. Anything that did not
-export it fell through to a hardcoded local SQLite filename. That one gap
+export it fell through to a hardcoded local the retired engine filename. That one gap
 produced, in different clothes each time:
 
 - **8 host-side writers** (4 systemd units, 3 cron entries, 1 hourly timer)
@@ -1944,7 +1944,7 @@ The password is not in the config and must never be: the DSN carries none and
 libpq reads `$PGPASSFILE` itself.
 
 Measured on the live host with `$SCITEX_CARDS_DB` unset and the same config
-present — `0.30.3` resolved to the **retired** SQLite store, this release
+present — `0.30.3` resolved to the **retired** the retired engine store, this release
 resolves to the PostgreSQL DSN.
 
 ## [0.30.3] - 2026-08-01
@@ -1955,7 +1955,7 @@ old behaviour is not a slow path, it is a broken one.
 
 ### Concurrent opens were deadlocking on the system catalogue (#714)
 
-`init_schema` ran its full DDL on **every connection**. On SQLite that was very
+`init_schema` ran its full DDL on **every connection**. On the retired engine that was very
 nearly free. Against a shared PostgreSQL server it is DDL against the system
 catalogues, and `CREATE OR REPLACE FUNCTION` rewrites the `pg_proc` row every
 time — it is *not* a no-op when the definition already matches.
@@ -2016,7 +2016,7 @@ Two calls on `get_board`'s read path coerced the store target to a filesystem
 file-existence gate.
 
 The refusal is correct and load-bearing. Coercing a DSN would have created an
-empty SQLite store at a mangled path and served 0 cards **while reporting
+empty the retired engine store at a mangled path and served 0 cards **while reporting
 healthy** — the exact failure `services.py` already carries a post-mortem for.
 The guard worked; the server branch behind it was missing.
 
@@ -2034,7 +2034,7 @@ treating it as a time is obviously wrong rather than subtly skewed.
 
 ### Every DM write died on `BEGIN IMMEDIATE` (#712)
 
-`syntax error at or near "IMMEDIATE"` — SQLite-only spelling, reported by
+`syntax error at or near "IMMEDIATE"` — the retired engine-only spelling, reported by
 scitex-db with a live reproduction. It failed before writing anything, so no data
 was harmed, but DM is the operator's channel to the fleet.
 
@@ -2042,18 +2042,18 @@ A gap in the 0.30.0 port: the statements *inside* the transaction were made
 portable and the statement that *opens* it was not.
 
 **A plain `BEGIN` would have been worse than the syntax error.** `IMMEDIATE` is
-not decoration — SQLite takes the write lock at BEGIN so two appenders serialise,
+not decoration — the retired engine takes the write lock at BEGIN so two appenders serialise,
 and the DM append reads `max(seq)` then inserts `seq + 1`. PostgreSQL defaults to
 READ COMMITTED, under which both appenders read the same `max(seq)` and both
 insert. That parses, runs, passes a smoke test, and silently reintroduces the
 exact race `IMMEDIATE` exists to prevent. SERIALIZABLE detects it but by aborting
 one side, which every call site would have to retry.
 
-New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on SQLite and
+New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on the retired engine and
 `BEGIN` plus `pg_advisory_xact_lock` on PostgreSQL — blocking, not aborting, and
 released on commit or rollback alike. It replaces all 7 executable sites
 (`_dm_write` ×4, `_dm_migrate` ×2, `_store_uuid` ×1). The lock is store-wide,
-matching SQLite where the write lock covers the whole file: this is a
+matching the retired engine where the write lock covers the whole file: this is a
 compatibility seam, not a concurrency rewrite.
 
 ### Verified against the live server, not a fixture
@@ -2122,7 +2122,7 @@ a DM write and the test fails (`- refused / + opened`).
 ## [0.30.0] - 2026-08-01
 
 **The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
-still died, because the write side had never been ported. SQLite remains the
+still died, because the write side had never been ported. the retired engine remains the
 DEFAULT and PostgreSQL stays OPT-IN via `$SCITEX_CARDS_DB`.
 
 ### The read path stopped taking the query side down (#704)
@@ -2187,8 +2187,8 @@ does not move.
 **The store layer now REACHES PostgreSQL.** 0.28.0 made a PostgreSQL store
 buildable; this release makes the package actually read one. Measured against
 the live server: `2962` cards and `6171` comments at `schema_version 7`, not the
-`0` a broken path returns. SQLite remains the DEFAULT and PostgreSQL is OPT-IN
-via `$SCITEX_CARDS_DB`; the SQLite path is byte-identical to 0.28.0.
+`0` a broken path returns. the retired engine remains the DEFAULT and PostgreSQL is OPT-IN
+via `$SCITEX_CARDS_DB`; the the retired engine path is byte-identical to 0.28.0.
 
 **The blocker was one line, and it explains why the seam sat unused.**
 `open_db` — the one-call entry point the canonical read path uses — resolved
@@ -2199,10 +2199,10 @@ imports them". It now resolves the TARGET (#693).
 
 **A PostgreSQL DSN is refused, never coerced (#692).** `Path("postgresql://h/db")`
 collapses to the RELATIVE path `postgresql:/h/db`, which manufactures an empty
-SQLite file and then serves 0 cards while reporting `exists: True`. Two stores,
+the retired engine file and then serves 0 cards while reporting `exists: True`. Two stores,
 both looking healthy, is a failure this package has scar tissue from.
 
-**Schema init is portable (#693).** `PRAGMA` is SQLite-only and PostgreSQL
+**Schema init is portable (#693).** `PRAGMA` is the retired engine-only and PostgreSQL
 rejects it outright, so the version stamp and the column probe are now
 dialect-aware. On PostgreSQL the trigger-protected `schema_meta` row IS the
 stamp — the direction `stamp_schema_version` already argued for, since a PRAGMA
@@ -2241,27 +2241,27 @@ guard, and the positive control passed in every one of those cases.
 **A PostgreSQL store can now be built and reached — not just described.** 0.27.0
 made the backend seam importable; this release makes it usable. `_db.connect()`
 accepts a PostgreSQL target, the schema script creates a working store on
-PostgreSQL including every guard, and the export path no longer speaks SQLite.
-Nothing writes to PostgreSQL yet: the canonical store is still SQLite, and the
+PostgreSQL including every guard, and the export path no longer speaks the retired engine.
+Nothing writes to PostgreSQL yet: the canonical store is still the retired engine, and the
 cutover switches are deliberately not in this release.
 
 **A theme, and it is the reason for the test style below: on this port, the
 dangerous failures pass at DDL time and fail at runtime.** `AUTOINCREMENT` has
 no portable spelling, and the obvious substitute — a plain `INTEGER PRIMARY KEY`
 — *parses on both engines* and only fails when you INSERT, because PostgreSQL
-does not auto-assign it the way SQLite's rowid alias does. So the tests here
+does not auto-assign it the way the retired engine's rowid alias does. So the tests here
 insert a row and read the generated id back; asserting `CREATE TABLE` succeeded
 would have certified the broken choice.
 
 ### Added
 - `_db.connect()` dispatches a PostgreSQL URL or a libpq keyword/value conninfo
   to the backend seam. The dispatch is the **first** statement in the function:
-  `Path(dsn)` on a conninfo does not raise, it manufactures a SQLite file named
+  `Path(dsn)` on a conninfo does not raise, it manufactures a the retired engine file named
   after the DSN that accepts writes while the real server sits untouched. That
   file was created and observed during development, so the test asserts **no
   file appears** (#685).
 - `_pg_triggers` — PostgreSQL equivalents of all nine guard triggers, and
-  `execute_ddl` now **substitutes** them when it meets a SQLite `CREATE TRIGGER`.
+  `execute_ddl` now **substitutes** them when it meets a the retired engine `CREATE TRIGGER`.
   An unrecognised trigger name **raises**. Skipping what a backend cannot run is
   the tempting move and it is silently wrong: the tables come up, the store
   passes every smoke test, and an append-only table quietly accepts `DELETE`
@@ -2274,8 +2274,8 @@ would have certified the broken choice.
   now lives in a module named for what it creates (#685).
 
 ### Fixed
-- The min-client-version gate no longer assumes SQLite. It recognised a missing
-  `schema_meta` by catching `sqlite3.OperationalError`; PostgreSQL raises
+- The min-client-version gate no longer assumes the retired engine. It recognised a missing
+  `schema_meta` by catching `the retired driver.OperationalError`; PostgreSQL raises
   `UndefinedTable`, so opening a **brand-new** PostgreSQL store raised out of a
   function whose contract is "no floor stamped, this is a no-op". It also read
   `row[0]` positionally, which `dict_row` refuses (#684).
@@ -2304,20 +2304,20 @@ would have certified the broken choice.
 
 **The backend seam becomes reachable.** Until this release `_backend_connect`
 and `_store_url` were implemented, tested, and imported by nothing — every read
-and write called `sqlite3` directly, so a PostgreSQL store could receive no
+and write called `the retired driver` directly, so a PostgreSQL store could receive no
 tables and, more importantly, **no guards**. A store with no retirement guard
 reports itself current and authoritative, which is the failure that took this
 board from 2170 rows to 18.
 
 A recurring lesson runs through the SQL fixes below: **both looked like they
 needed a dialect branch and neither did.** `GREATEST` is PostgreSQL-only and
-two-argument `MAX` is SQLite-only, but the standard-SQL spelling works on both.
+two-argument `MAX` is the retired engine-only, but the standard-SQL spelling works on both.
 Try standard SQL against both engines before adding a translation layer — every
 branch is a place the two backends can drift.
 
 ### Added
 - **A DDL runner that works on both backends (#675).**
-  `sqlite3.Connection.executescript` is pysqlite-only and was how *every* schema
+  `the retired driver.Connection.executescript` is pysqlite-only and was how *every* schema
   object here got installed, all nine triggers included. The difficulty is one
   character: a trigger body is `BEGIN <stmt>; <stmt>; END`, so its semicolons are
   internal and a naive `split(';')` severs it — and the first fragment can still
@@ -2332,7 +2332,7 @@ branch is a place the two backends can drift.
   represented; it was coerced instead:
   `postgresql://user@host:5432/db` → `Path('postgresql:/user@host:5432/db')`, a
   **relative** path, silently, one slash lost. The caller then creates an empty
-  SQLite file at that name and reports a healthy empty board.
+  the retired engine file at that name and reports a healthy empty board.
 
 ### Fixed
 - **Guards are read from the right catalogue (#676, #678).** Four sites asked
@@ -2351,14 +2351,14 @@ branch is a place the two backends can drift.
   is the same.
 
 - **NULL-safe comparison both engines accept (#679).** The inbox dedups on four
-  nullable columns. SQLite spells it `x IS ?`; PostgreSQL rejects that outright.
+  nullable columns. the retired engine spells it `x IS ?`; PostgreSQL rejects that outright.
   The tempting fix, `=`, **parses on both and silently stops deduplicating** —
   `actor = NULL` is UNKNOWN, never true — producing a notification storm and
   quietly killing the "at most one pending digest per recipient" invariant.
   Measured against a NULL column: `IS ?` → 1 row, `IS NOT DISTINCT FROM ?` → 1
   row, `= ?` → **0 rows**. That last line is now a test.
 
-- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on SQLite and
+- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on the retired engine and
   an **aggregate only** on PostgreSQL — `function max(integer, integer) does not
   exist`, measured live. Spelt as `CASE`, which is standard SQL.
 
@@ -2429,7 +2429,7 @@ protection was not.
   real, and it was the "remember to apply it" kind — it binds only the clients
   that have it, and any client still executing a bare
   `PRAGMA user_version={SCHEMA_VERSION}` overwrote the store regardless. The
-  floor now lives in a SQLite trigger on `schema_meta`, so it applies to every
+  floor now lives in a the retired engine trigger on `schema_meta`, so it applies to every
   writer whether or not that writer knows it exists.
 
   It ASSIGNS rather than REJECTS, deliberately: `RAISE(ABORT)` would fail every
@@ -2469,7 +2469,7 @@ protection was not.
 
 - **The `postgres` extra, so the PostgreSQL path is reachable by install
   (#668).** `_backend_connect` reads a PostgreSQL store today: the same query
-  string, written with SQLite's `?` placeholders and never rewritten by the
+  string, written with the retired engine's `?` placeholders and never rewritten by the
   caller, returned the same row count through both backends against PostgreSQL
   18.4, because `to_paramstyle` translates in transit. 39 tests cover it and it
   was independently reproduced.
@@ -2496,7 +2496,7 @@ the capability plus the guard, not the cutover.
 
 ### A byte no backend can store (#663)
 
-A NUL is legal in SQLite TEXT and illegal in PostgreSQL TEXT, so a body SQLite
+A NUL is legal in the retired engine TEXT and illegal in PostgreSQL TEXT, so a body the retired engine
 accepted silently made the whole store unmigratable. Two rows in `messages`
 blocked the preflight; within ~2 minutes of clearing them a third arrived in
 `dm_messages`, written by an agent actively trying not to write one, in a
@@ -2521,7 +2521,7 @@ plain text.
 
 ### Reading either backend (#663)
 
-140 `execute()` sites write SQLite's `?` paramstyle. Porting each is 140 chances
+140 `execute()` sites write the retired engine's `?` paramstyle. Porting each is 140 chances
 to miss one, so the translation is bound to the CONNECTION: code keeps writing
 `?` and forgetting is not expressible. A `?` inside a string literal is NOT a
 placeholder — card titles and message bodies contain them constantly, and a
@@ -2820,7 +2820,7 @@ Two bugs fell out of that change:
   delivered.
 - A FRESH STORE COULD NOT INITIALISE ITS INBOX. The legacy-YAML reader
   promised "malformed -> {}" but did not catch malformed-because-BINARY, so
-  it raised on a SQLite store. Existing stores escape only because their
+  it raised on a the retired engine store. Existing stores escape only because their
   migration flag predates the cutover. A NEW HOST IS THE FRESH-STORE CASE,
   so this sat directly on the multi-host path.
 
@@ -3461,7 +3461,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
 
   `resolve_tasks_path`'s own docstring says that path is "the non-task YAML
   CONTAINER path — NOT the store identity"; card data lives in the database.
-  Under SQLite nothing creates that sidecar, so the gate was permanently shut
+  Under the retired engine nothing creates that sidecar, so the gate was permanently shut
   and the board took the literal `else []`. The card read was never ATTEMPTED,
   which is why no guard anywhere had an opinion — the fail-loud reader in
   `_read_canonical_db_or_raise` was never reached. Worse, the same branch set
@@ -3491,7 +3491,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   `tasks.yaml` sidecar before every test in the package — precisely the file
   production does not have. Every test in the package therefore ran in a world
   where the gate was open, so the entire suite was green against a store shape
-  that has not existed since the SQLite cutover. The fixture is deleted. The one
+  that has not existed since the the retired engine cutover. The fixture is deleted. The one
   test that genuinely needs a marker file — `test__board_stale_while_revalidate`,
   which exercises the stat half of the cache key — now creates it in its own
   fixture. The file is that test's subject, so that test owns it, and no other
@@ -3505,7 +3505,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   unreadable store with a JSON 500 carrying the store's own reason.
 
 - **`/rev` reported the mtime of a file that does not exist, so an open board
-  stopped refreshing.** The reported store mtime was the SIDECAR's; under SQLite
+  stopped refreshing.** The reported store mtime was the SIDECAR's; under the retired engine
   that file is absent, so on any real deployment mtime was permanently `0.0`.
   The board's AutoRefresh keys on `f"{mtime}:{count}"`, so with mtime frozen the
   operator's open pane only refreshed when the card COUNT changed — a status
@@ -3706,7 +3706,7 @@ again.
   operator actually talks through. Appending one message rewrote the entire
   document — the same whole-document read-modify-write shape behind the
   2026-07 board wipes. Four append-only tables (`dm_threads`,
-  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus SQLite triggers
+  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus the retired engine triggers
   that make `DELETE` and post-hoc edits unreachable at the ENGINE, not merely
   guarded in Python. `append_message` now writes the database FIRST and raises
   on failure; the sidecar is mirrored best-effort and kept complete as the
@@ -3839,7 +3839,7 @@ was the reason nobody saw it. Both are fixed here.
   outage above stayed invisible: `add` refused every card while `health` called
   the same store writable. Writability is now measured with `os.access`,
   matching the sibling file-store branch that already did so. The store's
-  **directory** is checked too, because SQLite creates `-wal` / `-journal`
+  **directory** is checked too, because the retired engine creates `-wal` / `-journal`
   siblings — a writable file in a read-only directory still fails every write.
   Both failures name the offending path and say what to do.
 
@@ -3921,7 +3921,7 @@ integration follow-ups to #556.
   loudly when it is absent, never silently guessing a root mount. Regression
   lint extended to `static/scitex_cards/chat/*.js`.
 - **Honest empty state — an absent store renders 0 cards, not an error
-  banner** (adapted from unpushed `9db9146b` to the SQLite-era `get_board`).
+  banner** (adapted from unpushed `9db9146b` to the the retired engine-era `get_board`).
   A fresh workspace resolves to a store-identity path that does not exist
   yet; `load_groups` on that absent file was the one leftover raise that
   turned the new tenant's board into a 400 "No task store found." (and
@@ -3956,7 +3956,7 @@ silent-wrong-board class found in production on 2026-07-21.
 
 - **The dual-write mirror is deleted as a feature** (#545). A stale provenance
   stamp plus the mirror env flag had routed a session's writes into a side file
-  while every call reported success. SQLite is the only write target; a write
+  while every call reported success. the retired engine is the only write target; a write
   that cannot reach the canonical DB raises. A sentinel test fails if the
   toggle is ever reintroduced.
 - **The S2 read accelerator is deleted** (#547). On containers with the
@@ -3999,7 +3999,7 @@ silent-wrong-board class found in production on 2026-07-21.
 
 ## [0.17.4] - 2026-07-21
 
-The YAML-to-SQLite cutover release. SQLite is the store; YAML is gone from the
+The YAML-to-the retired engine cutover release. the retired engine is the store; YAML is gone from the
 task path.
 
 ### Changed
@@ -4275,7 +4275,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Unchanged (deliberately — later stages)
 - The store path (`~/.scitex/cards/tasks.yaml`): the store engine flips to
-  sqlite-as-truth and the file moves in the migration's later stages.
+  the retired engine-as-truth and the file moves in the migration's later stages.
 
 ## [0.9.9] - 2026-07-13 — fix: a flag that outran its deploy cost 135 seconds per card write
 
@@ -4410,7 +4410,7 @@ the live 1,390-card store, not inferred from the diff.
   A check that is always red is not a signal; it teaches everyone that red means "that's just
   the broken one". Parked properly with `workflow_dispatch:`.
 
-## [0.9.5] - 2026-07-13 — perf: a card write no longer drags the whole board through SQLite
+## [0.9.5] - 2026-07-13 — perf: a card write no longer drags the whole board through the retired engine
 
 Two fixes to the dual-write mirror. Together they take the mirror from **more than half of a
 card write** down to **under 2% of it**.
@@ -4427,7 +4427,7 @@ card write** down to **under 2% of it**.
   cost **4,592 µs/row** against **110 µs/row** for a plain `INSERT` — a **42x** difference,
   and 6.3 s of the rebuild's 7.3 s. `tasks` is a *parent* of `task_comments` / `task_edges` /
   `task_roles` (`ON DELETE CASCADE`), so under `PRAGMA foreign_keys=ON` every REPLACE runs
-  SQLite's full cascade/FK-check machinery — to resolve a collision that **cannot happen**,
+  the retired engine's full cascade/FK-check machinery — to resolve a collision that **cannot happen**,
   because the rebuild has just deleted every row in the same transaction.
 
   It was never foreign keys: `task_comments` already used a plain `INSERT`, and FK
@@ -4703,41 +4703,41 @@ that each bit multiple agents in production, plus the board-UI review batch.
   renders under the pointer); Timeline leftmost; Stale view removed; search
   input at filterbar scale; gzip on `/graph` (4.98 MB → 1.60 MB).
 
-## [0.7.50] - 2026-07-09 — feat: inbox reads/writes default to SQLite (retires the per-poll whole-store parse)
+## [0.7.50] - 2026-07-09 — feat: inbox reads/writes default to the retired engine (retires the per-poll whole-store parse)
 
 Fleet load incident: every agent's `scitex-cards mcp start` digest-poll (every
 5 s) `safe_load`ed the entire ~9 MB task store just to read ONE recipient's
 inbox — across ~21 agents the fleet's biggest CPU sink (host load ~27). This
-moves the inbox read/write path onto SQLite so a poll is an indexed
+moves the inbox read/write path onto the retired engine so a poll is an indexed
 `(recipient, seen)` lookup, never a whole-store parse.
 
-- New `_inbox_sqlite` backend (stdlib `sqlite3`, WAL) at the constitution's
+- New `_inbox_sqlite` backend (stdlib `the retired driver`, WAL) at the constitution's
   runtime-DB path `<store_dir>/runtime/cards.db`. `enqueue` / `poll_inbox` /
   `ack` mirror the YAML contract exactly (dedup on `(event_type, card_id, ts,
   actor)`, `supersede`, `unseen_only`, `mark_seen`).
-- SQLite is now the DEFAULT. `SCITEX_CARDS_INBOX_BACKEND=yaml` is an explicit
-  break-glass only; an unknown/unset value uses SQLite. No silent fallback — a
-  SQLite error fails loud.
+- the retired engine is now the DEFAULT. `SCITEX_CARDS_INBOX_BACKEND=yaml` is an explicit
+  break-glass only; an unknown/unset value uses the retired engine. No silent fallback — a
+  the retired engine error fails loud.
 - Lazy one-time auto-migration: first access copies the YAML `inboxes:` records
   into the DB (guarded by a `migrated_from_yaml` meta flag), so no unseen
   notification is lost regardless of restart timing; steady state never reads
   YAML. Idempotent + reversible (the YAML section is never deleted).
-- CLI: `scitex-cards inbox migrate-to-sqlite` / `inbox info`.
+- CLI: `scitex-cards inbox migrate-to-the retired engine` / `inbox info`.
 
-Phase 1 of the YAML→SQLite migration (inboxes only; cards/users/ledger stay on
+Phase 1 of the YAML→the retired engine migration (inboxes only; cards/users/ledger stay on
 YAML for now — Phase 2 covers cards). Complements the S0 shadow store (#349).
 
-## [0.7.49] - 2026-07-08 — feat: S0 shadow SQLite DB + YAML bootstrap (YAML still canonical)
+## [0.7.49] - 2026-07-08 — feat: S0 shadow the retired engine DB + YAML bootstrap (YAML still canonical)
 
-STAGE S0 of the YAML→SQLite migration (design-confirmed by scitex-dev,
-RFC #348). Purely ADDITIVE: an authority-local SHADOW SQLite database is
+STAGE S0 of the YAML→the retired engine migration (design-confirmed by scitex-dev,
+RFC #348). Purely ADDITIVE: an authority-local SHADOW the retired engine database is
 created and bootstrapped FROM the current YAML store. The YAML (`tasks.yaml` +
 the `threads.yaml` sidecar) STAYS the CANONICAL source of truth — no CRUD verb,
 MCP tool, or `load_doc`/`_save_doc_unlocked` path reads or writes the DB in S0.
 The shadow DB is incapable of harming the YAML by construction (a separate
 file, never linked into any write path). S1 (dual-write) comes next.
 
-- New `_db.py` adapter — stdlib `sqlite3` only (no scitex-db). `resolve_db_path`
+- New `_db.py` adapter — stdlib `the retired driver` only (no scitex-db). `resolve_db_path`
   follows explicit arg → `$SCITEX_CARDS_DB` → `local_state.user_path("cards",
   "cards.db")`, DELEGATING the user tier to the ecosystem resolver (never a
   re-rolled project/user precedence — the class of bug behind the 2026-07-06
