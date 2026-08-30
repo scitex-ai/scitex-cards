@@ -227,7 +227,10 @@ def test_a_backfilled_receipt_is_marked_as_a_sentinel(db_path, sidecar):
 
     # Act
     try:
-        sources = [r[0] for r in connection.execute("SELECT source FROM dm_receipts")]
+        # BY NAME: server rows are mapping-shaped, `r[0]` raises `KeyError: 0`.
+        sources = [
+            r["source"] for r in connection.execute("SELECT source FROM dm_receipts")
+        ]
     finally:
         connection.close()
 

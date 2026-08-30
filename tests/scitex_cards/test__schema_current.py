@@ -143,7 +143,22 @@ def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path, ne
     path = new_store()
     conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
-    conn.execute(f"DROP TRIGGER IF EXISTS {victim}")
+    # NAMED WITH ITS TABLE, because PostgreSQL's DROP TRIGGER requires one.
+    # `DROP TRIGGER IF EXISTS <name>` is SQLite's spelling -- trigger names are
+    # global there -- and against a server it is a syntax error at end of input,
+    # so this arrange step failed before the act ever ran.
+    #
+    # The table is READ FROM THE CATALOGUE rather than written down beside the
+    # name. A hardcoded pairing is a second list to keep in step with
+    # REQUIRED_GUARD_TRIGGERS, and the one that drifts is the one that stops
+    # dropping anything -- which would leave this test asserting False about a
+    # store whose trigger is still present, i.e. passing for the wrong reason.
+    owning_table = conn.execute(
+        "SELECT event_object_table AS t FROM information_schema.triggers "
+        "WHERE trigger_schema = current_schema() AND trigger_name = ?",
+        (victim,),
+    ).fetchone()["t"]
+    conn.execute(f"DROP TRIGGER IF EXISTS {victim} ON {owning_table}")
     conn.commit()
     shape = _shape(SCHEMA_VERSION)
     # Act

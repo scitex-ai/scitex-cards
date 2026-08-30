@@ -48,10 +48,28 @@ __all__ = [
 #: PostgreSQL: exclude ``tgisinternal`` rows -- every FK constraint installs
 #: internal triggers, and counting those would report a guard-free store as
 #: richly guarded.
+#: SCOPED TO THE CURRENT SCHEMA, like its two siblings below. It was not, and
+#: the join was the tell: it reached `pg_class` and then never used it to
+#: constrain the namespace, which is what a lost WHERE looks like.
+#:
+#: WHAT THAT COST. `trigger_names` feeds `_schema_current.schema_already_current`
+#: -- the proof-of-currency mechanism, whose whole job is to answer "does the
+#: store I opened still carry its guards". Unscoped, it answered from EVERY
+#: schema in the database at once, so a store missing a guard trigger was
+#: reported CURRENT as long as any other schema in the same database still had
+#: one by that name. Measured 2026-08-30: a guard dropped from a test's own
+#: schema, `schema_already_current` still True.
+#:
+#: THIS DEFECT COULD NOT EXIST ON THE PREVIOUS ENGINE, which is why it survived
+#: to here rather than being caught years ago -- SQLite has no schemas, so
+#: "every trigger in the database" and "every trigger in this store" were the
+#: same set. They stopped being the same set the moment the store became a
+#: schema on a shared server, and this query kept the old meaning.
 _PG_TRIGGERS = (
     "SELECT t.tgname FROM pg_trigger t "
     "JOIN pg_class c ON c.oid = t.tgrelid "
-    "WHERE NOT t.tgisinternal"
+    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE NOT t.tgisinternal AND n.nspname = current_schema()"
 )
 _PG_TABLES = (
     "SELECT table_name FROM information_schema.tables "
