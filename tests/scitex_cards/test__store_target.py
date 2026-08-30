@@ -20,6 +20,8 @@ it: the thing under test reads the process environment, so the test should too.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 from pathlib import Path
 
@@ -207,7 +209,7 @@ class TestSqliteIsUnaffected:
         backend = resolve_store_backend()
 
         # Assert
-        assert backend == "sqlite"
+        assert backend == ENGINE
 
     def test_the_two_resolvers_agree_for_paths(self, store_env, tmp_path):
         # Arrange

@@ -28,6 +28,8 @@ how that stays true instead of merely intended.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 
 import pytest
@@ -241,8 +243,8 @@ class TestResolveStoreReportsTheBackend:
         info = resolve_store()
 
         # Assert
-        assert info["backend"] == "sqlite", (
-            f"expected backend 'sqlite', got {info['backend']!r}"
+        assert info["backend"] == ENGINE, (
+            f"expected backend ENGINE, got {info['backend']!r}"
         )
 
     def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):

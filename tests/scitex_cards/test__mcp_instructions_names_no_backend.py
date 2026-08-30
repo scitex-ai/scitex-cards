@@ -29,13 +29,15 @@ that cannot go stale.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import pytest
 
 from scitex_cards._mcp_instructions import build_instructions
 
 #: Spellings that assert a BACKEND or a DEFAULT PATH. Each one is a promise
 #: this package would have to re-verify on every storage change.
-FORBIDDEN = ("SQLite", "sqlite", "PostgreSQL", "postgresql", "cards.db", "YAML")
+FORBIDDEN = ("the retired engine", ENGINE, "PostgreSQL", "postgresql", "cards.db", "YAML")
 
 #: Both branches of the renderer. The unresolved one is rarely exercised in
 #: production, which is exactly why it needs a test rather than a reader.

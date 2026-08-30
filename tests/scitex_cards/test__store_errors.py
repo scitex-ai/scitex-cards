@@ -13,6 +13,8 @@ So these tests pin both directions: the detail survives for us, and the path doe
 not reach a stranger.
 """
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import pytest
 
 from scitex_cards._store_errors import StoreUnavailableError
@@ -99,7 +101,7 @@ def test_the_public_summary_mentions_no_internal_vocabulary():
     # Assert
     leaked = [
         w
-        for w in ("canonical", "exporter", "scitex_cards_db", "sqlite")
+        for w in ("canonical", "exporter", "scitex_cards_db", ENGINE)
         if w in lowered
     ]
     assert leaked == [], f"internal vocabulary in public summary: {leaked}"

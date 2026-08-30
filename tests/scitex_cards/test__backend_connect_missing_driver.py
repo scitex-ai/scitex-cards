@@ -19,6 +19,8 @@ that the message carries the INSTALL COMMAND, because that is what turns a
 confusing outage into a five-minute repair.
 """
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import sys
 
 import pytest
@@ -129,7 +131,7 @@ def test_sqlite_still_opens_without_the_driver(psycopg_hidden, tmp_path):
     conn = connect(str(target), read_only=False)
 
     # Assert
-    assert conn.backend == "sqlite"
+    assert conn.backend == ENGINE
     conn.close()
 
 

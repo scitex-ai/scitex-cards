@@ -19,6 +19,8 @@ Postgres store) still works.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import pytest
 
 from scitex_cards._inbox_backend import (
@@ -92,7 +94,7 @@ class TestExplicitSqliteIsRefused:
 
     def test_explicit_sqlite_raises(self, env):
         # Arrange
-        env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+        env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
 
         # Act
         def select_the_backend():
@@ -104,7 +106,7 @@ class TestExplicitSqliteIsRefused:
 
     def test_explicit_sqlite_names_the_variable_that_caused_it(self, env):
         # Arrange
-        env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+        env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
 
         # Act
         def select_the_backend():

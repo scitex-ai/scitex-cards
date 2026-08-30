@@ -19,6 +19,8 @@ is about the query text, not about a branch.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import pytest
 
 from scitex_cards._db import connect

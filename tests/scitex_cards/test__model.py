@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import contextlib
 import os
 import warnings
@@ -1427,7 +1429,7 @@ def test_label_does_not_claim_sqlite_on_a_postgres_store(cards_db_env):
     # Act
     label = _canonical_source_label()
     # Assert
-    assert "sqlite" not in label
+    assert ENGINE not in label
 
 
 def test_label_keeps_both_slashes_in_a_dsn(cards_db_env):
@@ -1464,7 +1466,7 @@ def test_label_names_sqlite_when_the_store_is_a_file(cards_db_env, tmp_path):
     # Act
     label = _canonical_source_label()
     # Assert
-    assert label.startswith("<sqlite:")
+    assert label.startswith("<the retired engine:")
 
 
 # EOF

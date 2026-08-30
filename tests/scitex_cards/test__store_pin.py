@@ -38,6 +38,8 @@ real ``os.environ`` the resolver reads and restores them on teardown.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 import time
 import pytest

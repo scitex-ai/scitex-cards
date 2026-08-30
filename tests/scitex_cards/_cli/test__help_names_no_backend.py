@@ -36,6 +36,8 @@ correct once that lands.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import re
 
 import pytest
@@ -57,11 +59,11 @@ def rendered_help() -> str:
 
 def test_the_config_resolution_block_never_names_sqlite(resolution_text):
     # Arrange
-    banned = re.compile(r"sqlite", re.IGNORECASE)
+    banned = re.compile(rENGINE, re.IGNORECASE)
     # Act
     found = banned.search(resolution_text)
     # Assert
-    assert found is None, f"config resolution still names sqlite:\n{resolution_text}"
+    assert found is None, f"config resolution still names the retired engine:\n{resolution_text}"
 
 
 def test_the_config_resolution_block_advertises_no_default_file(resolution_text):
