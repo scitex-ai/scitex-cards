@@ -88,28 +88,27 @@ jobs:
         # honest about what actually broke.
         run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
 
-      - name: Discover every Postgres-dependent test file
-        id: discover
-        # THE EMPTY-SET REFUSAL IS THE LOAD-BEARING HALF. If the marker were
-        # renamed, the search would select nothing, pytest would receive no
-        # arguments, and the leg would pass having tested nothing — the same
-        # "green because it never ran" failure this job exists to remove, one
-        # level further up again.
+      - name: Confirm the suite collects, and refuse a run over zero tests
+        # THE EMPTY-SET REFUSAL IS STILL THE LOAD-BEARING HALF; what it guards
+        # changed. This step used to SELECT the "Postgres-dependent" files by
+        # grepping for a marker, because most of the suite did not touch a
+        # server. Every test touches one now -- the harness gives each its own
+        # throwaway schema -- so a marker-selected subset is not a subset of
+        # anything any more, and the honest scope is the whole suite.
         #
-        # find|xargs rather than a recursive grep: identical result, and it keeps
-        # the searched file set explicit.
+        # The threshold is deliberately coarse. Pinning an exact count is the
+        # mistake the assertion further down already records making: a number
+        # calibrated to one file's total goes stale the moment a test is added.
+        # "Thousands, not a handful" is the property that stays true.
         run: |
           set -euo pipefail
-          files=$(find tests -name '*.py' -print0 \
-                    | xargs -0 grep -lE 'postgres_dsn|postgres_cluster_dsn' \
-                    | sort | tr '\n' ' ' || true)
-          if [ -z "$files" ]; then
-            echo "::error::no test file requests the postgres_dsn / postgres_cluster_dsn fixtures -- the marker was renamed or the tests moved. Refusing to run zero Postgres tests and report success."
+          n=$(python -m pytest tests --collect-only -q 2>/dev/null | tail -1 \
+                | grep -oE '^[0-9]+' || true)
+          if [ -z "$n" ] || [ "$n" -lt 1000 ]; then
+            echo "::error::the suite collected ${n:-0} tests -- expected thousands. Collection is broken, and a run over a truncated set reports success for a suite that never ran."
             exit 1
           fi
-          echo "discovered:"
-          for f in $files; do echo "  $f"; done
-          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "collected=$n"
 
       - name: Run the Postgres-backed tests
         env:
@@ -130,7 +129,13 @@ jobs:
           # credit to scitex-hpc, who measured it on three commands piped to
           # `head` the same day this was written.)
           set -o pipefail
-          python -m pytest ${{ steps.discover.outputs.files }} -v -rs | tee result.txt
+          # NOT `-x`. The repo's addopts carry exitfirst, which is right for a
+          # developer loop and wrong for a MEASURING gate: it stops at the
+          # first failure, so the log reports a number describing where it gave
+          # up rather than the state of the suite. Overridden here so this leg
+          # answers "how many pass" instead of "how far did it get".
+          python -m pytest tests -q -rs \
+            --override-ini="addopts=-p no:anyio" | tee result.txt
 
       - name: Assert the Postgres tests actually exercised Postgres
         # The guard on the guard. A leg that is green because every Postgres
