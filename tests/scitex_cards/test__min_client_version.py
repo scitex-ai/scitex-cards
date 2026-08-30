@@ -29,12 +29,11 @@ suite-wide ``_store_env_stays_pinned`` autouse fixture (``tests/conftest.py``);
 from __future__ import annotations
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from scitex_cards import _db, _db_mirror, _store
+from scitex_cards._backend_connect import connect as backend_connect
 from scitex_cards._min_client_version import (
     ClientTooOldError,
     parse_version_tuple,
@@ -49,19 +48,24 @@ def _db_path() -> str:
 
 
 def _set_floor(version: str) -> None:
-    """Stamp the floor via a RAW ``sqlite3`` connection.
+    """Stamp the floor through the layer BELOW ``_db.connect``.
 
     Deliberately bypasses ``_db.connect`` (and therefore its own gate): the
     production CLI verb (``_cli/_min_client_version.py``) goes through
     ``_db.connect`` and so inherits whatever floor is ALREADY set — which
     means a test that first sets a too-high floor could never lower it again
-    through that path. This helper represents an operator fixing the raw
-    file directly, not the normal CLI flow, so tests can freely move the
-    floor up and down to exercise both sides of the gate.
-    """
-    import sqlite3
+    through that path. This helper represents an operator repairing the store
+    directly, not the normal CLI flow, so tests can freely move the floor up
+    and down to exercise both sides of the gate.
 
-    conn = sqlite3.connect(str(_db_path()))
+    ``_backend_connect.connect`` IS that bypass and is not a lesser one than
+    the raw driver connection this used to open: ``_db.connect`` is exactly
+    this call plus ``enforce_min_client_version``, so opening here reaches the
+    same store by the same driver with precisely the one check removed. Naming
+    the seam rather than the engine also keeps the bypass HONEST — it is
+    visible as "one layer down", not as "a different way in".
+    """
+    conn = backend_connect(_db_path(), read_only=False, rows_by_name=True)
     try:
         stamp_floor(conn, version)
         conn.commit()
@@ -196,20 +200,25 @@ def test_stamp_floor_replaces_a_previously_set_floor():
     assert floor == "2.0.0"
 
 
-def test_connect_opens_fine_on_a_totally_fresh_database_with_no_schema_meta_table_yet():
-    """`connect()` runs BEFORE `init_schema()`, so a brand-new file has no
+def test_connect_opens_fine_on_a_totally_fresh_store_with_no_schema_meta_table_yet(
+    new_store,
+):
+    """`connect()` runs BEFORE `init_schema()`, so a brand-new store has no
     `schema_meta` table at all — `read_floor` must treat that the same as a
-    present-but-empty table: no floor, proceed."""
+    present-but-empty table: no floor, proceed.
+
+    ``bootstrap=False`` is what makes this the case it is named for. The
+    harness's per-test store is schema-complete, so opening THAT would exercise
+    the present-but-empty branch and pass while saying "no table at all"."""
     # Arrange
-    with tempfile.TemporaryDirectory() as d:
-        fresh_path = Path(d) / "brand-new.db"
+    fresh = new_store("cards_floor_fresh", bootstrap=False)
 
-        # Act
-        conn = _db.connect(fresh_path)
+    # Act
+    conn = _db.connect(fresh)
 
-        # Assert
-        assert conn is not None
-        conn.close()
+    # Assert
+    assert conn is not None
+    conn.close()
 
 
 # --------------------------------------------------------------------------- #
