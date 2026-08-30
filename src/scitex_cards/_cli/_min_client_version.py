@@ -68,7 +68,8 @@ def register(main: click.Group) -> None:
 @_DB_OPTION
 def set_min_client_version_cmd(floor: str, db_path: str | None) -> None:
     """Stamp ``schema_meta.min_client_version`` after a self-brick sanity check."""
-    from .._db import connect, resolve_db_path
+    from .._db import connect
+    from .._store_target import resolve_store_target
 
     running = resolve_running_version()
     if parse_version_tuple(floor) > parse_version_tuple(running):
@@ -80,8 +81,20 @@ def set_min_client_version_cmd(floor: str, db_path: str | None) -> None:
             f"first, then set the floor."
         )
 
-    path = resolve_db_path(db_path)
-    conn = connect(path)
+    # THE STORE TARGET, NOT A FILESYSTEM PATH. This read
+    # ``resolve_db_path(db_path)`` and handed the result to ``connect`` --
+    # which takes a TARGET, so the path resolver was only ever a detour that
+    # happened to work while a store was a file. ``resolve_db_path`` is typed
+    # ``-> Path`` and RAISES ``StoreTargetIsNotAPath`` on a DSN (deliberately;
+    # see its docstring), so against the engine that ships, stamping the floor
+    # failed before it opened anything.
+    #
+    # Nothing here is filesystem work: the command writes one row into
+    # ``schema_meta``. The sibling ``dev db get-path`` keeps ``resolve_db_path``
+    # on purpose -- ITS subject is the path, and refusing a DSN is that
+    # command's correct answer rather than its bug.
+    target = resolve_store_target(db_path)
+    conn = connect(target)
     try:
         previous = read_floor(conn)
         stamp_floor(conn, floor)
@@ -89,7 +102,7 @@ def set_min_client_version_cmd(floor: str, db_path: str | None) -> None:
     finally:
         conn.close()
 
-    click.echo(f"# min_client_version: {previous or '(none)'} -> {floor}  ({path})")
+    click.echo(f"# min_client_version: {previous or '(none)'} -> {floor}  ({target})")
 
 
 __all__ = ["register"]

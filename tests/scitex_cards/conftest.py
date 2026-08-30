@@ -295,7 +295,20 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     conn = connect(str(db_path))
     try:
         init_schema(conn)
-        conn.execute("BEGIN IMMEDIATE")
+        # NO EXPLICIT `BEGIN` HERE, and the absence is the fix rather than an
+        # omission. This read `conn.execute("BEGIN IMMEDIATE")` -- a statement
+        # only one engine has ever understood, taking a write lock upfront so a
+        # later read-to-write upgrade could not fail under concurrency.
+        #
+        # It never ran against a server before, because the store this seeded
+        # was a file. Against the engine that ships it is a hard syntax error
+        # ("syntax error at or near IMMEDIATE"), and it took down 14 tests
+        # across three CLI modules the moment the harness pinned a real DSN.
+        #
+        # Nothing replaces it: the driver opens a transaction on the first
+        # statement of a non-autocommit connection, so the rebuild below is
+        # already atomic, and the lock it was reaching for is taken per row as
+        # the writes happen. The `conn.commit()` at the end is what ends it.
         summary = _rebuild_from_doc(conn, doc, threads=threads)
         summary["db_path"] = str(db_path)
         _stamp_meta(conn, "test-seed")
