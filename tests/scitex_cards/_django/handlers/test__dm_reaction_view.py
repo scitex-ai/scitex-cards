@@ -19,6 +19,7 @@ Django RequestFactory against a real throwaway PostgreSQL store; no mocks
 from __future__ import annotations
 
 import json
+from urllib.parse import quote
 
 import pytest
 from django.test import RequestFactory
@@ -81,7 +82,7 @@ def _react(
 
 
 def _get_thread(store: str, peer: str = "agent-x"):
-    request = RequestFactory().get(f"/dm/thread/{peer}?store={store}")
+    request = RequestFactory().get(f"/dm/thread/{peer}?store={quote(store, safe='')}")
     return dm_thread_view(request, peer)
 
 
@@ -170,7 +171,7 @@ def test_reaction_post_rejects_an_unknown_action(store: str, message: dict):
 def test_reaction_post_rejects_invalid_json(store: str):
     # Arrange
     request = RequestFactory().post(
-        f"/dm/thread/agent-x/reaction?store={store}",
+        f"/dm/thread/agent-x/reaction?store={quote(store, safe='')}",
         data="{not json",
         content_type="application/json",
     )
@@ -182,7 +183,7 @@ def test_reaction_post_rejects_invalid_json(store: str):
 
 def test_reaction_view_rejects_get(store: str):
     # Arrange
-    request = RequestFactory().get(f"/dm/thread/agent-x/reaction?store={store}")
+    request = RequestFactory().get(f"/dm/thread/agent-x/reaction?store={quote(store, safe='')}")
     # Act
     response = dm_reaction_view(request, "agent-x")
     # Assert

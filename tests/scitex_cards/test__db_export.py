@@ -23,7 +23,7 @@ from scitex_cards._yaml import safe_dump, safe_load
 
 
 @pytest.fixture()
-def seeded(tmp_path: Path) -> dict:
+def seeded(tmp_path: Path, new_store) -> dict:
     """A yaml store + threads sidecar with UNKNOWN keys on every section."""
     doc = {
         "tasks": [
@@ -75,7 +75,7 @@ def seeded(tmp_path: Path) -> dict:
     (tmp_path / "threads.yaml").write_text(
         safe_dump({"threads": threads}), encoding="utf-8"
     )
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc(doc, db, threads=threads)
     return {"doc": doc, "threads": threads, "db": db, "tmp": tmp_path}
 
@@ -168,9 +168,11 @@ def test_export_json_report_counts_every_exported_message(seeded):
 def test_export_refuses_rows_without_verbatim_payload(seeded):
     # Arrange — simulate a pre-v3 row: payload stripped after import.
     conn = connect(seeded["db"])
-    conn.execute("UPDATE users SET record_json = NULL")
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE users SET record_json = NULL")
+        conn.commit()
+    finally:
+        conn.close()
 
     # Act
     # Assert — refusal, not a stripped export.
@@ -181,9 +183,11 @@ def test_export_refuses_rows_without_verbatim_payload(seeded):
 def _export_after_acking_every_notification(seeded) -> dict:
     """Flip every notification's `seen` in the DB, then export the record."""
     conn = connect(seeded["db"])
-    conn.execute("UPDATE notifications SET seen = 1")
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE notifications SET seen = 1")
+        conn.commit()
+    finally:
+        conn.close()
     doc, _ = export_doc(seeded["db"])
     (record,) = doc["inboxes"]["u_000000000001"]
     return record
@@ -219,7 +223,7 @@ def test_resolve_db_path_still_delegates_to_the_chain(env, tmp_path):
     assert resolved == tmp_path / "x.db"
 
 
-def _export_a_store_with_one_drained_inbox(tmp_path) -> dict:
+def _export_a_store_with_one_drained_inbox(tmp_path, new_store) -> dict:
     """Round-trip a store carrying one populated and one drained ([]) inbox.
 
     Regression: live-store rehearsal 2026-07-16 — 2 of 56 recipients had
@@ -235,25 +239,25 @@ def _export_a_store_with_one_drained_inbox(tmp_path) -> dict:
     }
     tasks_yaml = tmp_path / "tasks.yaml"
     tasks_yaml.write_text(safe_dump(doc), encoding="utf-8")
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc(doc, db)
     out, _threads = export_doc(db)
     return out
 
 
-def test_export_keeps_a_drained_inbox_as_an_empty_list(tmp_path):
+def test_export_keeps_a_drained_inbox_as_an_empty_list(tmp_path, new_store):
     # Arrange — one populated inbox, one drained.
     # Act
-    out = _export_a_store_with_one_drained_inbox(tmp_path)
+    out = _export_a_store_with_one_drained_inbox(tmp_path, new_store)
 
     # Assert — the drained key is present, as an empty list.
     assert out["inboxes"]["drained"] == []
 
 
-def test_export_drops_no_recipient_when_one_inbox_is_drained(tmp_path):
+def test_export_drops_no_recipient_when_one_inbox_is_drained(tmp_path, new_store):
     # Arrange — one populated inbox, one drained.
     # Act
-    out = _export_a_store_with_one_drained_inbox(tmp_path)
+    out = _export_a_store_with_one_drained_inbox(tmp_path, new_store)
 
     # Assert — both recipients survive the round-trip.
     assert set(out["inboxes"]) == {"busy", "drained"}
@@ -269,20 +273,20 @@ def test_export_drops_no_recipient_when_one_inbox_is_drained(tmp_path):
 _SNAPSHOT_DOC = {"tasks": [{"id": "t", "title": "t", "status": "done"}]}
 
 
-def _seed_snapshot_db(tmp_path):
-    """Populate the DB the snapshot command will export, and return its path."""
-    db = tmp_path / "cards.db"
+def _seed_snapshot_db(new_store):
+    """Populate the store the snapshot command will export, and return it."""
+    db = new_store()
     seed_db_from_doc(_SNAPSHOT_DOC, db)
     return db
 
 
-def _run_snapshot(tmp_path):
-    """Seed the DB and run `db snapshot`; return (result, snap)."""
+def _run_snapshot(tmp_path, new_store):
+    """Seed the store and run `db snapshot`; return (result, snap)."""
     from click.testing import CliRunner
 
     from scitex_cards._cli import main
 
-    db = _seed_snapshot_db(tmp_path)
+    db = _seed_snapshot_db(new_store)
     snap = tmp_path / "snapshots"
     result = CliRunner().invoke(
         main,
@@ -291,34 +295,34 @@ def _run_snapshot(tmp_path):
     return result, snap
 
 
-def test_snapshot_exits_clean(tmp_path):
+def test_snapshot_exits_clean(tmp_path, new_store):
     # Arrange
     # Act
-    result, _snap = _run_snapshot(tmp_path)
+    result, _snap = _run_snapshot(tmp_path, new_store)
 
     # Assert
     assert result.exit_code == 0, result.output
 
 
-def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path):
+def test_snapshot_exports_the_store_into_the_snapshot_dir(tmp_path, new_store):
     # Arrange
     # Act
-    _result, snap = _run_snapshot(tmp_path)
+    _result, snap = _run_snapshot(tmp_path, new_store)
 
     # Assert — read the export back; it is the seeded doc.
     assert json.loads((snap / "tasks.json").read_text()) == _SNAPSHOT_DOC
 
 
-def test_snapshot_commits_the_export_into_a_git_repo(tmp_path):
+def test_snapshot_commits_the_export_into_a_git_repo(tmp_path, new_store):
     # Arrange
     # Act
-    _result, snap = _run_snapshot(tmp_path)
+    _result, snap = _run_snapshot(tmp_path, new_store)
 
     # Assert — the commit ran; the dir is a repo.
     assert (snap / ".git").exists()
 
 
-def _run_snapshot_push_to_a_bare_remote(tmp_path, env):
+def _run_snapshot_push_to_a_bare_remote(tmp_path, env, new_store):
     """Bootstrap a snapshot repo wired to a bare origin, then `--push` to it.
 
     Returns (first_result, push_result, bare).
@@ -329,7 +333,7 @@ def _run_snapshot_push_to_a_bare_remote(tmp_path, env):
 
     from scitex_cards._cli import main
 
-    db = _seed_snapshot_db(tmp_path)
+    db = _seed_snapshot_db(new_store)
     bare = tmp_path / "offsite.git"
     subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
     snap = tmp_path / "snapshots"
@@ -357,32 +361,32 @@ def _run_snapshot_push_to_a_bare_remote(tmp_path, env):
     return first, pushed, bare
 
 
-def test_snapshot_push_bootstrap_run_exits_clean(tmp_path, env):
+def test_snapshot_push_bootstrap_run_exits_clean(tmp_path, env, new_store):
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    first, _pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
+    first, _pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env, new_store)
 
     # Assert — the bootstrap snapshot the push builds on succeeded.
     assert first.exit_code == 0, first.output
 
 
-def test_snapshot_push_run_exits_clean(tmp_path, env):
+def test_snapshot_push_run_exits_clean(tmp_path, env, new_store):
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    _first, pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
+    _first, pushed, _bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env, new_store)
 
     # Assert
     assert pushed.exit_code == 0, pushed.output
 
 
-def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, env):
+def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, env, new_store):
     """--push delivers the commit to origin — verified by reading the BARE
     repo back, not by exit code (the rail's job is the off-site copy)."""
     import subprocess
 
     # Arrange — a store, a bare origin, and a snapshot dir wired to it.
     # Act
-    _first, _pushed, bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env)
+    _first, _pushed, bare = _run_snapshot_push_to_a_bare_remote(tmp_path, env, new_store)
 
     # Assert — the BARE side has the snapshot commit.
     log = subprocess.run(
@@ -394,13 +398,13 @@ def test_snapshot_push_lands_the_commit_in_the_bare_remote(tmp_path, env):
     assert "snapshot:" in log.stdout
 
 
-def _run_snapshot_push_without_a_remote(tmp_path, env):
+def _run_snapshot_push_without_a_remote(tmp_path, env, new_store):
     """`--push --json` against a snapshot dir that has no origin configured."""
     from click.testing import CliRunner
 
     from scitex_cards._cli import main
 
-    db = _seed_snapshot_db(tmp_path)
+    db = _seed_snapshot_db(new_store)
     return CliRunner().invoke(
         main,
         [
@@ -416,22 +420,22 @@ def _run_snapshot_push_without_a_remote(tmp_path, env):
     )
 
 
-def test_snapshot_push_without_remote_still_exits_zero(tmp_path, env):
+def test_snapshot_push_without_remote_still_exits_zero(tmp_path, env, new_store):
     """No remote yet = legitimate local-only, exit 0, said out loud."""
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, env)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env, new_store)
 
     # Assert
     assert result.exit_code == 0, result.output
 
 
-def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, env):
+def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, env, new_store):
     import json as _json
 
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, env)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env, new_store)
 
     # Assert — local-only is reported honestly, not claimed as a push.
     report = _json.loads(result.output.strip().splitlines()[-1])
@@ -439,13 +443,13 @@ def test_snapshot_push_without_remote_reports_pushed_false(tmp_path, env):
 
 
 def test_snapshot_push_without_remote_explains_why_it_was_local_only(
-    tmp_path, env
+    tmp_path, env, new_store
 ):
     import json as _json
 
     # Arrange
     # Act
-    result = _run_snapshot_push_without_a_remote(tmp_path, env)
+    result = _run_snapshot_push_without_a_remote(tmp_path, env, new_store)
 
     # Assert — the reason is said out loud, not left to guesswork.
     report = _json.loads(result.output.strip().splitlines()[-1])
@@ -468,11 +472,13 @@ def test_snapshot_push_without_remote_explains_why_it_was_local_only(
 def _strip_notification_payload(seeded, **columns) -> None:
     """Reproduce the live fault: a notification row with no verbatim payload."""
     conn = connect(seeded["db"])
-    conn.execute("UPDATE notifications SET record_json = NULL")
-    for name, value in columns.items():
-        conn.execute(f"UPDATE notifications SET {name} = ?", (value,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("UPDATE notifications SET record_json = NULL")
+        for name, value in columns.items():
+            conn.execute(f"UPDATE notifications SET {name} = ?", (value,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def test_export_repairs_a_payload_less_notification_instead_of_refusing(seeded):
@@ -530,8 +536,17 @@ def test_a_repaired_row_is_not_modified_on_disk(seeded):
     # Act — a read must not write.
     export_doc(seeded["db"])
     conn = connect(seeded["db"])
-    stored = conn.execute("SELECT record_json FROM notifications").fetchone()[0]
-    conn.close()
+    try:
+        # BY NAME, never ``[0]``. The connection carries ``row_factory=
+        # dict_row``, so an integer subscript raises ``KeyError: 0`` — and
+        # because that raised BEFORE ``close()``, the connection leaked and
+        # the schema teardown's ``DROP ... CASCADE`` blocked on it. The test
+        # did not fail; the whole FILE hung. Hence the ``finally`` too.
+        stored = conn.execute(
+            "SELECT record_json FROM notifications"
+        ).fetchone()["record_json"]
+    finally:
+        conn.close()
 
     # Assert — the repair is in-memory; nothing on disk is rewritten.
     assert stored is None
