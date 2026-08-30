@@ -177,13 +177,33 @@ def database_for(target: str | Path) -> str | Path:
     tier above was abolished on.
 
     A DSN passes through untouched: a server target is already a database.
+
+    A LABEL NOW RESOLVES TO THE AMBIENT STORE, NOT TO A SIBLING FILENAME. The
+    label branch used to answer ``<label>.parent / "cards.db"``, which was the
+    right inversion while a store was a file and is a PHANTOM now: that
+    filename names no store, so every caller handed it either CREATED one or --
+    once the opening door started refusing -- failed outright. Measured on a
+    server store: the users-registry read raised ``UnrecognisedStoreTarget``
+    naming ``~/.scitex/cards/cards.db``, fail-softed to an empty registry, and
+    ``resolve_user`` degraded to the raw name for every peer -- the SAME
+    2026-08-17 symptom this function exists to end, reached from the other side.
+
+    So a label is treated as what it is: a NAME for the store, never a location
+    of one, and it resolves to whatever the ambient chain resolves to. That
+    resolution can RAISE when nothing is configured, and raising is correct --
+    the alternative is inventing a target, which is the entire failure class.
+
+    ONLY THE LABEL BRANCH CHANGES. An explicit path argument is still returned
+    AS WRITTEN rather than redirected to the ambient store: silently sending an
+    explicit target somewhere else is the mirror image of this bug, and the
+    opening door already refuses a path loudly and by name.
     """
     text = str(target)
     if is_postgres_url(text):
         return text
     path = Path(text).expanduser()
     if path.suffix in (".yaml", ".yml"):
-        return path.parent / DEFAULT_DB_FILENAME
+        return resolve_store_target(None)
     return path
 
 
