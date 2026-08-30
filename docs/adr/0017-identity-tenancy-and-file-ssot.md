@@ -12,7 +12,7 @@
 scitex-cards has to work in three shapes at once, and the operator asked for all
 three deliberately:
 
-1. **Standalone** — one person, one machine, SQLite, no server.
+1. **Standalone** — one person, one machine, the retired engine, no server.
 2. **Behind a proxy** — the same board reachable from a phone, through a
    Cloudflare Tunnel with Cloudflare Access in front. Never Tailscale.
 3. **Hub plugin / group SaaS** — several people, one hosted deployment,
@@ -67,7 +67,7 @@ Consequences, which fall out rather than needing separate argument:
   No `SCHEMA_VERSION` bump for tenancy, and therefore no forced DDL pass across
   ~90 v9 clients.
 - Reads are never filtered, so the wipe guard keeps working.
-- SQLite and PostgreSQL get the **same** enforcement primitive, so shapes 1 and 3
+- the retired engine and PostgreSQL get the **same** enforcement primitive, so shapes 1 and 3
   do not fork at the security boundary. This is the operator's "the leaf has to
   be solid" requirement, stated as a mechanism.
 - A multi-tenant deployment hands out **zero** store handles. Members get an HTTP

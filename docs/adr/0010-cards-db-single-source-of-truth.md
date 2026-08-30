@@ -8,11 +8,11 @@
 > - The live fleet store is `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards`
 >   (store_uuid `1d55dd6e-3d2a-4c24-a429-a78835ab988f`), one per host, synchronised
 >   across hosts.
-> - `_paths.py:152` records that **since 2026-08-13 the zero-config SQLite default
+> - `_paths.py:152` records that **since 2026-08-13 the zero-config the retired engine default
 >   RAISES** instead of naming a database. The tier this ADR established is gone.
-> - Operator, 2026-08-15, verbatim: 「and never use sqlite」/「we migrated to 55432
->   postgres」/「if you find sqlite, <path/to>.db, it is violation」— and the
->   reasoning he gave for the singularity: 「if you have both sqlite and postgres,
+> - Operator, 2026-08-15, verbatim: 「and never use the retired engine」/「we migrated to 55432
+>   postgres」/「if you find the retired engine, <path/to>.db, it is violation」— and the
+>   reasoning he gave for the singularity: 「if you have both the retired engine and postgres,
 >   it will introduce mistakes and misunderstanding; remember, more options does
 >   not mean better」.
 >
@@ -25,13 +25,13 @@
 > thing that is now a violation.
 
 **Status:** SUPERSEDED 2026-08-15 (was ACCEPTED, operator-ruled, 2026-07-16)
-**Supersedes / amends:** `docs/design/sqlite-migration.md` (the RFC on branch
-`design/sqlite-migration`) — adopted as the base design; this ADR records the
+**Supersedes / amends:** `docs/design/the retired engine-migration.md` (the RFC on branch
+`design/the retired engine-migration`) — adopted as the base design; this ADR records the
 deltas the operator's rulings introduced and the sequencing they force.
 
 ## Context
 
-The RFC designed the yaml→sqlite migration when the package was still
+The RFC designed the yaml→the retired engine migration when the package was still
 scitex-cards, target path `~/.scitex/cards/cards.db`, with open questions Q5 (git
 audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 
