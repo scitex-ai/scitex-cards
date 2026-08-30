@@ -401,7 +401,7 @@ def undrained_backlog_check(tmp_path_factory):
     suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
     a FUNCTION-scoped one on the first test that needs both, so this
     fixture's real enqueue calls would otherwise run before
-    ``_default_inbox_backend_yaml`` ever pins the var. SQLite retired
+    ``_default_inbox_backend_yaml`` ever pins the var. The file rail retired
     (operator ruling 2026-08-23): an unset var now means "no backend at all"
     rather than a working default. Matches the suite-wide default; no
     teardown needed.
@@ -409,7 +409,7 @@ def undrained_backlog_check(tmp_path_factory):
     os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
     # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
     # itself rather than a `runtime/cards.db` beside it, so handing it a YAML
-    # path makes sqlite refuse with "file is not a database" — correctly. The
+    # path makes the driver refuse with "file is not a database" — correctly. The
     # operator's ruling the same day was that no cards store is ever a file
     # like this; a fixture that builds one is testing a store that must not
     # exist.

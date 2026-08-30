@@ -32,7 +32,7 @@ def _seed_and_stamp(db_path, store_path) -> None:
 
     Replaces the deleted ``import_from_yaml(tasks_path=store)``. That entry point
     built the DB from the YAML at ``store`` AND recorded ``store`` in the DB's
-    provenance stamp (``KEY_YAML_PATH``). SQLite is now the only store and the
+    provenance stamp (``KEY_YAML_PATH``). The database is now the only store and the
     importer is gone, so both halves are done explicitly: seed the DB from the
     same in-memory doc via ``seed_db_from_doc`` (the surviving rebuild
     primitive), then stamp ``KEY_YAML_PATH`` with ``store_path`` so the

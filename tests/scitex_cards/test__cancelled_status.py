@@ -52,7 +52,7 @@ NOW = _utc(2026, 6, 30, 12, 0, 0)
 def _write_store(tmp_path, text):
     """Seed the canonical DB from a YAML-text document; return the STORE path.
 
-    The store is SQLite now; ``load_tasks`` reads the canonical DB and ignores
+    The store is the database now; ``load_tasks`` reads it and ignores
     the path (which survives only as the store IDENTITY a write is stamped for).
     Tests still author fixtures as readable YAML text: parse it, seed the DB,
     and return the pinned STORE-identity path (NOT the DB path).

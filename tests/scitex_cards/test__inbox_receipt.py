@@ -13,7 +13,7 @@ So ``pushed_at`` and ``confirmed_at`` are now separate facts. The drain may only
 write the first; the second is the recipient's own act. A record that was pushed
 and never confirmed stays on the row forever, where the health doctor can see it.
 
-SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
+The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
 break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``, what this suite's
 conftest already pins) and the PostgreSQL backend production actually runs
 are the two real options left. This suite covers the file backend directly;
@@ -44,7 +44,7 @@ from scitex_cards._mcp_channel import drain_once
 
 AGENT = "receipt-agent"
 
-#: The one real non-server inbox backend left. SQLite was retired 2026-08-23.
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
 BACKENDS = ("yaml",)
 
 

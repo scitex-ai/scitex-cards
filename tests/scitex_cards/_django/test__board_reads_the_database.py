@@ -11,7 +11,7 @@ errored; ``services.get_board`` simply never asked the store::
 
 ``resolved`` is ``resolve_tasks_path(None)`` — the ``tasks.yaml`` SIDECAR beside
 the database, which holds ``groups:`` and nothing else. Its own docstring says
-"NOT the store identity ... Card DATA lives in the database." Under SQLite
+"NOT the store identity ... Card DATA lives in the database." Post-cutover
 nothing creates that file, so the gate was permanently shut and the board took
 the literal ``else []``. The fail-loud reader (``_read_canonical_db_or_raise``,
 which cross-checks its export against ``COUNT(*)`` and raises on any
@@ -42,7 +42,7 @@ THE CONTRACT PINNED HERE
 * ``groups:`` still comes from the sidecar, because groups genuinely live
   there. That is the one thing whose absence may honestly render as empty.
 
-RequestFactory against the real views, real SQLite stores, no mocks.
+RequestFactory against the real views, real stores, no mocks.
 """
 
 from __future__ import annotations
@@ -284,7 +284,7 @@ def corrupt_store(env, tmp_path):
     _reset_board_caches()
     broken = tmp_path / "corrupt" / "cards.db"
     broken.parent.mkdir(parents=True, exist_ok=True)
-    broken.write_bytes(b"this is not a sqlite database at all")
+    broken.write_bytes(b"this is not a database at all")
     env.set("SCITEX_CARDS_DB", str(broken))
     yield broken
     _reset_board_caches()

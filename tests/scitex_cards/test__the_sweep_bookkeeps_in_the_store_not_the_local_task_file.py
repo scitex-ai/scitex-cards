@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The sweeps' bookkeeping must land in the STORE, not in a SQLite sibling.
+"""The sweeps' bookkeeping must land in the STORE, not in a local sibling file.
 
 MEASURED 2026-08-23 on compute-04, with BOTH ledgers live at the same minute::
 
     Postgres sweep_state   612 rows   nudges    newest 15:06:31Z
                                       reminders newest 2026-08-18 (frozen 5 days)
-    SQLite   cards.db      445 rows   reminders newest 15:06:50Z
+    local    cards.db      445 rows   reminders newest 15:06:50Z
                                       nudges    newest 14:42:42Z
 
 Nineteen seconds apart. The cause was ``_sweeps`` passing ``local_store_path``
@@ -71,8 +71,8 @@ def test_on_a_database_deployment_it_differs_from_the_local_task_file():
     assert not agrees_with_local_file
 
 
-def test_a_task_file_label_maps_to_its_sqlite_sibling(tmp_path):
-    """Why passing the LOCAL PATH was wrong: the label becomes a SQLite file."""
+def test_a_task_file_label_maps_to_its_local_sibling(tmp_path):
+    """Why passing the LOCAL PATH was wrong: the label becomes a local file."""
     # Arrange
     label = tmp_path / "tasks.yaml"
     # Act

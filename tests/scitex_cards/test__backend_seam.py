@@ -37,7 +37,7 @@ from scitex_cards._currency import reset_currency_cache, warn_if_stale_once
 def store(env):
     env.set("SCITEX_CARDS_AGENT_ID", "seam-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
-    # SQLite is the store; the conftest pins + bootstraps an empty canonical
+    # The database is the store; the conftest pins + bootstraps an empty canonical
     # DB per test. Return the pinned STORE IDENTITY path (== resolve_tasks_path
     # (None)), NOT a tmp yaml: a write stamped with a tmp path would fail the
     # next read's stamp check (THE STORE-PATH RULE).

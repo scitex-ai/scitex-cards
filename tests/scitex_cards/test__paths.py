@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for store-path resolution (no mocks; real env + tmp files).
 
-The store IDENTITY is the SQLite database ``$SCITEX_CARDS_DB``
+The store IDENTITY is the database ``$SCITEX_CARDS_DB``
 (:func:`scitex_cards._db.resolve_db_path`). :func:`resolve_tasks_path` returns
 the YAML CONTAINER beside that database (``<db_dir>/tasks.yaml``) that still
 holds the non-task sections (users/groups/inboxes) — NOT the identity, and no
@@ -114,12 +114,12 @@ def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store
 
 
 def test_an_unconfigured_store_identity_refuses(clean_store_env):
-    """The store IDENTITY has NO default. It used to name a SQLite database.
+    """The store IDENTITY has NO default. It used to name a local database file.
 
     This asserted the abolished behaviour by name -- ``resolve_db_path(None)
     .name == DEFAULT_DB_FILENAME == "cards.db"``, i.e. that a store nobody
     configured still had an identity. On 2026-08-13 the operator abolished that
-    tier: SQLite is gone fleet-wide, and a filename is not a decision.
+    tier: the file-backed engine is gone fleet-wide, and a filename is not a decision.
 
     PAIRED WITH `test_the_local_state_container_still_resolves_with_no_database`
     — refusing here must not take the container down with it.

@@ -3,7 +3,7 @@
 """Tests for the POST /reopen handler — the board-v3 Undo affordance.
 
 Mirrors ``src/scitex_cards/_django/handlers/crud.py::handle_reopen``. Real
-``RequestFactory`` POST against the canonical SQLite store (no mocks, STX-NM /
+``RequestFactory`` POST against the canonical store (no mocks, STX-NM /
 PA-306), verifying:
 
   - reopen restores status to the supplied prior_status (default 'blocked')
@@ -71,7 +71,7 @@ _STORE_TEXT = (
 
 @pytest.fixture
 def store():
-    # SQLite store: seed the prior cards into the canonical DB, then hand the
+    # The store is the database: seed the prior cards into it, then hand the
     # handler the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path fails the next read's ownership check). The DB is
     # authoritative for content; the handler ignores the path except as a
@@ -96,7 +96,7 @@ def _post(endpoint, store_path, body):
 
 
 def _load(store_path):
-    # Read back through the canonical store (SQLite); the path is a label only.
+    # Read back through the canonical store; the path is a label only.
     return {t["id"]: t for t in load_tasks(store_path)}
 
 

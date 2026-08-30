@@ -552,7 +552,7 @@ class TestSubscriberFanOut:
 def _write_store(path, tasks, *, agents=None) -> None:
     """Seed the canonical DB with `tasks` AND write a physical store file.
 
-    The store is SQLite now: ``run_watcher_once`` reads task data via
+    The store is the database now: ``run_watcher_once`` reads task data via
     ``load_doc``, which reads the canonical DB and IGNORES the path. So the
     task data the watcher sees must be SEEDED into the DB, not written to a
     YAML file. But ``run_watcher_once`` still ``stat()``s the passed path for

@@ -33,7 +33,7 @@ from scitex_cards._model import (
 def _seed(tmp_path, n=2):
     """Seed the canonical DB with ``n`` deferred rows; return the STORE path.
 
-    Store is SQLite now: ``load_tasks`` / ``save_tasks`` read and write the
+    The store is the database now: ``load_tasks`` / ``save_tasks`` read and write the
     canonical database and the ``path`` argument only names which logical store
     is addressed. So seed the DB, then hand back the PINNED store-identity path
     (``SCITEX_CARDS_TASKS_YAML_SHARED``), NOT the DB path — a write stamped with
@@ -50,7 +50,7 @@ def _seed(tmp_path, n=2):
 def _seed_with_users(tmp_path):
     """A store carrying BOTH a ``users:`` registry and a ``tasks:`` list.
 
-    Seeds the canonical DB (SQLite store) and returns the pinned STORE path."""
+    Seeds the canonical DB and returns the pinned STORE path."""
     doc = {
         "users": [{"id": "u1", "kind": "agent", "name": "someone"}],
         "tasks": [{"id": "t0", "title": "T", "status": "deferred"}],
@@ -122,7 +122,7 @@ class TestOptimisticConcurrency:
         # Arrange — the store IS the canonical DB now, and store_generation
         # hashes THAT (ignoring the path arg), so the "store absent" case the
         # sentinel is for is a missing DB. Remove it; the pinned store path
-        # never was a real file under SQLite.
+        # never was a real file once the store became a database.
         os.remove(os.environ["SCITEX_CARDS_DB"])
         # Act
         generation = store_generation(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
@@ -162,7 +162,7 @@ class TestEditTasks:
                 raise RuntimeError("boom")
         # Assert — the half-done mutation never reached the store. Read the
         # persisted DATA back rather than compare store_generation() before and
-        # after: the store is SQLite in WAL mode, where even a read rewrites the
+        # after: the store used write-ahead logging, where even a read rewrites the
         # main DB file, so the content token is not read-stable and cannot
         # witness "unchanged" — the rows can, and are the actual subject.
         assert load_tasks(store)[0].get("priority") is None
@@ -174,7 +174,7 @@ class TestEditTasks:
         with edit_tasks(store) as tasks:
             tasks[0]["priority"] = 1
         # Assert — the users: registry survives a tasks-only edit. Store is
-        # SQLite: read the users section back from the canonical DB instead of a
+        # Read the users section back from the canonical DB instead of a
         # YAML file's text — the rule is unchanged, only its serialization is gone.
         assert any(u.get("id") == "u1" for u in load_doc(store).get("users", []))
 

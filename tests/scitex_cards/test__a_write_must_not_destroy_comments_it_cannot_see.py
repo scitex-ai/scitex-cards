@@ -21,7 +21,7 @@ confirmed the other half from the writer's side: their `card_json` showed all 8
 comments while the receiver's showed 0, so the only agent positioned to notice
 is structurally the one who cannot.
 
-Real SQLite throughout, like its sibling `test__compare_and_set_preserves_
+A real database throughout, like its sibling `test__compare_and_set_preserves_
 children.py`: the drop, the sequence keying and the re-insert are the things
 under test, and mocking the store would mock away all three.
 """

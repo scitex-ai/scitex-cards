@@ -24,7 +24,7 @@ No mocks (STX-NM / PA-306): a real store, real inbox records, real receipts, and
 a genuinely broken inbox — a corrupt sidecar — so the read really fails and the
 result does not depend on the test user's privileges.
 
-SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
+The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
 break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``) is the only
 non-server option left, and it is what production runs when the store is not
 PostgreSQL. This suite's conftest already pins it for every test.
@@ -46,7 +46,7 @@ from scitex_cards._inbox_receipt import record_confirmation, record_push
 
 AGENT = "delivery-agent"
 
-#: The one real non-server inbox backend left. SQLite was retired 2026-08-23.
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
 BACKENDS = ("yaml",)
 
 #: The push instant every fixture stamps, and a "now" five hours later.

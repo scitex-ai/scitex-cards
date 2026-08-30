@@ -3,17 +3,19 @@
 """A groups sidecar that is not a YAML document must not 500 the whole board.
 
 WHY THIS FILE EXISTS. Measured 2026-08-23, on two hosts independently: the
-sidecar path ``~/.scitex/cards/tasks.yaml`` held a SQLite DATABASE rather than
-YAML -- a phantom written by a caller that handed the store's DISPLAY LABEL to
-a database opener. ``yaml.safe_load`` then raised ``UnicodeDecodeError`` on the
-first high byte of the SQLite header and the entire board answered 500::
+sidecar path ``~/.scitex/cards/tasks.yaml`` held a BINARY DATABASE FILE rather
+than YAML -- a phantom written by a caller that handed the store's DISPLAY
+LABEL to a database opener. ``yaml.safe_load`` then raised
+``UnicodeDecodeError`` on the first high byte of that file's header and the
+entire board answered 500::
 
     compute-04      GET /tasks -> 500 "... can't decode byte 0x89 in position 99"
     ywata-note-win  GET /tasks -> 500 "... can't decode byte 0xf8 in position 102"
 
-(The byte and offset differ because the two hosts run different SQLite builds:
-the version number sits at header bytes 96..99, so a different build puts a
-different first-high-byte at a different offset.)
+(The byte and offset differed between the two hosts because they wrote the file
+with different builds of the same engine. The offset is an accident of one
+build; the PROPERTY -- "these bytes are not a UTF-8 document" -- is what this
+file pins, which is why the fixture below is calibrated rather than asserted.)
 
 The cards themselves were never at risk -- they live in the database and were
 read successfully. What took the board down was an OPTIONAL VIEWER CONCERN
@@ -29,7 +31,6 @@ author can act on -- a different failure wearing the same clothes.
 """
 
 import logging
-import sqlite3
 
 import pytest
 
@@ -45,29 +46,23 @@ VALID_SIDECAR = (
 )
 
 
+#: A binary file header followed by text -- the SHAPE of the phantom that took
+#: the board down: printable ASCII, then a high byte that is not valid UTF-8.
+#: The engine that wrote the original phantom is abolished, so the bytes are
+#: written directly now. That is not a downgrade from "real bytes": the
+#: incident's own two hosts disagreed about the exact offset, so the offset was
+#: never the property. What matters is that the file DECODES AS NOTHING, and
+#: :func:`test_the_fixture_really_is_undecodable_as_utf8` measures precisely
+#: that rather than trusting this constant.
+PHANTOM_BYTES = b"format 3\x00" + bytes(range(0x80, 0x90)) + b"\x00inbox\x00n_1\x00"
+
+
 @pytest.fixture
 def phantom(tmp_path):
-    """A REAL SQLite database at the sidecar path -- the measured condition.
-
-    Built with ``sqlite3`` rather than asserted with a hand-written header, so
-    the bytes are whatever this interpreter's SQLite actually writes. That is
-    the point: the incident's byte offset varied by SQLite build, and a
-    hardcoded header would pin one build's accident instead of the property.
-    """
+    """A real, non-UTF-8 binary file at the sidecar path -- the measured condition."""
     path = tmp_path / "tasks.yaml"
-    conn = sqlite3.connect(path)
-    try:
-        conn.execute("create table inbox (id text primary key, body text)")
-        conn.execute("insert into inbox values ('n_1', 'an undelivered row')")
-        conn.commit()
-    finally:
-        # Closed in a `finally` and handed over by `yield`, not `return`
-        # (STX-TQ005). The connection is an external resource, and a fixture
-        # that acquires one owes the suite a teardown even when the value it
-        # hands out is only the path — an exception between connect() and
-        # close() would otherwise leak the handle into every later test.
-        conn.close()
-    yield path
+    path.write_bytes(PHANTOM_BYTES)
+    return path
 
 
 def test_the_fixture_really_is_undecodable_as_utf8(phantom):
@@ -83,7 +78,7 @@ def test_the_fixture_really_is_undecodable_as_utf8(phantom):
     assert raised is not None
 
 
-def test_a_sqlite_sidecar_yields_no_groups_instead_of_raising(phantom):
+def test_a_binary_sidecar_yields_no_groups_instead_of_raising(phantom):
     # Arrange
     expected = []
     # Act

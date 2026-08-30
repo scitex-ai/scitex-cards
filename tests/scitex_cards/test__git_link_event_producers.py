@@ -58,7 +58,7 @@ def _card_events(sink: _Capturing) -> list[dict]:
 
 
 def _store_with(tmp_path: Path) -> str:
-    # SQLite store: `add_task` writes the canonical DB (the pinned test store);
+    # Database store: `add_task` writes the canonical DB (the pinned test store);
     # the path arg is a label only, so drop it and let the pinned store resolve.
     # Return the pinned STORE-identity path (NOT the DB path — see the store-path
     # rule) so callers keep addressing the same store.
@@ -231,7 +231,7 @@ def test_unknown_card_id_emits_no_event(tmp_path: Path, env):
 
 
 def _reconcile_store(tmp_path: Path) -> str:
-    # SQLite store: seed the canonical DB from the in-memory doc the YAML held,
+    # Database store: seed the canonical DB from the in-memory doc the YAML held,
     # then hand back the pinned STORE-identity path so `reconcile_merged_prs`
     # resolves the same store it reads/writes (see the store-path rule).
     doc = {

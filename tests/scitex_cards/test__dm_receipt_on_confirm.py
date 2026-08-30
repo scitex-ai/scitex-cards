@@ -39,7 +39,7 @@ from scitex_cards._inbox_confirm import confirm_notifications
 def store(tmp_path, env):
     """An isolated store + inbox, so the live fleet store is never touched.
 
-    SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23), so
+    The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23), so
     the file break-glass backend is now the only non-server option — and it
     is what ``tests/scitex_cards/conftest.py`` already pins
     (``SCITEX_CARDS_INBOX_BACKEND=yaml``) for every test in this suite. No

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`health` asserts SQLite is the ONLY write target (2026-07-21 deletion).
+"""`health` asserts the canonical DB is the ONLY write target (2026-07-21 deletion).
 
 The dual-write mirror was DELETED as a feature, not defaulted off (operator
 ruling: 「データベースしか書く場所なんてありえない。デュアルライトっていうオ

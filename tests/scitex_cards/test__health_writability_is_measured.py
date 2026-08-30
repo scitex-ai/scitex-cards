@@ -34,7 +34,7 @@ _ROOT_BYPASSES_PERMISSIONS = pytest.mark.skipif(
 
 
 def _make_store(path):
-    """A real, schema-complete SQLite store with one countable row."""
+    """A real, schema-complete store with one countable row."""
     conn = sqlite3.connect(path)
     try:
         conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY)")
@@ -63,7 +63,8 @@ def read_only_store(tmp_path):
 def store_in_read_only_dir(tmp_path):
     """A WRITABLE file inside a read-only directory.
 
-    SQLite creates `-wal` / `-journal` SIBLINGS, so the directory matters: a
+    A file-backed engine creates `-wal` / `-journal` SIBLINGS, so the directory
+    matters: a
     file-permission check alone would report a healthy store that cannot
     actually take a card.
     """

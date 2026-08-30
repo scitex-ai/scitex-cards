@@ -17,7 +17,7 @@ The comments live in a CHILD table cleared BEFORE it. Testing the row you are
 thinking about instead of the blast radius of the operation is exactly how this
 class of bug ships.
 
-Real SQLite throughout: the drop, the sequence keying, and the v7 trigger that
+A real database throughout: the drop, the sequence keying, and the v7 trigger that
 moves `revision` are the things under test, and mocking the store would mock
 away all three.
 """

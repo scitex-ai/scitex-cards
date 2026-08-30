@@ -37,7 +37,7 @@ from scitex_cards._backend_http import HubBackend, HubBackendError
 @pytest.fixture()
 def hub(tmp_path, env):
     """A live hub + a fully-provisioned client environment."""
-    # SQLite is the store: the conftest already pins every store env var at a
+    # The database is the store: the conftest already pins every store env var at a
     # per-test scratch dir and bootstraps an EMPTY, schema-complete DB there.
     # The hub server must address that SAME pinned store identity so its writes
     # stamp the canonical DB with `resolve_tasks_path(None)` and the direct

@@ -30,7 +30,6 @@ own schema, so nothing here can touch the live tables.
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import pytest
 
@@ -82,7 +81,7 @@ class _Shim:
     fails against an untouched database. That happened on the first run here,
     and it was an accidental positive control worth keeping deliberately: it
     proved the ``_is_postgres`` guard actually gates rather than being
-    decorative, which is exactly what the SQLite no-op test claims.
+    decorative rather than being taken on trust.
     """
 
     #: What ``StoreConnection`` reports for a PostgreSQL store.
@@ -488,19 +487,14 @@ class TestTheRungRepairs:
         )
 
 
-class TestSqliteIsANoOp:
-    def test_the_rung_returns_quietly_on_sqlite(self):
-        # Arrange: SQLite cannot ALTER TABLE ADD CONSTRAINT at all; its FKs
-        # arrive with the CREATE TABLE, which the declaration change already
-        # made deferrable. Returning is correct; raising would break every
-        # SQLite open_db in the fleet.
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY)")
-
-        # Act
-        result = _migrate_v10_to_v11(conn)
-
-        # Assert
-        assert result is None
+# WHAT WAS DELETED HERE. A no-op class asserted that
+# ``_migrate_v10_to_v11`` returned quietly against the retired engine, whose
+# foreign keys arrived with the CREATE TABLE and could not be ALTERed in. With
+# one engine there is no non-PostgreSQL connection for the rung to be a no-op
+# ON, so the test had no subject left -- it was not coverage of the rung, it
+# was coverage of a branch that can no longer be entered. The property that
+# still matters, that the rung GATES on the engine rather than running blind,
+# is asserted by ``_PgShim`` above: its ``backend`` attribute is load-bearing,
+# and the first run of this file proved it by omitting it.
 
 # EOF
