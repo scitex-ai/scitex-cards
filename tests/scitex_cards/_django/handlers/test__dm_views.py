@@ -10,14 +10,22 @@ Minimal-slice contract (card fleet-agent-direct-message-board-pane-20260707):
                             agent's pull-inbox; 400 on empty body.
   - 405 on other verbs.
 
-Django RequestFactory against a real tmp store via ``?store=``; no mocks
+Django RequestFactory against a REAL store via ``?store=``; no mocks
 (STX-NM / PA-306). AAA pattern, one assertion per test (STX-TQ007).
+
+THE STORE IS THIS TEST'S OWN THROWAWAY POSTGRESQL SCHEMA, not a scratch
+``tasks.yaml``. There is one storage engine now and a filename names no
+store, so the old fixture handed every call a target the doors refuse.
+The DM layer already understood a DSN here -- ``resolve_dm_db`` returns a
+PostgreSQL ``store`` verbatim rather than deriving a file beside it -- so
+what changed is the fixture, not the code under test.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
+from urllib.parse import urlencode
 
 import pytest
 from django.test import RequestFactory
@@ -32,12 +40,35 @@ from scitex_cards._threads import append_message, get_thread
 
 
 @pytest.fixture()
-def store(tmp_path: Path, env) -> Path:
-    """A real tmp tasks.yaml (threads sidecar lands next to it)."""
+def store(env) -> str:
+    """This test's own throwaway PostgreSQL schema.
+
+    FAILS rather than skips if the harness did not pin one -- see the root
+    ``conftest.py``. A skipped storage test and a passing one look identical in
+    a summary line, which is how four modules in this suite went unexercised
+    for months.
+    """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    if "search_path" not in dsn:
+        pytest.fail(
+            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            f"PostgreSQL schema; it holds {dsn!r}.",
+            pytrace=False,
+        )
+    return dsn
+
+
+def _q(store, **extra) -> str:
+    """The query string for ``store``, ENCODED.
+
+    A DSN is not URL-safe: it carries ``?options=-csearch_path%3D<schema>``.
+    Interpolated raw, its ``?`` starts a second query and the view receives a
+    store truncated at the schema -- a wrong store that parses, which is the
+    failure mode this package keeps meeting. Encoding keeps the value the view
+    reads identical to the one the fixture handed out.
+    """
+    return urlencode({"store": str(store), **extra})
 
 
 def _get(url):
@@ -51,7 +82,7 @@ def _agents_of(response) -> list:
 def _threads_with_one_inbound(store):
     """One inbound (agent→operator) message, no registry entries."""
     append_message("agent-x", "operator", "ping", store=store)
-    return dm_threads_view(_get(f"/dm/threads?store={store}"))
+    return dm_threads_view(_get(f"/dm/threads?{_q(store)}"))
 
 
 def _threads_with_a_silent_registry_agent(store):
@@ -59,7 +90,7 @@ def _threads_with_a_silent_registry_agent(store):
     from scitex_cards._users import register_user
 
     register_user(kind="agent", names=["agent-quiet"], store=store)
-    return dm_threads_view(_get(f"/dm/threads?store={store}"))
+    return dm_threads_view(_get(f"/dm/threads?{_q(store)}"))
 
 
 def _post_operator_message(store, body: str):
@@ -148,7 +179,7 @@ def test_silent_registry_agent_has_no_last_timestamp(store):
 
 def test_threads_view_rejects_post(store):
     # Arrange
-    request = RequestFactory().post(f"/dm/threads?store={store}")
+    request = RequestFactory().post(f"/dm/threads?{_q(store)}")
     # Act
     response = dm_threads_view(request)
     # Assert
@@ -163,7 +194,7 @@ def test_thread_view_returns_ok_for_a_known_peer(store):
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
     # Act
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Assert
     assert response.status_code == 200
 
@@ -172,7 +203,7 @@ def test_thread_view_names_the_canonical_thread_id(store):
     # Arrange
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Act
     data = json.loads(response.content)
     # Assert
@@ -183,7 +214,7 @@ def test_thread_view_returns_messages_chronologically(store):
     # Arrange
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Act
     data = json.loads(response.content)
     # Assert
@@ -193,7 +224,7 @@ def test_thread_view_returns_messages_chronologically(store):
 def test_thread_view_mark_read_acks_operator_messages(store):
     # Arrange
     append_message("agent-x", "operator", "unread ping", store=store)
-    dm_thread_view(_get(f"/dm/thread/agent-x?store={store}&mark_read=1"), "agent-x")
+    dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}"), "agent-x")
     # Act
     # read back from the sidecar, not just the response.
     msgs = get_thread("operator", "agent-x", store=store)
@@ -277,7 +308,7 @@ def test_post_rejects_empty_body(store):
 
 def test_thread_view_rejects_delete(store):
     # Arrange
-    request = RequestFactory().delete(f"/dm/thread/agent-x?store={store}")
+    request = RequestFactory().delete(f"/dm/thread/agent-x?{_q(store)}")
     # Act
     response = dm_thread_view(request, "agent-x")
     # Assert
@@ -307,10 +338,16 @@ def test_a_query_store_does_not_become_the_write_target(store, tmp_path, env):
     attacker = tmp_path / "attacker" / "tasks.yaml"
     attacker.parent.mkdir(parents=True, exist_ok=True)
     attacker.write_text("tasks: []\n", encoding="utf-8")
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))
+    # THE AMBIENT PIN IS STILL THE POINT, and it is now the harness's. This
+    # read `env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))` -- a
+    # FILENAME, which the doors refuse, so the handler's fallback would raise
+    # instead of writing anywhere and the test would pass without ever
+    # exercising the property. The autouse fixture already pins the ambient
+    # store to this test's throwaway schema, which is what the pin was for:
+    # somewhere real that is provably not the live board.
     env.set("SCITEX_CARDS_STORE", str(store))
     request = RequestFactory().post(
-        f"/dm/thread/agent-x?store={attacker}",
+        f"/dm/thread/agent-x?{_q(attacker)}",
         data=json.dumps({"body": "written wherever I say"}),
         content_type="application/json",
     )
