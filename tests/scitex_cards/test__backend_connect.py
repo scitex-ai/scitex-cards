@@ -42,6 +42,7 @@ test, and it goes red whenever someone writes a card.
 import contextlib
 import json
 import os
+from typing import Iterator
 
 import pytest
 
@@ -80,7 +81,7 @@ def store_dsn() -> str:
 
 
 @pytest.fixture
-def seeded_tasks(store_dsn) -> str:
+def seeded_tasks(store_dsn) -> "Iterator[str]":
     """Three rows in ``tasks``, written through the connection under test."""
     with connect(store_dsn, read_only=False) as conn:
         conn.executemany(
@@ -92,7 +93,13 @@ def seeded_tasks(store_dsn) -> str:
             ],
         )
         conn.raw.commit()
-    return store_dsn
+    # ``yield``, NOT ``return`` (STX-TQ005): a fixture that opens a
+    # connection hands control back so its teardown is reachable. Nothing
+    # needs closing here -- the ``with``/``finally`` above already closed
+    # it and the schema is dropped whole by the autouse fixture -- but the
+    # rule is about the SHAPE being right before someone adds teardown to
+    # it, and a `return` makes that impossible to add later.
+    yield store_dsn
 
 
 class TestBackendSelection:
@@ -207,7 +214,7 @@ class TestTheAppendOnlyGuarantee:
     """
 
     @pytest.fixture
-    def seeded_dm_message(self, store_dsn) -> tuple[str, str]:
+    def seeded_dm_message(self, store_dsn) -> "Iterator[tuple[str, str]]":
         # A thread first: dm_messages.thread_id is a real foreign key.
         with connect(store_dsn, read_only=False) as conn:
             conn.execute(
@@ -232,7 +239,8 @@ class TestTheAppendOnlyGuarantee:
                 ),
             )
             conn.raw.commit()
-        return store_dsn, "m1"
+        # yield, not return -- see ``seeded_tasks`` (STX-TQ005).
+        yield store_dsn, "m1"
 
     def test_deleting_a_matching_row_is_refused(self, seeded_dm_message):
         # Arrange

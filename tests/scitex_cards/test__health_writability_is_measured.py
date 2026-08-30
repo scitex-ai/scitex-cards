@@ -50,6 +50,7 @@ covered here.
 from __future__ import annotations
 
 import os
+from typing import Iterator
 
 import pytest
 
@@ -81,7 +82,7 @@ def writable_store() -> str:
 
 
 @pytest.fixture
-def store_the_role_cannot_write(writable_store) -> str:
+def store_the_role_cannot_write(writable_store) -> "Iterator[str]":
     """A store that reads and parses fine but cannot be written.
 
     ``REVOKE INSERT`` from the CURRENT role, which is also the schema's owner.
@@ -95,11 +96,11 @@ def store_the_role_cannot_write(writable_store) -> str:
         conn.commit()
     finally:
         conn.close()
-    return writable_store
+    yield writable_store
 
 
 @pytest.fixture
-def store_without_the_schema(writable_store) -> str:
+def store_without_the_schema(writable_store) -> "Iterator[str]":
     """A reachable server holding NO store — the "exists" question, restated.
 
     A server answering on the right address while carrying no cards table is
@@ -113,7 +114,7 @@ def store_without_the_schema(writable_store) -> str:
         conn.commit()
     finally:
         conn.close()
-    return writable_store
+    yield writable_store
 
 
 def test_a_writable_store_passes_the_check(writable_store):
