@@ -1,38 +1,58 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the SQLite adapter + in-memory doc bootstrap (RFC #348).
+"""Tests for the store adapter + in-memory doc bootstrap (RFC #348).
 
-Real ``sqlite3`` + real in-memory doc fixtures — NO mocks. SQLite is the only
-store now; there is no YAML file to read and the ``import_from_yaml`` entry
-point is gone. Tests build the same in-memory document the YAML used to hold
-and seed it into a scratch DB via ``seed_db_from_doc`` (the surviving
-``_rebuild_from_doc`` primitive), then assert the schema/columns/counts the RFC
-pins.
+Real stores + real in-memory doc fixtures — NO mocks. The database IS the store;
+there is no YAML file to read and the ``import_from_yaml`` entry point is gone.
+Tests build the same in-memory document the YAML used to hold and seed it into a
+throwaway store via ``seed_db_from_doc`` (the surviving ``_rebuild_from_doc``
+primitive), then assert the schema/columns/counts the RFC pins.
+
+EVERY FIXTURE HOLDS A TARGET, NOT A PATH, and the rename is the point rather
+than tidiness. A store is a PostgreSQL database now; the door refuses a filename
+before it touches the filesystem, and a key called ``db_path`` is what invites
+the next reader to call ``.parent`` or ``.exists()`` on it -- the assumption
+this repository has already paid for twice (``_store_backend`` renamed its own
+local for the same reason). ``bootstrap=False`` throughout: the harness's
+per-test store is already schema-complete, so a fixture standing in for an OLD
+store must start from an empty schema or the migration assertions are true
+before the act.
 """
 
 from __future__ import annotations
 
 import os
-import sqlite3
-from pathlib import Path
 
 import pytest
 from conftest import seed_db_from_doc
 
 from scitex_cards import _db, _db_bootstrap, _model
+from scitex_cards._ddl import execute_ddl
+from scitex_cards._schema_probe import column_names, table_names
+from scitex_cards._schema_shape import observed_version
 from scitex_cards._store_target import StoreTargetNotConfigured
+
+
+def _stamped(conn) -> int | None:
+    """The version the store SAYS it is. There is one stamp on this engine.
+
+    ``PRAGMA user_version`` was the second one; ``_read_stamps`` returns
+    ``stamped_pragma=None`` here by design, so ``schema_meta.schema_version`` is
+    the whole answer.
+    """
+    return observed_version(conn).stamped_meta
 
 
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                     #
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def store(tmp_path):
+def store(new_store):
     """An in-memory tasks doc + threads map exercising every child collection.
 
-    The store is SQLite-only now; there is no YAML file to read. Tests build the
-    same in-memory document the YAML used to hold and seed it into the scratch
-    ``db_path`` via ``seed_db_from_doc``.
+    The database IS the store; there is no YAML file to read. Tests build the
+    same in-memory document the YAML used to hold and seed it into the throwaway
+    ``target`` via ``seed_db_from_doc``.
     """
     tasks_doc = {
         "tasks": [
@@ -126,7 +146,7 @@ def store(tmp_path):
     return {
         "tasks_doc": tasks_doc,
         "threads": threads_doc["threads"],
-        "db_path": tmp_path / "cards.db",
+        "target": new_store("cards_db_tests", bootstrap=False),
     }
 
 
@@ -134,10 +154,9 @@ def store(tmp_path):
 def imported(store):
     """The `store` doc seeded into SQLite: summary + a live row-factory conn."""
     summary = seed_db_from_doc(
-        store["tasks_doc"], store["db_path"], threads=store["threads"]
+        store["tasks_doc"], store["target"], threads=store["threads"]
     )
-    conn = sqlite3.connect(str(store["db_path"]))
-    conn.row_factory = sqlite3.Row
+    conn = _db.connect(store["target"])
     try:
         yield {"summary": summary, "conn": conn, "store": store}
     finally:
@@ -248,77 +267,53 @@ def test_the_refusal_names_the_delegated_path(tmp_path, env):
 
 
 # --------------------------------------------------------------------------- #
-# Schema + PRAGMAs                                                            #
+# Schema                                                                      #
 # --------------------------------------------------------------------------- #
-def _pragma(tmp_path, name: str):
-    """Open a fresh connection and read back one PRAGMA."""
-    conn = _db.connect(tmp_path / "p.db")
-    try:
-        return conn.execute(f"PRAGMA {name}").fetchone()[0]
-    finally:
-        conn.close()
+# FOUR TESTS WERE DELETED HERE and they are worth naming: `connect` set
+# `journal_mode=wal`, `foreign_keys=ON`, `busy_timeout=300000` and
+# `synchronous=NORMAL`, and each had a test. All four are settings of a
+# single-writer local FILE -- a write-ahead log beside the database, a
+# per-connection lock wait, an fsync policy, and an opt-in for referential
+# integrity that the previous engine shipped OFF by default. The engine that
+# ships has no PRAGMA at all, journals and fsyncs by server configuration, and
+# enforces foreign keys unconditionally. There is nothing to restate: these
+# asserted that four knobs were turned, and the knobs are gone with the engine
+# that had them. Deferrability -- the FK property this package DOES still choose
+# -- has its own file, `test__foreign_keys_are_deferrable.py`.
 
 
-def test_connect_sets_journal_mode_to_wal(tmp_path):
+@pytest.fixture
+def opened(new_store):
+    """A store provisioned through the ordinary door."""
+    conn = _db.open_db(new_store("cards_db_schema", bootstrap=False))
+    yield conn
+    conn.close()
+
+
+def _index_names(conn) -> set[str]:
+    """Every index in THIS store's schema.
+
+    Scoped to `current_schema()` for the same reason `_schema_probe` is: the
+    store is a schema on a shared server, so an unscoped catalogue read answers
+    about the whole database and would report a neighbour's index as this
+    store's.
+    """
+    rows = conn.execute(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()"
+    ).fetchall()
+    return {row["indexname"] for row in rows}
+
+
+def test_open_db_creates_all_tables(opened):
     # Arrange
     # Act
-    mode = _pragma(tmp_path, "journal_mode")
-
-    # Assert
-    assert str(mode).lower() == "wal"
-
-
-def test_connect_enables_foreign_keys(tmp_path):
-    # Arrange
-    # Act
-    enabled = _pragma(tmp_path, "foreign_keys")
-
-    # Assert
-    assert enabled == 1
-
-
-def test_connect_sets_a_generous_busy_timeout(tmp_path):
-    # Arrange
-    # Act
-    timeout = _pragma(tmp_path, "busy_timeout")
-
-    # Assert
-    assert timeout == 300000
-
-
-def test_connect_sets_synchronous_to_normal(tmp_path):
-    # Arrange
-    # Act
-    synchronous = _pragma(tmp_path, "synchronous")
-
-    # Assert
-    assert synchronous == 1  # NORMAL
-
-
-def _schema_objects(tmp_path, object_type: str) -> set[str]:
-    """Open a fresh DB and return the names of every table/index it created."""
-    conn = _db.open_db(tmp_path / "s.db")
-    try:
-        return {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type=?", (object_type,)
-            )
-        }
-    finally:
-        conn.close()
-
-
-def test_open_db_creates_all_tables(tmp_path):
-    # Arrange
-    # Act
-    present = _schema_objects(tmp_path, "table")
+    present = table_names(opened)
 
     # Assert
     assert set(_db.SCHEMA_TABLES) <= present
 
 
-def test_open_db_creates_expected_indexes(tmp_path):
+def test_open_db_creates_expected_indexes(opened):
     # Arrange
     expected = {
         "idx_tasks_status",
@@ -340,14 +335,14 @@ def test_open_db_creates_expected_indexes(tmp_path):
     }
 
     # Act
-    idx = _schema_objects(tmp_path, "index")
+    idx = _index_names(opened)
 
     # Assert
     assert expected <= idx
 
 
-def test_user_version_matches_the_schema_constant(tmp_path):
-    """The PRAGMA stamp and the constant must agree — whatever the version IS.
+def test_the_stamp_matches_the_schema_constant(opened):
+    """The stamp and the constant must agree — whatever the version IS.
 
     Was ``test_user_version_is_1``, hard-coding the literal 1 in two places. That is
     a test of a NUMBER, not of a property: the schema went to v2 (``card_json``, the
@@ -355,18 +350,15 @@ def test_user_version_matches_the_schema_constant(tmp_path):
     the number changed, which we knew, and nothing about whether the DB is coherent.
 
     The property worth pinning is that the stamp and the constant do not DRIFT APART,
-    because a DB whose ``user_version`` disagrees with the code's ``SCHEMA_VERSION``
+    because a store whose stamp disagrees with the code's ``SCHEMA_VERSION``
     is exactly the "metadata that outlived its artifact" this migration keeps
     tripping over.
     """
     # Arrange
-    conn = _db.open_db(tmp_path / "s.db")
+    conn = opened
 
     # Act
-    try:
-        stamped = conn.execute("PRAGMA user_version").fetchone()[0]
-    finally:
-        conn.close()
+    stamped = _stamped(conn)
 
     # Assert
     assert stamped == _db.SCHEMA_VERSION
@@ -435,25 +427,34 @@ def _v1_schema_sql() -> str:
     )
 
 
-def _build_v1_db(tmp_path: Path) -> Path:
-    """A deterministic v1 DB carrying one pre-v2 row."""
-    db = tmp_path / "v1.db"
-    conn = sqlite3.connect(str(db))
+def _build_v1_db(new_store, prefix: str = "cards_v1") -> str:
+    """A deterministic v1 store carrying one pre-v2 row. Returns the TARGET.
+
+    NO VERSION STAMP IS WRITTEN, and the omission is the honest half. The stamp
+    that used to be set here was the second one, which this engine does not
+    carry; and it was never what placed the store anyway -- ``observed_version``
+    walks the PHYSICAL ladder, whose floor is v5's DM tables. This fixture
+    installs the fresh script alone, so it has none of them and reads as
+    genuinely below the floor rather than as a current store wearing an old
+    label. That distinction is the one `test__migration_provenance` records
+    having got wrong once already.
+    """
+    target = new_store(prefix, bootstrap=False)
+    conn = _db.connect(target)
     try:
-        conn.executescript(_v1_schema_sql())
-        conn.execute("PRAGMA user_version=1")
+        execute_ddl(conn, _v1_schema_sql())
         conn.execute(
             "INSERT INTO tasks(id, title, status) VALUES ('old-1', 'v1', 'goal')"
         )
         conn.commit()
     finally:
         conn.close()
-    return db
+    return target
 
 
-def _v1_task_columns(tmp_path: Path):
+def _v1_task_columns(new_store):
     """The `tasks` columns of the freshly built v1 fixture, BEFORE any migration."""
-    conn = sqlite3.connect(str(_build_v1_db(tmp_path)))
+    conn = _db.connect(_build_v1_db(new_store, "cards_v1_cols"))
     try:
         return _db.table_columns(conn, "tasks")
     finally:
@@ -478,50 +479,61 @@ def test_the_v1_fixture_sql_keeps_every_v1_index():
     assert "idx_tasks_agent" in v1_sql
 
 
-def test_the_v1_fixture_db_starts_without_the_payload_column(tmp_path):
+def test_the_v1_fixture_db_starts_without_the_payload_column(new_store):
     # Arrange
     # Act
-    columns = _v1_task_columns(tmp_path)
+    columns = _v1_task_columns(new_store)
 
     # Assert
     assert "card_json" not in columns
 
 
-def test_the_v1_fixture_db_still_has_every_v1_column(tmp_path):
+def test_the_v1_fixture_db_still_has_every_v1_column(new_store):
     # Arrange
     # Act
-    columns = _v1_task_columns(tmp_path)
+    columns = _v1_task_columns(new_store)
 
     # Assert
     assert "agent" in columns, "a real v1 DB HAS agent"
 
 
-def _open_migrated_v1_db(tmp_path: Path):
-    """Build a v1 DB and open it through `open_db` — the migration runs there."""
-    return _db.open_db(_build_v1_db(tmp_path))
+def _open_migrated_v1_db(new_store, prefix: str):
+    """Build a v1 store and open it through `open_db` — the migration runs there."""
+    return _db.open_db(_build_v1_db(new_store, prefix))
 
 
-def test_a_v1_db_gains_the_payload_column_on_open(tmp_path):
+def test_a_v1_db_gains_the_payload_column_on_open(new_store):
+    """A TRANSITION: the column is absent before the open and present after.
+
+    The end state alone is satisfied by any current store, which is every store
+    this harness hands out except the one built above.
+    """
     # Arrange
-    conn = _open_migrated_v1_db(tmp_path)
+    target = _build_v1_db(new_store, "cards_v1_gain")
+    probe = _db.connect(target)
+    before = "card_json" in _db.table_columns(probe, "tasks")
+    probe.close()
 
     # Act
+    conn = _db.open_db(target)
+
+    # Assert
     try:
-        columns = _db.table_columns(conn, "tasks")
+        assert (before, "card_json" in _db.table_columns(conn, "tasks")) == (
+            False,
+            True,
+        )
     finally:
         conn.close()
 
-    # Assert
-    assert "card_json" in columns
 
-
-def test_a_v1_db_is_restamped_to_the_current_schema_version(tmp_path):
+def test_a_v1_db_is_restamped_to_the_current_schema_version(new_store):
     # Arrange
-    conn = _open_migrated_v1_db(tmp_path)
+    conn = _open_migrated_v1_db(new_store, "cards_v1_stamp")
 
     # Act
     try:
-        stamped = conn.execute("PRAGMA user_version").fetchone()[0]
+        stamped = _stamped(conn)
     finally:
         conn.close()
 
@@ -529,10 +541,10 @@ def test_a_v1_db_is_restamped_to_the_current_schema_version(tmp_path):
     assert stamped == _db.SCHEMA_VERSION
 
 
-def test_the_migration_does_not_back_fill_pre_existing_rows(tmp_path):
+def test_the_migration_does_not_back_fill_pre_existing_rows(new_store):
     """The NULLs are LOAD-BEARING — they make the S2 read guard refuse the DB."""
     # Arrange
-    conn = _open_migrated_v1_db(tmp_path)
+    conn = _open_migrated_v1_db(new_store, "cards_v1_backfill")
 
     # Act
     try:
@@ -541,7 +553,9 @@ def test_the_migration_does_not_back_fill_pre_existing_rows(tmp_path):
         conn.close()
 
     # Assert
-    assert row[0] is None, "the pre-existing row must NOT be silently back-filled"
+    assert row["card_json"] is None, (
+        "the pre-existing row must NOT be silently back-filled"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -880,18 +894,21 @@ def _import_twice(store):
     proved.
     """
     first = seed_db_from_doc(
-        store["tasks_doc"], store["db_path"], threads=store["threads"]
+        store["tasks_doc"], store["target"], threads=store["threads"]
     )
     second = seed_db_from_doc(
-        store["tasks_doc"], store["db_path"], threads=store["threads"]
+        store["tasks_doc"], store["target"], threads=store["threads"]
     )
     return first, second
 
 
 def _count(store, table: str) -> int:
-    conn = sqlite3.connect(str(store["db_path"]))
+    conn = _db.connect(store["target"])
     try:
-        return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        # AN EXPLICIT ALIAS, because a COUNT has no column name of its own and
+        # this driver's rows are addressed BY NAME. `fetchone()[0]` raised
+        # `KeyError: 0` here.
+        return int(conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"])
     finally:
         conn.close()
 
@@ -967,8 +984,8 @@ def test_a_second_import_does_not_multiply_notification_rows(store):
 @pytest.fixture
 def verified(store):
     """The report `verify` gives for a freshly seeded store."""
-    seed_db_from_doc(store["tasks_doc"], store["db_path"], threads=store["threads"])
-    return _db.verify(store["db_path"])
+    seed_db_from_doc(store["tasks_doc"], store["target"], threads=store["threads"])
+    return _db.verify(store["target"])
 
 
 def test_verify_reports_ok_after_import(verified):
@@ -980,15 +997,22 @@ def test_verify_reports_ok_after_import(verified):
     assert report["ok"] is True
 
 
-def test_verify_reports_the_stamped_user_version(verified):
+def test_verify_reports_the_observed_version(verified):
+    """The ARTIFACT half of the report, and it replaces the second STAMP.
+
+    This asserted ``report["user_version"]`` -- the other stamp, which this
+    engine does not carry (``_read_stamps`` returns None for it by design). Two
+    stamps agreeing with each other was never the interesting question anyway;
+    the module's own docstring says what is: does the stamp agree with the
+    SHAPE. ``observed_version`` walks the physical ladder, so that is what the
+    field holds now.
+    """
     # Arrange
     # Act
     report = verified
 
-    # Assert — against the CONSTANT, not a literal: the schema is at v2 now
-    # (card_json) and will move again. What matters is that the two stamps
-    # agree with the code.
-    assert report["user_version"] == _db.SCHEMA_VERSION
+    # Assert — against the CONSTANT, not a literal: the schema keeps moving.
+    assert report["observed_version"] == _db.SCHEMA_VERSION
 
 
 def test_verify_reports_the_schema_version_as_a_string(verified):
@@ -1000,13 +1024,24 @@ def test_verify_reports_the_schema_version_as_a_string(verified):
     assert report["schema_version"] == str(_db.SCHEMA_VERSION)
 
 
-def test_verify_runs_sqlites_own_integrity_quick_check(verified):
+# `test_verify_runs_sqlites_own_integrity_quick_check` WAS DELETED HERE. It
+# asserted `report["quick_check"] == "ok"`, i.e. that the verb had run the
+# previous engine's page-level corruption scan over a local file. The shipping
+# engine checksums its own pages and exposes no client-callable equivalent, so
+# there is nothing to restate and nothing was invented in its place. `ok` did
+# not get weaker for losing the term: the `observed_version` test above is new,
+# and it makes `ok` require the stamp and the physical SHAPE to agree, which is
+# strictly more than the two stamps agreeing with each other.
+
+
+def test_verify_reports_no_error_on_a_healthy_store(verified):
+    """The report must not be carrying a swallowed failure while saying ok."""
     # Arrange
     # Act
     report = verified
 
     # Assert
-    assert report["quick_check"] == "ok"
+    assert report["error"] is None
 
 
 def test_verify_records_the_db_provenance_source(verified):
@@ -1043,22 +1078,60 @@ def test_verify_reports_a_row_count_for_every_schema_table(verified):
     assert set(report["tables"]) == set(_db.SCHEMA_TABLES)
 
 
-def test_verify_reports_an_absent_db_as_not_existing(tmp_path):
+def test_verify_reports_an_unprovisioned_store_as_not_existing(new_store):
+    """"Absent" is now "there is no store there", not "there is no file there"."""
     # Arrange
+    target = new_store("cards_verify_empty", bootstrap=False)
+
     # Act
-    report = _db.verify(tmp_path / "nope.db")
+    report = _db.verify(target)
 
     # Assert
     assert report["exists"] is False
 
 
-def test_verify_reports_an_absent_db_as_not_ok(tmp_path):
+def test_verify_reports_an_unprovisioned_store_as_not_ok(new_store):
     # Arrange
+    target = new_store("cards_verify_empty2", bootstrap=False)
+
     # Act
-    report = _db.verify(tmp_path / "nope.db")
+    report = _db.verify(target)
 
     # Assert
     assert report["ok"] is False
+
+
+def test_verify_says_why_an_unprovisioned_store_is_not_a_store(new_store):
+    """The CLI printed "run init-store" for every failure on the way in.
+
+    An unconfigured target, a refused one and an unreachable server all rendered
+    as the same instruction, and it is the right one for only the first.
+    """
+    # Arrange
+    target = new_store("cards_verify_empty3", bootstrap=False)
+
+    # Act
+    report = _db.verify(target)
+
+    # Assert
+    assert "schema_meta" in str(report["error"])
+
+
+def test_verify_reports_a_refused_target_rather_than_raising(tmp_path):
+    """A health verb that dies on a bad target tells the operator less.
+
+    A filename is REFUSED by the door now, and `verify` used to reach that door
+    through `resolve_db_path`, which raises on a DSN -- so this verb could not
+    survive its own first statement against the store it reports on.
+    """
+    # Arrange
+    target = str(tmp_path / "nope.db")
+
+    # Act
+    report = _db.verify(target)
+
+    # Assert
+    assert report["exists"] is False
 
 
 # --------------------------------------------------------------------------- #
@@ -1107,80 +1180,81 @@ def test_an_absent_repo_field_stays_out_of_the_serialised_card():
 def test_repo_field_round_trips_db_column(imported):
     # Arrange
     # Act
-    val = imported["conn"].execute("SELECT repo FROM tasks WHERE id='c1'").fetchone()[0]
+    row = imported["conn"].execute("SELECT repo FROM tasks WHERE id='c1'").fetchone()
 
     # Assert
-    assert val == "scitex-cards"
+    assert row["repo"] == "scitex-cards"
 
 
 # --------------------------------------------------------------------------- #
-# PERF REGRESSION: the REBUILD must not pay for `OR REPLACE`                  #
+# The upsert path must UPDATE, not DELETE-and-INSERT                          #
 # --------------------------------------------------------------------------- #
-# `INSERT OR REPLACE INTO tasks` cost 4,592 us/row against 110 us/row for a plain
-# INSERT — 42x, and 6.3 s of the rebuild's 7.3 s (live store, 1,370 cards).
-# `tasks` is a parent with ON DELETE CASCADE children, so under
-# `PRAGMA foreign_keys=ON` a REPLACE runs the full cascade/FK machinery on every
-# row — to resolve a conflict `_rebuild_from_doc` has already made IMPOSSIBLE by
-# deleting every row first. Asserts the MECHANISM, not a wall-clock number, so it
-# cannot flake on a busy box.
-def _sql_trace(conn, fn):
-    seen: list[str] = []
-    conn.set_trace_callback(seen.append)
-    try:
-        fn()
-    finally:
-        conn.set_trace_callback(None)
-    return seen
-
-
-def _traced_rebuild_inserts(store) -> list[str]:
-    """Run `_rebuild_from_doc` under a SQL trace; return the `INTO tasks` statements."""
-    doc = store["tasks_doc"]
-    conn = _db.connect(store["db_path"])
+# THESE TESTS USED TO READ THE SQL TEXT, through `sqlite3`'s trace callback, and
+# asserted that the rebuild's `INTO tasks` statements carried no `OR REPLACE`.
+# The measurement behind them stands: `INSERT OR REPLACE INTO tasks` cost
+# 4,592 us/row against 110 us/row for a plain INSERT -- 42x, 6.3 s of the
+# rebuild's 7.3 s on the live 1,370-card store -- because `tasks` is a parent
+# with ON DELETE CASCADE children and REPLACE is a DELETE plus an INSERT.
+#
+# THE ASSERTION IS BEHAVIOURAL NOW, AND THAT IS AN UPGRADE RATHER THAN A
+# WORKAROUND. There is no trace callback on this driver, but there is a better
+# question to ask, and `_db_bootstrap` states it in its own first reason for the
+# change: REPLACE fires the DELETE and INSERT triggers and NOT the AFTER UPDATE
+# ones, so v7's `tasks_bump_revision` -- the optimistic lock -- was INERT for
+# every upsert taking that path. A lock nobody fires is not a lock. So the
+# upsert is now measured by whether the REVISION MOVES, which a DELETE+INSERT
+# structurally cannot do and which no reading of the SQL string could have told
+# us.
+def _seeded(store):
+    """The store, rebuilt from the doc through the real primitive."""
+    conn = _db.connect(store["target"])
     _db.init_schema(conn)
-
-    def _go():
-        conn.execute("BEGIN IMMEDIATE")
-        _db_bootstrap._rebuild_from_doc(conn, doc)
-        conn.commit()
-
-    seen = _sql_trace(conn, _go)
-    conn.close()
-    return [s for s in seen if "INTO tasks" in s]
+    _db_bootstrap._rebuild_from_doc(conn, store["tasks_doc"])
+    conn.commit()
+    return conn
 
 
 def test_the_rebuild_actually_inserts_into_tasks(store):
     # Arrange
+    conn = _seeded(store)
+
     # Act
-    into_tasks = _traced_rebuild_inserts(store)
+    rows = conn.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()
 
-    # Assert — guards the trace itself; an empty trace would pass the next test
-    # vacuously.
-    assert into_tasks, "expected the rebuild to insert into `tasks`"
+    # Assert — guards the act itself; a rebuild that inserted nothing would make
+    # every assertion below vacuous.
+    try:
+        assert rows["n"] == 3
+    finally:
+        conn.close()
 
 
-def test_rebuild_inserts_tasks_without_or_replace(store):
+def test_the_rebuild_leaves_every_card_at_revision_zero(store):
+    """The rebuild DELETES first, so each row is new and has been written once.
+
+    A revision above zero here would mean the rebuild had gone through the
+    upsert path -- the one whose per-row cascade cost 42x.
+    """
     # Arrange
+    conn = _seeded(store)
+
     # Act
-    into_tasks = _traced_rebuild_inserts(store)
-    offenders = [s for s in into_tasks if "OR REPLACE" in s.upper()]
+    rows = conn.execute("SELECT revision FROM tasks ORDER BY id").fetchall()
 
     # Assert
-    assert not offenders, (
-        "the rebuild must use a plain INSERT — it deletes every row first, so "
-        "`INSERT OR REPLACE` only buys per-row FK cascade checks (42x slower). "
-        f"Offending SQL: {offenders[0]!r}"
-    )
+    try:
+        assert [row["revision"] for row in rows] == [0, 0, 0]
+    finally:
+        conn.close()
 
 
-# ...but the DEFAULT must stay REPLACE, because the incremental mirror upserts a
-# changed card WITHOUT dropping its `tasks` row first. A plain INSERT there would
-# raise `UNIQUE constraint failed: tasks.id` on every card update.
+# ...and the DEFAULT must stay an UPSERT, because the incremental mirror rewrites
+# a changed card WITHOUT dropping its `tasks` row first. A plain INSERT there
+# would violate the primary key on every card update.
 def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
     # Arrange
-    conn = _db.connect(store["db_path"])
+    conn = _db.connect(store["target"])
     _db.init_schema(conn)
-    conn.execute("BEGIN IMMEDIATE")
     _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "card"}])
 
     # Act — same id again, row still present: the incremental mirror's shape.
@@ -1190,7 +1264,34 @@ def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
     conn.close()
 
     # Assert
-    assert [tuple(r) for r in rows] == [("c9", "v2", "done")]
+    assert [(r["id"], r["title"], r["status"]) for r in rows] == [
+        ("c9", "v2", "done")
+    ]
+
+
+def test_the_upsert_fires_the_revision_trigger(store):
+    """THE PROPERTY `OR REPLACE` COULD NOT HAVE. A DELETE+INSERT fires the DELETE
+    and INSERT triggers and not the AFTER UPDATE one, so the optimistic lock was
+    inert on this path for as long as the clause was REPLACE. A true UPDATE
+    bumps it, and this is the assertion that can tell the two apart.
+    """
+    # Arrange
+    conn = _db.connect(store["target"])
+    _db.init_schema(conn)
+    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v1", "status": "card"}])
+    conn.commit()
+    before = conn.execute("SELECT revision FROM tasks WHERE id='c9'").fetchone()
+
+    # Act
+    _db_bootstrap._insert_tasks(conn, [{"id": "c9", "title": "v2", "status": "done"}])
+    conn.commit()
+
+    # Assert
+    try:
+        after = conn.execute("SELECT revision FROM tasks WHERE id='c9'").fetchone()
+        assert (before["revision"], after["revision"]) == (0, 1)
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -1199,7 +1300,7 @@ def test_insert_tasks_defaults_to_upsert_over_a_live_row(store):
 # Last-wins is exactly what `OR REPLACE` used to give us; it is now done in
 # Python (`_dedupe_last_wins`) so the SQL can stay plain. A duplicate id is a
 # real data bug, so it is also logged LOUD rather than silently absorbed.
-def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
+def _import_a_store_with_a_duplicate_id(new_store, caplog) -> dict:
     """Seed a doc carrying the same card id twice; return the observable state."""
     doc = {
         "tasks": [
@@ -1218,28 +1319,34 @@ def _import_a_store_with_a_duplicate_id(tmp_path, caplog) -> dict:
             },
         ]
     }
-    db_path = tmp_path / "cards.db"
+    target = new_store("cards_dupe", bootstrap=False)
 
     with caplog.at_level("ERROR"):
-        summary = seed_db_from_doc(doc, db_path)
+        summary = seed_db_from_doc(doc, target)
 
-    conn = sqlite3.connect(str(db_path))
+    conn = _db.connect(target)
     try:
-        rows = conn.execute(
-            "SELECT id, title, status FROM tasks ORDER BY id"
-        ).fetchall()
-        comments = conn.execute(
-            "SELECT task_id, text FROM task_comments ORDER BY task_id"
-        ).fetchall()
+        rows = [
+            (r["id"], r["title"], r["status"])
+            for r in conn.execute(
+                "SELECT id, title, status FROM tasks ORDER BY id"
+            ).fetchall()
+        ]
+        comments = [
+            (r["task_id"], r["text"])
+            for r in conn.execute(
+                "SELECT task_id, text FROM task_comments ORDER BY task_id"
+            ).fetchall()
+        ]
     finally:
         conn.close()
     return {"summary": summary, "rows": rows, "comments": comments}
 
 
-def test_a_duplicate_card_id_collapses_to_the_last_occurrence(tmp_path, caplog):
+def test_a_duplicate_card_id_collapses_to_the_last_occurrence(new_store, caplog):
     # Arrange
     # Act
-    state = _import_a_store_with_a_duplicate_id(tmp_path, caplog)
+    state = _import_a_store_with_a_duplicate_id(new_store, caplog)
 
     # Assert — the duplicate collapses to ONE row, the LAST one, without raising.
     assert state["rows"] == [
@@ -1248,37 +1355,37 @@ def test_a_duplicate_card_id_collapses_to_the_last_occurrence(tmp_path, caplog):
     ]
 
 
-def test_a_duplicate_card_id_is_counted_once_in_the_summary(tmp_path, caplog):
+def test_a_duplicate_card_id_is_counted_once_in_the_summary(new_store, caplog):
     # Arrange
     # Act
-    state = _import_a_store_with_a_duplicate_id(tmp_path, caplog)
+    state = _import_a_store_with_a_duplicate_id(new_store, caplog)
 
     # Assert
     assert state["summary"]["tasks"] == 2
 
 
-def test_only_the_winning_duplicates_comments_survive(tmp_path, caplog):
+def test_only_the_winning_duplicates_comments_survive(new_store, caplog):
     # Arrange
     # Act
-    state = _import_a_store_with_a_duplicate_id(tmp_path, caplog)
+    state = _import_a_store_with_a_duplicate_id(new_store, caplog)
 
     # Assert — `OR REPLACE` used to append BOTH cards' comments.
     assert state["comments"] == [("dup", "new")]
 
 
-def test_a_duplicate_card_id_is_logged_with_the_offending_id(tmp_path, caplog):
+def test_a_duplicate_card_id_is_logged_with_the_offending_id(new_store, caplog):
     # Arrange
     # Act
-    _import_a_store_with_a_duplicate_id(tmp_path, caplog)
+    _import_a_store_with_a_duplicate_id(new_store, caplog)
 
     # Assert — the data bug is surfaced, not swallowed.
     assert "dup" in caplog.text
 
 
-def test_a_duplicate_card_id_is_logged_at_error_level_by_name(tmp_path, caplog):
+def test_a_duplicate_card_id_is_logged_at_error_level_by_name(new_store, caplog):
     # Arrange
     # Act
-    _import_a_store_with_a_duplicate_id(tmp_path, caplog)
+    _import_a_store_with_a_duplicate_id(new_store, caplog)
 
     # Assert
     assert "DUPLICATE CARD ID" in caplog.text

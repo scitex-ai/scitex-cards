@@ -151,9 +151,9 @@ def db_path_cmd(db_path: str | None, as_json: bool) -> None:
 @db_group.command(
     "verify",
     help=(
-        "Open the shadow DB and verify its schema health.\n\n"
-        "Checks PRAGMA user_version, the schema_meta version, presence of "
-        "every expected table (with row counts), and PRAGMA quick_check. "
+        "Open the store and verify its schema health.\n\n"
+        "Checks the schema_meta version stamp against the store's PHYSICAL "
+        "shape, and the presence of every expected table (with row counts). "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
         "  scitex-cards dev db verify\n"
@@ -163,7 +163,7 @@ def db_path_cmd(db_path: str | None, as_json: bool) -> None:
 @_DB_OPTION
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw report as JSON.")
 def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
-    """Verify the DB schema + integrity."""
+    """Verify the store's schema stamp against its shape."""
     from .._db import verify
 
     report = verify(db_path)
@@ -172,14 +172,18 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-cards dev db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards dev db verify: {status} — {report['target']}")
     if not report["exists"]:
-        click.echo("[FAIL] db does not exist yet (run `init-store`)")
+        # THE REASON, NOT JUST THE VERDICT. This printed "db does not exist yet"
+        # for every failure on the way in -- an unconfigured target, a refused
+        # one and an unreachable server all rendered as "run init-store", which
+        # is the wrong instruction for all three.
+        click.echo(f"[FAIL] no store at this target: {report['error']}")
         raise SystemExit(1)
     click.echo(
-        f"  user_version={report['user_version']} "
-        f"schema_version={report['schema_version']} "
-        f"quick_check={report['quick_check']} source={report['source']}"
+        f"  schema_version={report['schema_version']} "
+        f"observed_version={report['observed_version']} "
+        f"source={report['source']}"
     )
     for name, count in report["tables"].items():
         click.echo(f"  {name}: {count}")
