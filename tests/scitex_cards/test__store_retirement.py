@@ -13,10 +13,14 @@ really exists, and each captures the outcome with try/except so the refusal and
 its message are one assertion rather than two fused ones.
 """
 
-import sqlite3
+import contextlib
+import itertools
 
 import pytest
 
+from scitex_cards._db import connect
+from scitex_cards._ddl import execute_ddl
+from scitex_cards._schema_probe import trigger_names
 from scitex_cards._store_retirement import (
     RETIREMENT_TRIGGER_SQL,
     STATUS_CURRENT,
@@ -29,16 +33,61 @@ from scitex_cards._store_retirement import (
 )
 
 
+_SEQ = itertools.count()
+
+_META = "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)"
+
+
+def _open_bare(new_store, prefix: str):
+    """An unprovisioned throwaway store carrying nothing but ``schema_meta``."""
+    conn = connect(new_store("%s_%d" % (prefix, next(_SEQ)), bootstrap=False))
+    conn.execute(_META)
+    return conn
+
+
 @pytest.fixture
-def guarded_store(tmp_path):
-    """A throwaway store with schema_meta and the retirement guards installed."""
-    conn = sqlite3.connect(tmp_path / "cards.db")
-    conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+def bare_store(new_store):
+    """Hand out bare stores, and CLOSE them however the test ends.
+
+    THE OWNERSHIP IS WHAT KEEPS A RED TEST RED. Each store is a throwaway
+    SCHEMA, and the harness drops it with ``DROP SCHEMA ... CASCADE`` when the
+    test ends -- which BLOCKS while any connection to it is still open. A test
+    that opens a connection and then raises never reaches its own ``close()``,
+    so the failure does not report red: it HANGS, which reads as a slow runner
+    rather than as a failure. Measured twice while converting this branch, in
+    two different files.
+
+    A file store forgave this; a schema on a shared server does not.
+    """
+    conns = []
+
+    def make(prefix: str):
+        conn = _open_bare(new_store, prefix)
+        conns.append(conn)
+        return conn
+
+    yield make
+    for conn in conns:
+        with contextlib.suppress(Exception):
+            conn.close()
+
+
+@pytest.fixture
+def guarded_store(new_store):
+    """A throwaway store with schema_meta and the retirement guards installed.
+
+    ``execute_ddl``, not a driver script runner, and that is what makes these
+    tests exercise the guard the fleet actually carries: the constant is an
+    inline-body ``CREATE TRIGGER`` no store has ever held, and ``execute_ddl``
+    substitutes it for the plpgsql pair in ``_pg_triggers`` -- which was read
+    back out of a running server with ``pg_get_triggerdef``.
+    """
+    conn = _open_bare(new_store, "cards_retire")
     conn.executemany(
         "INSERT INTO schema_meta(key, value) VALUES(?, ?)",
         [("store_uuid", "uuid-source"), ("store_status", STATUS_CURRENT)],
     )
-    conn.executescript(RETIREMENT_TRIGGER_SQL)
+    execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
     conn.commit()
     yield conn
     conn.close()
@@ -66,17 +115,31 @@ def _refusal_message(conn, sql, params=()):
 
     try/except rather than pytest.raises so the outcome and its message are a
     single assertion. Fusing them hides the second when the first fails.
+
+    THE ROLLBACK IS NOT TIDYING. A failed statement puts this engine's
+    transaction into an aborted state, where EVERY subsequent statement fails
+    with ``InFailedSqlTransaction`` -- so without it the next read (``_value_of``,
+    which several tests below call precisely to prove the data survived) would
+    fail for a reason that has nothing to do with the guard. The previous
+    engine simply carried on after an IntegrityError, which is why nothing here
+    had to say this before.
+
+    The exception type is not narrowed to one class either: the guard raises
+    from inside plpgsql, and pinning the driver's exception class would be
+    asserting something about the driver rather than about the refusal. The
+    MESSAGE is what the callers assert on, and that is the guard's own text.
     """
     try:
         conn.execute(sql, params)
         return ""
-    except sqlite3.IntegrityError as exc:
+    except Exception as exc:  # noqa: BLE001 - the message is the assertion
+        conn.rollback()
         return str(exc)
 
 
 def _value_of(conn, key):
     row = conn.execute("SELECT value FROM schema_meta WHERE key = ?", (key,)).fetchone()
-    return row[0] if row else None
+    return row["value"] if row else None
 
 
 class TestRetiringIsPermitted:
@@ -434,91 +497,79 @@ class TestTheReadDoorActuallyRefusesARetiredStore:
     tests exercise the read door itself rather than read_status.
     """
 
-    def test_a_retired_store_is_refused_at_the_read_door(self, tmp_path):
+    def test_a_retired_store_is_refused_at_the_read_door(self, bare_store):
         # Arrange
-        from scitex_cards._store_canonical_read import _refuse_if_retired
+        from scitex_cards._store_canonical_read import _refuse_if_retired_on
 
-        path = tmp_path / "retired.db"
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
-        conn.executescript(RETIREMENT_TRIGGER_SQL)
+        conn = bare_store("cards_door_retired")
+        execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
         retire_store(
             conn, successor_uuid="uuid-dest", by="me", at="2026-07-30T16:00:00Z"
         )
         conn.commit()
-        conn.close()
         # Act
         raised = pytest.raises(StoreRetired)
         # Assert
         with raised:
-            _refuse_if_retired(path)
+            _refuse_if_retired_on(conn)
 
-    def test_a_current_store_is_allowed_through(self, tmp_path):
+    def test_a_current_store_is_allowed_through(self, bare_store):
         # Arrange: the regression that matters -- this path reads the live board,
         # and a guard that refuses everything is as useless as one that refuses
         # nothing.
-        from scitex_cards._store_canonical_read import _refuse_if_retired
+        from scitex_cards._store_canonical_read import _refuse_if_retired_on
 
-        path = tmp_path / "current.db"
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn = bare_store("cards_door_current")
         conn.execute("INSERT INTO schema_meta(key, value) VALUES('store_uuid', 'u')")
-        conn.executescript(RETIREMENT_TRIGGER_SQL)
+        execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
         conn.commit()
-        conn.close()
         # Act
-        _refuse_if_retired(path)
+        allowed = _refuse_if_retired_on(conn)
         # Assert -- returning at all is the assertion; it must not raise
-        assert path.exists()
+        assert allowed is None
 
-    def test_a_store_without_schema_meta_is_not_treated_as_retired(self, tmp_path):
+    def test_a_store_without_schema_meta_is_not_treated_as_retired(self, bare_store):
         # Arrange: absence of the table is not a retirement, and refusing here
         # would break stores predating it for no safety gain.
-        from scitex_cards._store_canonical_read import _refuse_if_retired
+        from scitex_cards._store_canonical_read import _refuse_if_retired_on
 
-        path = tmp_path / "bare.db"
-        sqlite3.connect(path).close()
+        conn = bare_store("cards_door_bare_noschema")
+        conn.execute("DROP TABLE schema_meta")
         # Act
-        _refuse_if_retired(path)
+        allowed = _refuse_if_retired_on(conn)
         # Assert
-        assert path.exists()
+        assert allowed is None
 
-    def test_an_unguarded_store_is_allowed_during_the_rollout(self, tmp_path):
-        # Arrange: MEASURED -- no live store carries the guards yet, they install
-        # on a WRITE open, and this door opens read-only. Refusing here would
-        # black out every board on release day.
-        from scitex_cards._store_canonical_read import _refuse_if_retired
+    def test_an_unguarded_store_is_allowed_during_the_rollout(self, bare_store):
+        # Arrange: MEASURED -- no live store carried the guards when this was
+        # written, they install on a WRITE open, and this door opens read-only.
+        # Refusing here would black out every board on release day.
+        from scitex_cards._store_canonical_read import _refuse_if_retired_on
 
-        path = tmp_path / "unguarded.db"
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn = bare_store("cards_door_unguarded")
         conn.execute("INSERT INTO schema_meta(key, value) VALUES('store_uuid', 'u')")
         conn.commit()
-        conn.close()
         # Act
-        _refuse_if_retired(path)
+        allowed = _refuse_if_retired_on(conn)
         # Assert
-        assert path.exists()
+        assert allowed is None
 
-    def test_an_unguarded_store_that_IS_retired_is_still_refused(self, tmp_path):
+    def test_an_unguarded_store_that_IS_retired_is_still_refused(self, bare_store):
         # Arrange: the permissive era must never make a retired store readable.
         # This is the branch the cutover depends on.
-        from scitex_cards._store_canonical_read import _refuse_if_retired
+        from scitex_cards._store_canonical_read import _refuse_if_retired_on
 
-        path = tmp_path / "unguarded-retired.db"
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        conn = bare_store("cards_door_unguarded_retired")
         conn.execute(
             "INSERT INTO schema_meta(key, value) VALUES('store_status', ?)",
             (STATUS_RETIRED,),
         )
         conn.commit()
-        conn.close()
         # Act
         raised = pytest.raises(StoreRetired)
         # Assert
         with raised:
-            _refuse_if_retired(path)
+            _refuse_if_retired_on(conn)
 
 
 class TestTheTriggersAreActuallyInstalled:
@@ -526,10 +577,7 @@ class TestTheTriggersAreActuallyInstalled:
         # Arrange
         conn = guarded_store
         # Act
-        found = {
-            r[0]
-            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
-        }
+        found = trigger_names(conn)
         # Assert
         assert set(TRIGGER_NAMES).issubset(found)
 
@@ -537,13 +585,11 @@ class TestTheTriggersAreActuallyInstalled:
         # Arrange: init_schema re-applies at every open, so this runs constantly.
         conn = guarded_store
         # Act
-        conn.executescript(RETIREMENT_TRIGGER_SQL)
-        # Assert
-        n = conn.execute(
-            "SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name IN (?, ?)",
-            TRIGGER_NAMES,
-        ).fetchone()[0]
-        assert n == 2
+        execute_ddl(conn, RETIREMENT_TRIGGER_SQL)
+        # Assert -- still exactly the two, not four. `CREATE OR REPLACE TRIGGER`
+        # is the idempotent spelling here (there is no `IF NOT EXISTS` form for a
+        # trigger on this engine), so a re-apply must replace rather than add.
+        assert trigger_names(conn) & set(TRIGGER_NAMES) == set(TRIGGER_NAMES)
 
 
 # EOF

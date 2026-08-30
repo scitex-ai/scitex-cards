@@ -62,23 +62,24 @@ def _revision(task_id="c1"):
     did: two tests went green with the guard never once engaged.
     """
     import os
-    import sqlite3
+
+    from scitex_cards._db import connect
 
     db = os.environ["SCITEX_CARDS_DB"]
-    conn = sqlite3.connect(db)
+    conn = connect(db)
     try:
         row = conn.execute(
             "SELECT revision FROM tasks WHERE id = ?", (task_id,)
         ).fetchone()
     finally:
         conn.close()
-    if row is None or row[0] is None:
+    if row is None or row["revision"] is None:
         raise AssertionError(
             f"no revision for task {task_id!r} in {db} -- a None would be passed "
             f"as expected_revision and silently disable the guard under test, "
             f"which is a vacuous pass rather than a failure."
         )
-    return row[0]
+    return row["revision"]
 
 
 @pytest.fixture()
@@ -223,18 +224,21 @@ def test_a_retry_after_a_refusal_can_actually_land(refusal):
 # --------------------------------------------------------------------------
 
 
-def test_the_guard_is_refused_on_a_first_run_full_rebuild(tmp_path):
+def test_the_guard_is_refused_on_a_first_run_full_rebuild(new_store):
     """A full rebuild rewrites every card from the caller's doc, so it cannot
     honour a per-row guard. Refusing is the only honest option -- ignoring it
-    would overwrite the board while the caller believed they held a lock."""
+    would overwrite the board while the caller believed they held a lock.
+
+    ``bootstrap=False`` is what makes this the FIRST-RUN path: the rebuild is
+    chosen because the store holds no row hashes to diff against, and a
+    provisioned store would already carry them."""
     # Arrange
     from scitex_cards._db_mirror import mirror_doc_incremental
 
     doc = {"tasks": [{"id": "c1", "title": "A", "status": "deferred"}]}
+    fresh = new_store("cards_cas_fresh", bootstrap=False)
     # Act
-    call = partial(
-        mirror_doc_incremental, doc, tmp_path / "fresh.db", expected_revision=0
-    )
+    call = partial(mirror_doc_incremental, doc, fresh, expected_revision=0)
     # Assert
     with pytest.raises(ValueError, match="full rebuild"):
         call()

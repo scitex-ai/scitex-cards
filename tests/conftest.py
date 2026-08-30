@@ -383,6 +383,23 @@ def new_store():
     One store per test would force those back into sharing, which is the
     collision the per-test pin removes rather than arbitrates.
 
+    CLOSE EVERY CONNECTION YOU OPEN ON ONE OF THESE, AND CLOSE IT FROM A
+    FIXTURE OR A ``finally`` -- NEVER ON THE LINE AFTER YOUR ASSERTION. The
+    schema is removed with ``DROP SCHEMA ... CASCADE`` when the test ends, and
+    that statement BLOCKS while any connection is still holding a transaction
+    on it. So a test that opens a connection and then FAILS never reaches its
+    own ``close()``, and the failure does not report red -- IT HANGS, taking
+    the rest of the session with it, and a hang reads as a slow runner rather
+    than as a failure.
+
+    That is the single most expensive difference between this and the scratch
+    FILE these replaced: a file store forgave a leaked handle completely.
+    Measured twice on 2026-08-30 while converting ``test__schema_shape.py`` and
+    ``test__store_retirement.py``, both times as an indefinite wedge with no
+    output. The fix in both was the same and is the pattern to copy: a fixture
+    that hands out stores AND owns the connections, unwinding them on the way
+    out whatever the test did.
+
     ``bootstrap=True`` (the default) installs the schema through the package's
     own ``connect`` + ``init_schema``, exactly as ``_bootstrap_empty_store``
     does for the pinned per-test store, so a caller that just wants somewhere
