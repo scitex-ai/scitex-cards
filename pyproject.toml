@@ -106,7 +106,19 @@ dev = [
     # DIFFERENT constraint with a different purpose and is deliberately left
     # alone, as are the core [project] dependencies — scitex-dev is correctly
     # NOT a runtime dependency of this package.
-    "scitex-dev>=0.49.0",
+    #
+    # THE BINDING FLOOR IS NOW 0.57.0, and it binds HARDER than 0.49.0 did:
+    # 0.49.0 broke the collection of ONE module, this breaks the WHOLE SESSION.
+    # `tests/conftest.py` imports `scitex_dev.store.testing` at import time for
+    # `writable_dsn` / `ephemeral_schema`, which is how every test gets its own
+    # throwaway PostgreSQL schema now that a scratch FILE names no store. If
+    # that import fails the harness has no store to pin to, and it deliberately
+    # does NOT fall back to leaving $SCITEX_CARDS_DB unset — that is the live
+    # fleet board — so every test errors on configuration instead.
+    #
+    # Measured from the tag, not a changelog: `scitex_dev/store/testing.py`
+    # first appears at v0.57.0 (absent at v0.56.8).
+    "scitex-dev>=0.57.0",
     # Web-extra deps are imported (guarded) by the Django board source and its
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).

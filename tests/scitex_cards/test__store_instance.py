@@ -24,9 +24,18 @@ no dump, so a restore cannot carry it. The two clusters above differ on it, and
 that difference is the question this card was asking.
 
 WHAT THESE TESTS PIN, and one thing they deliberately do not: they pin the
-PROBE's contract — that a real server answers KNOWN, that SQLite answers
-UNKNOWN with a stated reason rather than an invented value, and that the type
-itself refuses the shapes that would let a caller mistake absence for a value.
+PROBE's contract — that a real server answers KNOWN, that the TYPE refuses the
+shapes that would let a caller mistake absence for a value, and that an
+UNKNOWN must carry a stated reason rather than an invented identity.
+
+THE UNKNOWN ARM IS NOW EXERCISED THROUGH THE VALIDATOR, NOT THROUGH A SECOND
+ENGINE. It used to be reached by opening a file store, which answered UNKNOWN
+because it had no cluster to ask. There is one storage engine now and a
+filename names no store at all, so that route is gone -- but the arm it
+reached is not decoration: an ``UNKNOWN`` that carries a placeholder id makes
+two unknowns compare EQUAL, which is the exact collapse this module exists to
+prevent. It is pinned below against ``StoreInstance``'s own validator, which
+is where the invariant actually lives.
 They do NOT claim any guard consumes it yet; the guard is the next step and
 owns its own tests, because having the instrument is exactly what makes the
 missing guard LOOK done.
@@ -46,31 +55,40 @@ from scitex_cards._store_instance import (
     check_store_identity,
     store_instance,
 )
-from scitex_cards._store_url import BACKEND_POSTGRES, BACKEND_SQLITE
+from scitex_cards._store_url import BACKEND_POSTGRES, BACKEND_UNSUPPORTED
 
-#: Same contract as ``test__sql_null_safe``: UNDECLARED skips, DECLARED-but-
-#: broken fails. A Postgres-only test that skips is indistinguishable from a
-#: passing one in a green summary, so declaring a server removes the excuse.
-_ENV_PG_DSN = "SCITEX_CARDS_TEST_PG_DSN"
+#: The store this test is pinned to by the root ``conftest.py`` -- a uniquely
+#: named, throwaway PostgreSQL schema, created and dropped per test.
+_ENV_STORE = "SCITEX_CARDS_DB"
 
 
 @pytest.fixture
 def pg_conn():
-    """A live Postgres connection, or a skip when none is declared."""
-    dsn = os.environ.get(_ENV_PG_DSN)
-    if not dsn:
-        pytest.skip(f"{_ENV_PG_DSN} is not set — no Postgres declared")
+    """A live connection to this test's own throwaway store. NEVER A SKIP.
+
+    THIS FIXTURE USED TO SKIP, and that is why it is written out at length
+    rather than quietly repaired. It read ``$SCITEX_CARDS_TEST_PG_DSN``, a
+    variable nothing in this repository, its CI, or any fleet container sets,
+    and skipped when it was absent -- which was always. Every server-side
+    assertion in this module therefore reported green without opening a
+    connection, for as long as the variable has existed.
+
+    That is the same failure the module docstring describes from the other
+    side: an identity check that cannot fail tells you nothing, and a storage
+    test that skips is indistinguishable from one that passes in a summary
+    line. So the target is now the store the harness already guarantees, and
+    its absence is a FAILURE naming what is missing.
+    """
+    dsn = os.environ.get(_ENV_STORE, "")
+    if "search_path" not in dsn:
+        pytest.fail(
+            f"the root conftest did not pin ${_ENV_STORE} to a throwaway "
+            f"PostgreSQL schema; it holds {dsn!r}. This is a failure and not a "
+            "skip: a skipped identity test and a passing one look identical, "
+            "which is how this module went unexercised.",
+            pytrace=False,
+        )
     conn = connect(dsn)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-@pytest.fixture
-def sqlite_conn(tmp_path):
-    """A real SQLite store on disk. No mocks (STX-NM)."""
-    conn = connect(str(tmp_path / "cards.db"))
     try:
         yield conn
     finally:
@@ -116,52 +134,34 @@ def test_a_postgres_instance_id_is_the_clusters_own_identifier(pg_conn):
     assert instance.instance_id == expected
 
 
-def test_a_sqlite_connection_cannot_know_its_instance(sqlite_conn):
-    """UNKNOWN is the honest answer for a file, not a gap to paper over."""
-    # Arrange
-    conn = sqlite_conn
-    # Act
-    instance = store_instance(conn)
-    # Assert
-    assert instance.certainty is Certainty.UNKNOWN
+def test_a_known_answer_carries_a_reason_of_none(pg_conn):
+    """A reason explains an UNKNOWN; carrying one on a KNOWN is a contradiction.
 
-
-def test_a_sqlite_answer_carries_no_invented_identity(sqlite_conn):
-    """A stable-but-invented value (a path hash, say) would be WORSE than none.
-
-    It would look like an instance identity and would FOLLOW A COPY — the exact
-    failure this module exists to detect, reintroduced by the fix for it.
+    Replaces three tests that reached the UNKNOWN arm by opening a FILE store.
+    That route is gone -- a filename names no store now -- and the arm itself
+    is pinned against the validator further down, which is where the invariant
+    lives rather than where one particular engine happened to trigger it.
     """
     # Arrange
-    conn = sqlite_conn
+    conn = pg_conn
     # Act
     instance = store_instance(conn)
     # Assert
-    assert instance.instance_id is None
+    assert instance.reason is None
 
 
-def test_a_sqlite_answer_says_why_it_cannot_tell(sqlite_conn):
-    """"Cannot tell" without a reason is indistinguishable from a broken probe."""
-    # Arrange
-    conn = sqlite_conn
-    # Act
-    instance = store_instance(conn)
-    # Assert
-    assert "sqlite" in (instance.reason or "")
-
-
-def test_the_backend_comes_from_the_live_connection(sqlite_conn):
+def test_the_backend_comes_from_the_live_connection(pg_conn):
     """Read from what is actually open, never from a caller's belief.
 
-    Same rule as ``_inbox_shape.shape_for``; on this module being wrong about
-    the backend means answering a question about the wrong instance.
+    Being wrong about the backend on this module means answering a question
+    about the wrong instance.
     """
     # Arrange
-    conn = sqlite_conn
+    conn = pg_conn
     # Act
     instance = store_instance(conn)
     # Assert
-    assert instance.backend == BACKEND_SQLITE
+    assert instance.backend == BACKEND_POSTGRES
 
 
 # ---------------------------------------------------------------------------
@@ -207,10 +207,10 @@ def test_an_unknown_identity_must_not_carry_a_value():
     """
     # Arrange — a stated reason, so ONLY the id is wrong here
     claimed = {
-        "backend": BACKEND_SQLITE,
+        "backend": BACKEND_UNSUPPORTED,
         "certainty": Certainty.UNKNOWN,
         "instance_id": "placeholder",
-        "reason": "sqlite: cannot tell",
+        "reason": "this target names no store: cannot tell",
     }
     # Act
     message = _refusal_message(**claimed)
@@ -221,7 +221,7 @@ def test_an_unknown_identity_must_not_carry_a_value():
 def test_an_unknown_identity_must_say_why():
     """A caller cannot tell a missing capability from a broken connection."""
     # Arrange
-    claimed = {"backend": BACKEND_SQLITE, "certainty": Certainty.UNKNOWN}
+    claimed = {"backend": BACKEND_UNSUPPORTED, "certainty": Certainty.UNKNOWN}
     # Act
     message = _refusal_message(**claimed)
     # Assert
@@ -318,17 +318,17 @@ def test_a_differing_identity_names_both_sides(pg_conn):
     assert not_this_cluster in (check.reason or "")
 
 
-def test_nothing_pinned_cannot_tell(sqlite_conn):
+def test_nothing_pinned_cannot_tell(pg_conn):
     """An unpinned client is the one that reads a stale replica confidently."""
     # Arrange
-    conn = sqlite_conn
+    conn = pg_conn
     # Act
     check = check_store_identity(conn, None)
     # Assert
     assert check.verdict is IdentityVerdict.CANNOT_TELL
 
 
-def test_nothing_pinned_does_not_proceed(sqlite_conn):
+def test_nothing_pinned_does_not_proceed(pg_conn):
     """CANNOT_TELL refuses. Collapsing it into a pass is the defect itself.
 
     Separate from the verdict assertion above because the verdict and the
@@ -336,36 +336,34 @@ def test_nothing_pinned_does_not_proceed(sqlite_conn):
     correct and let `may_proceed` fall through.
     """
     # Arrange
-    conn = sqlite_conn
+    conn = pg_conn
     # Act
     check = check_store_identity(conn, None)
     # Assert
     assert check.may_proceed is False
 
 
-def test_a_store_that_cannot_report_an_identity_cannot_tell(sqlite_conn):
-    """Pinned, but the store cannot answer — still a refusal, not a pass."""
-    # Arrange
-    conn = sqlite_conn
-    # Act
-    check = check_store_identity(conn, "7668165447904178049")
-    # Assert
-    assert check.may_proceed is False
-
-
-def test_the_two_refusals_do_not_share_a_message(sqlite_conn):
+def test_the_two_refusals_do_not_share_a_message(pg_conn):
     """"Wrong store" and "cannot tell which store" need different actions.
 
     The reason string is the only part a human acts on, so the two refusals
     staying distinguishable is the feature, not the wording.
+
+    THE SECOND REFUSAL CHANGED IDENTITY, deliberately. It used to be "the store
+    cannot report an identity at all", reached by opening a file store, and a
+    companion test asserted that case refuses. Neither survives: the one engine
+    that remains always answers ``pg_control_system()``, so a store that cannot
+    report an identity is not a state this package can be in. The pair compared
+    here is now the two refusals that DO exist -- nothing pinned, and a pin that
+    does not match -- which is the distinction a human actually acts on.
     """
     # Arrange
-    conn = sqlite_conn
+    conn = pg_conn
     # Act
     unpinned = check_store_identity(conn, None).reason
-    unanswerable = check_store_identity(conn, "7668165447904178049").reason
+    mismatched = check_store_identity(conn, "7668165447904178049").reason
     # Assert
-    assert unpinned != unanswerable
+    assert unpinned != mismatched
 
 
 # EOF

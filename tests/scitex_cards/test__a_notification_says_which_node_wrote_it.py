@@ -30,16 +30,24 @@ one of them too. Emitting it beside the payload is the same fix for the same
 class, and it means a future backend cannot be added without answering "does it
 carry an origin, and under what name".
 
-WHY THE SQLITE SHAPE SAYS None. The `inbox` table has no sync columns at all --
-it is a single-host file that never crosses a boundary. The nine-column INSERT
-that was correct there and lethal on the store is the reason `payload` lives in
-the shape; `origin` follows it for the same reason, stated rather than implied.
+WHY A SHAPE MAY SAY None. The retired single-host rail had no sync columns at
+all: it never crossed a boundary, so it carried no origin. The nine-column
+INSERT that was correct there and lethal on the store is the reason `payload`
+lives in the shape; `origin` follows it for the same reason, stated rather than
+implied.
+
+That rail is gone, and with it the second shape -- but ``origin_column=None``
+is still a value ``notification_columns`` must handle, so the over-reach
+control below passes it DIRECTLY rather than through a constant that no longer
+exists. The control is what stops the writer emitting a column unconditionally,
+and dropping it because one caller went away would leave the function free to
+regress the moment another caller with no origin appears.
 """
 
 import pytest
 
 from scitex_cards._inbox_record import notification_columns, notification_record
-from scitex_cards._inbox_shape import POSTGRES_SHAPE, SQLITE_SHAPE
+from scitex_cards._inbox_shape import POSTGRES_SHAPE
 
 
 @pytest.fixture
@@ -73,16 +81,6 @@ def test_the_postgres_shape_names_the_origin_column():
     named = shape.origin
     # Assert
     assert named == "origin_node"
-
-
-def test_the_sqlite_shape_has_no_origin_column():
-    # Arrange — `inbox` is a single-host file with no sync columns. Stated in
-    # the shape rather than left to a writer's belief, exactly as `payload` is.
-    shape = SQLITE_SHAPE
-    # Act
-    named = shape.origin
-    # Assert
-    assert named is None
 
 
 def test_a_postgres_insert_carries_the_origin_column(record):
@@ -119,16 +117,20 @@ def test_the_origin_value_matches_the_shared_resolver(record):
     assert written == expected
 
 
-def test_a_sqlite_insert_does_not_carry_it(record):
-    # Arrange — the over-reach control. `inbox` has no such column, so naming
-    # it would make every SQLite enqueue fail on an unknown column.
+def test_a_shape_without_an_origin_column_does_not_carry_it(record):
+    # Arrange — THE OVER-REACH CONTROL, and it is not decoration: without it,
+    # a writer that emits `origin_node` unconditionally passes every other test
+    # in this file. It used to be reached through the retired rail's shape,
+    # which really had no such column; the column is now passed as None
+    # directly, which is the same condition without depending on a constant
+    # that no longer exists.
     # Act
     columns, _ = notification_columns(
         record,
         recipient_id="me",
-        recipient_column=SQLITE_SHAPE.recipient,
-        payload_column=SQLITE_SHAPE.payload,
-        origin_column=SQLITE_SHAPE.origin,
+        recipient_column=POSTGRES_SHAPE.recipient,
+        payload_column=POSTGRES_SHAPE.payload,
+        origin_column=None,
     )
     # Assert
     assert "origin_node" not in columns
