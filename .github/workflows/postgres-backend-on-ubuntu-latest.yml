@@ -74,7 +74,13 @@ jobs:
       - name: Install the package with the postgres extra
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[postgres]" pytest
+          # scitex-dev IS REQUIRED NOW, and its absence is not a soft one:
+          # tests/conftest.py imports `scitex_dev.store.testing` at import
+          # time for the ephemeral-schema affordance every test's store is
+          # carved from. Without it the harness has no store to pin and
+          # refuses (correctly) rather than falling back to the live board,
+          # so the whole leg errors with a message about scitex-dev.
+          python -m pip install -e ".[postgres]" pytest "scitex-dev>=0.57.0"
 
       - name: Confirm psycopg is importable
         # A missing driver would otherwise surface as a fixture failure whose
@@ -95,10 +101,10 @@ jobs:
         run: |
           set -euo pipefail
           files=$(find tests -name '*.py' -print0 \
-                    | xargs -0 grep -l 'SCITEX_CARDS_TEST_PG_DSN' \
+                    | xargs -0 grep -lE 'postgres_dsn|postgres_cluster_dsn' \
                     | sort | tr '\n' ' ' || true)
           if [ -z "$files" ]; then
-            echo "::error::no test file references SCITEX_CARDS_TEST_PG_DSN -- the marker was renamed or the tests moved. Refusing to run zero Postgres tests and report success."
+            echo "::error::no test file requests the postgres_dsn / postgres_cluster_dsn fixtures -- the marker was renamed or the tests moved. Refusing to run zero Postgres tests and report success."
             exit 1
           fi
           echo "discovered:"
@@ -107,9 +113,14 @@ jobs:
 
       - name: Run the Postgres-backed tests
         env:
-          # Declaring the DSN is what makes an unreachable server a FAILURE
-          # rather than a skip. See the pg_conn fixture.
-          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+          # THE VARIABLE THE HARNESS ACTUALLY READS. `SCITEX_CARDS_TEST_PG_DSN`
+          # was this package's own private marker and is gone: the fixtures that
+          # keyed on it skipped whenever it was unset, which was always, so they
+          # reported green without opening a connection. The store now comes
+          # from `scitex_dev.store.testing.writable_dsn()`, whose first route is
+          # $SCITEX_STORE_DSN -- and it probes `pg_is_in_recovery()` rather than
+          # assuming, so a standby is rejected instead of silently refusing DDL.
+          SCITEX_STORE_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
         run: |
           # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
           # pipeline only the LAST command's status survives. Without this the
@@ -139,7 +150,12 @@ jobs:
           # A declared-but-broken DSN now FAILS in the fixture, so these strings
           # should be impossible here. Checking anyway: if the fixture ever
           # regresses to skipping, this leg must not stay green.
-          for marker in ("no live Postgres", "psycopg not installed"):
+          for marker in (
+              "No writable PostgreSQL is available",
+              "scitex_dev.store.testing is not importable",
+              "no live Postgres",
+              "psycopg not installed",
+          ):
               if marker in text:
                   print(f"ERROR: a test skipped for want of Postgres: {marker!r}")
                   sys.exit(1)
