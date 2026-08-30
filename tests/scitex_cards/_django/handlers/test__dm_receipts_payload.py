@@ -13,14 +13,20 @@ a value that is not part of the message anyway: "did this arrive" is a fact
 ABOUT the message, held in a different table, written by a different party.
 ``reactions`` already established this seat; ``receipts`` takes the next one.
 
-Django RequestFactory against a real tmp store via ``?store=``; no mocks
+Django RequestFactory against a REAL store via ``?store=``; no mocks
 (STX-NM / PA-306). AAA pattern, one assertion per test (STX-TQ007).
+
+THE STORE IS THIS TEST'S OWN THROWAWAY POSTGRESQL SCHEMA. It used to be a
+scratch ``tasks.yaml`` with "the database lands next to it" -- true while a
+store was a file, and now describing nothing: a filename names no store and
+the doors refuse it.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
+from urllib.parse import urlencode
 
 import pytest
 from django.test import RequestFactory
@@ -30,21 +36,40 @@ from scitex_cards._threads import append_message, mark_read, thread_key
 
 
 @pytest.fixture()
-def store(tmp_path: Path, env) -> Path:
-    """A real tmp tasks.yaml (the database lands next to it)."""
+def store(env) -> str:
+    """This test's own throwaway PostgreSQL schema.
+
+    FAILS rather than skips when the harness did not pin one: a skipped storage
+    test and a passing one are indistinguishable in a summary line.
+    """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    if "search_path" not in dsn:
+        pytest.fail(
+            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            f"PostgreSQL schema; it holds {dsn!r}.",
+            pytrace=False,
+        )
+    return dsn
 
 
-def _thread(store: Path) -> dict:
+def _q(store, **extra) -> str:
+    """The query string for ``store``, ENCODED.
+
+    A DSN carries ``?options=-csearch_path%3D<schema>``. Interpolated raw, its
+    ``?`` starts a second query and the view receives a store truncated at the
+    schema -- a wrong store that parses.
+    """
+    return urlencode({"store": str(store), **extra})
+
+
+def _thread(store: str) -> dict:
     """The endpoint's payload for the operator <-> agent-x thread.
 
     ``mark_read`` is deliberately NOT passed: the pane's own poll acks as the
     OPERATOR, which must never be mistaken for the agent confirming.
     """
-    request = RequestFactory().get(f"/dm/thread/agent-x?store={store}")
+    request = RequestFactory().get(f"/dm/thread/agent-x?{_q(store)}")
     return json.loads(dm_thread_view(request, "agent-x").content)
 
 
@@ -95,7 +120,7 @@ def test_the_operator_opening_the_pane_does_not_confirm_their_own_message(store)
     """
     # Arrange
     sent = append_message("operator", "agent-x", "are you there", store=store)
-    request = RequestFactory().get(f"/dm/thread/agent-x?store={store}&mark_read=1")
+    request = RequestFactory().get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}")
 
     # Act
     payload = json.loads(dm_thread_view(request, "agent-x").content)
