@@ -5,13 +5,13 @@
 MEASURED ON BOTH ENGINES, 2026-07-31 -- all three candidates, because the
 obvious middle one is a trap:
 
-    INTEGER PRIMARY KEY AUTOINCREMENT   sqlite OK    postgres SYNTAX ERROR
-    INTEGER PRIMARY KEY                 sqlite OK    postgres NotNullViolation
-    GENERATED ALWAYS AS IDENTITY        sqlite ERROR postgres OK
+    INTEGER PRIMARY KEY AUTOINCREMENT   the retired engine OK    postgres SYNTAX ERROR
+    INTEGER PRIMARY KEY                 the retired engine OK    postgres NotNullViolation
+    GENERATED ALWAYS AS IDENTITY        the retired engine ERROR postgres OK
 
 The middle row is what a careless port reaches for. It PARSES on both engines
 and fails only at INSERT time, because PostgreSQL does not auto-assign a plain
-``INTEGER PRIMARY KEY`` the way SQLite's rowid alias does. DDL-time success,
+``INTEGER PRIMARY KEY`` the way the retired engine's rowid alias does. DDL-time success,
 runtime failure -- the shape this whole port keeps meeting.
 
 So the PostgreSQL test here INSERTS a row and reads the generated id back.

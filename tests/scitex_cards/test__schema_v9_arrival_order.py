@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """v9 gives ``notifications`` an arrival-order column, on BOTH creation paths.
 
-WHY THE COLUMN EXISTS. The SQLite inbox delivers and acks by ``ORDER BY rowid``
+WHY THE COLUMN EXISTS. The the retired engine inbox delivers and acks by ``ORDER BY rowid``
 at five call sites, and ``rowid`` has no PostgreSQL equivalent. Moving the rail
 without replacing it loses delivery order SILENTLY -- the SQL stays valid on
 both engines and every test stays green, which is the worst shape a correctness
@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 class TestTheGeneratorIsRealAndMonotonic:
     """The SEQUENCE, read through a RAW driver connection.
 
-    This class was written as "the half SQLite tests structurally cannot
+    This class was written as "the half the retired engine tests structurally cannot
     reach", back when the fixtures above built an in-memory scratch database in
     which the column was a plain BIGINT and no sequence existed. They now build
     a real store, so that division is gone -- but the class is kept, and for a

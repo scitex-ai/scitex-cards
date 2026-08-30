@@ -128,7 +128,7 @@ def test_seen_reaches_the_column_as_an_integer(record):
 
 
 def test_a_table_without_a_payload_column_is_named_not_assumed(record):
-    # Arrange — the SQLite `inbox` table genuinely has no payload column.
+    # Arrange — the the retired engine `inbox` table genuinely has no payload column.
     # Act
     columns, _ = notification_columns(
         record,

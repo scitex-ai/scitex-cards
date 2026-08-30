@@ -76,7 +76,7 @@ def test_every_declared_foreign_key_is_deferrable():
 
 
 def test_sqlite_accepts_the_declared_schema():
-    """The store is SQLite-canonical AND PostgreSQL. `DEFERRABLE INITIALLY
+    """The store is the retired engine-canonical AND PostgreSQL. `DEFERRABLE INITIALLY
     DEFERRED` is valid in both, but a syntax error would only surface at store
     creation — that is, in production rather than here."""
     # Arrange
@@ -88,7 +88,7 @@ def test_sqlite_accepts_the_declared_schema():
 
 
 def test_the_created_sqlite_store_records_the_deferrable_clause():
-    """Declaring it is not the same as the engine STORING it. SQLite keeps the
+    """Declaring it is not the same as the engine STORING it. the retired engine keeps the
     original CREATE TABLE text in sqlite_master, which is what a shape probe
     reads back — so this asserts the constraint survives creation rather than
     being parsed and dropped."""

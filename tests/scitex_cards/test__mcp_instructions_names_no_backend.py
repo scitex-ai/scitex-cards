@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """The instructions must not name a storage backend or a default store path.
 
-This sentence has rotted TWICE. It said YAML, then it said "the SQLite database
+This sentence has rotted TWICE. It said YAML, then it said "the the retired engine database
 at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db) — that path is the SOLE
 store identity". After the PostgreSQL cutover both halves were false at once:
 the backend is postgres on this fleet, and the named path is the ABANDONED

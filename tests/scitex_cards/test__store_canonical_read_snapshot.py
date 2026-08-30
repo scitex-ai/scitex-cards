@@ -30,7 +30,7 @@ again and served an empty board instead).
 
 Together they say the thing that matters: the guard DISCRIMINATES.
 
-No mocks and no ``monkeypatch``: a real temp SQLite database, real cards, real
+No mocks and no ``monkeypatch``: a real temp the retired engine database, real cards, real
 second processes, and the real guard.
 """
 
@@ -204,7 +204,7 @@ def _run_overlap_trial(
     fixture below is unchanged in behaviour.
 
     Nothing is patched: the code under test is the real
-    ``_read_canonical_db_or_raise`` against a real SQLite database with a real
+    ``_read_canonical_db_or_raise`` against a real the retired engine database with a real
     second OS process writing to it.
     """
     from scitex_cards._store import _read_canonical_db_or_raise

@@ -10,7 +10,7 @@ cannot show you: a query that happened to return the right answer for the wrong
 reason (unscoped, counting internal triggers) is indistinguishable from a
 correct one when you only look at its result.
 
-THE HALF THAT USED TO BE THE OTHER BACKEND IS GONE. This file was "the SQLite
+THE HALF THAT USED TO BE THE OTHER BACKEND IS GONE. This file was "the the retired engine
 half runs against a real database; the PostgreSQL half uses a fake, because CI
 has no PostgreSQL". CI now has one, the store IS one, and the module has a
 single dialect — so the real-database half is the store and the recording half

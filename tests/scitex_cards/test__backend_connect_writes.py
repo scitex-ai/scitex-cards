@@ -7,7 +7,7 @@ oversight: `_db.init_schema` alone needs `executescript` and `commit`, and every
 mutation module needs `commit`/`rollback`. A connection wrapper that cannot
 close a transaction cannot carry the write path, so nothing could adopt it.
 
-THE HALVES HAVE COLLAPSED INTO ONE. This file used to say "the SQLite half runs
+THE HALVES HAVE COLLAPSED INTO ONE. This file used to say "the the retired engine half runs
 here; the PostgreSQL half was exercised against the live server -- see the PR",
 because pure logic could not catch the two defects that mattered and a mocked
 driver would reproduce exactly the assumptions under test. Both statements are
@@ -72,7 +72,7 @@ class TestAKeywordValueDsnIsNotAFilename:
         """Detection is by KEYWORD, not by 'contains ='.
 
         THE ANSWER CHANGED NAME, NOT MEANING. This asserted the path classified
-        as "sqlite"; there is no second engine to classify as, and
+        as "the retired engine"; there is no second engine to classify as, and
         `BACKEND_UNSUPPORTED` is not the name of one -- it is the symbol for
         "this names no store I can open". What the test is for is unchanged and
         is if anything sharper now: a filesystem path that happens to contain

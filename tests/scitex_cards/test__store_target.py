@@ -9,7 +9,7 @@ before the fix:
     SCITEX_CARDS_DB=postgresql://h/db  ->  Path('postgresql:/h/db')
 
 A RELATIVE path, silently, with no error -- one slash lost. A caller then
-creates an empty SQLite file at that name and reports a healthy, empty board,
+creates an empty the retired engine file at that name and reports a healthy, empty board,
 which is the two-stores-both-look-healthy failure this package already has scar
 tissue from. The control class below pins the coercion itself, so the fix is
 measured against the real defect rather than against a description of it.
@@ -97,7 +97,7 @@ class TestTheOldResolverNoLongerMangles:
     WHY IT CHANGED. The mangling was not merely untidy. Measured on the live
     system: with ``$SCITEX_CARDS_DB`` set to a PostgreSQL URL, ``list_tasks``
     returned 0 cards against a real board of 2960, ``resolve-store`` reported
-    ``exists: True``, and a real EMPTY 217 KB SQLite database was created at
+    ``exists: True``, and a real EMPTY 217 KB the retired engine database was created at
     the mangled path. An empty board reporting itself healthy is the outage
     this package's guards exist to prevent, so ``resolve_db_path`` now REFUSES
     a non-path target instead of coercing one.
@@ -145,7 +145,7 @@ class TestTheOldResolverNoLongerMangles:
         assert "0 cards" in message
 
     def test_a_real_path_still_resolves(self, tmp_path):
-        """Positive control: refusing a DSN must not break the SQLite path,
+        """Positive control: refusing a DSN must not break the the retired engine path,
         which is what every deployment uses today."""
         # Arrange
         target = tmp_path / "cards.db"

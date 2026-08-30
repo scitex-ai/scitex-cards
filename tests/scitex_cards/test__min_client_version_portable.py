@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """``read_floor`` must answer, not raise, on every shape of store it can meet.
 
-TWO SQLITE-SHAPED ASSUMPTIONS LIVED IN ONE SMALL FUNCTION, and both of them
+TWO the retired engine-SHAPED ASSUMPTIONS LIVED IN ONE SMALL FUNCTION, and both of them
 fail CLOSED on PostgreSQL in a way that turns a no-op into a crash:
 
-1. ``except sqlite3.OperationalError`` around the SELECT was how the function
+1. ``except the retired driver.OperationalError`` around the SELECT was how the function
    recognised "``schema_meta`` does not exist yet". PostgreSQL raises
    ``psycopg.errors.UndefinedTable`` for that condition, which the clause did
    not catch — so opening a BRAND-NEW store would raise out of a function whose
@@ -46,7 +46,7 @@ def empty(new_store):
 
 
 def test_absent_schema_meta_reads_as_no_floor(empty):
-    """The case the old ``except sqlite3.OperationalError`` could not catch.
+    """The case the old ``except the retired driver.OperationalError`` could not catch.
 
     A brand-new store has no ``schema_meta``, and the gate's documented contract
     for that is "no floor stamped, so this is a no-op" — not a raise out of the

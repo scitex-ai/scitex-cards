@@ -18,7 +18,7 @@ No mocks (PA-306): these build REAL stores from the shipped SQL, on the engine
 that ships. Each fixture carves its own throwaway PostgreSQL schema, installs
 the DDL through the package's own ``execute_ddl``, and reads the shape back out
 of ``information_schema`` — which is what makes the comparison meaningful now
-that ``execute_ddl`` TRANSLATES on the way in. A scratch SQLite file, which is
+that ``execute_ddl`` TRANSLATES on the way in. A scratch the retired engine file, which is
 what these fixtures used to be, exercised the untranslated text and therefore
 could not fail on a rung that is wrong for the only engine this package has.
 

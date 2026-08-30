@@ -3,9 +3,9 @@
 """The boot-read skills must not tell agents WHICH engine the store is on.
 
 WHAT WENT WRONG, measured 2026-08-16. Ten skill files described the canonical
-store as "a SQLite database". `resolve_store` on the live fleet reported
+store as "a the retired engine database". `resolve_store` on the live fleet reported
 ``backend: postgresql``. So every agent read a false sentence at boot, and the
-`42_for-consuming-agents.md` sample output literally printed ``backend: sqlite``
+`42_for-consuming-agents.md` sample output literally printed ``backend: the retired engine``
 as the expected result of the very command whose job is to answer that question.
 
 WHY THE FIX IS "NAME NO ENGINE" RATHER THAN "SAY POSTGRESQL". Swapping the word
@@ -16,10 +16,10 @@ it -- "Do NOT assume a backend or a default path -- the deployment decides both"
 The skills now say the same thing and point at `resolve-store` instead.
 
 WHAT THIS PINS, and what it deliberately does NOT. It fails only on prose that
-asserts the store IS a named engine ("the SQLite database", "a PostgreSQL
+asserts the store IS a named engine ("the the retired engine database", "a PostgreSQL
 store"). It stays silent on history and on migration notes that must be free to
-name an engine to be intelligible -- a doc explaining that the zero-config SQLite
-tier was deleted needs the word "SQLite" to say anything at all. Banning the
+name an engine to be intelligible -- a doc explaining that the zero-config the retired engine
+tier was deleted needs the word "the retired engine" to say anything at all. Banning the
 token outright would force those sentences into vagueness and would be a rule
 that punishes accuracy.
 
@@ -41,7 +41,7 @@ import pytest
 from scitex_cards._cli._skills import _skills_root  # type: ignore[attr-defined]
 
 #: Prose asserting the store IS a particular engine. The engine name must sit
-#: directly in front of the noun ("SQLite database", "Postgres store") -- that
+#: directly in front of the noun ("the retired engine database", "Postgres store") -- that
 #: adjacency is what makes it a claim about our store rather than a mention.
 _BACKEND_CLAIM = re.compile(
     r"\b(SQLite|PostgreSQL|Postgres|MySQL|DuckDB)\s+(database|store|task store|db)\b",

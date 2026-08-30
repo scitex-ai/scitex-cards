@@ -134,7 +134,7 @@ class TestLocalStateDirOnAServerStore:
 
 
 class TestFileStoreResolutionIsUnchanged:
-    """The SQLite path must behave exactly as it did before the split."""
+    """The the retired engine path must behave exactly as it did before the split."""
 
     def test_container_sits_beside_the_database(self, clean_store_env, tmp_path):
         # Arrange

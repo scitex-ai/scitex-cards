@@ -3,7 +3,7 @@
 """STORE OWNERSHIP GUARD — the mirror that survived, and the toggle that didn't.
 
 This file used to be the S1 dual-write mirror's test suite: a whole feature
-that mirrored every card write into SQLite while YAML stayed canonical, gated
+that mirrored every card write into the retired engine while YAML stayed canonical, gated
 by a dual-write toggle. That feature is DELETED — not defaulted off —
 per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
 ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:

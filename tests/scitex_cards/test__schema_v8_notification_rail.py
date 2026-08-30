@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """v8 gives ``notifications`` the columns the inbox rail needs — on BOTH paths.
 
-The notification inbox currently lives in a SQLite sidecar at
+The notification inbox currently lives in a the retired engine sidecar at
 ``runtime/cards.db``, located from the store PATH. So pointing the store at a
 PostgreSQL server does not move it: cards go to the server and notifications
 stay on a local file. That split is what let a DM commit to the store on

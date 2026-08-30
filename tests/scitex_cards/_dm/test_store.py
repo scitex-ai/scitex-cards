@@ -117,7 +117,7 @@ def test_a_database_failure_is_not_swallowed(store, db_path):
     """
 
     # Arrange — a REAL unusable database: the path where `cards.db` must go is
-    # a DIRECTORY, so sqlite cannot open it. This IS the failure rather than a
+    # a DIRECTORY, so the retired engine cannot open it. This IS the failure rather than a
     # stand-in for it, so it also proves the error escapes from wherever the
     # write actually happens — not merely from the one name a patch replaced.
     db_path.mkdir()

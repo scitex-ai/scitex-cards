@@ -8,8 +8,8 @@ libpq keyword/value conninfo was handed to a resolver that assumed a path:
     host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards
 
 ``Path(...)`` on that string does not raise. It produces a plausible relative
-path, and ``mkdir`` + ``sqlite3.connect`` then CREATED a SQLite database in the
-working directory literally named after the DSN. It reported backend "sqlite",
+path, and ``mkdir`` + ``the retired driver.connect`` then CREATED a the retired engine database in the
+working directory literally named after the DSN. It reported backend "the retired engine",
 accepted writes, and answered queries, while the real PostgreSQL server sat
 untouched. Nothing raised. The file had to be deleted by hand.
 
@@ -95,7 +95,7 @@ def test_a_postgres_url_never_becomes_a_file(empty_cwd):
 
 
 def test_a_libpq_keyword_conninfo_never_becomes_a_file(empty_cwd):
-    """The exact spelling that produced the observed stray SQLite file."""
+    """The exact spelling that produced the observed stray the retired engine file."""
     # Arrange
     dsn = PG_KV
 

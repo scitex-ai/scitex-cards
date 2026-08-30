@@ -152,7 +152,7 @@ def store(new_store):
 
 @pytest.fixture
 def imported(store):
-    """The `store` doc seeded into SQLite: summary + a live row-factory conn."""
+    """The `store` doc seeded into the retired engine: summary + a live row-factory conn."""
     summary = seed_db_from_doc(
         store["tasks_doc"], store["target"], threads=store["threads"]
     )
@@ -220,7 +220,7 @@ def _resolve_with_delegated_user_path(tmp_path, env):
 def test_resolve_db_path_refuses_instead_of_returning_the_user_path(tmp_path, env):
     """Final tier REFUSES. It used to return the delegated filename.
 
-    The abolished behaviour was returning a SQLite path nobody chose, handed
+    The abolished behaviour was returning a the retired engine path nobody chose, handed
     back with the same type as one somebody did choose. That is the whole
     defect, so this asserts the type of the outcome and not merely that
     something went wrong.
@@ -393,16 +393,16 @@ def test_schema_version_constant_is_at_least_the_payload_revision():
 #    that HAS NEVER EXISTED.
 #
 # 2. The second built it by ``ALTER TABLE tasks DROP COLUMN card_json``. That passed
-#    locally (SQLite 3.45.1) and FAILED IN CI with ``no such column: agent`` on the
+#    locally (the retired engine 3.45.1) and FAILED IN CI with ``no such column: agent`` on the
 #    reopen — the rewritten table came back missing columns. ``DROP COLUMN`` is a
-#    table-rewrite whose behaviour varies across SQLite versions, so the fixture was
-#    testing the runner's SQLite as much as our migration. A TEST FIXTURE MUST NOT BE
+#    table-rewrite whose behaviour varies across the retired engine versions, so the fixture was
+#    testing the runner's the retired engine as much as our migration. A TEST FIXTURE MUST NOT BE
 #    BUILT OUT OF A FEATURE WHOSE SEMANTICS VARY BY ENVIRONMENT — it turns a green
 #    local run into a red CI run and sends you hunting through the wrong code.
 #
 # So: take the REAL schema text and delete the one line v2 added. Every other column,
 # every index, exactly as v1 had them — and no dependency on any ALTER at all. The
-# fixture is a v1 DB because it was BUILT AS ONE, deterministically, on every SQLite.
+# fixture is a v1 DB because it was BUILT AS ONE, deterministically, on every the retired engine.
 def _v1_schema_sql() -> str:
     """Today's schema text, minus every column added after v1.
 
@@ -1189,7 +1189,7 @@ def test_repo_field_round_trips_db_column(imported):
 # --------------------------------------------------------------------------- #
 # The upsert path must UPDATE, not DELETE-and-INSERT                          #
 # --------------------------------------------------------------------------- #
-# THESE TESTS USED TO READ THE SQL TEXT, through `sqlite3`'s trace callback, and
+# THESE TESTS USED TO READ THE SQL TEXT, through `the retired driver`'s trace callback, and
 # asserted that the rebuild's `INTO tasks` statements carried no `OR REPLACE`.
 # The measurement behind them stands: `INSERT OR REPLACE INTO tasks` cost
 # 4,592 us/row against 110 us/row for a plain INSERT -- 42x, 6.3 s of the

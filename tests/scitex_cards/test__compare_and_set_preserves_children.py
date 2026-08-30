@@ -41,7 +41,7 @@ def _card(title="Original", comments=None):
 
 
 # ROWS ARE NAME-ADDRESSABLE, NOT POSITIONAL. These helpers read `row[0]`,
-# which worked only because `sqlite3.Row` accepts BOTH an index and a name.
+# which worked only because `the retired driver.Row` accepts BOTH an index and a name.
 # The store speaks to a server now and its rows are mapping-shaped, so an
 # integer subscript raises `KeyError: 0`. Reading by name is what the
 # package itself does throughout -- and it is the same defect that made

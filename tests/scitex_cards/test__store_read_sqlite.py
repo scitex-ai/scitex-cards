@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The S2 SQLite read accelerator is DELETED — this file pins the new contract.
+"""The S2 the retired engine read accelerator is DELETED — this file pins the new contract.
 
 INCIDENT (2026-07-21, P0): agent scitex-dev, running scitex-cards 0.17.4 with
-the deprecated ``SCITEX_CARDS_READ_BACKEND=sqlite`` env var set (and NOT
+the deprecated ``SCITEX_CARDS_READ_BACKEND=the retired engine`` env var set (and NOT
 ``SCITEX_CARDS_STORE_BACKEND``), hit ``_store_read_sqlite.py``'s refusal ("THE
-SQLITE READ BACKEND IS REFUSING TO SERVE ... falling back to the canonical
-YAML"). SQLite had already become the ONE canonical store by then (no mirror,
+the retired engine READ BACKEND IS REFUSING TO SERVE ... falling back to the canonical
+YAML"). the retired engine had already become the ONE canonical store by then (no mirror,
 no YAML behind it), so the accelerator's freshness check compared the
 database's provenance stamp against a YAML file that no longer existed and
 refused UNCONDITIONALLY, every time. Its "safe" fallback then resolved through
@@ -15,7 +15,7 @@ serving it silently while a banner claimed reads were merely slow. An
 accelerator whose guard can never again pass is not a slow path — it is dead
 code that fails dangerous, so it is deleted rather than repaired.
 
-This file used to prove the SQLite-indexed read path
+This file used to prove the the retired engine-indexed read path
 (``scitex_cards._store_read_sqlite.list_tasks_sqlite``) and the
 Python-predicate path (``scitex_cards._store_list._match``) returned
 IDENTICAL rows for every filter combination. There is no longer a second

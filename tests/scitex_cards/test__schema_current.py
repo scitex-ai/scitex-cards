@@ -144,7 +144,7 @@ def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path, ne
     conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
     # NAMED WITH ITS TABLE, because PostgreSQL's DROP TRIGGER requires one.
-    # `DROP TRIGGER IF EXISTS <name>` is SQLite's spelling -- trigger names are
+    # `DROP TRIGGER IF EXISTS <name>` is the retired engine's spelling -- trigger names are
     # global there -- and against a server it is a syntax error at end of input,
     # so this arrange step failed before the act ever ran.
     #

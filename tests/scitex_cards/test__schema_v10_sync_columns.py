@@ -249,7 +249,7 @@ class TestThePayloadTriggerIsInstalled:
     THIS REPLACES A TEST OF THE OTHER LEG. The class here was
     ``TestTheSqliteLegDoesNotInstallTheTrigger``: the rung has a
     ``if not _is_postgres(conn): return`` branch, and that branch was checked
-    by building a scratch SQLite database and reading ``sqlite_master`` back.
+    by building a scratch the retired engine database and reading ``sqlite_master`` back.
     There is one storage engine now, so that branch has no caller and no
     constructible fixture — the only way to reach it is to open something that
     is not the store, which every door in this package refuses. The behaviour

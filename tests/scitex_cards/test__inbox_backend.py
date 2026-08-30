@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``_inbox_backend.backend()`` selects the inbox rail — SQLite is RETIRED.
+"""``_inbox_backend.backend()`` selects the inbox rail — the retired engine is RETIRED.
 
-PR #938 (step one, 2026-08-23): SQLite stopped being *selectable* as a
-fallback for an unshared store. Step two (2026-08-28) deleted the SQLite
+PR #938 (step one, 2026-08-23): the retired engine stopped being *selectable* as a
+fallback for an unshared store. Step two (2026-08-28) deleted the the retired engine
 inbox implementation outright (``_inbox_sqlite.py`` / ``_inbox_sqlite_schema.py``
-/ ``_inbox_receipt.py``'s SQLite half), so this file is the direct test
+/ ``_inbox_receipt.py``'s the retired engine half), so this file is the direct test
 coverage for the seam neither draft PR carried its own dedicated suite for:
 real environment variables (the code under test reads ``os.environ``, so the
 test should too), no mocks.
 
 Every case here was previously reachable and silent (a store misconfiguration
-became an invisible SQLite inbox nobody polled). Now every one of them raises
+became an invisible the retired engine inbox nobody polled). Now every one of them raises
 :class:`~scitex_cards._store_errors.StoreUnavailableError` instead, and this
 file pins exactly which cases do and which one legitimate case (a real shared
 Postgres store) still works.
@@ -57,7 +57,7 @@ class TestAPostgresStoreSelectsPostgres:
 
 
 class TestAnUnsharedStoreHasNoBackend:
-    """No fallback: an unshared store used to select SQLite silently."""
+    """No fallback: an unshared store used to select the retired engine silently."""
 
     def test_an_unshared_store_raises(self, env, tmp_path):
         # Arrange
@@ -88,7 +88,7 @@ class TestAnUnsharedStoreHasNoBackend:
 
 
 class TestExplicitSqliteIsRefused:
-    """Selecting SQLite by name is a config error now, not a legal choice."""
+    """Selecting the retired engine by name is a config error now, not a legal choice."""
 
     def test_explicit_sqlite_raises(self, env):
         # Arrange

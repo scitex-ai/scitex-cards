@@ -417,7 +417,7 @@ def test_a_target_that_is_not_the_store_says_why_it_cannot_answer():
     """The honest answer, with its reason — never an invented stable value.
 
     Asserted against the reason's own words rather than an engine name. It used
-    to look for "sqlite" in the string; the reason names no engine now, because
+    to look for "the retired engine" in the string; the reason names no engine now, because
     there is only one and the answer is about this target not being it.
     """
     # Arrange

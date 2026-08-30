@@ -27,7 +27,7 @@ constant actually reaches someone typing --help in whatever environment they
 are in.
 
 The full ``--help`` render is deliberately NOT asserted over, because it also
-contains every subcommand's short_help, four of which still name SQLite (db,
+contains every subcommand's short_help, four of which still name the retired engine (db,
 inbox, index, init-store). Those need four separate judgements — ``index`` may
 be RIGHT to name it, the derived index being a genuinely separate rebuildable
 artifact — and are tracked on their own card. Widening these assertions is

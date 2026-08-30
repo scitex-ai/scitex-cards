@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""An UNCONFIGURED store must RAISE. There is no zero-config SQLite default.
+"""An UNCONFIGURED store must RAISE. There is no zero-config the retired engine default.
 
 THE TIER THIS DELETES, and why it could not be guarded door by door.
 
@@ -23,7 +23,7 @@ door states the consequence: "the exporter answers a missing database with an
 empty document, and this value is written back as the WHOLE store -- every card
 replaced by nothing."
 
-THE OPERATOR'S RULING, repeated and final: SQLite is abolished fleet-wide, and
+THE OPERATOR'S RULING, repeated and final: the retired engine is abolished fleet-wide, and
 the error-prone option is better off not existing at all -- fewer choices is the
 feature, not a limitation. This file pins that the tier is GONE rather than
 merely guarded: a guard has to be remembered at every new call site, and the
@@ -216,10 +216,10 @@ class TestBothResolversRefuse:
     def test_the_backend_cannot_be_reported_as_sqlite_by_default(
         self, unconfigured_store
     ):
-        """`backend_of` is TOTAL -- anything non-Postgres answers 'sqlite'.
+        """`backend_of` is TOTAL -- anything non-Postgres answers 'the retired engine'.
 
         So a resolver that still returned the invented filename would report a
-        confident ``sqlite`` for a store nobody configured. Nothing to classify
+        confident ``the retired engine`` for a store nobody configured. Nothing to classify
         is the only correct answer.
         """
         # Arrange
@@ -445,8 +445,8 @@ class TestConfiguredStoresAreUntouched:
     def test_an_env_sqlite_path_still_resolves(self, env_store, tmp_path):
         """The abolition is of the INVENTED default, not of an explicit path.
 
-        A caller who names a SQLite file has made a decision, and this package
-        is not the place that overrules it -- migrating the fleet off SQLite is
+        A caller who names a the retired engine file has made a decision, and this package
+        is not the place that overrules it -- migrating the fleet off the retired engine is
         a deployment change, not a resolver change.
         """
         # Arrange

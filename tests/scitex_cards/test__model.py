@@ -18,7 +18,7 @@ from scitex_cards._validate import _validate_tasks
 def _write(tmp_path, text):
     """Seed the canonical DB from a YAML-text document; return the STORE path.
 
-    The store is SQLite now: ``load_tasks`` / ``save_tasks`` read and write the
+    The store is the retired engine now: ``load_tasks`` / ``save_tasks`` read and write the
     canonical database and IGNORE the path argument (it survives only as a
     label in error text). Tests still author their fixtures as readable YAML
     text, so parse it, seed the DB, and return the STORE IDENTITY path — NOT
@@ -1376,7 +1376,7 @@ def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
 # ---------------------------------------------------------------------------
 # The canonical-store LABEL on tolerated-validation warnings.
 #
-# It said `<sqlite:{path}>` until 2026-08-02 -- a hardcoded backend, and a path
+# It said `<the retired engine:{path}>` until 2026-08-02 -- a hardcoded backend, and a path
 # to the YAML file the surrounding code documents as no longer existing. On a
 # PostgreSQL store that names a backend AND a location the rows did not come
 # from, which during an incident sends the reader somewhere irrelevant. Found

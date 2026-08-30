@@ -181,7 +181,7 @@ class TestRetirementIsOneWay:
         assert value == STATUS_RETIRED
 
     def test_writing_null_over_the_status_is_also_refused(self, retired_store):
-        # Arrange: SQLite's <> is NULL-propagating, so a guard using <> would
+        # Arrange: the retired engine's <> is NULL-propagating, so a guard using <> would
         # let NULL through and the retirement would be erasable.
         sql = "UPDATE schema_meta SET value = NULL WHERE key = 'store_status'"
         # Act
@@ -370,7 +370,7 @@ class TestTheUnguardedEraMustBeStatedExplicitly:
 
 
 class TestTheRetireVerbHandlesTheUpsertHazard:
-    """schema_meta's idiom is INSERT OR REPLACE, which SQLite implements as
+    """schema_meta's idiom is INSERT OR REPLACE, which the retired engine implements as
     DELETE-then-INSERT, so the obvious upsert trips the delete guard on an
     already-retired store. The verb exists so nobody has to remember that.
     """

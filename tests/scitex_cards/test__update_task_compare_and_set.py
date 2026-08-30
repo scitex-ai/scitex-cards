@@ -31,7 +31,7 @@ invisible lost update. A bulk reconciler that supplied nothing is counting
 ordinary concurrency, where an exception would be slow and would mislabel a
 routine outcome as a fault. So this verb raises; the mirror still reports.
 
-Real SQLite throughout: ``revision`` only moves because v7's
+Real the retired engine throughout: ``revision`` only moves because v7's
 ``tasks_bump_revision`` trigger moves it, so a mocked store would mock away the
 one thing under test.
 """
