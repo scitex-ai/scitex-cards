@@ -487,7 +487,7 @@ class TestTheRungRepairs:
         )
 
 
-# WHAT WAS DELETED HERE. A ``TestSqliteIsANoOp`` class asserted that
+# WHAT WAS DELETED HERE. A no-op class asserted that
 # ``_migrate_v10_to_v11`` returned quietly against the retired engine, whose
 # foreign keys arrived with the CREATE TABLE and could not be ALTERed in. With
 # one engine there is no non-PostgreSQL connection for the rung to be a no-op

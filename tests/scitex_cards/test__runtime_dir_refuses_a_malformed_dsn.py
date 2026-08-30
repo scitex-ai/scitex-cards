@@ -17,7 +17,7 @@ The inbox rail never reaches either guarded door. It calls
 is a `mkdir(parents=True)` during PATH DERIVATION -- upstream of every connect.
 A guard at the connect door is downstream of the damage and cannot see it.
 
-I FOUND THE DOORS BY GREPPING FOR `sqlite3.connect`, WHICH WAS THE WRONG
+I FOUND THE DOORS BY GREPPING FOR THE DRIVER'S `connect`, WHICH WAS THE WRONG
 INSTRUMENT. The manufacture happens at mkdir, one layer above. Counting connect
 sites gave a confident, complete-looking, wrong answer -- this package's own
 recurring defect, applied to my search rather than to its code.

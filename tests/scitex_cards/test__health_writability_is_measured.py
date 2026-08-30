@@ -63,7 +63,8 @@ def read_only_store(tmp_path):
 def store_in_read_only_dir(tmp_path):
     """A WRITABLE file inside a read-only directory.
 
-    SQLite creates `-wal` / `-journal` SIBLINGS, so the directory matters: a
+    A file-backed engine creates `-wal` / `-journal` SIBLINGS, so the directory
+    matters: a
     file-permission check alone would report a healthy store that cannot
     actually take a card.
     """

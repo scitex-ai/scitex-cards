@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The comment merge must work on a POSTGRES row, not only a sqlite3.Row.
+"""The comment merge must read rows by NAME, which is all PostgreSQL allows.
 
 THE GAP THIS FILLS. 0.49.0 shipped `_merge_unseen_comment_rows` reading result
-rows by POSITION. `sqlite3.Row` supports `row[0]`; psycopg's dict row factory
+rows by POSITION. The retired engine's row type supported `row[0]`; psycopg's dict row factory
 does not, so `row[0]` looked up the integer key ``0`` and raised ``KeyError: 0``.
 Production is PostgreSQL and the entire ~7,500-test suite ran on the retired engine, so the
 defect was not missed — it was UNREACHABLE from the harness. Every card holding
