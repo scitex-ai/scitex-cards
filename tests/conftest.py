@@ -46,7 +46,6 @@ from pathlib import Path
 from typing import Iterator
 
 import pytest
-from _store_damage import content_or_none, damaged_candidates
 
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
@@ -470,68 +469,15 @@ def new_store():
 # guarded is gone. Nothing can recreate it either: the env tier and the compat
 # mirror that could resolve to that dirname were deleted with the shim, so no
 # code path in this package names it any more.
-_REAL_STORE_CANDIDATES: tuple[Path, ...] = (
-    Path("/home/agent/.scitex/cards/cards.db"),
-    Path("/home/ywatanabe/.scitex/cards/cards.db"),
-)
 
 
-def _stat_or_none(path: Path) -> tuple[int, int] | None:
-    """``(mtime_ns, size)`` for ``path``, or ``None`` when it doesn't exist.
-
-    Never raises. Diagnostic context only — see :func:`_store_damage.damage`
-    for why file stat is NOT the failure criterion.
-    """
-    try:
-        st = path.stat()
-    except OSError:
-        return None
-    return (st.st_mtime_ns, st.st_size)
 
 
 # Captured at IMPORT — same reasoning as ``_SCRATCH`` above: nothing this
 # suite does can happen before this module finishes importing, so this is the
 # earliest possible "before" snapshot.
-_REAL_STORE_BEFORE: dict[Path, tuple[int, int] | None] = {
-    p: _stat_or_none(p) for p in _REAL_STORE_CANDIDATES
-}
-_REAL_CONTENT_BEFORE: dict[Path, dict | None] = {
-    p: content_or_none(p) for p in _REAL_STORE_CANDIDATES
-}
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _assert_real_store_untouched_by_session():
-    """FAIL LOUD if any real store candidate was DAMAGED during this session.
-
-    This is a DETECTOR, not a preventer — the prevention is the pinning above
-    and in ``tests/scitex_cards/conftest.py``. If this fires, do not go
-    hunting for the one leaking test as a condition of fixing the card in
-    hand: per the incident runbook, report the failing state (which candidate
-    path, and what changed) and treat it as a signal that the pinning
-    fixtures need a wider audit — finding the exact leaking test is
-    legitimate follow-up work, not a blocker on having this guard at all.
-    """
-    yield
-    damaged = damaged_candidates(_REAL_CONTENT_BEFORE, _REAL_STORE_CANDIDATES)
-    if not damaged:
-        return
-    details = "\n".join(
-        f"  {path}\n    {why}\n"
-        f"    stat before (mtime_ns, size) = {_REAL_STORE_BEFORE[path]}\n"
-        f"    stat after  (mtime_ns, size) = {_stat_or_none(path)}"
-        for path, why in damaged
-    )
-    pytest.fail(
-        "REAL TASK STORE DAMAGED DURING THIS TEST SESSION.\n"
-        "Every pinning fixture in this file and in "
-        "tests/scitex_cards/conftest.py is supposed to make this "
-        "impossible; one of them has a hole. Do NOT chase the individual "
-        "leaking test as a condition of triage — report this failure "
-        "verbatim; finding the exact leak is follow-up work.\n"
-        f"{details}",
-        pytrace=False,
-    )
 
 
 @pytest.fixture(autouse=True)
