@@ -17,6 +17,32 @@ resolve differently:
 Same inode, two realpaths. The guard therefore refused every write from
 whichever population did not match the stamp, against a database that was
 theirs. MEASURED on the live board 2026-07-20, minutes after a restore.
+
+STATUS ON THE POSTGRESQL BRANCH: THESE TESTS ARE RED AND THAT IS THE HONEST
+ANSWER, NOT A GAP LEFT BY A CONVERSION THAT RAN OUT OF TIME.
+
+The subject here is the identity of a FILE reached by two NAMES -- one inode,
+two directory entries, decided by the INODE branch of `_dual_write._same_file`.
+A store is a PostgreSQL database now, so that fixture cannot be built: there is
+no inode to reach twice, and `os.link` has no analogue on a schema.
+
+The mechanism it covers HAS NOT BEEN DELETED. `_db_freshness`'s `store_path`
+stamp and `_same_file` both survive in `src`, documented as the LEGACY branch
+the ownership guard consults only when a store carries no `store_uuid` AND the
+caller declares no expectation. What has changed underneath them is that
+`canonical_path()` now runs `Path(dsn).expanduser().resolve()` on a DSN --
+the `Path(dsn)` collapse this PR fixed in four other places -- so the row it
+writes is a phantom path derived from a server URL.
+
+So the decision this file is waiting on is NOT "how do I spell this fixture".
+It is whether the path stamp is retired outright now that `store_uuid` has
+landed and the guard consults it first. Retire it and these tests are deleted
+with it (answer (b)); keep it and they need a two-spellings-of-one-DSN fixture
+that asserts behaviour `stamp_store_provenance` does not currently have -- it
+would FLIP on every spelling change, because `_same_file` cannot stat either
+side. Writing that test today would be writing a new failing test for an
+undecided design, which is not this branch's job.
+
 """
 
 from __future__ import annotations
