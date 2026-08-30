@@ -28,9 +28,9 @@ from scitex_cards._schema_shape import SchemaShape, ShapeAgreement
 
 
 @pytest.fixture
-def live_store(tmp_path):
+def live_store(tmp_path, new_store):
     """A real, fully initialised store — triggers created by the real DDL."""
-    path = tmp_path / "cards.db"
+    path = new_store()
     conn = open_db(path)
     try:
         yield conn
@@ -133,14 +133,14 @@ def test_a_store_whose_stamp_disagrees_with_its_rungs_needs_the_ddl(live_store):
     assert current is False
 
 
-def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path):
+def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path, new_store):
     # Arrange
     # The guard triggers are not decoration: they are the retirement
     # enforcement AND the proof-of-currency mechanism. Skipping the DDL without
     # confirming they exist would leave a store unguarded while believing it
     # guarded. Dropping one is the honest way to test that — asserting on a
     # fabricated trigger list would only prove the fixture.
-    path = tmp_path / "cards.db"
+    path = new_store()
     conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
     conn.execute(f"DROP TRIGGER IF EXISTS {victim}")
@@ -153,10 +153,10 @@ def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path):
     assert current is False
 
 
-def test_an_unreadable_catalogue_is_not_a_current_schema(tmp_path):
+def test_an_unreadable_catalogue_is_not_a_current_schema(tmp_path, new_store):
     # Arrange
     # A connection that cannot answer the catalogue query at all.
-    path = tmp_path / "cards.db"
+    path = new_store()
     open_db(path).close()
     conn = connect(path)
     conn.close()  # closed: every query on it now raises

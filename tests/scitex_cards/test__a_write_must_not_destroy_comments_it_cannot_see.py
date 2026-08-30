@@ -42,9 +42,17 @@ def _card(comments):
     return {"id": "c1", "title": "T", "status": "deferred", "comments": comments}
 
 
+# ROWS ARE NAME-ADDRESSABLE, NOT POSITIONAL. These helpers read `row[0]`,
+# which worked only because `sqlite3.Row` accepts BOTH an index and a name.
+# The store speaks to a server now and its rows are mapping-shaped, so an
+# integer subscript raises `KeyError: 0`. Reading by name is what the
+# package itself does throughout -- and it is the same defect that made
+# every commented card read-only fleet-wide on 2026-08-23, which
+# .github/workflows/postgres-backend-on-ubuntu-latest.yml names in its
+# header. A COUNT needs an explicit alias to have a name at all.
 def _texts(conn, task_id="c1"):
     return [
-        r[0]
+        r["text"]
         for r in conn.execute(
             "SELECT text FROM task_comments WHERE task_id = ? ORDER BY seq",
             (task_id,),
@@ -53,8 +61,8 @@ def _texts(conn, task_id="c1"):
 
 
 @pytest.fixture()
-def conn(tmp_path):
-    connection = _db.open_db(tmp_path / "s.db")
+def conn(tmp_path, new_store):
+    connection = _db.open_db(new_store())
     yield connection
     connection.close()
 

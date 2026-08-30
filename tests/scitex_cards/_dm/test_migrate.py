@@ -37,9 +37,16 @@ THREAD_ID = "dm:agent-x::operator"
 
 
 @pytest.fixture()
-def db_path(tmp_path: Path) -> Path:
-    """An EXPLICIT database path nobody else can resolve."""
-    return tmp_path / "cards.db"
+def db_path(new_store) -> str:
+    """An EXPLICIT store nobody else can resolve. A DSN, not a path.
+
+    It returned ``tmp_path / "cards.db"``. That spelling meant "a fresh store
+    only this test can reach", and the temp directory supplied both halves at
+    once; a filesystem path names no store now, so the isolation has to come
+    from a throwaway PostgreSQL schema instead. Same guarantee, different
+    mechanism: nothing outside this test can address the schema either.
+    """
+    return new_store()
 
 
 def _write_sidecar(path: Path, records: list[dict]) -> Path:
@@ -329,7 +336,7 @@ def test_extra_rows_in_the_store_do_not_fail_the_gate(db_path, sidecar):
 # --------------------------------------------------------------------------- #
 # Cross-host round trip (design section 6.3)                                   #
 # --------------------------------------------------------------------------- #
-def test_an_export_merges_into_an_empty_peer_intact(db_path, sidecar, tmp_path):
+def test_an_export_merges_into_an_empty_peer_intact(db_path, sidecar, tmp_path, new_store):
     """Export then merge is how a second host gets the history at all.
 
     The payload has to carry threads, membership, messages and receipts — drop
@@ -338,7 +345,7 @@ def test_an_export_merges_into_an_empty_peer_intact(db_path, sidecar, tmp_path):
     # Arrange
     _dm_store.backfill_from_sidecar(sidecar, db=db_path)
     payload = _dm_store.export_dm(db=db_path)
-    peer = tmp_path / "peer.db"
+    peer = new_store(prefix="peer")
 
     # Act
     _dm_store.merge_dm(payload, db=peer)
@@ -350,11 +357,11 @@ def test_an_export_merges_into_an_empty_peer_intact(db_path, sidecar, tmp_path):
     ]
 
 
-def test_a_merged_receipt_keeps_the_peers_read_state(db_path, sidecar, tmp_path):
+def test_a_merged_receipt_keeps_the_peers_read_state(db_path, sidecar, tmp_path, new_store):
     """Read state has to survive the hop, or the peer shows everything unread."""
     # Arrange
     _dm_store.backfill_from_sidecar(sidecar, db=db_path)
-    peer = tmp_path / "peer.db"
+    peer = new_store(prefix="peer")
     _dm_store.merge_dm(_dm_store.export_dm(db=db_path), db=peer)
 
     # Act

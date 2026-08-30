@@ -317,7 +317,20 @@ def _insert_tasks(
             found_row = conn.execute(
                 "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
             ).fetchone()
-            found = None if found_row is None else found_row[0]
+            # BY NAME, NOT BY POSITION. `sqlite3.Row` accepted both an index
+            # and a column name, so `found_row[0]` worked for as long as the
+            # store was a file. The server's rows are mapping-shaped and an
+            # integer subscript raises `KeyError: 0` -- here, on the
+            # COMPARE-AND-SET branch of the card write funnel, which is the one
+            # path a caller reaches by asking for safety.
+            #
+            # Same defect that made every commented card read-only fleet-wide
+            # on 2026-08-23, named in the header of
+            # .github/workflows/postgres-backend-on-ubuntu-latest.yml. It
+            # survived the sweep that left warnings about `row[0]` in nine
+            # other modules because no test had ever run this branch against a
+            # server: the harness handed every test a file.
+            found = None if found_row is None else found_row["revision"]
             if found != expected_revision:
                 counts["revision_skipped"] = 1
                 counts["revision_found"] = found
