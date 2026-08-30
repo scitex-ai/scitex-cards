@@ -25,6 +25,17 @@ name: CLA Assistant
 #      as an INPUT defaulting to '["ubuntu-latest"]', so the same decision holds
 #      and is now the org's to change once rather than ours to re-defend here.
 #
+#      THAT PARAGRAPH WAS NOT TRUE OF THE SHA IT SHIPPED WITH. At `ecb0345b`
+#      the reusable had no `runs_on` input at all: both jobs hard-coded
+#      `runs-on: [self-hosted, Linux, X64, spartan-cpu]`. So this file claimed
+#      to have preserved the inline version's ubuntu-latest decision while
+#      actually reversing it, and the delegation quietly moved an
+#      outsider-triggerable job ONTO the credential-bearing pool. The bump to
+#      `8da375a9` is what makes the paragraph above describe reality: the input
+#      exists and defaults to '["ubuntu-latest"]', so passing nothing now lands
+#      on a disposable hosted VM. Verify before trusting a comment about a
+#      pinned callee — the pin is what decides, not the prose beside it.
+#
 # WHY THE `uses:` REF IS A SHA, NOT `@main`
 # -----------------------------------------
 # A mutable org-level ref means one change to the reusable lands in EVERY calling
@@ -58,7 +69,7 @@ permissions:
 
 jobs:
   call:
-    uses: scitex-ai/.github/.github/workflows/cla.yml@ecb0345b88823776aad046047288623bd5d24511 # main@2026-07-29
+    uses: scitex-ai/.github/.github/workflows/cla.yml@8da375a9771a07cf3f281c5f6fb450ab64dc7c0a # main@2026-08-30
     with:
       # Preserved verbatim from the inline version this replaces.
       owner_allowlist: "bot*,ywatanabe1989"
