@@ -33,12 +33,12 @@ from scitex_cards._store import add_task, comment_task
 
 @pytest.fixture()
 def store_with_chat_task() -> str:
-    """Seed the canonical (SQLite) store with one task that already carries
+    """Seed the canonical store with one task that already carries
     one comment, plus an empty-thread task, so the view's
     ``resolve_tasks_path(None)`` — pinned to the scratch store by the root and
     ``_django`` conftests — reads them back.
 
-    The store is SQLite now: ``add_task`` / ``comment_task`` write the canonical
+    The store is the database now: ``add_task`` / ``comment_task`` write the canonical
     DB, and passing ``store=None`` (the default) resolves the pinned store and
     round-trips (per THE STORE-PATH RULE — a ``tmp_path`` yaml would trip the
     "stamped for a DIFFERENT store" refusal). Returns the pinned STORE-identity

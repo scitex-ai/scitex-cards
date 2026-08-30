@@ -46,7 +46,7 @@ def _now_minus(minutes: float) -> str:
 def store_with_done_task() -> str:
     """Seed the canonical DB with one done task carrying a full ``_log_meta``
     set so the timing compute has something to aggregate. The store is the
-    pinned SQLite DB; ``add_task`` writes there and the view's
+    pinned scratch DB; ``add_task`` writes there and the view's
     ``resolve_tasks_path(None)`` resolves the SAME pinned identity, so the
     seeded card round-trips into the payload. Passing the pinned STORE path
     (never a ``tmp_path`` yaml) keeps the DB provenance stamp matching what the

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Crash-safe writer guarantees on `_model.save_tasks` — SQLite store.
+"""Crash-safe writer guarantees on `_model.save_tasks` — database store.
 
 Pins the safety contract the lead requested in a2a `d5809cd3` after
-recovering the 2026-06-13 corruption episode. The store is SQLite now, so
-the atomicity boundary is the SQLite TRANSACTION rather than the old YAML
+recovering the 2026-06-13 corruption episode. The store is the database now, so
+the atomicity boundary is the database TRANSACTION rather than the old YAML
 tmp + `os.replace` promotion — but the CONTRACT the caller relies on is
 unchanged:
 
@@ -28,7 +28,7 @@ a WRITE stamps the DB with the path passed, and the next read refuses a DB
 stamped for a different store. So every call here passes the PINNED store
 identity (`SCITEX_CARDS_TASKS_YAML_SHARED`), never a test-local tmp path, and
 prior rows are SEEDED into the canonical DB (`SCITEX_CARDS_DB`) via
-`seed_db_from_doc`. Under SQLite `users` round-trips as a LIST of records and
+`seed_db_from_doc`. In the database `users` round-trips as a LIST of records and
 `inboxes` as a `{recipient: [notification]}` map (the DB table shapes) — not
 the old YAML dict-of-users shape.
 """
@@ -134,7 +134,7 @@ _KILL_MID_WRITE_SCRIPT = textwrap.dedent(
     sys.path.insert(0, sys.argv[2])
     from scitex_cards._model import save_tasks
     # Schedule a SIGKILL on ourselves shortly after we start — it lands DURING
-    # the SQLite write for a payload this large, before the single commit that
+    # the write for a payload this large, before the single commit that
     # makes the write durable.
     pid = os.getpid()
     if os.fork() == 0:

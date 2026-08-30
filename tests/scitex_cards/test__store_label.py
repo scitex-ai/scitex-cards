@@ -127,7 +127,7 @@ class TestTheLabelCarriesNoCredentials:
         assert "zzz" not in label and "?" not in label
 
 
-class TestSqliteIsUnaffected:
+class TestAFileTargetIsUnaffected:
     """Positive control: the backend every deployment used before PostgreSQL."""
 
     def test_a_path_target_is_returned_as_written(self, store_env, tmp_path):

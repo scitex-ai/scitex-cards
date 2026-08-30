@@ -10,7 +10,7 @@ and a plain task listing. Part of `SciTeX <https://scitex.ai>`_.
 
 The store is **PostgreSQL on 55432** and there is ONE store identity: an explicit
 ``store`` argument → ``$SCITEX_CARDS_DB``. Nothing else — unset RAISES. There is
-deliberately no SQLite tier, no project scope and no bundled-example fallback: an
+deliberately no second-engine tier, no project scope and no bundled-example fallback: an
 unconfigured store is a configuration error, not a cue to invent a board.
 
 Interfaces

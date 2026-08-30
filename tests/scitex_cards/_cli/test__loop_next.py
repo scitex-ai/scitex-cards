@@ -33,7 +33,7 @@ from scitex_cards._cli._loop import next_cmd
 from scitex_cards._store import add_task, list_tasks
 
 #: The same four cards the YAML fixture used to spell out, seeded through the
-#: public write verb now that SQLite is the only store.
+#: public write verb now that the database is the only store.
 _CARDS = (
     dict(
         id="a-deferred",

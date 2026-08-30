@@ -38,6 +38,8 @@ supplies a SAFE DEFAULT where there previously was a dangerous one.
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -50,12 +52,13 @@ from _store_damage import content_or_none, damaged_candidates
 _STORE_ENV_VARS = (
     "SCITEX_CARDS_DB",
     "SCITEX_CARDS_TASKS_YAML_SHARED",
+    "SCITEX_STORE_DSN",
 )
 
 #: Env names that select WHICH BACKEND is canonical. These are CLEARED, not
 #: pinned. Pinning the store path while inheriting the backend selector makes
 #: the suite's behaviour depend on the developer's shell: a maintainer who has
-#: exported SCITEX_CARDS_STORE_BACKEND=sqlite (as anyone working the cutover
+#: exported a backend selector by hand (as anyone working the cutover
 #: does) flips every test into DB-canonical mode against a scratch DB that was
 #: never created, and they all fail with "canonical store ... does not exist".
 #: A test that WANTS canonical mode sets this itself; the default must be the
@@ -64,6 +67,97 @@ _BACKEND_ENV_VARS = (
     "SCITEX_CARDS_STORE_BACKEND",
     "SCITEX_CARDS_READ_BACKEND",
 )
+
+#: ``$SCITEX_STORE_DSN`` names the PostgreSQL the storage primitive
+#: (``scitex_dev.store``) opens. IT IS THE LIVE FLEET BOARD on every machine
+#: this suite runs on -- measured 2026-08-30, injected into every sac-managed
+#: agent container alongside ``$SCITEX_CARDS_DB``.
+#:
+#: The four variables above are pinned because a test that resolves the real
+#: board can rewrite it, which this suite did three times in 2026-07. That
+#: reasoning does not stop at this package's own resolver: the moment one test
+#: reaches the store through the PRIMITIVE instead of through
+#: ``scitex_cards``, an unpinned ``$SCITEX_STORE_DSN`` hands it the same live
+#: board by a route no ``scitex_cards`` guard sits on. Nothing in
+#: ``src/scitex_cards`` reads this variable TODAY, so the hole is not currently
+#: reachable -- it is pinned now because it is cheap now, and because the
+#: postgres port that is landing will make it reachable.
+_STORE_DSN_ENV = "SCITEX_STORE_DSN"
+
+
+# --------------------------------------------------------------------------- #
+# A throwaway PostgreSQL for the whole session.                                #
+# --------------------------------------------------------------------------- #
+#
+# NOT hand-rolled. ``scitex_dev.store.testing`` is the primitive's own test
+# affordance: ``writable_dsn()`` finds a cluster that ACCEPTS WRITES (it runs
+# ``pg_is_in_recovery()`` rather than assuming -- every host's own loopback
+# 55432 is a READ-ONLY STANDBY, which accepts the connection and refuses the
+# DDL) and ``ephemeral_schema()`` carves a uniquely named schema out of it.
+#
+# The yielded DSN carries ``options=-csearch_path=<schema>``, and that is what
+# makes it SAFE against the live cluster rather than merely polite: ``public``
+# is not on the path, so an unqualified ``SELECT ... FROM tasks`` inside a test
+# does not silently read the fleet's 6,399 cards -- it fails to resolve the
+# relation at all. The schema is dropped CASCADE when the session ends.
+_dsn_stack = contextlib.ExitStack()
+atexit.register(_dsn_stack.close)
+
+
+def _open_throwaway_postgres() -> "tuple[str | None, str]":
+    """A schema-scoped DSN for this session, or ``None`` AND THE REASON WHY.
+
+    Returns the reason rather than a bare ``None`` because the fixture below
+    turns it into a FAILURE MESSAGE. A PostgreSQL test that cannot reach a
+    server must not skip: a skipped test and a passing test render identically
+    in a green summary, which is exactly how a suite reports success while
+    running nothing.
+    """
+    try:
+        from scitex_dev.store.testing import ephemeral_schema, writable_dsn
+    except ImportError as exc:  # scitex-dev predating the affordance
+        return None, (
+            "scitex_dev.store.testing is not importable "
+            f"({type(exc).__name__}: {exc}). It ships the ephemeral-store "
+            "affordance this suite needs; upgrade scitex-dev."
+        )
+    try:
+        cluster = _dsn_stack.enter_context(writable_dsn())
+        scoped = _dsn_stack.enter_context(ephemeral_schema(cluster, prefix="cards_tests"))
+    except Exception as exc:  # noqa: BLE001 - report it, do not guess at it
+        _dsn_stack.close()
+        return None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+    return scoped, "ok"
+
+
+#: Resolved at IMPORT, before collection -- same reasoning as ``_SCRATCH``
+#: below: the pin has to be in place before the first test module imports
+#: anything that reads the environment.
+_EPHEMERAL_DSN, _EPHEMERAL_DSN_REASON = _open_throwaway_postgres()
+
+
+@pytest.fixture(scope="session")
+def postgres_dsn() -> str:
+    """A DSN for a REAL, throwaway PostgreSQL schema. FAILS if there is none.
+
+    The asymmetry with ``pytest.skip`` is the whole point and it is not
+    stylistic. Every host in this fleet answers on 55432, and every one of
+    those is a read-only STANDBY: a fixture that skipped on "cannot write"
+    would skip on every developer machine and in CI, and the suite would go
+    green having exercised no storage at all.
+    """
+    if _EPHEMERAL_DSN is None:
+        pytest.fail(
+            "No writable PostgreSQL is available, so this test cannot run "
+            "against the engine it ships on. This is a FAILURE and not a skip: "
+            "a skipped storage test is indistinguishable from a passing one.\n"
+            f"  reason: {_EPHEMERAL_DSN_REASON}\n"
+            "  a writable cluster is e.g. "
+            "postgresql://ywatanabe__scitex-dev@scitex-primary:55432/scitex\n"
+            "  (this host's own loopback 55432 is a READ-ONLY STANDBY)",
+            pytrace=False,
+        )
+    return _EPHEMERAL_DSN
 
 #: ``$SCITEX_DIR`` is the BASE DIRECTORY under ``resolve_db_path``'s tier-4
 #: fallback (``scitex_config._ecosystem.local_state.user_path``), which reads
@@ -120,12 +214,20 @@ def _point_env_at(scratch: Path) -> None:
     # wants the tier-4 fallback sets this explicitly) still wins for the
     # duration of that test; this only supplies the default.
     os.environ["SCITEX_DIR"] = str(scratch / "scitex-dir-fallback")
+    # The storage primitive's own variable. SET to the throwaway schema when
+    # one could be opened; otherwise REMOVED — never left inherited. Removing
+    # it is strictly safer than the value it replaces, because the value it
+    # replaces is the live fleet board.
+    if _EPHEMERAL_DSN is None:
+        os.environ.pop(_STORE_DSN_ENV, None)
+    else:
+        os.environ[_STORE_DSN_ENV] = _EPHEMERAL_DSN
 
 
 def _bootstrap_empty_db(db_path: Path) -> None:
     """Create an EMPTY, schema-complete database at ``db_path``.
 
-    SQLite is the store now, so a test that writes a card needs a database the
+    The database is the store now, so a test that writes a card needs one the
     way it used to need a ``tasks.yaml``. Pinning the variable was enough when
     the DB was a mirror that could be absent; against the real store an absent
     file is a hard, correct refusal ("canonical store ... does not exist"), and

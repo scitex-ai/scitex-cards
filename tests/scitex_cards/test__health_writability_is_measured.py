@@ -34,7 +34,7 @@ _ROOT_BYPASSES_PERMISSIONS = pytest.mark.skipif(
 
 
 def _make_store(path):
-    """A real, schema-complete SQLite store with one countable row."""
+    """A real, schema-complete store with one countable row."""
     conn = sqlite3.connect(path)
     try:
         conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY)")

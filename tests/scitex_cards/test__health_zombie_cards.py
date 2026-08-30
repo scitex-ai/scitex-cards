@@ -47,7 +47,7 @@ from scitex_cards._health import (
 
 @pytest.fixture()
 def store() -> str:
-    # SQLite is the store now: the conftest pins + bootstraps the canonical DB
+    # The database is the store now: the conftest pins + bootstraps the canonical DB
     # and both store-identity env vars at a per-test scratch dir. Seed the two
     # cards through the real write path, then hand back the PINNED store path
     # (the store IDENTITY == resolve_tasks_path(None)) so read-after-write

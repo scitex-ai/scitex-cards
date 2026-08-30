@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`print-stats --nudge-quiet` wrote its dedup ledger into a local SQLite file.
+"""`print-stats --nudge-quiet` wrote its dedup ledger into a local database file.
 
 `_cli/_stats.py` resolves ONE value and hands it to TWO consumers whose
 contracts differ:
@@ -17,7 +17,7 @@ Measured on compute-04, 2026-08-23, one variable changed:
     resolve_store_target(_db_target('…/tasks.yaml'))  -> …/cards/cards.db
 
 So every nudge-dedup write for the */10 cron went into `~/.scitex/cards/
-cards.db` — SQLite, banned fleet-wide — while the Postgres copy of
+cards.db` — the retired engine, banned fleet-wide — while the Postgres copy of
 `sweep_state` froze on 2026-08-18. The file was still being appended to when
 this test was written (367 rows, newest stamp seconds old).
 

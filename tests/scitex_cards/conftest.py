@@ -200,9 +200,9 @@ def _reject_deprecated_agent_env():
 
 # === Suite-wide: pin the YAML inbox backend by default ======================
 #
-# The inbox storage backend defaulted to SQLite from 2026-07-09 until it was
-# RETIRED entirely (operator ruling 2026-08-23, PR #938 / #944): SQLite is no
-# longer a legal inbox backend under any resolution path, so an unset var now
+# The inbox storage backend defaulted to a local file rail from 2026-07-09
+# until it was RETIRED entirely (operator ruling 2026-08-23, PR #938 / #944):
+# it is no longer a legal inbox backend under any resolution path, so an unset var now
 # means "no backend at all" against a non-shared store rather than a working
 # default. The bulk of the suite asserts the YAML on-disk inbox format /
 # semantics (the ``inboxes:`` section shape, tasks:/users: coexistence, the
@@ -233,7 +233,7 @@ def _refuse_swapped_args(doc, db_path) -> None:
 
     THE ARGUMENT ORDER IS (doc, db_path) AND GETTING IT BACKWARDS USED TO BE
     SILENT — measured 2026-08-17, by me, in this repo. `seed_db_from_doc(db,
-    {"tasks": []})` handed the DICT to SQLite as a path, and SQLite did exactly
+    {"tasks": []})` handed the DICT to the engine as a path, and it did exactly
     what it is asked to: it CREATED A DATABASE at a path whose name is the
     repr of the dict. A 225 KB file called `{'tasks': []}` landed at the repo
     root, `git add -A` committed it, and it was the CI quality gate that
@@ -257,7 +257,7 @@ def _refuse_swapped_args(doc, db_path) -> None:
             "seed_db_from_doc(doc, db_path) — the arguments look SWAPPED.\n"
             f"  doc     = {type(doc).__name__}\n"
             f"  db_path = {type(db_path).__name__}\n"
-            "Passing a mapping as db_path makes SQLite CREATE a database at a "
+            "Passing a mapping as db_path makes the engine CREATE a database at a "
             "path named after the dict's repr (measured: a 225 KB file called "
             "\"{'tasks': []}\" at the repo root, committed, caught only by the "
             "CI quality gate). Call it as seed_db_from_doc({'tasks': [...]}, "
@@ -269,8 +269,8 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     """Populate a fresh database from an IN-MEMORY document. Returns the summary.
 
     THE REPLACEMENT FOR ``import_from_yaml`` IN TESTS. That function read a doc
-    off a YAML file and rebuilt the DB from it; it is deleted, because SQLite is
-    the only store and there is no YAML to read. Tests that used it to *seed* a
+    off a YAML file and rebuilt the DB from it; it is deleted, because the
+    database is the only store and there is no YAML to read. Tests that used it to *seed* a
     database (build a doc, write YAML, import) now build the same doc and call
     this — which reaches the SAME surviving primitive (``_rebuild_from_doc``),
     so every downstream assertion about schema / columns / counts is unchanged.

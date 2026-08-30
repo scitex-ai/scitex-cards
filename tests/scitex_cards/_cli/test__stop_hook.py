@@ -63,7 +63,7 @@ def _seed_many_runnable_cards(count=12, agent="worker-x"):
 def _run_against_unreadable_store():
     """Invoke the hook against a store that cannot be read at all.
 
-    The store is SQLite-only now and the ``--tasks`` CLI option is gone, so a
+    The store is database-only now and the ``--tasks`` CLI option is gone, so a
     detector failure is simulated faithfully by pointing the resolved database
     env at a path that cannot even be created: the read raises ``RuntimeError``
     and the hook must fail open. (The old form named a missing ``tasks.yaml``

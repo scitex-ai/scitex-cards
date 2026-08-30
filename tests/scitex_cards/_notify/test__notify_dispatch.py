@@ -47,7 +47,8 @@ from scitex_cards._users import register_user
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _store(tmp_path):
-    # Store is SQLite; reads/writes hit the canonical DB and the path survives
+    # The store is the database; reads/writes hit the canonical DB and the path
+    # survives
     # only as the store IDENTITY stamp. Return the PINNED store path (== the
     # conftest-bootstrapped canonical DB's identity) so writes stamp it and the
     # matching reads round-trip — NOT tmp_path/tasks.yaml, which trips the

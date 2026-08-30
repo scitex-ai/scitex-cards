@@ -87,7 +87,7 @@ def _write_tasks_yaml(tmp_path, body: str):
 
 
 def test_local_file_sync_load_returns_validated_tasks(tmp_path):
-    # Arrange — SQLite is the store; seed the canonical DB, then point the
+    # Arrange — the database is the store; seed the canonical DB, then point the
     # adapter at the pinned STORE identity path (reads ignore the path and
     # read the DB; the STORE path is what the ownership stamp round-trips on).
     import os
@@ -106,7 +106,7 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
 
 
 #: The task DATA must round-trip through LocalFileSync unchanged: a mutation
-#: made in memory, saved, and reloaded must survive. SQLite is the store now,
+#: made in memory, saved, and reloaded must survive. The database is the store now,
 #: so save() writes the canonical DB and load() reads it back — seed the DB,
 #: point the adapter at the pinned STORE identity path, then load → mutate →
 #: save → reload. (The companion "drops YAML comments" assertion is gone: it

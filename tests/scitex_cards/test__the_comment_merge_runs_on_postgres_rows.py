@@ -5,7 +5,7 @@
 THE GAP THIS FILLS. 0.49.0 shipped `_merge_unseen_comment_rows` reading result
 rows by POSITION. `sqlite3.Row` supports `row[0]`; psycopg's dict row factory
 does not, so `row[0]` looked up the integer key ``0`` and raised ``KeyError: 0``.
-Production is PostgreSQL and the entire ~7,500-test suite runs on SQLite, so the
+Production is PostgreSQL and the entire ~7,500-test suite ran on the retired engine, so the
 defect was not missed — it was UNREACHABLE from the harness. Every card holding
 comments became read-only in every direction for about an hour, fleet-wide.
 

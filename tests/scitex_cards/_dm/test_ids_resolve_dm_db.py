@@ -12,7 +12,7 @@ existed::
     "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
         --  postgresql:/scitex_cards@127.0.0.1:55432/cards.db
 
-The second is not a near-miss, it is a new SQLite database: the caller opens
+The second is not a near-miss, it is a new, empty database: the caller opens
 it, the schema is created, and it answers queries with an empty board. The
 regrown file found on disk that day held 15 tables and 3 rows, all of them
 ``schema_meta`` -- created and initialised, never written to.

@@ -33,7 +33,7 @@ _STORE_TEXT = (
 def store():
     """Seed the canonical DB and reset the board cache around the test.
 
-    The store is SQLite now; the handlers read the canonical DB and treat the
+    The store is the database now; the handlers read it and treat the
     ``?store=`` path as a provenance label only. We still author the fixture as
     readable YAML text, parse it, seed the DB, and hand back the PINNED store
     identity path (never a tmp_path yaml — that trips the "stamped for a
@@ -258,7 +258,7 @@ _NESTED_STORE_TEXT = (
 def nested_store():
     """Seed the DB with a parent + two children + an unrelated top-level node.
 
-    Same SQLite-cutover shape as the ``store`` fixture: parse the YAML text,
+    Same post-cutover shape as the ``store`` fixture: parse the YAML text,
     seed the canonical DB, and yield the pinned store identity path.
     """
     from conftest import seed_db_from_doc
