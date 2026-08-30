@@ -65,3 +65,42 @@ jobs:
       # AGENT_TOOLSDIRECTORY; the shared workflow's `runs_on` input documents
       # that fix and why it has not fired yet.
       runs_on: '["ubuntu-latest"]'
+
+      # THE STORE IS A POSTGRESQL DATABASE, so this leg needs one or it is not
+      # testing this package. The three contexts this input flips are the
+      # REQUIRED ones; `postgres-backend`, which has always had a server, is
+      # not. So until now the gate that blocks a merge could not see the thing
+      # the store conversion changed.
+      #
+      # WITHOUT IT THE LEG DOES NOT SKIP — IT REFUSES, WHICH IS WHY THIS IS A
+      # FIX AND NOT A NEW FEATURE. tests/conftest.py pins $SCITEX_CARDS_DB to a
+      # target the source doors reject when no cluster could be opened, so every
+      # store-touching test fails loudly rather than passing over nothing.
+      # Measured on this leg, run 33290762754 (py3.12), the report header said:
+      #
+      #   scitex-cards store: NO WRITABLE POSTGRESQL WAS OPENED -- every
+      #   store-touching test will refuse.
+      #     reason: TimeoutExpired: Command '[.../pg_ctl, -D,
+      #     /tmp/scitex-store-test-azpl2pf9/data, ...]' timed out after 120s
+      #
+      # That is `scitex_dev.store.testing.writable_dsn()` falling through to its
+      # LAST route — start a private cluster with initdb/pg_ctl — and hanging
+      # there. (`pg_ctl start` is captured with `capture_output=True` and no
+      # `-l`, so the daemonised postmaster inherits the pipe and holds it open
+      # past pg_ctl's own exit; the read blocks until the 120s timeout. That is
+      # a scitex-dev defect, reported separately.) Declaring a server takes
+      # route ONE instead — `$SCITEX_STORE_DSN` — so the broken route is never
+      # reached.
+      #
+      # NO NAME MAPPING IS NEEDED, and I checked rather than assuming, because
+      # the org workflow's own comment warns that scitex-cards gates on a
+      # private marker. On DEVELOP that is true. On THIS branch it is not:
+      # tests/conftest.py:86 sets `_STORE_DSN_ENV = "SCITEX_STORE_DSN"` and
+      # tests/conftest.py:125-134 opens the session store through
+      # `scitex_dev.store.testing.writable_dsn()`, whose first route is that
+      # same variable (scitex_dev/store/_host.py `STORE_DSN_ENV`). The reusable
+      # workflow exports exactly that name, so ONE name is the source of truth
+      # and there is no second one to disagree with it — which is the property
+      # worth having here, given this repo lost its live board on 2026-07-19 to
+      # two names that resolved differently.
+      postgres: true
