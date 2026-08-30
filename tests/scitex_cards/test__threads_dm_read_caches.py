@@ -38,15 +38,20 @@ from scitex_cards._users._store_write import register_user
 
 
 @pytest.fixture()
-def store(tmp_path):
-    """A real, isolated store file + cleared module caches (they are global)."""
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
+def store(new_store):
+    """A real, isolated store + cleared module caches (they are global).
+
+    Was ``tmp_path / "tasks.yaml"``; a path names no store now and is refused
+    at the door. The cache clearing is the point of the fixture and is
+    unchanged — those caches are process-global, so a hermetic test cannot
+    depend on the luck of a fresh key.
+    """
+    path = new_store()
     _store_read._READ_CACHE.clear()
     _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
     _threads._SUMMARY_CACHE.clear()
-    yield str(path)
+    yield path
     _store_read._READ_CACHE.clear()
     _db_users._ROW_CACHE.clear()
     _threads._READ_CACHE.clear()
