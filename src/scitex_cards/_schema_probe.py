@@ -61,7 +61,7 @@ __all__ = [
 #: schema, `schema_already_current` still True.
 #:
 #: THIS DEFECT COULD NOT EXIST ON THE PREVIOUS ENGINE, which is why it survived
-#: to here rather than being caught years ago -- SQLite has no schemas, so
+#: to here rather than being caught years ago -- the retired engine has no schemas, so
 #: "every trigger in the database" and "every trigger in this store" were the
 #: same set. They stopped being the same set the moment the store became a
 #: schema on a shared server, and this query kept the old meaning.
