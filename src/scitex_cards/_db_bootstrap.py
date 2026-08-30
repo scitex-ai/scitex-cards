@@ -317,7 +317,7 @@ def _insert_tasks(
             found_row = conn.execute(
                 "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
             ).fetchone()
-            # BY NAME, NOT BY POSITION. `sqlite3.Row` accepted both an index
+            # BY NAME, NOT BY POSITION. `the retired driver.Row` accepted both an index
             # and a column name, so `found_row[0]` worked for as long as the
             # store was a file. The server's rows are mapping-shaped and an
             # integer subscript raises `KeyError: 0` -- here, on the
