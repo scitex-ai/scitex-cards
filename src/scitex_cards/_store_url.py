@@ -253,14 +253,41 @@ def reject_attempted_dsn(target: object) -> None:
         "cards database that answers every query, and a wrong board that works "
         "is far worse than one that will not start.\n"
         "Accepted forms:\n"
-        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
-        "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
+        "    postgresql://scitex-primary:55432/scitex_cards\n"
+        "    host=scitex-primary port=55432 dbname=scitex_cards\n"
         "    /an/absolute/path/to/cards.db\n"
         "Check $SCITEX_CARDS_DB, and note a DSN that has been through Path() "
         "loses one slash: 'postgresql:/host/db' is this error, not a directory."
     )
 
 
+#: WHY THE EXAMPLES ABOVE CARRY NO USER, and must not grow one back.
+#:
+#: They used to read ``postgresql://scitex_cards@.../scitex_cards``, and that
+#: example NEVER WORKED. `scitex_cards` was not an application login at all: it
+#: was the cluster's BOOTSTRAP SUPERUSER, created by initdb, and it is NOLOGIN.
+#: An operator who copied the example got "role cannot log in" -- from the one
+#: line in the codebase whose entire job is to tell them what a correct value
+#: looks like.
+#:
+#: Two things then changed, on 2026-08-25:
+#:   - identity moved OUT of the DSN. Agent specs carry a DSN with no userinfo
+#:     and the principal comes from PGUSER / ~/.pgpass, so one DSN serves 120+
+#:     per-principal roles instead of naming one shared account.
+#:   - that bootstrap role was RENAMED to `scitex_owner`, because a role named
+#:     after one leaf package while owning the whole cluster is exactly the
+#:     name collision this package keeps paying for.
+#:
+#: TWO FACTS ABOUT THAT ROLE, recorded here because they were each independently
+#: re-derived and each cost a rehearsal to settle:
+#:   - `ALTER ROLE scitex_owner NOSUPERUSER` is REFUSED by PostgreSQL --
+#:     "the bootstrap superuser must have the SUPERUSER attribute". It cannot be
+#:     de-privileged, by design, no matter how many other superusers exist.
+#:   - `REASSIGN OWNED BY scitex_owner` is likewise REFUSED -- its objects are
+#:     "required by the database system". Its ownership cannot be moved either.
+#: So "strip the legacy role's superuser" is not a task anyone can complete.
+#: What protects the store is that it is NOLOGIN and no one can SET ROLE to it.
+#:
 #: Shell constructs a shell would already have consumed. Their SURVIVAL into a
 #: store target is the whole signal: the value reached us through a reader that
 #: does not expand -- a JSON or YAML config, a single-quoted assignment, a spec
@@ -333,7 +360,7 @@ def reject_unexpanded_variable(target: object) -> None:
         "store at a fresh target is how the board was destroyed 2026-07-19.\n"
         "Check $SCITEX_CARDS_DB and the config that sets it; the intended "
         "value looks like\n"
-        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
+        "    postgresql://scitex-primary:55432/scitex_cards"
     )
 
 
