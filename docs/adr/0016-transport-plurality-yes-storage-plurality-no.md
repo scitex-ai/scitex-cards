@@ -11,7 +11,7 @@ are not.
 
 ## Context
 
-The store is one the retired engine file (`$SCITEX_CARDS_DB`, ~46 MB, ~2,860 cards) written
+The store is one SQLite file (`$SCITEX_CARDS_DB`, ~46 MB, ~2,860 cards) written
 by roughly 90 fleet agents. Three needs collided:
 
 1. The board is unusable from another machine — the public deployment at
@@ -30,7 +30,7 @@ by roughly 90 fleet agents. Three needs collided:
 > **ソースコード**に含めてください。」
 
 Backend selection was then deleted outright in `b63ffd42`
-(*"the retired engine is the only store — delete the backend switch"*).
+(*"SQLite is the only store — delete the backend switch"*).
 
 ## The question that had to be settled first
 
@@ -87,7 +87,7 @@ The forbidden object is a second **store or copy**, in any spelling. Two ways to
 4. **Row-level writes come first**, before any transport or storage work. Three
    independent reviewers converged on this. The decisive reason is the audit's:
    the 368 ms is an artifact of the write model, so **no capacity conclusion
-   about the retired engine can be drawn until it is gone** — a load test run today measures
+   about SQLite can be drawn until it is gone** — a load test run today measures
    the wrong thing.
 
 ## Consequences
@@ -135,7 +135,7 @@ instruction back and then answering it:
 >
 > これは私の指示が悪かったと思います。
 >
-> the retired engine と postgres を対応させてください、可能ですか？
+> sqlite と postgres を対応させてください、可能ですか？
 
 So the title of this ADR is now **half wrong**, and the honest thing is to
 amend rather than quietly rewrite: storage plurality is permitted. What follows
@@ -172,16 +172,16 @@ guards now have one stated reason instead of two folk ones.
 ### The permitted shape
 
 1. **One authoritative store per deployment**, never two at once. Default
-   the retired engine: single-host, zero-config, no daemon.
+   SQLite: single-host, zero-config, no daemon.
 2. **Selected by a deploy-time config value read once at startup — NOT an env
    var.** `_store_backend.py`'s own reasoning applies: an env var leaks
    ambiently across every write in a process, which is exactly why
    `allow_shrink` is keyword-only. (scitex-db caught the author about to
    specify an env var after arguing against them.)
-3. **No sync path, ever.** Nothing keeps the retired engine and Postgres in agreement. The
+3. **No sync path, ever.** Nothing keeps SQLite and Postgres in agreement. The
    only crossing is a one-way migration that runs once and finishes.
 4. **No implicit fallback.** A configured-but-unreachable Postgres FAILS the
-   process; it must not fall back to the retired engine. scitex-db's framing, which is
+   process; it must not fall back to SQLite. scitex-db's framing, which is
    better than the author's: *a fallback does not merely read the wrong
    database, it makes the wrong database WRITABLE* — and thereby manufactures
    the second-authoritative-store condition the ruling exists to prevent.
@@ -215,9 +215,9 @@ decided here because the lock is this package's.
 Preserving `revision` across the copy is necessary — it is user-visible causal
 state and belongs in the checksummed column set, not treated as backend
 bookkeeping. But it is **not sufficient**. A writer that read `revision=5` from
-the retired engine and writes to Postgres after cutover finds `revision=5` and SUCCEEDS —
+SQLite and writes to Postgres after cutover finds `revision=5` and SUCCEEDS —
 its lock is satisfied, yet it computed against a read from a different store,
-and any write that landed in the retired engine after the copy point is silently gone.
+and any write that landed in SQLite after the copy point is silently gone.
 Preserving `revision` makes the lock FUNCTION; it does not make it MEAN
 anything across a store swap, because the lock's premise ("nothing changed under
 me since I read") is what the swap violates.

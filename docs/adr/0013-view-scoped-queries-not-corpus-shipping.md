@@ -57,7 +57,7 @@ understated.
 On YAML that was effectively impossible: every query costs a full document
 parse (**measured 4.6 s**), so "filter server-side" meant 4.6 s per keystroke.
 The corpus-shipping design was a rational response to a store that could not
-answer questions. On the retired engine it is the natural shape — the mirror already
+answer questions. On SQLite it is the natural shape — the mirror already
 indexes `status`, `agent`, `assignee`, `scope`, `kind`, `blocker`, `project`,
 `deadline`, `parent`, and filtered reads measured **14–85×** faster than the
 YAML path.
