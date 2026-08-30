@@ -168,6 +168,31 @@ def postgres_dsn() -> str:
     return _EPHEMERAL_DSN
 
 
+def pytest_report_header() -> str:
+    """Say, in the header of EVERY run, whether a store was opened and why not.
+
+    WITHOUT THIS THE REASON IS UNREACHABLE IN CI. ``_EPHEMERAL_DSN_REASON`` is
+    only rendered by the ``postgres_dsn`` / ``postgres_cluster_dsn`` fixtures,
+    and this repo runs pytest with ``-x``: the session stops at the first
+    store-touching failure, which is reached long before any test requests
+    those fixtures. So a run with no cluster produced a hundred identical
+    "target does not name the store" refusals and NOWHERE said that the harness
+    had failed to open a cluster at all -- measured on the pytest-matrix leg
+    2026-08-30, where the cause had to be deduced from the fact that the
+    refused path was the harness's own ``store0/cards.db`` placeholder.
+
+    The header runs before collection and is printed even on a green run, so
+    the answer is in the log whether or not anything failed.
+    """
+    if _EPHEMERAL_DSN is not None:
+        return "scitex-cards store: a throwaway PostgreSQL schema was opened"
+    return (
+        "scitex-cards store: NO WRITABLE POSTGRESQL WAS OPENED -- every "
+        "store-touching test will refuse.\n"
+        f"  reason: {_EPHEMERAL_DSN_REASON}"
+    )
+
+
 @pytest.fixture(scope="session")
 def postgres_cluster_dsn() -> str:
     """The CLUSTER, unscoped — for a test that carves its own schema. NEVER SKIPS.
