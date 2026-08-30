@@ -46,7 +46,7 @@ def pre_v6_db():
     triggers, DM tables) and cannot drift from the v5 shape as the schema moves.
 
     The v7 trigger is dropped FIRST, and that is faithfulness rather than a
-    workaround: ``tasks_bump_revision`` references ``NEW.revision``, so SQLite
+    workaround: ``tasks_bump_revision`` references ``NEW.revision``, so the engine
     refuses to drop a column a trigger depends on ("error in trigger
     tasks_bump_revision after drop column"). A genuine pre-v6 database never had
     that trigger either — v7 introduced it — so removing both is what a real v5

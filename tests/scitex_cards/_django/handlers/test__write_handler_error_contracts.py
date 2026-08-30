@@ -50,7 +50,7 @@ _STORE_TEXT = (
 def store(env):
     # Hermetic: no per-project lane union from the real ~/proj tree.
     env.set("SCITEX_CARDS_LANE_GLOBS", "")
-    # SQLite store: seed the prior cards into the canonical DB, then hand the
+    # The store is the database: seed the prior cards into it, then hand the
     # handlers the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path fails the next read's ownership check). The DB is
     # authoritative for content; the path is a provenance label. The
@@ -80,7 +80,7 @@ def _stale_board(store_path):
 
 
 def _tasks_by_id(store_path):
-    # Read back through the canonical store (SQLite); the path is a label only.
+    # Read back through the canonical store; the path is a label only.
     return {t["id"]: t for t in load_tasks(store_path)}
 
 

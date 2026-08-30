@@ -85,7 +85,7 @@ def test_no_agent_yields_empty():
 
 
 def _store(tmp_path, tasks):
-    # Store is SQLite now; load_tasks reads the canonical DB and treats the path
+    # The store is the database now; load_tasks reads it and treats the path
     # as a label only. Seed the pinned canonical DB from the in-memory doc and
     # return the STORE-identity path (NOT the DB path — see the migration
     # playbook's store-path rule) for callers to pass as ``store=`` / the store
@@ -248,7 +248,7 @@ def test_main_no_agent_allows(tmp_path, silent_stdin):
 
 def test_main_failsoft_allows_on_error(env, silent_stdin):
     # A broken store makes the load raise; the guard must NOT trap (exit 0).
-    # Under the SQLite store the failure mode is a MISSING canonical DB, not a
+    # Against the database store the failure mode is a MISSING canonical DB, not a
     # missing YAML file — the store path is a label now and a broken path is read
     # as the (empty) DB — so point $SCITEX_CARDS_DB at a database that does not
     # exist; the canonical read raises RuntimeError, which the guard fails soft on.

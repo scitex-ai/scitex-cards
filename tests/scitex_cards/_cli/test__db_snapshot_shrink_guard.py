@@ -22,7 +22,7 @@ from scitex_cards._cli._db import db_group
 def _seed(n: int) -> None:
     """Seed the canonical DB with ``n`` done cards.
 
-    The snapshot guard reads the canonical SQLite DB (``db snapshot`` exports it
+    The snapshot guard reads the canonical DB (``db snapshot`` exports it
     and counts the rows), so seeding is a full DB rebuild from an in-memory doc —
     the same doc the old YAML fixture held. ``seed_db_from_doc`` replaces every
     row, so re-seeding with a smaller ``n`` genuinely collapses the store.

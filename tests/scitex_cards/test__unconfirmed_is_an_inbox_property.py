@@ -41,7 +41,7 @@ from scitex_cards._inbox_receipt import (
 
 AGENT = "unconfirmed-agent"
 
-#: The one real non-server inbox backend left. SQLite was retired 2026-08-23.
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
 BACKENDS = ("yaml",)
 
 

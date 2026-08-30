@@ -41,7 +41,7 @@ from scitex_cards._users import register_user, resolve_user
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _store(tmp_path):
-    # SQLite is the TASK store now: load_tasks / add_task read+write the
+    # The database is the TASK store now: load_tasks / add_task read+write the
     # canonical DB and only use this path to STAMP provenance, so a write
     # stamped with a tmp_path file is refused by the next read. Return the
     # PINNED store identity (== resolve_tasks_path(None)) the conftest already
@@ -925,7 +925,7 @@ def test_inbox_write_creates_the_inboxes_sidecar(store_with_task_user_and_inbox)
 def test_inbox_write_keeps_the_seeded_task(store_with_task_user_and_inbox):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — the task lives in the SQLite store now, not the YAML file; read it
+    # Act — the task lives in the database store now, not the YAML file; read it
     # back through load_tasks (the DB read path) to prove the inbox write left
     # it intact.
     tasks = load_tasks(store)
@@ -938,7 +938,7 @@ def test_inbox_persistence_does_not_clobber_tasks_and_users(
 ):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — the task payload lives in the SQLite store now; load it from there.
+    # Act — the task payload lives in the database store now; load it from there.
     task = {t["id"]: t for t in load_tasks(store)}["c1"]
     # Assert — the task PAYLOAD survived, not merely the row.
     assert task["note"] == "keep me"
@@ -985,7 +985,7 @@ def test_add_task_after_inbox_write_still_works(tmp_path):
     add_task(store=store, id="c2", title="later", agent="alice")
     tasks = load_tasks(store)
     # Assert — add_task does not raise after an inbox-only write, and the row
-    # lands in the SQLite store.
+    # lands in the database store.
     assert any(t["id"] == "c2" for t in tasks)
 
 

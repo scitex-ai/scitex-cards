@@ -5,7 +5,7 @@
 Measured 2026-08-18: ``SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'`` -- the literal --
 resolved to a legitimate target, because it is non-empty (so the zero-config
 refusal never fires) and not DSN-shaped (so the DSN refusal never inspects it).
-Eight agents then shared one SQLite file named after the variable, and four
+Eight agents then shared one database file named after the variable, and four
 operator messages were written into it and delivered to nobody.
 """
 

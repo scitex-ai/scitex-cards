@@ -39,4 +39,4 @@ Universal flags
 
 Every command resolves the store the same way, and there is ONE store identity:
 ``--store`` → ``$SCITEX_CARDS_DB`` (PostgreSQL on 55432). Nothing else — unset
-raises. No SQLite tier, no project scope, no bundled-example fallback.
+raises. No second-engine tier, no project scope, no bundled-example fallback.

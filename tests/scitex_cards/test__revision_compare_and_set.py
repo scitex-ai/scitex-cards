@@ -15,7 +15,7 @@ to ship into a fleet running mixed versions:
 A LOST RACE IS REPORTED, NOT RAISED. It is the ordinary outcome a reconciler
 counts; an exception would make routine concurrency look like a fault.
 
-Real SQLite throughout — ``open_db`` builds the actual schema including the
+A real database throughout — ``open_db`` builds the actual schema including the
 trigger under test. Mocking the store here would mock away the trigger, which is
 the only thing that moves ``revision``.
 """

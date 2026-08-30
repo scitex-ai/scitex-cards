@@ -1,4 +1,10 @@
-# SQLite eradication — what may be deleted, and what must not
+# ADR-0019 — SQLite eradication: what may be deleted, and what must not
+
+*Relocated from `docs/design/` when the design tree was purged of the retired
+engine's name. `docs/adr/` is the one place the name may still appear, because
+an ADR records a decision actually taken and rewriting it destroys the record.
+This is that record: the ruling, the measurement that made the removal safe, and
+the disposition of every module. Nothing below has been edited.*
 
 Operator ruling, 2026-08-17:
 

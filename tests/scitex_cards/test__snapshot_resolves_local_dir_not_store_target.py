@@ -14,11 +14,11 @@ found only by running the real command against a real server:
      LOCAL STATE DIR (always a real directory) are independent axes, and a
      backup needs the second.
   2. ``_live_task_fingerprint`` read its row POSITIONALLY (``row[0]``).
-     ``sqlite3.Row`` accepts that; the PostgreSQL wrapper yields a dict-like row
+     the retired engine's row type accepted that; the PostgreSQL wrapper yields a dict-like row
      where ``row[0]`` raises ``KeyError: 0``. This surfaced only after (1) was
      fixed -- one defect was hiding the next.
 
-WHY NOTHING CAUGHT IT: every existing snapshot test uses a SQLite file, where
+WHY NOTHING CAUGHT IT: every existing snapshot test used a local file, where
 both spellings work. The failure needs a DSN to exist at all, and the traceback
 went to a log file (``StandardOutput=append:``) rather than journald, so
 ``systemctl status`` showed a bare "exit-code 1" with no reason.
@@ -107,7 +107,7 @@ def _called_names(func) -> set[str]:
 def _positional_row_indexes(func) -> list[int]:
     """Integer subscripts applied to a name called ``row``.
 
-    ``row[0]`` is valid on ``sqlite3.Row`` and raises ``KeyError: 0`` on the
+    ``row[0]`` was valid on the retired engine's row type and raises ``KeyError: 0`` on the
     PostgreSQL wrapper. Same AST-not-text reasoning as above: the docstring
     explaining this hazard necessarily contains the offending spelling.
     """
@@ -149,7 +149,7 @@ class TestTheSnapshotCommandUsesTheLocalAxis:
 
 
 class TestTheLiveFingerprintReadsRowsByName:
-    """`row[0]` works on SQLite and raises KeyError on the PostgreSQL wrapper."""
+    """`row[0]` worked on the retired engine and raises KeyError on the PostgreSQL wrapper."""
 
     def test_the_fingerprint_does_not_index_its_row_positionally(self):
         # Arrange

@@ -8,7 +8,7 @@ Card writes used to auto-commit the store *directory* to a lazily-init'd
 ``.git`` "recovery repo" (the "must PACK, never PRUNE" layer whose ``gc.auto=0``
 misconfiguration grew 23,252 loose objects / 13 GB on the live fleet store).
 
-The SQLite cutover REMOVED that per-write autocommit entirely.
+The database cutover REMOVED that per-write autocommit entirely.
 ``_store_write._save_doc_unlocked`` now writes through ``write_doc_to_db`` and
 stands up no git repo — the removal is deliberate and load-bearing (see the
 comment there explicitly warning a future reader against reintroducing it).
@@ -47,7 +47,7 @@ def _store_dir() -> Path:
 
 def test_a_card_write_is_durable():
     """A write PERSISTS — the surviving rule the old 'a write is committed'
-    test pinned, now against the canonical SQLite store rather than a git
+    test pinned, now against the canonical database store rather than a git
     commit."""
     # Arrange
     # Act — one card write via the store API.
@@ -60,7 +60,7 @@ def test_a_card_write_is_durable():
 def test_a_write_creates_no_per_store_git_repo():
     """THE 13 GB era is over by construction.
 
-    The per-write autocommit repo was removed with the SQLite cutover, so a
+    The per-write autocommit repo was removed with the database cutover, so a
     card write must NOT lazily init a ``.git`` in the store directory. Pinning
     its absence guards the deliberate removal against a well-meaning
     reintroduction.

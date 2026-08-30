@@ -223,7 +223,7 @@ class TestHelpClear:
         assert payload == {"task_id": "help-bob-waiting", "cleared": False}
 
     def test_clear_is_noop_when_store_absent(self, tmp_path):
-        # Arrange — an empty canonical store (no card seeded) is the SQLite
+        # Arrange — an empty canonical store (no card seeded) is the database
         # equivalent of the old "store file absent": clearing finds nothing.
         store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
         # Act

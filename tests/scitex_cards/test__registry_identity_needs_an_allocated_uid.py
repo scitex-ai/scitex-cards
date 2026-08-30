@@ -39,7 +39,7 @@ re-derived or re-assigned at each point of use.
 ■ WHY EVERY AVAILABLE KEY FAILS TODAY — measured 2026-08-17, not assumed
 
     agent NAME          NOT fleet-unique. sac (their measurement): the registry
-                        is per-host SQLite, so cross-host uniqueness is
+                        is per-host, so cross-host uniqueness is
                         unenforceable AT REGISTRATION by construction;
                         `instances.name` has no UNIQUE; and `canary-resume-test`
                         ran on TWO HOSTS FOR ~8.5 HOURS, ended by a HAND-TYPED

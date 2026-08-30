@@ -47,7 +47,7 @@ def _valid_doc(n: int = 1) -> dict:
             {"id": f"t{i}", "title": f"Title {i}", "status": "pending"}
             for i in range(n)
         ],
-        # The store is SQLite now: the `users:` section is a LIST of records
+        # The store is the database now: the `users:` section is a LIST of records
         # each carrying its own `id` (the DB-canonical shape), not the old YAML
         # dict-map `{name: {...}}` (which the write path silently drops). `kind`
         # is the one NOT-NULL column beyond the id PK.
@@ -124,7 +124,7 @@ def promoted_store(env):
     """A 3-task doc written end-to-end through the REAL save path.
 
     Yields the canonical STORE path after ``_save_doc_unlocked`` committed the
-    doc to SQLite (the canonical slot now — there is no YAML file to
+    doc to the database (the canonical slot now — there is no YAML file to
     os.replace), so each ``TestHappyPath`` test below pins one property of that
     single completed write instead of re-running it.
 
@@ -154,7 +154,7 @@ class TestHappyPath:
 
     def test_save_doc_unlocked_persists_into_the_canonical_store(self, promoted_store):
         """End-to-end: the write path still commits a valid doc into the
-        canonical slot. SQLite is that slot now (there is no YAML file to
+        canonical slot. The database is that slot now (there is no YAML file to
         os.replace, and no ``.tmp`` sidecar to promote), so 'promoted' means
         the doc is durably readable back from the canonical store."""
         # Arrange

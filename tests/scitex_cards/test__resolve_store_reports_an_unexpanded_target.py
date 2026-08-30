@@ -6,7 +6,7 @@ WHY THIS FILE EXISTS. `reject_unexpanded_variable` already guards every door
 that OPENS a store (`_paths`, `_backend_connect`, `_db`), so a real read with
 `SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'` correctly fails. But `resolve_store` --
 the verb an agent runs precisely when it is confused about its configuration --
-reported `backend: "sqlite"`, `target_is_malformed_dsn: False` and exit 0, and
+reported the file backend, `target_is_malformed_dsn: False` and exit 0, and
 said nothing about the placeholder.
 
 That is the gap `reject_unexpanded_variable`'s own docstring anticipates:

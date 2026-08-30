@@ -15,7 +15,7 @@ the node payload MUST emit those fields. This covers the wire contract:
     null-checks
   * ``agent`` (the assignee in user terms) keeps being emitted
 
-Real ``RequestFactory`` GET against the canonical SQLite store — no mocks
+Real ``RequestFactory`` GET against the canonical store — no mocks
 (STX-NM / PA-306). Mirrors the pattern in ``test_graph_fleet.py``.
 One assertion per test (STX-TQ007).
 """
@@ -59,7 +59,7 @@ def _store_text() -> str:
 
 @pytest.fixture
 def store():
-    # SQLite store: seed the two cards into the canonical DB and hand the graph
+    # The store is the database: seed the two cards into it and hand the graph
     # view the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path would fail the next read's ownership check). The
     # DB is authoritative for content; the view ignores the path except as a

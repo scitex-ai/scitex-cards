@@ -13,7 +13,7 @@ induced them:
   day. That is the whole shape of the bug: the daemon kept ticking, the guard
   kept swallowing, and the summary kept printing ``sent=0 failed=0``.
 * **the inbox cannot be read** — the inbox database path is occupied by a
-  DIRECTORY, so SQLite genuinely cannot open it and ``poll_inbox`` raises. The
+  DIRECTORY, so the engine genuinely cannot open it and ``poll_inbox`` raises. The
   pass then does not know what is pending, and must say so rather than count 0.
 
 One assertion per test (STX-TQ007); each driver runs the scenario once and each
@@ -73,14 +73,14 @@ def _break_the_inbox(tmp_path) -> None:
     """Make the inbox genuinely unreadable — on EITHER inbox backend.
 
     Both are broken deliberately. The suite pins
-    ``SCITEX_CARDS_INBOX_BACKEND=yaml`` while production runs SQLite, so
-    breaking only the one this harness happens to use would make the test pass
-    for a reason that does not exist in production — and a test that cannot
-    fail on the real path is not a test.
+    ``SCITEX_CARDS_INBOX_BACKEND=yaml`` while production runs the database
+    rail, so breaking only the one this harness happens to use would make the
+    test pass for a reason that does not exist in production — and a test that
+    cannot fail on the real path is not a test.
 
     * yaml backend: ``inboxes.json`` is not JSON, so ``json.load`` raises.
-    * sqlite backend: the inbox database path is a DIRECTORY, which SQLite
-      cannot open.
+    * database backend: the inbox database path is a DIRECTORY, which no
+      engine can open.
 
     :func:`test_the_broken_inbox_really_raises` is the positive control — it
     proves this function actually broke something, because "the inbox is empty"

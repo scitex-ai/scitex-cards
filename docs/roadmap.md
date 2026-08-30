@@ -38,7 +38,8 @@ This keeps the data portable and the surfaces swappable.
   (`scitex-cards board`); the priority handler persists drag-reorder back to the
   YAML store (the agent↔user GUI interface, first write path).
 - **Store identity** — explicit `store` -> `$SCITEX_CARDS_DB` (PostgreSQL on
-  55432); unset raises. One axis, one backend: no SQLite tier, no project scope,
+  55432); unset raises. One axis, one backend: no second-engine tier, no project
+  scope,
   no bundled-example fallback.
 - **CLI** — `render-graph`, `list-tasks`, `board`, plus the standard
   introspection / completion / `skills` commands.

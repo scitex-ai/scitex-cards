@@ -9,7 +9,7 @@ survived: the gate was written to answer "is the store current?" and was tested
 only through the path where the client and the store agree exactly. The
 interesting cases are the two where they do not.
 
-Real SQLite stores built through ``open_db``, so the guard triggers under test
+Real stores built through ``open_db``, so the guard triggers under test
 are the ones the package actually creates rather than names in a fixture.
 A fixture that declares the triggers would pass even if the DDL stopped
 creating them.

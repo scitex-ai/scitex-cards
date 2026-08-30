@@ -25,7 +25,7 @@ Most tests below are therefore AMBIENT (``store=None``), the form the
 deployment actually uses. The three that DO name a store are there because
 naming one is where I broke this twice: first by giving an explicit store a
 YAML branch (which split the registry across two homes), then by handing its
-label to ``open_db`` raw (which made SQLite create a phantom database named
+label to ``open_db`` raw (which made the engine create a phantom database named
 ``tasks.yaml``). They pin the outcome — no file, and the rows land in the
 named store's sibling database — rather than either mechanism.
 
@@ -185,7 +185,7 @@ def test_an_explicit_store_writes_no_yaml_file(
     `resolve_db_path(None).parent / "tasks.yaml"`; the YAML tier died in
     #512), so the registry inverts it to the sibling database. If this file
     ever appears again, either a file branch came back or a label reached
-    `open_db` raw and SQLite created a phantom store at the label's path —
+    `open_db` raw and the engine created a phantom store at the label's path —
     both of which have already happened once each on this branch.
     """
     # Arrange

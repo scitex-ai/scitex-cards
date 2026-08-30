@@ -32,7 +32,7 @@ def _stamped_db(tmp_path, env, store):
 
     Seeds a fresh DB from the store's doc and stamps its provenance for
     ``store`` — the explicit form of the deleted
-    ``import_from_yaml(tasks_path=store, as_store=store)``. SQLite is the only
+    ``import_from_yaml(tasks_path=store, as_store=store)``. The database is the only
     store and the importer is gone, so both halves are done by hand: seed via
     ``seed_db_from_doc`` (the surviving rebuild primitive), then stamp
     ``KEY_YAML_PATH`` with ``store`` — which is exactly what
@@ -210,7 +210,7 @@ def _legacy_yaml_path_only_db(tmp_path, env):
     the 2026-07-20 outage — carries the OLD ``yaml_path`` ``schema_meta`` key and
     NO ``store_path``. The two ownership guards MUST AGREE it is usable, or
     ``check_fresh`` refuses it while ``_db_mirrors_this_store`` adopts it — and
-    the SQLite read path, with no YAML to fall back to, goes read-only again.
+    the database read path, with no YAML to fall back to, goes read-only again.
 
     This was one test with seven assertions until 2026-08-15. Split under
     STX-TQ007 because the assertions cover four DIFFERENT claims — both guards

@@ -6,10 +6,10 @@ THE FAILURE THIS PREVENTS WAS MEASURED ON THE LIVE SYSTEM, 2026-07-31, while
 testing the cutover before performing it. With ``SCITEX_CARDS_DB`` pointed at a
 PostgreSQL URL:
 
-    list_tasks()              ->    0 cards      (SQLite target: 2960)
+    list_tasks()              ->    0 cards      (real target: 2960)
     resolve-store `exists`    -> True            the guard reported healthy
     on disk                   -> ./postgresql:/scitex_cards@127.0.0.1:5432/
-                                    scitex_cards   a REAL, EMPTY, 217 KB SQLite
+                                    scitex_cards   a REAL, EMPTY, 217 KB local
                                                    database, freshly created
 
 ``Path("postgresql://host/db")`` is not an error -- the ``//`` collapses and you
@@ -173,7 +173,7 @@ def test_the_refusal_points_at_the_right_api():
 
 
 def test_an_ordinary_path_still_resolves(tmp_path):
-    """Positive control: the SQLite path is every deployment today."""
+    """Positive control: a filesystem path must still resolve."""
     # Arrange
     target = tmp_path / "cards.db"
 

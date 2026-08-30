@@ -192,7 +192,7 @@ def test_the_digest_names_the_owner_field_it_resolved_by():
 def test_the_stated_field_is_the_one_the_clock_reads():
     # Arrange — THE ANTI-DRIFT PIN. A hand-written label would let the message
     # keep naming `deferred_at` after someone changed the clock, which is the
-    # exact shape of the _inbox.py docstrings that still claim a SQLite
+    # exact shape of the _inbox.py docstrings that still claim a file-backed
     # default. Prove the printed name is the key the clock actually looks up.
     import datetime as _d
 

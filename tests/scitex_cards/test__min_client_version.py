@@ -15,9 +15,9 @@ which is ``connect`` + ``init_schema``) and the write path
 (``_db_mirror.mirror_doc_incremental`` opens the same way) funnel through — so gating it
 there gates both without touching either module.
 
-The S2 SQLite read accelerator (``_store_read_sqlite.list_tasks_sqlite``) this file
+The S2 indexed read accelerator (deleted) that this file
 originally exercised as "the read path" is DELETED (2026-07-21, a separate incident:
-its own freshness guard could never again pass once SQLite became canonical, so it
+its own freshness guard could never again pass once the database became canonical, so it
 refused unconditionally and fell back to an empty YAML/example chain). ``list_tasks``
 now has exactly one read path, and it is the one exercised below.
 
@@ -349,7 +349,7 @@ def test_the_read_path_is_gated_the_same_as_connect():
     """`_store.list_tasks` -> `_model.load_tasks` ->
     `_store._read_canonical_db_or_raise` -> `_db_export.export_doc` ->
     `_db.open_db` opens via `_db.connect` — the read chokepoint inherits the
-    same floor check. (The S2 SQLite read accelerator this test used to call
+    same floor check. (The S2 indexed read accelerator this test used to call
     directly, `_store_read_sqlite.list_tasks_sqlite`, is deleted; `list_tasks`
     is the one read path now.) The floor is stamped only AFTER a card is
     mirrored, so the read path is exercised against a genuinely populated,

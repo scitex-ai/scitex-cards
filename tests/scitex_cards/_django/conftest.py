@@ -28,9 +28,9 @@ def pytest_configure(config):  # noqa: ARG001
         django.setup()
 
 
-# === SQLite-cutover test plumbing for _django/** ============================
+# === Post-cutover test plumbing for _django/** ==============================
 #
-# Two things every _django test needs under the SQLite-only store, provided
+# Two things every _django test needs under the database-only store, provided
 # HERE (once) so the per-file migrations stay to plain store-path normalization.
 #
 # 1. `seed_db_from_doc` re-export. The helper is defined in
@@ -54,7 +54,7 @@ seed_db_from_doc = _mod.seed_db_from_doc
 #    THAT FIXTURE IS WHY THE 2026-07-29 OUTAGE HAD NO FAILING TEST. The board
 #    gated its CARD read on that file's existence (``services.get_board``:
 #    ``tasks = _load_global_tasks(resolved) if store_exists else []``). Under
-#    SQLite nothing creates it, so on the operator's live board the gate was
+#    the cutover nothing creates it, so on the operator's live board the gate was
 #    permanently shut and /tasks served 0 cards while 2,654 sat in the database
 #    — for over a day. Every test passed throughout, because this fixture
 #    manufactured, before each one, the exact file production did not have.

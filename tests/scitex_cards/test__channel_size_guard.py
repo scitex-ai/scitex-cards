@@ -219,7 +219,7 @@ def burst(tmp_path_factory):
     a FUNCTION-scoped one on the first test that needs both, so this fixture's
     real enqueue/drain calls would otherwise run before
     ``_default_inbox_backend_yaml`` ever pins the var — inheriting whatever
-    the ambient environment happens to hold. SQLite retired (operator ruling
+    the ambient environment happens to hold. The file rail retired (operator ruling
     2026-08-23): an unset var now means "no backend at all" rather than a
     working default, so this ordering gap turned silent-but-fine into a hard
     failure. Matches the suite-wide default; no teardown needed.
