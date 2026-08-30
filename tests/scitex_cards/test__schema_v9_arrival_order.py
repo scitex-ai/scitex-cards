@@ -189,24 +189,36 @@ class TestFreshAndMigratedAgreeOnShape:
 
 
 @pytest.fixture
-def pg_conn():
-    """Live Postgres: skip if UNDECLARED, fail if DECLARED-but-broken."""
-    import os
+def pg_conn(postgres_dsn):
+    """A connection to the harness's throwaway PostgreSQL. NEVER SKIPS.
 
-    declared = os.environ.get("SCITEX_CARDS_TEST_PG_DSN")
-    dsn = declared or "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+    ONE NAME ANSWERS "WHERE IS THE STORE", and this fixture used to add a
+    second. It read ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private
+    marker -- and SKIPPED when it was unset. Nothing sets that name any more,
+    so "unset" is now always, and these tests reported green in CI without ever
+    opening a connection: the exact failure
+    ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` exists to
+    remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+    a skipped test is indistinguishable from a passing one").
+
+    ``postgres_dsn`` (tests/conftest.py) is the one source of truth: a real
+    throwaway schema on the cluster the harness opened, which FAILS rather than
+    skipping when there is none.
+
+    The driver is a hard requirement rather than a skip for the same reason:
+    this package has one storage engine and psycopg is how it is reached, so
+    an interpreter without it cannot run these tests at all and must say so.
+    """
     try:
         import psycopg
-    except ImportError:
-        if declared:
-            pytest.fail("SCITEX_CARDS_TEST_PG_DSN is set but psycopg is missing")
-        pytest.skip("psycopg not installed")
-    try:
-        conn = psycopg.connect(dsn, connect_timeout=5)
-    except Exception as exc:
-        if declared:
-            pytest.fail(f"declared Postgres at {dsn!r} unreachable: {exc}")
-        pytest.skip(f"no live Postgres: {type(exc).__name__}")
+    except ImportError:  # pragma: no cover - the package requires the driver
+        pytest.fail(
+            "psycopg is not installed, so the only storage engine this "
+            "package has cannot be reached. Install the postgres extra: "
+            "pip install -e '.[postgres]'",
+            pytrace=False,
+        )
+    conn = psycopg.connect(postgres_dsn, connect_timeout=5)
     yield conn
     conn.close()
 

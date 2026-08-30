@@ -59,29 +59,23 @@ SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 #: Delete an entry when its module stops importing the driver -- the test fails
 #: if you forget, so the list cannot rot.
 KNOWN_SQLITE_IMPORTERS: dict[str, str] = {
-    # -- the two create-capable doors. Removing these is the behavioural change
-    #    the migration still owes; everything else here is downstream of them.
-    "_backend_connect.py": "the seam's SQLite branch: sqlite3.connect(uri, uri=read_only)",
-    "_db.py": "the main store door: mkdir(parents=True) then sqlite3.connect(str(p))",
-    # -- a THIRD create-capable door, and a separate database entirely: the
-    #    derived search index at ~/.scitex/card/.tasks.index.sqlite. Not the
-    #    cards store, so it needs its own migration decision, not this one's.
-    "_index.py": "derived FTS index; creates its own SQLite file",
-    # -- _inbox_sqlite.py / _inbox_sqlite_schema.py / _inbox_receipt.py's
-    #    SQLite half were DELETED 2026-08-28 (PR #938 step two): the inbox
-    #    backend is retired (operator ruling 2026-08-23), so there is no
-    #    longer a live SQLite inbox implementation to allowlist.
-    "_channel_rail.py": "read-only probe of the SQLite rail (mode=ro)",
-    "_db_dm_schema.py": "catches sqlite3.OperationalError from the DM schema probe",
-    # -- legacy readers. All open mode=ro, so none of them can CREATE a store;
-    #    they exist to read the retired SQLite predecessor or migrate off it.
-    "_dual_write.py": "mode=ro identity probe of the legacy store",
-    "_health_store.py": "mode=ro health probe",
-    "_health_store_identity.py": "mode=ro store_uuid probe",
-    "_health_stranded_backlog.py": "mode=ro stranded-backlog probe",
-    "_inbox_migrate_postgres.py": "mode=ro reader that migrates the inbox INTO PostgreSQL",
-    "_store_canonical_read.py": "mode=ro retirement check on the legacy store",
-    "_store_uuid.py": "mode=ro store_uuid reader",
+    # EMPTY, AND THAT IS THE RATCHET ARRIVING RATHER THAN AN OMISSION. Every
+    # entry that stood here named a module that could still bind the driver:
+    # two create-capable store doors (`_backend_connect`, `_db`), a third that
+    # built its own database (`_index`), and nine mode=ro readers of the
+    # retired predecessor. `src/scitex_cards` now imports sqlite3 NOWHERE, so
+    # all twelve were stale and `test_the_allowlist_has_no_stale_entries` said
+    # so by name -- which is the list working, not failing.
+    #
+    # WHAT THE EMPTY DICT NOW ASSERTS is stronger than what the full one did,
+    # and it is asserted by the OTHER test in this pair rather than by this
+    # comment: with nothing allowlisted,
+    # `test_no_module_outside_the_allowlist_imports_the_sqlite3_driver` fails
+    # on the FIRST module to bind the driver again, with no exemption left to
+    # hide behind. Do not add an entry back to make a red test green. An entry
+    # here is a module that can create a cards database, and a new and empty
+    # cards database that answers every query is the failure this package met
+    # on 2026-07-31, 2026-08-02 and 2026-08-12.
 }
 
 

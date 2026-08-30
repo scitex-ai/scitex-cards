@@ -330,10 +330,24 @@ def _bootstrap_empty_store(store_dsn: str) -> None:
     of the scratch one.
     """
     from scitex_cards._db import connect, init_schema
+    from scitex_cards._store_uuid import mint_store_uuid, stamp_store_uuid
 
     conn = connect(store_dsn)
     try:
         init_schema(conn)
+        # AN IDENTITY, BECAUSE A REAL STORE HAS ONE. `init_schema` builds the
+        # tables and stops; `schema_meta.store_uuid` is written separately, so
+        # a store bootstrapped by tables alone answers "no store_uuid" -- which
+        # is the shape of a server that has never held a board, not of the
+        # provisioned store this fixture is standing in for.
+        #
+        # IT WAS COSTING COVERAGE, not merely realism. The four both-halves pin
+        # tests in test__store_pin.py SKIP on exactly that condition ("names a
+        # server with no store on it"), and a skipped test is indistinguishable
+        # from a passing one -- the same silent-green this harness is otherwise
+        # built to refuse. Minted per test, so the per-test isolation the schema
+        # gives is matched by a per-test identity rather than a shared one.
+        stamp_store_uuid(conn, mint_store_uuid())
         conn.commit()
     finally:
         conn.close()
@@ -349,6 +363,64 @@ _SCRATCH = _pin_to_scratch()
 def scratch_store_root() -> Path:
     """The throwaway store directory this run is pinned to (for assertions)."""
     return _SCRATCH
+
+
+@pytest.fixture
+def new_store():
+    """Hand out ADDITIONAL throwaway stores, one per call. Returns a DSN string.
+
+    THE REPLACEMENT FOR ``tmp_path / "cards.db"``. That spelling meant "a fresh
+    empty store nobody else is using", and for a file store the temp directory
+    supplied both halves at once. It cannot mean that any more: a filesystem
+    path names no store and is refused at the door
+    (``_store_url.reject_non_postgres_target``), so a test that still writes it
+    is not testing a store -- it is testing the refusal.
+
+    A FACTORY RATHER THAN A FIXTURE VALUE, because the tests that need this
+    mostly need TWO. The store carries an identity and half this suite's
+    subjects are about two stores disagreeing -- a peer's database, a byte
+    copy, the store a stamp was claimed for versus the one it was opened as.
+    One store per test would force those back into sharing, which is the
+    collision the per-test pin removes rather than arbitrates.
+
+    ``bootstrap=True`` (the default) installs the schema through the package's
+    own ``connect`` + ``init_schema``, exactly as ``_bootstrap_empty_store``
+    does for the pinned per-test store, so a caller that just wants somewhere
+    to write cards gets a working store.
+
+    PASS ``bootstrap=False`` WHEN THE SUBJECT IS PROVISIONING ITSELF, and read
+    this before deciding you do not need to. The pinned per-test store is
+    already schema-complete, so a test that asserts "the verb created the
+    table" passes against it WITH THE VERB REMOVED -- the assertion is true
+    before the act runs, which makes it a check that cannot fail. An empty
+    schema is the only arrangement under which that assertion measures
+    anything, and the test should assert the FALSE -> TRUE transition across
+    the act rather than the true-at-the-end state.
+
+    Every schema is dropped ``CASCADE`` when the test ends.
+    """
+    with contextlib.ExitStack() as per_call:
+
+        def make(prefix: str = "cards_extra", *, bootstrap: bool = True) -> str:
+            if _CLUSTER_DSN is None:
+                pytest.fail(
+                    "This test needs a second throwaway store and no writable "
+                    "PostgreSQL was opened, so there is nowhere to carve one. "
+                    "This is a FAILURE and not a skip: a skipped storage test "
+                    "is indistinguishable from a passing one.\n"
+                    f"  reason: {_EPHEMERAL_DSN_REASON}",
+                    pytrace=False,
+                )
+            from scitex_dev.store.testing import ephemeral_schema
+
+            dsn = per_call.enter_context(
+                ephemeral_schema(_CLUSTER_DSN, prefix=prefix)
+            )
+            if bootstrap:
+                _bootstrap_empty_store(dsn)
+            return dsn
+
+        yield make
 
 
 # --------------------------------------------------------------------------- #

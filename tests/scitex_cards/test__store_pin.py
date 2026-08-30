@@ -58,10 +58,19 @@ from scitex_cards._store_pin import (
     require_pinned_store,
 )
 
-#: Same contract as ``test__store_instance`` and ``test__sql_null_safe``:
-#: UNDECLARED skips, DECLARED-but-broken fails. A Postgres-only test that skips
-#: is indistinguishable from a passing one in a green summary.
-_ENV_PG_DSN = "SCITEX_CARDS_TEST_PG_DSN"
+#: THE HARNESS'S STORE, NOT A SECOND NAME FOR ONE. This read
+#: ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private marker -- and
+#: SKIPPED when it was unset, which is now always: nothing sets that name any
+#: more. The five tests below therefore reported green in CI without opening a
+#: connection, which is the exact failure
+#: ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` was written to
+#: remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+#: a skipped test is indistinguishable from a passing one").
+#:
+#: ONE NAME NOW ANSWERS "WHERE IS THE STORE": ``$SCITEX_CARDS_DB``, which
+#: ``tests/conftest.py`` pins per test to a throwaway PostgreSQL schema. A
+#: second name could disagree with the first, and two names resolving
+#: differently is how this repo lost its live board on 2026-07-19.
 
 #: A DSN pointing at a port nothing serves. Pins the "unreachable target answers
 #: UNKNOWN rather than raising or hanging" contract. Port 1 is privileged and
@@ -111,11 +120,16 @@ def environment():
 
 @pytest.fixture
 def pg_dsn():
-    """A live Postgres DSN, or a skip when none is declared."""
-    dsn = os.environ.get(_ENV_PG_DSN)
-    if not dsn:
-        pytest.skip(f"{_ENV_PG_DSN} is not set — no Postgres declared")
-    return dsn
+    """The live PostgreSQL store this test was given. NEVER SKIPS.
+
+    Whatever ``$SCITEX_CARDS_DB`` names is the store, so that is what a test
+    about store IDENTITY must interrogate. When no cluster could be opened the
+    harness pins a target the doors refuse rather than unsetting the variable,
+    so the fixtures below fail naming the unreadable identity instead of
+    quietly not running -- which is the contract this file's header describes
+    and the old skip quietly broke.
+    """
+    return os.environ[ENV_DB]
 
 
 @pytest.fixture
@@ -124,7 +138,7 @@ def live_instance_id(pg_dsn):
     observed = instance_at(pg_dsn)
     if observed.certainty is not Certainty.KNOWN:
         pytest.fail(
-            f"{_ENV_PG_DSN} is declared but its instance is unreadable: "
+            f"{ENV_DB} names a store whose instance is unreadable: "
             f"{observed.reason}"
         )
     return observed.instance_id
@@ -167,7 +181,7 @@ def live_store_uuid(pg_dsn):
     observed = store_uuid_at(pg_dsn)
     if not observed:
         pytest.skip(
-            f"{_ENV_PG_DSN} names a server with no store on it (no "
+            f"{ENV_DB} names a server with no store on it (no "
             "schema_meta.store_uuid), so a BOTH-HALVES pin cannot be satisfied "
             "against it. The contract's positive control lives in "
             "test__identity_decision_both_halves.py and needs no server."
