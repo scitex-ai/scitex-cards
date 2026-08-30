@@ -27,8 +27,8 @@ classifiers = [
 
 # `scitex_config` is a FOUNDATIONAL ecosystem lib (not a leaf peer): it
 # supplies `local_state.user_path`, the user-canonical path resolver the
-# shadow-SQLite adapter (`_db.resolve_db_path`) delegates to instead of
-# re-rolling a project/user precedence (RFC #348 S0).
+# sidecar path helpers use instead of re-rolling a project/user precedence
+# (RFC #348 S0).
 dependencies = [
     "pyyaml",
     "click",
@@ -55,7 +55,8 @@ dependencies = [
     # any sense the user would recognise.
     #
     # `[binary]` bundles libpq, so this installs on a bare machine with no
-    # PostgreSQL client libraries. SQLite remains the zero-config default.
+    # PostgreSQL client libraries. There is no zero-config default and no
+    # second backend: an unconfigured store RAISES.
     "psycopg[binary]>=3.1",
     # PROMOTED FROM THE `web`, `mcp` AND `currency` EXTRAS, 2026-08-03, under
     # the same test psycopg was promoted by: WHEN THIS IS MISSING, DOES THE
@@ -202,9 +203,9 @@ postgres = [
     # ---- history, kept because it explains why the extra existed ----
     # THE CAPABILITY ALREADY WORKS AND WAS NEVER DECLARED. `_backend_connect`
     # reads a PostgreSQL store today -- verified against a real server
-    # (PostgreSQL 18.4, database scitex_cards): the same query string, with
-    # SQLite's `?` placeholders, returned the same 264 rows through both
-    # backends because `_store_url.to_paramstyle` translates in transit.
+    # (PostgreSQL 18.4, database scitex_cards): the package's own query
+    # strings, written in the `?` paramstyle, returned 264 rows unchanged
+    # because `_store_url.to_paramstyle` translates in transit.
     #
     # It worked only because psycopg happened to be present in the
     # environment where it was tried. Nothing in the package asked for it, so
@@ -215,9 +216,9 @@ postgres = [
     # `[binary]` bundles libpq rather than requiring system client libraries,
     # so this extra installs on a bare machine without a PostgreSQL install.
     #
-    # SQLite remains the zero-config default and is NOT moved behind an extra:
-    # the canonical store is SQLite, and a store you cannot open without an
-    # optional dependency is not a default.
+    # The driver is NOT behind an extra: the canonical store is PostgreSQL,
+    # and a store you cannot open without an optional dependency is not a
+    # store.
     "psycopg[binary]>=3.1",
 ]
 currency = [
