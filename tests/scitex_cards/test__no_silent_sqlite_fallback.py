@@ -180,7 +180,7 @@ class TestThePreconditionIsReal:
 class TestBothResolversRefuse:
     """One closed and one open is the same fallback with an extra hop."""
 
-    def test_resolve_store_target_raises_instead_of_naming_a_sqlite_file(
+    def test_resolve_store_target_raises_instead_of_naming_a_retired_store_file(
         self, unconfigured_store
     ):
         # Arrange
@@ -197,7 +197,7 @@ class TestBothResolversRefuse:
         # not raise something else.
         assert returned == "<refused>"
 
-    def test_resolve_db_path_raises_instead_of_naming_a_sqlite_file(
+    def test_resolve_db_path_raises_instead_of_naming_a_retired_store_file(
         self, unconfigured_store
     ):
         """``_db.resolve_db_path`` promises to mirror the other's precedence."""
@@ -213,7 +213,7 @@ class TestBothResolversRefuse:
         # Assert
         assert returned == "<refused>"
 
-    def test_the_backend_cannot_be_reported_as_sqlite_by_default(
+    def test_the_backend_cannot_be_reported_as_the_retired_engine_by_default(
         self, unconfigured_store
     ):
         """`backend_of` is TOTAL -- anything non-Postgres answers 'the retired engine'.
@@ -442,7 +442,7 @@ class TestConfiguredStoresAreUntouched:
         # Assert
         assert resolved == expected
 
-    def test_an_env_sqlite_path_still_resolves(self, env_store, tmp_path):
+    def test_an_env_retired_store_path_still_resolves(self, env_store, tmp_path):
         """The abolition is of the INVENTED default, not of an explicit path.
 
         A caller who names a the retired engine file has made a decision, and this package

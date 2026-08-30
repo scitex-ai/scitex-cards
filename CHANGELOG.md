@@ -388,7 +388,7 @@ actively WRONG — on PostgreSQL `_db.connect()` returns a `StoreConnection`, so
 those signatures named a type the caller does not receive. Retyped under
 `if TYPE_CHECKING:`, which is zero runtime import.
 
-**THE BARRIER.** `tests/scitex_cards/test__no_sqlite3_import_in_src.py` parses
+**THE BARRIER.** `tests/scitex_cards/test__no_retired_driver_import_in_src.py` parses
 every module and asserts none imports the driver, with a SHRINK-ONLY allowlist
 naming the 15 remaining offenders and why each still holds it. A module off the
 list that starts importing fails; a module ON the list that stops importing
@@ -1786,7 +1786,7 @@ the board, which legitimately threads its store through to the inbox rail.
 **The the retired engine inbox used SQL that old the retired engine cannot parse, so no notification
 was ever delivered on the host.**
 
-`_inbox_sqlite.enqueue` spelled its null-safe comparisons
+`_inbox_retired.enqueue` spelled its null-safe comparisons
 `IS NOT DISTINCT FROM` — standard SQL, and exactly what the retired engine's `IS` means.
 the retired engine only accepts that spelling from **3.39** (2022-06). The host runs
 **3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
@@ -1815,7 +1815,7 @@ the retired engine >= 3.39 as a floor. The floor was false where it mattered —
 measured 3.37.2 — and it was never ours to enforce, since the package controls
 neither the CI images nor the host's system python. A requirement the package
 cannot enforce is a hope, not a floor. The premise does not hold either:
-`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+`_inbox_retired` resolves `inbox_db_path(store)` and opens a **file**, so it can
 never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
 backend module, exactly as the YAML and the retired engine backends are separate today.
 
@@ -2317,7 +2317,7 @@ branch is a place the two backends can drift.
 
 ### Added
 - **A DDL runner that works on both backends (#675).**
-  `the retired driver.Connection.executescript` is pysqlite-only and was how *every* schema
+  `the retired driver.Connection.executescript` is driver-only and was how *every* schema
   object here got installed, all nine triggers included. The difficulty is one
   character: a trigger body is `BEGIN <stmt>; <stmt>; END`, so its semicolons are
   internal and a naive `split(';')` severs it — and the first fragment can still
@@ -2336,7 +2336,7 @@ branch is a place the two backends can drift.
 
 ### Fixed
 - **Guards are read from the right catalogue (#676, #678).** Four sites asked
-  `sqlite_master` which guards a store carries — a table PostgreSQL does not
+  `the retired catalog table` which guards a store carries — a table PostgreSQL does not
   have. The quiet failure is the dangerous one: the query returns nothing, the
   store looks unguarded, and it is reported healthy and current. A store that
   can prove nothing must not answer yes. The PostgreSQL query excludes
@@ -2345,7 +2345,7 @@ branch is a place the two backends can drift.
 
 - **Every DDL install routes through the runner (#677).** Verified by building
   the same database twice, one process per branch: 44 objects vs 44 objects,
-  identical `sqlite_master`, `user_version` 7, 9 triggers. The transaction
+  identical `the retired catalog table`, `user_version` 7, 9 triggers. The transaction
   boundary was the risk rather than the SQL — `executescript` issues an implicit
   COMMIT before running — so only building both databases establishes the result
   is the same.
@@ -3480,7 +3480,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   empty board that its deliberate except-keeps-previous branch would then serve
   silently and indefinitely on `/graph` and `/timeline`; it is removed.
 
-  This is the same defect as the deleted `_store_read_sqlite` accelerator
+  This is the same defect as the deleted `_store_read_retired` accelerator
   (2026-07-21), whose post-mortem sits forty lines above the bug: a guard
   comparing against a YAML file that stopped existing at the cutover, silently
   degrading to an empty board. Fixing one instance of a pattern is not fixing
@@ -4711,7 +4711,7 @@ inbox — across ~21 agents the fleet's biggest CPU sink (host load ~27). This
 moves the inbox read/write path onto the retired engine so a poll is an indexed
 `(recipient, seen)` lookup, never a whole-store parse.
 
-- New `_inbox_sqlite` backend (stdlib `the retired driver`, WAL) at the constitution's
+- New `_inbox_retired` backend (stdlib `the retired driver`, WAL) at the constitution's
   runtime-DB path `<store_dir>/runtime/cards.db`. `enqueue` / `poll_inbox` /
   `ack` mirror the YAML contract exactly (dedup on `(event_type, card_id, ts,
   actor)`, `supersede`, `unseen_only`, `mark_seen`).

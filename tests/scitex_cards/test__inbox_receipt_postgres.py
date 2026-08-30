@@ -11,7 +11,7 @@ THE DEFECT THIS CLOSES, measured on the live store 2026-08-11 23:30Z::
     ~/.scitex/cards/inboxes.json           DOES NOT EXIST
 
 #780 moved enqueue/poll/ack into PostgreSQL; ``_inbox_receipt`` did not come
-along, and its dispatch asked a TWO-valued question (``_use_sqlite()``) of a
+along, and its dispatch asked a TWO-valued question (``_use_retired()``) of a
 THREE-valued world. So the shared-inbox case fell into the file branch: every
 push receipt and every recipient confirmation went to a JSON sidecar that was
 never even created, while the rows they described sat in PostgreSQL. The lock

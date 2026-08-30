@@ -4,7 +4,7 @@
 
 PR #938 (step one, 2026-08-23): the retired engine stopped being *selectable* as a
 fallback for an unshared store. Step two (2026-08-28) deleted the the retired engine
-inbox implementation outright (``_inbox_sqlite.py`` / ``_inbox_sqlite_schema.py``
+inbox implementation outright (``_inbox_retired.py`` / ``_inbox_retired_schema.py``
 / ``_inbox_receipt.py``'s the retired engine half), so this file is the direct test
 coverage for the seam neither draft PR carried its own dedicated suite for:
 real environment variables (the code under test reads ``os.environ``, so the
@@ -89,7 +89,7 @@ class TestAnUnsharedStoreHasNoBackend:
             select_the_backend()
 
 
-class TestExplicitSqliteIsRefused:
+class TestExplicitRetiredEngineIsRefused:
     """Selecting the retired engine by name is a config error now, not a legal choice."""
 
     def test_explicit_sqlite_raises(self, env):

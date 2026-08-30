@@ -23,7 +23,7 @@ the column. So the load-bearing test here is not "does the migration add the
 columns" — it is **does a FRESH store end up identical to a MIGRATED one**.
 
 Scope, stated so nobody reads more into v8 than it does: installing the columns
-does NOT move the rail. ``_inbox_sqlite`` still writes ``cards.db``, and
+does NOT move the rail. ``_inbox_retired`` still writes ``cards.db``, and
 ``_db_mirror`` still issues ``DELETE FROM notifications`` — harmless against a
 derived empty table, and data loss the moment this table becomes the store of
 record. That DELETE must be neutralised in the same change that flips the

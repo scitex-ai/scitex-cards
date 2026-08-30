@@ -359,7 +359,7 @@ def test_the_read_path_is_gated_the_same_as_connect():
     `_store._read_canonical_db_or_raise` -> `_db_export.export_doc` ->
     `_db.open_db` opens via `_db.connect` — the read chokepoint inherits the
     same floor check. (The S2 indexed read accelerator this test used to call
-    directly, `_store_read_sqlite.list_tasks_sqlite`, is deleted; `list_tasks`
+    directly, `_store_read_retired.list_tasks_retired`, is deleted; `list_tasks`
     is the one read path now.) The floor is stamped only AFTER a card is
     mirrored, so the read path is exercised against a genuinely populated,
     schema-complete database."""
