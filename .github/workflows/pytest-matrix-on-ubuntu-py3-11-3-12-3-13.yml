@@ -29,20 +29,38 @@ jobs:
     uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
     secrets: inherit
     with:
-      # GITHUB-HOSTED, not the Spartan pool. Operator ruling 2026-07-31: hosted
-      # is the default choice now — this repository is public, so the minutes
-      # are free, and our own machines are not faster for a pure-Python test
-      # matrix that finishes in about a minute.
+      # RUNNER: whatever `vars.CI_RUNS_ON` says, falling back to GITHUB-HOSTED
+      # `ubuntu-latest` when that variable is unset — so this line is inert
+      # wherever nobody set it. It previously read the literal
+      # `'["ubuntu-latest"]'`, which meant the repository variable pointing CI
+      # at our own hardware was written and then IGNORED: the write was
+      # verified, the EFFECT was not, and a rerun still landed on "GitHub
+      # Actions 1000048594" after 16m57s. The callee's `runs_on` input is a
+      # STRING that it passes through `fromJSON` itself, so it must NOT be
+      # wrapped in `fromJSON` here.
       #
-      # The immediate reason is the shared tool cache. Every runner on the
-      # Spartan lease inherits one mutable ~/.runner-toolcache on GPFS, so
-      # runners contend for a single directory and jobs fail BOTH reading it
+      # THE CAUTION BELOW STILL STANDS — BUT IT IS SPARTAN-SPECIFIC.
+      # Operator ruling 2026-07-31 made GitHub-hosted the default here: this
+      # repository is public so the minutes are free, our machines are not
+      # faster for a pure-Python matrix that finishes in about a minute, and
+      # the Spartan pool had a measured hazard. Every runner on the SPARTAN
+      # lease inherits ONE mutable ~/.runner-toolcache on GPFS, so runners
+      # contend for a single directory and jobs fail BOTH reading it
       # (`uv: No such file` -> exit 127) and writing it (ENOENT during copy).
       # Measured here 2026-07-31: seven failures across five pull requests in
       # one afternoon, four differently-named runners, every one cleared by a
       # plain rerun.
       #
-      # DIAGNOSING ONE — USE THE EXIT CODE, NOT THE DURATION:
+      # What is now known: OUR OWN POOL CANNOT HIT IT. Label `scitex-org-cpu`
+      # (hosts compute-01/03/04) gives each host its own LOCAL home — verified
+      # 2026-08-31 by writing a marker file under ~ on compute-04 and finding
+      # it ABSENT on 01 and 03 while the same read succeeded locally. So
+      # honouring the variable is safe AS LONG AS THE VARIABLE DOES NOT POINT
+      # AT `spartan-cpu`. If it ever does, the toolcache race is back and this
+      # should be pinned to the literal again until every Spartan runner has
+      # its own AGENT_TOOLSDIRECTORY.
+      #
+      # DIAGNOSING A TOOLCACHE FAILURE — USE THE EXIT CODE, NOT THE DURATION:
       #   exit 127 -> the toolcache race; uv died before anything ran
       #   exit 1   -> something ran and genuinely failed. Read the log.
       #
@@ -60,11 +78,7 @@ jobs:
       # whether the rule was ever right. Verified here 2026-08-02: a release
       # failure watched live now reads `attempt=2, conclusion=success`, with
       # 25/25 recent runs green and the failure nowhere in the list.
-      #
-      # Revert this to inherit the default once each runner has its own
-      # AGENT_TOOLSDIRECTORY; the shared workflow's `runs_on` input documents
-      # that fix and why it has not fired yet.
-      runs_on: '["ubuntu-latest"]'
+      runs_on: ${{ vars.CI_RUNS_ON || '["ubuntu-latest"]' }}
 
       # THE STORE IS A POSTGRESQL DATABASE, so this leg needs one or it is not
       # testing this package. The three contexts this input flips are the
