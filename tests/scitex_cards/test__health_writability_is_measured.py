@@ -51,11 +51,29 @@ from __future__ import annotations
 
 import os
 from typing import Iterator
+from urllib.parse import quote, urlsplit, urlunsplit
+from uuid import uuid4
 
 import pytest
 
 from scitex_cards._db import connect
 from scitex_cards._health import _verify_postgres_store
+
+
+def _dsn_as_role(dsn: str, role: str, password: str) -> str:
+    """The same store, addressed as ``role``.
+
+    Only the credentials change: the query string -- which carries the
+    ``options=-csearch_path%3D...`` pin -- is passed through UNTOUCHED rather
+    than re-encoded, because libpq does not read ``+`` as a space and a
+    well-meaning round-trip through ``urlencode`` silently repoints the store
+    at the wrong schema.
+    """
+    parts = urlsplit(dsn)
+    netloc = f"{quote(role)}:{quote(password)}@{parts.hostname}"
+    if parts.port:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit(parts._replace(netloc=netloc))
 
 
 @pytest.fixture
@@ -89,14 +107,70 @@ def store_the_role_cannot_write(writable_store) -> "Iterator[str]":
     An owner's privileges are revocable like anyone else's — measured, not
     assumed — so this needs no second role and no grant fixture, and the whole
     schema is dropped afterwards regardless of how the test ends.
+
+    EXCEPT FROM A SUPERUSER, WHICH CANNOT BE DENIED. ``REVOKE`` succeeds and
+    changes nothing: ``has_table_privilege`` answers true for a superuser
+    whatever the catalogue says, so the store stays writable and all three
+    arms below assert against a healthy store. This module's own docstring
+    celebrates deleting ``@skipif(os.geteuid() == 0)`` on the grounds that
+    "database privileges are not bypassed by the OS user" — true, and it
+    traded an OS-root bypass for a DATABASE-SUPERUSER one without noticing.
+
+    IT IS NOT HYPOTHETICAL EITHER: CI's ``postgres:16`` service makes
+    ``POSTGRES_USER`` the bootstrap superuser, so on CI these arms silently
+    measured nothing while passing locally, where the fleet role is ordinary.
+    Measured 2026-08-31 — three failures on CI, zero locally, same commit.
+
+    So when the current role cannot be denied, a role that CAN is created for
+    the test and dropped afterwards. Skipping was rejected deliberately: this
+    module exists because "a check that cannot fail is not a check", and a
+    storage arm that skips reads exactly like one that passed.
     """
     conn = connect(writable_store)
+    role: "str | None" = None
     try:
-        conn.execute("REVOKE INSERT ON tasks FROM current_user")
-        conn.commit()
+        superuser = conn.execute(
+            "SELECT rolsuper AS s FROM pg_roles WHERE rolname = current_user"
+        ).fetchone()["s"]
+        if not superuser:
+            conn.execute("REVOKE INSERT ON tasks FROM current_user")
+            conn.commit()
+            target = writable_store
+        else:
+            schema = conn.execute("SELECT current_schema() AS s").fetchone()["s"]
+            role = f"cards_ro_{uuid4().hex[:12]}"
+            password = uuid4().hex
+            conn.execute(f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{password}'")
+            conn.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
+            conn.execute(
+                f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{role}"'
+            )
+            conn.commit()
+            target = _dsn_as_role(writable_store, role, password)
     finally:
+        # CLOSED BEFORE THE YIELD, never after it. The schema is dropped
+        # CASCADE at teardown and that statement BLOCKS on any live
+        # transaction, so a handle held across the test turns a failure into
+        # an indefinite hang that reads as a slow runner.
         conn.close()
-    yield writable_store
+
+    if role is None:
+        yield target
+        return
+
+    try:
+        yield target
+    finally:
+        # A ROLE IS NOT SCHEMA-SCOPED, so the CASCADE that removes everything
+        # else leaves it behind; without this the cluster accumulates one
+        # login role per run of this test.
+        cleanup = connect(writable_store)
+        try:
+            cleanup.execute(f'DROP OWNED BY "{role}"')
+            cleanup.execute(f'DROP ROLE IF EXISTS "{role}"')
+            cleanup.commit()
+        finally:
+            cleanup.close()
 
 
 @pytest.fixture

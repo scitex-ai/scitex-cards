@@ -142,18 +142,32 @@ def test_stamps_that_disagree_with_each_other_still_need_the_ddl(live_store):
     assert current is False
 
 
-def test_a_behind_client_still_needs_a_guarded_store(tmp_path):
+def test_a_behind_client_still_needs_a_guarded_store(new_store):
     # Arrange
     # The exemption must not become a way to skip the guard-trigger proof. A
     # behind-client whose store is missing a guard runs the DDL like anyone
     # else — dropping a real trigger rather than fabricating a list, so this
     # measures the DDL's own output.
-    from scitex_cards._db import open_db as _open_db
-
-    path = tmp_path / "cards.db"
-    conn = _open_db(path)
+    #
+    # ARRIVED FROM develop VIA #952 AND MERGED CLEAN WHILE BEING WRONG HERE.
+    # It was written against the file-store world: it opened
+    # `tmp_path / "cards.db"`, which this branch's door refuses outright, and
+    # it dropped a trigger by bare name, which is the retired engine's
+    # spelling -- names are global there, so against a server it is a syntax
+    # error at end of input and the arrange step died before the act ran.
+    # Both halves are repaired exactly as
+    # `test_a_missing_guard_trigger_defeats_an_otherwise_current_store`
+    # already does it, including reading the owning table FROM THE CATALOGUE
+    # rather than pairing it with the name by hand.
+    path = new_store()
+    conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
-    conn.execute(f"DROP TRIGGER IF EXISTS {victim}")
+    owning_table = conn.execute(
+        "SELECT event_object_table AS t FROM information_schema.triggers "
+        "WHERE trigger_schema = current_schema() AND trigger_name = ?",
+        (victim,),
+    ).fetchone()["t"]
+    conn.execute(f"DROP TRIGGER IF EXISTS {victim} ON {owning_table}")
     conn.commit()
     shape = _behind_shape(SCHEMA_VERSION, SCHEMA_VERSION + 1)
     # Act
