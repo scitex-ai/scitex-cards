@@ -78,7 +78,7 @@ def test_the_reported_store_is_never_a_yaml_path():
     assert not str(reported).endswith(".yaml")
 
 
-def test_an_explicit_store_argument_is_reported_as_given(tmp_path):
+def test_an_explicit_store_argument_is_reported_as_given(new_store):
     """POSITIVE CONTROL: the fix must not hardcode "always the resolved target".
 
     An explicit argument outranks the ambient resolution, and the label has to
@@ -86,21 +86,20 @@ def test_an_explicit_store_argument_is_reported_as_given(tmp_path):
     would pass both tests above while lying to every caller that passed a store
     explicitly -- the same defect, relabelled.
 
-    Uses the store the autouse fixture already created, copied to a second path,
-    so the argument names a REAL readable store rather than a path that would
-    fail for an unrelated reason.
+    TAKES A SECOND REAL STORE FROM ``new_store`` rather than byte-copying the
+    resolved one. The copy spelling worked while a store was a file and cannot
+    survive PostgreSQL: the resolved target is a DSN, so ``shutil.copyfile`` was
+    being handed a connection string as a source path. A provisioned second
+    store is what "a different store that really exists" means now -- and it
+    lets the assertion be an equality rather than a substring.
     """
     # Arrange
-    import shutil
-
-    resolved = resolve_store_target(None)
-    explicit = tmp_path / "explicit-cards.db"
-    shutil.copyfile(resolved, explicit)
+    explicit = new_store()
 
     # Act
-    reported = summarize_tasks(str(explicit))["store"]
+    reported = summarize_tasks(explicit)["store"]
 
     # Assert
-    assert str(explicit) in str(reported)
+    assert reported == explicit
 
 # EOF
