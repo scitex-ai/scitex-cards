@@ -149,70 +149,45 @@
 
   // ---- agent list --------------------------------------------------------
 
-  /* Deterministic per-agent avatar. The hash/initials logic is pure and lives in
-   * chat_avatar.js so node can test it; this builds the element from the spec. */
-  function avatarFor(name) {
-    var spec = (window.ChatAvatar || null)
-      ? window.ChatAvatar.avatarSpec(name)
-      : { initials: "?", background: "transparent" };
-    var av = el("span", "avatar", spec.initials);
-    av.style.background = spec.background;
-    return av;
-  }
-
-  function renderAgents(agents) {
-    // The list fully rebuilds each poll; keep the operator's scroll position.
-    var scrollTop = $agents.scrollTop;
-    $agents.textContent = "";
-    if (!agents.length) {
-      $agents.appendChild(
-        el("div", "empty", "No agents registered and no threads yet."),
-      );
-      return;
-    }
-    agents.forEach(function (a) {
-      var item = el("div", "agent" + (a.name === state.peer ? " active" : ""));
-      item.appendChild(avatarFor(a.name));
-      var cols = el("div", "cols");
-      var row1 = el("div", "row1");
-      row1.appendChild(el("span", "name", a.name));
-      if (a.unread > 0) row1.appendChild(el("span", "badge", String(a.unread)));
-      cols.appendChild(row1);
-      var preview = a.last_body
-        ? shortTs(a.last_ts) + "  " + a.last_body
-        : a.kind
-          ? a.kind
-          : "no messages yet";
-      cols.appendChild(el("div", "preview", preview));
-      item.appendChild(cols);
-      item.addEventListener("click", function () {
-        openThread(a.name);
-        closeDrawer();
-      });
-      $agents.appendChild(item);
-    });
-    $agents.scrollTop = scrollTop;
-  }
-
-  // The unread count in the BROWSER TAB (chat_title.js). Fed the SAME array,
-  // from the SAME poll, as the per-peer badges above it: the tab and the
-  // drawer are one fact rendered twice, and neither counts anything itself.
-  // Giving the title its own request would be a second answer to "how many
-  // unread?" — do not.
-  var pageTitle = window.ChatTitle ? window.ChatTitle.mount({}) : null;
-
-  function refreshAgents() {
-    getJSON(API_BASE + "/dm/threads")
-      .then(function (data) {
-        clearError();
-        state.agents = data.agents || [];
-        renderAgents(state.agents);
-        if (pageTitle) pageTitle.update(state.agents);
+  // WHO the operator can talk to — the roster list, the avatars, the browser-tab
+  // unread count, and the poll that feeds all of it — lives in ChatAgents.
+  // chat.js keeps the seams: a row click opens the thread (and closes the
+  // mobile drawer), and the polled roster is handed to the new-message input's
+  // datalist so the operator can START a conversation, not only reply.
+  var agentsApi = window.ChatAgents
+    ? window.ChatAgents.mount({
+        listEl: $agents,
+        state: state,
+        el: el,
+        shortTs: shortTs,
+        apiBase: API_BASE,
+        getJSON: getJSON,
+        showError: showError,
+        clearError: clearError,
+        onRowClick: function (peer) {
+          openThread(peer);
+          closeDrawer();
+        },
+        onAgents: function (agents) {
+          if (window.ChatNewDm) window.ChatNewDm.setAgents(agents);
+        },
       })
-      .catch(function (err) {
-        showError("Agent list failed: " + err.message);
-      });
+    : null;
+
+  // Thin wrapper so the three call sites (openThread, send confirmation,
+  // forward notice) and the boot below keep their name.
+  function refreshAgents() {
+    if (agentsApi) agentsApi.refresh();
   }
+
+  // The new-message input above the filter: hand it the SAME open+close a row
+  // click runs, so "type a name, Enter" behaves exactly like "click a row" —
+  // one opener for two entrances into the same thread.
+  if (window.ChatNewDm)
+    window.ChatNewDm.setOpener(function (peer) {
+      openThread(peer);
+      closeDrawer();
+    });
 
   // ---- thread pane -------------------------------------------------------
 
@@ -360,11 +335,14 @@
         }
         // Plan against the WINDOW, not the whole thread: state.messages stays
         // complete for everything else, only rendering is bounded.
-        var view = win
-      ? win.windowed(state.messages, state.windowSize)
-      : msgs;
+        var view = win ? win.windowed(state.messages, state.windowSize) : msgs;
         applyPlan(
-          diff.planRender(state.rendered, view, state.reactions, state.receipts),
+          diff.planRender(
+            state.rendered,
+            view,
+            state.reactions,
+            state.receipts,
+          ),
           view,
         );
       })
@@ -403,12 +381,6 @@
     state.timerThread = setInterval(refreshThread, THREAD_POLL_MS);
   }
 
-  // ---- compose -----------------------------------------------------------
-
-  // The send path (submit handler, Enter binding, in-flight guard) lives in
-  // chat_send.js — see that module for the two defects it replaced, the worse
-  // of which let the operator send exactly ONE message per page load.
-
   // ---- mobile drawer -----------------------------------------------------
 
   // State, inert-when-closed and the scrim pairing live in ChatDrawer — see that
@@ -444,6 +416,10 @@
         showError: showError,
       })
     : null;
+  // The peer the operator is talking to — one closure for the two mounts below.
+  var getPeer = function () {
+    return state.peer;
+  };
   // Mounted AFTER `composer` exists, since it hands the composer its reset.
   if (window.ChatSend) {
     window.ChatSend.mount({
@@ -452,9 +428,7 @@
       send: $send,
       apiBase: API_BASE,
       composer: composer,
-      getPeer: function () {
-        return state.peer;
-      },
+      getPeer: getPeer,
       onSent: function () {
         refreshThread();
         refreshAgents();
@@ -478,9 +452,7 @@
       showError: showError,
       showNotice: showNotice,
       refreshThread: refreshThread,
-      getPeer: function () {
-        return state.peer;
-      },
+      getPeer: getPeer,
       getMessages: function () {
         return state.messages;
       },

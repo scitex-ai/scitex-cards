@@ -186,13 +186,17 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
   #agent-filter-row {
     flex: 0 0 auto; padding: 8px; border-bottom: 1px solid var(--line);
   }
-  #agent-filter {
+  #new-dm-row { flex: 0 0 auto; padding: 8px 8px 0; }
+  #agent-filter,
+  #new-dm {
     width: 100%; background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 6px;
     padding: 6px 8px; font-size: 0.78rem; font-family: inherit;
   }
-  #agent-filter::placeholder { color: var(--dim); }
-  #agent-filter:focus { outline: none; border-color: var(--accent); }
+  #agent-filter::placeholder,
+  #new-dm::placeholder { color: var(--dim); }
+  #agent-filter:focus,
+  #new-dm:focus { outline: none; border-color: var(--accent); }
   #agents .agent {
     display: flex; flex-direction: row; align-items: center; gap: 9px;
     padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--line);
@@ -750,8 +754,19 @@ The input is written HERE rather than created by chat_filter.js so the page can
 be asserted to actually SERVE it (same reason the context-menu items are in the
 template). `#agents` keeps its id because the mobile drawer is mounted on it and
 every `#agents .agent` rule still matches through the new wrapper.
+
+The new-message input above the filter row is the same deal, and it is the half
+of the 2026-08-15 fix that lets the operator START a conversation with an agent
+who has not messaged them yet. The backend now seeds that roster from the
+cards' owners; this input's datalist (the empty element below) is what the
+behaviour module fills from each poll.
 {% endcomment %}
   <nav id="agents" aria-label="Agents">
+    <div id="new-dm-row">
+      <input id="new-dm" type="text" list="new-dm-options" autocomplete="off"
+             placeholder="Start a message&hellip;" aria-label="Start a new message">
+      <datalist id="new-dm-options"></datalist>
+    </div>
     <div id="agent-filter-row">
       <input id="agent-filter" type="search" autocomplete="off"
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
@@ -898,6 +913,12 @@ off `window` and never the reverse.
   chat_attach.js   attachment uploads AND their rendering (no deps)
   chat_drawer.js   the mobile drawer: state, inert-when-closed, scrim (no deps)
   chat_filter.js   fuzzy filter over the agent list (reads STX.Combobox)
+  chat_newdm.js    the new-message input above the filter: roster datalist +
+                   Enter opens the thread (self-mounts; chat.js hands it the
+                   opener and the polled roster)
+  chat_agents.js   the agent roster: the rows, avatars, the browser-tab unread
+                   count, and the poll that feeds them all (reads ChatAvatar
+                   and ChatTitle; mounted by chat.js with the row-click opener)
   chat_longtext.js the long-body clamp + .txt download (no deps)
   chat_compose.js  the composer: auto-grow + the long-draft offer
                    (reads ChatLongText for the threshold, and is handed
@@ -937,6 +958,8 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_attach.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_drawer.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_filter.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_newdm.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_agents.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_markdown.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_longtext.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_compose.js' %}"></script>

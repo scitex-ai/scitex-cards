@@ -155,6 +155,48 @@ def _registry_agents(store) -> list[dict]:
     return out
 
 
+def _task_agents(store) -> list[dict]:
+    """Derive ``{name, kind}`` roster rows from the store's cards themselves.
+
+    The ``users:`` registry is a per-host YAML sidecar with NO database read
+    path (see ``_users``), and the cards moved to the database — so on every
+    post-migration host :func:`_registry_agents` returns ``[]`` and the roster
+    was built from thread peers alone: the operator could only reply to
+    agents who had already DM'd them, with no way to start a conversation
+    with an agent they had not messaged first.
+
+    The cards DO name their owners (``assignee`` / ``agent``) and live in the
+    same database the threads do, so reading them seeds the roster with
+    everyone the fleet actually tracks. ``kind`` is ``None`` — only the
+    registry knows kinds.
+
+    Fail-soft like :func:`_registry_agents`: an unreadable store degrades to
+    the registry-plus-peers roster instead of 500-ing the page — the roster
+    is an affordance, not the page's data.
+    """
+    try:
+        from scitex_cards._django import services
+
+        tasks = services.get_board(store, allow_stale=True).tasks
+    except Exception:  # noqa: BLE001 — roster optional for the chat view
+        return []
+    seen: set = set()
+    out = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        for field in ("assignee", "agent"):
+            name = task.get(field)
+            if not isinstance(name, str):
+                continue
+            name = name.strip()
+            if not name or name == OPERATOR_NAME or name in seen:
+                continue
+            seen.add(name)
+            out.append({"name": name, "kind": None})
+    return out
+
+
 def dm_threads_view(request: HttpRequest) -> HttpResponse:
     """GET the operator's agent list + per-agent thread summaries."""
     if request.method != "GET":
@@ -171,6 +213,22 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             "last_ts": None,
             "last_body": None,
         }
+    # Then the cards' owners: on every post-migration host the registry above
+    # is empty (it is a per-host sidecar with no DB path), so without this
+    # seed the roster held only agents who had already DM'd the operator, and
+    # the chat view offered no way to start a conversation with anyone else.
+    # Registry rows keep their ``kind``; setdefault keeps whichever seed won.
+    for agent in _task_agents(store):
+        rows.setdefault(
+            agent["name"],
+            {
+                "name": agent["name"],
+                "kind": agent["kind"],
+                "unread": 0,
+                "last_ts": None,
+                "last_body": None,
+            },
+        )
     # Merge in any peer that already has a thread with the operator (covers
     # unregistered senders — the thread store is the SSOT of who talked).
     # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
@@ -203,9 +261,12 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
         if last is not None:
             row["last_ts"] = last.get("ts")
             row["last_body"] = last.get("body")
-    agents = sorted(
-        rows.values(), key=lambda r: (r["last_ts"] or "", r["name"]), reverse=True
-    )
+    # Two-stage: rows with a real conversation sort by recency (most recent
+    # on top, as before); roster-only rows — known agents the operator has
+    # not talked to yet — carry no timestamp, so the stable sort leaves them
+    # in the alphabetical order they were seeded in, below every thread.
+    agents = sorted(rows.values(), key=lambda r: r["name"])
+    agents.sort(key=lambda r: r["last_ts"] or "", reverse=True)
     return JsonResponse({"agents": agents})
 
 
