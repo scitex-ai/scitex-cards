@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### A behind-client no longer re-runs the DDL it cannot possibly need
+
+The 2026-08-02 "BEHIND, not DIFFERENT" fix was one line short. It changed the
+version comparison to `<` so a client older than the store would stop
+re-asserting its whole schema on every connection. That works — and the very
+next check, `shape.agreement is not ShapeAgreement.AGREES`, then rejected the
+same client for the same underlying reason, so the deadlocks continued.
+
+Measured on the live board with the deployed client's own interpreter:
+
+    SCHEMA_VERSION       12
+    shape.observed       12
+    version check        passes
+    shape.agreement      STAMP_IS_HIGH  ->  AGREES? False   <- rejected here
+    required triggers    9, none missing
+
+`STAMP_IS_HIGH` is the NORMAL reading for a behind-client, not a symptom: its
+physical-rung reader knows only the rungs its own version defines, so it can
+never observe above itself, while the stamp was written by a newer client. Every
+not-yet-upgraded client reports this disagreement forever, and a fleet always
+contains such clients — three card writes died of `deadlock detected ... in
+relation "pg_proc"` inside twenty minutes with nothing else running.
+
+The exemption is narrow: it applies only when EVERY stamp sits above the version
+this client would assert, so the store is unambiguously ahead. `STAMP_IS_LOW`
+still refuses, because that is the repair the migration chain exists for. Stamps
+that disagree with each other still refuse. A current or ahead client seeing a
+high stamp still refuses, because it can read every rung it would assert and the
+stamp is genuinely unexplained. The guard triggers are still proven present on
+every open, so nothing skips the DDL without proof.
+
+Why the existing tests missed it: `test_a_store_AHEAD_of_the_client_needs_no_ddl`
+builds a self-consistent shape — observed and both stamps equal, agreement
+`AGREES` — which is a reading no real behind-client can produce, so it exercised
+the version comparison and nothing else.
+
 ### The store verbs answer to `dev db`, and every hint says so
 
 Per-package database client commands standardize on `<package> dev db`, with
