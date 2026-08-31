@@ -21,51 +21,77 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scitex_cards._db import ENV_DB, resolve_db_path
+from scitex_cards._db import ENV_DB
 from scitex_cards._paths import _user_root
+from scitex_cards._store_target import resolve_store_target
 
 # Kept in sync BY HAND with tests/conftest.py's `_REAL_STORE_CANDIDATES` —
 # duplicated rather than imported so this guard does not depend on the
 # internals of the thing it is guarding still being named/shaped the same way.
 _REAL_HOMES = ("/home/agent", "/home/ywatanabe")
 
+#: The schema the LIVE board's tables live in. A resolved target that reaches
+#: it is the failure this whole file exists to catch.
+_LIVE_SCHEMA = "public"
 
-def test_resolved_db_path_lives_under_the_pytest_tmp_root(tmp_path_factory):
-    """``resolve_db_path(None)`` must resolve inside pytest's own tmp tree.
 
-    ``tmp_path_factory.getbasetemp()`` is the root every ``tmp_path`` /
-    ``tmp_path_factory.mktemp()`` call in this session nests under —
-    including the scratch directory ``_store_env_stays_pinned`` points
-    ``$SCITEX_CARDS_DB`` at for THIS test. If the isolation fixture stopped
-    running (or stopped covering ``$SCITEX_CARDS_DB``), this would instead
-    resolve to the real user-canonical store.
+def _resolved_schema() -> str | None:
+    """The schema the resolved store target is scoped to, or None if unscoped.
+
+    THE ISOLATION BOUNDARY MOVED, so the guard reads a different thing. It used
+    to compare FILE PATHS, because a stray resolve wrote to a stray file. The
+    store is PostgreSQL now: every test resolves to the same server and the
+    same database as the live board, and the ONLY thing keeping a test write
+    out of the operator's cards is the `search_path` the pinning fixture puts
+    on the DSN. So that is what has to be asserted.
+
+    An unscoped DSN — no `options=-csearch_path=...` — is the dangerous state:
+    it resolves to `public`, which is the live board.
+    """
+    target = str(resolve_store_target(None))
+    marker = "search_path%3D"
+    if marker not in target:
+        return None
+    return target.rsplit(marker, 1)[1].split("&")[0]
+
+
+def test_the_resolved_store_is_scoped_to_a_schema_at_all():
+    """An unscoped DSN IS the live board — there is no separate test database.
+
+    The direct successor to the old tmp-root check. That one asked "is the
+    resolved path inside pytest's scratch tree"; the equivalent question now is
+    "is the resolved target confined to a schema of its own", because a DSN
+    with no search_path lands in `public` alongside the real cards.
     """
     # Arrange
     # Act
-    resolved = resolve_db_path(None).resolve()
-    base_tmp = tmp_path_factory.getbasetemp().resolve()
+    schema = _resolved_schema()
     # Assert
-    assert base_tmp in resolved.parents, (
-        f"resolve_db_path(None) = {resolved} is NOT under pytest's tmp root "
-        f"{base_tmp} — the session isolation fixture in tests/conftest.py "
-        "does not appear to be pinning $SCITEX_CARDS_DB any more."
+    assert schema is not None, (
+        "the resolved store target carries no search_path, so it resolves to "
+        f"the {_LIVE_SCHEMA} schema — the LIVE board. The session isolation "
+        "fixture in tests/conftest.py does not appear to be pinning "
+        f"${ENV_DB} to an ephemeral schema any more."
     )
 
 
-def test_resolved_db_path_is_not_a_real_store_candidate():
-    """Belt-and-braces companion to the tmp-root check above: also assert the
-    resolved path is not literally one of the known real-store locations."""
+def test_the_resolved_store_is_not_the_live_schema():
+    """The same pin from the other direction, and not redundant.
+
+    A target could carry a search_path and still name `public` — a refactor
+    that kept the mechanism and lost the isolation. The test above would pass
+    on that; this one is what fails. Same reasoning as the two SCITEX_DIR
+    checks further down, which were split for exactly this asymmetry.
+    """
     # Arrange
     # Act
-    resolved = resolve_db_path(None).resolve()
-    for home in _REAL_HOMES:
-        for pkg in ("cards", "card"):
-            real = Path(home, ".scitex", pkg, "cards.db")
-            # Assert
-            assert resolved != real, (
-                f"resolve_db_path(None) resolved to the REAL store {real} — "
-                "the isolation fixture in tests/conftest.py is not active."
-            )
+    schema = _resolved_schema()
+    # Assert
+    assert schema != _LIVE_SCHEMA, (
+        f"the resolved store target is scoped to {_LIVE_SCHEMA!r}, which is "
+        "where the REAL board's tables live — the isolation fixture in "
+        "tests/conftest.py is not active."
+    )
 
 
 def test_scitex_dir_fallback_is_also_pinned_under_tmp(tmp_path_factory):
