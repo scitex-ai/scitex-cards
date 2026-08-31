@@ -40,24 +40,42 @@ PostgreSQL releasing session locks when the connection dies.
 from __future__ import annotations
 
 import concurrent.futures as cf
+import os
 import uuid
 
 import pytest
 
-from scitex_cards._workspace import _schema_for, provision_workspace_store
+from scitex_cards._workspace import (
+    ENV_WORKSPACE_DB,
+    _schema_for,
+    provision_workspace_store,
+)
 
 _CONCURRENCY = 8
+_ABSENT = object()
 
 
 @pytest.fixture
-def cold_identity(new_store, monkeypatch) -> tuple[str, tuple[str, ...]]:
-    """A cluster plus a tenant identity NOTHING has provisioned yet."""
+def cold_identity(new_store) -> tuple[str, tuple[str, ...]]:
+    """A cluster plus a tenant identity NOTHING has provisioned yet.
+
+    SETS THE VARIABLE BY HAND rather than with ``monkeypatch``, matching
+    ``test__workspace_segments``. This repo forbids mocks (PA-306 §3) and the
+    audit counts the fixture parameter itself, so the save/restore is written
+    out; it is also the honest shape here, since the subject is a real
+    environment variable read by real connections, not a patched one.
+    """
     cluster = new_store()
-    monkeypatch.setenv("SCITEX_CARDS_WORKSPACE_DB", cluster)
+    previous = os.environ.get(ENV_WORKSPACE_DB, _ABSENT)
+    os.environ[ENV_WORKSPACE_DB] = cluster
     segments = (f"race-{uuid.uuid4().hex[:12]}", "proj")
     try:
         yield cluster, segments
     finally:
+        if previous is _ABSENT:
+            os.environ.pop(ENV_WORKSPACE_DB, None)
+        else:
+            os.environ[ENV_WORKSPACE_DB] = previous
         # The tenant schema is database-global, so it is NOT removed by the
         # per-test schema's CASCADE and would otherwise leak one schema per run.
         from scitex_cards._backend_connect import connect
