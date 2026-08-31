@@ -104,7 +104,7 @@ def _fallback_deprecated_alias(
     group: click.Group,
     old_name: str,
     *,
-    target: str,
+    target: click.Command | str,
     remove_in: str,
     phase: str = "warn",
     target_name: str | None = None,
@@ -120,7 +120,12 @@ def _fallback_deprecated_alias(
             f"fallback deprecated_alias implements only phase='warn' "
             f"(got {phase!r}); upgrade scitex-dev for the full ladder"
         )
-    display = target_name or target
+    display = target_name or (
+        target.name if isinstance(target, click.Command) else target
+    )
+    # A GROUP alias must hand `--help` to the target, or `db --help` would
+    # print the alias's own (empty) help instead of the group's verb list.
+    targets_a_group = isinstance(target, click.Group)
     version = f"v{str(remove_in).lstrip('vV')}"
 
     @click.pass_context
@@ -129,7 +134,11 @@ def _fallback_deprecated_alias(
             old_name,
             f"'{old_name}' is deprecated — use '{display}' (removed in {version})",
         )
-        target_cmd = group.get_command(ctx, target)
+        target_cmd = (
+            target
+            if isinstance(target, click.Command)
+            else group.get_command(ctx, target)
+        )
         if target_cmd is None:  # wiring bug — fail loud (exit 2)
             ctx.fail(
                 f"deprecated alias misconfigured: target command "
@@ -146,6 +155,7 @@ def _fallback_deprecated_alias(
         callback=_forward,
         params=[],
         hidden=True,
+        add_help_option=not targets_a_group,
         short_help=f"(deprecated) Use '{display}'.",
         help=f"(deprecated) Forwards to '{display}'. Removed in {version}.",
         context_settings={
@@ -167,7 +177,7 @@ def deprecated_alias(
     group: click.Group,
     old_name: str,
     *,
-    target: str,
+    target: click.Command | str,
     remove_in: str,
     phase: str = "warn",
     target_name: str | None = None,

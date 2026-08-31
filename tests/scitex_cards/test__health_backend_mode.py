@@ -59,7 +59,13 @@ def _write_user_config(target: str) -> None:
 
 @pytest.fixture
 def sqlite_store(tmp_path):
-    """A plain file store, so BOTH rails are legitimately on SQLite."""
+    """A plain file card store.
+
+    SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23), so a
+    plain file store no longer gives the inbox rail anything to select — see
+    ``TestAFileStoreHasNoInboxBackend`` below. The card store itself may
+    still be a local file; only the inbox rail's fallback to SQLite is gone.
+    """
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
@@ -102,8 +108,11 @@ def postgres_inbox_only(sqlite_store):
     os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)
 
 
-class TestMatchingRailsPass:
-    def test_a_file_store_reports_ok(self, sqlite_store):
+class TestAFileStoreHasNoInboxBackend:
+    """SQLite retired (operator ruling 2026-08-23): a plain file card store no
+    longer gives the inbox rail a backend to fall back to at all."""
+
+    def test_a_file_store_fails(self, sqlite_store):
         # Arrange
         store = sqlite_store
 
@@ -111,9 +120,9 @@ class TestMatchingRailsPass:
         result = check_backend_mode(store)
 
         # Assert
-        assert result["ok"] is True
+        assert result["ok"] is False
 
-    def test_it_names_the_engine(self, sqlite_store):
+    def test_it_names_the_card_store_engine(self, sqlite_store):
         # Arrange
         store = sqlite_store
 
@@ -141,13 +150,15 @@ class TestASplitIsReportedAsFailure:
         store = _DSN
 
         # Act
-        detail = check_backend_mode(store)["detail"]
+        detail = check_backend_mode(store)["detail"].lower()
 
-        # Assert
-        assert POSTGRES in detail and SQLITE in detail
+        # Assert — the card store's engine (postgres) and the reason the
+        # inbox has none (its refusal message names "SQLite") both appear.
+        assert POSTGRES in detail and "sqlite" in detail
 
-    def test_the_hint_refuses_to_offer_a_toggle(self, sqlite_store):
-        """A knob here would be a fallback wearing a switch -- say so instead."""
+    def test_the_hint_names_the_actual_remedy(self, sqlite_store):
+        """A knob here would be a fallback wearing a switch -- the hint names
+        the one real fix (move the store) rather than offering a toggle."""
         # Arrange
         store = _DSN
 
@@ -155,7 +166,7 @@ class TestASplitIsReportedAsFailure:
         hint = check_backend_mode(store)["hint"]
 
         # Assert
-        assert "no setting" in hint.lower()
+        assert "SCITEX_CARDS_DB" in hint
 
     def test_it_does_not_raise_on_a_nonsense_store(self, sqlite_store):
         """A doctor reports; it must not crash the caller asking for a report."""

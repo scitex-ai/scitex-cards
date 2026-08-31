@@ -56,7 +56,6 @@ ZERO external-runtime imports (this sits under the standalone delivery rail).
 from __future__ import annotations
 
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -91,135 +90,6 @@ def _wanted(ids: "list[str] | str | None") -> list[str]:
     for nid in ids:
         if nid and nid not in out:
             out.append(nid)
-    return out
-
-
-# --------------------------------------------------------------------------- #
-# SQLite backend (the default)                                                #
-# --------------------------------------------------------------------------- #
-def _existing_columns(conn: sqlite3.Connection) -> set[str]:
-    """Column names currently on the ``inbox`` table (empty when absent)."""
-    try:
-        return {row[1] for row in conn.execute("PRAGMA table_info(inbox)")}
-    except sqlite3.Error:
-        return set()
-
-
-def _ensure_columns(conn: sqlite3.Connection) -> None:
-    """Add the receipt columns if this DB predates them. Idempotent + racy-safe.
-
-    ~21 agents share one ``cards.db``; two of them can reach the ``ALTER`` at the
-    same instant and the loser sees ``duplicate column name``. That is the
-    winner having done our job, not a failure, so it is swallowed — anything
-    else and a health check could take down a drain.
-    """
-    have = _existing_columns(conn)
-    for column in RECEIPT_COLUMNS:
-        if column in have:
-            continue
-        try:
-            conn.execute(f"ALTER TABLE inbox ADD COLUMN {column} TEXT")
-        except sqlite3.OperationalError as exc:
-            if "duplicate column" not in str(exc).lower():
-                raise
-    conn.commit()
-
-
-def _sqlite_stamp(
-    recipient_id: str,
-    ids: list[str],
-    *,
-    column: str,
-    stamp: str,
-    advance_cursor: bool,
-    store: str | Path | None,
-) -> list[str]:
-    """Stamp ``column`` on ``ids`` (first stamp wins) in ONE atomic UPDATE.
-
-    ``advance_cursor`` additionally flips ``seen`` in the SAME statement — that
-    is what makes "the push is recorded" and "the cursor moved" a single fact
-    with no window in between. ``COALESCE`` keeps the FIRST stamp: the age of an
-    unconfirmed push must measure how long it has gone unanswered, not how
-    recently it was retried.
-
-    Returns the ids that exist in this recipient's inbox (the ones stamped).
-    """
-    from ._inbox_sqlite import _ensure_ready, inbox_target, open_connection
-
-    placeholders = ",".join("?" for _ in ids)
-    with open_connection(inbox_target(store)) as conn:
-        _ensure_ready(conn, store)
-        _ensure_columns(conn)
-        # Same reason as the read below: table / recipient column / arrival
-        # order are properties of the OPEN CONNECTION, not of this file.
-        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
-
-        shape = shape_for(conn)
-        rows = conn.execute(
-            f"SELECT id FROM {shape.table} WHERE {shape.recipient} = ? "
-            f"AND id IN ({placeholders}) {shape.order()}",
-            (recipient_id, *ids),
-        ).fetchall()
-        present = [row["id"] for row in rows]
-        if not present:
-            return []
-        present_placeholders = ",".join("?" for _ in present)
-        seen_clause = "seen = 1, " if advance_cursor else ""
-        conn.execute(
-            f"UPDATE inbox SET {seen_clause}{column} = COALESCE({column}, ?) "
-            f"WHERE recipient = ? AND id IN ({present_placeholders})",
-            (stamp, recipient_id, *present),
-        )
-        conn.commit()
-    return present
-
-
-def _sqlite_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
-    """Read every record + its receipts for ``recipient_id`` (read-only).
-
-    Never creates the database and never ALTERs it: a doctor that has to write
-    before it can measure is a doctor that can break the patient. A DB that
-    predates the receipt columns simply reports ``None`` for both, which the
-    health check reads — correctly — as "no push has ever been recorded".
-    """
-    from ._inbox_sqlite import inbox_target, open_connection
-
-    db = inbox_target(store)
-    # THE ABSENCE PROBE CANNOT BE `.exists()` ANY MORE, and this is the same
-    # class the rest of today was: a store TARGET may be a URL, and `Path.exists`
-    # on one is either an AttributeError (it is a str) or a lie (it is a
-    # relative path that happens not to be there). The never-create guarantee in
-    # the docstring above is a FILE property, so it is asked only of files.
-    from ._store_url import is_postgres_url  # noqa: PLC0415 -- import cycle
-
-    if not is_postgres_url(str(db)) and not Path(db).exists():
-        return []
-    with open_connection(db) as conn:
-        columns = _existing_columns(conn)
-        if not columns:
-            return []
-        # Table, recipient column and arrival order come from the LIVE
-        # connection, not from this file's belief. Hardcoding `FROM inbox …
-        # ORDER BY rowid` was correct while the rail was its own SQLite file
-        # and is a syntax error against the canonical store, where the rail is
-        # `notifications` ordered by `seq`.
-        from ._inbox_shape import shape_for  # noqa: PLC0415 -- import cycle
-
-        shape = shape_for(conn)
-        selected = ["id", "event_type", "card_id", "ts", "seen"]
-        selected += [c for c in RECEIPT_COLUMNS if c in columns]
-        rows = conn.execute(
-            f"SELECT {', '.join(selected)} FROM {shape.table} "
-            f"WHERE {shape.recipient} = ? {shape.order()}",
-            (recipient_id,),
-        ).fetchall()
-    out: list[dict] = []
-    for row in rows:
-        record = {name: row[name] for name in selected}
-        record["seen"] = bool(record.get("seen"))
-        for column in RECEIPT_COLUMNS:
-            record.setdefault(column, None)
-        out.append(record)
     return out
 
 
@@ -296,13 +166,18 @@ def _stamp(
 ) -> list[str]:
     """Dispatch a stamp onto whichever inbox backend is active.
 
-    THREE BACKENDS, NOT TWO, and the missing third was a live defect. This read
+    TWO BACKENDS TODAY: PostgreSQL (the store-following default) and the file
+    break-glass (``SCITEX_CARDS_INBOX_BACKEND=yaml``). SQLite is RETIRED
+    (operator ruling 2026-08-23) — :func:`scitex_cards._inbox_backend.backend`
+    never returns it, so this dispatch no longer needs to ask.
+
+    Before #780 landed and the SQLite backend was retired, this read
     ``_sqlite_stamp if _use_sqlite() else _file_stamp`` — a two-valued question
-    asked of a three-valued world. After #780 the shared-inbox deployment (the
-    fleet's) answers "not sqlite", so every push receipt and every recipient
-    confirmation was written to a FILE while the notifications themselves lived
-    in PostgreSQL. Measured 2026-08-11: 8 rows on the rail, 0 with ``pushed_at``,
-    0 with ``confirmed_at``, and an ``inboxes.json`` LOCK file next to no
+    asked of a three-valued world. The shared-inbox deployment answered "not
+    sqlite", so every push receipt and every recipient confirmation was written
+    to a FILE while the notifications themselves lived in PostgreSQL. Measured
+    2026-08-11: 8 rows on the rail, 0 with ``pushed_at``, 0 with
+    ``confirmed_at``, and an ``inboxes.json`` LOCK file next to no
     ``inboxes.json`` at all — the file rail being taken, finding nothing, and
     reporting success. See :mod:`scitex_cards._inbox_receipt_postgres`.
 
@@ -310,7 +185,7 @@ def _stamp(
     enqueue/poll/ack path asks — is what keeps the receipt and the row it
     describes in the same database by construction.
     """
-    from ._inbox_backend import POSTGRES, SQLITE, backend
+    from ._inbox_backend import POSTGRES, backend
 
     normalized = _wanted(ids)
     if not recipient_id or not normalized:
@@ -328,8 +203,7 @@ def _stamp(
             advance_cursor=advance_cursor,
             store=store if isinstance(store, str) else None,
         )
-    writer = _sqlite_stamp if active == SQLITE else _file_stamp
-    return writer(
+    return _file_stamp(
         recipient_id,
         normalized,
         column=column,
@@ -401,11 +275,11 @@ def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict
     ``{id, event_type, card_id, ts, seen, pushed_at, confirmed_at}``; a record
     that predates receipts reports ``None`` for both stamps.
 
-    Dispatches three ways for the same reason :func:`_stamp` does — a doctor
-    reading a different database from the one the rail writes is a doctor that
-    reports health it never measured.
+    Dispatches for the same reason :func:`_stamp` does — a doctor reading a
+    different database from the one the rail writes is a doctor that reports
+    health it never measured.
     """
-    from ._inbox_backend import POSTGRES, SQLITE, backend
+    from ._inbox_backend import POSTGRES, backend
 
     if not recipient_id:
         return []
@@ -416,8 +290,7 @@ def receipts(recipient_id: str, *, store: str | Path | None = None) -> list[dict
         return _postgres_receipts(
             recipient_id, store if isinstance(store, str) else None
         )
-    reader = _sqlite_receipts if active == SQLITE else _file_receipts
-    return reader(recipient_id, store)
+    return _file_receipts(recipient_id, store)
 
 
 def is_confirmed(record: dict) -> bool:

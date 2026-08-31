@@ -38,7 +38,7 @@ from scitex_cards import _server, _store
 def rig(tmp_path, env):
     """A serving rig: pinned store + tmp tokens + tmp audit + live server.
 
-    The store is SQLite now, and the harness (tests/conftest.py) already pins
+    The store is the database now, and the harness (tests/conftest.py) already pins
     every store-selecting env var at a per-test scratch dir and bootstraps an
     EMPTY, schema-complete canonical DB there. So the server must be pinned to
     that SAME store identity — ``$SCITEX_CARDS_TASKS_YAML_SHARED`` (==

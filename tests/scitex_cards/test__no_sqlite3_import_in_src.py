@@ -67,10 +67,10 @@ KNOWN_SQLITE_IMPORTERS: dict[str, str] = {
     #    derived search index at ~/.scitex/card/.tasks.index.sqlite. Not the
     #    cards store, so it needs its own migration decision, not this one's.
     "_index.py": "derived FTS index; creates its own SQLite file",
-    # -- the live SQLite inbox backend, still selected by _inbox._use_sqlite().
-    "_inbox_sqlite.py": "SQLite inbox backend (annotation use only, but the module IS the backend)",
-    "_inbox_sqlite_schema.py": "SQLite inbox DDL + open_connection",
-    "_inbox_receipt.py": "reads/writes the SQLite inbox receipt rows",
+    # -- _inbox_sqlite.py / _inbox_sqlite_schema.py / _inbox_receipt.py's
+    #    SQLite half were DELETED 2026-08-28 (PR #938 step two): the inbox
+    #    backend is retired (operator ruling 2026-08-23), so there is no
+    #    longer a live SQLite inbox implementation to allowlist.
     "_channel_rail.py": "read-only probe of the SQLite rail (mode=ro)",
     "_db_dm_schema.py": "catches sqlite3.OperationalError from the DM schema probe",
     # -- legacy readers. All open mode=ro, so none of them can CREATE a store;

@@ -96,7 +96,7 @@ axis, not a search order:
 | — | *nothing else* | **unset ⇒ raises `StoreTargetNotConfigured`** |
 
 **There is no second backend and no fallback tier.** Each removed tier was a way to
-silently answer with the wrong board: the zero-config **SQLite** default raises as of
+silently answer with the wrong board: the zero-config **file-backed** default raises as of
 2026-08-13; **project scope** is gone (a per-repo store meant one agent saw a
 different board per directory); the **bundled example** went with #512. An
 unconfigured store is a configuration error and says so.

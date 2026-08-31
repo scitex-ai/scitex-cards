@@ -9,8 +9,8 @@ The half of the rail that did not move
 ``notifications`` table. :mod:`scitex_cards._inbox_receipt` — the module that
 stamps ``pushed_at`` when the channel hands a record to the transport, and
 ``confirmed_at`` when the recipient confirms it by id — did not come along. It
-dispatched on ``_use_sqlite()``, which is TWO-VALUED, so the shared-inbox case
-fell into the ``else`` and wrote a FILE.
+dispatched on ``_use_sqlite()`` (retired 2026-08-23), which was TWO-VALUED, so
+the shared-inbox case fell into the ``else`` and wrote a FILE.
 
 MEASURED ON THE LIVE STORE, 2026-08-11 23:30Z::
 
@@ -36,9 +36,9 @@ What that cost, concretely
 
 Why this is a separate module
 -----------------------------
-Same seam as ``_inbox_postgres``: the file/SQLite halves know about paths and
-``PRAGMA table_info``, and this one knows about a server. Keeping them apart is
-what lets the file halves be DELETED later without surgery inside a live module.
+Same seam as ``_inbox_postgres``: the file half knows about paths, and this one
+knows about a server. Keeping them apart is what let the (now-deleted) SQLite
+half be retired without surgery inside a live module.
 
 One statement per operation, deliberately
 -----------------------------------------

@@ -36,8 +36,8 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
+from pathlib import Path
 
-from .._inbox import _resolved_store
 from ._tick import fault_text
 
 logger = logging.getLogger("scitex_cards.delivery.notifyd")
@@ -45,6 +45,40 @@ logger = logging.getLogger("scitex_cards.delivery.notifyd")
 #: Cadence (MINUTES) of the fleet-liveness sweep. ``<= 0`` disables it.
 ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
 DEFAULT_NUDGE_SWEEP_MINUTES = 30.0
+
+
+def _sweep_store(store: "str | Path | None"):
+    """The STORE the sweep's BOOKKEEPING belongs in — never the local task file.
+
+    ``_resolved_store`` is an alias for :func:`scitex_cards._paths.local_store_path`,
+    whose own docstring warns that it answers "which local FILE", not "which
+    store": on a PostgreSQL deployment it returns ``…/tasks.yaml`` while the data
+    lives in ``postgresql://…``. Both sweeps used to pass that label straight into
+    ``sweep_reminders(store=…)`` / ``sweep_and_nudge(store=…)``, and those hand it
+    to ``_db_sweep_state`` → ``_db_target`` → ``database_for``, which maps a label
+    to its SIBLING DATABASE — ``~/.scitex/cards/cards.db``, SQLite.
+
+    MEASURED 2026-08-23 on compute-04, both ledgers live at once:
+
+        Postgres sweep_state   612 rows   nudges    newest 15:06:31Z
+                                          reminders newest 08-18 (frozen 5 days)
+        SQLite   cards.db      445 rows   reminders newest 15:06:50Z
+                                          nudges    newest 14:42:42Z
+
+    Nineteen seconds apart. ``_cli/_stats.py`` calls ``sweep_and_nudge(store=store)``
+    with the raw argument and therefore reached Postgres, while notifyd reached
+    SQLite — so nudge dedup was split across two ledgers and a suppression recorded
+    by one driver could not suppress the other. That is the exact harm
+    ``_db_sweep_state`` says it exists to prevent, happening twice on ONE host.
+
+    ``None`` (notifyd's default) now resolves to the real store target. An explicit
+    value is still honoured verbatim, because a caller naming a store means it.
+    """
+    if store is not None:
+        return store
+    from .._store_target import resolve_store_target  # noqa: PLC0415 -- cycle
+
+    return resolve_store_target(None)
 
 
 def _run_reminder_sweep(*, store, now) -> "str | None":
@@ -69,10 +103,10 @@ def _run_reminder_sweep(*, store, now) -> "str | None":
         from .._reminders import sweep_reminders
 
         # Resolve the store BEFORE use: notifyd's `store` is None by default
-        # (deliver_pending resolves it internally), but load_tasks / the sweep
-        # need a concrete path — passing None trips Path(None). Use the same
-        # resolver the daemon logs with so all three see one store.
-        resolved = _resolved_store(store)
+        # (deliver_pending resolves it internally) and load_tasks trips on None.
+        # It must resolve to the STORE, not to the local task file — see
+        # _sweep_store for the two-ledger split that the local path caused.
+        resolved = _sweep_store(store)
         tasks = load_tasks(resolved)
         result = sweep_reminders(tasks, store=resolved, now=now)
         if result["digested"] or result["escalated"]:
@@ -132,7 +166,7 @@ def _run_stale_nudge_sweep(*, store, now) -> "str | None":
         from .._model import load_tasks
         from .._stale.active_nudge import sweep_and_nudge
 
-        resolved = _resolved_store(store)
+        resolved = _sweep_store(store)
         tasks = load_tasks(resolved)
         for line in sweep_and_nudge(tasks, store=resolved, now=now):
             logger.info("notifyd liveness sweep: %s", line.strip())

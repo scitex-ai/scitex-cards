@@ -217,7 +217,7 @@ Store identity (ONE axis, not a search order):
 
 The store is **PostgreSQL on 55432, per host, synchronised across hosts** — one
 board where tasks from every project on this host live together. There is no
-SQLite tier and no `.db` file: two backends would be two ways to be wrong about
+second-engine tier and no `.db` file: two backends would be two ways to be wrong about
 which board you are reading.
 
 **THERE IS NO PROJECT SCOPE, AND THIS IS DELIBERATE.** An earlier version of

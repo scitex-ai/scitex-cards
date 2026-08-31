@@ -25,7 +25,7 @@ spartan agent                          hub (ywata-note-win)
 ```
 
 - Every remote agent keeps running its **local stdio MCP server** — the 23-tool surface (`_mcp_server.py:264-298`) is byte-identical on remote hosts, satisfying the "identical MCP surface" constraint by construction. Only the storage verbs beneath swap from local-file to HTTP client.
-- The hub runs a **new `scitex-cards serve` verb**: a small authenticated HTTP JSON-RPC service in front of the canonical DB. There is exactly one store, opened by processes on one machine — flock + SQLite WAL semantics stay valid (WAL over NFS/SMB is explicitly unsafe per `_db.py:85-119`, which rules out network-filesystem sharing; HTTP-fronting is the only shape compatible with "this one cards.db").
+- The hub runs a **new `scitex-cards serve` verb**: a small authenticated HTTP JSON-RPC service in front of the canonical DB. There is exactly one store, opened by processes on one machine — flock + write-ahead-log semantics stay valid (a write-ahead log over NFS/SMB is explicitly unsafe, which rules out network-filesystem sharing; HTTP-fronting is the only shape compatible with "this one store").
 
 ### Existing components to build on
 
@@ -157,7 +157,7 @@ Remote agents then use `SCITEX_CARDS_HUB_URL=http://127.0.0.1:8765` — a loopba
 
 ## 6. STAGED PRs + SPARTAN PILOT
 
-Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in `_mcp_*`; they never modify `_store_*` internals, so the in-flight S6 store cutover (YAML→SQLite beneath the verbs) proceeds independently — the seam sits *above* the engine S6 is swapping. Land after S6's verb signatures are frozen on 0.17.
+Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in `_mcp_*`; they never modify `_store_*` internals, so the in-flight S6 store cutover (YAML→database beneath the verbs) proceeds independently — the seam sits *above* the engine S6 is swapping. Land after S6's verb signatures are frozen on 0.17.
 
 | PR | Content | Independent verification |
 |---|---|---|
@@ -170,7 +170,7 @@ Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in
 1. Operator: tunnel unit + `hub provision spartan` + env on one login-node agent.
 2. `scitex-cards hub doctor` on spartan: all four checks green.
 3. Write matrix from spartan via ordinary MCP tools: `add_task` (unique id) → `comment_task` → `update_task` → `set_edge` → `dm_send` → `poll_notifications(ack)`.
-4. **Read-back gate — every claim verified from the other side:** each write is confirmed by (a) hub-side direct read (CLI/sqlite against `~/.scitex/cards/cards.db`) showing the row with `created_by`/actor = the spartan agent id, and (b) spartan-side `get_task` returning the identical card. No write counts until both read-backs pass.
+4. **Read-back gate — every claim verified from the other side:** each write is confirmed by (a) hub-side direct read (CLI or a direct database session against the canonical store) showing the row with `created_by`/actor = the spartan agent id, and (b) spartan-side `get_task` returning the identical card. No write counts until both read-backs pass.
 5. Record per-op latency over the tunnel (expect 1 RTT/op); kill the tunnel mid-session and confirm the failure is loud, attributed, and leaves no local shadow store on spartan.
 6. NAS follows only after the spartan gate passes.
 
@@ -180,7 +180,7 @@ Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in
 
 | Risk | Mitigation |
 |---|---|
-| **Concurrency on one cards.db** — HTTP writers + hub-local MCP + board writing simultaneously | Serve handlers use only the locked `_store` verbs (flock across full read-modify-write, SQLite WAL + 300s busy_timeout hub-side) — the server is just another local process, so the existing single-host locking story covers it. Residual hazard is the board's 8 bypassing endpoints (apiCov's lost-update finding) — pre-existing, hub-local, and a recommended follow-up card: route them through `_store` too. They are never exposed remotely. |
+| **Concurrency on one cards.db** — HTTP writers + hub-local MCP + board writing simultaneously | Serve handlers use only the locked `_store` verbs (flock across full read-modify-write, write-ahead logging + a 300s busy timeout hub-side) — the server is just another local process, so the existing single-host locking story covers it. Residual hazard is the board's 8 bypassing endpoints (apiCov's lost-update finding) — pre-existing, hub-local, and a recommended follow-up card: route them through `_store` too. They are never exposed remotely. |
 | **Latency** — every MCP op is a WAN round trip (hub↔spartan) | One RPC per op by design; `list_tasks` filters execute hub-side (never the 5 MB `/tasks` dump); no auto-retry on writes (avoids duplicate comments; `add_task` is id-idempotent anyway); pilot records p50/p95 before NAS rollout. |
 | **Auth leakage** — token on a shared HPC home dir | 0600 file, never in URL/query, only the Authorization header, wire is ssh-encrypted end to end; `serve --rotate-token` + re-provision is a two-command rotation; JSONL audit gives detection. Agent-identity spoofing within the trusted fleet is accepted v1, closed by per-agent tokens in v2. |
 | **Tunnel fragility** — remote work stalls when the forward drops | autossh Restart=always; end-to-end monitor = hub cron ssh-probing `curl 127.0.0.1:8765/v1/health` *on the peer* (traverses the whole loop, hub-initiated like sac's pull posture). Deliberately **no offline write queue**: a queue is a second copy under another name — remotes fail loud and wait, per the operator's one-database ruling. |

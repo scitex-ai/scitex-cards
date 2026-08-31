@@ -33,7 +33,7 @@ from scitex_cards._model import load_tasks
 
 @pytest.fixture()
 def store(env):
-    # SQLite cutover: card DATA lives in the canonical DB (a path-independent
+    # Post-cutover: card DATA lives in the canonical DB (a path-independent
     # read), so the two seeded cards are put THERE. But the board cache — the
     # subject of this whole file — still keys HALF its invalidation on the
     # resolved store PATH's stat (mtime_ns, size, inode via ``_stat_sig``) and
@@ -143,7 +143,7 @@ def _break_the_rebuild(store) -> None:
     believable empty board is neither" — an unreadable database is MEANT to
     reach the operator as a 500. Asserting stale-serving there would have been
     asserting against the module's stated design. (Measured: it raises
-    `sqlite3.DatabaseError: file is not a database` straight out of the view.)
+    a driver-level "file is not a database" error straight out of the view.)
 
     The real seam is narrower. `_load_global_tasks` ALSO parses the sidecar
     through `load_groups` -> `safe_load`, while `store_generation` reads the

@@ -2,6 +2,79 @@
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-31
+
+### A behind-client no longer re-runs the DDL it cannot possibly need
+
+The 2026-08-02 "BEHIND, not DIFFERENT" fix was one line short. It changed the
+version comparison to `<` so a client older than the store would stop
+re-asserting its whole schema on every connection. That works — and the very
+next check, `shape.agreement is not ShapeAgreement.AGREES`, then rejected the
+same client for the same underlying reason, so the deadlocks continued.
+
+Measured on the live board with the deployed client's own interpreter:
+
+    SCHEMA_VERSION       12
+    shape.observed       12
+    version check        passes
+    shape.agreement      STAMP_IS_HIGH  ->  AGREES? False   <- rejected here
+    required triggers    9, none missing
+
+`STAMP_IS_HIGH` is the NORMAL reading for a behind-client, not a symptom: its
+physical-rung reader knows only the rungs its own version defines, so it can
+never observe above itself, while the stamp was written by a newer client. Every
+not-yet-upgraded client reports this disagreement forever, and a fleet always
+contains such clients — three card writes died of `deadlock detected ... in
+relation "pg_proc"` inside twenty minutes with nothing else running.
+
+The exemption is narrow: it applies only when EVERY stamp sits above the version
+this client would assert, so the store is unambiguously ahead. `STAMP_IS_LOW`
+still refuses, because that is the repair the migration chain exists for. Stamps
+that disagree with each other still refuse. A current or ahead client seeing a
+high stamp still refuses, because it can read every rung it would assert and the
+stamp is genuinely unexplained. The guard triggers are still proven present on
+every open, so nothing skips the DDL without proof.
+
+Why the existing tests missed it: `test_a_store_AHEAD_of_the_client_needs_no_ddl`
+builds a self-consistent shape — observed and both stamps equal, agreement
+`AGREES` — which is a reading no real behind-client can produce, so it exercised
+the version comparison and nothing else.
+
+### The store verbs answer to `dev db`, and every hint says so
+
+Per-package database client commands standardize on `<package> dev db`, with
+the ecosystem-wide aggregate on `scitex-dev ecosystem dev db` (operator,
+2026-08-26). `db` was the last store-facing group still mounted at the root
+next to the card verbs people actually run, though it is upkeep by the same
+test every other `dev` verb passes: it operates on the store as an object.
+
+`scitex-cards db ...` keeps working as a Phase-W alias through v0.54, because
+that spelling is baked into cron lines, troubleshooting notes and agent
+prompts across the fleet, none of which are greppable from this repository.
+
+TWO THINGS THE MOVE BROKE THAT AN ALIAS DOES NOT COVER, both caught by the
+suite rather than by review:
+
+* The hourly snapshot rail INVOKED `scitex-cards db snapshot --push` — after
+  the move a doubly-deprecated spelling, which would have printed two
+  deprecation warnings per fire into the log that rail's red/green reading
+  comes from. It now invokes the canonical `dev db create-snapshot`.
+
+* Every hint naming the group — across seven modules — said
+  `scitex-cards db <verb>`, and `test_every_verb_named_in_a_hint_exists`
+  enforces that a hint is runnable as printed. An alias resolves at the CLI
+  but is not a verb the enumeration finds, so the hints moved with the group.
+  Three were split across source lines, in two different wrappings, and only
+  the per-substitution assertion counts caught them.
+
+The alias helper had to learn one thing first. `_compat`'s inline fallback —
+the LIVE path for an ordinary install, since scitex-dev is deliberately not a
+runtime dependency — resolved targets with `group.get_command`, which only
+finds commands on the group the alias itself sits on. Pointing the root `db`
+at a group that now lives on `dev` returned `None` there (and, spelled as a
+string, resolved to the alias itself). It now accepts a command object, as
+scitex-dev's real helper always did, and forwards `--help` to a group target.
+
 ### A poll and a confirm each name the store they used
 
 A consumer that polls one store and confirms against another gets no error from

@@ -29,7 +29,7 @@ from scitex_cards._cli import main
 
 
 def _store_path(tmp_path) -> str:
-    # Store is SQLite; load/save read+write the canonical DB and IGNORE the
+    # The store is the database; load/save read+write it and IGNORE the
     # path except as the provenance stamp. Return the PINNED STORE identity
     # (== resolve_tasks_path(None)) so a read-after-write round-trips instead
     # of tripping the stamp-mismatch guard. NOT the tmp_path file.

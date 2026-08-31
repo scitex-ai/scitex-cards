@@ -181,7 +181,7 @@ ENV_DB = "SCITEX_CARDS_DB"
 #: and :func:`_db_foreign_keys._migrate_v10_to_v11` is a no-op on SQLite. In
 #: each case the artifact exists and its effect does not yet, which is a state
 #: worth being able to name.
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:

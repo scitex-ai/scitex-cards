@@ -32,7 +32,7 @@ def _seed_and_stamp(db_path, store_path) -> None:
 
     Replaces the deleted ``import_from_yaml(tasks_path=store)``. That entry point
     built the DB from the YAML at ``store`` AND recorded ``store`` in the DB's
-    provenance stamp (``KEY_YAML_PATH``). SQLite is now the only store and the
+    provenance stamp (``KEY_YAML_PATH``). The database is now the only store and the
     importer is gone, so both halves are done explicitly: seed the DB from the
     same in-memory doc via ``seed_db_from_doc`` (the surviving rebuild
     primitive), then stamp ``KEY_YAML_PATH`` with ``store_path`` so the
@@ -134,12 +134,21 @@ def test_the_hint_names_the_pointer_the_reader_can_change(two_stores):
 
 
 def test_the_hint_names_a_runnable_verb(two_stores):
+    """The verb moved twice, and the hint has to name where it landed.
+
+    `db path` was two deprecations deep by 2026-08-26: the leaf had already
+    been renamed to `get-path`, and the group then moved to `dev db`. Both old
+    spellings still RESOLVE as Phase-W aliases, so this assertion would pass on
+    either — but `test_every_verb_named_in_a_hint_exists` enumerates the
+    command tree, and an alias is not a verb it finds. Pin the canonical
+    spelling, which is the one a reader in the failure path can run.
+    """
     # Arrange
     _, store_b = two_stores
     # Act
     check = _check(health(store=str(store_b)), "store_identity")
     # Assert
-    assert "db path" in check["hint"]
+    assert "dev db get-path" in check["hint"]
 
 
 def test_the_hint_does_not_name_the_nonexistent_import_verb(two_stores):

@@ -435,6 +435,84 @@ def store_adopt_uuid_cmd(identity, as_json) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# list-importers — which PROCESSES hold this package, not which venvs have it #
+# --------------------------------------------------------------------------- #
+@click.command(
+    "list-importers",
+    **spec_command_kwargs(
+        summary="List the processes that import this package, and their staleness.",
+        description=(
+            "Answers 'who must restart for a fix to take effect'. Reports the "
+            "ENUMERATION SIZE so an empty result is evidence rather than a "
+            "shrug, states the VANTAGE because a container cannot see host "
+            "processes, and never substitutes a venv's version for what a "
+            "process actually imports.",
+        ),
+        examples=(
+            ("{prog} list-importers", "List importing processes."),
+            ("{prog} list-importers --self", "What THIS interpreter imports."),
+        ),
+    ),
+)
+@click.option("--json", "as_json", is_flag=True)
+@click.option(
+    "--self",
+    "self_only",
+    is_flag=True,
+    help="Report what this interpreter imports — the one row always knowable.",
+)
+def list_importers_cmd(as_json, self_only) -> None:
+    """Enumerate importing processes, or describe this interpreter."""
+    from .._process_inventory import describe_self, scan
+
+    if self_only:
+        info = describe_self()
+        if as_json:
+            click.echo(json.dumps(info))
+            return
+        click.echo(f"pid:                  {info['pid']}")
+        click.echo(f"resolved_import_path: {info['resolved_import_path']}")
+        click.echo(f"resolved_version:     {info['resolved_version']}")
+        return
+
+    inv = scan()
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "vantage": inv.vantage,
+                    "enumerated": inv.enumerated,
+                    "rows": [
+                        {**vars(r), "staleness": r.staleness} for r in inv.rows
+                    ],
+                }
+            )
+        )
+        return
+    # THE TWO HEADER LINES ARE NOT DECORATION. Without them a zero-row report is
+    # indistinguishable from a scan that could not run, and from one run where
+    # the processes are not visible -- the two false conclusions this verb was
+    # built after.
+    click.echo(f"vantage:    {inv.vantage}")
+    click.echo(f"enumerated: {inv.enumerated} process(es) examined")
+    click.echo(f"matched:    {len(inv.rows)}")
+    for r in inv.rows:
+        click.echo("")
+        click.echo(f"  pid {r.pid}  [{r.lifetime_class}]  started {r.start_time}")
+        click.echo(f"    cmdline:  {r.cmdline}")
+        click.echo(f"    venv:     {r.venv_path} -> {r.venv_version}")
+        click.echo(f"    imports:  {r.resolved_import_path}")
+        click.echo(f"    stale:    {r.staleness}")
+    if inv.vantage == "container":
+        click.echo("")
+        click.echo(
+            "NOTE: run from inside a container — this /proc shows only this "
+            "namespace. An empty result here means WRONG VANTAGE, not "
+            "'nothing running'. Re-run on the host for a fleet answer."
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Registration                                                                #
 # --------------------------------------------------------------------------- #
 def register(main: click.Group) -> None:
@@ -443,6 +521,7 @@ def register(main: click.Group) -> None:
     main.add_command(init_store_cmd, name="init-store")
     main.add_command(sync_store_cmd, name="sync-store")
     main.add_command(store_group, name="store")
+    main.add_command(list_importers_cmd, name="list-importers")
 
 
 # EOF

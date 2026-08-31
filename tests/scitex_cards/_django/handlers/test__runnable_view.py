@@ -32,7 +32,7 @@ from scitex_cards._store import add_task
 def store_with_runnable() -> Path:
     """Seed the canonical DB with one runnable + one blocked task.
 
-    The store is SQLite now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
+    The store is the database now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
     and SCITEX_CARDS_DB at a per-test scratch DB, and the view's ``get_board``
     -> ``resolve_tasks_path(None)`` reads that SAME store. Seed via
     ``add_task`` (store=None resolves the pinned store and writes the canonical

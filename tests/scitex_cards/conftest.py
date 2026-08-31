@@ -200,17 +200,21 @@ def _reject_deprecated_agent_env():
 
 # === Suite-wide: pin the YAML inbox backend by default ======================
 #
-# The inbox storage backend DEFAULT flipped to SQLite (operator decision
-# 2026-07-09: SQLite is ON, YAML is explicit break-glass). But the bulk of the
-# suite asserts the YAML on-disk inbox format / semantics (the ``inboxes:``
-# section shape, tasks:/users: coexistence, the digest-collapse maintenance
-# path, etc.). Pin the (still-supported) YAML break-glass backend for every
-# test by default so those assertions keep exercising the path they were
-# written for. The dedicated SQLite-backend tests opt BACK OUT via
-# ``env.delete("SCITEX_CARDS_INBOX_BACKEND")`` (to prove the real default) or
-# set it explicitly; this fixture restores the pre-test value on teardown, so
-# the two stack safely. Production agents set NEITHER var and therefore get the
-# real SQLite default.
+# The inbox storage backend defaulted to a local file rail from 2026-07-09
+# until it was RETIRED entirely (operator ruling 2026-08-23, PR #938 / #944):
+# it is no longer a legal inbox backend under any resolution path, so an unset var now
+# means "no backend at all" against a non-shared store rather than a working
+# default. The bulk of the suite asserts the YAML on-disk inbox format /
+# semantics (the ``inboxes:`` section shape, tasks:/users: coexistence, the
+# digest-collapse maintenance path, etc.), so this fixture pins the
+# (still-supported) YAML break-glass backend for every test by default —
+# every real-store fixture needs SOME resolvable backend now, not only the
+# ones that used to assert YAML specifically. A module-scoped fixture that
+# does real inbox I/O must set this var itself rather than relying on this
+# (function-scoped) autouse fixture: pytest sets up a module-scoped fixture
+# BEFORE a function-scoped one on the first test that needs both, so this
+# fixture's pin would not yet be in effect (see e.g.
+# ``test__channel_size_guard.py``'s ``burst`` fixture).
 
 
 @pytest.fixture(autouse=True)
@@ -229,7 +233,7 @@ def _refuse_swapped_args(doc, db_path) -> None:
 
     THE ARGUMENT ORDER IS (doc, db_path) AND GETTING IT BACKWARDS USED TO BE
     SILENT — measured 2026-08-17, by me, in this repo. `seed_db_from_doc(db,
-    {"tasks": []})` handed the DICT to SQLite as a path, and SQLite did exactly
+    {"tasks": []})` handed the DICT to the engine as a path, and it did exactly
     what it is asked to: it CREATED A DATABASE at a path whose name is the
     repr of the dict. A 225 KB file called `{'tasks': []}` landed at the repo
     root, `git add -A` committed it, and it was the CI quality gate that
@@ -253,7 +257,7 @@ def _refuse_swapped_args(doc, db_path) -> None:
             "seed_db_from_doc(doc, db_path) — the arguments look SWAPPED.\n"
             f"  doc     = {type(doc).__name__}\n"
             f"  db_path = {type(db_path).__name__}\n"
-            "Passing a mapping as db_path makes SQLite CREATE a database at a "
+            "Passing a mapping as db_path makes the engine CREATE a database at a "
             "path named after the dict's repr (measured: a 225 KB file called "
             "\"{'tasks': []}\" at the repo root, committed, caught only by the "
             "CI quality gate). Call it as seed_db_from_doc({'tasks': [...]}, "
@@ -265,8 +269,8 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     """Populate a fresh database from an IN-MEMORY document. Returns the summary.
 
     THE REPLACEMENT FOR ``import_from_yaml`` IN TESTS. That function read a doc
-    off a YAML file and rebuilt the DB from it; it is deleted, because SQLite is
-    the only store and there is no YAML to read. Tests that used it to *seed* a
+    off a YAML file and rebuilt the DB from it; it is deleted, because the
+    database is the only store and there is no YAML to read. Tests that used it to *seed* a
     database (build a doc, write YAML, import) now build the same doc and call
     this — which reaches the SAME surviving primitive (``_rebuild_from_doc``),
     so every downstream assertion about schema / columns / counts is unchanged.

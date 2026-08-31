@@ -14,7 +14,7 @@ Lead-approved guardrails (operator OK via lead a2a `3cf31901`):
      repo, the post-migration state is committed under a clear
      ``[scitex-cards migrate]`` message.
 
-SQLite is the store (YAML→SQLite cutover): the migrator reads its rows
+The database is the store (the YAML→database cutover): the migrator reads its rows
 from the canonical DB — NOT from a ``tasks.yaml`` file — classifies them,
 writes each card's ``tasks/<id>/README.md`` under the store path's parent,
 and writes the stripped rows back to the DB. So these tests SEED the
@@ -43,7 +43,7 @@ from scitex_cards._model import load_tasks
 
 
 def _seed_db(body: str) -> None:
-    """Seed the canonical SQLite store from a YAML-text fixture (Pattern 1).
+    """Seed the canonical store from a YAML-text fixture (Pattern 1).
 
     The migrator reads its rows from the DB now, not from a ``tasks.yaml``
     file, so the fixtures are still authored as readable YAML text: parse it

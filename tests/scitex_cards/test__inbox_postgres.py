@@ -8,7 +8,7 @@ one-off script so they run again every time someone touches the backend.
 The cross-host case is simulated the way it actually fails: a DIFFERENT
 HOME and a DIFFERENT cwd for the reader, so nothing local could satisfy the
 read even if the code tried to. That is precisely what the old per-host
-SQLite inbox did — 4901 rows on one machine, 162 on another, and the
+retired per-host inbox did — 4901 rows on one machine, 162 on another, and the
 operator's messages reaching nobody.
 
 Skipped, loudly, when no throwaway Postgres is configured: these must never

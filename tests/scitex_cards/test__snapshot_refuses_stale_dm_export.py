@@ -8,7 +8,7 @@ Zero rows for 07-27 or 07-28; four DMs sent that morning were absent. Every DM
 since existed only in the ``threads.json`` sidecar.
 
 The root cause is worse than a lapsed refresh: ``messages`` has NO LIVE WRITER.
-``_threads.append_message`` (the only DM write path) never touches SQLite, and
+``_threads.append_message`` (the only DM write path) never touches the database, and
 ``_insert_messages`` — the table's only writer — has a single caller guarded by
 an explicit ``threads=`` argument that nothing in ``src/`` passes. The table is
 a fossil left behind when the YAML tier was deleted.

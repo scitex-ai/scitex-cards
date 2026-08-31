@@ -280,7 +280,7 @@ def export_doc(
     concurrent writer in that window makes the two disagree with no card
     missing at all. That false "INCOMPLETE" refusal blanked ``list_tasks``
     fleet-wide (observed 2,374 exported vs 2,375 in-table while
-    ``scitex-cards db verify`` reported the DB perfectly healthy).
+    ``scitex-cards dev db verify`` reported the DB perfectly healthy).
 
     So the caller opens ONE connection, begins ONE read transaction, and hands
     it here. When ``conn`` is supplied it is used as-is and NOT closed —

@@ -13,14 +13,16 @@ So ``pushed_at`` and ``confirmed_at`` are now separate facts. The drain may only
 write the first; the second is the recipient's own act. A record that was pushed
 and never confirmed stays on the row forever, where the health doctor can see it.
 
-RUN ON BOTH BACKENDS, EXPLICITLY. This suite's conftest pins
-``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test, but PRODUCTION AGENTS SET
-NEITHER VAR AND GET SQLITE. A receipt suite that inherited the default would
-therefore have tested everything except the code every real agent runs, and
-looked complete doing it. Every fixture below is parametrized over both.
+The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``, what this suite's
+conftest already pins) and the PostgreSQL backend production actually runs
+are the two real options left. This suite covers the file backend directly;
+the PostgreSQL dispatch is covered by :mod:`scitex_cards._inbox_receipt_postgres`'s
+own suite (a live server is out of scope for this file's fixtures).
 
 No mocks (STX-NM / PA-306): a real store, real ``_inbox`` records, the real
-``drain_once`` with a real async send callable, and both real inbox backends.
+``drain_once`` with a real async send callable, and the real file inbox
+backend.
 """
 
 from __future__ import annotations
@@ -42,8 +44,8 @@ from scitex_cards._mcp_channel import drain_once
 
 AGENT = "receipt-agent"
 
-#: Both real inbox backends. ``sqlite`` is what production runs.
-BACKENDS = ("sqlite", "yaml")
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
+BACKENDS = ("yaml",)
 
 
 class _SendRecorder:

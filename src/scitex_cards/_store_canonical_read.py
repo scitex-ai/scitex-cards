@@ -348,7 +348,7 @@ def _export_and_count_in_one_snapshot(db_path: Path) -> dict:
     refuses a perfectly healthy read.
 
     Not hypothetical: ``list_tasks`` refused fleet-wide at 2,374-vs-2,375 while
-    ``scitex-cards db verify`` reported ``quick_check=ok``, and a background
+    ``scitex-cards dev db verify`` reported ``quick_check=ok``, and a background
     writer inserting one row every 100ms reproduces it 10/10 (0/10 with the
     writer off). The exported count consistently tracked the table as it had
     been one export-duration earlier — the signature of a stale snapshot, not
@@ -465,7 +465,7 @@ def _export_and_count_in_one_snapshot(db_path: Path) -> dict:
             f"{exported} cards but the tasks table holds {in_table}. REFUSING "
             f"to continue — this document is written back as the whole store, "
             f"so the {in_table - exported} missing cards would be DELETED. "
-            f"Verify with `scitex-cards db verify`, then point $SCITEX_CARDS_DB "
+            f"Verify with `scitex-cards dev db verify`, then point $SCITEX_CARDS_DB "
             f"at a complete database for this store."
         )
     return doc

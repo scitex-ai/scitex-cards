@@ -32,7 +32,7 @@ and failed all three CI legs, because CI has no such server -- a test that
 depends on one machine's running database is not a test, it is a local probe
 wearing a test's name.
 
-``tests/conftest.py`` ALREADY hands every test its own scratch SQLite store via
+``tests/conftest.py`` ALREADY hands every test its own scratch store via
 an autouse fixture, precisely so the suite can never touch the live board. The
 first version FOUGHT that fixture. This one uses it: the assertion is that the
 reported label AGREES WITH THE RESOLVER, whatever the resolver happens to

@@ -67,7 +67,7 @@ def _eps(sink: _Capturing) -> list[_FakeEP]:
 
 @pytest.fixture()
 def store(env):
-    # Store is SQLite now; the harness bootstraps an empty canonical DB per test
+    # The store is the database now; the harness bootstraps an empty canonical DB per test
     # and pins SCITEX_CARDS_TASKS_YAML_SHARED as the STORE IDENTITY. Return that
     # pinned store path (NOT a tmp_path file — a write stamped with any other
     # path fails the next read's ownership guard; see THE STORE-PATH RULE).

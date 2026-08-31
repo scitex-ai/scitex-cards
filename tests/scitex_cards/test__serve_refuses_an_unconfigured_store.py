@@ -17,7 +17,7 @@ His ruling, in capitals and repeated: NO SILENT FALLBACKS -- "it is always the
 cause of troubles". It is also already the constitution's rule (fail fast, fail
 loud, no silent fallbacks, no surprises) and already ADR-0016 clause 4 ("A
 configured-but-unreachable Postgres FAILS the process; it must not fall back to
-SQLite"). The rule existed; this door did not enforce it.
+a second engine"). The rule existed; this door did not enforce it.
 
 WHY THE GUARD IS ON THE SERVER AND NOT ON THE RESOLVER. A one-shot CLI landing
 on the zero-config default is a fresh install behaving correctly. A BOARD

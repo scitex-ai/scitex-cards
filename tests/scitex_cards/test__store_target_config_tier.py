@@ -5,7 +5,7 @@
 Guards the fix for the defect behind every store-target failure during the
 2026-08-01 PostgreSQL cutover: the target could ONLY come from an environment
 variable, so any caller that did not export one silently resolved to a private
-SQLite file. Eight host-side writers did exactly that while the fleet was
+local file. Eight host-side writers did exactly that while the fleet was
 believed migrated.
 
 The tier sits BELOW the environment (so per-agent overrides still win and
@@ -79,7 +79,7 @@ class TestConfigSuppliesTheTarget:
 
         The assertion moved on 2026-08-13 and the SUBJECT did not. It used to
         be ``resolved.endswith("cards.db")``, because falling past this tier
-        landed on the zero-config SQLite default. That tier is abolished, so
+        landed on the zero-config file default. That tier is abolished, so
         falling past this one now lands on the refusal -- which is still the
         NEXT tier answering, not this one failing. What is being pinned either
         way is that an absent config is silent.

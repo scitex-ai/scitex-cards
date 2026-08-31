@@ -164,25 +164,54 @@ def queued_message_ids(
     store, two distinct durable messages collapsed onto one notification. A
     lossy join here would mark a message that was never delivered.
 
-    THE INBOX IS A DIFFERENT STORE, which is why it is passed rather than taken
-    from the caller's connection. Notifications live in a SQLite sidecar at
-    ``runtime/cards.db`` while the messages live in the card store, so this is a
-    cross-store question today. Schema v8 adds these columns to the store's own
-    ``notifications`` table; when the rail moves, this becomes one query and
-    this function collapses into the main one.
+    THE INBOX IS A DIFFERENT CONNECTION, which is why it is passed rather than
+    taken from the caller's connection: on the PostgreSQL backend the rail's
+    ``notifications`` table lives in the same server as the messages but is
+    queried through its own dedicated connection (mirroring
+    :mod:`scitex_cards._inbox_receipt_postgres`), and on the file break-glass
+    backend it is a genuinely different store (``inboxes.json``). SQLite is
+    RETIRED as an inbox backend (operator ruling 2026-08-23); this function
+    now dispatches on :func:`scitex_cards._inbox_backend.backend` exactly like
+    the rest of the rail does.
     """
     if not message_ids:
         return set()
-    try:
-        from .._inbox_sqlite import inbox_target, open_connection
+    from .._inbox_backend import POSTGRES, backend
 
-        with open_connection(inbox_target(store)) as inbox:
-            rows = inbox.execute(
-                "SELECT DISTINCT msg_id FROM inbox WHERE msg_id IS NOT NULL"
-            ).fetchall()
+    try:
+        active = backend()
+    except Exception:  # noqa: BLE001 — an unresolvable backend is UNKNOWN
+        return None
+    if active == POSTGRES:
+        from .._inbox_postgres import _connect  # noqa: PLC0415 -- import cycle
+
+        try:
+            with _connect(store if isinstance(store, str) else None) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT DISTINCT msg_id FROM notifications "
+                        "WHERE msg_id IS NOT NULL"
+                    )
+                    rows = cur.fetchall()
+                conn.rollback()
+        except Exception:  # noqa: BLE001 — unreadable inbox is UNKNOWN, not empty
+            return None
+        present = {str(row[0]) for row in rows}
+        return message_ids & present
+    # The file break-glass backend: read the sidecar directly.
+    try:
+        from .._inbox import _inboxes_path, _load_inboxes_section
+
+        path = _inboxes_path(store)
+        section = _load_inboxes_section(path) if path.exists() else {}
     except Exception:  # noqa: BLE001 — unreadable inbox is UNKNOWN, not empty
         return None
-    present = {str(row_values(row)[0]) for row in rows}
+    present = {
+        str(record["msg_id"])
+        for records in section.values()
+        for record in records
+        if record.get("msg_id")
+    }
     return message_ids & present
 
 

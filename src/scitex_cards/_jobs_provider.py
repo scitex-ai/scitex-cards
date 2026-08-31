@@ -234,7 +234,12 @@ def provide_jobs() -> list[JobSpec]:
             # ywatanabe1989/scitex-cards-cards, operator-chosen 2026-07-17);
             # a failed push exits 1 so the cron tick reads red, never
             # "backed up" with a local-only commit.
-            command="scitex-cards db snapshot --push",
+            # Canonical spelling on both halves: the group moved to `dev db`
+            # (operator naming standard, 2026-08-26) and the leaf was already
+            # `create-snapshot`. Both old spellings still resolve as Phase-W
+            # aliases, but a scheduled job must not invoke one — it would warn
+            # on every fire into the log this rail is read from.
+            command="scitex-cards dev db create-snapshot --push",
             description=(
                 "scitex-cards snapshot — hourly backup rail (ADR-0010): "
                 "export the database to YAML text and git-commit the export. "
