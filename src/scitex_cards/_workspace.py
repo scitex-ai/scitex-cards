@@ -240,6 +240,28 @@ def _workspace_dsn(cluster: str, schema: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(merged, quote_via=quote)))
 
 
+#: The advisory-lock class for workspace provisioning. PostgreSQL keeps
+#: TWO-argument advisory locks in a SEPARATE space from the one-argument
+#: (bigint) form, so this cannot collide with the package's existing single-key
+#: locks -- ``_db_foreign_keys._ADVISORY_LOCK_KEY`` and ``_store_tx``'s write
+#: lock -- whatever integers those choose. That is why the two-argument form is
+#: used here rather than a third bigint nobody can prove is unused.
+_PROVISION_LOCK_CLASS = 0x5C1D0001
+
+
+def _provision_lock_key(schema: str) -> int:
+    """A stable signed int32 for ``schema``, for the lock's second argument.
+
+    Derived from the digest the schema name already is, so the lock is keyed on
+    the TENANT: two provisions of one identity serialise, two provisions of
+    different identities do not touch each other. Shifted into signed range
+    because ``pg_advisory_lock(int, int)`` takes int4, and a bare
+    ``int(..., 16)`` overflows it for any digest starting above 0x7F.
+    """
+    digest = schema.removeprefix("ws_")
+    return int(digest[:8], 16) - 0x80000000
+
+
 def provision_workspace_store(*segments: object) -> str:
     """Create the store for a workspace identity. Idempotent; returns its DSN.
 
@@ -252,8 +274,24 @@ def provision_workspace_store(*segments: object) -> str:
     IDEMPOTENT BY REGISTRATION, not by exception: an already-provisioned
     workspace returns its DSN unchanged rather than raising or recreating,
     because re-provisioning must never truncate a store that already holds cards.
-    ``ON CONFLICT DO NOTHING`` and ``IF NOT EXISTS`` carry that, so two concurrent
-    provisions of the same workspace settle rather than racing into an error.
+
+    CONCURRENT PROVISIONS ARE SERIALISED BY AN ADVISORY LOCK, and the sentence
+    that used to stand here was wrong in a way worth recording, because it was
+    the contract callers were told to rely on. It read: "``ON CONFLICT DO
+    NOTHING`` and ``IF NOT EXISTS`` carry that, so two concurrent provisions of
+    the same workspace settle rather than racing into an error."
+
+    They do not carry it. ``IF NOT EXISTS`` CHECKS THEN CREATES, and PostgreSQL
+    does not make that pair atomic against a concurrent create: two sessions
+    both find the object absent, both issue the CREATE, and the loser takes a
+    unique violation on the system catalogue -- ``pg_namespace_nspname_index``
+    for the schema, ``pg_type_typname_nsp_index`` for a table. MEASURED, not
+    reasoned: eight threads provisioning one identity reproduce it in under
+    five seconds, and CI hit the table half of it on 2026-08-31.
+
+    So the lock is what carries it now. It is keyed on the schema digest, so
+    two provisions of DIFFERENT tenants never contend -- this serialises one
+    tenant's creation, not the cluster's.
 
     IT REGISTERS THE TENANT AND BUILDS THE SCHEMA, not one or the other, and that
     is a contract rather than a convenience: :func:`resolve_workspace_store` reads
@@ -279,6 +317,25 @@ def provision_workspace_store(*segments: object) -> str:
 
     conn = connect(cluster, read_only=False, rows_by_name=True)
     try:
+        # SESSION-LEVEL, NOT TRANSACTION-LEVEL, and that is the whole point.
+        # This function provisions across TWO connections -- the cluster one
+        # below, then `open_db(dsn)` -- and the table-creation race CI actually
+        # hit lives in the SECOND. A `pg_advisory_xact_lock` would release at
+        # the `conn.commit()` a few lines down, i.e. before the vulnerable half
+        # ever runs, and would have looked like a fix while changing nothing.
+        # The session lock is released when this connection closes, including
+        # on an exception or a crashed process, so `finally: conn.close()` is
+        # the whole cleanup story.
+        #
+        # LOCK ORDER, stated because a second lock is where deadlocks come
+        # from: `open_db` -> `init_schema` may take the migration lock
+        # (`_db_foreign_keys._ADVISORY_LOCK_KEY`). This path therefore always
+        # takes provision-then-migration and never the reverse, and no other
+        # caller takes the provision lock at all, so no cycle exists.
+        conn.execute(
+            "SELECT pg_advisory_lock(?, ?)",
+            [_PROVISION_LOCK_CLASS, _provision_lock_key(schema)],
+        )
         # `schema` is a digest -- 32 hex characters produced above, never the
         # caller's bytes -- so it cannot carry an identifier quote. Quoted anyway
         # so the safety survives a future change to the derivation.
@@ -310,12 +367,16 @@ def provision_workspace_store(*segments: object) -> str:
             [list(str(segment) for segment in segments), schema],
         )
         conn.commit()
+
+        # INSIDE THE LOCK, DELIBERATELY. This is the statement that failed on
+        # CI -- `open_db` builds the card tables, and two workers reaching it
+        # together is exactly the pg_type collision. Moving it out of the
+        # `try` to keep the connection short-lived would restore the bug.
+        from ._db import open_db  # noqa: PLC0415 -- import cycle
+
+        open_db(dsn).close()
     finally:
         conn.close()
-
-    from ._db import open_db  # noqa: PLC0415 -- import cycle
-
-    open_db(dsn).close()
     return dsn
 
 
