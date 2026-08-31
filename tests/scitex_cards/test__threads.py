@@ -52,16 +52,18 @@ def _clear_read_cache():
 
 
 @pytest.fixture()
-def store(tmp_path: Path, env) -> Path:
-    """A real tmp tasks.yaml store (threads sidecar lands next to it).
+def store(new_store, env) -> str:
+    """An EXPLICIT throwaway store nobody else can resolve.
+
+    Was ``tmp_path / "tasks.yaml"``, whose sibling ``cards.db`` is a
+    filesystem path — and a path names no store, so the door refuses it
+    before the driver is reached.
 
     Git autocommit is disabled so the inbox write path stays fast and
     deterministic under test.
     """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+    return new_store()
 
 
 # === thread key ============================================================
@@ -241,13 +243,28 @@ def test_list_threads_on_missing_sidecar_returns_empty(store):
 # === store isolation (sidecar, own lock) ===================================
 
 
-def test_the_threads_sidecar_sits_next_to_tasks_yaml(store, sent_message):
+def test_the_sidecar_resolves_to_a_real_local_path(store, sent_message):
+    """It must not be fabricated from the DSN TEXT.
+
+    ``Path("postgresql://host/db")`` does not raise — it collapses the double
+    slash into the RELATIVE ``postgresql:/host/db``, and an earlier version of
+    ``threads_path`` then created that tree and wrote the sidecar into it. So
+    the pin is absoluteness: a relative path here means the resolver went back
+    to treating the target as a filename.
+    """
     # Arrange
-    expected = store.parent / "threads.json"
     # Act
     sidecar = threads_path(store)
     # Assert
-    assert sidecar == expected
+    assert sidecar.is_absolute()
+
+
+def test_the_sidecar_is_not_named_after_the_dsn(store, sent_message):
+    # Arrange
+    # Act
+    sidecar = str(threads_path(store))
+    # Assert
+    assert "postgresql" not in sidecar
 
 
 def test_the_threads_sidecar_is_created_on_append(store, sent_message):
@@ -268,19 +285,10 @@ def test_the_sidecar_holds_the_appended_thread(store, sent_message):
     assert key in doc["threads"]
 
 
-def test_tasks_yaml_carries_no_threads_section(store, sent_message):
-    """The isolation half: a DM must never land inside the task store."""
-    # Arrange
-    section = "threads"
-    # Act
-    tasks_doc = safe_load(store.read_text(encoding="utf-8"))
-    # Assert
-    assert section not in tasks_doc
-
-
 def test_threads_use_their_own_lockfile(store, sent_message):
-    # Arrange — a separate lock sentinel, not the tasks.yaml one.
-    lockfile = store.parent / ".threads.json.lock"
+    # Arrange — a separate lock sentinel, beside the sidecar rather than the
+    # store: the store is a database now and has no directory to share.
+    lockfile = threads_path(store).parent / ".threads.json.lock"
     # Act
     exists = lockfile.exists()
     # Assert
@@ -322,7 +330,7 @@ def test_every_appended_message_survives_the_reparse(two_written_threads):
 
 def test_writes_leave_no_tmp_sidecar_behind(two_written_threads):
     # Arrange
-    tmp_sidecar = two_written_threads.parent / ".threads.json.tmp"
+    tmp_sidecar = threads_path(two_written_threads).parent / ".threads.json.tmp"
     # Act
     exists = tmp_sidecar.exists()
     # Assert
@@ -595,7 +603,7 @@ def _poison_read_cache(path: Path, content: dict) -> None:
     _threads._READ_CACHE[str(path)] = (stat.st_mtime_ns, stat.st_size, content)
 
 
-def test_append_message_never_reads_the_cache(store: Path) -> None:
+def test_append_message_never_reads_the_cache(store: str) -> None:
     """A writer served from a stale cache would serialize the stale mapping
     and DROP messages. append_message must re-read the file under the lock.
     Read back through the UNCACHED primitive so the assertion itself cannot
@@ -612,7 +620,7 @@ def test_append_message_never_reads_the_cache(store: Path) -> None:
     assert [r["body"] for r in on_disk] == ["first", "second"]
 
 
-def test_mark_read_flip_reads_the_file_not_the_cache(store: Path) -> None:
+def test_mark_read_flip_reads_the_file_not_the_cache(store: str) -> None:
     """The fast NO may consult the cache; the authoritative flip may not.
     Here the cache sees only ONE of two unread messages — the flip must still
     find both on disk."""
@@ -631,7 +639,7 @@ def test_mark_read_flip_reads_the_file_not_the_cache(store: Path) -> None:
 
 
 def test_mark_read_does_not_truncate_the_store_from_a_stale_cache(
-    store: Path,
+    store: str,
 ) -> None:
     """The save after a flip must not write back the cache's truncated view."""
     # Arrange
@@ -647,7 +655,7 @@ def test_mark_read_does_not_truncate_the_store_from_a_stale_cache(
     assert len(_threads._load_threads(path)[key]) == 2
 
 
-def test_fast_no_is_derived_per_reader_not_memoized(store: Path) -> None:
+def test_fast_no_is_derived_per_reader_not_memoized(store: str) -> None:
     """The cache stores parsed CONTENT; "has unread" is re-derived for each
     reader per call. One peer's "nothing unread" must never answer for the
     other's — both readers here are evaluated against the SAME cache entry."""
@@ -665,7 +673,7 @@ def test_fast_no_is_derived_per_reader_not_memoized(store: Path) -> None:
     assert (operator_flipped, agent_flipped) == (0, 1)
 
 
-def test_stale_cache_defers_the_flip_by_one_poll(store: Path) -> None:
+def test_stale_cache_defers_the_flip_by_one_poll(store: str) -> None:
     """The ACCEPTED cost of the lock-free fast NO, pinned as chosen behavior:
     a stale cache makes this poll a no-op. It is not a bug to be "fixed" by
     putting the writer on the cache — that is the one failure mode."""
@@ -681,7 +689,7 @@ def test_stale_cache_defers_the_flip_by_one_poll(store: Path) -> None:
     assert flipped == 0
 
 
-def test_stale_cache_self_heals_on_the_next_poll(store: Path) -> None:
+def test_stale_cache_self_heals_on_the_next_poll(store: str) -> None:
     """...and the deferral is bounded at one poll: the next stamp roll
     re-parses and the message is marked. This is what makes the accepted cost
     a delay rather than a lost flip."""
@@ -701,7 +709,7 @@ def test_stale_cache_self_heals_on_the_next_poll(store: Path) -> None:
     assert flipped == 1
 
 
-def test_get_thread_is_served_from_the_read_cache(store: Path) -> None:
+def test_get_thread_is_served_from_the_read_cache(store: str) -> None:
     """Pins that the read path actually consults the cache — otherwise the
     5s poll is still paying a full parse and this whole change is inert."""
     # Arrange
@@ -716,7 +724,7 @@ def test_get_thread_is_served_from_the_read_cache(store: Path) -> None:
     assert bodies == ["from-cache"]
 
 
-def test_list_threads_is_served_from_the_read_cache(store: Path) -> None:
+def test_list_threads_is_served_from_the_read_cache(store: str) -> None:
     """Same for the agent-list poll (~10s)."""
     # Arrange
     append_message("agent-a", "operator", "on-disk", store=store)
@@ -730,7 +738,7 @@ def test_list_threads_is_served_from_the_read_cache(store: Path) -> None:
     assert summary["last"]["body"] == "from-cache"
 
 
-def test_a_write_invalidates_the_cached_read(store: Path) -> None:
+def test_a_write_invalidates_the_cached_read(store: str) -> None:
     """The property that makes the cache safe to read from: any write rolls
     the mtime, so the next read re-parses. No reader sees a stale thread."""
     # Arrange — warm the cache on a one-message thread.
@@ -743,7 +751,7 @@ def test_a_write_invalidates_the_cached_read(store: Path) -> None:
     assert bodies == ["first", "second"]
 
 
-def test_cached_read_of_an_absent_sidecar_is_empty(store: Path) -> None:
+def test_cached_read_of_an_absent_sidecar_is_empty(store: str) -> None:
     """Absent file → {} and nothing cached (the uncached primitive's
     never-raise-on-absence contract must survive the cache)."""
     # Arrange

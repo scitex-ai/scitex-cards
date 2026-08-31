@@ -13,6 +13,8 @@ So these tests pin both directions: the detail survives for us, and the path doe
 not reach a stranger.
 """
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import pytest
 
 from scitex_cards._store_errors import StoreUnavailableError
@@ -99,7 +101,7 @@ def test_the_public_summary_mentions_no_internal_vocabulary():
     # Assert
     leaked = [
         w
-        for w in ("canonical", "exporter", "scitex_cards_db", "sqlite")
+        for w in ("canonical", "exporter", "scitex_cards_db", ENGINE)
         if w in lowered
     ]
     assert leaked == [], f"internal vocabulary in public summary: {leaked}"
@@ -120,20 +122,32 @@ def test_a_caller_may_override_the_summary():
 # === the raise site actually uses the type ===============================
 
 
-def test_the_missing_store_refusal_raises_this_type(tmp_path):
+def test_the_missing_store_refusal_raises_this_type(new_store):
     """A perfect exception class nobody raises protects nothing.
 
-    Points the ambient store at a path that does not exist and checks the TYPE,
-    not the message - the message is what we just stopped depending on.
+    Checks the TYPE at a real raise site, not the message - the message is what
+    we just stopped depending on.
+
+    WHAT "MISSING" MEANS CHANGED, and pointing at the old kind of missing now
+    tests the wrong door. This used to set the ambient store to a path that did
+    not exist. A path is refused before any store logic runs, with
+    `UnrecognisedStoreTarget` - a plain RuntimeError, NOT a StoreUnavailableError
+    - so the test measured the target guard rather than the missing-store
+    refusal it is named for.
+
+    The modern equivalent is a store that is REACHABLE BUT UNPROVISIONED, which
+    is what `bootstrap=False` hands out and what a fresh deployment looks like.
+    That path raises StoreNotProvisionedError, which IS a StoreUnavailableError,
+    so the assertion below is unchanged and still proves the class is used
+    somewhere real.
     """
     # Arrange
     import os
 
     from scitex_cards import _store_canonical_read
 
-    missing = tmp_path / "definitely-absent" / "cards.db"
     saved = os.environ.get("SCITEX_CARDS_DB")
-    os.environ["SCITEX_CARDS_DB"] = str(missing)
+    os.environ["SCITEX_CARDS_DB"] = new_store("errors_unprovisioned", bootstrap=False)
 
     # Act
     try:

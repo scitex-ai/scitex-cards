@@ -22,14 +22,18 @@ THE SHAPE COMPARISON IS ON DEFERRABILITY, NOT PRESENCE. The card that ordered
 this work says so explicitly, because "the FK exists" passes on a store that
 oscillates between the two shapes.
 
-The PostgreSQL half runs against a real server and FAILS rather than skips when
-one is declared, per ``SCITEX_CARDS_TEST_PG_DSN``. Every test works inside its
-own schema, so nothing here can touch the live tables.
+THIS FILE RUNS AGAINST A REAL SERVER AND NEVER SKIPS. It used to say it
+failed "rather than skips when one is declared, per ``SCITEX_CARDS_TEST_PG_DSN``"
+-- and nothing anywhere declares that variable, so the undeclared branch was
+the only one ever taken and all seventeen tests here skipped. See the ``pg``
+fixture for the measurement. The target now comes from the harness, which
+resolves a writable cluster or fails naming why.
+
+Every test works inside its OWN schema, dropped ``CASCADE`` afterwards, so
+nothing here can touch the live tables.
 """
 
 from __future__ import annotations
-
-import os
 
 import pytest
 
@@ -39,12 +43,6 @@ from scitex_cards._db_foreign_keys import (
     _migrate_v10_to_v11,
     observe_foreign_key,
 )
-
-_ENV_PG_DSN = "SCITEX_CARDS_TEST_PG_DSN"
-#: Port 55432, never 5432. The operator's ruling is that 5432 is NEVER used for
-#: scitex and every reference to it is a defect; the fleet's clones all listen
-#: on 55432 per host.
-_PG_DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
 
 _TEST_SCHEMA = "fk_rung_test"
 
@@ -98,20 +96,33 @@ class _Shim:
 
 
 @pytest.fixture
-def pg(request):
+def pg(request, postgres_cluster_dsn):
     """A live PostgreSQL connection in a PRIVATE schema, dropped afterwards.
 
-    Skips when no server is declared; FAILS when one is declared and unusable,
-    so a broken CI database cannot masquerade as "no Postgres here".
+    NEVER SKIPS, AND THAT IS A REPAIR RATHER THAN A PREFERENCE. This fixture
+    used to fall back to a hardcoded default::
+
+        _PG_DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
+        dsn = declared or _PG_DSN
+
+    and skip when connecting to it failed. Every part of that default is now
+    unreachable: ``scitex_cards`` is a RETIRED database whose ``CONNECT`` was
+    revoked, and every host's loopback 55432 is a READ-ONLY STANDBY which
+    refuses ``CREATE SCHEMA`` even where it does answer. Nothing sets the
+    declaring variable either, so the fallback was always taken and the connect
+    always failed — SEVENTEEN TESTS SKIPPED SILENTLY, on the file whose own
+    docstring says the middle property is "the reason this file exists rather
+    than a one-line smoke test".
+
+    A skip and a pass render identically in a summary line, which is exactly
+    why it went unnoticed. The target now comes from the harness's
+    ``postgres_cluster_dsn``, which resolves a WRITABLE cluster (it runs
+    ``pg_is_in_recovery()`` rather than assuming) and FAILS, naming the reason,
+    when there is none.
     """
-    declared = os.environ.get(_ENV_PG_DSN)
-    dsn = declared or _PG_DSN
-    try:
-        import psycopg
-    except ImportError:
-        if declared:
-            pytest.fail(f"{_ENV_PG_DSN} is set but psycopg is not installed")
-        pytest.skip("psycopg not installed")
+    dsn = postgres_cluster_dsn
+    import psycopg
+
     try:
         # dict_row IS THE POINT, NOT A DETAIL. `scitex_cards._db.connect` opens
         # PostgreSQL with `row_factory=dict_row` (_backend_connect.py:206) because
@@ -134,9 +145,11 @@ def pg(request):
 
         conn = psycopg.connect(dsn, connect_timeout=5, row_factory=dict_row)
     except Exception as exc:
-        if declared:
-            pytest.fail(f"{_ENV_PG_DSN} declares {dsn!r} but connecting raised {exc}")
-        pytest.skip(f"no live Postgres: {type(exc).__name__}")
+        pytest.fail(
+            f"the harness resolved a writable cluster but connecting raised "
+            f"{type(exc).__name__}: {exc}",
+            pytrace=False,
+        )
 
     # A per-test schema keeps every ALTER off the real tables, and makes
     # `current_schema()` in the probe resolve to exactly what this test built.

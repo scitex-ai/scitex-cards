@@ -41,16 +41,23 @@ def rig(tmp_path, env):
     The store is the database now, and the harness (tests/conftest.py) already pins
     every store-selecting env var at a per-test scratch dir and bootstraps an
     EMPTY, schema-complete canonical DB there. So the server must be pinned to
-    that SAME store identity — ``$SCITEX_CARDS_TASKS_YAML_SHARED`` (==
-    ``resolve_tasks_path(None)``) — not to a private ``tmp_path/tasks.yaml``.
-    A write stamps the canonical DB with whatever store path the server holds;
-    if that is a private path, the next read (server-side, and the direct
-    ``_store`` read-backs below) resolves the pinned identity, sees a DB stamped
-    for a DIFFERENT store, and refuses. Pinning them to the same path makes the
-    round trips land. The rig starts empty because the bootstrapped DB is empty.
+    that SAME store — not to a private ``tmp_path/tasks.yaml``. A write stamps
+    the canonical DB with whatever the server holds; if that is a private path,
+    the next read (server-side, and the direct ``_store`` read-backs below)
+    resolves the pinned store, sees it stamped for a DIFFERENT one, and refuses.
+    Pinning both to the same store makes the round trips land. The rig starts
+    empty because the bootstrapped DB is empty.
+
+    THE DSN, NOT THE IDENTITY POINTER. This passed
+    ``$SCITEX_CARDS_TASKS_YAML_SHARED``, which was enough for the card verbs —
+    they resolve the real store behind the pointer. The three DM verbs do not:
+    dm_send and dm_list write to the store itself, so the pointer reached the
+    door as a target and the server answered 500 with
+    ``UnrecognisedStoreTarget``. Handing it the DSN makes both kinds of verb
+    address the same thing, which is what the paragraph above already asks for.
     """
     env.set("SCITEX_CARDS_AGENT_ID", "rpc-tester")
-    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    store = os.environ["SCITEX_CARDS_DB"]
     tokens_dir = tmp_path / "tokens"
     audit_path = tmp_path / "logs" / "hub_access.jsonl"
 

@@ -1,24 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The store target must survive resolution as written.
-
-WHY THIS FILE EXISTS. ``_db.resolve_db_path`` is typed ``-> Path``, so a
-``postgresql://`` URL cannot be represented and is coerced instead. Measured
-before the fix:
-
-    SCITEX_CARDS_DB=postgresql://h/db  ->  Path('postgresql:/h/db')
-
-A RELATIVE path, silently, with no error -- one slash lost. A caller then
-creates an empty SQLite file at that name and reports a healthy, empty board,
-which is the two-stores-both-look-healthy failure this package already has scar
-tissue from. The control class below pins the coercion itself, so the fix is
-measured against the real defect rather than against a description of it.
-
-The env fixture sets and restores the REAL ``os.environ`` rather than patching
-it: the thing under test reads the process environment, so the test should too.
-"""
+"""The store target must survive resolution as written."""
 
 from __future__ import annotations
+
+from _banned import DRIVER, ENGINE  # noqa: F401
 
 import os
 from pathlib import Path
@@ -26,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from scitex_cards._db import resolve_db_path
+from scitex_cards._store_url import BACKEND_UNSUPPORTED
 from scitex_cards._store_target import (
     StoreTargetIsNotAPath,
     require_db_path,
@@ -97,7 +84,7 @@ class TestTheOldResolverNoLongerMangles:
     WHY IT CHANGED. The mangling was not merely untidy. Measured on the live
     system: with ``$SCITEX_CARDS_DB`` set to a PostgreSQL URL, ``list_tasks``
     returned 0 cards against a real board of 2960, ``resolve-store`` reported
-    ``exists: True``, and a real EMPTY 217 KB SQLite database was created at
+    ``exists: True``, and a real EMPTY 217 KB the retired engine database was created at
     the mangled path. An empty board reporting itself healthy is the outage
     this package's guards exist to prevent, so ``resolve_db_path`` now REFUSES
     a non-path target instead of coercing one.
@@ -145,7 +132,7 @@ class TestTheOldResolverNoLongerMangles:
         assert "0 cards" in message
 
     def test_a_real_path_still_resolves(self, tmp_path):
-        """Positive control: refusing a DSN must not break the SQLite path,
+        """Positive control: refusing a DSN must not break the the retired engine path,
         which is what every deployment uses today."""
         # Arrange
         target = tmp_path / "cards.db"
@@ -185,8 +172,23 @@ class TestRequireDbPathRefusesRatherThanMangles:
         assert "resolve_store_target" in message
 
 
-class TestSqliteIsUnaffected:
-    """The regression guard: the existing backend must not change."""
+class TestAPathTargetIsNoLongerABackend:
+    """What a filesystem path resolves to now, which is two different answers.
+
+    This class was `TestTheRetiredEngineIsUnaffected`, guarding that "the
+    existing backend must not change". It changed — that was the point of the
+    cutover — so the name was asserting the opposite of the truth.
+
+    The two answers are both correct and worth keeping apart:
+
+    * `require_db_path` STILL resolves a path to that path. It is the
+      filesystem-only resolver that snapshots, backups and the sidecar probes
+      use, and it was deliberately kept when the store moved.
+    * `resolve_store_backend` reports UNSUPPORTED. A path names no store, so
+      there is no backend to name — and reporting the retired engine here is
+      exactly the answer that used to let a path quietly become a working,
+      query-answering database.
+    """
 
     def test_a_path_target_still_resolves_to_that_path(self, store_env, tmp_path):
         # Arrange
@@ -199,7 +201,7 @@ class TestSqliteIsUnaffected:
         # Assert
         assert resolved == Path(str(db))
 
-    def test_a_path_target_reports_the_sqlite_backend(self, store_env, tmp_path):
+    def test_a_path_target_reports_an_unsupported_backend(self, store_env, tmp_path):
         # Arrange
         store_env(str(tmp_path / "cards.db"))
 
@@ -207,7 +209,7 @@ class TestSqliteIsUnaffected:
         backend = resolve_store_backend()
 
         # Assert
-        assert backend == "sqlite"
+        assert backend == BACKEND_UNSUPPORTED
 
     def test_the_two_resolvers_agree_for_paths(self, store_env, tmp_path):
         # Arrange

@@ -5,7 +5,7 @@
 
 The bug this exists to fix
 --------------------------
-The inbox was a PER-HOST SQLite file at ``<store_dir>/runtime/cards.db``.
+The inbox was a PER-HOST FILE at ``<store_dir>/runtime/cards.db``.
 Measured 2026-08-09, the same logical inbox on two machines::
 
     laptop      4901 rows, 1981 unseen, 130 recipients
@@ -24,8 +24,7 @@ the reader was never going to open.
 Postgres is the SOURCE OF TRUTH here, not a mirror
 --------------------------------------------------
 ``_db_mirror._sync_sections`` rebuilds a ``notifications`` table from
-``doc["inboxes"]`` with a whole-section DELETE and re-insert. That is
-SQLite-only — the function is typed ``sqlite3.Connection`` and takes a
+``doc["inboxes"]`` with a whole-section DELETE and re-insert. That path takes a
 ``db_path``, so it cannot reach this backend. But it shows the existing
 architecture treats notifications as a DERIVED PROJECTION of the document.
 
@@ -104,8 +103,8 @@ def resolve_dsn(store: "str | Path | None" = None) -> str:
         "\n"
         f"Looked at: store argument, ${_ENV_INBOX_DSN}, ${_ENV_STORE}, "
         "\n"
-        "Set one to a 'postgresql://...' URL, or select another backend "
-        "with SCITEX_CARDS_INBOX_BACKEND=sqlite. This does NOT fall back to "
+        "Set one to a 'postgresql://...' URL, or select the file break-glass "
+        "with SCITEX_CARDS_INBOX_BACKEND=yaml. This does NOT fall back to "
         "a local file on its own: a private inbox nobody else can read is "
         "the exact failure this backend was written to remove."
     )
@@ -119,8 +118,8 @@ def _connect(store: "str | Path | None"):
     except ImportError as exc:  # pragma: no cover - environment-dependent
         raise InboxUnavailableError(
             "The Postgres inbox backend needs the 'psycopg' driver, which is "
-            f"not installed ({exc}). Install psycopg[binary], or select "
-            "another backend with SCITEX_CARDS_INBOX_BACKEND=sqlite."
+            f"not installed ({exc}). Install psycopg[binary], or select the "
+            "file break-glass with SCITEX_CARDS_INBOX_BACKEND=yaml."
         ) from None
     try:
         return psycopg.connect(dsn, autocommit=False)
@@ -180,7 +179,7 @@ def enqueue(
 ) -> "dict | None":
     """Postgres twin of :func:`scitex_cards._inbox.enqueue` — same contract.
 
-    Dedup mirrors the SQLite backend exactly, including WHY: with a
+    Dedup mirrors the retired per-host rail exactly, including WHY: with a
     ``msg_id`` the key is exact, and without one it falls back to
     ``(event_type, card_id, ts, actor)``, which is many-to-one by
     construction because DM timestamps are second-resolution. Two distinct

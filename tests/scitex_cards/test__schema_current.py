@@ -28,9 +28,9 @@ from scitex_cards._schema_shape import SchemaShape, ShapeAgreement
 
 
 @pytest.fixture
-def live_store(tmp_path):
+def live_store(tmp_path, new_store):
     """A real, fully initialised store — triggers created by the real DDL."""
-    path = tmp_path / "cards.db"
+    path = new_store()
     conn = open_db(path)
     try:
         yield conn
@@ -142,18 +142,32 @@ def test_stamps_that_disagree_with_each_other_still_need_the_ddl(live_store):
     assert current is False
 
 
-def test_a_behind_client_still_needs_a_guarded_store(tmp_path):
+def test_a_behind_client_still_needs_a_guarded_store(new_store):
     # Arrange
     # The exemption must not become a way to skip the guard-trigger proof. A
     # behind-client whose store is missing a guard runs the DDL like anyone
     # else — dropping a real trigger rather than fabricating a list, so this
     # measures the DDL's own output.
-    from scitex_cards._db import open_db as _open_db
-
-    path = tmp_path / "cards.db"
-    conn = _open_db(path)
+    #
+    # ARRIVED FROM develop VIA #952 AND MERGED CLEAN WHILE BEING WRONG HERE.
+    # It was written against the file-store world: it opened
+    # `tmp_path / "cards.db"`, which this branch's door refuses outright, and
+    # it dropped a trigger by bare name, which is the retired engine's
+    # spelling -- names are global there, so against a server it is a syntax
+    # error at end of input and the arrange step died before the act ran.
+    # Both halves are repaired exactly as
+    # `test_a_missing_guard_trigger_defeats_an_otherwise_current_store`
+    # already does it, including reading the owning table FROM THE CATALOGUE
+    # rather than pairing it with the name by hand.
+    path = new_store()
+    conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
-    conn.execute(f"DROP TRIGGER IF EXISTS {victim}")
+    owning_table = conn.execute(
+        "SELECT event_object_table AS t FROM information_schema.triggers "
+        "WHERE trigger_schema = current_schema() AND trigger_name = ?",
+        (victim,),
+    ).fetchone()["t"]
+    conn.execute(f"DROP TRIGGER IF EXISTS {victim} ON {owning_table}")
     conn.commit()
     shape = _behind_shape(SCHEMA_VERSION, SCHEMA_VERSION + 1)
     # Act
@@ -226,17 +240,32 @@ def test_a_store_whose_stamp_disagrees_with_its_rungs_needs_the_ddl(live_store):
     assert current is False
 
 
-def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path):
+def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path, new_store):
     # Arrange
     # The guard triggers are not decoration: they are the retirement
     # enforcement AND the proof-of-currency mechanism. Skipping the DDL without
     # confirming they exist would leave a store unguarded while believing it
     # guarded. Dropping one is the honest way to test that — asserting on a
     # fabricated trigger list would only prove the fixture.
-    path = tmp_path / "cards.db"
+    path = new_store()
     conn = open_db(path)
     victim = sorted(REQUIRED_GUARD_TRIGGERS)[0]
-    conn.execute(f"DROP TRIGGER IF EXISTS {victim}")
+    # NAMED WITH ITS TABLE, because PostgreSQL's DROP TRIGGER requires one.
+    # `DROP TRIGGER IF EXISTS <name>` is the retired engine's spelling -- trigger names are
+    # global there -- and against a server it is a syntax error at end of input,
+    # so this arrange step failed before the act ever ran.
+    #
+    # The table is READ FROM THE CATALOGUE rather than written down beside the
+    # name. A hardcoded pairing is a second list to keep in step with
+    # REQUIRED_GUARD_TRIGGERS, and the one that drifts is the one that stops
+    # dropping anything -- which would leave this test asserting False about a
+    # store whose trigger is still present, i.e. passing for the wrong reason.
+    owning_table = conn.execute(
+        "SELECT event_object_table AS t FROM information_schema.triggers "
+        "WHERE trigger_schema = current_schema() AND trigger_name = ?",
+        (victim,),
+    ).fetchone()["t"]
+    conn.execute(f"DROP TRIGGER IF EXISTS {victim} ON {owning_table}")
     conn.commit()
     shape = _shape(SCHEMA_VERSION)
     # Act
@@ -246,10 +275,10 @@ def test_a_missing_guard_trigger_defeats_an_otherwise_current_store(tmp_path):
     assert current is False
 
 
-def test_an_unreadable_catalogue_is_not_a_current_schema(tmp_path):
+def test_an_unreadable_catalogue_is_not_a_current_schema(tmp_path, new_store):
     # Arrange
     # A connection that cannot answer the catalogue query at all.
-    path = tmp_path / "cards.db"
+    path = new_store()
     open_db(path).close()
     conn = connect(path)
     conn.close()  # closed: every query on it now raises

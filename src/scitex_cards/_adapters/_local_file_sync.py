@@ -19,7 +19,7 @@ class LocalFileSync:
     """Read + write the task store via :mod:`scitex_cards._model`.
 
     Delegates to :func:`scitex_cards._model.load_tasks` /
-    :func:`~scitex_cards._model.save_tasks`, which read/write the SQLite
+    :func:`~scitex_cards._model.save_tasks`, which read/write the canonical
     database; ``path`` names the logical store for error text and mtime
     fingerprinting.
 

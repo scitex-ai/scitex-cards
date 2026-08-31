@@ -22,7 +22,7 @@ in THIS code and nowhere else:
   slow" report we have ever had.
 
 The lock is correct. What we do while holding it is not. This file is where that
-gets fixed (see :mod:`scitex_cards._dual_write` and the SQLite migration), so it
+gets fixed (see :mod:`scitex_cards._dual_write` and the store migration), so it
 deserves to be readable on its own rather than buried at the end of the model.
 
 Every name here is re-exported from ``_model`` for backwards compatibility — 43
@@ -155,12 +155,11 @@ def store_generation(path: str | Path) -> str:
     # content (load_doc's output), NOT the DB file's bytes and NOT the `path`
     # argument's file. Two traps this avoids:
     #   - the store-identity path (the legacy sidecar name) is never a real
-    #     file under SQLite, so hashing it always returned "absent" and
-    #     silently disabled the optimistic-concurrency guard (a stale write
-    #     was never refused);
-    #   - SQLite in WAL mode rewrites cards.db on a plain READ (it creates
-    #     -wal/-shm), so hashing the DB FILE returned a new token after an
-    #     un-contended read and falsely refused a fresh guarded write.
+    #     file, so hashing it always returned "absent" and silently disabled
+    #     the optimistic-concurrency guard (a stale write was never refused);
+    #   - a write-ahead-logging store rewrites its own files on a plain READ,
+    #     so hashing the DB FILE returned a new token after an un-contended
+    #     read and falsely refused a fresh guarded write.
     # Hashing the logical doc is stable across reads and changes only when the
     # cards/users actually change. Missing DB -> "absent".
     import json
@@ -171,7 +170,7 @@ def store_generation(path: str | Path) -> str:
 
     # THE EXISTENCE GATE IS A *FILE* GATE, AND A SERVER STORE HAS NO FILE.
     # ``resolve_db_path`` REFUSES a DSN rather than coercing it — coercion would
-    # manufacture an empty SQLite store at a mangled path and serve 0 cards
+    # manufacture an empty store file at a mangled path and serve 0 cards
     # while reporting healthy — so calling it unconditionally raised on every
     # PostgreSQL deployment. That took the board down with it, because
     # ``get_board`` computes this generation on its read path.
@@ -214,9 +213,9 @@ def edit_tasks(path: str | Path):
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     with _store_lock(path):
-        # SQLite is the store: load_doc reads the canonical DB (and fail-louds
-        # if it is missing). The old `if path.exists() else {}` gated on the
-        # YAML store PATH, which is NEVER a real file under SQLite, so it
+        # THE DATABASE is the store: load_doc reads it (and fail-louds if it
+        # is missing). The old `if path.exists() else {}` gated on the
+        # YAML store PATH, which is NEVER a real file, so it
         # silently yielded an empty doc and the write below wiped the store.
         doc = load_doc(path, validate=True)
         if not isinstance(doc, dict):
@@ -248,7 +247,7 @@ def _save_tasks_unlocked(tasks: list[dict], path: Path) -> None:
     # Recover the existing non-`tasks` sections (users:, …) so they survive
     # the rewrite. Read UNCONDITIONALLY: load_doc reads the canonical DB (and
     # fail-louds if it is missing). The old `if path.exists()` gated on the
-    # YAML store PATH — never a real file under SQLite — so it skipped this
+    # YAML store PATH — never a real file — so it skipped this
     # read, wrote back doc={"tasks": tasks} with NO users section, and the
     # incremental mirror then DELETEd the users registry (a card write wiped
     # every user). Every caller of this wrapper (save_tasks, help-wait/clear)
@@ -279,7 +278,7 @@ def _save_doc_unlocked(
     list, e.g. ``keep = [...]`` in delete).
 
     ``deleted_ids`` names cards a verb INTENTIONALLY removed (``delete_task``):
-    the pruned ``tasks`` no longer lists them, but SQLite is upsert-only and the
+    the pruned ``tasks`` no longer lists them, but the writer is upsert-only and the
     mirror never infers a delete from absence, so the ids are forwarded
     explicitly and the mirror drops exactly those rows. Omit on ordinary writes.
     NOTE: as of the 2026-07-21 tombstone change, ``delete_task`` itself no
@@ -304,7 +303,7 @@ def _save_doc_unlocked(
     # drift between the two spellings would silently restore the mislabel.
     _validate_tasks(tasks, source=_WRITE_SOURCE)  # hook-bypass: line-limit
 
-    # SQLite IS the store. This is the whole write path — there is no second
+    # THE DATABASE IS the store. This is the whole write path — no second
     # branch, and that is the point of the change rather than a side effect of
     # it. `write_doc_to_db` RAISES on failure; see `_store_backend` for why
     # that inverts the usual best-effort posture.
@@ -313,7 +312,7 @@ def _save_doc_unlocked(
     # a future reader will otherwise reintroduce one of them as an improvement:
     #
     #   the YAML dump + atomic tmp/os.replace promotion — there is no file to
-    #     promote; SQLite's own transaction is the atomicity boundary now
+    #     promote; the database transaction is the atomicity boundary now
     #   the dual-write mirror — a mirror needs an original, and the original
     #     was the thing removed
     #   the git auto-commit of the store directory — it version-controlled a

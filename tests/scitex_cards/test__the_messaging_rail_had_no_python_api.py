@@ -48,9 +48,9 @@ _FIVE = [
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, new_store):
     """An explicit tmp task-store path — never the resolved default."""
-    return str(tmp_path / "cards.db")
+    return new_store()
 
 
 @pytest.fixture

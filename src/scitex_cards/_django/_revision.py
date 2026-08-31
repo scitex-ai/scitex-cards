@@ -43,7 +43,7 @@ def store_change_stamp(generation: str) -> float:
     none of them ever reached the operator's screen.
 
     ON A SERVER STORE THERE IS NO FILE, and ``resolve_db_path`` REFUSES a DSN
-    rather than coercing it (coercion would manufacture an empty SQLite store
+    rather than coercing it (coercion would manufacture an empty store file
     at a mangled path and serve 0 cards while reporting healthy). Calling it
     unconditionally is what made the board answer 500 to every data request
     after the PostgreSQL cutover. The generation hash is already computed on

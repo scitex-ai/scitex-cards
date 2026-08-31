@@ -290,7 +290,7 @@ def export_doc(
 
     The connection MUST have been opened through :func:`scitex_cards._db.connect`
     (directly or via :func:`open_db`), because that is where the
-    min-client-version gate lives. Hand-rolling a bare ``sqlite3.connect`` here
+    min-client-version gate lives. Hand-rolling a bare driver connect here
     would silently delete that gate.
     """
     owned = conn is None
@@ -328,8 +328,8 @@ def export_doc(
                 continue
             tasks.append(card_from_payload(r["card_json"]))
 
-        # ORDERED BY REAL COLUMNS, NOT ``rowid``. ``rowid`` is a SQLite
-        # implementation detail with no PostgreSQL equivalent, so these four
+        # ORDERED BY REAL COLUMNS, NOT an implicit row counter. That counter
+        # has no PostgreSQL equivalent, so these four
         # queries were the export path's hard stop against a server backend --
         # and they would have failed at CUTOVER, not at porting time.
         #

@@ -105,7 +105,7 @@ def _file_stamp(
     advance_cursor: bool,
     store: str | Path | None,
 ) -> list[str]:
-    """File-backend twin of :func:`_sqlite_stamp` — same contract, one lock."""
+    """File-backend twin of :func:`_postgres_stamp` — same contract, one lock."""
     from ._inbox import _inboxes_path, _load_inboxes_section, _save_inboxes_unlocked
     from ._model import _store_lock
 
@@ -130,7 +130,7 @@ def _file_stamp(
 
 
 def _file_receipts(recipient_id: str, store: str | Path | None) -> list[dict]:
-    """File-backend twin of :func:`_sqlite_receipts` — read-only."""
+    """File-backend twin of :func:`_postgres_receipts` — read-only."""
     from ._inbox import _inboxes_path, _load_inboxes_section
 
     path = _inboxes_path(store)
@@ -167,14 +167,15 @@ def _stamp(
     """Dispatch a stamp onto whichever inbox backend is active.
 
     TWO BACKENDS TODAY: PostgreSQL (the store-following default) and the file
-    break-glass (``SCITEX_CARDS_INBOX_BACKEND=yaml``). SQLite is RETIRED
-    (operator ruling 2026-08-23) — :func:`scitex_cards._inbox_backend.backend`
-    never returns it, so this dispatch no longer needs to ask.
+    break-glass (``SCITEX_CARDS_INBOX_BACKEND=yaml``). The per-host rail is
+    RETIRED (operator ruling 2026-08-23) —
+    :func:`scitex_cards._inbox_backend.backend` never names it, so this dispatch
+    no longer needs to ask.
 
-    Before #780 landed and the SQLite backend was retired, this read
-    ``_sqlite_stamp if _use_sqlite() else _file_stamp`` — a two-valued question
-    asked of a three-valued world. The shared-inbox deployment answered "not
-    sqlite", so every push receipt and every recipient confirmation was written
+    Before #780 landed and the per-host rail was retired, this dispatched on a
+    two-valued question asked of a three-valued world. The shared-inbox
+    deployment answered "not the per-host rail", so every push receipt and
+    every recipient confirmation was written
     to a FILE while the notifications themselves lived in PostgreSQL. Measured
     2026-08-11: 8 rows on the rail, 0 with ``pushed_at``, 0 with
     ``confirmed_at``, and an ``inboxes.json`` LOCK file next to no

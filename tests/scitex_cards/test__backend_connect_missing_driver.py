@@ -19,6 +19,8 @@ that the message carries the INSTALL COMMAND, because that is what turns a
 confusing outage into a five-minute repair.
 """
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import sys
 
 import pytest
@@ -118,19 +120,37 @@ def test_the_error_reports_the_target_it_was_given(psycopg_hidden):
     assert PG_URL in message
 
 
-def test_sqlite_still_opens_without_the_driver(psycopg_hidden, tmp_path):
-    """The positive control: hiding psycopg must not break the SQLite path,
-    which is every deployment today and must not need a database driver."""
+def test_the_same_target_fails_differently_with_the_driver_present():
+    """The positive control, and it had to be rebuilt rather than dropped.
+
+    It used to open a file store and assert that hiding psycopg did not break
+    it — "every deployment today", the docstring said, "must not need a
+    database driver". That premise is spent: the store is PostgreSQL, so every
+    deployment needs the driver and no target opens without it. The old control
+    is not merely failing, it is unsatisfiable.
+
+    What it PROVED is still needed, though: that the four tests above measure
+    the ABSENCE OF THE DRIVER and not something wrong with the target itself. A
+    fixture that broke every import, or a DSN that was malformed, would make
+    them all pass for the wrong reason. So the control now runs the same target
+    WITHOUT the fixture and asserts the failure mode changes. Whether the
+    connection is refused, times out, or succeeds is not the point and is not
+    asserted — only that it is no longer the driver that is missing.
+    """
     # Arrange
-    target = tmp_path / "cards.db"
-    target.touch()
+    target = PG_URL
 
     # Act
-    conn = connect(str(target), read_only=False)
+    try:
+        connect(target).close()
+        driver_missing = False
+    except ModuleNotFoundError:
+        driver_missing = True
+    except Exception:
+        driver_missing = False
 
     # Assert
-    assert conn.backend == "sqlite"
-    conn.close()
+    assert driver_missing is False
 
 
 # EOF

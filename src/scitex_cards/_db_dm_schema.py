@@ -20,9 +20,9 @@ DM can never have three participants, so copying it forward would have carried
 that limit into the new store for free.
 
 APPEND-ONLY IS ENFORCED BY TRIGGERS, NOT BY PYTHON. A Python guard binds only
-the callers that go through it; a trigger binds the ``sqlite3`` CLI, a stray
-script and every future caller. Stated honestly: ``DROP TRIGGER``, a raw file
-copy and ``sqlite3 .recover`` still bypass all of it. The triggers close the
+the callers that go through it; a trigger binds an interactive SQL session, a
+stray script and every future caller. Stated honestly: ``DROP TRIGGER``, a
+physical copy and a dump/restore still bypass all of it. The triggers close the
 ACCIDENT class, not the adversary class.
 
 This DDL lives in its own module (rather than inline in :mod:`scitex_cards._db`)
@@ -32,8 +32,6 @@ database quietly stop being the same shape.
 """
 
 from __future__ import annotations
-
-import sqlite3
 
 from ._ddl import execute_ddl
 
@@ -148,7 +146,7 @@ END;
 """
 
 
-def migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
+def migrate_v4_to_v5(conn) -> None:
     """Create the v5 DM tables + triggers on ANY database. Idempotent, additive.
 
     Every statement is ``IF NOT EXISTS``, so this is a no-op on a database that
@@ -167,35 +165,34 @@ def migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "dm_thread_member_events", "seq", "INTEGER NOT NULL DEFAULT 0")
 
 
-def _ensure_column(
-    conn: sqlite3.Connection, table: str, column: str, decl: str
-) -> None:
+def _ensure_column(conn, table: str, column: str, decl: str) -> None:
     """Add ``column`` to ``table`` if absent. Idempotent, race-tolerant.
 
     ``CREATE TABLE IF NOT EXISTS`` does NOT alter an existing table, so a
     database created by an earlier v5 build keeps the old column set unless
     something ALTERs it — the same trap ``_migrate_v1_to_v2`` documents.
 
-    The `PRAGMA table_info` → `ALTER` window is a multi-process TOCTOU race
-    (two agents opening the same store), and ``duplicate column name`` is a
-    LOGICAL error that ``busy_timeout`` does nothing for. Uncaught it would
-    propagate out of ``init_schema`` and leave the loser unable to open the
-    store at all. Swallowing exactly that one message is the fix
-    claude-code-telegrammer already landed for the identical race
-    (``ts/lib/store-migrations.ts``); anything else still raises.
+    The probe → `ALTER` window is a multi-process TOCTOU race (two agents
+    opening the same store), and "this column already exists" is a LOGICAL
+    error that no lock timeout does anything for. Uncaught it would propagate
+    out of ``init_schema`` and leave the loser unable to open the store at all.
+    Swallowing exactly that one message is the fix claude-code-telegrammer
+    already landed for the identical race (``ts/lib/store-migrations.ts``);
+    anything else still raises.
     """
     from ._schema_probe import column_names  # noqa: PLC0415 -- import cycle
 
-    # Delegated: PRAGMA table_info is SQLite-only. Read directly it made this
-    # guard raise on PostgreSQL from inside init_schema -- found by running the
-    # real server, not by scanning, because this module is not in the init path
-    # anyone thinks to grep.
+    # DELEGATED rather than asked directly. The column probe is engine-specific,
+    # and reading it inline made this guard raise from inside init_schema --
+    # found by running the real server, not by scanning, because this module is
+    # not in the init path anyone thinks to grep.
     if column in column_names(conn, table):
         return
     try:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-    except sqlite3.OperationalError as exc:
-        if "duplicate column" not in str(exc).lower():
+    except Exception as exc:  # noqa: BLE001 -- narrowed by the message test
+        text = str(exc).lower()
+        if "duplicate column" not in text and "already exists" not in text:
             raise
 
 

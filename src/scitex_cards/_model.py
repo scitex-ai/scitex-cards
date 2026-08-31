@@ -4,7 +4,7 @@
 # -*- coding: utf-8 -*-
 """Canonical task model + loader/validator/writer for scitex-cards.
 
-The task store is the SQLite database; this module models it as a
+The task store is the database; this module models it as a
 top-level ``tasks:`` list for the validation + adapter layers built on
 top. Each task is a mapping with ``id`` + ``title`` + ``status`` (required) and
 optional ``repo`` / ``depends_on`` / ``blocks`` / ``note`` / ``priority`` /
@@ -99,7 +99,7 @@ def load_doc(
     """
     path = Path(path).expanduser()
 
-    # DB-CANONICAL: read the doc FROM SQLITE, not from a file that no longer
+    # DB-CANONICAL: read the doc FROM THE DATABASE, not from a file that no longer
     # exists. This is not an optimisation — it is what makes the mode safe.
     #
     # WITHOUT IT, EVERY WRITE ERASES THE BOARD, and the mechanism is worth
@@ -143,11 +143,11 @@ def load_doc(
 def _canonical_source_label() -> str:
     """Name the store the rows ACTUALLY came from.
 
-    This label was ``f"<sqlite:{path}>"`` until 2026-08-02, and it was wrong in
+    This label hardcoded an engine name until 2026-08-02, and it was wrong in
     two independent ways at once:
 
-    1. ``sqlite:`` was HARDCODED, so every tolerated-validation warning claimed
-       SQLite even when the canonical store was PostgreSQL.
+    1. The engine was HARDCODED, so every tolerated-validation warning named
+       the wrong one whenever the canonical store was a server.
     2. ``path`` is the YAML argument — and the comment block a few lines above
        states in its own words that the doc is read "not from a file that no
        longer exists". So the label pointed at a file this very function
@@ -176,7 +176,7 @@ def _canonical_source_label() -> str:
         # Strip any query string: DSNs carry credentials there, and this label
         # is written into warnings that land in logs.
         return f"<postgres:{str(target).split('?', 1)[0]}>"
-    return f"<sqlite:{target}>"
+    return f"<store:{target}>"
 
 
 # ---------------------------------------------------------------------------

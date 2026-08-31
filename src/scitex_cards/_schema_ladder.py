@@ -109,9 +109,9 @@ def _has_table(conn, name: str) -> bool:
 
 
 def _has_trigger(conn, name: str) -> bool:
-    """Delegated: sqlite_master does not exist on PostgreSQL, and a rung that
-    cannot be seen is reported ABSENT -- which downgrades the observed version
-    rather than erroring, the quiet direction."""
+    """Delegated to the one catalogue probe, and a rung that cannot be seen is
+    reported ABSENT -- which downgrades the observed version rather than
+    erroring, the quiet direction."""
     return has_trigger(conn, name)
 
 

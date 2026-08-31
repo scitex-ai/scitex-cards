@@ -11,9 +11,8 @@ along the seam that module's own comment already draws:
 * ``_health_cards`` = "do the CARDS CONTRADICT THEMSELVES?"
 
 THE IMPORT SURFACE DOES NOT MOVE: ``_health`` re-exports every name below, so
-``from scitex_cards._health import _verify_db_store`` (which the tests do)
-keeps resolving to this same object. A split that breaks its callers is a
-rename with extra steps.
+``from scitex_cards._health import _verify_postgres_store`` keeps resolving to
+this same object. A split that breaks its callers is a rename with extra steps.
 """
 
 from __future__ import annotations
@@ -23,98 +22,24 @@ from pathlib import Path
 from typing import Any
 
 
-def _is_sqlite_db(path: Path) -> bool:
-    """True when ``path`` begins with the SQLite file magic header."""
-    try:
-        with path.open("rb") as handle:
-            return handle.read(16) == b"SQLite format 3\x00"
-    except OSError:
-        return False
-
-
-def _verify_db_store(path: Path) -> dict[str, Any]:
-    """Confirm the canonical database opens and carries a ``tasks`` table."""
-    import sqlite3
-
-    try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            n = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
-        finally:
-            conn.close()
-    except sqlite3.Error as exc:
-        return {
-            "ok": False,
-            "detail": f"canonical database {path} did not open/read ({exc})",
-            "hint": (
-                f"do NOT overwrite it — a database that fails to open may still "
-                f"hold every card, and the recovery is to COPY IT ASIDE FIRST. "
-                f"Check the snapshot repo for the newest good copy, and "
-                f"`scitex-cards dev db verify` for the schema report. "
-                f"`scitex-cards init-store` creates an EMPTY store and is "
-                f"correct only when there is nothing to recover. "
-                f"{type(exc).__name__}: {exc}"
-            ),
-        }
-    # WRITABILITY IS MEASURED, NEVER ASSERTED. This probe opens the database
-    # `mode=ro`, so it learns nothing about writing — yet the detail string below
-    # claims "writable". That word used to be a hardcoded literal, so it could
-    # never be false: "a gate that cannot fail is not a gate ... the same as
-    # deleting it, except worse: the config still lists it and everyone believes
-    # it is working" (constitution §2). It is exactly how the 2026-07-28
-    # create-path outage stayed invisible — `add` refused every card while health
-    # cheerfully reported the same store readable AND writable. The sibling
-    # file-store branch already measures this with `os.access`; this branch now
-    # matches it. SQLite also writes `-wal` / `-journal` SIBLINGS, so the
-    # DIRECTORY must be writable too: a writable file in a read-only directory
-    # still fails every write.
-    if not os.access(path, os.W_OK):
-        return {
-            "ok": False,
-            "detail": (
-                f"canonical store {path} is NOT writable "
-                f"(SQLite, {n} cards, readable) — every card write will fail"
-            ),
-            "hint": f"fix permissions so {path} is writable (e.g. chmod u+w {path})",
-        }
-    if not os.access(path.parent, os.W_OK):
-        return {
-            "ok": False,
-            "detail": (
-                f"canonical store {path} is readable but its directory "
-                f"{path.parent} is NOT writable (SQLite, {n} cards) — SQLite "
-                f"cannot create the -wal/-journal siblings a write needs"
-            ),
-            "hint": (
-                f"make the store's directory writable (e.g. chmod u+w {path.parent})"
-            ),
-        }
-    return {
-        "ok": True,
-        "detail": f"canonical store {path} (SQLite, {n} cards, readable, writable)",
-        "hint": None,
-    }
-
-
 def _verify_postgres_store(target: str) -> dict[str, Any]:
     """Confirm a PostgreSQL store opens, carries `tasks`, and can be WRITTEN.
 
-    THE SAME THREE QUESTIONS AS THE SQLITE BRANCH, re-asked for a server. Each
-    one means something different here, and pretending otherwise is how a check
-    starts answering a question nobody asked:
+    THREE QUESTIONS, each asked of a SERVER. Every one means something other
+    than the filesystem question it replaced, and pretending otherwise is how a
+    check starts answering a question nobody asked:
 
-      exists    -- not a `stat()` and not the SQLite magic header. A server can
-                   be reachable while holding no store at all, so the question
-                   is whether this database carries the schema.
+      exists    -- not a `stat()`. A server can be reachable while holding no
+                   store at all, so the question is whether this database
+                   carries the schema.
       readable  -- the COUNT(*) below either returns or it does not.
-      writable  -- MEASURED, NEVER ASSERTED. This is the rule this file already
-                   states in `_verify_db_store`: the word "writable" was once a
-                   hardcoded literal that could not be false, and that is how
-                   the 2026-07-28 outage stayed invisible while `add` refused
-                   every card and health called the store writable.
+      writable  -- MEASURED, NEVER ASSERTED. The word "writable" was once a
+                   hardcoded literal in this file that could not be false, and
+                   that is how the 2026-07-28 outage stayed invisible while
+                   `add` refused every card and health called the store
+                   writable.
 
-    Writability is TWO conditions here, exactly as the SQLite branch needs both
-    the file and its directory:
+    Writability is TWO conditions:
 
       has_table_privilege(...,'INSERT')  the role may write the table
       NOT pg_is_in_recovery()            this is not a read-only standby
@@ -209,38 +134,27 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
 def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
     """Resolve the task store and verify it is the canonical, healthy store.
 
-    The canonical store is the SQLite database ($SCITEX_CARDS_DB). ok when it
-    exists, opens, and carries a ``tasks`` table. An EXPLICIT file store (tests,
-    ``--tasks <file>``) is taken as the intended target and checked as a
-    serialized document with a top-level ``tasks`` key.
+    The canonical store is the database named by ``$SCITEX_CARDS_DB``. ok when
+    it is reachable, carries a ``tasks`` table, and the role can write it. An
+    EXPLICIT file store (tests, ``--tasks <file>``) is taken as the intended
+    target and checked as a serialized document with a top-level ``tasks`` key.
     """
-    from ._db import resolve_db_path
     from ._paths import resolve_tasks_path
     from ._store_target import resolve_store_target
     from ._store_url import is_postgres_url
 
-    # POSTGRESQL BRANCHES FIRST, and it has to: `resolve_db_path` is typed
-    # `-> Path` and REFUSES a DSN outright since #692, so on a PostgreSQL store
-    # the health check would raise from its own first statement -- crashing on
-    # exactly the backend it exists to report on. Health that cannot run against
-    # the live store is worse than absent, because a crashing doctor reads as an
-    # infrastructure problem rather than as "I never checked".
+    # THE STORE BRANCHES FIRST, and it has to: this check must be able to run
+    # against the live store. Health that cannot run against the live store is
+    # worse than absent, because a crashing doctor reads as an infrastructure
+    # problem rather than as "I never checked".
     target = resolve_store_target(store)
     if is_postgres_url(target):
         return _verify_postgres_store(target)
 
-    db = Path(resolve_db_path(store))
-
-    # The canonical store IS the database — verify it directly.
-    if db.exists() and _is_sqlite_db(db):
-        return _verify_db_store(db)
-
-    # No database. An EXPLICIT file store (tests / `--tasks <file>`) is checked
-    # as a serialized document; otherwise the store is genuinely absent.
+    # NOT THE STORE. An EXPLICIT file store (tests / `--tasks <file>`) is checked
+    # as a serialized document; otherwise the target names no store at all.
     resolved = resolve_tasks_path(store)
     if store is not None and resolved.exists():
-        if _is_sqlite_db(resolved):
-            return _verify_db_store(resolved)
         if not os.access(resolved, os.R_OK):
             return {
                 "ok": False,
@@ -281,9 +195,9 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
 
     return {
         "ok": False,
-        "detail": f"no store: the database {db} is absent",
+        "detail": f"no store: {target!r} does not name a reachable store",
         "hint": (
-            "if this agent should have the FLEET board, the path is wrong — "
+            "if this agent should have the FLEET board, the target is wrong — "
             "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
             "empty one here becomes a SECOND store, which is how the board was "
             "destroyed on 2026-07-19. `scitex-cards dev db get-path` shows "
@@ -306,8 +220,7 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
 
 __all__ = [
     "_check_store_canonical",
-    "_is_sqlite_db",
-    "_verify_db_store",
+    "_verify_postgres_store",
 ]
 
 # EOF

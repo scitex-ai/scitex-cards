@@ -71,7 +71,7 @@ def _registry_ids(db: Path) -> set[str]:
 
 
 @pytest.fixture()
-def ambient_db_store(tmp_path: Path):
+def ambient_db_store(new_store):
     """An empty board reachable AMBIENTLY — the shape the deployment has.
 
     The environment variable is the subject here, not scaffolding: the
@@ -79,7 +79,7 @@ def ambient_db_store(tmp_path: Path):
     that passed ``store=`` would take the file branch and re-prove what the
     existing suite already proves.
     """
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc({"tasks": []}, db)
     before = os.environ.get(_STORE_ENV)
     os.environ[_STORE_ENV] = str(db)
@@ -200,32 +200,40 @@ def test_an_explicit_store_writes_no_yaml_file(
     assert not named.exists()
 
 
-def test_an_explicit_store_reaches_its_sibling_database(
-    ambient_db_store: Path, tmp_path: Path
+def test_an_explicit_store_is_the_one_written_to(
+    ambient_db_store, new_store
 ) -> None:
-    """...and the registration is retrievable from that database."""
+    """A NAMED store receives the registration.
+
+    Was "reaches its SIBLING database", which named the file era's shape: an
+    explicit ``tasks.yaml`` whose ``cards.db`` sat beside it. A path names no
+    store now, so the sibling cannot exist and the pair below is the property
+    that survives — the named store gets it, the ambient one does not.
+    """
     # Arrange
     from scitex_cards import _users
 
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    named = elsewhere / "tasks.yaml"
+    named = new_store()
     # Act
     user = _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert
-    assert user.id in _registry_ids(elsewhere / "cards.db")
+    assert user.id in _registry_ids(named)
 
 
-def test_an_explicit_store_stays_out_of_the_database(
-    ambient_db_store: Path, tmp_path: Path
+def test_an_explicit_store_stays_out_of_the_ambient_one(
+    ambient_db_store, new_store
 ) -> None:
-    """...and does not leak onto the shared board while doing it."""
+    """...and does not leak onto the shared board while doing it.
+
+    THE LEAK IS REAL AND THIS CAUGHT IT. Handed a file PATH, the write did not
+    fail — it landed in the AMBIENT store, so the "explicit" argument was
+    silently ignored and the shared board took a row nobody addressed to it.
+    That is the failure this pair exists to refuse.
+    """
     # Arrange
     from scitex_cards import _users
 
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    named = elsewhere / "tasks.yaml"
+    named = new_store()
     # Act
     _users.register_user(kind="agent", names=["file-probe"], store=named)
     # Assert

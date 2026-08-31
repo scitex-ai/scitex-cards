@@ -12,14 +12,14 @@ Contract:
     are byte-identical to before (the v5 design freezes the record).
   - 400 on a missing message_id / emoji / unknown action; 405 on GET.
 
-Django RequestFactory against a real tmp store via ``?store=``; no mocks
+Django RequestFactory against a real throwaway PostgreSQL store; no mocks
 (STX-NM / PA-306). AAA pattern, one assertion per test (STX-TQ007).
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from django.test import RequestFactory
@@ -33,21 +33,24 @@ from scitex_cards._threads import append_message
 
 
 @pytest.fixture()
-def store(tmp_path: Path, env) -> Path:
-    """A real tmp tasks.yaml (both sidecars land next to it)."""
+def store(new_store, env) -> str:
+    """An EXPLICIT throwaway store nobody else can resolve.
+
+    This used to be ``tmp_path / "tasks.yaml"``, whose sibling ``cards.db`` is
+    a filesystem path -- and a path names no store, so the door refuses it
+    before the driver is reached.
+    """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+    return new_store()
 
 
 @pytest.fixture()
-def message(store: Path) -> dict:
+def message(store: str) -> dict:
     """One agent→operator message to react to."""
     return append_message("agent-x", "operator", "deploy is green", store=store)
 
 
-def _post_reaction(store: Path, payload: dict, peer: str = "agent-x"):
+def _post_reaction(store: str, payload: dict, peer: str = "agent-x"):
     """A reaction is a WRITE, so it is scoped the way writes are now scoped.
 
     Through the trusted request attribute, exactly as scitex-hub's tenancy
@@ -65,7 +68,7 @@ def _post_reaction(store: Path, payload: dict, peer: str = "agent-x"):
 
 
 def _react(
-    store: Path,
+    store: str,
     message: dict,
     emoji: str = "👍",
     action: str = "add",
@@ -78,13 +81,13 @@ def _react(
     )
 
 
-def _get_thread(store: Path, peer: str = "agent-x"):
-    request = RequestFactory().get(f"/dm/thread/{peer}?store={store}")
+def _get_thread(store: str, peer: str = "agent-x"):
+    request = RequestFactory().get(f"/dm/thread/{peer}?store={quote(store, safe='')}")
     return dm_thread_view(request, peer)
 
 
 @pytest.fixture()
-def reacted(store: Path, message: dict) -> tuple:
+def reacted(store: str, message: dict) -> tuple:
     """The operator has reacted 👍 to the message."""
     return store, message, _react(store, message)
 
@@ -129,7 +132,7 @@ def test_reaction_post_derives_the_thread_from_the_peer(reacted: tuple):
     assert event["thread"] == "dm:agent-x::operator"
 
 
-def test_removing_a_reaction_empties_the_fold(store: Path, message: dict):
+def test_removing_a_reaction_empties_the_fold(store: str, message: dict):
     # Arrange
     _react(store, message)
     response = _react(store, message, action="remove")
@@ -139,7 +142,7 @@ def test_removing_a_reaction_empties_the_fold(store: Path, message: dict):
     assert data["reactions"] == {}
 
 
-def test_reaction_post_rejects_a_missing_message_id(store: Path):
+def test_reaction_post_rejects_a_missing_message_id(store: str):
     # Arrange
     # Act
     response = _post_reaction(store, {"emoji": "👍"})
@@ -147,7 +150,7 @@ def test_reaction_post_rejects_a_missing_message_id(store: Path):
     assert response.status_code == 400
 
 
-def test_reaction_post_rejects_a_missing_emoji(store: Path, message: dict):
+def test_reaction_post_rejects_a_missing_emoji(store: str, message: dict):
     # Arrange
     # Act
     response = _post_reaction(store, {"message_id": message["id"]})
@@ -155,7 +158,7 @@ def test_reaction_post_rejects_a_missing_emoji(store: Path, message: dict):
     assert response.status_code == 400
 
 
-def test_reaction_post_rejects_an_unknown_action(store: Path, message: dict):
+def test_reaction_post_rejects_an_unknown_action(store: str, message: dict):
     # Arrange
     # Act
     response = _post_reaction(
@@ -165,10 +168,10 @@ def test_reaction_post_rejects_an_unknown_action(store: Path, message: dict):
     assert response.status_code == 400
 
 
-def test_reaction_post_rejects_invalid_json(store: Path):
+def test_reaction_post_rejects_invalid_json(store: str):
     # Arrange
     request = RequestFactory().post(
-        f"/dm/thread/agent-x/reaction?store={store}",
+        f"/dm/thread/agent-x/reaction?store={quote(store, safe='')}",
         data="{not json",
         content_type="application/json",
     )
@@ -178,9 +181,9 @@ def test_reaction_post_rejects_invalid_json(store: Path):
     assert response.status_code == 400
 
 
-def test_reaction_view_rejects_get(store: Path):
+def test_reaction_view_rejects_get(store: str):
     # Arrange
-    request = RequestFactory().get(f"/dm/thread/agent-x/reaction?store={store}")
+    request = RequestFactory().get(f"/dm/thread/agent-x/reaction?store={quote(store, safe='')}")
     # Act
     response = dm_reaction_view(request, "agent-x")
     # Assert
@@ -191,7 +194,7 @@ def test_reaction_view_rejects_get(store: Path):
 
 
 def test_thread_view_returns_an_empty_reactions_map_by_default(
-    store: Path, message: dict
+    store: str, message: dict
 ):
     # Arrange
     response = _get_thread(store)
@@ -212,7 +215,7 @@ def test_thread_view_returns_the_reaction_keyed_by_message(reacted: tuple):
 
 
 def test_thread_view_message_records_are_unchanged_by_a_reaction(
-    store: Path, message: dict
+    store: str, message: dict
 ):
     # Arrange
     before = json.loads(_get_thread(store).content)["messages"]
@@ -224,7 +227,7 @@ def test_thread_view_message_records_are_unchanged_by_a_reaction(
     assert after == before
 
 
-def test_a_reaction_on_another_thread_does_not_leak_in(store: Path, message: dict):
+def test_a_reaction_on_another_thread_does_not_leak_in(store: str, message: dict):
     # Arrange
     other = append_message("agent-y", "operator", "unrelated", store=store)
     _react(store, other, emoji="🎉", peer="agent-y")

@@ -3,20 +3,34 @@
 """A malformed DSN must not become a filename.
 
 WHAT THIS SUITE IS DEFENDING, stated once so no future reader softens it into a
-style preference: ``backend_of`` is total, so "I do not recognise this" has
-never had anywhere to live, and the answer for anything unrecognised is SQLITE
--- which means a FILENAME, which ``_db.connect`` then creates with
-``mkdir(parents=True)``. A wrong cards database that answers queries is the
-failure this package keeps meeting, and it has now arrived three times through
-three different spellings.
+style preference: ``backend_of`` is total, so "I do not recognise this" once had
+nowhere to live, and the answer for anything unrecognised was a FILENAME, which
+``_db.connect`` then created with ``mkdir(parents=True)``. A wrong cards
+database that answers queries is the failure this package keeps meeting, and it
+arrived three times through three different spellings.
 
-THE SUITE IS DELIBERATELY TWO-SIDED. Half of it asserts that malformed DSNs are
-refused; the other half asserts that ordinary paths are STILL ACCEPTED. A guard
-that refuses everything satisfies the first half completely, and that is exactly
-how a store-target guard shipped broken before (the click decorator incident
-recorded on
+``backend_of`` is still total -- thirteen call sites branch on it -- but the
+else-branch now answers ``BACKEND_UNSUPPORTED``, which is not the name of a
+second engine; it is the symbol for "this target names no store I can open".
+The refusal itself lives at the door, in ``reject_non_postgres_target``.
+
+THE SUITE IS STILL DELIBERATELY TWO-SIDED, AND THE SECOND SIDE MOVED. Half of
+it asserts that malformed DSNs are recognised as such; the other half is the
+POSITIVE CONTROL, without which a guard that refuses everything passes the
+first half completely -- which is exactly how a store-target guard shipped
+broken before (the click decorator incident recorded on
 cards-store-resolution-falls-back-silently-instead-of-failing-loud-20260809).
-The acceptance tests are the positive control and are not optional.
+
+What the control asserts is what changed. It used to be "an ordinary path is
+still ACCEPTED", because a path was a store. A path is not a store any more, so
+that control would now be asserting the bug. Two things take its place, and
+both are load-bearing:
+
+  * an ordinary path is still not classified as an ATTEMPTED DSN -- the
+    distinction survives the abolition, because the two produce different
+    diagnostics and a lost operator reads the diagnostic; and
+  * a well-formed DSN is still opened. That is the control that a guard
+    refusing everything now fails.
 """
 
 import contextlib
@@ -26,7 +40,7 @@ from pathlib import Path
 import pytest
 
 from scitex_cards._store_url import (
-    BACKEND_SQLITE,
+    BACKEND_UNSUPPORTED,
     UnrecognisedStoreTarget,
     backend_of,
     is_attempted_dsn,
@@ -45,8 +59,11 @@ MALFORMED = [
     "mysql://scitex_cards@127.0.0.1:55432/scitex_cards",
 ]
 
-#: Targets that MUST keep resolving to SQLite. Every store in service today is
-#: an absolute path, so a false positive here is an outage.
+#: Ordinary filesystem paths. None of them names a store any more, but each
+#: MUST keep being told apart from a MALFORMED DSN: the two are refused with
+#: different diagnostics, and the diagnostic is the only part an operator acts
+#: on. A path misfiled as an attempted DSN sends them hunting for a typo in a
+#: server address they never wrote.
 REAL_PATHS = [
     "/home/agent/.scitex/cards/cards.db",
     "/srv/data/a=b/cards.db",
@@ -64,8 +81,6 @@ VALID_DSNS = [
     "postgres://scitex_cards@127.0.0.1:55432/scitex_cards",
     "host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards",
 ]
-
-SRC = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
 
 
 @pytest.fixture
@@ -101,9 +116,17 @@ class TestMalformedTargetsAreRecognised:
             act()
 
 
-class TestOrdinaryPathsStillWork:
-    """THE POSITIVE CONTROL. A guard that refuses everything passes the suite
-    above and destroys every deployment in existence."""
+class TestOrdinaryPathsAreStillDistinguishable:
+    """HALF THE POSITIVE CONTROL, and the half that had to be restated.
+
+    A path is no longer a store, so "an ordinary path still opens" is not a
+    property to defend -- asserting it would pin the defect. What survives is
+    the DISTINCTION: a path must not be misfiled as an attempted DSN, because
+    the two carry different diagnostics and the diagnostic is the only part an
+    operator acts on. The other half of the control -- that a well-formed DSN
+    is still opened -- lives in :class:`TestNoFileIsManufactured` below, and is
+    what a guard refusing everything now fails.
+    """
 
     @pytest.mark.parametrize("target", REAL_PATHS)
     def test_a_path_is_not_an_attempted_dsn(self, target):
@@ -124,13 +147,13 @@ class TestOrdinaryPathsStillWork:
         assert result is None
 
     @pytest.mark.parametrize("target", REAL_PATHS)
-    def test_a_path_still_classifies_as_sqlite(self, target):
+    def test_a_path_classifies_as_unsupported(self, target):
         # Arrange
         subject = target
         # Act
         backend = backend_of(subject)
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_UNSUPPORTED
 
 
 class TestWellFormedPostgresIsUntouched:
@@ -249,17 +272,34 @@ class TestNoFileIsManufactured:
         # Assert
         assert sorted(p.name for p in tmp_path.iterdir()) == before
 
-    def test_a_real_path_is_still_created_and_usable(self, tmp_path):
+    def test_a_well_formed_dsn_is_still_opened(self):
         """POSITIVE CONTROL for the door: refusing everything would pass all
-        three tests above."""
+        three tests above.
+
+        THIS CONTROL WAS INVERTED, not repaired. It used to open
+        ``tmp_path / "nested" / "cards.db"`` and assert the file EXISTS
+        afterwards -- i.e. it asserted that the door creates a database at an
+        arbitrary filename, which is the precise behaviour that manufactured
+        the three phantom stores this module is named after. Once a filename
+        stopped naming a store, keeping that assertion would have meant
+        pinning the defect as the requirement.
+
+        The control still has to exist, because a door that refuses everything
+        passes every refusal test above. So the accepted case is now the only
+        target that IS a store: the throwaway schema the harness pinned.
+        """
         # Arrange
+        import os
+
         from scitex_cards._db import connect
 
-        target = tmp_path / "nested" / "cards.db"
+        target = os.environ["SCITEX_CARDS_DB"]
         # Act
-        connect(target).close()
+        conn = connect(target)
+        backend = conn.backend
+        conn.close()
         # Assert
-        assert target.exists()
+        assert backend == "postgresql"
 
 
 class TestNonStringsAreNotGuessedAt:
@@ -287,27 +327,74 @@ class TestTheGuardIsActuallyWiredIn:
     one protects anybody. A predicate with perfect unit tests still lets the
     tree get built if nothing invokes it at the door.
 
-    These two tests read the source rather than the behaviour, which is a weak
-    instrument and is chosen deliberately: the strong version would need a live
-    store per door. They cost nothing and they fail loudly the day someone
-    deletes a call site while keeping the function.
+    THESE WERE SOURCE GREPS, AND TWO OF THE THREE NO LONGER NEED TO BE. Both
+    read the text of a module for the literal ``reject_attempted_dsn(target)``
+    -- a weak instrument, chosen when the strong version would have needed a
+    live store per door. Two things changed that:
+
+    * the door was renamed. ``reject_attempted_dsn`` is now COMPOSED INTO
+      ``reject_non_postgres_target``, which runs it first and then refuses
+      everything else that is not a DSN. A grep for the old call site fails on
+      a wiring that is present and stricter than before, which is a false
+      alarm, not a finding.
+    * ``_db.connect`` no longer calls it at all. It delegates to
+      ``_backend_connect.connect``, so the grep was asserting a call site the
+      refactor legitimately moved -- and would keep failing however correct
+      the code was.
+
+    Since the refusal now happens BEFORE anything is opened, it no longer takes
+    a live store to observe, so the two module-level greps become behavioural
+    tests of the doors themselves. The one grep that survives is the one whose
+    subject really is a call site rather than an outcome.
     """
 
-    def test_db_connect_calls_the_guard(self):
+    def test_db_connect_reaches_the_guard(self):
+        """Behavioural, and it is the door callers actually use."""
         # Arrange
-        source = SRC / "_db.py"
+        target = ":55432"
         # Act
-        text = source.read_text(encoding="utf-8")
-        # Assert
-        assert "reject_attempted_dsn(target)" in text
+        # Assert -- opening is the act and the refusal is the observation.
+        with pytest.raises(UnrecognisedStoreTarget):
+            from scitex_cards._db import connect
 
-    def test_backend_connect_calls_the_guard(self):
+            connect(target)
+
+    def test_backend_connect_reaches_the_guard(self):
         # Arrange
-        source = SRC / "_backend_connect.py"
+        target = ":55432"
         # Act
-        text = source.read_text(encoding="utf-8")
         # Assert
-        assert "reject_attempted_dsn(target)" in text
+        with pytest.raises(UnrecognisedStoreTarget):
+            from scitex_cards._backend_connect import connect as backend_connect
+
+            backend_connect(target)
+
+    def test_the_composed_door_still_runs_the_attempted_dsn_diagnostic(self):
+        """The composition is the part a rename could silently drop.
+
+        A door that refused everything with ONE blanket message would pass both
+        tests above while destroying the diagnostic: an operator who typed a
+        server address and mistyped it would be told their target "does not
+        name the store", and would go looking for a missing file. The two
+        refusals must stay distinguishable, which is only true if
+        ``reject_non_postgres_target`` still runs ``reject_attempted_dsn``
+        first.
+        """
+        # Arrange
+        from scitex_cards._store_url import reject_non_postgres_target
+
+        def refusal(target: str) -> str:
+            try:
+                reject_non_postgres_target(target)
+            except UnrecognisedStoreTarget as exc:
+                return str(exc)
+            return ""
+
+        # Act
+        mistyped_server = refusal(":55432")
+        plain_path = refusal("/home/agent/.scitex/cards/cards.db")
+        # Assert
+        assert mistyped_server != plain_path
 
 
 # EOF

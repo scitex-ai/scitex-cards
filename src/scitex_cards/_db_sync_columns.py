@@ -117,11 +117,11 @@ def _migrate_v11_to_v12(conn: Any) -> None:
     arrives NULL and is filled by a later change that can argue for how.
 
     NO BACKEND BRANCH IS NEEDED HERE, and that is worth stating because the
-    neighbouring rung has one. ``_migrate_v9_to_v10`` skips its trigger on
-    SQLite because ``json_object()`` needs SQLite 3.38 and the live host runs
-    3.37.2. This rung installs no trigger and no function -- plain ``ALTER TABLE
-    ADD COLUMN`` is understood by both backends -- so branching would add a
-    difference between the two stores that nothing requires. If a fill trigger
+    neighbouring rung has one. ``_migrate_v9_to_v10`` installs a plpgsql
+    trigger, which only the store can accept. This rung installs no trigger and
+    no function -- plain ``ALTER TABLE ADD COLUMN`` is standard -- so branching
+    would add a difference between stores that nothing requires. If a fill
+    trigger
     is added later it MUST take that branch; the column set must not.
     """
     for table in SYNCED_TABLES:

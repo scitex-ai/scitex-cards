@@ -108,9 +108,9 @@ def _write_card(
 def _comment_fields(row) -> tuple:
     """Read a ``task_comments`` row BY NAME. The row TYPE varies by backend.
 
-    POSITIONAL INDEXING IS A BUG HERE, and it shipped in 0.49.0. ``_db.py`` sets
-    ``row_factory = sqlite3.Row``, which supports ``row[0]``, so every SQLite test
-    passed. The PostgreSQL path (``_db_mirror.mirror_doc_incremental``) uses
+    POSITIONAL INDEXING IS A BUG HERE, and it shipped in 0.49.0. The row factory
+    it was written against supported ``row[0]``, so every test on that backend
+    passed. The store path (``_db_mirror.mirror_doc_incremental``) uses
     psycopg's DICT row factory, where ``row[0]`` is a lookup of the integer KEY
     ``0`` and raises ``KeyError: 0``. Production is PostgreSQL.
 

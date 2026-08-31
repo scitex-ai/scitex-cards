@@ -120,7 +120,7 @@ def store_config_target() -> str | None:
 
     WHY THIS EXISTS. Until this was added, the ONLY way to point a client at a
     non-default store was ``$SCITEX_CARDS_DB``, set at every single invocation
-    site. Everything that forgot fell through to a hardcoded local SQLite
+    site. Everything that forgot fell through to a hardcoded local
     filename. During the 2026-08-01 PostgreSQL cutover that cost us eight
     host-side writers (four systemd units, three cron entries, one hourly timer)
     silently writing the OLD store while the fleet was believed migrated, and

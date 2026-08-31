@@ -31,7 +31,7 @@ _MANAGED = ("SCITEX_CARDS_AGENT_ID", "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
-def store_with_blocked_card(tmp_path):
+def store_with_blocked_card(tmp_path, new_store):
     """A real store holding one blocked card."""
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
@@ -40,7 +40,7 @@ def store_with_blocked_card(tmp_path):
     os.environ["HOME"] = str(tmp_path)
     os.environ["SCITEX_CARDS_AGENT_ID"] = "test-agent"
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
-    store = tmp_path / "cards.db"
+    store = new_store()
     os.environ["SCITEX_CARDS_DB"] = str(store)
     os.chdir(tmp_path)
     open_db(str(store)).close()

@@ -169,7 +169,7 @@ TASK_FIELDS: "dict[str, FieldPolicy]" = {
     # THE CARD ITSELF, WHOLE, UNDER LAST_WRITER_WINS. This is ADR-0018 D1.
     #
     # kind=JSON describes the VALUE, not the storage class: the column is
-    # `card_json TEXT` in SQLite (`_db_schema_sql.py`) and what it holds is a
+    # `card_json TEXT` (`_db_schema_sql.py`) and what it holds is a
     # document. FieldKind is dialect-independent by construction.
     #
     # LAST_WRITER_WINS rather than a collection rule: the card is a mapping one

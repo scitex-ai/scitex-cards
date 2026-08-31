@@ -11,7 +11,7 @@ S1 shipped a FULL REBUILD: ``DELETE FROM`` every doc-owned table, then re-insert
 all 1,365 tasks + 3,043 comments + edges + roles. On EVERY card write. I argued
 that was fine because I measured the rebuild at 1.24 s that morning and called it
 noise. It is 8.69 s now — the cost grows with the board, and it more than DOUBLES
-the very stall the SQLite migration exists to remove. It also doubles the
+the very stall the store migration exists to remove. It also doubles the
 CRITICAL SECTION, which doubles the convoy for every other writer.
 
 The full rebuild was chosen for a real reason: ``_save_doc_unlocked`` receives the
@@ -213,8 +213,8 @@ def mirror_doc_incremental(
     """
     own_conn = conn is None
     if own_conn:
-        # open_db (NOT a bare sqlite3.connect) — it applies the pragmas AND
-        # init_schema, so a fresh DB has its tables. The old full-rebuild mirror
+        # open_db (NOT a bare driver connect) — it runs the client-version
+        # gate AND init_schema, so a fresh DB has its tables. The old mirror
         # got this for free via _db_bootstrap; doing it by hand dropped it, and
         # the dual-write tests caught the missing tables. Fail-loud worked: the
         # mirror shouted instead of silently writing nothing.

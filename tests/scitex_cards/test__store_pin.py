@@ -38,14 +38,13 @@ real ``os.environ`` the resolver reads and restores them on teardown.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 import time
-from contextlib import closing
-from pathlib import Path
-
 import pytest
 
-from scitex_cards._db import ENV_DB, connect
+from scitex_cards._db import ENV_DB
 from scitex_cards._store import resolve_store
 from scitex_cards._store_instance import Certainty, IdentityVerdict
 from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
@@ -58,10 +57,19 @@ from scitex_cards._store_pin import (
     require_pinned_store,
 )
 
-#: Same contract as ``test__store_instance`` and ``test__sql_null_safe``:
-#: UNDECLARED skips, DECLARED-but-broken fails. A Postgres-only test that skips
-#: is indistinguishable from a passing one in a green summary.
-_ENV_PG_DSN = "SCITEX_CARDS_TEST_PG_DSN"
+#: THE HARNESS'S STORE, NOT A SECOND NAME FOR ONE. This read
+#: ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private marker -- and
+#: SKIPPED when it was unset, which is now always: nothing sets that name any
+#: more. The five tests below therefore reported green in CI without opening a
+#: connection, which is the exact failure
+#: ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` was written to
+#: remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+#: a skipped test is indistinguishable from a passing one").
+#:
+#: ONE NAME NOW ANSWERS "WHERE IS THE STORE": ``$SCITEX_CARDS_DB``, which
+#: ``tests/conftest.py`` pins per test to a throwaway PostgreSQL schema. A
+#: second name could disagree with the first, and two names resolving
+#: differently is how this repo lost its live board on 2026-07-19.
 
 #: A DSN pointing at a port nothing serves. Pins the "unreachable target answers
 #: UNKNOWN rather than raising or hanging" contract. Port 1 is privileged and
@@ -111,11 +119,16 @@ def environment():
 
 @pytest.fixture
 def pg_dsn():
-    """A live Postgres DSN, or a skip when none is declared."""
-    dsn = os.environ.get(_ENV_PG_DSN)
-    if not dsn:
-        pytest.skip(f"{_ENV_PG_DSN} is not set — no Postgres declared")
-    return dsn
+    """The live PostgreSQL store this test was given. NEVER SKIPS.
+
+    Whatever ``$SCITEX_CARDS_DB`` names is the store, so that is what a test
+    about store IDENTITY must interrogate. When no cluster could be opened the
+    harness pins a target the doors refuse rather than unsetting the variable,
+    so the fixtures below fail naming the unreadable identity instead of
+    quietly not running -- which is the contract this file's header describes
+    and the old skip quietly broke.
+    """
+    return os.environ[ENV_DB]
 
 
 @pytest.fixture
@@ -124,7 +137,7 @@ def live_instance_id(pg_dsn):
     observed = instance_at(pg_dsn)
     if observed.certainty is not Certainty.KNOWN:
         pytest.fail(
-            f"{_ENV_PG_DSN} is declared but its instance is unreadable: "
+            f"{ENV_DB} names a store whose instance is unreadable: "
             f"{observed.reason}"
         )
     return observed.instance_id
@@ -167,7 +180,7 @@ def live_store_uuid(pg_dsn):
     observed = store_uuid_at(pg_dsn)
     if not observed:
         pytest.skip(
-            f"{_ENV_PG_DSN} names a server with no store on it (no "
+            f"{ENV_DB} names a server with no store on it (no "
             "schema_meta.store_uuid), so a BOTH-HALVES pin cannot be satisfied "
             "against it. The contract's positive control lives in "
             "test__identity_decision_both_halves.py and needs no server."
@@ -175,39 +188,32 @@ def live_store_uuid(pg_dsn):
     return observed
 
 
-def _create_sqlite_store(path: Path) -> str:
-    """Create ONE real store at ``path``; return the path, never the handle.
-
-    The connection lives and dies inside this function, inside ``closing`` —
-    so it is released even if ``connect`` hands back a store that raises on
-    use. This is deliberately NOT a fixture: a fixture that acquires a
-    resource has to give it to the test via ``yield`` so pytest can tear it
-    down (STX-TQ005), and the only way to owe no teardown is to own the
-    whole lifetime here. What escapes is a ``str`` path.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(connect(str(path))):
-        pass
-    return str(path)
+#: A target that is not the store. Not a fixture and not created: the point of
+#: the two tests that use it is that a target the resolver cannot open reports
+#: UNKNOWN rather than inventing an identity, and MAKING one would be the
+#: opposite of the case. (`_create_retired_store` used to build a real file store
+#: here; there is no such thing to build now.)
+_NOT_A_STORE = "/nonexistent/scitex-cards/cards.db"
 
 
 @pytest.fixture
-def two_sqlite_stores(tmp_path):
-    """Two REAL, DIFFERENT SQLite stores on disk. No mocks (STX-NM).
+def two_stores(new_store):
+    """Two REAL, DIFFERENT stores. No mocks (STX-NM).
 
-    Created through the package's own ``connect`` so they are stores the
-    resolver would genuinely accept, not empty files with the right names.
+    Two throwaway schemas on the cluster the harness opened, each provisioned
+    through the package's own ``connect`` + ``init_schema`` -- so they are
+    stores the resolver would genuinely accept, and they are genuinely
+    DIFFERENT, which is the whole property under test. Two scratch FILES were
+    what this built before; a filename names no store, so the fixture could not
+    hand out one store, let alone two that differ.
     """
-    return [
-        _create_sqlite_store(tmp_path / name / "cards.db")
-        for name in ("alpha", "beta")
-    ]
+    return [new_store("cards_pin_alpha"), new_store("cards_pin_beta")]
 
 
 @pytest.fixture
-def two_resolutions(environment, two_sqlite_stores):
+def two_resolutions(environment, two_stores):
     """The same call, twice, under two genuinely different environments."""
-    alpha, beta = two_sqlite_stores
+    alpha, beta = two_stores
     environment(**{ENV_DB: alpha})
     first = resolve_store()
     environment(**{ENV_DB: beta})
@@ -260,7 +266,7 @@ def test_the_two_environments_really_did_reach_different_stores(two_resolutions)
 # ---------------------------------------------------------------------------
 # An absent expectation is not agreement
 # ---------------------------------------------------------------------------
-def test_an_unpinned_resolution_may_not_proceed(environment, two_sqlite_stores):
+def test_an_unpinned_resolution_may_not_proceed(environment, two_stores):
     """No pin is CANNOT_TELL, and CANNOT_TELL is not a pass.
 
     The defect being closed is precisely that an absent expectation read as
@@ -268,7 +274,7 @@ def test_an_unpinned_resolution_may_not_proceed(environment, two_sqlite_stores):
     right-hand side and could not fail.
     """
     # Arrange
-    alpha, _ = two_sqlite_stores
+    alpha, _ = two_stores
     environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
@@ -276,10 +282,10 @@ def test_an_unpinned_resolution_may_not_proceed(environment, two_sqlite_stores):
     assert report["may_proceed"] is False
 
 
-def test_an_unpinned_resolution_is_named_cannot_tell(environment, two_sqlite_stores):
+def test_an_unpinned_resolution_is_named_cannot_tell(environment, two_stores):
     """The verdict is NAMED, so a caller must handle it rather than inherit it."""
     # Arrange
-    alpha, _ = two_sqlite_stores
+    alpha, _ = two_stores
     environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
@@ -287,10 +293,10 @@ def test_an_unpinned_resolution_is_named_cannot_tell(environment, two_sqlite_sto
     assert report["identity_verdict"] == IdentityVerdict.CANNOT_TELL.value
 
 
-def test_an_unpinned_resolution_says_why(environment, two_sqlite_stores):
+def test_an_unpinned_resolution_says_why(environment, two_stores):
     """A refusal a caller cannot print is a refusal nobody can act on."""
     # Arrange
-    alpha, _ = two_sqlite_stores
+    alpha, _ = two_stores
     environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
@@ -298,10 +304,10 @@ def test_an_unpinned_resolution_says_why(environment, two_sqlite_stores):
     assert report["identity_reason"]
 
 
-def test_resolve_store_reports_the_pin_it_was_given(environment, two_sqlite_stores):
+def test_resolve_store_reports_the_pin_it_was_given(environment, two_stores):
     """``expected_instance`` echoes the pin, so a mismatch shows both sides."""
     # Arrange
-    alpha, _ = two_sqlite_stores
+    alpha, _ = two_stores
     environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
     # Act
     report = resolve_store()
@@ -390,24 +396,38 @@ def test_an_unreachable_server_answers_promptly():
     assert time.monotonic() - started < 30
 
 
-def test_a_sqlite_target_cannot_report_an_instance(two_sqlite_stores):
-    """A byte copy of a file is indistinguishable from the original inside it."""
+def test_a_target_that_is_not_the_store_cannot_report_an_instance():
+    """No cluster to ask, so there is no instance identity to be had.
+
+    THE SUBJECT SURVIVED THE ENGINE, and only the example changed. It was "a
+    byte copy of a FILE is indistinguishable from the original inside it" --
+    file identity, which is why the fixture built one. A file is now simply a
+    target the resolver refuses, and the property that matters is the same one:
+    a target that cannot be opened must answer UNKNOWN rather than invent a
+    stable-looking value. Passing a path that does not exist makes that
+    unambiguous; passing a REAL store would test the opposite branch.
+    """
     # Arrange
-    alpha, _ = two_sqlite_stores
+    target = _NOT_A_STORE
     # Act
-    observed = instance_at(alpha)
+    observed = instance_at(target)
     # Assert
     assert observed.certainty is Certainty.UNKNOWN
 
 
-def test_a_sqlite_target_says_why_it_cannot_answer(two_sqlite_stores):
-    """The honest answer, with its reason — never an invented stable value."""
+def test_a_target_that_is_not_the_store_says_why_it_cannot_answer():
+    """The honest answer, with its reason — never an invented stable value.
+
+    Asserted against the reason's own words rather than an engine name. It used
+    to look for "the retired engine" in the string; the reason names no engine now, because
+    there is only one and the answer is about this target not being it.
+    """
     # Arrange
-    alpha, _ = two_sqlite_stores
+    target = _NOT_A_STORE
     # Act
-    observed = instance_at(alpha)
+    observed = instance_at(target)
     # Assert
-    assert "sqlite" in observed.reason
+    assert "does not name the store" in observed.reason
 
 
 # ---------------------------------------------------------------------------

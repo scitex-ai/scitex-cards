@@ -13,8 +13,8 @@ package.
 
 EVERY WRITE HERE IS ``ON CONFLICT DO NOTHING``, NOT ``INSERT OR IGNORE``, and
 that is a portability fix rather than a style choice. ``INSERT OR IGNORE`` is
-SQLite-only syntax; PostgreSQL rejects it outright with ``syntax error at or
-near "OR"``. The upsert form is understood by both (SQLite since 3.24), which
+not portable syntax; PostgreSQL rejects it outright with ``syntax error at or
+near "OR"``. The upsert form is standard, which
 keeps the package's "carry exactly ONE way in the source" doctrine intact
 instead of adding a dialect-translation layer.
 

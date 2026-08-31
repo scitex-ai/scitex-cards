@@ -38,9 +38,14 @@ from scitex_cards._mcp_skills import dm_send_document
 
 
 @pytest.fixture
-def store(tmp_path):
-    """An explicit tmp task-store path — never the resolved default."""
-    return str(tmp_path / "cards.db")
+def store(new_store):
+    """An EXPLICIT throwaway store — never the resolved default.
+
+    The intent is unchanged and is the point of the fixture: these tests must
+    never reach the ambient board. Only the spelling moved, because a filesystem
+    path names no store and is refused before the driver is reached.
+    """
+    return new_store()
 
 
 @pytest.fixture

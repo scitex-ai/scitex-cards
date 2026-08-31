@@ -166,12 +166,31 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     directory the sidecar was already in.
     """
     from .._db import DEFAULT_DB_FILENAME
+    from .._store_url import BACKEND_POSTGRES, backend_of, reject_attempted_dsn
 
     if db is not None:
+        # THE SAME REFUSAL THE ``store`` TIER BELOW ALREADY MAKES, and it was
+        # missing here -- one line above the comment that describes the very
+        # bug. ``Path(db)`` collapses a DSN's "//" into a relative directory:
+        # "postgresql://scitex-primary:55432/scitex" comes back as
+        # "postgresql:/scitex-primary:55432/scitex", which is the FIFTH
+        # spelling of the regrowth ``is_attempted_dsn`` records four of.
+        #
+        # THE STORE TIER WAS FIXED AND THIS ONE WAS NOT because they are
+        # reached by different callers: everything inside the package threads
+        # ``store=``, so the ``db=`` tier is only taken when a caller names the
+        # database OUTRIGHT -- which nothing did while a database was a file
+        # beside the store, and which every ``--db``/``db=`` caller does now.
+        # It surfaced the moment a test passed a real DSN as ``db=``.
+        #
+        # The guard is not what saved us here: ``reject_attempted_dsn`` fires on
+        # the ALREADY-MANGLED string, so the failure was loud rather than a
+        # phantom tree. Returning the target verbatim is what makes it work.
+        reject_attempted_dsn(db)
+        if backend_of(db) == BACKEND_POSTGRES:
+            return db
         return Path(db).expanduser()
     if store is not None:
-        from .._store_url import BACKEND_POSTGRES, backend_of, reject_attempted_dsn
-
         # A DSN IS NOT A CONTAINER PATH, and the tier below assumes it is one:
         # it takes ``store.parent``. Run that on a server URL and ``Path``
         # collapses the "//" into a RELATIVE directory that gets created on the

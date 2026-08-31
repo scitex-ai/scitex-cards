@@ -15,29 +15,50 @@ answers -- and ~90 containers open this store constantly, so "every connection"
 is the common path, not an edge case.
 """
 
-import sqlite3
-
 import pytest
 
+from scitex_cards import _db
+from scitex_cards._db import connect
 from scitex_cards._db_migrations import record_migration_provenance
 
-
-def _store() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
-    return conn
+_META = "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)"
 
 
-def _meta(conn: sqlite3.Connection) -> dict:
-    return dict(conn.execute("SELECT key, value FROM schema_meta").fetchall())
+@pytest.fixture
+def store(new_store):
+    """A throwaway store carrying nothing but ``schema_meta``.
+
+    BARE, not provisioned. ``record_migration_provenance`` is the unit under
+    test and it reads and writes exactly one table; a full store would also
+    carry the version-floor trigger, whose refusals belong to the tests at the
+    bottom of this file and would otherwise silently arbitrate these.
+    """
+    conn = connect(new_store("cards_provenance", bootstrap=False))
+    conn.execute(_META)
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+def _meta(conn) -> dict:
+    """``schema_meta`` as a plain dict, read BY COLUMN NAME.
+
+    ``dict(cursor.fetchall())`` was the old spelling, and it relied on each row
+    being a two-tuple. The store's rows are dict-shaped, so a pairwise ``dict()``
+    over them builds ``{"key": "value"}`` out of the COLUMN NAMES -- a dict of
+    exactly the right shape holding entirely the wrong thing, which is worse
+    than an error.
+    """
+    rows = conn.execute("SELECT key, value FROM schema_meta").fetchall()
+    return {row["key"]: row["value"] for row in rows}
 
 
 # === it must fire on a real upgrade =======================================
 
 
-def test_an_upgrade_is_recorded():
+def test_an_upgrade_is_recorded(store):
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     recorded = record_migration_provenance(conn, 5, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -46,10 +67,10 @@ def test_an_upgrade_is_recorded():
     assert recorded is True
 
 
-def test_the_record_names_the_version_that_did_it():
+def test_the_record_names_the_version_that_did_it(store):
     """The field whose absence forced me to infer the culprit from residue."""
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     record_migration_provenance(conn, 5, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -58,9 +79,9 @@ def test_the_record_names_the_version_that_did_it():
     assert _meta(conn)["schema_migrated_by"] == "0.24.0"
 
 
-def test_the_record_names_both_ends_of_the_move():
+def test_the_record_names_both_ends_of_the_move(store):
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     record_migration_provenance(conn, 5, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -70,9 +91,9 @@ def test_the_record_names_both_ends_of_the_move():
     assert (meta["schema_migrated_from"], meta["schema_migrated_to"]) == ("5", "7")
 
 
-def test_the_record_carries_a_timestamp():
+def test_the_record_carries_a_timestamp(store):
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     record_migration_provenance(conn, 5, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -81,10 +102,10 @@ def test_the_record_carries_a_timestamp():
     assert _meta(conn)["schema_migrated_at"] == "2026-07-30T09:00:00Z"
 
 
-def test_a_later_upgrade_replaces_the_earlier_record():
+def test_a_later_upgrade_replaces_the_earlier_record(store):
     """Last upgrade wins: the question is "who moved it to where it is now"."""
     # Arrange
-    conn = _store()
+    conn = store
     record_migration_provenance(conn, 5, 6, "2026-07-30T09:00:00Z", "0.23.0")
 
     # Act
@@ -97,11 +118,11 @@ def test_a_later_upgrade_replaces_the_earlier_record():
 # === it must NOT fire otherwise ===========================================
 
 
-def test_a_fresh_database_is_not_a_migration():
-    """user_version 0 means the file is being CREATED. Stamping it would put a
-    migration record on every new store and answer nobody's question."""
+def test_a_fresh_database_is_not_a_migration(store):
+    """A prior version of 0 means the store is being CREATED. Stamping it would
+    put a migration record on every new store and answer nobody's question."""
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     recorded = record_migration_provenance(conn, 0, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -110,9 +131,9 @@ def test_a_fresh_database_is_not_a_migration():
     assert recorded is False
 
 
-def test_a_fresh_database_gets_no_rows_at_all():
+def test_a_fresh_database_gets_no_rows_at_all(store):
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     record_migration_provenance(conn, 0, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -121,12 +142,12 @@ def test_a_fresh_database_gets_no_rows_at_all():
     assert _meta(conn) == {}
 
 
-def test_reopening_an_already_current_store_is_not_a_migration():
+def test_reopening_an_already_current_store_is_not_a_migration(store):
     """THE IMPORTANT NEGATIVE. ~90 containers open this store constantly and
     init_schema is idempotent by design. Recording those would rewrite the
     timestamp on every connection, destroying the only thing it is good for."""
     # Arrange
-    conn = _store()
+    conn = store
 
     # Act
     recorded = record_migration_provenance(conn, 7, 7, "2026-07-30T09:00:00Z", "0.24.0")
@@ -135,10 +156,10 @@ def test_reopening_an_already_current_store_is_not_a_migration():
     assert recorded is False
 
 
-def test_reopening_does_not_overwrite_an_existing_record():
+def test_reopening_does_not_overwrite_an_existing_record(store):
     """The earlier upgrade's stamp must survive every subsequent connection."""
     # Arrange
-    conn = _store()
+    conn = store
     record_migration_provenance(conn, 5, 7, "2026-07-30T09:00:00Z", "0.24.0")
 
     # Act
@@ -151,98 +172,87 @@ def test_reopening_does_not_overwrite_an_existing_record():
 # === end to end through init_schema ======================================
 
 
-def test_init_schema_stamps_a_real_upgrade(tmp_path):
-    """Through the production entry point, on a file that starts at an old
-    version -- so the wiring in _db.py is exercised, not just the helper.
+def _v5_shaped(new_store, prefix: str):
+    """A store that is GENUINELY v5 -- artifacts removed, not just relabelled.
 
-    THE FIXTURE REMOVES THE ARTIFACTS, not just the labels, and that distinction
+    THE FIXTURE REMOVES THE ARTIFACTS, NOT JUST THE LABELS, and that distinction
     is the whole point. It used to fake an old store by running init_schema and
-    then writing ``PRAGMA user_version=5`` over the result -- a PHYSICALLY v7
-    file wearing a v5 label. That is not an old store; it is exactly the
-    corruption observed on the live store on 2026-07-31, where the stamp read 5
-    while ``tasks.revision`` and ``tasks_bump_revision`` were both present, and
-    a current client re-migrated it every ~45s forever.
+    then writing a v5 stamp over the result -- a physically v7 store wearing a v5
+    label. That is not an old store; it is exactly the corruption observed on the
+    live store on 2026-07-31, where the stamp read 5 while ``tasks.revision`` and
+    ``tasks_bump_revision`` were both present, and a current client re-migrated
+    it every ~45s forever. A fixture that cannot tell the case it is named for
+    from the bug we defend against has to get one of them wrong.
 
-    So the old fixture could not tell the case it is named for from the bug we
-    now defend against, and a test that cannot distinguish those two has to
-    fail one of them. Dropping v6's column and v7's trigger makes the store
-    genuinely v5, and the assertion then means what its name says.
+    THE STAMP IS LOWERED BY DELETE + INSERT, and the spelling is deliberate:
+    ``schema_meta_version_floor`` refuses an UPDATE that lowers
+    ``schema_version``. A store genuinely stamped 5 PREDATES that guard, so
+    rebuilding one must not go through the path the guard sits on.
     """
-    # Arrange
-    from scitex_cards import _db
-
-    db_path = tmp_path / "old.db"
-    conn = sqlite3.connect(db_path)
+    conn = connect(new_store(prefix, bootstrap=False))
     _db.init_schema(conn)
-    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision")
+    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision ON tasks")
     conn.execute("ALTER TABLE tasks DROP COLUMN revision")
-    conn.execute("PRAGMA user_version=5")
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version','5') "
-        "ON CONFLICT(key) DO UPDATE SET value='5'"
-    )
+    conn.execute("DELETE FROM schema_meta WHERE key='schema_version'")
+    conn.execute("INSERT INTO schema_meta(key, value) VALUES('schema_version','5')")
     conn.commit()
+    return conn
+
+
+def test_init_schema_stamps_a_real_upgrade(new_store):
+    """Through the production entry point, on a store that starts at an old
+    version -- so the wiring in ``_db`` is exercised, not just the helper."""
+    # Arrange
+    conn = _v5_shaped(new_store, "cards_prov_v5")
 
     # Act
     _db.init_schema(conn)
 
     # Assert
-    assert _meta(conn).get("schema_migrated_from") == "5"
+    try:
+        assert _meta(conn).get("schema_migrated_from") == "5"
+    finally:
+        conn.close()
 
 
-def test_init_schema_leaves_a_fresh_database_unstamped(tmp_path):
+def test_init_schema_leaves_a_fresh_database_unstamped(new_store):
     """The common path for a new store must stay clean."""
     # Arrange
-    from scitex_cards import _db
-
-    conn = sqlite3.connect(tmp_path / "new.db")
+    conn = connect(new_store("cards_prov_fresh", bootstrap=False))
 
     # Act
     _db.init_schema(conn)
 
     # Assert
-    assert "schema_migrated_from" not in _meta(conn)
+    try:
+        assert "schema_migrated_from" not in _meta(conn)
+    finally:
+        conn.close()
 
 
 # === the stamp is a floor ==================================================
 #
 # Measured on the live store 2026-07-30: four read-only connections seconds
-# apart reported user_version 6, 6, 6, then 5 -- while the revision column and
+# apart reported the version as 6, 6, 6, then 5 -- while the revision column and
 # bump trigger were present in ALL of them. An older client had stamped a newer
 # store as older. These tests pin the direction.
+#
+# THERE USED TO BE TWO OF THEM, one per stamp: ``PRAGMA user_version`` and the
+# ``schema_meta`` row, "because both stamps must agree, or readers pick whichever
+# suits them". The engine that carried the second stamp is gone --
+# ``_read_stamps`` returns ``stamped_pragma=None`` here by design -- so the two
+# tests became one test written twice, and the duplicate is deleted rather than
+# converted into a second copy of its twin.
 
 
-def test_an_older_client_cannot_lower_the_stamp(tmp_path):
+def test_an_older_client_cannot_lower_the_stamp(new_store):
     """THE REGRESSION TEST. A v5-era client opening a v7 store must not say 5."""
     # Arrange
-    from scitex_cards import _db
-
-    conn = sqlite3.connect(tmp_path / "current.db")
+    conn = connect(new_store("cards_prov_high", bootstrap=False))
     _db.init_schema(conn)
     high = _db.SCHEMA_VERSION + 3
-    conn.execute(f"PRAGMA user_version={high}")
-    conn.commit()
-
-    # Act
-    _db.init_schema(conn)
-
-    # Assert
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == high
-
-
-def test_the_schema_meta_row_also_holds_the_floor(tmp_path):
-    """Both stamps must agree, or readers pick whichever suits them."""
-    # Arrange
-    from scitex_cards import _db
-
-    conn = sqlite3.connect(tmp_path / "current.db")
-    _db.init_schema(conn)
-    high = _db.SCHEMA_VERSION + 3
-    conn.execute(f"PRAGMA user_version={high}")
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(high),),
+        "UPDATE schema_meta SET value=? WHERE key='schema_version'", (str(high),)
     )
     conn.commit()
 
@@ -250,14 +260,17 @@ def test_the_schema_meta_row_also_holds_the_floor(tmp_path):
     _db.init_schema(conn)
 
     # Assert
-    assert _meta(conn)["schema_version"] == str(high)
+    try:
+        assert _meta(conn)["schema_version"] == str(high)
+    finally:
+        conn.close()
 
 
-def test_the_comparison_is_numeric_not_lexicographic(tmp_path):
+def test_the_comparison_is_numeric_not_lexicographic(new_store):
     """'10' < '9' as TEXT. A double-digit stamp must not be lowered to 9.
 
     THE CLIENT VERSION IS PASSED, NOT PATCHED. This used to stamp the store 10
-    and re-run ``init_schema``, asserting the stamp stayed 10 — which exercised
+    and re-run ``init_schema``, asserting the stamp stayed 10 -- which exercised
     the digit boundary only while ``SCHEMA_VERSION`` happened to BE 10. When it
     became 11 the correct behaviour was to raise the stamp to 11, so the test
     failed for pinning a constant instead of a rule, and the property in its own
@@ -269,21 +282,19 @@ def test_the_comparison_is_numeric_not_lexicographic(tmp_path):
     doing so at every future schema version.
 
     THE STORE IS BUILT BARE RATHER THAN THROUGH ``init_schema``, and that is not
-    a shortcut. ``init_schema`` installs
-    ``schema_meta_version_never_regresses``, whose entire job is to refuse a
-    lowered stamp — so on a store it built, the Arrange step could no longer
-    write '10' at all once ``SCHEMA_VERSION`` passed 10, and the test read back
-    the current version having silently never set up its own precondition. The
-    comparison under test is the one inside this function's SQL ``CASE``; the
-    trigger is a separate guard with its own tests.
+    a shortcut. ``init_schema`` installs the version-floor trigger, whose entire
+    job is to refuse a lowered stamp -- so on a store it built, the Arrange step
+    could no longer write '10' at all once ``SCHEMA_VERSION`` passed 10, and the
+    test read back the current version having silently never set up its own
+    precondition. The comparison under test is the one inside this function's
+    SQL ``CASE``; the trigger is a separate guard with its own tests.
     """
     # Arrange
     from scitex_cards._schema_shape import stamp_schema_version
 
-    conn = sqlite3.connect(tmp_path / "bare.db")
-    conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn = connect(new_store("cards_prov_bare", bootstrap=False))
+    conn.execute(_META)
     conn.execute("INSERT INTO schema_meta(key, value) VALUES('schema_version','10')")
-    conn.execute("PRAGMA user_version=10")
     conn.commit()
 
     # Act: a SINGLE-DIGIT client stamps a DOUBLE-DIGIT store. `'10' < '9'` as
@@ -292,24 +303,25 @@ def test_the_comparison_is_numeric_not_lexicographic(tmp_path):
     conn.commit()
 
     # Assert
-    assert _meta(conn)["schema_version"] == "10"
+    try:
+        assert _meta(conn)["schema_version"] == "10"
+    finally:
+        conn.close()
 
 
-def test_a_current_client_still_raises_an_old_stamp(tmp_path):
+def test_a_current_client_still_raises_an_old_stamp(new_store):
     """The floor must not block legitimate forward movement."""
     # Arrange
-    from scitex_cards import _db
-
-    conn = sqlite3.connect(tmp_path / "old.db")
-    _db.init_schema(conn)
-    conn.execute("PRAGMA user_version=5")
-    conn.commit()
+    conn = _v5_shaped(new_store, "cards_prov_forward")
 
     # Act
     _db.init_schema(conn)
 
     # Assert
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == _db.SCHEMA_VERSION
+    try:
+        assert _meta(conn)["schema_version"] == str(_db.SCHEMA_VERSION)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

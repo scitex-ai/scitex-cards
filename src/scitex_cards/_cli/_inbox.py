@@ -10,13 +10,13 @@ Verbs:
     nothing else must have a way to give one; otherwise the hook would be
     blocking where the actor cannot remediate.
 
-``inbox migrate-to-sqlite`` and ``inbox info`` were removed 2026-08-28: SQLite
-is RETIRED as an inbox backend (operator ruling 2026-08-23) and the module
-they drove, :mod:`scitex_cards._inbox_sqlite`, was deleted. The notification
-rail is PostgreSQL-only now; there is nothing left to migrate INTO SQLite.
+The two backend-lifecycle verbs this group used to carry were removed
+2026-08-28 along with the per-host inbox file they drove (operator ruling
+2026-08-23). The notification rail lives in the store; there is nothing left
+for them to move it to.
 
 Attached to the root group via :func:`register`, matching the sibling
-``_index`` / ``_migration_cli`` modules.
+``_migration_cli`` module.
 """
 
 from __future__ import annotations

@@ -91,7 +91,7 @@ def _user_ids(db: Path) -> set[str]:
 
 
 @pytest.fixture()
-def store_with_one_unreadable_user(tmp_path: Path):
+def store_with_one_unreadable_user(tmp_path: Path, new_store):
     """A store holding healthy rows plus ONE user record that cannot rebuild.
 
     Nulling `record_json` is enough here, unlike the notifications case: a
@@ -110,7 +110,7 @@ def store_with_one_unreadable_user(tmp_path: Path):
         ],
         "inboxes": {},
     }
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc(doc, db)
 
     conn = connect(db)

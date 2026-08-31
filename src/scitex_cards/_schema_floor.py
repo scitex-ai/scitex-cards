@@ -50,10 +50,10 @@ SCHEMA_VERSION_FLOOR_TRIGGER = "schema_meta_version_never_regresses"
 # across _db.py, _db_bootstrap.py and the installed 0.18.0 client), and the
 # gap is covered by a test so a future one cannot open it silently.
 #
-# Re-entrancy: the inner UPDATE cannot loop. With the SQLite default
-# (recursive_triggers OFF) it does not re-fire at all; with it ON it re-fires
-# once with NEW=high and OLD=low, where the WHEN clause is false. Safe under
-# both settings, and both are tested rather than assumed from the default.
+# Re-entrancy: the inner UPDATE cannot loop. Without recursive triggers it does
+# not re-fire at all; with them it re-fires once with NEW=high and OLD=low,
+# where the WHEN clause is false. Safe either way, and both are tested rather
+# than assumed from a default.
 #
 # IT ALSO RECORDS THE ATTEMPT, and that half is not decoration.
 #
@@ -68,7 +68,7 @@ SCHEMA_VERSION_FLOOR_TRIGGER = "schema_meta_version_never_regresses"
 #
 # So the trigger writes what it can see: how many downgrades were refused,
 # when the last one was, and what value was attempted. A trigger cannot name
-# the process -- SQLite has no view of the caller -- but a count and a
+# the process -- a trigger has no view of the caller -- but a count and a
 # timestamp turn "something invisible is happening" into a signal that can be
 # correlated against process activity, which is exactly what was missing
 # while three wrong hypotheses were being formed.
@@ -134,12 +134,28 @@ def downgrade_report(conn) -> DowngradeReport:
     """Read the refusal counters the floor trigger maintains. Read-only."""
     if not _has_table(conn, "schema_meta"):
         return DowngradeReport(refused=0)
-    rows = dict(
-        conn.execute(
+    # BY COLUMN NAME, NOT BY UNPACKING THE ROW.
+    #
+    # This read `dict(cursor.fetchall())`, which relied on each row being a
+    # two-tuple. This driver's rows are dict-shaped, and iterating a dict yields
+    # its KEYS -- so `dict([{"key": k, "value": v}, ...])` builds the literal
+    # mapping `{"key": "value"}`. A dict of exactly the right SHAPE holding
+    # entirely the wrong thing: every `.get()` below then missed, and this
+    # function reported refused=0 / last_at="" / last_attempt="" on every store,
+    # forever, without raising.
+    #
+    # THAT IS THE ONE DIRECTION THIS FUNCTION MUST NOT FAIL IN. It exists
+    # because the 2026-07-31 downgrade was "the one event with no audit trail at
+    # all", and it was answering "no downgrade has ever been refused" while the
+    # trigger beside it was refusing them. The counters were being WRITTEN
+    # correctly the whole time; only the reader was blind.
+    rows = {
+        row["key"]: row["value"]
+        for row in conn.execute(
             "SELECT key, value FROM schema_meta WHERE key IN (?, ?, ?)",
             SCHEMA_VERSION_DOWNGRADE_KEYS,
         ).fetchall()
-    )
+    }
     try:
         refused = int(rows.get("schema_version_downgrades_refused", 0) or 0)
     except (TypeError, ValueError):
@@ -181,9 +197,9 @@ def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
     to speak for a store ~90 processes share.
     """
     stamp = max(prior_version, schema_version)
-    # SQLite ONLY. PostgreSQL has no `user_version` and rejects PRAGMA outright
-    # (`syntax error at or near "PRAGMA"`, measured on the live server), so on
-    # that backend the schema_meta upsert below is the WHOLE stamp -- which is
+    # NOT THE STORE'S STAMP. PostgreSQL has no `user_version` and rejects PRAGMA
+    # outright (`syntax error at or near "PRAGMA"`, measured on the live
+    # server), so the schema_meta upsert below is the WHOLE stamp -- which is
     # the direction this function's own docstring argues for anyway: the row is
     # trigger-protected and the PRAGMA structurally cannot be.
     if not _is_postgres(conn):
@@ -195,12 +211,11 @@ def stamp_schema_version(conn, prior_version: int, schema_version: int) -> None:
         # raised it between our PRAGMA read and this statement, and CAST makes
         # the comparison numeric rather than lexicographic ('10' < '9' as text).
         #
-        # SPELT AS A CASE RATHER THAN MAX(a, b). SQLite's two-argument MAX is a
-        # scalar; PostgreSQL's MAX is an AGGREGATE ONLY, and the two-argument
-        # call is not a subtle behaviour difference there but a hard
-        # `function max(integer, integer) does not exist`. GREATEST() is the
-        # PostgreSQL spelling and SQLite does not have it, so neither engine's
-        # native form is portable -- but CASE is, and it is standard SQL.
+        # SPELT AS A CASE RATHER THAN MAX(a, b). PostgreSQL's MAX is an
+        # AGGREGATE ONLY, so a two-argument call is not a subtle behaviour
+        # difference but a hard `function max(integer, integer) does not exist`.
+        # GREATEST() is the PostgreSQL spelling and is not portable either --
+        # but CASE is, and it is standard SQL.
         # Verified on both: max(7,5)=7, max(5,7)=7, max(10,9)=10.
         "  CAST(CASE WHEN CAST(schema_meta.value AS INTEGER) "
         "                 > CAST(excluded.value AS INTEGER) "

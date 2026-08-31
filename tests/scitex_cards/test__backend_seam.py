@@ -37,11 +37,17 @@ from scitex_cards._currency import reset_currency_cache, warn_if_stale_once
 def store(env):
     env.set("SCITEX_CARDS_AGENT_ID", "seam-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
-    # The database is the store; the conftest pins + bootstraps an empty canonical
-    # DB per test. Return the pinned STORE IDENTITY path (== resolve_tasks_path
-    # (None)), NOT a tmp yaml: a write stamped with a tmp path would fail the
-    # next read's stamp check (THE STORE-PATH RULE).
-    return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    # The database IS the store, so return the DATABASE the conftest pinned and
+    # bootstrapped for this test — not `$SCITEX_CARDS_TASKS_YAML_SHARED`, which
+    # still holds a `tasks.yaml` PATH. Returning the yaml worked while a store
+    # had a sibling `cards.db`; it now sends the DM path down the legacy
+    # sibling resolution and lands on a filename the door refuses.
+    #
+    # The STORE-PATH RULE the old comment invoked is unchanged and is the
+    # reason this returns the PINNED target rather than a fresh throwaway: a
+    # write stamped with a different store identity fails the next read's stamp
+    # check.
+    return os.environ["SCITEX_CARDS_DB"]
 
 
 def _add(backend, store_path, cid, title, assignee):

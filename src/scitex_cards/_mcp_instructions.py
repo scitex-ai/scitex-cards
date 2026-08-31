@@ -60,7 +60,7 @@ from __future__ import annotations
 #: Agents read this string at session start and act on it, so it must describe
 #: the store as it actually is. IT MUST NOT NAME A BACKEND OR A DEFAULT PATH.
 #:
-#: It used to say "the canonical store is the SQLite database at
+#: It used to say "the canonical store is the database file at
 #: $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db)". After the PostgreSQL
 #: cutover that sentence was FALSE in both halves at once: the backend is
 #: postgres on this fleet, and ``~/.scitex/cards/cards.db`` is the abandoned
@@ -77,8 +77,8 @@ from __future__ import annotations
 #: So the sentence now names only the QUESTION and the verb that answers it.
 #: ``resolve_store`` reports the resolved target and its backend; anything this
 #: string asserted about either would be a second thing to keep in step, and
-#: this is the second time it has fallen out of step (YAML -> SQLite, then
-#: SQLite -> PostgreSQL).
+#: this is the second time it has fallen out of step (YAML -> a local
+#: database, then that -> PostgreSQL).
 _STORE_LINE = (
     "The store is whatever $SCITEX_CARDS_DB resolves to, and that resolved "
     "target is the SOLE store identity. Do NOT assume a backend or a default "

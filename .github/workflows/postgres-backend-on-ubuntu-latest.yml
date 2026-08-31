@@ -74,7 +74,13 @@ jobs:
       - name: Install the package with the postgres extra
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[postgres]" pytest
+          # scitex-dev IS REQUIRED NOW, and its absence is not a soft one:
+          # tests/conftest.py imports `scitex_dev.store.testing` at import
+          # time for the ephemeral-schema affordance every test's store is
+          # carved from. Without it the harness has no store to pin and
+          # refuses (correctly) rather than falling back to the live board,
+          # so the whole leg errors with a message about scitex-dev.
+          python -m pip install -e ".[postgres]" pytest "scitex-dev>=0.57.0"
 
       - name: Confirm psycopg is importable
         # A missing driver would otherwise surface as a fixture failure whose
@@ -82,34 +88,38 @@ jobs:
         # honest about what actually broke.
         run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
 
-      - name: Discover every Postgres-dependent test file
-        id: discover
-        # THE EMPTY-SET REFUSAL IS THE LOAD-BEARING HALF. If the marker were
-        # renamed, the search would select nothing, pytest would receive no
-        # arguments, and the leg would pass having tested nothing — the same
-        # "green because it never ran" failure this job exists to remove, one
-        # level further up again.
+      - name: Confirm the suite collects, and refuse a run over zero tests
+        # THE EMPTY-SET REFUSAL IS STILL THE LOAD-BEARING HALF; what it guards
+        # changed. This step used to SELECT the "Postgres-dependent" files by
+        # grepping for a marker, because most of the suite did not touch a
+        # server. Every test touches one now -- the harness gives each its own
+        # throwaway schema -- so a marker-selected subset is not a subset of
+        # anything any more, and the honest scope is the whole suite.
         #
-        # find|xargs rather than a recursive grep: identical result, and it keeps
-        # the searched file set explicit.
+        # The threshold is deliberately coarse. Pinning an exact count is the
+        # mistake the assertion further down already records making: a number
+        # calibrated to one file's total goes stale the moment a test is added.
+        # "Thousands, not a handful" is the property that stays true.
         run: |
           set -euo pipefail
-          files=$(find tests -name '*.py' -print0 \
-                    | xargs -0 grep -l 'SCITEX_CARDS_TEST_PG_DSN' \
-                    | sort | tr '\n' ' ' || true)
-          if [ -z "$files" ]; then
-            echo "::error::no test file references SCITEX_CARDS_TEST_PG_DSN -- the marker was renamed or the tests moved. Refusing to run zero Postgres tests and report success."
+          n=$(python -m pytest tests --collect-only -q 2>/dev/null | tail -1 \
+                | grep -oE '^[0-9]+' || true)
+          if [ -z "$n" ] || [ "$n" -lt 1000 ]; then
+            echo "::error::the suite collected ${n:-0} tests -- expected thousands. Collection is broken, and a run over a truncated set reports success for a suite that never ran."
             exit 1
           fi
-          echo "discovered:"
-          for f in $files; do echo "  $f"; done
-          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "collected=$n"
 
       - name: Run the Postgres-backed tests
         env:
-          # Declaring the DSN is what makes an unreachable server a FAILURE
-          # rather than a skip. See the pg_conn fixture.
-          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+          # THE VARIABLE THE HARNESS ACTUALLY READS. `SCITEX_CARDS_TEST_PG_DSN`
+          # was this package's own private marker and is gone: the fixtures that
+          # keyed on it skipped whenever it was unset, which was always, so they
+          # reported green without opening a connection. The store now comes
+          # from `scitex_dev.store.testing.writable_dsn()`, whose first route is
+          # $SCITEX_STORE_DSN -- and it probes `pg_is_in_recovery()` rather than
+          # assuming, so a standby is rejected instead of silently refusing DDL.
+          SCITEX_STORE_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
         run: |
           # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
           # pipeline only the LAST command's status survives. Without this the
@@ -119,7 +129,13 @@ jobs:
           # credit to scitex-hpc, who measured it on three commands piped to
           # `head` the same day this was written.)
           set -o pipefail
-          python -m pytest ${{ steps.discover.outputs.files }} -v -rs | tee result.txt
+          # NOT `-x`. The repo's addopts carry exitfirst, which is right for a
+          # developer loop and wrong for a MEASURING gate: it stops at the
+          # first failure, so the log reports a number describing where it gave
+          # up rather than the state of the suite. Overridden here so this leg
+          # answers "how many pass" instead of "how far did it get".
+          python -m pytest tests -q -rs \
+            --override-ini="addopts=-p no:anyio" | tee result.txt
 
       - name: Assert the Postgres tests actually exercised Postgres
         # The guard on the guard. A leg that is green because every Postgres
@@ -139,7 +155,12 @@ jobs:
           # A declared-but-broken DSN now FAILS in the fixture, so these strings
           # should be impossible here. Checking anyway: if the fixture ever
           # regresses to skipping, this leg must not stay green.
-          for marker in ("no live Postgres", "psycopg not installed"):
+          for marker in (
+              "No writable PostgreSQL is available",
+              "scitex_dev.store.testing is not importable",
+              "no live Postgres",
+              "psycopg not installed",
+          ):
               if marker in text:
                   print(f"ERROR: a test skipped for want of Postgres: {marker!r}")
                   sys.exit(1)

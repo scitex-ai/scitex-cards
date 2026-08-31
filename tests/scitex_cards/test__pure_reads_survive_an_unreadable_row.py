@@ -58,7 +58,7 @@ def _user_ids(db: Path) -> set[str]:
 
 
 @pytest.fixture()
-def store_with_one_unreadable_user(tmp_path: Path):
+def store_with_one_unreadable_user(tmp_path: Path, new_store):
     """Two healthy cards, two users, one of which cannot be rebuilt.
 
     `users` has no rebuild rule (`_db_export._REBUILDERS` covers only
@@ -76,7 +76,7 @@ def store_with_one_unreadable_user(tmp_path: Path):
         ],
         "inboxes": {},
     }
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc(doc, db)
 
     conn = connect(db)

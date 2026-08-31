@@ -123,13 +123,27 @@ def test_the_card_store_variable_is_still_pinned_too():
     what a correct one looks like. This asserts the pin that has been in place
     since 2026-07 is still in place, so an empty reading above is evidence
     about ``SCITEX_STORE_DSN`` rather than about the harness having stopped.
+
+    THE ASSERTION IS NO LONGER A ``cards.db`` SUFFIX. That suffix described a
+    scratch FILE, and there is one storage engine now: a filename names no
+    store at all, and the source doors refuse it. The per-test pin is a
+    schema-scoped DSN, so the control checks the property that actually makes
+    it safe — the same one asserted of ``$SCITEX_STORE_DSN`` above, for the
+    same reason. ``public`` is off the ``search_path``, so an unqualified read
+    cannot resolve the live board's tables; it fails to find the relation
+    rather than quietly returning the fleet's cards.
+
+    Still a control rather than a fourth copy of the same test: it reads a
+    DIFFERENT variable, pinned by a DIFFERENT mechanism (the per-test autouse
+    fixture, not the import-time session pin), so a gutted conftest cannot
+    make both read correctly by accident.
     """
     # Arrange
-    expected_suffix = "cards.db"
+    expected_marker = "search_path"
     # Act
     observed = os.environ.get("SCITEX_CARDS_DB", "")
     # Assert
-    assert observed.endswith(expected_suffix)
+    assert expected_marker in observed
 
 
 # EOF

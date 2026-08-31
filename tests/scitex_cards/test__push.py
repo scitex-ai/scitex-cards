@@ -49,7 +49,7 @@ from scitex_cards._users import register_user
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_resolution(tmp_path):
+def _hermetic_resolution(tmp_path, new_store):
     """Isolate ``turn_url_for`` from the test HOST's live resolution sources.
 
     ``turn_url_for`` resolves through scitex-cards's OWN user registry (step
@@ -65,7 +65,7 @@ def _hermetic_resolution(tmp_path):
     """
     from scitex_cards._db import connect, init_schema
 
-    store = tmp_path / "_empty_push_store.db"
+    store = new_store(prefix="empty_push_store")
     conn = connect(str(store))
     try:
         init_schema(conn)

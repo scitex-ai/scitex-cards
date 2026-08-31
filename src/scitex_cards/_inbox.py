@@ -18,8 +18,9 @@ Storage
 This module is the (non-default, break-glass) file-backed inbox
 implementation, selected only via ``SCITEX_CARDS_INBOX_BACKEND=yaml``
 (the default follows the store — see :mod:`scitex_cards._inbox_backend`;
-production is PostgreSQL, SQLite is RETIRED as a backend, operator ruling
-2026-08-23). Inboxes live in their own ``inboxes.json`` SIDECAR next to the task
+production is PostgreSQL, the per-host rail is RETIRED as a backend, operator
+ruling 2026-08-23). Inboxes live in their own ``inboxes.json`` SIDECAR next to
+the task
 store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
 ..., "event_type": ..., "card_id": ..., "body": ..., "actor": ...,
 "ts": ..., "seen": bool}, ...]}}``. A pre-existing legacy embedded
@@ -57,8 +58,8 @@ _INBOXES_KEY = "inboxes"
 #: backend, its own ``inboxes.json`` sidecar — see the module docstring) is
 #: selected ONLY by ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a
 #: historical name for "not the store"; the on-disk format itself is JSON —
-#: see the module docstring). SQLite is RETIRED as a backend (operator ruling
-#: 2026-08-23): selecting it explicitly, or resolving to it by default, now
+#: see the module docstring). The per-host rail is RETIRED as a backend
+#: (operator ruling 2026-08-23): selecting it, or resolving to it by default, now
 #: raises :class:`~scitex_cards._store_errors.StoreUnavailableError`. There is
 #: NO silent fallback: when the configured backend cannot be reached, the
 #: error PROPAGATES (constitution: fail fast, fail loud).
