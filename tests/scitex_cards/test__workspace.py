@@ -213,8 +213,24 @@ def test_the_resolved_store_is_scoped_to_its_own_schema(workspace_root):
     store = resolve_workspace_store(identity)
 
     # Assert
-    assert store.startswith(workspace_root)
     assert "search_path%3Dws_" in store
+
+
+def test_the_resolved_store_stays_on_the_configured_cluster(workspace_root):
+    """The other half of containment: the right schema on the RIGHT server.
+
+    Scoping to a tenant schema means nothing if the handle points at a
+    different cluster, which is exactly what a stale or half-applied
+    configuration produces.
+    """
+    # Arrange
+    identity = "acme"
+
+    # Act
+    store = resolve_workspace_store(identity)
+
+    # Assert
+    assert store.startswith(workspace_root)
 
 
 if __name__ == "__main__":
