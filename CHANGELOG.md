@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-31
+
 ### A behind-client no longer re-runs the DDL it cannot possibly need
 
 The 2026-08-02 "BEHIND, not DIFFERENT" fix was one line short. It changed the
