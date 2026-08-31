@@ -18,6 +18,8 @@ import contextlib
 import os
 
 import pytest
+
+from scitex_cards._store_errors import StoreNotProvisionedError
 from conftest import seed_db_from_doc
 
 from scitex_cards._model import (
@@ -118,16 +120,41 @@ class TestOptimisticConcurrency:
         # Assert — the token is opt-in; existing callers keep working.
         assert load_tasks(store)[0]["priority"] == 3
 
-    def test_generation_of_missing_store(self, tmp_path):
-        # Arrange — the store IS the canonical DB now, and store_generation
-        # hashes THAT (ignoring the path arg), so the "store absent" case the
-        # sentinel is for is a missing DB. Remove it; the pinned store path
-        # never was a real file once the store became a database.
-        os.remove(os.environ["SCITEX_CARDS_DB"])
+    def test_generation_of_missing_store(self, env, new_store):
+        # Arrange — the store IS the canonical DB, and store_generation hashes
+        # THAT (ignoring the path arg), so the "store absent" case the sentinel
+        # is for is a store with nothing in it. `os.remove` on $SCITEX_CARDS_DB
+        # was how that used to be arranged; the variable holds a DSN now, so
+        # removing it raised FileNotFoundError before the assertion ran. The
+        # comment above it already said the pinned value "never was a real file
+        # once the store became a database" — the arrangement just had not
+        # caught up.
+        #
+        # `bootstrap=False` is the modern absent store: reachable, but carrying
+        # no schema, which is what a fresh deployment looks like.
+        #
+        # AND THE ANSWER INVERTED. This asserted "a stable sentinel, not a
+        # raise". An unprovisioned store now RAISES, on purpose:
+        #
+        #     StoreNotProvisionedError: the PostgreSQL store ... has no `tasks`
+        #     table. REFUSING to continue: the exporter answers a schemaless
+        #     database with an empty document, and that value is written back
+        #     as the WHOLE store.
+        #
+        # That is the same class of bug the sentinel was protecting against,
+        # caught one layer earlier and more loudly. A quiet token for an absent
+        # store is exactly what let an empty document look like a legitimate
+        # generation. So the test keeps its subject — what happens when the
+        # store is not there — and follows the behaviour to its refusal.
+        env.set("SCITEX_CARDS_DB", new_store("concurrency_absent", bootstrap=False))
+
         # Act
-        generation = store_generation(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
-        # Assert — a stable sentinel, not a raise.
-        assert generation == "absent"
+        def read_the_generation():
+            return store_generation(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
+
+        # Assert
+        with pytest.raises(StoreNotProvisionedError):
+            read_the_generation()
 
 
 class TestEditTasks:
