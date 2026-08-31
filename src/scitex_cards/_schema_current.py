@@ -69,6 +69,44 @@ REQUIRED_GUARD_TRIGGERS: frozenset[str] = frozenset(
 )
 
 
+
+def _behind_explains(shape: Any, schema_version: int) -> bool:
+    """Is this disagreement fully explained by the client being out of date?
+
+    True only for a STAMP_IS_HIGH store whose EVERY stamp sits above the version
+    this client would assert. Then the store is unambiguously ahead, this
+    client's DDL knows no rung that could change it, and running it can only
+    take ShareRowExclusiveLock on ``pg_proc`` for nothing.
+
+    IT DOES NOT WEAKEN THE GUARANTEE, because the guarantee is not carried here.
+    What must never be skipped without proof is the GUARD TRIGGERS, and those are
+    checked separately against the catalogue further down on every open. A client
+    that is merely old, against a store that is fully guarded, is the one case
+    where asserting the schema is pure contention.
+
+    EVERY OTHER DISAGREEMENT STILL REFUSES, and the boundaries are deliberate:
+
+    * STAMP_IS_LOW is a store whose rungs ran past its stamp. That IS the repair
+      the migration chain exists for, and it is not this.
+    * Stamps that disagree WITH EACH OTHER (``min`` below, not ``max``) leave one
+      of them at or under this client's version, so the store is not provably
+      ahead and the conservative branch is correct.
+    * A current or ahead client seeing STAMP_IS_HIGH is a genuine anomaly -- it
+      can read every rung it would assert, so a higher stamp is unexplained --
+      and keeps running the DDL.
+    """
+    from ._schema_shape import ShapeAgreement  # noqa: PLC0415 -- import cycle
+
+    if shape.agreement is not ShapeAgreement.STAMP_IS_HIGH:
+        return False
+    stamps = [
+        stamp
+        for stamp in (shape.stamped_meta, shape.stamped_pragma)
+        if stamp is not None
+    ]
+    return bool(stamps) and min(stamps) > schema_version
+
+
 def schema_already_current(conn: Any, shape: Any, schema_version: int) -> bool:
     """True only when the store provably needs no DDL from this client.
 
@@ -123,8 +161,28 @@ def schema_already_current(conn: Any, shape: Any, schema_version: int) -> bool:
         return False
     # The physical rungs and the stamp must tell the same story. A disagreement
     # is precisely the state the migration chain exists to repair, so it must
-    # never take the fast path.
-    if shape.agreement is not ShapeAgreement.AGREES:
+    # never take the fast path -- EXCEPT for the one disagreement that is not a
+    # repair situation at all, which is the same behind-client this function was
+    # already fixed once to let through.
+    #
+    # THE 2026-08-02 FIX WAS ONE LINE SHORT, measured on the live board
+    # 2026-08-31. That change made the version comparison `<` so a client BEHIND
+    # the store would stop re-running DDL it cannot possibly need. It works: the
+    # comparison above passes. Then this check rejected the very same client one
+    # line later, for the very same underlying reason, and the deadlocks
+    # continued:
+    #
+    #     deployed client SCHEMA_VERSION 12, observed 12, all 9 triggers present
+    #     shape.agreement -> STAMP_IS_HIGH  ->  False  ->  full DDL, every open
+    #
+    # STAMP_IS_HIGH IS THE NORMAL STATE FOR A BEHIND-CLIENT, not a symptom. Its
+    # physical-rung reader only knows the rungs its own version defines, so it
+    # can never observe more than that, while the stamp was written by a newer
+    # client. Every client the fleet has not yet upgraded therefore reports this
+    # disagreement forever, and the fleet always contains such clients.
+    if shape.agreement is not ShapeAgreement.AGREES and not _behind_explains(
+        shape, schema_version
+    ):
         return False
     try:
         present = trigger_names(conn)
