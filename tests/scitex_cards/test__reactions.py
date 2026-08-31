@@ -327,8 +327,19 @@ def test_next_action_removes_when_the_actor_already_reacted():
 # === isolation from the DM records =========================================
 
 
-def test_reacting_does_not_touch_the_message_record(store: Path):
+def test_reacting_does_not_touch_the_message_record(new_store):
     # Arrange
+    # A REAL STORE, for the same reason as its sibling below: this sends a DM,
+    # and `append_message` writes to the store itself, so the `tasks.yaml`
+    # pointer the rest of the file uses is refused at the door.
+    #
+    # It was passing before, which is worth naming rather than enjoying: the
+    # two DM tests are identical in shape and only one of them was red. This
+    # one's result depended on ambient state left by whatever ran before it in
+    # the same worker, so it was never really testing what it claims — it just
+    # happened to be arranged for. Giving it its own store removes the
+    # dependency along with the failure.
+    store = new_store("reactions_record")
     append_message("agent-x", "operator", "hello", store=store)
     before = get_thread("operator", "agent-x", store=store)
     _reactions.append_reaction_event(
@@ -345,10 +356,15 @@ def test_reacting_does_not_touch_the_message_record(store: Path):
     assert after == before
 
 
-def test_reacting_does_not_write_the_threads_sidecar(store: Path):
+def test_reacting_does_not_write_the_threads_sidecar(new_store):
     # Arrange
+    # A REAL STORE, not the yaml pointer the other tests here use. This is the
+    # only test in the file that sends a DM, and `append_message` writes to the
+    # store itself — handing it a `tasks.yaml` path made it refuse at the door
+    # (`UnrecognisedStoreTarget`) before the sidecar was ever consulted.
     from scitex_cards._threads import threads_path
 
+    store = new_store("reactions_sidecar")
     append_message("agent-x", "operator", "hello", store=store)
     threads_file = threads_path(store)
     before = threads_file.stat().st_mtime_ns
