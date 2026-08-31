@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from scitex_cards._db import resolve_db_path
+from scitex_cards._store_url import BACKEND_UNSUPPORTED
 from scitex_cards._store_target import (
     StoreTargetIsNotAPath,
     require_db_path,
@@ -171,8 +172,23 @@ class TestRequireDbPathRefusesRatherThanMangles:
         assert "resolve_store_target" in message
 
 
-class TestTheRetiredEngineIsUnaffected:
-    """The regression guard: the existing backend must not change."""
+class TestAPathTargetIsNoLongerABackend:
+    """What a filesystem path resolves to now, which is two different answers.
+
+    This class was `TestTheRetiredEngineIsUnaffected`, guarding that "the
+    existing backend must not change". It changed — that was the point of the
+    cutover — so the name was asserting the opposite of the truth.
+
+    The two answers are both correct and worth keeping apart:
+
+    * `require_db_path` STILL resolves a path to that path. It is the
+      filesystem-only resolver that snapshots, backups and the sidecar probes
+      use, and it was deliberately kept when the store moved.
+    * `resolve_store_backend` reports UNSUPPORTED. A path names no store, so
+      there is no backend to name — and reporting the retired engine here is
+      exactly the answer that used to let a path quietly become a working,
+      query-answering database.
+    """
 
     def test_a_path_target_still_resolves_to_that_path(self, store_env, tmp_path):
         # Arrange
@@ -185,7 +201,7 @@ class TestTheRetiredEngineIsUnaffected:
         # Assert
         assert resolved == Path(str(db))
 
-    def test_a_path_target_reports_the_retired_backend(self, store_env, tmp_path):
+    def test_a_path_target_reports_an_unsupported_backend(self, store_env, tmp_path):
         # Arrange
         store_env(str(tmp_path / "cards.db"))
 
@@ -193,7 +209,7 @@ class TestTheRetiredEngineIsUnaffected:
         backend = resolve_store_backend()
 
         # Assert
-        assert backend == ENGINE
+        assert backend == BACKEND_UNSUPPORTED
 
     def test_the_two_resolvers_agree_for_paths(self, store_env, tmp_path):
         # Arrange
