@@ -215,12 +215,23 @@ def _workspace_dsn(cluster: str, schema: str) -> str:
     setting = f"-csearch_path={schema}"
     parts = urlsplit(cluster)
     query = parse_qsl(parts.query, keep_blank_values=True)
-    merged = [
-        (key, f"{value} {setting}".strip() if key == "options" else value)
-        for key, value in query
-    ]
-    if not any(key == "options" for key, _ in query):
-        merged.append(("options", setting))
+
+    # ONLY THE LAST `options` IS REAL, and merging into all of them corrupts the
+    # DSN. libpq honours the last occurrence of a repeated URI parameter and
+    # discards the rest, so a cluster carrying two of them — which happens
+    # whenever a layer appends one naively instead of merging, as
+    # `ephemeral_schema` does — has exactly one that matters. Merging into every
+    # occurrence rewrote a parameter libpq was going to throw away, and the
+    # result no longer had the cluster DSN as a prefix. Measured in the full
+    # suite, where the pinned per-test store is already `?options=...` and the
+    # fixture appends a second one.
+    #
+    # So the earlier duplicates are dropped rather than edited, which is what
+    # libpq does with them anyway, and the setting is merged into the survivor.
+    others = [(k, v) for k, v in query if k != "options"]
+    existing = [v for k, v in query if k == "options"]
+    effective = f"{existing[-1]} {setting}".strip() if existing else setting
+    merged = others + [("options", effective)]
     # quote_via=quote, NOT the default quote_plus. libpq percent-decodes a URI
     # parameter but does NOT read "+" as a space, so the default encoding turns
     # a merged two-setting options string into one unparseable token -- which

@@ -14,6 +14,7 @@ below are the ones a denylist would have let through.
 """
 
 import os
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -230,7 +231,13 @@ def test_the_resolved_store_stays_on_the_configured_cluster(workspace_root):
     store = resolve_workspace_store(identity)
 
     # Assert
-    assert store.startswith(workspace_root)
+    # SERVER AND DATABASE, not a string prefix. `startswith` looked equivalent
+    # and was not: the cluster DSN can carry more than one `options` parameter,
+    # only the last of which libpq honours, so the resolved DSN legitimately
+    # differs from the cluster string before the schema is even appended.
+    # Comparing the parts that actually name the server says what this test
+    # means without depending on how the query string was assembled.
+    assert urlsplit(store)[:3] == urlsplit(workspace_root)[:3]
 
 
 if __name__ == "__main__":
