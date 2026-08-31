@@ -81,32 +81,53 @@ class TestAnUnsharedStoreHasNoBackend:
             select_the_backend()
 
 
-class TestExplicitRetiredEngineIsRefused:
-    """Selecting the retired engine by name is a config error now, not a legal choice."""
+class TestExplicitRetiredEngineIsNotHonoured:
+    """Naming the retired engine must not select it. It never has to raise.
 
-    def test_explicit_retired_engine_raises(self, env):
+    THESE TWO USED TO ASSERT A RAISE, AND THEY PASSED FOR THE WRONG REASON.
+    `backend()` does not reject an unrecognised name — by design, per its own
+    docstring, it IGNORES the name and follows the store. The old raise came
+    from the second half of that fallthrough: the ambient store was not a DSN,
+    so the store-following default had nothing to select and raised. The tests
+    were reading a store misconfiguration and calling it a refusal of the
+    engine name.
+
+    Once the suite pins a real Postgres store — which it must — the
+    misconfiguration is gone, the fallthrough succeeds, and the raise these
+    asserted simply does not happen. Nothing regressed; the scaffolding they
+    were leaning on was removed.
+
+    WHAT ACTUALLY MATTERS is the invariant underneath, and it is stronger than
+    a raise: whatever you put in that variable, the answer is never the retired
+    engine. That holds under a correct store, which is the configuration the
+    fleet actually runs, so it is worth asserting there rather than only in a
+    broken one.
+    """
+
+    def test_the_retired_engine_name_does_not_select_it(self, env):
         # Arrange
         env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
+        env.set("SCITEX_CARDS_DB", _PG_DSN)
 
         # Act
-        def select_the_backend():
-            return backend()
+        active = backend()
 
         # Assert
-        with pytest.raises(StoreUnavailableError):
-            select_the_backend()
+        assert active != ENGINE
 
-    def test_explicit_retired_engine_names_the_variable_that_caused_it(self, env):
+    def test_an_unrecognised_name_falls_through_to_the_store(self, env):
         # Arrange
+        # The positive half: not merely "not the retired engine" — which an
+        # exception would also satisfy — but the documented behaviour, that an
+        # unrecognised name is ignored and the store decides.
         env.set("SCITEX_CARDS_INBOX_BACKEND", ENGINE)
+        env.set("SCITEX_CARDS_DB", _PG_DSN)
 
         # Act
-        def select_the_backend():
-            return backend()
+        active = backend()
 
         # Assert
-        with pytest.raises(StoreUnavailableError, match="SCITEX_CARDS_INBOX_BACKEND"):
-            select_the_backend()
+        assert active == POSTGRES
 
 
 class TestExplicitOverridesStillWork:
