@@ -137,6 +137,35 @@ def _refusal(row, table: str, *, detail: str) -> ExportRefused:
     )
 
 
+def missing_payload_refusal(task_id, stamp) -> ExportRefused:
+    """The refusal for a ``tasks`` row with no ``card_json`` payload.
+
+    ONE WORDING, two readers: the whole-board export and the single-card read
+    (:mod:`scitex_cards._store_single_card`) both meet such a row, and the
+    diagnosis must not depend on which door found it. ``stamp`` is the row's
+    ``last_activity`` — the one fact that lets the reader tell an old row from
+    one a current writer just broke.
+    """
+    when = f" (last activity {stamp})" if stamp else ""
+    return ExportRefused(
+        f"task {task_id!r}{when} has no card_json payload, and a "
+        "card CANNOT be rebuilt from its columns: 22 distinct card "
+        "keys measured on the live store are not columns at all, "
+        "so a rebuild would drop them silently.\n"
+        "\n"
+        "Two different faults look like this:\n"
+        "  * an OLD row predating the payload columns — re-import "
+        "the database from an export written by a current "
+        "version;\n"
+        "  * a row a CURRENT writer stored without a payload — "
+        "that is a WRITER defect; report it with the id and "
+        "timestamp above.\n"
+        "\n"
+        "Nothing was deleted or modified. Inspect the row with:\n"
+        f"  SELECT * FROM tasks WHERE id = '{task_id}';"
+    )
+
+
 def _record(row, table: str, *, repair: bool = True) -> dict[str, Any]:
     """Rebuild one record from its verbatim payload + mutable-column overlay.
 
@@ -306,25 +335,10 @@ def export_doc(
             "SELECT id, card_json, last_activity FROM tasks ORDER BY row_order"
         ).fetchall():
             if r["card_json"] is None:
-                stamp = r["last_activity"]
-                when = f" (last activity {stamp})" if stamp else ""
-                _omit_or_raise(ExportRefused(
-                    f"task {r['id']!r}{when} has no card_json payload, and a "
-                    "card CANNOT be rebuilt from its columns: 22 distinct card "
-                    "keys measured on the live store are not columns at all, "
-                    "so a rebuild would drop them silently.\n"
-                    "\n"
-                    "Two different faults look like this:\n"
-                    "  * an OLD row predating the payload columns — re-import "
-                    "the database from an export written by a current "
-                    "version;\n"
-                    "  * a row a CURRENT writer stored without a payload — "
-                    "that is a WRITER defect; report it with the id and "
-                    "timestamp above.\n"
-                    "\n"
-                    "Nothing was deleted or modified. Inspect the row with:\n"
-                    f"  SELECT * FROM tasks WHERE id = '{r['id']}';"
-                ), on_unrebuildable, "tasks", r["id"])
+                _omit_or_raise(
+                    missing_payload_refusal(r["id"], r["last_activity"]),
+                    on_unrebuildable, "tasks", r["id"],
+                )
                 continue
             tasks.append(card_from_payload(r["card_json"]))
 
@@ -499,6 +513,6 @@ def export_json(
     }
 
 
-__all__ = ["ExportRefused", "export_doc", "export_json"]
+__all__ = ["ExportRefused", "export_doc", "export_json", "missing_payload_refusal"]
 
 # EOF

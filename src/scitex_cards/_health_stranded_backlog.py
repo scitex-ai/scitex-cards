@@ -102,7 +102,13 @@ def _unseen_in(path: Path) -> "int | None":
         if "inbox" not in names:
             return 0
         row = conn.execute("select count(*) from inbox where seen=0").fetchone()
-        return int(row[0]) if row else 0
+        # _sole_value, not row[0]: this cursor yields tuples today, and the
+        # package-wide guard refuses positional reads of fetched rows so a
+        # future connection with a name-only row type cannot crash a health
+        # check. The helper is right on every row shape.
+        from ._schema_probe import _sole_value
+
+        return int(_sole_value(row)) if row else 0
     except Exception:  # noqa: BLE001
         return None
     finally:

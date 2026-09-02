@@ -71,7 +71,19 @@ def _read_canonical_db_or_raise() -> dict:
         return _read_canonical_postgres(target)
 
     db_path = Path(resolve_db_path(None))
+    _sqlite_guards(db_path)
+    return _export_and_count_in_one_snapshot(db_path)
 
+
+def _sqlite_guards(db_path: Path) -> None:
+    """The three guards of the SQLite read door: exists, ownership, retired.
+
+    ONE DEFINITION, two callers: the whole-document read above and the
+    single-card door (:func:`_guarded_connection`), so a verb that reads one
+    row is refused exactly where a verb that reads the board is refused. The
+    body below is the guard block that used to sit inline in
+    :func:`_read_canonical_db_or_raise`, moved without a change in behaviour.
+    """
     # A MISSING DB IS NOT AN EMPTY STORE. `export_doc` answers a nonexistent
     # file with a perfectly well-formed ``{"tasks": []}``, which is why merely
     # type-checking the result does not help — that value is indistinguishable
@@ -126,12 +138,46 @@ def _read_canonical_db_or_raise() -> dict:
     # docstring already says not to recreate that asymmetry.
     _refuse_if_retired(db_path)
 
-    doc = _export_and_count_in_one_snapshot(db_path)
-    return doc
-
 
 def _read_canonical_postgres(target: str) -> dict:
-    """The canonical read against a PostgreSQL store.
+    """The canonical read against a PostgreSQL store: the guards, then the export."""
+    conn = _postgres_guarded_connection(target)
+    try:
+        conn.rollback()
+    finally:
+        conn.close()
+    return _export_and_count_in_one_snapshot(target)
+
+
+def _guarded_connection(target: str):
+    """Open ``target`` through the canonical read's guards; return it OPEN.
+
+    THE DOOR THE SINGLE-CARD VERBS USE (:mod:`scitex_cards._store_single_card`).
+    It runs exactly the checks the whole-document read runs — the SQLite trio
+    in :func:`_sqlite_guards`, the PostgreSQL trio in
+    :func:`_postgres_guarded_connection` — and then, instead of exporting the
+    board, hands the caller the guarded connection so it can read or write ONE
+    row. The caller owns the connection: rollback and close it.
+
+    There is deliberately no lighter variant. A one-card path that skipped a
+    guard would be the read door and the write door disagreeing again, which is
+    what this module's header says never to rebuild.
+
+    Opened via :func:`scitex_cards._db.connect`, the one constructor that runs
+    the min-client-version gate for both backends.
+    """
+    from ._db import connect
+    from ._store_url import is_postgres_url
+
+    if is_postgres_url(target):
+        return _postgres_guarded_connection(target)
+    db_path = Path(target)
+    _sqlite_guards(db_path)
+    return connect(db_path)
+
+
+def _postgres_guarded_connection(target: str):
+    """Connect to a PostgreSQL store and run its three guards; return it OPEN.
 
     SAME THREE GUARDS AS THE SQLITE PATH, re-expressed for a server rather than
     a file. They are stated here rather than shared because each one asks a
@@ -208,13 +254,15 @@ def _read_canonical_postgres(target: str) -> dict:
             )
 
         _refuse_if_retired_on(conn)
-    finally:
+    except BaseException:
+        # A refused store never hands its connection out: close it and let the
+        # refusal propagate. On success the CALLER owns rollback and close.
         try:
             conn.rollback()
         finally:
             conn.close()
-
-    return _export_and_count_in_one_snapshot(target)
+        raise
+    return conn
 
 
 def _store_errors() -> tuple[type[BaseException], ...]:
@@ -471,6 +519,6 @@ def _export_and_count_in_one_snapshot(db_path: Path) -> dict:
     return doc
 
 
-__all__ = ["_read_canonical_db_or_raise"]
+__all__ = ["_guarded_connection", "_read_canonical_db_or_raise"]
 
 # EOF

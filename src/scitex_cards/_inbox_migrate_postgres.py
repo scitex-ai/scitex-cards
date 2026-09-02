@@ -174,7 +174,13 @@ def migrate_sqlite_inbox_to_postgres(
                 )
                 got = cur.fetchone()
                 if got:
-                    inserted_ids.append(got[0])
+                    # _sole_value, not got[0]: this raw cursor yields tuples,
+                    # and the package-wide guard refuses positional reads of
+                    # fetched rows so a row factory added later cannot turn
+                    # this into a KeyError. Right on every row shape.
+                    from ._schema_probe import _sole_value
+
+                    inserted_ids.append(_sole_value(got))
         conn.commit()
 
     inserted = set(inserted_ids)

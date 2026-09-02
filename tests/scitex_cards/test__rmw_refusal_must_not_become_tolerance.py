@@ -10,12 +10,24 @@ THIS FILE EXISTS TO MAKE ONE PARTICULAR FIX UNSHIPPABLE.
      REPORTED."
 
 That is right for a PURE read and destructive here, because `list_tasks` and
-`add_task` / `comment_task` reach the same `_read_canonical_db_or_raise`, and
+`add_task` / `update_task` reach the same `_read_canonical_db_or_raise`, and
 on the write side the document that comes back is written back as the store::
 
     list_tasks         _store_list.py    load_tasks()        pure read
-    add/comment/...    _store_mutate.py  _read_write_doc()   READ-MODIFY-WRITE
+    add/update/...     _store_mutate.py  _read_write_doc()   READ-MODIFY-WRITE
               both --> _model.load_doc --> _read_canonical_db_or_raise
+
+    comment_task       _store_comment.py  ONE-CARD path (2026-09-02): reads and
+    get_task           _store.py          writes exactly one `tasks` row through
+                                          the same guards; never touches `users`
+
+SINCE 2026-09-02 THE WRITE THIS FILE DRIVES IS `update_task`, NOT `comment_task`.
+`comment_task` no longer runs the read-modify-write cycle: it reads one row and
+compare-and-sets one row (`_store_single_card`), so a `users` row it never
+reads cannot refuse it — and, more to the point, cannot be deleted by it. The
+two `one_card` tests below pin THAT directly: the write lands, and the
+unreadable row is still there afterwards. The refusal pairing moved to
+`update_task`, which still hands the whole document to the writer.
 
 MEASURED, by applying that prescription to `_db_export` and running a
 `comment_task`::
@@ -139,10 +151,10 @@ def store_after_an_attempted_write(store_with_one_unreadable_user: Path) -> Path
     the tolerant change this call succeeds, and the point of the guard is to
     inspect what that success did to the store.
     """
-    from scitex_cards import comment_task
+    from scitex_cards import update_task
 
     with contextlib.suppress(ExportRefused):
-        comment_task(task_id=_CARD, text="a comment that must not land")
+        update_task(task_id=_CARD, note="a note that must not land")
     return store_with_one_unreadable_user
 
 
@@ -160,13 +172,41 @@ def test_a_card_write_refuses_when_a_user_row_cannot_be_rebuilt(
     store_with_one_unreadable_user: Path,
 ):
     # Arrange
+    from scitex_cards import update_task
+
+    # Act
+    note = "a note that must not land"
+    # Assert — refusing to write is recoverable; writing a document that is
+    # missing a row is not. update_task still runs the whole-document cycle.
+    with pytest.raises(ExportRefused):
+        update_task(task_id=_CARD, note=note)
+
+
+def test_a_one_card_write_lands_beside_an_unreadable_user_row(
+    store_with_one_unreadable_user: Path,
+):
+    # Arrange
+    from scitex_cards import comment_task
+    from scitex_cards._store import get_task
+
+    # Act
+    comment_task(task_id=_CARD, text="lands: this verb reads one row")
+    # Assert — the one-card path reads and writes exactly this card, so a row
+    # it never touches has no say. Before 2026-09-02 this call was refused.
+    assert get_task(task_id=_CARD)["comments"][-1]["text"] == "lands: this verb reads one row"
+
+
+def test_a_one_card_write_leaves_the_unreadable_user_intact(
+    store_with_one_unreadable_user: Path,
+):
+    # Arrange
     from scitex_cards import comment_task
 
     # Act
-    # Assert — refusing to write is recoverable; writing a document that is
-    # missing a row is not.
-    with pytest.raises(ExportRefused):
-        comment_task(task_id=_CARD, text="a comment that must not land")
+    comment_task(task_id=_CARD, text="lands, and deletes nothing")
+    # Assert — the invariant the refusal existed for, asserted directly: a
+    # one-card write-back owns one `tasks` row, so the unreadable row stays.
+    assert _UNREADABLE_USER in _user_ids(store_with_one_unreadable_user)
 
 
 def test_a_refused_card_write_leaves_the_unreadable_user_intact(

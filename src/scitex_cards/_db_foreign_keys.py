@@ -222,7 +222,9 @@ def foreign_key_is_deferred(conn: Any, table: str, column: str) -> bool:
     ).fetchone()
     if row is None:
         return False
-    ddl = str(row[0] or "")
+    # Through _column, like every other row read in this module: name first,
+    # position as the fallback, so the accessor is right on all three row shapes.
+    ddl = str(_column(row, "sql", 0) or "")
     return column in ddl and _SQLITE_DEFERRED in ddl
 
 

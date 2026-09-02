@@ -317,7 +317,12 @@ def _insert_tasks(
             found_row = conn.execute(
                 "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
             ).fetchone()
-            found = None if found_row is None else found_row[0]
+            # BY NAME, NOT ``[0]``. sqlite3.Row accepts both; psycopg's dict_row
+            # raises ``KeyError: 0`` on the positional form, so this compare-and-
+            # set died on PostgreSQL for every caller that opted in — and the
+            # SQLite suite could not see it. Found 2026-09-02 by the one-card
+            # write's PostgreSQL test on its first run.
+            found = None if found_row is None else found_row["revision"]
             if found != expected_revision:
                 counts["revision_skipped"] = 1
                 counts["revision_found"] = found
@@ -332,7 +337,7 @@ def _insert_tasks(
                     "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
                 ).fetchone()
                 counts["revision_skipped"] = 1
-                counts["revision_found"] = None if after is None else after[0]
+                counts["revision_found"] = None if after is None else after["revision"]
                 return counts
         counts["tasks"] += 1
         tid = row.get("id")
