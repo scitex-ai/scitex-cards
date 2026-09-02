@@ -10,10 +10,15 @@ conversation, and it carries its own fan-out (the ``card-message`` bus dispatch
 with the owner / collaborators / subscribers snapshot, PLUS the canonical
 ``commented`` card-event).
 
-The shared helpers (``_read_write_doc`` / ``_utc_now_iso`` / ``_default_agent``
-/ ``TaskNotFoundError``) stay in ``_store`` and are imported inside the function
+The shared helpers (``_utc_now_iso`` / ``_default_agent`` /
+``TaskNotFoundError``) stay in ``_store`` and are imported inside the function
 body — deferred, because ``_store`` imports this module at module level to
 re-export the verb and a top-level import back would cycle.
+
+THE READ AND THE WRITE ARE ONE CARD EACH (``_store_single_card``), not the
+whole-document read-modify-write the other verbs still run. See that module
+for the measurement; the cycle here is read one row -> append -> compare-and-
+set one row, retried on a lost race.
 """
 
 from __future__ import annotations
@@ -53,9 +58,20 @@ def comment_task(
     observe the emitted event via a real fake handler.
     """
     from . import _model, _task
-    from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
+    from ._store import _default_agent, _task_not_found, _utc_now_iso
+    from ._store_errors import RevisionConflictError
+    from ._store_single_card import (
+        CAS_ATTEMPTS,
+        read_card_or_raise,
+        write_card_or_raise,
+    )
+    from ._store_target import resolve_store_target
 
     tasks_path = _resolved_store(store)
+    # THE STORE THE ROW LIVES IN, not the local sidecar path above. This is the
+    # identity the whole-document read and write both keyed on (both resolved
+    # it themselves and ignored ``store``); the one-card path names it once.
+    target = resolve_store_target(None)
     if not task_id:
         raise ValueError("comment_task: 'task_id' is required")
     if not text or not str(text).strip():
@@ -71,47 +87,56 @@ def comment_task(
     if kind:
         entry["kind"] = str(kind)
     with _model._store_lock(tasks_path):
-        doc, tasks = _read_write_doc(tasks_path)
-        # See `_task._is_tombstoned`: a deleted card's row is retained
-        # forever but must behave as ABSENT here.
-        target = _task._find_live_task(tasks, task_id)
-        if target is None:
-            raise _task_not_found(task_id)
-        comments = target.setdefault("comments", [])
-        # Pre-append snapshot of comment authors — forms the
-        # `collaborators` list of the card-message event below.
-        prior_authors = [
-            c.get("author")
-            for c in comments
-            if isinstance(c, dict) and isinstance(c.get("author"), str)
-        ]
-        comments.append(entry)
-        # A comment IS activity. Without this stamp, an actively-discussed
-        # card reads as "untouched" to every staleness signal (idle_guard,
-        # list-stale, digests) — found 2026-07-10 when the idle guard kept
-        # flagging a card that had received progress comments minutes earlier.
-        target["last_activity"] = entry["ts"]
-        # NAMES THE ONE CARD IT TOUCHED. Without this the write re-asserts every
-        # card in the document as it looked at THIS function's read time, so a
-        # comment on card A silently reverts another agent's committed change to
-        # card B — measured on the live board 2026-08-10, three times, once a
-        # confirmed loss of a completion that had reported success.
+        # ONE CARD IN, ONE CARD OUT. This verb used to run the whole-document
+        # read-modify-write cycle: export every card (plus a COUNT(*)
+        # cross-check), append to one, write the document back naming the one
+        # it touched. Measured 2026-09-02 on the live primary (6,542 cards):
+        # 2.7 s per comment, of which the one-row work was 3 ms. The export is
+        # the right guard for a caller that PRODUCES a whole document; this
+        # verb never does, so it now reads one row and writes one row through
+        # the same guards (see _store_single_card).
         #
-        # comment_task is the first verb converted because it is the one that was
-        # measured, and because a comment is the most obviously-single-card write
-        # in the package: appending to one card's activity log cannot legitimately
-        # rewrite anything else.
-        _model._save_doc_unlocked(
-            doc, tasks_path, tasks=tasks, touched_ids=[task_id]
-        )
-        owner = target.get("agent") or target.get("assignee")
+        # COMPARE-AND-SET, RETRIED. The row's revision at read time is handed
+        # back with the write; a card written by another agent in between
+        # refuses BEFORE anything is dropped, and the loop re-reads and
+        # re-applies. Appending to an activity log is the one mutation that is
+        # provably safe to replay, which is why this verb can retry where a
+        # status change could not.
+        for attempt in range(1, CAS_ATTEMPTS + 1):
+            card, revision = read_card_or_raise(target, task_id)
+            # See `_task._is_tombstoned`: a deleted card's row is retained
+            # forever but must behave as ABSENT here.
+            if card is None or _task._is_tombstoned(card):
+                raise _task_not_found(task_id)
+            comments = card.setdefault("comments", [])
+            # Pre-append snapshot of comment authors — forms the
+            # `collaborators` list of the card-message event below.
+            prior_authors = [
+                c.get("author")
+                for c in comments
+                if isinstance(c, dict) and isinstance(c.get("author"), str)
+            ]
+            comments.append(entry)
+            # A comment IS activity. Without this stamp, an actively-discussed
+            # card reads as "untouched" to every staleness signal (idle_guard,
+            # list-stale, digests) — found 2026-07-10 when the idle guard kept
+            # flagging a card that had received progress comments minutes earlier.
+            card["last_activity"] = entry["ts"]
+            try:
+                write_card_or_raise(target, card, expected_revision=revision)
+            except RevisionConflictError:
+                if attempt == CAS_ATTEMPTS:
+                    raise
+                continue
+            break
+        owner = card.get("agent") or card.get("assignee")
         # Persistent role lists (ADR-0009) — captured under the lock so
         # the bus emit below works off a consistent snapshot.
         persistent_collaborators = [
-            c for c in (target.get("collaborators") or []) if isinstance(c, str) and c
+            c for c in (card.get("collaborators") or []) if isinstance(c, str) and c
         ]
         persistent_subscribers = [
-            s for s in (target.get("subscribers") or []) if isinstance(s, str) and s
+            s for s in (card.get("subscribers") or []) if isinstance(s, str) and s
         ]
 
     # card-message bus emit (lead a2a `1e8e33d0`, 2026-06-14) — done

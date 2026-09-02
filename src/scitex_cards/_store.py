@@ -563,18 +563,27 @@ def get_task(
     treated as NOT FOUND — the 2026-07-21 tombstone change keeps a
     deleted card's row on disk forever, but this read must behave exactly
     as it did when ``delete_task`` physically removed it.
-    """
-    from . import _model, _task
 
-    tasks_path = _resolved_store(store)
+    READS ONE ROW. This verb used to load the whole board under the store lock
+    and scan it for the id — a full export per call, which the notification
+    dispatcher pays on EVERY card event (measured 2026-09-02: 1.2 s of a 2.7 s
+    comment). It now reads the one row through the canonical read's own guards
+    (:mod:`scitex_cards._store_single_card`), takes no lock (a one-row read has
+    nothing to serialise against), and returns the card exactly as the export
+    would have rebuilt it. ``store`` still names the caller's logical store for
+    messages and sidecars; the row is read from the resolved store target, as
+    the whole-document read always did.
+    """
+    from . import _task
+    from ._store_single_card import read_card_or_raise
+    from ._store_target import resolve_store_target
+
     if not task_id:
         raise ValueError("get_task: 'task_id' is required")
-    with _model._store_lock(tasks_path):
-        tasks = _model.load_tasks(tasks_path)
-        for t in tasks:
-            if t.get("id") == task_id and not _task._is_tombstoned(t):
-                return dict(t)
-    raise _task_not_found(task_id)
+    card, _revision = read_card_or_raise(resolve_store_target(None), task_id)
+    if card is None or _task._is_tombstoned(card):
+        raise _task_not_found(task_id)
+    return card
 
 
 # --------------------------------------------------------------------------- #

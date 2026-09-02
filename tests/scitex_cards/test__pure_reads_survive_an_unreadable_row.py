@@ -32,6 +32,15 @@ courtesy duplicate of
 `test__rmw_refusal_must_not_become_tolerance.py`; it is the assertion that this
 change did not leak into the mutate path, run against this file's own fixture.
 Delete it and a future edit could make both doors tolerant with nothing red.
+
+THE WRITE THAT FILE DRIVES IS `update_task` SINCE 2026-09-02. `comment_task`
+and `get_task` moved to a ONE-CARD path (`_store_single_card`): they read and
+compare-and-set exactly one `tasks` row through the canonical read's own
+guards and never touch `users`, so an unreadable `users` row neither refuses
+them nor can be deleted by them. Two tests below pin that pairing from the
+other side: a one-card write beside the unreadable row LANDS and the row is
+still there; a one-card write ON a card whose own payload is unreadable
+REFUSES, with the export's own wording.
 """
 
 from __future__ import annotations
@@ -128,13 +137,47 @@ def test_a_write_still_refuses_an_unreadable_row(
     store_with_one_unreadable_user: Path,
 ):
     # Arrange
+    from scitex_cards import update_task
+
+    # Act
+    note = "must not land"
+    # Assert — THE PAIRING. Tolerance must not have reached the mutate path;
+    # a whole-document write that omitted this row would DELETE it.
+    with pytest.raises(ExportRefused):
+        update_task(task_id="t-one", note=note)
+
+
+def test_a_one_card_write_survives_an_unreadable_user_row(
+    store_with_one_unreadable_user: Path,
+):
+    # Arrange
     from scitex_cards import comment_task
 
     # Act
-    # Assert — THE PAIRING. Tolerance must not have reached the mutate path;
-    # a write that omitted this row would DELETE it.
+    comment_task(task_id="t-one", text="lands: one row read, one row written")
+    # Assert — the one-card path never reads `users`, so it neither refuses on
+    # this row nor writes anything that could remove it.
+    assert _UNREADABLE_USER in _user_ids(store_with_one_unreadable_user)
+
+
+def test_a_one_card_write_on_an_unreadable_card_refuses(
+    store_with_one_unreadable_user: Path,
+):
+    # Arrange — null THIS card's own payload; the one-card read meets it directly
+    from scitex_cards import comment_task
+
+    conn = connect(store_with_one_unreadable_user)
+    try:
+        conn.execute("UPDATE tasks SET card_json = NULL WHERE id = ?", ("t-two",))
+        conn.commit()
+    finally:
+        conn.close()
+    # Act
+    text = "must not land"
+    # Assert — same refusal, same wording as the export: a row with no payload
+    # is a writer defect, never "card not found".
     with pytest.raises(ExportRefused):
-        comment_task(task_id="t-one", text="must not land")
+        comment_task(task_id="t-two", text=text)
 
 
 def test_a_tolerant_read_deletes_nothing(store_with_one_unreadable_user: Path):

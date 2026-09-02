@@ -13,6 +13,7 @@ Three callers, ONE policy, deliberately:
     _store._read_write_doc      the read-modify-write cycle behind every CRUD verb
     _model.load_doc             the pure-read path (``load_tasks`` → ``list_tasks``)
     _store_backend.write_doc_to_db   by inheritance
+    _store_single_card          the ONE-CARD read and write, through _guarded_connection
 
 That single chokepoint is the point. On 2026-07-19 the write door refused a
 foreign store correctly all day while the read door happily returned its rows,
@@ -66,7 +67,28 @@ def _read_canonical_db_or_raise() -> dict:
 
 
 def _read_canonical_postgres(target: str) -> dict:
-    """The canonical read against a PostgreSQL store.
+    """The canonical read against a PostgreSQL store: the guards, then the export."""
+    conn = _guarded_connection(target)
+    try:
+        conn.rollback()
+    finally:
+        conn.close()
+    return _export_and_count_in_one_snapshot(target)
+
+
+def _guarded_connection(target: str):
+    """Connect to the store and run its three guards; return the connection OPEN.
+
+    THE DOOR THE SINGLE-CARD VERBS USE (:mod:`scitex_cards._store_single_card`).
+    The whole-document read above runs exactly these checks and then exports the
+    board; a one-card verb runs exactly these checks and then reads or writes
+    ONE row on the connection this hands back. The caller owns the connection:
+    rollback and close it. On a refusal nothing is handed out — the connection
+    is closed here and the refusal propagates.
+
+    There is deliberately no lighter variant. A one-card path that skipped a
+    guard would be the read door and the write door disagreeing again, which is
+    what this module's header says never to rebuild.
 
     THREE GUARDS, each asked of a SERVER. Every one of them means something
     other than the filesystem question it replaced, and a guard that silently
@@ -142,13 +164,15 @@ def _read_canonical_postgres(target: str) -> dict:
             )
 
         _refuse_if_retired_on(conn)
-    finally:
+    except BaseException:
+        # A refused store never hands its connection out: close it and let the
+        # refusal propagate. On success the CALLER owns rollback and close.
         try:
             conn.rollback()
         finally:
             conn.close()
-
-    return _export_and_count_in_one_snapshot(target)
+        raise
+    return conn
 
 
 def _store_errors() -> tuple[type[BaseException], ...]:
@@ -383,6 +407,6 @@ def _export_and_count_in_one_snapshot(db_path: str) -> dict:
     return doc
 
 
-__all__ = ["_read_canonical_db_or_raise"]
+__all__ = ["_guarded_connection", "_read_canonical_db_or_raise"]
 
 # EOF
