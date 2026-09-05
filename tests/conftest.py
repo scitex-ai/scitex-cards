@@ -131,10 +131,43 @@ def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
     try:
         cluster = _dsn_stack.enter_context(writable_dsn())
         scoped = _dsn_stack.enter_context(ephemeral_schema(cluster, prefix="cards_tests"))
+        _assert_scope_is_applied_by_the_server(scoped)
     except Exception as exc:  # noqa: BLE001 - report it, do not guess at it
         _dsn_stack.close()
         return None, None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
     return cluster, scoped, "ok"
+
+
+def _assert_scope_is_applied_by_the_server(scoped: str) -> None:
+    """The scoped DSN is only safe if the SERVER actually applies its search_path.
+
+    MEASURED 2026-09-05: a transaction-mode pooler (pgbouncer 1.25 in front of
+    scitex-primary:55432) accepts a DSN carrying ``options=-csearch_path=...``
+    and silently DROPS the startup parameter, so the session has the default
+    ``"$user", public`` and every unqualified ``tasks`` is the live board. That
+    day only the store-identity stamp refused; this check names the cause
+    instead of leaving it to the next guard. The DSN saying so is not the
+    scope being in force.
+    """
+    import psycopg
+    from urllib.parse import unquote
+
+    marker = "search_path"
+    tail = scoped.split(marker, 1)[1] if marker in scoped else ""
+    want = unquote(tail).lstrip("=").split("&", 1)[0].split(",", 1)[0].strip().strip('"')
+    if not want:
+        raise RuntimeError(f"the scoped DSN carries no search_path to verify: {scoped!r}")
+    with psycopg.connect(scoped) as conn:
+        got = conn.execute("SHOW search_path").fetchone()[0]
+    on_path = {p.strip().strip('"') for p in str(got).split(",")}
+    if want not in on_path:
+        raise RuntimeError(
+            f"the server did not apply the scoped DSN's search_path: asked for {want!r}, "
+            f"the session has {got!r}. A pooler between the client and PostgreSQL "
+            "(transaction-mode pgbouncer) drops the `options` startup parameter; point "
+            "SCITEX_STORE_DSN at the PostgreSQL port itself (55433 on scitex-primary), "
+            "never at the pooler, for tests."
+        )
 
 
 #: Resolved at IMPORT, before collection -- same reasoning as ``_SCRATCH``
