@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import uuid
 
 import pytest
 
@@ -122,6 +123,19 @@ def workspace_db_unset():
             os.environ[ENV_WORKSPACE_DB] = previous
 
 
+@pytest.fixture
+def who() -> str:
+    """A tenant slug UNIQUE TO THIS TEST, valid under the identity regex.
+
+    A fixed identity derives a fixed, database-global schema name, so every
+    xdist worker provisioning "user/alice/notes" shared ONE schema: one worker's
+    teardown dropped it while another's open ran - the CI flake measured on
+    #964/#965 (two tests of this module, two legs, two PRs). A per-test slug
+    makes the schema this test's alone; `workspace_cluster` still drops it.
+    """
+    return "t" + uuid.uuid4().hex[:10]
+
+
 def _registered_segments(cluster, schema_suffix_of):
     """The ``segments`` array as the registry stored it, for one tenant."""
     conn = connect(cluster, read_only=True, rows_by_name=True)
@@ -169,7 +183,7 @@ def _unavailable_message(*segments) -> str:
 # ---------------------------------------------------------------------------
 # The collision. This is the reason the signature changed.
 # ---------------------------------------------------------------------------
-def test_the_two_shapes_that_used_to_collide_now_differ(workspace_cluster):
+def test_the_two_shapes_that_used_to_collide_now_differ(workspace_cluster, who):
     """The collision itself. hub's measured example, not an invented one.
 
     Asserts the CONSEQUENCE — two tenants must not share a store — while
@@ -179,14 +193,14 @@ def test_the_two_shapes_that_used_to_collide_now_differ(workspace_cluster):
     accident.
     """
     # Arrange
-    first = provision_workspace_store("user", "alice-my", "project")
+    first = provision_workspace_store("user", f"{who}-my", "project")
     # Act
-    second = provision_workspace_store("user", "alice", "my-project")
+    second = provision_workspace_store("user", who, "my-project")
     # Assert
     assert first != second
 
 
-def test_the_registry_stores_segment_boundaries(workspace_cluster):
+def test_the_registry_stores_segment_boundaries(workspace_cluster, who):
     """A text[] of three elements, not one joined string.
 
     The structural half of the collision guarantee, and it is stored rather
@@ -195,14 +209,14 @@ def test_the_registry_stores_segment_boundaries(workspace_cluster):
     the schema name unique; this makes the identity unique.
     """
     # Arrange
-    store = provision_workspace_store("org", "acme", "widgets")
+    store = provision_workspace_store("org", who, "widgets")
     # Act
     segments = _registered_segments(workspace_cluster, _schema_of(store))
     # Assert
-    assert segments == ["org", "acme", "widgets"]
+    assert segments == ["org", who, "widgets"]
 
 
-def test_one_segment_still_resolves(workspace_cluster):
+def test_one_segment_still_resolves(workspace_cluster, who):
     """A one-dimensional consumer sees exactly the previous behaviour.
 
     Asserts the tenant's own card tables are QUERYABLE, not merely that a name
@@ -210,9 +224,9 @@ def test_one_segment_still_resolves(workspace_cluster):
     string is true of a schema that was never populated.
     """
     # Arrange
-    provision_workspace_store("solo")
+    provision_workspace_store(who)
     # Act
-    store = resolve_workspace_store("solo")
+    store = resolve_workspace_store(who)
     # Assert
     conn = connect(store, read_only=True, rows_by_name=True)
     try:
@@ -224,7 +238,7 @@ def test_one_segment_still_resolves(workspace_cluster):
 # ---------------------------------------------------------------------------
 # The two verbs, and the contract between them.
 # ---------------------------------------------------------------------------
-def test_resolve_finds_what_provision_created(workspace_cluster):
+def test_resolve_finds_what_provision_created(workspace_cluster, who):
     """The contract an earlier draft broke: provision must satisfy resolve.
 
     That draft created only the container while resolve tested for what goes
@@ -232,19 +246,19 @@ def test_resolve_finds_what_provision_created(workspace_cluster):
     provision that does not satisfy the resolver is a rename of the problem.
     """
     # Arrange
-    provisioned = provision_workspace_store("user", "alice", "notes")
+    provisioned = provision_workspace_store("user", who, "notes")
     # Act
-    resolved = resolve_workspace_store("user", "alice", "notes")
+    resolved = resolve_workspace_store("user", who, "notes")
     # Assert
     assert resolved == provisioned
 
 
-def test_provision_is_idempotent(workspace_cluster):
+def test_provision_is_idempotent(workspace_cluster, who):
     """Re-provisioning must never truncate a store that already holds cards."""
     # Arrange
-    first = provision_workspace_store("user", "alice", "notes")
+    first = provision_workspace_store("user", who, "notes")
     # Act
-    second = provision_workspace_store("user", "alice", "notes")
+    second = provision_workspace_store("user", who, "notes")
     # Assert
     assert second == first
 
@@ -367,7 +381,7 @@ def test_the_refusal_names_the_offending_position(workspace_cluster):
     assert "segment 2" in message
 
 
-def test_two_identities_cannot_share_a_schema(workspace_cluster):
+def test_two_identities_cannot_share_a_schema(workspace_cluster, who):
     """The UNIQUE constraint behind the digest, exercised directly.
 
     THE SECOND LINE OF DEFENCE, and it is only reachable because the insert
@@ -380,8 +394,8 @@ def test_two_identities_cannot_share_a_schema(workspace_cluster):
     # Arrange
     import psycopg
 
-    provision_workspace_store("user", "alice", "notes")
-    taken = _schema_of(resolve_workspace_store("user", "alice", "notes"))
+    provision_workspace_store("user", who, "notes")
+    taken = _schema_of(resolve_workspace_store("user", who, "notes"))
     # Act
     conn = connect(workspace_cluster, read_only=False, rows_by_name=True)
     # Assert
@@ -395,6 +409,106 @@ def test_two_identities_cannot_share_a_schema(workspace_cluster):
     finally:
         conn.rollback()
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# A tenant schema this role cannot use is a collision, not a provision.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def unusable_tenant_schema(workspace_cluster, who):
+    """The tenant schema for ``(who,)`` already present with USAGE revoked.
+
+    THE REAL SHAPE OF THE LEFTOVER, reproduced under one role: on the fleet
+    primary the schema for "acme" was left behind by another agent's test run,
+    owned by that agent's role, and this role had no USAGE on it - PostgreSQL
+    silently drops an unusable schema from the effective search_path, and the
+    first CREATE TABLE failed with "no schema has been selected to create in".
+    A second role is not available to a test, but an owner may revoke its own
+    USAGE, and ``has_schema_privilege`` then answers exactly as it did for the
+    foreign-owned schema. Dropped on teardown; the owner can always drop.
+    """
+    from scitex_cards._workspace import _schema_for
+
+    schema = _schema_for((who,))
+    conn = connect(workspace_cluster, read_only=False, rows_by_name=True)
+    try:
+        conn.execute(f'CREATE SCHEMA "{schema}"')
+        conn.execute(f'REVOKE ALL ON SCHEMA "{schema}" FROM current_user')
+        conn.commit()
+        yield schema
+    finally:
+        conn.rollback()
+        conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        conn.commit()
+        conn.close()
+
+
+def test_a_tenant_schema_this_role_cannot_use_is_refused(unusable_tenant_schema, who):
+    # Arrange
+    from scitex_cards._workspace import WorkspaceSchemaNotUsable
+
+    identity = who
+    # Act
+    with pytest.raises(WorkspaceSchemaNotUsable):
+        # Assert: the raise is the assertion
+        provision_workspace_store(identity)
+
+
+@pytest.fixture
+def unusable_schema_refusal(unusable_tenant_schema, who) -> str:
+    from scitex_cards._workspace import WorkspaceSchemaNotUsable
+
+    try:
+        provision_workspace_store(who)
+    except WorkspaceSchemaNotUsable as exc:
+        return str(exc)
+    pytest.fail("a tenant schema without USAGE was accepted as provisioned")
+
+
+def test_the_refusal_names_the_schema(unusable_schema_refusal, unusable_tenant_schema):
+    # Arrange
+    message = unusable_schema_refusal
+    # Act
+    named = unusable_tenant_schema in message
+    # Assert
+    assert named, message
+
+
+def test_the_refusal_names_the_current_role(unusable_schema_refusal, workspace_cluster):
+    # Arrange
+    conn = connect(workspace_cluster, read_only=True, rows_by_name=True)
+    try:
+        me = conn.fetchone("SELECT current_user AS me")["me"]
+    finally:
+        conn.close()
+    # Act
+    named = me in unusable_schema_refusal
+    # Assert
+    assert named, unusable_schema_refusal
+
+
+def test_an_unusable_schema_is_not_registered(unusable_schema_refusal, workspace_cluster, who):
+    # Arrange
+    _ = unusable_schema_refusal
+    # Act: the refusal fires before the registry table is even created, so
+    # "not registered" is either no table at all or no row for this identity
+    conn = connect(workspace_cluster, read_only=True, rows_by_name=True)
+    try:
+        table = conn.fetchone("SELECT to_regclass('scitex_cards_workspaces') AS t")["t"]
+        registered = (
+            conn.fetchone(
+                "SELECT count(*) AS n FROM scitex_cards_workspaces WHERE segments = ?",
+                [[who]],
+            )["n"]
+            if table is not None
+            else 0
+        )
+    finally:
+        conn.close()
+    # Assert
+    assert registered == 0
 
 
 # EOF
