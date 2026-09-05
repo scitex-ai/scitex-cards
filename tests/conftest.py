@@ -131,10 +131,64 @@ def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
     try:
         cluster = _dsn_stack.enter_context(writable_dsn())
         scoped = _dsn_stack.enter_context(ephemeral_schema(cluster, prefix="cards_tests"))
+        _assert_scope_is_applied_by_the_server(scoped)
     except Exception as exc:  # noqa: BLE001 - report it, do not guess at it
         _dsn_stack.close()
         return None, None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
     return cluster, scoped, "ok"
+
+
+def _search_path_libpq_will_apply(dsn: str) -> str:
+    """The schema the SERVER will be asked for, read the way libpq reads it.
+
+    A DSN can carry ``options`` more than once -- an xdist worker inherits the
+    controller's already-scoped ``$SCITEX_STORE_DSN`` and ``ephemeral_schema``
+    appends a second one -- and libpq honours the LAST occurrence of a repeated
+    URI parameter, discarding the rest. Inside that value the last ``-c
+    search_path=`` wins likewise. Reading the FIRST occurrence (the substring
+    search this replaced) compared the controller's schema against the worker's
+    session and refused every worker on PR #962's first run, while the
+    controller, with a single ``options``, passed and printed a clean header.
+    """
+    from urllib.parse import parse_qsl, urlsplit
+
+    values = [v for k, v in parse_qsl(urlsplit(dsn).query, keep_blank_values=True) if k == "options"]
+    if not values:
+        return ""
+    want = ""
+    for token in values[-1].replace("-c ", "-c").split():
+        if token.startswith("-csearch_path="):
+            want = token[len("-csearch_path="):]
+    return want.split(",", 1)[0].strip().strip('"')
+
+
+def _assert_scope_is_applied_by_the_server(scoped: str) -> None:
+    """The scoped DSN is only safe if the SERVER actually applies its search_path.
+
+    MEASURED 2026-09-05: a transaction-mode pooler (pgbouncer 1.25 in front of
+    scitex-primary:55432) accepts a DSN carrying ``options=-csearch_path=...``
+    and silently DROPS the startup parameter, so the session has the default
+    ``"$user", public`` and every unqualified ``tasks`` is the live board. That
+    day only the store-identity stamp refused; this check names the cause
+    instead of leaving it to the next guard. The DSN saying so is not the
+    scope being in force.
+    """
+    import psycopg
+
+    want = _search_path_libpq_will_apply(scoped)
+    if not want:
+        raise RuntimeError(f"the scoped DSN carries no search_path to verify: {scoped!r}")
+    with psycopg.connect(scoped) as conn:
+        got = conn.execute("SHOW search_path").fetchone()[0]
+    on_path = {p.strip().strip('"') for p in str(got).split(",")}
+    if want not in on_path:
+        raise RuntimeError(
+            f"the server did not apply the scoped DSN's search_path: asked for {want!r}, "
+            f"the session has {got!r}. A pooler between the client and PostgreSQL "
+            "(transaction-mode pgbouncer) drops the `options` startup parameter; point "
+            "SCITEX_STORE_DSN at the PostgreSQL port itself (55433 on scitex-primary), "
+            "never at the pooler, for tests."
+        )
 
 
 #: Resolved at IMPORT, before collection -- same reasoning as ``_SCRATCH``
