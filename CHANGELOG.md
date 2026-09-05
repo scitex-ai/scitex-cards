@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### A DSN that asks for a search_path is refused when the server did not apply it
+
+Measured 2026-09-05: the fleet primary went behind PgBouncer in transaction
+mode with `options` in `ignore_startup_parameters`. A DSN carrying
+`options=-csearch_path=<schema>` connected without error and `SHOW search_path`
+answered `"$user", public`. Every scoped handle in this package — a workspace
+tenant's DSN, the test harness, any consumer appending `-csearch_path` — relies
+on that one startup parameter for its isolation, and every guard asserted what
+the DSN *said*, never what the server *held*. The harness sat on the live board
+believing itself scoped; only the store-identity stamp refused, in words about
+identities.
+
+`connect()` now reads the session's search_path back when the DSN asks for one
+and raises `SearchPathNotApplied` on mismatch, naming asked-for, got, and the
+remedy (the PostgreSQL port itself, or a pooler that tracks `search_path`). The
+schema is read the way libpq reads it — the last `options` wins — because an
+xdist worker's DSN carries two. A DSN that asks for nothing pays nothing.
+
 ## [0.51.1] - 2026-09-05
 
 ### A store target written into a message names the store, never its password
