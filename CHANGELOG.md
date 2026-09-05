@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+## [0.51.1] - 2026-09-05
+
+### The release pipeline runs green from a self-hosted runner's home directory
+
+v0.51.0 was tagged but never published: the tag-driven workflow, which runs on
+the Spartan self-hosted runners, failed one test in 6,378 —
+`test_scitex_dir_fallback_is_not_under_any_real_home`. The runner's whole work
+tree lives under its user's home, so pytest's basetemp is
+`/home/ywatanabe/actions-runner-org/_work/_temp/...` and "not under a real
+home" was false by construction there, while it held on GitHub-hosted runners
+(`/home/runner` + `/tmp`), which is why the same tree was green on #960 and
+#961. The store was never touched.
+
+The guard now asserts the invariant it protects: the tier-4 file fallback never
+lands in a real user's **store root** (`<home>/.scitex`), not that it avoids
+the home as a whole. The sibling test still pins the fallback under pytest's
+tmp root, so a scratch inside a real `.scitex` still fails. (#962)
+
+### The test harness refuses a search_path the server did not apply
+
+The harness scopes every test to a throwaway schema with one mechanism,
+`options=-csearch_path=<schema>` on the DSN. Through a transaction-mode
+PgBouncer that startup parameter is dropped silently, so the harness believed
+it was scoped and was on `public`, the live board; only the store-identity
+stamp stopped a write, with a message about identities. `_open_throwaway_postgres`
+now asks the server `SHOW search_path` on the scoped DSN and refuses before any
+test runs when the session does not carry the schema asked for, naming both
+sides and the remedy (the PostgreSQL port itself, never the pooler). The reason
+lands in the report header, where `-x` cannot hide it. The schema is read the
+way libpq reads it — the last `options`, the last `-csearch_path=` — because an
+xdist worker inherits the controller's already-scoped DSN and carves a second
+one on top. (#962)
+
 ## [0.51.0] - 2026-09-05
 
 ### A fresh install keeps the mcp 1.x the channel server speaks
