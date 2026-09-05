@@ -155,6 +155,55 @@ def _registry_agents(store) -> list[dict]:
     return out
 
 
+#: What an anonymous visitor is told when the DM views have no store to read.
+#: The operator's full diagnosis (which target was asked for, and why it names
+#: no store) is the exception's own text, shown under ``DEBUG`` only.
+_NO_DM_STORE_SUMMARY = "No direct-message store is configured for this board."
+
+
+def _typed_store_refusals(view):
+    """Answer a store the DM views cannot read with a NAMED JSON refusal.
+
+    A per-project path label, or no configured target at all, used to reach
+    ``connect()`` and surface as an UNHANDLED 500 - a crash in the HTTP rail
+    for a configuration state (measured 2026-09-05 on hub's mount, 0.51.1).
+    The board's task endpoints already answer that state with
+    ``{"error": ..., "reason": "store_absent"}``; the DM views now do the same,
+    so the operator sees WHY instead of a traceback, monitoring is not
+    poisoned by a non-outage, and nothing invents an empty thread list.
+    """
+    from functools import wraps
+
+    from scitex_cards._store_errors import StoreNotProvisionedError
+    from scitex_cards._store_target import StoreTargetNotConfigured
+    from scitex_cards._store_url import UnrecognisedStoreTarget
+
+    @wraps(view)
+    def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        try:
+            return view(request, *args, **kwargs)
+        except (StoreTargetNotConfigured, UnrecognisedStoreTarget, StoreNotProvisionedError) as exc:
+            from scitex_cards._django.views import (  # noqa: PLC0415 - avoids the import cycle
+                STORE_ABSENT_REASON,
+                STORE_ABSENT_STATUS,
+                _store_error_body,
+            )
+
+            # The two target errors carry no ``public_summary``; without one
+            # ``_store_error_body`` would hand a stranger the full sentence,
+            # which names a container path. Give them the same two-audience
+            # switch the store errors have: DEBUG sees the diagnosis.
+            if getattr(exc, "public_summary", None) is None:
+                exc.public_summary = _NO_DM_STORE_SUMMARY
+            return JsonResponse(
+                {"error": _store_error_body(exc), "reason": STORE_ABSENT_REASON},
+                status=STORE_ABSENT_STATUS,
+            )
+
+    return _wrapped
+
+
+@_typed_store_refusals
 def dm_threads_view(request: HttpRequest) -> HttpResponse:
     """GET the operator's agent list + per-agent thread summaries."""
     if request.method != "GET":
@@ -210,6 +259,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
 
 
 @csrf_exempt
+@_typed_store_refusals
 def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     """GET the operator↔``peer`` thread, or POST a new operator message."""
     if request.method not in {"GET", "POST"}:
@@ -312,6 +362,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
 
 
 @csrf_exempt
+@_typed_store_refusals
 def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     """POST one reaction event onto a message in the operator↔``peer`` thread.
 
