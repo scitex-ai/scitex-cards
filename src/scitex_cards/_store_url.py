@@ -46,6 +46,7 @@ __all__ = [
     "POSTGRES_SCHEMES",
     "UnrecognisedStoreTarget",
     "backend_of",
+    "describe_store_target",
     "is_attempted_dsn",
     "is_postgres_conninfo",
     "is_postgres_url",
@@ -261,7 +262,7 @@ def reject_attempted_dsn(target: object) -> None:
     if not is_attempted_dsn(target):
         return
     raise UnrecognisedStoreTarget(
-        f"the cards database target {target!r} names a server and is malformed, "
+        f"the cards database target {describe_store_target(target)!r} names a server and is malformed, "
         "so it will NOT be opened as a file.\n"
         "Refusing is deliberate: treated as a path this creates a NEW and EMPTY "
         "cards database that answers every query, and a wrong board that works "
@@ -296,7 +297,7 @@ def reject_non_postgres_target(target: object) -> None:
     if is_postgres_url(target):
         return
     raise UnrecognisedStoreTarget(
-        f"the cards store target {target!r} does not name the store.\n"
+        f"the cards store target {describe_store_target(target)!r} does not name the store.\n"
         "The store is a PostgreSQL database and the target must be a DSN:\n"
         "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
         "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
@@ -368,7 +369,7 @@ def reject_unexpanded_variable(target: object) -> None:
     if not is_unexpanded_variable(target):
         return
     raise UnrecognisedStoreTarget(
-        f"the cards database target {target!r} still contains an UNEXPANDED "
+        f"the cards database target {describe_store_target(target)!r} still contains an UNEXPANDED "
         "shell variable, so it names no store and will NOT be opened.\n"
         "Something read this value without expanding it -- a JSON/YAML config, "
         "a single-quoted assignment, or a spec template rendered literally -- "
@@ -383,6 +384,57 @@ def reject_unexpanded_variable(target: object) -> None:
         "value looks like\n"
         "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
     )
+
+
+_CONNINFO_PASSWORD = re.compile(r"\bpassword\s*=\s*(?:'(?:[^'\\]|\\.)*'|\S+)")
+#: scheme:/[/]user:password@host -> scheme:/[/]user@host, for the mangled form
+#: only (the URL form goes through urlsplit above).
+_MANGLED_PASSWORD = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*:/+[^:/@]*):[^@]*@")
+
+
+def describe_store_target(target: object) -> str:
+    """``target`` as it may be written into a message: the store named, the
+    secret dropped.
+
+    MEASURED 2026-09-05: the read-side TOLERATED warning rendered the store
+    as a repr of the resolved DSN, and a consumer whose DSN carried its
+    password inline (hub's board mount, minted six minutes earlier and
+    delivered through a 0600 secrets path) printed that password to docker
+    logs on its first page load - once per legacy ``pending`` row. The label
+    already stripped the query string "because DSNs carry credentials there";
+    the password lives in the userinfo, before the ``@``. Every message that
+    names a store goes through this function, so the fact that a target
+    appears in text is no longer a decision each call site makes alone.
+
+    A URL keeps scheme, user, host, port and database; the password and the
+    query string go (``options=`` can carry a per-session setting, never a
+    secret, but the whole query is dropped so the rule stays one line). A
+    ``key=value`` conninfo keeps every keyword except ``password``. Anything
+    else - a path, a placeholder, an unexpanded variable - is returned as the
+    string it was, because those refusals need the literal to be diagnosable.
+    """
+    text = str(target)
+    # Conninfo first: `is_postgres_url` answers True for BOTH forms (it is the
+    # "names a server" predicate), and a conninfo fed to urlsplit comes back
+    # as "://host=h ..." - measured on the first cut of this function.
+    if is_postgres_conninfo(text):
+        return " ".join(_CONNINFO_PASSWORD.sub("", text).split())
+    if is_postgres_url(text):
+        from urllib.parse import urlsplit  # noqa: PLC0415
+
+        parts = urlsplit(text)
+        user = parts.username or ""
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+        userinfo = f"{user}@" if (user or parts.password) else ""
+        return f"{parts.scheme}://{userinfo}{host}{port}{parts.path}"
+    if is_attempted_dsn(text):
+        # The MANGLED form - a DSN that went through Path() and lost a slash -
+        # is refused by name, and the refusal must keep the shape that explains
+        # it while dropping what sits between the first ':' of the userinfo and
+        # the '@'. urlsplit cannot parse it; a regex on that one span can.
+        return _MANGLED_PASSWORD.sub(r"\1@", text.split("?", 1)[0])
+    return text
 
 
 def to_paramstyle(sql: str, backend: str) -> str:

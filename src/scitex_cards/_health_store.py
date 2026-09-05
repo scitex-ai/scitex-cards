@@ -17,6 +17,8 @@ this same object. A split that breaks its callers is a rename with extra steps.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 import os
 from pathlib import Path
 from typing import Any
@@ -56,7 +58,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 -- a failed open is a reportable state
         return {
             "ok": False,
-            "detail": f"PostgreSQL store {target!r} did not open ({exc})",
+            "detail": f"PostgreSQL store {describe_store_target(target)!r} did not open ({exc})",
             "hint": (
                 "check the server is reachable and that $SCITEX_CARDS_DB names "
                 "the right database. NOTE `scitex-cards dev db get-path` does NOT help "
@@ -71,7 +73,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
         if not has_table(conn, "tasks"):
             return {
                 "ok": False,
-                "detail": f"PostgreSQL store {target!r} has no `tasks` table",
+                "detail": f"PostgreSQL store {describe_store_target(target)!r} has no `tasks` table",
                 "hint": (
                     "the server is reachable but holds no store. Verify the "
                     "DATABASE name in the DSN before creating anything -- an "
@@ -93,7 +95,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 -- a failed probe is a reportable state
         return {
             "ok": False,
-            "detail": f"PostgreSQL store {target!r} did not read ({exc})",
+            "detail": f"PostgreSQL store {describe_store_target(target)!r} did not read ({exc})",
             "hint": (
                 "do NOT re-initialise it -- a store that fails to read may still "
                 "hold every card. `scitex-cards dev db verify` reports the schema. "
@@ -110,7 +112,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": (
-                f"PostgreSQL store {target!r} is readable ({n} cards) but the "
+                f"PostgreSQL store {describe_store_target(target)!r} is readable ({n} cards) but the "
                 f"current role has no INSERT on `tasks`"
             ),
             "hint": "GRANT INSERT (and UPDATE/DELETE) on the store tables to this role",
@@ -119,14 +121,14 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": (
-                f"PostgreSQL store {target!r} is readable ({n} cards) but the "
+                f"PostgreSQL store {describe_store_target(target)!r} is readable ({n} cards) but the "
                 f"server is IN RECOVERY -- a standby, so every write will fail"
             ),
             "hint": "point the store at the primary, not a read replica",
         }
     return {
         "ok": True,
-        "detail": f"PostgreSQL store {target!r} ({n} cards, readable, writable)",
+        "detail": f"PostgreSQL store {describe_store_target(target)!r} ({n} cards, readable, writable)",
         "hint": None,
     }
 
@@ -195,7 +197,7 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
 
     return {
         "ok": False,
-        "detail": f"no store: {target!r} does not name a reachable store",
+        "detail": f"no store: {describe_store_target(target)!r} does not name a reachable store",
         "hint": (
             "if this agent should have the FLEET board, the target is wrong — "
             "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "

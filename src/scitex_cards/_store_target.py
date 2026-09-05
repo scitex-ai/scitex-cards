@@ -378,18 +378,14 @@ def store_label(explicit: str | Path | None = None) -> str:
        that was correct, and that a stale client turned into a real directory
        tree on disk.
     """
-    target = str(resolve_store_target(explicit))
-    if not is_postgres_url(target):
-        return target
-    target = target.split("?", 1)[0]
-    # Strip userinfo: scheme://user:secret@host -> scheme://user@host. Split on
-    # the LAST '@' before the host, since a password may itself contain one.
-    scheme, sep, rest = target.partition("://")
-    if sep and "@" in rest:
-        userinfo, _, hostpart = rest.rpartition("@")
-        user = userinfo.split(":", 1)[0]
-        rest = f"{user}@{hostpart}" if user else hostpart
-    return f"{scheme}{sep}{rest}"
+    # ONE RENDERING, SHARED. This function did the stripping itself until
+    # 2026-09-05, and it was right - but it was the only site that was. The
+    # tolerated-read warning built its own label, kept the userinfo, and printed
+    # a consumer's password to docker logs. `describe_store_target` is now the
+    # single place a target becomes text, and this label is one caller of it.
+    from ._store_url import describe_store_target  # noqa: PLC0415
+
+    return describe_store_target(str(resolve_store_target(explicit)))
 
 
 # EOF

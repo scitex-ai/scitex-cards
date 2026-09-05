@@ -16,6 +16,8 @@ process RESOLVED match the identity the database on disk actually carries?
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +51,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 -- a failed open is a reportable state
         return {
             "ok": False,
-            "detail": f"could not read the identity from {target!r} ({exc})",
+            "detail": f"could not read the identity from {describe_store_target(target)!r} ({exc})",
             "hint": (
                 "check the server is reachable and $SCITEX_CARDS_DB names the "
                 f"right database. {type(exc).__name__}: {exc}"
@@ -60,7 +62,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 -- a failed read is a reportable state
         return {
             "ok": False,
-            "detail": f"could not read the identity from {target!r} ({exc})",
+            "detail": f"could not read the identity from {describe_store_target(target)!r} ({exc})",
             "hint": "run `scitex-cards dev db verify` for the schema report",
         }
     finally:
@@ -76,7 +78,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
         return {
             "ok": False,
             "detail": (
-                f"STORE IDENTITY MISMATCH -- {target!r} carries {ident}. EVERY "
+                f"STORE IDENTITY MISMATCH -- {describe_store_target(target)!r} carries {ident}. EVERY "
                 f"WRITE AND EVERY READ IS BEING REFUSED by the ownership guard "
                 f"(correctly: writing one store into another's database is how "
                 f"a board gets destroyed)."
@@ -93,13 +95,13 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
     if verdict == ACCEPT:
         return {
             "ok": True,
-            "detail": f"store identity accepted: {target!r} has {ident}",
+            "detail": f"store identity accepted: {describe_store_target(target)!r} has {ident}",
             "hint": None,
         }
     return {
         "ok": True,
         "detail": (
-            f"store identity ADOPTABLE: {target!r} has {ident}. A server "
+            f"store identity ADOPTABLE: {describe_store_target(target)!r} has {ident}. A server "
             f"store has NO path stamp to fall back on, so the uuid is the only "
             f"identity evidence there is -- nothing weaker is being consulted "
             f"underneath this answer."
@@ -150,7 +152,7 @@ def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
     return {
         "ok": False,
         "detail": (
-            f"the resolved store target {target!r} does not name a store, so it "
+            f"the resolved store target {describe_store_target(target)!r} does not name a store, so it "
             f"carries no identity to check (store_uuid=none)"
         ),
         "hint": (

@@ -66,6 +66,8 @@ states for the unconfigured-store case.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 import os
 from pathlib import Path
 from typing import Final, Optional
@@ -117,7 +119,7 @@ class StoreIdentityRefused(RuntimeError):
         self.check = check
         self.target = target
         super().__init__(
-            f"REFUSING to use {target!r}: {check.reason}\n"
+            f"REFUSING to use {describe_store_target(target)!r}: {check.reason}\n"
             # NAMES BOTH HALVES, because as of 2026-08-19 pinning one is not
             # enough and a hint that names one sends the reader to do half the
             # work and hit this same refusal again. An error message outlives

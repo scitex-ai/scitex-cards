@@ -24,6 +24,8 @@ recreates exactly the asymmetry that outage was made of.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 from ._store_errors import StoreNotProvisionedError, StoreUnavailableError
 
 
@@ -132,7 +134,7 @@ def _guarded_connection(target: str):
         # this line raise the subclass, `test_an_unreachable_postgres_is_still
         # _a_server_fault` fails, and it should.
         raise StoreUnavailableError(
-            f"cannot open the PostgreSQL store {target!r} ({exc}). REFUSING to "
+            f"cannot open the PostgreSQL store {describe_store_target(target)!r} ({exc}). REFUSING to "
             f"continue rather than writing an unverified document back over "
             f"the store."
         ) from exc
@@ -144,7 +146,7 @@ def _guarded_connection(target: str):
         # is exactly the value that must never be written back.
         if not has_table(conn, "tasks"):
             raise StoreNotProvisionedError(
-                f"the PostgreSQL store {target!r} has no `tasks` table. "
+                f"the PostgreSQL store {describe_store_target(target)!r} has no `tasks` table. "
                 f"REFUSING to continue: the exporter answers a schemaless "
                 f"database with an empty document, and that value is written "
                 f"back as the WHOLE store."
@@ -157,7 +159,7 @@ def _guarded_connection(target: str):
         expected = expected_store_uuid()
         if actual and expected and actual != expected:
             raise RuntimeError(
-                f"REFUSING TO READ {target!r} as the store: it is stamped "
+                f"REFUSING TO READ {describe_store_target(target)!r} as the store: it is stamped "
                 f"{actual}, but this process expects {expected}. Reading it "
                 f"would treat another board's rows as yours, and the "
                 f"write-back would then replace that board."
