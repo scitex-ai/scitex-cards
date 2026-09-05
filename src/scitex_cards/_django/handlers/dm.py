@@ -160,6 +160,15 @@ def _registry_agents(store) -> list[dict]:
 #: no store) is the exception's own text, shown under ``DEBUG`` only.
 _NO_DM_STORE_SUMMARY = "No direct-message store is configured for this board."
 
+#: A write reached the store and the store's CREDENTIAL refused it. Distinct
+#: from "no store": the board can read, and its role has no INSERT on the DM
+#: tables. 403, because the request was understood and is forbidden to this
+#: credential; the reason is machine-readable so a client can tell it from a
+#: missing store without parsing the sentence.
+STORE_READ_ONLY_STATUS = 403
+STORE_READ_ONLY_REASON = "store_read_only"
+_READ_ONLY_STORE_SUMMARY = "This board's store credential is read-only; direct messages cannot be sent from it."
+
 
 def _typed_store_refusals(view):
     """Answer a store the DM views cannot read with a NAMED JSON refusal.
@@ -178,10 +187,31 @@ def _typed_store_refusals(view):
     from scitex_cards._store_target import StoreTargetNotConfigured
     from scitex_cards._store_url import UnrecognisedStoreTarget
 
+    from psycopg.errors import InsufficientPrivilege
+
     @wraps(view)
     def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
         try:
             return view(request, *args, **kwargs)
+        except InsufficientPrivilege as exc:
+            # A READ-ONLY CREDENTIAL MET A WRITE. scitex-hub's board mount
+            # reads the fleet store as a SELECT-only role by design; a DM send
+            # through it reaches PostgreSQL and is refused there. Predicted by
+            # hub 2026-09-05 from two measured facts, before 0.51.2 shipped.
+            # The refusal is correct; answering it as a 500 is not - the mount
+            # needs a write credential scoped to the DM tables, and the body
+            # says so instead of a traceback.
+            from django.conf import settings  # noqa: PLC0415
+
+            detail = (
+                f"the store credential cannot write direct messages: {exc}"
+                if settings.DEBUG
+                else _READ_ONLY_STORE_SUMMARY
+            )
+            return JsonResponse(
+                {"error": detail, "reason": STORE_READ_ONLY_REASON},
+                status=STORE_READ_ONLY_STATUS,
+            )
         except (StoreTargetNotConfigured, UnrecognisedStoreTarget, StoreNotProvisionedError) as exc:
             from scitex_cards._django.views import (  # noqa: PLC0415 - avoids the import cycle
                 STORE_ABSENT_REASON,

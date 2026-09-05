@@ -468,6 +468,80 @@ def test_the_thread_view_refuses_the_same_way(hubs_label_with_nothing_configured
 # card, not papered over by a test that asserts a refusal the code cannot make.
 
 
+@pytest.fixture()
+def read_only_dm_store(store):
+    """The throwaway store with INSERT revoked on the DM tables for this role.
+
+    scitex-hub's board mount reads the fleet store as a SELECT-only role. A DM
+    send through it reaches PostgreSQL and is refused there; this reproduces
+    the refusal under the test's own role by revoking its INSERT on the two
+    tables a send writes first. MEASURED, not assumed: a superuser bypasses
+    every privilege check, so under CI's service role the revoke changes
+    nothing and the refusal cannot be reached - skip with the reason.
+    """
+    from scitex_cards._backend_connect import connect
+
+    # A send creates the DM tables on first use; seed one so they exist.
+    append_message("agent-x", "operator", "seed", store=store)
+    conn = connect(store, read_only=False, rows_by_name=True)
+    try:
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"REVOKE INSERT ON {table} FROM current_user")
+        conn.commit()
+        row = conn.execute(
+            "SELECT has_table_privilege(current_user, 'dm_messages', 'INSERT') AS can_insert, "
+            "current_user AS me, "
+            "(SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su"
+        ).fetchone()
+        if row["can_insert"]:
+            pytest.skip(
+                f"role {row['me']!r} keeps INSERT on a table it revoked its own "
+                f"privileges on (rolsuper={row['su']}); the refusal under test "
+                "cannot be reached by this role."
+            )
+        yield store
+    finally:
+        conn.rollback()
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"GRANT INSERT ON {table} TO current_user")
+        conn.commit()
+        conn.close()
+
+
+def test_a_send_through_a_read_only_credential_answers_forbidden(read_only_dm_store):
+    """hub's mount after 0.51.2: the label resolves to the fleet store, the
+    role cannot INSERT, and the board says so instead of crashing."""
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_STATUS
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert response.status_code == STORE_READ_ONLY_STATUS
+
+
+def test_a_send_through_a_read_only_credential_names_the_reason(read_only_dm_store):
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_REASON
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert json.loads(response.content)["reason"] == STORE_READ_ONLY_REASON
+
+
 def test_a_label_with_an_ambient_store_reads_the_fleet_threads(store, tmp_path):
     """The other half of fleet-wide: the label is ignored, the ambient store read.
 

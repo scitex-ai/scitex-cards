@@ -22,6 +22,14 @@ and `StoreNotProvisionedError`, never an unhandled 500 — and never an empty
 thread list in place of a missing store. Under `DEBUG` the body carries the
 full diagnosis; a stranger sees one fixed sentence.
 
+A write that PostgreSQL refuses for lack of privilege answers 403 with reason
+`store_read_only`. scitex-hub's board mount reads the fleet store as a
+SELECT-only role by design, and with a path label now resolving to that store
+a DM send from the mount reaches the database and is refused there; hub
+predicted this from the two measured facts before the release. The refusal is
+correct — the mount needs a write credential scoped to the DM tables — and the
+board now says so instead of crashing.
+
 ### A tenant schema this role cannot use is refused, not silently reused
 
 A tenant schema's name is a digest of the identity alone and is global to the
