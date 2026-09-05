@@ -79,7 +79,15 @@ dependencies = [
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",
-    "fastmcp>=2.0",
+    # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
+    # 2.0, so an unbounded resolution now installs mcp 2.1.1, whose
+    # ServerSession no longer takes the initialization options positionally.
+    # `_mcp_channel.py` opens the live channel session with the 1.x shape and
+    # raises TypeError at the handshake (CI run 33935106759, every Python).
+    # The bound states the versions that actually pass; the port to mcp 2.x
+    # is its own card (cards-fresh-install-resolves-fastmcp-4-mcp-2-...),
+    # and this line must not outlive that decision.
+    "fastmcp>=2.0,<4",
 ]
 
 [project.optional-dependencies]
@@ -197,7 +205,8 @@ mcp = [
     # resolving, and now resolving to a COMPLETE install, is the point.
     #
     # Restated rather than left empty, per PS-214 -- see the `web` note above.
-    "fastmcp>=2.0",
+    # Same <4 bound as `dependencies`, for the same measured reason.
+    "fastmcp>=2.0,<4",
 ]
 postgres = [
     # KEPT DELIBERATELY, THOUGH IT IS NOW REDUNDANT: psycopg was promoted to a
