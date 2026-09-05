@@ -2,6 +2,78 @@
 
 ## [Unreleased]
 
+### A comment reads one card and writes one card, not the whole board three times
+
+Measured 2026-09-02 on the live primary (6,542 cards, 15,773 comments), one
+`comment_task` took 2.7 s against a 3.1 ms one-card query, because every CRUD
+verb was built on the whole-document read-modify-write cycle:
+
+    comment_task                                          3.013 s
+    ├─ _read_canonical_db_or_raise      x2                2.048 s   export the board, twice
+    └─ dispatch_notifications -> get_task                 1.221 s   export the board, a third time
+
+The export plus its `COUNT(*)` cross-check is the right guard for a caller that
+PRODUCES a whole document and writes it back. A verb that touches one card never
+produces one, so it paid for a guard it could not use, linearly in board size,
+on every write — the operator's ruling 2 (cost O(viewport), never O(corpus))
+violated on the most frequent write in the package.
+
+`comment_task` and `get_task` now go through `_store_single_card`: one
+`SELECT ... WHERE id = ?`, decoded exactly as the exporter decodes a row, and one
+compare-and-set write on `tasks.revision` through `_mirror_rows._write_card` —
+the same primitive the incremental mirror uses per changed card, so the
+table-leads comment merge (the 2026-08-23 loss) and the refuse-before-drop
+ordering are inherited, not re-implemented. A lost race raises
+`RevisionConflictError` and `comment_task` re-reads and re-applies (three
+attempts), which also closes the "two callers naming the SAME card still race"
+gap the mirror's docstring left open, for the one verb that is provably
+append-only.
+
+THE GUARDS DID NOT MOVE AND DID NOT FORK. `_store_canonical_read` now exposes
+`_guarded_connection`, the ONE definition of exists / ownership / retired; the
+whole-document read calls it and so does the one-card path. There is no lenient
+single-card variant, because the 2026-07-19 outage was the read door and the
+write door disagreeing. The export's `COUNT(*)` cross-check stays exactly where
+it is and exactly as strict for every caller that still produces a whole
+document (`list_tasks`, `db export`, backup, the board); the one-card verbs
+simply no longer produce one.
+
+Re-measured through the new path against the same primary: 2,697.6 ms ->
+272.1 ms, `export_doc` 0 times. What remains is three guarded connections plus
+event dispatch; the card that opened this change stays open on those.
+
+What this changes for a row the export refuses: a `users` row with no payload
+used to refuse EVERY write, including a comment on an unrelated card, because
+the write-back would have deleted it. A one-card write never reads `users` and
+writes one `tasks` row, so it now lands and the unreadable row is untouched —
+pinned directly by `test__pure_reads_survive_an_unreadable_row.py` and
+`test__rmw_refusal_must_not_become_tolerance.py`, whose refusal pairing moved to
+`update_task` (still the whole-document cycle). A one-card write ON a card whose
+own payload is unreadable refuses with the export's own wording, from the shared
+`missing_payload_refusal`.
+
+### The positional-row-read guard now covers the whole package
+
+`_insert_tasks`' compare-and-set branch shipped in 0.50.0 reading its revision
+row as `found_row[0]` — fine on the retired driver's row type, `KeyError: 0` on
+psycopg's `dict_row` — and #949 fixed that read by name. Its sibling three
+lines down, the post-race re-read `after[0]`, survived #949 and is fixed here:
+it is the line that runs exactly when the compare-and-set LOSES, so the guard
+that exists to report a lost race crashed instead of reporting it. The source
+guard that should have caught both keyed on the identifier `row` in one
+module. It now keys on WHERE THE VALUE CAME FROM: any name bound from
+`.fetchone()` / `.fetchall()`, in any module under `src/scitex_cards`,
+subscripted with an integer, fails
+`test__a_comment_row_is_read_by_name_not_position.py` — and it found `after[0]`
+on its first run over develop.
+
+Tests: `test__store_single_card.py` — thirteen tests on throwaway PostgreSQL
+schemas: exporter equivalence, blast radius = one row's revision, a table-only
+comment row survives, a stale revision is refused with the row intact,
+tombstone parity, the three guard refusals (foreign identity / schemaless /
+retired) as positive controls, and cProfile asserting `export_doc` ran 0 times
+for both verbs.
+
 ## [0.50.0] - 2026-08-31
 
 ### A behind-client no longer re-runs the DDL it cannot possibly need

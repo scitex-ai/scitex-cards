@@ -58,3 +58,47 @@ def test_no_positional_row_indexing_survives_in_the_mirror_module():
     ]
     # Assert
     assert offenders == []
+
+
+def _positional_reads_of_fetched_rows(source: Path) -> list[tuple[str, int]]:
+    """``name[<int>]`` where ``name`` was bound from ``.fetchone()`` / ``.fetchall()``.
+
+    The guard above keys on the identifier ``row``; 0.50.0 shipped the same
+    defect under the names ``found_row`` and ``after`` in ``_db_bootstrap`` —
+    the compare-and-set branch of ``_insert_tasks`` — and it died on PostgreSQL
+    for every opt-in caller until #949 read it by name. So this guard keys on
+    WHERE THE VALUE CAME FROM, not what it was called: a name assigned from a
+    fetch, or iterated from one, must never be subscripted with an integer, in
+    any module of the package.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    fetched: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            func = node.value.func
+            if isinstance(func, ast.Attribute) and func.attr in ("fetchone", "fetchall"):
+                fetched.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Call):
+            func = node.iter.func
+            if isinstance(func, ast.Attribute) and func.attr == "fetchall":
+                if isinstance(node.target, ast.Name):
+                    fetched.add(node.target.id)
+    return [
+        (source.name, node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id in fetched
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, int)
+    ]
+
+
+def test_no_fetched_row_is_read_by_position_anywhere_in_the_package():
+    # Arrange
+    package = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
+    sources = sorted(package.rglob("*.py"))
+    # Act
+    offenders = [hit for src in sources for hit in _positional_reads_of_fetched_rows(src)]
+    # Assert
+    assert offenders == []

@@ -345,7 +345,12 @@ def _insert_tasks(
                     "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
                 ).fetchone()
                 counts["revision_skipped"] = 1
-                counts["revision_found"] = None if after is None else after[0]
+                # BY NAME, like `found_row` above. #949 converted that read and
+                # left this one — the line that runs exactly when the
+                # compare-and-set LOSES — so a lost race crashed with
+                # `KeyError: 0` instead of being reported. Found by the
+                # package-wide positional-read guard on its first run.
+                counts["revision_found"] = None if after is None else after["revision"]
                 return counts
         counts["tasks"] += 1
         tid = row.get("id")
