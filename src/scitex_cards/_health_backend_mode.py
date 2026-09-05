@@ -27,6 +27,8 @@ configuration, and a knob here would be a fallback wearing a switch.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 from pathlib import Path
 from typing import Any
 
@@ -160,7 +162,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             "ok": False,
             "detail": (
                 f"the notification inbox has NO usable backend — cards are on "
-                f"{store_mode} ({target}, chosen by {source}). {inbox_where}"
+                f"{store_mode} ({describe_store_target(target)}, chosen by {source}). {inbox_where}"
             ),
             "hint": (
                 f"point $SCITEX_CARDS_DB at a postgresql://...:55432/... DSN. "
@@ -173,7 +175,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
         return {
             "ok": True,
             "detail": (
-                f"both rails on {store_mode}: cards at {target} "
+                f"both rails on {store_mode}: cards at {describe_store_target(target)} "
                 f"(chosen by {source}), notification inbox at {inbox_where}"
             ),
             "hint": None,
@@ -189,7 +191,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             "detail": (
                 f"SPLIT BACKENDS, THE OTHER WAY ROUND — the notification inbox "
                 f"is on postgres ({inbox_where}) but the cards are on "
-                f"{store_mode} ({target}, chosen by {source}). Notifications "
+                f"{store_mode} ({describe_store_target(target)}, chosen by {source}). Notifications "
                 "reference cards that the notification database has never seen, "
                 "so no read can join the two and no transaction can span them."
             ),
@@ -202,7 +204,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
     return {
         "ok": False,
         "detail": (
-            f"SPLIT BACKENDS — cards are on {store_mode} ({target}, chosen by "
+            f"SPLIT BACKENDS — cards are on {store_mode} ({describe_store_target(target)}, chosen by "
             f"{source}) but the "
             f"notification inbox is on {inbox_mode} ({inbox_where}). Card "
             "writes and notification writes therefore land in different places, "

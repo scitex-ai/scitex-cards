@@ -20,6 +20,8 @@ usage of "resolve."
 
 from __future__ import annotations
 
+from .._store_url import describe_store_target
+
 import json
 
 import click
@@ -263,7 +265,7 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
     target = resolve_store_target(None)
 
     if dry_run:
-        click.echo(f"# dry-run: would provision {target}")
+        click.echo(f"# dry-run: would provision {describe_store_target(target)}")
         return
     # An unstamped store is adoptable, so the first write claims it. This is
     # additive only: `init_schema` creates what is missing and touches no row.
@@ -273,7 +275,7 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
         conn.commit()
     finally:
         conn.close()
-    click.echo(f"provisioned: {target}")
+    click.echo(f"provisioned: {describe_store_target(target)}")
 
 
 # --------------------------------------------------------------------------- #

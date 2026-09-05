@@ -21,6 +21,8 @@ in ``_cli/__init__.py``.
 
 from __future__ import annotations
 
+from .._store_url import describe_store_target
+
 import click
 
 from .._min_client_version import (
@@ -102,7 +104,7 @@ def set_min_client_version_cmd(floor: str, db_path: str | None) -> None:
     finally:
         conn.close()
 
-    click.echo(f"# min_client_version: {previous or '(none)'} -> {floor}  ({target})")
+    click.echo(f"# min_client_version: {previous or '(none)'} -> {floor}  ({describe_store_target(target)})")
 
 
 __all__ = ["register"]

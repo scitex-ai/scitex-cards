@@ -159,24 +159,30 @@ def _canonical_source_label() -> str:
     to do with the failure, and they will spend real time there before
     suspecting the label. Reported by scitex-app, who hit exactly that.
 
-    A DSN is rendered WITHOUT its query string and never through ``Path``.
-    ``Path`` collapses ``//`` to ``/``, which is what turned
+    A DSN is rendered through :func:`describe_store_target` - user, host,
+    port and database, never the password, never the query string - and never
+    through ``Path``. ``Path`` collapses ``//`` to ``/``, which is what turned
     ``postgresql://host/db`` into ``postgresql:/host/db`` elsewhere in this
     package and had two agents reporting a malformed-URL bug against a config
     that was correct.
+
+    THE PASSWORD WAS IN THIS LABEL until 2026-09-05. The previous version
+    stripped the query string "because DSNs carry credentials there", and the
+    password is not there: it is in the userinfo before the ``@``. A consumer
+    whose DSN carried its password inline (hub's board mount, minted minutes
+    earlier) printed it to docker logs on its first read, once per legacy
+    ``pending`` row, through the TOLERATED warning this label feeds.
     """
     from ._store_target import resolve_store_target  # noqa: PLC0415
-    from ._store_url import is_postgres_url  # noqa: PLC0415
+    from ._store_url import describe_store_target, is_postgres_url  # noqa: PLC0415
 
     try:
         target = resolve_store_target(None)
     except Exception:  # noqa: BLE001 -- a label must never break the read
         return "<store:unresolved>"
     if is_postgres_url(target):
-        # Strip any query string: DSNs carry credentials there, and this label
-        # is written into warnings that land in logs.
-        return f"<postgres:{str(target).split('?', 1)[0]}>"
-    return f"<store:{target}>"
+        return f"<postgres:{describe_store_target(target)}>"
+    return f"<store:{describe_store_target(target)}>"
 
 
 # ---------------------------------------------------------------------------
