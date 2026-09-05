@@ -385,4 +385,177 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
     assert stored[-1]["body"] == "scoped by the trusted attribute"
 
 
+# === A store the views cannot read is a TYPED refusal, not a 500 ===========
+#
+# scitex-hub's arrangement, measured 2026-09-05 with a one-variable
+# differential (0.50.0 -> 0.51.1, same container): the tenancy middleware sets
+# ``request.scitex_store`` to a per-project PATH LABEL, and no ambient target is
+# configured. 0.50.0 answered 200 from a phantom SQLite file beside the label;
+# 0.51.1 crashed with an unhandled ``UnrecognisedStoreTarget``. Neither is the
+# answer: the honest one is the board's store-absent JSON.
+
+
+@pytest.fixture()
+def hubs_label_with_nothing_configured(env, tmp_path):
+    """A per-project label on the trusted attribute, and no store anywhere.
+
+    Both ambient tiers are silenced on purpose: on a developer host the user
+    config file answers with the fleet DSN when the env alone is unset, and the
+    view would then read a real store and pass for the wrong reason.
+    """
+    from scitex_cards._store_target import ENV_DB
+
+    env.delete(ENV_DB)
+    env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
+    label = tmp_path / "users" / "alice" / "proj" / "dotfiles" / ".scitex" / "todo" / "tasks.yaml"
+    yield str(label)
+
+
+def _threads_for_label(label: str):
+    request = _get("/dm/threads")
+    setattr(request, STORE_REQUEST_ATTR, label)
+    return dm_threads_view(request)
+
+
+def test_a_label_with_no_store_answers_the_store_absent_status(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_STATUS
+
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert response.status_code == STORE_ABSENT_STATUS
+
+
+def test_a_label_with_no_store_names_the_reason_machine_readably(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_REASON
+
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert json.loads(response.content)["reason"] == STORE_ABSENT_REASON
+
+
+def test_a_label_with_no_store_carries_an_error_sentence(hubs_label_with_nothing_configured):
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert json.loads(response.content)["error"]
+
+
+def test_the_thread_view_refuses_the_same_way(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_STATUS
+
+    # Arrange
+    request = _get("/dm/thread/agent-x")
+    setattr(request, STORE_REQUEST_ATTR, hubs_label_with_nothing_configured)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert response.status_code == STORE_ABSENT_STATUS
+
+
+# The reaction view is wrapped the same way but is NOT pinned here: reactions
+# still live in a JSON sidecar beside the store label (``_reactions.reactions_path``),
+# so a path label with nothing configured never reaches a store refusal there --
+# it writes ``dm_reactions.json`` beside the label and answers 200. That sidecar
+# is a file-backed store the 2026-08-09 ruling left behind; tracked on its own
+# card, not papered over by a test that asserts a refusal the code cannot make.
+
+
+@pytest.fixture()
+def read_only_dm_store(store):
+    """The throwaway store with INSERT revoked on the DM tables for this role.
+
+    scitex-hub's board mount reads the fleet store as a SELECT-only role. A DM
+    send through it reaches PostgreSQL and is refused there; this reproduces
+    the refusal under the test's own role by revoking its INSERT on the two
+    tables a send writes first. MEASURED, not assumed: a superuser bypasses
+    every privilege check, so under CI's service role the revoke changes
+    nothing and the refusal cannot be reached - skip with the reason.
+    """
+    from scitex_cards._backend_connect import connect
+
+    # A send creates the DM tables on first use; seed one so they exist.
+    append_message("agent-x", "operator", "seed", store=store)
+    conn = connect(store, read_only=False, rows_by_name=True)
+    try:
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"REVOKE INSERT ON {table} FROM current_user")
+        conn.commit()
+        row = conn.execute(
+            "SELECT has_table_privilege(current_user, 'dm_messages', 'INSERT') AS can_insert, "
+            "current_user AS me, "
+            "(SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su"
+        ).fetchone()
+        if row["can_insert"]:
+            pytest.skip(
+                f"role {row['me']!r} keeps INSERT on a table it revoked its own "
+                f"privileges on (rolsuper={row['su']}); the refusal under test "
+                "cannot be reached by this role."
+            )
+        yield store
+    finally:
+        conn.rollback()
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"GRANT INSERT ON {table} TO current_user")
+        conn.commit()
+        conn.close()
+
+
+def test_a_send_through_a_read_only_credential_answers_forbidden(read_only_dm_store):
+    """hub's mount after 0.51.2: the label resolves to the fleet store, the
+    role cannot INSERT, and the board says so instead of crashing."""
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_STATUS
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert response.status_code == STORE_READ_ONLY_STATUS
+
+
+def test_a_send_through_a_read_only_credential_names_the_reason(read_only_dm_store):
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_REASON
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert json.loads(response.content)["reason"] == STORE_READ_ONLY_REASON
+
+
+def test_a_label_with_an_ambient_store_reads_the_fleet_threads(store, tmp_path):
+    """The other half of fleet-wide: the label is ignored, the ambient store read.
+
+    Hub's deployments that carry the fleet DSN keep their per-project board
+    label and still get the fleet's DM threads -- a thread between two agents
+    belongs to no project. ``store`` is the harness-pinned ambient target.
+    """
+    # Arrange
+    append_message("agent-x", "operator", "ping", store=store)
+    label = tmp_path / "proj" / ".scitex" / "todo" / "tasks.yaml"
+    # Act
+    response = _threads_for_label(str(label))
+    # Assert
+    assert [a["name"] for a in _agents_of(response)] == ["agent-x"]
+
+
 # EOF
