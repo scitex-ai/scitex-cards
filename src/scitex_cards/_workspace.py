@@ -115,6 +115,16 @@ _IDENTITY_RE = re.compile(r"\A[a-z0-9][a-z0-9_-]{0,62}\Z")
 _SEGMENT_SEPARATOR = "/"
 
 
+class WorkspaceSchemaNotUsable(StoreUnavailableError):
+    """The tenant's schema exists under a role that has not granted this one USAGE.
+
+    A deployment fault, not a caller fault: the identity is valid and the
+    cluster is reachable, but the schema the identity maps to is somebody
+    else's. Raised by :func:`provision_workspace_store` instead of letting the
+    first table build fail with PostgreSQL's "no schema has been selected".
+    """
+
+
 class InvalidWorkspaceIdentity(ValueError):
     """The caller passed something that is not a workspace identity.
 
@@ -340,6 +350,33 @@ def provision_workspace_store(*segments: object) -> str:
         # caller's bytes -- so it cannot carry an identifier quote. Quoted anyway
         # so the safety survives a future change to the derivation.
         conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        # THE SCHEMA MAY ALREADY EXIST UNDER ANOTHER ROLE. `IF NOT EXISTS` then
+        # does nothing and says nothing, the registry insert succeeds, and the
+        # open below runs on a session whose search_path names a schema this
+        # role cannot USE -- which PostgreSQL silently drops from the effective
+        # path, so the first CREATE TABLE fails with "no schema has been
+        # selected to create in", a message about nothing in particular.
+        # Measured 2026-09-05 on the fleet primary: ws_<digest("acme")> left
+        # behind by another agent's test run made every provision of "acme"
+        # from this role fail that way. A tenant schema this role cannot use is
+        # a COLLISION, not a provision, and is refused by name.
+        usable = conn.fetchone(
+            "SELECT has_schema_privilege(current_user, ?, 'USAGE') AS usable, "
+            "(SELECT r.rolname FROM pg_namespace n JOIN pg_roles r "
+            " ON r.oid = n.nspowner WHERE n.nspname = ?) AS owner, "
+            "current_user AS me",
+            [schema, schema],
+        )
+        if not usable["usable"]:
+            raise WorkspaceSchemaNotUsable(
+                f"tenant schema {schema!r} for identity {list(segments)!r} "
+                f"already exists and is owned by role {usable['owner']!r}; the "
+                f"current role {usable['me']!r} has no USAGE on it, so every "
+                "unqualified statement on that tenant would land nowhere. "
+                "REFUSING to register it as provisioned. Either the owner "
+                "grants USAGE and CREATE, or the owner drops the schema "
+                "(a leftover from an interrupted run is the usual cause)."
+            )
         conn.execute(
             f"CREATE TABLE IF NOT EXISTS {_REGISTRY_TABLE} ("
             f"  segments    text[]      PRIMARY KEY,"

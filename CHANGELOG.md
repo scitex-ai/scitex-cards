@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### A tenant schema this role cannot use is refused, not silently reused
+
+A tenant schema's name is a digest of the identity alone and is global to the
+database. When one already existed under another role (left behind by that
+role's test run), `provision_workspace_store` created nothing, registered the
+tenant, and then failed on the first table build with PostgreSQL's "no schema
+has been selected to create in" — the unusable schema was silently dropped from
+the effective search_path. Provisioning now checks `has_schema_privilege` right
+after `CREATE SCHEMA IF NOT EXISTS` and raises `WorkspaceSchemaNotUsable`
+naming the schema, its owner and the current role. The test harness provisions
+per-test identities and drops the tenant schemas it created, which also ends an
+xdist race on shared fixed identities that failed one CI leg in three.
+
 ### A DSN that asks for a search_path is refused when the server did not apply it
 
 Measured 2026-09-05: the fleet primary went behind PgBouncer in transaction
