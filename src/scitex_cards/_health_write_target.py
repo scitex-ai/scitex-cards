@@ -31,6 +31,8 @@ axis fails LOUDLY instead of this check silently trusting the deletion held.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 import os
 from typing import Any
 
@@ -89,7 +91,7 @@ def check_single_write_target() -> dict[str, Any]:
         from ._health_backend_mode import _store_mode
 
         engine, target = _store_mode(None)
-        where = f"{engine} ({target})"
+        where = f"{engine} ({describe_store_target(target)})"
     except Exception:  # noqa: BLE001 — a doctor must not crash the caller
         where = "the resolved store (engine undetermined)"
     return {
