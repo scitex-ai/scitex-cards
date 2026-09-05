@@ -437,6 +437,27 @@ def unusable_tenant_schema(workspace_cluster, who):
         conn.execute(f'CREATE SCHEMA "{schema}"')
         conn.execute(f'REVOKE ALL ON SCHEMA "{schema}" FROM current_user')
         conn.commit()
+        # MEASURE THE ARRANGEMENT, do not assume it. A SUPERUSER bypasses every
+        # privilege check, so the revoke above changes nothing for it and
+        # has_schema_privilege stays true: the refusal is unreachable under that
+        # role, on CI's service database and nowhere on the fleet primary (its
+        # agent roles are not superusers). Under a superuser the guard is
+        # correct to stay silent - there is no collision a superuser cannot use
+        # through - so these tests measure nothing there and say why, rather
+        # than failing on a condition that cannot exist or passing vacuously.
+        row = conn.fetchone(
+            "SELECT has_schema_privilege(current_user, ?, 'USAGE') AS usable, "
+            "current_user AS me, "
+            "(SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su",
+            [schema],
+        )
+        if row["usable"]:
+            pytest.skip(
+                f"role {row['me']!r} keeps USAGE on a schema it revoked its own "
+                f"privileges on (rolsuper={row['su']}); the refusal under test "
+                "cannot be reached by this role. It is exercised on a "
+                "non-superuser role such as the fleet's agent roles."
+            )
         yield schema
     finally:
         conn.rollback()
