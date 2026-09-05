@@ -42,6 +42,8 @@ and skip -- loudly -- when it is unreachable, rather than passing on a mock.
 
 from __future__ import annotations
 
+from ._store_url import describe_store_target
+
 from typing import Any, Iterable
 
 from ._store_url import (
@@ -199,7 +201,7 @@ def connect(
             "include, so a default install has no driver:\n"
             "    pip install 'scitex-cards[all]'\n"
             "    (or add psycopg[binary]>=3.1 to whatever installs this env)\n"
-            f"target was: {target!r}"
+            f"target was: {describe_store_target(target)!r}"
         ) from exc
 
     if rows_by_name:

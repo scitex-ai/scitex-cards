@@ -20,6 +20,59 @@ remedy (the PostgreSQL port itself, or a pooler that tracks `search_path`). The
 schema is read the way libpq reads it — the last `options` wins — because an
 xdist worker's DSN carries two. A DSN that asks for nothing pays nothing.
 
+## [0.51.1] - 2026-09-05
+
+### A store target written into a message names the store, never its password
+
+Measured 2026-09-05 by scitex-hub, six minutes after a freshly minted
+read-only role had been delivered through a 0600 secrets path: on the first
+board read, the read-side TOLERATED warning printed the store label as a repr
+of the full DSN, password included, once per legacy `pending` row, to docker
+logs. The label had stripped the query string "because DSNs carry credentials
+there"; the password is in the userinfo, before the `@`. The same raw
+interpolation sat in about twenty other messages — the missing-driver error,
+the malformed-target refusals, the identity guard, the health checks, the
+canonical read's refusals, the CLI's provision and floor echoes.
+
+`describe_store_target` is now the one rendering: a URL keeps scheme, user,
+host, port and database and drops the password and the query string; a
+conninfo keeps every keyword but `password`; the mangled form the refusals
+exist for has its userinfo password stripped; any other target is returned
+unchanged so a path or placeholder stays diagnosable. Every site goes through
+it, `store_label` delegates to it, and a source-level test greps the watched
+modules for a raw interpolation that bypasses it. (#964)
+
+### The release pipeline runs green from a self-hosted runner's home directory
+
+v0.51.0 was tagged but never published: the tag-driven workflow, which runs on
+the Spartan self-hosted runners, failed one test in 6,378 —
+`test_scitex_dir_fallback_is_not_under_any_real_home`. The runner's whole work
+tree lives under its user's home, so pytest's basetemp is
+`/home/ywatanabe/actions-runner-org/_work/_temp/...` and "not under a real
+home" was false by construction there, while it held on GitHub-hosted runners
+(`/home/runner` + `/tmp`), which is why the same tree was green on #960 and
+#961. The store was never touched.
+
+The guard now asserts the invariant it protects: the tier-4 file fallback never
+lands in a real user's **store root** (`<home>/.scitex`), not that it avoids
+the home as a whole. The sibling test still pins the fallback under pytest's
+tmp root, so a scratch inside a real `.scitex` still fails. (#962)
+
+### The test harness refuses a search_path the server did not apply
+
+The harness scopes every test to a throwaway schema with one mechanism,
+`options=-csearch_path=<schema>` on the DSN. Through a transaction-mode
+PgBouncer that startup parameter is dropped silently, so the harness believed
+it was scoped and was on `public`, the live board; only the store-identity
+stamp stopped a write, with a message about identities. `_open_throwaway_postgres`
+now asks the server `SHOW search_path` on the scoped DSN and refuses before any
+test runs when the session does not carry the schema asked for, naming both
+sides and the remedy (the PostgreSQL port itself, never the pooler). The reason
+lands in the report header, where `-x` cannot hide it. The schema is read the
+way libpq reads it — the last `options`, the last `-csearch_path=` — because an
+xdist worker inherits the controller's already-scoped DSN and carves a second
+one on top. (#962)
+
 ## [0.51.0] - 2026-09-05
 
 ### A fresh install keeps the mcp 1.x the channel server speaks
