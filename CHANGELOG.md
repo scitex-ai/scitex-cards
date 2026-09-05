@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-09-05
+
+### A fresh install keeps the mcp 1.x the channel server speaks
+
+fastmcp 4.0.3 stopped holding mcp below 2.0, so an unbounded resolution of
+`fastmcp>=2.0` installed mcp 2.1.1, whose `ServerSession` no longer takes the
+initialization options positionally. `_mcp_channel.py` opens the live channel
+session with the 1.x shape and raised `TypeError` at the handshake, on every
+Python, in CI (#959) — a production break for any fresh install, since that
+session is the push rail every agent's Claude session speaks to. The
+requirement is now `fastmcp>=2.0,<4` on both sites, which resolves to
+fastmcp 3.4.7 / mcp 1.29.1, the pair every fleet venv already runs. The port
+to mcp 2.x is its own card, and this bound must not outlive that decision.
+
 ### A comment reads one card and writes one card, not the whole board three times
 
 Measured 2026-09-02 on the live primary (6,542 cards, 15,773 comments), one
