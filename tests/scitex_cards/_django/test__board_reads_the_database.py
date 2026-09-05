@@ -440,8 +440,13 @@ def test_the_failure_body_names_the_store_it_could_not_read(unreadable_store):
     FileNotFoundError into a fixed 400 "No task store found.", and let every
     other load failure escape into an HTML error page the frontend cannot parse.
     """
-    # Arrange
-    expected_fragment = str(unreadable_store)
+    # Arrange: the store as a MESSAGE names it - user, host, port, database -
+    # never its password or query string (2026-09-05: the raw DSN in a warning
+    # printed a consumer's password to its logs; every rendering now goes
+    # through describe_store_target).
+    from scitex_cards._store_url import describe_store_target
+
+    expected_fragment = describe_store_target(str(unreadable_store))
     # Act
     payload = _tasks_payload()
     # Assert
