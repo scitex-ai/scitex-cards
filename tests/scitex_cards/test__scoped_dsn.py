@@ -144,14 +144,22 @@ def test_a_request_the_session_does_not_carry_is_refused(
 
 
 @pytest.fixture
-def refusal_message(store_dsn, a_request_the_session_does_not_carry) -> str:
+def refusal_message(store_dsn, a_request_the_session_does_not_carry):
+    """The gate's message for a request the session does not carry.
+
+    Yielded from inside the connection's context so the connection is closed
+    after the tests that read the message, not before the message exists.
+    """
     _, other = a_request_the_session_does_not_carry
     with connect(store_dsn) as conn:
+        message = ""
         try:
             assert_search_path_applied(conn.raw, other)
         except SearchPathNotApplied as exc:
-            return str(exc)
-    pytest.fail("the gate accepted a search_path the session does not carry")
+            message = str(exc)
+        if not message:
+            pytest.fail("the gate accepted a search_path the session does not carry")
+        yield message
 
 
 def test_the_refusal_names_the_schema_asked_for(refusal_message):
