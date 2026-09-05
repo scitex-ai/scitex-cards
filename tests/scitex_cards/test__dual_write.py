@@ -1,36 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""STORE OWNERSHIP GUARD — the mirror that survived, and the toggle that didn't.
-
-This file used to be the S1 dual-write mirror's test suite: a whole feature
-that mirrored every card write into SQLite while YAML stayed canonical, gated
-by a dual-write toggle. That feature is DELETED — not defaulted off —
-per the operator's 2026-07-21 ruling: 「データベースしか書く場所なんてありえ
-ない。デュアルライトっていうオプションがあること自体がおかしい」. Root cause:
-``cards.db`` carried a stale ``schema_meta`` row pointing at an old YAML file,
-and an agent whose env still carried the dual-write flag had every write
-silently routed there instead of the canonical database — every call
-returned SUCCESS and ``health`` stayed green while a whole session of card
-writes vanished. Deleting the toggle makes that class of bug unrepresentable:
-there is no environment variable left to read that could send a write
-anywhere but ``$SCITEX_CARDS_DB``.
-
-What SURVIVES, and is tested below, is the OWNERSHIP GUARD
-(``_dual_write._db_mirrors_this_store`` / ``_same_file``): the invariant that
-a database belongs to exactly ONE store, checked at the write chokepoint
-(:func:`scitex_cards._store_backend.write_doc_to_db`), which RAISES rather
-than returning quietly on a mismatch — a write that cannot reach the
-canonical DB must NEVER report success.
-"""
+"""STORE OWNERSHIP GUARD — the mirror that survived, and the toggle that didn't."""
 
 from __future__ import annotations
 
-import sqlite3
 
 import pytest
 
 from scitex_cards import _dual_write, _store, _store_backend
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_DB, connect
 
 
 def test_the_dual_write_module_now_exposes_only_the_ownership_guard():
@@ -82,7 +60,7 @@ def test_no_deleted_toggle_symbol_survives_on_the_module():
     )
 
 
-def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(env, tmp_path):
+def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(new_store, env, tmp_path):
     """The incident, closed: the flag has ZERO effect on where a write lands.
 
     2026-07-21 root cause: an agent env carrying ``SCITEX_CARDS_DUAL_WRITE=1``
@@ -99,8 +77,8 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(env, tmp_path):
     # neither step.
     env.set("SCITEX_CARDS_DUAL_WRITE", "1")
     store = tmp_path / "tasks.yaml"
-    db = tmp_path / "cards.db"
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_flag", bootstrap=False)
+    env.set(ENV_DB, db)
     _store_backend.write_doc_to_db({"tasks": []}, store)
 
     # Act — the legacy dual-write env var stays set for the actual write too.
@@ -113,10 +91,19 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(env, tmp_path):
     )
 
 
-def _db_ids(db_path) -> set[str]:
-    conn = sqlite3.connect(str(db_path))
+#: `store` STAYS A PATH IN EVERY TEST BELOW, and that is not an oversight.
+#: `_paths.resolve_tasks_path`'s own first line says it resolves "the non-task
+#: YAML CONTAINER path -- NOT the store identity": the sidecar that still holds
+#: the `users:` and `groups:` sections, and whose `.parent` is the store
+#: DIRECTORY that pidfiles and the delivery ledger live in. Card data lives in
+#: the database, which is what `$SCITEX_CARDS_DB` names. Feeding a DSN in as
+#: `store=` would not be a conversion, it would be wrong.
+
+
+def _db_ids(db_target) -> set[str]:
+    conn = connect(db_target)
     try:
-        return {r[0] for r in conn.execute("SELECT id FROM tasks")}
+        return {r["id"] for r in conn.execute("SELECT id FROM tasks").fetchall()}
     finally:
         conn.close()
 
@@ -126,7 +113,7 @@ def _db_ids(db_path) -> set[str]:
 # --------------------------------------------------------------------------
 
 
-def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
+def test_a_card_write_does_not_touch_the_messages_table(new_store, env, tmp_path):
     """DM threads MUST survive a card write.
 
     `mirror_doc_incremental` is now the SOLE canonical write primitive, and the
@@ -139,8 +126,8 @@ def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
     """
     # Arrange — one canonical write builds the DB, then a DM lands in `messages`.
     store = tmp_path / "tasks.yaml"
-    db = tmp_path / "own.db"
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_messages", bootstrap=False)
+    env.set(ENV_DB, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -149,7 +136,7 @@ def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
         },
         store,
     )
-    conn = sqlite3.connect(str(db))
+    conn = connect(db)
     conn.execute(
         "INSERT INTO messages(id, thread_key, sender, recipient, body, ts, read) "
         "VALUES('m1','dm:x::y','x','y','hello','2026-07-12T00:00:00Z',0)"
@@ -169,9 +156,11 @@ def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
     )
 
     # Assert
-    conn = sqlite3.connect(str(db))
+    conn = connect(db)
     try:
-        surviving = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        surviving = conn.execute(
+            "SELECT COUNT(*) AS n FROM messages"
+        ).fetchone()["n"]
     finally:
         conn.close()
     assert surviving == 1, "the write DELETED a DM thread on a card write"
@@ -188,24 +177,31 @@ def test_a_card_write_does_not_touch_the_messages_table(env, tmp_path):
 # controls guard the opposite error of refusing legitimate mirrors.
 
 
-def _mirror_of_store_a(env, tmp_path):
-    """A DB holding A's card, STAMPED for a FOREIGN identity (not its own path).
+def _mirror_of_store_a(env, new_store, tmp_path):
+    """A store holding A's card, carrying a FOREIGN IDENTITY.
 
-    Single-identity model: the store IS the database, so "a database that
-    belongs to a different store" is one whose provenance stamp names a
-    DIFFERENT database path than ``$SCITEX_CARDS_DB`` resolves. The ownership
-    guard must refuse a write or read against it. Built by seeding the rows then
-    stamping the provenance for a foreign path by hand (the production write
-    door stamps the database's OWN path, so it cannot manufacture this).
+    THE IDENTITY IS A UUID, NOT A PATH, AND THAT IS THE WHOLE CONVERSION. This
+    used to stamp a foreign database PATH through
+    ``_db_freshness.stamp_store_provenance`` and rely on the ownership guard
+    comparing paths. The guard is UUID-FIRST now -- ``_dual_write`` states the
+    order in capitals: the verdict is taken on ``schema_meta.store_uuid``
+    against ``expected_store_uuid()``, and on both ACCEPT and REFUSE "THE PATH
+    IS NOT CONSULTED AT ALL". A path stamp therefore no longer makes a store
+    foreign, and a fixture built on one is not building the case it names: the
+    write and read doors both let it straight through.
+
+    ``store_uuid`` is what a namespace cannot re-spell, which is why it
+    replaced the path -- see ``_store_uuid`` and the 2026-07-28 flip it ended.
+    So the store is stamped with one uuid and the PROCESS is told to expect a
+    different one, which is exactly the shape of "this database belongs to
+    somebody else's board".
     """
     from conftest import seed_db_from_doc
 
-    from scitex_cards._db import connect
-    from scitex_cards._db_freshness import stamp_store_provenance
+    from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID, stamp_store_uuid
 
-    db = tmp_path / "mirror-of-a.db"
-    foreign = tmp_path / "a" / "cards.db"  # a DIFFERENT database path
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_mirror_a", bootstrap=False)
+    env.set(ENV_DB, db)
     doc = {
         "tasks": [
             {
@@ -216,29 +212,32 @@ def _mirror_of_store_a(env, tmp_path):
             }
         ]
     }
-    seed_db_from_doc(doc, str(db))
-    conn = connect(str(db))
+    seed_db_from_doc(doc, db)
+    conn = connect(db)
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        stamp_store_provenance(conn, foreign)
+        # NO `BEGIN IMMEDIATE`: it is a statement only one engine ever
+        # understood, and a hard syntax error here. The driver opens a
+        # transaction on the first statement anyway.
+        stamp_store_uuid(conn, "11111111-1111-4111-8111-111111111111")
         conn.commit()
     finally:
         conn.close()
+    # The process expects a DIFFERENT board. Set last, so the seeding above
+    # (which opens the same doors) is not itself refused.
+    env.set(ENV_EXPECTED_STORE_UUID, "22222222-2222-4222-8222-222222222222")
     return db
 
 
-def test_the_mirror_of_store_a_really_holds_store_as_card(env, tmp_path):
+def test_the_mirror_of_store_a_really_holds_store_as_card(new_store, env, tmp_path):
     # Arrange
     # Act
-    db = _mirror_of_store_a(env, tmp_path)
+    db = _mirror_of_store_a(env, new_store, tmp_path)
 
     # Assert — the precondition every foreign-write test below rests on.
     assert "a-only" in _db_ids(db), "precondition: the DB mirrors store A"
 
 
-def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
-    env, tmp_path
-):
+def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(new_store, env, tmp_path):
     """The incident, in miniature: store B must not overwrite store A's mirror.
 
     The public card verb is protected, not only the low-level primitive: store B
@@ -246,7 +245,7 @@ def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
     read door of `add_task` RAISES before any row is touched.
     """
     # Arrange — a DB stamped for a FOREIGN identity, holding A's card.
-    db = _mirror_of_store_a(env, tmp_path)
+    db = _mirror_of_store_a(env, new_store, tmp_path)
 
     # Act — the resolved database is foreign-stamped, so the read door of
     # add_task RAISES before any row is touched (the `store` arg is cosmetic —
@@ -267,9 +266,7 @@ def test_a_write_to_a_foreign_store_does_not_clobber_another_stores_mirror(
     )
 
 
-def test_a_write_to_a_foreign_store_raises_rather_than_returning_quietly(
-    env, tmp_path
-):
+def test_a_write_to_a_foreign_store_raises_rather_than_returning_quietly(new_store, env, tmp_path):
     """The refusal itself, split out under STX-TQ007.
 
     A write that cannot reach the canonical database must NEVER report success.
@@ -278,7 +275,7 @@ def test_a_write_to_a_foreign_store_raises_rather_than_returning_quietly(
     that silently no-ops would satisfy the mirror check and fail this one.
     """
     # Arrange
-    _mirror_of_store_a(env, tmp_path)
+    _mirror_of_store_a(env, new_store, tmp_path)
     store_b = tmp_path / "b" / "cards.db"
     # Act
     # Assert
@@ -286,14 +283,12 @@ def test_a_write_to_a_foreign_store_raises_rather_than_returning_quietly(
         _store.add_task(store_b, id="b-only", title="B", assignee="agent:test-suite")
 
 
-def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(
-    env, tmp_path
-):
+def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(new_store, env, tmp_path):
     """Control: refusing must not break the FIRST write to a brand-new mirror."""
     # Arrange
     store = tmp_path / "tasks.yaml"
-    db = tmp_path / "fresh.db"
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_fresh", bootstrap=False)
+    env.set(ENV_DB, db)
 
     # Act — the first canonical write to an un-adopted DB must claim it.
     _store_backend.write_doc_to_db(
@@ -316,12 +311,12 @@ def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(
     )
 
 
-def test_a_store_writing_to_its_own_mirror_is_not_refused(env, tmp_path):
+def test_a_store_writing_to_its_own_mirror_is_not_refused(new_store, env, tmp_path):
     """Control: the normal case — repeated writes to one's own mirror keep working."""
     # Arrange — first write adopts the DB and stamps it for `store`.
     store = tmp_path / "tasks.yaml"
-    db = tmp_path / "own.db"
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_own", bootstrap=False)
+    env.set(ENV_DB, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -370,12 +365,10 @@ def test_a_store_writing_to_its_own_mirror_is_not_refused(env, tmp_path):
 # harder (2,138 -> 1). Declining quietly is right when YAML still holds the card and
 # wrong when the DB is the only copy: it would report success for a card that was
 # never stored.
-def test_canonical_write_to_a_foreign_db_RAISES_rather_than_clobbering(
-    env, tmp_path
-):
+def test_canonical_write_to_a_foreign_db_RAISES_rather_than_clobbering(new_store, env, tmp_path):
     # Arrange — a DB that belongs to store A.
 
-    db = _mirror_of_store_a(env, tmp_path)
+    db = _mirror_of_store_a(env, new_store, tmp_path)
     store_b = tmp_path / "b" / "cards.db"
 
     # Act
@@ -384,12 +377,10 @@ def test_canonical_write_to_a_foreign_db_RAISES_rather_than_clobbering(
         _store_backend.write_doc_to_db({"tasks": [{"id": "b-only"}]}, store_b)
 
 
-def test_a_refused_canonical_write_leaves_the_foreign_rows_untouched(
-    env, tmp_path
-):
+def test_a_refused_canonical_write_leaves_the_foreign_rows_untouched(new_store, env, tmp_path):
     # Arrange — a DB that belongs to store A.
 
-    db = _mirror_of_store_a(env, tmp_path)
+    db = _mirror_of_store_a(env, new_store, tmp_path)
     store_b = tmp_path / "b" / "cards.db"
 
     # Act — the refused write. (Captured, not `pytest.raises`: the refusal
@@ -417,13 +408,11 @@ def test_a_refused_canonical_write_leaves_the_foreign_rows_untouched(
 #: always-red uselessness as an always-green gate, and this codebase has
 #: shipped that shape more than once. The healthy-read test is what proves the
 #: guard discriminates rather than merely fires.
-def test_reading_a_foreign_stamped_db_RAISES_rather_than_returning_its_rows(
-    env, tmp_path
-):
+def test_reading_a_foreign_stamped_db_RAISES_rather_than_returning_its_rows(new_store, env, tmp_path):
     # Arrange — a database whose provenance names a DIFFERENT database path.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    _mirror_of_store_a(env, tmp_path)
+    _mirror_of_store_a(env, new_store, tmp_path)
 
     # Act
     # Assert
@@ -431,13 +420,13 @@ def test_reading_a_foreign_stamped_db_RAISES_rather_than_returning_its_rows(
         _read_canonical_db_or_raise()
 
 
-def test_reading_the_db_that_owns_this_store_returns_its_cards(env, tmp_path):
+def test_reading_the_db_that_owns_this_store_returns_its_cards(new_store, env, tmp_path):
     # Arrange — a database stamped for its OWN path (the normal case): the first
     # canonical write adopts the fresh database and stamps its own identity.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    db = tmp_path / "own.db"
-    env.set(ENV_DB, str(db))
+    db = new_store("cards_dual_owning", bootstrap=False)
+    env.set(ENV_DB, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -459,25 +448,30 @@ def test_reading_the_db_that_owns_this_store_returns_its_cards(env, tmp_path):
     assert [t["id"] for t in doc["tasks"]] == ["a-only"]
 
 
-def test_a_missing_canonical_db_RAISES_instead_of_reading_an_empty_store(
-    env, tmp_path
-):
+def test_a_missing_canonical_db_RAISES_instead_of_reading_an_empty_store(new_store, env, tmp_path):
     """A failed READ must never become a write of nothing.
 
     In canonical mode the value returned here is written back as the WHOLE
-    store, so `export_doc` answering a missing database with a well-formed
-    {"tasks": []} is not "no cards" but "delete every card". That is not
-    theoretical: one comment_task call took the live board from 2,138 cards to
-    3 this way. Type-checking the result cannot catch it — the empty document
-    is indistinguishable from a real empty board — so the check asks the file
-    system instead.
+    store, so `export_doc` answering an unprovisioned database with a
+    well-formed {"tasks": []} is not "no cards" but "delete every card". That is
+    not theoretical: one comment_task call took the live board from 2,138 cards
+    to 3 this way. Type-checking the result cannot catch it — the empty document
+    is indistinguishable from a real empty board.
+
+    "MISSING" IS A DIFFERENT QUESTION NOW, AND A SHARPER ONE. This pointed at a
+    filename that did not exist and asked the FILE SYSTEM. A store is a database
+    on a server: the filesystem has no opinion, and the dangerous case is not an
+    absent file but a REACHABLE, EMPTY, SCHEMALESS one -- a server that answers
+    every connection and holds no `tasks` table. `_store_canonical_read` says so
+    in its own words ("EXISTENCE, asked of the catalogue rather than the
+    filesystem"), and that is the case built here.
     """
-    # Arrange — point at a database that does not exist.
+    # Arrange — point at a store that is reachable and has nothing in it.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    env.set(ENV_DB, str(tmp_path / "not-here.db"))
+    env.set(ENV_DB, new_store("cards_dual_unprovisioned", bootstrap=False))
 
     # Act
     # Assert
-    with pytest.raises(RuntimeError, match="does not exist"):
+    with pytest.raises(RuntimeError, match="no `tasks` table"):
         _read_canonical_db_or_raise()

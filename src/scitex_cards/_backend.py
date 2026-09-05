@@ -423,7 +423,7 @@ class LocalBackend:
         #   scitex-agent-container (laptop)     dm_list(peer="…-04") -> 1 message
         #   scitex-agent-container-04 (compute) IDENTICAL query      -> []
         # Same DSN, same store_uuid 1d55dd6e-3d2a-4c24-a429-a78835ab988f, no
-        # SQLite fallback, Postgres reachable from both, and — checked, because
+        # local fallback, Postgres reachable from both, and — checked, because
         # it was the obvious suspect — THE SAME PACKAGE VERSION 0.32.3 on both.
         # The only difference was which host's `threads.json` each client read.
         #

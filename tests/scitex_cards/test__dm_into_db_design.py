@@ -23,19 +23,21 @@ Two kinds of test live here:
   implementation incrementally turns these green without ever turning CI red
   on a test that started working earlier than expected.
 
-Every database here is an EXPLICIT ``tmp_path / "cards.db"``. Nothing in this
-file resolves the ambient store, migrates data, or touches the live fleet.
+Every store here is an EXPLICIT throwaway from the ``new_store`` factory.
+Nothing in this file resolves the ambient store, migrates data, or touches the
+live fleet. (It used to say ``tmp_path / "cards.db"``; a filesystem path names
+no store any more and is refused at the door.)
 """
 
 from __future__ import annotations
 
 import ast
 import re
-import sqlite3
 from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
 
+import psycopg
 import pytest
 
 from scitex_cards._db import open_db, table_columns
@@ -62,27 +64,39 @@ def _card(section: str):
 # Fixtures — explicit throwaway stores only                                    #
 # --------------------------------------------------------------------------- #
 @pytest.fixture()
-def db_path(tmp_path: Path) -> Path:
-    """An EXPLICIT database path nobody else can resolve.
+def db_dsn(new_store) -> str:
+    """An EXPLICIT throwaway store nobody else can resolve.
 
     The suite's isolation guard exists because a test that lets the store
     resolve itself rebuilt the fleet's production board three times. Naming the
-    file is the cheapest way to stay outside that failure class.
+    store explicitly is the cheapest way to stay outside that failure class.
+
+    This used to be ``tmp_path / "cards.db"``. A filesystem path names no store
+    any more — ``reject_non_postgres_target`` refuses it at the door — so that
+    spelling stopped testing DM behaviour and started testing the refusal.
+    ``new_store`` carries the same meaning it used to: a fresh empty store
+    nobody else is using.
     """
-    return tmp_path / "cards.db"
+    return new_store("cards_dmdesign")
 
 
 @pytest.fixture()
-def conn(db_path: Path):
-    """A schema-complete connection to the throwaway database."""
-    connection = open_db(db_path)
+def conn(db_dsn: str):
+    """A schema-complete connection to the throwaway store.
+
+    The close is in a ``finally`` on purpose, and it is not tidiness: the
+    schema is dropped ``CASCADE`` when the test ends, and that statement BLOCKS
+    on any connection still holding a transaction. A leaked handle here does
+    not fail — it HANGS, which reads as a slow runner rather than a red test.
+    """
+    connection = open_db(db_dsn)
     try:
         yield connection
     finally:
         connection.close()
 
 
-def _seed_pair_message(connection: sqlite3.Connection) -> str:
+def _seed_pair_message(connection: psycopg.Connection) -> str:
     """Insert one thread + one message directly, for the invariant tests.
 
     Deliberately raw SQL: these tests are about what the ENGINE permits, so
@@ -145,7 +159,7 @@ def test_threads_path_does_not_materialise_the_sidecar(tmp_path: Path):
     assert not (tmp_path / "threads.json").exists()
 
 
-def test_sent_dm_reaches_the_canonical_database(tmp_path: Path, db_path):
+def test_sent_dm_reaches_the_canonical_database(db_dsn):
     """The whole card in one line: the store now HAS the DM.
 
     This assertion used to read ``== 0`` and was the defect made observable —
@@ -153,23 +167,27 @@ def test_sent_dm_reaches_the_canonical_database(tmp_path: Path, db_path):
     protection that store offers covered nothing about that message. Inverting
     it is the deliverable.
     """
-    # Arrange — a store whose database sits next to the sidecar.
-    store = tmp_path / "tasks.yaml"
-    store.write_text("tasks: []\n", encoding="utf-8")
+    # Arrange — the store the message is sent to IS the store we then read.
+    # This used to be a yaml sidecar with `cards.db` beside it, and the two
+    # halves agreed because the temp directory held both. A DSN names the store
+    # directly, so passing the SAME value to both halves is what preserves the
+    # subject: send here, then look here.
 
     # Act
-    append_message("operator", "agent-x", "hello there", store=store)
+    append_message("operator", "agent-x", "hello there", store=db_dsn)
 
     # Assert
-    connection = open_db(db_path)
+    connection = open_db(db_dsn)
     try:
-        rows = connection.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0]
+        rows = connection.execute(
+            "SELECT COUNT(*) AS n FROM dm_messages"
+        ).fetchone()["n"]
     finally:
         connection.close()
     assert rows == 1
 
 
-def test_the_superseded_messages_table_is_left_alone(tmp_path: Path, db_path):
+def test_the_superseded_messages_table_is_left_alone(db_dsn):
     """The v3 ``messages`` table is not written, not dropped, not rebuilt.
 
     It is a derived mirror of the sidecar with no live writer — a fossil of
@@ -178,17 +196,17 @@ def test_the_superseded_messages_table_is_left_alone(tmp_path: Path, db_path):
     design exists to avoid), so it is FROZEN: kept as a pre-migration snapshot
     and superseded by ``dm_messages`` rather than repaired.
     """
-    # Arrange
-    store = tmp_path / "tasks.yaml"
-    store.write_text("tasks: []\n", encoding="utf-8")
+    # Arrange — same store for the write and the read; see the test above.
 
     # Act
-    append_message("operator", "agent-x", "hello there", store=store)
+    append_message("operator", "agent-x", "hello there", store=db_dsn)
 
     # Assert
-    connection = open_db(db_path)
+    connection = open_db(db_dsn)
     try:
-        rows = connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        rows = connection.execute(
+            "SELECT COUNT(*) AS n FROM messages"
+        ).fetchone()["n"]
     finally:
         connection.close()
     assert rows == 0
@@ -337,12 +355,20 @@ def test_a_real_delete_is_still_counted(tmp_path):
 # --------------------------------------------------------------------------- #
 # INTENT — schema v5 (design section 3)                                        #
 # --------------------------------------------------------------------------- #
-def _tables(connection: sqlite3.Connection) -> set[str]:
-    """Tables actually present in THIS file — the artifact, not the stamp."""
+def _tables(connection: psycopg.Connection) -> set[str]:
+    """Tables actually present in THIS store — the artifact, not the stamp.
+
+    Scoped to the connection's OWN search_path with ``current_schema()`` rather
+    than listing every table in the database. Each test carves its own schema on
+    a shared cluster, so an unscoped catalog query would see its neighbours' and
+    answer "the table exists" for a store that never created it — a check that
+    passes for the wrong reason.
+    """
     rows = connection.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
+        "SELECT table_name AS name FROM information_schema.tables"
+        " WHERE table_schema = current_schema()"
     ).fetchall()
-    return {row[0] for row in rows}
+    return {row["name"] for row in rows}
 
 
 def test_schema_declares_the_dm_threads_table(conn):
@@ -440,7 +466,7 @@ def test_dm_messages_records_the_host_that_wrote_it(conn):
 def test_dm_messages_refuses_physical_delete(conn):
     """A guard can be bypassed; an engine trigger cannot be reached around.
 
-    Enforcing append-only in Python leaves every other client — the sqlite3
+    Enforcing append-only in Python leaves every other client — the psql
     CLI, a stray script, a future caller — free to delete. The refusal belongs
     in the database so it binds all of them.
     """
@@ -449,7 +475,7 @@ def test_dm_messages_refuses_physical_delete(conn):
     delete = partial(conn.execute, "DELETE FROM dm_messages")
 
     # Act
-    refusal = pytest.raises(sqlite3.DatabaseError, match="append-only")
+    refusal = pytest.raises(psycopg.DatabaseError, match="append-only")
 
     # Assert
     with refusal:
@@ -467,7 +493,7 @@ def test_dm_messages_body_is_immutable(conn):
     edit = partial(conn.execute, "UPDATE dm_messages SET body = 'tampered'")
 
     # Act
-    refusal = pytest.raises(sqlite3.DatabaseError, match="immutable")
+    refusal = pytest.raises(psycopg.DatabaseError, match="immutable")
 
     # Assert
     with refusal:
@@ -488,7 +514,7 @@ def test_dm_messages_tombstone_marks_the_row_in_place(conn):
     conn.execute("UPDATE dm_messages SET deleted_at = '2026-07-28T00:00:02Z'")
 
     # Assert
-    assert conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) AS n FROM dm_messages").fetchone()["n"] == 1
 
 
 def test_pair_thread_id_is_the_legacy_thread_key():

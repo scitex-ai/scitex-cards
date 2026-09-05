@@ -198,14 +198,15 @@ def resolve_store_cmd(as_json) -> None:
 @click.command(
     "init-store",
     **spec_command_kwargs(
-        summary="Create an empty SQLite task store at the chosen scope (idempotent).",
+        summary="Install the task schema into the resolved store (idempotent).",
         description=(
-            "--shared -> ~/.scitex/cards/cards.db (user scope, the "
-            "default). --project -> <git-root>/.scitex/cards/cards.db. "
-            "Creates an empty, schema-complete SQLite DB. No-op (prints "
-            "'exists') when the target DB already exists.",
+            "Connects to the store $SCITEX_CARDS_DB resolves to and creates "
+            "the tables, indexes and triggers if they are absent. Idempotent: "
+            "a store that already carries the schema is left untouched. It "
+            "does NOT create a database -- the database must exist and the "
+            "role must be able to write it.",
         ),
-        examples=(("{prog} init-store --shared", "Create the user-scope store."),),
+        examples=(("{prog} init-store --shared", "Provision the resolved store."),),
     ),
 )
 @click.option(
@@ -213,18 +214,19 @@ def resolve_store_cmd(as_json) -> None:
     "scope_choice",
     flag_value="shared",
     default="shared",
-    help="Create the user-scope SQLite store (~/.scitex/cards/cards.db).",
+    help="Provision the store $SCITEX_CARDS_DB resolves to (the default).",
 )
 @click.option(
     "--project",
     "scope_choice",
     flag_value="project",
-    help="Create <git-root>/.scitex/cards/cards.db instead.",
+    help="REMOVED: there is no project-scoped store. Kept so the flag errors "
+    "with an explanation instead of silently meaning --shared.",
 )
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Print the target path and exit 0 without creating it.",
+    help="Print the target and exit 0 without touching it.",
 )
 @click.option(
     "-y",
@@ -233,51 +235,45 @@ def resolve_store_cmd(as_json) -> None:
     help="Skip confirmation (no-op today — init-store is non-interactive; reserved for §2).",
 )
 def init_store_cmd(scope_choice, dry_run, yes) -> None:
-    """Create an empty, schema-complete SQLite store at the chosen scope."""
+    """Install the task schema into the resolved store. Idempotent."""
     _ = yes  # accepted for §2 compliance
-    from pathlib import Path
-
     from .._db import connect, init_schema
-    from .._paths import _find_git_root
+    from .._store_target import resolve_store_target
 
     if scope_choice == "project":
-        git_root = _find_git_root(Path.cwd())
-        if git_root is None:
-            raise click.ClickException(
-                "`--project` requires running inside a git repo; "
-                "no `.git` directory found in any parent of "
-                f"{Path.cwd()}"
-            )
-        target = git_root / ".scitex" / "cards" / "cards.db"
-    else:
-        # THE SHARED SCOPE NAMES NO PATH, so it inherits whatever the store
-        # resolves to -- and since 2026-08-13 that RAISES when nobody chose
-        # one, instead of quietly meaning ~/.scitex/cards/cards.db. Asking the
-        # guard first turns that into the remedy this verb's user needs; going
-        # straight to `resolve_db_path` would hand them a traceback for the one
-        # question they are already trying to answer. `--project`, one branch
-        # up, states its own path and is deliberately not guarded.
-        from ._store_guard import refuse_unconfigured_store
+        # A PROJECT-SCOPED STORE IS EXACTLY THE SECOND STORE the package spent
+        # three outages learning to refuse, and it is no longer expressible:
+        # the store is a server, and per-repository copies of a shared board is
+        # the shape that took it from 2,138 cards to 3. Erroring is the point --
+        # silently treating this as --shared would provision the fleet board
+        # from a command whose author meant something else.
+        raise click.ClickException(
+            "`--project` is removed: there is no project-scoped store. The "
+            "store is whatever $SCITEX_CARDS_DB resolves to, one board for the "
+            "fleet. Re-run without the flag, or point $SCITEX_CARDS_DB at the "
+            "store you actually mean."
+        )
 
-        refuse_unconfigured_store()
-        target = resolve_db_path(None)
+    # RESOLUTION RAISES when nobody chose a store, and asking the guard first
+    # turns that into the remedy this verb's user needs rather than a traceback
+    # for the one question they are already trying to answer.
+    from ._store_guard import refuse_unconfigured_store
+
+    refuse_unconfigured_store()
+    target = resolve_store_target(None)
 
     if dry_run:
-        click.echo(f"# dry-run: would create {target} (scope={scope_choice})")
+        click.echo(f"# dry-run: would provision {target}")
         return
-    if target.exists():
-        click.echo(f"exists: {target}  (no-op)")
-        return
-    # The store is the canonical SQLite DB — no YAML. Create it empty and
-    # schema-complete; an unstamped DB is adoptable, so the first write claims it.
-    target.parent.mkdir(parents=True, exist_ok=True)
+    # An unstamped store is adoptable, so the first write claims it. This is
+    # additive only: `init_schema` creates what is missing and touches no row.
     conn = connect(target)
     try:
         init_schema(conn)
         conn.commit()
     finally:
         conn.close()
-    click.echo(f"created: {target}")
+    click.echo(f"provisioned: {target}")
 
 
 # --------------------------------------------------------------------------- #

@@ -25,9 +25,9 @@ from ._help_tree import _emit_help_recursive
 # NAMES NO BACKEND AND NO DEFAULT PATH, ON PURPOSE.
 #
 # This block and the `summary` below are the two strings a human reads first
-# from `scitex-cards --help`. They used to open "Canonical store: the SQLite
-# database at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db...)" and
-# "Shared task store (SQLite canonical)".
+# from `scitex-cards --help`. They used to name a backend and a default file
+# path -- "Canonical store: the ... database at $SCITEX_CARDS_DB (default
+# ~/.scitex/cards/cards.db...)".
 #
 # Both named a backend the code does not verify and the operator has banned,
 # and the first also advertised a default file path — which is precisely the
@@ -71,7 +71,6 @@ _COMMAND_CATEGORIES = (
             "help-clear",
             "hook",
             "migration",
-            "index",
             "inbox",
             "init-store",
             "reconcile-merged-prs",
@@ -408,7 +407,7 @@ def list_tasks_cmd(
     if as_json:
         click.echo(json.dumps(tasks))
         return
-    # Header names the STORE (the SQLite database) — NOT `resolved`, which is
+    # Header names the STORE (the database itself) — NOT `resolved`, which is
     # the non-task sidecar container `load_tasks` takes only for naming in
     # error text (see `_paths.resolve_tasks_path`). Printing that sidecar
     # here mislabeled the header with a path the data never lived at.
@@ -429,7 +428,6 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _gui,
     _hooks,
     _inbox,
-    _index,
     _introspect,
     _loop,
     _mcp,
@@ -440,7 +438,6 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _skills,
     _stats,
     _triage,
-    _undelivered,
     _write,
 )  # noqa: E402
 
@@ -453,12 +450,9 @@ _board.register(main)
 # `scitex_start_gui_servers` loop can bring every SciTeX GUI up the same way.
 # A thin front over the board lifecycle above; `board` stays canonical.
 _gui.register(main)
-# index <verb> — SQLite derived-index lifecycle (rebuild / info). Extracted
-# to _index.py alongside the board split (same pure-move refactor).
-_index.register(main)
-# inbox <verb> — inbox storage-backend lifecycle (migrate-to-sqlite / info).
-# Phase 1 of the store SQLite migration: moves the per-recipient inbox off the
-# monolithic task document so a 5 s digest-poll no longer re-parses all cards.
+# inbox <verb> — the `ack` verb, reachable without MCP. The per-recipient
+# inbox lives in the store rather than in the monolithic task document, so a
+# 5 s digest-poll no longer re-parses all cards.
 _inbox.register(main)
 # migration <verb> — directory-card enforcement migration (plan / apply).
 # Extracted to _migration_cli.py alongside the board split.
@@ -525,9 +519,6 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
-# dev list-undelivered — the restart/cadence check against the DURABLE channel
-# rail, with a mandatory positive control so a filtered zero is trustworthy.
-_undelivered.register(main)
 
 
 if __name__ == "__main__":

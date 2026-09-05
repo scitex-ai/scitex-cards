@@ -42,9 +42,9 @@ WHAT CAN AND CANNOT BE GUARDED -- STATED, NOT GLOSSED
 * ``schema_meta.schema_version`` is written with ``ON CONFLICT DO UPDATE``,
   which IS an UPDATE, so a trigger reaches it. That half is fixed here, for
   every client including ones that predate this code.
-* ``PRAGMA user_version`` is not a table write. NO trigger can reach it, in
-  any SQLite version. That half is NOT fixed here and cannot be; it will keep
-  oscillating until the last old client is gone.
+* ``PRAGMA user_version`` is not a table write. NO trigger can reach it. That
+  half is NOT fixed here and cannot be; it will keep oscillating until the last
+  old client is gone.
 
 Which is exactly why the second half of this module exists. If one of the two
 stamps is permanently unguardable, no consumer should be gating on stamps at
@@ -234,8 +234,39 @@ def observed_version(conn) -> SchemaShape:
     # would hide the failure that actually bites.
     stamps = [s for s in (meta, pragma) if s is not None]
     if not stamps:
-        agreement = ShapeAgreement.UNKNOWN
-        return SchemaShape(None, meta, pragma, agreement, "no stamp to compare")
+        # NO STAMP TO COMPARE AGAINST IS NOT "I DID NOT MEASURE THE SHAPE".
+        #
+        # This returned ``observed=None`` -- discarding a physical reading it had
+        # just taken, because there was nothing to compare it WITH. That inverts
+        # this module's whole rule: the shape is the artifact and the stamp is a
+        # claim, so losing the artifact when the claim is missing is the wrong
+        # one to drop.
+        #
+        # THE BRANCH WAS UNREACHABLE ON THE PREVIOUS ENGINE, which is why it
+        # survived to here. ``PRAGMA user_version`` answers 0 on a store that
+        # has never been stamped, so ``stamps`` was never empty and this line
+        # never ran. This engine has no second stamp -- ``_read_stamps`` returns
+        # ``stamped_pragma=None`` by design -- so a store whose
+        # ``schema_meta.schema_version`` row is absent (deleted by hand, or
+        # never written) now reaches it, and reached it reporting UNKNOWN for a
+        # store whose shape had been read successfully.
+        #
+        # The cost is not cosmetic: ``schema_already_current`` cannot close on
+        # an UNKNOWN shape, so every such store re-runs the FULL DDL on every
+        # open -- the ``pg_proc`` contention this package measured as 11 of 12
+        # concurrent opens failing with DeadlockDetected.
+        #
+        # UNKNOWN stays the AGREEMENT, because agreement genuinely is unknown
+        # with nothing to compare against; ``trustworthy_version`` keeps
+        # answering with the shape, which is its documented contract ("Never
+        # falls back to a stamp").
+        return SchemaShape(
+            observed=observed,
+            stamped_meta=meta,
+            stamped_pragma=pragma,
+            agreement=ShapeAgreement.UNKNOWN,
+            broken_rung=broken or "no stamp to compare",
+        )
     lowest = min(stamps)
     if lowest < observed:
         agreement = ShapeAgreement.STAMP_IS_LOW

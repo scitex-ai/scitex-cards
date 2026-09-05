@@ -48,7 +48,7 @@ from scitex_cards._stale.active_nudge import (
 
 
 @pytest.fixture(autouse=True)
-def _isolated_store(tmp_path, env):
+def _isolated_store(tmp_path, env, new_store):
     """Point the store (and therefore the inbox + nudge sidecar) at a tmp dir.
 
     Yields rather than returns (STX-TQ005). The connection opened here is
@@ -59,7 +59,7 @@ def _isolated_store(tmp_path, env):
     """
     from scitex_cards._db import connect, init_schema
 
-    db = tmp_path / "cards.db"
+    db = new_store()
     env.set(ENV_DB, str(db))
     conn = connect(str(db))
     try:

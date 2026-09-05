@@ -36,7 +36,7 @@ from scitex_cards._inbox_confirm import confirm_notifications
 
 
 @pytest.fixture()
-def store(tmp_path, env):
+def store(tmp_path, env, new_store):
     """An isolated store + inbox, so the live fleet store is never touched.
 
     The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23), so
@@ -45,8 +45,9 @@ def store(tmp_path, env):
     (``SCITEX_CARDS_INBOX_BACKEND=yaml``) for every test in this suite. No
     override needed here any more.
     """
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
-    return tmp_path / "cards.db"
+    dsn = new_store()
+    env.set("SCITEX_CARDS_DB", dsn)
+    return dsn
 
 
 def _send(store_path, sender, to, body, ts=None):

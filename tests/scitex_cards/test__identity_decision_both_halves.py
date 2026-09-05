@@ -37,6 +37,8 @@ GREEN; a guard that refuses everything is as useless as one that passes
 everything, and only a table containing both proves it is neither.
 """
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import inspect
 
 import pytest
@@ -69,7 +71,7 @@ def _observed(instance_id=REAL_INSTANCE):
 def _unreadable():
     """A store that cannot report an instance at all."""
     return StoreInstance(
-        backend="sqlite",
+        backend=ENGINE,
         certainty=Certainty.UNKNOWN,
         instance_id=None,
         reason="this backend has no cluster identifier",

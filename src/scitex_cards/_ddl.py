@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Run a DDL script on either backend, because ``executescript`` is SQLite-only.
+"""Run a DDL script statement by statement, because the driver cannot.
 
-WHY THIS BLOCKS THE PORT. ``sqlite3.Connection.executescript`` is a pysqlite
-method with no psycopg equivalent, and it is how EVERY schema object in this
-package is installed -- including all nine triggers. Five call sites::
+WHY THIS EXISTS. psycopg has no multi-statement script runner, and a script is
+how EVERY schema object in this package is installed -- including all nine
+triggers. Five call sites::
 
     _db.py:399           _SCHEMA_SQL
     _db.py:403           RETIREMENT_TRIGGER_SQL
@@ -18,7 +18,7 @@ reports itself current and authoritative, which is the failure that took this
 board from 2170 rows to 18.
 
 THE WHOLE DIFFICULTY IS ONE CHARACTER. A naive ``script.split(";")`` is wrong
-for exactly the statements that matter most: a SQLite trigger body is
+for exactly the statements that matter most: a trigger body is
 ``BEGIN <stmt>; <stmt>; END;`` so its semicolons are INTERNAL. Splitting on
 them yields fragments that are individually invalid, and the failure is not
 loud -- the first fragment ``CREATE TRIGGER ... BEGIN UPDATE ...`` may parse as
@@ -52,8 +52,8 @@ __all__ = [
 #:
 #: so requiring ``BEGIN`` alone on its line split four append-only triggers mid
 #: body -- producing exactly the truncated fragment this module's header warns
-#: about. SQLite rejected it with "incomplete input", which is the loud outcome;
-#: the quiet one was always the risk. Found by executing the real constants
+#: about. The engine rejected it with "incomplete input", which is the loud
+#: outcome; the quiet one was always the risk. Found by executing the constants
 #: rather than by reading them, which is why the equivalence test below exists.
 #:
 #: ``BEGIN IMMEDIATE`` / ``BEGIN DEFERRED`` / a bare ``BEGIN;`` are transaction
@@ -66,14 +66,14 @@ _END_RE = re.compile(r"^\s*END\s*;?\s*$", re.IGNORECASE)
 #: spelling, so it is the one that forces a dialect branch. Measured on both
 #: engines 2026-07-31:
 #:
-#:     INTEGER PRIMARY KEY AUTOINCREMENT   sqlite OK    postgres SYNTAX ERROR
-#:     INTEGER PRIMARY KEY                 sqlite OK    postgres NotNullViolation
-#:     GENERATED ALWAYS AS IDENTITY        sqlite ERROR postgres OK
+#:     INTEGER PRIMARY KEY AUTOINCREMENT   postgres SYNTAX ERROR
+#:     INTEGER PRIMARY KEY                 postgres NotNullViolation
+#:     GENERATED ALWAYS AS IDENTITY        postgres OK
 #:
 #: THE MIDDLE ROW IS THE TRAP, and it is what a careless port reaches for: it
-#: PARSES on both engines and fails only at INSERT, because PostgreSQL does not
-#: auto-assign a plain ``INTEGER PRIMARY KEY`` the way SQLite's rowid alias
-#: does. DDL-time success, runtime failure. So the replacement below was
+#: PARSES and fails only at INSERT, because PostgreSQL does not auto-assign a
+#: plain ``INTEGER PRIMARY KEY`` the way an implicit row-id alias does.
+#: DDL-time success, runtime failure. So the replacement below was
 #: verified by INSERTING a row and reading the generated id back, not merely by
 #: creating the table.
 _AUTOINCREMENT_RE = re.compile(
@@ -92,12 +92,12 @@ _PG_IDENTITY = "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
 
 
 def to_dialect(statement: str, *, postgres: bool) -> str:
-    """Translate one SQLite-flavoured DDL statement for the target engine.
+    """Translate one DDL statement into the target engine's dialect.
 
-    A no-op for SQLite, which is why the schema constants stay written in the
-    dialect the production store actually speaks today -- the translation is
-    applied at execution time, to the engine that needs it, rather than
-    rewriting the source of truth for a backend nothing runs yet.
+    ``postgres=False`` returns the statement untouched. That branch is
+    unreachable in a deployment -- there is one engine -- and is kept so the
+    function is total, and so the schema constants can be compared against
+    their untranslated form in a test.
 
     Deliberately NOT a general SQL translator. It handles the constructs this
     schema actually contains and measurement has shown to differ; anything
@@ -182,9 +182,9 @@ def split_sql_script(script: str) -> list[str]:
 def execute_ddl(conn, script: str) -> int:
     """Execute every statement in ``script``; return how many ran.
 
-    Replaces ``conn.executescript(script)``, which exists only on
-    ``sqlite3.Connection``. Works with anything exposing ``execute`` -- a raw
-    driver connection or the ``_backend_connect.StoreConnection`` wrapper.
+    Replaces a driver-level ``executescript``, which psycopg does not provide.
+    Works with anything exposing ``execute`` -- a raw driver connection or the
+    ``_backend_connect.StoreConnection`` wrapper.
 
     RETURNS A COUNT ON PURPOSE. ``executescript`` returns a cursor nobody reads,
     so a script that silently ran zero statements looked identical to one that
@@ -192,10 +192,10 @@ def execute_ddl(conn, script: str) -> int:
     which is the difference between "the guards are installed" and "the install
     call did not raise".
 
-    A SQLITE ``CREATE TRIGGER`` IS SUBSTITUTED ON POSTGRESQL, NOT SKIPPED. The
-    schema constants define guards in SQLite's inline-body form, which
-    PostgreSQL cannot parse at all -- it needs a plpgsql FUNCTION plus a trigger
-    that calls it, and it has no ``IF NOT EXISTS`` for triggers. Each such
+AN INLINE-BODY ``CREATE TRIGGER`` IS SUBSTITUTED, NOT SKIPPED. The schema
+    constants define guards in an inline-body form that PostgreSQL cannot parse
+    at all -- it needs a plpgsql FUNCTION plus a trigger that calls it, and it
+    has no ``IF NOT EXISTS`` for triggers. Each such
     statement is therefore replaced by its equivalent pair from
     :mod:`scitex_cards._pg_triggers`, and an UNRECOGNISED trigger name RAISES.
 
@@ -219,7 +219,7 @@ def execute_ddl(conn, script: str) -> int:
             if pair is None:
                 raise ValueError(
                     f"trigger {name!r} has no PostgreSQL equivalent in "
-                    "scitex_cards._pg_triggers. A SQLite trigger body does not "
+                    "scitex_cards._pg_triggers. An inline trigger body does not "
                     "port as text: write the plpgsql FUNCTION plus a "
                     "CREATE OR REPLACE TRIGGER that calls it, add both under "
                     f"{name!r}, and re-run. Refusing to create a store whose "

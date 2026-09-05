@@ -11,13 +11,18 @@ produced. The speed claim is checked separately, by counting how many cards get
 written — not by timing (a wall-clock assertion would be flaky in CI).
 """
 
-import sqlite3
+import itertools
 
 import pytest
 
-from scitex_cards._db import init_schema
+from scitex_cards._db import connect, init_schema
 from scitex_cards._db_bootstrap import _rebuild_from_doc
 from scitex_cards._db_mirror import HASH_TABLE, mirror_doc_incremental
+
+#: Every store carved here needs its own name, and the tests take a factory
+#: rather than a fixture value because several need TWO (the incremental result
+#: and the full-rebuild result it must equal).
+_SEQ = itertools.count()
 
 
 def _doc(*cards, users=None, inboxes=None):
@@ -35,19 +40,25 @@ def _card(cid, **kw):
     return c
 
 
-def _fresh_db(tmp_path):
-    p = tmp_path / "cards.db"
-    conn = sqlite3.connect(str(p))
+def _fresh_db(new_store):
+    """An EMPTY throwaway store, provisioned through the package's own door.
+
+    ``bootstrap=False`` then ``init_schema``: the fixture must own the
+    provisioning, because the first test below asserts that a store with NO
+    hash table falls back to a full rebuild -- and the harness's per-test store
+    would already have one.
+    """
+    target = new_store("cards_mirror_%d" % next(_SEQ), bootstrap=False)
+    conn = connect(target)
     init_schema(conn)
     conn.commit()
     conn.close()
-    return p
+    return target
 
 
 def _rows(db, table):
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    out = [dict(r) for r in conn.execute("SELECT * FROM %s" % table)]
+    conn = connect(db)
+    out = [dict(r) for r in conn.execute("SELECT * FROM %s" % table).fetchall()]
     conn.close()
     return out
 
@@ -59,10 +70,10 @@ def _ids(db):
 # --------------------------------------------------------------- correctness
 
 
-def test_first_run_falls_back_to_a_full_rebuild(tmp_path):
+def test_first_run_falls_back_to_a_full_rebuild(new_store):
     """A DB with no hash table must still end up correct — no migration step."""
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     doc = _doc(_card("a"), _card("b"))
     # Act
     out = mirror_doc_incremental(doc, db)
@@ -70,9 +81,9 @@ def test_first_run_falls_back_to_a_full_rebuild(tmp_path):
     assert out["full"] is True
 
 
-def test_first_run_writes_every_card(tmp_path):
+def test_first_run_writes_every_card(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     doc = _doc(_card("a"), _card("b"))
     # Act
     mirror_doc_incremental(doc, db)
@@ -80,9 +91,9 @@ def test_first_run_writes_every_card(tmp_path):
     assert _ids(db) == ["a", "b"]
 
 
-def test_a_changed_card_is_updated(tmp_path):
+def test_a_changed_card_is_updated(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a"), _card("b")), db)
     # Act
     mirror_doc_incremental(_doc(_card("a", status="done"), _card("b")), db)
@@ -91,9 +102,9 @@ def test_a_changed_card_is_updated(tmp_path):
     assert statuses["a"] == "done"
 
 
-def test_an_untouched_card_is_left_alone(tmp_path):
+def test_an_untouched_card_is_left_alone(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a"), _card("b")), db)
     # Act
     mirror_doc_incremental(_doc(_card("a", status="done"), _card("b")), db)
@@ -102,9 +113,9 @@ def test_an_untouched_card_is_left_alone(tmp_path):
     assert statuses["b"] == "deferred"
 
 
-def test_a_new_card_is_inserted(tmp_path):
+def test_a_new_card_is_inserted(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a")), db)
     # Act
     mirror_doc_incremental(_doc(_card("a"), _card("new")), db)
@@ -112,7 +123,7 @@ def test_a_new_card_is_inserted(tmp_path):
     assert _ids(db) == ["a", "new"]
 
 
-def test_a_card_missing_from_the_document_SURVIVES(tmp_path):
+def test_a_card_missing_from_the_document_SURVIVES(new_store):
     """A row absent from the incoming document is KEPT.
 
     INVERTED FROM ITS PREVIOUS FORM, deliberately. It asserted
@@ -133,7 +144,7 @@ def test_a_card_missing_from_the_document_SURVIVES(tmp_path):
     The delete VERB still removes rows when a caller genuinely means it.
     """
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a"), _card("gone")), db)
     # Act
     mirror_doc_incremental(_doc(_card("a")), db)
@@ -141,7 +152,7 @@ def test_a_card_missing_from_the_document_SURVIVES(tmp_path):
     assert _ids(db) == ["a", "gone"]
 
 
-def test_a_surviving_cards_hash_is_kept_too(tmp_path):
+def test_a_surviving_cards_hash_is_kept_too(new_store):
     """The hash must track the row, or the next reconcile re-writes it forever.
 
     Also inverted: the hash of a row absent from the document is RETAINED,
@@ -149,7 +160,7 @@ def test_a_surviving_cards_hash_is_kept_too(tmp_path):
     make every subsequent reconcile see it as "changed" and rewrite it.
     """
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a"), _card("gone")), db)
     # Act
     mirror_doc_incremental(_doc(_card("a")), db)
@@ -158,12 +169,12 @@ def test_a_surviving_cards_hash_is_kept_too(tmp_path):
     assert "gone" in hashes
 
 
-def test_comments_are_not_duplicated_on_re_write(tmp_path):
+def test_comments_are_not_duplicated_on_re_write(new_store):
     """THE SHARPEST EDGE: _insert_comments INSERTs (it does not REPLACE), so a
     card re-written without clearing its comments first would duplicate every one
     of them on every single write."""
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     comment = {"author": "x", "ts": "2026-01-01", "text": "hello"}
     mirror_doc_incremental(_doc(_card("a", comments=[comment])), db)
     # Act — the SAME comment arrives again on a re-written card.
@@ -175,18 +186,17 @@ def test_comments_are_not_duplicated_on_re_write(tmp_path):
 # ------------------------------------------------- equivalence to full rebuild
 
 
-def _full_rebuild_db(tmp_path, doc):
+def _full_rebuild_db(new_store, doc):
     """A sibling DB built by the FULL rebuild — the equivalence yardstick."""
-    (tmp_path / "full").mkdir(exist_ok=True)
-    full = _fresh_db(tmp_path / "full")
-    conn = sqlite3.connect(str(full))
+    full = _fresh_db(new_store)
+    conn = connect(full)
     _rebuild_from_doc(conn, doc)
     conn.commit()
     conn.close()
     return full
 
 
-def _stale_doc_then_incremental(tmp_path):
+def _stale_doc_then_incremental(new_store):
     """Set up the divergence both tests below measure; return ``(inc, full)``.
 
     A STALE document (naming "gone") is mirrored first, then the current one.
@@ -200,15 +210,14 @@ def _stale_doc_then_incremental(tmp_path):
         _card("b", depends_on=["a"]),
         _card("c"),
     )
-    (tmp_path / "inc").mkdir(exist_ok=True)
-    inc = _fresh_db(tmp_path / "inc")
+    inc = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a"), _card("b"), _card("gone")), inc)
-    full = _full_rebuild_db(tmp_path, doc_v2)
+    full = _full_rebuild_db(new_store, doc_v2)
     mirror_doc_incremental(doc_v2, inc)
     return inc, full
 
 
-def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(tmp_path):
+def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(new_store):
     """Incremental now SUPERSETS a full rebuild, and the difference is the point.
 
     THIS ASSERTION WAS `_ids(inc) == _ids(full)` and its docstring called that
@@ -230,7 +239,7 @@ def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(tmp_path
     is its own change, carded, not smuggled in here.
     """
     # Arrange
-    inc, full = _stale_doc_then_incremental(tmp_path)
+    inc, full = _stale_doc_then_incremental(new_store)
     # Act
     extra = set(_ids(inc)) - set(_ids(full))
     # Assert — the only row incremental keeps that the rebuild drops is the
@@ -238,7 +247,7 @@ def test_incremental_is_a_full_rebuild_PLUS_the_rows_it_refuses_to_drop(tmp_path
     assert extra == {"gone"}
 
 
-def test_incremental_keeps_every_row_a_full_rebuild_produces(tmp_path):
+def test_incremental_keeps_every_row_a_full_rebuild_produces(new_store):
     """The superset half, split out under STX-TQ007 (one assertion per test).
 
     NOT redundant with the sibling above, and the split makes that visible:
@@ -248,22 +257,21 @@ def test_incremental_keeps_every_row_a_full_rebuild_produces(tmp_path):
     single test, this assertion ran only when the other had already passed.
     """
     # Arrange
-    inc, full = _stale_doc_then_incremental(tmp_path)
+    inc, full = _stale_doc_then_incremental(new_store)
     # Act
     missing = set(_ids(full)) - set(_ids(inc))
     # Assert
     assert missing == set()
 
 
-def test_incremental_comments_equal_a_full_rebuild(tmp_path):
+def test_incremental_comments_equal_a_full_rebuild(new_store):
     # Arrange
     doc_v2 = _doc(
         _card("a", comments=[{"author": "x", "ts": "t", "text": "c"}]),
     )
-    (tmp_path / "inc").mkdir(exist_ok=True)
-    inc = _fresh_db(tmp_path / "inc")
+    inc = _fresh_db(new_store)
     mirror_doc_incremental(_doc(_card("a")), inc)
-    full = _full_rebuild_db(tmp_path, doc_v2)
+    full = _full_rebuild_db(new_store, doc_v2)
     # Act
     mirror_doc_incremental(doc_v2, inc)
     # Assert
@@ -275,12 +283,12 @@ def test_incremental_comments_equal_a_full_rebuild(tmp_path):
 # ------------------------------------------------------------------- the speed
 
 
-def test_a_one_card_change_writes_exactly_one_card(tmp_path):
+def test_a_one_card_change_writes_exactly_one_card(new_store):
     """The performance claim, asserted as WORK DONE rather than wall-clock (a
     timing assertion would be flaky in CI). 8.69 s of the 16.31 s write was the
     full rebuild; this is what removes it."""
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     cards = [_card("c%d" % i) for i in range(200)]
     mirror_doc_incremental(_doc(*cards), db)
     cards[7]["status"] = "done"
@@ -290,9 +298,9 @@ def test_a_one_card_change_writes_exactly_one_card(tmp_path):
     assert out["changed"] == 1
 
 
-def test_a_one_card_change_leaves_the_rest_unchanged(tmp_path):
+def test_a_one_card_change_leaves_the_rest_unchanged(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     cards = [_card("c%d" % i) for i in range(200)]
     mirror_doc_incremental(_doc(*cards), db)
     cards[7]["status"] = "done"
@@ -302,9 +310,9 @@ def test_a_one_card_change_leaves_the_rest_unchanged(tmp_path):
     assert out["unchanged"] == 199
 
 
-def test_no_change_at_all_writes_nothing(tmp_path):
+def test_no_change_at_all_writes_nothing(new_store):
     # Arrange
-    db = _fresh_db(tmp_path)
+    db = _fresh_db(new_store)
     cards = [_card("c%d" % i) for i in range(50)]
     mirror_doc_incremental(_doc(*cards), db)
     # Act — the identical doc, a second time.

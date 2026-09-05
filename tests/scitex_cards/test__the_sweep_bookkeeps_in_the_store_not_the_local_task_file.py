@@ -34,7 +34,6 @@ they are deterministic and need no ambient database.
 import pytest
 
 from scitex_cards._delivery._sweeps import _sweep_store
-from pathlib import Path
 
 from scitex_cards._paths import local_store_path
 from scitex_cards._store_target import database_for, resolve_store_target
@@ -71,14 +70,37 @@ def test_on_a_database_deployment_it_differs_from_the_local_task_file():
     assert not agrees_with_local_file
 
 
-def test_a_task_file_label_maps_to_its_local_sibling(tmp_path):
-    """Why passing the LOCAL PATH was wrong: the label becomes a local file."""
+def test_a_task_file_label_resolves_to_the_ambient_store(tmp_path):
+    """Why passing the LOCAL PATH was wrong: a label NAMES a store, never locates one.
+
+    Until 6f976060 this asserted the label mapped to ``<label>.parent/cards.db``
+    -- the right inversion while a store was a file, and a PHANTOM once it was
+    not: that filename names no store, so every caller handed it either CREATED
+    one or, after the door started refusing, failed outright. The label branch
+    now answers the ambient target, and this pins that.
+    """
     # Arrange
     label = tmp_path / "tasks.yaml"
     # Act
-    mapped = Path(database_for(label))
+    mapped = database_for(label)
     # Assert
-    assert mapped.name == "cards.db"
+    assert mapped == resolve_store_target(None)
+
+
+def test_a_label_never_maps_to_a_sibling_of_itself(tmp_path):
+    """THE REGRESSION GUARD: restoring the sibling construction fails here.
+
+    Kept separate from the test above because that one pins the value and this
+    one pins the SHAPE. A label branch that returned some other ambient-looking
+    answer would still satisfy the equality; only this fires on the specific
+    construction the fix removed -- a path built from the label's own directory.
+    """
+    # Arrange
+    label = tmp_path / "tasks.yaml"
+    # Act
+    mapped = str(database_for(label))
+    # Assert
+    assert str(tmp_path) not in mapped
 
 
 def test_a_database_store_survives_the_mapping_unchanged():

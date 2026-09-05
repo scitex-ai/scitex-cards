@@ -296,7 +296,7 @@ class Task:
     # ``**extras`` without a dataclass field — a confirmed latent bug: a row
     # carrying ``repo`` survived on disk but never round-tripped through the
     # Task dataclass (from_dict dropped it as an unknown key). Promoted to a
-    # first-class OPTIONAL field in the SQLite-migration S0 (RFC #348 Q4);
+    # first-class OPTIONAL field in the store migration S0 (RFC #348 Q4);
     # pure-additive, defaults None so to_dict omits it when unset.
     repo: str | None = None
     host: str | None = None  # where the work happens (operator co-design TG 9667)

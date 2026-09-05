@@ -6,12 +6,12 @@ Replaces the deleted ``dual_write_mirror`` check (2026-07-21 operator ruling:
 「データベースしか書く場所なんてありえない。デュアルライトっていうオプション
 があること自体がおかしい」 — there is no such thing as a second place to
 write; the mere EXISTENCE of a dual-write option is the bug). That check used
-to report whether an env-gated YAML mirror had stayed in sync with SQLite.
+to report whether an env-gated YAML mirror had stayed in sync with the store.
 The mirror is gone, not merely off, so there is nothing left to report
 sync/divergence for.
 
 What this checks instead is the thing the deleted feature actually put at
-risk: is SQLite still the ONLY write target? The 2026-07-21 incident's root
+risk: is the store still the ONLY write target? The 2026-07-21 incident's root
 cause was not a mirror falling out of sync — it was a stale ``schema_meta``
 row plus an agent env that still carried the dual-write flag, which together
 routed every write to a dead YAML file while every call reported SUCCESS and
@@ -35,7 +35,7 @@ import os
 from typing import Any
 
 #: Legacy dual-write toggle names. The feature they gated was DELETED
-#: entirely — SQLite is the only write target, unconditionally, with no env
+#: entirely — the store is the only write target, unconditionally, with no env
 #: var left to read.
 _LEGACY_DUAL_WRITE_ENV_VARS = ("SCITEX_CARDS_DUAL_WRITE",)
 
@@ -45,15 +45,15 @@ _REINTRODUCED_TOGGLE_SYMBOLS = ("enabled", "mirror_after_save", "ENV_DUAL_WRITE"
 
 
 def check_single_write_target() -> dict[str, Any]:
-    """SQLite is the ONLY write target — assert there is no second one, ever."""
+    """The store is the ONLY write target — assert there is no second one, ever."""
     leftover = [v for v in _LEGACY_DUAL_WRITE_ENV_VARS if os.environ.get(v)]
     if leftover:
         return {
             "ok": False,
             "detail": (
                 f"legacy dual-write env var(s) still set: {', '.join(leftover)}. "
-                "The dual-write mirror was DELETED (2026-07-21) — SQLite is the "
-                "only write target and nothing reads these anymore, but their "
+                "The dual-write mirror was DELETED (2026-07-21) — the store is "
+                "the only write target and nothing reads these anymore, but their "
                 "presence is exactly the state that let an entire session's "
                 "card writes vanish silently."
             ),
@@ -70,7 +70,7 @@ def check_single_write_target() -> dict[str, Any]:
             "ok": False,
             "detail": (
                 f"the dual-write toggle was reintroduced in code: "
-                f"scitex_cards._dual_write now defines {reintroduced}. SQLite "
+                f"scitex_cards._dual_write now defines {reintroduced}. The store "
                 "must be the ONLY write target — there is no sanctioned second "
                 "one, not even behind a flag."
             ),
@@ -79,12 +79,12 @@ def check_single_write_target() -> dict[str, Any]:
                 "scitex_cards._store_backend.write_doc_to_db"
             ),
         }
-    # NAME THE ENGINE THIS PROCESS IS ACTUALLY ON. This string used to read
-    # "SQLite" unconditionally, which was true when written and became a lie the
-    # day a store could be a PostgreSQL server: the doctor then reported SQLite
-    # while every card write went to PostgreSQL. An operator asking "which mode
-    # am I in?" — the exact question this line looks like it answers — got the
-    # wrong answer, confidently. Resolve it instead of asserting it.
+    # NAME THE ENGINE THIS PROCESS IS ACTUALLY ON. This string used to be a
+    # hardcoded engine name, which was true when written and became a lie the
+    # day a store could be a server: the doctor then named one engine while
+    # every card write went to another. An operator asking "which mode am I
+    # in?" — the exact question this line looks like it answers — got the wrong
+    # answer, confidently. Resolve it instead of asserting it.
     try:
         from ._health_backend_mode import _store_mode
 

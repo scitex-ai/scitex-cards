@@ -52,7 +52,7 @@ recipient confirm at all?" must be answered from the RECIPIENT's standing, never
 from the absence of a receipt — decide it from absence and every genuinely
 unconfirmed message quietly becomes "cannot tell", and the detector is dead.
 The registry looks like the right oracle and is not: ``list_users`` parses the
-store as YAML, so on the canonical SQLite store it raises, ``_registry_agents``
+store as YAML, so on the canonical database store it raises, ``_registry_agents``
 fail-softs to ``[]``, and the live ``/dm/threads`` reports ``kind: null`` for
 every peer. Keying capability on "is registered" would therefore mark EVERY
 message unknowable and hide the outage completely. Membership is the honest
@@ -169,8 +169,8 @@ def queued_message_ids(
     ``notifications`` table lives in the same server as the messages but is
     queried through its own dedicated connection (mirroring
     :mod:`scitex_cards._inbox_receipt_postgres`), and on the file break-glass
-    backend it is a genuinely different store (``inboxes.json``). SQLite is
-    RETIRED as an inbox backend (operator ruling 2026-08-23); this function
+    backend it is a genuinely different store (``inboxes.json``). The per-host
+    rail is RETIRED as an inbox backend (operator ruling 2026-08-23); this function
     now dispatches on :func:`scitex_cards._inbox_backend.backend` exactly like
     the rest of the rail does.
     """

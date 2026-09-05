@@ -43,9 +43,9 @@ import contextlib
 import os
 import tempfile
 from pathlib import Path
+from typing import Iterator
 
 import pytest
-from _store_damage import content_or_none, damaged_candidates
 
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
@@ -104,36 +104,43 @@ _dsn_stack = contextlib.ExitStack()
 atexit.register(_dsn_stack.close)
 
 
-def _open_throwaway_postgres() -> "tuple[str | None, str]":
-    """A schema-scoped DSN for this session, or ``None`` AND THE REASON WHY.
+def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
+    """The CLUSTER, a schema-scoped DSN on it, and the reason if there is none.
 
     Returns the reason rather than a bare ``None`` because the fixture below
     turns it into a FAILURE MESSAGE. A PostgreSQL test that cannot reach a
     server must not skip: a skipped test and a passing test render identically
     in a green summary, which is exactly how a suite reports success while
     running nothing.
+
+    THE CLUSTER IS RETURNED TOO, and that is what makes the PER-TEST store
+    below possible. ``writable_dsn()`` is the expensive half -- it probes
+    routes and may START A CLUSTER -- so it is entered ONCE for the session;
+    ``ephemeral_schema()`` is the cheap half and is entered again per test.
+    Handing back only the scoped DSN, as this did when only the session-wide
+    pin existed, would leave a per-test caller with nowhere to carve from.
     """
     try:
         from scitex_dev.store.testing import ephemeral_schema, writable_dsn
     except ImportError as exc:  # scitex-dev predating the affordance
-        return None, (
+        return None, None, (
             "scitex_dev.store.testing is not importable "
             f"({type(exc).__name__}: {exc}). It ships the ephemeral-store "
-            "affordance this suite needs; upgrade scitex-dev."
+            "affordance this suite needs; upgrade scitex-dev to >=0.57.0."
         )
     try:
         cluster = _dsn_stack.enter_context(writable_dsn())
         scoped = _dsn_stack.enter_context(ephemeral_schema(cluster, prefix="cards_tests"))
     except Exception as exc:  # noqa: BLE001 - report it, do not guess at it
         _dsn_stack.close()
-        return None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
-    return scoped, "ok"
+        return None, None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+    return cluster, scoped, "ok"
 
 
 #: Resolved at IMPORT, before collection -- same reasoning as ``_SCRATCH``
 #: below: the pin has to be in place before the first test module imports
 #: anything that reads the environment.
-_EPHEMERAL_DSN, _EPHEMERAL_DSN_REASON = _open_throwaway_postgres()
+_CLUSTER_DSN, _EPHEMERAL_DSN, _EPHEMERAL_DSN_REASON = _open_throwaway_postgres()
 
 
 @pytest.fixture(scope="session")
@@ -158,6 +165,60 @@ def postgres_dsn() -> str:
             pytrace=False,
         )
     return _EPHEMERAL_DSN
+
+
+def pytest_report_header() -> str:
+    """Say, in the header of EVERY run, whether a store was opened and why not.
+
+    WITHOUT THIS THE REASON IS UNREACHABLE IN CI. ``_EPHEMERAL_DSN_REASON`` is
+    only rendered by the ``postgres_dsn`` / ``postgres_cluster_dsn`` fixtures,
+    and this repo runs pytest with ``-x``: the session stops at the first
+    store-touching failure, which is reached long before any test requests
+    those fixtures. So a run with no cluster produced a hundred identical
+    "target does not name the store" refusals and NOWHERE said that the harness
+    had failed to open a cluster at all -- measured on the pytest-matrix leg
+    2026-08-30, where the cause had to be deduced from the fact that the
+    refused path was the harness's own ``store0/cards.db`` placeholder.
+
+    The header runs before collection and is printed even on a green run, so
+    the answer is in the log whether or not anything failed.
+    """
+    if _EPHEMERAL_DSN is not None:
+        return "scitex-cards store: a throwaway PostgreSQL schema was opened"
+    return (
+        "scitex-cards store: NO WRITABLE POSTGRESQL WAS OPENED -- every "
+        "store-touching test will refuse.\n"
+        f"  reason: {_EPHEMERAL_DSN_REASON}"
+    )
+
+
+@pytest.fixture(scope="session")
+def postgres_cluster_dsn() -> str:
+    """The CLUSTER, unscoped — for a test that carves its own schema. NEVER SKIPS.
+
+    ``postgres_dsn`` above hands out ONE schema, shared for the session. A test
+    that needs to ``CREATE SCHEMA`` itself (the foreign-key rung builds a
+    miniature store and runs ``ALTER TABLE`` over it) needs the cluster the
+    schema was carved from, not the scoped DSN — a ``search_path`` already
+    pinned to somebody else's schema is the wrong starting point for making a
+    new one.
+
+    Same refusal contract as ``postgres_dsn``, and for the same reason: the
+    fixtures this replaces skipped on "no server declared", which is how
+    seventeen foreign-key tests reported green for months without opening a
+    connection.
+    """
+    if _CLUSTER_DSN is None:
+        pytest.fail(
+            "No writable PostgreSQL is available, so this test cannot run "
+            "against the engine it ships on. This is a FAILURE and not a skip: "
+            "a skipped storage test is indistinguishable from a passing one.\n"
+            f"  reason: {_EPHEMERAL_DSN_REASON}\n"
+            "  (this host's own loopback 55432 is a READ-ONLY STANDBY)",
+            pytrace=False,
+        )
+    return _CLUSTER_DSN
+
 
 #: ``$SCITEX_DIR`` is the BASE DIRECTORY under ``resolve_db_path``'s tier-4
 #: fallback (``scitex_config._ecosystem.local_state.user_path``), which reads
@@ -199,15 +260,35 @@ os.environ["SCITEX_DEV_CURRENCY_SEVERITY"] = "silent"
 def _pin_to_scratch() -> Path:
     """Point every store-selecting variable at a throwaway directory."""
     scratch = Path(tempfile.mkdtemp(prefix="scitex-cards-tests-"))
-    _point_env_at(scratch)
+    _point_env_at(scratch, _EPHEMERAL_DSN)
     for name in _BACKEND_ENV_VARS:
         os.environ.pop(name, None)
     return scratch
 
 
-def _point_env_at(scratch: Path) -> None:
-    """Aim every store-selecting variable at ``scratch``."""
-    os.environ["SCITEX_CARDS_DB"] = str(scratch / "cards.db")
+def _refused_placeholder(scratch: Path) -> str:
+    """A store target the source doors REFUSE, for when no server was opened.
+
+    Not "unset", which is the one value that must never be reached: with
+    ``$SCITEX_CARDS_DB`` absent, ``resolve_db_path(None)`` walks its precedence
+    chain to the user-canonical target -- the live board -- and that is the
+    exact enabling condition of all three 2026-07 wipes this file exists to
+    prevent. A filename is refused by ``reject_non_postgres_target`` before the
+    filesystem is touched, so the suite fails LOUDLY on configuration instead
+    of quietly succeeding against production.
+    """
+    return str(scratch / "cards.db")
+
+
+def _point_env_at(scratch: Path, store_dsn: "str | None") -> None:
+    """Aim every store-selecting variable at ``scratch`` / ``store_dsn``.
+
+    ``store_dsn`` is a schema-scoped throwaway DSN, or ``None`` when no
+    writable PostgreSQL could be opened at all. THE VARIABLE IS SET EITHER
+    WAY -- see :func:`_refused_placeholder` for why the absent case is not
+    allowed to mean "unset".
+    """
+    os.environ["SCITEX_CARDS_DB"] = store_dsn or _refused_placeholder(scratch)
     os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
     # Same scratch tree, own subdir — no separate tempfile.mkdtemp() call
     # needed, and it means a test's own $SCITEX_DIR override (every one that
@@ -224,14 +305,22 @@ def _point_env_at(scratch: Path) -> None:
         os.environ[_STORE_DSN_ENV] = _EPHEMERAL_DSN
 
 
-def _bootstrap_empty_db(db_path: Path) -> None:
-    """Create an EMPTY, schema-complete database at ``db_path``.
+def _bootstrap_empty_store(store_dsn: str) -> None:
+    """Install the schema into the EMPTY throwaway schema named by ``store_dsn``.
 
-    The database is the store now, so a test that writes a card needs one the
-    way it used to need a ``tasks.yaml``. Pinning the variable was enough when
-    the DB was a mirror that could be absent; against the real store an absent
-    file is a hard, correct refusal ("canonical store ... does not exist"), and
-    every write test would fail on configuration rather than on behaviour.
+    The store is the database now, so a test that writes a card needs the
+    tables present the way it used to need a ``tasks.yaml``. Pinning the
+    variable was enough when the DB was a mirror that could be absent; against
+    the real store an unprovisioned target is a hard, correct refusal
+    ("canonical store ... does not exist"), and every write test would fail on
+    configuration rather than on behaviour.
+
+    THROUGH THE PACKAGE'S OWN DOORS, not hand-written DDL. ``connect`` +
+    ``init_schema`` is what production runs, so a schema this builds is the
+    schema that ships -- including the migration ladder and the version stamp.
+    A fixture that issued its own ``CREATE TABLE`` would drift from the real
+    shape silently, and every test would then be asserting against a store no
+    user will ever have.
 
     Imported INSIDE the function on purpose: this module is imported before any
     test touches ``scitex_cards``, and importing the package at conftest import
@@ -240,11 +329,24 @@ def _bootstrap_empty_db(db_path: Path) -> None:
     of the scratch one.
     """
     from scitex_cards._db import connect, init_schema
+    from scitex_cards._store_uuid import mint_store_uuid, stamp_store_uuid
 
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = connect(db_path)
+    conn = connect(store_dsn)
     try:
         init_schema(conn)
+        # AN IDENTITY, BECAUSE A REAL STORE HAS ONE. `init_schema` builds the
+        # tables and stops; `schema_meta.store_uuid` is written separately, so
+        # a store bootstrapped by tables alone answers "no store_uuid" -- which
+        # is the shape of a server that has never held a board, not of the
+        # provisioned store this fixture is standing in for.
+        #
+        # IT WAS COSTING COVERAGE, not merely realism. The four both-halves pin
+        # tests in test__store_pin.py SKIP on exactly that condition ("names a
+        # server with no store on it"), and a skipped test is indistinguishable
+        # from a passing one -- the same silent-green this harness is otherwise
+        # built to refuse. Minted per test, so the per-test isolation the schema
+        # gives is matched by a per-test identity rather than a shared one.
+        stamp_store_uuid(conn, mint_store_uuid())
         conn.commit()
     finally:
         conn.close()
@@ -260,6 +362,81 @@ _SCRATCH = _pin_to_scratch()
 def scratch_store_root() -> Path:
     """The throwaway store directory this run is pinned to (for assertions)."""
     return _SCRATCH
+
+
+@pytest.fixture
+def new_store():
+    """Hand out ADDITIONAL throwaway stores, one per call. Returns a DSN string.
+
+    THE REPLACEMENT FOR ``tmp_path / "cards.db"``. That spelling meant "a fresh
+    empty store nobody else is using", and for a file store the temp directory
+    supplied both halves at once. It cannot mean that any more: a filesystem
+    path names no store and is refused at the door
+    (``_store_url.reject_non_postgres_target``), so a test that still writes it
+    is not testing a store -- it is testing the refusal.
+
+    A FACTORY RATHER THAN A FIXTURE VALUE, because the tests that need this
+    mostly need TWO. The store carries an identity and half this suite's
+    subjects are about two stores disagreeing -- a peer's database, a byte
+    copy, the store a stamp was claimed for versus the one it was opened as.
+    One store per test would force those back into sharing, which is the
+    collision the per-test pin removes rather than arbitrates.
+
+    CLOSE EVERY CONNECTION YOU OPEN ON ONE OF THESE, AND CLOSE IT FROM A
+    FIXTURE OR A ``finally`` -- NEVER ON THE LINE AFTER YOUR ASSERTION. The
+    schema is removed with ``DROP SCHEMA ... CASCADE`` when the test ends, and
+    that statement BLOCKS while any connection is still holding a transaction
+    on it. So a test that opens a connection and then FAILS never reaches its
+    own ``close()``, and the failure does not report red -- IT HANGS, taking
+    the rest of the session with it, and a hang reads as a slow runner rather
+    than as a failure.
+
+    That is the single most expensive difference between this and the scratch
+    FILE these replaced: a file store forgave a leaked handle completely.
+    Measured twice on 2026-08-30 while converting ``test__schema_shape.py`` and
+    ``test__store_retirement.py``, both times as an indefinite wedge with no
+    output. The fix in both was the same and is the pattern to copy: a fixture
+    that hands out stores AND owns the connections, unwinding them on the way
+    out whatever the test did.
+
+    ``bootstrap=True`` (the default) installs the schema through the package's
+    own ``connect`` + ``init_schema``, exactly as ``_bootstrap_empty_store``
+    does for the pinned per-test store, so a caller that just wants somewhere
+    to write cards gets a working store.
+
+    PASS ``bootstrap=False`` WHEN THE SUBJECT IS PROVISIONING ITSELF, and read
+    this before deciding you do not need to. The pinned per-test store is
+    already schema-complete, so a test that asserts "the verb created the
+    table" passes against it WITH THE VERB REMOVED -- the assertion is true
+    before the act runs, which makes it a check that cannot fail. An empty
+    schema is the only arrangement under which that assertion measures
+    anything, and the test should assert the FALSE -> TRUE transition across
+    the act rather than the true-at-the-end state.
+
+    Every schema is dropped ``CASCADE`` when the test ends.
+    """
+    with contextlib.ExitStack() as per_call:
+
+        def make(prefix: str = "cards_extra", *, bootstrap: bool = True) -> str:
+            if _CLUSTER_DSN is None:
+                pytest.fail(
+                    "This test needs a second throwaway store and no writable "
+                    "PostgreSQL was opened, so there is nowhere to carve one. "
+                    "This is a FAILURE and not a skip: a skipped storage test "
+                    "is indistinguishable from a passing one.\n"
+                    f"  reason: {_EPHEMERAL_DSN_REASON}",
+                    pytrace=False,
+                )
+            from scitex_dev.store.testing import ephemeral_schema
+
+            dsn = per_call.enter_context(
+                ephemeral_schema(_CLUSTER_DSN, prefix=prefix)
+            )
+            if bootstrap:
+                _bootstrap_empty_store(dsn)
+            return dsn
+
+        yield make
 
 
 # --------------------------------------------------------------------------- #
@@ -292,72 +469,19 @@ def scratch_store_root() -> Path:
 # guarded is gone. Nothing can recreate it either: the env tier and the compat
 # mirror that could resolve to that dirname were deleted with the shim, so no
 # code path in this package names it any more.
-_REAL_STORE_CANDIDATES: tuple[Path, ...] = (
-    Path("/home/agent/.scitex/cards/cards.db"),
-    Path("/home/ywatanabe/.scitex/cards/cards.db"),
-)
 
 
-def _stat_or_none(path: Path) -> tuple[int, int] | None:
-    """``(mtime_ns, size)`` for ``path``, or ``None`` when it doesn't exist.
-
-    Never raises. Diagnostic context only — see :func:`_store_damage.damage`
-    for why file stat is NOT the failure criterion.
-    """
-    try:
-        st = path.stat()
-    except OSError:
-        return None
-    return (st.st_mtime_ns, st.st_size)
 
 
 # Captured at IMPORT — same reasoning as ``_SCRATCH`` above: nothing this
 # suite does can happen before this module finishes importing, so this is the
 # earliest possible "before" snapshot.
-_REAL_STORE_BEFORE: dict[Path, tuple[int, int] | None] = {
-    p: _stat_or_none(p) for p in _REAL_STORE_CANDIDATES
-}
-_REAL_CONTENT_BEFORE: dict[Path, dict | None] = {
-    p: content_or_none(p) for p in _REAL_STORE_CANDIDATES
-}
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _assert_real_store_untouched_by_session():
-    """FAIL LOUD if any real store candidate was DAMAGED during this session.
-
-    This is a DETECTOR, not a preventer — the prevention is the pinning above
-    and in ``tests/scitex_cards/conftest.py``. If this fires, do not go
-    hunting for the one leaking test as a condition of fixing the card in
-    hand: per the incident runbook, report the failing state (which candidate
-    path, and what changed) and treat it as a signal that the pinning
-    fixtures need a wider audit — finding the exact leaking test is
-    legitimate follow-up work, not a blocker on having this guard at all.
-    """
-    yield
-    damaged = damaged_candidates(_REAL_CONTENT_BEFORE, _REAL_STORE_CANDIDATES)
-    if not damaged:
-        return
-    details = "\n".join(
-        f"  {path}\n    {why}\n"
-        f"    stat before (mtime_ns, size) = {_REAL_STORE_BEFORE[path]}\n"
-        f"    stat after  (mtime_ns, size) = {_stat_or_none(path)}"
-        for path, why in damaged
-    )
-    pytest.fail(
-        "REAL TASK STORE DAMAGED DURING THIS TEST SESSION.\n"
-        "Every pinning fixture in this file and in "
-        "tests/scitex_cards/conftest.py is supposed to make this "
-        "impossible; one of them has a hole. Do NOT chase the individual "
-        "leaking test as a condition of triage — report this failure "
-        "verbatim; finding the exact leak is follow-up work.\n"
-        f"{details}",
-        pytrace=False,
-    )
 
 
 @pytest.fixture(autouse=True)
-def _store_env_stays_pinned(tmp_path_factory) -> None:
+def _store_env_stays_pinned(tmp_path_factory) -> "Iterator[None]":
     """Give every test its OWN empty database, and re-assert the pin.
 
     TWO JOBS, both load-bearing.
@@ -384,13 +508,33 @@ def _store_env_stays_pinned(tmp_path_factory) -> None:
     ``env=os.environ.copy()`` to real child processes, and those children must
     inherit this test's database. That inheritance is precisely how the first
     wipe happened, so it is not incidental.
+
+    A SCHEMA, NOT A FILE. The per-test store used to be a scratch FILENAME;
+    there is one storage engine now and a filename names no store, so the
+    isolation is a uniquely named PostgreSQL schema carved out of the session
+    cluster and dropped ``CASCADE`` when the test ends. The DSN carries
+    ``options=-csearch_path=<schema>``, and that is the load-bearing part:
+    ``public`` is off the path, so an unqualified read inside a test cannot
+    resolve the live board's tables at all -- it fails to find the relation
+    rather than quietly returning the fleet's cards. Isolation and the barrier
+    are the same mechanism, which is why converting the pin could not be done
+    by weakening it.
     """
     scratch = tmp_path_factory.mktemp("store")
-    _point_env_at(scratch)
-    _bootstrap_empty_db(scratch / "cards.db")
-    # Re-assert the CURRENCY gate suppression too (same "a stray pop/delenv
-    # must not leak into the next test" reasoning as the store vars above).
-    os.environ["SCITEX_DEV_CURRENCY_SEVERITY"] = "silent"
+    with contextlib.ExitStack() as per_test:
+        store_dsn = None
+        if _CLUSTER_DSN is not None:
+            from scitex_dev.store.testing import ephemeral_schema
+
+            store_dsn = per_test.enter_context(
+                ephemeral_schema(_CLUSTER_DSN, prefix="cards_test")
+            )
+            _bootstrap_empty_store(store_dsn)
+        _point_env_at(scratch, store_dsn)
+        # Re-assert the CURRENCY gate suppression too (same "a stray pop/delenv
+        # must not leak into the next test" reasoning as the store vars above).
+        os.environ["SCITEX_DEV_CURRENCY_SEVERITY"] = "silent"
+        yield
 
 
 # EOF

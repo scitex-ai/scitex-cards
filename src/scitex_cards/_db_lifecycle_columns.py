@@ -74,12 +74,10 @@ should map onto the column, and inventing one would make the gap
 unrecoverable BY LOOKING CORRECT. The fill is a later change that can
 argue for how, exactly as ``row_uuid`` was left.
 
-NO BACKEND BRANCH. Plain ``ALTER TABLE ADD COLUMN`` is understood by both
-SQLite and PostgreSQL, and no trigger or function is installed here, so
-branching would add a difference between the two stores that nothing
-requires. If a fill trigger is added later it MUST take that branch (see
-``_migrate_v9_to_v10``, which skips its trigger on SQLite because
-``json_object()`` needs 3.38 and the live host runs 3.37.2); the column
+NO BACKEND BRANCH. Plain ``ALTER TABLE ADD COLUMN`` is standard and no trigger
+or function is installed here, so branching would add a difference between
+stores that nothing requires. If a fill trigger is added later it MUST take
+that branch (see ``_migrate_v9_to_v10``, whose trigger is plpgsql); the column
 set must not.
 """
 
@@ -101,11 +99,11 @@ LIFECYCLE_TABLE = "tasks"
 #: ``(column, sql_type)``, applied one at a time against the physical shape.
 #:
 #: ``BOOLEAN`` is written rather than ``INTEGER`` because PostgreSQL has a
-#: real boolean type and the declared field is ``FieldKind.BOOL``. SQLite has
-#: no boolean type but accepts the token and gives it NUMERIC affinity, so the
-#: same DDL is valid on both -- the difference surfaces only in what the
-#: driver hands back (``0``/``1`` from sqlite3, ``False``/``True`` from
-#: psycopg), and both are correct inputs to ``bool()``.
+#: real boolean type and the declared field is ``FieldKind.BOOL``. An engine
+#: without a boolean type still accepts the token and gives it numeric
+#: affinity, so the same DDL is portable -- the difference surfaces only in
+#: what the driver hands back (``0``/``1`` versus ``False``/``True``), and both
+#: are correct inputs to ``bool()``.
 #:
 #: No column takes a DEFAULT. A default would silently assert a value for
 #: every pre-existing row -- ``is_deleted DEFAULT 0`` reads as "every historical

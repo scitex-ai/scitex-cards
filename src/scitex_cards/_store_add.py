@@ -92,9 +92,9 @@ def add_task(
     #
     # The guard asks ONE question — "would this write MANUFACTURE a board?" —
     # and answers it with `path.exists()`. So it must be handed the store's real
-    # LOCATION: the canonical SQLite database, which is what `save_tasks` writes
-    # and what `init-store` creates. `_resolved_store` returns a DISPLAY LABEL
-    # (`<db_dir>/tasks.yaml`) that the SQLite backend maps to that database —
+    # LOCATION: the canonical database, which is what `save_tasks` writes and
+    # what `init-store` provisions. `_resolved_store` returns a DISPLAY LABEL
+    # (`<db_dir>/tasks.yaml`) that the store backend maps to that database —
     # good enough to name a store in a message, never a thing on disk. The YAML
     # tier was deleted (#512), so that label can NEVER exist, and passing it here
     # made the guard refuse unconditionally: every `add` failed for any agent
@@ -107,8 +107,8 @@ def add_task(
     # against PostgreSQL died here, before the guard it feeds ever ran. The
     # guard itself is fine with a DSN (it returns early; a server store cannot
     # be manufactured by a write). Handing it the target as written keeps the
-    # SQLite behaviour byte-identical and stops the coercion happening on the
-    # way in.
+    # existing behaviour byte-identical and stops the coercion happening on
+    # the way in.
     _refuse_ambient_store_creation(resolve_store_target(store), store)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     # FAIL-LOUD on a missing/blank OWNER (operator mandate 2026-06-26,

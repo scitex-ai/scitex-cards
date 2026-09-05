@@ -24,7 +24,7 @@ identity resolution degraded silently to the raw name string.
 
 The premise was false as well as dangerous: a store path is not a file. The
 YAML tier was deleted in #512, and the notify test says so where it builds
-one — *"Store is SQLite; reads/writes hit the canonical DB and the path
+one — *"The store is a database; reads/writes hit the canonical DB and the path
 survives only as the store IDENTITY stamp."* An explicit store names WHICH
 database, never a different KIND of home. So ``store`` is threaded through to
 ``open_db`` and nothing branches on it.

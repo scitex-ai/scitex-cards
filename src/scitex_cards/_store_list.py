@@ -9,17 +9,18 @@ surface. They share nothing but a store path, and the read surface is the half t
 the fleet hits on every poll. ``_store`` re-exports every name defined here, so no
 caller had to move.
 
-SQLite IS the store (see :mod:`scitex_cards._store_backend`) — there is no other
+THE DATABASE IS the store (see :mod:`scitex_cards._store_backend`) — no other
 backend and no way to select one. :func:`list_tasks` always reads through
 :func:`scitex_cards._model.load_tasks`, which reads the canonical database via
 :func:`scitex_cards._store._read_canonical_db_or_raise`. An unresolvable or
 unreadable store RAISES with an actionable message; there is no YAML chain and no
 bundled example left to fall back to (both were deleted 2026-07-19/21).
 
-This module used to also dispatch to a second, SQLite-indexed read path
-(``_store_read_sqlite`` — S2) when a set of runtime checks passed, and fell back to
-this Python-predicate path otherwise. That accelerator is DELETED (2026-07-21
-incident): now that SQLite is canonical rather than a mirror, its freshness guard
+This module used to also dispatch to a second, index-backed read path (the S2
+accelerator) when a set of runtime checks passed, and fell back to this
+Python-predicate path otherwise. That accelerator is DELETED (2026-07-21
+incident): once the database became canonical rather than a mirror, its
+freshness guard
 compared the DB's provenance stamp against a YAML file that no longer exists, so it
 refused to serve and fell back — and that fallback resolved to an empty bundled
 example, silently serving a blank board while claiming reads were merely slow. A
@@ -277,9 +278,9 @@ def list_tasks(
     affecting the on-disk store (no save here).
 
     Reads always go through :func:`scitex_cards._model.load_tasks`, which reads the
-    ONE canonical SQLite database and raises rather than returning an empty or
+    ONE canonical database and raises rather than returning an empty or
     stale document when the store cannot be resolved (see the module docstring —
-    the S2 SQLite-indexed accelerator that used to dispatch here is deleted).
+    the S2 index-backed accelerator that used to dispatch here is deleted).
     """
     resolved = _resolved_store(store)
     scope_eff = _default_scope(scope)

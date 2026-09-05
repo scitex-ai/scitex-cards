@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Decide WHICH backend a store target names, and translate SQL paramstyle.
+"""Decide whether a store target names the store, and translate SQL paramstyle.
 
-This is the pure half of PostgreSQL support: the part that can be written and
+This is the pure half of the store layer: the part that can be written and
 tested without a server. It exists because 140 ``execute()`` call sites across
-10 modules currently hardcode SQLite's ``?`` paramstyle, and PostgreSQL uses
-``%s``. Translating at each call site would be 140 opportunities to get it
-wrong; translating in one place is one.
+10 modules are written in the ``?`` paramstyle and PostgreSQL uses ``%s``.
+Translating at each call site would be 140 opportunities to get it wrong;
+translating in one place is one.
 
 WHAT THIS DELIBERATELY DOES NOT DO
 ----------------------------------
@@ -15,18 +15,21 @@ in scitex-db's migration tool on 2026-07-30 were invisible to 196 passing tests
 and appeared only against a real driver -- a probe that aborted the transaction
 so the first CREATE TABLE died, and indexes of excluded tables counted as
 carried. Both were pure-logic-looking bugs that pure logic could not catch. So
-the connection layer is being built against a real PostgreSQL, and nothing here
-should be read as evidence that it works.
+nothing here should be read as evidence that the connection layer works.
 
-A PATH IS THE LEGACY SPELLING, AND STAYS THE DEFAULT
-----------------------------------------------------
-``$SCITEX_CARDS_DB`` has always held a filesystem path, and every existing
-deployment sets one. So anything that is not explicitly a PostgreSQL URL
-resolves to SQLite: that keeps every current store working untouched. Only an
-explicit ``postgresql://`` (or ``postgres://``) opts in.
+THERE IS EXACTLY ONE ACCEPTED SHAPE
+-----------------------------------
+A store target is a PostgreSQL DSN -- either the URL form (``postgresql://``,
+``postgres://``) or the libpq keyword/value conninfo form. Nothing else is a
+store. A filesystem path is NOT a store target and is refused by
+:func:`reject_non_postgres_target`, which is the restatement of a protection
+this package earned the hard way: on 2026-07-31, 2026-08-02 and 2026-08-12 a
+target that was not a DSN became a real, empty, query-answering cards database
+on disk, and a wrong board that works is far worse than one that will not
+start.
 
-Note this module answers "which backend", never "which store". A DSN is a
-LOCATION and locations fail both ways -- the same database reached as
+Note this module answers "is this the store's shape", never "which store". A
+DSN is a LOCATION and locations fail both ways -- the same database reached as
 ``localhost`` and ``127.0.0.1`` is string-unequal, and a restored backup at the
 same address is a different store wearing the right name. Store IDENTITY lives
 inside the store (``schema_meta.store_uuid``) and is checked there. This module
@@ -39,7 +42,7 @@ import re
 
 __all__ = [
     "BACKEND_POSTGRES",
-    "BACKEND_SQLITE",
+    "BACKEND_UNSUPPORTED",
     "POSTGRES_SCHEMES",
     "UnrecognisedStoreTarget",
     "backend_of",
@@ -48,12 +51,19 @@ __all__ = [
     "is_postgres_url",
     "is_unexpanded_variable",
     "reject_attempted_dsn",
+    "reject_non_postgres_target",
     "reject_unexpanded_variable",
     "to_paramstyle",
 ]
 
-BACKEND_SQLITE = "sqlite"
 BACKEND_POSTGRES = "postgresql"
+
+#: What :func:`backend_of` answers for anything that is not a PostgreSQL DSN.
+#: NOT the name of a second engine -- there is no second engine. It is the
+#: symbol for "this target names no store I can open", so a caller that
+#: branches on the backend gets a value it must handle rather than a plausible
+#: alternative it can quietly accept.
+BACKEND_UNSUPPORTED = "unsupported"
 
 #: Both spellings are accepted. libpq has honoured "postgres://" for years and
 #: it appears in real config, so refusing it would be pedantry with an outage
@@ -79,17 +89,17 @@ class UnrecognisedStoreTarget(RuntimeError):
 #: libpq accepts a KEYWORD/VALUE conninfo string as well as a URL --
 #: ``host=127.0.0.1 port=5432 dbname=cards`` -- and psycopg.connect() takes it
 #: happily. Only the URL form was recognised here, so a keyword/value DSN was
-#: classified SQLITE and opened AS A FILENAME.
+#: not recognised as a store target at all and was opened AS A FILENAME.
 #:
 #: That is not theoretical: on 2026-07-31, testing this very module, I passed
-#: ``host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards`` and it
-#: created a SQLite database in the working directory literally named that,
-#: reported backend "sqlite", accepted writes, and answered queries. A wrong
-#: store that works is the failure this package keeps meeting: nothing raises,
-#: and the board looks healthy and empty.
+#: ``host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards`` and a
+#: database file was created in the working directory literally named that,
+#: which accepted writes and answered queries. A wrong store that works is the
+#: failure this package keeps meeting: nothing raises, and the board looks
+#: healthy and empty.
 #:
-#: Detection is by KEYWORD rather than by "contains =", because a filesystem
-#: path may legitimately contain "=" and must keep resolving to SQLite.
+#: Detection is by KEYWORD rather than by "contains =", because a target may
+#: legitimately contain "=" in a password or an ``options`` value.
 _LIBPQ_KEYWORDS = frozenset(
     {
         "host",
@@ -112,9 +122,9 @@ _LIBPQ_KEYWORDS = frozenset(
 def is_postgres_conninfo(target: object) -> bool:
     """True iff ``target`` is a libpq KEYWORD/VALUE conninfo string.
 
-    Requires the FIRST token to be ``<known-keyword>=``: a path such as
+    Requires the FIRST token to be ``<known-keyword>=``: a string such as
     ``/srv/data/a=b/cards.db`` contains an ``=`` but does not begin with a libpq
-    keyword, so it stays SQLite.
+    keyword, so it is not a conninfo.
     """
     if not isinstance(target, str):
         return False
@@ -149,23 +159,24 @@ def backend_of(target: object) -> str:
     """Return the backend constant for ``target``.
 
     Deliberately total: every input gets an answer, and the answer for anything
-    that is not a PostgreSQL URL is SQLite. That is what keeps existing stores
-    -- all of which are paths -- working with no migration of configuration.
+    that is not a PostgreSQL DSN is :data:`BACKEND_UNSUPPORTED`.
 
-    THAT TOTALITY IS ALSO THIS MODULE'S RECURRING DEFECT, so it is no longer the
-    only thing standing between a botched DSN and a new file. See
-    :func:`is_attempted_dsn` and :func:`reject_attempted_dsn`, which give
-    "I do not recognise this" somewhere to live. This function keeps its total
-    contract because thirteen call sites branch on it; the guard is enforced at
-    the door where a guess does damage.
+    THAT TOTALITY WAS THIS MODULE'S RECURRING DEFECT while the "else" branch
+    named a real engine: an unrecognised target became a confident wrong answer,
+    and the wrong answer meant A FILENAME, which meant a new and empty cards
+    database that answers queries. Naming the else-branch UNSUPPORTED is what
+    makes non-recognition representable. This function keeps its total contract
+    because thirteen call sites branch on it; the refusal is enforced at the
+    door where a guess does damage -- see :func:`reject_non_postgres_target`.
     """
-    return BACKEND_POSTGRES if is_postgres_url(target) else BACKEND_SQLITE
+    return BACKEND_POSTGRES if is_postgres_url(target) else BACKEND_UNSUPPORTED
 
 
 #: A path is anchored. Anything starting this way was typed as a location on
-#: disk and stays SQLite no matter what punctuation appears later in it -- a
-#: directory may legitimately be named "a://b", and a store under it must keep
-#: opening.
+#: disk, so it is not a MALFORMED DSN however it is punctuated later -- a
+#: directory may legitimately be named "a://b". It is still not a store target;
+#: :func:`reject_non_postgres_target` is what refuses it, with the diagnostic
+#: that fits.
 _PATH_ANCHORS = ("/", "./", "../", "~")
 
 #: ``:55432`` and ``127.0.0.1:55432`` -- a port, with or without a host, and no
@@ -187,17 +198,20 @@ _MANGLED_SEGMENT = re.compile(r"/postgres(?:ql)?:/")
 def is_attempted_dsn(target: object) -> bool:
     """True iff ``target`` is TRYING to name a server and failing.
 
-    This is the answer :func:`backend_of` cannot give. A classifier that is
-    total by construction cannot report non-recognition, so every input outside
-    its allowlist becomes a confident wrong answer -- and here the wrong answer
-    is "SQLite", which means A FILENAME, which means a new and empty cards
-    database that answers queries.
+    A DSN that is merely MALFORMED gets a diagnostic of its own, separate from
+    the blanket refusal in :func:`reject_non_postgres_target`, because "you
+    meant a server and mistyped it" and "this is not a store target" send a
+    reader to different places. Historically this predicate was the whole guard:
+    a classifier that is total by construction cannot report non-recognition, so
+    every input outside its allowlist became a confident wrong answer -- and the
+    wrong answer meant A FILENAME, which meant a new and empty cards database
+    that answers queries.
 
     THREE TIMES NOW, EACH TIME A DIFFERENT SPELLING:
 
       2026-07-31  ``host=127.0.0.1 port=55432 dbname=scitex_cards``
-                  created a SQLite database in the working directory named
-                  literally that, reported backend "sqlite", accepted writes.
+                  created a database file in the working directory named
+                  literally that, which accepted writes.
                   Fixed by enumerating :data:`_LIBPQ_KEYWORDS`.
       2026-08-02  ``postgresql://scitex_cards@127.0.0.1:.../...`` reached
                   ``Path()``, which collapses "//" to "/", and the inbox
@@ -205,16 +219,16 @@ def is_attempted_dsn(target: object) -> bool:
                   ``postgresql:/scitex_cards@.../runtime/`` IN THE SOURCE REPO.
                   Found 2026-08-12, ten days later, untracked and NOT ignored --
                   one ``git add -A`` from being committed.
-      2026-08-12  ``:55432`` resolved to backend "sqlite", exists False, ready
+      2026-08-12  ``:55432`` was classified as a filename, exists False, ready
                   to create a file named ":55432".
 
     Enumerating a fourth accepted spelling would fix the third and wait for the
     fourth. So the predicate is written from the other side: not "which server
     spellings do I know" but "which inputs are obviously not filenames".
 
-    A PATH WINS FIRST. Anchored targets return False before any other rule, so
-    no existing deployment can be broken by this -- every store in service today
-    is an absolute path.
+    A PATH WINS FIRST. Anchored targets return False before any other rule: an
+    anchored target is not a mistyped server, so it gets the other refusal
+    rather than this one.
     """
     if not isinstance(target, str):
         return False
@@ -255,9 +269,43 @@ def reject_attempted_dsn(target: object) -> None:
         "Accepted forms:\n"
         "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
         "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
-        "    /an/absolute/path/to/cards.db\n"
         "Check $SCITEX_CARDS_DB, and note a DSN that has been through Path() "
         "loses one slash: 'postgresql:/host/db' is this error, not a directory."
+    )
+
+
+def reject_non_postgres_target(target: object) -> None:
+    """Raise unless ``target`` names the PostgreSQL store. THE OPENING DOOR.
+
+    Call this at every door that OPENS a store, ahead of the driver. It is the
+    single refusal the two narrower ones fold into: it runs
+    :func:`reject_unexpanded_variable` and :func:`reject_attempted_dsn` first so
+    a caller that mistyped a server still gets the diagnostic that names the
+    mistake, and only then refuses everything that is left.
+
+    WHY IT REFUSES A PERFECTLY GOOD FILE PATH. A path used to be the accepted
+    spelling, so the surviving hazard is not a typo -- it is a stale but
+    syntactically fine configuration pointing at a filename. Opened, that
+    filename becomes a new, empty, query-answering cards database; measured on
+    this package three times (2026-07-31, 2026-08-02, 2026-08-12), each time
+    with every health probe green. Refusing to open a target that is not the
+    store is the only version of this guard that cannot be threaded.
+    """
+    reject_unexpanded_variable(target)
+    reject_attempted_dsn(target)
+    if is_postgres_url(target):
+        return
+    raise UnrecognisedStoreTarget(
+        f"the cards store target {target!r} does not name the store.\n"
+        "The store is a PostgreSQL database and the target must be a DSN:\n"
+        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
+        "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
+        "Refusing is deliberate: opened as a file, this target MANUFACTURES a "
+        "new and empty cards database that answers every query, and a wrong "
+        "board that works is far worse than one that will not start.\n"
+        "Fix the SOURCE of the value -- $SCITEX_CARDS_DB or the config that "
+        "sets it. Repointing a live store at a fresh target is how the board "
+        "was destroyed 2026-07-19."
     )
 
 
@@ -288,7 +336,7 @@ def is_unexpanded_variable(target: object) -> bool:
     resolved at all?".
 
     WHAT IT COST. Eight handyman agents on scitex-compute-03 held exactly this
-    literal in their environment, so every cards client resolved to one SQLite
+    literal in their environment, so every cards client resolved to one database
     file named ``${SCITEX_CARDS_DB}`` in the project directory. Four direct
     messages addressed to the operator were written into it and delivered to
     nobody. Two of those agents diagnosed the defect themselves, at 00:20 and
@@ -338,10 +386,12 @@ def reject_unexpanded_variable(target: object) -> None:
 
 
 def to_paramstyle(sql: str, backend: str) -> str:
-    """Rewrite SQLite ``?`` placeholders for ``backend``.
+    """Rewrite ``?`` placeholders for ``backend``.
 
-    SQLite is returned unchanged -- the SQL in this package is already written
-    in its paramstyle, so the common path costs nothing and cannot corrupt.
+    The SQL in this package is written in the ``?`` paramstyle; a PostgreSQL
+    connection rewrites it on the way through. Any other backend is returned
+    unchanged, which is unreachable in a deployment (there is no other backend)
+    and kept so this function is total rather than partial.
 
     A ``?`` INSIDE A STRING LITERAL IS NOT A PLACEHOLDER and must survive. This
     is not hypothetical: card and message bodies routinely contain question

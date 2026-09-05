@@ -1,25 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The comment merge must read rows by NAME, which is all PostgreSQL allows.
-
-THE GAP THIS FILLS. 0.49.0 shipped `_merge_unseen_comment_rows` reading result
-rows by POSITION. The retired engine's row type supported `row[0]`; psycopg's dict row factory
-does not, so `row[0]` looked up the integer key ``0`` and raised ``KeyError: 0``.
-Production is PostgreSQL and the entire ~7,500-test suite ran on the retired engine, so the
-defect was not missed — it was UNREACHABLE from the harness. Every card holding
-comments became read-only in every direction for about an hour, fleet-wide.
-
-The repo already had a `postgres-backend` CI job whose header names "dict-like
-row access" as a behaviour it exists to validate. It passed on 0.49.0, because
-its `PG_TEST_FILES` is a hand-maintained allowlist and the card-write funnel is
-not on it. This file is the missing member.
-
-WHY IT IS SAFE TO POINT AT A LIVE STORE. `_merge_unseen_comment_rows` only READS
-`task_comments`; its output is a mutation of the in-memory card dict. And the
-fixture creates a session-local ``TEMP`` table of that name, which precedes
-``public`` on the search_path, so the SELECT resolves to the temporary rows and
-the real table is never touched. Nothing here writes to the database.
-"""
+"""The comment merge must read rows by NAME, which is all PostgreSQL allows."""
 
 from __future__ import annotations
 
@@ -35,35 +16,39 @@ _CARD_ID = "zz-pgmerge-fixture-card"
 
 
 @pytest.fixture
-def pg_store_conn():
+def pg_store_conn(postgres_dsn):
     """A package StoreConnection over Postgres, with a TEMP task_comments.
 
-    Skip if UNDECLARED, fail if DECLARED-but-broken — the same contract the other
-    Postgres-backed tests use, so a missing server cannot quietly turn this into
-    a green no-op.
+    ONE NAME ANSWERS "WHERE IS THE STORE", and this fixture used to add a
+    second. It read ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private
+    marker -- and SKIPPED when it was unset. Nothing sets that name any more,
+    so "unset" is now always, and these tests reported green in CI without ever
+    opening a connection: the exact failure
+    ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` exists to
+    remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+    a skipped test is indistinguishable from a passing one").
+
+    ``postgres_dsn`` (tests/conftest.py) is the one source of truth: a real
+    throwaway schema on the cluster the harness opened, which FAILS rather than
+    skipping when there is none.
 
     The package wrapper is deliberate rather than a raw psycopg connection: the
     module under test writes `?` paramstyle, which only `StoreConnection`
     translates. A raw connection would fail for a reason unrelated to the defect.
     """
-    declared = os.environ.get("SCITEX_CARDS_TEST_PG_DSN")
-    dsn = declared or _FALLBACK_DSN
     try:
         import psycopg  # noqa: F401
-    except ImportError:
-        if declared:
-            pytest.fail("SCITEX_CARDS_TEST_PG_DSN is set but psycopg is missing")
-        pytest.skip("psycopg not installed")
+    except ImportError:  # pragma: no cover - the package requires the driver
+        pytest.fail(
+            "psycopg is not installed, so the only storage engine this "
+            "package has cannot be reached. Install the postgres extra: "
+            "pip install -e '.[postgres]'",
+            pytrace=False,
+        )
 
     from scitex_cards._db import open_db
 
-    try:
-        conn = open_db(dsn)
-    except Exception as exc:  # noqa: BLE001 -- see contract above
-        if declared:
-            pytest.fail(f"declared Postgres at {dsn!r} unreachable: {exc}")
-        pytest.skip(f"no live Postgres: {type(exc).__name__}")
-
+    conn = open_db(postgres_dsn)
     conn.execute(
         "CREATE TEMP TABLE task_comments ("
         " task_id TEXT, seq INTEGER, author TEXT, ts TEXT, kind TEXT, text TEXT)"

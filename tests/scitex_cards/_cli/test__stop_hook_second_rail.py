@@ -43,6 +43,43 @@ from scitex_cards._inbox_confirm import confirm_notifications
 from scitex_cards._inbox_present import INJECTED_CONTEXT_CAP, MAX_PRESENTED
 from scitex_cards._stop_hook_bound import MAX_PRESENTATIONS
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _inbox_follows_the_store():
+    """This module's rail must be the STORE's rail, not the file break-glass.
+
+    The suite-wide default pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every
+    test. That was right while the store was a file -- both rails were local
+    and agreed. It is a SPLIT now: the store is a PostgreSQL DSN and the inbox
+    is pointed at a per-host file, which is the exact configuration
+    ``check_backend_mode`` reports as a FAILURE ("card writes and notification
+    writes land in different places, fail independently, and a green card-side
+    check says nothing about whether notifications are delivered").
+
+    Two tests here measured that split rather than the hook: ``_send()``
+    enqueued on one rail and the CLI entry point read the other, so the hook
+    emitted ``{}`` -- allow -- where a block was expected, and an unavailable
+    rail reported no warning. Both pass once the rails agree.
+
+    PINNED HERE RATHER THAN SUITE-WIDE on purpose. Flipping the global default
+    is very likely the right change -- a PostgreSQL store should never be
+    paired with a file inbox -- but fourteen test files name that variable and
+    validating them all needs a full-suite run. This module's scope is one
+    module, and it is measured: 25 passed.
+    """
+    previous = os.environ.get("SCITEX_CARDS_INBOX_BACKEND")
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("SCITEX_CARDS_INBOX_BACKEND", None)
+        else:
+            os.environ["SCITEX_CARDS_INBOX_BACKEND"] = previous
+
+
 AGENT = "rail-tester"
 
 #: A canonical database under a directory that cannot even be created — the
@@ -56,7 +93,16 @@ UNREADABLE_DB = "/proc/1/definitely-not-a-directory/cards.db"
 
 #: An inbox database under a path that cannot even be created, so the message
 #: rail fails on its own rather than borrowing the board's failure.
-UNREADABLE_INBOX_DB = "/proc/1/definitely-not-a-directory/cards.db"
+#: A store target that names no store, so ``_inbox_backend.backend()`` cannot
+#: select a rail and raises. THIS REPLACED an unreadable inbox FILE reached by
+#: selecting the retired engine: with one storage engine, an unrecognised
+#: backend name is not an alternative backend and is never treated as one --
+#: it falls through to the store-following default, which SUCCEEDS whenever the
+#: store is a DSN. So the old arrangement stopped producing the refusal it was
+#: written to observe the moment the harness began pinning a real store, and
+#: the tests passed or failed for reasons that had nothing to do with the rail.
+#: A non-DSN store is the condition that genuinely makes a rail unselectable.
+UNSELECTABLE_STORE = "/proc/1/definitely-not-a-directory/cards.db"
 
 
 def _store():
@@ -297,9 +343,8 @@ def test_an_unreadable_board_says_why_it_is_silent(env):
 def test_an_unreadable_inbox_allows_the_stop(env):
     """The message rail fails on its own terms — a mail read that raises must
     not wedge the agent any more than a board read that raises."""
-    # Arrange — an inbox database at a path that cannot even be created.
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-    env.set("SCITEX_CARDS_INBOX_DB", UNREADABLE_INBOX_DB)
+    # Arrange — a store that names no backend, so the rail cannot be selected.
+    env.set("SCITEX_CARDS_DB", UNSELECTABLE_STORE)
 
     # Act
     out = _decide()
@@ -310,8 +355,7 @@ def test_an_unreadable_inbox_allows_the_stop(env):
 
 def test_an_unreadable_inbox_says_why_it_is_silent(env):
     # Arrange
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-    env.set("SCITEX_CARDS_INBOX_DB", UNREADABLE_INBOX_DB)
+    env.set("SCITEX_CARDS_DB", UNSELECTABLE_STORE)
 
     # Act
     out = _decide()
@@ -431,65 +475,55 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 
 
 # --------------------------------------------------------------------------- #
-# 7. The backend PRODUCTION actually runs                                     #
+# 7. An unrecognised backend name is not a second rail                        #
 # --------------------------------------------------------------------------- #
 #
-# This suite pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test. Until
-# 2026-08-23 the fleet ran SQLite by default, so the block/release pair was
-# re-run against it explicitly here — a delivery rail proven only on the
+# This suite pins ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test. This
+# section used to re-run the block/release pair against a SECOND engine that
+# the fleet then ran by default -- a delivery rail proven only on the
 # break-glass backend is proven on a configuration nobody runs, and "measured
 # somewhere else" is how the original outage stayed invisible.
 #
-# SQLite is now RETIRED as an inbox backend (operator ruling 2026-08-23,
-# PR #938): selecting it explicitly raises ``StoreUnavailableError`` instead
-# of enqueuing anything, so the three behavioural round-trips this section
-# used to run against it no longer have a backend to run against. What
-# replaces them is the refusal itself — the hook must not silently swallow a
-# retired-backend selection as if the mail simply never arrived; it must
-# report the message rail as UNAVAILABLE, exactly like any other inbox
-# failure (see ``test_an_unreadable_inbox_says_why_it_is_silent`` above,
-# which already covers the generic "the hook does not wedge" contract).
+# There is one engine now, so there is no second backend to re-run anything
+# against, and the operator ruled that the retired one gets no special handling
+# whatsoever. What is left worth pinning is the SELECTOR's contract, which is
+# engine-agnostic and stated in ``backend()``'s own docstring: a name it does
+# not recognise is not an alternative backend and is never treated as one.
+# Without that, a typo becomes a second inbox that merely happens to be
+# switched off today, and nobody polls it.
 
 
-def test_selecting_the_retired_sqlite_backend_still_lets_the_stop_through(env):
-    """A refusal at the backend seam must still fail the hook OPEN, not silent.
+def test_an_unrecognised_backend_name_is_not_a_second_rail(env):
+    """It follows the STORE, exactly as an unset value does.
 
-    ``_decide`` guards each rail with its own broad ``except Exception`` (see
-    ``_cli/_stop_hook.py``), so a ``StoreUnavailableError`` from the retired
-    SQLite selection is caught the same way an unreadable inbox file always
-    was — same fail-open decision. This pins that the retirement did not
-    quietly change that contract.
+    REPLACES THREE TESTS that selected the retired engine by name and asserted
+    the rail went unavailable with a "RETIRED" warning. Two things ended them.
+
+    The operator ruled that the retired engine gets no special handling at all
+    (「スクライドと言うのは例外でも何でもなくて、そんなものは一切扱いません」), so a
+    warning naming it would be the exception the ruling forbids -- the code
+    would still know the engine's name in order to be rude about it.
+
+    And the behaviour they asserted was never about the engine. ``backend()``
+    documents that an unrecognised value "is not an alternative backend and is
+    never treated as one: it falls through to the store-following default".
+    With a real store that default SUCCEEDS, which is why those tests began
+    failing the moment the harness pinned one -- they had been observing a
+    non-DSN store, not a retired engine.
+
+    What survives is the property that actually matters and is engine-agnostic:
+    a name the selector does not know must not become a second inbox that
+    merely happens to be switched off today.
     """
     # Arrange
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "no-such-backend")
 
     # Act
     out = _decide()
 
-    # Assert
-    assert out["decision"] == {}
-
-
-def test_selecting_the_retired_sqlite_backend_reports_the_rail_unavailable(env):
-    # Arrange
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-
-    # Act
-    out = _decide()
-
-    # Assert
-    assert any("message rail unavailable" in w for w in out["warnings"])
-
-
-def test_the_retirement_reason_is_in_the_warning(env):
-    # Arrange
-    env.set("SCITEX_CARDS_INBOX_BACKEND", "sqlite")
-
-    # Act
-    out = _decide()
-
-    # Assert
-    assert any("RETIRED" in w for w in out["warnings"])
+    # Assert — the store is a DSN, so the fall-through selects the store's own
+    # rail and the hook proceeds normally rather than inventing a rail.
+    assert out["warnings"] == []
 
 
 # EOF

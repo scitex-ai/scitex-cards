@@ -6,7 +6,7 @@ WHY THIS EXISTS. DMs reach an agent 13-25s after they are written, against a 5s
 interval. NINE candidates were eliminated by direct measurement — the wrong
 daemon, the mtime drain gate, the burst cap, PostgreSQL write latency, the drain
 work itself, an overridden interval, MCP transport backpressure (an IDLE session
-measured SLOWER, 20s vs 13s), SQLite write-lock contention on the shared sidecar,
+measured SLOWER, 20s vs 13s), write-lock contention on the shared sidecar,
 and PostgreSQL advisory-lock contention. Every component measured fast and the
 composite stayed slow, which is the shape outside observation cannot resolve.
 

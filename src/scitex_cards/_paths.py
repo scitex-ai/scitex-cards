@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Task-store path resolution — the store IS the SQLite database.
+"""Task-store path resolution — the store IS the database.
 
 There is ONE store identity and it is ``$SCITEX_CARDS_DB`` (the database path).
 :func:`resolve_tasks_path` returns that path; there is no separate, YAML-named
@@ -51,7 +51,7 @@ def _find_git_root(start: Path) -> Path | None:
 def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     """Resolve the non-task YAML CONTAINER path — NOT the store identity.
 
-    The store IDENTITY is ``$SCITEX_CARDS_DB`` (the SQLite database); see
+    The store IDENTITY is ``$SCITEX_CARDS_DB`` (the database itself); see
     :func:`scitex_cards._db.resolve_db_path`, and the ownership guard in
     :mod:`scitex_cards._dual_write` / :mod:`scitex_cards._store_backend` which
     stamps and compares THAT path. Card DATA lives in the database.
@@ -159,7 +159,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
 
     # NO STORE CONFIGURED IS NOT NO LOCAL STATE, and this is the one place that
     # distinction has to be made in code rather than in the docstring above.
-    # Since 2026-08-13 the zero-config SQLite default RAISES instead of naming a
+    # Since 2026-08-13 the zero-config default RAISES instead of naming a
     # database, so the derivation at the bottom of this function has nothing
     # left to derive from -- but pidfiles, the delivery ledger, reminder state
     # and the users/groups sidecar all still want a real local directory, and
@@ -301,8 +301,32 @@ def local_store_path(store: str | Path | None) -> Path:
     keeps importing it under the old private name so no call site changes here,
     but there is now a single place to correct — a triplicated resolver is the
     shape that starts answering three different ways.
+
+    A DSN IS NOT A LOCAL PATH, and the else-branch below used to treat it as
+    one. ``Path("postgresql://host/db")`` does not raise: it collapses the
+    doubled slash and yields the RELATIVE ``postgresql:/host/db``, whose
+    ``.parent`` the sidecar callers then create and write into. Measured
+    2026-08-30, once the test harness began pinning a real DSN:
+
+        _inboxes_path(dsn) -> postgresql:/scitex-primary:55432/inboxes.json
+
+    5,579 bytes of it, under the repository working directory, holding twelve
+    notifications that every run appended to. That is the phantom-store
+    regrowth ``is_attempted_dsn`` already records four spellings of, reached
+    through a FIFTH door -- the inbox rail -- and it is the same confusion as
+    ``_live_dm_count`` and the snapshot dir: a LOCAL NEIGHBOUR derived from
+    STORE IDENTITY instead of from the local axis.
+
+    An explicit DSN therefore resolves the way ``None`` does -- through
+    ``resolve_tasks_path``, which returns the user root for a server target.
+    An explicit PATH is still taken as written, because a caller naming a path
+    means that path.
     """
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    if store is None or is_postgres_url(store):
+        return resolve_tasks_path(store if store is None else None)
+    return Path(store).expanduser()
 
 
 # EOF

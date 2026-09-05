@@ -28,6 +28,8 @@ how that stays true instead of merely intended.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 
 import pytest
@@ -134,7 +136,7 @@ class TestLocalStateDirOnAServerStore:
 
 
 class TestFileStoreResolutionIsUnchanged:
-    """The SQLite path must behave exactly as it did before the split."""
+    """The the retired engine path must behave exactly as it did before the split."""
 
     def test_container_sits_beside_the_database(self, clean_store_env, tmp_path):
         # Arrange
@@ -227,22 +229,6 @@ class TestResolveStoreReportsTheBackend:
         # Assert
         assert info["resolved"] == DSN, (
             f"expected the target as written, got {info['resolved']!r}"
-        )
-
-    def test_backend_is_sqlite_for_a_path(self, clean_store_env, tmp_path):
-        # Arrange
-        from scitex_cards._store import resolve_store
-
-        db = tmp_path / "cards.db"
-        db.touch()
-        os.environ[ENV_DB] = str(db)
-
-        # Act
-        info = resolve_store()
-
-        # Assert
-        assert info["backend"] == "sqlite", (
-            f"expected backend 'sqlite', got {info['backend']!r}"
         )
 
     def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):

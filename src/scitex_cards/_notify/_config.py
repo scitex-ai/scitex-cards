@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
-from .._paths import resolve_tasks_path
+from .._paths import local_store_path
 from ._rules import (
     DEFAULT_NOTIFY_RULES,
     EVENT_TYPES,
@@ -128,9 +128,7 @@ def notify_sidecar_path(store: str | Path | None) -> Path | None:
     ``resolve_tasks_path`` always returns a path).
     """
     try:
-        tasks_path = (
-            resolve_tasks_path(store) if store is None else Path(store).expanduser()
-        )
+        tasks_path = local_store_path(store)
     except Exception:  # noqa: BLE001 — never break on a path-resolution edge
         return None
     return tasks_path.parent / NOTIFY_SIDECAR_NAME

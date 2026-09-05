@@ -64,9 +64,9 @@ def _card_json_state(db: Path, task_id: str) -> str:
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
+def store(tmp_path: Path, new_store):
     """An ordinary healthy store, with $SCITEX_CARDS_DB pinned at it."""
-    db = tmp_path / "cards.db"
+    db = new_store()
     seed_db_from_doc(
         {
             "tasks": [

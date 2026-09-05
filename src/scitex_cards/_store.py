@@ -30,10 +30,9 @@ Design constraints
 ------------------
 - **Generic** (Req 8): scope/assignee/status are free-form strings. The
   helpers don't know what an "agent" is.
-- **Centralized** (Req 3): the default store is the SQLite database
-  resolved by ``$SCITEX_CARDS_DB``; callers can override with an
-  explicit ``store=`` path. The user-scope default
-  (``~/.scitex/cards/cards.db``) covers Req 7.
+- **Centralized** (Req 3): the default store is the database resolved by
+  ``$SCITEX_CARDS_DB``; callers can override with an explicit ``store=``
+  target. One board for the fleet covers Req 7.
 - **Shared with scopes** (Req 1): ``$SCITEX_CARDS_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
@@ -229,8 +228,8 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     # AN UNEXPANDED PLACEHOLDER IS NOT AN IDENTITY — THE IDENTITY DOOR, WHICH
     # THIS PACKAGE GUARDED EVERYWHERE EXCEPT HERE.
     #
-    # `reject_unexpanded_variable` already guards four STORE-TARGET doors
-    # (_paths x2, _backend_connect, _db, _index). Identity had none, so until
+    # `reject_unexpanded_variable` already guards the STORE-TARGET doors
+    # (_paths x2, _backend_connect, _db). Identity had none, so until
     # today `_default_agent("${SCITEX_CARDS_AGENT_ID}")` returned that string
     # VERBATIM and it was persisted as an author. Measured 2026-08-21:
     #
@@ -464,7 +463,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         "pkg_short": PKG_SHORT,
         "backend": backend_of(target),
         # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
-        # 2026-08-12 this verb answered `backend: "sqlite", exists: false` for
+        # 2026-08-12 this verb answered `backend: <a file>, exists: false` for
         # SCITEX_CARDS_DB=":55432" — a port, reported as a file that merely does
         # not exist yet. Both fields were true of the string and neither was
         # true of the intent, so the report read as "fresh install" to every
@@ -476,7 +475,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # detector sat in the same module as `is_attempted_dsn`. The argument
         # above generalises verbatim: `backend` cannot carry it either, because
         # an unexpanded `${SCITEX_CARDS_DB}` is not DSN-shaped, so `backend_of`
-        # answers "sqlite" and `exists` answers False -- both true of the string
+        # cannot name the store and `exists` answers False -- both true of the string
         # and neither true of the intent, exactly as ":55432" once read as a
         # fresh install.
         #
@@ -488,7 +487,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # surface and this surface did not consult it.
         #
         # Measured 2026-08-21 by claude-code-telegrammer: with the literal
-        # `${SCITEX_CARDS_DB}` set, this verb returned backend=sqlite,
+        # `${SCITEX_CARDS_DB}` set, this verb named a file as the backend,
         # target_is_malformed_dsn=False and exit 0, while an actual read refused
         # (exit 1). The system was safe; the DIAGNOSTIC said nothing, which is
         # the surface an agent runs precisely when it is confused.
@@ -564,18 +563,27 @@ def get_task(
     treated as NOT FOUND — the 2026-07-21 tombstone change keeps a
     deleted card's row on disk forever, but this read must behave exactly
     as it did when ``delete_task`` physically removed it.
-    """
-    from . import _model, _task
 
-    tasks_path = _resolved_store(store)
+    READS ONE ROW. This verb used to load the whole board under the store lock
+    and scan it for the id — a full export per call, which the notification
+    dispatcher pays on EVERY card event (measured 2026-09-02: 1.2 s of a 2.7 s
+    comment). It now reads the one row through the canonical read's own guards
+    (:mod:`scitex_cards._store_single_card`), takes no lock (a one-row read has
+    nothing to serialise against), and returns the card exactly as the export
+    would have rebuilt it. ``store`` still names the caller's logical store for
+    messages and sidecars; the row is read from the resolved store target, as
+    the whole-document read always did.
+    """
+    from . import _task
+    from ._store_single_card import read_card_or_raise
+    from ._store_target import resolve_store_target
+
     if not task_id:
         raise ValueError("get_task: 'task_id' is required")
-    with _model._store_lock(tasks_path):
-        tasks = _model.load_tasks(tasks_path)
-        for t in tasks:
-            if t.get("id") == task_id and not _task._is_tombstoned(t):
-                return dict(t)
-    raise _task_not_found(task_id)
+    card, _revision = read_card_or_raise(resolve_store_target(None), task_id)
+    if card is None or _task._is_tombstoned(card):
+        raise _task_not_found(task_id)
+    return card
 
 
 # --------------------------------------------------------------------------- #

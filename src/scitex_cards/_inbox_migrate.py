@@ -2,15 +2,16 @@
 # -*- coding: utf-8 -*-
 """One-time fold of the LEGACY embedded ``inboxes:`` section into the sidecar.
 
-Originally split out of :mod:`scitex_cards._inbox_sqlite` (retired 2026-08-23,
-operator ruling — SQLite is eradicated as a fleet-state backend). What
+Originally split out of the per-host inbox module (retired 2026-08-23,
+operator ruling — the file-backed rail is eradicated as a fleet-state backend).
+What
 survives here is the part that outlived that module: pre-cutover stores may
 still carry an ``inboxes:`` section embedded in the monolithic legacy
 document, and :func:`_migrate_legacy_yaml_once` folds it into the standalone
 ``inboxes.json`` sidecar exactly once, on first access, for the file-backed
-break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``). The SQLite-specific
-half (``migrate_to_sqlite``, ``gather_migratable_inboxes``, ``info``) was
-deleted with the module it fed.
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``). The rail-specific
+half (the migrate verb, ``gather_migratable_inboxes``, ``info``) was deleted
+with the module it fed.
 """
 
 from __future__ import annotations

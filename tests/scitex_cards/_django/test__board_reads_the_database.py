@@ -97,28 +97,29 @@ def populated_db_without_sidecar():
     from conftest import seed_db_from_doc
 
     _reset_board_caches()
-    db = Path(os.environ["SCITEX_CARDS_DB"])
+    # NOT ``Path(...)``. The value is a DSN, and ``Path`` collapses the double
+    # slash: ``postgresql://host/db`` becomes ``postgresql:/host/db``, which the
+    # door then refuses as malformed. `_store_url` names this exact trap in its
+    # own error text — it was reached from here.
+    db = os.environ["SCITEX_CARDS_DB"]
     seed_db_from_doc(_TWO_CARDS, db)
-    sidecar = db.parent / "tasks.yaml"
-    if sidecar.exists():
-        sidecar.unlink()
+    # No sidecar to remove: a DSN has no directory to sit a `tasks.yaml` beside,
+    # so the shape this fixture had to construct by hand is now the only shape
+    # there is.
     yield db
     _reset_board_caches()
 
 
-def test_the_sidecar_really_is_absent_in_this_fixture(populated_db_without_sidecar):
-    """POSITIVE CONTROL. Without it, the test below could pass for the wrong reason.
-
-    Every assertion in this section is about what happens when the sidecar is
-    MISSING. If some other fixture quietly created it, those tests would go
-    green while measuring nothing at all — the instrument, not the code.
-    """
-    # Arrange
-    sidecar = populated_db_without_sidecar.parent / "tasks.yaml"
-    # Act
-    present = sidecar.exists()
-    # Assert
-    assert present is False
+# THE POSITIVE CONTROL THAT STOOD HERE IS DELETED, and saying why matters more
+# than the line count. It asserted the `tasks.yaml` sidecar was absent, so that
+# the tests below could not "go green while measuring nothing at all — the
+# instrument, not the code". That was a real control while a store was a FILE
+# and something could quietly create a sibling.
+#
+# A DSN has no directory, so no sidecar can exist to be found: the control could
+# only ever return the same answer. A check that cannot fail is the thing this
+# file's own docstring warns against, so it is removed rather than left standing
+# as reassurance. The condition it guarded is now guaranteed by construction.
 
 
 def test_a_populated_store_without_its_sidecar_serves_its_cards(
@@ -161,8 +162,8 @@ def test_get_board_returns_the_cards_when_only_the_sidecar_is_missing(
 
 
 @pytest.fixture
-def unreadable_store(env, tmp_path):
-    """Point the canonical store at a database that does not exist.
+def unreadable_store(env, new_store):
+    """Point the canonical store at a REACHABLE but UNPROVISIONED store.
 
     A missing database is the plainest form of "cannot read the store". The
     package already has the right verdict for it
@@ -171,9 +172,18 @@ def unreadable_store(env, tmp_path):
     absorbing it into a blank page.
     """
     _reset_board_caches()
-    missing = tmp_path / "no-such-store" / "cards.db"
-    env.set("SCITEX_CARDS_DB", str(missing))
-    yield missing
+    # REACHABLE BUT UNPROVISIONED — a throwaway schema with no `tasks` table.
+    # That is where `_store_canonical_read` draws the line, and it draws it
+    # deliberately: a connect() FAILURE is an OUTAGE (5xx, alert, retry), while
+    # "connected, but this tenant has no store yet" is a configuration state.
+    #
+    # `tmp_path / "no-such-store" / "cards.db"` used to express the second, and
+    # an obvious-looking translation — a DSN naming a database that does not
+    # exist — expresses the FIRST, because it fails at connect(). It would have
+    # made these tests demand 4xx for a dead server, which is the misdiagnosis
+    # `test_an_unreachable_postgres_is_still_a_server_fault` exists to refuse.
+    env.set("SCITEX_CARDS_DB", new_store(bootstrap=False))
+    yield os.environ["SCITEX_CARDS_DB"]
     _reset_board_caches()
 
 
@@ -460,7 +470,7 @@ def test_a_store_that_cannot_be_read_never_answers_with_a_task_list(unreadable_s
 def real_but_empty_db():
     """The per-test scratch database, bootstrapped and holding no cards."""
     _reset_board_caches()
-    yield Path(os.environ["SCITEX_CARDS_DB"])
+    yield os.environ["SCITEX_CARDS_DB"]
     _reset_board_caches()
 
 
@@ -493,9 +503,17 @@ def db_with_sidecar_groups():
     from conftest import seed_db_from_doc
 
     _reset_board_caches()
-    db = Path(os.environ["SCITEX_CARDS_DB"])
+    # Groups are the ONE thing still read from a YAML sidecar, so this fixture
+    # must write it WHERE THE BOARD LOOKS — `resolve_tasks_path`, the same
+    # resolver `services._load_sidecar_groups` receives. `Path(DSN).parent` used
+    # to name that spot; it now yields `postgresql:/...`, a relative directory
+    # the board never consults, so the sidecar would be written where nothing
+    # reads it and the test would fail for the wrong reason.
+    from scitex_cards._paths import resolve_tasks_path
+
+    db = os.environ["SCITEX_CARDS_DB"]
     seed_db_from_doc(_TWO_CARDS, db)
-    sidecar = db.parent / "tasks.yaml"
+    sidecar = Path(resolve_tasks_path(None))
     sidecar.parent.mkdir(parents=True, exist_ok=True)
     sidecar.write_text(
         "groups:\n  - id: cluster-one\n    label: Cluster One\n"

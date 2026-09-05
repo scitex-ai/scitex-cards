@@ -15,30 +15,38 @@ revision column. Their own summary of it — every one of those checks asks "did
 row match?", not "did I overwrite someone else's version?". ``rowcount == 1``
 confirms the row EXISTS; it is silent on whether another writer changed it
 between my read and my write, which is the only thing a lost update needs.
+
+THE FIXTURES BUILD REAL STORES, and each one is a throwaway PostgreSQL schema
+rather than a scratch filename. That is not cosmetic: the shape questions below
+are asked through ``table_columns``, which reads ``information_schema``, and the
+version stamp is ``schema_meta.schema_version`` because the engine has no
+``PRAGMA`` to hold a second one.
 """
 
 from __future__ import annotations
 
-import pathlib
-import tempfile
-
 import pytest
 
 from scitex_cards import _db
+from scitex_cards._schema_shape import observed_version
+
+
+def _stamped(conn) -> int | None:
+    """The version the store SAYS it is, or None when it says nothing."""
+    return observed_version(conn).stamped_meta
 
 
 @pytest.fixture
-def fresh_db():
+def fresh_db(new_store):
     """A brand-new store at the current schema version."""
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "fresh.db")
+    conn = _db.connect(new_store("cards_rev_fresh", bootstrap=False))
     _db.init_schema(conn)
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def pre_v6_db():
+def pre_v6_db(new_store):
     """A store shaped like one written before ``revision`` existed.
 
     Built by initialising current schema then DROPPING the column, rather than
@@ -46,18 +54,25 @@ def pre_v6_db():
     triggers, DM tables) and cannot drift from the v5 shape as the schema moves.
 
     The v7 trigger is dropped FIRST, and that is faithfulness rather than a
-    workaround: ``tasks_bump_revision`` references ``NEW.revision``, so the engine
-    refuses to drop a column a trigger depends on ("error in trigger
-    tasks_bump_revision after drop column"). A genuine pre-v6 database never had
-    that trigger either — v7 introduced it — so removing both is what a real v5
-    file looks like. Dropping only the column would be an impossible state.
+    workaround: ``tasks_bump_revision``'s ``WHEN`` clause references
+    ``NEW.revision``, so the engine records a dependency and refuses to drop a
+    column a trigger is built on. A genuine pre-v6 database never had that
+    trigger either — v7 introduced it — so removing both is what a real v5 store
+    looks like. Dropping only the column would be an impossible state.
+
+    THE STAMP IS REWRITTEN AS A DELETE + INSERT, NOT AN UPDATE, and that spelling
+    is the point rather than a trick. ``schema_meta_version_floor`` refuses an
+    UPDATE that lowers ``schema_version`` — by design, because a stale client
+    knocking the stamp backwards is a measured live incident. A store genuinely
+    stamped 5 PREDATES that guard, so reconstructing one cannot go through the
+    path the guard sits on without asserting the guard is broken.
     """
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "old.db")
+    conn = _db.connect(new_store("cards_rev_prev6", bootstrap=False))
     _db.init_schema(conn)
-    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision")
+    conn.execute("DROP TRIGGER IF EXISTS tasks_bump_revision ON tasks")
     conn.execute("ALTER TABLE tasks DROP COLUMN revision")
-    conn.execute("PRAGMA user_version=5")
+    conn.execute("DELETE FROM schema_meta WHERE key='schema_version'")
+    conn.execute("INSERT INTO schema_meta(key, value) VALUES('schema_version', '5')")
     conn.execute(
         "INSERT INTO tasks(id, title, status) VALUES('pre-existing', 't', 'blocked')"
     )
@@ -82,7 +97,7 @@ def test_a_fresh_store_stamps_the_current_schema_version(fresh_db):
     expected = _db.SCHEMA_VERSION
 
     # Act
-    got = fresh_db.execute("pragma user_version").fetchone()[0]
+    got = _stamped(fresh_db)
 
     # Assert
     assert got == expected
@@ -94,10 +109,10 @@ def test_a_new_card_starts_at_revision_zero(fresh_db):
     fresh_db.execute("INSERT INTO tasks(id, title, status) VALUES('c', 't', 'blocked')")
 
     # Act
-    got = fresh_db.execute("select revision from tasks where id='c'").fetchone()[0]
+    got = fresh_db.execute("select revision from tasks where id='c'").fetchone()
 
     # Assert
-    assert got == 0
+    assert got["revision"] == 0
 
 
 def test_the_fixture_really_lacks_the_column(pre_v6_db):
@@ -142,21 +157,28 @@ def test_migrating_backfills_existing_rows_with_zero(pre_v6_db):
     # Act
     got = pre_v6_db.execute(
         "select revision from tasks where id='pre-existing'"
-    ).fetchone()[0]
+    ).fetchone()
 
     # Assert
-    assert got == 0
+    assert got["revision"] == 0
 
 
 def test_migrating_bumps_the_version_stamp(pre_v6_db):
+    """A TRANSITION, because the end state alone cannot fail.
+
+    Every store this harness hands out is stamped at the current version, so
+    "the stamp reads SCHEMA_VERSION afterwards" is satisfied by a store that was
+    never migrated at all. The fixture puts a genuine 5 on it; what is asserted
+    is the pair.
+    """
     # Arrange
-    _db.init_schema(pre_v6_db)
+    before = _stamped(pre_v6_db)
 
     # Act
-    got = pre_v6_db.execute("pragma user_version").fetchone()[0]
+    _db.init_schema(pre_v6_db)
 
     # Assert
-    assert got == _db.SCHEMA_VERSION
+    assert (before, _stamped(pre_v6_db)) == (5, _db.SCHEMA_VERSION)
 
 
 def test_migrating_twice_does_not_raise(pre_v6_db):
@@ -193,9 +215,8 @@ def test_a_row_update_never_moves_the_counter_backwards(fresh_db):
     fresh_db.execute("UPDATE tasks SET title = 'renamed' WHERE id='c'")
 
     # Assert
-    assert (
-        fresh_db.execute("select revision from tasks where id='c'").fetchone()[0] >= 7
-    )
+    row = fresh_db.execute("select revision from tasks where id='c'").fetchone()
+    assert row["revision"] >= 7
 
 
 # EOF

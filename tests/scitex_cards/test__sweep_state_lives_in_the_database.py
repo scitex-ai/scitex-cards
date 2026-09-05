@@ -42,9 +42,14 @@ _STORE_ENV = "SCITEX_CARDS_DB"
 
 
 @pytest.fixture()
-def ambient_db_store(tmp_path: Path):
-    """An empty board reachable AMBIENTLY — the shape the deployment has."""
-    db = tmp_path / "cards.db"
+def ambient_db_store(new_store):
+    """An empty board reachable AMBIENTLY — the shape the deployment has.
+
+    The AMBIENT variable is the subject here, not scaffolding, so it is still
+    set explicitly; only the value it is pointed at moved from a `cards.db`
+    path to a real store.
+    """
+    db = new_store()
     seed_db_from_doc({"tasks": []}, db)
     before = os.environ.get(_STORE_ENV)
     os.environ[_STORE_ENV] = str(db)

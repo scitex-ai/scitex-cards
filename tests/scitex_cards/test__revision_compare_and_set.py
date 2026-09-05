@@ -32,21 +32,29 @@ def _card(title="Original"):
     return {"id": "c1", "title": title, "status": "deferred"}
 
 
+# ROWS ARE NAME-ADDRESSABLE, NOT POSITIONAL. These helpers read `row[0]`,
+# which worked only because `the retired driver.Row` accepts BOTH an index and a name.
+# The store speaks to a server now and its rows are mapping-shaped, so an
+# integer subscript raises `KeyError: 0`. Reading by name is what the
+# package itself does throughout -- and it is the same defect that made
+# every commented card read-only fleet-wide on 2026-08-23, which
+# .github/workflows/postgres-backend-on-ubuntu-latest.yml names in its
+# header. A COUNT needs an explicit alias to have a name at all.
 def _revision_of(conn, task_id="c1"):
     row = conn.execute(
         "SELECT revision FROM tasks WHERE id = ?", (task_id,)
     ).fetchone()
-    return None if row is None else row[0]
+    return None if row is None else row["revision"]
 
 
 def _title_of(conn, task_id="c1"):
     row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    return None if row is None else row[0]
+    return None if row is None else row["title"]
 
 
 @pytest.fixture()
-def conn(tmp_path):
-    connection = _db.open_db(tmp_path / "s.db")
+def conn(tmp_path, new_store):
+    connection = _db.open_db(new_store())
     yield connection
     connection.close()
 

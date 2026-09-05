@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The CARD PAYLOAD: how a card survives a round-trip through SQLite intact.
+"""The CARD PAYLOAD: how a card survives a round-trip through the store intact.
 
 WHY A PAYLOAD COLUMN AT ALL — THE MEASUREMENT THAT DECIDED IT
 --------------------------------------------------------------

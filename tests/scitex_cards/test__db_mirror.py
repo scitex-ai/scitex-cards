@@ -29,11 +29,9 @@ TABLE IS OWNED BY EXACTLY THE THING THAT PRODUCES IT.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from scitex_cards._db import init_schema
+from scitex_cards._db import connect, init_schema
 from scitex_cards._db_bootstrap import _DOC_CLEAR_ORDER
 from scitex_cards._db_mirror import _SECTION_KEYS, mirror_doc_incremental
 
@@ -54,11 +52,15 @@ _RAIL_ROW = (
 
 
 @pytest.fixture
-def store(tmp_path):
-    """A real store with one notification the RAIL wrote, receipts and all."""
-    path = tmp_path / "cards.db"
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+def store(new_store):
+    """A real store with one notification the RAIL wrote, receipts and all.
+
+    ``bootstrap=False`` then ``init_schema``: the row inserted below is written
+    directly, so the fixture has to own the provisioning in order to know that
+    nothing else has touched ``notifications`` before the card write under test.
+    """
+    path = new_store("cards_rail", bootstrap=False)
+    conn = connect(path)
     init_schema(conn)
     conn.execute(
         "INSERT INTO notifications(id, recipient_id, event_type, card_id, body,"
@@ -78,8 +80,7 @@ def _write_a_card(store, *, title="a card"):
 
 
 def _rail_row(store):
-    conn = sqlite3.connect(str(store))
-    conn.row_factory = sqlite3.Row
+    conn = connect(store)
     try:
         return conn.execute(
             "SELECT * FROM notifications WHERE id = 'n_rail01'"

@@ -3,21 +3,29 @@
 """The doctor must name the engine, and must fail when the two rails differ.
 
 Operator directive 2026-08-02: "fail fast, fail loud, no fallbacks", and asking
-for a doctor that says whether this process is in sqlite mode or postgres mode.
+for a doctor that says which engine this process is on.
 
 TWO DEFECTS THIS PINS.
 
-First, ``check_single_write_target`` reported the string "SQLite"
+First, ``check_single_write_target`` reported ONE ENGINE'S NAME
 UNCONDITIONALLY. That was true when written and became a lie the day a store
 could be a PostgreSQL server: the doctor answered "which engine am I on?" — the
 exact question that line looks like it answers — with the wrong engine,
 confidently, on every PostgreSQL deployment.
 
-Second, nothing reported the NOTIFICATION rail's engine at all. The inbox is a
-SQLite sidecar located from the store PATH, so pointing the store at a server
-does not move it: cards go to PostgreSQL and notifications stay on SQLite. That
+Second, nothing reported the NOTIFICATION rail's engine at all. The inbox was a
+sidecar located from the store PATH, so pointing the store at a server did not
+move it: cards went to PostgreSQL and notifications stayed on the sidecar. That
 split is what let a DM commit to the store on 2026-08-01 while no notification
 was ever created, with every card-side check green.
+
+WHAT THE ANSWER "A FILE" BECAME. There is one storage engine now, so a target
+that is not a DSN does not select a different engine — it names no store, and
+the token for that is ``UNSUPPORTED``. The inbox rail's answer for the same
+target is ``UNAVAILABLE``: not "on another engine", but "nothing to select".
+The two tokens are deliberately distinct from each other and from a SPLIT,
+because all three call for different actions and folding them together is how
+a doctor starts answering a question nobody asked.
 
 WHY A SPLIT IS A FAILURE, NOT AN INFO LINE. A check that merely printed both
 modes would report the split as normal. It is not normal — it is the state in
@@ -32,11 +40,20 @@ import os
 import pytest
 
 from scitex_cards._config import CONFIG_NAME, STORE_SECTION, STORE_TARGET_KEY
-from scitex_cards._health_backend_mode import POSTGRES, SQLITE, check_backend_mode
+from scitex_cards._health_backend_mode import (
+    POSTGRES,
+    UNSUPPORTED,
+    check_backend_mode,
+)
 from scitex_cards._health_write_target import check_single_write_target
 from scitex_cards._paths import _user_root
 
-_DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+#: A well-formed DSN. Never CONNECTED to -- ``check_backend_mode`` inspects
+#: the target string and never opens it -- but spelled with the port this
+#: fleet actually runs on, because 5432 appearing anywhere teaches the wrong
+#: port to the next reader (operator ruling; see
+#: ``test__store_url_attempted_dsn`` for the same rule applied to messages).
+_DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
 _MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND")
 
 
@@ -58,13 +75,14 @@ def _write_user_config(target: str) -> None:
 
 
 @pytest.fixture
-def sqlite_store(tmp_path):
-    """A plain file card store.
+def file_store(tmp_path):
+    """A card store target that is a plain FILENAME.
 
-    SQLite is RETIRED as an inbox backend (operator ruling 2026-08-23), so a
-    plain file store no longer gives the inbox rail anything to select — see
-    ``TestAFileStoreHasNoInboxBackend`` below. The card store itself may
-    still be a local file; only the inbox rail's fallback to SQLite is gone.
+    Not "a store on the other engine" -- there is no other engine. This is a
+    target that names no store at all, which is the condition both rails have
+    to report honestly: ``UNSUPPORTED`` for the cards, ``UNAVAILABLE`` for the
+    inbox, and a failing check rather than a fallback (operator ruling
+    2026-08-23).
     """
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
@@ -88,10 +106,10 @@ def sqlite_store(tmp_path):
 
 
 @pytest.fixture
-def postgres_rails(sqlite_store):
+def postgres_rails(file_store):
     """Both rails on a server: the shape the fleet has run since #780.
 
-    Layered on ``sqlite_store`` so the environment is saved and restored once.
+    Layered on ``file_store`` so the environment is saved and restored once.
     Real environment variables, because which backend the rail picks is read
     from ``os.environ`` and that resolution is exactly what is under test.
     """
@@ -100,21 +118,24 @@ def postgres_rails(sqlite_store):
 
 
 @pytest.fixture
-def postgres_inbox_only(sqlite_store):
+def postgres_inbox_only(file_store):
     """Inbox on a server, cards in a file — the split the other way round."""
     os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
     os.environ["SCITEX_CARDS_INBOX_DSN"] = _DSN
-    yield sqlite_store
+    yield file_store
     os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)
 
 
 class TestAFileStoreHasNoInboxBackend:
-    """SQLite retired (operator ruling 2026-08-23): a plain file card store no
-    longer gives the inbox rail a backend to fall back to at all."""
+    """A target that names no store gives the inbox rail nothing to select.
 
-    def test_a_file_store_fails(self, sqlite_store):
+    There is no fallback rail (operator ruling 2026-08-23), so this is a
+    failure and not an informational line.
+    """
+
+    def test_a_file_store_fails(self, file_store):
         # Arrange
-        store = sqlite_store
+        store = file_store
 
         # Act
         result = check_backend_mode(store)
@@ -122,20 +143,20 @@ class TestAFileStoreHasNoInboxBackend:
         # Assert
         assert result["ok"] is False
 
-    def test_it_names_the_card_store_engine(self, sqlite_store):
+    def test_it_names_the_card_store_mode(self, file_store):
         # Arrange
-        store = sqlite_store
+        store = file_store
 
         # Act
         result = check_backend_mode(store)
 
         # Assert
-        assert SQLITE in result["detail"]
+        assert UNSUPPORTED in result["detail"]
 
 
 class TestASplitIsReportedAsFailure:
-    def test_a_server_store_with_a_file_inbox_fails(self, sqlite_store):
-        """The live shape: cards on PostgreSQL, notifications on a sidecar."""
+    def test_a_server_store_with_no_usable_inbox_fails(self, file_store):
+        """Cards on PostgreSQL while the ambient target leaves the rail nothing."""
         # Arrange
         store = _DSN
 
@@ -145,18 +166,22 @@ class TestASplitIsReportedAsFailure:
         # Assert
         assert result["ok"] is False
 
-    def test_the_detail_names_both_engines(self, sqlite_store):
+    def test_the_detail_names_the_card_engine_and_the_missing_rail(
+        self, file_store
+    ):
         # Arrange
         store = _DSN
 
         # Act
         detail = check_backend_mode(store)["detail"].lower()
 
-        # Assert — the card store's engine (postgres) and the reason the
-        # inbox has none (its refusal message names "SQLite") both appear.
-        assert POSTGRES in detail and "sqlite" in detail
+        # Assert — the card store's engine and the fact that the inbox rail has
+        # NO backend. It used to assert the refusal named a second engine; with
+        # one engine there is no second name to print, and "no usable backend"
+        # is the stronger statement anyway.
+        assert POSTGRES in detail and "no usable backend" in detail
 
-    def test_the_hint_names_the_actual_remedy(self, sqlite_store):
+    def test_the_hint_names_the_actual_remedy(self, file_store):
         """A knob here would be a fallback wearing a switch -- the hint names
         the one real fix (move the store) rather than offering a toggle."""
         # Arrange
@@ -168,7 +193,7 @@ class TestASplitIsReportedAsFailure:
         # Assert
         assert "SCITEX_CARDS_DB" in hint
 
-    def test_it_does_not_raise_on_a_nonsense_store(self, sqlite_store):
+    def test_it_does_not_raise_on_a_nonsense_store(self, file_store):
         """A doctor reports; it must not crash the caller asking for a report."""
         # Arrange
         store = "://///not-a-store"
@@ -188,7 +213,7 @@ class TestItCanGoGreenWhenTheRailMoves:
     PostgreSQL in #780: this check still reported ``SPLIT BACKENDS ... the
     notification inbox is on yaml (~/.scitex/cards/runtime/inboxes.json)`` — a
     path that did not exist on disk — because ``_inbox_mode`` asked the
-    two-valued ``_use_sqlite()`` and mapped its ``False`` onto "yaml". The
+    two-valued engine predicate and mapped its ``False`` onto "yaml". The
     remedy the hint named had already been applied and the check could not say
     so, which is the same class of error it exists to catch, pointed the other
     way.
@@ -253,9 +278,9 @@ class TestASplitTheOtherWayIsAlsoReported:
 class TestItNamesWhichTierChoseTheTarget:
     """ "I edited the config and nothing changed" must be one line, not a hunt."""
 
-    def test_an_explicit_argument_is_named(self, sqlite_store):
+    def test_an_explicit_argument_is_named(self, file_store):
         # Arrange
-        store = sqlite_store
+        store = file_store
 
         # Act
         detail = check_backend_mode(store)["detail"]
@@ -263,10 +288,10 @@ class TestItNamesWhichTierChoseTheTarget:
         # Assert
         assert "explicit argument" in detail
 
-    def test_the_environment_variable_is_named_when_it_wins(self, sqlite_store):
+    def test_the_environment_variable_is_named_when_it_wins(self, file_store):
         """The env var outranks the file -- that is the confusing case."""
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = sqlite_store
+        os.environ["SCITEX_CARDS_DB"] = file_store
 
         # Act
         detail = check_backend_mode(None)["detail"]
@@ -274,7 +299,7 @@ class TestItNamesWhichTierChoseTheTarget:
         # Assert
         assert "environment variable" in detail
 
-    def test_the_config_file_is_named_when_no_env_var_is_set(self, sqlite_store):
+    def test_the_config_file_is_named_when_no_env_var_is_set(self, file_store):
         """It must name ``config.json`` -- not merely resolve to SOMETHING.
 
         THIS TEST WAS GREEN FOR THE WRONG REASON until the compat shim was
@@ -296,7 +321,7 @@ class TestItNamesWhichTierChoseTheTarget:
         """
         # Arrange
         os.environ.pop("SCITEX_CARDS_DB", None)
-        _write_user_config(sqlite_store)
+        _write_user_config(file_store)
 
         # Act
         detail = check_backend_mode(None)["detail"]
@@ -306,19 +331,27 @@ class TestItNamesWhichTierChoseTheTarget:
 
 
 class TestTheWriteTargetNamesTheRealEngine:
-    def test_it_no_longer_hardcodes_sqlite(self, sqlite_store):
-        """Against a FILE store the honest answer really is sqlite."""
+    def test_it_no_longer_hardcodes_one_engine(self, file_store):
+        """Against a target that names no store, the honest answer says so.
+
+        This test and its docstring were both named after the retired engine,
+        and both asserted that a FILE store honestly reports that engine. That
+        was true of a two-engine world and is now the opposite of true: a
+        filename does not select an engine, it selects nothing, and printing
+        any engine's name here would be the very hardcoding this test was
+        written to prevent -- just with a different constant.
+        """
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = sqlite_store
+        os.environ["SCITEX_CARDS_DB"] = file_store
 
         # Act
         detail = check_single_write_target()["detail"]
 
         # Assert
-        assert SQLITE in detail
+        assert UNSUPPORTED in detail
 
-    def test_it_reports_postgres_when_the_store_is_a_server(self, sqlite_store):
-        """The regression: this line used to read SQLite here too."""
+    def test_it_reports_postgres_when_the_store_is_a_server(self, file_store):
+        """The regression: this line used to name the wrong engine here too."""
         # Arrange
         os.environ["SCITEX_CARDS_DB"] = _DSN
 

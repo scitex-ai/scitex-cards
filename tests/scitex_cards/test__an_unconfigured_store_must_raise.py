@@ -1,46 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""An UNCONFIGURED store must RAISE. There is no zero-config SQLite default.
-
-THE TIER THIS DELETES, and why it could not be guarded door by door.
-
-Until 2026-08-13 both resolvers ended the same way::
-
-    from scitex_config._ecosystem import local_state
-    return local_state.user_path("cards", "cards.db")
-
--- a filename nobody chose, returned with the same type, at the same call sites,
-as a target somebody did choose. ``require_configured_store_target`` existed to
-refuse exactly that, and the policy was to wire it one door at a time. Measured
-on the day this landed: it had reached 1 of 31 production call sites.
-
-WHAT MADE IT REACHABLE IN PRODUCTION RATHER THAN THEORETICAL. On compute-04
-``~/.bashrc`` exports ``$SCITEX_CARDS_DB`` at line 124, BELOW the
-non-interactive early return at line 8. So an interactive shell saw the DSN and
-every cron job, systemd unit and script on that host saw it EMPTY -- entered
-this tier -- and resolved a database that does not exist. The package's own read
-door states the consequence: "the exporter answers a missing database with an
-empty document, and this value is written back as the WHOLE store -- every card
-replaced by nothing."
-
-THE OPERATOR'S RULING, repeated and final: SQLite is abolished fleet-wide, and
-the error-prone option is better off not existing at all -- fewer choices is the
-feature, not a limitation. This file pins that the tier is GONE rather than
-merely guarded: a guard has to be remembered at every new call site, and the
-missing one is always found in production.
-
-TWO ASSERTIONS CARRY THIS FILE, and neither is "it raised". First, that BOTH
-resolvers refuse -- one closed and one open is the original fallback with an
-extra hop. Second, that nothing is MANUFACTURED on disk: a refusal issued after
-creating an empty board has already done the damage the refusal exists to
-prevent.
-
-NO ``monkeypatch`` OF PRODUCTION INTERNALS, per the ecosystem rule and for the
-same reason as the neighbouring files: the defect WAS an environment state, so
-these tests move the real environment, write real files, and restore both on
-teardown. A test that patched the resolver would assert a belief about the
-resolver; the resolver was never wrong, the environment was.
-"""
+"""An UNCONFIGURED store must RAISE."""
 
 from __future__ import annotations
 
@@ -180,7 +140,7 @@ class TestThePreconditionIsReal:
 class TestBothResolversRefuse:
     """One closed and one open is the same fallback with an extra hop."""
 
-    def test_resolve_store_target_raises_instead_of_naming_a_sqlite_file(
+    def test_resolve_store_target_raises_instead_of_naming_a_retired_store_file(
         self, unconfigured_store
     ):
         # Arrange
@@ -197,7 +157,7 @@ class TestBothResolversRefuse:
         # not raise something else.
         assert returned == "<refused>"
 
-    def test_resolve_db_path_raises_instead_of_naming_a_sqlite_file(
+    def test_resolve_db_path_raises_instead_of_naming_a_retired_store_file(
         self, unconfigured_store
     ):
         """``_db.resolve_db_path`` promises to mirror the other's precedence."""
@@ -213,13 +173,13 @@ class TestBothResolversRefuse:
         # Assert
         assert returned == "<refused>"
 
-    def test_the_backend_cannot_be_reported_as_sqlite_by_default(
+    def test_the_backend_cannot_be_reported_as_the_retired_engine_by_default(
         self, unconfigured_store
     ):
-        """`backend_of` is TOTAL -- anything non-Postgres answers 'sqlite'.
+        """`backend_of` is TOTAL -- anything non-Postgres answers 'the retired engine'.
 
         So a resolver that still returned the invented filename would report a
-        confident ``sqlite`` for a store nobody configured. Nothing to classify
+        confident ``the retired engine`` for a store nobody configured. Nothing to classify
         is the only correct answer.
         """
         # Arrange
@@ -442,11 +402,11 @@ class TestConfiguredStoresAreUntouched:
         # Assert
         assert resolved == expected
 
-    def test_an_env_sqlite_path_still_resolves(self, env_store, tmp_path):
+    def test_an_env_retired_store_path_still_resolves(self, env_store, tmp_path):
         """The abolition is of the INVENTED default, not of an explicit path.
 
-        A caller who names a SQLite file has made a decision, and this package
-        is not the place that overrules it -- migrating the fleet off SQLite is
+        A caller who names a the retired engine file has made a decision, and this package
+        is not the place that overrules it -- migrating the fleet off the retired engine is
         a deployment change, not a resolver change.
         """
         # Arrange

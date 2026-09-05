@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The root --help must not advertise a backend or a default path.
+"""The root --help must not advertise a storage backend or a default path.
 
-WHY NOT A STRING-EQUALITY TEST. Pinning today's exact sentence would re-encode
-today's wording and fail on the next harmless rewrite. These assert the
-CONSTRAINT — no banned backend name, no default file path, and the one honest
-answer to "which database?" is present — so any rewording that keeps the
-constraint keeps passing.
+Asserts the CONSTRAINT, not today's sentence: no default file path, and the
+one honest answer to "which database?" is present. Any rewording that keeps
+the constraint keeps passing.
 
-WHY THE CONSTANT PLUS A REACHES-THE-READER TEST, RATHER THAN THE RENDER ALONE.
-The first version of this file asserted over ``main.help`` and claimed in this
-docstring that "both the spec-built renderer and _render_fallback_help compose
-these". THAT CLAIM WAS FALSE AND CI CAUGHT IT. Measured in both interpreters:
+The constant and the render are tested separately because neither ``main.help``
+nor any positional slice of it is stable across environments:
 
     scitex-dev ABSENT   ``main.help`` = summary + config-resolution block,
     (fallback renderer)  and the block renders BEFORE the Options section
@@ -19,19 +15,9 @@ these". THAT CLAIM WAS FALSE AND CI CAUGHT IT. Measured in both interpreters:
     scitex-dev PRESENT  ``main.help`` = the summary line ONLY; the block is
     (spec renderer)      composed at format time and renders AFTER Options
 
-So neither ``main.help`` nor any positional slice of the render is stable
-across environments. What IS stable: the constant is the single source of the
-text, and the text reaches a reader in both. Hence the split — the constraint
-tests read the constant this change owns, and two separate tests prove the
-constant actually reaches someone typing --help in whatever environment they
-are in.
-
-The full ``--help`` render is deliberately NOT asserted over, because it also
-contains every subcommand's short_help, four of which still name SQLite (db,
-inbox, index, init-store). Those need four separate judgements — ``index`` may
-be RIGHT to name it, the derived index being a genuinely separate rebuildable
-artifact — and are tracked on their own card. Widening these assertions is
-correct once that lands.
+What IS stable: the constant is the single source of the text, and the text
+reaches a reader in both. Hence the split -- the constraint tests read the
+constant, and two more prove it actually reaches someone typing --help.
 """
 
 from __future__ import annotations
@@ -53,15 +39,6 @@ def resolution_text() -> str:
 @pytest.fixture
 def rendered_help() -> str:
     return CliRunner().invoke(main, ["--help"]).output
-
-
-def test_the_config_resolution_block_never_names_sqlite(resolution_text):
-    # Arrange
-    banned = re.compile(r"sqlite", re.IGNORECASE)
-    # Act
-    found = banned.search(resolution_text)
-    # Assert
-    assert found is None, f"config resolution still names sqlite:\n{resolution_text}"
 
 
 def test_the_config_resolution_block_advertises_no_default_file(resolution_text):

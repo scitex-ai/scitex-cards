@@ -72,7 +72,7 @@ def handle_delete(request, board):
                 scrubbed_refs.append({"id": t["id"], "field": "parent"})
 
         try:
-            # Name the id we intentionally removed: SQLite is upsert-only and the
+            # Name the id we intentionally removed: the writer is upsert-only and the
             # mirror never INFERS a delete from absence (the board-wipe fix), so an
             # explicit single-card removal must say what it removed or the row
             # survives. `remaining` omitting it is not enough on its own.

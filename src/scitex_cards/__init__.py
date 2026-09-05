@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """scitex-cards: a canonical task-card store with pluggable adapters.
 
-The task store (SQLite, one ``tasks`` table) is the single source of
+The task store (one ``tasks`` table in the canonical database) is the source of
 truth. Adapters render or import it; the mermaid adapter (store -> dependency
 PNG) ships today. See the project roadmap for org and Web-UI adapters.
 

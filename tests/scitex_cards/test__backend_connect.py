@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the backend-agnostic store connection.
+"""Tests for the store connection.
 
-THE POSTGRESQL TESTS RUN AGAINST A REAL SERVER, OR THEY SKIP LOUDLY.
+THESE RUN AGAINST A REAL SERVER, AND THEY DO NOT SKIP.
 
 They are not mocked, because mocking is what would hide the defects this module
 exists to avoid. On 2026-07-30 two fatal bugs in scitex-db's migration tool
@@ -11,85 +11,151 @@ the transaction so the first CREATE TABLE died, and indexes of excluded tables
 counted as carried. Both looked like pure logic. A mock agrees with whatever you
 tell it; a server does not.
 
-The skip reason names the server, so a green run that never touched PostgreSQL
-cannot be mistaken for one that did.
+WHAT CHANGED, AND WHY IT IS NOT A COSMETIC EDIT. This module used to reach a
+server through a module-level constant::
+
+    PG_URL = os.environ.get(
+        "SCITEX_CARDS_TEST_PG", "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+    )
+
+Every part of that default is now wrong: ``scitex_cards`` is a RETIRED database
+(``CONNECT`` revoked), ``5432`` is not the port this fleet runs on (55432 is),
+and every host's loopback instance is a READ-ONLY STANDBY regardless. So
+``_postgres_reachable()`` answered False everywhere and ``requires_postgres``
+skipped the entire PostgreSQL half of this file — silently, in a green run.
+That is the exact failure the module docstring above claims to prevent: a suite
+reporting success while touching no server at all.
+
+The target is now the per-test throwaway schema the root ``conftest.py`` pins,
+and an unavailable one is a FAILURE rather than a skip. A skipped storage test
+and a passing storage test render identically in a summary line, which is how
+this went unnoticed.
+
+THE TESTS SEED THEIR OWN ROWS. The previous versions read whatever happened to
+be in the operator's verified copy (``SELECT id FROM dm_messages LIMIT 1``,
+``assert n > 0``), so they were assertions about the fleet's data rather than
+about this module. Against an empty throwaway schema that is not available and
+should not be: a test that needs production rows to pass is a monitor, not a
+test, and it goes red whenever someone writes a card.
 """
 
+import contextlib
+import json
 import os
-import sqlite3
+from typing import Iterator
 
 import pytest
 
 from scitex_cards._backend_connect import StoreConnection, connect
-from scitex_cards._store_url import BACKEND_POSTGRES, BACKEND_SQLITE
-
-PG_URL = os.environ.get(
-    "SCITEX_CARDS_TEST_PG", "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-)
-
-
-def _postgres_reachable() -> tuple[bool, str]:
-    try:
-        import psycopg
-    except ImportError:
-        return False, "psycopg is not installed (pip install 'psycopg[binary]')"
-    try:
-        psycopg.connect(PG_URL, connect_timeout=4).close()
-    except Exception as exc:
-        return False, f"{PG_URL} unreachable: {type(exc).__name__}"
-    return True, ""
-
-
-_PG_OK, _PG_WHY = _postgres_reachable()
-requires_postgres = pytest.mark.skipif(
-    not _PG_OK, reason=_PG_WHY or "postgres available"
+from scitex_cards._store_url import (
+    BACKEND_POSTGRES,
+    BACKEND_UNSUPPORTED,
+    UnrecognisedStoreTarget,
+    backend_of,
 )
 
 
 @pytest.fixture
-def sqlite_store(tmp_path):
-    """A throwaway SQLite store. Never the canonical one -- a test must not be
-    able to touch the fleet's live board."""
-    path = tmp_path / "cards.db"
-    conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, agent TEXT, title TEXT)")
-    conn.executemany(
-        "INSERT INTO tasks(id, agent, title) VALUES(?, ?, ?)",
-        [
-            ("a", "scitex-cards", "first"),
-            ("b", "scitex-cards", "is it done?"),
-            ("c", "other", "third"),
-        ],
-    )
-    conn.commit()
-    conn.close()
-    yield str(path)
+def store_dsn() -> str:
+    """The throwaway, schema-scoped store this test is pinned to.
+
+    Read from the environment rather than taken as a fixture argument because
+    that variable IS the contract: the root conftest points it at a uniquely
+    named PostgreSQL schema per test, and the code under test resolves it the
+    same way production does.
+
+    FAILS rather than skips when the pin is missing. See the module docstring —
+    a skip here is indistinguishable from a pass, and that is precisely how the
+    old ``requires_postgres`` marker hid this whole file for months.
+    """
+    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    if "search_path" not in dsn:
+        pytest.fail(
+            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            f"PostgreSQL schema; it holds {dsn!r}. Without that pin this test "
+            "would run against whatever store the ambient environment names, "
+            "which is the live fleet board.",
+            pytrace=False,
+        )
+    return dsn
+
+
+@pytest.fixture
+def seeded_tasks(store_dsn) -> "Iterator[str]":
+    """Three rows in ``tasks``, written through the connection under test."""
+    with connect(store_dsn, read_only=False) as conn:
+        conn.executemany(
+            "INSERT INTO tasks(id, title, agent) VALUES(?, ?, ?)",
+            [
+                ("a", "first", "scitex-cards"),
+                ("b", "is it done?", "scitex-cards"),
+                ("c", "third", "other"),
+            ],
+        )
+        conn.raw.commit()
+    # ``yield``, NOT ``return`` (STX-TQ005): a fixture that opens a
+    # connection hands control back so its teardown is reachable. Nothing
+    # needs closing here -- the ``with``/``finally`` above already closed
+    # it and the schema is dropped whole by the autouse fixture -- but the
+    # rule is about the SHAPE being right before someone adds teardown to
+    # it, and a `return` makes that impossible to add later.
+    yield store_dsn
 
 
 class TestBackendSelection:
-    def test_a_path_opens_as_sqlite(self, sqlite_store):
+    def test_a_dsn_opens_as_postgres(self, store_dsn):
         # Arrange
-        target = sqlite_store
+        target = store_dsn
         # Act
         with connect(target) as conn:
             backend = conn.backend
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_POSTGRES
 
-    def test_a_sqlite_connection_is_wrapped(self, sqlite_store):
+    def test_the_connection_is_wrapped(self, store_dsn):
         # Arrange
-        target = sqlite_store
+        target = store_dsn
         # Act
         with connect(target) as conn:
             wrapped = isinstance(conn, StoreConnection)
         # Assert
         assert wrapped is True
 
+    def test_a_filesystem_path_names_no_store(self, tmp_path):
+        # Arrange: there is one storage engine, so a filename is not a target
+        # that merely selects a different one -- it names nothing openable.
+        target = str(tmp_path / "cards.db")
+        # Act
+        backend = backend_of(target)
+        # Assert
+        assert backend == BACKEND_UNSUPPORTED
 
-class TestSqliteReadsWork:
-    def test_a_parameterised_query_returns_the_right_count(self, sqlite_store):
+    def test_a_filesystem_path_is_refused(self, tmp_path):
         # Arrange
-        target = sqlite_store
+        target = str(tmp_path / "cards.db")
+        # Act
+        # Assert -- opening is the act and the refusal is the observation, so
+        # they are one statement; the markers stay so the shape is still legible.
+        with pytest.raises(UnrecognisedStoreTarget):
+            connect(target)
+
+    def test_the_refusal_creates_no_file(self, tmp_path):
+        # Arrange: the surviving hazard was never the typo, it was a refusal
+        # that came AFTER the mkdir -- which MANUFACTURED an empty cards
+        # database that then answers queries. One was found in this repo's own
+        # root on 2026-08-12: 24KB, created 2026-08-02, last opened 2026-08-09.
+        target = tmp_path / "cards.db"
+        # Act
+        with contextlib.suppress(UnrecognisedStoreTarget):
+            connect(str(target))
+        # Assert
+        assert target.exists() is False
+
+
+class TestReadsWork:
+    def test_a_parameterised_query_returns_the_right_count(self, seeded_tasks):
+        # Arrange
+        target = seeded_tasks
         # Act
         with connect(target) as conn:
             n = conn.fetchone(
@@ -98,75 +164,91 @@ class TestSqliteReadsWork:
         # Assert
         assert n == 2
 
-    def test_read_only_refuses_to_write(self, sqlite_store):
-        # Arrange: a reader that can mutate the store is how a board ends up
-        # empty; read_only must actually be enforced, not documented.
-        target = sqlite_store
-        # Act
-        with connect(target, read_only=True) as conn:
-            try:
-                conn.execute("DELETE FROM tasks")
-                refused = False
-            except sqlite3.OperationalError:
-                refused = True
-        # Assert
-        assert refused is True
-
-
-@requires_postgres
-class TestPostgresReadsWork:
-    """Against the real PostgreSQL 18.4 holding the verified copy."""
-
-    def test_the_url_selects_the_postgres_backend(self):
-        # Arrange
-        target = PG_URL
-        # Act
-        with connect(target) as conn:
-            backend = conn.backend
-        # Assert
-        assert backend == BACKEND_POSTGRES
-
-    def test_sqlite_paramstyle_sql_runs_unchanged(self):
+    def test_question_mark_paramstyle_sql_runs_unchanged(self, seeded_tasks):
         # Arrange: this is the whole design -- the caller writes "?" and never
-        # learns which backend it reached.
+        # writes the driver's own paramstyle.
         query = "SELECT count(*) FROM tasks WHERE agent = ?"
         # Act
-        with connect(PG_URL) as conn:
+        with connect(seeded_tasks) as conn:
             n = conn.fetchone(query, ("scitex-cards",))[0]
         # Assert
-        assert n > 0
+        assert n == 2
 
-    def test_a_question_mark_inside_a_literal_survives(self):
+    def test_a_question_mark_inside_a_literal_survives(self, store_dsn):
         # Arrange: a naive replace corrupts this silently -- wrong data, no error.
         query = "SELECT 'is it done?'"
         # Act
-        with connect(PG_URL) as conn:
+        with connect(store_dsn) as conn:
             value = conn.fetchone(query)[0]
         # Assert
         assert value == "is it done?"
 
-    def test_a_placeholder_and_a_literal_coexist(self):
+    def test_a_placeholder_and_a_literal_coexist(self, store_dsn):
         # Arrange
         query = "SELECT ?, 'is it done?'"
         # Act
-        with connect(PG_URL) as conn:
+        with connect(store_dsn) as conn:
             row = conn.fetchone(query, ("x",))
         # Assert
-        assert row == ("x", "is it done?")
+        assert tuple(row) == ("x", "is it done?")
 
-    def test_the_append_only_guarantee_is_enforced_not_merely_present(self):
-        # Arrange: the DELETE must MATCH A ROW or the guarantee is never
-        # exercised -- a BEFORE DELETE trigger fires per row, so deleting zero
-        # rows succeeds trivially. The first version of this test used a
-        # nonexistent id "to be safe" and reported refused=False against a store
-        # where the trigger provably works. A test that cannot fail for the
-        # right reason cannot pass for it either. The transaction is rolled back
-        # regardless, and the trigger aborts before anything is removed.
+    def test_a_literal_percent_is_not_a_format_specifier(self, seeded_tasks):
+        # Arrange: a LIKE pattern must survive the rewrite to "%s" paramstyle,
+        # or it raises at execution time rather than returning a wrong answer.
+        query = "SELECT count(*) FROM tasks WHERE title LIKE '%ir%' AND agent = ?"
+        # Act
+        with connect(seeded_tasks) as conn:
+            n = conn.fetchone(query, ("scitex-cards",))[0]
+        # Assert
+        assert n == 1
+
+
+class TestTheAppendOnlyGuarantee:
+    """A BEFORE DELETE trigger, exercised against a row that actually matches.
+
+    The DELETE must MATCH A ROW or the guarantee is never exercised -- the
+    trigger fires per row, so deleting zero rows succeeds trivially. An earlier
+    version of this test used a nonexistent id "to be safe" and reported
+    ``refused=False`` against a store where the trigger provably works. A test
+    that cannot fail for the right reason cannot pass for it either.
+    """
+
+    @pytest.fixture
+    def seeded_dm_message(self, store_dsn) -> "Iterator[tuple[str, str]]":
+        # A thread first: dm_messages.thread_id is a real foreign key.
+        with connect(store_dsn, read_only=False) as conn:
+            conn.execute(
+                "INSERT INTO dm_threads"
+                "(id, kind, created_at, origin_host, record_json)"
+                " VALUES(?, ?, ?, ?, ?)",
+                ("t1", "dm", "2026-08-30T00:00:00Z", "test-host", json.dumps({})),
+            )
+            conn.execute(
+                "INSERT INTO dm_messages"
+                "(id, thread_id, sender, body, ts, seq, origin_host, record_json)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "m1",
+                    "t1",
+                    "tester",
+                    "hello",
+                    "2026-08-30T00:00:01Z",
+                    1,
+                    "test-host",
+                    json.dumps({}),
+                ),
+            )
+            conn.raw.commit()
+        # yield, not return -- see ``seeded_tasks`` (STX-TQ005).
+        yield store_dsn, "m1"
+
+    def test_deleting_a_matching_row_is_refused(self, seeded_dm_message):
+        # Arrange
         import psycopg
 
-        with connect(PG_URL) as conn:
-            existing = conn.fetchone("SELECT id FROM dm_messages LIMIT 1")[0]
-            # Act
+        target, existing = seeded_dm_message
+        # Act
+        with connect(target, read_only=False) as conn:
             try:
                 conn.execute("DELETE FROM dm_messages WHERE id = ?", (existing,))
                 refused = False
@@ -177,60 +259,24 @@ class TestPostgresReadsWork:
         # Assert
         assert refused is True
 
-    def test_the_row_the_delete_targeted_still_exists(self):
+    def test_the_row_the_delete_targeted_still_exists(self, seeded_dm_message):
         # Arrange: proves the refusal test rolled back cleanly rather than
-        # quietly removing a row from the operator's copy.
-        with connect(PG_URL) as conn:
-            target = conn.fetchone("SELECT id FROM dm_messages LIMIT 1")[0]
-            # Act
+        # quietly removing the row it was supposed to fail to remove.
+        target, existing = seeded_dm_message
+        with connect(target, read_only=False) as conn:
+            try:
+                conn.execute("DELETE FROM dm_messages WHERE id = ?", (existing,))
+            except Exception:
+                pass
+            finally:
+                conn.raw.rollback()
+        # Act
+        with connect(target) as conn:
             still_there = conn.fetchone(
-                "SELECT count(*) FROM dm_messages WHERE id = ?", (target,)
+                "SELECT count(*) FROM dm_messages WHERE id = ?", (existing,)
             )[0]
         # Assert
         assert still_there == 1
-
-
-@requires_postgres
-class TestBothBackendsAnswerTheSameQuery:
-    """The property that makes a migration meaningful: identical SQL text runs
-    on either backend and the caller never learns which one answered.
-
-    DELIBERATELY NOT COMPARED AGAINST THE LIVE STORE. The first version of this
-    class read $SCITEX_CARDS_DB and compared row counts to the PostgreSQL copy.
-    It failed with `0 == 2042`, because conftest redirects that variable to a
-    temporary store precisely so tests cannot touch the fleet's live board --
-    the protection working exactly as intended, against me. A test that needs
-    the operator's real data to pass is not a test; it is a monitor, and it
-    would go red every time someone wrote a card.
-
-    The live comparison was run manually and is recorded on card
-    cards-postgres-capable-client-20260730: identical SQL, `264` cards from both
-    backends, with sqlite ahead of the copy on the append-heavy tables.
-    """
-
-    def test_the_same_sql_text_runs_on_both_backends(self, sqlite_store):
-        # Arrange: one query string, SQLite paramstyle, two backends.
-        query = "SELECT count(*) FROM tasks WHERE agent = ?"
-        # Act
-        with connect(sqlite_store) as lite, connect(PG_URL) as pg:
-            ran = (
-                lite.fetchone(query, ("scitex-cards",))[0],
-                pg.fetchone(query, ("scitex-cards",))[0],
-            )
-        # Assert -- both answered; the counts differ because they are different
-        # stores, and that is the point: the CALLER did not have to care.
-        assert all(isinstance(n, int) for n in ran)
-
-    def test_neither_backend_needed_a_dialect_specific_query(self, sqlite_store):
-        # Arrange
-        query = "SELECT count(*) FROM tasks WHERE agent = ? AND title <> 'x?'"
-        # Act
-        with connect(sqlite_store) as lite, connect(PG_URL) as pg:
-            lite.fetchone(query, ("scitex-cards",))
-            pg.fetchone(query, ("scitex-cards",))
-            both_ran = True
-        # Assert
-        assert both_ran is True
 
 
 # EOF

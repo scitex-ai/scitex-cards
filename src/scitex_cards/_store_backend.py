@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite IS the store. There is no other backend and no way to select one.
+"""THE DATABASE IS the store. There is no other backend and no way to select one.
 
 THE ORDER (operator, 2026-07-20): 「例外を用意しないでください。甘くせずにハード
 に切り替えてください。曖昧にするとバグが残ります。他のエージェントも迷ってしまい
@@ -9,8 +9,8 @@ switch hard, leave nothing ambiguous, and carry exactly ONE way in the source.
 
 WHAT THIS MODULE USED TO DO, and why that is gone. It exported
 ``db_is_canonical()``, reading a now-deleted ``*_STORE_BACKEND`` environment
-variable to decide whether SQLite was the store or merely a mirror of a YAML
-file. That switch — function, env var, and its sibling read-side toggle alike
+variable to decide whether the database was the store or merely a mirror of a
+YAML file. That switch — function, env var, and its sibling read-side toggle
 — is deleted outright, not merely defaulted off, and its exact former name is
 deliberately not repeated here: a string a maintainer can copy back into an
 ``export`` is a string that can be copied back. See ``git log -p`` on this
@@ -38,7 +38,7 @@ question with a different answer per process. That is the ambiguity the operator
 named, and deletion is the only thing that answers it.
 
 THE ONE-WAY DOOR, stated plainly because it is the real cost. A card that fails
-to reach SQLite is GONE — there is no YAML behind it to fall back on. So the
+to reach the store is GONE — there is no YAML behind it to fall back on. So the
 write path must NOT take the mirror's best-effort, never-raise posture: a failed
 write MUST raise and the caller MUST see it. Swallowing an exception here would
 silently drop the operator's cards, which is the single worst thing this package
@@ -56,9 +56,9 @@ def _current_stored_ids(db_target) -> set[str]:
     correct even when ``doc`` was built from a stale snapshot (the exact
     shape of the 2170->18 collapse).
 
-    BY COLUMN NAME, not position. ``sqlite3.Row`` accepts both ``r["id"]`` and
-    ``r[0]``; psycopg's ``dict_row`` accepts only the former and raises
-    ``KeyError: 0``. ``_backend_connect`` documents that asymmetry and
+    BY COLUMN NAME, not position. psycopg's ``dict_row`` accepts ``r["id"]``
+    and raises ``KeyError: 0`` on a positional index; the previous driver's row
+    objects accepted both. ``_backend_connect`` documents that asymmetry and
     deliberately does NOT paper over it, so that call sites are found while it
     is still cheap — this was one of them, and it was load-bearing: the raise
     happened inside the shrink guard, which is the last thing standing between
@@ -131,7 +131,7 @@ def write_doc_to_db(
     allow_shrink: bool = False,
     expected_revision: int | None = None,
 ) -> dict:
-    """Commit ``doc`` to SQLite, the only store. RAISES on failure.
+    """Commit ``doc`` to the store, the only one there is. RAISES on failure.
 
     ``store_path`` identifies WHICH logical store is addressed, and therefore
     stamps provenance. Nothing is written to that path.

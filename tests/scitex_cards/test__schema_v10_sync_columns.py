@@ -27,11 +27,9 @@ how that divergence happens again.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from scitex_cards._db import SCHEMA_VERSION
+from scitex_cards._db import SCHEMA_VERSION, connect
 from scitex_cards._db_migrations import (
     NOTIFICATION_SYNC_COLUMNS,
     _migrate_v9_to_v10,
@@ -64,22 +62,37 @@ CREATE TABLE notifications (
 """
 
 
+def _empty(new_store, prefix: str, script: str):
+    """An empty throwaway store with ``script`` installed through the package.
+
+    ``bootstrap=False``: the harness's per-test store is already at the current
+    shape, so a v9 fixture built on it would carry the v10 columns before the
+    migration ran and every assertion below would be true before the act.
+
+    These fixtures used to be an in-memory scratch database. That cannot stand
+    in for the store any more, and not merely on principle: every shape
+    question here is asked through ``table_columns``, which reads
+    ``information_schema`` and has no second dialect — so the old fixtures did
+    not measure a v9-shaped store, they errored on the probe.
+    """
+    conn = connect(new_store(prefix, bootstrap=False))
+    execute_ddl(conn, script)
+    conn.commit()
+    return conn
+
+
 @pytest.fixture
-def v9_store():
+def v9_store(new_store):
     """A store at the v9 shape — the thing the migration must upgrade."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(_V9_NOTIFICATIONS)
+    conn = _empty(new_store, "cards_v10_v9shape", _V9_NOTIFICATIONS)
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def fresh_store():
+def fresh_store(new_store):
     """A store created by the CURRENT fresh-create script."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    execute_ddl(conn, SCHEMA_SQL)
+    conn = _empty(new_store, "cards_v10_fresh", SCHEMA_SQL)
     yield conn
     conn.close()
 
@@ -230,29 +243,39 @@ class TestTheShapeLadderCanPlaceAV10Store:
         assert (kind, table, column) == ("column", _TABLE, "row_uuid")
 
 
-class TestTheSqliteLegDoesNotInstallTheTrigger:
-    def test_no_payload_trigger_is_created_on_sqlite(self, v9_store):
-        """``json_object()`` is only on by default from SQLite 3.38.
+class TestThePayloadTriggerIsInstalled:
+    """The guard the rung exists for, asserted where it actually runs.
 
-        The live host runs 3.37.2, and this repo has already lost 36 hours to
-        SQL that parsed everywhere except on the one machine that mattered. The
-        multi-version fleet is on PostgreSQL, which is where the barrier is
-        needed and where it works.
-        """
+    THIS REPLACES A TEST OF THE OTHER LEG. The class here was
+    ``TestTheRetiredLegDoesNotInstallTheTrigger``: the rung has a
+    ``if not _is_postgres(conn): return`` branch, and that branch was checked
+    by building a scratch the retired engine database and reading ``the retired catalog table`` back.
+    There is one storage engine now, so that branch has no caller and no
+    constructible fixture — the only way to reach it is to open something that
+    is not the store, which every door in this package refuses. The behaviour
+    was not weakened, it was ABOLISHED, so the test of it is deleted rather
+    than converted.
+
+    What is kept is the half that always mattered and was never asserted
+    anywhere in this repository: on the store, the trigger is THERE. A rung
+    whose whole purpose is "no client of any version can enqueue a
+    payload-less row" is worth nothing if the guard silently fails to install.
+    """
+
+    def test_the_payload_trigger_is_created_on_the_store(self, v9_store):
         # Arrange
-        trigger = "notifications_fill_payload"
+        from scitex_cards._db_migrations import NOTIFICATION_PAYLOAD_TRIGGER
+        from scitex_cards._schema_probe import trigger_names
+
+        before = trigger_names(v9_store)
 
         # Act
         _migrate_v9_to_v10(v9_store)
 
-        # Assert
-        names = {
-            r[0]
-            for r in v9_store.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'trigger'"
-            )
-        }
-        assert trigger not in names
+        # Assert -- a TRANSITION: the empty v9 fixture proves the rung put it
+        # there, where "it is present at the end" would also pass on a store
+        # that already carried it.
+        assert NOTIFICATION_PAYLOAD_TRIGGER in trigger_names(v9_store) - before
 
 
 # EOF

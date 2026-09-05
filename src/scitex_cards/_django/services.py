@@ -7,9 +7,9 @@ board never mutates the store in this MVP, so the "board" is just the validated
 task list plus its resolved path and a content signature. The cache avoids
 re-loading the store on every poll while still picking up external edits.
 
-Single canonical store (SQLite cutover)
----------------------------------------
-SQLite is the only store. :func:`scitex_cards._model.load_tasks` reads the ONE
+Single canonical store (post-cutover)
+-------------------------------------
+The database is the only store. :func:`scitex_cards._model.load_tasks` reads the ONE
 canonical DB (``resolve_db_path(None)``) and ignores the path argument, so the
 board no longer globs per-project YAML lanes and unions them — every "source"
 would read the same DB. The board therefore loads exactly one store.
@@ -22,8 +22,8 @@ flag selecting between them — because every one of those is a way for the boar
 to answer "0 cards" without having asked the store.
 
 That is not a hypothetical. Twice now a read has degraded to empty by comparing
-against a YAML file that stopped existing at the SQLite cutover: the
-``_store_read_sqlite`` accelerator (2026-07-21, post-mortem in
+against a YAML file that stopped existing at the cutover: the S2 read
+accelerator (2026-07-21, post-mortem in
 :func:`_load_global_tasks`), and this module's own ``if store_exists else []``
 gate on the ``tasks.yaml`` SIDECAR, which served the operator a 0-card board for
 over a day while 2,654 cards sat in the database.
@@ -118,7 +118,7 @@ class BoardState:
     #:
     #: IT IS DERIVED FROM THE READ, NEVER INFERRED FROM A MISSING FILE, and that
     #: is the whole point. It used to mean "the resolved store-identity FILE did
-    #: not exist" — but under SQLite that file is the ``tasks.yaml`` SIDECAR,
+    #: not exist" — but that file is the ``tasks.yaml`` SIDECAR,
     #: which stopped existing at the cutover, so on the live board this flag was
     #: permanently True and the board permanently served ``[]`` while 2,654 cards
     #: sat in the database. Worse than the missing cards: ``empty_store=True``
@@ -270,14 +270,14 @@ def _kick_board_refresh(
 
 
 def _load_global_tasks(path: Path) -> list:
-    """Global store rows — from the ONE canonical SQLite database.
+    """Global store rows — from the ONE canonical database.
 
-    SQLite is the store; there is no other backend and no mirror to prefer over
-    it (see :mod:`scitex_cards._store_backend`). This used to also try a
-    SQLite-INDEXED accelerator (``_store_read_sqlite`` — S2) ahead of
-    :func:`load_tasks`, guarded by a freshness check comparing the database's
-    provenance stamp against a YAML file. That accelerator is DELETED
-    (2026-07-21 incident): once SQLite became canonical the YAML the stamp
+    The database is the store; there is no other backend and no mirror to prefer
+    over it (see :mod:`scitex_cards._store_backend`). This used to also try an
+    index-backed accelerator (S2) ahead of :func:`load_tasks`, guarded by a
+    freshness check comparing the database's provenance stamp against a YAML
+    file. That accelerator is DELETED (2026-07-21 incident): once the database
+    became canonical the YAML the stamp
     compared against stopped existing, so the guard refused unconditionally and
     fell back to a YAML chain that resolved to an empty bundled example —
     silently serving a blank board. ``path`` is accepted for the caller's
@@ -310,8 +310,8 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
     ONE, and that is the same positive reading rather than a new hedge: a file
     that cannot be parsed as YAML defines no groups, exactly as a missing file
     defines none. Measured 2026-08-23 — on TWO hosts the sidecar path held a
-    SQLite database (the phantom of
-    ``cards-sqlite-inbox-overwrote-tasks-yaml-board-500-p0-20260823``), so
+    binary database (the phantom recorded on
+    ``cards-inbox-overwrote-tasks-yaml-board-500-p0-20260823``), so
     ``yaml.safe_load`` raised ``UnicodeDecodeError`` on the header's first
     high byte and the WHOLE board answered 500::
 
@@ -352,7 +352,8 @@ def _load_sidecar_groups(resolved: Path, task_ids: set) -> list:
             "serving the board with NO GROUPS rather than failing the whole "
             "read. The cards below are unaffected — they come from the "
             "database, not from this file. To fix: inspect the file (`file "
-            "%s`); if it reads 'SQLite format 3' it is a phantom store written "
+            "%s`); if it reports a database rather than text it is a phantom "
+            "store written "
             "by a caller that handed this DISPLAY LABEL to a database opener, "
             "and the file should be MOVED ASIDE (never deleted — it may hold "
             "undelivered inbox rows), not repaired.",
@@ -386,7 +387,7 @@ def get_board(
     in, because a self-refreshing view one cycle behind is invisible while a
     31-second wait is not.
 
-    Reads the ONE canonical store (SQLite): ``load_tasks`` ignores the resolved
+    Reads the ONE canonical store: ``load_tasks`` ignores the resolved
     path and reads ``resolve_db_path(None)``. Cache invalidation keys on
     ``sig`` = ``(store_generation(resolved), _stat_sig(resolved))`` — the DB's
     read-stable content hash so a DB write self-invalidates, plus the identity
@@ -437,7 +438,7 @@ def get_board(
     #     store_exists = resolved.exists()
     #     tasks = _load_global_tasks(resolved) if store_exists else []
     #
-    # Under SQLite that sidecar is not created, so on the operator's live board
+    # That sidecar is not created, so on the operator's live board
     # ``store_exists`` was permanently False and the board served the literal
     # ``else []`` — 0 cards, while 2,654 sat in the database, for over a day.
     # The card read was never even attempted: the fail-loud guard in
@@ -446,10 +447,10 @@ def get_board(
     # signature of a wipe — because ``empty_store=True`` suppresses the error
     # banner by design.
     #
-    # This is the SAME defect as the deleted ``_store_read_sqlite`` accelerator
+    # This is the SAME defect as the deleted S2 read accelerator
     # (2026-07-21), whose post-mortem sits 40 lines above in
     # ``_load_global_tasks``: a guard comparing against a YAML file that stopped
-    # existing when SQLite became canonical, silently degrading to an empty
+    # existing when the database became canonical, silently degrading to an empty
     # board. Fixing one instance of a pattern is not fixing the pattern.
     #
     # So the sidecar now gates ONLY what actually lives in the sidecar

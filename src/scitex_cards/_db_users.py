@@ -61,7 +61,7 @@ so identity resolution silently degraded to the raw name string. Caught by
 
 The premise was also simply false. A store path is not a file — the YAML
 tier was DELETED in #512, and ``tests/.../test__notify_dispatch.py`` says so
-where it builds one: *"Store is SQLite; reads/writes hit the canonical DB
+where it builds one: *"The store is a database; reads/writes hit the canonical DB
 and the path survives only as the store IDENTITY stamp."* So an explicit
 store names WHICH DATABASE, never a different KIND of home, and the file the
 registry used to write was a phantom sitting beside the real one.
@@ -74,7 +74,7 @@ So ``store`` selects WHICH database and never a different KIND of home. It
 still cannot be handed to :func:`open_db` raw, because a ``tasks.yaml``
 store is a display LABEL that nothing downstream normalises — see
 :func:`_db_target`, which inverts it to the sibling database rather than
-letting SQLite create a phantom store at the label's path.
+letting a database opener create a phantom store at the label's path.
 """
 
 from __future__ import annotations

@@ -119,7 +119,7 @@ def test_an_existing_ambient_store_is_untouched_by_the_guard(tmp_path, env):
     assert refused is False
 
 
-def test_add_task_succeeds_against_an_existing_store(tmp_path, env):
+def test_add_task_succeeds_against_an_existing_store(new_store, env):
     """The board already exists and the write must WORK. The pin that keeps
     CREATE agreeing with read/update.
 
@@ -135,41 +135,16 @@ def test_add_task_succeeds_against_an_existing_store(tmp_path, env):
     already there, there is nothing to manufacture, so there is nothing to
     refuse. An agent that cannot create a card cannot record work, hand off, or
     escalate.
-
-    THE STORE IS NOW NAMED, AND THE TEST'S SUBJECT IS UNCHANGED. This used to
-    arrange "a REAL store at the AMBIENT default, named by nothing" — the
-    configuration it said every fleet agent ran in. That configuration is what
-    the operator abolished on 2026-08-13, precisely because "named by nothing"
-    and "named by a variable that got lost" are the same state from inside the
-    process. The write path being pinned here is identical either way; only the
-    arrangement moved from ambient to named, and the sibling test below still
-    covers the ambient-write refusal.
     """
-    # Arrange — a REAL store, NAMED through the environment.
+    # Arrange — a REAL store that already exists, NAMED through the environment.
     import scitex_cards
-    from scitex_cards._db import connect, init_schema, resolve_db_path
 
-    env.set("SCITEX_DIR", str(tmp_path / "scitex"))
-    env.set(ENV_DB, str(tmp_path / "scitex" / "cards" / "cards.db"))
-
-    db = resolve_db_path(None)
-    db.parent.mkdir(parents=True, exist_ok=True)
-    conn = connect(db)
-    try:
-        init_schema(conn)
-        conn.commit()
-    finally:
-        conn.close()
-    if not db.exists():
-        # An arrange that silently produced no store would make the assertion
-        # below meaningless, so this fails the ARRANGE loudly rather than
-        # spending a second assertion (STX-TQ007) on setup.
-        raise AssertionError(f"arrange failed: no store at {db}")
+    env.set(ENV_DB, new_store())
 
     # Act
     scitex_cards.add_task(
         id="ambient-card",
-        title="created against an existing ambient store",
+        title="created against an existing store",
         assignee="scitex-cards",
         agent="scitex-cards",
     )

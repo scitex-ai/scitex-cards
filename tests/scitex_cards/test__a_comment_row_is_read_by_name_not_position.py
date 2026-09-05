@@ -1,35 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""A ``task_comments`` row must be read BY NAME, not by position.
-
-0.49.0 shipped ``_key(row[0], row[1], row[2], row[3])`` and crashed in production::
-
-    File "scitex_cards/_mirror_rows.py", line 194, in _merge_unseen_comment_rows
-        key = _key(row[0], row[1], row[2], row[3])
-    KeyError: 0
-
-THE DEFECT WAS A TYPE DIFFERENCE THE SUITE COULD NOT SEE. The retired engine's
-row type accepted BOTH ``row[0]`` and ``row["author"]``, so every test against
-it passed. PostgreSQL — which is production, and now the only engine — uses
-psycopg's DICT row factory, where ``row[0]`` is a lookup of the integer KEY
-``0``, and there is no such key.
-
-WHY A SMOKE TEST MISSED IT: ``_merge_unseen_comment_rows`` returns early when the
-card has no comment rows, so the FIRST comment on a fresh card succeeded and every
-comment on a card WITH HISTORY failed. Reported by scitex-dev as a bare ``"0"``
-through MCP — which is ``str(KeyError(0))``.
-
-WHAT WAS DELETED HERE WITH THE SECOND ENGINE, and why that is not a loss of
-coverage: the round-trip through the permissive row type is gone. It asserted
-that a type nothing constructs any more still worked. What it BOUGHT — the
-knowledge that positional access is a backend-specific crash — is kept, and
-kept in the form that can still fail: the AST guard below, which refuses
-``row[<int>]`` in the module regardless of what any row object happens to
-tolerate. That guard is the half that would have caught 0.49.0.
-
-NO MOCKS: a plain ``dict`` is exactly the shape psycopg's dict row factory
-yields, which is why it is the fixture rather than a stand-in for one.
-"""
+"""A ``task_comments`` row must be read BY NAME, not by position."""
 
 import ast
 from pathlib import Path
@@ -85,5 +56,49 @@ def test_no_positional_row_indexing_survives_in_the_mirror_module():
         and isinstance(node.slice, ast.Constant)
         and isinstance(node.slice.value, int)
     ]
+    # Assert
+    assert offenders == []
+
+
+def _positional_reads_of_fetched_rows(source: Path) -> list[tuple[str, int]]:
+    """``name[<int>]`` where ``name`` was bound from ``.fetchone()`` / ``.fetchall()``.
+
+    The guard above keys on the identifier ``row``; 0.50.0 shipped the same
+    defect under the names ``found_row`` and ``after`` in ``_db_bootstrap`` —
+    the compare-and-set branch of ``_insert_tasks`` — and it died on PostgreSQL
+    for every opt-in caller until #949 read it by name. So this guard keys on
+    WHERE THE VALUE CAME FROM, not what it was called: a name assigned from a
+    fetch, or iterated from one, must never be subscripted with an integer, in
+    any module of the package.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    fetched: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            func = node.value.func
+            if isinstance(func, ast.Attribute) and func.attr in ("fetchone", "fetchall"):
+                fetched.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Call):
+            func = node.iter.func
+            if isinstance(func, ast.Attribute) and func.attr == "fetchall":
+                if isinstance(node.target, ast.Name):
+                    fetched.add(node.target.id)
+    return [
+        (source.name, node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id in fetched
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, int)
+    ]
+
+
+def test_no_fetched_row_is_read_by_position_anywhere_in_the_package():
+    # Arrange
+    package = Path(__file__).resolve().parents[2] / "src" / "scitex_cards"
+    sources = sorted(package.rglob("*.py"))
+    # Act
+    offenders = [hit for src in sources for hit in _positional_reads_of_fetched_rows(src)]
     # Assert
     assert offenders == []

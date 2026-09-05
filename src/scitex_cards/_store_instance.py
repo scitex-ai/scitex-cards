@@ -30,11 +30,10 @@ Same argument as the schema LADDER in :mod:`._schema_shape` and as the
 row-level-write marker ruling: trust an artifact the copying operation cannot
 fake, never a stamp the operation happens to write.
 
-SQLITE HAS NO ANALOGUE AND THIS MODULE SAYS SO. A SQLite store is a file, and
-a byte copy of that file is indistinguishable from the original by anything
-inside it — which is the honest answer, not a gap to paper over. The file's
-path IS its identity (ADR-0010), and that is the caller's to compare, not
-ours. So the SQLite answer is ``UNKNOWN`` with a stated reason, and a caller
+A TARGET THAT IS NOT THE STORE HAS NO ANALOGUE AND THIS MODULE SAYS SO. There
+is no cluster to ask, so there is no instance identity to read — which is the
+honest answer, not a gap to paper over. So that answer is ``UNKNOWN`` with a
+stated reason, and a caller
 that needs certainty must refuse rather than proceed. Returning a
 made-up-but-stable value here (a hash of the path, say) would be worse than
 useless: it would look like an instance identity and would follow a copy.
@@ -59,12 +58,12 @@ from typing import Optional
 #: and would therefore have made this probe fail exactly where it is needed.
 _POSTGRES_INSTANCE_SQL = "select system_identifier::text from pg_control_system()"
 
-#: Why a SQLite store cannot answer. Stated once, returned verbatim, so the
-#: reason a caller reports is the reason this module actually has.
-_SQLITE_HAS_NO_INSTANCE_ID = (
-    "sqlite: a database file carries no instance identity — a byte copy is "
-    "indistinguishable from the original from inside it. The file path is the "
-    "store identity (ADR-0010); compare that instead."
+#: Why a target that is not the store cannot answer. Stated once, returned
+#: verbatim, so the reason a caller reports is the reason this module has.
+_NO_INSTANCE_ID_OFF_SERVER = (
+    "unsupported: this target does not name the store, so there is no cluster "
+    "to ask for an instance identity. The store is a PostgreSQL DSN; check "
+    "$SCITEX_CARDS_DB."
 )
 
 
@@ -86,7 +85,7 @@ class StoreInstance:
     Attributes
     ----------
     backend : str
-        ``_store_url.BACKEND_POSTGRES`` or ``BACKEND_SQLITE``.
+        ``_store_url.BACKEND_POSTGRES`` or ``BACKEND_UNSUPPORTED``.
     certainty : Certainty
         ``KNOWN`` iff ``instance_id`` is a real identity read from the server.
     instance_id : str or None
@@ -157,7 +156,7 @@ def store_instance(conn) -> StoreInstance:
         Always. See the class for the invariants it guarantees.
     """
     from ._schema_probe import _is_postgres, _sole_value
-    from ._store_url import BACKEND_POSTGRES, BACKEND_SQLITE
+    from ._store_url import BACKEND_POSTGRES, BACKEND_UNSUPPORTED
 
     # The backend comes from the LIVE connection, never from a caller's belief
     # about what it opened — the same rule `_inbox_shape.shape_for` states:
@@ -167,9 +166,9 @@ def store_instance(conn) -> StoreInstance:
     # the wrong instance.
     if not _is_postgres(conn):
         return StoreInstance(
-            backend=BACKEND_SQLITE,
+            backend=BACKEND_UNSUPPORTED,
             certainty=Certainty.UNKNOWN,
-            reason=_SQLITE_HAS_NO_INSTANCE_ID,
+            reason=_NO_INSTANCE_ID_OFF_SERVER,
         )
     backend = BACKEND_POSTGRES
 

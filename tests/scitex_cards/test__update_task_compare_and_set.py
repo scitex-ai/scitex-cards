@@ -1,40 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``update_task(..., expected_revision=N)`` -- the opt-in compare-and-set.
-
-``_insert_tasks`` has had a working compare-and-set since PR #790 and
-``_write_card`` forwards to it, but nothing above them could ask for it: the doc
-path carried no parameter, so the guard existed and was unreachable from every
-public verb. #790 refused the argument on ``update_task`` because that function
-was a whole-document read-modify-write and a per-row guard would have overwritten
-every other card from the same read. #872 made it declare ``touched_ids`` and the
-mirror intersects the write set with that, so the write reaches exactly one row
-and the premise is gone.
-
-TWO HAZARDS HERE WERE FOUND BY TESTS, NOT BY READING, and both fail silently:
-
-1. THE HASH TABLE. The mirror records a content hash per card so the next write
-   can skip an unchanged one. Recording a REFUSED card's new hash would leave the
-   mirror believing the row holds content it does not -- and the caller's natural
-   response to a refusal (re-read, re-apply, retry) computes that same hash, is
-   judged unchanged, and writes NOTHING. Permanently, with no exception anywhere.
-
-2. THE FIRST-RUN FULL REBUILD. With no hash table yet the mirror rebuilds every
-   card from the caller's doc and returns early -- before any guard. Silently
-   ignoring ``expected_revision`` there is worse than not offering it: the caller
-   believes they hold a per-row lock while the whole board is overwritten from
-   their snapshot.
-
-RAISE vs REPORT is keyed on THE OPT-IN, not on the layer. Passing a revision is
-an assertion, and a violated explicit assertion that returns quietly is the
-invisible lost update. A bulk reconciler that supplied nothing is counting
-ordinary concurrency, where an exception would be slow and would mislabel a
-routine outcome as a fault. So this verb raises; the mirror still reports.
-
-Real SQLite throughout: ``revision`` only moves because v7's
-``tasks_bump_revision`` trigger moves it, so a mocked store would mock away the
-one thing under test.
-"""
+"""``update_task(..., expected_revision=N)`` -- the opt-in compare-and-set."""
 
 from __future__ import annotations
 
@@ -62,23 +28,24 @@ def _revision(task_id="c1"):
     did: two tests went green with the guard never once engaged.
     """
     import os
-    import sqlite3
+
+    from scitex_cards._db import connect
 
     db = os.environ["SCITEX_CARDS_DB"]
-    conn = sqlite3.connect(db)
+    conn = connect(db)
     try:
         row = conn.execute(
             "SELECT revision FROM tasks WHERE id = ?", (task_id,)
         ).fetchone()
     finally:
         conn.close()
-    if row is None or row[0] is None:
+    if row is None or row["revision"] is None:
         raise AssertionError(
             f"no revision for task {task_id!r} in {db} -- a None would be passed "
             f"as expected_revision and silently disable the guard under test, "
             f"which is a vacuous pass rather than a failure."
         )
-    return row[0]
+    return row["revision"]
 
 
 @pytest.fixture()
@@ -223,18 +190,21 @@ def test_a_retry_after_a_refusal_can_actually_land(refusal):
 # --------------------------------------------------------------------------
 
 
-def test_the_guard_is_refused_on_a_first_run_full_rebuild(tmp_path):
+def test_the_guard_is_refused_on_a_first_run_full_rebuild(new_store):
     """A full rebuild rewrites every card from the caller's doc, so it cannot
     honour a per-row guard. Refusing is the only honest option -- ignoring it
-    would overwrite the board while the caller believed they held a lock."""
+    would overwrite the board while the caller believed they held a lock.
+
+    ``bootstrap=False`` is what makes this the FIRST-RUN path: the rebuild is
+    chosen because the store holds no row hashes to diff against, and a
+    provisioned store would already carry them."""
     # Arrange
     from scitex_cards._db_mirror import mirror_doc_incremental
 
     doc = {"tasks": [{"id": "c1", "title": "A", "status": "deferred"}]}
+    fresh = new_store("cards_cas_fresh", bootstrap=False)
     # Act
-    call = partial(
-        mirror_doc_incremental, doc, tmp_path / "fresh.db", expected_revision=0
-    )
+    call = partial(mirror_doc_incremental, doc, fresh, expected_revision=0)
     # Assert
     with pytest.raises(ValueError, match="full rebuild"):
         call()

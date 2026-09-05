@@ -31,11 +31,9 @@ generator and a warning they were supposed to have read.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from scitex_cards._db import SCHEMA_VERSION
+from scitex_cards._db import SCHEMA_VERSION, connect
 from scitex_cards._db_init_schema import init_schema
 from scitex_cards._db_migrations import table_columns
 from scitex_cards._db_schema_sql import SCHEMA_SQL
@@ -120,22 +118,38 @@ CREATE TABLE task_comments (
 """
 
 
+def _empty(new_store, prefix: str, script: str):
+    """An empty throwaway store with ``script`` installed through the package.
+
+    ``bootstrap=False``: the harness's per-test store is already at the current
+    shape, so a v11 fixture built on it would carry the v12 columns before the
+    migration ran and every assertion below would be true before the act.
+
+    ``execute_ddl`` rather than a driver-level script runner, and that is the
+    part the old in-memory fixtures could not do: the shipped DDL is TRANSLATED
+    on the way into the engine (``INTEGER PRIMARY KEY AUTOINCREMENT`` has no
+    PostgreSQL spelling, and every inline-body trigger is substituted for its
+    plpgsql pair), so a fixture that fed the raw text to another engine was
+    exercising a string this package never installs anywhere.
+    """
+    conn = connect(new_store(prefix, bootstrap=False))
+    execute_ddl(conn, script)
+    conn.commit()
+    return conn
+
+
 @pytest.fixture
-def v11_store():
+def v11_store(new_store):
     """A store at the v11 shape — the thing this migration must upgrade."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_V11_TABLES)
+    conn = _empty(new_store, "cards_v12_v11shape", _V11_TABLES)
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def fresh_store():
+def fresh_store(new_store):
     """A store created by the CURRENT fresh-create script, no migrations run."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    execute_ddl(conn, SCHEMA_SQL)
+    conn = _empty(new_store, "cards_v12_fresh", SCHEMA_SQL)
     yield conn
     conn.close()
 
@@ -224,12 +238,19 @@ class TestItLeavesTheV6RevisionAlone:
         _migrate_v11_to_v12(v11_store)
 
         # Assert
-        assert v11_store.execute("SELECT revision FROM tasks").fetchone()[0] == 0
+        # BY NAME, not by position: the store's rows are dict-shaped and raise
+        # ``KeyError: 0`` on an index. The old in-memory fixture accepted both,
+        # which is exactly how positional reads survived into the package and
+        # cost it three separate crashes on the real server.
+        row = v11_store.execute("SELECT revision FROM tasks").fetchone()
+        assert row["revision"] == 0
 
 
 class TestTheTwoPathsAgree:
     @pytest.mark.parametrize("table", SYNCED_TABLES)
-    def test_a_migrated_store_ends_with_the_same_columns_as_a_fresh_one(self, table):
+    def test_a_migrated_store_ends_with_the_same_columns_as_a_fresh_one(
+        self, new_store, table
+    ):
         """The divergence this repo keeps getting bitten by, as a gate.
 
         Asserted through ``init_schema`` — the FULL chain — rather than through
@@ -246,20 +267,21 @@ class TestTheTwoPathsAgree:
         up syncable, and that is what is checked.
         """
         # Arrange
-        migrated = sqlite3.connect(":memory:")
-        migrated.row_factory = sqlite3.Row
-        migrated.executescript(_V11_TABLES)
-        fresh = sqlite3.connect(":memory:")
-        fresh.row_factory = sqlite3.Row
+        migrated = _empty(new_store, "cards_v12_agree_mig", _V11_TABLES)
+        fresh = connect(new_store("cards_v12_agree_fresh", bootstrap=False))
 
         # Act
         init_schema(migrated)
         init_schema(fresh)
 
         # Assert
-        assert set(_NAMES) <= (
-            table_columns(migrated, table) & table_columns(fresh, table)
-        )
+        try:
+            assert set(_NAMES) <= (
+                table_columns(migrated, table) & table_columns(fresh, table)
+            )
+        finally:
+            migrated.close()
+            fresh.close()
 
 
 class TestTheSplitForwardsRatherThanShadows:
