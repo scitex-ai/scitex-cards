@@ -75,13 +75,19 @@ def requested_search_path(dsn: str) -> str:
 
 def search_path_in_force(raw: Any) -> list[str]:
     """The schemas the SERVER has on this session's search_path, unquoted."""
-    row = raw.execute("SHOW search_path").fetchone()
+    from psycopg.rows import dict_row  # noqa: PLC0415
+
+    # BY NAME, whatever row factory the connection was opened with: a cursor
+    # can carry its own factory, and the package reads every fetched column
+    # by name (a positional read is refused by a package-wide guard test).
+    with raw.cursor(row_factory=dict_row) as cur:
+        row = cur.execute("SHOW search_path").fetchone()
     # The read opened psycopg's implicit transaction; end it, so the caller
     # receives the connection in the state a fresh connect() hands out (a
     # caller that then sets `autocommit` would otherwise be refused: psycopg
     # will not change it inside a transaction).
     raw.rollback()
-    value = row[0] if isinstance(row, (tuple, list)) else next(iter(row.values()))
+    value = row["search_path"] if row else ""
     return [p.strip().strip('"') for p in str(value).split(",") if p.strip()]
 
 
