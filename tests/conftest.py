@@ -138,6 +138,30 @@ def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
     return cluster, scoped, "ok"
 
 
+def _search_path_libpq_will_apply(dsn: str) -> str:
+    """The schema the SERVER will be asked for, read the way libpq reads it.
+
+    A DSN can carry ``options`` more than once -- an xdist worker inherits the
+    controller's already-scoped ``$SCITEX_STORE_DSN`` and ``ephemeral_schema``
+    appends a second one -- and libpq honours the LAST occurrence of a repeated
+    URI parameter, discarding the rest. Inside that value the last ``-c
+    search_path=`` wins likewise. Reading the FIRST occurrence (the substring
+    search this replaced) compared the controller's schema against the worker's
+    session and refused every worker on PR #962's first run, while the
+    controller, with a single ``options``, passed and printed a clean header.
+    """
+    from urllib.parse import parse_qsl, urlsplit
+
+    values = [v for k, v in parse_qsl(urlsplit(dsn).query, keep_blank_values=True) if k == "options"]
+    if not values:
+        return ""
+    want = ""
+    for token in values[-1].replace("-c ", "-c").split():
+        if token.startswith("-csearch_path="):
+            want = token[len("-csearch_path="):]
+    return want.split(",", 1)[0].strip().strip('"')
+
+
 def _assert_scope_is_applied_by_the_server(scoped: str) -> None:
     """The scoped DSN is only safe if the SERVER actually applies its search_path.
 
@@ -150,11 +174,8 @@ def _assert_scope_is_applied_by_the_server(scoped: str) -> None:
     scope being in force.
     """
     import psycopg
-    from urllib.parse import unquote
 
-    marker = "search_path"
-    tail = scoped.split(marker, 1)[1] if marker in scoped else ""
-    want = unquote(tail).lstrip("=").split("&", 1)[0].split(",", 1)[0].strip().strip('"')
+    want = _search_path_libpq_will_apply(scoped)
     if not want:
         raise RuntimeError(f"the scoped DSN carries no search_path to verify: {scoped!r}")
     with psycopg.connect(scoped) as conn:
