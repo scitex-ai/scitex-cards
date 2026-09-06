@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import datetime as dt
 import socket
+from importlib import metadata
 
 from scitex_cards._reminder_enqueue import _safe_enqueue
 
@@ -93,6 +94,53 @@ class TestTheBodyNamesTheComputingHost:
 
         # Assert
         assert body in sent["body"]
+
+
+class TestTheBodyNamesTheProducingVersion:
+    """The host says WHERE. It says nothing about WHICH CODE.
+
+    2026-09-06: scitex-hub reported the backlog nudge conflating "untouched"
+    with "deliberately scheduled forward". Real defect, fixed hours earlier —
+    and the daemon producing their nudge ran a release two versions older than
+    the fix, so it would have kept producing it through any number of merges.
+    Measured that day: 0.50.0 in one container, 0.51.1 in another, 0.51.2 on
+    PyPI, all at the same ``/opt/venv-sac`` path, because that path names a
+    per-container install.
+    """
+
+    def test_the_body_carries_the_package_version(self):
+        # Arrange
+        body = "BACKLOG: 37 deferred card(s) waiting >24h"
+
+        # Act
+        sent = _enqueue_once(body)
+
+        # Assert
+        assert "scitex-cards" in sent["body"]
+
+    def test_it_names_the_INSTALLED_version_and_not_a_placeholder(self):
+        # "unknown-version" would satisfy the test above while carrying exactly
+        # the information the reader lacked — which is the defect, not the fix.
+        # Arrange
+        expected = metadata.version("scitex-cards")
+
+        # Act
+        sent = _enqueue_once("body")
+
+        # Assert
+        assert expected in sent["body"]
+
+    def test_the_version_travels_with_the_host_not_instead_of_it(self):
+        # Both halves answer different questions: WHICH STORE was read, and
+        # WHICH CODE read it. A reader needs both to reason about a nudge.
+        # Arrange
+        expected = socket.gethostname()
+
+        # Act
+        sent = _enqueue_once("body")
+
+        # Assert
+        assert expected in sent["body"]
 
 
 class TestTheStampAppliesToEveryNotificationType:
