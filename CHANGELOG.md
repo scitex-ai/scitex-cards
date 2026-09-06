@@ -2,6 +2,161 @@
 
 ## [Unreleased]
 
+## [0.51.3] - 2026-09-06
+
+### `claim_sweep`: one host takes each sweep, so one board produces one digest
+
+Measured 2026-09-06: BACKLOG digests arrived stamped "[computed on
+scitex-compute-01]", "[computed on scitex-compute-03]" and "[computed on
+scitex-compute-04]" within minutes of each other. Three notifyd daemons sweep
+one shared store and each keeps its cadence in a local variable reset on every
+restart, so their phases collide and every owner is nudged two or three times
+for one board.
+
+`claim_sweep(name, cadence_minutes=…)` returns True at most once per cadence
+across every host. It is a time-bounded CLAIM, not a held lock: the cadence
+stamp is the state, so a crashed or absent winner simply never refreshes it and
+the next host claims after one cadence. A held lock owned by a merely wedged
+winner would block every other host indefinitely while logging like a healthy
+quiet sweep — trading visible duplicates for a silent outage. The advisory lock
+is transaction-scoped, which is also what makes it correct behind PgBouncer in
+transaction mode, where a session-level lock outlives its owner's hold on the
+server connection.
+
+Two failure directions fail OPEN: a store that cannot answer, and a non-server
+store with no shared lock to arbitrate, both return True. A coordination
+mechanism that cannot coordinate must not become a fleet-wide silence.
+
+The claim rows live in their own `sweep_claims` scope, and a test pins that:
+`save_sections` soft-deletes every row of a scope absent from its payload, so a
+claim sharing the nudge scope would be tombstoned by the next nudge-state write
+— silently, after which every host sweeps again while the code still looks
+correct.
+
+Arming it is deliberately a separate change; nothing calls it yet.
+
+### Advancing the shared store's schema says so
+
+A P0 opened 2026-07-30 was titled "opening the shared store SILENTLY MIGRATES
+it", and "silently" was literally true: neither `_db_init_schema` nor
+`_db_migrations` contained a logger, a warning or a print. `open_db()` is
+`connect()` plus `init_schema()`, and the only thing in front of the rung
+ladder is a currency skip, not a consent gate — so a client ahead of the store
+ran the ladder on its first ordinary open, including from the read-side verbs,
+and moved the shape under every other client with no trace anywhere. The sole
+record was the `schema_migrated_*` rows, whose own docstring says "THIS IS A
+RECORD, NOT A GATE".
+
+A genuine upgrade now emits one WARNING naming both rungs and the client
+version. It is deliberately not a gate: the store is one PostgreSQL primary the
+whole fleet shares and containers still run a spread of versions, so refusing
+here would trade a silent change for a fleet-wide open failure — the trade this
+card declined twice, on the measured ground that "every client is current" has
+never been establishable. What changes is only the silence.
+
+A fresh store and an already-current store stay silent, and both are pinned by
+tests, because that is what keeps the line worth reading: a warning on every
+ordinary open would be filtered out within a day and the genuine event would go
+back to being invisible.
+
+### /tasks honours status, assignee and limit, and answers 304 when nothing changed
+
+The board's list endpoint accepted `status`, `assignee` and `limit` and ignored
+all three, so the only way to see one agent's blocked cards was to fetch every
+card on the board. Measured 2026-09-06 on the live store: a single `/tasks` call
+returned 8051 cards and 55 MB, of which comments were 67% — the operator could
+not open the board on 8051 at all, and neither could anything else with a
+timeout.
+
+`/tasks` now applies the filters it already documented (`status` takes a
+comma-separated list), caps with `limit`, and reports the store `generation` in
+the payload. It also answers a conditional request: the response carries a weak
+`ETag` computed from the store generation and the filter shape, so a client that
+sends `If-None-Match` gets `304 Not Modified` with no body when nothing has
+changed. A poll then costs a header round-trip instead of a full serialisation.
+
+This is a read-path change only; no card content, ordering or field shape moved.
+The payload's size problem is not solved by it — comments are still serialised
+in full for every card returned, which is tracked separately.
+
+### The BLOCKED-CHECK line prints the edges that decide the case
+
+The rail listed card ids and asked the reader to remember the rest, so a card
+whose real work lives in its children was indistinguishable from a stalled
+leaf. That is not hypothetical: scitex-ui judged `scitex-ui-quality` "an empty
+shell" and cancelled it on 08-05 (retracted 20 minutes later), again on 08-23
+(retracted 12 minutes later), and wrote a wrong conclusion about it on 09-04 —
+each time reading status, blocker, last_activity and priority, and never
+`parent` or `depends_on`. Their words: "the information was always there; it
+was not in my query."
+
+Each id now renders as `<id> [parent=… deps=N children=N]`, always all three,
+including `parent=-` for a card with no parent: "looked and found none" and
+"never asked" are different states, and a column that appeared only on edged
+cards would teach the reader to skim the rest.
+
+`StaleCard` carries the three fields and the detector fills them, because they
+cannot be recovered downstream — the line composer receives one owner's bucket,
+and a card's children usually belong to other owners, so `children` is
+uncomputable at render time. Counting costs one extra O(N) pass over the list
+the detector already holds. The `_cap_ids` helper gains a per-card render seam
+whose default is the previous behaviour, so the cap keeps living in one place
+and the STALE-ACTIVE and BACKLOG lines are unchanged to the byte; `deps` and
+`children` are counts rather than lists so an unbounded per-card expansion
+cannot defeat the cap from the inside.
+
+### A deferred card whose start date is still ahead is no longer reported as backlog
+
+The backlog nudge aged a card by `deferred_at` and never read `scheduled`, so
+work its owner had already dated for next week was reported exactly like work
+nobody got to. Measured on the fleet 2026-09-06: five BACKLOG digests between
+01:10Z and 05:20Z naming 29, 30, 31, 33 and 35 cards, with cards scheduled
+09-07 through 09-12 among them.
+
+The cost was not only noise. `scheduled` is the field that says "not yet, and
+when", and while the rail ignored it the only way to be quiet was to park the
+card — and park also suppresses the triage report's expiry proposal, so an
+alarm answerable only by parking teaches parking by reflex, onto something
+load-bearing.
+
+`detect_pending_backlog` now skips a card whose `scheduled` stamp is strictly
+in the future, as an eligibility test beside the existing `parked` skip rather
+than as a clock: a dated card has sat exactly as long as it has sat, it is
+simply not yet due, and ageing by that field would corrupt the "waiting Nd"
+number the line prints. Today, a past date, a missing one and an unreadable one
+(an org repeater, say) all keep firing, so the exemption cannot be reached by
+accident, and a stamp of today agrees with `_may_stop`'s own "scheduled time
+reached" rule. The rot clock is untouched — `deferred_at` keeps running, so the
+triage report still proposes cancellation at the horizon however far a start
+date is pushed forward.
+
+Two rails change, not one: the BACKLOG nudge line, and the owner digest in
+`_reminders`, where an owner whose only stale cards were future-scheduled now
+produces an empty bucket and receives no digest at all. That is the intended
+outcome and is stated here because it is a second surface.
+
+### The suite refuses to run against a tree it did not import
+
+The shared `.venv`'s editable install points at the main checkout, so pytest
+launched from a linked worktree collected the worktree's tests against
+*develop's* package. Every result was then a true statement about code nobody
+had edited — indistinguishable from a true statement about the code under
+review.
+
+Measured twice, by two agents, a month apart: scitex-hpc on 2026-08-02 (PR #72,
+"56 passed", nothing under test) and scitex-cards-gui on 2026-09-06, where a
+deliberately broken import returned "87 passed" and they were one step from
+writing a test to close a gap that did not exist.
+
+`tests/conftest.py` now asserts at import time that `scitex_cards` resolves
+inside this checkout, and refuses the run with both paths and the remedy when it
+does not. It lives in conftest rather than in a shell hook deliberately: sac's
+`enforce_pytest_worktree_source.sh` guards the same thing but inspects the Bash
+command string, so a pytest call inside a shell script hides from it — which is
+exactly how it was got past. This runs *inside* pytest, after the import has
+happened, so no script, Makefile or future wrapper can route around it. Every
+workflow installs editable, verified before adding this, so CI is unaffected.
+
 ## [0.51.2] - 2026-09-06
 
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store

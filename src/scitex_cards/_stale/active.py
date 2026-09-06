@@ -194,6 +194,17 @@ class StaleCard:
     # a list of 98 is a list of 0. Defaulted for back-compat with any caller
     # constructing a StaleCard positionally.
     priority: int | None = None
+    # EDGES, carried because the line composer cannot recover them. It is
+    # handed one owner's bucket, never the full task list, so `children` in
+    # particular is uncomputable at render time. They decide whether a card is
+    # a stalled leaf or a shell whose work lives elsewhere — the distinction
+    # that made a peer cancel the same live node three times by age alone.
+    # Defaulted and LAST, because the comment above pins positional
+    # construction; `depends_on` is a tuple because a list default is a
+    # dataclass error and, here, a shared-mutable-default bug.
+    parent: str | None = None
+    depends_on: tuple[str, ...] = ()
+    children: int = 0
 
 
 def _detect_owned_untouched(
@@ -233,6 +244,16 @@ def _detect_owned_untouched(
     Pure: no env reads, no network — the caller resolves the threshold.
     """
     cur = now or _now_utc()
+    # ONE EXTRA PASS OVER THE LIST WE ALREADY HAVE. The child count cannot be
+    # recovered downstream: the line composer receives a single owner's
+    # bucket, so a card's children — which usually belong to OTHER owners —
+    # are not in scope by the time anyone would want them. Counted here, where
+    # every task is in hand, and kept O(N).
+    child_counts: dict[str, int] = {}
+    for t in tasks:
+        p = t.get("parent")
+        if isinstance(p, str) and p:
+            child_counts[p] = child_counts.get(p, 0) + 1
     out: dict[str, list[StaleCard]] = {}
     for t in tasks:
         if t.get("status") not in statuses:
@@ -252,6 +273,9 @@ def _detect_owned_untouched(
                 priority=t.get("priority")
                 if isinstance(t.get("priority"), int)
                 else None,
+                parent=t.get("parent") if isinstance(t.get("parent"), str) else None,
+                depends_on=tuple(str(d) for d in (t.get("depends_on") or []) if d),
+                children=child_counts.get(str(t.get("id") or ""), 0),
             )
         )
     for cards in out.values():
@@ -378,16 +402,27 @@ def detect_pending_backlog(
     silenced, untouched card is the exact incident the board exists to prevent.
     You may park work you are NOT doing. You may not park work you say you ARE.
 
+    A FUTURE START DATE IS ALSO SKIPPED (:func:`active_clocks._scheduled_ahead`),
+    and for the same reason parking is: the card is not backlog nobody got to,
+    it is work whose owner already said when it begins. Only a STRICTLY future
+    stamp exempts — today, a past date, a missing one and an unreadable one all
+    keep firing, so the exemption cannot be reached by accident. The clock is
+    untouched: the card goes on ageing by ``deferred_at`` underneath, which is
+    what keeps this a quieter alarm rather than a way to hide.
+
     Pure: no env reads beyond the threshold resolution, no network.
     """
     from scitex_cards._backlog_triage import is_parked
 
+    from .active_clocks import _scheduled_ahead
+
+    cur = now or _now_utc()
     return _detect_owned_untouched(
         tasks,
         statuses=PENDING_STATUSES,
         threshold_hours=_pending_nudge_hours(pending_hours),
-        now=now,
-        where=lambda t: not is_parked(t),
+        now=cur,
+        where=lambda t: not is_parked(t) and not _scheduled_ahead(t, cur),
         clock=_deferred_age_hours,
     )
 
