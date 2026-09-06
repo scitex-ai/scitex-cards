@@ -42,6 +42,8 @@ __all__ = [
     "_blocked_age_hours",
     "_deferred_age_hours",
     "BACKLOG_AGE_FIELD",
+    "BACKLOG_SCHEDULED_FIELD",
+    "_scheduled_ahead",
 ]
 
 #: When the card entered its CURRENT ``(status, blocker)`` pair — the
@@ -170,6 +172,50 @@ def _deferred_age_hours(task: dict, now: _dt.datetime) -> float | None:
     if not candidates:
         return None
     return (now - min(candidates)).total_seconds() / 3600.0
+
+
+#: The field that says WHEN the owner intends to start. Read by
+#: :func:`_scheduled_ahead` only — it is an ELIGIBILITY field here, never a
+#: clock, and the distinction is the whole design of the next function.
+BACKLOG_SCHEDULED_FIELD = "scheduled"
+
+
+def _scheduled_ahead(task: dict, now: _dt.datetime) -> bool:
+    """True when the card names a start time STRICTLY in the future.
+
+    THIS IS NOT A CLOCK, AND MAKING IT ONE WOULD BE THE BUG. The backlog
+    sweep asks "how long has this sat here", which is
+    :func:`_deferred_age_hours` over ``deferred_at``. A card with a start date
+    is not YOUNGER — it has sat exactly as long as it has sat — it is NOT YET
+    DUE. That is an eligibility question, the same shape as ``parked``, so it
+    belongs in the sweep's ``where`` predicate and not in its clock. Ageing by
+    this field instead would corrupt the "waiting Nd" number the nudge line
+    prints, and the anti-drift pin on the entry clock exists to stop exactly
+    that substitution.
+
+    STRICTLY future, and the boundary is deliberate. A stamp of TODAY does NOT
+    exempt: ``2026-09-06`` parses to midnight UTC, which is not ``> now`` at
+    any moment after it, so the card fires — today is the day its owner said
+    they would start, and "start it or triage it" is the correct thing to say.
+    That agrees with ``_may_stop``'s own ``scheduled <= moment`` rule, so the
+    two surfaces cannot disagree about what "due" means.
+
+    UNREADABLE MEANS NOT EXEMPT. ``scheduled`` may legally carry an org
+    repeater (``2026-09-01 +1w``) that :func:`_parse_iso` cannot read, and the
+    answer to input we do not understand is to keep firing. A rail that fell
+    silent on a stamp it could not parse would be silenced by a typo, which is
+    the failure this package refuses everywhere else. Widening the parser is a
+    separate and deliberate change.
+
+    WHY THE EXEMPTION CANNOT BECOME A MUTE BUTTON, stated here because it is
+    the honest objection: ``parked`` demands a written reason, while this is a
+    bare date that can be pushed forward forever. What stops it is that the
+    rot clock does not move with it — ``deferred_at`` keeps running, so the
+    triage report still proposes cancellation at the horizon however far the
+    start date is pushed. This quiets the nudge; it does not stop the ageing.
+    """
+    when = _parse_iso(task.get(BACKLOG_SCHEDULED_FIELD))
+    return when is not None and when > now
 
 
 # EOF
