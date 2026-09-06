@@ -26,6 +26,8 @@ tests, because that is what keeps the line worth reading: a warning on every
 ordinary open would be filtered out within a day and the genuine event would go
 back to being invisible.
 
+## [0.51.2] - 2026-09-06
+
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
 
 Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
