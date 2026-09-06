@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Advancing the shared store's schema says so
+
+A P0 opened 2026-07-30 was titled "opening the shared store SILENTLY MIGRATES
+it", and "silently" was literally true: neither `_db_init_schema` nor
+`_db_migrations` contained a logger, a warning or a print. `open_db()` is
+`connect()` plus `init_schema()`, and the only thing in front of the rung
+ladder is a currency skip, not a consent gate — so a client ahead of the store
+ran the ladder on its first ordinary open, including from the read-side verbs,
+and moved the shape under every other client with no trace anywhere. The sole
+record was the `schema_migrated_*` rows, whose own docstring says "THIS IS A
+RECORD, NOT A GATE".
+
+A genuine upgrade now emits one WARNING naming both rungs and the client
+version. It is deliberately not a gate: the store is one PostgreSQL primary the
+whole fleet shares and containers still run a spread of versions, so refusing
+here would trade a silent change for a fleet-wide open failure — the trade this
+card declined twice, on the measured ground that "every client is current" has
+never been establishable. What changes is only the silence.
+
+A fresh store and an already-current store stay silent, and both are pinned by
+tests, because that is what keeps the line worth reading: a warning on every
+ordinary open would be filtered out within a day and the genuine event would go
+back to being invisible.
+
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
 
 Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
