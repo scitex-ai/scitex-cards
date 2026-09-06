@@ -378,16 +378,27 @@ def detect_pending_backlog(
     silenced, untouched card is the exact incident the board exists to prevent.
     You may park work you are NOT doing. You may not park work you say you ARE.
 
+    A FUTURE START DATE IS ALSO SKIPPED (:func:`active_clocks._scheduled_ahead`),
+    and for the same reason parking is: the card is not backlog nobody got to,
+    it is work whose owner already said when it begins. Only a STRICTLY future
+    stamp exempts — today, a past date, a missing one and an unreadable one all
+    keep firing, so the exemption cannot be reached by accident. The clock is
+    untouched: the card goes on ageing by ``deferred_at`` underneath, which is
+    what keeps this a quieter alarm rather than a way to hide.
+
     Pure: no env reads beyond the threshold resolution, no network.
     """
     from scitex_cards._backlog_triage import is_parked
 
+    from .active_clocks import _scheduled_ahead
+
+    cur = now or _now_utc()
     return _detect_owned_untouched(
         tasks,
         statuses=PENDING_STATUSES,
         threshold_hours=_pending_nudge_hours(pending_hours),
-        now=now,
-        where=lambda t: not is_parked(t),
+        now=cur,
+        where=lambda t: not is_parked(t) and not _scheduled_ahead(t, cur),
         clock=_deferred_age_hours,
     )
 

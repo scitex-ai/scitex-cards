@@ -33,6 +33,36 @@ correct.
 
 Arming it is deliberately a separate change; nothing calls it yet.
 
+### A deferred card whose start date is still ahead is no longer reported as backlog
+
+The backlog nudge aged a card by `deferred_at` and never read `scheduled`, so
+work its owner had already dated for next week was reported exactly like work
+nobody got to. Measured on the fleet 2026-09-06: five BACKLOG digests between
+01:10Z and 05:20Z naming 29, 30, 31, 33 and 35 cards, with cards scheduled
+09-07 through 09-12 among them.
+
+The cost was not only noise. `scheduled` is the field that says "not yet, and
+when", and while the rail ignored it the only way to be quiet was to park the
+card — and park also suppresses the triage report's expiry proposal, so an
+alarm answerable only by parking teaches parking by reflex, onto something
+load-bearing.
+
+`detect_pending_backlog` now skips a card whose `scheduled` stamp is strictly
+in the future, as an eligibility test beside the existing `parked` skip rather
+than as a clock: a dated card has sat exactly as long as it has sat, it is
+simply not yet due, and ageing by that field would corrupt the "waiting Nd"
+number the line prints. Today, a past date, a missing one and an unreadable one
+(an org repeater, say) all keep firing, so the exemption cannot be reached by
+accident, and a stamp of today agrees with `_may_stop`'s own "scheduled time
+reached" rule. The rot clock is untouched — `deferred_at` keeps running, so the
+triage report still proposes cancellation at the horizon however far a start
+date is pushed forward.
+
+Two rails change, not one: the BACKLOG nudge line, and the owner digest in
+`_reminders`, where an owner whose only stale cards were future-scheduled now
+produces an empty bucket and receives no digest at all. That is the intended
+outcome and is stated here because it is a second surface.
+
 ### The suite refuses to run against a tree it did not import
 
 The shared `.venv`'s editable install points at the main checkout, so pytest
