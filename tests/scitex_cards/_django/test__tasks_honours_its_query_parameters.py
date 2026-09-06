@@ -39,10 +39,12 @@ from scitex_cards._django.handlers.graph import handle_tasks
 class _Board:
     """The slice of BoardState this handler touches, and nothing more."""
 
-    def __init__(self, tasks):
+    def __init__(self, tasks, generation="gen-1"):
         self.tasks = tasks
         self.store_path = "postgresql://example/store"
         self.empty_store = not tasks
+        # (generation, stat_sig) — the shape services.get_board builds.
+        self.sig = (generation, (0, 0, 0))
 
 
 @pytest.fixture()
@@ -144,6 +146,72 @@ def test_a_status_nobody_has_returns_an_empty_list(board):
     response = handle_tasks(request, board)
     # Assert
     assert _ids(response) == []
+
+
+def _etag(response) -> str:
+    return response["ETag"]
+
+
+def test_an_unchanged_board_answers_304_to_a_matching_etag(board):
+    """THE CACHE THE OPERATOR ASKED FOR: an unchanged poll costs ~0 bytes.
+
+    He directed 2026-09-06 that the GUI be made fast with diffs and caching.
+    The server already cached its own work; what it never had was a way to
+    tell a POLLING client "nothing changed", so every poll paid the full
+    payload — 20 MB gzipped on the live board.
+    """
+    # Arrange
+    first = handle_tasks(RequestFactory().get("/tasks"), board)
+    request = RequestFactory().get("/tasks", HTTP_IF_NONE_MATCH=_etag(first))
+    # Act
+    second = handle_tasks(request, board)
+    # Assert
+    assert second.status_code == 304
+
+
+def test_a_changed_board_does_not_answer_304(board):
+    """The generation is the store's mutation stamp, so a moved board cannot
+    report fresh. This is the half that makes the cache safe rather than fast."""
+    # Arrange
+    first = handle_tasks(RequestFactory().get("/tasks"), board)
+    moved = _Board(board.tasks, generation="gen-2")
+    request = RequestFactory().get("/tasks", HTTP_IF_NONE_MATCH=_etag(first))
+    # Act
+    second = handle_tasks(request, moved)
+    # Assert
+    assert second.status_code == 200
+
+
+def test_a_filtered_etag_does_not_satisfy_an_unfiltered_request(board):
+    """THE TRAP, and the reason the filters are in the key.
+
+    Without this, a client that fetched ?status=in_progress and then asked for
+    the WHOLE board would present the narrow ETag, match, and be told 304 —
+    quietly holding a filtered board while believing it had all of it. A stale
+    hit indistinguishable from a fresh one, on the fleet's source of truth.
+    """
+    # Arrange
+    narrow = handle_tasks(RequestFactory().get("/tasks?status=in_progress"), board)
+    request = RequestFactory().get("/tasks", HTTP_IF_NONE_MATCH=_etag(narrow))
+    # Act
+    whole = handle_tasks(request, board)
+    # Assert
+    assert whole.status_code == 200
+
+
+def test_the_response_states_which_generation_it_was_built_from(board):
+    """A reader must be able to tell WHICH board state it is holding.
+
+    sac's caveat, adopted as a requirement rather than a note: a cache that
+    cannot distinguish a stale hit from a fresh one looks exactly like a fast
+    correct answer.
+    """
+    # Arrange
+    request = RequestFactory().get("/tasks")
+    # Act
+    response = handle_tasks(request, board)
+    # Assert
+    assert json.loads(response.content)["generation"] == "gen-1"
 
 
 # EOF
