@@ -194,6 +194,17 @@ class StaleCard:
     # a list of 98 is a list of 0. Defaulted for back-compat with any caller
     # constructing a StaleCard positionally.
     priority: int | None = None
+    # EDGES, carried because the line composer cannot recover them. It is
+    # handed one owner's bucket, never the full task list, so `children` in
+    # particular is uncomputable at render time. They decide whether a card is
+    # a stalled leaf or a shell whose work lives elsewhere — the distinction
+    # that made a peer cancel the same live node three times by age alone.
+    # Defaulted and LAST, because the comment above pins positional
+    # construction; `depends_on` is a tuple because a list default is a
+    # dataclass error and, here, a shared-mutable-default bug.
+    parent: str | None = None
+    depends_on: tuple[str, ...] = ()
+    children: int = 0
 
 
 def _detect_owned_untouched(
@@ -233,6 +244,16 @@ def _detect_owned_untouched(
     Pure: no env reads, no network — the caller resolves the threshold.
     """
     cur = now or _now_utc()
+    # ONE EXTRA PASS OVER THE LIST WE ALREADY HAVE. The child count cannot be
+    # recovered downstream: the line composer receives a single owner's
+    # bucket, so a card's children — which usually belong to OTHER owners —
+    # are not in scope by the time anyone would want them. Counted here, where
+    # every task is in hand, and kept O(N).
+    child_counts: dict[str, int] = {}
+    for t in tasks:
+        p = t.get("parent")
+        if isinstance(p, str) and p:
+            child_counts[p] = child_counts.get(p, 0) + 1
     out: dict[str, list[StaleCard]] = {}
     for t in tasks:
         if t.get("status") not in statuses:
@@ -252,6 +273,9 @@ def _detect_owned_untouched(
                 priority=t.get("priority")
                 if isinstance(t.get("priority"), int)
                 else None,
+                parent=t.get("parent") if isinstance(t.get("parent"), str) else None,
+                depends_on=tuple(str(d) for d in (t.get("depends_on") or []) if d),
+                children=child_counts.get(str(t.get("id") or ""), 0),
             )
         )
     for cards in out.values():
