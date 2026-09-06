@@ -32,6 +32,8 @@ Two rails change, not one: the BACKLOG nudge line, and the owner digest in
 produces an empty bucket and receives no digest at all. That is the intended
 outcome and is stated here because it is a second surface.
 
+## [0.51.2] - 2026-09-06
+
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
 
 Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
