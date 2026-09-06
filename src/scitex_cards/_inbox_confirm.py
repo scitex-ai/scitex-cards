@@ -27,9 +27,21 @@ THE SPLIT THIS MODULE OWNS
 * :func:`confirm_notifications` is the ONLY verb that advances it, and it
   advances it PER ID — the consumer confirms exactly what it actually
   delivered.
-* REDELIVERY IS THE DEFAULT. An unconfirmed notification is still unseen, so
-  the next poll returns it again. A consumer that dies between read and
-  confirm loses NOTHING.
+* REDELIVERY IS NOT AUTOMATIC, AND THIS BULLET USED TO CLAIM IT WAS. It read:
+  "An unconfirmed notification is still unseen, so the next poll returns it
+  again. A consumer that dies between read and confirm loses NOTHING." That is
+  true only for a record NOTHING HAS PUSHED — i.e. false for essentially every
+  live record, because the channel drain calls ``record_push`` with
+  ``advance_cursor=True``, which sets ``seen`` in the same statement as
+  ``pushed_at``. A pushed-then-abandoned record is seen, unconfirmed, and
+  absent from every ``unseen_only`` poll. The promise was load-bearing and
+  wrong: agents were told their crash-safety came from the store when it came
+  from their own discipline of polling with ``ack=False``.
+  What DOES recover such a record today is
+  :func:`scitex_cards._inbox_present.pending`, which selects on
+  ``confirmed_at`` rather than ``seen`` and re-presents anything unconfirmed
+  past the push grace. A visibility timeout on the drain itself — the general
+  fix — is still open.
 * CONFIRMING IS IDEMPOTENT. Re-confirming an id is a no-op, never an error:
   a retrying consumer must not be punished for retrying.
 

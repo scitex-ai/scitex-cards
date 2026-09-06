@@ -217,11 +217,20 @@ async def ack_notifications(
     """CONFIRM delivery of specific notifications — the ONLY cursor-advancing verb.
 
     Call this AFTER you have actually delivered each notification, passing the
-    ids you delivered. Anything you do not confirm stays unseen and is
-    REDELIVERED on the next ``poll_notifications`` — that redelivery is the
-    whole point: a consumer that dies between reading and confirming must lose
-    nothing. (The reverse — confirming at handover — destroyed five operator
-    DMs on the live store on 2026-07-29; see ``poll_notifications``' ``ack``.)
+    ids you delivered. (The reverse — confirming at handover — destroyed five
+    operator DMs on the live store on 2026-07-29; see ``poll_notifications``'
+    ``ack``.)
+
+    DO NOT RELY ON AUTOMATIC REDELIVERY. This paragraph used to promise that
+    "anything you do not confirm stays unseen and is REDELIVERED on the next
+    poll_notifications". That holds only for a record NOTHING HAS PUSHED: the
+    channel drain advances ``seen`` in the same statement that stamps
+    ``pushed_at``, so a notification pushed into a session that then died is
+    seen, unconfirmed, and absent from every later unseen-only poll. Your
+    crash-safety comes from polling with ``ack=False`` and confirming what you
+    actually delivered — which is your own discipline, not a store guarantee.
+    A record stranded that way is re-presented by the stop-hook's pending rail
+    once it is past the push grace; nothing else recovers it.
 
     IDEMPOTENT. Confirming the same id twice is a no-op, never an error, so a
     retrying consumer is not punished for retrying. An id this agent's inbox
