@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.51.3] - 2026-09-06
+
 ### `claim_sweep`: one host takes each sweep, so one board produces one digest
 
 Measured 2026-09-06: BACKLOG digests arrived stamped "[computed on
