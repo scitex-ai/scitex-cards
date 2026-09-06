@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### The suite declines to carve its schemas on the live board's server
+
+Tests create a throwaway PostgreSQL schema each, and ``writable_dsn()``'s first
+route is whatever ``SCITEX_STORE_DSN`` names. Its docstring states the fleet
+store is not among its routes, and that is true of the function and false of
+this deployment: in a sac agent container that variable IS the board, so route
+one succeeded and every local run carved on the production primary. Measured
+2026-09-06: three leaked ``cards_test*`` schemas were sitting there, because
+killing a run skips ``ephemeral_schema``'s ``finally``.
+
+The existing design was not careless about this — the schema-scoped DSN keeps
+``public`` off the search_path, so a test cannot read the fleet's cards. That
+reasoning is sound and covers only the DATA. It says nothing about the
+CATALOGUE, which is what a test store writes: every fresh schema runs the full
+DDL, so a parallel run is a DDL storm beside the operator's own writes.
+
+``tests/_fleet_store_guard.py`` now compares the configured cluster against the
+board by SERVER (host, port, dbname — credentials and search_path dropped, so
+two spellings of one primary still match) and clears the variable when they are
+the same, dropping through to a private throwaway cluster. CI is unaffected by
+construction: postgres-backend sets its own service-container DSN and no board
+variable, so there is nothing to match.
+
+Where no throwaway cluster can be started, PostgreSQL tests now FAIL rather than
+run against the board, and the failure names the guard as the cause and says to
+point ``SCITEX_STORE_DSN`` at a scratch server. Without that the message reads
+as a broken environment, and the reasonable response to a broken environment is
+to delete the guard.
+
 ### The BLOCKED-CHECK line prints the edges that decide the case
 
 The rail listed card ids and asked the reader to remember the rest, so a card
