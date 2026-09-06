@@ -9,7 +9,7 @@ and ``load_tasks``), and node colors come from ``STATUS_STYLE``.
 
 from pathlib import Path
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 
 # Fleet-liveness builder — extracted to graph_fleet.py (line-limit split).
 # `_build_fleet` feeds the payload's "fleet" key below; the private helpers
@@ -331,11 +331,101 @@ def handle_graph(request, board):
     return JsonResponse(payload)
 
 
+def _selected_tasks(request, tasks: list) -> list:
+    """Apply the query filters this endpoint has always advertised by accident.
+
+    THE PARAMETERS WERE ACCEPTED AND IGNORED, which is worse than rejecting
+    them: a caller passing ``?status=in_progress`` got the whole board and no
+    indication that its filter did nothing. Measured 2026-09-06 by
+    scitex-agent-container with four arms — ``?limit=50``,
+    ``?status=in_progress``, both together, and ``?assignee=…`` — all four
+    returning a BYTE-IDENTICAL 55,418,279-byte body. Four identical sizes is
+    what "the server never looked" looks like from outside.
+
+    Filtering here is deliberately additive and cannot change an existing
+    caller's answer: with no parameters the list is returned exactly as before.
+    An unparseable ``limit`` is IGNORED rather than fatal — this endpoint feeds
+    a browser grid, and refusing the whole board over a malformed integer would
+    replace a slow page with no page.
+    """
+    params = request.GET if hasattr(request, "GET") else {}
+    raw_status = (params.get("status") or "").strip()
+    if raw_status:
+        # Comma-separated so a board column set is one request rather than N.
+        wanted = {s.strip() for s in raw_status.split(",") if s.strip()}
+        tasks = [t for t in tasks if str(t.get("status") or "") in wanted]
+    assignee = (params.get("assignee") or "").strip()
+    if assignee:
+        tasks = [t for t in tasks if str(t.get("assignee") or "") == assignee]
+    raw_limit = (params.get("limit") or "").strip()
+    if raw_limit:
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            limit = None
+        if limit is not None and limit >= 0:
+            tasks = tasks[:limit]
+    return tasks
+
+
+def _board_etag(request, board) -> "str | None":
+    """An ETag over the store's generation AND this request's filters.
+
+    THE OPERATOR ASKED FOR A CACHE (2026-09-06: 「差分やキャッシュを使う」).
+    The server already caches its own work; what it never had was a way to tell
+    a POLLING CLIENT "nothing changed", so an unchanged board cost 20 MB
+    gzipped on every poll. The generation is the store's mutation stamp, so an
+    ETag built from it cannot report fresh when the board has moved.
+
+    THE FILTERS ARE IN THE KEY, AND LEAVING THEM OUT WOULD BE THE BUG. A client
+    that fetched ``?status=in_progress`` and then asked for the whole board
+    would present the narrow response's ETag, match, and be told 304 — quietly
+    receiving a filtered board while believing it had all of it. That is the
+    stale-hit-indistinguishable-from-fresh failure this endpoint must not have,
+    because this board is the fleet's source of truth.
+
+    Returns None when the board carries no signature, which disables
+    conditional handling rather than inventing a key: no ETag is a slow
+    correct answer, a wrong ETag is a fast wrong one.
+    """
+    import hashlib
+
+    sig = getattr(board, "sig", None)
+    if not sig:
+        return None
+    generation = str(sig[0])
+    params = request.GET if hasattr(request, "GET") else {}
+    shape = "|".join(
+        f"{k}={str(params.get(k) or '').strip()}"
+        for k in ("status", "assignee", "limit")
+    )
+    digest = hashlib.sha256(f"{generation}\x1f{shape}".encode("utf-8")).hexdigest()
+    return f'W/"{digest[:32]}"'
+
+
 def handle_tasks(request, board):
-    """GET tasks -> the raw validated task list (for grids / debugging)."""
-    return JsonResponse(
+    """GET tasks -> the raw validated task list (for grids / debugging).
+
+    Honours ``status`` (comma-separated), ``assignee`` and ``limit``. Without
+    them the whole board is returned, unchanged — see :func:`_selected_tasks`
+    for why that default is kept rather than narrowed here.
+
+    Answers 304 to a matching ``If-None-Match`` so a polling client pays
+    nothing for an unchanged board, and always states the ``generation`` it was
+    computed from so a reader can tell WHICH board state it is holding rather
+    than trusting that it is current.
+    """
+    etag = _board_etag(request, board)
+    if etag is not None:
+        incoming = (request.headers.get("If-None-Match") or "").strip()
+        if incoming and etag in {t.strip() for t in incoming.split(",")}:
+            not_modified = HttpResponse(status=304)
+            not_modified["ETag"] = etag
+            return not_modified
+    response = JsonResponse(
         {
-            "tasks": list(board.tasks),
+            "generation": str(board.sig[0]) if getattr(board, "sig", None) else None,
+            "tasks": _selected_tasks(request, list(board.tasks)),
             "store_path": str(board.store_path),
             # Same honest-empty-state flag as the /graph payload: the store
             # was read and holds no cards (see BoardState.empty_store). An
@@ -343,6 +433,9 @@ def handle_tasks(request, board):
             "empty_store": board.empty_store,
         }
     )
+    if etag is not None:
+        response["ETag"] = etag
+    return response
 
 
 def handle_ping(request, board):

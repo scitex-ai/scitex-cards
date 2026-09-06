@@ -32,6 +32,28 @@ Two rails change, not one: the BACKLOG nudge line, and the owner digest in
 produces an empty bucket and receives no digest at all. That is the intended
 outcome and is stated here because it is a second surface.
 
+### The suite refuses to run against a tree it did not import
+
+The shared `.venv`'s editable install points at the main checkout, so pytest
+launched from a linked worktree collected the worktree's tests against
+*develop's* package. Every result was then a true statement about code nobody
+had edited — indistinguishable from a true statement about the code under
+review.
+
+Measured twice, by two agents, a month apart: scitex-hpc on 2026-08-02 (PR #72,
+"56 passed", nothing under test) and scitex-cards-gui on 2026-09-06, where a
+deliberately broken import returned "87 passed" and they were one step from
+writing a test to close a gap that did not exist.
+
+`tests/conftest.py` now asserts at import time that `scitex_cards` resolves
+inside this checkout, and refuses the run with both paths and the remedy when it
+does not. It lives in conftest rather than in a shell hook deliberately: sac's
+`enforce_pytest_worktree_source.sh` guards the same thing but inspects the Bash
+command string, so a pytest call inside a shell script hides from it — which is
+exactly how it was got past. This runs *inside* pytest, after the import has
+happened, so no script, Makefile or future wrapper can route around it. Every
+workflow installs editable, verified before adding this, so CI is unaffected.
+
 ## [0.51.2] - 2026-09-06
 
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
