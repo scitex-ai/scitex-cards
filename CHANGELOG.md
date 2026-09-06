@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### A notification names the version that produced it, not just the host
+
+The provenance stamp said *where* a notification was computed and nothing about
+*which code* computed it, and that gap cost a peer a wasted bug report.
+
+scitex-hub reported the backlog nudge conflating "untouched" with "deliberately
+scheduled forward" — a real defect, fixed hours earlier the same day. The daemon
+producing their nudge was running a release two versions older than the fix and
+would have kept producing it through any number of merges. Nothing in the
+notification could have said so.
+
+Measured 2026-09-06: `0.50.0` in one container, `0.51.1` in another, `0.51.2` on
+PyPI — all at the same `/opt/venv-sac` path, because that path names a
+per-container install and each agent runs whatever was newest when *its* image
+was built. That is version skew rather than uniform staleness, and skew is worse
+in one specific way: with a uniformly old fleet a single measurement generalises
+correctly, while under skew every measurement generalises wrongly, including a
+reassuring one.
+
+The stamp now carries both halves:
+
+    [computed on scitex-compute-04 · scitex-cards 0.50.0]
+
+Added at the same enqueue choke point as the host, for the reason that code
+already gives about the host: the digest, escalations, backlog nudge and
+blocked-check are composed in four different modules, so a rule each new
+notification type has to remember is a rule the next one forgets. It never
+raises — an unresolvable version reads `unknown-version`, the same discipline
+`unknown-host` already follows, because a label must not break delivery.
+
 ## [0.51.3] - 2026-09-06
 
 ### `claim_sweep`: one host takes each sweep, so one board produces one digest
