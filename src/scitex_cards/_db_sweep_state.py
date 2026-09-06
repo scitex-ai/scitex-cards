@@ -252,9 +252,158 @@ def save_sections(
         conn.close()
 
 
+#: The claim rows' OWN scope, and it may not be shared. :func:`save_sections`
+#: soft-deletes every row of a scope absent from its payload, so a claim living
+#: in the nudge scope would be tombstoned by the next ``save_nudge_state`` —
+#: silently, and the sweep would go back to running on every host at once while
+#: looking fixed. That is the single likeliest way a correct-looking
+#: implementation of this disarms itself.
+SCOPE_CLAIMS = "sweep_claims"
+
+#: Second argument to ``pg_try_advisory_xact_lock``. Deliberately in the
+#: two-argument space, which ``_workspace`` documents as disjoint from the
+#: one-argument keys ``_store_tx`` and ``_db_foreign_keys`` use, so a new class
+#: here needs no collision proof against them.
+_CLAIM_LOCK_CLASS = 0x5C1D0002
+
+
+def _claim_lock_key(name: str) -> int:
+    """A stable signed int32 for a sweep name, for the lock's second argument.
+
+    Same derivation as ``_workspace._provision_lock_key`` and shifted into
+    signed range for the same reason: ``pg_try_advisory_xact_lock(int, int)``
+    takes int4 and a bare digest overflows it above 0x7F.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) - 0x80000000
+
+
+def claim_sweep(
+    name: str,
+    *,
+    cadence_minutes: float,
+    store: str | Path | None = None,
+    now: str | None = None,
+) -> bool:
+    """Claim ``name``'s sweep for this host, or return False if someone has it.
+
+    ONE BOARD SHOULD PRODUCE ONE DIGEST. Three notifyd daemons sweep the same
+    shared store, each keeping its own cadence in a local variable reset on
+    every restart, so their phases collide and every owner receives the same
+    nudge two or three times within minutes — measured on 2026-09-06, with
+    digests stamped compute-01, compute-03 and compute-04 arriving together.
+
+    A CLAIM, NOT A HELD LOCK, and the difference is the whole design. The
+    cadence stamp IS the state, so nothing depends on a live lock owner: a
+    crashed or absent winner simply never refreshes it, the stamp ages past the
+    cadence, and the next host to tick claims it — worst case one cadence of
+    delay. A held lock owned by a merely WEDGED winner (process alive,
+    connection alive, sweep stuck) would block every other host forever while
+    logging like a healthy quiet sweep, which is the silent-outage class this
+    daemon already has on its record.
+
+    The advisory lock is transaction-scoped for a second reason: the fleet
+    primary sits behind PgBouncer in TRANSACTION mode, where a session-level
+    lock outlives the client's hold on the server connection and cannot be
+    released by its owner. ``pg_try_advisory_xact_lock`` is correct under both
+    pooled and direct connections, so this needs no deployment assumption.
+
+    Returns True at most once per ``cadence_minutes`` across every host.
+    """
+    from ._store_url import BACKEND_POSTGRES, backend_of
+    from ._db_users import _db_target
+
+    target = _db_target(store)
+    if backend_of(target) != BACKEND_POSTGRES:
+        # NO SHARED LOCK, NO CLAIM TO ARBITRATE. Saying True here is right:
+        # a caller with no shared database has exactly one sweeper by
+        # construction, and refusing would turn "cannot coordinate" into "do
+        # not run", which is the reassuring-pole collapse this package keeps
+        # paying for.
+        return True
+
+    conn = _open(store)
+    try:
+        row = conn.execute(
+            "SELECT pg_try_advisory_xact_lock(?, ?) AS got",
+            [_CLAIM_LOCK_CLASS, _claim_lock_key(name)],
+        ).fetchone()
+        if not _truthy(row):
+            conn.rollback()
+            return False
+        stamp = now or _now_iso()
+        if not _cadence_elapsed(conn, name, stamp, cadence_minutes):
+            conn.rollback()
+            return False
+        _write_claim(conn, name, stamp)
+        conn.commit()  # releases the xact lock
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sweep-claim: cannot claim %s: %s", name, exc)
+        # UNCLAIMED, NOT DENIED. A store that cannot answer must not silence
+        # the sweep on every host at once; the duplicate this exists to remove
+        # is far cheaper than a fleet-wide silence.
+        return True
+    finally:
+        conn.close()
+
+
+def _truthy(row) -> bool:
+    """Read the lock result off a row without assuming its shape."""
+    if row is None:
+        return False
+    if isinstance(row, dict):
+        return bool(row.get("got"))
+    return bool(row[0])
+
+
+def _cadence_elapsed(conn, name: str, stamp: str, cadence_minutes: float) -> bool:
+    """Has ``cadence_minutes`` passed since this sweep last ran anywhere?"""
+    import datetime as _dt
+
+    from ._throughput import _parse_iso
+
+    row = conn.execute(
+        f"SELECT payload_json FROM {_TABLE} "
+        "WHERE scope = ? AND section = ? AND entry_key = ? AND deleted_at IS NULL",
+        [SCOPE_CLAIMS, name, "claim"],
+    ).fetchone()
+    if row is None:
+        return True
+    raw = row.get("payload_json") if isinstance(row, dict) else row[0]
+    try:
+        last = _parse_iso(json.loads(raw).get("last_run_at"))
+    except Exception:  # noqa: BLE001 -- an unreadable claim must not wedge the sweep
+        return True
+    if last is None:
+        return True
+    moment = _parse_iso(stamp) or _dt.datetime.now(_dt.timezone.utc)
+    return (moment - last).total_seconds() >= cadence_minutes * 60.0
+
+
+def _write_claim(conn, name: str, stamp: str) -> None:
+    """Upsert this sweep's claim row, in its own scope."""
+    payload = json.dumps({"last_run_at": stamp})
+    conn.execute(
+        f"INSERT INTO {_TABLE}"
+        "(scope, section, entry_key, payload_json, origin_node, updated_at, deleted_at)"
+        " VALUES(?, ?, ?, ?, ?, ?, NULL)"
+        " ON CONFLICT (scope, section, entry_key) DO UPDATE SET"
+        " payload_json = EXCLUDED.payload_json,"
+        " origin_node = EXCLUDED.origin_node,"
+        " updated_at = EXCLUDED.updated_at,"
+        " deleted_at = NULL",
+        [SCOPE_CLAIMS, name, "claim", payload, _origin_node(), stamp],
+    )
+
+
 __all__ = [
+    "SCOPE_CLAIMS",
     "SCOPE_NUDGES",
     "SCOPE_REMINDERS",
+    "claim_sweep",
     "load_sections",
     "save_sections",
 ]
