@@ -412,6 +412,55 @@ def _bootstrap_empty_store(store_dsn: str) -> None:
 _SCRATCH = _pin_to_scratch()
 
 
+def _refuse_to_test_a_tree_we_did_not_import() -> None:
+    """Fail the run if ``scitex_cards`` resolves outside THIS checkout.
+
+    THE SUITE CAN OTHERWISE TEST SOMEBODY ELSE'S CODE AND SAY NOTHING. The
+    shared ``.venv``'s editable install points at the MAIN checkout, so pytest
+    launched from a linked worktree collects YOUR tests against DEVELOP's
+    package. Every result is then a true statement about a tree you did not
+    edit, which is indistinguishable from a true statement about the one you
+    did — the most expensive kind of green there is.
+
+    MEASURED TWICE, by two agents, a month apart. scitex-hpc on 2026-08-02
+    (PR #72: "56 passed", nothing under test). scitex-cards-gui on 2026-09-06:
+    a deliberately broken import returned "87 passed", and they were one step
+    from writing a test to close a gap that did not exist — the coverage was
+    there all along, and the file they broke was never loaded.
+
+    WHY THIS LIVES IN CONFTEST AND NOT IN A HOOK. sac's
+    ``enforce_pytest_worktree_source.sh`` already guards this and is a good
+    hook, but it inspects the Bash COMMAND STRING: putting the pytest call
+    inside a shell script hides it, and gui got past it exactly that way. A
+    matcher answers "does this pattern appear", so the indirection nobody
+    thought of comes back clean. This check runs INSIDE pytest, after the
+    import has actually happened, so no script, Makefile, nohup or future
+    wrapper can route around it — it measures the OUTCOME rather than
+    enumerating the ways to reach it.
+
+    Editable installs (``pip install -e .``) resolve inside the checkout and
+    pass; every workflow in ``.github/workflows`` installs that way, verified
+    before this was added, so CI is unaffected.
+    """
+    import scitex_cards  # noqa: PLC0415 -- must come AFTER _pin_to_scratch
+
+    repo = Path(__file__).resolve().parent.parent
+    imported = Path(getattr(scitex_cards, "__file__", "") or "").resolve()
+    if repo == imported or repo in imported.parents:
+        return
+    raise RuntimeError(
+        "THE SUITE IS ABOUT TO TEST A DIFFERENT TREE.\n"
+        f"  tests live in : {repo}\n"
+        f"  scitex_cards  : {imported}\n"
+        "Every result would be a true statement about code you did not edit.\n"
+        f"Remedy: run with PYTHONPATH={repo}/src, or install this checkout "
+        "editable into the interpreter you are using."
+    )
+
+
+_refuse_to_test_a_tree_we_did_not_import()
+
+
 @pytest.fixture(scope="session")
 def scratch_store_root() -> Path:
     """The throwaway store directory this run is pinned to (for assertions)."""
