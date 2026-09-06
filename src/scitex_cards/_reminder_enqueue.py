@@ -81,8 +81,42 @@ def _computing_host() -> str:
         return "unknown-host"
 
 
+def _computing_version() -> str:
+    """The scitex-cards version that PRODUCED this notification. Never raises.
+
+    THE HOSTNAME SAYS WHERE, AND SAYS NOTHING ABOUT WHICH CODE. Measured
+    2026-09-06, and it cost a peer a wasted bug report:
+
+        my container    /opt/venv-sac   scitex_cards 0.50.0
+        hub's container /opt/venv-sac   scitex_cards 0.51.1
+        PyPI latest                     0.51.2
+
+    Same path, different file, because that path names a per-container install.
+    Each agent runs whatever was newest when ITS image was built, and those
+    build dates differ, so there is no fleet-wide answer to "which code is
+    running" -- only a per-container one.
+
+    scitex-hub reported the backlog nudge conflating "untouched" with
+    "deliberately scheduled forward". That defect was real and had been fixed
+    hours earlier; the daemon producing their nudge was executing a release two
+    versions older than the fix, and would have kept producing it through any
+    number of merges. Nothing in the notification could have told them that.
+
+    VERSION SKEW IS WORSE THAN UNIFORM STALENESS for exactly one reason: with a
+    uniformly old fleet a single measurement generalises correctly, while under
+    skew EVERY measurement generalises wrongly -- including a reassuring one.
+    Sampling the newer container would have produced "nearly current, fine".
+    """
+    try:
+        from importlib.metadata import version  # noqa: PLC0415 -- keep import cheap
+
+        return version("scitex-cards")
+    except Exception:  # noqa: BLE001 -- a label must never break delivery
+        return "unknown-version"
+
+
 def _stamp_provenance(body: str) -> str:
-    """Append the computing host to a notification body. Never raises.
+    """Append the computing host and version to a notification body. Never raises.
 
     WHY EVERY NOTIFICATION AND NOT JUST THE DIGEST. Two notifyd daemons on two
     hosts each resolve ``127.0.0.1:55432`` to their OWN database, and both are
@@ -103,9 +137,19 @@ def _stamp_provenance(body: str) -> str:
     composed in four different modules; labelling them one at a time is a rule
     each new notification type has to remember, and the next one will not. This
     is the single function they all pass through.
+
+    THE VERSION RIDES IN THE SAME STAMP, for the same reason the host does. The
+    argument above is that a notification which cannot name its origin cannot be
+    reasoned about; "which store" and "which code" are two halves of that origin,
+    and 2026-09-06 supplied the second half's incident. Adding it here rather
+    than beside each body builder follows the same choke-point reasoning: a rule
+    each new notification type must remember is a rule the next one forgets.
     """
     try:
-        return f"{body}\n  [computed on {_computing_host()}]"
+        return (
+            f"{body}\n  [computed on {_computing_host()}"
+            f" · scitex-cards {_computing_version()}]"
+        )
     except Exception:  # noqa: BLE001 -- never lose a notification to a label
         return body
 
