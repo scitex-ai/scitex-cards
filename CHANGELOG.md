@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### `claim_sweep`: one host takes each sweep, so one board produces one digest
+
+Measured 2026-09-06: BACKLOG digests arrived stamped "[computed on
+scitex-compute-01]", "[computed on scitex-compute-03]" and "[computed on
+scitex-compute-04]" within minutes of each other. Three notifyd daemons sweep
+one shared store and each keeps its cadence in a local variable reset on every
+restart, so their phases collide and every owner is nudged two or three times
+for one board.
+
+`claim_sweep(name, cadence_minutes=…)` returns True at most once per cadence
+across every host. It is a time-bounded CLAIM, not a held lock: the cadence
+stamp is the state, so a crashed or absent winner simply never refreshes it and
+the next host claims after one cadence. A held lock owned by a merely wedged
+winner would block every other host indefinitely while logging like a healthy
+quiet sweep — trading visible duplicates for a silent outage. The advisory lock
+is transaction-scoped, which is also what makes it correct behind PgBouncer in
+transaction mode, where a session-level lock outlives its owner's hold on the
+server connection.
+
+Two failure directions fail OPEN: a store that cannot answer, and a non-server
+store with no shared lock to arbitrate, both return True. A coordination
+mechanism that cannot coordinate must not become a fleet-wide silence.
+
+The claim rows live in their own `sweep_claims` scope, and a test pins that:
+`save_sections` soft-deletes every row of a scope absent from its payload, so a
+claim sharing the nudge scope would be tombstoned by the next nudge-state write
+— silently, after which every host sweeps again while the code still looks
+correct.
+
+Arming it is deliberately a separate change; nothing calls it yet.
+
 ### Advancing the shared store's schema says so
 
 A P0 opened 2026-07-30 was titled "opening the shared store SILENTLY MIGRATES
