@@ -200,8 +200,10 @@ test("valueSuggestions: project values sorted by freq DESC then alpha", () => {
 test("valueSuggestions: status uses closed enum, alpha sort", () => {
   const sug = valueSuggestions("status", "", dataSource);
   const labels = sug.map((s) => s.label);
-  // VALID_STATUSES = goal/pending/in_progress/blocked/done/deferred/failed
-  // — 7 entries; capped at 8 so all should appear.
+  // VALID_STATUSES = blocked/cancelled/deferred/done/failed/goal/in_progress
+  // — 7 entries; capped at 8 so all should appear. `pending` was ABOLISHED
+  // 2026-07-10 and is not one of them; this file spent that time asserting 7
+  // while the JS list carried 8, and nothing ran to say so.
   assert.equal(labels.length, 7);
   assert.deepEqual(labels, [...labels].sort());
 });

@@ -1,0 +1,43 @@
+name: node-tests
+# The board's JS unit tests, which until now were run by NOTHING.
+#
+# Twelve files under tests/scitex_cards/*.js hold ~200 node:test assertions
+# covering the search parser, the matrix drop arithmetic, the timeline packer
+# and the chat window. No workflow executed them, and several PYTHON test
+# docstrings cite them as the place a behaviour is covered -- so the Python
+# suite was deferring coverage to a suite that never ran.
+#
+# When they were finally run (2026-09-06) one was already RED, on a real
+# defect: searchQuery.js offered `status:pending`, a status abolished in
+# _task.py on 2026-07-10 and refused by the store on write. Two months of a
+# failing test nobody could see. Card gui-node-tests-not-run-by-ci-20260815.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  node-tests-on-ubuntu-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A JOB THAT RUNS NOTHING REPORTS GREEN, which is the exact failure this
+      # workflow exists to end -- adding a runner that silently matches zero
+      # files would recreate it one level up. Count first, refuse at zero.
+      - name: Refuse to pass on an empty test set
+        run: |
+          count=$(ls tests/scitex_cards/*.js 2>/dev/null | wc -l)
+          echo "node test files found: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no JS test files matched — this job would have been a green no-op"
+            exit 1
+          fi
+
+      - name: node --test
+        run: node --test tests/scitex_cards/*.js
