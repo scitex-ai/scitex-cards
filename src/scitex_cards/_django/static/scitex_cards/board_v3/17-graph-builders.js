@@ -43,16 +43,33 @@
 "use strict";
 
 (function (global) {
-  // mermaid 10 refuses any diagram whose source exceeds this many characters
-  // and returns an ERROR IMAGE rather than throwing. The template pins the
-  // same number in mermaid.initialize() so this constant is true by
-  // construction rather than by matching whatever the library defaults to.
+  // TWO INDEPENDENT GUARDS, DOING DIFFERENT JOBS. The next person here will be
+  // tempted to raise the cap and delete the "redundant" size check; they are
+  // not redundant and neither subsumes the other:
+  //
+  //   GRAPH_NODE_CAP      -> LEGIBILITY. A product decision. 407 nodes of
+  //                          dagre layout is unreadable even when it renders.
+  //   _exceedsMermaidLimit-> SAFETY. Asked BEFORE handing the source over, so
+  //                          an oversized diagram gets an explanation instead
+  //                          of mermaid's own complaint rendered as a graph.
+  //
+  // The cap alone is NOT sufficient: 120 nodes with very long titles can still
+  // exceed the character ceiling, and only the size check catches that.
+
+  // mermaid 10 refuses any diagram whose source exceeds this many characters.
+  // It does NOT throw and does NOT emit error markup — measured in a browser
+  // 2026-08-15: it returns a perfectly valid `flowchart-v2` SVG containing one
+  // node whose LABEL is "Maximum text size in diagram exceeded". That is why
+  // this ceiling is checked BEFORE asking, and why the render is verified
+  // afterwards by node count rather than by looking for an error graphic.
+  // The template pins the same number in mermaid.initialize() so this constant
+  // is true by construction rather than by matching a library default.
   const MERMAID_MAX_TEXT = 50000;
   // How many connected cards the diagram will draw. The real board reached
   // 407 connected nodes / 155,977 characters of source — 3.1x over the limit
-  // above — and silently showed an error box for weeks. A cap is not a
-  // workaround for that: 407 nodes of dagre layout is unreadable even when it
-  // renders, so the honest diagram is a legible subset that SAYS it is one.
+  // above — and silently showed mermaid's complaint for weeks. The cap is not
+  // a workaround for that overflow (the size check is): it is what keeps the
+  // diagram READABLE, and it says so in the hint line.
   const GRAPH_NODE_CAP = 120;
 
   // How many neighbours one seed may claim before the next seed gets a turn.
