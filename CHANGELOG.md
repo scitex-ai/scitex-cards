@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
+
+Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
+0.51.1, same container): hub's tenancy middleware injects a per-project path
+label as the request's store, and `GET /dm/threads` went from 200 to an
+unhandled 500. `resolve_dm_db` derived `cards.db` beside the label, which since
+#949 names no store, so `connect()` refused it with `UnrecognisedStoreTarget`
+and the view crashed. The 200 it replaced was the phantom-store behaviour — an
+empty SQLite file manufactured beside the label — never a working DM store.
+
+DM threads are fleet-wide (a thread between two agents belongs to no project;
+operator ruling 2026-08-09), so a path label now resolves to the ambient store
+target, exactly as the task reads do; a DSN is still returned verbatim. The
+three DM views (`dm/threads`, `dm/thread/<peer>`, and the reaction endpoint)
+now answer `{"error": ..., "reason": "store_absent"}` with the board's
+store-absent status for `StoreTargetNotConfigured`, `UnrecognisedStoreTarget`
+and `StoreNotProvisionedError`, never an unhandled 500 — and never an empty
+thread list in place of a missing store. Under `DEBUG` the body carries the
+full diagnosis; a stranger sees one fixed sentence.
+
+A write that PostgreSQL refuses for lack of privilege answers 403 with reason
+`store_read_only`. scitex-hub's board mount reads the fleet store as a
+SELECT-only role by design, and with a path label now resolving to that store
+a DM send from the mount reaches the database and is refused there; hub
+predicted this from the two measured facts before the release. The refusal is
+correct — the mount needs a write credential scoped to the DM tables — and the
+board now says so instead of crashing.
+
 ### A tenant schema this role cannot use is refused, not silently reused
 
 A tenant schema's name is a digest of the identity alone and is global to the

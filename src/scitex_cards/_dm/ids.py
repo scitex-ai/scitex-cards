@@ -153,17 +153,16 @@ def origin_host() -> str:
 def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = None):
     """Resolve which database the DM tables live in.
 
-    Precedence: an explicit ``db`` wins; else the ``cards.db`` beside an
-    explicit ``store`` container; else the ambient
-    :func:`scitex_cards._db.resolve_db_path` chain.
+    Precedence: an explicit ``db`` wins; else an explicit ``store`` when it
+    names a server (a DSN), verbatim; else the ambient
+    :func:`scitex_cards._store_target.resolve_store_target` chain -- which is
+    also where a ``store`` that is a PATH LABEL lands, because DM threads are
+    fleet-wide and a per-project label names no DM store (see the store tier).
 
-    THE MIDDLE TIER IS THE LOAD-BEARING ONE. Every DM caller in the package
-    threads a ``store=`` through (the task-store container path), and the
-    sidecar has always been resolved as ``store.parent / "threads.json"``. If
-    the DB tier ignored ``store`` and fell through to the ambient chain, a test
-    passing an explicit tmp store would write its DMs into the LIVE FLEET
-    DATABASE. Deriving from ``store.parent`` keeps the DB in exactly the
-    directory the sidecar was already in.
+    A test that wants its DMs isolated from the live fleet database passes a
+    scoped DSN (its own schema) as ``store=`` or ``db=``, exactly as the task
+    reads do; a tmp PATH no longer isolates anything, because nothing writes a
+    file beside it any more.
     """
     from .._db import DEFAULT_DB_FILENAME
     from .._store_url import BACKEND_POSTGRES, backend_of, reject_attempted_dsn
@@ -206,7 +205,27 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
             # already does, and ``open_db`` re-resolves through
             # ``resolve_store_target`` so ``connect`` dispatches the URL.
             return store
-        return Path(store).expanduser().parent / DEFAULT_DB_FILENAME
+        # A PATH LABEL NAMES NO DM STORE. This tier derived ``<label>.parent /
+        # cards.db`` while a store was a file beside the label; since #949 there
+        # is no file-backed store, so that filename names nothing and every
+        # caller handed it was refused at the door -- as an UNHANDLED 500 in
+        # the board's DM views. Measured 2026-09-05 by scitex-hub with a
+        # one-variable differential (0.50.0 -> 0.51.1, same container, same
+        # code): hub's tenancy middleware injects the per-project label
+        # ``<workspace>/<project>/.scitex/todo/tasks.yaml`` and GET dm/threads
+        # went 200 -> 500. The 200 was the phantom-store behaviour (an empty
+        # SQLite file manufactured beside the label), not a working DM store.
+        #
+        # DM THREADS ARE FLEET-WIDE. A thread between two agents belongs to no
+        # project (operator, 2026-08-09: DMs read the database, never a per-host
+        # or per-project file), so a per-project label resolves to the AMBIENT
+        # store -- the same rule ``_store_target`` applies to a tasks label --
+        # and when nothing is configured that resolution RAISES
+        # ``StoreTargetNotConfigured``, which the views turn into a typed
+        # refusal rather than inventing an empty thread list.
+        from .._store_target import resolve_store_target as _ambient
+
+        return _ambient(None)
 
     # THE AMBIENT TIER RETURNS THE TARGET AS WRITTEN, path or server URL.
     # It used to call resolve_db_path, which RAISES on a DSN -- so with
@@ -215,10 +234,10 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     # image the way an agent does: list_tasks returned 2971 cards and the DM
     # write funnel raised StoreTargetIsNotAPath.
     #
-    # The two tiers above stay PATHS on purpose and are not a bug: an explicit
-    # db or store names a file, and deriving the DM database from
-    # ``store.parent`` is what stops a test with a tmp store writing its DMs
-    # into the live fleet database. Only the AMBIENT tier can be a server.
+    # Every tier can be a server now. The ``db`` tier still hands a path back
+    # for the callers that name a database file outright; the ``store`` tier
+    # hands a DSN back verbatim and sends a path label HERE, to the same
+    # ambient resolution the task store uses.
     from .._store_target import resolve_store_target
 
     return resolve_store_target(None)
