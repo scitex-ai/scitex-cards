@@ -47,6 +47,9 @@ from typing import Iterator
 
 import pytest
 
+from _fleet_store_guard import CLUSTER_ENV as _CLUSTER_ENV
+from _fleet_store_guard import fleet_store_declined as _fleet_store_declined
+
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
 _STORE_ENV_VARS = (
@@ -104,6 +107,15 @@ _dsn_stack = contextlib.ExitStack()
 atexit.register(_dsn_stack.close)
 
 
+#: Cleared BEFORE ``_open_throwaway_postgres`` runs, because that function's
+#: first act is to ask ``writable_dsn()`` -- which reads this variable. The
+#: decision itself lives in ``tests/_fleet_store_guard.py`` so it can be tested
+#: without importing this file, whose import opens a PostgreSQL cluster.
+_DECLINED_FLEET_STORE = _fleet_store_declined(os.environ)
+if _DECLINED_FLEET_STORE:
+    os.environ.pop(_CLUSTER_ENV, None)
+
+
 def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
     """The CLUSTER, a schema-scoped DSN on it, and the reason if there is none.
 
@@ -134,7 +146,24 @@ def _open_throwaway_postgres() -> "tuple[str | None, str | None, str]":
         _assert_scope_is_applied_by_the_server(scoped)
     except Exception as exc:  # noqa: BLE001 - report it, do not guess at it
         _dsn_stack.close()
-        return None, None, f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+        why = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+        if _DECLINED_FLEET_STORE:
+            # WITHOUT THIS, THE GUARD READS AS A BROKEN ENVIRONMENT. The
+            # message that reaches the developer is scitex-dev's "No writable
+            # PostgreSQL is available", which is true and says nothing about
+            # the fact that WE removed the route it would otherwise have taken.
+            # Someone debugging that failure finds a working primary in their
+            # own environment, concludes the suite is misconfigured, and
+            # deletes the guard -- which is how a correct control gets removed
+            # by a reasonable person. Name the cause and the way forward.
+            why = (
+                f"{why}\n\n  AND NOTE WHY ONE ROUTE WAS NOT TRIED: "
+                f"{_DECLINED_FLEET_STORE}\n"
+                f"  To run these tests locally, point {_CLUSTER_ENV} at a "
+                "scratch PostgreSQL of your own (any writable server that is "
+                "NOT the board) and they will use it."
+            )
+        return None, None, why
     return cluster, scoped, "ok"
 
 
