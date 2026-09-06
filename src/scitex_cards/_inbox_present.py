@@ -53,6 +53,7 @@ environment assumed.
 
 from __future__ import annotations
 
+import datetime as _dt
 from pathlib import Path
 
 from ._inbox import poll_inbox
@@ -78,7 +79,22 @@ MAX_PRESENTED = 10
 
 
 def pending(agent: str, store: str | Path | None = None) -> list[dict]:
-    """Unseen notifications for ``agent`` across EVERY key they can live under.
+    """UNCONFIRMED notifications for ``agent`` across every key they live under.
+
+    NOT "unseen", and the difference is the whole point. ``seen`` was a
+    delivery cursor until the channel drain began advancing it as it PUSHES —
+    ``record_push(advance_cursor=True)`` sets ``seen`` in the same statement
+    that writes ``pushed_at`` — after which a record handed to a session that
+    then died was seen, unconfirmed, and invisible to every later poll. This
+    rail exists to catch exactly that outage and was reading the field the
+    outage moves. ``confirmed_at`` is the only evidence a consumer acted, as
+    :func:`scitex_cards._inbox_receipt.is_confirmed` has said all along.
+
+    Records pushed within :data:`_health_delivery.PUSH_CONFIRM_GRACE_SECONDS`
+    are held back: a consumer still working on what it was just handed does not
+    need it presented twice, and presenting it would be a duplicate rather than
+    a recovery. A record never pushed at all has no such stamp and is presented
+    immediately, exactly as before.
 
     A PURE READ: ``mark_seen=False`` on every call, so the cursor never moves
     here. Advancing it is :func:`scitex_cards._inbox_confirm.
@@ -95,10 +111,35 @@ def pending(agent: str, store: str | Path | None = None) -> list[dict]:
     Returns records oldest-first, de-duplicated by id (the two keys can resolve
     to the same inbox).
     """
+    from ._health_delivery import (  # noqa: PLC0415 -- import cycle
+        PUSH_CONFIRM_GRACE_SECONDS,
+        _age_seconds,
+    )
+    from ._inbox_receipt import is_confirmed  # noqa: PLC0415 -- import cycle
+
+    now = _dt.datetime.now(_dt.timezone.utc)
     seen_ids: set[str] = set()
     out: list[dict] = []
     for key in recipient_keys(agent, store):
-        for record in poll_inbox(key, unseen_only=True, mark_seen=False, store=store):
+        for record in poll_inbox(key, unseen_only=False, mark_seen=False, store=store):
+            # UNCONFIRMED, NOT UNSEEN. `seen` stopped meaning "the consumer
+            # got it" the day the channel drain began advancing the cursor as
+            # it pushes: `record_push(advance_cursor=True)` sets `seen = 1` in
+            # the SAME statement that writes `pushed_at`. So a record pushed to
+            # a session that then died is seen, unconfirmed, and — under the
+            # old `unseen_only=True` — never presented again. `is_confirmed`
+            # already said so in its own docstring while this rail read the
+            # other field; the two are reconciled here.
+            if is_confirmed(record):
+                continue
+            # A RECENT PUSH IS NOT A LOST ONE. Without this the record would be
+            # presented while the consumer it was just handed to is still
+            # acting on it, which is a duplicate rather than a recovery. The
+            # grace is the delivery health check's own constant, so the two
+            # surfaces cannot drift into disagreeing about what "overdue" is.
+            age = _age_seconds(record.get("pushed_at"), now)
+            if age is not None and age < PUSH_CONFIRM_GRACE_SECONDS:
+                continue
             nid = record.get("id")
             if nid and nid in seen_ids:
                 continue

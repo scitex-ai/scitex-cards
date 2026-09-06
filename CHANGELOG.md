@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### A notification pushed into a session that died is presented again
+
+`_inbox_present.pending` selected on `seen`, and `seen` stopped meaning "the
+consumer got it" the day the channel drain began advancing the cursor as it
+pushes: `record_push(advance_cursor=True)` sets `seen` in the same statement
+that writes `pushed_at`. A record handed to a session that then died was
+therefore seen, unconfirmed, and invisible to every later unseen-only poll —
+the rail built to catch that outage was reading the field the outage moves. It
+now selects on `confirmed_at`, holding back anything pushed within the delivery
+health check's own grace constant so a recovery is never a duplicate.
+
+Two docstrings promised the opposite and are corrected in the same change.
+`_inbox_confirm`'s header stated "an unconfirmed notification is still unseen,
+so the next poll returns it again", and the MCP skill text repeated it to every
+agent. Both hold only for a record nothing has pushed — i.e. false for
+essentially every live record. The promise was load-bearing and wrong: agents
+were told their crash-safety came from the store when it came from their own
+discipline of polling with `ack=False`. `_inbox_receipt.is_confirmed` had said
+exactly this all along, so the package knew it in one module and denied it in
+two others.
+
+A visibility timeout on the drain itself — the general fix, after which `seen`
+reverts to a pure read cursor — is still open and needs its storm bound
+designed first.
+
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
 
 Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
