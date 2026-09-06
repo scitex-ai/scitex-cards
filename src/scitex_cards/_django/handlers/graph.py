@@ -331,11 +331,53 @@ def handle_graph(request, board):
     return JsonResponse(payload)
 
 
+def _selected_tasks(request, tasks: list) -> list:
+    """Apply the query filters this endpoint has always advertised by accident.
+
+    THE PARAMETERS WERE ACCEPTED AND IGNORED, which is worse than rejecting
+    them: a caller passing ``?status=in_progress`` got the whole board and no
+    indication that its filter did nothing. Measured 2026-09-06 by
+    scitex-agent-container with four arms — ``?limit=50``,
+    ``?status=in_progress``, both together, and ``?assignee=…`` — all four
+    returning a BYTE-IDENTICAL 55,418,279-byte body. Four identical sizes is
+    what "the server never looked" looks like from outside.
+
+    Filtering here is deliberately additive and cannot change an existing
+    caller's answer: with no parameters the list is returned exactly as before.
+    An unparseable ``limit`` is IGNORED rather than fatal — this endpoint feeds
+    a browser grid, and refusing the whole board over a malformed integer would
+    replace a slow page with no page.
+    """
+    params = request.GET if hasattr(request, "GET") else {}
+    raw_status = (params.get("status") or "").strip()
+    if raw_status:
+        # Comma-separated so a board column set is one request rather than N.
+        wanted = {s.strip() for s in raw_status.split(",") if s.strip()}
+        tasks = [t for t in tasks if str(t.get("status") or "") in wanted]
+    assignee = (params.get("assignee") or "").strip()
+    if assignee:
+        tasks = [t for t in tasks if str(t.get("assignee") or "") == assignee]
+    raw_limit = (params.get("limit") or "").strip()
+    if raw_limit:
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            limit = None
+        if limit is not None and limit >= 0:
+            tasks = tasks[:limit]
+    return tasks
+
+
 def handle_tasks(request, board):
-    """GET tasks -> the raw validated task list (for grids / debugging)."""
+    """GET tasks -> the raw validated task list (for grids / debugging).
+
+    Honours ``status`` (comma-separated), ``assignee`` and ``limit``. Without
+    them the whole board is returned, unchanged — see :func:`_selected_tasks`
+    for why that default is kept rather than narrowed here.
+    """
     return JsonResponse(
         {
-            "tasks": list(board.tasks),
+            "tasks": _selected_tasks(request, list(board.tasks)),
             "store_path": str(board.store_path),
             # Same honest-empty-state flag as the /graph payload: the store
             # was read and holds no cards (see BoardState.empty_store). An
