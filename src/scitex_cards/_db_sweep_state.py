@@ -351,12 +351,17 @@ def claim_sweep(
 
 
 def _truthy(row) -> bool:
-    """Read the lock result off a row without assuming its shape."""
+    """Read the lock result BY NAME. Never by position.
+
+    The column is aliased ``got`` in the query for this reason. Reading
+    ``row[0]`` would work today and break silently the day a column is added
+    ahead of it — which is why this package has a guard test forbidding
+    positional reads of a fetched row anywhere in ``src``, and why that guard
+    caught the first draft of this function.
+    """
     if row is None:
         return False
-    if isinstance(row, dict):
-        return bool(row.get("got"))
-    return bool(row[0])
+    return bool(dict(row).get("got"))
 
 
 def _cadence_elapsed(conn, name: str, stamp: str, cadence_minutes: float) -> bool:
@@ -372,7 +377,10 @@ def _cadence_elapsed(conn, name: str, stamp: str, cadence_minutes: float) -> boo
     ).fetchone()
     if row is None:
         return True
-    raw = row.get("payload_json") if isinstance(row, dict) else row[0]
+    # BY NAME, for the same reason as :func:`_truthy` — the guard test is not
+    # a style rule, it is what stops a column addition silently shifting a
+    # positional read onto the wrong value.
+    raw = dict(row).get("payload_json")
     try:
         last = _parse_iso(json.loads(raw).get("last_run_at"))
     except Exception:  # noqa: BLE001 -- an unreadable claim must not wedge the sweep
