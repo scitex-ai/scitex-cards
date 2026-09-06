@@ -207,8 +207,24 @@ def connect(
     if rows_by_name:
         from psycopg.rows import dict_row  # noqa: PLC0415
 
-        return StoreConnection(psycopg.connect(target, row_factory=dict_row), backend)
-    return StoreConnection(psycopg.connect(target), backend)
+        raw = psycopg.connect(target, row_factory=dict_row)
+    else:
+        raw = psycopg.connect(target)
+
+    # A DSN THAT ASKS FOR A SEARCH_PATH IS NOT A SESSION THAT HAS ONE. Measured
+    # 2026-09-05: a transaction-mode pooler accepted `options=-csearch_path=...`
+    # and discarded it, so a handle that believed itself scoped to a throwaway
+    # schema sat on `public`, the live board. Every guard above asserts what the
+    # DSN says; this is the one that asks the server. Paid only by a DSN that
+    # carries a search_path; see `_scoped_dsn` for the incident.
+    from ._scoped_dsn import assert_search_path_applied  # noqa: PLC0415
+
+    try:
+        assert_search_path_applied(raw, target)
+    except Exception:
+        raw.close()
+        raise
+    return StoreConnection(raw, backend)
 
 
 # EOF

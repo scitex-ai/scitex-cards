@@ -8,9 +8,13 @@ came back as a plausible-looking FILE path. Reproduced before this module
 existed::
 
     "/home/agent/.scitex/cards/tasks.yaml"
-        --  /home/agent/.scitex/cards/cards.db          (correct)
+        --  /home/agent/.scitex/cards/cards.db          (correct, at the time)
     "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
         --  postgresql:/scitex_cards@127.0.0.1:55432/cards.db
+
+Since 2026-09-05 the first line is wrong too: a file beside a label names no
+store any more, and a path label resolves to the AMBIENT target (DM threads are
+fleet-wide). ``TestResolveDmDbStoreTier`` pins both halves.
 
 The second is not a near-miss, it is a new, empty database: the caller opens
 it, the schema is created, and it answers queries with an empty board. The
@@ -18,29 +22,71 @@ regrown file found on disk that day held 15 tables and 3 rows, all of them
 ``schema_meta`` -- created and initialised, never written to.
 """
 
+import os
+
 import pytest
 
 from scitex_cards._db import DEFAULT_DB_FILENAME
 from scitex_cards._dm.ids import resolve_dm_db
+from scitex_cards._store_target import ENV_DB, StoreTargetNotConfigured
 from scitex_cards._store_url import UnrecognisedStoreTarget
 
 DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
 
 
-class TestResolveDmDbStoreTier:
-    def test_a_path_store_still_puts_the_db_beside_it(self, tmp_path):
-        """The tier's REASON, pinned: a tmp store must not reach the fleet DB.
+@pytest.fixture()
+def nothing_configured(env, tmp_path):
+    """No store target anywhere: no env, and a user config root holding no file.
 
-        This is why the middle tier cannot simply be deleted. Every DM caller
-        threads ``store=`` through, and falling back to the ambient chain would
-        send a test's DMs into the live fleet database.
+    Both tiers must be silenced. Deleting the env alone is not enough on a
+    developer host, whose ``~/.scitex/cards/config.json`` answers with the
+    fleet DSN -- measured 2026-09-05 -- so a test that only unset the variable
+    would resolve the live board and pass for the wrong reason.
+    """
+    env.delete(ENV_DB)
+    env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
+    yield tmp_path
+
+
+class TestResolveDmDbStoreTier:
+    def test_a_path_label_resolves_to_the_ambient_store(self, tmp_path):
+        """DM threads are fleet-wide, so a per-project label names no DM store.
+
+        Until 2026-09-05 this tier derived ``cards.db`` beside the label. That
+        filename names nothing since #949, and the board's DM views crashed on
+        it with an unhandled 500 when scitex-hub's tenancy middleware injected
+        a project's ``tasks.yaml`` label. The label now resolves the way a task
+        read resolves it: to the ambient target, which the harness pins to
+        this test's own throwaway schema.
         """
+        # Arrange
+        store = tmp_path / "proj" / ".scitex" / "todo" / "tasks.yaml"
+        # Act
+        got = resolve_dm_db(store=store)
+        # Assert
+        assert got == os.environ[ENV_DB]
+
+    def test_a_path_label_never_yields_a_cards_file(self, tmp_path):
+        """The old derivation, pinned closed: no filename comes out of a label."""
         # Arrange
         store = tmp_path / "tasks.yaml"
         # Act
         got = resolve_dm_db(store=store)
         # Assert
-        assert got == tmp_path / DEFAULT_DB_FILENAME
+        assert DEFAULT_DB_FILENAME not in str(got)
+
+    def test_a_path_label_with_nothing_configured_refuses(self, nothing_configured):
+        """No ambient target means NO DM store, said loudly.
+
+        The alternative -- an empty thread list manufactured beside the label
+        -- is the silent fallback the operator ruled out on 2026-09-05.
+        """
+        # Arrange
+        store = nothing_configured / "tasks.yaml"
+        # Act
+        # Assert
+        with pytest.raises(StoreTargetNotConfigured):
+            resolve_dm_db(store=store)
 
     def test_a_dsn_store_comes_back_as_the_same_dsn(self):
         """The regression. Against the old tier this returned a path."""
