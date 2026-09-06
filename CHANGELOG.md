@@ -31,6 +31,26 @@ point ``SCITEX_STORE_DSN`` at a scratch server. Without that the message reads
 as a broken environment, and the reasonable response to a broken environment is
 to delete the guard.
 
+### /tasks honours status, assignee and limit, and answers 304 when nothing changed
+
+The board's list endpoint accepted `status`, `assignee` and `limit` and ignored
+all three, so the only way to see one agent's blocked cards was to fetch every
+card on the board. Measured 2026-09-06 on the live store: a single `/tasks` call
+returned 8051 cards and 55 MB, of which comments were 67% — the operator could
+not open the board on 8051 at all, and neither could anything else with a
+timeout.
+
+`/tasks` now applies the filters it already documented (`status` takes a
+comma-separated list), caps with `limit`, and reports the store `generation` in
+the payload. It also answers a conditional request: the response carries a weak
+`ETag` computed from the store generation and the filter shape, so a client that
+sends `If-None-Match` gets `304 Not Modified` with no body when nothing has
+changed. A poll then costs a header round-trip instead of a full serialisation.
+
+This is a read-path change only; no card content, ordering or field shape moved.
+The payload's size problem is not solved by it — comments are still serialised
+in full for every card returned, which is tracked separately.
+
 ### The BLOCKED-CHECK line prints the edges that decide the case
 
 The rail listed card ids and asked the reader to remember the rest, so a card
