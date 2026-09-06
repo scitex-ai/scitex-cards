@@ -25,6 +25,7 @@ last passenger getting off.
 
 from __future__ import annotations
 
+import logging as _logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
@@ -53,6 +54,11 @@ from ._schema_shape import (
 )
 from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
+
+#: The first logger this module has ever had. Its only call site is the
+#: genuine-upgrade branch at the end of :func:`init_schema`; a fresh store and
+#: an already-current one stay silent, so ordinary opens are unchanged.
+_logger = _logging.getLogger(__name__)
 
 __all__ = ["init_schema"]
 
@@ -213,6 +219,34 @@ def init_schema(conn: StoreConnection) -> None:
     if _prior_version not in (0, SCHEMA_VERSION):
         from . import __version__ as _client_version
 
+        # SAY IT OUT LOUD. Until 2026-09-06 this whole path emitted NOTHING —
+        # neither this module nor `_db_migrations` held a logger, a warning or
+        # a print — so one client advancing the SHARED store's schema for every
+        # other client left no trace anywhere except the provenance rows, whose
+        # own docstring says "THIS IS A RECORD, NOT A GATE". A record nobody is
+        # told to go and read is not a notification.
+        #
+        # This does NOT gate the migration, and deliberately so: the store is
+        # one PostgreSQL primary the whole fleet shares, containers still run
+        # a spread of versions, and refusing here would trade a silent change
+        # for a fleet-wide open failure — the trade this card's owner declined
+        # twice. What it removes is the SILENCE, which the operator ruled out
+        # on 2026-09-05 even where the outcome is harmless: a fallback that
+        # says nothing is not acceptable for having turned out fine.
+        #
+        # WARNING, not INFO: an ordinary open should never reach this branch,
+        # because the shared store is normally already current. Arriving here
+        # means this client is ahead of the store and has just moved it under
+        # everyone else — rare, consequential, and worth interrupting a reader.
+        _logger.warning(
+            "[scitex-cards] SCHEMA MIGRATED: this client advanced the shared "
+            "store from rung %s to rung %s (client %s). Every other client now "
+            "reads the new shape. This was not gated; if it was unintended, "
+            "the store's schema_migrated_* rows record it.",
+            _prior_version,
+            SCHEMA_VERSION,
+            _client_version,
+        )
         record_migration_provenance(
             conn,
             _prior_version,

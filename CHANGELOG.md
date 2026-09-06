@@ -31,6 +31,93 @@ point ``SCITEX_STORE_DSN`` at a scratch server. Without that the message reads
 as a broken environment, and the reasonable response to a broken environment is
 to delete the guard.
 
+### A notification names the version that produced it, not just the host
+
+The provenance stamp said *where* a notification was computed and nothing about
+*which code* computed it, and that gap cost a peer a wasted bug report.
+
+scitex-hub reported the backlog nudge conflating "untouched" with "deliberately
+scheduled forward" — a real defect, fixed hours earlier the same day. The daemon
+producing their nudge was running a release two versions older than the fix and
+would have kept producing it through any number of merges. Nothing in the
+notification could have said so.
+
+Measured 2026-09-06: `0.50.0` in one container, `0.51.1` in another, `0.51.2` on
+PyPI — all at the same `/opt/venv-sac` path, because that path names a
+per-container install and each agent runs whatever was newest when *its* image
+was built. That is version skew rather than uniform staleness, and skew is worse
+in one specific way: with a uniformly old fleet a single measurement generalises
+correctly, while under skew every measurement generalises wrongly, including a
+reassuring one.
+
+The stamp now carries both halves:
+
+    [computed on scitex-compute-04 · scitex-cards 0.50.0]
+
+Added at the same enqueue choke point as the host, for the reason that code
+already gives about the host: the digest, escalations, backlog nudge and
+blocked-check are composed in four different modules, so a rule each new
+notification type has to remember is a rule the next one forgets. It never
+raises — an unresolvable version reads `unknown-version`, the same discipline
+`unknown-host` already follows, because a label must not break delivery.
+
+## [0.51.3] - 2026-09-06
+
+### `claim_sweep`: one host takes each sweep, so one board produces one digest
+
+Measured 2026-09-06: BACKLOG digests arrived stamped "[computed on
+scitex-compute-01]", "[computed on scitex-compute-03]" and "[computed on
+scitex-compute-04]" within minutes of each other. Three notifyd daemons sweep
+one shared store and each keeps its cadence in a local variable reset on every
+restart, so their phases collide and every owner is nudged two or three times
+for one board.
+
+`claim_sweep(name, cadence_minutes=…)` returns True at most once per cadence
+across every host. It is a time-bounded CLAIM, not a held lock: the cadence
+stamp is the state, so a crashed or absent winner simply never refreshes it and
+the next host claims after one cadence. A held lock owned by a merely wedged
+winner would block every other host indefinitely while logging like a healthy
+quiet sweep — trading visible duplicates for a silent outage. The advisory lock
+is transaction-scoped, which is also what makes it correct behind PgBouncer in
+transaction mode, where a session-level lock outlives its owner's hold on the
+server connection.
+
+Two failure directions fail OPEN: a store that cannot answer, and a non-server
+store with no shared lock to arbitrate, both return True. A coordination
+mechanism that cannot coordinate must not become a fleet-wide silence.
+
+The claim rows live in their own `sweep_claims` scope, and a test pins that:
+`save_sections` soft-deletes every row of a scope absent from its payload, so a
+claim sharing the nudge scope would be tombstoned by the next nudge-state write
+— silently, after which every host sweeps again while the code still looks
+correct.
+
+Arming it is deliberately a separate change; nothing calls it yet.
+
+### Advancing the shared store's schema says so
+
+A P0 opened 2026-07-30 was titled "opening the shared store SILENTLY MIGRATES
+it", and "silently" was literally true: neither `_db_init_schema` nor
+`_db_migrations` contained a logger, a warning or a print. `open_db()` is
+`connect()` plus `init_schema()`, and the only thing in front of the rung
+ladder is a currency skip, not a consent gate — so a client ahead of the store
+ran the ladder on its first ordinary open, including from the read-side verbs,
+and moved the shape under every other client with no trace anywhere. The sole
+record was the `schema_migrated_*` rows, whose own docstring says "THIS IS A
+RECORD, NOT A GATE".
+
+A genuine upgrade now emits one WARNING naming both rungs and the client
+version. It is deliberately not a gate: the store is one PostgreSQL primary the
+whole fleet shares and containers still run a spread of versions, so refusing
+here would trade a silent change for a fleet-wide open failure — the trade this
+card declined twice, on the measured ground that "every client is current" has
+never been establishable. What changes is only the silence.
+
+A fresh store and an already-current store stay silent, and both are pinned by
+tests, because that is what keeps the line worth reading: a warning on every
+ordinary open would be filtered out within a day and the genuine event would go
+back to being invisible.
+
 ### /tasks honours status, assignee and limit, and answers 304 when nothing changed
 
 The board's list endpoint accepted `status`, `assignee` and `limit` and ignored
