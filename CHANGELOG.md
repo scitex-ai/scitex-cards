@@ -28,6 +28,8 @@ and the STALE-ACTIVE and BACKLOG lines are unchanged to the byte; `deps` and
 `children` are counts rather than lists so an unbounded per-card expansion
 cannot defeat the cap from the inside.
 
+## [0.51.2] - 2026-09-06
+
 ### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
 
 Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
