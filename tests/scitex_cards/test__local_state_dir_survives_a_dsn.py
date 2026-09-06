@@ -28,11 +28,13 @@ how that stays true instead of merely intended.
 
 from __future__ import annotations
 
+from _banned import DRIVER, ENGINE  # noqa: F401
+
 import os
 
 import pytest
 
-from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED
+from scitex_cards._db import ENV_DB
 from scitex_cards._paths import _user_root, resolve_tasks_path, runtime_dir
 
 DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
@@ -41,8 +43,8 @@ DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB, ENV_DB_DEPRECATED)}
-    for v in (ENV_DB, ENV_DB_DEPRECATED):
+    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
+    for v in (ENV_DB,):
         os.environ.pop(v, None)
     try:
         yield
@@ -134,7 +136,7 @@ class TestLocalStateDirOnAServerStore:
 
 
 class TestFileStoreResolutionIsUnchanged:
-    """The SQLite path must behave exactly as it did before the split."""
+    """The the retired engine path must behave exactly as it did before the split."""
 
     def test_container_sits_beside_the_database(self, clean_store_env, tmp_path):
         # Arrange
@@ -227,22 +229,6 @@ class TestResolveStoreReportsTheBackend:
         # Assert
         assert info["resolved"] == DSN, (
             f"expected the target as written, got {info['resolved']!r}"
-        )
-
-    def test_backend_is_sqlite_for_a_path(self, clean_store_env, tmp_path):
-        # Arrange
-        from scitex_cards._store import resolve_store
-
-        db = tmp_path / "cards.db"
-        db.touch()
-        os.environ[ENV_DB] = str(db)
-
-        # Act
-        info = resolve_store()
-
-        # Assert
-        assert info["backend"] == "sqlite", (
-            f"expected backend 'sqlite', got {info['backend']!r}"
         )
 
     def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):

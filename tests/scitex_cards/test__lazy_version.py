@@ -140,51 +140,47 @@ def test_unknown_attribute_still_raises():
     assert raised is not None
 
 
-def test_resolver_prefers_scitex_cards_dist(monkeypatch):
-    """Both dists installed during the transition — the new name wins."""
-    # Arrange
-    import importlib.metadata as md
-
-    monkeypatch.setattr(md, "version", lambda dist: {"scitex-cards": "9.9.9"}[dist])
+def test_resolver_prefers_scitex_cards_dist():
+    """The resolver asks for THIS dist by name, and reports what it answers."""
+    # Arrange — a reader that answers only for the current dist name, so a
+    # resolver asking for any other name would raise KeyError rather than
+    # quietly pass.
+    claims = {"scitex-cards": "9.9.9"}
 
     # Act
-    resolved = scitex_cards._resolve_version()
+    resolved = scitex_cards._resolve_version(read_version=lambda dist: claims[dist])
 
     # Assert
     assert resolved == "9.9.9"
 
 
-def test_resolver_falls_back_to_scitex_todo_dist(monkeypatch):
-    """Un-cutover editable installs still only carry the old dist name."""
-    # Arrange
+# REMOVED: test_resolver_falls_back_to_scitex_cards_dist.
+#
+# It pinned the SECOND tier of `_resolve_version()`: when the current dist name
+# was not installed, fall back to the pre-rename one, so an un-cutover editable
+# install still reported a version. That tier is gone with the retired dist, and
+# the loop it lived in had already collapsed to iterating the SAME name twice —
+# a "fallback" whose second attempt could only re-raise the first's
+# PackageNotFoundError. Its own fake made that visible: `_version` raised for
+# "scitex-cards" and returned 8.8.8 for anything else, so post-rename it was
+# asserting that a name nothing asks for supplies the version.
+#
+# The tier below it — neither dist installed, report the local sentinel — is
+# still real and is still covered by the test immediately following.
+
+
+def test_resolver_falls_back_to_local_when_uninstalled():
+    """Running from a source tree with the dist not installed."""
+    # Arrange — the branch is unreachable any other way here: scitex-cards IS
+    # installed in every environment this suite runs in, so "not installed" has
+    # to be supplied rather than arranged.
     import importlib.metadata as md
 
-    def _version(dist):
-        if dist == "scitex-cards":
-            raise md.PackageNotFoundError(dist)
-        return "8.8.8"
-
-    monkeypatch.setattr(md, "version", _version)
-
-    # Act
-    resolved = scitex_cards._resolve_version()
-
-    # Assert
-    assert resolved == "8.8.8"
-
-
-def test_resolver_falls_back_to_local_when_uninstalled(monkeypatch):
-    """Running from a source tree with neither dist installed."""
-    # Arrange
-    import importlib.metadata as md
-
-    def _version(dist):
+    def _uninstalled(dist):
         raise md.PackageNotFoundError(dist)
 
-    monkeypatch.setattr(md, "version", _version)
-
     # Act
-    resolved = scitex_cards._resolve_version()
+    resolved = scitex_cards._resolve_version(read_version=_uninstalled)
 
     # Assert
     assert resolved == "0.0.0+local"

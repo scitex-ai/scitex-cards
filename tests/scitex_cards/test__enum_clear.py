@@ -15,8 +15,8 @@ rejected the save::
 work, and it failed at SAVE time, aborting the whole bulk batch having
 applied nothing.
 
-Real round-trips against the canonical SQLite store — no mocks of the thing
-under test (Req STX-NM). The store is SQLite-only now: the CRUD verbs read
+Real round-trips against the canonical store — no mocks of the thing
+under test (Req STX-NM). The store is database-only now: the CRUD verbs read
 and write the canonical DB (the conftest bootstraps a fresh empty one per
 test), so every helper below seeds/reads THAT store rather than a YAML file.
 """
@@ -100,7 +100,7 @@ def test_blocker_empty_string_never_reaches_the_store_as_a_value():
     _store.update_task(task_id="triage-raw", status="deferred", blocker="")
 
     # Assert — re-read the PERSISTED card: no `blocker` value survived the
-    # write (SQLite store; the old raw-YAML read is the same rule in DB terms).
+    # write (database store; the old raw-YAML read is the same rule in DB terms).
     assert "blocker" not in _reload("triage-raw")
 
 

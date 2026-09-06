@@ -10,14 +10,22 @@ Minimal-slice contract (card fleet-agent-direct-message-board-pane-20260707):
                             agent's pull-inbox; 400 on empty body.
   - 405 on other verbs.
 
-Django RequestFactory against a real tmp store via ``?store=``; no mocks
+Django RequestFactory against a REAL store via ``?store=``; no mocks
 (STX-NM / PA-306). AAA pattern, one assertion per test (STX-TQ007).
+
+THE STORE IS THIS TEST'S OWN THROWAWAY POSTGRESQL SCHEMA, not a scratch
+``tasks.yaml``. There is one storage engine now and a filename names no
+store, so the old fixture handed every call a target the doors refuse.
+The DM layer already understood a DSN here -- ``resolve_dm_db`` returns a
+PostgreSQL ``store`` verbatim rather than deriving a file beside it -- so
+what changed is the fixture, not the code under test.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
+from urllib.parse import urlencode
 
 import pytest
 from django.test import RequestFactory
@@ -32,12 +40,35 @@ from scitex_cards._threads import append_message, get_thread
 
 
 @pytest.fixture()
-def store(tmp_path: Path, env) -> Path:
-    """A real tmp tasks.yaml (threads sidecar lands next to it)."""
-    env.set("SCITEX_TODO_STORE_GIT_AUTOCOMMIT", "0")
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+def store(env) -> str:
+    """This test's own throwaway PostgreSQL schema.
+
+    FAILS rather than skips if the harness did not pin one -- see the root
+    ``conftest.py``. A skipped storage test and a passing one look identical in
+    a summary line, which is how four modules in this suite went unexercised
+    for months.
+    """
+    env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
+    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    if "search_path" not in dsn:
+        pytest.fail(
+            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            f"PostgreSQL schema; it holds {dsn!r}.",
+            pytrace=False,
+        )
+    return dsn
+
+
+def _q(store, **extra) -> str:
+    """The query string for ``store``, ENCODED.
+
+    A DSN is not URL-safe: it carries ``?options=-csearch_path%3D<schema>``.
+    Interpolated raw, its ``?`` starts a second query and the view receives a
+    store truncated at the schema -- a wrong store that parses, which is the
+    failure mode this package keeps meeting. Encoding keeps the value the view
+    reads identical to the one the fixture handed out.
+    """
+    return urlencode({"store": str(store), **extra})
 
 
 def _get(url):
@@ -51,7 +82,7 @@ def _agents_of(response) -> list:
 def _threads_with_one_inbound(store):
     """One inbound (agent→operator) message, no registry entries."""
     append_message("agent-x", "operator", "ping", store=store)
-    return dm_threads_view(_get(f"/dm/threads?store={store}"))
+    return dm_threads_view(_get(f"/dm/threads?{_q(store)}"))
 
 
 def _threads_with_a_silent_registry_agent(store):
@@ -59,7 +90,7 @@ def _threads_with_a_silent_registry_agent(store):
     from scitex_cards._users import register_user
 
     register_user(kind="agent", names=["agent-quiet"], store=store)
-    return dm_threads_view(_get(f"/dm/threads?store={store}"))
+    return dm_threads_view(_get(f"/dm/threads?{_q(store)}"))
 
 
 def _post_operator_message(store, body: str):
@@ -148,7 +179,7 @@ def test_silent_registry_agent_has_no_last_timestamp(store):
 
 def test_threads_view_rejects_post(store):
     # Arrange
-    request = RequestFactory().post(f"/dm/threads?store={store}")
+    request = RequestFactory().post(f"/dm/threads?{_q(store)}")
     # Act
     response = dm_threads_view(request)
     # Assert
@@ -163,7 +194,7 @@ def test_thread_view_returns_ok_for_a_known_peer(store):
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
     # Act
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Assert
     assert response.status_code == 200
 
@@ -172,7 +203,7 @@ def test_thread_view_names_the_canonical_thread_id(store):
     # Arrange
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Act
     data = json.loads(response.content)
     # Assert
@@ -183,7 +214,7 @@ def test_thread_view_returns_messages_chronologically(store):
     # Arrange
     append_message("agent-x", "operator", "first", store=store)
     append_message("operator", "agent-x", "second", store=store)
-    response = dm_thread_view(_get(f"/dm/thread/agent-x?store={store}"), "agent-x")
+    response = dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store)}"), "agent-x")
     # Act
     data = json.loads(response.content)
     # Assert
@@ -193,7 +224,7 @@ def test_thread_view_returns_messages_chronologically(store):
 def test_thread_view_mark_read_acks_operator_messages(store):
     # Arrange
     append_message("agent-x", "operator", "unread ping", store=store)
-    dm_thread_view(_get(f"/dm/thread/agent-x?store={store}&mark_read=1"), "agent-x")
+    dm_thread_view(_get(f"/dm/thread/agent-x?{_q(store, mark_read='1')}"), "agent-x")
     # Act
     # read back from the sidecar, not just the response.
     msgs = get_thread("operator", "agent-x", store=store)
@@ -277,7 +308,7 @@ def test_post_rejects_empty_body(store):
 
 def test_thread_view_rejects_delete(store):
     # Arrange
-    request = RequestFactory().delete(f"/dm/thread/agent-x?store={store}")
+    request = RequestFactory().delete(f"/dm/thread/agent-x?{_q(store)}")
     # Act
     response = dm_thread_view(request, "agent-x")
     # Assert
@@ -307,11 +338,16 @@ def test_a_query_store_does_not_become_the_write_target(store, tmp_path, env):
     attacker = tmp_path / "attacker" / "tasks.yaml"
     attacker.parent.mkdir(parents=True, exist_ok=True)
     attacker.write_text("tasks: []\n", encoding="utf-8")
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))
-    env.set("SCITEX_TODO_STORE", str(store))
+    # THE AMBIENT PIN IS STILL THE POINT, and it is now the harness's. This
+    # read `env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))` -- a
+    # FILENAME, which the doors refuse, so the handler's fallback would raise
+    # instead of writing anywhere and the test would pass without ever
+    # exercising the property. The autouse fixture already pins the ambient
+    # store to this test's throwaway schema, which is what the pin was for:
+    # somewhere real that is provably not the live board.
     env.set("SCITEX_CARDS_STORE", str(store))
     request = RequestFactory().post(
-        f"/dm/thread/agent-x?store={attacker}",
+        f"/dm/thread/agent-x?{_q(attacker)}",
         data=json.dumps({"body": "written wherever I say"}),
         content_type="application/json",
     )
@@ -347,6 +383,179 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
     stored = get_thread("operator", "agent-x", store=store)
     # Assert
     assert stored[-1]["body"] == "scoped by the trusted attribute"
+
+
+# === A store the views cannot read is a TYPED refusal, not a 500 ===========
+#
+# scitex-hub's arrangement, measured 2026-09-05 with a one-variable
+# differential (0.50.0 -> 0.51.1, same container): the tenancy middleware sets
+# ``request.scitex_store`` to a per-project PATH LABEL, and no ambient target is
+# configured. 0.50.0 answered 200 from a phantom SQLite file beside the label;
+# 0.51.1 crashed with an unhandled ``UnrecognisedStoreTarget``. Neither is the
+# answer: the honest one is the board's store-absent JSON.
+
+
+@pytest.fixture()
+def hubs_label_with_nothing_configured(env, tmp_path):
+    """A per-project label on the trusted attribute, and no store anywhere.
+
+    Both ambient tiers are silenced on purpose: on a developer host the user
+    config file answers with the fleet DSN when the env alone is unset, and the
+    view would then read a real store and pass for the wrong reason.
+    """
+    from scitex_cards._store_target import ENV_DB
+
+    env.delete(ENV_DB)
+    env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
+    label = tmp_path / "users" / "alice" / "proj" / "dotfiles" / ".scitex" / "todo" / "tasks.yaml"
+    yield str(label)
+
+
+def _threads_for_label(label: str):
+    request = _get("/dm/threads")
+    setattr(request, STORE_REQUEST_ATTR, label)
+    return dm_threads_view(request)
+
+
+def test_a_label_with_no_store_answers_the_store_absent_status(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_STATUS
+
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert response.status_code == STORE_ABSENT_STATUS
+
+
+def test_a_label_with_no_store_names_the_reason_machine_readably(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_REASON
+
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert json.loads(response.content)["reason"] == STORE_ABSENT_REASON
+
+
+def test_a_label_with_no_store_carries_an_error_sentence(hubs_label_with_nothing_configured):
+    # Arrange
+    label = hubs_label_with_nothing_configured
+    # Act
+    response = _threads_for_label(label)
+    # Assert
+    assert json.loads(response.content)["error"]
+
+
+def test_the_thread_view_refuses_the_same_way(hubs_label_with_nothing_configured):
+    from scitex_cards._django.views import STORE_ABSENT_STATUS
+
+    # Arrange
+    request = _get("/dm/thread/agent-x")
+    setattr(request, STORE_REQUEST_ATTR, hubs_label_with_nothing_configured)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert response.status_code == STORE_ABSENT_STATUS
+
+
+# The reaction view is wrapped the same way but is NOT pinned here: reactions
+# still live in a JSON sidecar beside the store label (``_reactions.reactions_path``),
+# so a path label with nothing configured never reaches a store refusal there --
+# it writes ``dm_reactions.json`` beside the label and answers 200. That sidecar
+# is a file-backed store the 2026-08-09 ruling left behind; tracked on its own
+# card, not papered over by a test that asserts a refusal the code cannot make.
+
+
+@pytest.fixture()
+def read_only_dm_store(store):
+    """The throwaway store with INSERT revoked on the DM tables for this role.
+
+    scitex-hub's board mount reads the fleet store as a SELECT-only role. A DM
+    send through it reaches PostgreSQL and is refused there; this reproduces
+    the refusal under the test's own role by revoking its INSERT on the two
+    tables a send writes first. MEASURED, not assumed: a superuser bypasses
+    every privilege check, so under CI's service role the revoke changes
+    nothing and the refusal cannot be reached - skip with the reason.
+    """
+    from scitex_cards._backend_connect import connect
+
+    # A send creates the DM tables on first use; seed one so they exist.
+    append_message("agent-x", "operator", "seed", store=store)
+    conn = connect(store, read_only=False, rows_by_name=True)
+    try:
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"REVOKE INSERT ON {table} FROM current_user")
+        conn.commit()
+        row = conn.execute(
+            "SELECT has_table_privilege(current_user, 'dm_messages', 'INSERT') AS can_insert, "
+            "current_user AS me, "
+            "(SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su"
+        ).fetchone()
+        if row["can_insert"]:
+            pytest.skip(
+                f"role {row['me']!r} keeps INSERT on a table it revoked its own "
+                f"privileges on (rolsuper={row['su']}); the refusal under test "
+                "cannot be reached by this role."
+            )
+        yield store
+    finally:
+        conn.rollback()
+        for table in ("dm_threads", "dm_messages"):
+            conn.execute(f"GRANT INSERT ON {table} TO current_user")
+        conn.commit()
+        conn.close()
+
+
+def test_a_send_through_a_read_only_credential_answers_forbidden(read_only_dm_store):
+    """hub's mount after 0.51.2: the label resolves to the fleet store, the
+    role cannot INSERT, and the board says so instead of crashing."""
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_STATUS
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert response.status_code == STORE_READ_ONLY_STATUS
+
+
+def test_a_send_through_a_read_only_credential_names_the_reason(read_only_dm_store):
+    from scitex_cards._django.handlers.dm import STORE_READ_ONLY_REASON
+
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    # Assert
+    assert json.loads(response.content)["reason"] == STORE_READ_ONLY_REASON
+
+
+def test_a_label_with_an_ambient_store_reads_the_fleet_threads(store, tmp_path):
+    """The other half of fleet-wide: the label is ignored, the ambient store read.
+
+    Hub's deployments that carry the fleet DSN keep their per-project board
+    label and still get the fleet's DM threads -- a thread between two agents
+    belongs to no project. ``store`` is the harness-pinned ambient target.
+    """
+    # Arrange
+    append_message("agent-x", "operator", "ping", store=store)
+    label = tmp_path / "proj" / ".scitex" / "todo" / "tasks.yaml"
+    # Act
+    response = _threads_for_label(str(label))
+    # Assert
+    assert [a["name"] for a in _agents_of(response)] == ["agent-x"]
 
 
 # EOF

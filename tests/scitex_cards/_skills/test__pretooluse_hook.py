@@ -18,7 +18,7 @@ from pathlib import Path
 from scitex_cards._cli._skills import _skills_root
 
 #: Derived, never spelled: the bundled skills directory was renamed
-#: ``scitex-todo`` -> ``scitex-cards`` on 2026-07-20 and every hardcoded copy of
+#: ``scitex-cards`` -> ``scitex-cards`` on 2026-07-20 and every hardcoded copy of
 #: the path broke at once. ``_skills_root`` is the one resolver.
 HOOK_PATH = (
     _skills_root()

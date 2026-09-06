@@ -12,7 +12,7 @@ This is not hypothetical. On 2026-07-13 exactly two such cards were found on the
 live board, and only by hand-scanning all 1,467 rows:
 
     selftest-card-20260701                              closed_at set, status=deferred
-    todo-board-reads-stale-project-store-not-canonical  closed_at set, status=deferred
+    cards-board-reads-stale-project-store-not-canonical  closed_at set, status=deferred
 
 Both carried COMMENTS saying they had been moved to a terminal state. The prose
 claimed the change; the FIELD never took it. They nagged the fleet for two days.
@@ -47,7 +47,7 @@ from scitex_cards._health import (
 
 @pytest.fixture()
 def store() -> str:
-    # SQLite is the store now: the conftest pins + bootstraps the canonical DB
+    # The database is the store now: the conftest pins + bootstraps the canonical DB
     # and both store-identity env vars at a per-test scratch dir. Seed the two
     # cards through the real write path, then hand back the PINNED store path
     # (the store IDENTITY == resolve_tasks_path(None)) so read-after-write
@@ -66,7 +66,7 @@ def store() -> str:
 def store_resolved_from_env(store: str, env) -> str:
     """The fixture store becomes what the precedence chain resolves to."""
     env.delete("SCITEX_CARDS_TASKS_YAML_SHARED")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     return store
 
 

@@ -1,0 +1,91 @@
+/* board_v3 — board-state panels (load / empty / error).
+ *
+ * The panels rendered by boardStates.js when /graph does not return a card
+ * list. Until now these carried NO styling at all — `board-state--signed-out`
+ * and `board-state--no-project` existed in markup and matched nothing here, so
+ * they inherited `.loading` and rendered as undifferentiated centred text.
+ *
+ * The failure that prompted this (operator, 2026-08-17): a complete and
+ * correct server diagnosis rendered as one long red line where the cards
+ * belong, read as 「何も表示されない」— nothing displayed. The words were there.
+ * The SHAPE said "broken".
+ *
+ * So the rule this file encodes: the CAUSE gets the eye, the DETAIL stays
+ * available. A diagnosis nobody reads is worth what a diagnosis nobody sends
+ * is worth.
+ *
+ * Every colour sources from the board_v3 :root palette (01-filterbar.css) —
+ * the token contract this directory already keeps — so these panels follow
+ * whatever theme work lands later rather than pinning a second palette.
+ */
+
+.board-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  max-width: 62ch;
+  margin: 48px auto;
+  padding: 24px 28px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+/* The one line that answers the question. Everything else is support. */
+.board-state__lead {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The server's own first sentence — its words, not a paraphrase. */
+.board-state__cause {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.board-state--error {
+  border-color: var(--red);
+}
+
+.board-state--error .board-state__lead {
+  color: var(--red);
+}
+
+/* Collapsed by default. The full server text is often the REMEDY — the store
+ * refusal literally lists the env var to set — so it must remain reachable in
+ * one click, and must not be the first thing competing for attention.
+ */
+.board-state__detail {
+  width: 100%;
+  margin-top: 4px;
+  text-align: left;
+}
+
+.board-state__detail > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.board-state__detail pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  background: var(--col-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.board-state a {
+  color: var(--green);
+}

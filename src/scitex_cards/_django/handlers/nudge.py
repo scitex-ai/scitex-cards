@@ -120,7 +120,7 @@ def handle_nudge(request, board):
         _LAST_SENT_AT[agent] = now
 
     logger.info(
-        "[scitex-todo] nudge → %s wire=%s reason=%s (%d chars)",
+        "[scitex-cards] nudge → %s wire=%s reason=%s (%d chars)",
         agent, result.get("wire"), result.get("reason"), len(body),
     )
     return JsonResponse(

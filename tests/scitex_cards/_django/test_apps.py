@@ -8,12 +8,12 @@ import pytest
 
 pytest.importorskip("django")
 
-from scitex_cards._django.apps import ScitexTodoConfig  # noqa: E402
+from scitex_cards._django.apps import ScitexCardsConfig  # noqa: E402
 
 
 def test_app_config_uses_board_label():
     # Arrange
-    config = ScitexTodoConfig
+    config = ScitexCardsConfig
     # Act
     label = config.label
     # Assert
@@ -22,7 +22,7 @@ def test_app_config_uses_board_label():
 
 def test_app_config_points_at_django_package():
     # Arrange
-    config = ScitexTodoConfig
+    config = ScitexCardsConfig
     # Act
     name = config.name
     # Assert

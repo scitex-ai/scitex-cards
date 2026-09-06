@@ -3,7 +3,7 @@
 """``reassign_all`` — bulk owner change: one lock, one batch event.
 
 The bulk-reassignment primitive ``sac agents rename`` needs
-(``todo-reassign-all-bulk-primitive``). Every card owned by ``old_owner``
+(``cards-reassign-all-bulk-primitive``). Every card owned by ``old_owner``
 moves to ``new_owner`` in ONE atomic locked write; ONE canonical
 ``reassigned_batch`` event is emitted for the whole cohort (NOT one
 ``reassigned`` per card — that would be a notification flood).

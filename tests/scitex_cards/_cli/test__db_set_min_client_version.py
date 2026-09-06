@@ -40,7 +40,14 @@ def test_set_min_client_version_refuses_a_floor_above_the_running_client():
     # Arrange
     running = resolve_running_version()
     too_high = "9999.0.0"
-    assert too_high != running  # sanity: this must actually exercise "too high"
+    if too_high == running:
+        # Fail the ARRANGE rather than spend this test's one assertion on it
+        # (STX-TQ007): if these ever coincide the test is not exercising
+        # "too high" at all, and passing would mean nothing.
+        raise AssertionError(
+            f"the running version is {running}, so {too_high} is not a "
+            f"higher floor and this test exercises nothing"
+        )
 
     # Act
     result = CliRunner().invoke(db_group, ["set-min-client-version", too_high])
@@ -49,7 +56,7 @@ def test_set_min_client_version_refuses_a_floor_above_the_running_client():
     assert result.exit_code != 0
 
 
-def test_refusing_a_high_floor_names_both_versions_in_the_error():
+def test_refusing_a_high_floor_names_the_running_version():
     # Arrange
     running = resolve_running_version()
     too_high = "9999.0.0"
@@ -59,6 +66,18 @@ def test_refusing_a_high_floor_names_both_versions_in_the_error():
 
     # Assert
     assert running in result.output
+
+
+def test_refusing_a_high_floor_names_the_rejected_floor():
+    # Arrange
+    too_high = "9999.0.0"
+
+    # Act
+    result = CliRunner().invoke(db_group, ["set-min-client-version", too_high])
+
+    # Assert — split under STX-TQ007. The operator needs BOTH numbers to know
+    # how far behind they are; an error naming only one is half-written, and
+    # merged the second could never be the reported failure.
     assert too_high in result.output
 
 

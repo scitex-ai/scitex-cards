@@ -80,19 +80,19 @@ def _read(path: Path) -> str:
 @pytest.mark.parametrize(
     "selector",
     [
-        ".stx-todo-chat",
-        ".stx-todo-chat__title",
-        ".stx-todo-chat__list",
-        ".stx-todo-chat__bubble",
-        ".stx-todo-chat__meta",
-        ".stx-todo-chat__author",
-        ".stx-todo-chat__ts",
-        ".stx-todo-chat__text",
-        ".stx-todo-chat__error",
-        ".stx-todo-chat__form",
-        ".stx-todo-chat__author-input",
-        ".stx-todo-chat__text-input",
-        ".stx-todo-chat__actions",
+        ".stx-cards-chat",
+        ".stx-cards-chat__title",
+        ".stx-cards-chat__list",
+        ".stx-cards-chat__bubble",
+        ".stx-cards-chat__meta",
+        ".stx-cards-chat__author",
+        ".stx-cards-chat__ts",
+        ".stx-cards-chat__text",
+        ".stx-cards-chat__error",
+        ".stx-cards-chat__form",
+        ".stx-cards-chat__author-input",
+        ".stx-cards-chat__text-input",
+        ".stx-cards-chat__actions",
     ],
 )
 def test_chat_css_declares_selector(selector: str) -> None:
@@ -245,13 +245,13 @@ def test_node_detail_panel_imports_chat_panel_tsx_contains_2() -> None:
 
 
 def test_chat_panel_references_scitex_cards_agent_env() -> None:
-    """The component reads SCITEX_TODO_AGENT to default the author
+    """The component reads SCITEX_CARDS_AGENT to default the author
     field — no hardcoded proper nouns per the architectural principle."""
     # Arrange
     # Act
     tsx = _read(_CHAT_TSX)
     # Assert
-    assert "SCITEX_TODO_AGENT" in tsx
+    assert "SCITEX_CARDS_AGENT" in tsx
 
 
 def test_chat_panel_has_fail_loud_error_path_tsx_contains() -> None:

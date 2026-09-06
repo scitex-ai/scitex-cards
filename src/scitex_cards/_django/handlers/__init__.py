@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Handler package -- thin Django wrappers around the scitex-todo Python API.
+"""Handler package -- thin Django wrappers around the scitex-cards Python API.
 
 Exports the ``HANDLERS`` dict consumed by the catch-all dispatcher in
 ``views.api_dispatch``. Each handler takes ``(request, board)`` and returns a

@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Ask a store which tables and triggers it has, without assuming SQLite.
+"""Ask a store which tables and triggers it has, from ONE catalogue.
 
 WHY THIS IS SAFETY CODE RATHER THAN PLUMBING. Three call sites decide whether a
 store can be trusted by looking up guard names:
 
-    _store_canonical_read.py:153   feeds read_status() -- the retirement gate
-    _schema_shape.py:316           _has_table, the version ladder
-    _schema_shape.py:323           _has_trigger, the version ladder
+    _store_canonical_read.py   feeds read_status() -- the retirement gate
+    _schema_shape.py           _has_table, the version ladder
+    _schema_shape.py           _has_trigger, the version ladder
 
-All three query ``sqlite_master``, which does not exist on PostgreSQL. Both
-failure modes are bad and one of them is silent:
+Each used to query a catalogue that does not exist on the store, and both
+failure modes are bad while one of them is silent:
 
-  * the query RAISES -- and ``_store_canonical_read`` catches only
-    ``sqlite3.OperationalError``, so a psycopg error escapes uncaught through
-    the read path;
+  * the query RAISES -- and a driver error can escape uncaught through the
+    read path;
   * the query returns NOTHING -- the store looks unguarded, and with
     ``unguarded_store=STATUS_CURRENT`` (today's setting) it is then reported
     HEALTHY AND CURRENT. A store that cannot prove anything answers "yes".
@@ -26,11 +25,10 @@ WHAT THIS MODULE DELIBERATELY DOES NOT DO. It does not change
 ``unguarded_store``. That flag is REQUIRED at every call site precisely because
 the right value changes over time, and its docstring names the condition:
 ``"current"`` is correct only until the guards are installed on live stores.
-Measured 2026-07-31, the canonical SQLite store and the PostgreSQL store each
-carry all nine -- but the fleet image has not shipped, so stores this session
-has not touched may still be unguarded, and flipping to ``"refuse"`` now would
-darken them. Porting the probe and flipping the policy are two changes; this is
-the first.
+Measured 2026-07-31, the live store carries all nine -- but the fleet image has
+not shipped, so stores this session has not touched may still be unguarded, and
+flipping to ``"refuse"`` now would darken them. Porting the probe and flipping
+the policy are two changes; this is the first.
 """
 
 from __future__ import annotations
@@ -50,23 +48,37 @@ __all__ = [
 #: PostgreSQL: exclude ``tgisinternal`` rows -- every FK constraint installs
 #: internal triggers, and counting those would report a guard-free store as
 #: richly guarded.
+#: SCOPED TO THE CURRENT SCHEMA, like its two siblings below. It was not, and
+#: the join was the tell: it reached `pg_class` and then never used it to
+#: constrain the namespace, which is what a lost WHERE looks like.
+#:
+#: WHAT THAT COST. `trigger_names` feeds `_schema_current.schema_already_current`
+#: -- the proof-of-currency mechanism, whose whole job is to answer "does the
+#: store I opened still carry its guards". Unscoped, it answered from EVERY
+#: schema in the database at once, so a store missing a guard trigger was
+#: reported CURRENT as long as any other schema in the same database still had
+#: one by that name. Measured 2026-08-30: a guard dropped from a test's own
+#: schema, `schema_already_current` still True.
+#:
+#: THIS DEFECT COULD NOT EXIST ON THE PREVIOUS ENGINE, which is why it survived
+#: to here rather than being caught years ago -- the retired engine has no schemas, so
+#: "every trigger in the database" and "every trigger in this store" were the
+#: same set. They stopped being the same set the moment the store became a
+#: schema on a shared server, and this query kept the old meaning.
 _PG_TRIGGERS = (
     "SELECT t.tgname FROM pg_trigger t "
     "JOIN pg_class c ON c.oid = t.tgrelid "
-    "WHERE NOT t.tgisinternal"
+    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE NOT t.tgisinternal AND n.nspname = current_schema()"
 )
 _PG_TABLES = (
     "SELECT table_name FROM information_schema.tables "
     "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'"
 )
-_SQLITE_TRIGGERS = "SELECT name FROM sqlite_master WHERE type = 'trigger'"
-_SQLITE_TABLES = (
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-)
-#: The column catalogue. ``PRAGMA table_info`` is SQLite-only, so the ladder's
-#: column rungs could not be read on PostgreSQL at all -- and an unreadable rung
-#: is reported ABSENT, which downgrades the observed version rather than
-#: erroring. That is the same quiet direction :func:`has_trigger` documents.
+#: The column catalogue. The ladder's column rungs are read from here; an
+#: unreadable rung is reported ABSENT, which downgrades the observed version
+#: rather than erroring. That is the same quiet direction :func:`has_trigger`
+#: documents.
 _PG_COLUMNS = (
     "SELECT column_name FROM information_schema.columns "
     "WHERE table_schema = current_schema() AND table_name = '{table}'"
@@ -97,18 +109,17 @@ def _is_postgres(conn) -> bool:
 def _sole_value(row):
     """The single column of a one-column row, whatever shape the row is.
 
-    THREE ROW SHAPES REACH THIS MODULE and only two of them index by position.
-    A plain ``sqlite3`` connection yields tuples; ``sqlite3.Row`` yields
-    something that accepts BOTH ``row[0]`` and ``row["col"]``; psycopg's
-    ``dict_row`` yields a real ``dict``, which accepts ONLY the name and raises
-    ``KeyError: 0`` on the position.
+    TWO ROW SHAPES REACH THIS MODULE and only one of them indexes by position.
+    A plain driver cursor yields tuples; psycopg's ``dict_row`` yields a real
+    ``dict``, which accepts ONLY the name and raises ``KeyError: 0`` on the
+    position.
 
     So ``{row[0] for row in rows}`` worked right up until a caller passed a
     connection opened with ``rows_by_name=True`` -- which is precisely what
-    :func:`scitex_cards._db.connect` must do for PostgreSQL, because the rest of
-    the store reads columns by name. The probe would then raise from inside a
-    predicate whose whole job is to answer "does this table exist?", turning a
-    routine question into a crash on the backend it was written to support.
+    :func:`scitex_cards._db.connect` must do, because the rest of the store
+    reads columns by name. The probe would then raise from inside a predicate
+    whose whole job is to answer "does this table exist?", turning a routine
+    question into a crash on the store it was written to read.
 
     Keying off the row's TYPE rather than trying ``row[0]`` and catching the
     failure keeps the two cases explicit; a bare ``except KeyError`` here would
@@ -151,12 +162,12 @@ def _query(conn, sql: str) -> set[str]:
 
 def trigger_names(conn) -> set[str]:
     """Every non-internal trigger on the store."""
-    return _query(conn, _PG_TRIGGERS if _is_postgres(conn) else _SQLITE_TRIGGERS)
+    return _query(conn, _PG_TRIGGERS)
 
 
 def table_names(conn) -> set[str]:
     """Every base table on the store, excluding engine-internal ones."""
-    return _query(conn, _PG_TABLES if _is_postgres(conn) else _SQLITE_TABLES)
+    return _query(conn, _PG_TABLES)
 
 
 def has_trigger(conn, name: str) -> bool:
@@ -180,14 +191,7 @@ def column_names(conn, table: str) -> set[str]:
             f"refusing to interpolate {table!r} into a catalogue query: only "
             "a plain SQL identifier is accepted here. See _IDENTIFIER_RE."
         )
-    if _is_postgres(conn):
-        return _query(conn, _PG_COLUMNS.format(table=table))
-    # SQLite only. `PRAGMA table_info` returns (cid, name, type, ...) and the
-    # name is at index 1, so `_sole_value` -- which takes the FIRST column --
-    # would silently return the integer cid and every lookup would miss.
-    cur = conn.execute(f'PRAGMA table_info("{table}")')
-    rows = cur.fetchall() if hasattr(cur, "fetchall") else cur
-    return {row[1] for row in rows}
+    return _query(conn, _PG_COLUMNS.format(table=table))
 
 
 def has_column(conn, table: str, column: str) -> bool:

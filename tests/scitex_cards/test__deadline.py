@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the P4 deadline + scheduled validator (no mocks; SQLite store).
+"""Tests for the P4 deadline + scheduled validator (no mocks; database store).
 
 Lead-approved 2026-06-12. Nullable ISO-8601 fields on Task; validator
 rejects empty strings, unparseable dates, and ``deadline < scheduled``.
 
-SQLite cutover: the store is now the canonical DB, so ACCEPT tests seed the
+Post-cutover: the store is now the canonical DB, so ACCEPT tests seed the
 DB from an in-memory doc (via ``_write``) and read it back through
 ``load_tasks``. The REJECT tests exercise the SAME read-time gate
 (``_validate_tasks`` with ``strict=False``, exactly as ``load_tasks`` calls
@@ -28,7 +28,7 @@ from scitex_cards._validate import _validate_tasks
 def _write(tmp_path, text):
     """Seed the canonical DB from a YAML-text document; return the STORE path.
 
-    The store is SQLite; ``load_tasks`` reads the canonical DB and IGNORES the
+    The store is the database; ``load_tasks`` reads it and IGNORES the
     path (it survives only as a label). Tests still author fixtures as readable
     YAML text; parse it, seed the DB, and return the STORE identity path (NOT
     the DB path — a write/read stamps+resolves the store identity).

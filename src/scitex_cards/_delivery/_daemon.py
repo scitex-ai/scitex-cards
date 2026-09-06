@@ -3,7 +3,7 @@
 """The always-on delivery daemon (slice 2) — a single-instance notify loop.
 
 Slice 1 shipped :func:`scitex_cards._delivery.deliver_pending` (ONE pass) and
-the ``scitex-todo deliver`` one-shot verb. This module wraps that pass in a
+the ``scitex-cards deliver`` one-shot verb. This module wraps that pass in a
 long-running, signal-aware loop so notifications keep flowing without an
 external cron:
 
@@ -144,7 +144,7 @@ class _SingleInstanceLock:
             fd.close()
             existing = self._read_pid_text()
             raise DaemonAlreadyRunning(
-                f"another scitex-todo notifyd already holds {self._path} "
+                f"another scitex-cards notifyd already holds {self._path} "
                 f"(pid {existing or 'unknown'}); refusing to start a second "
                 f"instance ({type(exc).__name__})"
             ) from exc
@@ -280,11 +280,12 @@ def run_notifyd(
     interval: float = DEFAULT_INTERVAL,
     channels: dict | None = None,
     stop: threading.Event | None = None,
-    sleep=time.sleep,
+    sleep=None,
     now_fn=None,
     max_iterations: int | None = None,
     terminal_report_every: int = DEFAULT_TERMINAL_REPORT_EVERY,
     nudge_sweep_minutes: float | None = None,
+    nudge_sweep=_run_stale_nudge_sweep,
     escalate_after: int = DEFAULT_ESCALATE_AFTER,
 ) -> dict:
     """Run the always-on delivery loop until stopped.
@@ -309,8 +310,15 @@ def run_notifyd(
         ``None`` → entry-point-discovered channels.
     stop : threading.Event | None
         Cooperative stop flag, checked each iteration. Default: a fresh event.
-    sleep : callable
+    sleep : callable | None
         ``sleep(seconds)`` between ticks (TEST seam → ``lambda _: None``).
+        ``None`` (the default) binds it to ``stop.wait``, which returns the
+        MOMENT the stop event is set. Do not pass ``time.sleep`` here: it is
+        NOT interruptible by a signal handler that only sets a flag, because
+        Python retries the sleep after the handler returns (PEP 475). With a
+        120s interval against systemd's 90s TimeoutStopSec, that made a clean
+        shutdown impossible — measured 2026-08-24, SIGTERM at 10:54:28 and
+        SIGKILL at 10:55:58, twelve seconds before the sleep would have ended.
     now_fn : callable | None
         ``() -> datetime`` for the per-tick ``now`` (deterministic backoff in
         tests). Default: aware UTC now.
@@ -336,6 +344,12 @@ def run_notifyd(
         record (last ok tick, last successful delivery, consecutive failures).
     """
     stop = stop or threading.Event()
+    # WAIT ON THE EVENT, do not sleep blind. `Event.wait(timeout)` behaves
+    # like sleep when nothing happens and returns immediately once the event
+    # is set, so a SIGTERM landing mid-wait is serviced at once instead of
+    # after the remaining interval. An injected `sleep` still wins, so every
+    # existing test that passes a no-op is unaffected.
+    wait = sleep if sleep is not None else stop.wait
     now_fn = now_fn or (lambda: _dt.datetime.now(_dt.timezone.utc))
     sweep_minutes = (
         nudge_sweep_minutes
@@ -392,7 +406,7 @@ def run_notifyd(
             # daemon. deliver_pending is already fail-soft per recipient, but a
             # ledger/disk/clock error could still raise — catch it, log with a
             # traceback, and continue to the next tick. This self-heals under
-            # BOTH foreground `scitex-todo notifyd` AND systemd (which also has
+            # BOTH foreground `scitex-cards notifyd` AND systemd (which also has
             # Restart=on-failure as a second safety net).
             try:
                 # NAG sweep FIRST: enqueue any due reminders / escalations so
@@ -413,7 +427,7 @@ def run_notifyd(
                     # sweep escaped, which is precisely the coupling the sweep
                     # must never have. Delivery runs even when detection dies.
                     try:
-                        faults.append(_run_stale_nudge_sweep(store=store, now=tick_now))
+                        faults.append(nudge_sweep(store=store, now=tick_now))
                     except Exception as exc:  # noqa: BLE001 — never block delivery
                         logger.exception(
                             "notifyd liveness sweep raised; continuing to delivery"
@@ -463,7 +477,7 @@ def run_notifyd(
             if max_iterations is not None and iterations >= max_iterations:
                 stopped_by = "max_iterations"
                 break
-            sleep(interval)
+            wait(interval)
         else:
             stopped_by = "stop_event"
     finally:

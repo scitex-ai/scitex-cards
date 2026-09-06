@@ -36,7 +36,7 @@ def _summary(output: str) -> dict:
     """Parse the emit-event JSON summary from CLI ``output``.
 
     The verb prints the JSON summary as its FINAL line. When the optional
-    push rail runs under ``SCITEX_TODO_PUSH_DRY_RUN=1`` it also writes a
+    push rail runs under ``SCITEX_CARDS_PUSH_DRY_RUN=1`` it also writes a
     dev/test banner to stdout BEFORE the JSON (a production producer never
     sets dry-run, so the JSON is the only stdout there). Parse the last
     non-empty line so the test is robust to that dev banner.
@@ -130,7 +130,7 @@ def _release_to_subscriber(env):
         subscribers=["eve"],
         created_by="alice",
     )
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
     # A `released` card-event for the card, caused by `ci` (the actor is never
     # self-notified; here the actor is neither alice nor eve).
     result = runner.invoke(
@@ -215,7 +215,7 @@ def _release_caused_by_the_subscriber(env):
     runner = CliRunner()
     alice = register_user(kind="agent", names=["alice"])
     add_task(id="card-rel", title="x", agent="bob", subscribers=["alice"])
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
     result = runner.invoke(
         main,
         [
@@ -466,7 +466,7 @@ def _find_then_emit(env):
         subscribers=["alice"],
         repo="owner/repo",
     )
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
     # Resolve repo → card id.
     resolve = runner.invoke(main, ["find-card", "--repo", "owner/repo"])
     card_id = resolve.output.strip()

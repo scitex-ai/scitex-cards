@@ -4,7 +4,7 @@
  * alongside the legacy comment section.
  *
  * Themed via scitex-ui tokens already exposed by board.css's
- * `.stx-todo-board` block (--stx-text, --stx-text-muted, --stx-panel-bg,
+ * `.stx-cards-board` block (--stx-text, --stx-text-muted, --stx-panel-bg,
  * --stx-canvas-bg, --stx-border, --stx-border-strong, --stx-accent, …).
  * No hardcoded color literals here — light/dark mode flips ride entirely
  * on the shell's data-theme switch.
@@ -15,7 +15,7 @@
  *   - Error pill between thread + composer (fail-loud).
  *   - 30s auto-poll while the panel is open. */
 
-.stx-todo-chat {
+.stx-cards-chat {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -25,7 +25,7 @@
   color: var(--stx-text);
 }
 
-.stx-todo-chat__title {
+.stx-cards-chat__title {
   margin: 0;
   font-size: 0.84rem;
   font-weight: 600;
@@ -34,7 +34,7 @@
   text-transform: uppercase;
 }
 
-.stx-todo-chat__empty {
+.stx-cards-chat__empty {
   margin: 4px 0;
   font-size: 0.82rem;
   color: var(--stx-text-faint);
@@ -44,7 +44,7 @@
  * Vertical stack of bubbles, oldest first. Each bubble keeps a thin
  * left border in the author-color token so the operator can scan a
  * multi-party thread without re-reading the author label every row. */
-.stx-todo-chat__list {
+.stx-cards-chat__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -55,7 +55,7 @@
   overflow-y: auto;
 }
 
-.stx-todo-chat__bubble {
+.stx-cards-chat__bubble {
   background: var(--stx-input-bg);
   border: 1px solid var(--stx-border);
   border-radius: 6px;
@@ -65,7 +65,7 @@
   gap: 4px;
 }
 
-.stx-todo-chat__meta {
+.stx-cards-chat__meta {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -73,19 +73,19 @@
   font-size: 0.72rem;
 }
 
-.stx-todo-chat__author {
+.stx-cards-chat__author {
   font-weight: 600;
   /* color comes from authorColorToken() inline style — the hash maps
      into AUTHOR_COLOR_TOKENS (also --stx-* tokens) so the theme flip
      still applies. */
 }
 
-.stx-todo-chat__ts {
+.stx-cards-chat__ts {
   color: var(--stx-text-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.stx-todo-chat__text {
+.stx-cards-chat__text {
   font-size: 0.86rem;
   white-space: pre-wrap;
   word-break: break-word;
@@ -96,7 +96,7 @@
  * Surfaces a failed GET or POST without taking the panel down. The
  * textarea retains the operator's draft on POST failure so they can
  * retry without re-typing — see ChatPanel.tsx. */
-.stx-todo-chat__error {
+.stx-cards-chat__error {
   margin: 0;
   padding: 6px 10px;
   font-size: 0.78rem;
@@ -108,14 +108,14 @@
 
 /* ── Composer ────────────────────────────────────────────────────────
  * Author input + textarea + send button. The author input defaults to
- * SCITEX_TODO_AGENT (set by the Django template); operator can override. */
-.stx-todo-chat__form {
+ * SCITEX_CARDS_AGENT (set by the Django template); operator can override. */
+.stx-cards-chat__form {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.stx-todo-chat__author-input {
+.stx-cards-chat__author-input {
   width: 100%;
   font-size: 0.84rem;
   padding: 6px 8px;
@@ -125,7 +125,7 @@
   border-radius: 4px;
 }
 
-.stx-todo-chat__text-input {
+.stx-cards-chat__text-input {
   width: 100%;
   font-size: 0.86rem;
   padding: 6px 8px;
@@ -137,7 +137,7 @@
   min-height: 44px;
 }
 
-.stx-todo-chat__actions {
+.stx-cards-chat__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

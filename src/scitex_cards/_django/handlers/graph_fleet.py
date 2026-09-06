@@ -58,7 +58,7 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
       1. ``blocking-operator``  any task is blocker=operator-decision
       2. ``working``            any task is status=in_progress *AND* the
                                 agent's most-recent ``last_activity`` is
-                                within ``SCITEX_TODO_FLEET_WORKING_MIN``
+                                within ``SCITEX_CARDS_FLEET_WORKING_MIN``
                                 minutes (default 10). Without the
                                 freshness gate, agents that forgot to
                                 flip in_progress→pending stay "working"
@@ -71,7 +71,7 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
                                 signal so the operator can prune it.
       4. ``active``             no in_progress task, but the agent's
                                 most-recent ``last_activity`` is within
-                                ``SCITEX_TODO_FLEET_ACTIVE_MIN`` minutes
+                                ``SCITEX_CARDS_FLEET_ACTIVE_MIN`` minutes
                                 (default 60). Activity badge derived
                                 from FRESHNESS, not manual status.
       5. ``idle``               otherwise.
@@ -115,8 +115,8 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
         except (TypeError, ValueError):
             return float(default)
 
-    working_window_s = _env_minutes("SCITEX_TODO_FLEET_WORKING_MIN", 10) * 60.0
-    active_window_s = _env_minutes("SCITEX_TODO_FLEET_ACTIVE_MIN", 60) * 60.0
+    working_window_s = _env_minutes("SCITEX_CARDS_FLEET_WORKING_MIN", 10) * 60.0
+    active_window_s = _env_minutes("SCITEX_CARDS_FLEET_ACTIVE_MIN", 60) * 60.0
     cur = now or _dt.datetime.now(tz=_dt.timezone.utc)
 
     def _seconds_since(ts: str) -> float | None:
@@ -185,14 +185,14 @@ def _build_fleet(tasks: list[dict], *, now=None) -> list[dict]:
                 current = sorted(pool, key=_priority_key)[0]
 
         # `overdue_count` = tasks past their next deadline AND not in a
-        # terminal state. Feeds the operator UX (todo-p6-overdue-ui):
+        # terminal state. Feeds the operator UX (cards-p6-overdue-ui):
         # "attended an overdue task but no suitable UI to act" — the
         # fleet strip + filter bar can now surface a per-agent overdue
         # tally without re-walking the store on the client side.
         from scitex_cards._model import is_overdue as _is_overdue
 
         # "Waiting-on-operator" queue (operator P1
-        # todo-operator-blocking-queue-view): cards stuck on a
+        # cards-operator-blocking-queue-view): cards stuck on a
         # human decision. SSOT — reuse the board's BLOCKING-YOU
         # predicate (``_match(..., blocking_me=True)`` == the same
         # filter ``list_tasks(blocking_me=True)`` uses) so the count

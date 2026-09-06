@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Mutation-side Python API for the scitex-todo task store.
+"""Mutation-side Python API for the scitex-cards task store.
 
 THIN ORCHESTRATOR. The verbs themselves now live in focused siblings; this
 module owns the SHARED helpers they all pull on (identity resolution, the
@@ -30,11 +30,10 @@ Design constraints
 ------------------
 - **Generic** (Req 8): scope/assignee/status are free-form strings. The
   helpers don't know what an "agent" is.
-- **Centralized** (Req 3): the default store is the SQLite database
-  resolved by ``$SCITEX_CARDS_DB``; callers can override with an
-  explicit ``store=`` path. The user-scope default
-  (``~/.scitex/cards/cards.db``) covers Req 7.
-- **Shared with scopes** (Req 1): ``$SCITEX_TODO_SCOPE`` provides the
+- **Centralized** (Req 3): the default store is the database resolved by
+  ``$SCITEX_CARDS_DB``; callers can override with an explicit ``store=``
+  target. One board for the fleet covers Req 7.
+- **Shared with scopes** (Req 1): ``$SCITEX_CARDS_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
   one explicitly. Pass ``scope=""`` (empty string) to ignore the env
   default and see everything.
@@ -114,16 +113,16 @@ from ._store_list import (  # noqa: F401  (re-export: preserve the public surfac
 
 #: Env var name carrying the agent's identity. Used as the default
 #: `completed_by` when :func:`complete_task` doesn't get an explicit `by=`.
-ENV_AGENT = "SCITEX_TODO_AGENT_ID"
+ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
 
 #: previous name of :data:`ENV_AGENT`. Renamed 2026-07-02. We fail LOUD (never
 #: silently honour it) if it is still set, so a stale export can't quietly
 #: mis-attribute a write — the operator must migrate to the new name.
-ENV_AGENT_DEPRECATED = "SCITEX_TODO_AGENT"
+ENV_AGENT_DEPRECATED = "SCITEX_CARDS_AGENT"
 
 
 def _reject_deprecated_agent_env() -> None:
-    """Fail loud if the old ``SCITEX_TODO_AGENT`` var is still set.
+    """Fail loud if the old ``SCITEX_CARDS_AGENT`` var is still set.
 
     No silent fallback: a leftover export of the old name is a configuration
     error the operator must fix, not something we quietly translate.
@@ -139,13 +138,45 @@ class TaskNotFoundError(KeyError):
     """Raised when an update/complete target id is not in the store."""
 
 
+def _task_not_found(task_id: str) -> TaskNotFoundError:
+    """Build the "no such card" error, naming THE STORE THAT WAS SEARCHED.
+
+    ONE BUILDER FOR SEVEN RAISE SITES, because seven copies of a sentence is
+    how the wrong one survived this long. Each site used to interpolate its
+    own ``tasks_path`` / ``resolved`` local -- the LOCAL sidecar path -- while
+    the lookup that had just failed ran against the resolved store. On a
+    PostgreSQL deployment the message therefore named a YAML file::
+
+        task id 'x' not found in /home/agent/.scitex/cards/tasks.yaml
+
+    and it named it for a value THAT PLAYED NO PART IN THE SEARCH.
+    ``_read_write_doc(path)`` ignores its argument entirely -- its body is
+    ``_read_canonical_db_or_raise()``, which takes none -- so that path served
+    the file lock and this one string, and nothing else. ``_paths`` already
+    said so in prose: "interpolates the path into an error message only".
+
+    That is worse than a vague message, because it is actionable in the WRONG
+    DIRECTION: it sent a peer hunting a second store that does not exist, and
+    cost them a conclusion they had to retract to another agent.
+
+    ``store_label`` rather than ``resolve_store_target``: the label strips
+    credentials before this reaches a log, and never routes a DSN through
+    ``Path`` (which collapses ``//`` and mangles it). Calling it here cannot
+    fail the caller it is captioning -- reaching this line means the canonical
+    read ALREADY SUCCEEDED, so the store is resolvable by construction.
+    """
+    from ._store_target import store_label
+
+    return TaskNotFoundError(f"task id {task_id!r} not found in {store_label()}")
+
+
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
 def _default_agent(arg: str | None) -> str:
     """Resolve an ACTOR/AUTHOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``by=``/``actor`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``
     (the former lenient chain): the operator mandate (constitution rule 2
     "fail fast and fail loud, NO silent fallbacks") requires completion /
@@ -168,7 +199,7 @@ def _default_agent(arg: str | None) -> str:
 def _resolve_creator_or_raise(arg: str | None) -> str:
     """Resolve a card CREATOR — FAIL LOUD when it cannot be resolved.
 
-    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_TODO_AGENT_ID``.
+    Precedence: an explicit ``created_by``/``by=`` arg → ``$SCITEX_CARDS_AGENT_ID``.
     Deliberately does NOT fall back to ``getpass.getuser()`` / ``"unknown"``:
     the operator mandate (constitution rule 2 "fail fast and fail loud, NO
     silent fallbacks") requires a card to record a REAL creator, never a blank
@@ -180,7 +211,7 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     Raises
     ------
     RuntimeError
-        When the deprecated ``$SCITEX_TODO_AGENT`` is still exported (renamed
+        When the deprecated ``$SCITEX_CARDS_AGENT`` is still exported (renamed
         away — see :func:`_reject_deprecated_agent_env`).
     TaskValidationError
         When the creator resolves to empty or the ``"unknown"`` sentinel,
@@ -190,9 +221,65 @@ def _resolve_creator_or_raise(arg: str | None) -> str:
     resolved = (arg or os.environ.get(ENV_AGENT) or "").strip()
     if not resolved or resolved == "unknown":
         raise TaskValidationError(
-            "creator unresolved — set SCITEX_TODO_AGENT_ID=<your-agent> or pass "
+            "creator unresolved — set SCITEX_CARDS_AGENT_ID=<your-agent> or pass "
             "created_by=/by= (creator+assignee are mandatory; no silent "
             "fallback to a blank/'unknown' creator; see constitution)."
+        )
+    # AN UNEXPANDED PLACEHOLDER IS NOT AN IDENTITY — THE IDENTITY DOOR, WHICH
+    # THIS PACKAGE GUARDED EVERYWHERE EXCEPT HERE.
+    #
+    # `reject_unexpanded_variable` already guards the STORE-TARGET doors
+    # (_paths x2, _backend_connect, _db). Identity had none, so until
+    # today `_default_agent("${SCITEX_CARDS_AGENT_ID}")` returned that string
+    # VERBATIM and it was persisted as an author. Measured 2026-08-21:
+    #
+    #     '${SCITEX_CARDS_AGENT_ID}'  ACCEPTED -> stored verbatim
+    #     '$SCITEX_CARDS_AGENT_ID'    ACCEPTED -> stored verbatim
+    #     'unknown'                   REFUSED
+    #
+    # This is not hypothetical. On 2026-07-18/19 fifteen `tasks` rows were
+    # written with a literal `$` in `created_by`; a card closed that incident
+    # asserting "0 rows carry the literal env var (was 7)", which was true when
+    # written and false afterwards -- a restore brought the rows back and
+    # nobody re-measured. The original incident card asked for exactly this
+    # guard, in as many words, and it was never built.
+    #
+    # WHY IT MATTERS NOW RATHER THAN EVENTUALLY: sac injects BOTH the current
+    # and the legacy env spellings today, which is the only reason a bad value
+    # does not appear. The moment that compatibility path is dropped -- and
+    # they are waiting on this guard to drop it -- an agent whose env lacks the
+    # CARDS name writes the literal again, silently. So the ordering is
+    # dotfiles' spec migration, then THIS, then sac's drop.
+    #
+    # A blank creator and a placeholder creator are the same defect wearing
+    # different clothes: neither names an agent, and the placeholder is worse
+    # because it LOOKS resolved on the board.
+    # Imported inside the function, matching the existing deferred import of
+    # this same helper further down this module — `_store_url` is pulled in
+    # lazily here to keep the import graph as it is rather than adding a new
+    # module-level edge while fixing an unrelated defect.
+    from ._store_url import is_unexpanded_variable
+
+    # THE BRACED HELPER IS NOT ENOUGH HERE, and the gap is deliberate upstream.
+    # `is_unexpanded_variable` matches `${FOO}` and NOT bare `$FOO` — a choice
+    # that is defensible for STORE TARGETS (a path beginning `$FOO` is odd) and
+    # wrong for IDENTITY, where `SCITEX_CARDS_AGENT_ID=$SCITEX_CARDS_AGENT_ID`
+    # in a non-expanding context yields exactly the bare form. Measured: the
+    # braced form was refused and the bare form sailed through, so the first
+    # version of this guard was half a guard.
+    #
+    # `startswith("$")` is the identity-specific rule and it is deliberately
+    # narrow: an agent NAME never begins with a dollar sign, while a dollar
+    # elsewhere in a name is nobody's business but the namer's. Verified that
+    # `agent-with-$-inside` still resolves, so this rejects the placeholder
+    # shape without policing legitimate names.
+    if is_unexpanded_variable(resolved) or resolved.startswith("$"):
+        raise TaskValidationError(
+            f"creator is an UNEXPANDED shell variable, not an agent: {resolved!r}. "
+            "Something exported the literal text instead of its value — check the "
+            "spec/unit that sets SCITEX_CARDS_AGENT_ID, and whether it is quoted "
+            "in a context that never expands it. Writing this would attribute the "
+            "card to a placeholder that looks like a real name on the board."
         )
     return resolved
 
@@ -281,7 +368,7 @@ def _read_write_doc(path: str | Path) -> tuple[dict, list]:
 def resolve_store(store: str | Path | None = None) -> dict:
     """Return the resolved task store path and the precedence chain.
 
-    Mirrors the data the `scitex-todo resolve-store` CLI verb and the
+    Mirrors the data the `scitex-cards resolve-store` CLI verb and the
     `resolve_store` MCP tool emit. Keeping a Python API by the same name
     as the MCP tool satisfies audit §6 (Convention A: tool_name == api_name).
 
@@ -344,7 +431,12 @@ def resolve_store(store: str | Path | None = None) -> dict:
     from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
     from ._paths import PKG_SHORT, _user_root
     from ._store_target import resolve_store_target
-    from ._store_url import backend_of, is_attempted_dsn, is_postgres_url
+    from ._store_url import (
+        backend_of,
+        is_attempted_dsn,
+        is_postgres_url,
+        is_unexpanded_variable,
+    )
     from ._store_pin import _check_against, instance_at, pinned_instance
     from ._store_uuid import expected_store_uuid, store_uuid_at
 
@@ -359,6 +451,10 @@ def resolve_store(store: str | Path | None = None) -> dict:
     target = resolve_store_target(_arg)
     on_server = is_postgres_url(target)
     resolved = target if on_server else str(resolve_db_path(_arg))
+    # Read ONCE, then used for BOTH the report and the comparison. Two call
+    # sites reading the same value independently is how they come to disagree.
+    observed_uuid = store_uuid_at(resolved)
+    pinned_uuid = expected_store_uuid()
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
@@ -367,7 +463,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         "pkg_short": PKG_SHORT,
         "backend": backend_of(target),
         # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
-        # 2026-08-12 this verb answered `backend: "sqlite", exists: false` for
+        # 2026-08-12 this verb answered `backend: <a file>, exists: false` for
         # SCITEX_CARDS_DB=":55432" — a port, reported as a file that merely does
         # not exist yet. Both fields were true of the string and neither was
         # true of the intent, so the report read as "fresh install" to every
@@ -375,6 +471,27 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # branch on it two-valued. So the third answer gets its own field, and
         # a diagnosing reader sees the malformation instead of inferring it.
         "target_is_malformed_dsn": is_attempted_dsn(target),
+        # THE SIBLING MALFORMATION, and it was missing from this dict while its
+        # detector sat in the same module as `is_attempted_dsn`. The argument
+        # above generalises verbatim: `backend` cannot carry it either, because
+        # an unexpanded `${SCITEX_CARDS_DB}` is not DSN-shaped, so `backend_of`
+        # cannot name the store and `exists` answers False -- both true of the string
+        # and neither true of the intent, exactly as ":55432" once read as a
+        # fresh install.
+        #
+        # `reject_unexpanded_variable` already guards the doors that OPEN a
+        # store (_paths, _backend_connect, _db), and its own docstring says why
+        # it does not raise here: "Resolution stays total and silent so a caller
+        # that merely REPORTS a target can SHOW the ambiguity instead of raising
+        # on it." This dict is that caller. The detector was built for this
+        # surface and this surface did not consult it.
+        #
+        # Measured 2026-08-21 by claude-code-telegrammer: with the literal
+        # `${SCITEX_CARDS_DB}` set, this verb named a file as the backend,
+        # target_is_malformed_dsn=False and exit 0, while an actual read refused
+        # (exit 1). The system was safe; the DIAGNOSTIC said nothing, which is
+        # the surface an agent runs precisely when it is confused.
+        "target_is_unexpanded_variable": is_unexpanded_variable(target),
         # THREE-VALUED, and None is not a hedge. "Does this file exist" has no
         # answer for a server, and BOTH poles actively mislead: False reads as
         # "your store is missing" to every operator staring at a cutover, True
@@ -382,14 +499,29 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # pure reporting — it never opens anything). Read `backend` to know
         # which question was asked.
         "exists": None if on_server else Path(resolved).exists(),
-        "store_uuid": store_uuid_at(resolved),
-        "expected_uuid": expected_store_uuid(),
+        "store_uuid": observed_uuid,
+        "expected_uuid": pinned_uuid,
         # Probed ONCE and compared in-process. `check_resolution` would re-run
         # the whole resolution and open a second connection to say the same
         # thing, and a diagnostic that costs two round-trips to a store that may
         # be down is a diagnostic that hangs twice as long on the case it exists
         # to explain.
-        **_identity_fields(_check_against(instance_at(resolved), pinned_instance())),
+        #
+        # BOTH HALVES ARE HANDED TO THE COMPARISON, and until 2026-08-19 they
+        # were not: the two uuid values were computed for the REPORT on the
+        # lines above and never passed into `_check_against`, which compared the
+        # instance alone. So this verb printed `expected_uuid` and `store_uuid`
+        # differing on adjacent lines and answered `"identity_verdict":
+        # "matches"` beneath them. The values being in scope is what made the
+        # omission invisible.
+        **_identity_fields(
+            _check_against(
+                instance_at(resolved),
+                pinned_instance(),
+                observed_uuid=observed_uuid,
+                expected_uuid=pinned_uuid,
+            )
+        ),
     }
 
 
@@ -431,18 +563,27 @@ def get_task(
     treated as NOT FOUND — the 2026-07-21 tombstone change keeps a
     deleted card's row on disk forever, but this read must behave exactly
     as it did when ``delete_task`` physically removed it.
-    """
-    from . import _model, _task
 
-    tasks_path = _resolved_store(store)
+    READS ONE ROW. This verb used to load the whole board under the store lock
+    and scan it for the id — a full export per call, which the notification
+    dispatcher pays on EVERY card event (measured 2026-09-02: 1.2 s of a 2.7 s
+    comment). It now reads the one row through the canonical read's own guards
+    (:mod:`scitex_cards._store_single_card`), takes no lock (a one-row read has
+    nothing to serialise against), and returns the card exactly as the export
+    would have rebuilt it. ``store`` still names the caller's logical store for
+    messages and sidecars; the row is read from the resolved store target, as
+    the whole-document read always did.
+    """
+    from . import _task
+    from ._store_single_card import read_card_or_raise
+    from ._store_target import resolve_store_target
+
     if not task_id:
         raise ValueError("get_task: 'task_id' is required")
-    with _model._store_lock(tasks_path):
-        tasks = _model.load_tasks(tasks_path)
-        for t in tasks:
-            if t.get("id") == task_id and not _task._is_tombstoned(t):
-                return dict(t)
-    raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+    card, _revision = read_card_or_raise(resolve_store_target(None), task_id)
+    if card is None or _task._is_tombstoned(card):
+        raise _task_not_found(task_id)
+    return card
 
 
 # --------------------------------------------------------------------------- #

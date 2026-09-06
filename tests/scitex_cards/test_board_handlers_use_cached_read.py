@@ -3,7 +3,7 @@
 """Board read handlers must go through the mtime-keyed cache, not `load_tasks`.
 
 Regression cover for the 2026-07-12 slow-board incident. The operator said the
-GUI was slow and asked for the SQLite migration. Measured on his live store
+GUI was slow and asked for the database migration. Measured on his live store
 (1,352 cards), /timeline was ~6 s per request and broke down as:
 
     load_tasks()     1.22 s   <- 99% of it, re-parsing the whole 5 MB YAML

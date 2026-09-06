@@ -251,17 +251,17 @@ STALE_REMEDY = (
 #: that it will stay silent about it.
 #:
 #: BOTH console-script names are spelled out, and that is not redundancy. The
-#: command that actually refused in the 2026-07-29 incident was ``scitex-todo
+#: command that actually refused in the 2026-07-29 incident was ``scitex-cards
 #: list-tasks`` — the LEGACY script, which ``pyproject.toml`` still installs
 #: alongside ``scitex-cards`` (both resolve to ``scitex_cards._cli:main``) and
-#: which much of the fleet still types. A reader who types ``scitex-todo`` may
+#: which much of the fleet still types. A reader who types ``scitex-cards`` may
 #: not recognise a warning phrased only in terms of ``scitex-cards``, which
 #: would defeat the single purpose of this text. Name whichever form they use.
 _STALE_HEADER = (
     "scitex-cards CURRENCY: this Python call SUCCEEDED, but the CLI/MCP rail "
     "for this same package is currently REFUSING. Both console scripts are "
     "affected - 'scitex-cards list-tasks' AND its still-installed legacy "
-    "alias 'scitex-todo list-tasks' are the same program and will BOTH FAIL "
+    "alias 'scitex-cards list-tasks' are the same program and will BOTH FAIL "
     "until this install is fixed, as will every other scitex-cards CLI "
     "command and the scitex-cards MCP server, while Python calls such as "
     "dm_send keep working. Nothing on this rail will error, so this warning "

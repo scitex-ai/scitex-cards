@@ -14,13 +14,12 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from .._paths import resolve_tasks_path
+from .._paths import local_store_path
 from ._model import User, UserValidationError, validate_user
 
-
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path through the same chain the task API uses."""
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path — see :func:`scitex_cards._paths.local_store_path`.
+#: Third of three byte-identical copies of this resolver; now one definition.
+_resolved_store = local_store_path
 
 
 def _load_users_section(path: Path) -> list[dict]:
@@ -98,12 +97,27 @@ def _load_users_section_cached(path: Path) -> list[dict]:
 def load_users(store: str | Path | None = None) -> list[User]:
     """Return all registered users (absent ``users:`` section → ``[]``).
 
-    Read-only snapshot — does NOT lock. Served from the mtime-guarded read
-    cache; rows are deep-copied before :meth:`User.from_dict` so mutating a
-    returned user (or its nested lists) can never poison the cache.
+    Read-only snapshot — does NOT lock. Rows are deep-copied before
+    :meth:`User.from_dict` so mutating a returned user (or its nested lists)
+    can never poison a cache.
+
+    READS THE DATABASE, ALWAYS. ``store`` selects WHICH database; it never
+    selects a different KIND of home. The registry is fleet identity, and the
+    local path it used to resolve to is a per-container private overlay — so
+    the answer it gave was never shared with anyone. See
+    :mod:`scitex_cards._db_users` for the measurement, and
+    :mod:`._registry_home` for why an earlier ``explicit -> file`` branch had
+    to go (it split the registry across two homes and broke notify dispatch).
+
+    The mtime-guarded cache above is now unreachable from this function. It
+    is keyed on ``(mtime_ns, size)``, which a database has no equivalent of,
+    and the thing it existed to skip — a multi-MB full-store YAML parse per
+    call — is not what a one-table ``SELECT`` costs.
     """
-    path = _resolved_store(store)
-    return [User.from_dict(copy.deepcopy(d)) for d in _load_users_section_cached(path)]
+    from .._db_users import load_users_rows_cached
+
+    rows = load_users_rows_cached(store)
+    return [User.from_dict(copy.deepcopy(d)) for d in rows]
 
 
 def list_users(store: str | Path | None = None) -> list[User]:

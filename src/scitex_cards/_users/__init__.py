@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Standalone user registry for scitex-todo — board MEMBERSHIP SSOT.
+"""Standalone user registry for scitex-cards — board MEMBERSHIP SSOT.
 
-scitex-todo is the single source of truth for who may be an assignee,
+scitex-cards is the single source of truth for who may be an assignee,
 collaborator, or subscriber on the board — HUMANS and AGENTS alike. Until
 now a "user" was just a mutable name string in each card's ``agent`` /
 ``assignee`` field, so renaming an owner (e.g. ``proj-scitex-dev`` →

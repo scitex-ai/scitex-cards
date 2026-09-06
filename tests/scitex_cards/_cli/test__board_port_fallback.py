@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the port-fallback hardening of ``scitex-todo board``.
+"""Tests for the port-fallback hardening of ``scitex-cards board``.
 
 Incident: a board process was serving on its port, but the pidfile
-(``~/.scitex/todo/board.pid``) was STALE (its pid dead while a different,
+(``~/.scitex/cards/board.pid``) was STALE (its pid dead while a different,
 untracked board held the port), so ``status`` reported NOT-running and
 ``stop``/``restart`` couldn't act on the live board.
 
@@ -55,7 +55,7 @@ _needs_port_tool = pytest.mark.skipif(
 def pidfile_path(env, tmp_path):
     """Point the pidfile at a tmp location (env override)."""
     pf = tmp_path / "board.pid"
-    env.set("SCITEX_TODO_BOARD_PIDFILE", str(pf))
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(pf))
     yield pf
 
 

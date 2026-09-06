@@ -87,7 +87,7 @@ def _write_tasks_yaml(tmp_path, body: str):
 
 
 def test_local_file_sync_load_returns_validated_tasks(tmp_path):
-    # Arrange — SQLite is the store; seed the canonical DB, then point the
+    # Arrange — the database is the store; seed the canonical DB, then point the
     # adapter at the pinned STORE identity path (reads ignore the path and
     # read the DB; the STORE path is what the ownership stamp round-trips on).
     import os
@@ -106,7 +106,7 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
 
 
 #: The task DATA must round-trip through LocalFileSync unchanged: a mutation
-#: made in memory, saved, and reloaded must survive. SQLite is the store now,
+#: made in memory, saved, and reloaded must survive. The database is the store now,
 #: so save() writes the canonical DB and load() reads it back — seed the DB,
 #: point the adapter at the pinned STORE identity path, then load → mutate →
 #: save → reload. (The companion "drops YAML comments" assertion is gone: it
@@ -181,9 +181,9 @@ def test_pubsub_literal_channel_match_delivers_to_subscriber():
     # Arrange
     bus = InProcessPubSub()
     seen: list[dict] = []
-    bus.subscribe("scitex-todo:task:x/y", seen.append)
+    bus.subscribe("scitex-cards:task:x/y", seen.append)
     # Act
-    bus.publish("scitex-todo:task:x/y", {"task_id": "x/y"})
+    bus.publish("scitex-cards:task:x/y", {"task_id": "x/y"})
     # Assert
     assert seen == [{"task_id": "x/y"}]
 
@@ -192,11 +192,11 @@ def test_pubsub_suffix_glob_matches_every_task_in_project():
     # Arrange
     bus = InProcessPubSub()
     seen: list[dict] = []
-    bus.subscribe("scitex-todo:task:demo/*", seen.append)
+    bus.subscribe("scitex-cards:task:demo/*", seen.append)
     # Act
-    bus.publish("scitex-todo:task:demo/foo", {"task_id": "demo/foo"})
-    bus.publish("scitex-todo:task:demo/bar", {"task_id": "demo/bar"})
-    bus.publish("scitex-todo:task:other/baz", {"task_id": "other/baz"})
+    bus.publish("scitex-cards:task:demo/foo", {"task_id": "demo/foo"})
+    bus.publish("scitex-cards:task:demo/bar", {"task_id": "demo/bar"})
+    bus.publish("scitex-cards:task:other/baz", {"task_id": "other/baz"})
     # Assert
     assert [p["task_id"] for p in seen] == ["demo/foo", "demo/bar"]
 

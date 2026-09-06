@@ -88,7 +88,8 @@ _STORE_TEXT = (
 def store():
     """Seed the canonical DB from the fixture doc; reset the board cache around it.
 
-    The store is SQLite now: ``load_tasks`` / the ``/graph`` handler read and
+    The store is the database now: ``load_tasks`` / the ``/graph`` handler read
+    and
     write the canonical DB and ignore the store path (it survives only as a
     provenance label). So parse the readable YAML fixture text into the doc the
     YAML used to hold, seed the canonical DB from it, and yield the PINNED store

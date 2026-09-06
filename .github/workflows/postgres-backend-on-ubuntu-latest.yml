@@ -29,21 +29,23 @@ jobs:
   postgres-backend:
     runs-on: ubuntu-latest
 
-    env:
-      # Defined once at job level so the run step and the guard step below
-      # cannot drift apart. A guard that checks a different set of files than
-      # the one that actually ran is worse than no guard: it reports on a run
-      # that did not happen.
-      #
-      # ADD EVERY FILE WITH A POSTGRES-DEPENDENT TEST HERE. A test that needs a
-      # server and is not listed does not fail — it simply never runs in CI,
-      # which is this workflow's own failure mode reappearing one level up.
-      PG_TEST_FILES: >-
-        tests/scitex_cards/test__sql_null_safe.py
-        tests/scitex_cards/test__inbox_carry.py
-        tests/scitex_cards/test__schema_v9_arrival_order.py
-        tests/scitex_cards/test__store_instance.py
-        tests/scitex_cards/test__store_pin.py
+    # THE FILE LIST IS DISCOVERED, NOT MAINTAINED. It was a hand-written allowlist
+    # here, carrying its own warning that a Postgres-dependent test not on the
+    # list "does not fail — it simply never runs in CI, which is this workflow's
+    # own failure mode reappearing one level up."
+    #
+    # That is what happened. Measured 2026-08-23: SEVEN files declared
+    # SCITEX_CARDS_TEST_PG_DSN and FIVE were listed; test__db_foreign_keys and
+    # test__inbox_shape had never run against a server. And the defect that made
+    # every commented card read-only fleet-wide that day — positional access on a
+    # dict row, a behaviour THIS FILE'S HEADER NAMES BY NAME — shipped green,
+    # because the card-write funnel had no Postgres-backed test to be omitted
+    # from at all.
+    #
+    # A registry that must be remembered is not a mechanism. Discovery keys on
+    # the marker this job already switches on, so a new Postgres test is included
+    # by being written, and the empty-set refusal below turns a renamed marker
+    # into a loud failure instead of a green run over zero files.
 
     services:
       postgres:
@@ -72,7 +74,13 @@ jobs:
       - name: Install the package with the postgres extra
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[postgres]" pytest
+          # scitex-dev IS REQUIRED NOW, and its absence is not a soft one:
+          # tests/conftest.py imports `scitex_dev.store.testing` at import
+          # time for the ephemeral-schema affordance every test's store is
+          # carved from. Without it the harness has no store to pin and
+          # refuses (correctly) rather than falling back to the live board,
+          # so the whole leg errors with a message about scitex-dev.
+          python -m pip install -e ".[postgres]" pytest "scitex-dev>=0.57.0"
 
       - name: Confirm psycopg is importable
         # A missing driver would otherwise surface as a fixture failure whose
@@ -80,11 +88,38 @@ jobs:
         # honest about what actually broke.
         run: python -c "import psycopg; print('psycopg', psycopg.__version__)"
 
+      - name: Confirm the suite collects, and refuse a run over zero tests
+        # THE EMPTY-SET REFUSAL IS STILL THE LOAD-BEARING HALF; what it guards
+        # changed. This step used to SELECT the "Postgres-dependent" files by
+        # grepping for a marker, because most of the suite did not touch a
+        # server. Every test touches one now -- the harness gives each its own
+        # throwaway schema -- so a marker-selected subset is not a subset of
+        # anything any more, and the honest scope is the whole suite.
+        #
+        # The threshold is deliberately coarse. Pinning an exact count is the
+        # mistake the assertion further down already records making: a number
+        # calibrated to one file's total goes stale the moment a test is added.
+        # "Thousands, not a handful" is the property that stays true.
+        run: |
+          set -euo pipefail
+          n=$(python -m pytest tests --collect-only -q 2>/dev/null | tail -1 \
+                | grep -oE '^[0-9]+' || true)
+          if [ -z "$n" ] || [ "$n" -lt 1000 ]; then
+            echo "::error::the suite collected ${n:-0} tests -- expected thousands. Collection is broken, and a run over a truncated set reports success for a suite that never ran."
+            exit 1
+          fi
+          echo "collected=$n"
+
       - name: Run the Postgres-backed tests
         env:
-          # Declaring the DSN is what makes an unreachable server a FAILURE
-          # rather than a skip. See the pg_conn fixture.
-          SCITEX_CARDS_TEST_PG_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
+          # THE VARIABLE THE HARNESS ACTUALLY READS. `SCITEX_CARDS_TEST_PG_DSN`
+          # was this package's own private marker and is gone: the fixtures that
+          # keyed on it skipped whenever it was unset, which was always, so they
+          # reported green without opening a connection. The store now comes
+          # from `scitex_dev.store.testing.writable_dsn()`, whose first route is
+          # $SCITEX_STORE_DSN -- and it probes `pg_is_in_recovery()` rather than
+          # assuming, so a standby is rejected instead of silently refusing DDL.
+          SCITEX_STORE_DSN: postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards
         run: |
           # pipefail is NOT on by default -- GitHub runs `bash -e {0}`, so in a
           # pipeline only the LAST command's status survives. Without this the
@@ -94,7 +129,13 @@ jobs:
           # credit to scitex-hpc, who measured it on three commands piped to
           # `head` the same day this was written.)
           set -o pipefail
-          python -m pytest $PG_TEST_FILES -v -rs | tee result.txt
+          # NOT `-x`. The repo's addopts carry exitfirst, which is right for a
+          # developer loop and wrong for a MEASURING gate: it stops at the
+          # first failure, so the log reports a number describing where it gave
+          # up rather than the state of the suite. Overridden here so this leg
+          # answers "how many pass" instead of "how far did it get".
+          python -m pytest tests -q -rs \
+            --override-ini="addopts=-p no:anyio" | tee result.txt
 
       - name: Assert the Postgres tests actually exercised Postgres
         # The guard on the guard. A leg that is green because every Postgres
@@ -114,7 +155,12 @@ jobs:
           # A declared-but-broken DSN now FAILS in the fixture, so these strings
           # should be impossible here. Checking anyway: if the fixture ever
           # regresses to skipping, this leg must not stay green.
-          for marker in ("no live Postgres", "psycopg not installed"):
+          for marker in (
+              "No writable PostgreSQL is available",
+              "scitex_dev.store.testing is not importable",
+              "no live Postgres",
+              "psycopg not installed",
+          ):
               if marker in text:
                   print(f"ERROR: a test skipped for want of Postgres: {marker!r}")
                   sys.exit(1)

@@ -101,7 +101,7 @@ write a superseding ADR if the rule changes).
   write time, not at "the chip count looks wrong, why?" time.
 - Extending the enum (e.g. `"upstream-vendor"` for third-party API
   outages) is a one-line tuple edit.
-- Fits the convergent quality-hygiene arc (`proj-scitex-todo-quality-
+- Fits the convergent quality-hygiene arc (`proj-scitex-cards-quality-
   hygiene` task): the `blocker` Literal validator is a third seed
   (alongside ADR-0002 `kind` and the future ref-integrity + cycle-
   detection passes) that all roll up into the typed `Task` dataclass

@@ -59,7 +59,7 @@ export function ContextMenu() {
 
   return (
     <div
-      className="stx-todo-menu__backdrop"
+      className="stx-cards-menu__backdrop"
       onClick={closeMenu}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -68,7 +68,7 @@ export function ContextMenu() {
     >
       <div
         ref={ref}
-        className="stx-todo-menu"
+        className="stx-cards-menu"
         style={{ left, top }}
         role="menu"
         onClick={(e) => e.stopPropagation()}
@@ -76,7 +76,7 @@ export function ContextMenu() {
         {menu.taskId === null ? (
           <button
             type="button"
-            className="stx-todo-menu__item"
+            className="stx-cards-menu__item"
             role="menuitem"
             onClick={beginCreate}
           >
@@ -84,12 +84,12 @@ export function ContextMenu() {
           </button>
         ) : (
           <>
-            <div className="stx-todo-menu__label" title={menu.taskId}>
+            <div className="stx-cards-menu__label" title={menu.taskId}>
               {task ? task.title : menu.taskId}
             </div>
             <button
               type="button"
-              className="stx-todo-menu__item"
+              className="stx-cards-menu__item"
               role="menuitem"
               onClick={() => {
                 // Copy the multi-selection if the clicked card is part of it
@@ -111,7 +111,7 @@ export function ContextMenu() {
             </button>
             <button
               type="button"
-              className="stx-todo-menu__item"
+              className="stx-cards-menu__item"
               role="menuitem"
               onClick={() => beginEdit(menu.taskId as string)}
             >
@@ -120,7 +120,7 @@ export function ContextMenu() {
             {bulk && (
               <button
                 type="button"
-                className="stx-todo-menu__item"
+                className="stx-cards-menu__item"
                 role="menuitem"
                 onClick={() =>
                   void bulkGroupUnder(menu.taskId as string, selectedIds)
@@ -129,11 +129,11 @@ export function ContextMenu() {
                 ▤ Group {selectedIds.length - 1} under this
               </button>
             )}
-            <div className="stx-todo-menu__sep" />
-            <div className="stx-todo-menu__group-label">
+            <div className="stx-cards-menu__sep" />
+            <div className="stx-cards-menu__group-label">
               {bulk ? `Set status (${selectedIds.length})` : "Set status"}
             </div>
-            <div className="stx-todo-menu__statuses">
+            <div className="stx-cards-menu__statuses">
               {STATUSES.map((s) => {
                 const c = graph?.status_colors[s];
                 const current = !bulk && task?.status === s;
@@ -141,8 +141,8 @@ export function ContextMenu() {
                   <button
                     type="button"
                     key={s}
-                    className={`stx-todo-menu__status${
-                      current ? " stx-todo-menu__status--current" : ""
+                    className={`stx-cards-menu__status${
+                      current ? " stx-cards-menu__status--current" : ""
                     }`}
                     role="menuitem"
                     onClick={() =>
@@ -152,7 +152,7 @@ export function ContextMenu() {
                     }
                   >
                     <span
-                      className="stx-todo-menu__swatch"
+                      className="stx-cards-menu__swatch"
                       style={{
                         background: c?.fill ?? "#888",
                         borderColor: c?.stroke ?? "#888",
@@ -166,10 +166,10 @@ export function ContextMenu() {
             </div>
             {!bulk && task?.parent && (
               <>
-                <div className="stx-todo-menu__sep" />
+                <div className="stx-cards-menu__sep" />
                 <button
                   type="button"
-                  className="stx-todo-menu__item"
+                  className="stx-cards-menu__item"
                   role="menuitem"
                   onClick={() => {
                     const id = menu.taskId as string;
@@ -184,10 +184,10 @@ export function ContextMenu() {
                 </button>
               </>
             )}
-            <div className="stx-todo-menu__sep" />
+            <div className="stx-cards-menu__sep" />
             <button
               type="button"
-              className="stx-todo-menu__item stx-todo-menu__item--danger"
+              className="stx-cards-menu__item stx-cards-menu__item--danger"
               role="menuitem"
               onClick={() => {
                 if (bulk) {

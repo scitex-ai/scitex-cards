@@ -4,11 +4,11 @@
 
 Covers two cards surfaced from the 2026-06-29 neurovista dogfood:
 
-  * ``todo-add-empty-stdout-on-success`` — a successful ``add`` must print a
+  * ``cards-add-empty-stdout-on-success`` — a successful ``add`` must print a
     one-line confirmation that LEADS with the created id, so success is never
     indistinguishable from a silent failure (empty stdout). The ``--json``
     path stays machine-readable (JSON only, no extra human line).
-  * ``todo-blocker-none-validation-lenient`` — the ``"none"`` sentinel ("no
+  * ``cards-blocker-none-validation-lenient`` — the ``"none"`` sentinel ("no
     specific blocker named") must NOT error on a non-blocked status; it is
     normalized away. A REAL blocker variant on a non-blocked status still
     errors.
@@ -29,7 +29,7 @@ from scitex_cards._cli import main
 
 
 def _store_path(tmp_path) -> str:
-    # Store is SQLite; load/save read+write the canonical DB and IGNORE the
+    # The store is the database; load/save read+write it and IGNORE the
     # path except as the provenance stamp. Return the PINNED STORE identity
     # (== resolve_tasks_path(None)) so a read-after-write round-trips instead
     # of tripping the stamp-mismatch guard. NOT the tmp_path file.

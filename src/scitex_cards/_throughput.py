@@ -3,8 +3,8 @@
 """Throughput aggregator — single source of truth for stats / WIP / notify.
 
 Shared by:
-  * ``scitex-todo print-stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
-  * ``scitex-todo sync-github`` (permanent version of the lead's
+  * ``scitex-cards print-stats [--by ...] [--since ...] [--notify]`` (CLI/MCP)
+  * ``scitex-cards sync-github`` (permanent version of the lead's
     one-time GitHub → board sync)
   * ``_store.add_task``'s WIP-validation gate (env-bounded throttle
     that warns / refuses based on the owning agent's open task count)
@@ -20,7 +20,7 @@ Lead-approved spec a2a:
     unknown-id deps are defensive BLOCKED.
 
 The matching semantics for RUNNABLE / BLOCKED mirror
-``_skills/scitex-todo/40_task-harvest.md``.
+``_skills/scitex-cards/40_task-harvest.md``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ DONE_STATUSES = frozenset({"done"})
 # ``deferred`` is NOT terminal (operator ruling, 2026-07-10: "deferred は終了
 # ではない"). A deferred card is OPEN — consciously not being worked right now,
 # but still carried. It was wrongly listed here because ``deferred`` had been
-# overloaded as the close status (``scitex-todo close`` and the board's close
+# overloaded as the close status (``scitex-cards close`` and the board's close
 # button both wrote status=deferred, since no ``closed`` value existed). That
 # overload made 354 open cards silently vanish from every active view.
 # Closing now writes ``cancelled``; ``deferred`` means "not now", and shows.
@@ -77,10 +77,10 @@ SHORT_ID_TRUNC = 24
 
 # WIP-validation thresholds (env-bounded, lead spec
 # ``d99b8de6839d46e586e4ee692f43c1d9``).
-ENV_WIP_LIMIT = "SCITEX_TODO_WIP_LIMIT"
+ENV_WIP_LIMIT = "SCITEX_CARDS_WIP_LIMIT"
 DEFAULT_WIP_LIMIT = 20
 
-ENV_STALE_HOURS = "SCITEX_TODO_STALE_HOURS"
+ENV_STALE_HOURS = "SCITEX_CARDS_STALE_HOURS"
 DEFAULT_STALE_HOURS = 24
 
 
@@ -99,7 +99,7 @@ def _parse_iso(ts: str | None) -> _dt.datetime | None:
     subsequent ``_now_utc() - parsed`` subtraction raise
     ``TypeError: can't subtract offset-naive and offset-aware datetimes``
     and kills the entire ``--notify`` / ``--nudge-quiet`` loop before any
-    POST happens (the cron then dies silently every tick — proj-scitex-todo
+    POST happens (the cron then dies silently every tick — proj-scitex-cards
     P3a(c) pilot, 2026-06-13).
     """
     if not ts:

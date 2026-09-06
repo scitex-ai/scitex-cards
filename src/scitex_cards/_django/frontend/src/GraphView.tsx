@@ -148,14 +148,14 @@ function Breadcrumb({
   // Hidden at top level (atTop) — there's nowhere to go.
   const onBack = () => drillTo(drillPath.length - 1);
   return (
-    <nav className="stx-todo-breadcrumb" aria-label="Drill-down breadcrumb">
+    <nav className="stx-cards-breadcrumb" aria-label="Drill-down breadcrumb">
       {/* "Drill:" prefix label (operator UX 2026-06-06: "canvas/drill/pool/
         * table/board とか UI 上にヒント的に書いておいて") so the user can see
         * THIS strip = the drill-down state, not a generic title bar. The
         * label is visually muted so it doesn't fight the breadcrumb crumbs.
         */}
       <span
-        className="stx-todo-breadcrumb__hint"
+        className="stx-cards-breadcrumb__hint"
         aria-hidden="true"
         title="Drill-down path — click a parent crumb to go back"
       >
@@ -164,7 +164,7 @@ function Breadcrumb({
       {!atTop && (
         <button
           type="button"
-          className="stx-todo-breadcrumb__back"
+          className="stx-cards-breadcrumb__back"
           onClick={onBack}
           title="Go up one level (or click any crumb below)"
           aria-label="Back one drill level"
@@ -174,7 +174,7 @@ function Breadcrumb({
       )}
       {atTop ? (
         <span
-          className="stx-todo-breadcrumb__crumb stx-todo-breadcrumb__crumb--current"
+          className="stx-cards-breadcrumb__crumb stx-cards-breadcrumb__crumb--current"
           aria-current="page"
         >
           Home
@@ -182,7 +182,7 @@ function Breadcrumb({
       ) : (
         <button
           type="button"
-          className="stx-todo-breadcrumb__crumb"
+          className="stx-cards-breadcrumb__crumb"
           onClick={() => drillTo(0)}
         >
           Home
@@ -191,7 +191,7 @@ function Breadcrumb({
       {titles.map((title, idx) => {
         const isCurrent = idx === titles.length - 1;
         const separator = (
-          <span className="stx-todo-breadcrumb__sep" aria-hidden="true">
+          <span className="stx-cards-breadcrumb__sep" aria-hidden="true">
             /
           </span>
         );
@@ -200,7 +200,7 @@ function Breadcrumb({
             <span key={`${drillPath[idx]}-${idx}`}>
               {separator}
               <span
-                className="stx-todo-breadcrumb__crumb stx-todo-breadcrumb__crumb--current"
+                className="stx-cards-breadcrumb__crumb stx-cards-breadcrumb__crumb--current"
                 aria-current="page"
               >
                 {title}
@@ -213,7 +213,7 @@ function Breadcrumb({
             {separator}
             <button
               type="button"
-              className="stx-todo-breadcrumb__crumb"
+              className="stx-cards-breadcrumb__crumb"
               onClick={() => drillTo(idx + 1)}
             >
               {title}
@@ -312,9 +312,9 @@ function UncategorizedPool({
         key={n.id}
         className={`${
           hasChildren
-            ? "stx-todo-pool__item stx-todo-pool__item--parent"
-            : "stx-todo-pool__item stx-todo-pool__item--leaf"
-        }${selected ? " stx-todo-pool__item--selected" : ""}`}
+            ? "stx-cards-pool__item stx-cards-pool__item--parent"
+            : "stx-cards-pool__item stx-cards-pool__item--leaf"
+        }${selected ? " stx-cards-pool__item--selected" : ""}`}
         style={style}
         onClick={onClick}
         onContextMenu={(e) => {
@@ -335,13 +335,13 @@ function UncategorizedPool({
         }
       >
         {hasChildren && (
-          <span className="stx-todo-pool__badge" aria-hidden="true">
+          <span className="stx-cards-pool__badge" aria-hidden="true">
             {kids} ↓
           </span>
         )}
         {hasChildren ? (
           <>
-            <span className="stx-todo-node__glyph" aria-hidden="true">
+            <span className="stx-cards-node__glyph" aria-hidden="true">
               ⊞{" "}
             </span>
             {n.title}
@@ -381,32 +381,32 @@ function UncategorizedPool({
   if (!open) {
     return (
       <aside
-        className="stx-todo-pool stx-todo-pool--collapsed"
+        className="stx-cards-pool stx-cards-pool--collapsed"
         aria-label={`${ariaLabel} (collapsed)`}
       >
         <button
           type="button"
-          className="stx-todo-pool__expand"
+          className="stx-cards-pool__expand"
           onClick={() => setOpen(true)}
           aria-expanded={false}
           title={`Show ${label}`}
           aria-label={`Show ${ariaLabel}`}
         >
-          <span className="stx-todo-pool__expand-glyph" aria-hidden="true">
+          <span className="stx-cards-pool__expand-glyph" aria-hidden="true">
             ▸
           </span>
-          <span className="stx-todo-pool__expand-label">{label}</span>
+          <span className="stx-cards-pool__expand-label">{label}</span>
         </button>
       </aside>
     );
   }
 
   return (
-    <aside className="stx-todo-pool" aria-label={ariaLabel}>
-      <div className="stx-todo-pool__head">
+    <aside className="stx-cards-pool" aria-label={ariaLabel}>
+      <div className="stx-cards-pool__head">
         <button
           type="button"
-          className="stx-todo-pool__title"
+          className="stx-cards-pool__title"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           title="Collapse"
@@ -415,7 +415,7 @@ function UncategorizedPool({
         </button>
         <button
           type="button"
-          className="stx-todo-pool__new"
+          className="stx-cards-pool__new"
           onClick={beginCreate}
           title="New task"
           aria-label="New task"
@@ -424,12 +424,12 @@ function UncategorizedPool({
         </button>
       </div>
       {open && (
-        <div className="stx-todo-pool__groups">
+        <div className="stx-cards-pool__groups">
           {groups.map(({ status, items }) => (
-            <details className="stx-todo-pool__group" key={status}>
-              <summary className="stx-todo-pool__group-summary">
+            <details className="stx-cards-pool__group" key={status}>
+              <summary className="stx-cards-pool__group-summary">
                 <span
-                  className="stx-todo-pool__group-swatch"
+                  className="stx-cards-pool__group-swatch"
                   style={{
                     background: graph.status_colors[status]?.fill ?? "#888",
                     borderColor: graph.status_colors[status]?.stroke ?? "#888",
@@ -438,13 +438,13 @@ function UncategorizedPool({
                 />
                 {status} ({items.length})
               </summary>
-              <div className="stx-todo-pool__items">
+              <div className="stx-cards-pool__items">
                 {items.map(renderItem)}
               </div>
             </details>
           ))}
           {visible.length === 0 && (
-            <span className="stx-todo-pool__empty">no matches</span>
+            <span className="stx-cards-pool__empty">no matches</span>
           )}
         </div>
       )}
@@ -695,9 +695,9 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
     .join(",")}|${seeded.nodes.length}`;
 
   return (
-    <div className={`stx-todo-flow${saving ? " stx-todo-flow--saving" : ""}`}>
+    <div className={`stx-cards-flow${saving ? " stx-cards-flow--saving" : ""}`}>
       <Breadcrumb graph={graph} drillPath={drillPath} drillTo={drillTo} />
-      <div className="stx-todo-flow__body">
+      <div className="stx-cards-flow__body">
         <UncategorizedPool
           graph={graph}
           scope={scope}
@@ -705,14 +705,14 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
           activeStatuses={activeStatuses}
           activeRepos={activeRepos}
         />
-        <div className="stx-todo-flow__canvas">
+        <div className="stx-cards-flow__canvas">
           {/* Region hint label (operator UX 2026-06-06): floating top-left
             * pill saying "Canvas" so the user can name what they're looking
             * at vs the Pool aside and the Breadcrumb strip. Pointer-events
             * disabled so it never steals clicks from the React Flow surface
             * underneath. */}
           <span
-            className="stx-todo-flow__canvas-label"
+            className="stx-cards-flow__canvas-label"
             aria-hidden="true"
             title="Canvas — the connected dependency graph for the current drill scope"
           >
@@ -729,16 +729,16 @@ export function GraphView({ graph }: { graph: GraphPayload }) {
             * still receives pan/zoom interactions through this overlay. */}
           {viewNodes.length === 0 && (
             <div
-              className="stx-todo-flow__empty"
+              className="stx-cards-flow__empty"
               role="status"
               aria-live="polite"
             >
-              <p className="stx-todo-flow__empty-title">
+              <p className="stx-cards-flow__empty-title">
                 {scope
                   ? "No dependency edges inside this scope."
                   : "No connected tasks to render."}
               </p>
-              <p className="stx-todo-flow__empty-body">
+              <p className="stx-cards-flow__empty-body">
                 {scope
                   ? "The children of this parent live in the sidebar on the left (they don't depend on each other inside this scope yet). Click any sidebar card to open its details, or click ⌀ Home in the breadcrumb above to go back."
                   : "All tasks are uncategorized — see the Pool sidebar on the left."}

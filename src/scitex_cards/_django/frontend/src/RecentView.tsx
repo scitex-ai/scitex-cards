@@ -1,5 +1,5 @@
 /** RecentView — newest-first triage surface (operator TG msg 513,
- * 2026-06-12). "Make a Recent / 最近のToDo UI. There are many ToDos now —
+ * 2026-06-12). "Make a Recent / 最近のカード UI. There are many CARDs now —
  * I want to see at a glance when something new comes in."
  *
  * Design framing (dogfooding loop, lead-aligned): this view is the
@@ -110,7 +110,7 @@ function RecentRow({
 
   return (
     <div
-      className={`stx-todo-recent__row stx-todo-recent__row--${recency}`}
+      className={`stx-cards-recent__row stx-cards-recent__row--${recency}`}
       onClick={() => selectNode(node.id)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -120,9 +120,9 @@ function RecentRow({
       tabIndex={0}
       title="Open details (right-click to edit)"
     >
-      <div className="stx-todo-recent__topline">
+      <div className="stx-cards-recent__topline">
         <time
-          className="stx-todo-recent__ts"
+          className="stx-cards-recent__ts"
           dateTime={iso || undefined}
           title={hoverTip}
         >
@@ -130,7 +130,7 @@ function RecentRow({
         </time>
         {recency === "new" && (
           <span
-            className="stx-todo-recent__newbadge"
+            className="stx-cards-recent__newbadge"
             title="Added in the last 24 hours"
           >
             NEW 🆕
@@ -138,7 +138,7 @@ function RecentRow({
         )}
         {status && (
           <span
-            className="stx-todo-recent__status"
+            className="stx-cards-recent__status"
             style={{
               background: status.fill,
               borderColor: status.stroke,
@@ -149,7 +149,7 @@ function RecentRow({
         )}
         {project && (
           <span
-            className="stx-todo-recent__project"
+            className="stx-cards-recent__project"
             style={{
               background: `hsl(${projectHue(project)} 70% 28%)`,
               borderColor: `hsl(${projectHue(project)} 70% 45%)`,
@@ -161,18 +161,18 @@ function RecentRow({
         )}
         {prio && (
           <span
-            className={`stx-todo-recent__prio stx-todo-recent__prio--${prio.label.toLowerCase()}`}
+            className={`stx-cards-recent__prio stx-cards-recent__prio--${prio.label.toLowerCase()}`}
             title={`Priority ${prio.label}`}
           >
             {prio.label}
           </span>
         )}
       </div>
-      <div className="stx-todo-recent__title">{node.title}</div>
+      <div className="stx-cards-recent__title">{node.title}</div>
       {agent && (
-        <div className="stx-todo-recent__meta">
+        <div className="stx-cards-recent__meta">
           <span
-            className="stx-todo-recent__assignee"
+            className="stx-cards-recent__assignee"
             title={`Owned by ${agent}`}
           >
             👤 {agent}
@@ -227,13 +227,13 @@ export function RecentView({ graph }: { graph: GraphPayload }) {
   );
 
   return (
-    <div className="stx-todo-recent">
-      <div className="stx-todo-recent__titlebar">
-        <span className="stx-todo-recent__heading">
-          Recent — 最近のToDo (新着が上)
+    <div className="stx-cards-recent">
+      <div className="stx-cards-recent__titlebar">
+        <span className="stx-cards-recent__heading">
+          Recent — 最近のカード (新着が上)
         </span>
         <span
-          className="stx-todo-recent__count"
+          className="stx-cards-recent__count"
           title="Tasks added in the last 24 hours (using created_at, or earliest comment as fallback)"
         >
           {newCount} new in last 24h
@@ -241,7 +241,7 @@ export function RecentView({ graph }: { graph: GraphPayload }) {
         {!showOlder && olderCount > 0 && (
           <button
             type="button"
-            className="stx-todo-recent__show-older"
+            className="stx-cards-recent__show-older"
             onClick={() => setShowOlder(true)}
             title={`Show ${olderCount} tasks older than 30 days`}
           >
@@ -251,7 +251,7 @@ export function RecentView({ graph }: { graph: GraphPayload }) {
         {showOlder && (
           <button
             type="button"
-            className="stx-todo-recent__show-older"
+            className="stx-cards-recent__show-older"
             onClick={() => setShowOlder(false)}
             title="Collapse to the last 30 days"
           >
@@ -260,19 +260,19 @@ export function RecentView({ graph }: { graph: GraphPayload }) {
         )}
       </div>
       {sorted.length === 0 && !hasAnyTimestamp && (
-        <div className="stx-todo-recent__empty">
+        <div className="stx-cards-recent__empty">
           No <code>created_at</code> timestamps yet — Recent view will populate
           as new tasks are added with <code>created_at</code> or{" "}
           <code>comments[]</code>. Existing tasks can be timestamped via{" "}
-          <code>scitex-todo update &lt;id&gt; --created-at &lt;iso&gt;</code>.
+          <code>scitex-cards update &lt;id&gt; --created-at &lt;iso&gt;</code>.
         </div>
       )}
       {sorted.length === 0 && hasAnyTimestamp && (
-        <div className="stx-todo-recent__empty">
+        <div className="stx-cards-recent__empty">
           No tasks match the current filter.
         </div>
       )}
-      <div className="stx-todo-recent__list">
+      <div className="stx-cards-recent__list">
         {sorted.map((n) => (
           <RecentRow
             key={n.id}

@@ -58,7 +58,7 @@ def over_cap(env):
     """An agent ``a`` sitting FAR over its refuse threshold (limit 1 → 2x = 2).
 
     Yields the STORE path. Seeded by writing the 8 in-flight rows DIRECTLY
-    into the canonical SQLite DB (``seed_db_from_doc``): the gate itself
+    into the canonical DB (``seed_db_from_doc``): the gate itself
     refuses seeding past 2x through ``add_task``, which is the point — the
     seed must bypass the gate the tests then exercise. Returns the pinned
     STORE identity path (NOT the DB path — see the migration playbook's

@@ -25,7 +25,7 @@ from scitex_cards._store import add_task, reassign_all, reassign_task
 
 @pytest.fixture()
 def store():
-    # SQLite cutover: the store is the canonical DB that the conftest
+    # Post-cutover: the store is the canonical DB that the conftest
     # bootstraps empty per-test. Pass the pinned STORE identity path (==
     # resolve_tasks_path(None)) to the verbs so read-after-write round-trips;
     # the verbs read+write the DB and IGNORE this path except as the

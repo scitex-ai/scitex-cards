@@ -6,7 +6,7 @@ Mirrors ``src/scitex_cards/_django/handlers/priority.py``. Drives
 ``views.api_dispatch`` with a real ``RequestFactory`` POST; no mocks
 (STX-NM / PA-306).
 
-SQLite cutover: card DATA lives in the canonical DB (a path-independent read),
+Post-cutover: card DATA lives in the canonical DB (a path-independent read),
 so the baseline cards are seeded THERE via ``seed_db_from_doc``; the handler is
 handed the PINNED store-identity path (never a tmp_path YAML — a write stamped
 with a tmp path fails the next read's ownership check). The reorder is read
@@ -81,7 +81,7 @@ def _post_priority(store_path, body):
 
 
 def _load_priorities(store_path):
-    """Read the canonical store (SQLite) and return {id: priority}."""
+    """Read the canonical store and return {id: priority}."""
     return {t["id"]: t.get("priority") for t in load_tasks(store_path)}
 
 
@@ -242,7 +242,7 @@ def two_card_store_after_reorder():
     """Seed a two-card store (alpha/beta), reorder [beta, alpha], and return
     the {id: priority} read back through the canonical store.
 
-    (Under the SQLite cutover the old ``commented.yaml`` variant has no
+    (After the cutover the old ``commented.yaml`` variant has no
     subject: the handler writes the DB, never a YAML file, so there is no
     hand-written comment to preserve or drop — that assertion tested a
     YAML round-trip that no longer exists and is retired. The priorities-are-

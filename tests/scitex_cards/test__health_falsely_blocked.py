@@ -25,7 +25,7 @@ from scitex_cards._health import _check_no_falsely_blocked
 def _store(tmp_path, tasks):
     """Seed the canonical DB from an in-memory task list; return the STORE path.
 
-    The store is SQLite now: the health checks read the canonical DB, not a
+    The store is the database now: the health checks read it, not a
     YAML file. Seed the DB the harness pinned + bootstrapped, and return the
     pinned STORE identity path (NOT the DB path — see THE STORE-PATH RULE).
     """

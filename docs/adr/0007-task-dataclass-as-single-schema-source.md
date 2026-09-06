@@ -6,7 +6,7 @@ Accepted (2026-06-07)
 
 ## Context
 
-scitex-todo's schema has been accreting across the operator-co-design
+scitex-cards's schema has been accreting across the operator-co-design
 loops (TG 9517 / 9667 / 9671 / 9678 — lead a2a `28967019` / `2bd37bd2`
 / `a62db48c` / `6d9b6073`). Each loop added closed-enum fields (ADR-
 0002 `kind`, ADR-0003 `kind:"decision"`, ADR-0004 `blocker`) +
@@ -213,11 +213,11 @@ mechanically derived from it.
   render contract" table that maps each dataclass field to its UI
   card element. Together this ADR + ADR-0006 give the complete
   schema → UI pipeline.
-- The 270-task store at `~/.scitex/todo/tasks.yaml` carries the old
+- The 270-task store at `~/.scitex/cards/tasks.yaml` carries the old
   7-value status enum. The new dataclass tolerates both during the
   deprecation window — `from_dict` doesn't normalize statuses
   today; the migration is a separate ADR + one-shot rewrite.
 - ADR-0007 cross-link: per-task `adr.md` for the quality-hygiene
-  task at `tasks/proj-scitex-todo-quality-hygiene/adr.md` (to be
+  task at `tasks/proj-scitex-cards-quality-hygiene/adr.md` (to be
   created when the implementation starts) carries the task-scoped
   application of this convention.

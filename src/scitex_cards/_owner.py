@@ -59,7 +59,7 @@ def card_owner(card: Any) -> str | None:
     resolve to one user without changing what the board shows. A future,
     deliberate display-canonicalisation pass (once the fleet is fully
     registered) could route this through ``canonical_identity`` too — left as
-    a TODO to keep this change small and low-risk.
+    a CARD to keep this change small and low-risk.
     """
     if not isinstance(card, dict):
         return None

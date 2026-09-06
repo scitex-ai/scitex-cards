@@ -25,7 +25,7 @@ spartan agent                          hub (ywata-note-win)
 ```
 
 - Every remote agent keeps running its **local stdio MCP server** — the 23-tool surface (`_mcp_server.py:264-298`) is byte-identical on remote hosts, satisfying the "identical MCP surface" constraint by construction. Only the storage verbs beneath swap from local-file to HTTP client.
-- The hub runs a **new `scitex-cards serve` verb**: a small authenticated HTTP JSON-RPC service in front of the canonical DB. There is exactly one store, opened by processes on one machine — flock + SQLite WAL semantics stay valid (WAL over NFS/SMB is explicitly unsafe per `_db.py:85-119`, which rules out network-filesystem sharing; HTTP-fronting is the only shape compatible with "this one cards.db").
+- The hub runs a **new `scitex-cards serve` verb**: a small authenticated HTTP JSON-RPC service in front of the canonical DB. There is exactly one store, opened by processes on one machine — flock + write-ahead-log semantics stay valid (a write-ahead log over NFS/SMB is explicitly unsafe, which rules out network-filesystem sharing; HTTP-fronting is the only shape compatible with "this one store").
 
 ### Existing components to build on
 
@@ -34,7 +34,7 @@ spartan agent                          hub (ywata-note-win)
 | Locked `_store` verbs (`_store_write._store_lock`, `_store_mutate`, `_store_lifecycle`, `_store_comment`, `_store_relations`, `_store_reassign`, `_threads.append_message`) | **Foundation.** Every serve handler calls these — the same chokepoint MCP tools use. Full parity, events emitted, flock held across read-modify-write. |
 | Django board `/create`, `/comment`, `/chat`, `/dm` handlers | **Pattern only.** These four already delegate to the `_store` chokepoint (crud.py:219-232, 421-429) — that delegation style is the template for every new endpoint. |
 | Django board `/update /delete /restore /edge /resolve /reopen /priority /archive` | **Do NOT reuse.** They bypass the lock (cached-board read → `_model.save_tasks`, no `expected_generation`, no card-events — apiCov's documented lost-update window), have zero auth, are csrf_exempt, and honor `?store=` retargeting. Exposing them remotely would be exposing the exact bugs the coverage report catalogued. |
-| FastMCP 3.4.4 HTTP transport (`scitex-todo mcp start --http`, verified available) | **Rejected as the primary rail.** A shared hub-side MCP-over-HTTP server resolves `SCITEX_TODO_AGENT_ID` from *its own* env, so every remote agent's writes would be stamped with one hub identity; and the HTTP transport cannot carry the server-initiated claude/channel push (`_cli/_mcp.py:113-115`). Kept in the back pocket for single-identity tooling, nothing more. |
+| FastMCP 3.4.4 HTTP transport (`scitex-cards mcp start --http`, verified available) | **Rejected as the primary rail.** A shared hub-side MCP-over-HTTP server resolves `SCITEX_CARDS_AGENT_ID` from *its own* env, so every remote agent's writes would be stamped with one hub identity; and the HTTP transport cannot carry the server-initiated claude/channel push (`_cli/_mcp.py:113-115`). Kept in the back pocket for single-identity tooling, nothing more. |
 | `_ports.py` (TaskSyncPort, `host@name` identity contract) | **Reuse the identity contract** (`canonical_agent_id`); TaskSyncPort (git push/pull sync) is a *copies* design — contradicts the operator ruling — leave it dormant. |
 
 ### What must be NEW
@@ -66,7 +66,7 @@ def resolve_backend() -> CardsBackend:
 
 The `_mcp_*` modules call `backend.<verb>(...)` instead of importing `_store` functions directly. `LocalBackend` is a zero-behavior-change delegation; `HubBackend` maps each verb to one RPC round trip. Coarse verb-level granularity is deliberate: the **server** holds the flock — no distributed locking, no partial-state protocols, one round trip per MCP op.
 
-Three tools stay local-only regardless of backend: `todo_skills_list/get` (bundled package files), and `resolve_store` / `health` become **backend-aware** (`resolve_store` on a remote reports `backend=hub` + the URL — the "am I on a shadow store?" check the operator's ruling needs; `health` adds a hub `/v1/health` + auth probe).
+Three tools stay local-only regardless of backend: `cards_skills_list/get` (bundled package files), and `resolve_store` / `health` become **backend-aware** (`resolve_store` on a remote reports `backend=hub` + the URL — the "am I on a shadow store?" check the operator's ruling needs; `health` adds a hub `/v1/health` + auth probe).
 
 ### Env/config contract (all new, zero sac names)
 
@@ -77,7 +77,7 @@ Three tools stay local-only regardless of backend: `todo_skills_list/get` (bundl
 | Serve-side | `scitex-cards serve --port 8765` binds `127.0.0.1` only (no non-loopback flag in v1 at all); auto-mints `~/.scitex/cards/tokens/hub.token` + per-host tokens under `~/.scitex/cards/tokens/<host>.token`, 32 url-safe random bytes, 0600. |
 
 ### Identity on the wire
-Agent id = `SCITEX_TODO_AGENT_ID` (already wired per-agent). HubBackend sends it as `X-Scitex-Agent: <host@name>` on every request AND passes it through the verbs' existing `by`/`actor`/`created_by` parameters, so `_log_meta` stamping is identical to local writes. v1 trust model: bearer authenticates the *host*, header declares the *agent* — spoofable between mutually-trusted fleet agents; acceptable now, with per-agent token rows (sac node_tokens *pattern*, own table) as the named v2 hardening. Server rejects any request missing the identity header (fail-loud, mirrors sac's "host-wide bearer honours from_agent verbatim but requires it present").
+Agent id = `SCITEX_CARDS_AGENT_ID` (already wired per-agent). HubBackend sends it as `X-Scitex-Agent: <host@name>` on every request AND passes it through the verbs' existing `by`/`actor`/`created_by` parameters, so `_log_meta` stamping is identical to local writes. v1 trust model: bearer authenticates the *host*, header declares the *agent* — spoofable between mutually-trusted fleet agents; acceptable now, with per-agent token rows (sac node_tokens *pattern*, own table) as the named v2 hardening. Server rejects any request missing the identity header (fail-loud, mirrors sac's "host-wide bearer honours from_agent verbatim but requires it present").
 
 ---
 
@@ -104,7 +104,7 @@ All serve endpoints are `POST /v1/rpc/<verb>` (reads included — filter payload
 | dm_send / dm_list | /v1/rpc/dm_{send,list} | /dm/* hardwired from=operator — unusable for agents | NEW |
 | health | local + GET /v1/health probe | /ping (bare liveness) | NEW (health endpoint is the one unauthenticated route, sac pattern) |
 | resolve_store | local, backend-aware | none | no endpoint needed |
-| todo_skills_list / get | local (bundled files) | none | no endpoint needed |
+| cards_skills_list / get | local (bundled files) | none | no endpoint needed |
 
 Explicitly absent from serve v1: `?store=` retargeting (the serve store is pinned to the hub canonical, period), priority-reorder/archive (board/CLI-only ops, not in the MCP surface — add later only if a tool appears).
 
@@ -131,7 +131,7 @@ Remote agents then use `SCITEX_CARDS_HUB_URL=http://127.0.0.1:8765` — a loopba
 - Hub mints per-host tokens: `~/.scitex/cards/tokens/{spartan,nas}.token` (0600, 32 random url-safe bytes, constant-time compare server-side, `/v1/health` public — all sac *patterns*, zero sac code or files).
 - One-time provisioning per host, shipped as a helper: `scitex-cards hub provision spartan` → scp token to `spartan:~/.scitex/cards/hub.token` (0600) over the existing ssh alias.
 - Operator must provision: (1) the two tunnel units on the hub, (2) run `hub provision` twice, (3) set `SCITEX_CARDS_HUB_URL` in remote agents' environments (how it's injected is the deployer's concern — cards stays independent of sac's injector). Nothing else.
-- `scitex-cards hub doctor` (remote side): URL set? token readable? `/v1/health` reachable? authenticated identity echo matches `SCITEX_TODO_AGENT_ID`? Four checks, each fail-loud with a hint.
+- `scitex-cards hub doctor` (remote side): URL set? token readable? `/v1/health` reachable? authenticated identity echo matches `SCITEX_CARDS_AGENT_ID`? Four checks, each fail-loud with a hint.
 
 ---
 
@@ -157,7 +157,7 @@ Remote agents then use `SCITEX_CARDS_HUB_URL=http://127.0.0.1:8765` — a loopba
 
 ## 6. STAGED PRs + SPARTAN PILOT
 
-Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in `_mcp_*`; they never modify `_store_*` internals, so the in-flight S6 store cutover (YAML→SQLite beneath the verbs) proceeds independently — the seam sits *above* the engine S6 is swapping. Land after S6's verb signatures are frozen on 0.17.
+Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in `_mcp_*`; they never modify `_store_*` internals, so the in-flight S6 store cutover (YAML→database beneath the verbs) proceeds independently — the seam sits *above* the engine S6 is swapping. Land after S6's verb signatures are frozen on 0.17.
 
 | PR | Content | Independent verification |
 |---|---|---|
@@ -170,7 +170,7 @@ Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in
 1. Operator: tunnel unit + `hub provision spartan` + env on one login-node agent.
 2. `scitex-cards hub doctor` on spartan: all four checks green.
 3. Write matrix from spartan via ordinary MCP tools: `add_task` (unique id) → `comment_task` → `update_task` → `set_edge` → `dm_send` → `poll_notifications(ack)`.
-4. **Read-back gate — every claim verified from the other side:** each write is confirmed by (a) hub-side direct read (CLI/sqlite against `~/.scitex/cards/cards.db`) showing the row with `created_by`/actor = the spartan agent id, and (b) spartan-side `get_task` returning the identical card. No write counts until both read-backs pass.
+4. **Read-back gate — every claim verified from the other side:** each write is confirmed by (a) hub-side direct read (CLI or a direct database session against the canonical store) showing the row with `created_by`/actor = the spartan agent id, and (b) spartan-side `get_task` returning the identical card. No write counts until both read-backs pass.
 5. Record per-op latency over the tunnel (expect 1 RTT/op); kill the tunnel mid-session and confirm the failure is loud, attributed, and leaves no local shadow store on spartan.
 6. NAS follows only after the spartan gate passes.
 
@@ -180,7 +180,7 @@ Sequencing rule honored: PR-1..4 touch only **new modules** plus import-swaps in
 
 | Risk | Mitigation |
 |---|---|
-| **Concurrency on one cards.db** — HTTP writers + hub-local MCP + board writing simultaneously | Serve handlers use only the locked `_store` verbs (flock across full read-modify-write, SQLite WAL + 300s busy_timeout hub-side) — the server is just another local process, so the existing single-host locking story covers it. Residual hazard is the board's 8 bypassing endpoints (apiCov's lost-update finding) — pre-existing, hub-local, and a recommended follow-up card: route them through `_store` too. They are never exposed remotely. |
+| **Concurrency on one cards.db** — HTTP writers + hub-local MCP + board writing simultaneously | Serve handlers use only the locked `_store` verbs (flock across full read-modify-write, write-ahead logging + a 300s busy timeout hub-side) — the server is just another local process, so the existing single-host locking story covers it. Residual hazard is the board's 8 bypassing endpoints (apiCov's lost-update finding) — pre-existing, hub-local, and a recommended follow-up card: route them through `_store` too. They are never exposed remotely. |
 | **Latency** — every MCP op is a WAN round trip (hub↔spartan) | One RPC per op by design; `list_tasks` filters execute hub-side (never the 5 MB `/tasks` dump); no auto-retry on writes (avoids duplicate comments; `add_task` is id-idempotent anyway); pilot records p50/p95 before NAS rollout. |
 | **Auth leakage** — token on a shared HPC home dir | 0600 file, never in URL/query, only the Authorization header, wire is ssh-encrypted end to end; `serve --rotate-token` + re-provision is a two-command rotation; JSONL audit gives detection. Agent-identity spoofing within the trusted fleet is accepted v1, closed by per-agent tokens in v2. |
 | **Tunnel fragility** — remote work stalls when the forward drops | autossh Restart=always; end-to-end monitor = hub cron ssh-probing `curl 127.0.0.1:8765/v1/health` *on the peer* (traverses the whole loop, hub-initiated like sac's pull posture). Deliberately **no offline write queue**: a queue is a second copy under another name — remotes fail loud and wait, per the operator's one-database ruling. |

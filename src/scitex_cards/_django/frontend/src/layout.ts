@@ -165,7 +165,7 @@ export function parentNodeStyle(
  * label is plain text, so a status pill can't ride along with the title.
  * Returning a JSX subtree lets us:
  *   - place a colored "N ↓" PILL BADGE in the top-right corner, absolute-
- *     positioned via CSS (`.stx-todo-node__badge`)
+ *     positioned via CSS (`.stx-cards-node__badge`)
  *   - prefix the title with a "⊞" expand glyph (universal "container /
  *     drill in" icon — not theme- or font-dependent like a folder emoji)
  *   - set a NATIVE `title` attribute on the inner span so the browser
@@ -194,17 +194,17 @@ function parentLabel(
     : `Drill into ${title} (${kids} ${kids === 1 ? "child" : "children"})`;
   return createElement(
     "span",
-    { className: "stx-todo-node__label", title: tip },
+    { className: "stx-cards-node__label", title: tip },
     createElement(
       "span",
-      { className: "stx-todo-node__badge", "aria-label": tip },
+      { className: "stx-cards-node__badge", "aria-label": tip },
       `${kids} ↓`,
     ),
     decision
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__decision",
+            className: "stx-cards-node__decision",
             "aria-label": "decision node",
             title: "Decision node — body in tasks/<id>/adr.md (kind: decision)",
           },
@@ -215,7 +215,7 @@ function parentLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__compute",
+            className: "stx-cards-node__compute",
             "aria-label": "compute job",
             title: "Compute job — externally-updated row (kind: compute)",
           },
@@ -226,7 +226,7 @@ function parentLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__blocked",
+            className: "stx-cards-node__blocked",
             "aria-label": "blocked",
             title: "Blocked — see Blockers section in the detail drawer",
           },
@@ -235,7 +235,7 @@ function parentLabel(
       : null,
     createElement(
       "span",
-      { className: "stx-todo-node__glyph", "aria-hidden": "true" },
+      { className: "stx-cards-node__glyph", "aria-hidden": "true" },
       "⊞ ",
     ),
     `${title}${suffix}`,
@@ -243,7 +243,7 @@ function parentLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__blocked-by",
+            className: "stx-cards-node__blocked-by",
             title: `Blocked by ${blockerId}`,
           },
           `← ${truncateId(blockerId)}`,
@@ -253,9 +253,9 @@ function parentLabel(
       ? createElement(
           "span",
           {
-            className: `stx-todo-node__decision-impact${
+            className: `stx-cards-node__decision-impact${
               decision.impact >= 5
-                ? " stx-todo-node__decision-impact--high"
+                ? " stx-cards-node__decision-impact--high"
                 : ""
             }`,
             title: `Resolving this decision will auto-unblock ${decision.impact} task${
@@ -274,7 +274,7 @@ function parentLabel(
     createElement(
       "span",
       {
-        className: "stx-todo-node__hover-hint",
+        className: "stx-cards-node__hover-hint",
         "aria-hidden": "true",
       },
       "⊞ Drill in",
@@ -289,7 +289,7 @@ function parentLabel(
  *
  * When the task is `status: blocked`, a leading "🚧" glyph is prepended so the
  * board reads at a glance which threads are stuck (the operator's UX request
- * 2026-06-06: "ブロッカーが何かわからないので、todo にブロッカー可視化"). The
+ * 2026-06-06: "ブロッカーが何かわからないので、card にブロッカー可視化"). The
  * tooltip also flags it as blocked so a hover confirms what's wrong without
  * opening the drawer. */
 function leafLabel(
@@ -312,14 +312,14 @@ function leafLabel(
   return createElement(
     "span",
     {
-      className: "stx-todo-node__label",
+      className: "stx-cards-node__label",
       title: tip,
     },
     decision
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__decision",
+            className: "stx-cards-node__decision",
             "aria-label": "decision node",
             title: "Decision node — body lives in tasks/<id>/adr.md (kind: decision)",
           },
@@ -330,7 +330,7 @@ function leafLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__compute",
+            className: "stx-cards-node__compute",
             "aria-label": "compute job",
             title: "Compute job — externally-updated row (kind: compute)",
           },
@@ -341,7 +341,7 @@ function leafLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__blocked",
+            className: "stx-cards-node__blocked",
             "aria-label": "blocked",
           },
           "🚧 ",
@@ -352,7 +352,7 @@ function leafLabel(
       ? createElement(
           "span",
           {
-            className: "stx-todo-node__blocked-by",
+            className: "stx-cards-node__blocked-by",
             title: `Blocked by ${blockerId}`,
           },
           `← ${truncateId(blockerId)}`,
@@ -362,9 +362,9 @@ function leafLabel(
       ? createElement(
           "span",
           {
-            className: `stx-todo-node__decision-impact${
+            className: `stx-cards-node__decision-impact${
               decision.impact >= 5
-                ? " stx-todo-node__decision-impact--high"
+                ? " stx-cards-node__decision-impact--high"
                 : ""
             }`,
             title: `Resolving this decision will auto-unblock ${decision.impact} task${
@@ -606,7 +606,7 @@ export function buildFlow(
     //   (4) a stacked-card box-shadow pile             — depth = container
     //   (5) `zoom-in` hover cursor + tilt via CSS      — interaction cue
     // The label is now a ReactNode (was a string) so the badge can sit at
-    // the corner via CSS — see board.css `.stx-todo-node__badge`.
+    // the corner via CSS — see board.css `.stx-cards-node__badge`.
     const kids = nodeChildCount(graph, n.id);
     const isParent = kids > 0;
     // Comment-count badge: a "💬N" suffix when the task has any comments, so
@@ -670,11 +670,11 @@ export function buildFlow(
       // `--decision-operator` modifier to drive the LOUD purple-gold halo
       // (this is the one the operator opens the UI to find — ADR-0003).
       className: [
-        "stx-todo-node",
-        isParent ? "stx-todo-node--parent" : "stx-todo-node--leaf",
-        n.kind === "decision" ? "stx-todo-node--decision" : "",
+        "stx-cards-node",
+        isParent ? "stx-cards-node--parent" : "stx-cards-node--leaf",
+        n.kind === "decision" ? "stx-cards-node--decision" : "",
         n.kind === "decision" && n.blocker === "operator-decision"
-          ? "stx-todo-node--decision-operator"
+          ? "stx-cards-node--decision-operator"
           : "",
       ]
         .filter(Boolean)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PostgreSQL equivalents of the SQLite guard triggers.
+PostgreSQL equivalents of the schema's inline-body guard triggers.
 
-A SQLITE TRIGGER DOES NOT PORT AS A STRING SWAP. Its body is inline SQL with
+AN INLINE TRIGGER DOES NOT PORT AS A STRING SWAP. Its body is inline SQL with
 ``RAISE(ABORT)``; PostgreSQL needs a plpgsql FUNCTION plus a trigger that
 calls it, with ``RAISE EXCEPTION``, ``IS DISTINCT FROM`` for null-safe
 comparison, a parenthesised ``WHEN``, and an explicit ``RETURN`` in BEFORE
@@ -164,7 +164,8 @@ PG_TRIGGER_NAMES: frozenset[str] = frozenset({
     "tasks_bump_revision",
 })
 
-#: Keyed by the SQLITE trigger name so ``execute_ddl`` can SUBSTITUTE, not skip,
+#: Keyed by the schema constant's trigger name so ``execute_ddl`` can
+#: SUBSTITUTE, not skip,
 #: when it meets a ``CREATE TRIGGER IF NOT EXISTS`` while talking to PostgreSQL.
 #: Substitution is what keeps the failure loud: an unknown name RAISES, whereas a
 #: skip would leave the table present and its guard silently absent -- a database

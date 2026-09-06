@@ -35,7 +35,8 @@ Read `threads.json` **under its own flock** so no writer is mid-RMW. Then:
 - `read: true` → one `dm_receipts` row, `source='backfill'`.
 
 **Id-less records.** The inbox migration skips them
-(`_inbox_sqlite._migrate_into_conn`) because a record with no stable id cannot
+(the retired inbox backend's `_migrate_into_conn`) because a record with no
+stable id cannot
 be deduped on re-run. Here we can do better: mint
 `'m_' + sha256(thread_id|from|to|ts|body)[:24]` — content-derived, so a re-run
 maps to the same PK. Skipping would *lose a message*, which this design may not
@@ -137,8 +138,11 @@ expressible, because neither writer restates rows it did not author. This is a
 strict improvement even with no multi-host story at all.
 
 **2. One DB on a shared filesystem, several hosts — REJECTED, explicitly.**
-SQLite over NFS/CIFS is unsafe (advisory locking). `cards.db` must not be put
-on a network share. This is written down so nobody "fixes" multi-host that way.
+A file-backed engine over NFS/CIFS is unsafe (advisory locking is unreliable
+there). The store must not be put on a network share. This is written down so
+nobody "fixes" multi-host that way. (Moot since the cutover to PostgreSQL,
+which is reached over the network by design; kept because the reasoning is
+what stopped the shared-file shortcut.)
 
 **3. Hub-authoritative — RECOMMENDED, and already built.**
 `SCITEX_CARDS_HUB_URL` + `scitex-cards serve` already route `dm_send` /

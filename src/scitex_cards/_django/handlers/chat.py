@@ -39,15 +39,15 @@ Design principles (HARD, from the operator brief):
   write via the existing ``_store.comment_task`` API. No new schema,
   no parallel storage.
 - **NO hardcoded proper nouns** — the ``author`` value flows in from
-  the request body (set by the FE from ``SCITEX_TODO_AGENT_ID`` env, with
+  the request body (set by the FE from ``SCITEX_CARDS_AGENT_ID`` env, with
   operator-typed override). The fallback used when neither is supplied
   is the closed sentinel string ``"<unknown>"`` — purely a display token,
   not a literal agent name.
 - **read + write floor; NO RW-perm gating yet** — the operator may want
-  operator-only writes later (TODO below); the floor allows all writes
+  operator-only writes later (CARD below); the floor allows all writes
   so the WRITE-BACK UI can land standalone.
 
-Out of scope (deferred — flagged with TODOs):
+Out of scope (deferred — flagged with CARDs):
 
 - RW-perm gating (operator-write, agents-read).
 - WebSocket push — polling at 30s is fine for the floor.
@@ -67,7 +67,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 # ---------------------------------------------------------------------------
 
 #: Fallback display label when neither the request body's ``author`` field nor
-#: the underlying ``_store.comment_task`` default (``$SCITEX_TODO_AGENT_ID`` →
+#: the underlying ``_store.comment_task`` default (``$SCITEX_CARDS_AGENT_ID`` →
 #: ``$USER``) is set. Purely a display string — never a literal agent name,
 #: per the "no hardcoded proper nouns" principle.
 _UNKNOWN_AUTHOR: str = "<unknown>"

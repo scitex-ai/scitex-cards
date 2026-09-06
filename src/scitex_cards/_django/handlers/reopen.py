@@ -137,7 +137,7 @@ def handle_reopen(request, board):
         if _BUS is None:
             _BUS = InProcessPubSub()
             handle_reopen._BUS = _BUS  # type: ignore[attr-defined]
-        channel = f"scitex-todo:task:{task.get('project', 'unknown')}/{task_id}"
+        channel = f"scitex-cards:task:{task.get('project', 'unknown')}/{task_id}"
         _BUS.publish(
             channel,
             {
@@ -149,10 +149,10 @@ def handle_reopen(request, board):
             },
         )
     except Exception:  # noqa: BLE001 — publish-failure is non-fatal
-        logger.exception("[scitex-todo] reopen notify-publish failed (non-fatal)")
+        logger.exception("[scitex-cards] reopen notify-publish failed (non-fatal)")
 
     logger.info(
-        "[scitex-todo] REOPENED %s by %s in %s (status %r->%r)",
+        "[scitex-cards] REOPENED %s by %s in %s (status %r->%r)",
         task_id,
         actor,
         board.store_path,

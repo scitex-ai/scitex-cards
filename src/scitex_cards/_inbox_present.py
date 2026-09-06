@@ -3,7 +3,7 @@
 """PRESENTATION — put the message in front of the agent, then ask for the ack.
 
 THE SECOND DELIVERY RAIL. Delivery had exactly ONE rail: the MCP channel push.
-When the agent spec whitelisted ``server:scitex-todo`` while ``.mcp.json``
+When the agent spec whitelisted ``server:scitex-cards`` while ``.mcp.json``
 registered the server as ``scitex-cards`` (renamed during the migration), Claude
 Code SILENTLY DISCARDED every push. ``send()`` returned normally, the drain
 acked on that success, and the message was gone. Measured on this agent: 228

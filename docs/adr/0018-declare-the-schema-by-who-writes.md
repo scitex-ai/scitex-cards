@@ -257,7 +257,7 @@ renamed from `text` so that posting it back as content would read wrong
 > If a caller ever posts it back as the comment body it silently destroys the tail
 > of that comment. The field is named so that writing such code reads wrong.
 
-The reasoning is recorded on card `todo-board-graph-payload-slim-20260710`
+The reasoning is recorded on card `cards-board-graph-payload-slim-20260710`
 (comment `c_c16b1bb7d9dc`): *"the preview field is `text_preview`, not `text`. …
 `text` reads like the full body."* That is the bar the two renames above are
 measured against.
@@ -288,7 +288,7 @@ flag-day rename.** Specifically:
 3. **Dual-read**, preferring the new and falling back to the old — the same
    prefer-with-fallback shape the `/graph` payload migration used so that merge
    order never mattered (that programme's ledger is on card
-   `todo-board-graph-payload-slim-20260710`).
+   `cards-board-graph-payload-slim-20260710`).
 4. **Backfill** the old rows.
 5. **Retire** the old name only once no reachable reader needs it.
 

@@ -37,7 +37,7 @@ Distinct from :func:`_next.next_task`:
     self-consumption loop.
   - `runnable_tasks` returns the FULL list, respects `depends_on`,
     is what the parallelism dispatcher (lead-side) consumes via the
-    `scitex-todo runnable` CLI / `/runnable` endpoint.
+    `scitex-cards runnable` CLI / `/runnable` endpoint.
 """
 
 from __future__ import annotations

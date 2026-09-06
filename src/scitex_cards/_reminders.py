@@ -78,7 +78,7 @@ from ._reminder_enqueue import (
 )
 from ._reminder_liveness import _card_creator, _owner_liveness
 from ._reminder_cadence import resolve_owner_interval
-from ._stale_active import detect_pending_backlog, detect_stale_active
+from ._stale.active import detect_pending_backlog, detect_stale_active
 from ._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)
@@ -89,33 +89,33 @@ REMINDER_SIDECAR_NAME = "reminders.yaml"
 #: Digests to an owner before a HIGH-PRIORITY card also escalates to the
 #: operator. Escalation fires once per stale streak (reset when the card
 #: leaves the stale set).
-ENV_ESCALATE_AFTER = "SCITEX_TODO_REMINDER_ESCALATE_AFTER"
+ENV_ESCALATE_AFTER = "SCITEX_CARDS_REMINDER_ESCALATE_AFTER"
 DEFAULT_ESCALATE_AFTER = 3
 
 #: A card with ``priority <= this`` is "high priority" (lower int = higher
 #: priority, matching the card model). Cards without a priority never
 #: escalate (only the owner is nagged).
-ENV_ESCALATE_PRIORITY = "SCITEX_TODO_REMINDER_ESCALATE_PRIORITY"
+ENV_ESCALATE_PRIORITY = "SCITEX_CARDS_REMINDER_ESCALATE_PRIORITY"
 DEFAULT_ESCALATE_PRIORITY = 1
 
 #: Liveness TTL (seconds) for the creator-escalation path: a card's owner
 #: whose registry ``last_seen`` is older than this (or absent) is "not alive"
 #: and the card escalates to its CREATOR. Mirrors the users-layer default;
 #: overridable per-sweep via the ``liveness_ttl`` arg or this env knob.
-ENV_LIVENESS_TTL = "SCITEX_TODO_REMINDER_LIVENESS_TTL"
+ENV_LIVENESS_TTL = "SCITEX_CARDS_REMINDER_LIVENESS_TTL"
 DEFAULT_LIVENESS_TTL = 600
 
 #: The operator identity escalations are addressed to (resolved like any
 #: other recipient). Delivery to Telegram is operator-gated config
 #: (recipients.yaml + token); the engine only enqueues.
-ENV_OPERATOR = "SCITEX_TODO_OPERATOR"
+ENV_OPERATOR = "SCITEX_CARDS_OPERATOR"
 DEFAULT_OPERATOR = "operator"
 
 #: Optional owner ALLOWLIST for a phased rollout. Comma-separated owner
 #: names; when set, ONLY those owners are nagged (every other owner is left
 #: untouched). Empty / unset = nag every owner. Lets the engine start scoped
 #: to one agent and widen deliberately, with no fleet-wide first-sweep storm.
-ENV_REMINDER_OWNERS = "SCITEX_TODO_REMINDER_OWNERS"
+ENV_REMINDER_OWNERS = "SCITEX_CARDS_REMINDER_OWNERS"
 
 #: Event types (also the inbox dedup discriminator + the ledger key prefix).
 EVENT_DIGEST = "reminder"
@@ -188,61 +188,37 @@ def _sidecar_path(store: str | Path | None) -> Path:
 
 
 def load_reminder_state(store: str | Path | None = None) -> dict[str, dict]:
-    """Load the reminder sidecar → ``{"owners": {...}, "cards": {...}}``.
+    """Load reminder state from the DATABASE → ``{"owners": {...}, "cards": {...}}``.
 
-    Missing / unreadable / malformed sidecar → empty sections (fail-soft: a
-    bad sidecar must never break a sweep). Always returns both sections so
-    callers can index them without guarding. A legacy ``cards:``-only sidecar
-    loads leniently (only the ``escalated`` latch is still meaningful; the
-    per-owner cadence rebuilds from the first sweep — no migration needed).
+    Was a ``reminders.yaml`` sidecar under ``runtime/``; moved to the store on
+    the operator's 2026-08-17 directive, and because that directory is for
+    REGENERABLE state while this is not — losing it re-escalates every card,
+    and holding it per host escalates once per machine.
+
+    Fail-soft is UNCHANGED and load-bearing: any failure yields empty sections
+    and a warning, never an exception. A sweep must not die because its
+    bookkeeping is unavailable. Always returns both sections so callers index
+    without guarding.
     """
-    import yaml
+    from ._db_sweep_state import SCOPE_REMINDERS, load_sections
 
-    from ._yaml import safe_load
-
-    path = _sidecar_path(store)
-    empty = {"owners": {}, "cards": {}}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return empty
-    except OSError as exc:  # noqa: BLE001 — unreadable sidecar must not break the sweep
-        logger.warning("reminders: cannot read %s: %s", path, exc)
-        return empty
-    try:
-        data = safe_load(text) or {}
-    except yaml.YAMLError as exc:
-        logger.warning("reminders: malformed %s: %s", path, exc)
-        return empty
-    if not isinstance(data, dict):
-        return empty
-    owners = data.get("owners")
-    cards = data.get("cards")
-    return {
-        "owners": owners if isinstance(owners, dict) else {},
-        "cards": cards if isinstance(cards, dict) else {},
-    }
+    return load_sections(SCOPE_REMINDERS, ("owners", "cards"), store)
 
 
 def save_reminder_state(state: dict[str, dict], store: str | Path | None = None) -> None:
-    """Atomically persist the reminder sidecar (temp + ``os.replace``)."""
-    import yaml
+    """Persist reminder state to the DATABASE (row per entry, versioned upsert).
 
-    path = _sidecar_path(store)
-    payload = {
-        "owners": state.get("owners") or {},
-        "cards": state.get("cards") or {},
-    }
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(
-            yaml.safe_dump(payload, sort_keys=True, allow_unicode=True),
-            encoding="utf-8",
-        )
-        os.replace(tmp, path)
-    except OSError as exc:  # noqa: BLE001 — a failed state write must not break delivery
-        logger.warning("reminders: cannot write %s: %s", path, exc)
+    Replace semantics are preserved from the whole-document write this
+    supersedes: an entry the caller drops is soft-deleted. Fail-soft is
+    preserved too — a failed state write must not break delivery.
+    """
+    from ._db_sweep_state import SCOPE_REMINDERS, save_sections
+
+    save_sections(
+        SCOPE_REMINDERS,
+        {"owners": state.get("owners") or {}, "cards": state.get("cards") or {}},
+        store,
+    )
 
 
 def _is_parked(card: dict | None) -> bool:

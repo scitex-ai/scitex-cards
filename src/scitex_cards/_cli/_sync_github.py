@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo sync-github`` CLI verb.
+"""``scitex-cards sync-github`` CLI verb.
 
 Permanent version of the lead's one-time GitHub→board sync (a2a
 ``7489ac3173fa4d7e9b2a870e30085b44`` 2026-06-12). Pulls today's (or
@@ -132,9 +132,9 @@ def sync_github_cmd(since: str | None, dry_run: bool, assume_yes: bool) -> None:
 
     \b
     Example:
-      $ scitex-todo sync-github --dry-run
-      $ scitex-todo sync-github --since 2026-06-01 -y
-      $ scitex-todo sync-github -y                  # cron / scripted use
+      $ scitex-cards sync-github --dry-run
+      $ scitex-cards sync-github --since 2026-06-01 -y
+      $ scitex-cards sync-github -y                  # cron / scripted use
     """
     # Defer the imports to avoid pulling `_store` at module load (some
     # call paths import this module without needing the write side).

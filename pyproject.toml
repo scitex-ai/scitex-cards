@@ -3,11 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-# Renamed from `scitex-todo` (operator directive 2026-07-15/16). The import
-# package is `scitex_cards`; `scitex_todo` ships as a deprecated re-export
-# shim for one transition window so un-cutover consumers keep working.
 name = "scitex-cards"
-version = "0.40.0"
+version = "0.51.2"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -15,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "Yusuke Watanabe" },
 ]
-keywords = ["todo", "tasks", "dependency-graph", "mermaid", "science"]
+keywords = ["cards", "tasks", "dependency-graph", "mermaid", "science"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -30,8 +27,8 @@ classifiers = [
 
 # `scitex_config` is a FOUNDATIONAL ecosystem lib (not a leaf peer): it
 # supplies `local_state.user_path`, the user-canonical path resolver the
-# shadow-SQLite adapter (`_db.resolve_db_path`) delegates to instead of
-# re-rolling a project/user precedence (RFC #348 S0).
+# sidecar path helpers use instead of re-rolling a project/user precedence
+# (RFC #348 S0).
 dependencies = [
     "pyyaml",
     "click",
@@ -58,7 +55,8 @@ dependencies = [
     # any sense the user would recognise.
     #
     # `[binary]` bundles libpq, so this installs on a bare machine with no
-    # PostgreSQL client libraries. SQLite remains the zero-config default.
+    # PostgreSQL client libraries. There is no zero-config default and no
+    # second backend: an unconfigured store RAISES.
     "psycopg[binary]>=3.1",
     # PROMOTED FROM THE `web`, `mcp` AND `currency` EXTRAS, 2026-08-03, under
     # the same test psycopg was promoted by: WHEN THIS IS MISSING, DOES THE
@@ -81,17 +79,54 @@ dependencies = [
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",
-    "fastmcp>=2.0",
+    # <4 is MEASURED, 2026-09-05: fastmcp 4.0.3 stopped holding mcp below
+    # 2.0, so an unbounded resolution now installs mcp 2.1.1, whose
+    # ServerSession no longer takes the initialization options positionally.
+    # `_mcp_channel.py` opens the live channel session with the 1.x shape and
+    # raises TypeError at the handshake (CI run 33935106759, every Python).
+    # The bound states the versions that actually pass; the port to mcp 2.x
+    # is its own card (cards-fresh-install-resolves-fastmcp-4-mcp-2-...),
+    # and this line must not outlive that decision.
+    "fastmcp>=2.0,<4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
-    # >=0.17.11 for the JobSpec service|timer|cron taxonomy + new
+    # >=0.17.11 was the JobSpec floor: the service|timer|cron taxonomy + the
     # restart_policy field used by _jobs_provider.provide_jobs(). Older
-    # versions don't have the kwarg and the leaf TypeErrors on import.
-    "scitex-dev>=0.17.11",
+    # versions don't have the kwarg and the leaf TypeErrors on import. That
+    # reason still holds; it is simply no longer the BINDING constraint.
+    #
+    # THE BINDING FLOOR IS 0.49.0, and it is a COLLECTION failure, not a
+    # runtime one. tests/scitex_cards/test__store_plugin_merge_semantics.py:37
+    # imports `scitex_dev.store` at MODULE SCOPE, unguarded, so a conforming
+    # `pip install -e .[dev]` that resolved an older scitex-dev would die
+    # during collection rather than skip.
+    #
+    # Floors measured from git tags AND wheels, not from a changelog:
+    #     FieldPolicy   first exported  0.44.0
+    #     StorePlugin   first exported  0.49.0   (v0.48.0 -> 0 hits, v0.49.0 -> 4)
+    # StorePlugin is the later of the two, so it sets the floor.
+    #
+    # NOTE the currency pin at the bottom of this file (>=0.34.0) is a
+    # DIFFERENT constraint with a different purpose and is deliberately left
+    # alone, as are the core [project] dependencies — scitex-dev is correctly
+    # NOT a runtime dependency of this package.
+    #
+    # THE BINDING FLOOR IS NOW 0.57.0, and it binds HARDER than 0.49.0 did:
+    # 0.49.0 broke the collection of ONE module, this breaks the WHOLE SESSION.
+    # `tests/conftest.py` imports `scitex_dev.store.testing` at import time for
+    # `writable_dsn` / `ephemeral_schema`, which is how every test gets its own
+    # throwaway PostgreSQL schema now that a scratch FILE names no store. If
+    # that import fails the harness has no store to pin to, and it deliberately
+    # does NOT fall back to leaving $SCITEX_CARDS_DB unset — that is the live
+    # fleet board — so every test errors on configuration instead.
+    #
+    # Measured from the tag, not a changelog: `scitex_dev/store/testing.py`
+    # first appears at v0.57.0 (absent at v0.56.8).
+    "scitex-dev>=0.57.0",
     # Web-extra deps are imported (guarded) by the Django board source and its
     # tests; include them so a fresh `pip install -e .[dev]` runs the full
     # suite rather than silently skipping the board tests (PS-210).
@@ -150,7 +185,6 @@ web = [
     # pins outside this repo are updated -- measured 2026-08-03, three build
     # sites in scitex-agent-container name `scitex-cards[mcp,postgres]`:
     #   containers/apptainer-scitex.def (x2), containers/apptainer-base.def
-    # plus docs/CHEATSHEET-fleet-todo.md naming `scitex-todo[mcp]`.
     #
     # Deleting the name first would not break those builds -- the dependencies
     # are core, so the install still gets everything, and an unknown extra is a
@@ -171,7 +205,8 @@ mcp = [
     # resolving, and now resolving to a COMPLETE install, is the point.
     #
     # Restated rather than left empty, per PS-214 -- see the `web` note above.
-    "fastmcp>=2.0",
+    # Same <4 bound as `dependencies`, for the same measured reason.
+    "fastmcp>=2.0,<4",
 ]
 postgres = [
     # KEPT DELIBERATELY, THOUGH IT IS NOW REDUNDANT: psycopg was promoted to a
@@ -189,9 +224,9 @@ postgres = [
     # ---- history, kept because it explains why the extra existed ----
     # THE CAPABILITY ALREADY WORKS AND WAS NEVER DECLARED. `_backend_connect`
     # reads a PostgreSQL store today -- verified against a real server
-    # (PostgreSQL 18.4, database scitex_cards): the same query string, with
-    # SQLite's `?` placeholders, returned the same 264 rows through both
-    # backends because `_store_url.to_paramstyle` translates in transit.
+    # (PostgreSQL 18.4, database scitex_cards): the package's own query
+    # strings, written in the `?` paramstyle, returned 264 rows unchanged
+    # because `_store_url.to_paramstyle` translates in transit.
     #
     # It worked only because psycopg happened to be present in the
     # environment where it was tried. Nothing in the package asked for it, so
@@ -202,9 +237,9 @@ postgres = [
     # `[binary]` bundles libpq rather than requiring system client libraries,
     # so this extra installs on a bare machine without a PostgreSQL install.
     #
-    # SQLite remains the zero-config default and is NOT moved behind an extra:
-    # the canonical store is SQLite, and a store you cannot open without an
-    # optional dependency is not a default.
+    # The driver is NOT behind an extra: the canonical store is PostgreSQL,
+    # and a store you cannot open without an optional dependency is not a
+    # store.
     "psycopg[binary]>=3.1",
 ]
 currency = [
@@ -282,22 +317,14 @@ all = [
     "scitex-cards[dev,docs,mcp,web,currency,postgres]",
 ]
 
-# BOTH console scripts resolve to the canonical `scitex_cards` CLI. The legacy
-# `scitex-todo` binary MUST keep working through the transition window: the
-# agent fleet invokes it today, and breaking it would cut every agent off from
-# the task board.
 [project.scripts]
 scitex-cards = "scitex_cards._cli:main"
-scitex-todo = "scitex_cards._cli:main"
 
-# Repo renamed to scitex-ai/scitex-cards (2026-07-16); old URLs auto-redirect.
-# Documentation stays on the scitex-todo RTD project until that console-side
-# rename lands (tracked on the S2 migration card).
 [project.urls]
 Homepage = "https://github.com/scitex-ai/scitex-cards"
 Repository = "https://github.com/scitex-ai/scitex-cards"
 Issues = "https://github.com/scitex-ai/scitex-cards/issues"
-Documentation = "https://scitex-todo.readthedocs.io"
+Documentation = "https://scitex-cards.readthedocs.io"
 
 # scitex_dev.* groups are ITERATED by scitex-dev (not looked up by key), so
 # each registers the NEW key only — a legacy twin key would list the package
@@ -315,6 +342,27 @@ scitex-cards = "scitex_cards"
 [project.entry-points."scitex_dev.jobs"]
 scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 
+# DELIBERATELY NOT REGISTERED: `scitex_dev.store.plugins`.
+#
+# `scitex_cards._store_plugin` declares the card table's merge semantics, and
+# that declaration lands as DOCUMENTATION first. Registering the entry-point
+# group here is what makes the federation actually resolve and merge the live
+# board, and several field rules are still open. ADR-0018 D1 settled the first
+# of them — `card_json` vs the columns it duplicates: the document is
+# canonical, the columns are derived — but `row_order` still has no DERIVED
+# role upstream, `status` still has no transition-aware rule (so a merge can
+# resurrect a terminal card), and D3's delete tombstone has not yet left the
+# document it would be replaced wholesale with. Wiring it before those are
+# settled would put an admittedly incomplete declaration in charge of real
+# data.
+#
+# So the module states the semantics and nothing calls it — which is exactly
+# what its own docstring claims, and the claim has to stay TRUE. Add the block
+# below only together with the decisions above:
+#
+#     [project.entry-points."scitex_dev.store.plugins"]
+#     scitex-cards = "scitex_cards._store_plugin:provide"
+
 # Hook-consumer entry-point contract (lead a2a `6fff33d6` +
 # `fbffb879`, 2026-06-14, operator-mandated). External producers
 # (SAC's push-hook, dev's merge-Action, future federated producers)
@@ -327,13 +375,13 @@ scitex-cards = "scitex_cards._jobs_provider:provide_jobs"
 # See `scitex_cards._hooks` for the canonical event-payload spec and
 # the built-in handlers (which run regardless of plugins).
 # Standalone notification-DELIVERY channel registry (slice 1). The
-# delivery loop (`scitex-todo deliver`) discovers channels registered
+# delivery loop (`scitex-cards deliver`) discovers channels registered
 # under this group via importlib.metadata and hands each pending
 # notification to the channels a user is configured for in
 # recipients.yaml. Channel plugin = a class implementing the
 # DeliveryChannel Protocol (attribute `name`, synchronous `deliver`).
 # This group name is DELIBERATELY distinct from any
-# `scitex_agent_container.*` group — scitex-todo's delivery rail is
+# `scitex_agent_container.*` group — this package's delivery rail is
 # fully independent of sac (ZERO sac imports). See
 # src/scitex_cards/_delivery/_registry.py.
 [project.entry-points."scitex_cards.delivery_channels"]
@@ -341,22 +389,85 @@ log = "scitex_cards._delivery._channels.log:LogChannel"
 telegram = "scitex_cards._delivery._channels.telegram:TelegramChannel"
 
 [project.entry-points."scitex_cards.hooks"]
-# scitex-todo's built-in handler is invoked DIRECTLY by
+# The built-in handler is invoked DIRECTLY by
 # dispatch_event (not via the plugin loop). External producers add
 # their plugins under this group in their own pyproject.toml.
 
+[tool.hatch.build.targets.sdist]
+# THE SDIST MUST NEVER CARRY A VIRTUAL ENVIRONMENT, and this exclude is a
+# MECHANICAL barrier rather than a restatement of `.gitignore`.
+#
+# Measured 2026-08-17, v0.43.0: the release workflow builds the in-wheel Sphinx
+# HTML in a throwaway `.venv-docs/` (#876), `.gitignore` carried `.venv/` which
+# matches only that exact name, so `.venv-docs/` was neither tracked nor
+# ignored — hatchling swept it into the sdist and `uv build` refused the result:
+#
+#     Caused by: Invalid tar file
+#     Caused by: failed to unpack .../scitex_cards-0.43.0/.venv-docs/bin/python
+#     Caused by: symlink path `/usr/bin/python3.12` is absolute, but external
+#                symlinks are not allowed
+#     hint: The source distribution includes a virtual environment.
+#
+# The `.gitignore` glob was widened in the same change, and that alone would
+# have fixed THIS instance. It is not enough on its own: it makes build
+# correctness depend on an ignore file that exists for a different purpose and
+# that anyone may narrow without knowing the sdist reads it. This exclude states
+# the build's own requirement in the build's own file.
+#
+# WHY IT ONLY FIRED AT RELEASE: no pull request builds an sdist, and the docs
+# venv is created only by the release job. So the defect was invisible on every
+# green PR and appeared on the first tag after #876 landed.
+exclude = [
+    ".venv*",
+    "venv",
+]
+# AND THE SDIST MUST CARRY THE DOCS, BECAUSE THE WHEEL IS BUILT FROM IT.
+#
+# `uv build` does not build the two targets independently. Its own log:
+#
+#     Building source distribution...
+#     Building wheel from source distribution...
+#
+# So the wheel inherits exactly what the sdist contains. `_sphinx_html/` is
+# GENERATED at release time and gitignored on purpose, hatchling excludes
+# gitignored files, and `artifacts` was declared only on the WHEEL target — so
+# the docs never reached the sdist, and the wheel built from it shipped none:
+#
+#     ::error:: dist/scitex_cards-0.43.0-py3-none-any.whl ships no
+#     _sphinx_html/index.html - scitex-cloud would serve nothing for this
+#     package (PS-121)
+#
+# This was never observed before because #876 (which added the docs step) has
+# not been through a successful release: v0.42.0 predates it, and the first tag
+# after it died earlier in the same job on the docs VENV being swept into the
+# sdist. Fixing that exposed this. Two defects in one release path, the second
+# hidden behind the first.
+#
+# The list is deliberately identical to the wheel target's `artifacts` for the
+# docs entry. They are not redundant — one carries the files into the sdist, the
+# other keeps them in a wheel built directly — and the release job asserts on
+# the BUILT WHEEL, which is the only check that spans both.
+artifacts = [
+    "src/scitex_cards/_sphinx_html/**/*",
+]
+
 [tool.hatch.build.targets.wheel]
-# `src/scitex_todo` is the deprecated import shim (re-exports scitex_cards);
-# it ships in the wheel until the fleet cutover completes, then gets dropped.
-packages = ["src/scitex_cards", "src/scitex_todo"]
+packages = ["src/scitex_cards"]
 # Bundle the Django app's non-Python assets (manifest, templates, built
-# frontend) into the wheel so `scitex-todo board` works from a pip install.
+# frontend) into the wheel so `scitex-cards board` works from a pip install.
 artifacts = [
     "src/scitex_cards/_django/manifest.json",
     "src/scitex_cards/_django/templates/**/*",
     "src/scitex_cards/_django/static/**/*",
     # Agent-facing skills — read at runtime by `scitex-cards skills get/install`.
     "src/scitex_cards/_skills/**/*",
+    # Sphinx HTML, GENERATED at release time and gitignored on purpose (see the
+    # release workflow's "Build docs into the package" step). `artifacts` is
+    # exactly hatchling's mechanism for shipping VCS-ignored files, so this
+    # line is what carries the docs into the wheel — without it the build stays
+    # green and the wheel ships no docs. The release workflow asserts on the
+    # built wheel for that reason.
+    "src/scitex_cards/_sphinx_html/**/*",
 ]
 
 [tool.pytest.ini_options]
@@ -412,6 +523,18 @@ select = ["E", "F", "W", "I"]
 
 [tool.scitex-linter]
 library_dirs = ["src", "tests", "examples"]
+
+[tool.scitex_dev]
+# §6a — env vars that are NOT ours to name.
+#
+# `PUPPETEER_EXECUTABLE_PATH` is puppeteer's own variable, read by the
+# mermaid-cli child process we spawn to render diagrams. `_diagram/_render.py`
+# both READS it (so an operator can point the renderer at their own chromium)
+# and SETS it on the child's environment. Renaming it to `SCITEX_CARDS_*`
+# would not rename it inside puppeteer — it would simply stop working, which
+# is the opposite of what the rule is protecting. Exempted by name, not by
+# prefix, so a future third-party variable still has to be argued for.
+env_allowlist = ["PUPPETEER_EXECUTABLE_PATH"]
 
 [tool.scitex_dev.audit]
 # PS-168 — Per-package secret + env-var prefix in GitHub Actions workflows.

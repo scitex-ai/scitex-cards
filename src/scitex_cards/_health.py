@@ -56,7 +56,6 @@ from ._health_backend_mode import check_backend_mode
 from ._health_channel_reach import check_channel_reaches_session
 from ._health_delivery import check_delivery_confirmed
 from ._health_gui import check_gui_resident
-from ._health_stranded_backlog import check_no_stranded_backlog
 from ._health_store_identity import (  # noqa: F401  (re-export: import surface)
     _check_store_identity_agrees,
 )
@@ -72,7 +71,7 @@ UNSEEN_BACKLOG_THRESHOLD = 50
 #: The exact drain-stuck remediation (kept verbatim per the cross-package spec).
 _DRAIN_HINT = (
     "channel not draining — ensure `scitex-cards mcp start` is running for this "
-    "agent with SCITEX_TODO_AGENT_ID set (needs >=0.7.32 where the poll loop no "
+    "agent with SCITEX_CARDS_AGENT_ID set (needs >=0.7.32 where the poll loop no "
     "longer starves the handshake)"
 )
 
@@ -83,7 +82,7 @@ _DRAIN_HINT = (
 # The STORE checks — "is this the right store, and can we use it?" — moved to
 # `_health_store` (this file reached the 512-line cap). THE IMPORT SURFACE DOES
 # NOT MOVE: every name is re-exported here, so
-# `from scitex_cards._health import _verify_db_store` is the SAME object it
+# `from scitex_cards._health import _verify_postgres_store` is the SAME object it
 # always was, defined next door. Same rule as the `_health_cards` split below.
 #
 # `_check_store_identity_agrees` is NOT in this list. It is imported at the
@@ -97,8 +96,7 @@ _DRAIN_HINT = (
 # Exactly ONE definition of the name exists in the package; see below.
 from ._health_store import (  # noqa: E402  (re-export)
     _check_store_canonical,
-    _is_sqlite_db,  # noqa: F401
-    _verify_db_store,  # noqa: F401
+    _verify_postgres_store,  # noqa: F401
 )
 
 
@@ -111,8 +109,8 @@ def _check_agent_id(agent_id: str | None) -> dict[str, Any]:
             "ok": False,
             "detail": f"agent id unresolved ({exc})",
             "hint": (
-                "set SCITEX_TODO_AGENT_ID=<your-agent-id> (not blank / 'unknown'); "
-                'in .mcp.json use the brace form "${SCITEX_TODO_AGENT_ID}" — '
+                "set SCITEX_CARDS_AGENT_ID=<your-agent-id> (not blank / 'unknown'); "
+                'in .mcp.json use the brace form "${SCITEX_CARDS_AGENT_ID}" — '
                 "Claude Code does not expand bare $VAR"
             ),
         }
@@ -277,7 +275,7 @@ def health(
         (and enables project-shadow detection); an explicit path is taken as the
         intended store (hermetic tests, ``--tasks``).
     agent_id : str | None
-        Agent identity override. ``None`` resolves ``$SCITEX_TODO_AGENT_ID``.
+        Agent identity override. ``None`` resolves ``$SCITEX_CARDS_AGENT_ID``.
     unseen_threshold : int
         Unseen-backlog ceiling for :func:`_check_channel_drain`.
 
@@ -311,25 +309,14 @@ def health(
         _run_check("store_identity", lambda: _check_store_identity_agrees(store)),
         # WHICH ENGINE, on BOTH rails? store_canonical names the card store's
         # engine; nothing named the notification inbox's, and the two can
-        # differ — the inbox is a SQLite sidecar located from the store PATH, so
-        # pointing the store at a server does not move it. That split is what
-        # let a DM commit to the store on 2026-08-01 while no notification was
-        # ever created, with every card-side check green. Reported as a FAILURE
-        # rather than an info line, because a split is not a normal state.
+        # differ — the inbox rail used to be a file sidecar located from the
+        # store PATH, so pointing the store at a server did not move it. That
+        # split is what let a DM commit to the store on 2026-08-01 while no
+        # notification was ever created, with every card-side check green.
+        # Reported as a FAILURE rather than an info line, because a split is not
+        # a normal state.
         _run_check("backend_mode", lambda: check_backend_mode(store), severity=DELIVERY),
         _run_check("agent_id", lambda: _check_agent_id(agent_id)),
-        # Did a BACKEND CUTOVER leave undelivered messages behind? Measured
-        # 2026-08-14: the rail moved from SQLite to PostgreSQL on 08-11 and
-        # stranded 149 unseen notifications — 0 of them migrated — including an
-        # answer the operator was waiting on and another agent's retraction of a
-        # false outage report. It sat for THREE DAYS with every call reporting
-        # success, because the writes and the reads were about different
-        # databases. Nothing detected it; someone had to go looking.
-        _run_check(
-            "no_stranded_backlog",
-            lambda: check_no_stranded_backlog(store),
-            severity=DELIVERY,
-        ),
         _run_check("notifyd_alive", lambda: _check_notifyd_alive(store), severity=DELIVERY),
         # Is anything actually being DELIVERED? notifyd_alive answers the
         # narrower "is the process ticking", and it was green throughout the
@@ -356,8 +343,9 @@ def health(
         # Does the far end ACCEPT what we send? channel_capable (can we push?)
         # and channel_drain (is the inbox consumed?) were both GREEN through the
         # 2026-07-24 outage in which the whole fleet was deaf to the board: the
-        # scitex-cards -> scitex-cards rename left agent launch lines allowlisting
-        # the OLD server name, so every push was discarded on arrival while the
+        # package rename left agent launch lines allowlisting the OLD server
+        # name while we registered under the new one, so every push was
+        # discarded on arrival while the
         # drain kept marking records seen. Delivery here is fire-and-forget, so
         # a name the client does not know does not delay a notification, it
         # destroys it — silently. This is the only check that asks the far end.
@@ -382,7 +370,7 @@ def health(
         # detector off. Verified BY CONTENT, never by the version alone.
         # (Incident 2026-07-12: metadata said 0.7.26 while the code ran 0.8.7.)
         _run_check("install_honest", check_install_honest),
-        # SQLite is the ONLY write target (the dual-write mirror toggle was
+        # The store is the ONLY write target (the dual-write mirror toggle was
         # DELETED 2026-07-21, not defaulted off — see `_health_write_target`).
         # This replaces the old `dual_write_mirror` sync-check: there is no
         # mirror left to fall out of sync, so the question is now "did the

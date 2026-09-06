@@ -1,3 +1,16 @@
+---
+description: |
+  [TOPIC] The PR-merge recording mandate — record evidence on the card at
+  merge / issue-close time, from whichever wire you are on.
+  [DETAILS] Closing a card without a `pr_url` makes the board under-report
+  throughput, and the operator's 完了率 metric is what allocates fleet
+  capacity. The 2026-06-13 pass measured 199 PRs merged in 24h against ~5
+  recorded completions. The gap is structural, not hygiene: writers never
+  set the pointer at merge time. Gives the exact recording verbs for CLI,
+  Python API and MCP.
+tags: [scitex-cards-pr-merge-recording-mandate, scitex-cards-evidence-mandate]
+---
+
 # 60 — PR-merge recording mandate (the recording-gap fix)
 
 Sister doc to the **⚑ MANDATE — record evidence at PR-merge / issue-close
@@ -41,9 +54,9 @@ is closed-on-evidence the next time the pass runs, NOT closed-by-luck.
 ## Python API equivalent
 
 ```python
-import scitex_cards as todo
+import scitex_cards as card
 
-todo.update_task(
+card.update_task(
     task_id="<card-id>",
     pr_url="https://github.com/<org>/<repo>/pull/<N>",
     status="done",

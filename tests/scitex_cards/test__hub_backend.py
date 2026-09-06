@@ -37,13 +37,23 @@ from scitex_cards._backend_http import HubBackend, HubBackendError
 @pytest.fixture()
 def hub(tmp_path, env):
     """A live hub + a fully-provisioned client environment."""
-    # SQLite is the store: the conftest already pins every store env var at a
+    # The database is the store: the conftest already pins every store env var at a
     # per-test scratch dir and bootstraps an EMPTY, schema-complete DB there.
-    # The hub server must address that SAME pinned store identity so its writes
-    # stamp the canonical DB with `resolve_tasks_path(None)` and the direct
-    # hub-side read-backs below round-trip (a tmp_path/tasks.yaml store would
-    # stamp the DB for a DIFFERENT path than reads resolve → hard refusal).
-    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
+    # The hub server must address that SAME pinned store so its writes and the
+    # direct hub-side read-backs below round-trip.
+    #
+    # THE DSN, NOT THE YAML IDENTITY. This passed the identity pointer, which
+    # was enough while every verb went through the card path — that path
+    # resolves the real store behind the pointer. The DM verbs do not: dm_send
+    # and dm_list write to the store itself, so the pointer reached the door as
+    # a target and was refused:
+    #
+    #     HubBackendError: hub error on dm_send: the cards store target
+    #     '.../cards.db' does not name the store
+    #
+    # Handing the server the DSN makes both kinds of verb address the same
+    # thing, which is what the paragraph above was already asking for.
+    store = os.environ["SCITEX_CARDS_DB"]
     tokens_dir = tmp_path / "tokens"
     audit_path = tmp_path / "logs" / "hub_access.jsonl"
 
@@ -57,7 +67,7 @@ def hub(tmp_path, env):
     env.set("SCITEX_CARDS_HUB_URL", f"http://127.0.0.1:{port}")
     env.set("SCITEX_CARDS_HUB_TOKEN_FILE", str(tokens_dir / "hub.token"))
     env.delete("SCITEX_CARDS_HUB_TOKEN")
-    env.set("SCITEX_TODO_AGENT_ID", "remote-agent")
+    env.set("SCITEX_CARDS_AGENT_ID", "remote-agent")
 
     yield {"store": str(store), "port": port, "tokens_dir": tokens_dir}
 

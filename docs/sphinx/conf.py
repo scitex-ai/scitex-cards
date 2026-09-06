@@ -1,4 +1,4 @@
-"""Sphinx configuration for scitex-todo documentation."""
+"""Sphinx configuration for scitex-cards documentation."""
 
 import os
 import sys
@@ -7,14 +7,14 @@ sys.path.insert(0, os.path.abspath("../../src"))
 
 # -- Project information -----------------------------------------------------
 
-project = "scitex-todo"
+project = "scitex-cards"
 copyright = "2026, Yusuke Watanabe"
 author = "Yusuke Watanabe"
 
 try:
     from importlib.metadata import version as _get_version
 
-    release = _get_version("scitex-todo")
+    release = _get_version("scitex-cards")
 except Exception:
     release = "0.2.0"
 

@@ -114,20 +114,24 @@ def test_the_switcher_labels_the_dm_surface_dm(chat_html):
 
     Was ``…_second_item_is_labelled_dm`` and asserted ``["Board", "DM"]``. The
     POSITION was incidental; the LABEL is the operator's ruling. "Mine" (the
-    My Cards phone view) joined the switcher on 2026-08-14 and sits between
-    them, which moved DM to third without changing anything this test is
-    actually about.
+    My Cards phone view) joined the switcher on 2026-08-14, moving DM to third,
+    and was REMOVED on 2026-08-19 when the operator asked for that page deleted
+    — so the list is back to the two it started with.
 
     Still an exact list rather than a membership check, deliberately: that is
     what makes an item appearing or vanishing unnoticed a failure instead of a
-    silent change to the operator's own navigation.
+    silent change to the operator's own navigation. THAT DESIGN EARNED ITSELF
+    on 2026-08-19 — this assertion is the one thing that went red when the Mine
+    feature was deleted, out of 1,395 Django tests. A membership check for
+    "DM" would have stayed green while an item silently left the operator's
+    navigation, which is the whole failure it was written to prevent.
     """
     # Arrange
     html = chat_html
     # Act
     labels = _switcher_labels(html)
     # Assert
-    assert labels == ["Board", "Mine", "DM"]
+    assert labels == ["Board", "DM"]
 
 
 def test_the_switcher_has_no_item_labelled_chat(chat_html):
@@ -145,14 +149,22 @@ def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     a "Board or Chat" switcher when the visible label says DM.
 
     The wording grew from "Board or DM" to "Board, Mine or DM" when the My
-    Cards view joined the switcher (2026-08-14). The property under test is
-    unchanged: what is ANNOUNCED must name the same surfaces the eye sees, so
-    the landmark is asserted verbatim rather than by substring.
+    Cards view joined the switcher (2026-08-14), and went back when that page
+    was deleted on the operator's instruction (2026-08-19). The property under
+    test is unchanged across both moves: what is ANNOUNCED must name the same
+    surfaces the eye sees, so the landmark is asserted verbatim rather than by
+    substring.
+
+    THE VERBATIM FORM IS WHY THIS CAUGHT THE REMOVAL. A substring check for
+    "DM" passes whether or not the announcement still claims a "Mine" surface
+    that no longer exists — leaving an assistive user told about a third item
+    sighted users cannot see. That divergence is invisible to every other test
+    in this suite.
     """
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Board, Mine or DM"' in html
+    announced = 'aria-label="Board or DM"' in html
     # Assert
     assert announced
 

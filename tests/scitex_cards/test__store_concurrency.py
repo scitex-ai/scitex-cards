@@ -18,6 +18,8 @@ import contextlib
 import os
 
 import pytest
+
+from scitex_cards._store_errors import StoreNotProvisionedError
 from conftest import seed_db_from_doc
 
 from scitex_cards._model import (
@@ -33,7 +35,7 @@ from scitex_cards._model import (
 def _seed(tmp_path, n=2):
     """Seed the canonical DB with ``n`` deferred rows; return the STORE path.
 
-    Store is SQLite now: ``load_tasks`` / ``save_tasks`` read and write the
+    The store is the database now: ``load_tasks`` / ``save_tasks`` read and write the
     canonical database and the ``path`` argument only names which logical store
     is addressed. So seed the DB, then hand back the PINNED store-identity path
     (``SCITEX_CARDS_TASKS_YAML_SHARED``), NOT the DB path — a write stamped with
@@ -50,7 +52,7 @@ def _seed(tmp_path, n=2):
 def _seed_with_users(tmp_path):
     """A store carrying BOTH a ``users:`` registry and a ``tasks:`` list.
 
-    Seeds the canonical DB (SQLite store) and returns the pinned STORE path."""
+    Seeds the canonical DB and returns the pinned STORE path."""
     doc = {
         "users": [{"id": "u1", "kind": "agent", "name": "someone"}],
         "tasks": [{"id": "t0", "title": "T", "status": "deferred"}],
@@ -118,16 +120,41 @@ class TestOptimisticConcurrency:
         # Assert — the token is opt-in; existing callers keep working.
         assert load_tasks(store)[0]["priority"] == 3
 
-    def test_generation_of_missing_store(self, tmp_path):
-        # Arrange — the store IS the canonical DB now, and store_generation
-        # hashes THAT (ignoring the path arg), so the "store absent" case the
-        # sentinel is for is a missing DB. Remove it; the pinned store path
-        # never was a real file under SQLite.
-        os.remove(os.environ["SCITEX_CARDS_DB"])
+    def test_generation_of_missing_store(self, env, new_store):
+        # Arrange — the store IS the canonical DB, and store_generation hashes
+        # THAT (ignoring the path arg), so the "store absent" case the sentinel
+        # is for is a store with nothing in it. `os.remove` on $SCITEX_CARDS_DB
+        # was how that used to be arranged; the variable holds a DSN now, so
+        # removing it raised FileNotFoundError before the assertion ran. The
+        # comment above it already said the pinned value "never was a real file
+        # once the store became a database" — the arrangement just had not
+        # caught up.
+        #
+        # `bootstrap=False` is the modern absent store: reachable, but carrying
+        # no schema, which is what a fresh deployment looks like.
+        #
+        # AND THE ANSWER INVERTED. This asserted "a stable sentinel, not a
+        # raise". An unprovisioned store now RAISES, on purpose:
+        #
+        #     StoreNotProvisionedError: the PostgreSQL store ... has no `tasks`
+        #     table. REFUSING to continue: the exporter answers a schemaless
+        #     database with an empty document, and that value is written back
+        #     as the WHOLE store.
+        #
+        # That is the same class of bug the sentinel was protecting against,
+        # caught one layer earlier and more loudly. A quiet token for an absent
+        # store is exactly what let an empty document look like a legitimate
+        # generation. So the test keeps its subject — what happens when the
+        # store is not there — and follows the behaviour to its refusal.
+        env.set("SCITEX_CARDS_DB", new_store("concurrency_absent", bootstrap=False))
+
         # Act
-        generation = store_generation(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
-        # Assert — a stable sentinel, not a raise.
-        assert generation == "absent"
+        def read_the_generation():
+            return store_generation(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
+
+        # Assert
+        with pytest.raises(StoreNotProvisionedError):
+            read_the_generation()
 
 
 class TestEditTasks:
@@ -162,7 +189,7 @@ class TestEditTasks:
                 raise RuntimeError("boom")
         # Assert — the half-done mutation never reached the store. Read the
         # persisted DATA back rather than compare store_generation() before and
-        # after: the store is SQLite in WAL mode, where even a read rewrites the
+        # after: the store used write-ahead logging, where even a read rewrites the
         # main DB file, so the content token is not read-stable and cannot
         # witness "unchanged" — the rows can, and are the actual subject.
         assert load_tasks(store)[0].get("priority") is None
@@ -174,7 +201,7 @@ class TestEditTasks:
         with edit_tasks(store) as tasks:
             tasks[0]["priority"] = 1
         # Assert — the users: registry survives a tasks-only edit. Store is
-        # SQLite: read the users section back from the canonical DB instead of a
+        # Read the users section back from the canonical DB instead of a
         # YAML file's text — the rule is unchanged, only its serialization is gone.
         assert any(u.get("id") == "u1" for u in load_doc(store).get("users", []))
 

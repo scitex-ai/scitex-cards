@@ -5,7 +5,7 @@
 Guards the fix for the defect behind every store-target failure during the
 2026-08-01 PostgreSQL cutover: the target could ONLY come from an environment
 variable, so any caller that did not export one silently resolved to a private
-SQLite file. Eight host-side writers did exactly that while the fleet was
+local file. Eight host-side writers did exactly that while the fleet was
 believed migrated.
 
 The tier sits BELOW the environment (so per-agent overrides still win and
@@ -24,7 +24,7 @@ import os
 import pytest
 
 from scitex_cards._config import CONFIG_NAME
-from scitex_cards._db import ENV_DB, ENV_DB_DEPRECATED, resolve_db_path
+from scitex_cards._db import ENV_DB, resolve_db_path
 from scitex_cards._store_target import (
     StoreTargetIsNotAPath,
     StoreTargetNotConfigured,
@@ -32,7 +32,7 @@ from scitex_cards._store_target import (
 )
 
 DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_MANAGED = (ENV_DB, ENV_DB_DEPRECATED, "HOME", "SCITEX_DIR")
+_MANAGED = (ENV_DB, "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def config_home(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in (ENV_DB, ENV_DB_DEPRECATED, "SCITEX_DIR"):
+    for name in (ENV_DB, "SCITEX_DIR"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     cards_dir = tmp_path / ".scitex" / "cards"
@@ -79,7 +79,7 @@ class TestConfigSuppliesTheTarget:
 
         The assertion moved on 2026-08-13 and the SUBJECT did not. It used to
         be ``resolved.endswith("cards.db")``, because falling past this tier
-        landed on the zero-config SQLite default. That tier is abolished, so
+        landed on the zero-config file default. That tier is abolished, so
         falling past this one now lands on the refusal -- which is still the
         NEXT tier answering, not this one failing. What is being pinned either
         way is that an absent config is silent.

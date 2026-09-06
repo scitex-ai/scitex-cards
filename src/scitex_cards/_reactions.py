@@ -59,7 +59,7 @@ import os
 import secrets
 from pathlib import Path
 
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 
 #: Sidecar filename, sibling of the resolved task store and of ``threads.json``.
 REACTIONS_FILENAME = "dm_reactions.json"
@@ -142,8 +142,12 @@ def reactions_path(store: str | Path | None = None) -> Path:
     YAML migration as a side effect of being asked for a path (design §1.2 W3),
     and a path query must not write a file.
     """
-    tasks = resolve_tasks_path(store) if store is None else Path(store).expanduser()
-    return tasks.parent / REACTIONS_FILENAME
+    # ``local_store_path``, not a copy of its body -- a DSN is not a path, and
+    # ``Path("postgresql://h/d")`` silently yields the RELATIVE
+    # ``postgresql:/h/d``, whose parent the caller then creates. Two phantom
+    # trees were measured under the repository working directory on
+    # 2026-08-30 from exactly this line, duplicated.
+    return local_store_path(store).parent / REACTIONS_FILENAME
 
 
 def _utc_now_iso() -> str:

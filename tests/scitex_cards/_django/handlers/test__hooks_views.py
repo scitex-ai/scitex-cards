@@ -27,7 +27,7 @@ from scitex_cards._store import add_task
 def store_with_card(tmp_path: Path, env) -> Path:
     store = tmp_path / "tasks.yaml"
     add_task(store=store, id="card-1", title="x", assignee="agent:test-suite")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     return store
 
 

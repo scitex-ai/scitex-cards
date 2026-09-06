@@ -28,7 +28,6 @@ import os
 from pathlib import Path
 
 import pytest
-import yaml
 
 from scitex_cards._events import Event, EventType
 from scitex_cards._inbox import ack, enqueue, poll_inbox
@@ -42,20 +41,18 @@ from scitex_cards._users import register_user, resolve_user
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _store(tmp_path):
-    # SQLite is the TASK store now: load_tasks / add_task read+write the
+    # The database is the TASK store now: load_tasks / add_task read+write the
     # canonical DB and only use this path to STAMP provenance, so a write
     # stamped with a tmp_path file is refused by the next read. Return the
     # PINNED store identity (== resolve_tasks_path(None)) the conftest already
     # aims the DB at, so writes stamp the same path reads resolve. The users:
     # section still lives in THIS YAML file; inboxes now live in their own
     # inboxes.json sidecar next to it (see `_inbox._inboxes_path`).
-    # register_user keeps operating on this file directly. `tmp_path` is
-    # now unused.
+    # register_user NO LONGER operates on this file — the registry moved to
+    # the database with the rest of the state, so nothing creates it and the
+    # three assertions that used to read it go through `load_tasks` /
+    # `load_users` instead. `tmp_path` is now unused.
     return Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
-
-
-def _read(store):
-    return yaml.safe_load(store.read_text(encoding="utf-8"))
 
 
 def _enqueue_reassigned(
@@ -213,8 +210,8 @@ def bus_dispatch(tmp_path, env):
     store = _store(tmp_path)
     alice = register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", str(store))
-    env.set("SCITEX_TODO_PUSH_DRY_RUN", "1")
+    env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
+    env.set("SCITEX_CARDS_PUSH_DRY_RUN", "1")
     envelope = Event(type=EventType.REASSIGNED, card_id="c1", actor="bob").to_dict()
     summary = dispatch_event(envelope, store=store, entry_points=[])
     return {"store": store, "alice": alice, "summary": summary, "envelope": envelope}
@@ -894,19 +891,24 @@ def test_poll_notifications_raw_key_returns_the_notification(dave_notification_s
 def test_inbox_write_keeps_the_tasks_section(store_with_task_user_and_inbox):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act
-    data = _read(store)
+    # Act — tasks live in the DATABASE, so read them from there. Asserting on
+    # a `tasks:` key in the YAML label stopped testing anything real when the
+    # task tier migrated; it only kept passing because `register_user` was
+    # still creating that file as a side effect. It no longer does.
+    tasks = load_tasks(store)
     # Assert
-    assert isinstance(data.get("tasks"), list)
+    assert isinstance(tasks, list)
 
 
 def test_inbox_write_keeps_the_users_section(store_with_task_user_and_inbox):
     # Arrange
+    from scitex_cards._users import load_users
+
     store = store_with_task_user_and_inbox
-    # Act
-    data = _read(store)
+    # Act — the registry is in the database now, same as tasks before it.
+    users = load_users(store)
     # Assert
-    assert isinstance(data.get("users"), list)
+    assert isinstance(users, list)
 
 
 def test_inbox_write_creates_the_inboxes_sidecar(store_with_task_user_and_inbox):
@@ -923,7 +925,7 @@ def test_inbox_write_creates_the_inboxes_sidecar(store_with_task_user_and_inbox)
 def test_inbox_write_keeps_the_seeded_task(store_with_task_user_and_inbox):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — the task lives in the SQLite store now, not the YAML file; read it
+    # Act — the task lives in the database store now, not the YAML file; read it
     # back through load_tasks (the DB read path) to prove the inbox write left
     # it intact.
     tasks = load_tasks(store)
@@ -936,7 +938,7 @@ def test_inbox_persistence_does_not_clobber_tasks_and_users(
 ):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — the task payload lives in the SQLite store now; load it from there.
+    # Act — the task payload lives in the database store now; load it from there.
     task = {t["id"]: t for t in load_tasks(store)}["c1"]
     # Assert — the task PAYLOAD survived, not merely the row.
     assert task["note"] == "keep me"
@@ -944,11 +946,13 @@ def test_inbox_persistence_does_not_clobber_tasks_and_users(
 
 def test_inbox_write_preserves_the_registered_user(store_with_task_user_and_inbox):
     # Arrange
+    from scitex_cards._users import load_users
+
     store = store_with_task_user_and_inbox
     # Act
-    data = _read(store)
+    users = load_users(store)
     # Assert
-    assert any("alice" in (u.get("names") or []) for u in data["users"])
+    assert any("alice" in (u.names or []) for u in users)
 
 
 def test_inbox_write_stores_the_record(store_with_task_user_and_inbox):
@@ -981,7 +985,7 @@ def test_add_task_after_inbox_write_still_works(tmp_path):
     add_task(store=store, id="c2", title="later", agent="alice")
     tasks = load_tasks(store)
     # Assert — add_task does not raise after an inbox-only write, and the row
-    # lands in the SQLite store.
+    # lands in the database store.
     assert any(t["id"] == "c2" for t in tasks)
 
 

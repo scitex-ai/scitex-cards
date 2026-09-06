@@ -39,7 +39,7 @@ from scitex_cards._store import add_task, complete_task
 # ``seed_db_from_doc`` lives in the SHARED tests/scitex_cards/conftest.py; the
 # _django/ sibling conftest shadows the bare ``conftest`` module name, so load
 # the shared one deterministically by path (same idiom as the other _django
-# handler tests under the SQLite cutover).
+# handler tests after the cutover).
 _shared_conftest = Path(__file__).resolve().parents[2] / "conftest.py"
 _spec = _ilu.spec_from_file_location("_scitex_cards_shared_conftest", _shared_conftest)
 _mod = _ilu.module_from_spec(_spec)
@@ -56,7 +56,7 @@ def store_with_timeline_tasks() -> str:
     """Seed the canonical DB with one in-window + one out-of-window task plus
     a depends_on edge; return the PINNED store-identity path the view resolves.
 
-    The store is SQLite now: ``add_task`` writes the canonical DB and the view's
+    The store is the database now: ``add_task`` writes it and the view's
     ``get_board`` reads it back. We pass the PINNED store path (never a tmp_path
     YAML — a write stamped with a tmp path fails the next read's ownership
     check). The fresh tasks use ``add_task`` which stamps ``created_at`` to NOW

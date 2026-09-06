@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Root ``scitex-todo`` group and core verbs (render-graph, list-tasks, board).
+"""Root ``scitex-cards`` group and core verbs (render-graph, list-tasks, board).
 
 The §1a introspection / completion / skills groups live in sibling modules and
 are attached to ``main`` at the bottom of this file.
@@ -25,9 +25,9 @@ from ._help_tree import _emit_help_recursive
 # NAMES NO BACKEND AND NO DEFAULT PATH, ON PURPOSE.
 #
 # This block and the `summary` below are the two strings a human reads first
-# from `scitex-cards --help`. They used to open "Canonical store: the SQLite
-# database at $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db...)" and
-# "Shared task store (SQLite canonical)".
+# from `scitex-cards --help`. They used to name a backend and a default file
+# path -- "Canonical store: the ... database at $SCITEX_CARDS_DB (default
+# ~/.scitex/cards/cards.db...)".
 #
 # Both named a backend the code does not verify and the operator has banned,
 # and the first also advertised a default file path — which is precisely the
@@ -71,13 +71,22 @@ _COMMAND_CATEGORIES = (
             "help-clear",
             "hook",
             "migration",
-            "index",
             "inbox",
             "init-store",
             "reconcile-merged-prs",
         ),
     ),
-    ("Data & Sync", ("db", "dm", "store", "sync-github", "sync-store", "deliver")),
+    # `deliver-notifications`, not `deliver` — the bare verb is a hidden
+    # Phase-W alias now, and a deprecated name in the help advertises the
+    # spelling we want callers to stop using.
+    (
+        "Data & Sync",
+        # `db` moved to `dev db` (operator naming standard, 2026-08-26): a verb
+        # that operates on the store as an object is upkeep, so it belongs under
+        # `dev`. The root spelling is a hidden Phase-W alias now and is
+        # deliberately NOT listed here, for the same reason `health` is not.
+        ("dm", "store", "sync-github", "sync-store", "deliver-notifications"),
+    ),
     (
         "Service",
         ("board", "gui", "hub", "mcp", "notifyd", "serve", "watch", "watch-ci"),
@@ -90,8 +99,18 @@ _COMMAND_CATEGORIES = (
             "stop-hook",
             "install-stop-hook",
             "print-stats",
-            "health",
+            # Renamed from `health` (audit §1: a noun leaf implies a transitive
+            # action) using the ecosystem's canonical checking verb — §1f names
+            # `validate`, not `check`. The old `health` is a hidden Phase-W
+            # alias, so it is deliberately NOT listed here: a deprecated name in
+            # the help text advertises the thing we want callers to stop using.
+            "validate-health",
             "resolve-store",
+            # Answers "who must restart for a fix to take effect". Sits beside
+            # resolve-store because both diagnose the same class of question —
+            # not "what does the config say" but "what is this process
+            # actually using".
+            "list-importers",
         ),
     ),
     ("Introspection", ("list-python-apis", "skills")),
@@ -103,6 +122,28 @@ _COMMAND_CATEGORIES = (
 # --------------------------------------------------------------------------- #
 # Top-level group (--help-recursive / --json universal flags)                 #
 # --------------------------------------------------------------------------- #
+def _run_currency_gate(check=check_currency) -> None:
+    """Run the CURRENCY gate, surfacing a refusal as a CLEAN CLI error.
+
+    A raw traceback is not a usable answer for an operator, and scitex-dev's
+    message carries the remedy command — so the message is preserved verbatim
+    inside the :class:`click.ClickException`. A ``ClickException`` raised by
+    the gate itself is re-raised untouched rather than re-wrapped, which would
+    double the prefix.
+
+    ``check`` is a parameter so this translation can be driven directly with a
+    hand-rolled gate (PA-306 §3). It is called from the GROUP CALLBACK, which
+    is what makes the gate unconditional: every subcommand passes through it,
+    not merely the ones some code path happens to reach.
+    """
+    try:
+        check()
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @click.group(
     invoke_without_command=True,
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -134,12 +175,7 @@ def main(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
     # `check_currency()` is a no-op when scitex-dev is absent; when present it
     # raises with the exact remedy command, which we surface as a clean
     # ClickException rather than a raw traceback. See `_currency.py`.
-    try:
-        check_currency()
-    except click.ClickException:
-        raise
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+    _run_currency_gate()
     if help_recursive or as_json:
         _emit_help_recursive(ctx, as_json=as_json)
         ctx.exit(0)
@@ -208,9 +244,9 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
             "filters, matches are AND-composed."
         ),
         examples=(
-            ('{prog} list-tasks --assignee "$SCITEX_TODO_AGENT_ID" --json', ""),
+            ('{prog} list-tasks --assignee "$SCITEX_CARDS_AGENT_ID" --json', ""),
             (
-                "{prog} list-tasks --project scitex-todo --status pending "
+                "{prog} list-tasks --project scitex-cards --status pending "
                 "--status in_progress",
                 "",
             ),
@@ -223,7 +259,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
 @click.option(
     "--scope",
     default=None,
-    help="Match `scope` exactly (use '' to ignore $SCITEX_TODO_SCOPE).",
+    help="Match `scope` exactly (use '' to ignore $SCITEX_CARDS_SCOPE).",
 )
 @click.option(
     "--assignee",
@@ -276,7 +312,7 @@ def render_graph_cmd(output: str, print_mermaid: bool) -> None:
         "Predicate: tasks past their next deadline AND not in a closed "
         "lifecycle state (done / failed / cancelled / goal). Uses the "
         "deadline / deadlines schema + repeater rules from "
-        "scitex_cards._model.is_overdue (PR #125, todo-p6-overdue-ui). "
+        "scitex_cards._model.is_overdue (PR #125, cards-p6-overdue-ui). "
         "This filter is the ONLY thing a deadline drives (that, and the "
         "board view) — a deadline NEVER sends a notification, so poll "
         "this yourself. Owner nudges key on inactivity, not deadlines. "
@@ -371,7 +407,7 @@ def list_tasks_cmd(
     if as_json:
         click.echo(json.dumps(tasks))
         return
-    # Header names the STORE (the SQLite database) — NOT `resolved`, which is
+    # Header names the STORE (the database itself) — NOT `resolved`, which is
     # the non-task sidecar container `load_tasks` takes only for naming in
     # error text (see `_paths.resolve_tasks_path`). Printing that sidecar
     # here mislabeled the header with a path the data never lived at.
@@ -392,7 +428,6 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _gui,
     _hooks,
     _inbox,
-    _index,
     _introspect,
     _loop,
     _mcp,
@@ -403,25 +438,21 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _skills,
     _stats,
     _triage,
-    _undelivered,
     _write,
 )  # noqa: E402
 
 # board <verb> — dependency-graph board lifecycle (start/stop/restart/
 # status). Extracted to _board.py to keep _main.py under the 512-line cap;
-# behaviour + pidfile path (~/.scitex/todo/board.pid) are unchanged.
+# behaviour + pidfile path (~/.scitex/cards/board.pid) are unchanged.
 _board.register(main)
 # gui <verb> — the ecosystem-standard GUI verbs (open/serve/status/stop),
 # shared with figrecipe / scitex-writer / scitex-scholar so the operator's
 # `scitex_start_gui_servers` loop can bring every SciTeX GUI up the same way.
 # A thin front over the board lifecycle above; `board` stays canonical.
 _gui.register(main)
-# index <verb> — SQLite derived-index lifecycle (rebuild / info). Extracted
-# to _index.py alongside the board split (same pure-move refactor).
-_index.register(main)
-# inbox <verb> — inbox storage-backend lifecycle (migrate-to-sqlite / info).
-# Phase 1 of the store SQLite migration: moves the per-recipient inbox off the
-# monolithic task document so a 5 s digest-poll no longer re-parses all cards.
+# inbox <verb> — the `ack` verb, reachable without MCP. The per-recipient
+# inbox lives in the store rather than in the monolithic task document, so a
+# 5 s digest-poll no longer re-parses all cards.
 _inbox.register(main)
 # migration <verb> — directory-card enforcement migration (plan / apply).
 # Extracted to _migration_cli.py alongside the board split.
@@ -441,9 +472,9 @@ _write.register(main)
 # individual verbs print a clear install hint when fastmcp is missing.
 _mcp.register(main)
 # P3b + P3d (lead-approved 2026-06-12) — self-consuming board loop.
-# `scitex-todo next` returns the top runnable task for an agent;
-# `scitex-todo watch --push` is the push side that wakes agents on
-# new/commented/changed tasks. See _skills/scitex-todo/32_*.md for the
+# `scitex-cards next` returns the top runnable task for an agent;
+# `scitex-cards watch --push` is the push side that wakes agents on
+# new/commented/changed tasks. See _skills/scitex-cards/32_*.md for the
 # 7-step agent self-consumption pattern.
 _loop.register(main)
 # T1.2 (lead a2a `74db4f2d`, 2026-06-14) — the parallelism dispatcher's
@@ -455,7 +486,7 @@ _runnable.register(main)
 # decides and mutates via the existing verbs. See _backlog_triage.py.
 _triage.register(main)
 # Hook-consumer wire (lead a2a `6fff33d6` + `fbffb879`, 2026-06-14,
-# operator-mandated). `scitex-todo hook push|done` verbs are the
+# operator-mandated). `scitex-cards hook push|done` verbs are the
 # CLI twins of POST /hooks/push and POST /hooks/done — same canonical
 # event-payload shape, same idempotency. See _hooks.py for the spec.
 _hooks.register(main)
@@ -468,7 +499,7 @@ _ci_watch.register(main)
 # reconcile-merged-prs (card-freshness automation) — periodic auto-close of
 # cards whose linked PR (pr_url) has MERGED. Pure decision core + gh/REST
 # merge-state seam live in `_reconcile_prs.py`; DRY-RUN by default, --apply
-# to mutate. Paired with the scitex-todo.reconcile-merged-prs JobSpec.
+# to mutate. Paired with the scitex-cards-reconcile-merged-prs JobSpec.
 _reconcile.register(
     main
 )  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
@@ -480,7 +511,7 @@ _reconcile.register(
 # src/scitex_cards/_delivery/.
 _deliver.register(main)
 # notifyd (slice 2 of the standalone notification-DELIVERY rail). The always-on
-# daemon: bare `scitex-todo notifyd` runs the foreground loop (systemd
+# daemon: bare `scitex-cards notifyd` runs the foreground loop (systemd
 # ExecStart) ticking deliver_pending every --interval seconds, single-instance
 # locked + signal-aware, re-surfacing standing terminal comm-misses on a
 # throttle. `--once` is a single pass; `notifyd install-unit` writes the
@@ -488,9 +519,6 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
-# dev list-undelivered — the restart/cadence check against the DURABLE channel
-# rail, with a mandatory positive control so a filtered zero is trustworthy.
-_undelivered.register(main)
 
 
 if __name__ == "__main__":

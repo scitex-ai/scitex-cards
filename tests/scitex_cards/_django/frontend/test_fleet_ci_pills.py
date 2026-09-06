@@ -70,16 +70,16 @@ def test_css_has_canonical_selectors() -> None:
     # Act
     # Assert
     for selector in (
-        ".stx-todo-fleet-ci",
-        ".stx-todo-fleet-ci__pill",
-        ".stx-todo-fleet-ci__pill--success",
-        ".stx-todo-fleet-ci__pill--failure",
-        ".stx-todo-fleet-ci__pill--pending",
-        ".stx-todo-fleet-ci__pill--unknown",
-        ".stx-todo-fleet-ci__pill--error",
-        ".stx-todo-fleet-ci__dot",
-        ".stx-todo-fleet-ci__name",
-        ".stx-todo-fleet-ci--note",
+        ".stx-cards-fleet-ci",
+        ".stx-cards-fleet-ci__pill",
+        ".stx-cards-fleet-ci__pill--success",
+        ".stx-cards-fleet-ci__pill--failure",
+        ".stx-cards-fleet-ci__pill--pending",
+        ".stx-cards-fleet-ci__pill--unknown",
+        ".stx-cards-fleet-ci__pill--error",
+        ".stx-cards-fleet-ci__dot",
+        ".stx-cards-fleet-ci__name",
+        ".stx-cards-fleet-ci--note",
     ):
         assert selector in css, f"missing CSS selector: {selector}"
 

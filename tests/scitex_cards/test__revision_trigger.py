@@ -20,29 +20,38 @@ WHY ASSIGN AND NOT REJECT. Rejecting a write whose revision is not
 UPDATE from a writer that does not know about the column — i.e. break the fleet
 until every container is current, which is the condition that cannot be
 established. Assign keeps old writers working and bumps on their behalf.
+
+THESE TESTS RUN AGAINST THE ENGINE THAT SHIPS, and for this file that changed
+what one of them measures rather than only how it is spelled — see
+``test_the_bump_does_not_recurse``. The trigger installed on the store is the
+plpgsql pair in ``_pg_triggers``, not the inline-body text the constant carries,
+so a test against a different engine was exercising a trigger no store has.
 """
 
 from __future__ import annotations
 
-import pathlib
-import sqlite3
-import tempfile
-
 import pytest
 
 from scitex_cards import _db
+from scitex_cards._schema_probe import has_trigger
+from scitex_cards._schema_shape import observed_version
 
 TRIGGER = "tasks_bump_revision"
 
 
-@pytest.fixture
-def store():
-    """A fresh canonical store at the current schema version."""
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "t.db")
+def _carded_store(new_store, prefix: str):
+    """A fresh canonical store at the current schema version, holding one card."""
+    conn = _db.connect(new_store(prefix, bootstrap=False))
     _db.init_schema(conn)
     conn.execute("INSERT INTO tasks(id, title, status) VALUES('c', 't', 'blocked')")
     conn.commit()
+    return conn
+
+
+@pytest.fixture
+def store(new_store):
+    """A fresh canonical store at the current schema version."""
+    conn = _carded_store(new_store, "cards_revtrg")
     yield conn
     conn.close()
 
@@ -50,13 +59,13 @@ def store():
 def test_the_trigger_exists_on_a_fresh_store(store):
     """Positive control: without this, every behaviour test below is vacuous."""
     # Arrange
-    q = "select name from sqlite_master where type='trigger' and name=?"
+    name = TRIGGER
 
     # Act
-    found = [r[0] for r in store.execute(q, (TRIGGER,))]
+    found = has_trigger(store, name)
 
     # Assert
-    assert found == [TRIGGER]
+    assert found is True
 
 
 def test_a_new_card_starts_at_revision_zero(store):
@@ -64,10 +73,10 @@ def test_a_new_card_starts_at_revision_zero(store):
     card = "c"
 
     # Act
-    got = store.execute("select revision from tasks where id=?", (card,)).fetchone()[0]
+    got = store.execute("select revision from tasks where id=?", (card,)).fetchone()
 
     # Assert
-    assert got == 0
+    assert got["revision"] == 0
 
 
 def test_an_old_writer_still_bumps_the_revision(store):
@@ -81,10 +90,10 @@ def test_an_old_writer_still_bumps_the_revision(store):
     store.execute("UPDATE tasks SET title='renamed' WHERE id='c'")
 
     # Act
-    got = store.execute("select revision from tasks where id='c'").fetchone()[0]
+    got = store.execute("select revision from tasks where id='c'").fetchone()
 
     # Assert
-    assert got == 1
+    assert got["revision"] == 1
 
 
 def test_an_old_writers_update_is_not_rejected(store):
@@ -97,10 +106,10 @@ def test_an_old_writers_update_is_not_rejected(store):
     store.execute("UPDATE tasks SET title='renamed' WHERE id='c'")
 
     # Act
-    got = store.execute("select title from tasks where id='c'").fetchone()[0]
+    got = store.execute("select title from tasks where id='c'").fetchone()
 
     # Assert
-    assert got == "renamed"
+    assert got["title"] == "renamed"
 
 
 def test_the_second_of_two_writers_is_rejected(store):
@@ -140,9 +149,8 @@ def test_the_first_writers_value_survives_the_conflict(store):
     )
 
     # Assert
-    assert (
-        store.execute("select title from tasks where id='c'").fetchone()[0] == "first"
-    )
+    row = store.execute("select title from tasks where id='c'").fetchone()
+    assert row["title"] == "first"
 
 
 def test_an_explicitly_passed_revision_is_not_overwritten(store):
@@ -157,28 +165,34 @@ def test_an_explicitly_passed_revision_is_not_overwritten(store):
     store.execute("UPDATE tasks SET title='x', revision=1 WHERE id='c' AND revision=0")
 
     # Act
-    got = store.execute("select revision from tasks where id='c'").fetchone()[0]
+    got = store.execute("select revision from tasks where id='c'").fetchone()
 
     # Assert
-    assert got == 1
+    assert got["revision"] == 1
 
 
-def test_the_bump_does_not_recurse_with_recursive_triggers_on(store):
-    """Correctness must not rest on a PRAGMA default someone can flip.
+def test_the_bump_does_not_recurse(store):
+    """The WHEN guard, with no engine default underneath it.
 
-    ``recursive_triggers`` defaults to OFF, which alone would make the nested
-    UPDATE safe — but a default is not a guarantee. The ``WHEN`` guard is the real
-    protection: the nested write changes ``revision``, so on a re-fire the
-    condition no longer holds.
+    THIS TEST GOT STRONGER RATHER THAN WEAKER. It used to set
+    ``PRAGMA recursive_triggers=1`` first, and said so: on the previous engine
+    recursion was OFF by default, so the plain case proved nothing and the
+    PRAGMA had to be flipped to remove the safety net. This engine has no such
+    default to lean on — an AFTER UPDATE trigger whose body issues an UPDATE on
+    the same table re-enters the trigger — so the ordinary case IS the case that
+    used to require setting up. Exactly one bump means the ``WHEN`` guard, and
+    only the ``WHEN`` guard, stopped the re-fire: the nested write changes
+    ``revision``, so on re-entry the condition no longer holds.
     """
     # Arrange
-    store.execute("pragma recursive_triggers=1")
+    card = "c"
 
     # Act
     store.execute("UPDATE tasks SET title='deep' WHERE id='c'")
 
     # Assert
-    assert store.execute("select revision from tasks where id='c'").fetchone()[0] == 1
+    got = store.execute("select revision from tasks where id=?", (card,)).fetchone()
+    assert got["revision"] == 1
 
 
 def test_installing_the_trigger_twice_does_not_raise(store):
@@ -190,51 +204,56 @@ def test_installing_the_trigger_twice_does_not_raise(store):
     _db.init_schema(store)
 
     # Assert
-    assert store.execute("pragma user_version").fetchone()[0] == before
+    assert observed_version(store).stamped_meta == before
 
 
-def test_a_pre_v7_store_gains_the_trigger_on_open():
-    """The existing population: an older file must acquire the enforcement.
+def test_a_pre_v7_store_gains_the_trigger_on_open(new_store):
+    """The existing population: an older store must acquire the enforcement.
 
     Built by dropping the trigger from a current store rather than hand-writing an
-    old schema, so the fixture cannot drift from the real v6 shape.
+    old schema, so the fixture cannot drift from the real v6 shape. The version
+    stamp is left alone deliberately: ``observed_version`` walks the PHYSICAL
+    ladder and v7's rung IS this trigger, so removing it is what makes the store
+    read as v6 — a stamp edit would only be a claim about it.
     """
     # Arrange
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "old.db")
+    conn = _db.connect(new_store("cards_revtrg_prev7", bootstrap=False))
     _db.init_schema(conn)
-    conn.execute(f"DROP TRIGGER {TRIGGER}")
-    conn.execute("PRAGMA user_version=6")
+    conn.execute(f"DROP TRIGGER {TRIGGER} ON tasks")
     conn.commit()
+    before = has_trigger(conn, TRIGGER)
 
     # Act
     _db.init_schema(conn)
 
     # Assert
-    q = "select name from sqlite_master where type='trigger' and name=?"
-    assert [r[0] for r in conn.execute(q, (TRIGGER,))] == [TRIGGER]
+    try:
+        assert (before, has_trigger(conn, TRIGGER)) == (False, True)
+    finally:
+        conn.close()
 
 
-def test_the_pre_v7_fixture_really_lacks_the_trigger():
+def test_the_pre_v7_fixture_really_lacks_the_trigger(new_store):
     """Positive control for the migration test above.
 
     A fixture that silently still HAD the trigger would let a no-op migration
     pass ``test_a_pre_v7_store_gains_the_trigger_on_open``.
     """
     # Arrange
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "old.db")
+    conn = _db.connect(new_store("cards_revtrg_control", bootstrap=False))
     _db.init_schema(conn)
 
     # Act
-    conn.execute(f"DROP TRIGGER {TRIGGER}")
+    conn.execute(f"DROP TRIGGER {TRIGGER} ON tasks")
 
     # Assert
-    q = "select name from sqlite_master where type='trigger' and name=?"
-    assert [r[0] for r in conn.execute(q, (TRIGGER,))] == []
+    try:
+        assert has_trigger(conn, TRIGGER) is False
+    finally:
+        conn.close()
 
 
-def test_a_physical_delete_of_a_card_is_still_possible_here():
+def test_a_physical_delete_of_a_card_is_still_possible_here(new_store):
     """Documents what this trigger does NOT do, so nobody assumes coverage.
 
     ``tasks`` has no no-delete trigger — the append-only ruling is enforced for
@@ -244,8 +263,7 @@ def test_a_physical_delete_of_a_card_is_still_possible_here():
     gains its own no-delete trigger, this test should fail and be updated.
     """
     # Arrange
-    d = pathlib.Path(tempfile.mkdtemp())
-    conn = _db.connect(d / "t.db")
+    conn = _db.connect(new_store("cards_revtrg_delete", bootstrap=False))
     _db.init_schema(conn)
     conn.execute("INSERT INTO tasks(id, title, status) VALUES('gone', 't', 'blocked')")
 
@@ -253,15 +271,23 @@ def test_a_physical_delete_of_a_card_is_still_possible_here():
     conn.execute("DELETE FROM tasks WHERE id='gone'")
 
     # Assert
-    assert conn.execute("select count(*) from tasks where id='gone'").fetchone()[0] == 0
+    try:
+        row = conn.execute(
+            "select count(*) AS n from tasks where id='gone'"
+        ).fetchone()
+        assert row["n"] == 0
+    finally:
+        conn.close()
 
 
 def test_the_trigger_sql_is_a_single_source_for_translation():
-    """scitex-db translates this to PL/pgSQL, so it must live in ONE place.
+    """The PostgreSQL pair is DERIVED from this constant, so it must live once.
 
-    Their migration tool drops triggers unless it carries them explicitly, and
-    they gate on it in preflight now. A constant they can read beats a string
-    duplicated between the fresh-schema path and the migration.
+    ``execute_ddl`` substitutes each inline-body ``CREATE TRIGGER`` for the
+    plpgsql pair in ``_pg_triggers`` BY NAME, and raises on a name it does not
+    recognise. So this constant is still the single declaration — what changed
+    is that a second file has to agree with it, and the substitution's own
+    refusal is what makes a disagreement loud.
     """
     # Arrange
     from scitex_cards import _db_migrations
@@ -271,6 +297,23 @@ def test_the_trigger_sql_is_a_single_source_for_translation():
 
     # Assert
     assert "NEW.revision = OLD.revision" in sql
+
+
+def test_the_declared_trigger_has_a_postgres_pair():
+    """The other half of the single source: the substitution can find it.
+
+    Without this the constant above could name a trigger ``_pg_triggers`` has
+    never heard of, and the failure would surface as a raise inside
+    ``init_schema`` on a fresh store rather than here.
+    """
+    # Arrange
+    from scitex_cards._pg_triggers import PG_TRIGGER_BY_NAME
+
+    # Act
+    pair = PG_TRIGGER_BY_NAME.get(TRIGGER)
+
+    # Assert
+    assert pair is not None
 
 
 # EOF

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """T1.4 — /runnable + /blocked-batch Django endpoints.
 
-Lead a2a `74db4f2d`, 2026-06-14. HTTP twins of `scitex-todo runnable`
-+ `scitex-todo blocked` so the parallelism dispatcher consumes JSON
+Lead a2a `74db4f2d`, 2026-06-14. HTTP twins of `scitex-cards runnable`
++ `scitex-cards blocked` so the parallelism dispatcher consumes JSON
 over HTTP.
 
 Django RequestFactory; no mocks (STX-NM / PA-306). AAA pattern, one
@@ -32,7 +32,7 @@ from scitex_cards._store import add_task
 def store_with_runnable() -> Path:
     """Seed the canonical DB with one runnable + one blocked task.
 
-    The store is SQLite now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
+    The store is the database now; the harness pins SCITEX_CARDS_TASKS_YAML_SHARED
     and SCITEX_CARDS_DB at a per-test scratch DB, and the view's ``get_board``
     -> ``resolve_tasks_path(None)`` reads that SAME store. Seed via
     ``add_task`` (store=None resolves the pinned store and writes the canonical

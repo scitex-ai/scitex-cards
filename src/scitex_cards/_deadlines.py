@@ -192,7 +192,7 @@ def is_overdue(task: dict, *, now=None) -> bool:
     Used by the fleet liveness handler and the CLI's `list-tasks
     --overdue` filter to surface late tasks at a glance (operator
     TG12664 "attended an overdue task but no suitable UI to act on it" —
-    todo-p6-overdue-ui). Pure function (no I/O); deterministic given
+    cards-p6-overdue-ui). Pure function (no I/O); deterministic given
     ``now``.
 
     OVERDUE IS A FILTER, NOT AN ALARM. This predicate is PULL-only —

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """A deadline is a VIEW, never a notifier — pin the contract.
 
-scitex-todo accepts a `deadline` with an org-style recurring repeater
+scitex-cards accepts a `deadline` with an org-style recurring repeater
 (`+1d` / `+1w` / `+1m` / `+1y`), and the repeater genuinely rolls the next
 occurrence forward. Agents therefore read "recurring deadline" as "this will
 remind me periodically". IT WILL NOT. Two separate truths, both pinned here
@@ -23,7 +23,7 @@ because both are DOC-level promises a doc could silently break:
 
 The structural guard at the bottom fails if a delivery module ever starts
 reading a deadline (a real, queued proposal — card
-``todo-recurring-deadline-does-not-nudge-docs-lie-20260712``), forcing the
+``cards-recurring-deadline-does-not-nudge-docs-lie-20260712``), forcing the
 docs to be corrected in the same breath.
 
 No mocks — real dicts + a frozen ``now``, per STX-NM / PA-306.
@@ -37,7 +37,7 @@ import inspect
 import re
 
 from scitex_cards._model import is_overdue, next_deadline_for_task
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     detect_pending_backlog,
     detect_stale_active,
 )

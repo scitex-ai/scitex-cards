@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Stale-cards review handler — derives the standing "operator should
 archive" list from the loaded board + the SAME criteria as the
-``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-todo
+``STALE_CARDS_FOR_REVIEW.md`` generator (proj-scitex-cards
 2026-06-13, operator-direct via lead a2a).
 
 Two endpoints:
@@ -43,7 +43,13 @@ from ..._comment_ids import stamp_comment_id
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_DAYS = 14
+#: A SECOND COPY of `_cli/_stale.py`'s `_DEFAULT_DAYS`. Same number, no shared
+#: source: change one and the board and the CLI disagree silently.
+#: 14 -> 7 ON THE OPERATOR'S INSTRUCTION, 2026-08-19 (「はい7日でお願いします」),
+#: after he was told what it costs: THIS copy feeds the /stale panel behind the
+#: ARCHIVE BUTTON, so the widening offers ~a week more of everyone's cards for
+#: archiving. He decided with that in front of him. See: cards-auto-expiry-is-a-report-nothing-schedules-and-three-horizons-disagree-20260817
+_DEFAULT_DAYS = 7
 
 
 def _parse_iso(s):
@@ -113,7 +119,7 @@ def handle_stale(request, board):
 
     Query params:
 
-    - ``days`` (int, default 14): age cutoff in days for created_at /
+    - ``days`` (int, default 7): age cutoff in days for created_at /
       last_activity. Smaller value surfaces more cards.
     - ``include_no_timestamp`` (bool, default ``true``): set to
       ``false`` to HIDE rows whose ONLY reason is missing timestamps
@@ -208,7 +214,7 @@ def handle_archive(request, board):
       3. Flip ``status`` to ``"deferred"`` (sentinel — no new enum
          value cascading into FE / tests today).
       4. Stamp ``_log_meta.closed_{at,by}`` (UTC ISO-8601 + author
-         precedence chain: body ``by`` -> ``$SCITEX_TODO_AGENT_ID`` ->
+         precedence chain: body ``by`` -> ``$SCITEX_CARDS_AGENT_ID`` ->
          ``$USER`` -> ``"user"``).
       5. Persist via the board's existing save path.
 
@@ -235,7 +241,7 @@ def handle_archive(request, board):
 
     by = payload.get("by")
     if not isinstance(by, str) or not by.strip():
-        by = os.environ.get("SCITEX_TODO_AGENT_ID") or os.environ.get("USER") or "user"
+        by = os.environ.get("SCITEX_CARDS_AGENT_ID") or os.environ.get("USER") or "user"
     by = by.strip()
 
     from scitex_cards import TaskValidationError
@@ -284,7 +290,7 @@ def handle_archive(request, board):
             return JsonResponse({"error": str(exc)}, status=400)
     _reset_cache()
     logger.info(
-        "[scitex-todo] archive %s by %s (reason: %.80s) in %s",
+        "[scitex-cards] archive %s by %s (reason: %.80s) in %s",
         task_id,
         by,
         reason,

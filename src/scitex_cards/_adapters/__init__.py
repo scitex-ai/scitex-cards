@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """Default adapter implementations for the four extension ports.
 
-These ship with the standalone package so :command:`pip install scitex-todo`
+These ship with the standalone package so :command:`pip install scitex-cards`
 yields a working local board with no fleet glue installed. Fleet
 deployments swap in real implementations from an external package
-(e.g. ``scitex-todo-fleet``) via constructor injection on
+(e.g. ``scitex-cards-fleet``) via constructor injection on
 :func:`scitex_cards.create_board`.
 
 See :mod:`scitex_cards._ports` for the Protocol contracts and

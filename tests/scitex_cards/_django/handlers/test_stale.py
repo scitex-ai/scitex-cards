@@ -85,7 +85,7 @@ tasks:
 
 @pytest.fixture
 def store():
-    # SQLite store: seed the prior cards into the canonical DB, then hand the
+    # The store is the database: seed the prior cards into it, then hand the
     # handler the PINNED store-identity path (never a tmp_path YAML — a write
     # stamped with a tmp path fails the next read's ownership check). The DB is
     # authoritative for content; the handler treats the path as a provenance
@@ -114,7 +114,7 @@ def _post(endpoint, store_path, body):
 
 
 def _load(store_path):
-    # Read back through the canonical store (SQLite); the path is a label only.
+    # Read back through the canonical store; the path is a label only.
     return {t["id"]: t for t in load_tasks(store_path)}
 
 

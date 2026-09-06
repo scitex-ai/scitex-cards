@@ -5,14 +5,14 @@
 The fleet dashboard reads its watched-repo list from
 ``~/.scitex/cards/dashboard.json`` under the key path
 ``fleet.ci_status.repos`` (a list of ``owner/name`` GitHub slugs).
-The env var ``SCITEX_TODO_FLEET_CI_REPOS=slug1,slug2`` is the override hook
+The env var ``SCITEX_CARDS_FLEET_CI_REPOS=slug1,slug2`` is the override hook
 (handy for CI tests and for the operator to flip the set without editing
 a file).
 
 Architectural principles in play:
 
 - NO hardcoded proper nouns. There is no
-  ``["scitex-todo","scitex-dev",…]`` literal in this module — the
+  ``["scitex-cards","scitex-dev",…]`` literal in this module — the
   config is the only source of truth.
 - Absence is NOT an error. A fresh install has no dashboard config; that
   means "no repos configured" and the UI hides the pills strip gracefully.
@@ -36,7 +36,7 @@ _CONFIG_REL = Path(".scitex") / "cards" / "dashboard.json"
 
 # Env override — comma-separated slugs. Whitespace around commas is
 # tolerated (operator may copy-paste from a shell history).
-_ENV_REPOS = "SCITEX_TODO_FLEET_CI_REPOS"
+_ENV_REPOS = "SCITEX_CARDS_FLEET_CI_REPOS"
 
 
 def _config_path() -> Path:
@@ -84,7 +84,7 @@ def _load_config(path: Path) -> dict:
 # Ecosystem spin-out flag (operator opt-in). When truthy in the dashboard config
 # (``fleet.ci_status.ecosystem: true``) or via this env var, the watched-repo
 # list is UNIONed with the live SciTeX ecosystem registry.
-_ENV_ECOSYSTEM = "SCITEX_TODO_FLEET_CI_ECOSYSTEM"
+_ENV_ECOSYSTEM = "SCITEX_CARDS_FLEET_CI_ECOSYSTEM"
 
 # The ecosystem roster changes rarely but ``fleet_config_load`` runs on every
 # 30s poll — so resolve the registry at most once per TTL.
@@ -157,10 +157,10 @@ def fleet_config_load() -> dict[str, Any]:
 
     1. ``~/.scitex/cards/dashboard.json`` if present (otherwise empty
        config, NOT an error)
-    2. ``SCITEX_TODO_FLEET_CI_REPOS`` env var — when set, replaces
+    2. ``SCITEX_CARDS_FLEET_CI_REPOS`` env var — when set, replaces
        ``fleet.ci_status.repos`` regardless of file contents
     3. ``fleet.ci_status.ecosystem: true`` (or env
-       ``SCITEX_TODO_FLEET_CI_ECOSYSTEM``) — UNION the result with every
+       ``SCITEX_CARDS_FLEET_CI_ECOSYSTEM``) — UNION the result with every
        SciTeX ecosystem repo from ``scitex-dev ecosystem list``, so the
        pills "spin out" across the whole ecosystem.
 

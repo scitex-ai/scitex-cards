@@ -61,7 +61,7 @@ interface SearchAutocompleteProps {
   }>;
 }
 
-const LIST_ID = "stx-todo-search-suggest";
+const LIST_ID = "stx-cards-search-suggest";
 const ROW_ID = (i: number) => `${LIST_ID}-row-${i}`;
 
 export function SearchAutocomplete({
@@ -118,7 +118,7 @@ export function SearchAutocomplete({
   }, []);
 
   // Merge the user's input event handlers with our own — preserve whatever
-  // TodoBoard already wired (e.g. value/onChange).
+  // CardsBoard already wired (e.g. value/onChange).
   const child = children;
   const userValue = child.props.value;
   const userOnChange = child.props.onChange;
@@ -222,21 +222,21 @@ export function SearchAutocomplete({
   );
 
   return (
-    <span className="stx-todo-search-suggest__wrap">
+    <span className="stx-cards-search-suggest__wrap">
       {inputEl}
       {showList && (
         <ul
           id={LIST_ID}
           role="listbox"
-          className="stx-todo-search-suggest"
+          className="stx-cards-search-suggest"
           aria-label="Search suggestions"
         >
           {suggestions.map((s, i) => {
             const { label, hint } = formatSuggestion(s);
             const cls = [
-              "stx-todo-search-suggest__row",
-              i === active ? "stx-todo-search-suggest__row--active" : "",
-              `stx-todo-search-suggest__row--${s.kind}`,
+              "stx-cards-search-suggest__row",
+              i === active ? "stx-cards-search-suggest__row--active" : "",
+              `stx-cards-search-suggest__row--${s.kind}`,
             ]
               .filter(Boolean)
               .join(" ");
@@ -256,14 +256,14 @@ export function SearchAutocomplete({
                 }}
                 onMouseEnter={() => setActive(i)}
               >
-                <span className="stx-todo-search-suggest__label">{label}</span>
+                <span className="stx-cards-search-suggest__label">{label}</span>
                 {s.count != null && (
-                  <span className="stx-todo-search-suggest__badge">
+                  <span className="stx-cards-search-suggest__badge">
                     {s.count}
                   </span>
                 )}
                 {hint && (
-                  <span className="stx-todo-search-suggest__hint">{hint}</span>
+                  <span className="stx-cards-search-suggest__hint">{hint}</span>
                 )}
               </li>
             );

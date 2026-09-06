@@ -2,13 +2,13 @@
 # Runs INSIDE the reused scitex-ci SIF (apptainer exec). $1 = python version.
 #
 # WHY a layered install (not the bare PYTHONPATH=src trick scitex-dev uses):
-# the shared ci-cpu.sif bakes scitex-dev[all,dev] DEPS, NOT scitex-todo's —
+# the shared ci-cpu.sif bakes scitex-dev[all,dev] DEPS, NOT scitex-cards's —
 # matplotlib / graphviz / seaborn / django / Pillow / networkx / playwright /
 # pytesseract / scitex-app / scitex-ui are absent from the SIF. So we install
 # THIS checkout + its [all,dev] extras (WITH dependency resolution) into a
 # writable --target dir and prepend that on PYTHONPATH. The SIF still supplies
 # the heavy shared base (pip/uv, the python interpreters, scitex-dev's deps),
-# so only scitex-todo's own thin dep set is fetched per run.
+# so only scitex-cards's own thin dep set is fetched per run.
 #
 # --target (not a plain `-e .`): the SIF's /opt/venv-* are root-owned + RO and
 # the HPC compute-node HOME is RO inside the container, so a normal site install
@@ -51,7 +51,7 @@ export MPLBACKEND=Agg
 # every CI run; the xdist workers (one per core, see below) then each cold-start
 # matplotlib and RACE to build fontList.json in that shared dir.
 # A partial/contended cache makes some renders fall back to a different font, so
-# scitex-todo's reproducibility tests (validate_recipe renders the SAME recipe
+# scitex-cards's reproducibility tests (validate_recipe renders the SAME recipe
 # twice and compares) see render1 != render2 → spurious MSE-over-threshold
 # failures (e.g. TestValidateRecipe, max channel diff 255). One stable dir +
 # a single warm-up below (build the cache ONCE, pre-fork) removes the race.
@@ -68,8 +68,8 @@ export PATH="$VENV/bin:$PATH"
 
 echo "py=$("$VENV/bin/python" -V) target=$TMPDIR/site"
 
-# Install scitex-todo + its [all,dev] extras WITH deps into the writable target.
-# Fallback chain mirrors scitex-todo's historical bare-uv/pip workflow so a
+# Install scitex-cards + its [all,dev] extras WITH deps into the writable target.
+# Fallback chain mirrors scitex-cards's historical bare-uv/pip workflow so a
 # packaging hiccup in an optional extra doesn't strand CI: [all,dev] → [dev] →
 # bare. uv first (fast resolver), pip as a final safety net.
 uv pip install --python "$VENV/bin/python" --target="$TMPDIR/site" -e ".[all,dev]" ||

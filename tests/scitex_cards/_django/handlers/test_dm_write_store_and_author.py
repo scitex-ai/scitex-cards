@@ -73,7 +73,7 @@ def test_the_query_seam_no_longer_applies_to_a_write():
     honest response to a deliberate contract-pin failing is to invert it with
     the reason, not to delete it.
 
-    What changed, measured 2026-07-29: scitex-hub's TodoBoardTenancyMiddleware
+    What changed, measured 2026-07-29: scitex-hub's CardsBoardTenancyMiddleware
     sets ``request.scitex_store`` (its own comment calls that the PRIMARY
     CHANNEL and marks the query injection legacy). Both halves of the
     migration were already in place; each side was waiting on the other.

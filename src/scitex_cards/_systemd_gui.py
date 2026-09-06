@@ -132,6 +132,7 @@ def install_gui_unit(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     force: bool = False,
+    dry_run: bool = False,
 ) -> dict:
     """Write the GUI unit to ``~/.config/systemd/user``. Never runs systemctl.
 
@@ -139,7 +140,9 @@ def install_gui_unit(
     ``{path, written, existed, exec_start, enable_commands}`` result; the
     caller prints ``enable_commands`` for the operator to run.
     """
-    return install_unit(gui_unit_spec(host=host, port=port), force=force)
+    return install_unit(
+        gui_unit_spec(host=host, port=port), force=force, dry_run=dry_run
+    )
 
 
 def gui_unit_is_installed() -> bool:

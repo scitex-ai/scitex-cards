@@ -43,7 +43,7 @@ def _isolate_home(env, tmp_path: Path) -> None:
     dashboard.json. Also clear any leaked env override from a sibling
     test."""
     env.set("HOME", str(tmp_path))
-    env.delete("SCITEX_TODO_FLEET_CI_REPOS")
+    env.delete("SCITEX_CARDS_FLEET_CI_REPOS")
 
 
 def test_endpoint_returns_200_with_repos_shape_status_code(env, tmp_path) -> None:
@@ -56,7 +56,7 @@ def test_endpoint_returns_200_with_repos_shape_status_code(env, tmp_path) -> Non
     # Use an invalid-shape slug so the adapter raises synchronously on
     # the input check (no network needed). The shape pin is the same
     # one tested in ``test__gh_ci.py::test_invalid_slug_shape_raises``.
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash")
 
     request = RequestFactory().get("/fleet/ci-status")
     # Act
@@ -77,7 +77,7 @@ def test_endpoint_returns_200_with_repos_shape_set(env, tmp_path) -> None:
     # Use an invalid-shape slug so the adapter raises synchronously on
     # the input check (no network needed). The shape pin is the same
     # one tested in ``test__gh_ci.py::test_invalid_slug_shape_raises``.
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash")
 
     request = RequestFactory().get("/fleet/ci-status")
     # Act
@@ -98,7 +98,7 @@ def test_endpoint_returns_200_with_repos_shape_repos(env, tmp_path) -> None:
     # Use an invalid-shape slug so the adapter raises synchronously on
     # the input check (no network needed). The shape pin is the same
     # one tested in ``test__gh_ci.py::test_invalid_slug_shape_raises``.
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash")
 
     request = RequestFactory().get("/fleet/ci-status")
     # Act
@@ -119,7 +119,7 @@ def test_endpoint_returns_200_with_repos_shape_isinstance(env, tmp_path) -> None
     # Use an invalid-shape slug so the adapter raises synchronously on
     # the input check (no network needed). The shape pin is the same
     # one tested in ``test__gh_ci.py::test_invalid_slug_shape_raises``.
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash")
 
     request = RequestFactory().get("/fleet/ci-status")
     # Act
@@ -140,7 +140,7 @@ def test_endpoint_returns_200_with_repos_shape_len(env, tmp_path) -> None:
     # Use an invalid-shape slug so the adapter raises synchronously on
     # the input check (no network needed). The shape pin is the same
     # one tested in ``test__gh_ci.py::test_invalid_slug_shape_raises``.
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash")
 
     request = RequestFactory().get("/fleet/ci-status")
     # Act
@@ -154,7 +154,7 @@ def test_endpoint_returns_200_with_repos_shape_len(env, tmp_path) -> None:
 def _ci_status_for_bad_repos(env, tmp_path):
     """Run the CI-status view with two malformed slugs; return parsed JSON."""
     _isolate_home(env, tmp_path)
-    env.set("SCITEX_TODO_FLEET_CI_REPOS", "bad-slug-no-slash,also-bad")
+    env.set("SCITEX_CARDS_FLEET_CI_REPOS", "bad-slug-no-slash,also-bad")
     request = RequestFactory().get("/fleet/ci-status")
     response = fleet_ci_status_view(request)
     return response, json.loads(response.content)

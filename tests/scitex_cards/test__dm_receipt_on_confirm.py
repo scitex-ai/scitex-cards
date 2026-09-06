@@ -36,20 +36,18 @@ from scitex_cards._inbox_confirm import confirm_notifications
 
 
 @pytest.fixture()
-def store(tmp_path, monkeypatch):
-    """An isolated store + inbox DB, so the live fleet store is never touched.
+def store(tmp_path, env, new_store):
+    """An isolated store + inbox, so the live fleet store is never touched.
 
-    The SQLite inbox is selected EXPLICITLY. ``tests/scitex_cards/conftest.py``
-    pins ``SCITEX_TODO_INBOX_BACKEND=yaml`` for every test, and the file
-    backend resolves the legacy embedded ``inboxes:`` section by YAML-parsing
-    the task store — which, on the canonical store, is a SQLite file. That is
-    the shipped configuration this feature runs in, so pinning sqlite here
-    tests the real thing rather than the break-glass path.
+    The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23), so
+    the file break-glass backend is now the only non-server option — and it
+    is what ``tests/scitex_cards/conftest.py`` already pins
+    (``SCITEX_CARDS_INBOX_BACKEND=yaml``) for every test in this suite. No
+    override needed here any more.
     """
-    monkeypatch.setenv("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
-    monkeypatch.setenv("SCITEX_TODO_INBOX_DB", str(tmp_path / "inbox.db"))
-    monkeypatch.setenv("SCITEX_TODO_INBOX_BACKEND", "sqlite")
-    return tmp_path / "cards.db"
+    dsn = new_store()
+    env.set("SCITEX_CARDS_DB", dsn)
+    return dsn
 
 
 def _send(store_path, sender, to, body, ts=None):

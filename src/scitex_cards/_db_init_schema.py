@@ -3,8 +3,8 @@
 # File: src/scitex_cards/_db_init_schema.py
 """ASSERT THE SCHEMA on an open connection — extracted from :mod:`scitex_cards._db`.
 
-``_db`` owns CONNECTIONS: resolving a target, dispatching SQLite vs PostgreSQL,
-applying PRAGMAs, gating the client version. This module owns the OTHER thing
+``_db`` owns CONNECTIONS: resolving a target, refusing one that is not the
+store, gating the client version. This module owns the OTHER thing
 that lived there: making an already-open connection carry the current shape —
 the currency gate, the DDL, the whole migration ladder, the version stamp and
 the provenance rows.
@@ -25,10 +25,16 @@ last passenger getting off.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_foreign_keys import _migrate_v10_to_v11
+from ._db_lifecycle_columns import _migrate_v12_to_v13
+from ._db_sync_columns import _migrate_v11_to_v12
 from ._db_migrations import (
     _migrate_v1_to_v2,
     _migrate_v2_to_v3,
@@ -51,7 +57,7 @@ from ._store_retirement import RETIREMENT_TRIGGER_SQL
 __all__ = ["init_schema"]
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn: StoreConnection) -> None:
     """Create the schema idempotently + stamp version. Commits on success.
 
     Runs the ``CREATE TABLE/INDEX IF NOT EXISTS`` script, applies the additive
@@ -98,8 +104,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
     # ASSERT THE SCHEMA ONCE PER STORE, NOT ONCE PER OPEN.
     #
-    # Everything below this point is DDL. On SQLite that was very nearly free.
-    # Against a shared PostgreSQL server it is DDL against the system
+    # Everything below this point is DDL. Against a local file that was very
+    # nearly free. Against a shared PostgreSQL server it is DDL against the system
     # catalogues, and CREATE OR REPLACE FUNCTION rewrites the pg_proc row every
     # single time -- it is not a no-op when the function already matches.
     #
@@ -156,6 +162,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_v7_to_v8(conn)
     _migrate_v8_to_v9(conn)
     _migrate_v9_to_v10(conn)
+    # v11 -> v12 RUNS HERE, BEFORE THE LOWER-NUMBERED RUNG BELOW, AND THAT IS
+    # NOT A MISTAKE. This chain is ordered by COST, not by number: the comment
+    # under `_migrate_v10_to_v11` says it runs "LAST, and after every column
+    # rung" precisely so its advisory lock does not serialise the cheap ones.
+    # v11 -> v12 is a plain additive ADD COLUMN rung, so it belongs with the
+    # cheap ones. The chain already carries a numbering irregularity for a
+    # different reason (there is no _migrate_v3_to_v4, noted above), so the
+    # invariant to preserve is the ordering rule, not the arithmetic.
+    _migrate_v11_to_v12(conn)
+    # v12 -> v13 sits here for the same reason v11 -> v12 does: it is a plain
+    # additive ADD COLUMN rung with no trigger and no lock, so it belongs with
+    # the cheap ones and must not be pushed behind the advisory-lock rung below.
+    _migrate_v12_to_v13(conn)
     # LAST, and after every column rung, because it is the only rung that takes
     # locks on tables the fleet is actively writing. It also SERIALISES ~90
     # clients on an advisory lock rather than letting them race — the same width
@@ -168,7 +187,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # live in _schema_shape: this client-side one, and the engine-side trigger
     # applied above which binds the clients that predate this code.
     stamp_schema_version(conn, _prior_version, SCHEMA_VERSION)
-    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is SQLite-only
+    # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter is not portable
     # syntax. The two are equivalent here -- both leave an existing row alone,
     # which is what preserves the ORIGINAL provenance on a re-init -- but only
     # this spelling parses on PostgreSQL. (`?` is fine on both: StoreConnection

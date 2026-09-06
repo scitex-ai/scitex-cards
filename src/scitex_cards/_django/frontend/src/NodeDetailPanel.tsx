@@ -31,7 +31,7 @@ function StatusBadge({
   const c = color ?? { fill: "#eceff1", stroke: "#90a4ae", dashed: false };
   return (
     <span
-      className="stx-todo-detail__badge"
+      className="stx-cards-detail__badge"
       style={{
         background: c.fill,
         border: `2px ${c.dashed ? "dashed" : "solid"} ${c.stroke}`,
@@ -89,11 +89,11 @@ function DetailEditor({
   };
 
   return (
-    <form className="stx-todo-detail__form" onSubmit={onSubmit}>
-      <label className="stx-todo-field">
+    <form className="stx-cards-detail__form" onSubmit={onSubmit}>
+      <label className="stx-cards-field">
         <span>Title</span>
         <input
-          className="stx-todo-input"
+          className="stx-cards-input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           autoFocus
@@ -101,11 +101,11 @@ function DetailEditor({
         />
       </label>
 
-      <div className="stx-todo-field-row">
-        <label className="stx-todo-field">
+      <div className="stx-cards-field-row">
+        <label className="stx-cards-field">
           <span>Status</span>
           <select
-            className="stx-todo-input"
+            className="stx-cards-input"
             value={status}
             onChange={(e) => setStatus(e.target.value)}
           >
@@ -116,10 +116,10 @@ function DetailEditor({
             ))}
           </select>
         </label>
-        <label className="stx-todo-field stx-todo-field--narrow">
+        <label className="stx-cards-field stx-cards-field--narrow">
           <span>Priority</span>
           <input
-            className="stx-todo-input"
+            className="stx-cards-input"
             type="number"
             value={priority}
             placeholder="—"
@@ -128,20 +128,20 @@ function DetailEditor({
         </label>
       </div>
 
-      <label className="stx-todo-field">
+      <label className="stx-cards-field">
         <span>Repo</span>
         <input
-          className="stx-todo-input"
+          className="stx-cards-input"
           value={repo}
           placeholder="optional"
           onChange={(e) => setRepo(e.target.value)}
         />
       </label>
 
-      <label className="stx-todo-field">
+      <label className="stx-cards-field">
         <span>Parent</span>
         <select
-          className="stx-todo-input"
+          className="stx-cards-input"
           value={parent}
           onChange={(e) => setParent(e.target.value)}
         >
@@ -154,20 +154,20 @@ function DetailEditor({
         </select>
       </label>
 
-      <label className="stx-todo-field stx-todo-field--grow">
+      <label className="stx-cards-field stx-cards-field--grow">
         <span>Note (markdown)</span>
         <textarea
-          className="stx-todo-input stx-todo-textarea"
+          className="stx-cards-input stx-cards-textarea"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={8}
         />
       </label>
 
-      <div className="stx-todo-detail__actions">
+      <div className="stx-cards-detail__actions">
         <button
           type="button"
-          className="stx-todo-btn"
+          className="stx-cards-btn"
           onClick={onCancel}
           disabled={mutating}
         >
@@ -175,7 +175,7 @@ function DetailEditor({
         </button>
         <button
           type="submit"
-          className="stx-todo-btn stx-todo-btn--primary"
+          className="stx-cards-btn stx-cards-btn--primary"
           disabled={mutating || !title.trim()}
         >
           {mutating ? "Saving…" : creating ? "Create" : "Save"}
@@ -187,7 +187,7 @@ function DetailEditor({
 
 /** localStorage key remembering the last author typed, so a commenter
  * doesn't re-enter their name each time. */
-const AUTHOR_KEY = "stx-todo-comment-author";
+const AUTHOR_KEY = "stx-cards-comment-author";
 
 function fmtTs(ts: string): string {
   const d = new Date(ts);
@@ -222,47 +222,47 @@ function CommentsSection({ node }: { node: GraphNode }) {
   };
 
   return (
-    <section className="stx-todo-comments">
-      <h3 className="stx-todo-comments__title">
+    <section className="stx-cards-comments">
+      <h3 className="stx-cards-comments__title">
         Comments {comments.length > 0 && `(${comments.length})`}
       </h3>
       {comments.length === 0 ? (
-        <p className="stx-todo-comments__empty">
+        <p className="stx-cards-comments__empty">
           <em>No comments yet.</em>
         </p>
       ) : (
-        <ul className="stx-todo-comments__list">
+        <ul className="stx-cards-comments__list">
           {comments.map((c, i) => (
-            <li className="stx-todo-comment" key={`${c.ts}-${i}`}>
-              <div className="stx-todo-comment__meta">
-                <span className="stx-todo-comment__author">{c.author}</span>
-                <span className="stx-todo-comment__ts">{fmtTs(c.ts)}</span>
+            <li className="stx-cards-comment" key={`${c.ts}-${i}`}>
+              <div className="stx-cards-comment__meta">
+                <span className="stx-cards-comment__author">{c.author}</span>
+                <span className="stx-cards-comment__ts">{fmtTs(c.ts)}</span>
               </div>
-              <div className="stx-todo-comment__text">{c.text}</div>
+              <div className="stx-cards-comment__text">{c.text}</div>
             </li>
           ))}
         </ul>
       )}
-      <form className="stx-todo-comments__form" onSubmit={submit}>
+      <form className="stx-cards-comments__form" onSubmit={submit}>
         <input
-          className="stx-todo-input stx-todo-comments__author"
+          className="stx-cards-input stx-cards-comments__author"
           value={author}
           placeholder="your name (optional)"
           onChange={(e) => setAuthor(e.target.value)}
           aria-label="Comment author"
         />
         <textarea
-          className="stx-todo-input stx-todo-comments__text"
+          className="stx-cards-input stx-cards-comments__text"
           value={text}
           placeholder="Add a comment…"
           rows={2}
           onChange={(e) => setText(e.target.value)}
           aria-label="Comment text"
         />
-        <div className="stx-todo-comments__actions">
+        <div className="stx-cards-comments__actions">
           <button
             type="submit"
-            className="stx-todo-btn stx-todo-btn--primary"
+            className="stx-cards-btn stx-cards-btn--primary"
             disabled={mutating || !text.trim()}
           >
             {mutating ? "…" : "Comment"}
@@ -275,7 +275,7 @@ function CommentsSection({ node }: { node: GraphNode }) {
 
 /** "What is blocking this task?" + "What does this task block?" section.
  *
- * Operator UX 2026-06-06: "ブロッカーが何かわからないので、todo にブロッカー
+ * Operator UX 2026-06-06: "ブロッカーが何かわからないので、card にブロッカー
  * 可視化". For any selected task X this section enumerates two graph slices
  * read directly from the loaded edges + nodes:
  *
@@ -351,47 +351,47 @@ function BlockersSection({
   const renderRow = (n: GraphNode, why: string, key: string) => {
     const c = graph.status_colors[n.status];
     return (
-      <li className="stx-todo-blocker" key={key}>
+      <li className="stx-cards-blocker" key={key}>
         <button
           type="button"
-          className="stx-todo-blocker__link"
+          className="stx-cards-blocker__link"
           onClick={() => selectNode(n.id)}
           title={`Open details for ${n.title}`}
         >
           <StatusBadge status={n.status} color={c} />
-          <span className="stx-todo-blocker__title">{n.title}</span>
-          <span className="stx-todo-blocker__why">{why}</span>
+          <span className="stx-cards-blocker__title">{n.title}</span>
+          <span className="stx-cards-blocker__why">{why}</span>
         </button>
       </li>
     );
   };
 
   return (
-    <section className="stx-todo-blockers">
-      <h3 className="stx-todo-blockers__title">
+    <section className="stx-cards-blockers">
+      <h3 className="stx-cards-blockers__title">
         🚧 Blockers {blockers.length > 0 && `(${blockers.length})`}
       </h3>
       {empty && (
-        <p className="stx-todo-blockers__empty">
+        <p className="stx-cards-blockers__empty">
           <em>Nothing blocking this — and nothing waiting on it.</em>
         </p>
       )}
       {blockers.length > 0 ? (
-        <ul className="stx-todo-blockers__list">
+        <ul className="stx-cards-blockers__list">
           {blockers.map((b, i) =>
             renderRow(b.node, b.why, `b-${b.node.id}-${i}`),
           )}
         </ul>
       ) : !empty ? (
-        <p className="stx-todo-blockers__hint">
+        <p className="stx-cards-blockers__hint">
           <em>Nothing is currently blocking this task.</em>
         </p>
       ) : null}
 
       {satisfiedDeps.length > 0 && (
-        <details className="stx-todo-blockers__satisfied">
+        <details className="stx-cards-blockers__satisfied">
           <summary>✓ Satisfied deps ({satisfiedDeps.length})</summary>
-          <ul className="stx-todo-blockers__list">
+          <ul className="stx-cards-blockers__list">
             {satisfiedDeps.map((n, i) =>
               renderRow(n, "depends_on (done)", `s-${n.id}-${i}`),
             )}
@@ -401,10 +401,10 @@ function BlockersSection({
 
       {downstream.length > 0 && (
         <>
-          <h4 className="stx-todo-blockers__subtitle">
+          <h4 className="stx-cards-blockers__subtitle">
             Blocks (downstream) — {downstream.length}
           </h4>
-          <ul className="stx-todo-blockers__list">
+          <ul className="stx-cards-blockers__list">
             {downstream.map((d, i) =>
               renderRow(d.node, d.why, `d-${d.node.id}-${i}`),
             )}
@@ -441,14 +441,14 @@ function ComputeMetaSection({ node }: { node: GraphNode }) {
     rows.push({ label: "finished_at", value: node.finished_at });
 
   return (
-    <section className="stx-todo-compute" aria-label="Compute job metadata">
-      <h3 className="stx-todo-compute__title">⚙ Compute job</h3>
+    <section className="stx-cards-compute" aria-label="Compute job metadata">
+      <h3 className="stx-cards-compute__title">⚙ Compute job</h3>
       {rows.length > 0 && (
-        <dl className="stx-todo-compute__kv">
+        <dl className="stx-cards-compute__kv">
           {rows.map((r) => (
-            <div className="stx-todo-compute__row" key={r.label}>
-              <dt className="stx-todo-compute__key">{r.label}</dt>
-              <dd className="stx-todo-compute__val">
+            <div className="stx-cards-compute__row" key={r.label}>
+              <dt className="stx-cards-compute__key">{r.label}</dt>
+              <dd className="stx-cards-compute__val">
                 <code>{r.value}</code>
               </dd>
             </div>
@@ -456,15 +456,15 @@ function ComputeMetaSection({ node }: { node: GraphNode }) {
         </dl>
       )}
       {node.command && (
-        <div className="stx-todo-compute__cmd">
-          <div className="stx-todo-compute__cmd-label">command</div>
-          <pre className="stx-todo-compute__cmd-text">
+        <div className="stx-cards-compute__cmd">
+          <div className="stx-cards-compute__cmd-label">command</div>
+          <pre className="stx-cards-compute__cmd-text">
             <code>{node.command}</code>
           </pre>
         </div>
       )}
       {rows.length === 0 && !node.command && (
-        <p className="stx-todo-compute__empty">
+        <p className="stx-cards-compute__empty">
           <em>
             No compute metadata recorded yet (writer hasn't populated this row).
           </em>
@@ -484,15 +484,15 @@ function DetailReader({
   const note = (node.note ?? "").trim();
   const hasNote = note.length > 0 && note !== "uncategorized";
   return (
-    <div className="stx-todo-detail__body">
+    <div className="stx-cards-detail__body">
       <ComputeMetaSection node={node} />
       <BlockersSection node={node} graph={graph} />
       {hasNote ? (
-        <div className="stx-todo-detail__markdown">
+        <div className="stx-cards-detail__markdown">
           <ReactMarkdown>{note}</ReactMarkdown>
         </div>
       ) : (
-        <p className="stx-todo-detail__empty">
+        <p className="stx-cards-detail__empty">
           <em>No note yet for this task.</em>
         </p>
       )}
@@ -542,21 +542,21 @@ export function NodeDetailPanel({
 
   return (
     <div
-      className="stx-todo-detail__backdrop"
+      className="stx-cards-detail__backdrop"
       role="dialog"
       aria-modal="true"
       aria-label={creating ? "Create task" : `Task detail: ${title}`}
       onClick={onClose}
     >
-      <aside className="stx-todo-detail" onClick={(e) => e.stopPropagation()}>
-        <header className="stx-todo-detail__header">
-          <div className="stx-todo-detail__title-row">
-            <h2 className="stx-todo-detail__title">{title || "Untitled"}</h2>
-            <div className="stx-todo-detail__title-actions">
+      <aside className="stx-cards-detail" onClick={(e) => e.stopPropagation()}>
+        <header className="stx-cards-detail__header">
+          <div className="stx-cards-detail__title-row">
+            <h2 className="stx-cards-detail__title">{title || "Untitled"}</h2>
+            <div className="stx-cards-detail__title-actions">
               {!editMode && node && (
                 <button
                   type="button"
-                  className="stx-todo-detail__edit"
+                  className="stx-cards-detail__edit"
                   onClick={onEdit}
                   aria-label="Edit task"
                   title="Edit"
@@ -566,7 +566,7 @@ export function NodeDetailPanel({
               )}
               <button
                 type="button"
-                className="stx-todo-detail__close"
+                className="stx-cards-detail__close"
                 onClick={onClose}
                 aria-label="Close"
               >
@@ -575,19 +575,19 @@ export function NodeDetailPanel({
             </div>
           </div>
           {!editMode && node && (
-            <div className="stx-todo-detail__meta">
+            <div className="stx-cards-detail__meta">
               <StatusBadge status={node.status} color={color} />
               {node.priority != null && (
-                <span className="stx-todo-detail__prio">
+                <span className="stx-cards-detail__prio">
                   priority {node.priority}
                 </span>
               )}
               {node.repo && (
-                <span className="stx-todo-detail__repo">
+                <span className="stx-cards-detail__repo">
                   <code>{node.repo}</code>
                 </span>
               )}
-              <span className="stx-todo-detail__id">
+              <span className="stx-cards-detail__id">
                 id: <code>{node.id}</code>
               </span>
             </div>

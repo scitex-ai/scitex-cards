@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""User model + validation for the standalone scitex-todo user registry.
+"""User model + validation for the standalone scitex-cards user registry.
 
 See :mod:`scitex_cards._users` for the package-level overview (storage
 decision, id format, standalone constraint). This module holds the closed
@@ -82,7 +82,7 @@ class User:
     last_seen : str | None
         ISO-8601 UTC timestamp of the most recent time this user's acting
         agent touched the store (inbox poll, comment/create/update). This is
-        scitex-todo's OWN liveness signal — stamped by the mutation layer,
+        scitex-cards's OWN liveness signal — stamped by the mutation layer,
         NEVER pulled from an external runtime (the standalone constraint).
         ``None`` (the default) means "never seen" → :func:`is_alive` returns
         ``"unknown"``. See :func:`is_alive` for the alive/stale/unknown TTL
@@ -324,7 +324,7 @@ def is_alive(
 ) -> dict:
     """Pure liveness classifier off a user's ``last_seen`` stamp.
 
-    scitex-todo's OWN liveness signal — computed purely from the registry
+    scitex-cards's OWN liveness signal — computed purely from the registry
     record's ``last_seen`` (stamped by the mutation layer whenever an agent
     touches the store), NEVER from an external runtime probe.
 

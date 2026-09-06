@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Process/pidfile helpers for the ``scitex-todo board`` lifecycle CLI.
+"""Process/pidfile helpers for the ``scitex-cards board`` lifecycle CLI.
 
 Extracted from :mod:`scitex_cards._cli._board` to keep that module under
 the 512-line cap and to give the pidfile + port-resolution logic a
@@ -35,7 +35,7 @@ import enum
 from dataclasses import dataclass, field
 from pathlib import Path as _Path
 
-BOARD_PIDFILE = _Path.home() / ".scitex" / "todo" / "board.pid"
+BOARD_PIDFILE = _Path.home() / ".scitex" / "card" / "board.pid"
 
 # Markers we expect in a board process's /proc/<pid>/cmdline. The board
 # is launched via Django's ``call_command("scitex_cards_board", ...)``
@@ -50,7 +50,7 @@ def _board_pidfile() -> _Path:
     """Return the pidfile path (function so tests can override via env)."""
     import os as _os
 
-    override = _os.environ.get("SCITEX_TODO_BOARD_PIDFILE")
+    override = _os.environ.get("SCITEX_CARDS_BOARD_PIDFILE")
     if override:
         return _Path(override)
     return BOARD_PIDFILE
@@ -96,7 +96,7 @@ def _board_write_pid(pid: int) -> None:
 
 
 def _board_cmdline_is_board(pid: int) -> bool:
-    """True iff ``/proc/<pid>/cmdline`` looks like a scitex-todo board.
+    """True iff ``/proc/<pid>/cmdline`` looks like a scitex-cards board.
 
     The cmdline-marker guard is what makes the port fallback SAFE: a
     foreign process holding the configured port is NOT ours and must
@@ -114,7 +114,7 @@ def _board_cmdline_is_board(pid: int) -> bool:
 
 
 def _board_pid_on_port(port: int) -> int | None:
-    """Return the PID of the scitex-todo board listening on ``port``.
+    """Return the PID of the scitex-cards board listening on ``port``.
 
     Tries the available port-introspection tools in order — ``lsof``,
     ``ss``, then ``fuser`` — and tolerates any of them being absent

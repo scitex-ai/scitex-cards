@@ -179,6 +179,7 @@ def install_unit(
     *,
     exec_start: str | None = None,
     force: bool = False,
+    dry_run: bool = False,
 ) -> dict:
     """Write ``spec``'s unit file to the user-unit dir. Does NOT run systemctl.
 
@@ -194,6 +195,12 @@ def install_unit(
         Overwrite an existing unit file. Without it, an existing file is left
         untouched and the result reports ``written=False`` — a hand-edited unit
         is somebody's deliberate work and is not silently reverted.
+    dry_run : bool
+        Do everything except the write, and report it. The preview RESOLVES
+        ``ExecStart`` through the same call the real install uses, so an
+        unresolvable console script raises here exactly as it would then. A dry
+        run that skipped the resolution could pass while the real install
+        fails, which would make it worse than no preview at all.
 
     Returns
     -------
@@ -214,6 +221,15 @@ def install_unit(
     # Resolve BEFORE touching the filesystem: an unresolvable ExecStart must
     # abort the install, not leave a half-written unit behind.
     resolved = exec_start or resolve_exec_start(spec)
+    if dry_run:
+        return {
+            "path": str(path),
+            "written": False,
+            "existed": existed,
+            "exec_start": resolved,
+            "enable_commands": enable_commands(spec),
+            "dry_run": True,
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_unit(spec, resolved), encoding="utf-8")
     return {

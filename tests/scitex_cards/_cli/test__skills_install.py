@@ -192,13 +192,30 @@ def test_the_bundled_skills_directory_is_named_for_this_package():
 
     Every other assertion derives it from ``_SKILLS_PKG``, so the name lives in
     exactly one test instead of a dozen string literals. When it moved from
-    ``scitex-todo`` to ``scitex-cards`` (2026-07-20, operator directive: stop
-    using the todo paths), the hardcoded copies all failed at once and said
+    ``scitex-cards`` to ``scitex-cards`` (2026-07-20, operator directive: stop
+    using the card paths), the hardcoded copies all failed at once and said
     nothing about which was the contract and which was an echo of it.
 
     Pinned because it IS a contract — other packages resolve this path on disk.
     """
+    # Arrange
+    # Act
+    name = _SKILLS_PKG
+    # Assert
+    assert name == "scitex-cards"
+
+
+def test_the_bundled_skills_directory_exists_on_disk():
+    """The NAME being right and the DIRECTORY being there are separate claims.
+
+    Split under STX-TQ007: a rename that updated the constant but not the
+    packaged data satisfies the name assertion and fails this one, which is
+    precisely the failure other packages would hit when they resolve the path.
+    """
+    # Arrange
     from scitex_cards._cli._skills import _skills_root
 
-    assert _SKILLS_PKG == "scitex-cards"
-    assert _skills_root().is_dir(), f"bundled skills missing at {_skills_root()}"
+    # Act
+    root = _skills_root()
+    # Assert
+    assert root.is_dir(), f"bundled skills missing at {root}"

@@ -6,7 +6,7 @@ Split out of ``_store_lifecycle`` when adding :func:`reassign_all` pushed that
 module past its line budget. ``_store`` re-exports the name below so
 ``from ._store import reassign_all`` keeps working. The single-card
 :func:`reassign_task` stays in ``_store_lifecycle``; this module is the BULK
-verb ``sac agents rename`` needs (card ``todo-reassign-all-bulk-primitive``).
+verb ``sac agents rename`` needs (card ``cards-reassign-all-bulk-primitive``).
 
 The shared helpers (``_read_write_doc`` / ``_utc_now_iso`` / ``_default_agent``)
 stay in ``_store`` and are imported inside the function body — a deferred
@@ -35,7 +35,7 @@ def reassign_all(
     """Bulk owner change — move EVERY card owned by ``old_owner`` to
     ``new_owner`` in ONE atomic locked write, then emit ONE batch event.
 
-    The primitive ``sac agents rename`` needs (``todo-reassign-all-bulk-
+    The primitive ``sac agents rename`` needs (``cards-reassign-all-bulk-
     primitive``). Mirrors :func:`reassign_task`'s per-card semantics
     EXACTLY — for every matched card it sets ``agent = assignee =
     new_owner``, ``scope = "agent:<new_owner>"``, appends the identical
@@ -72,7 +72,7 @@ def reassign_all(
         Both required, non-empty. ``old_owner == new_owner`` raises
         ``ValueError`` — a self-rename is meaningless for a bulk verb.
     by : str, optional
-        The actor; resolved via ``$SCITEX_TODO_AGENT_ID`` -> ``$USER`` ->
+        The actor; resolved via ``$SCITEX_CARDS_AGENT_ID`` -> ``$USER`` ->
         ``"unknown"``.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
@@ -140,7 +140,21 @@ def reassign_all(
             if tid:
                 moved.append(str(tid))
         if moved:
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+            # NARROWED TO WHAT THIS CALL ACTUALLY MOVED. Without `touched_ids`
+            # the write re-asserts this caller's whole in-memory copy, so a card
+            # another agent changed between our read and our write is silently
+            # reverted — "and both are told they succeeded" (`_db_mirror`).
+            # Measured on the live board 2026-08-10: a `complete_task` that
+            # RETURNED status=done was later found back at blocked, reverted by
+            # writes to UNRELATED cards.
+            #
+            # `moved`, NOT `[task_id]`: this verb is BULK and has no single
+            # task_id. Narrowing to one id here would persist one ownership
+            # change and drop the other N-1 — a worse defect than the broad
+            # write, which at least keeps everything it touched.
+            _model._save_doc_unlocked(
+                doc, tasks_path, tasks=tasks, touched_ids=moved
+            )
     count = len(moved)
     # ONE batch event, AFTER the write is durable + the lock released
     # (fail-soft). The event models the ACT — one emit for the whole cohort,
@@ -180,7 +194,7 @@ def reassign_task(
 ) -> dict:
     """Atomically change a card's owner — the primitive the board lacked.
 
-    C5 (``todo-reassign-verb-with-owner-notify``). In ONE locked write:
+    C5 (``cards-reassign-verb-with-owner-notify``). In ONE locked write:
 
       * set ``agent = assignee = new_owner`` (keep the legacy ``assignee``
         in lock-step with the operator-co-designed ``agent`` so every
@@ -207,7 +221,7 @@ def reassign_task(
         The new owning agent (required, non-empty).
     by : str, optional
         The actor performing the reassignment; resolved through the usual
-        ``$SCITEX_TODO_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
+        ``$SCITEX_CARDS_AGENT_ID`` → ``$USER`` → ``"unknown"`` chain.
     entry_points : iterable, optional
         In-process injection seam forwarded to the event emit (real fake
         handler in tests); ``None`` uses real plugin discovery.
@@ -279,7 +293,14 @@ def reassign_task(
             if subs:
                 target["subscribers"] = subs
             target["last_activity"] = _utc_now_iso()
-            _model._save_doc_unlocked(doc, tasks_path, tasks=tasks)
+            # Genuinely single-card: every field written above belongs to
+            # `target`, and no peer card is touched. Same guard as every other
+            # card verb — reassign was the only one missing it, and it is the
+            # worst one to miss, because a stale-copy overwrite here reverts
+            # another agent's OWNERSHIP change while both callers see success.
+            _model._save_doc_unlocked(
+                doc, tasks_path, tasks=tasks, touched_ids=[task_id]
+            )
             result_task = dict(target)
             changed = True
     # C5: emit `reassigned` ONLY on a real owner change, AFTER the write is

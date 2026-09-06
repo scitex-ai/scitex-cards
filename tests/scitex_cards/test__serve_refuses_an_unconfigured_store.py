@@ -17,7 +17,7 @@ His ruling, in capitals and repeated: NO SILENT FALLBACKS -- "it is always the
 cause of troubles". It is also already the constitution's rule (fail fast, fail
 loud, no silent fallbacks, no surprises) and already ADR-0016 clause 4 ("A
 configured-but-unreachable Postgres FAILS the process; it must not fall back to
-SQLite"). The rule existed; this door did not enforce it.
+a second engine"). The rule existed; this door did not enforce it.
 
 WHY THE GUARD IS ON THE SERVER AND NOT ON THE RESOLVER. A one-shot CLI landing
 on the zero-config default is a fresh install behaving correctly. A BOARD
@@ -48,7 +48,9 @@ from scitex_cards._store_target import (
 )
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 @pytest.fixture()

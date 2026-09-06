@@ -16,7 +16,7 @@
  * derived from scitex-ui shell tokens — no hardcoded colors.
  *
  * Sibling file: ../../frontend/src/styles/board.css carries the React-side
- * equivalent rules under `.stx-todo-board`. The two surfaces share the
+ * equivalent rules under `.stx-cards-board`. The two surfaces share the
  * scitex-ui token system so behaviour matches across both UIs.
  */
 

@@ -24,9 +24,12 @@ WRITES ARE NOT ENABLED HERE YET. :class:`~._pg.PgCardStore` raises
 :class:`~._pg.ReadOnlyStoreError` from ``write()``. A card spans 28 derived
 columns plus three child tables (``task_comments`` / ``task_edges`` /
 ``task_roles``), and the correct write path is
-``update_task(..., expected_revision=N)`` — the compare-and-set that shipped
-in 0.35.0 — not raw SQL against that projection. Routing the write through
-that verb is the follow-up; until then this measures and reports.
+``_db_mirror._write_card(conn, card, *, expected_revision=N)`` — not raw SQL
+against that projection, and NOT ``update_task``, which REFUSES
+``expected_revision`` with a TypeError. PR #790 ruled that out: update_task is
+a whole-document read-modify-write, so a per-row revision guard there would
+silently overwrite concurrent edits to OTHER cards. Routing the write through
+the real compare-and-set is the follow-up; until then this measures and reports.
 
 The interesting part is :mod:`._decide`: one pure function, three-valued,
 that decides which side of a disagreement wins and records why. Everything

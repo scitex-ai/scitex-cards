@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""The comment merge must read rows by NAME, which is all PostgreSQL allows."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from scitex_cards._mirror_rows import _merge_unseen_comment_rows
+
+_FALLBACK_DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+
+_CARD_ID = "zz-pgmerge-fixture-card"
+
+
+@pytest.fixture
+def pg_store_conn(postgres_dsn):
+    """A package StoreConnection over Postgres, with a TEMP task_comments.
+
+    ONE NAME ANSWERS "WHERE IS THE STORE", and this fixture used to add a
+    second. It read ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private
+    marker -- and SKIPPED when it was unset. Nothing sets that name any more,
+    so "unset" is now always, and these tests reported green in CI without ever
+    opening a connection: the exact failure
+    ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` exists to
+    remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+    a skipped test is indistinguishable from a passing one").
+
+    ``postgres_dsn`` (tests/conftest.py) is the one source of truth: a real
+    throwaway schema on the cluster the harness opened, which FAILS rather than
+    skipping when there is none.
+
+    The package wrapper is deliberate rather than a raw psycopg connection: the
+    module under test writes `?` paramstyle, which only `StoreConnection`
+    translates. A raw connection would fail for a reason unrelated to the defect.
+    """
+    try:
+        import psycopg  # noqa: F401
+    except ImportError:  # pragma: no cover - the package requires the driver
+        pytest.fail(
+            "psycopg is not installed, so the only storage engine this "
+            "package has cannot be reached. Install the postgres extra: "
+            "pip install -e '.[postgres]'",
+            pytrace=False,
+        )
+
+    from scitex_cards._db import open_db
+
+    conn = open_db(postgres_dsn)
+    conn.execute(
+        "CREATE TEMP TABLE task_comments ("
+        " task_id TEXT, seq INTEGER, author TEXT, ts TEXT, kind TEXT, text TEXT)"
+    )
+    yield conn
+    conn.close()
+
+
+def _insert(conn, seq: int, text: str) -> None:
+    conn.execute(
+        "INSERT INTO task_comments (task_id, seq, author, ts, kind, text)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (_CARD_ID, seq, "scitex-cards", "2026-08-23T00:0%d:00Z" % seq, "note", text),
+    )
+
+
+def test_a_row_the_document_cannot_see_is_absorbed_on_postgres(pg_store_conn):
+    """The headline: the merge runs on a Postgres row without raising."""
+    # Arrange
+    _insert(pg_store_conn, 1, "in the doc")
+    _insert(pg_store_conn, 2, "arrived by sync")
+    card = {"id": _CARD_ID, "comments": [{"author": "scitex-cards", "ts": "2026-08-23T00:01:00Z", "kind": "note", "text": "in the doc"}]}
+    # Act
+    _merge_unseen_comment_rows(pg_store_conn, _CARD_ID, card)
+    # Assert
+    assert [c["text"] for c in card["comments"]] == ["in the doc", "arrived by sync"]
+
+
+def test_the_recovered_count_is_reported_on_postgres(pg_store_conn):
+    """One row was invisible to the document, so exactly one is recovered."""
+    # Arrange
+    _insert(pg_store_conn, 1, "in the doc")
+    _insert(pg_store_conn, 2, "arrived by sync")
+    card = {"id": _CARD_ID, "comments": [{"author": "scitex-cards", "ts": "2026-08-23T00:01:00Z", "kind": "note", "text": "in the doc"}]}
+    # Act
+    recovered = _merge_unseen_comment_rows(pg_store_conn, _CARD_ID, card)
+    # Assert
+    assert recovered == 1
+
+
+def test_an_already_agreeing_card_recovers_nothing_on_postgres(pg_store_conn):
+    """Over-reach guard: a merge wide enough to resurrect is wide enough to duplicate."""
+    # Arrange
+    _insert(pg_store_conn, 1, "only comment")
+    card = {"id": _CARD_ID, "comments": [{"author": "scitex-cards", "ts": "2026-08-23T00:01:00Z", "kind": "note", "text": "only comment"}]}
+    # Act
+    recovered = _merge_unseen_comment_rows(pg_store_conn, _CARD_ID, card)
+    # Assert
+    assert recovered == 0
+
+
+def test_a_card_with_no_rows_is_left_alone_on_postgres(pg_store_conn):
+    """The early return that hid the 0.49.0 defect, pinned so it stays correct.
+
+    This is the case a create-and-comment-once smoke test exercises, and passing
+    it proves nothing about the others — which is exactly why it is here WITH
+    them rather than instead of them.
+    """
+    # Arrange
+    card = {"id": _CARD_ID, "comments": []}
+    # Act
+    recovered = _merge_unseen_comment_rows(pg_store_conn, _CARD_ID, card)
+    # Assert
+    assert recovered == 0

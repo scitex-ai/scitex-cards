@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite table population from an in-memory document.
+"""Table population from an in-memory document.
 
 The import entry points that used to live here (the sidecar importer /
-``mirror_doc`` / ``_load_source``) are DELETED: SQLite is the only store, so
+``mirror_doc`` / ``_load_source``) are DELETED: the database is the only store, so
 there is no external document to read and no second representation to project from.
 What remains is the low-level table-writing machinery — the column maps, the
 per-table inserters, and :func:`_rebuild_from_doc` — used by the incremental
@@ -23,12 +23,16 @@ Field mapping (see :mod:`scitex_cards._db` for the schema rationale):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
-import sqlite3
 from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
-from ._db_payload import CARD_JSON_COL, card_payload_json
+from ._db_payload import CARD_JSON_COL, card_payload_json_or_raise
 from ._db_payload import json_or_none as _json_or_none
 from ._db_sections import (  # re-exported: _db_mirror imports these from here
     _gen_id,  # noqa: F401
@@ -174,7 +178,7 @@ class RevisionOutcome:
 
 
 def _insert_tasks(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     tasks: list,
     *,
     replace: bool = True,
@@ -257,8 +261,8 @@ def _insert_tasks(
         #    and NOT the AFTER UPDATE ones. v7's `tasks_bump_revision` is an
         #    AFTER UPDATE trigger, which means the revision lock has been INERT
         #    for every upsert taking this path. A true UPDATE fires it.
-        # 2. INSERT OR REPLACE is SQLite-only syntax; ON CONFLICT parses on both
-        #    engines, which is what lets this path reach PostgreSQL at all.
+        # 2. INSERT OR REPLACE is not portable syntax; ON CONFLICT is
+        #    standard, which is what lets this path reach the store at all.
         # 3. It should also be FASTER, not slower. The 42x measured against
         #    REPLACE was the DELETE half dragging the whole ON DELETE CASCADE
         #    machinery through `task_comments` / `task_edges` / `task_roles` for
@@ -290,7 +294,15 @@ def _insert_tasks(
         # The VERBATIM card — the payload an S2 read reconstructs from, exactly as
         # it appeared in the source document (unknown keys, key order, types and
         # all). The typed columns above are only the INDEX. See :mod:`_db_payload`.
-        values.append(card_payload_json(row))
+        #
+        # _or_raise, NOT the None-returning encoder: a row stored with a NULL
+        # payload is UNREADABLE, and the read refuses the whole store on it, so
+        # one bad card takes the board down for every agent until somebody
+        # unrelated rewrites it. Measured 2026-08-17 — `add_task(note=<datetime>)`
+        # planted exactly that, and it is the tasks-variant outage of 2026-08-11.
+        # The writer already knows the payload cannot be serialised at this point;
+        # refusing costs this one call, storing it costs everyone else.
+        values.append(card_payload_json_or_raise(row))
         if expected_revision is None:
             conn.execute(insert_sql, values)
         else:
@@ -305,7 +317,20 @@ def _insert_tasks(
             found_row = conn.execute(
                 "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
             ).fetchone()
-            found = None if found_row is None else found_row[0]
+            # BY NAME, NOT BY POSITION. `the retired driver.Row` accepted both an index
+            # and a column name, so `found_row[0]` worked for as long as the
+            # store was a file. The server's rows are mapping-shaped and an
+            # integer subscript raises `KeyError: 0` -- here, on the
+            # COMPARE-AND-SET branch of the card write funnel, which is the one
+            # path a caller reaches by asking for safety.
+            #
+            # Same defect that made every commented card read-only fleet-wide
+            # on 2026-08-23, named in the header of
+            # .github/workflows/postgres-backend-on-ubuntu-latest.yml. It
+            # survived the sweep that left warnings about `row[0]` in nine
+            # other modules because no test had ever run this branch against a
+            # server: the harness handed every test a file.
+            found = None if found_row is None else found_row["revision"]
             if found != expected_revision:
                 counts["revision_skipped"] = 1
                 counts["revision_found"] = found
@@ -320,7 +345,12 @@ def _insert_tasks(
                     "SELECT revision FROM tasks WHERE id = ?", (tid_cas,)
                 ).fetchone()
                 counts["revision_skipped"] = 1
-                counts["revision_found"] = None if after is None else after[0]
+                # BY NAME, like `found_row` above. #949 converted that read and
+                # left this one — the line that runs exactly when the
+                # compare-and-set LOSES — so a lost race crashed with
+                # `KeyError: 0` instead of being reported. Found by the
+                # package-wide positional-read guard on its first run.
+                counts["revision_found"] = None if after is None else after["revision"]
                 return counts
         counts["tasks"] += 1
         tid = row.get("id")
@@ -409,12 +439,27 @@ def _insert_roles(conn, task_id, row) -> int:
 #: restore them from, because the rail is now their only copy. The sibling
 #: neutralisation is ``_db_mirror._SECTION_KEYS``, which no longer rebuilds
 #: ``notifications`` on the INCREMENTAL path; this closes the FULL one.
-_DOC_OWNED_ELSEWHERE = ("messages", "notifications", "inbox_recipients")
+#: ``users`` / ``user_names`` joined this tuple when the registry acquired a
+#: live producer (``_db_users.save_users_rows``): the document is no longer
+#: the thing that makes them, so a doc-only rebuild must not DELETE them.
+#:
+#: The upsert at ``_insert_users(conn, doc.get("users"))`` below still runs,
+#: so a doc carrying a registry section still contributes its rows — this
+#: removes the WIPE, not the merge. The full-restore path is unaffected: it
+#: passes ``threads`` and therefore uses ``_CLEAR_ORDER``, where clearing the
+#: registry is exactly right because a restore is meant to replace it.
+_DOC_OWNED_ELSEWHERE = (
+    "messages",
+    "notifications",
+    "inbox_recipients",
+    "users",
+    "user_names",
+)
 _DOC_CLEAR_ORDER = tuple(t for t in _CLEAR_ORDER if t not in _DOC_OWNED_ELSEWHERE)
 
 
 def _rebuild_from_doc(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     doc: dict,
     *,
     threads: dict[str, list[dict]] | None = None,
@@ -443,7 +488,7 @@ def _rebuild_from_doc(
     summary: dict = {}
     tasks = doc.get("tasks") if isinstance(doc, dict) else None
     # replace=False: every row was just DELETEd above, so a conflict is impossible
-    # and REPLACE would only buy SQLite's per-row FK-cascade check — which was 6.3 s
+    # and REPLACE would only buy the per-row FK-cascade check — which was 6.3 s
     # of this rebuild's 7.3 s. See _insert_tasks.
     summary.update(
         _insert_tasks(conn, tasks if isinstance(tasks, list) else [], replace=False)
@@ -455,7 +500,7 @@ def _rebuild_from_doc(
     return summary
 
 
-def _stamp_meta(conn: sqlite3.Connection, source: str) -> None:
+def _stamp_meta(conn: StoreConnection, source: str) -> None:
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('source', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

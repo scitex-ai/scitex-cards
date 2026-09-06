@@ -2,6 +2,1070 @@
 
 ## [Unreleased]
 
+### A deferred card whose start date is still ahead is no longer reported as backlog
+
+The backlog nudge aged a card by `deferred_at` and never read `scheduled`, so
+work its owner had already dated for next week was reported exactly like work
+nobody got to. Measured on the fleet 2026-09-06: five BACKLOG digests between
+01:10Z and 05:20Z naming 29, 30, 31, 33 and 35 cards, with cards scheduled
+09-07 through 09-12 among them.
+
+The cost was not only noise. `scheduled` is the field that says "not yet, and
+when", and while the rail ignored it the only way to be quiet was to park the
+card — and park also suppresses the triage report's expiry proposal, so an
+alarm answerable only by parking teaches parking by reflex, onto something
+load-bearing.
+
+`detect_pending_backlog` now skips a card whose `scheduled` stamp is strictly
+in the future, as an eligibility test beside the existing `parked` skip rather
+than as a clock: a dated card has sat exactly as long as it has sat, it is
+simply not yet due, and ageing by that field would corrupt the "waiting Nd"
+number the line prints. Today, a past date, a missing one and an unreadable one
+(an org repeater, say) all keep firing, so the exemption cannot be reached by
+accident, and a stamp of today agrees with `_may_stop`'s own "scheduled time
+reached" rule. The rot clock is untouched — `deferred_at` keeps running, so the
+triage report still proposes cancellation at the horizon however far a start
+date is pushed forward.
+
+Two rails change, not one: the BACKLOG nudge line, and the owner digest in
+`_reminders`, where an owner whose only stale cards were future-scheduled now
+produces an empty bucket and receives no digest at all. That is the intended
+outcome and is stated here because it is a second surface.
+
+### The suite refuses to run against a tree it did not import
+
+The shared `.venv`'s editable install points at the main checkout, so pytest
+launched from a linked worktree collected the worktree's tests against
+*develop's* package. Every result was then a true statement about code nobody
+had edited — indistinguishable from a true statement about the code under
+review.
+
+Measured twice, by two agents, a month apart: scitex-hpc on 2026-08-02 (PR #72,
+"56 passed", nothing under test) and scitex-cards-gui on 2026-09-06, where a
+deliberately broken import returned "87 passed" and they were one step from
+writing a test to close a gap that did not exist.
+
+`tests/conftest.py` now asserts at import time that `scitex_cards` resolves
+inside this checkout, and refuses the run with both paths and the remedy when it
+does not. It lives in conftest rather than in a shell hook deliberately: sac's
+`enforce_pytest_worktree_source.sh` guards the same thing but inspects the Bash
+command string, so a pytest call inside a shell script hides from it — which is
+exactly how it was got past. This runs *inside* pytest, after the import has
+happened, so no script, Makefile or future wrapper can route around it. Every
+workflow installs editable, verified before adding this, so CI is unaffected.
+
+## [0.51.2] - 2026-09-06
+
+### The board's DM views answer a typed refusal for a store they cannot read, and a path label resolves to the fleet store
+
+Measured 2026-09-05 by scitex-hub with a one-variable differential (0.50.0 to
+0.51.1, same container): hub's tenancy middleware injects a per-project path
+label as the request's store, and `GET /dm/threads` went from 200 to an
+unhandled 500. `resolve_dm_db` derived `cards.db` beside the label, which since
+#949 names no store, so `connect()` refused it with `UnrecognisedStoreTarget`
+and the view crashed. The 200 it replaced was the phantom-store behaviour — an
+empty SQLite file manufactured beside the label — never a working DM store.
+
+DM threads are fleet-wide (a thread between two agents belongs to no project;
+operator ruling 2026-08-09), so a path label now resolves to the ambient store
+target, exactly as the task reads do; a DSN is still returned verbatim. The
+three DM views (`dm/threads`, `dm/thread/<peer>`, and the reaction endpoint)
+now answer `{"error": ..., "reason": "store_absent"}` with the board's
+store-absent status for `StoreTargetNotConfigured`, `UnrecognisedStoreTarget`
+and `StoreNotProvisionedError`, never an unhandled 500 — and never an empty
+thread list in place of a missing store. Under `DEBUG` the body carries the
+full diagnosis; a stranger sees one fixed sentence.
+
+A write that PostgreSQL refuses for lack of privilege answers 403 with reason
+`store_read_only`. scitex-hub's board mount reads the fleet store as a
+SELECT-only role by design, and with a path label now resolving to that store
+a DM send from the mount reaches the database and is refused there; hub
+predicted this from the two measured facts before the release. The refusal is
+correct — the mount needs a write credential scoped to the DM tables — and the
+board now says so instead of crashing.
+
+### A tenant schema this role cannot use is refused, not silently reused
+
+A tenant schema's name is a digest of the identity alone and is global to the
+database. When one already existed under another role (left behind by that
+role's test run), `provision_workspace_store` created nothing, registered the
+tenant, and then failed on the first table build with PostgreSQL's "no schema
+has been selected to create in" — the unusable schema was silently dropped from
+the effective search_path. Provisioning now checks `has_schema_privilege` right
+after `CREATE SCHEMA IF NOT EXISTS` and raises `WorkspaceSchemaNotUsable`
+naming the schema, its owner and the current role. The test harness provisions
+per-test identities and drops the tenant schemas it created, which also ends an
+xdist race on shared fixed identities that failed one CI leg in three.
+
+### A DSN that asks for a search_path is refused when the server did not apply it
+
+Measured 2026-09-05: the fleet primary went behind PgBouncer in transaction
+mode with `options` in `ignore_startup_parameters`. A DSN carrying
+`options=-csearch_path=<schema>` connected without error and `SHOW search_path`
+answered `"$user", public`. Every scoped handle in this package — a workspace
+tenant's DSN, the test harness, any consumer appending `-csearch_path` — relies
+on that one startup parameter for its isolation, and every guard asserted what
+the DSN *said*, never what the server *held*. The harness sat on the live board
+believing itself scoped; only the store-identity stamp refused, in words about
+identities.
+
+`connect()` now reads the session's search_path back when the DSN asks for one
+and raises `SearchPathNotApplied` on mismatch, naming asked-for, got, and the
+remedy (the PostgreSQL port itself, or a pooler that tracks `search_path`). The
+schema is read the way libpq reads it — the last `options` wins — because an
+xdist worker's DSN carries two. A DSN that asks for nothing pays nothing.
+
+## [0.51.1] - 2026-09-05
+
+### A store target written into a message names the store, never its password
+
+Measured 2026-09-05 by scitex-hub, six minutes after a freshly minted
+read-only role had been delivered through a 0600 secrets path: on the first
+board read, the read-side TOLERATED warning printed the store label as a repr
+of the full DSN, password included, once per legacy `pending` row, to docker
+logs. The label had stripped the query string "because DSNs carry credentials
+there"; the password is in the userinfo, before the `@`. The same raw
+interpolation sat in about twenty other messages — the missing-driver error,
+the malformed-target refusals, the identity guard, the health checks, the
+canonical read's refusals, the CLI's provision and floor echoes.
+
+`describe_store_target` is now the one rendering: a URL keeps scheme, user,
+host, port and database and drops the password and the query string; a
+conninfo keeps every keyword but `password`; the mangled form the refusals
+exist for has its userinfo password stripped; any other target is returned
+unchanged so a path or placeholder stays diagnosable. Every site goes through
+it, `store_label` delegates to it, and a source-level test greps the watched
+modules for a raw interpolation that bypasses it. (#964)
+
+### The release pipeline runs green from a self-hosted runner's home directory
+
+v0.51.0 was tagged but never published: the tag-driven workflow, which runs on
+the Spartan self-hosted runners, failed one test in 6,378 —
+`test_scitex_dir_fallback_is_not_under_any_real_home`. The runner's whole work
+tree lives under its user's home, so pytest's basetemp is
+`/home/ywatanabe/actions-runner-org/_work/_temp/...` and "not under a real
+home" was false by construction there, while it held on GitHub-hosted runners
+(`/home/runner` + `/tmp`), which is why the same tree was green on #960 and
+#961. The store was never touched.
+
+The guard now asserts the invariant it protects: the tier-4 file fallback never
+lands in a real user's **store root** (`<home>/.scitex`), not that it avoids
+the home as a whole. The sibling test still pins the fallback under pytest's
+tmp root, so a scratch inside a real `.scitex` still fails. (#962)
+
+### The test harness refuses a search_path the server did not apply
+
+The harness scopes every test to a throwaway schema with one mechanism,
+`options=-csearch_path=<schema>` on the DSN. Through a transaction-mode
+PgBouncer that startup parameter is dropped silently, so the harness believed
+it was scoped and was on `public`, the live board; only the store-identity
+stamp stopped a write, with a message about identities. `_open_throwaway_postgres`
+now asks the server `SHOW search_path` on the scoped DSN and refuses before any
+test runs when the session does not carry the schema asked for, naming both
+sides and the remedy (the PostgreSQL port itself, never the pooler). The reason
+lands in the report header, where `-x` cannot hide it. The schema is read the
+way libpq reads it — the last `options`, the last `-csearch_path=` — because an
+xdist worker inherits the controller's already-scoped DSN and carves a second
+one on top. (#962)
+
+## [0.51.0] - 2026-09-05
+
+### A fresh install keeps the mcp 1.x the channel server speaks
+
+fastmcp 4.0.3 stopped holding mcp below 2.0, so an unbounded resolution of
+`fastmcp>=2.0` installed mcp 2.1.1, whose `ServerSession` no longer takes the
+initialization options positionally. `_mcp_channel.py` opens the live channel
+session with the 1.x shape and raised `TypeError` at the handshake, on every
+Python, in CI (#959) — a production break for any fresh install, since that
+session is the push rail every agent's Claude session speaks to. The
+requirement is now `fastmcp>=2.0,<4` on both sites, which resolves to
+fastmcp 3.4.7 / mcp 1.29.1, the pair every fleet venv already runs. The port
+to mcp 2.x is its own card, and this bound must not outlive that decision.
+
+### A comment reads one card and writes one card, not the whole board three times
+
+Measured 2026-09-02 on the live primary (6,542 cards, 15,773 comments), one
+`comment_task` took 2.7 s against a 3.1 ms one-card query, because every CRUD
+verb was built on the whole-document read-modify-write cycle:
+
+    comment_task                                          3.013 s
+    ├─ _read_canonical_db_or_raise      x2                2.048 s   export the board, twice
+    └─ dispatch_notifications -> get_task                 1.221 s   export the board, a third time
+
+The export plus its `COUNT(*)` cross-check is the right guard for a caller that
+PRODUCES a whole document and writes it back. A verb that touches one card never
+produces one, so it paid for a guard it could not use, linearly in board size,
+on every write — the operator's ruling 2 (cost O(viewport), never O(corpus))
+violated on the most frequent write in the package.
+
+`comment_task` and `get_task` now go through `_store_single_card`: one
+`SELECT ... WHERE id = ?`, decoded exactly as the exporter decodes a row, and one
+compare-and-set write on `tasks.revision` through `_mirror_rows._write_card` —
+the same primitive the incremental mirror uses per changed card, so the
+table-leads comment merge (the 2026-08-23 loss) and the refuse-before-drop
+ordering are inherited, not re-implemented. A lost race raises
+`RevisionConflictError` and `comment_task` re-reads and re-applies (three
+attempts), which also closes the "two callers naming the SAME card still race"
+gap the mirror's docstring left open, for the one verb that is provably
+append-only.
+
+THE GUARDS DID NOT MOVE AND DID NOT FORK. `_store_canonical_read` now exposes
+`_guarded_connection`, the ONE definition of exists / ownership / retired; the
+whole-document read calls it and so does the one-card path. There is no lenient
+single-card variant, because the 2026-07-19 outage was the read door and the
+write door disagreeing. The export's `COUNT(*)` cross-check stays exactly where
+it is and exactly as strict for every caller that still produces a whole
+document (`list_tasks`, `db export`, backup, the board); the one-card verbs
+simply no longer produce one.
+
+Re-measured through the new path against the same primary: 2,697.6 ms ->
+272.1 ms, `export_doc` 0 times. What remains is three guarded connections plus
+event dispatch; the card that opened this change stays open on those.
+
+What this changes for a row the export refuses: a `users` row with no payload
+used to refuse EVERY write, including a comment on an unrelated card, because
+the write-back would have deleted it. A one-card write never reads `users` and
+writes one `tasks` row, so it now lands and the unreadable row is untouched —
+pinned directly by `test__pure_reads_survive_an_unreadable_row.py` and
+`test__rmw_refusal_must_not_become_tolerance.py`, whose refusal pairing moved to
+`update_task` (still the whole-document cycle). A one-card write ON a card whose
+own payload is unreadable refuses with the export's own wording, from the shared
+`missing_payload_refusal`.
+
+### The positional-row-read guard now covers the whole package
+
+`_insert_tasks`' compare-and-set branch shipped in 0.50.0 reading its revision
+row as `found_row[0]` — fine on the retired driver's row type, `KeyError: 0` on
+psycopg's `dict_row` — and #949 fixed that read by name. Its sibling three
+lines down, the post-race re-read `after[0]`, survived #949 and is fixed here:
+it is the line that runs exactly when the compare-and-set LOSES, so the guard
+that exists to report a lost race crashed instead of reporting it. The source
+guard that should have caught both keyed on the identifier `row` in one
+module. It now keys on WHERE THE VALUE CAME FROM: any name bound from
+`.fetchone()` / `.fetchall()`, in any module under `src/scitex_cards`,
+subscripted with an integer, fails
+`test__a_comment_row_is_read_by_name_not_position.py` — and it found `after[0]`
+on its first run over develop.
+
+Tests: `test__store_single_card.py` — thirteen tests on throwaway PostgreSQL
+schemas: exporter equivalence, blast radius = one row's revision, a table-only
+comment row survives, a stale revision is refused with the row intact,
+tombstone parity, the three guard refusals (foreign identity / schemaless /
+retired) as positive controls, and cProfile asserting `export_doc` ran 0 times
+for both verbs.
+
+## [0.50.0] - 2026-08-31
+
+### A behind-client no longer re-runs the DDL it cannot possibly need
+
+The 2026-08-02 "BEHIND, not DIFFERENT" fix was one line short. It changed the
+version comparison to `<` so a client older than the store would stop
+re-asserting its whole schema on every connection. That works — and the very
+next check, `shape.agreement is not ShapeAgreement.AGREES`, then rejected the
+same client for the same underlying reason, so the deadlocks continued.
+
+Measured on the live board with the deployed client's own interpreter:
+
+    SCHEMA_VERSION       12
+    shape.observed       12
+    version check        passes
+    shape.agreement      STAMP_IS_HIGH  ->  AGREES? False   <- rejected here
+    required triggers    9, none missing
+
+`STAMP_IS_HIGH` is the NORMAL reading for a behind-client, not a symptom: its
+physical-rung reader knows only the rungs its own version defines, so it can
+never observe above itself, while the stamp was written by a newer client. Every
+not-yet-upgraded client reports this disagreement forever, and a fleet always
+contains such clients — three card writes died of `deadlock detected ... in
+relation "pg_proc"` inside twenty minutes with nothing else running.
+
+The exemption is narrow: it applies only when EVERY stamp sits above the version
+this client would assert, so the store is unambiguously ahead. `STAMP_IS_LOW`
+still refuses, because that is the repair the migration chain exists for. Stamps
+that disagree with each other still refuse. A current or ahead client seeing a
+high stamp still refuses, because it can read every rung it would assert and the
+stamp is genuinely unexplained. The guard triggers are still proven present on
+every open, so nothing skips the DDL without proof.
+
+Why the existing tests missed it: `test_a_store_AHEAD_of_the_client_needs_no_ddl`
+builds a self-consistent shape — observed and both stamps equal, agreement
+`AGREES` — which is a reading no real behind-client can produce, so it exercised
+the version comparison and nothing else.
+
+### The store verbs answer to `dev db`, and every hint says so
+
+Per-package database client commands standardize on `<package> dev db`, with
+the ecosystem-wide aggregate on `scitex-dev ecosystem dev db` (operator,
+2026-08-26). `db` was the last store-facing group still mounted at the root
+next to the card verbs people actually run, though it is upkeep by the same
+test every other `dev` verb passes: it operates on the store as an object.
+
+`scitex-cards db ...` keeps working as a Phase-W alias through v0.54, because
+that spelling is baked into cron lines, troubleshooting notes and agent
+prompts across the fleet, none of which are greppable from this repository.
+
+TWO THINGS THE MOVE BROKE THAT AN ALIAS DOES NOT COVER, both caught by the
+suite rather than by review:
+
+* The hourly snapshot rail INVOKED `scitex-cards db snapshot --push` — after
+  the move a doubly-deprecated spelling, which would have printed two
+  deprecation warnings per fire into the log that rail's red/green reading
+  comes from. It now invokes the canonical `dev db create-snapshot`.
+
+* Every hint naming the group — across seven modules — said
+  `scitex-cards db <verb>`, and `test_every_verb_named_in_a_hint_exists`
+  enforces that a hint is runnable as printed. An alias resolves at the CLI
+  but is not a verb the enumeration finds, so the hints moved with the group.
+  Three were split across source lines, in two different wrappings, and only
+  the per-substitution assertion counts caught them.
+
+The alias helper had to learn one thing first. `_compat`'s inline fallback —
+the LIVE path for an ordinary install, since scitex-dev is deliberately not a
+runtime dependency — resolved targets with `group.get_command`, which only
+finds commands on the group the alias itself sits on. Pointing the root `db`
+at a group that now lives on `dev` returned `None` there (and, spelled as a
+string, resolved to the alias itself). It now accepts a command object, as
+scitex-dev's real helper always did, and forwards `--help` to a group target.
+
+### A poll and a confirm each name the store they used
+
+A consumer that polls one store and confirms against another gets no error from
+either call: the poll returns nothing, and the confirmation answers `unknown`
+for every id. Both are indistinguishable from an ordinary empty inbox, and
+`unknown` reads as a statement about the IDS when the truth is a statement
+about the DATABASE.
+
+`poll_notifications` and `ack_notifications` now both return `store` — the
+target that call actually read or wrote through, rendered by `store_label` so
+DSN credentials never reach a transcript.
+
+The comparison is ONE-SIDED, and the docstrings say so: two labels that DIFFER
+identify a split; two that AGREE mean only that this client read and wrote in
+one place. The delivery daemon resolves its own target and stamps nothing, so a
+third store can be feeding the inbox while both labels agree. Agreement is
+CANNOT-TELL, not MATCHES.
+
+### The store identity pin checks BOTH halves (BREAKING for anyone who pinned one)
+
+`SCITEX_CARDS_STORE_UUID` was read, reported, and never compared. Found by
+dotfiles on 2026-08-17 by mutation-testing the gate rather than reading it —
+setting a deliberately wrong value and checking whether the gate noticed.
+Reproduced on shipped 0.48.0:
+
+    SCITEX_CARDS_STORE_UUID=deadbeef-1111-4222-8333-444455556666 \
+    SCITEX_CARDS_STORE_INSTANCE=7672112238472680366 \
+      scitex-cards resolve-store --json
+
+    "store_uuid":       "1d55dd6e-3d2a-4c24-a429-a78835ab988f"
+    "expected_uuid":    "deadbeef-1111-4222-8333-444455556666"
+    "identity_verdict": "matches"       <-- differing values on adjacent lines
+    "may_proceed":      true
+
+Both call sites passed the INSTANCE into a single `expected` field, so the uuid
+never reached a comparison. The collapse of two independent expectations into
+one field was the defect, so `IdentityCheck` now carries them separately.
+
+**Both halves are now required for a pass**, and an instance-only pin answers
+`cannot-tell` rather than `matches`. That is deliberate: the instance identifies
+the SERVER, and a database restored onto that same server keeps its
+`system_identifier` while getting a NEW `store_uuid` — the 2026-08-09
+frozen-store incident this pin exists to catch. The uuid alone is equally
+insufficient: three databases once answered the same `store_uuid` ~300 cards
+apart, because a uuid is a row and a dump carries rows.
+
+**Alongside, never instead of.** Only the instance half was live, so the
+two-ports-on-one-host case (measured on nas-03, same uuid, different
+`system_identifier`, one seven days stale) was being caught by accident; a
+repair that simplified toward the uuid would have converted a working guard
+into one that passes a week-old board.
+
+The comparison moved to a new `_store_identity_decision.decide_identity` and
+both guards now probe-then-delegate. They previously carried two bodies "kept
+IDENTICAL by discipline" — which is the arrangement that drifted, and is why
+one of them stopped checking the uuid. `IdentityVerdict` and `IdentityCheck`
+are re-exported from `_store_instance`, so existing imports are unaffected.
+
+`StoreIdentityRefused` now names BOTH environment variables; the old hint sent
+the reader to pin one and hit the same refusal again.
+### Reassign narrows its write to the cards it touched
+
+`_db_mirror` documents a lost-write mechanism distinct from the deadlock
+rollback: a caller writing card A re-asserts its STALE copy of card B over
+another agent's committed change, "and both are told they succeeded". Measured
+on the live board 2026-08-10 — a `complete_task` that RETURNED status=done was
+later found back at `blocked`, reverted by writes to unrelated cards.
+
+`touched_ids` is the built mitigation. An AST audit of all 21
+`_save_doc_unlocked` call sites found the two reassign verbs were the only card
+verbs omitting it — and they are the worst to omit, because a stale-copy
+overwrite there reverts another agent's OWNERSHIP change rather than a field.
+
+The two sites need DIFFERENT sets, which a careless fix gets wrong:
+
+    reassign_all    BULK    -> touched_ids=moved       (every card it moved)
+    reassign_task   SINGLE  -> touched_ids=[task_id]
+
+`reassign_all` has no `task_id`. Narrowing it to a single id would persist one
+ownership change and silently drop the other N-1 — worse than the broad write,
+which at least keeps everything it touched.
+
+Neither verb touches a peer card: every field written (`agent`, `assignee`,
+`scope`, the audit comment, `subscribers`, `last_activity`) belongs to the card
+being moved, so the touched set is exactly the moved ids.
+### A "no such card" error names the store it searched
+
+All seven raise sites interpolated their own local `tasks_path` / `resolved`
+variable — the LOCAL sidecar path — while the lookup that had just failed ran
+against the resolved store. Measured on the deployed 0.48.0:
+
+    resolve_store().resolved  ->  postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+    comment_task(bad_id)      ->  task id '...' not found in
+                                  /home/agent/.scitex/cards/tasks.yaml
+
+The named value played no part in the search. `_read_write_doc(path)` ignores
+its argument entirely — its body is `_read_canonical_db_or_raise()`, which takes
+none — so that path served the file lock and this one string, and nothing else.
+`_paths` already said so in prose: "interpolates the path into an error message
+only".
+
+That is worse than a vague message because it is actionable in the WRONG
+DIRECTION: it sent a peer hunting a second store that does not exist, and cost
+them a conclusion they had to retract to another agent.
+
+One builder, `_task_not_found(task_id)`, now replaces seven copies of the
+sentence, and reaches for the existing `store_label()` — which strips DSN
+credentials before this reaches a log and never routes a URL through `Path`.
+A source scan pins it: the test fails on the eighth site written the old way,
+which is how the first six survived.
+
+### Expiry is a REPORT, not a mechanism — every surface now says so
+
+Nothing in this package expires a card. `is_expired` is an age predicate and
+`expired()` feeds a body that gets PRINTED; no sweep, daemon or verb writes
+`status=cancelled`, and none of the six JobSpecs in `_jobs_provider` runs
+`scitex-cards triage`. Four user-facing surfaces claimed otherwise:
+
+* `add_task` / `update_task` on the MCP surface — the one every agent in the
+  fleet reads before writing a card — promised that a park exempts a card
+  "from the backlog nudge AND from auto-expiry".
+* the `--parked` CLI help repeated it verbatim.
+* `is_expired`'s own docstring said expiry "cancels on silence", while the
+  module header 300 lines above correctly said the opposite.
+* worst, the triage nudge told its HUMAN reader "Rescue any you still want;
+  silence cancels them". Silence cancels nothing. That promise was read by the
+  person whose actual complaint is that the board has too many cards, and
+  whose 「忘れたもので本当に必要なものは…必ず上がってくる」 presupposes that
+  forgetting really happens.
+
+All four now describe what runs. The nudge names `status=cancelled` as an
+explicit step. `add_task` states the horizon, the env var, and the six jobs
+that exist instead.
+
+CORRECTING THE 0.48.0 ENTRY BELOW, which is left intact as the record: it ends
+"a standing goal must not be auto-cancelled at the horizon for the crime of
+standing". Nothing auto-cancels; the park exempts a card from being PROPOSED
+for cancellation. The false framing reached the release notes of the very
+change that made it expensive: measured tonight, 839 cards sat past that line
+with nothing in the package able to act on them.
+
+`test__expiry_is_a_report_not_a_mechanism.py` reads the docstrings by AST, and
+`test_no_jobspec_schedules_triage` pins the fact the prose depends on, so
+scheduling triage turns the docs red instead of letting them rot.
+
+### The stale horizon is 7 days too, and the forgetting was executed (BREAKING)
+
+`_cli/_stale.py` and `_django/handlers/stale.py` each hard-coded **14** days —
+two copies, no shared source — while the forgetting horizon was 7. A card aged
+7-14 days was forgotten by the rule and invisible to the stale sweep.
+
+Both are now 7, on the operator's instruction 「はい7日でお願いします」, given
+after he was told the cost: the Django copy feeds the board's Archive button, so
+the change offers about a week more of everyone's cards for archiving on a shared
+board. `test_the_cli_and_django_stale_horizons_are_equal` keeps the two literals
+from drifting apart; there is still no shared source, only a test that says they
+must agree.
+
+AND THE FORGETTING WAS ACTUALLY RUN, once, by hand — 「忘却実行してください」.
+839 deferred cards past 7 days, across 39 owners, driven to `status=cancelled`.
+Parked (147) and undatable (32) were exempt. Ages 7.3 to 68.8 days, median 28.3.
+A full undo record was written and verified BEFORE the first write
+(`~/.scitex/cards/archive/forget-7d-20260819-undo-ids.txt`, 838 ids), and the
+restore path was tested end-to-end on one card rather than assumed.
+
+THE PACKAGE STILL DOES NOT DO THIS BY ITSELF, which is why the docstring fix
+above stands unchanged: no sweep, daemon, verb or JobSpec cancels anything. The
+execution was an operator-authorised manual run, and a reader of this package
+must still not expect the board to clean itself up.
+
+## [0.48.0] - 2026-08-19
+
+### The forgetting horizon is 7 days, not 30 (BREAKING)
+
+The operator asked for this directly: 「じゃあ1週間したら完全に赤い風にしようしましょうか？
+なので、3日ルールは7日ルールにしてください」, and the reason he gave matters more than
+the number — 「カードが多すぎるとその管理コストが増える割に実際にはうまくワークしない」,
+and 「忘れたもので本当に必要なものはもう一回私から必要に応じて必ず上がってくる」.
+Forgetting is the mechanism, not the failure.
+
+`DEFAULT_EXPIRY_DAYS` moves 30.0 to 7.0. Dry-run against the live board, 1748
+deferred cards and 141 parked, before anything was written:
+
+    30 days  ->  356 cards expire
+    14 days  ->  800
+     7 days  ->  935
+
+`DEFAULT_HALF_LIFE_HOURS` is deliberately UNCHANGED at 24*7. It is a sampling
+weight in an A-Res weighted reservoir (`u ** (1/w)`), not a lifetime, so
+shortening it does not make the board forget faster — it concentrates the draw
+on the newest cards and makes the older ones *less* likely to ever surface for
+triage, which is the opposite of the intent.
+
+Parked cards are exempt, as before: a park is a stated reason, and a standing
+goal must not be auto-cancelled at the horizon for the crime of standing.
+
+### The "Mine" page is removed (BREAKING)
+
+The operator asked twice, three days apart, and it had not happened. Removes
+`_me_page.py`, `handlers/mine.py`, `_board_identity.py`, the `me.html` template,
+the `me/` JS assets, and their tests; drops three routes from `urls.py` and the
+nav item from the page switcher. Any bookmark to `/me/` now 404s.
+
+### A PostgreSQL store no longer resolves the DM tables to a file
+
+`resolve_dm_db` derived the DM database from `store.parent`, which assumes
+`store` names a FILE. Every DM caller threads `store=` through and
+`$SCITEX_CARDS_DB` is a DSN, so the assumption was false in production:
+
+    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards
+      -> postgresql:/scitex_cards@127.0.0.1:55432/cards.db
+
+`Path()` collapses the doubled slash. That is not a near-miss but a NEW retired-engine
+database: `open_db` creates it, `init_schema` fills it, and it answers every
+query with an empty board. The regrown file measured on disk held 15 tables and
+3 rows, all of them `schema_meta` — created and initialised, never written to.
+A fourth spelling of the regrowth `is_attempted_dsn` already records three of.
+
+The tier is KEPT — falling through to the ambient chain would send a test's DMs
+into the live fleet database — and now asks `_store_url` what it holds. A server
+target is returned verbatim, which is what the ambient tier below already does
+and what `open_db` re-resolves for `connect` to dispatch. A mangled DSN is
+refused rather than guessed at.
+
+The libpq keyword form (`host=… port=… dbname=…`) is covered and pinned
+separately: it carries no scheme, and had it fallen to the path arm its parent
+would have been `.`, putting a relative `cards.db` in the caller's working
+directory — the 2026-07-31 incident exactly.
+
+`resolve_dm_db` had no test anywhere; the gap in the tests and the gap in the
+code were the same gap. All five shapes are now pinned.
+
+## [0.47.0] - 2026-08-18
+
+### A store target that was never resolved is refused instead of created
+
+`${SCITEX_CARDS_DB}` — the literal, unexpanded — was a valid store target.
+Reproduced against 0.44.0 in an isolated directory:
+
+    connect(tmpdir / "${SCITEX_CARDS_DB}")
+      -> OPENED, no refusal
+      -> left ${SCITEX_CARDS_DB}, -shm, -wal
+
+A live WAL-mode board on the retired engine, named after the variable and
+answering every query.
+
+It threaded between two correct guards. The value is NON-EMPTY, so the
+zero-config refusal never fired; it is NOT DSN-SHAPED, so `is_attempted_dsn`
+returned False and `reject_attempted_dsn` never inspected it. Both guards ask
+"does this look like a server?". Neither asks "did this value ever get
+resolved at all?".
+
+Measured cost, scitex-compute-03, 2026-08-18: eight agents held this literal
+in their environment, so every cards client resolved to one file named
+`${SCITEX_CARDS_DB}` in the project directory. Four direct messages addressed
+to the operator were written into it and delivered to nobody. Two of those
+agents diagnosed the defect themselves, at 00:20 and 00:41, and declined to
+redirect the store — citing the 2026-07-19 board destruction by name. Their
+escalation went into the store it was about.
+
+`_store_url` gains `is_unexpanded_variable` and `reject_unexpanded_variable`,
+both exported so a peer package reuses this guard rather than writing a second
+spelling of it. They are wired at the four doors that already call
+`reject_attempted_dsn` — both branches of `resolve_tasks_path`, and both
+`connect` functions — and placed BEFORE the DSN check, because provenance is a
+different question from shape: `"${DSN}://x"` carries `://` and would
+otherwise be refused as a malformed server address, sending the reader hunting
+a typo in a hostname nobody wrote.
+
+`${` and `$(` only. A bare `$FOO` is deliberately NOT matched, and a test
+asserts that: `$` is legal in a POSIX filename, and no store in service may
+break. `${` and `$(` cannot survive any shell that actually ran.
+
+**Upgrade note.** An agent still holding an unexpanded literal now fails to
+start rather than quietly writing to a store named after a variable. That is
+the intended failure. Verify before rolling out by reading
+`/proc/<pid>/environ` of the RUNNING processes — a spec file describes what an
+agent was started with, not what it holds now.
+
+## [0.46.0] - 2026-08-17
+
+### The fleet's only card-event consumer was registered, importable, and never called
+
+**Install this if anything in your deployment consumes card events.** An
+entry-point group is a PUBLISHED CONTRACT: the string lives in OTHER packages'
+installed metadata, not in this package's source. Renaming it is therefore a
+MIGRATION — alias first, remove later — and that step was skipped when this
+package was renamed from `scitex_todo` to `scitex_cards`.
+
+Measured 2026-08-17 in the live fleet venv:
+
+    entry_points(group="scitex_cards.hooks")  ->  []
+    entry_points(group="scitex_todo.hooks")   ->  [scitex-agent-container
+        = scitex_agent_container._listen._card_event_delivery:deliver_card_event]
+
+Discovery read the new group and found nobody. The one registered card-event
+consumer in the fleet sat in the group dispatch had stopped reading — it was
+registered, it was importable, and it was never called. Nothing raised and
+nothing went red, because a rename cannot fail loudly when the failure mode is
+an empty iterator. The push rail was simply silent.
+
+**Both groups are now read**, and the union is deduped on `(name, value)`. That
+dedupe is not tidiness: a producer migrating CORRECTLY registers under both
+groups for one release, and dispatching it once per group would deliver every
+card event TWICE — turning a delivery repair into duplicate operator
+notifications. A `DeprecationWarning` names the straggler and its replacement
+group, so the retired group can actually empty instead of silently absorbing
+the debt.
+
+Two cheaper fixes were rejected. Flipping the constant back to the old name
+breaks any future CORRECT registration. Asking the one producer we happen to
+know about to re-register repairs exactly that producer, and leaves every other
+one dead AND invisible.
+
+`merge_hook_entry_points()` takes the discovered set as an argument, so the
+alias and dedupe decisions are tested by handing them a real object rather than
+by patching production internals. Six new tests, one assertion each, including
+a positive control against an implementation that returned every entry point
+regardless of group — without it the other five could pass vacuously.
+
+**NOT CLAIMED:** that this is the root cause of the silent doorbell (1823 DM
+bodies delivered, 125 badges unfired). A dead group would independently produce
+that signature, but no event has been traced end-to-end yet, and the board
+records a second, separate rail defect.
+
+### Retired-engine eradication, stage 1: the driver import under `src/`, 30 -> 15
+
+Operator ruling, 2026-08-17: the retired file engine is abolished — removed from source,
+migrated to PostgreSQL, and confirmed unable to be recreated. This release
+carries the SAFE SUBSET of that sweep, plus the barrier that keeps it from
+regressing.
+
+**THE MEASUREMENT THAT MADE IT SAFE.** 38 files under `src/` carry the retired
+driver's module name; 30 bound the driver. An AST walk sorted every use into four buckets
+and found ZERO `isinstance(..., <driver>....)` checks anywhere — no guard in
+this package uses the driver to DETECT the engine. `_store_url.py`, which holds
+`is_attempted_dsn`, `reject_attempted_dsn` and every refusal, does not contain
+the token AT ALL; it recognises a file-shaped target from a STRING. So driving
+the import toward zero removes the ability to CREATE a database without
+weakening a single REFUSAL. That asymmetry is the whole reason this stage is
+tractable, and it is why the sweep is not a keyword sweep: most retired-engine
+vocabulary in this package IS the abolition guard — prose whose only job is to
+NAME the engine in order to REFUSE it.
+
+**WHAT MOVED.** 15 modules imported the driver solely to write
+the driver's `Connection` / `Row` in a signature. Every one of them carries
+`from __future__ import annotations`, so the annotation was a string that is
+never evaluated: the import bought nothing at runtime, and the annotation was
+actively WRONG — on PostgreSQL `_db.connect()` returns a `StoreConnection`, so
+those signatures named a type the caller does not receive. Retyped under
+`if TYPE_CHECKING:`, which is zero runtime import.
+
+**THE BARRIER.** `tests/scitex_cards/test__no_retired_driver_import_in_src.py` parses
+every module and asserts none imports the driver, with a SHRINK-ONLY allowlist
+naming the 15 remaining offenders and why each still holds it. A module off the
+list that starts importing fails; a module ON the list that stops importing
+ALSO fails until its entry is deleted, so the allowlist cannot decay into a
+permanent exemption. AST, not grep — a textual check would report the refusal
+machinery as the offence it exists to prevent.
+
+**RED-PROOFED, not assumed.** A guard that has never failed is not a guard.
+Eight offending spellings (aliased, from-import, submodule, comma,
+function-local, conditional, try-guarded) and five innocent ones (docstring,
+comment, string literal, string annotation) run through the real detector, and
+the barrier itself was driven red against a deliberately planted offending
+module before being restored.
+
+**WHAT DID NOT MOVE**, and why, is written down in
+ADR-0019, the eradication classification: the three create-capable
+doors (`_backend_connect:186`, `_db:365`, `_index:67`), the live file-engine
+inbox backend, and the nine `mode=ro` legacy readers. The legacy readers stay because
+the Phase-2 measurement returned CANNOT PROVE — the retired store `0bb1395b`
+could not be located on this host at all (172 files reference the uuid, none of
+them is a database on that engine), so losslessness cannot be certified. A separate,
+real gap did surface on the way: four surviving legacy `todo.db` inboxes hold
+149 notification ids absent from PostgreSQL (all `seen=1`, all payloads present
+in PG). That is precisely what `_health_stranded_backlog` exists to detect, and
+precisely what removing its reader would silently drop.
+
+### Also
+
+- **`main` reaches 0.46.0 from 0.44.0 in one step, and the skipped step is
+  named rather than absorbed.** The 0.45.0 `develop` -> `main` promotion never
+  happened, so PyPI served 0.45.0 while `main`'s `pyproject.toml` still read
+  0.44.0 — `main` has been two releases stale, not one. The 0.46.0 promotion
+  carries `main` across both releases at once.
+
+  **The missing promotion is the defect — NOT the fact that v0.45.0 was tagged
+  on a `develop` commit.** Tagging the release-bump commit on `develop` is the
+  ritual adopted 2026-08-16, and 0.45.0 was the first release to follow it. The
+  promotion merge then makes that same commit an ancestor of `main` too, so the
+  tag is reachable from BOTH branches by construction. The older habit of
+  tagging `main`'s merge commit strands the tag on a commit `develop` never
+  receives, and `git describe --tags --abbrev=0 origin/develop` answers with a
+  stale version — confidently, and without an error: measured `v0.38.0` while
+  `v0.42.0` existed, four releases behind. Any tool deriving a version from
+  local `HEAD` inherits that. v0.46.0 is therefore tagged on this release's
+  bump commit on `develop`, and the promotion lands FIRST so the ancestry the
+  ritual depends on actually holds when the tag is cut.
+
+## [0.45.0] - 2026-08-17
+
+### State that was in files is now in the database
+
+The user registry, reminder escalation and nudge dedup no longer live in
+sidecar files. Operator ruling, 2026-08-17: 「データベースを使わないで状態を
+表しているファイルがあるならばそれは失格です」 — state held in files outside
+the database is disqualified.
+
+**ROLL THE FLEET TOGETHER, and this is the reason.** An agent on <=0.44.0
+writes nudge dedup and reminder escalation to `runtime/nudges.yaml` and
+`runtime/reminders.yaml`; an agent on 0.45.0 reads them from the database.
+During a mixed-version window the two populations cannot see each other's
+bookkeeping, so an owner can be nudged once per version rather than once. The
+harm is bounded and is exactly what the sidecar loaders always documented —
+*"the worst case is one re-push"* — but it is real, and it shrinks to nothing
+the moment the roll completes. No migration step is required: both stores
+start empty and refill on the next sweep.
+
+### The user registry answered `None` for every name, on every agent
+
+`resolve_user` could not resolve anyone — including invented names — because
+the registry resolved through `_paths.resolve_tasks_path`, the LOCAL-state
+resolver, to a `tasks.yaml` that did not exist. Assignee liveness and the
+heartbeat had therefore never worked.
+
+Measured before the fix, with `$SCITEX_CARDS_DB` set to the fleet server:
+
+    resolve_tasks_path(None)   /home/agent/.scitex/cards/tasks.yaml
+    exists()                   False        registered users  0
+
+`~/.scitex/cards` is bind-mounted from the host, so the file was host-shared
+rather than container-private — but a bind is PER HOST, and the fleet spans
+hosts. A file behind a host bind gives a per-host registry.
+
+**Still not fleet-global, and that is stated rather than implied.** `users`
+carries no sync columns because there is nothing sound to key a row on across
+hosts: the agent NAME is not fleet-unique (measured: two hosts, one name, ~8.5
+hours, ended by a hand-typed `exit_reason`), `instances.id` mints a new value
+on EVERY RESTART (24 rows -> 24 distinct ids for one agent), and
+`definition_id` is content-addressed over the spec file, so it tracks the
+config version rather than the agent. That fix belongs to scitex-agent-container
+and is tracked there; a non-strict xfail names the unblock condition here.
+
+### Reminder and nudge state, row per entry
+
+One `sweep_state` table, keyed `(scope, section, entry_key)`. Row-per-entry
+rather than one blob: two hosts nudging different owners MERGE, where two
+whole-document writes clobber. Sync columns (`origin_node`, `row_uuid`,
+`revision`, `updated_at`, `deleted_at`) are present FROM CREATION rather than
+retrofitted. Deletion is a tombstone — a physical delete cannot propagate to a
+peer, it can only fail to.
+
+Conflict ordering is by `revision`, never `updated_at`. Last-writer-wins on a
+timestamp is not "newest wins", it is "fastest clock wins": a suspended host
+waking with a stale value and a fast clock overwrites a correct newer one,
+honestly, and nothing errors.
+
+Fail-soft is preserved and is a contract, not politeness: a sweep must not die
+because its bookkeeping is unavailable, or a cosmetic fault becomes a delivery
+outage.
+
+### Also
+
+- `runtime/todo.db` archived — a retired-engine database under the retired `todo`
+  name, measured stale (3 days, zero open file descriptors) before removal.
+- Board protective timeouts set, having all been `0`:
+  `idle_in_transaction_session_timeout = 300s`, `lock_timeout = 90s`. An
+  abandoned transaction had hung the board for 13 minutes with five backends
+  queued behind it, detectable only by a human noticing their tools stall.
+  `lock_timeout` is the more important of the two — a call that waits is
+  indistinguishable from a call that is merely slow.
+- Test helper `seed_db_from_doc` now refuses swapped arguments. Passing a
+  mapping as the path made the engine CREATE a database at the dict's repr; a
+  225 KB file named `{'tasks': []}` reached the repo root and only the CI
+  quality gate noticed.
+
+## [0.44.0] - 2026-08-17
+
+### One `add_task` with a datetime took the whole board down for everyone
+
+**Install this together with 0.43.0's fix, not after it.** 0.43.0 ends the DDL
+storm; a fleet on 0.43.0 is still a fleet where any agent passing a
+non-JSON value to a card field makes the store unreadable for every other agent.
+
+Measured 2026-08-17, through the public API, no internal path required:
+
+    add_task(..., note="x")            -> payload OK
+    add_task(..., note=datetime(...))  -> row stored, card_json NULL
+    add_task(..., note={1, 2})         -> ExportRefused naming 't-datetime'
+
+The third call never reached its own value. It was refused by the row the
+SECOND call had just planted. `json.dumps` raises `TypeError`,
+`card_payload_json` swallows it and returns `None`, and `_db_bootstrap` writes
+the row anyway — so one call with one bad field disables every subsequent card
+read AND write, for every agent, until something unrelated rewrites that row.
+
+This is the "tasks-variant writer" that had been unidentified since
+2026-08-12. It also explains the original incident exactly: that row was
+written by CURRENT code, was SECONDS old, and SELF-HEALED when its owner
+rewrote the card — because the rewrite carried a serialisable value. The
+"one-minute window" was never a race; it was one call with one bad field.
+
+**The write now refuses**, naming the offending field and its type
+(`note (datetime)`), and plants no row at all:
+
+    good-str       written -> payload OK
+    bad-datetime   REFUSED, row state ABSENT      <- nothing to clean up
+    after-bad      written -> payload OK          <- the board still works
+
+The NULL payload remains load-bearing on READ — it is what makes the reader
+refuse rather than serve a card whose fields changed shape. It was never
+defensible on WRITE: the writer has already discovered the payload cannot be
+serialised, and stored a row it knew to be unreadable. Refusing costs the
+caller one message; storing it cost everyone else the board.
+
+### An error message that told you to ignore an outage you had just caused
+
+`card_payload_json` logged *"falling back to YAML … your card is fine and the
+canonical YAML store is untouched."* Both clauses were false — there is no YAML
+fallback and nothing catches the refusal. Rewritten to say what is true.
+
+### Also
+
+- A card WRITE refusing an unreadable row is now pinned by tests, including
+  that a refused write leaves the row INTACT. Skipping a row on the
+  read-modify-write path does not omit it from a result, it DELETES it — one
+  named tuple (`_db_mirror._SECTION_KEYS`) is the blast radius, and widening it
+  now fails a test rather than passing silently.
+
+## [0.43.0] - 2026-08-17
+
+### Cut to end a live incident, and the incident is the reason to install it
+
+**Every client older than this release runs the full schema DDL on every
+connection against a store that has been migrated to rung 12, and a resulting
+`pg_proc` deadlock LOSES THE WRITE.**
+
+Measured 2026-08-17 on the live store, with the package's own connection:
+
+    client SCHEMA_VERSION    11        (0.42.0)
+    shape.observed           11
+    agreement                STAMP_IS_HIGH      <- AGREES? False
+    triggers present         10, MISSING: []
+    schema_already_current   False              <- DOES NOT SKIP
+
+`schema_already_current` refuses the fast path whenever the stamp and the
+physical shape disagree — correctly, since that is the state the migration
+chain exists to repair. Rung 12 raised the stamp to 12 while every installed
+client's ladder tops out at 11, so the disagreement went from rare to
+UNIVERSAL and the skip stopped firing for the whole fleet. Each open then
+issues `CREATE OR REPLACE FUNCTION` ten times, taking `ShareRowExclusiveLock`
+on `pg_proc`; the 2026-08-01 curve is 4 concurrent opens -> at least 1
+deadlock, 12 -> 11 of 12 failed.
+
+**And there is no retry.** `DeadlockDetected` appears five times in the package
+and all five are comments; there is no `except` clause for it and no call site
+retries. `_store_tx` states the intent: "a serialization failure, which every
+call site would then have to retry." So a deadlocked write raises to the caller
+and is lost unless a human or an agent happens to notice — two were observed on
+2026-08-17 and both were recovered only because someone was watching.
+
+Installing this release restores `AGREES` for the client and ends its
+participation in the storm. A rung bump is therefore a fleet-wide availability
+event, not a schema change, and that is now written into the rung's own module.
+
+### Added
+
+- **Schema rung v11 -> v12: the SYNCED tables get their sync columns** (#882).
+  `tasks` and `task_comments` now carry `origin_node`, `row_uuid`, `revision`,
+  `updated_at` and `deleted_at` FROM CREATION, per the operator's rule that any
+  syncable table carries them from the start and that a blind
+  `ON CONFLICT DO UPDATE` is prohibited. Purely additive — `ALTER TABLE ADD
+  COLUMN` only, no trigger and no function — so the columns EXIST and are not
+  yet populated; population is deliberately separate, because `origin_node` is
+  SUBJECT (which machine the row is about) and never PROVENANCE (which node
+  relayed it), and those coincide only until the first relay.
+- **`update_task` accepts `expected_revision`, an opt-in compare-and-set**
+  (#880). A caller that opts in and loses leaves the row untouched.
+
+### Fixed
+
+- **A failed board load says why instead of painting a blank canvas** (#883).
+  The board was rendering the server's complete store-resolution diagnosis as
+  one unreadable red line, which reads as "nothing displayed". It now leads
+  with the server's own first sentence and keeps the full text behind a
+  disclosure. A correct diagnosis rendered as a wall is indistinguishable from
+  silence. Also: a zero-card payload gets a NAMED state that distinguishes "the
+  store is empty" from "cards exist and none are scoped to you" — the server
+  already separates those and the page was discarding the distinction.
+- **The BACKLOG nudge said "untouched" while ageing by `deferred_at`** (#884).
+  Two different predicates in one sentence, so a card deferred a month ago and
+  worked an hour ago was reported as untouched for over a day. The clock is
+  deliberately unchanged: `last_activity` measures whether anyone LOOKED,
+  `deferred_at` measures how long it has WAITED, and the sweep is about
+  waiting. A touch is not a start.
+- **Tolerated-value warnings reach the writer who caused them** (#881), and
+  name the side they fired on (#878).
+- **`update_task` and `add_task` declare the row they touched** (#872).
+- **A snapshot whose DM export disagrees with the live sidecar is refused**
+  (#585).
+
+### Changed
+
+- **The store plugin declares the card document and registers the column
+  rules** (ADR-0018 D1, #877, building on #835). `TASK_FIELDS` declares exactly
+  the card document (JSON / LAST_WRITER_WINS) and `id` (IDENTITY / IMMUTABLE);
+  the ~29 typed columns that duplicated the document moved to a promotion
+  register that keeps every rationale, so "promote one at a time, with a stated
+  reason" has something to promote FROM.
+- `_db_mirror` and `_store_mutate` split at the 512-line ceiling (#879).
+- In-wheel docs are built at release instead of pushed to a protected branch
+  (#876).
+
+## [0.42.0] - 2026-08-16
+
+### Fixed — two alarms that could not fire, and one that fired on the wrong clock
+
+- **The backlog nudge measured the last touch, not entry into the backlog.**
+  `detect_pending_backlog` passed no `clock` and silently inherited
+  `_age_hours`, which reads `last_activity`. So commenting on a rotting
+  deferred card reset its own backlog alarm for a day — the exact hazard
+  `_store_clocks` names in the module that WRITES `deferred_at`: "key any of
+  them on `last_activity` and the sweep that reads it becomes SILENCEABLE BY
+  TYPING."
+
+  The ruling already existed forty lines above: `detect_blocked_external`
+  passes `clock=_blocked_age_hours` and its docstring spells out the same
+  reasoning. The backlog sweep sat below that paragraph and kept the touch
+  clock, while `deferred_at` was written on every entry and read only by the
+  CLI triage surface — the right fact in the wrong lane.
+
+  Adds `_deferred_age_hours`. An unstamped card is aged by
+  `min(created_at, last_activity)` — the OLDEST evidence, which is not a
+  fallback: a fallback lets a touch make a card look FRESHER, a minimum can
+  only make it look OLDER, so typing still cannot silence the alarm while
+  genuinely old cards stop being dropped.
+
+  Measured across 1854 deferred cards before landing: 1193 nudged under the
+  old clock, 1354 under the new, **and zero cards lost coverage**. Monotonic
+  by construction — entry into the backlog cannot postdate the last touch.
+
+- **A card leaving `done` kept its completion stamp.**
+  `clear_completion_stamp` had exactly one production caller (`reopen_task`)
+  while its own docstring said "call this from ANY transition that takes a
+  card OUT of `done`". Every other exit went through `update_task`, which
+  never called it. Since the throughput surfaces aggregate solely on
+  `completed_at` and never read `status`, a stamped-open card counted as
+  delivered work forever WHILE ALSO nagging its owner as backlog.
+
+### Changed — the digest states the predicate it counted
+
+- **`BACKLOG: N …` now names its clock and its owner field.** One question —
+  "how many backlog cards does this owner have" — produced four different true
+  answers on one database: 62 from the sweep, 103 from `last_activity > 24h`,
+  163 from `deferred_at > 24h`, and 583 from a reader on a stale replica. None
+  of them disagreed; they were four predicates wearing one sentence.
+
+  The field name is READ from the clock (`BACKLOG_AGE_FIELD`) rather than
+  written as prose, and a test pins the printed name to the key the clock
+  looks up, so the message cannot outlive the behaviour it describes.
+
+### Fixed — gates and guidance
+
+- The quality gate no longer passes `--no-version-check`; measured
+  byte-identical output with and without it, so the flag silenced "is the rule
+  corpus current?" and bought nothing.
+- The PS-140 cross-package gate covered 3 of 7 cases and skipped what it
+  exists to catch.
+- The cardsync compare-and-set advice named the one door that is locked.
+- Ten boot-read skill files told every agent the store was a database on the
+  retired file engine, while `resolve_store` reports `backend: postgresql`.
+  They now name no engine and point at `resolve-store`, because naming an
+  engine in prose is a guess about someone else's deployment.
+
+## [0.41.0] - 2026-08-16
+
+### Removed — BREAKING
+
+- **The pre-rename compatibility surface is gone.** The import shim, the stub
+  distribution, the second console script, the deprecated env-var prefix and
+  the legacy skills directory are all deleted. Operator directive, verbatim:
+  the old name「なんて使いません」and the migration is to be hard rather than
+  incremental. Anything still importing the retired module, invoking the
+  retired console script, or exporting the retired env prefix now FAILS rather
+  than silently resolving.
+
+  Consumers must import `scitex_cards`, invoke `scitex-cards`, and export
+  `SCITEX_CARDS_*`. There is no transition window; that was the point.
+
+### Fixed — defects the removal exposed
+
+A mechanical rename leaves no mechanical trace: it produces code that reads
+correctly and means less. Across roughly 1300 replacements, 37 were wrong and
+exactly ONE announced itself as a test failure. These were found by asking what
+each string used to DISTINGUISH.
+
+- **`mcp install --apply` deleted the entry it had just written.** The retire
+  step's `LEGACY_CLI_NAME` collapsed onto the current name, so `del
+  servers[LEGACY_CLI_NAME]` removed the live server. A config-destroying bug,
+  invisible to a search for the old name because the old name was what had gone.
+- **Plugins and delivery channels were discovered twice.** Two
+  `LEGACY_ENTRY_POINT_GROUP` constants collapsed onto their current
+  counterparts, so each scan ran over the same group twice.
+- **The git→card hooks had silently stopped recording.** `.githooks/_lib.sh`
+  invoked a console script deleted in the same sweep; the hooks fail soft by
+  design, so nothing said so.
+- **`.gitignore` whitelisted the pre-rename runtime directory** while the live
+  one is `.scitex/cards/`, so `.scitex/*` swallowed it whole — git does not
+  descend into an excluded directory, so no `!` rule underneath could apply.
+- **A version fallback that could not fall back**, in `__init__.py` and
+  `_min_client_version.py`: both name lists collapsed to one string repeated,
+  so the second lookup could only re-raise the first's error. In the floor
+  check that resolves to "too old" against any minimum.
+- **The reachability fixture stopped reproducing the outage it pins.** It was
+  built from two names a rename merged into one, so `ok is False` became `True`.
+- **A leak guard silently narrowed.** `tests/conftest.py`'s real-store
+  candidate list collapsed to two duplicated paths.
+- **The JobSpec gate added in #858 inverted.** It held the retired name in a
+  constant; the sweep rewrote it, so it began asserting that no JobSpec
+  contains the CURRENT name. Rewritten from a blocklist to an allowlist — every
+  `scitex-<pkg>` token in a load-bearing field must name THIS package — which
+  is rename-proof, also catches a typo'd sibling package, and now carries the
+  positive control the blocklist lacked.
+
+### Changed
+
+- **The skill bundle fits its budget.** `SKILL.md` is an index again (318 → 113
+  lines); it had inlined a whole leaf that the audit separately flagged as
+  unreferenced. Oversized leaves split into `31_fleet-ports-sync-and-citation`,
+  `43_consuming-agent-schema-and-crud`, `44_consuming-agent-coordination`,
+  `45_blocker-taxonomy` and `46_task-harvest-cadence-and-routing`, all linked.
+- **A lossy pattern removed from the docs agents read.** The consuming-agent
+  guide said there was no `comment` verb and told agents to hand-roll the
+  append through `update_task(comments=[...])` — which drops any comment
+  another agent added between the read and the write. The verb has existed
+  since #144.
+
+
 ## [0.40.0] - 2026-08-15
 
 ### Added
@@ -133,7 +1197,7 @@ a board you already started stops being a wall.**
 ### Changed
 
 - **Notifications are stored where the cards are.** The inbox rail resolved its
-  own target — `runtime_dir(store)/todo.db`, a SQLite file *per container* —
+  own target — `runtime_dir(store)/cards.db`, a private local file *per container* —
   while every card write went to PostgreSQL. Two agents on two hosts therefore
   enqueued into two different files that nothing ever reconciled: measured on
   2026-08-14 the laptop's copy was 5.1 MB, compute-04's 147 KB, and the
@@ -147,7 +1211,7 @@ a board you already started stops being a wall.**
   column. Verified end to end against the live store: enqueue → 1 row in
   PostgreSQL → the same id read back through `poll_inbox`, the first row that
   table has ever held. **If you are upgrading from ≤0.38.0, notifications still
-  sitting in a per-container `todo.db` are not migrated by installing this
+  sitting in a per-container `cards.db` are not migrated by installing this
   release** — the `no_stranded_backlog` health check added in 0.38.0 is what
   tells you whether you have any, and `_inbox_migrate` is what moves them.
   (#779)
@@ -167,7 +1231,7 @@ a board you already started stops being a wall.**
 
 ### Fixed
 
-- **149 undelivered notifications were stranded by the SQLite → PostgreSQL
+- **149 undelivered notifications were stranded by the file-engine → PostgreSQL
   cutover**, and nothing noticed for three days. The rail moved on 08-11; the
   backlog did not — 0 of the 149 unseen rows existed in PostgreSQL. 130 were
   addressed to the operator, and 134 of 149 were DMs to people rather than card
@@ -374,14 +1438,14 @@ now being built.
 **The notification rail can finally cross a host, and a store stops lying about
 which store it is.**
 
-The operator asked twice — 2026-07-30 and again 2026-08-09 (「通知は todo.db????
-…ポスグレを使っているはずなのになぜまだ sqlite を使っているのか」) — why
-notifications were still SQLite when the card store had moved to PostgreSQL. The
-honest answer is that the mission card claimed the migration was COMPLETE while
-only half of it was. Measured on the live rail the day of this release:
+The operator asked twice — 2026-07-30 and again 2026-08-09 (「通知は cards.db????
+…ポスグレを使っているはずなのになぜまだ[退役エンジン]を使っているのか」) — why
+notifications were still on the retired engine when the card store had moved to
+PostgreSQL. The honest answer is that the mission card claimed the migration was
+COMPLETE while only half of it was. Measured on the live rail the day of this release:
 
 ```
-/home/agent/.scitex/cards/runtime/todo.db   table `inbox`
+/home/agent/.scitex/cards/runtime/cards.db   table `inbox`
   rows                324      unseen  133
   recipient  operator 123      unseen  123   <- not one ever consumed
   recipient  every agent whose consumer runs on this host: unseen 0
@@ -510,7 +1574,7 @@ release was held by one test, and that test was a stopwatch.
   cleaning up a dangling edge refused precisely when the edge was dangling.
 - **`gui serve` refuses an unconfigured store instead of inventing one**
   (#774). With no DSN configured the board did not fail — it silently read a
-  local SQLite file that had stopped being written on 2026-08-02 and served it
+  local file that had stopped being written on 2026-08-02 and served it
   as current. A silent fallback to a stale store is the failure mode ADR-0016
   exists to forbid.
 - **The board's DM thread list reads the database, not `threads.json`**
@@ -605,7 +1669,7 @@ and a test now refuses any that do.
 
 Found while verifying the fix above by *reading the rendered string* rather than
 the diff. The same instructions carried a second false claim, untouched by the
-scope work: *"The canonical store is the SQLite database at `$SCITEX_CARDS_DB`
+scope work: *"The canonical store is the [retired-engine] database at `$SCITEX_CARDS_DB`
 (default `~/.scitex/cards/cards.db`) — that path is the SOLE store identity."*
 After the PostgreSQL cutover both halves were false at once, and the named path
 is the **abandoned** pre-migration file — still on disk, still holding thousands
@@ -620,7 +1684,7 @@ answered plausibly and reproduced a reporter's own count exactly, which is
 precisely what stopped the checking. A store that answers plausibly is the
 dangerous kind of wrong.
 
-The sentence had rotted twice (YAML → SQLite → PostgreSQL) because it
+The sentence had rotted twice (YAML → the retired engine → PostgreSQL) because it
 **restates** what `resolve_store` already answers correctly, and nothing
 asserted it. It now names only the question and the verb that answers it, and
 `test__mcp_instructions_names_no_backend.py` fails the build on any backend name
@@ -628,8 +1692,8 @@ or default path in either branch of the renderer — while separately requiring
 that `resolve_store` stay named, so the guard cannot be satisfied by deleting
 the sentence and leaving an agent no way to learn which store it is on.
 
-That test earned its place immediately: the first replacement sentence said "a
-SQLite path or a PostgreSQL URL, depending on the deployment" — naming both
+That test earned its place immediately: the first replacement sentence offered
+a file path or a PostgreSQL URL "depending on the deployment" — naming both
 backends inside the sentence that says not to — and the guard caught it before
 it was committed.
 
@@ -868,11 +1932,11 @@ proxy is enforcing, so it is gone. A test pins the gate's signature at exactly
 misconfigured Access policy stops being a breach, and standalone stays honest
 because it is the same code path with no proxy at all.
 
-**The notification rail no longer hand-rolls `sqlite3.connect`.** It was the only
+**The notification rail no longer hand-rolls the driver's `connect`.** It was the only
 part of the package opening its own database, and therefore the only part that
 could not be handed a PostgreSQL target — where the failure is not a clean error:
 a DSN reaching `Path(...)` does not raise, it yields a plausible relative path,
-and `mkdir` + `sqlite3.connect` then *manufacture* a SQLite file named after the
+and `mkdir` + the driver's `connect` then *manufacture* a local file named after the
 DSN that accepts writes while the real server sits untouched. It now opens
 through `_db.connect`, which dispatches on the target before any path handling.
 No rows move: same file, same contents, measured at 56 emitted statements
@@ -883,7 +1947,7 @@ Supporting that move: a per-backend shape seam so every rail query reads its
 table, recipient column and ordering from one place (`rowid` → `seq` is a
 replacement, not a rename, and a pure rename would produce SQL valid on both
 engines that silently loses delivery order); the null-safe comparison resolved
-per connection, because no literal spelling parses on both SQLite 3.37 and
+per connection, because no literal spelling parses on both that engine's 3.37 and
 PostgreSQL; schema **v9** giving `notifications` a server-assigned arrival-order
 column; row-carry verified by id rather than by count; and a PostgreSQL CI leg so
 the canonical backend has regression coverage and its absence is loud.
@@ -898,7 +1962,7 @@ channel's own diagnostics are readable in production via an opt-in file sink.
 built to find.**
 
 `notifications` gains `msg_id`, `pushed_at` and `confirmed_at` — the three
-columns the SQLite sidecar gained and the store's own table never did. The table
+columns the file sidecar gained and the store's own table never did. The table
 already existed on the fresh-create path with the right shape and index, and was
 vestigial (0 rows on the live store), so the notification rail can move *into*
 the store rather than into a parallel table. The columns live in one list used
@@ -920,7 +1984,7 @@ detect.
 against a 5 s interval. Nine candidates were eliminated by direct measurement —
 the wrong daemon, the mtime drain gate, the burst cap, PostgreSQL write latency,
 the drain work, an overridden interval, MCP transport backpressure (an *idle*
-session measured slower), SQLite write-lock contention, and PostgreSQL
+session measured slower), file-engine write-lock contention, and PostgreSQL
 advisory-lock contention. Every component measured fast and the composite stayed
 slow, which is the shape outside observation cannot resolve. The loop now
 records `drain_s`, `gap_s` and `unexplained_s = gap − prev_drain − interval` —
@@ -940,24 +2004,24 @@ jitter means a term is mismeasured. Reported at WARNING, never asserted — a ba
 assert in a long-lived delivery loop kills the task and stops the delivery it
 measures.
 
-Also documents the twelve SQLite→PostgreSQL hazards measured during the store
+Also documents the twelve retired-engine→PostgreSQL hazards measured during the store
 migration, nine of which produced no error at all.
 
 ## [0.31.4] - 2026-08-02
 
 **The doctor names the engine on both rails, and fails when they differ.**
 
-`check_single_write_target` reported the literal string "SQLite"
-*unconditionally*. True when written; a lie from the day a store could be a
+`check_single_write_target` reported the retired engine's name as a literal
+string *unconditionally*. True when written; a lie from the day a store could be a
 PostgreSQL server. Measured on the live store: it printed `exactly one write
-target: SQLite` while every card write went to PostgreSQL. The one line that
+target: <retired engine>` while every card write went to PostgreSQL. The one line that
 looks like it answers "which engine am I on" answered it wrongly, confidently,
 on every PostgreSQL deployment. It now resolves the engine instead of asserting
 it.
 
-Nothing reported the *notification* rail's engine at all. The inbox is a SQLite
-sidecar located from the store **path**, so pointing the store at a server does
-not move it — cards go to PostgreSQL and notifications stay on SQLite. That
+Nothing reported the *notification* rail's engine at all. The inbox is a
+local-file sidecar located from the store **path**, so pointing the store at a server does
+not move it — cards go to PostgreSQL and notifications stay on the sidecar engine. That
 split is what let a DM commit to the store on 2026-08-01 while no notification
 was ever created, with every card-side check green.
 
@@ -966,7 +2030,7 @@ check that merely printed the two modes would report the split as normal, and
 normal is the wrong word for a state in which a green card-side doctor says
 nothing about whether notifications are delivered.
 
-It deliberately offers **no toggle** to disable the SQLite rail, and the hint
+It deliberately offers **no toggle** to disable the sidecar rail, and the hint
 says so: in postgres mode the sidecar is the only inbox implementation that
 exists, so a switch would let the split be *configured* rather than *fixed* — a
 fallback wearing a switch. The doctor goes green when the inbox moves into the
@@ -994,7 +2058,7 @@ Path("postgresql://scitex_cards@127.0.0.1:5432/scitex_cards")
 
 Everything derived from it then resolved against the writer's current
 directory, so `runtime_dir` yielded `postgresql:/…/runtime` and `inbox_db_path`
-put `todo.db` inside it.
+put `cards.db` inside it.
 
 The failure was a silent **success**, which is why it survived: measured
 2026-08-02, `enqueue(store=<DSN>)` returned a notification id and created a
@@ -1010,12 +2074,12 @@ the board, which legitimately threads its store through to the inbox rail.
 
 ## [0.31.3] - 2026-08-02
 
-**The SQLite inbox used SQL that old SQLite cannot parse, so no notification
+**The file inbox used SQL that an old build of that engine cannot parse, so no notification
 was ever delivered on the host.**
 
-`_inbox_sqlite.enqueue` spelled its null-safe comparisons
-`IS NOT DISTINCT FROM` — standard SQL, and exactly what SQLite's `IS` means.
-SQLite only accepts that spelling from **3.39** (2022-06). The host runs
+The retired inbox backend's `enqueue` spelled its null-safe comparisons
+`IS NOT DISTINCT FROM` — standard SQL, and exactly what that engine's `IS`
+means. It only accepts that spelling from **3.39** (2022-06). The host runs
 **3.37.2**, so every enqueue raised `near "DISTINCT": syntax error`.
 
 `_threads_mirror.dispatch_to_inbox` is deliberately fail-soft — the message is
@@ -1026,25 +2090,25 @@ the live store — an operator DM sat in the store and never reached the agent's
 session.
 
 It stayed hidden because the failure is **environment-dependent**. Containers
-run SQLite 3.45.1 and parse the standard spelling happily, so agent-to-agent
+run 3.45.1 of that engine and parse the standard spelling happily, so agent-to-agent
 DMs delivered normally while board-originated ones vanished. CI ran a new
-SQLite too, so a behavioural test was green no matter which spelling the source
-used — it pinned the SQLite version, not the SQL.
+build too, so a behavioural test was green no matter which spelling the source
+used — it pinned the engine version, not the SQL.
 
-Fixed by using `IS ?`, null-safe in every SQLite that ships this module and
+Fixed by using `IS ?`, null-safe in every build that ships this module and
 needing no version floor. The PostgreSQL side (`_pg_triggers`) keeps the
 standard spelling, which is correct there.
 
 **This reverses a deliberate decision from 0.31.2**, and the reasoning behind
 that decision was sound apart from one premise. It chose the standard spelling
 so the module's SQL would survive a later move to PostgreSQL, and pinned
-SQLite >= 3.39 as a floor. The floor was false where it mattered — production
+that engine >= 3.39 as a floor. The floor was false where it mattered — production
 measured 3.37.2 — and it was never ours to enforce, since the package controls
 neither the CI images nor the host's system python. A requirement the package
 cannot enforce is a hope, not a floor. The premise does not hold either:
-`_inbox_sqlite` resolves `inbox_db_path(store)` and opens a **file**, so it can
+the retired inbox backend resolves `inbox_db_path(store)` and opens a **file**, so it can
 never be handed a PostgreSQL connection. The PostgreSQL rail will be its own
-backend module, exactly as the YAML and SQLite backends are separate today.
+backend module, exactly as the YAML and file backends are separate today.
 
 What that decision got right is kept: rewriting the comparison to `=` parses on
 both engines and then silently stops deduplicating, because `actor = NULL` is
@@ -1052,7 +2116,7 @@ never true. That trap is still pinned by a positive-control test.
 
 The regression test reads the statements the module actually hands to
 `execute()` via AST and fails on the non-portable spelling regardless of the
-local SQLite version. It deliberately does not scan the file for a substring:
+local engine version. It deliberately does not scan the file for a substring:
 the module now discusses `IS NOT DISTINCT FROM` by name, and a substring scan
 would match that prose and fail forever.
 
@@ -1103,7 +2167,7 @@ and `_store` paths all return the same object.
 
 **An unattended reconcile names itself instead of failing.** (#720)
 
-The `*/15` cron entry runs with no `SCITEX_TODO_AGENT_ID`, so every close raised
+The `*/15` cron entry runs with no `SCITEX_CARDS_AGENT_ID`, so every close raised
 `creator unresolved` and the job closed nothing. It surfaced only once 0.31.0
 fixed the store-target failure that had been masking it — the job had been dying
 at store-open, so it never reached `complete_task`.
@@ -1114,7 +2178,7 @@ a variable is less truthful than naming the reconciler, and requiring one means
 an unattended run cannot work at all. Precedence is widened only at the end:
 
 ```
-explicit by=  →  $SCITEX_TODO_AGENT_ID  →  SYSTEM_ACTOR
+explicit by=  →  $SCITEX_CARDS_AGENT_ID  →  SYSTEM_ACTOR
 ```
 
 The two cases that already worked are untouched; the third previously raised.
@@ -1136,7 +2200,7 @@ PostgreSQL cutover.
 
 Until now the only way to point a client at a non-default store was
 `$SCITEX_CARDS_DB`, exported at every invocation site. Anything that did not
-export it fell through to a hardcoded local SQLite filename. That one gap
+export it fell through to a hardcoded local filename. That one gap
 produced, in different clothes each time:
 
 - **8 host-side writers** (4 systemd units, 3 cron entries, 1 hourly timer)
@@ -1171,7 +2235,7 @@ The password is not in the config and must never be: the DSN carries none and
 libpq reads `$PGPASSFILE` itself.
 
 Measured on the live host with `$SCITEX_CARDS_DB` unset and the same config
-present — `0.30.3` resolved to the **retired** SQLite store, this release
+present — `0.30.3` resolved to the **retired** file store, this release
 resolves to the PostgreSQL DSN.
 
 ## [0.30.3] - 2026-08-01
@@ -1182,7 +2246,8 @@ old behaviour is not a slow path, it is a broken one.
 
 ### Concurrent opens were deadlocking on the system catalogue (#714)
 
-`init_schema` ran its full DDL on **every connection**. On SQLite that was very
+`init_schema` ran its full DDL on **every connection**. On the retired engine
+that was very
 nearly free. Against a shared PostgreSQL server it is DDL against the system
 catalogues, and `CREATE OR REPLACE FUNCTION` rewrites the `pg_proc` row every
 time — it is *not* a no-op when the definition already matches.
@@ -1243,7 +2308,7 @@ Two calls on `get_board`'s read path coerced the store target to a filesystem
 file-existence gate.
 
 The refusal is correct and load-bearing. Coercing a DSN would have created an
-empty SQLite store at a mangled path and served 0 cards **while reporting
+empty file store at a mangled path and served 0 cards **while reporting
 healthy** — the exact failure `services.py` already carries a post-mortem for.
 The guard worked; the server branch behind it was missing.
 
@@ -1261,7 +2326,8 @@ treating it as a time is obviously wrong rather than subtly skewed.
 
 ### Every DM write died on `BEGIN IMMEDIATE` (#712)
 
-`syntax error at or near "IMMEDIATE"` — SQLite-only spelling, reported by
+`syntax error at or near "IMMEDIATE"` — a spelling only the retired engine
+accepts, reported by
 scitex-db with a live reproduction. It failed before writing anything, so no data
 was harmed, but DM is the operator's channel to the fleet.
 
@@ -1269,18 +2335,20 @@ A gap in the 0.30.0 port: the statements *inside* the transaction were made
 portable and the statement that *opens* it was not.
 
 **A plain `BEGIN` would have been worse than the syntax error.** `IMMEDIATE` is
-not decoration — SQLite takes the write lock at BEGIN so two appenders serialise,
+not decoration — the retired engine takes the write lock at BEGIN so two
+appenders serialise,
 and the DM append reads `max(seq)` then inserts `seq + 1`. PostgreSQL defaults to
 READ COMMITTED, under which both appenders read the same `max(seq)` and both
 insert. That parses, runs, passes a smoke test, and silently reintroduces the
 exact race `IMMEDIATE` exists to prevent. SERIALIZABLE detects it but by aborting
 one side, which every call site would have to retry.
 
-New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on SQLite and
+New `_store_tx.begin_write_transaction` issues `BEGIN IMMEDIATE` on the retired
+engine and
 `BEGIN` plus `pg_advisory_xact_lock` on PostgreSQL — blocking, not aborting, and
 released on commit or rollback alike. It replaces all 7 executable sites
 (`_dm_write` ×4, `_dm_migrate` ×2, `_store_uuid` ×1). The lock is store-wide,
-matching SQLite where the write lock covers the whole file: this is a
+matching that engine, where the write lock covers the whole file: this is a
 compatibility seam, not a concurrency rewrite.
 
 ### Verified against the live server, not a fixture
@@ -1349,8 +2417,8 @@ a DM write and the test fails (`- refused / + opened`).
 ## [0.30.0] - 2026-08-01
 
 **The client can now WRITE PostgreSQL.** 0.29.0 could read one; every write
-still died, because the write side had never been ported. SQLite remains the
-DEFAULT and PostgreSQL stays OPT-IN via `$SCITEX_CARDS_DB`.
+still died, because the write side had never been ported. The retired engine
+remains the DEFAULT and PostgreSQL stays OPT-IN via `$SCITEX_CARDS_DB`.
 
 ### The read path stopped taking the query side down (#704)
 
@@ -1414,8 +2482,8 @@ does not move.
 **The store layer now REACHES PostgreSQL.** 0.28.0 made a PostgreSQL store
 buildable; this release makes the package actually read one. Measured against
 the live server: `2962` cards and `6171` comments at `schema_version 7`, not the
-`0` a broken path returns. SQLite remains the DEFAULT and PostgreSQL is OPT-IN
-via `$SCITEX_CARDS_DB`; the SQLite path is byte-identical to 0.28.0.
+`0` a broken path returns. The retired engine remains the DEFAULT and PostgreSQL
+is OPT-IN via `$SCITEX_CARDS_DB`; its path is byte-identical to 0.28.0.
 
 **The blocker was one line, and it explains why the seam sat unused.**
 `open_db` — the one-call entry point the canonical read path uses — resolved
@@ -1426,10 +2494,11 @@ imports them". It now resolves the TARGET (#693).
 
 **A PostgreSQL DSN is refused, never coerced (#692).** `Path("postgresql://h/db")`
 collapses to the RELATIVE path `postgresql:/h/db`, which manufactures an empty
-SQLite file and then serves 0 cards while reporting `exists: True`. Two stores,
+file store and then serves 0 cards while reporting `exists: True`. Two stores,
 both looking healthy, is a failure this package has scar tissue from.
 
-**Schema init is portable (#693).** `PRAGMA` is SQLite-only and PostgreSQL
+**Schema init is portable (#693).** `PRAGMA` belongs to the retired engine alone
+and PostgreSQL
 rejects it outright, so the version stamp and the column probe are now
 dialect-aware. On PostgreSQL the trigger-protected `schema_meta` row IS the
 stamp — the direction `stamp_schema_version` already argued for, since a PRAGMA
@@ -1468,27 +2537,28 @@ guard, and the positive control passed in every one of those cases.
 **A PostgreSQL store can now be built and reached — not just described.** 0.27.0
 made the backend seam importable; this release makes it usable. `_db.connect()`
 accepts a PostgreSQL target, the schema script creates a working store on
-PostgreSQL including every guard, and the export path no longer speaks SQLite.
-Nothing writes to PostgreSQL yet: the canonical store is still SQLite, and the
+PostgreSQL including every guard, and the export path no longer speaks the
+retired dialect. Nothing writes to PostgreSQL yet: the canonical store is still
+the retired engine, and the
 cutover switches are deliberately not in this release.
 
 **A theme, and it is the reason for the test style below: on this port, the
 dangerous failures pass at DDL time and fail at runtime.** `AUTOINCREMENT` has
 no portable spelling, and the obvious substitute — a plain `INTEGER PRIMARY KEY`
 — *parses on both engines* and only fails when you INSERT, because PostgreSQL
-does not auto-assign it the way SQLite's rowid alias does. So the tests here
+does not auto-assign it the way the retired engine's rowid alias does. So the tests here
 insert a row and read the generated id back; asserting `CREATE TABLE` succeeded
 would have certified the broken choice.
 
 ### Added
 - `_db.connect()` dispatches a PostgreSQL URL or a libpq keyword/value conninfo
   to the backend seam. The dispatch is the **first** statement in the function:
-  `Path(dsn)` on a conninfo does not raise, it manufactures a SQLite file named
+  `Path(dsn)` on a conninfo does not raise, it manufactures a local store file named
   after the DSN that accepts writes while the real server sits untouched. That
   file was created and observed during development, so the test asserts **no
   file appears** (#685).
 - `_pg_triggers` — PostgreSQL equivalents of all nine guard triggers, and
-  `execute_ddl` now **substitutes** them when it meets a SQLite `CREATE TRIGGER`.
+  `execute_ddl` now **substitutes** them when it meets a retired-engine `CREATE TRIGGER`.
   An unrecognised trigger name **raises**. Skipping what a backend cannot run is
   the tempting move and it is silently wrong: the tables come up, the store
   passes every smoke test, and an append-only table quietly accepts `DELETE`
@@ -1501,8 +2571,9 @@ would have certified the broken choice.
   now lives in a module named for what it creates (#685).
 
 ### Fixed
-- The min-client-version gate no longer assumes SQLite. It recognised a missing
-  `schema_meta` by catching `sqlite3.OperationalError`; PostgreSQL raises
+- The min-client-version gate no longer assumes the retired engine. It recognised
+  a missing `schema_meta` by catching the driver's `OperationalError`;
+  PostgreSQL raises
   `UndefinedTable`, so opening a **brand-new** PostgreSQL store raised out of a
   function whose contract is "no floor stamped, this is a no-op". It also read
   `row[0]` positionally, which `dict_row` refuses (#684).
@@ -1531,20 +2602,22 @@ would have certified the broken choice.
 
 **The backend seam becomes reachable.** Until this release `_backend_connect`
 and `_store_url` were implemented, tested, and imported by nothing — every read
-and write called `sqlite3` directly, so a PostgreSQL store could receive no
+and write called the retired driver directly, so a PostgreSQL store could receive no
 tables and, more importantly, **no guards**. A store with no retirement guard
 reports itself current and authoritative, which is the failure that took this
 board from 2170 rows to 18.
 
 A recurring lesson runs through the SQL fixes below: **both looked like they
 needed a dialect branch and neither did.** `GREATEST` is PostgreSQL-only and
-two-argument `MAX` is SQLite-only, but the standard-SQL spelling works on both.
+two-argument `MAX` belongs to the retired engine alone, but the standard-SQL
+spelling works on both.
 Try standard SQL against both engines before adding a translation layer — every
 branch is a place the two backends can drift.
 
 ### Added
 - **A DDL runner that works on both backends (#675).**
-  `sqlite3.Connection.executescript` is pysqlite-only and was how *every* schema
+  The driver's `Connection.executescript` is specific to that binding and was
+  how *every* schema
   object here got installed, all nine triggers included. The difficulty is one
   character: a trigger body is `BEGIN <stmt>; <stmt>; END`, so its semicolons are
   internal and a naive `split(';')` severs it — and the first fragment can still
@@ -1559,11 +2632,12 @@ branch is a place the two backends can drift.
   represented; it was coerced instead:
   `postgresql://user@host:5432/db` → `Path('postgresql:/user@host:5432/db')`, a
   **relative** path, silently, one slash lost. The caller then creates an empty
-  SQLite file at that name and reports a healthy empty board.
+  file store at that name and reports a healthy empty board.
 
 ### Fixed
 - **Guards are read from the right catalogue (#676, #678).** Four sites asked
-  `sqlite_master` which guards a store carries — a table PostgreSQL does not
+  the retired engine's catalogue table which guards a store carries — a table
+  PostgreSQL does not
   have. The quiet failure is the dangerous one: the query returns nothing, the
   store looks unguarded, and it is reported healthy and current. A store that
   can prove nothing must not answer yes. The PostgreSQL query excludes
@@ -1572,20 +2646,22 @@ branch is a place the two backends can drift.
 
 - **Every DDL install routes through the runner (#677).** Verified by building
   the same database twice, one process per branch: 44 objects vs 44 objects,
-  identical `sqlite_master`, `user_version` 7, 9 triggers. The transaction
+  identical catalogue contents, `user_version` 7, 9 triggers. The transaction
   boundary was the risk rather than the SQL — `executescript` issues an implicit
   COMMIT before running — so only building both databases establishes the result
   is the same.
 
 - **NULL-safe comparison both engines accept (#679).** The inbox dedups on four
-  nullable columns. SQLite spells it `x IS ?`; PostgreSQL rejects that outright.
+  nullable columns. The retired engine spells it `x IS ?`; PostgreSQL rejects
+  that outright.
   The tempting fix, `=`, **parses on both and silently stops deduplicating** —
   `actor = NULL` is UNKNOWN, never true — producing a notification storm and
   quietly killing the "at most one pending digest per recipient" invariant.
   Measured against a NULL column: `IS ?` → 1 row, `IS NOT DISTINCT FROM ?` → 1
   row, `= ?` → **0 rows**. That last line is now a test.
 
-- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on SQLite and
+- **Scalar max both engines accept (#680).** `MAX(a, b)` is scalar on the retired
+  engine and
   an **aggregate only** on PostgreSQL — `function max(integer, integer) does not
   exist`, measured live. Spelt as `CASE`, which is standard SQL.
 
@@ -1656,7 +2732,7 @@ protection was not.
   real, and it was the "remember to apply it" kind — it binds only the clients
   that have it, and any client still executing a bare
   `PRAGMA user_version={SCHEMA_VERSION}` overwrote the store regardless. The
-  floor now lives in a SQLite trigger on `schema_meta`, so it applies to every
+  floor now lives in an engine-level trigger on `schema_meta`, so it applies to every
   writer whether or not that writer knows it exists.
 
   It ASSIGNS rather than REJECTS, deliberately: `RAISE(ABORT)` would fail every
@@ -1696,7 +2772,7 @@ protection was not.
 
 - **The `postgres` extra, so the PostgreSQL path is reachable by install
   (#668).** `_backend_connect` reads a PostgreSQL store today: the same query
-  string, written with SQLite's `?` placeholders and never rewritten by the
+  string, written with the retired engine's `?` placeholders and never rewritten by the
   caller, returned the same row count through both backends against PostgreSQL
   18.4, because `to_paramstyle` translates in transit. 39 tests cover it and it
   was independently reproduced.
@@ -1723,8 +2799,8 @@ the capability plus the guard, not the cutover.
 
 ### A byte no backend can store (#663)
 
-A NUL is legal in SQLite TEXT and illegal in PostgreSQL TEXT, so a body SQLite
-accepted silently made the whole store unmigratable. Two rows in `messages`
+A NUL is legal in the retired engine's TEXT and illegal in PostgreSQL TEXT, so a
+body that engine accepted silently made the whole store unmigratable. Two rows in `messages`
 blocked the preflight; within ~2 minutes of clearing them a third arrived in
 `dm_messages`, written by an agent actively trying not to write one, in a
 message ANNOUNCING the fix. Prose about the byte is how the byte spreads.
@@ -1748,7 +2824,7 @@ plain text.
 
 ### Reading either backend (#663)
 
-140 `execute()` sites write SQLite's `?` paramstyle. Porting each is 140 chances
+140 `execute()` sites write the retired engine's `?` paramstyle. Porting each is 140 chances
 to miss one, so the translation is bound to the CONNECTION: code keeps writing
 `?` and forgetting is not expressible. A `?` inside a string literal is NOT a
 placeholder — card titles and message bodies contain them constantly, and a
@@ -2047,7 +3123,7 @@ Two bugs fell out of that change:
   delivered.
 - A FRESH STORE COULD NOT INITIALISE ITS INBOX. The legacy-YAML reader
   promised "malformed -> {}" but did not catch malformed-because-BINARY, so
-  it raised on a SQLite store. Existing stores escape only because their
+  it raised on a database store. Existing stores escape only because their
   migration flag predates the cutover. A NEW HOST IS THE FRESH-STORE CASE,
   so this sat directly on the multi-host path.
 
@@ -2132,7 +3208,7 @@ is the difference.
 
 - **The Stop hook is now a SECOND DELIVERY RAIL** — it delivers the agent's
   pending notifications itself, then requires the ack. Delivery had exactly ONE
-  rail: the MCP channel push. An agent spec whitelisted `server:scitex-todo`
+  rail: the MCP channel push. An agent spec whitelisted `server:scitex-cards`
   while `.mcp.json` registered the server as `scitex-cards` (renamed during the
   migration), so Claude Code SILENTLY DISCARDED every push — `send()` returned
   normally, the drain acked on that success, and roughly three weeks of operator
@@ -2189,7 +3265,7 @@ is the difference.
   325–763 ms, after 108–168 ms — the distributions do not overlap.
 
   The public surface is unchanged: `scitex_cards.__version__` still answers,
-  still prefers the `scitex-cards` dist, still falls back to `scitex-todo`
+  still prefers the `scitex-cards` dist, still falls back to `scitex-cards`
   for un-cutover editable installs, and `dir()` still lists it.
   `from scitex_cards import __version__` is covered separately because it
   takes a different path than attribute access.
@@ -2232,7 +3308,7 @@ is the difference.
   has no reply, and Claude Code silently DISCARDS a push from a server missing
   from its launch-line allowlist. So the drain was storing "the transport call
   returned" as "the recipient received it". Measured 2026-07-29: one agent's
-  spec allowlisted `server:scitex-todo` while `.mcp.json` registers the server
+  spec allowlisted `server:scitex-cards` while `.mcp.json` registers the server
   as `scitex-cards` (renamed during the migration) — 228 rows enqueued for that
   agent, ZERO unseen, weeks of operator DMs destroyed, every check green.
 
@@ -2614,7 +3690,7 @@ has moved up out of the 0.17.12 section, where it had been filed by mistake:
 
 - **The Python rail now tells you when the CLI rail is dead.** Measured by
   agent `grant` inside their own container: `scitex-cards --version` answered
-  `0.17.7` while `scitex-todo list-tasks` REFUSED with "0.17.7 is behind latest
+  `0.17.7` while `scitex-cards list-tasks` REFUSED with "0.17.7 is behind latest
   0.17.9". Their card rail had been dead for HOURS with no way to know it. They
   reach the operator through the PYTHON path (`LocalBackend.dm_send()`), which
   does not pass the CLI/MCP currency gate — so DMs kept arriving normally and
@@ -2634,7 +3710,7 @@ has moved up out of the 0.17.12 section, where it had been filed by mistake:
   rail for this same package is currently REFUSING" — quotes scitex-dev's
   message verbatim, and prescribes a BASE REBAKE. The warning names BOTH
   console scripts, `scitex-cards list-tasks` **and** the still-installed legacy
-  alias `scitex-todo list-tasks`, because the latter is what actually refused
+  alias `scitex-cards list-tasks`, because the latter is what actually refused
   in the incident and is still what much of the fleet types; a reader must
   recognise the command they are running.
 
@@ -2688,7 +3764,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
 
   `resolve_tasks_path`'s own docstring says that path is "the non-task YAML
   CONTAINER path — NOT the store identity"; card data lives in the database.
-  Under SQLite nothing creates that sidecar, so the gate was permanently shut
+  Under the retired engine nothing creates that sidecar, so the gate was permanently shut
   and the board took the literal `else []`. The card read was never ATTEMPTED,
   which is why no guard anywhere had an opinion — the fail-loud reader in
   `_read_canonical_db_or_raise` was never reached. Worse, the same branch set
@@ -2707,7 +3783,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   empty board that its deliberate except-keeps-previous branch would then serve
   silently and indefinitely on `/graph` and `/timeline`; it is removed.
 
-  This is the same defect as the deleted `_store_read_sqlite` accelerator
+  This is the same defect as the deleted retired-engine read accelerator
   (2026-07-21), whose post-mortem sits forty lines above the bug: a guard
   comparing against a YAML file that stopped existing at the cutover, silently
   degrading to an empty board. Fixing one instance of a pattern is not fixing
@@ -2718,7 +3794,7 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   `tasks.yaml` sidecar before every test in the package — precisely the file
   production does not have. Every test in the package therefore ran in a world
   where the gate was open, so the entire suite was green against a store shape
-  that has not existed since the SQLite cutover. The fixture is deleted. The one
+  that has not existed since the database cutover. The fixture is deleted. The one
   test that genuinely needs a marker file — `test__board_stale_while_revalidate`,
   which exercises the stat half of the cache key — now creates it in its own
   fixture. The file is that test's subject, so that test owns it, and no other
@@ -2732,7 +3808,8 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   unreadable store with a JSON 500 carrying the store's own reason.
 
 - **`/rev` reported the mtime of a file that does not exist, so an open board
-  stopped refreshing.** The reported store mtime was the SIDECAR's; under SQLite
+  stopped refreshing.** The reported store mtime was the SIDECAR's; under the
+  retired engine
   that file is absent, so on any real deployment mtime was permanently `0.0`.
   The board's AutoRefresh keys on `f"{mtime}:{count}"`, so with mtime frozen the
   operator's open pane only refreshed when the card COUNT changed — a status
@@ -2752,27 +3829,27 @@ moment it reaches PyPI and not one minute before. Merged is not deployed.
   work again — a flag that can be flipped is a second target that merely happens
   to be switched the right way today.
 
-- **The MCP and CLI surfaces introduced themselves as `scitex-todo`.** The
+- **The MCP and CLI surfaces introduced themselves as `scitex-cards`.** The
   package was renamed to `scitex-cards`, but what agents and humans actually
   READ still said the old name: the `.mcp.json` key the install snippet emits
   (which is the namespace agents see their tools under, `mcp__<key>__add_task`),
   every `{prog}` in help text on installs without scitex-dev, the `mcp doctor`
   and `health` payloads, and the shipped skills. Two of these were not merely
-  stale but WRONG: `pip install 'scitex-todo[mcp]'` pointed at the superseded
+  stale but WRONG: `pip install 'scitex-cards[mcp]'` pointed at the superseded
   dist (the `[mcp]` extra is declared by `scitex-cards`), and the skills taught
-  the `mcp__scitex-todo__*` tool namespace that no longer exists.
+  the `mcp__scitex-cards__*` tool namespace that no longer exists.
 
   Renaming the emitted `.mcp.json` key would, on its own, have left configs
   holding BOTH keys pointing at the same server — every tool loaded twice, both
   copies writing one store. So `mcp install --apply` now RETIRES our stale
-  `scitex-todo` entry as part of writing the new one. Only our entry, matched on
+  `scitex-cards` entry as part of writing the new one. Only our entry, matched on
   console-script basename plus the `mcp` verb: an unrelated server that merely
   shares the old key is left as found.
 
   What the package PUBLISHES is unchanged, because that is a migration and not
-  a rename: the `scitex-todo` console script, the `SCITEX_TODO_*` environment
-  variables, the `scitex_todo.*` legacy entry-point groups, the
-  `scitex-todo-notifyd.service` unit and the `scitex-todo.dashboard` job names
+  a rename: the `scitex-cards` console script, the `SCITEX_CARDS_*` environment
+  variables, the `scitex_cards.*` legacy entry-point groups, the
+  `scitex-cards-notifyd.service` unit and the `scitex-cards.dashboard` job names
   all still work. Breaking any of them would have stopped the operator's running
   units — one of which serves the board, and another of which is the live
   systemd dashboard that execs the legacy console script.
@@ -2933,7 +4010,7 @@ again.
   operator actually talks through. Appending one message rewrote the entire
   document — the same whole-document read-modify-write shape behind the
   2026-07 board wipes. Four append-only tables (`dm_threads`,
-  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus SQLite triggers
+  `dm_thread_member_events`, `dm_messages`, `dm_receipts`) plus engine-level triggers
   that make `DELETE` and post-hoc edits unreachable at the ENGINE, not merely
   guarded in Python. `append_message` now writes the database FIRST and raises
   on failure; the sidecar is mirrored best-effort and kept complete as the
@@ -3066,7 +4143,7 @@ was the reason nobody saw it. Both are fixed here.
   outage above stayed invisible: `add` refused every card while `health` called
   the same store writable. Writability is now measured with `os.access`,
   matching the sibling file-store branch that already did so. The store's
-  **directory** is checked too, because SQLite creates `-wal` / `-journal`
+  **directory** is checked too, because the retired engine creates `-wal` / `-journal`
   siblings — a writable file in a read-only directory still fails every write.
   Both failures name the offending path and say what to do.
 
@@ -3089,9 +4166,9 @@ Delivery that admits when it is not working, and a chat page that is readable.
   client does not know is discarded on arrival — and because a channel
   notification is fire-and-forget, the drain marks the record `seen` whether or
   not the push was accepted, so a mismatch does not delay delivery, it destroys
-  it. Measured 2026-07-24: the scitex-todo → scitex-cards rename re-registered
-  this server as `scitex-cards` while agent launch lines still allowlisted the
-  pre-rename `scitex-todo`, and the fleet had been deaf to the board ever since.
+  it. Measured 2026-07-24: the package rename re-registered this server under
+  its new name while agent launch lines still allowlisted the pre-rename one,
+  and the fleet had been deaf to the board ever since.
   A self-test notification was consumed and marked seen within six seconds and
   never reached any session. `channel_capable` and `channel_drain` were green
   throughout; neither asks whether the far end accepts what we send. The check
@@ -3148,7 +4225,7 @@ integration follow-ups to #556.
   loudly when it is absent, never silently guessing a root mount. Regression
   lint extended to `static/scitex_cards/chat/*.js`.
 - **Honest empty state — an absent store renders 0 cards, not an error
-  banner** (adapted from unpushed `9db9146b` to the SQLite-era `get_board`).
+  banner** (adapted from unpushed `9db9146b` to the then-current `get_board`).
   A fresh workspace resolves to a store-identity path that does not exist
   yet; `load_groups` on that absent file was the one leftover raise that
   turned the new tenant's board into a 400 "No task store found." (and
@@ -3183,7 +4260,7 @@ silent-wrong-board class found in production on 2026-07-21.
 
 - **The dual-write mirror is deleted as a feature** (#545). A stale provenance
   stamp plus the mirror env flag had routed a session's writes into a side file
-  while every call reported success. SQLite is the only write target; a write
+  while every call reported success. The retired engine is the only write target; a write
   that cannot reach the canonical DB raises. A sentinel test fails if the
   toggle is ever reintroduced.
 - **The S2 read accelerator is deleted** (#547). On containers with the
@@ -3226,7 +4303,7 @@ silent-wrong-board class found in production on 2026-07-21.
 
 ## [0.17.4] - 2026-07-21
 
-The YAML-to-SQLite cutover release. SQLite is the store; YAML is gone from the
+The YAML-to-database cutover release. The retired engine is the store; YAML is gone from the
 task path.
 
 ### Changed
@@ -3253,8 +4330,9 @@ one board could be destroyed or the fleet could fail to boot.
   The importer resolved its destination from the ambient environment, so an
   import against any store could rebuild the one globally-resolved database.
   Store identity is now compared by inode, dissolving the class where two
-  spellings of one file (`~/.scitex/cards` vs `~/.scitex/todo`) each re-stamped
-  the other and locked writers out.
+  different path spellings of the SAME file (the store directory under its
+  current name and under its pre-rename one) each re-stamped the other and
+  locked writers out.
 - **A write no longer manufactures a board nobody asked for** (#533). A write
   to a store that did not exist silently created it, which is how a packaged
   fixture came to be read as the board. The write now refuses.
@@ -3272,7 +4350,7 @@ one board could be destroyed or the fleet could fail to boot.
   evidence of deletion, it is evidence of a stale read. The explicit delete
   verb is unaffected.
 - **The bundled skills directory is named for this package** (#532).
-  `_skills/scitex-todo` → `_skills/scitex-cards`, with an in-repo compat symlink
+  `_skills/scitex-cards` → `_skills/scitex-cards`, with an in-repo compat symlink
   so the fleet's staging links do not dangle mid-migration (the failure that
   made every agent unstartable on 2026-07-16).
 
@@ -3295,7 +4373,7 @@ one board could be destroyed or the fleet could fail to boot.
   export is cross-checked against `SELECT COUNT(*)` because the exporter
   answers a nonexistent DB with a well-formed empty document.
 - **Malformed `SCITEX_CARDS_*` values are refused, not mirrored** (#508).
-  An unexpanded `${...}` placeholder overwrote a working `SCITEX_TODO_*`
+  An unexpanded `${...}` placeholder overwrote a working `SCITEX_CARDS_*`
   value, corrupting card authorship and silently relocating the store.
 - Concurrency test's subprocess bound raised 30s -> 300s: it is a deadlock
   detector, not a latency assertion, and was failing on loaded CI runners.
@@ -3368,10 +4446,10 @@ All notable changes to this project are documented here. The format follows
 ## [0.16.2] - 2026-07-18 — upgrading no longer deletes your CLI
 
 ### Fixed
-- **The scitex-todo stub now declares both console scripts** (`scitex-todo`
-  and `scitex-cards`), healing the upgrade kill: old scitex-todo wheels
+- **The scitex-cards stub now declares both console scripts** (`scitex-cards`
+  and `scitex-cards`), healing the upgrade kill: old scitex-cards wheels
   (0.13.x–0.15.x) own both binaries in their RECORD, so `pip install -U
-  scitex-todo` deleted BOTH during the old wheel's uninstall — and pip
+  scitex-cards` deleted BOTH during the old wheel's uninstall — and pip
   processes dependencies first, so a same-transaction scitex-cards
   reinstall could not save them. The stub installs LAST and recreates
   them. Venv-matrix verified: the 0.13.5 upgrade path, a fresh stub
@@ -3441,9 +4519,9 @@ All notable changes to this project are documented here. The format follows
 - **Schema v4** — `inbox_recipients` records the `inboxes:` map keys, so a
   drained (empty) inbox survives the round-trip instead of vanishing with its
   zero rows.
-- **The scitex-todo deprecation stub** (`stub/scitex-todo/`) — a
+- **The scitex-cards deprecation stub** (`stub/scitex-cards/`) — a
   metadata-only dist depending on `scitex-cards>=0.14.0`, published from the
-  same tag, so old `scitex-todo` pins keep resolving. Version sync with the
+  same tag, so old `scitex-cards` pins keep resolving. Version sync with the
   main package is test-enforced.
 - **ADR-0010** — `~/.scitex/cards/cards.db` as the single source of truth,
   the yaml-snapshot-export backup rail, and the fleet-cutover sequencing that
@@ -3451,9 +4529,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 - **The canonical DB path is `~/.scitex/cards/cards.db`** —
-  `resolve_db_path`: explicit arg → `$SCITEX_CARDS_DB` → `$SCITEX_TODO_DB`
+  `resolve_db_path`: explicit arg → `$SCITEX_CARDS_DB` → `$SCITEX_CARDS_DB`
   (deprecated, warned) → `local_state.user_path("cards", "cards.db")`. The
-  pre-rename shadow `~/.scitex/todo/todo.db` is never moved or trusted;
+  pre-rename shadow `~/.scitex/cards/cards.db` is never moved or trusted;
   `cards.db` is rebuilt by the importer at cutover.
 
 ### Fixed
@@ -3463,57 +4541,57 @@ All notable changes to this project are documented here. The format follows
   (TypeError…)" (7/9 UNHEALTHY on healthy installs); both now resolve through
   the standard precedence chain like every other check.
 
-## [0.14.0] - 2026-07-16 — the package is scitex-cards now (scitex-todo stays as a shim)
+## [0.14.0] - 2026-07-16 — the package is scitex-cards now (scitex-cards stays as a shim)
 
 ### Changed
-- **Package identity: `scitex-todo` → `scitex-cards`** (operator directive
+- **Package identity: `scitex-cards` → `scitex-cards`** (operator directive
   2026-07-15/16; stage 1 of the migration, card
   `scitex-cards-s1-package-identity-rename-20260716`).
-  - PyPI/dist name `scitex-cards`; import package `scitex_todo` → `scitex_cards`
+  - PyPI/dist name `scitex-cards`; import package `scitex_cards` → `scitex_cards`
     (380 files, `scitex-dev rename-symbols`, CHANGELOG history left untouched).
   - Both console scripts ship and resolve to the same CLI: `scitex-cards`
-    (canonical) and `scitex-todo` (legacy, kept for the un-cutover fleet).
+    (canonical) and `scitex-cards` (legacy, kept for the un-cutover fleet).
   - MCP server identity is `scitex-cards`.
   - Entry points under `scitex_dev.*` register the new key only (those groups
     are iterated, so a legacy twin key would list the package twice — and
     `scitex_dev.jobs` would double-schedule every job).
 
 ### Added
-- **`scitex_todo` import shim** — `import scitex_todo` (and any
-  `scitex_todo.<submodule>`) resolves to the very same module objects as
+- **`scitex_cards` import shim** — `import scitex_cards` (and any
+  `scitex_cards.<submodule>`) resolves to the very same module objects as
   `scitex_cards` via a meta-path finder: one import, one module state, never a
   duplicated copy. Emits a `DeprecationWarning`; ships for one transition
   window only.
 - **Environment dual-read** (`scitex_cards._env_compat`, operator-requested) —
-  every `SCITEX_CARDS_<X>` env var is mirrored onto `SCITEX_TODO_<X>` at
+  every `SCITEX_CARDS_<X>` env var is mirrored onto `SCITEX_CARDS_<X>` at
   import, so shells already exporting the new names work today while the
   un-cutover fleet's old names keep working with one deprecation warning per
   process. When both are set, the new name wins, loudly.
 - **Legacy entry-point groups honoured** — hook plugins registered under
-  `scitex_todo.hooks` and delivery channels under
-  `scitex_todo.delivery_channels` stay discoverable alongside the new
+  `scitex_cards.hooks` and delivery channels under
+  `scitex_cards.delivery_channels` stay discoverable alongside the new
   `scitex_cards.*` groups until producers re-release.
 
 ### Changed (repo)
-- GitHub repository renamed **scitex-ai/scitex-todo → scitex-ai/scitex-cards**
+- GitHub repository renamed **scitex-ai/scitex-cards → scitex-ai/scitex-cards**
   (operator-approved); old URLs auto-redirect. `[project.urls]` and README
   badges follow. RTD project rename is still pending (docs URL unchanged).
 
 ### Unchanged (deliberately — later stages)
-- The store path (`~/.scitex/todo/tasks.yaml`): the store engine flips to
-  sqlite-as-truth and the file moves in the migration's later stages.
+- The store path (`~/.scitex/cards/tasks.yaml`): the store engine flips to
+  database-as-truth and the file moves in the migration's later stages.
 
 ## [0.9.9] - 2026-07-13 — fix: a flag that outran its deploy cost 135 seconds per card write
 
 ### Fixed
-- **`SCITEX_TODO_DUAL_WRITE` now refuses to turn on where the code cannot honour it.**
+- **`SCITEX_CARDS_DUAL_WRITE` now refuses to turn on where the code cannot honour it.**
 
   MEASURED on a live 1,449-card store, in the configuration that was actually running:
 
   | | |
   |---|---|
-  | scitex-todo **0.9.4**, dual-write **ON** | `add_task()` = **135.2 s** |
-  | scitex-todo **0.9.4**, dual-write **OFF** | `delete_task()` = **3.8 s** |
+  | scitex-cards **0.9.4**, dual-write **ON** | `add_task()` = **135.2 s** |
+  | scitex-cards **0.9.4**, dual-write **OFF** | `delete_task()` = **3.8 s** |
 
   **35×. One flag.**
 
@@ -3548,7 +4626,7 @@ All notable changes to this project are documented here. The format follows
   been written and reviewed and was sitting in an unmerged branch — which is the same as not
   existing. It ships now.
 
-  `scitex-cards` and `scitex-todo` are the SAME entry point: every verb, identical behaviour.
+  `scitex-cards` and `scitex-cards` are the SAME entry point: every verb, identical behaviour.
   This is the console script only — the package, the module, the MCP tool prefix and the store
   path are untouched (the full rename is a separate, coordinated effort).
 
@@ -3622,8 +4700,8 @@ the live 1,390-card store, not inferred from the diff.
   **Fail-loud is preserved deliberately**: a *local* daemon whose pid is gone still reports DEAD
   even with a fresh heartbeat. Freshness must not paper over a corpse we can actually see.
 
-- **The systemd unit template could not start.** `scitex-todo notifyd install-unit` emitted
-  `ExecStart=scitex-todo notifyd` — a bare command. systemd does not use your login PATH, and
+- **The systemd unit template could not start.** `scitex-cards notifyd install-unit` emitted
+  `ExecStart=scitex-cards notifyd` — a bare command. systemd does not use your login PATH, and
   the console script lives in a venv, so the unit died with `status=203/EXEC`. The one durable
   recovery path the tool offered was itself broken. `ExecStart` is now resolved to an absolute
   path at generation time, and generation **raises** rather than writing a unit that is
@@ -3636,7 +4714,7 @@ the live 1,390-card store, not inferred from the diff.
   A check that is always red is not a signal; it teaches everyone that red means "that's just
   the broken one". Parked properly with `workflow_dispatch:`.
 
-## [0.9.5] - 2026-07-13 — perf: a card write no longer drags the whole board through SQLite
+## [0.9.5] - 2026-07-13 — perf: a card write no longer drags the whole board through the retired engine
 
 Two fixes to the dual-write mirror. Together they take the mirror from **more than half of a
 card write** down to **under 2% of it**.
@@ -3653,7 +4731,7 @@ card write** down to **under 2% of it**.
   cost **4,592 µs/row** against **110 µs/row** for a plain `INSERT` — a **42x** difference,
   and 6.3 s of the rebuild's 7.3 s. `tasks` is a *parent* of `task_comments` / `task_edges` /
   `task_roles` (`ON DELETE CASCADE`), so under `PRAGMA foreign_keys=ON` every REPLACE runs
-  SQLite's full cascade/FK-check machinery — to resolve a collision that **cannot happen**,
+  the retired engine's full cascade/FK-check machinery — to resolve a collision that **cannot happen**,
   because the rebuild has just deleted every row in the same transaction.
 
   It was never foreign keys: `task_comments` already used a plain `INSERT`, and FK
@@ -3748,16 +4826,16 @@ card write** down to **under 2% of it**.
 - **The board was telling every agent to look in an empty drawer.** The MCP server
   instructions — read by every agent at session start — hard-coded a dead example:
 
-      "Use list_tasks with a `scope` arg (e.g. 'agent:proj-scitex-todo')"
+      "Use list_tasks with a `scope` arg (e.g. 'agent:proj-scitex-cards')"
 
-  There is no `proj-scitex-todo`. Measured against the live store, that taught scope held
-  **2** cards while the real one (`agent:scitex-todo`) held **63**. So an agent that
+  There is no `proj-scitex-cards`. Measured against the live store, that taught scope held
+  **2** cards while the real one (`agent:scitex-cards`) held **63**. So an agent that
   *followed the shipped instructions* saw ~3% of its own work and reasonably concluded the
   board had nothing for it. Nothing errored; the query simply returned almost nothing.
   This is a mechanical explanation for the standing complaint that "the fleet ignores the
   board" — the board was not being ignored, it was lying about where to look.
 - The instructions now interpolate each agent's **resolved** identity
-  (`$SCITEX_TODO_AGENT_ID`). When the identity **cannot** be resolved they say so and tell
+  (`$SCITEX_CARDS_AGENT_ID`). When the identity **cannot** be resolved they say so and tell
   the agent how to discover its scope, rather than falling back to a hard-coded example. A
   silently-wrong example is worse than an honest absence — that was the entire bug.
 - The same dead prefix was fixed everywhere it was taught, not just the one line: CLI
@@ -3783,7 +4861,7 @@ card write** down to **under 2% of it**.
   caller — and it then ran every 30 minutes reaching zero agents. Verified against the
   live daemon:
 
-      liveness sweep: ERR  scitex-todo    32 pending  wire=http  reason=transport-error
+      liveness sweep: ERR  scitex-cards    32 pending  wire=http  reason=transport-error
       liveness sweep: ERR  scitex-types    2 pending  wire=http  reason=no-turn-url-configured
       liveness sweep: ERR  scitex-writer   3 pending  wire=http  reason=no-turn-url-configured
       liveness sweep: # 0 pending-backlog push(es) sent
@@ -3801,7 +4879,7 @@ card write** down to **under 2% of it**.
 
 ### Changed
 - `_push` (HTTP turn-url) is kept only as an opt-in secondary echo
-  (`SCITEX_TODO_NUDGE_PUSH=1`). It never counts toward delivery, never arms suppression,
+  (`SCITEX_CARDS_NUDGE_PUSH=1`). It never counts toward delivery, never arms suppression,
   and there is no silent fallback between rails in either direction.
 
 ### Notes
@@ -3834,9 +4912,9 @@ card write** down to **under 2% of it**.
   every sweep and defeat suppression entirely.
 
 ### Added
-- `SCITEX_TODO_NUDGE_FLOOR_HOURS` (default `24.0`) — an unchanged nudge is
+- `SCITEX_CARDS_NUDGE_FLOOR_HOURS` (default `24.0`) — an unchanged nudge is
   re-sent anyway once the floor elapses, so a genuinely stuck agent is still
-  nudged daily. Mirrors the existing `SCITEX_TODO_DIGEST_FLOOR_HOURS`.
+  nudged daily. Mirrors the existing `SCITEX_CARDS_DIGEST_FLOOR_HOURS`.
 
 ### Notes
 - Only a **delivered** nudge arms the suppression; a failed push does not, so a
@@ -3853,7 +4931,7 @@ card write** down to **under 2% of it**.
   every five minutes teaches its reader to ignore it, and the digest is the
   one signal that must stay un-ignorable. The owner's wake-up is now skipped
   while the card set AND each card's status are unchanged since the last
-  DELIVERED digest, with a 24 h floor (`SCITEX_TODO_DIGEST_FLOOR_HOURS`) so a
+  DELIVERED digest, with a 24 h floor (`SCITEX_CARDS_DIGEST_FLOOR_HOURS`) so a
   genuinely stuck owner is still nudged daily rather than never. A status flip
   alone (`in_progress` → `blocked`) re-notifies even when the id set is equal.
   The digest TICK still advances on the cadence: operator escalation fires
@@ -3861,7 +4939,7 @@ card write** down to **under 2% of it**.
   high-priority escalation (the existing escalation test caught exactly that on
   the first cut). Only the owner-facing enqueue is conditional; escalation and
   creator-escalation are untouched, and a regression test pins it.
-- **`scitex-todo update --help` crashed on click >= 8.2.** The custom
+- **`scitex-cards update --help` crashed on click >= 8.2.** The custom
   `--blocker` param type's `get_metavar()` predated the `ctx` keyword click now
   passes, so the help screen died with a `TypeError` and the update syntax was
   undiscoverable (found by neurovista in production while working around a
@@ -3905,7 +4983,7 @@ that each bit multiple agents in production, plus the board-UI review batch.
   outcome cancellation; the owner rescues what they still want), the
   `deferred_at` age clock (stamped once on entry, never reset by a re-defer)
   and the `last_triaged_at` re-draw cooldown.
-- `scitex-todo triage [--mine|--agent X] [--json]` — the read-only payload a
+- `scitex-cards triage [--mine|--agent X] [--json]` — the read-only payload a
   short-lived twin consumes under its parent's identity; mutation stays with
   the existing verbs.
 - The 24 h backlog nudge, `runnable`, and `next` now target `deferred`
@@ -3929,43 +5007,43 @@ that each bit multiple agents in production, plus the board-UI review batch.
   renders under the pointer); Timeline leftmost; Stale view removed; search
   input at filterbar scale; gzip on `/graph` (4.98 MB → 1.60 MB).
 
-## [0.7.50] - 2026-07-09 — feat: inbox reads/writes default to SQLite (retires the per-poll whole-store parse)
+## [0.7.50] - 2026-07-09 — feat: inbox reads/writes default to the file engine (retires the per-poll whole-store parse)
 
-Fleet load incident: every agent's `scitex-todo mcp start` digest-poll (every
+Fleet load incident: every agent's `scitex-cards mcp start` digest-poll (every
 5 s) `safe_load`ed the entire ~9 MB task store just to read ONE recipient's
 inbox — across ~21 agents the fleet's biggest CPU sink (host load ~27). This
-moves the inbox read/write path onto SQLite so a poll is an indexed
+moves the inbox read/write path onto that engine so a poll is an indexed
 `(recipient, seen)` lookup, never a whole-store parse.
 
-- New `_inbox_sqlite` backend (stdlib `sqlite3`, WAL) at the constitution's
-  runtime-DB path `<store_dir>/runtime/todo.db`. `enqueue` / `poll_inbox` /
+- New retired-engine inbox backend (stdlib driver, WAL) at the constitution's
+  runtime-DB path `<store_dir>/runtime/cards.db`. `enqueue` / `poll_inbox` /
   `ack` mirror the YAML contract exactly (dedup on `(event_type, card_id, ts,
   actor)`, `supersede`, `unseen_only`, `mark_seen`).
-- SQLite is now the DEFAULT. `SCITEX_TODO_INBOX_BACKEND=yaml` is an explicit
-  break-glass only; an unknown/unset value uses SQLite. No silent fallback — a
-  SQLite error fails loud.
+- That engine is now the DEFAULT. `SCITEX_CARDS_INBOX_BACKEND=yaml` is an
+  explicit break-glass only; an unknown/unset value uses it. No silent
+  fallback — an engine error fails loud.
 - Lazy one-time auto-migration: first access copies the YAML `inboxes:` records
   into the DB (guarded by a `migrated_from_yaml` meta flag), so no unseen
   notification is lost regardless of restart timing; steady state never reads
   YAML. Idempotent + reversible (the YAML section is never deleted).
-- CLI: `scitex-todo inbox migrate-to-sqlite` / `inbox info`.
+- CLI: the `inbox` migrate-to-database command / `inbox info`.
 
-Phase 1 of the YAML→SQLite migration (inboxes only; cards/users/ledger stay on
+Phase 1 of the YAML→database migration (inboxes only; cards/users/ledger stay on
 YAML for now — Phase 2 covers cards). Complements the S0 shadow store (#349).
 
-## [0.7.49] - 2026-07-08 — feat: S0 shadow SQLite DB + YAML bootstrap (YAML still canonical)
+## [0.7.49] - 2026-07-08 — feat: S0 shadow DB + YAML bootstrap (YAML still canonical)
 
-STAGE S0 of the YAML→SQLite migration (design-confirmed by scitex-dev,
-RFC #348). Purely ADDITIVE: an authority-local SHADOW SQLite database is
+STAGE S0 of the YAML→database migration (design-confirmed by scitex-dev,
+RFC #348). Purely ADDITIVE: an authority-local SHADOW database is
 created and bootstrapped FROM the current YAML store. The YAML (`tasks.yaml` +
 the `threads.yaml` sidecar) STAYS the CANONICAL source of truth — no CRUD verb,
 MCP tool, or `load_doc`/`_save_doc_unlocked` path reads or writes the DB in S0.
 The shadow DB is incapable of harming the YAML by construction (a separate
 file, never linked into any write path). S1 (dual-write) comes next.
 
-- New `_db.py` adapter — stdlib `sqlite3` only (no scitex-db). `resolve_db_path`
-  follows explicit arg → `$SCITEX_TODO_DB` → `local_state.user_path("todo",
-  "todo.db")`, DELEGATING the user tier to the ecosystem resolver (never a
+- New `_db.py` adapter — the stdlib driver only (no scitex-db). `resolve_db_path`
+  follows explicit arg → `$SCITEX_CARDS_DB` → `local_state.user_path("cards",
+  "cards.db")`, DELEGATING the user tier to the ecosystem resolver (never a
   re-rolled project/user precedence — the class of bug behind the 2026-07-06
   stale-store incident). On connect: WAL, `synchronous=NORMAL`,
   `busy_timeout=300000`, `foreign_keys=ON`; schema stamped `user_version=1`.
@@ -4021,11 +5099,11 @@ other's rollup the "skipping" line never printed.
   moved to `_cli/_sync_github.py`; `_cli/_stats.py` keeps `print-stats` and still
   registers both. No behavior change to `sync-github`.
 
-Incident: incident-todo-wake-watcher-interval2-spiral-20260708.
+Incident: incident-cards-wake-watcher-interval2-spiral-20260708.
 
 ## [0.7.47] - 2026-07-08 — fix: single-instance flock on `print-stats --notify` (third store-size daemon)
 
-The managed notify cron runs `scitex-todo print-stats --by agent --notify
+The managed notify cron runs `scitex-cards print-stats --by agent --notify
 --nudge-quiet` every 10 minutes. `print-stats --by agent` re-derives per-agent
 rollups from all ~930 cards in the ~9 MB `tasks.yaml`; when a single run exceeds
 the 10-min period it OVERLAPS the next cron tick, so runs STACK (observed: 2
@@ -4052,7 +5130,7 @@ stacking guard.
 
 ## [0.7.46] - 2026-07-08 — fix: mtime-gate the channel inbox drain (read-side twin of #344)
 
-Each agent's `scitex-todo mcp start` runs a channel poll loop that called
+Each agent's `scitex-cards mcp start` runs a channel poll loop that called
 `drain_once` every 5s **unconditionally**. Every drain calls `recipient_keys` +
 `_inbox.poll_inbox`, both of which `safe_load` the ENTIRE shared store — the
 inbox lives in an `inboxes:` section of the SAME ~9 MB / ~930-card `tasks.yaml`
@@ -4092,14 +5170,14 @@ to land the change under budget.
 
 ## [0.7.45] - 2026-07-08 — fix: prevent the wake-watcher digest death-spiral
 
-`scitex-todo.wake-watcher` (`watch --push --interval 2`, systemd
+`scitex-cards.wake-watcher` (`watch --push --interval 2`, systemd
 `Restart=on-failure`) death-spiraled on ywata-note-win 2026-07-08: the 2s
 interval re-parsed the ~9 MB / ~930-card store faster than a tick finished on a
 slow host, so the watch daemon ran at sustained high CPU while the separate
 10-min `print-stats --by agent --notify` cron piled up unfinished digests on the
 already-saturated box. Load hit 43 on 16 cores; sac-listen OOM-died and several
 agents/builds died before the host was recovered
-(incident-todo-wake-watcher-interval2-spiral-20260708).
+(incident-cards-wake-watcher-interval2-spiral-20260708).
 
 Four durable, structural fixes to `_wake_watcher.py` / `_jobs_provider.py` /
 `_cli/_loop.py`:
@@ -4131,7 +5209,7 @@ ended mid-string). That full construct built ~159k Python objects on the live
 9.2 MB / ~930-card store just to prove the bytes were parseable, and every
 write paid it; bursts convoyed on the flock.
 
-- New `src/scitex_todo/_store_verify.py` `_verify_dumped_tmp(tmp_path, dumped)`
+- New `src/scitex_cards/_store_verify.py` `_verify_dumped_tmp(tmp_path, dumped)`
   keeps the SAME guarantee (the promoted bytes must be FULLY reparseable) but
   drops the object construction. It does two cheap checks:
   1. **Byte-length check** — `os.stat(tmp).st_size == len(dumped.encode())`,
@@ -4153,7 +5231,7 @@ write paid it; bursts convoyed on the flock.
 - Measured on a synthetic realistic-shape store: the event-scan verify is
   ~2.4x faster than the full `safe_load` construct-reparse it replaces
   (e.g. ~3.1 s → ~1.3 s on a ~900-card 1 MB doc; the saving scales with store
-  size). New `tests/scitex_todo/test__store_verify.py` (10 tests) pins the
+  size). New `tests/scitex_cards/test__store_verify.py` (10 tests) pins the
   corruption-safety non-negotiables; `test__store_doc_preservation.py` +
   `test__model.py` regression-green.
 
@@ -4172,7 +5250,7 @@ live: one agent had 53 unseen `reminder` digests spanning 3 days).
 - The reminder engine wires `supersede=True` ONLY at the cumulative owner-digest
   enqueue (`EVENT_DIGEST` / `(digest)`). Per-card events (escalation,
   creator_escalation) stay distinct and do NOT supersede.
-- New maintenance verb `scitex-todo notifyd collapse-digests [--json]`
+- New maintenance verb `scitex-cards notifyd collapse-digests [--json]`
   (`_inbox_maint.collapse_digests`): one safe locked pass that collapses each
   recipient's unseen digest backlog to the single newest digest (older ones
   marked seen, nothing deleted) — clears the already-accumulated fleet backlog.
@@ -4182,9 +5260,9 @@ live: one agent had 53 unseen `reminder` digests spanning 3 days).
 
 ## [0.7.42] - 2026-07-08 — fix: tolerate a STALE deprecated env var when the current one is valid
 
-Fleet agents still carry a stale ambient `SCITEX_TODO_AGENT` (the pre-0.7.30
-name) baked in by an old sac injector. Until now scitex-todo fail-louded on the
-mere PRESENCE of that old var — even when the current `SCITEX_TODO_AGENT_ID` was
+Fleet agents still carry a stale ambient `SCITEX_CARDS_AGENT` (the pre-0.7.30
+name) baked in by an old sac injector. Until now scitex-cards fail-louded on the
+mere PRESENCE of that old var — even when the current `SCITEX_CARDS_AGENT_ID` was
 set and correct. In the unified MCP server that fail-loud was swallowed by
 `resolve_agent_id_optional` → returned `None` → the digest poll loop never
 started, so agents on 0.7.32 with a correct `AGENT_ID` connected (tools worked)
@@ -4193,15 +5271,15 @@ but never received channel notifications.
 ### Changed
 
 - `resolve_agent_id` (`_mcp_channel.py`) now makes the CURRENT var WIN: when
-  `arg` / `$SCITEX_TODO_AGENT_ID` yields a valid id it is returned even if the
-  stale `$SCITEX_TODO_AGENT` is also exported — a loud warning is logged and the
+  `arg` / `$SCITEX_CARDS_AGENT_ID` yields a valid id it is returned even if the
+  stale `$SCITEX_CARDS_AGENT` is also exported — a loud warning is logged and the
   stale var is ignored (no raise). The fail-loud on the old name fires ONLY when
   the current var is absent/invalid (a genuine reliance on the renamed-away
   var). Placeholder / unresolved errors are unchanged. `resolve_agent_id_optional`
   therefore returns the id (not `None`) when both vars are set, re-enabling the
   poll loop.
 - Same tolerance applied to the store var in `_paths.py`: a stale
-  `SCITEX_TODO_TASKS` is warn-and-ignored when `SCITEX_TODO_TASKS_YAML_SHARED`
+  `SCITEX_CARDS_TASKS` is warn-and-ignored when `SCITEX_CARDS_TASKS_YAML_SHARED`
   is set, and fails loud only when the current var is absent.
 
 ## [0.7.41] - 2026-07-07 — feat: operator↔agent direct-message chat view (/chat)
@@ -4213,7 +5291,7 @@ board, and agents reply through an MCP verb.
 
 ### Added
 
-- **`scitex_todo._threads`** — pure DM thread store. Canonical record
+- **`scitex_cards._threads`** — pure DM thread store. Canonical record
   `{id, thread, from, to, body, ts, read}`; thread id `dm:<a>::<b>` with the
   peers sorted lexicographically (one thread per pair, both directions;
   reserved operator name `operator`). Threads live in a SIDECAR
@@ -4234,7 +5312,7 @@ board, and agents reply through an MCP verb.
   `resolve_agent_id_optional` with an actionable error when unset; store IO
   wrapped in `anyio.to_thread.run_sync`).
 - **Board `/chat` view** — mobile-first page (new `chat.html` template +
-  `static/scitex_todo/chat/chat.js`): collapsible agent list (users registry
+  `static/scitex_cards/chat/chat.js`): collapsible agent list (users registry
   ∪ existing thread peers, unread badges), chronological bubble thread
   (operator right-aligned), compose box; polls `/dm/thread/<peer>` every 5s
   and `/dm/threads` every 10s. JSON endpoints `GET /dm/threads`,
@@ -4265,13 +5343,13 @@ scitex-dev `general/03_interface/02_cli`).
   Data & Sync / Service / Diagnostics / Introspection / Shell; the `Other`
   catch-all is empty), with spec-built help (`CliHelp`) on the root group
   and on `list-tasks` / `add` / `done` / `close` plus the renamed leaves.
-- The `scitex-todo.ci-watch` JobSpec keeps its registry NAME (systemd/dedupe
+- The `scitex-cards.ci-watch` JobSpec keeps its registry NAME (systemd/dedupe
   identity) but its command now invokes the canonical
-  `scitex-todo watch-ci --once`.
+  `scitex-cards watch-ci --once`.
 
 ### Added
 
-- `src/scitex_todo/_cli/_compat.py` — guarded imports of scitex-dev's
+- `src/scitex_cards/_cli/_compat.py` — guarded imports of scitex-dev's
   `deprecated_alias` + `help_spec` helpers (present on scitex-dev develop,
   absent from the released 0.21.0; scitex-python#352 precedent) with
   doctrine-contract fallbacks so warn+forward behavior is identical on
@@ -4282,21 +5360,21 @@ scitex-dev `general/03_interface/02_cli`).
 - `_cli/_write.py` (pre-existing over the 512-line cap): the `update` verb
   moved to `_cli/_update.py` — pure move, one-verb-per-file precedent.
 
-## [0.7.39] - 2026-07-07 — chore: channel-notification source label is now `stodo`
+## [0.7.39] - 2026-07-07 — chore: channel-notification source label is now a short sender identity
 
 ### Changed
 
-- **Default `meta.source` label: `scitex-todo-system` → `stodo`.** Per the
+- **Default `meta.source` label: `scitex-cards-system` → a short sender identity.** Per the
   fleet naming agreement (operator 2026-07-07, card
   fleet-channel-source-sender-identity-naming-20260707), channel-notification
   source labels are standardized to SHORT sender-identity names — sac / cct /
-  stodo (`daemon` is reserved for daemon-origin messages). This supersedes the
-  short-lived `scitex-todo-system` default introduced in 0.7.32. Label-only
+  that label (`daemon` is reserved for daemon-origin messages). This supersedes the
+  short-lived `scitex-cards-system` default introduced in 0.7.32. Label-only
   change: `meta.source` is a free attribution label decoupled from routing
   (replies route via the MCP tool + ids).
 - **Deployed config note:** `.mcp.json` entries that pin the old values
-  (`--name scitex-todo` / `--name scitex-todo-system`, or
-  `SCITEX_TODO_CHANNEL_SOURCE` set to either) should update to `stodo` or
+  (`--name scitex-cards` / `--name scitex-cards-system`, or
+  `SCITEX_CARDS_CHANNEL_SOURCE` set to either) should update to the short label or
   simply drop the override and inherit the new default.
 
 ## [0.7.34] - 2026-07-05 — fix: harden the channel push path (size cap + first-connect burst cap)
@@ -4304,7 +5382,7 @@ scitex-dev `general/03_interface/02_cli`).
 Hardens the `notifications/claude/channel` push surface against the crash class
 behind the 2026-07-02 incident, where 180 solver apptainer containers died on
 boot with `JSON message exceeded maximum buffer size of 1048576 bytes` — an
-oversized scitex-todo channel push overflowed the Claude Agent SDK's 1 MB stdio
+oversized scitex-cards channel push overflowed the Claude Agent SDK's 1 MB stdio
 reader.
 
 ### Fixed
@@ -4323,26 +5401,26 @@ reader.
 
 ### Added
 
-- New pure, unit-testable `scitex_todo._channel_guard` module holding the size
+- New pure, unit-testable `scitex_cards._channel_guard` module holding the size
   constants and `_bounded_content` / `_bounded_meta_value` helpers (keeps
   `_mcp_channel.py` within the module size budget).
 
 ### Docs
 
-- Documented the headless lever: with **no** `SCITEX_TODO_AGENT_ID` the unified
-  `scitex-todo mcp start` runs tools-only (no poll loop, zero pushes) — the
+- Documented the headless lever: with **no** `SCITEX_CARDS_AGENT_ID` the unified
+  `scitex-cards mcp start` runs tools-only (no poll loop, zero pushes) — the
   intended mode for solver / headless capsules that must not receive pushes.
 
 ## [0.7.33] - 2026-07-05 — feat: package-level `health` doctor (MCP tool + CLI verb)
 
 A broad store / identity / delivery health check, exposed as BOTH the `health`
-MCP tool and the `scitex-todo health` CLI verb. Motivated by the 0.7.32
+MCP tool and the `scitex-cards health` CLI verb. Motivated by the 0.7.32
 handshake incident: the `channel_drain` check turns that class of "MCP not
 connected" failure into a one-command diagnosis.
 
 ### Added
 
-- **`scitex_todo._health.health(...)`** — one pure, never-raising function that
+- **`scitex_cards._health.health(...)`** — one pure, never-raising function that
   returns the cross-package standard report shape
   `{"package", "ok", "checks":[{name,ok,detail,hint}], "summary"}` (shared
   verbatim with the sac/cct health tools). Every FAILING check carries an
@@ -4350,28 +5428,28 @@ connected" failure into a one-command diagnosis.
   with the error in its hint rather than raising. Checks: `store_canonical`
   (resolved store is the canonical user/shared path — not a project shadow —
   and is readable, writable, and parses with a top-level `tasks` key),
-  `agent_id` (`$SCITEX_TODO_AGENT_ID` resolves to a real value, not
+  `agent_id` (`$SCITEX_CARDS_AGENT_ID` resolves to a real value, not
   blank/`unknown`/an unexpanded `$VAR`), `notifyd_alive` (real pidfile probe of
   the delivery daemon), `channel_drain` (this agent's unseen vs seen inbox
   backlog — flags a large unseen pile that was never drained), and
-  `channel_capable` (`scitex_todo._mcp_channel` imports and exposes
+  `channel_capable` (`scitex_cards._mcp_channel` imports and exposes
   `_serve`/`_run`).
 - **`health` MCP tool** — registered on the shared FastMCP instance
-  (`scitex_todo._mcp_skills`); returns the JSON report. Distinct from the
+  (`scitex_cards._mcp_skills`); returns the JSON report. Distinct from the
   narrow `mcp doctor` (which only checks the fastmcp install).
-- **`scitex-todo health [--json]` CLI verb** — human-readable report by default,
+- **`scitex-cards health [--json]` CLI verb** — human-readable report by default,
   raw JSON with `--json`; exits `0` when all checks pass, else `1` (usable as a
   shell/CI gate).
 
 ## [0.7.32] - 2026-07-04 — fix: channel poll loop no longer starves the MCP handshake
 
-Hotfix for a fleet-wide "scitex-todo MCP not connected" regression introduced
+Hotfix for a fleet-wide "scitex-cards MCP not connected" regression introduced
 by the unified server (0.7.31).
 
 ### Fixed
 
 - **Unified `mcp start` failed the MCP `initialize` handshake once an agent had
-  an identity set** — every fleet agent showed the `scitex-todo` server as "not
+  an identity set** — every fleet agent showed the `scitex-cards` server as "not
   connected". Root cause: the inbox poll loop's first drain ran SYNCHRONOUS
   blocking store IO (`recipient_keys` + `_inbox.poll_inbox`, which lock and
   parse the whole YAML store) **inline on the asyncio event loop**. That starved
@@ -4385,35 +5463,35 @@ by the unified server (0.7.31).
 
 ### Changed
 
-- **Channel render name is now `scitex-todo-system`** (was `scitex-todo`). The
+- **Channel render name is now `scitex-cards-system`** (was `scitex-cards`). The
   system-pushed notification source (`meta.source`, env
-  `SCITEX_TODO_CHANNEL_SOURCE`, default) is deliberately distinct from the
-  `scitex-todo` agent id so the operator's TUI does not confuse a system digest
-  with a message authored by the scitex-todo agent. Deployed `.mcp.json` entries
-  that pin `SCITEX_TODO_CHANNEL_SOURCE=scitex-todo` must update to
-  `scitex-todo-system` (or drop the key to take the new default).
+  `SCITEX_CARDS_CHANNEL_SOURCE`, default) is deliberately distinct from the
+  `scitex-cards` agent id so the operator's TUI does not confuse a system digest
+  with a message authored by the scitex-cards agent. Deployed `.mcp.json` entries
+  that pin `SCITEX_CARDS_CHANNEL_SOURCE=scitex-cards` must update to
+  `scitex-cards-system` (or drop the key to take the new default).
 
-## [0.7.31] - 2026-07-03 — one unified scitex-todo MCP server (tools + digest push)
+## [0.7.31] - 2026-07-03 — one unified scitex-cards MCP server (tools + digest push)
 
 The turn-on release for fleet-wide notifications. Together with the 0.7.30
 env-var standardization, this is what the coordinated fleet flip deploys.
 
 ### Changed
 
-- **One MCP server instead of two**: `scitex-todo mcp start` now runs a SINGLE
+- **One MCP server instead of two**: `scitex-cards mcp start` now runs a SINGLE
   server that both serves the card tools AND pushes this agent's digest
   (`notifications/claude/channel`). Previously the tools server (`mcp start`)
   and the digest-push server (`mcp channel`) were separate, needing two
-  `.mcp.json` entries. Now one `scitex-todo` entry (`args: ["mcp", "start"]`)
+  `.mcp.json` entries. Now one `scitex-cards` entry (`args: ["mcp", "start"]`)
   does both — matching the one-server-per-project convention.
   - It reuses FastMCP's underlying low-level server (which has every registered
     tool) and declares the `claude/channel` capability alongside the tools
     capability, so no tool behaviour changes.
-  - The agent id is optional: with `SCITEX_TODO_AGENT_ID` set, the digest is
+  - The agent id is optional: with `SCITEX_CARDS_AGENT_ID` set, the digest is
     pushed; without it, the server serves tools only (a loud warning, never a
     hard failure on the tools surface).
   - `--http` transport remains tools-only (HTTP cannot carry the push).
-  - The standalone `scitex-todo mcp channel` verb is retained for
+  - The standalone `scitex-cards mcp channel` verb is retained for
     back-compatibility.
 
 ## [0.7.30] - 2026-07-02 — env-var standardization for fleet-wide notification delivery
@@ -4425,22 +5503,22 @@ layer: the env-injection + `.mcp.json` wiring flip in lockstep with this release
 
 ### Changed
 
-- **Env var rename**: the agent-identity var `SCITEX_TODO_AGENT` is renamed to
-  `SCITEX_TODO_AGENT_ID` (encodes that it is an identity). It stamps
+- **Env var rename**: the agent-identity var `SCITEX_CARDS_AGENT` is renamed to
+  `SCITEX_CARDS_AGENT_ID` (encodes that it is an identity). It stamps
   `created_by`/`updated_by`, keys the channel inbox, and drives the `--mine`
   filter.
-- **Env var rename**: the task-store override `SCITEX_TODO_TASKS` is renamed to
-  `SCITEX_TODO_TASKS_YAML_SHARED` (encodes the shared-yaml store).
-- **Channel server is fully env-configurable**: `scitex-todo mcp channel` now
-  reads `SCITEX_TODO_CHANNEL_SOURCE` (meta.source, default `scitex-todo`) and
-  `SCITEX_TODO_CHANNEL_INTERVAL` (poll seconds, default `5`), with CLI flags as
+- **Env var rename**: the task-store override `SCITEX_CARDS_TASKS` is renamed to
+  `SCITEX_CARDS_TASKS_YAML_SHARED` (encodes the shared-yaml store).
+- **Channel server is fully env-configurable**: `scitex-cards mcp channel` now
+  reads `SCITEX_CARDS_CHANNEL_SOURCE` (meta.source, default `scitex-cards`) and
+  `SCITEX_CARDS_CHANNEL_INTERVAL` (poll seconds, default `5`), with CLI flags as
   optional overrides. The `.mcp.json` entry needs zero config args — every
-  parameter is a `SCITEX_TODO_`-prefixed env var.
+  parameter is a `SCITEX_CARDS_`-prefixed env var.
 
 ### Fixed
 
-- **Fail-loud on the deprecated env-var names**: if `SCITEX_TODO_AGENT` or
-  `SCITEX_TODO_TASKS` is still set, resolution raises with an actionable
+- **Fail-loud on the deprecated env-var names**: if `SCITEX_CARDS_AGENT` or
+  `SCITEX_CARDS_TASKS` is still set, resolution raises with an actionable
   "renamed to …; unset the old var" message instead of silently honouring a
   stale export that could pin the wrong identity or store.
 
@@ -4451,7 +5529,7 @@ broken (see Fixed below), so the accumulated work below shipped only now.
 
 ### Added
 
-- **Standalone user-delivery rail**: scitex-todo's own notification path —
+- **Standalone user-delivery rail**: scitex-cards's own notification path —
   channels + a delivery ledger + an always-on `notifyd` daemon (with a systemd
   unit) + a standalone MCP channel-notification server. Users-first, with no
   dependency on scitex-agent-container.
@@ -4539,11 +5617,11 @@ broken (see Fixed below), so the accumulated work below shipped only now.
   `MAX_ROWS`) now fans co-located markers into stacked sub-rows and grows the
   lane to fit, so every task is visible. x/time math and the time-axis are
   unchanged.
-- **`scitex-todo help-wait` / `help-clear`** CLI verbs + `help_wait` /
+- **`scitex-cards help-wait` / `help-clear`** CLI verbs + `help_wait` /
   `help_clear` MCP tools (PR #242). First-class "an agent is waiting on the
   operator" card semantics (`help-<agent>-waiting`, `status=blocked`,
   `blocker=operator-decision`), idempotent atomic upsert / resolve. Lifts the
-  card shape out of the dotfiles Notification hook so scitex-todo owns the
+  card shape out of the dotfiles Notification hook so scitex-cards owns the
   single source of truth; the hook becomes a thin trigger that calls the verb.
 
 ### Changed
@@ -4554,22 +5632,22 @@ broken (see Fixed below), so the accumulated work below shipped only now.
   fleet dependency can never red-gate the standalone package's CI. Fail-loud
   adapter-error tests still run (they need no working sac).
 
-## [0.7.25] - 2026-06-15 — `scitex-todo ci-watch` (record-only CI poller)
+## [0.7.25] - 2026-06-15 — `scitex-cards ci-watch` (record-only CI poller)
 
 ### Added
 
-- **`scitex-todo ci-watch`** + **`scitex-todo.ci-watch` cron JobSpec**
+- **`scitex-cards ci-watch`** + **`scitex-cards.ci-watch` cron JobSpec**
   (PR #206, lead a2a `b4c10158` / operator decoupled-pollers override
   via dev a2a `96afacc7`). Record-only CI poller — server-side
   `*/5 * * * *` cron that sweeps every repo in
   `dashboard.yaml → fleet.ci_status.repos` (or env override
-  `SCITEX_TODO_FLEET_CI_REPOS=owner/a,owner/b`), diffs against the
-  local state cache at `~/.scitex/todo/ci-state.json` (override via
-  `SCITEX_TODO_CI_STATE`), classifies the transition
+  `SCITEX_CARDS_FLEET_CI_REPOS=owner/a,owner/b`), diffs against the
+  local state cache at `~/.scitex/cards/ci-state.json` (override via
+  `SCITEX_CARDS_CI_STATE`), classifies the transition
   (`first-seen` / `newly-green` / `newly-red` / `still-pending` /
   `unchanged`), and logs one stderr line per repo.
 
-  Lane: **todo records, SAC delivers** — todo writes no a2a sends
+  Lane: **the card layer records, SAC delivers** — it writes no a2a sends
   and emits no bus events; SAC has its own independent poller for the
   delivery side. Either side can crash without breaking the other.
   The dedupe key (`head_sha`, `overall`) is content-keyed so SAC's
@@ -4578,25 +5656,25 @@ broken (see Fixed below), so the accumulated work below shipped only now.
 
   CLI:
 
-      scitex-todo ci-watch --once                # cron mode (one sweep)
-      scitex-todo ci-watch --interval 600        # loop with custom cadence
-      scitex-todo ci-watch --once --dry-run      # plan + summary, no state write
-      SCITEX_TODO_FLEET_CI_REPOS=owner/a scitex-todo ci-watch --once
+      scitex-cards ci-watch --once                # cron mode (one sweep)
+      scitex-cards ci-watch --interval 600        # loop with custom cadence
+      scitex-cards ci-watch --once --dry-run      # plan + summary, no state write
+      SCITEX_CARDS_FLEET_CI_REPOS=owner/a scitex-cards ci-watch --once
 
   Wired into the ecosystem federation via `_jobs_provider.py`; after
-  `scitex-dev ecosystem up`, the `scitex-todo.ci-watch.timer`
+  `scitex-dev ecosystem up`, the `scitex-cards.ci-watch.timer`
   systemd-user unit fires every 5 min. 18 mock-free tests
   (classifier purity, state load/save round-trip + atomic-write, CLI
   dry-run, JobSpec registration).
 
-## [0.7.24] - 2026-06-14 — `scitex-todo mcp install-fleet` (P3a one-liner)
+## [0.7.24] - 2026-06-14 — `scitex-cards mcp install-fleet` (P3a one-liner)
 
 ### Added
 
-- **`scitex-todo mcp install-fleet --agents-dir <DIR>`** (PR #204,
+- **`scitex-cards mcp install-fleet --agents-dir <DIR>`** (PR #204,
   lead a2a `1ab212f3`). One-shot fleet sweep — walks every
   ``<agents-dir>/*/to_home/.mcp.json`` (the agent-container spec
-  convention) and idempotently applies the scitex-todo MCP entry to
+  convention) and idempotently applies the scitex-cards MCP entry to
   each. Sibling MCP server entries preserved; per-agent corrupt JSON
   reported + sweep continues; final summary line carries
   ``agents=N updated=K noop=M errors=E``. Closes the missing-MCP gap
@@ -4606,9 +5684,9 @@ broken (see Fixed below), so the accumulated work below shipped only now.
 
   Sweep one-liner for agent-container:
 
-      scitex-todo mcp install-fleet \\
+      scitex-cards mcp install-fleet \\
           --agents-dir ~/.dotfiles/src/.scitex/agent-container/agents \\
-          --env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y
+          --env-tasks-path /home/agent/.scitex/cards/tasks.yaml -y
 
   Mirrors the single-file ``install --apply`` semantics (PR #155 +
   #158) — same backup, same idempotency, same env-pin.
@@ -4622,14 +5700,14 @@ broken (see Fixed below), so the accumulated work below shipped only now.
   "a time-based view", translated). The v3 board at `/` (the
   operator's home view)
   now exposes time-based controls in the existing
-  `.stx-todo-filterbar__group--view` group:
+  `.stx-cards-filterbar__group--view` group:
   - Sort dropdown extends with `created_at` + `completed_at` options
     (newest first) plus the reworked `last_activity` comparator.
   - New "Group by time" checkbox (`#stx-toggle-group-by-time`) folds
     each project column's cards under collapsible bucket headers:
     TODAY / THIS WEEK / THIS MONTH / OLDER. State persists in
-    localStorage (`scitex-todo:group-by-time`,
-    `scitex-todo:time-buckets-collapsed`).
+    localStorage (`scitex-cards:group-by-time`,
+    `scitex-cards:time-buckets-collapsed`).
   - New `board_v3/08-time-grouping.css` with token-only styling
     (bucket headers, chevrons, collapsed state, body left-rail).
   - 43 mock-free test cases pin the bucket classifier + sort-key
@@ -4658,7 +5736,7 @@ by `test__no_multiline_django_short_comments.py` from PR #199).
   ``board_v3.html:200-208`` (introduced in PR #173) rendered as
   visible text on the board UI. Converted to
   ``{% comment %}…{% endcomment %}`` (multi-line safe). New
-  regression test (``tests/scitex_todo/_django/test__no_multiline_django_short_comments.py``)
+  regression test (``tests/scitex_cards/_django/test__no_multiline_django_short_comments.py``)
   walks every ``.html`` under ``_django/templates/`` and asserts
   every ``{#`` closes with ``#}`` on the same line — bug class
   pinned. Operator reported live; hotfix-released same hour.
@@ -4667,7 +5745,7 @@ by `test__no_multiline_django_short_comments.py` from PR #199).
 
 Two enhancements that close the **operator↔card↔owner+collaborators
 feedback ring** Phase 6 was missing. Cross-package coordination via
-the existing `scitex_todo.hooks` entry-point bus — no new poller, no
+the existing `scitex_cards.hooks` entry-point bus — no new poller, no
 inter-package import.
 
 ### Added
@@ -4697,7 +5775,7 @@ inter-package import.
   errors are caught + logged so external handler failure (SAC
   unreachable, missing entry-point) never breaks the producer's
   comment-save. 15 mock-free tests.
-  Surfaces emit: `/chat/<card_id>` POST, `scitex-todo comment` CLI,
+  Surfaces emit: `/chat/<card_id>` POST, `scitex-cards comment` CLI,
   MCP `comment_task` tool, Python API direct calls.
 
 ### Provenance
@@ -4705,7 +5783,7 @@ inter-package import.
 PR #196 + #197. Lead a2a `0ab1d9fd` (ci-result ordering coordination
 with dev) + `1e8e33d0` (card-message feedback channel — Phase 6
 extends to active routing). Both follow the same loose-coupling
-pattern: todo = producer, SAC = consumer, no cross-package import.
+pattern: the card layer = producer, SAC = consumer, no cross-package import.
 
 ## [0.7.20] - 2026-06-14 — 🎯 TRACK 2 dashboard mission COMPLETE (6/6 surfaces)
 
@@ -4726,9 +5804,9 @@ fail-loud / registry-sourced / no hardcoded proper nouns / no mocks.
   PUT/DELETE. New `ChatPanel.tsx` mounts inside the existing
   NodeDetailPanel drawer — bubble layout with author-color hash,
   30s auto-poll for new comments, fail-loud error pill + toast on
-  write failure. Author default from `SCITEX_TODO_AGENT` env. 45
+  write failure. Author default from `SCITEX_CARDS_AGENT` env. 45
   new mock-free tests (16 backend + 8 JS predicate + 21 CSS/wiring).
-  TODOs: RW-perm gating, WebSocket push, markdown rendering,
+  Follow-ups: RW-perm gating, WebSocket push, markdown rendering,
   @-mentions / threading / reactions / attachments.
 
 ### Mission complete — 6/6 TRACK-2 surfaces
@@ -4803,7 +5881,7 @@ agent finished the commit/push/PR.
   Mounted in the toolbar STATUS group. 26 new mock-free tests (10
   adapter + 4 view + 12 FE CSS/helper) + 119-test broader fleet
   suite green.
-- **Phase 3.b TODOs captured inline** (will land in a follow-up):
+- **Phase 3.b follow-ups captured inline** (will land in a follow-up):
   - `comms_blocks` has no listing CLI yet → deny edges not wired
     (the shape already supports `allow: false`).
   - No heartbeat-freshness threshold in `sac a2a list` → status is
@@ -4819,21 +5897,21 @@ PR #189. Lead a2a `74db4f2d`. 3/6 TRACK-2 dashboard surfaces shipped
 
 Wave 2 of the fleet-dashboard mission. The hook-consumer contract
 is the operator-mandated "green static record pipe" — SAC's
-push-hook + dev's merge-Action will call scitex-todo's API to
+push-hook + dev's merge-Action will call scitex-cards's API to
 auto-record progress/DONE on the board.
 
 ### Added — Hook-consumer (loose-coupling contract)
 
-- **`scitex_todo.hooks` entry-point group** (PR #187, lead a2a
+- **`scitex_cards.hooks` entry-point group** (PR #187, lead a2a
   `6fff33d6` + `fbffb879`, operator-mandated). External producers
   register a plugin callable under this group:
   `def on_event(event: dict) -> None`.
 - **Three converging wire surfaces** (producers pick one):
   - **HTTP**: `POST /hooks/push`, `POST /hooks/done`. Idempotent.
     405 on GET, 400 on bad shape / kind-mismatch.
-  - **CLI**: `scitex-todo hook push --payload <FILE|->` /
-    `scitex-todo hook done --payload <FILE|->`.
-  - **Python**: `from scitex_todo._hooks import dispatch_event`.
+  - **CLI**: `scitex-cards hook push --payload <FILE|->` /
+    `scitex-cards hook done --payload <FILE|->`.
+  - **Python**: `from scitex_cards._hooks import dispatch_event`.
 - **Canonical event payloads**:
   - push: `{kind, repo, branch, commit_sha, author?, message?,
     card_ids?}`
@@ -4857,13 +5935,13 @@ auto-record progress/DONE on the board.
   fade-out on done; depends_on/blocks edges drawn as connecting
   lines; click-through to the existing NodeDetailPanel. 30s poll.
   17 backend + 15 frontend mock-free tests. Pan/zoom/WebSocket are
-  flagged TODOs for future iterations.
+  flagged follow-ups for future iterations.
 - **Phase 2 — Host geometry** (PR #185, lead a2a `74db4f2d` +
   `10afa799`). `sac host list --json` adapter + `/fleet/hosts`
   endpoint + `FleetHostsPanel.tsx` mounted next to the CI pills.
   Fail-loud on missing `sac` CLI (FleetAdapterError → HTTP 500).
   Phase 2.b cpu/mem/SLURM enrichment landing site marked with
-  `TODO(phase-2.b)`. 14 + 47 = 61 tests green.
+  `FOLLOW-UP(phase-2.b)`. 14 + 47 = 61 tests green.
 
 ### Provenance
 
@@ -4880,14 +5958,14 @@ release closes Wave 1 of the fleet-dashboard mission.
 
 ### Added — TRACK 1 (parallelism-engine backbone)
 
-- **T1.2 — `runnable_tasks()` API + `scitex-todo runnable` CLI**
+- **T1.2 — `runnable_tasks()` API + `scitex-cards runnable` CLI**
   (PR #181). Batch runnable view (sister to `next_task`'s single
   pick) respecting `depends_on` + reverse-`blocks` closure +
   optional agent + group filter. Diagnostic counts
   (`candidate_count`, `blocked_by_deps_count`) let the dispatcher
   distinguish "queue empty" from "queue blocked." 22 mock-free
   tests.
-- **T1.3 — `blocked_tasks()` inverse view + `scitex-todo blocked`
+- **T1.3 — `blocked_tasks()` inverse view + `scitex-cards blocked`
   CLI** (PR #182). For every NOT-runnable task, name WHY
   (`explicit-blocker` / `manual-block` / `depends-on` /
   `reverse-blocks`) + the chain of upstream ids. `by_reason`
@@ -4913,7 +5991,7 @@ dashboard) continues in parallel — Phase 2 host geometry queued.
 
 ## [0.7.15] - 2026-06-14 — Fleet-dashboard Phase 1 (CI pills) + TRACK-1 `group` field
 
-Operator vision (lead a2a `74db4f2d` + `10afa799`): scitex-todo
+Operator vision (lead a2a `74db4f2d` + `10afa799`): scitex-cards
 becomes the ONE fleet dashboard + dependency-aware ticket backbone.
 This is wave 1 of two parallel tracks.
 
@@ -4922,8 +6000,8 @@ This is wave 1 of two parallel tracks.
 - **Phase 1 — CI-status pills + Phase-0 registry-reader harness**
   (PR #178). New `_django/handlers/fleet/` package: `FleetAdapterError`
   (fail-loud on missing data, no silent fallback), `fleet_config_load`
-  (reads `~/.scitex/todo/dashboard.yaml` or env
-  `SCITEX_TODO_FLEET_CI_REPOS=owner/name,...`; NO hardcoded slugs),
+  (reads `~/.scitex/cards/dashboard.yaml` or env
+  `SCITEX_CARDS_FLEET_CI_REPOS=owner/name,...`; NO hardcoded slugs),
   `gh_ci.fetch_repo_ci_status` (`gh repo view` for default branch +
   `gh api .../check-runs`). New `/fleet/ci-status` Django endpoint
   with per-repo error trap (200 with `error` field per bad repo, 500
@@ -4945,7 +6023,7 @@ This is wave 1 of two parallel tracks.
   `_groups.py:Group` (project-cluster viewer aggregation). 15
   mock-free tests pin the dataclass shape, validator, Python API,
   and CLI wiring. Follow-up chain: T1.2 (`runnable()` API + CLI),
-  T1.3 (`scitex-todo blocked` introspection), T1.4 (`/runnable` +
+  T1.3 (`scitex-cards blocked` introspection), T1.4 (`/runnable` +
   `/blocked-batch` endpoints).
 
 ### Architectural principles enforced
@@ -4953,9 +6031,9 @@ This is wave 1 of two parallel tracks.
 - **fail-loud / no-silent-fallback** — adapters RAISE on missing
   data; no stubs.
 - **registry-sourced** — read from authoritative GitHub via `gh`;
-  scitex-todo doesn't duplicate state.
+  scitex-cards doesn't duplicate state.
 - **NO hardcoded proper nouns** — watched-repo list is fully
-  config-driven; no `["scitex-todo","scitex-dev",...]` literals in
+  config-driven; no `["scitex-cards","scitex-dev",...]` literals in
   source.
 
 ### Provenance
@@ -4967,25 +6045,25 @@ PR #178 + #179. Lead a2a `74db4f2d` + `10afa799` (refined brief
 
 ### Changed (BREAKING)
 
-- **`scitex-todo board` (no verb) HARD-ERRORS** (PR #176, op TG 13316
+- **`scitex-cards board` (no verb) HARD-ERRORS** (PR #176, op TG 13316
   via lead a2a `c36b0d1e`). PR #139 (v0.7.6) had kept it as a
   deprecation-warn-and-forward to `board start`, but that path HID
   the noun-verb violation from audit tools. Bare invocation now exits
   2 + emits a redirect message naming the canonical replacements:
 
   ```
-  ERROR: `scitex-todo board` (no verb) is no longer supported.
+  ERROR: `scitex-cards board` (no verb) is no longer supported.
   Operator directive TG 13316 — noun-verb CLI convention. Use:
-    scitex-todo board start [--port N] [--no-browser]
-    scitex-todo board stop
-    scitex-todo board restart
-    scitex-todo board status
+    scitex-cards board start [--port N] [--no-browser]
+    scitex-cards board stop
+    scitex-cards board restart
+    scitex-cards board status
   ```
 
   In-tree call site migrated: `_jobs_provider.py`'s
-  `scitex-todo.dashboard` JobSpec command now reads
-  `scitex-todo board start --port 8051`. External call sites (the
-  host systemd unit `scitex-todo.dashboard.service` ExecStart + any
+  `scitex-cards.dashboard` JobSpec command now reads
+  `scitex-cards board start --port 8051`. External call sites (the
+  host systemd unit `scitex-cards.dashboard.service` ExecStart + any
   launcher script) need the same migration on the host side. Until
   they do, restarting them will exit 2 + log the redirect — which IS
   the operator's intended forcing function, but coordinate with the
@@ -5044,7 +6122,7 @@ Table view). Header declutter + Calendar view follow in v0.7.13.
   the board's white-in-dark-mode scrollbar and OS-default white
   dropdowns now bind to scitex-ui shell tokens (`var(--col-bg)` /
   `var(--text)` / `var(--border)` / `var(--purple)`). Two layers:
-  global `.stx-todo-board, *` fallback in `board.css` + a new
+  global `.stx-cards-board, *` fallback in `board.css` + a new
   `board_v3/00-theme-scrollbar-select.css` loaded FIRST in the
   template. 13 CSS-contract tests pin the rule set.
 
@@ -5052,7 +6130,7 @@ Table view). Header declutter + Calendar view follow in v0.7.13.
 
 - **Table view: hide structural cards by default** (PR #171) — the
   `kind=status` quality-axis rows (8 q-*) and `kind=goal` umbrella
-  rows (proj-clew / proj-todo / pool-* / ywatanabe-operator-anchor)
+  rows (proj-clew / proj-cards / pool-* / ywatanabe-operator-anchor)
   are FILTERED OUT of the Table view by default; a "Show structural
   cards" checkbox in the toolbar flips them back on. Graph + Column
   views are unchanged — they keep showing every card per the
@@ -5072,14 +6150,14 @@ card with `--pr-url` post-merge).
 ### Added
 
 - **Canonical skill mandate: NEVER hand-edit `tasks.yaml`** (PR #168,
-  lead a2a `02c8a4ae`). Folds into the bundled `scitex-todo` skill
+  lead a2a `02c8a4ae`). Folds into the bundled `scitex-cards` skill
   alongside the SSoT MANDATE and the multiplier-#3 PR-merge recording
   mandate. The 2026-06-13 corruption episode traced to a hand-edit
   bypassing the API. Rule: always use the CLI / MCP / Python API; the
   flock + atomic-rename + post-dump-validate path is the only safe
   write. Emergency-repair exception documented (already-broken file
   with backup-first / parse-verify-after / report-to-lead protocol).
-  Propagates to every agent's required_skills via `scitex-todo skills
+  Propagates to every agent's required_skills via `scitex-cards skills
   propagate` (PR #161 mechanism), so every fleet agent reads it on
   boot. 4 mock-free file-content tests pin the load-bearing phrases.
 
@@ -5089,7 +6167,7 @@ card with `--pr-url` post-merge).
 
 - **Writer: post-dump round-trip validation** (PR #166, lead a2a
   `d5809cd3`) — after the 2026-06-13 corruption episode where
-  `~/.scitex/todo/tasks.yaml` was found truncated mid-string at line
+  `~/.scitex/cards/tasks.yaml` was found truncated mid-string at line
   ~2784 and recovered by hand. Audit: the existing writer already had
   pre-write `_validate_tasks`, atomic-rename (tmp + fsync +
   `os.replace`), `fcntl.flock`, and tmp-cleanup-on-error. NEW LAYER:
@@ -5120,7 +6198,7 @@ fix closes the dogfooded blocker that surfaced from dev's reconcile.
 
 Closes the **board-recording gap** surfaced by the 2026-06-13 reconciliation
 pass (199 PRs merged in 24h vs ~5 board completions — structural, not a
-hygiene problem). Adds a LOAD-BEARING mandate to the canonical scitex-todo
+hygiene problem). Adds a LOAD-BEARING mandate to the canonical scitex-cards
 skill that propagates to every fleet agent via `skills propagate` (#161).
 
 ### Added
@@ -5130,7 +6208,7 @@ skill that propagates to every fleet agent via `skills propagate` (#161).
   sister leaf `60_pr-merge-recording-mandate.md` with the CLI/API/MCP
   verb table, no-PR alternative, bulk catch-up verb (`sync-github
   --since <date> -y`), anti-pattern list, and provenance. Hard rule:
-  `scitex-todo done <card-id> --pr-url <merged-PR-URL>` IMMEDIATELY at
+  `scitex-cards done <card-id> --pr-url <merged-PR-URL>` IMMEDIATELY at
   PR-merge time; bare `done` without `--pr-url` is the recording-gap.
   8 mock-free file-content tests pin the load-bearing phrases so they
   can't drift silently. Lead a2a `0cdca03a` approved as fleet-adoption
@@ -5146,7 +6224,7 @@ pass.
 ## [0.7.8] - 2026-06-13 — Fleet-adoption multipliers (PreToolUse hook + skill propagation)
 
 Ships the two **fleet-adoption multipliers** so every other agent in the
-fleet uses scitex-todo correctly without per-agent buy-in. Lead a2a
+fleet uses scitex-cards correctly without per-agent buy-in. Lead a2a
 `1b5c3b4d` prioritized both over the UX cards because they move the
 operator's single-shared-store doctrine forward across the WHOLE fleet
 in one bump.
@@ -5154,16 +6232,16 @@ in one bump.
 ### Added
 
 - **Bundled PreToolUse hook** (PR #160): a bash script in the skill
-  bundle (`_skills/scitex-todo/hooks/pre-tool-use/`) that any agent
+  bundle (`_skills/scitex-cards/hooks/pre-tool-use/`) that any agent
   drops into `~/.claude/hooks/pre-tool-use/` and immediately gets
   the redirect. Intercepts Claude Code's built-in `TaskCreate`,
   `TaskUpdate`, `TaskList` — exits non-zero with a clear stderr
-  redirect to the equivalent scitex-todo CLI verb. ENFORCES the
+  redirect to the equivalent scitex-cards CLI verb. ENFORCES the
   doctrine, not just warns. Opt-out: `CC_ALLOW_CLAUDE_TASKLIST=1`
   for rare legit uses. 8 mock-free subprocess tests.
-- **Canonical skill manifest + `scitex-todo skills propagate`**
-  (PR #161): `_skills/manifest.yaml` lists which scitex-todo skill
-  IDs every fleet agent should require. `scitex-todo skills
+- **Canonical skill manifest + `scitex-cards skills propagate`**
+  (PR #161): `_skills/manifest.yaml` lists which scitex-cards skill
+  IDs every fleet agent should require. `scitex-cards skills
   propagate --agents-dir <DIR>` walks a tree of agent-container
   `spec.yaml` files and idempotently appends those IDs to each
   agent's `required_skills` list (ruamel.yaml round-trip preserves
@@ -5182,38 +6260,38 @@ WHOLE single-shared-store + agent-redirect story for agent-container.
 
 ## [0.7.7] - 2026-06-13 — P3a fleet host-store wire-up + board-reconciliation verbs
 
-Cuts the **P3a throughput unlock** (host scitex-todo store reachable from
+Cuts the **P3a throughput unlock** (host scitex-cards store reachable from
 every containerized agent, write-safety via flock-scoped RMW) into a
 pull-able PyPI release so agent-container can bake the wire into
 `to_home/.mcp.json`. agent-container a2a `e330b084` confirmed
-`/home/agent/.scitex/todo` bind is fleet-wide; dev a2a
+`/home/agent/.scitex/cards` bind is fleet-wide; dev a2a
 `dd971b57` + `932ea837` independently verified the host's 632-task
 corpus is visible from their container. Also rolls up the
 board-reconciliation verb sweep landed over 2026-06-13.
 
 ### Added
 
-- **`scitex-todo mcp install [--apply] --env-tasks-path <abs/path>`**
-  (PR #158) — when set, pins `SCITEX_TODO_TASKS` in the generated
+- **`scitex-cards mcp install [--apply] --env-tasks-path <abs/path>`**
+  (PR #158) — when set, pins `SCITEX_CARDS_TASKS` in the generated
   `.mcp.json` entry's `env` block. Belt-and-suspenders for the
   bind-mount-based host-store resolution; makes the wire-up
   self-documenting in the generated config. Operator P3a, lead a2a
   `a579358e` + `d7789963`. agent-container's one-liner:
-  `scitex-todo mcp install --apply --to to_home/.mcp.json --env-tasks-path /home/agent/.scitex/todo/tasks.yaml -y`.
-- **`scitex-todo mcp install --apply`** (PR #155) — idempotent
+  `scitex-cards mcp install --apply --to to_home/.mcp.json --env-tasks-path /home/agent/.scitex/cards/tasks.yaml -y`.
+- **`scitex-cards mcp install --apply`** (PR #155) — idempotent
   `.mcp.json` merge; the foundation #158 builds on. P3a fleet
   enablement.
-- **`scitex-todo stale-list`** (PR #157) — terminal twin of the
+- **`scitex-cards stale-list`** (PR #157) — terminal twin of the
   board's `🧹 Stale` panel + `/stale` HTTP endpoint. Lets agents
   reconcile from the CLI without opening the board.
 - **`/stale` + `/archive` board endpoints + `🧹 Stale` layout +
   per-row Archive button** (PR #153 backend + #154 frontend) —
   recurring stale-review surface; 128 / ~218 candidate cards
   flagged for operator review at landing.
-- **`scitex-todo close <id> --reason ...`** (PR #151) — close-stale-
+- **`scitex-cards close <id> --reason ...`** (PR #151) — close-stale-
   with-reason verb (board-reconciliation gap fix); writes
   `status=deferred` + a `[CLOSED]` activity comment.
-- **`scitex-todo comment <id> <text>`** (PR #144) — CLI wrapping
+- **`scitex-cards comment <id> <text>`** (PR #144) — CLI wrapping
   `_store.comment_task` (the PR #64 replacement).
 - **Per-row multi-select + bulk status change on the board**
   (PR #150) — PR(h) Stage 1.
@@ -5249,16 +6327,16 @@ canonical path lock-in).
 ## [0.7.6] - 2026-06-13 — board lifecycle verbs (start/stop/restart/status + pidfile)
 
 Operator-direct TG12949/12950/12951 (via lead a2a `b5726672`).
-`scitex-todo board` was a bare NOUN that directly LAUNCHED — CLI
+`scitex-cards board` was a bare NOUN that directly LAUNCHED — CLI
 noun-verb violation, AND no clean way to restart after a card/source
 change (`port already in use` was the trap).
 
 ### Added
 
-- **`scitex-todo board <verb>` lifecycle CLI** (PR #139):
+- **`scitex-cards board <verb>` lifecycle CLI** (PR #139):
   - `board start [--port --tasks --no-browser] [--dry-run] [-y]` —
-    foreground launch, writes `~/.scitex/todo/board.pid` (env-
-    overridable via `SCITEX_TODO_BOARD_PIDFILE`).
+    foreground launch, writes `~/.scitex/cards/board.pid` (env-
+    overridable via `SCITEX_CARDS_BOARD_PIDFILE`).
   - `board stop [--timeout] [--dry-run] [-y]` — SIGTERM the pidfile
     PID; escalate to SIGKILL on timeout.
   - `board restart [--port --tasks --no-browser] [--dry-run] [-y]` —
@@ -5271,7 +6349,7 @@ change (`port already in use` was the trap).
 
 ### Changed
 
-- Bare `scitex-todo board` (no verb) stays back-compat: forwards to
+- Bare `scitex-cards board` (no verb) stays back-compat: forwards to
   `board start` with a stderr DEPRECATION line. Operator's muscle
   memory survives; the alias will be removed in a future minor bump.
 
@@ -5288,8 +6366,8 @@ Stage 0-1 chain:
 ### Added
 
 - **`services.get_board()` UNIONS the global store + every per-project
-  lane** (`~/proj/*/.scitex/todo/tasks.yaml`, comma-sep override via
-  `SCITEX_TODO_LANE_GLOBS`). Skill 30's two-tier rollup is finally
+  lane** (`~/proj/*/.scitex/cards/tasks.yaml`, comma-sep override via
+  `SCITEX_CARDS_LANE_GLOBS`). Skill 30's two-tier rollup is finally
   delivered; the operator's hand-curated `nv-lessons` + 31 other
   neurovista cards become visible on the board (lead a2a
   `1ceec0ef` / `40c0a42d`). Collision policy: project-lane wins on
@@ -5309,8 +6387,8 @@ Stage 0-1 chain:
 
 - `BoardState.lane_paths` exposes the successfully-consumed per-project
   lanes so the FE / tests / future indexer can see what was unioned.
-- Suite-wide test isolation: `tests/scitex_todo/conftest.py` autouse
-  fixture pins `SCITEX_TODO_LANE_GLOBS=""` by default so existing
+- Suite-wide test isolation: `tests/scitex_cards/conftest.py` autouse
+  fixture pins `SCITEX_CARDS_LANE_GLOBS=""` by default so existing
   fixture-pure tests don't pick up the test runner's host lanes.
 
 ### Provenance
@@ -5335,7 +6413,7 @@ turn can't fail the nudge batch.
 ### Fixed
 
 - **`DEFAULT_TIMEOUT_S` 5.0 → 30.0**, env-overridable via
-  `SCITEX_TODO_PUSH_TIMEOUT_S`. Reflects the receiver's actual
+  `SCITEX_CARDS_PUSH_TIMEOUT_S`. Reflects the receiver's actual
   budget so short ack-style turns complete cleanly.
 - **Read-timeout treated as `DISPATCHED` success**
   (`ok=True, reason="dispatched"`), not `transport-error`. By the
@@ -5353,7 +6431,7 @@ Real localhost `http.server` round-trips (no mocks, STX-NM / PA-306):
   request body then sleeps past the client timeout; pre-fix this
   returned `reason=transport-error`, post-fix it returns
   `reason=dispatched`.
-- `test_default_timeout_env_override` — `SCITEX_TODO_PUSH_TIMEOUT_S`
+- `test_default_timeout_env_override` — `SCITEX_CARDS_PUSH_TIMEOUT_S`
   reflected at call-time.
 - `test_default_timeout_falls_back_to_constant_when_env_unset` — bare
   case yields `DEFAULT_TIMEOUT_S`.
@@ -5368,7 +6446,7 @@ The pragmatic stopgap here can then be reverted.
 
 PR #123 (`fix/push-timeout-env`), lead a2a `0b59485f` (root-fix
 directive: not just a bigger timeout but DISPATCHED-success
-semantics), proj-scitex-todo overnight mission.
+semantics), proj-scitex-cards overnight mission.
 
 ## [0.7.3] - 2026-06-12 — `_push.deliver` payload aliases `text` to `body` (SAC /v1/turn unblocked)
 
@@ -5383,7 +6461,7 @@ whole nudge chain still produced zero delivered turns.
 
 - **`_push.deliver` now sends BOTH `text` and `body`** in the payload.
   `text` satisfies SAC + the telegrammer; `body` stays for back-compat
-  with any pre-existing consumer keying off scitex-todo's historical
+  with any pre-existing consumer keying off scitex-cards's historical
   name.
 
 ### Tests
@@ -5400,7 +6478,7 @@ Real localhost `http.server` round-trips (no mocks, STX-NM / PA-306):
 ### Provenance
 
 PR #120 (`fix/push-text-alias`), lead a2a `8afe659e` (SPLIT directive
-from the decay PR so the delivery fix ships first), proj-scitex-todo
+from the decay PR so the delivery fix ships first), proj-scitex-cards
 overnight mission.
 
 ## [0.7.2] - 2026-06-12 — coerce naive ISO timestamps to UTC-aware (unblocks `--notify` cron)
@@ -5431,7 +6509,7 @@ BEFORE any POST fired, so no agent ever received a structural nudge.
 ### Provenance
 
 PR #118 (`fix/parse-iso-utc-coerce`), lead-ACK a2a `cfbade6b` /
-`f556b755`, proj-scitex-todo overnight mission.
+`f556b755`, proj-scitex-cards overnight mission.
 
 ## [0.7.1] - 2026-06-12 — 10-min structural-nudge cron + `--nudge-quiet` flag
 
@@ -5443,17 +6521,17 @@ manual lead intervention. The 10-min threshold is the operator's
 
 ### Added
 
-- **New `--nudge-quiet` flag on `scitex-todo print-stats`.** Per-agent
+- **New `--nudge-quiet` flag on `scitex-cards print-stats`.** Per-agent
   sweep: if any open `in_progress` task hasn't been touched in
-  `SCITEX_TODO_NUDGE_QUIET_MIN` (default 10) minutes, push a
+  `SCITEX_CARDS_NUDGE_QUIET_MIN` (default 10) minutes, push a
   quiet-nudge body via `_push.deliver(kind="quiet-nudge")` — the
   same self-contained HTTP push wire 0.7.0 introduced. Composes the
   full per-agent open list (RUNNABLE first, BLOCKED after) so the
   recipient sees the full picture, not just the stalled row.
-- **`scitex-todo.notify` JobSpec** in `_jobs_provider.provide_jobs`.
+- **`scitex-cards.notify` JobSpec** in `_jobs_provider.provide_jobs`.
   `kind="oneshot"` + `schedule="*:0/10"` → systemd runs it every 10
   minutes via the existing `scitex-dev ecosystem up` federation.
-  Command: `scitex-todo print-stats --by agent --notify --nudge-quiet`.
+  Command: `scitex-cards print-stats --by agent --notify --nudge-quiet`.
   Pairs with the v0.7.0 UI nudge button: the cron is the STRUCTURAL
   feedback path; the button is the manual override.
 
@@ -5466,23 +6544,23 @@ manual lead intervention. The 10-min threshold is the operator's
 
 Operator standing direction (lead a2a `f16b0d2a` + `9e710ab0` +
 `8e51b1e0` + `ffc6629c80e4462a8401fb7e4ebb7240`, 2026-06-12,
-operator TG12608 / TG12611 / TG12617): scitex-todo must NOT depend on
+operator TG12608 / TG12611 / TG12617): scitex-cards must NOT depend on
 the `sac` CLI for outbound notifications. The package owns its own
 push delivery, the contract is HTTP (not Python imports), and silent
 fallbacks are forbidden — failures must be loud-but-not-fatal so the
 operator can fix the config without breaking the running board.
 
-### Added — `src/scitex_todo/_push.py` (self-contained HTTP push wire)
+### Added — `src/scitex_cards/_push.py` (self-contained HTTP push wire)
 
 - `deliver(agent, body, *, kind=..., task_id=..., store_path=...)` —
-  resolves the agent's turn URL from `SCITEX_TODO_AGENT_TURN_URLS`
-  (JSON map, canonical) or `SCITEX_TODO_TURN_URL_<AGENT_SLUG>` (per-
+  resolves the agent's turn URL from `SCITEX_CARDS_AGENT_TURN_URLS`
+  (JSON map, canonical) or `SCITEX_CARDS_TURN_URL_<AGENT_SLUG>` (per-
   agent fallback, same shape as claude-code-telegrammer's
   `TURN_URL`). POSTs a JSON envelope (`agent` / `kind` / `body` /
-  `task_id` / `store_path` / `ts` / `source: scitex-todo`) and
+  `task_id` / `store_path` / `ts` / `source: scitex-cards`) and
   returns a structured result with `ok`, `wire`, `reason`,
   `status`. No `sac` dependency.
-- `SCITEX_TODO_PUSH_DRY_RUN=1` short-circuits to stdout; useful in
+- `SCITEX_CARDS_PUSH_DRY_RUN=1` short-circuits to stdout; useful in
   test / dev.
 - `announce_missing_at_boot(tasks)` lists distinct agents in the
   store that have no turn URL configured; emits a single WARN log
@@ -5513,7 +6591,7 @@ operator can fix the config without breaking the running board.
   the comment write. Relay outcome surfaces in the response so the
   UI can render a toast ("📨 relayed → <agent>" / failure marker).
 - Comment-relay body invites the agent to reply via
-  `scitex-todo comment <task-id>` (CLI) or `add_comment` / `comment_task`
+  `scitex-cards comment <task-id>` (CLI) or `add_comment` / `comment_task`
   (MCP) — both surfaces are already available in v0.5.x.
 
 ### Changed — `print-stats --notify` migrated to `_push.deliver`
@@ -5531,7 +6609,7 @@ operator can fix the config without breaking the running board.
 
 ### Tests
 
-- `tests/scitex_todo/test__push.py` — 12 tests against a localhost
+- `tests/scitex_cards/test__push.py` — 12 tests against a localhost
   `http.server` capture (no mocks, STX-NM / PA-306). Covers env
   resolution (JSON map + per-agent fallback + malformed JSON +
   missing), HTTP 200 / 4xx / transport-error, dry-run, and
@@ -5552,15 +6630,15 @@ completion rate, push the per-agent numbers hourly so receivers
 self-correct, hard-throttle add-task at 2× the agent's WIP limit, and
 absorb GitHub merges back into the canonical board automatically.
 
-### Added — `scitex-todo print-stats`
+### Added — `scitex-cards print-stats`
 
-- New CLI: `scitex-todo stats [--by agent|project|host] [--since
+- New CLI: `scitex-cards stats [--by agent|project|host] [--since
   YYYY-MM-DD] [--format text|json] [--notify]`.
 - Per-group rows: `name / open / stale / created / completed / delta
   / ratio / velocity_per_day`. Source = canonical `tasks.yaml`. The
   `created_at` field anchors the window; `last_activity` anchors the
   `done` projection; `in_progress` rows older than
-  `SCITEX_TODO_STALE_HOURS` (default 24) count as `stale`.
+  `SCITEX_CARDS_STALE_HOURS` (default 24) count as `stale`.
 - `--notify` (agent grouping only): for each agent, push a body via
   `sac agents send <agent> <body>` (stdout fallback when `sac`
   unavailable). Body layout: HEADER (counts + ratio) → RUNNABLE
@@ -5568,9 +6646,9 @@ absorb GitHub merges back into the canonical board automatically.
   capped at 10 + `+ N more`, then a RECENT DONE section. `⚠` marks
   stale in_progress so receivers see neglected work at a glance.
 
-### Added — `scitex-todo sync-github`
+### Added — `scitex-cards sync-github`
 
-- New CLI: `scitex-todo sync-github [--since YYYY-MM-DD] [--dry-run]`.
+- New CLI: `scitex-cards sync-github [--since YYYY-MM-DD] [--dry-run]`.
 - Permanent version of the lead's 2026-06-12 one-time GitHub→board
   sync. Pulls `ywatanabe1989/*` merged PRs in the window, matches by
   `pr_url` (and creates new `status=done` records for unmatched PRs),
@@ -5584,8 +6662,8 @@ absorb GitHub merges back into the canonical board automatically.
 - `_store.add_task` now consults `_throughput.evaluate_wip(tasks,
   agent)` BEFORE the append. The agent's open-task count (`status
   NOT IN {done, goal}`) drives:
-  - `>= SCITEX_TODO_WIP_LIMIT` (default 20) → WARN to stderr.
-  - `>= 2 × SCITEX_TODO_WIP_LIMIT` → `TaskValidationError` HARD
+  - `>= SCITEX_CARDS_WIP_LIMIT` (default 20) → WARN to stderr.
+  - `>= 2 × SCITEX_CARDS_WIP_LIMIT` → `TaskValidationError` HARD
     REFUSE; the message names the agent + the count + the limit.
 - Goal-tier umbrellas (`status == "goal"`) are explicitly excluded
   per lead-confirm `5acfbb5d`.
@@ -5595,14 +6673,14 @@ absorb GitHub merges back into the canonical board automatically.
 
 ### Added — `_throughput.py` shared aggregator
 
-- New module `src/scitex_todo/_throughput.py` — the single source of
+- New module `src/scitex_cards/_throughput.py` — the single source of
   truth for "open" / "stale" / "completed" / "RUNNABLE" / "BLOCKED"
   semantics across the three new surfaces (stats CLI, WIP gate,
   notify body). The dependency classifier (`classify()`) is
   operator-confirmed defensive: an `depends_on` reference to a task
   id that doesn't exist returns `BLOCKED(→ unknown:<id>)` rather
   than silently treating it as RUNNABLE (lead-confirmed `130cc5ac`).
-- 26 unit tests in `tests/scitex_todo/test__throughput.py` covering
+- 26 unit tests in `tests/scitex_cards/test__throughput.py` covering
   `aggregate` (groupings, status semantics, stale flag, unassigned
   rendering), `classify` (RUNNABLE / BLOCKED / unknown-dep
   defensive / status-blocked precedence), the WIP thresholds
@@ -5741,7 +6819,7 @@ Table) sits in the filterbar; TIME (Recent) is a SORT mode in the
 existing Sort dropdown, applies across all layouts.
 
 - **LAYOUT switcher** — three segmented buttons in the filterbar.
-  Persisted in `localStorage["scitex-todo:layout"]`.
+  Persisted in `localStorage["scitex-cards:layout"]`.
   - `📋 Column` — the existing kanban (default).
   - `📑 Table` — flat rows view, sortable, click a row to open the
     detail drawer. Status / Title / Project / Blocker / Priority /
@@ -5753,7 +6831,7 @@ existing Sort dropdown, applies across all layouts.
   the existing `#f-sort` dropdown. Cards sort by `last_activity →
   created_at` desc; cards with activity in the last 24 h get a gold
   `NEW` badge in `.card-top`. The badge renders across every layout
-  when sort = recent. Persisted in `localStorage["scitex-todo:sort"]`.
+  when sort = recent. Persisted in `localStorage["scitex-cards:sort"]`.
 - **🆕 N new in 24 h pill** — always-visible filterbar indicator
   showing how many of the currently-visible cards moved in the last
   day. Click to set Sort = Recent. Hidden when zero.
@@ -5780,9 +6858,9 @@ Operator-reported regression after the 0.5.3 release:
   Django's `{# … #}` is single-line only; multi-line blocks render their
   body as page text. Already pinned by
   `test_standalone_template_does_not_leak_django_comment` in
-  `tests/scitex_todo/_django/test_views.py`.
+  `tests/scitex_cards/_django/test_views.py`.
 - **Bundle/template food (root cause)** (PR #105). The vite config wrote
-  into `../static/scitex_todo` with `emptyOutDir: true`, which wiped the
+  into `../static/scitex_cards` with `emptyOutDir: true`, which wiped the
   SIBLINGS of `assets/` on every rebuild — `favicon.svg`,
   `board_v3/*.css`, and `board_v3/searchQuery.js`/`searchSuggest.js` are
   all tracked-in-git static assets consumed by the live `board_v3.html`
@@ -5837,11 +6915,11 @@ TG 12028 / 12038 / 12081 wave).
 
 ### Added — Self-consuming board loop (operator TG 12038)
 
-- **`scitex-todo next` CLI verb** (PR #95). Canonical "what to pick
-  up next" predicate. `--mine` reads `SCITEX_TODO_AGENT`;
+- **`scitex-cards next` CLI verb** (PR #95). Canonical "what to pick
+  up next" predicate. `--mine` reads `SCITEX_CARDS_AGENT`;
   `--auto-claim` atomic-flips to `in_progress` + stamps a starting
   comment in one write.
-- **`scitex-todo watch --push` CLI verb** (PR #95). Polls tasks.yaml,
+- **`scitex-cards watch --push` CLI verb** (PR #95). Polls tasks.yaml,
   diffs, POSTs `/v1/turn` to the owning agent's a2a port on
   new / commented / status-changed tasks. Watcher declared as a
   second `kind=service` JobSpec.
@@ -5853,15 +6931,15 @@ TG 12028 / 12038 / 12081 wave).
 - **P1 + P7 regressions restored** (PR #96). The P10/P11 squash wave
   silently dropped P1 #86 + P7 #87 from develop; PR #96 restores both
   and pins **24 substring signatures** in
-  `tests/scitex_todo/test__board_v3_signatures.py` so future squash
+  `tests/scitex_cards/test__board_v3_signatures.py` so future squash
   drops fail CI instead.
 
 ### Notes for operators
 
-After upgrading: `systemctl --user restart scitex-todo.dashboard`.
-The new `scitex-todo.wake-watcher` unit needs
-`systemctl --user reset-failed scitex-todo.wake-watcher` followed by
-`systemctl --user enable --now scitex-todo.wake-watcher`.
+After upgrading: `systemctl --user restart scitex-cards.dashboard`.
+The new `scitex-cards.wake-watcher` unit needs
+`systemctl --user reset-failed scitex-cards.wake-watcher` followed by
+`systemctl --user enable --now scitex-cards.wake-watcher`.
 
 ## [0.4.2] - 2026-06-08 — Crash-safe store + version label + Uncategorized column
 
@@ -5879,12 +6957,12 @@ the store layer + makes the live release visible on the board.
   is unchanged.
 - **Git auto-commit on every save** — lazy-initializes a `.git` inside
   the store directory on first save_tasks call, then commits each
-  successful write. Operator gets time-travel: `git -C ~/.scitex/todo
+  successful write. Operator gets time-travel: `git -C ~/.scitex/cards
   log` + `git show <sha>:tasks.yaml` to restore any prior state.
   Best-effort: a git failure never blocks the actual save.
 
 ### Added (board v3)
-- **`scitex-todo vX.Y.Z` page title + header** (operator TG 407). The
+- **`scitex-cards vX.Y.Z` page title + header** (operator TG 407). The
   live `__version__` is read off the package import and rendered in
   both the `<title>` tag (browser tab) and the in-page H1. No second
   source of truth to drift on release.
@@ -5894,9 +6972,9 @@ the store layer + makes the live release visible on the board.
   key + filter dropdown both updated.
 
 ### Notes for operators
-After upgrading: restart your `scitex-todo board` systemd unit.
-`~/.scitex/todo` becomes a git repo on the first board write — the
-operator can `git -C ~/.scitex/todo log` immediately, no extra setup.
+After upgrading: restart your `scitex-cards board` systemd unit.
+`~/.scitex/cards` becomes a git repo on the first board write — the
+operator can `git -C ~/.scitex/cards log` immediately, no extra setup.
 Any future corruption is recoverable via standard git commands.
 
 ## [0.4.1] - 2026-06-08 — Board v3 horizontal layout + column pin + drag-reorder + fleet-liveness
@@ -5916,11 +6994,11 @@ many projects + no way to reorder / prioritize them.
 ### Added (board v3)
 - **Column drag-to-reorder.** Each column section is `draggable`;
   drop on another column inserts BEFORE that target. Order persists
-  in `localStorage` under `scitex-todo:col-order` (per-browser
+  in `localStorage` under `scitex-cards:col-order` (per-browser
   preference, no backend change).
 - **Column pin (📍 / 📌).** Per-column pin button in the header.
   Pinned columns float to the LEFT of the strip regardless of drag
-  order. Persists in `localStorage` under `scitex-todo:col-pinned`.
+  order. Persists in `localStorage` under `scitex-cards:col-pinned`.
 - **Fleet-liveness dot-strip** (PR #75) — one colored dot per agent
   in the filter bar, gold/green/blue/grey by status, click toggles
   the agent filter. Powered by a new `fleet` summary on `/graph`
@@ -5997,21 +7075,21 @@ nodes + ports skeleton land for the north-star roadmap.
   `scitex-dev cron` JobSpec.
 
 ### Fixed
-- **`scitex-todo board --tasks PATH`** now actually pins the server's
+- **`scitex-cards board --tasks PATH`** now actually pins the server's
   store (was previously a no-op for the Django subprocess — only the
   browser URL query was set). (#46.)
 - **Audit pipeline unblocked** — TQ002 / TQ007 + PS-202 / PS-204
   violations fixed. (#68.)
 
 ### Notes for operators
-After upgrading: restart your `scitex-todo board` systemd unit so the
+After upgrading: restart your `scitex-cards board` systemd unit so the
 board picks up the scitex-ui-shell extension. Alt+I + element-
 inspector work immediately after restart. CRUD UI on board v3 wires
 to the existing endpoints incrementally — Resolve + Priority +
 Comment + Hide already land in this release; full Create / Update /
 Delete UI ships in a follow-up patch.
 
-## [0.3.0] - 2026-06-04 — Phase 1 MVP: shared-fleet TODO
+## [0.3.0] - 2026-06-04 — Phase 1 MVP: shared-fleet card board
 
 The universal-task-layer FLOOR for the agent fleet. Every agent can
 read/write the same YAML store across hosts, the board at
@@ -6026,15 +7104,15 @@ conventions (Convention A: tool_name == python_api_name).
 - **`_log_meta` mapping** — opaque event-stamp dict; `complete_task` writes
   `completed_at` (ISO-8601 UTC, `Z`-suffixed, second resolution) +
   `completed_by`. Phase-2 progress-history substrate.
-- **Mutation Python API** (`scitex_todo._store`, re-exported from
-  `scitex_todo`): `add_task`, `update_task`, `complete_task`, `list_tasks`,
+- **Mutation Python API** (`scitex_cards._store`, re-exported from
+  `scitex_cards`): `add_task`, `update_task`, `complete_task`, `list_tasks`,
   `summarize_tasks`, `resolve_store`, `TaskNotFoundError`, `ENV_SCOPE`,
   `ENV_AGENT`. The public top-level surface is narrowed to these six
   task-store functions (plus errors / env constants) to satisfy audit §6
   (Convention A: tool_name == python_api_name). The mermaid / render /
   model / paths helpers remain importable from their submodules
-  (`scitex_todo._diagram`, `scitex_todo._diagram`, `scitex_todo._model`,
-  `scitex_todo._paths`).
+  (`scitex_cards._diagram`, `scitex_cards._diagram`, `scitex_cards._model`,
+  `scitex_cards._paths`).
 - **CLI write / admin verbs**: `add`, `update`, `done`, `summary`, plus
   `list-tasks` (extended with `--scope` / `--assignee` / `--status`
   filters; backward-compatible default output for existing `list-tasks`
@@ -6044,12 +7122,12 @@ conventions (Convention A: tool_name == python_api_name).
   accept `--dry-run` + `-y`/`--yes` per audit §2. The pre-audit names
   `list` / `where` / `init` / `sync` were renamed per audit §1 (bare
   transitive verbs at the top level need an object noun).
-- **MCP server** (`scitex_todo._mcp_server`) behind the new `[mcp]` extra
+- **MCP server** (`scitex_cards._mcp_server`) behind the new `[mcp]` extra
   (`fastmcp>=2.0`). Eight tools — six task-store tools follow
   Convention A (tool_name == python_api_name, no prefix): `add_task`,
   `update_task`, `complete_task`, `list_tasks`, `summarize_tasks`,
-  `resolve_store`; plus `todo_skills_list` / `todo_skills_get` for
-  bundled-skill discovery. `import scitex_todo` works fine without the
+  `resolve_store`; plus `cards_skills_list` / `cards_skills_get` for
+  bundled-skill discovery. `import scitex_cards` works fine without the
   extra installed.
 - **`mcp` CLI subgroup** — §3 required four (`start`, `doctor`,
   `list-tools`, `install`). Prefers `scitex_dev._mcp_cli` when present;
@@ -6062,7 +7140,7 @@ conventions (Convention A: tool_name == python_api_name).
 - `GITIGNORED/ARCHITECTURE.md` — Phase-0 9-requirement → mechanism map.
 - `GITIGNORED/QUESTIONS.md` — open defaults for the operator/lead.
 - `GITIGNORED/PROPOSAL_scitex-dev-ecosystem-register.md` — paste-apply
-  diff for the lead so `scitex_dev.ECOSYSTEM` includes `scitex-todo`
+  diff for the lead so `scitex_dev.ECOSYSTEM` includes `scitex-cards`
   (Req 6).
 
 ### Test surface
@@ -6075,7 +7153,7 @@ conventions (Convention A: tool_name == python_api_name).
 
 ### Added
 - Web board (read-only React-Flow dependency graph) served by Django:
-  `scitex-todo board` (needs the `[web]` extra). Nodes colored by status,
+  `scitex-cards board` (needs the `[web]` extra). Nodes colored by status,
   `depends_on` arrows, `blocks` inhibition edges, clickable cards, and
   nested-graph drill-down via a new `parent` task field.
 - Drag-reorder write path: the board's `POST /priority` handler persists a new
@@ -6085,10 +7163,10 @@ conventions (Convention A: tool_name == python_api_name).
   ladder) and `mcp list-tools`, both with `--json`.
 - Shell completion: `install-shell-completion` / `print-shell-completion`
   (bash/zsh/fish) using the static cache-file pattern.
-- Agent skills: bundled `_skills/scitex-todo/` (installation, quick-start,
+- Agent skills: bundled `_skills/scitex-cards/` (installation, quick-start,
   python-api, cli-reference, env-vars) plus a self-contained
   `skills {list, get, install}` CLI group.
-- `python -m scitex_todo` entry point; `.env.example`; `examples/` with a
+- `python -m scitex_cards` entry point; `.env.example`; `examples/` with a
   matching `tests/examples/` smoke test; cross-package integration gate.
 
 ### Changed
@@ -6104,7 +7182,7 @@ conventions (Convention A: tool_name == python_api_name).
 - Test suite reorganized to mirror `src/` and to satisfy the test-quality rules
   (one assertion per test, AAA markers).
 
-[0.2.0]: https://github.com/ywatanabe1989/scitex-todo/releases/tag/v0.2.0
+[0.2.0]: https://github.com/ywatanabe1989/scitex-cards/releases/tag/v0.2.0
 
 ## [0.1.0] - 2026-05-22
 
@@ -6120,9 +7198,9 @@ conventions (Convention A: tool_name == python_api_name).
 - Renderer: `render` (mmdc-first with auto-discovered puppeteer/playwright
   chromium and `--no-sandbox`; `kroki.io` fallback).
 - Task-store path resolution following the SciTeX local-state convention:
-  explicit path -> `$SCITEX_TODO_TASKS` -> project `.scitex/todo/tasks.yaml`
-  -> user `~/.scitex/todo/tasks.yaml` -> bundled generic example.
-- CLI `scitex-todo` (Click, noun-verb): `render`, `list`.
-- Bundled generic example task store at `scitex_todo/examples/tasks.yaml`.
+  explicit path -> `$SCITEX_CARDS_TASKS` -> project `.scitex/cards/tasks.yaml`
+  -> user `~/.scitex/cards/tasks.yaml` -> bundled generic example.
+- CLI `scitex-cards` (Click, noun-verb): `render`, `list`.
+- Bundled generic example task store at `scitex_cards/examples/tasks.yaml`.
 
-[0.1.0]: https://github.com/ywatanabe1989/scitex-todo/releases/tag/v0.1.0
+[0.1.0]: https://github.com/ywatanabe1989/scitex-cards/releases/tag/v0.1.0

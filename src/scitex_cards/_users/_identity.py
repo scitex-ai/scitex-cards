@@ -18,7 +18,7 @@ This module is a PURE resolver: :func:`canonical_identity` takes the
 registry snapshot + the alias / host tables as arguments and returns a
 canonical name string. :func:`resolve_identity` is the thin, store-aware
 convenience wrapper that loads the ``users:`` snapshot and reads the
-``SCITEX_TODO_STRICT_IDENTITY`` env gate for the ``strict`` default.
+``SCITEX_CARDS_STRICT_IDENTITY`` env gate for the ``strict`` default.
 
 Standalone constraint: like the rest of :mod:`scitex_cards._users`, this
 module imports NOTHING from any external agent runtime / fleet package. It
@@ -45,7 +45,7 @@ from ._model import User
 #: registered. Enabling fail-loud-on-unknown is a deliberate flip AFTER
 #: every real entity has a registry record (its ``names[]`` alias) or an
 #: alias-table entry. Truthy values: ``1 / true / yes / on`` (case-insensitive).
-ENV_STRICT_IDENTITY = "SCITEX_TODO_STRICT_IDENTITY"
+ENV_STRICT_IDENTITY = "SCITEX_CARDS_STRICT_IDENTITY"
 
 #: Explicit synonym table: canonical name <- {declared aliases}. SEEDED
 #: exactly per the drift audit; extend by adding rows here (or by passing an

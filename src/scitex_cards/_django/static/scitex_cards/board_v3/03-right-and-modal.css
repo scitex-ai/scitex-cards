@@ -133,7 +133,7 @@
   margin-bottom: 14px;
   font-family: ui-monospace, monospace;
 }
-/* Operator 2026-07-10 (todo-board-detail-row-readability-20260710): the
+/* Operator 2026-07-10 (cards-board-detail-row-readability-20260710): the
  * label/value pair read as visually run-together in the 584px drawer.
  * Give the label its own fixed-width muted column (uppercase, matching the
  * repo's other label conventions — 02-card.css .card-status / 06-layout-

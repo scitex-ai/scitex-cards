@@ -79,10 +79,10 @@ def _read(path: Path) -> str:
 @pytest.mark.parametrize(
     "selector",
     [
-        ".stx-todo-filterbar__group--view",
-        ".stx-todo-filterbar__group--search",
-        ".stx-todo-filterbar__primary",
-        ".stx-todo-filterbar__divider",
+        ".stx-cards-filterbar__group--view",
+        ".stx-cards-filterbar__group--search",
+        ".stx-cards-filterbar__primary",
+        ".stx-cards-filterbar__divider",
     ],
 )
 def test_toolbar_css_declares_group_selector(selector: str) -> None:
@@ -169,10 +169,10 @@ def test_toolbar_css_balanced_braces() -> None:
 @pytest.mark.parametrize(
     "selector_class",
     [
-        "stx-todo-filterbar__group--view",
-        "stx-todo-filterbar__group--search",
-        "stx-todo-filterbar__primary",
-        "stx-todo-filterbar__divider",
+        "stx-cards-filterbar__group--view",
+        "stx-cards-filterbar__group--search",
+        "stx-cards-filterbar__primary",
+        "stx-cards-filterbar__divider",
     ],
 )
 def test_template_renders_group_class(selector_class: str) -> None:
@@ -200,7 +200,7 @@ def test_template_loads_toolbar_css() -> None:
 
 def _view_group_body(html: str) -> str:
     m = re.search(
-        r"stx-todo-filterbar__group--view[^>]*>(.*?)\{#\s*end VIEW group",
+        r"stx-cards-filterbar__group--view[^>]*>(.*?)\{#\s*end VIEW group",
         html,
         flags=re.DOTALL,
     )
@@ -243,7 +243,7 @@ def test_template_view_group_dropped_sort_and_group(gone: str) -> None:
 
 def _primary_zone_match(html: str):
     return re.search(
-        r"stx-todo-filterbar__primary[^>]*>(.*?)\{#\s*end PRIMARY",
+        r"stx-cards-filterbar__primary[^>]*>(.*?)\{#\s*end PRIMARY",
         html,
         flags=re.DOTALL,
     )
@@ -251,7 +251,7 @@ def _primary_zone_match(html: str):
 
 def _search_group_match(html: str):
     return re.search(
-        r"stx-todo-filterbar__group--search[^>]*>(.*?)\{#\s*end " r"\.fb-center",
+        r"stx-cards-filterbar__group--search[^>]*>(.*?)\{#\s*end " r"\.fb-center",
         html,
         flags=re.DOTALL,
     )
@@ -364,7 +364,7 @@ def test_status_group_is_gone_from_the_template() -> None:
     # Act
     html = _read(_BOARD_V3_TEMPLATE)
     # Assert
-    assert "stx-todo-filterbar__group--status" not in html, (
+    assert "stx-cards-filterbar__group--status" not in html, (
         "the STATUS toolbar group is back in board_v3.html"
     )
 

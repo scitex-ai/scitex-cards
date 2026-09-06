@@ -6,7 +6,7 @@ Regression cover for the 2026-07-12 finding: ``detect_stale_active`` keyed on
 STATUS alone (``{in_progress, blocked}``) and ignored the BLOCKER, so every
 blocked card nudged its owner every 2 h — including cards blocked on a
 dependency, a compute job, another agent, or an operator decision. All 8 of
-scitex-todo's own "stale" cards were externally blocked; not one was
+scitex-cards's own "stale" cards were externally blocked; not one was
 actionable. 12 identical nudges a day about work you are powerless to advance
 is not a signal, it is training to ignore the channel — which is precisely how
 the REAL nudge gets missed.
@@ -22,7 +22,7 @@ import datetime as _dt
 
 import pytest
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     EXTERNAL_BLOCKERS,
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -393,7 +393,7 @@ def test_line_composers_are_still_importable_from_the_original_module():
     """The split moved them to ``_stale_active_lines``; the re-export must hold
     so notifyd / the CLI / out-of-tree importers keep working unchanged."""
     # Arrange
-    from scitex_cards._stale_active import (  # noqa: F401
+    from scitex_cards._stale.active import (  # noqa: F401
         NUDGE_ID_CAP,
         pending_backlog_nudge_line,
     )

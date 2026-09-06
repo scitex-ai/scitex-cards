@@ -101,7 +101,7 @@ def refusal_message(rep) -> str:
         f"  • a card filed as deferred or blocked is never gated either.\n"
         f"Otherwise this is ordinary new work: FINISH or PARK one in-flight "
         f"card before starting another. Do NOT close cards you have not "
-        f"finished to get past this gate. See SCITEX_TODO_WIP_LIMIT env."
+        f"finished to get past this gate. See SCITEX_CARDS_WIP_LIMIT env."
     )
 
 

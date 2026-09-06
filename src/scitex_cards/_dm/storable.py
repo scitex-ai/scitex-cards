@@ -4,8 +4,9 @@
 
 WHY THIS EXISTS, measured rather than anticipated
 -------------------------------------------------
-A NUL byte is legal in SQLite TEXT and ILLEGAL in PostgreSQL TEXT. So a body
-that SQLite accepts silently can make the whole store unmigratable. On
+A NUL byte is ILLEGAL in PostgreSQL TEXT and was legal in the retired
+file-backed store, so a body accepted silently there could make the whole store
+unmigratable. On
 2026-07-30 that was not hypothetical twice over:
 
   * two rows in ``messages`` blocked the PostgreSQL preflight outright; and

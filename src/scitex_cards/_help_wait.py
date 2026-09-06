@@ -6,9 +6,9 @@ operator" card as a first-class verb pair.
 Background (SoC lift)
 ---------------------
 A dotfiles Notification hook used to hand-roll these cards by shelling out to
-the generic ``scitex-todo add / update / list-tasks`` verbs. Whenever the card
+the generic ``scitex-cards add / update / list-tasks`` verbs. Whenever the card
 schema drifted, the hook broke *silently*. Lifting the semantics into the
-package makes scitex-todo the single source of truth; the hook becomes a thin
+package makes scitex-cards the single source of truth; the hook becomes a thin
 trigger that calls one verb (``help-wait`` / ``help-clear``).
 
 Card contract (byte-for-byte what the old hook produced, so this is a drop-in
@@ -98,8 +98,8 @@ def help_wait(
     # one lock makes the upsert atomic.
     with _store_lock(resolved):
         # Read the canonical DB unconditionally. The old `if resolved.exists()
-        # else []` gated on the YAML store PATH (never a real file under
-        # SQLite), so this always read [] — re-inserting (regenerating
+        # else []` gated on the YAML store PATH (never a real file), so
+        # this always read [] — re-inserting (regenerating
         # created_at) instead of upserting, AND writing back only the new card,
         # which diff-deleted every OTHER agent's cards. load_tasks reads the DB.
         tasks = load_tasks(resolved)
@@ -154,7 +154,7 @@ def help_clear(
     # No YAML-file existence gate: the store is the canonical DB. load_tasks
     # reads it; an absent card still yields cleared=False below (target None).
     # The old `if not resolved.exists()` made help_clear a permanent no-op
-    # under SQLite (the store path is never a real file).
+    # (the store path is never a real file).
     with _store_lock(resolved):
         tasks = load_tasks(resolved)
         target = next((t for t in tasks if t.get("id") == card_id), None)

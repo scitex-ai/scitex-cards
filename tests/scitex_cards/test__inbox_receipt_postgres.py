@@ -11,7 +11,7 @@ THE DEFECT THIS CLOSES, measured on the live store 2026-08-11 23:30Z::
     ~/.scitex/cards/inboxes.json           DOES NOT EXIST
 
 #780 moved enqueue/poll/ack into PostgreSQL; ``_inbox_receipt`` did not come
-along, and its dispatch asked a TWO-valued question (``_use_sqlite()``) of a
+along, and its dispatch asked a TWO-valued question (``_use_retired()``) of a
 THREE-valued world. So the shared-inbox case fell into the file branch: every
 push receipt and every recipient confirmation went to a JSON sidecar that was
 never even created, while the rows they described sat in PostgreSQL. The lock
@@ -63,7 +63,7 @@ def postgres_mode() -> Iterator[None]:
     exists to pin down — a fixture that rewrote the resolver instead would prove
     nothing about the deployment the bug was found in.
     """
-    keys = {"SCITEX_TODO_INBOX_BACKEND": "postgres", "SCITEX_CARDS_INBOX_DSN": _DSN}
+    keys = {"SCITEX_CARDS_INBOX_BACKEND": "postgres", "SCITEX_CARDS_INBOX_DSN": _DSN}
     before = {key: os.environ.get(key) for key in keys}
     os.environ.update(keys)
     try:

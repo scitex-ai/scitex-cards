@@ -24,7 +24,7 @@ from scitex_cards._paths import PKG_SHORT
 
 
 def _store_path(tmp_path) -> str:
-    """Path string to a fresh empty store under tmp_path/.scitex/todo/."""
+    """Path string to a fresh empty store under tmp_path/.scitex/cards/."""
     return str(tmp_path / "tasks.yaml")
 
 
@@ -382,10 +382,10 @@ def test_add_agent_flag_persists(tmp_path):
     runner = CliRunner()
     store = _store_path(tmp_path)
     # Act
-    runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-todo"])
+    runner.invoke(main, ["add", "a", "A", "--agent", "proj-scitex-cards"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["agent"] == "proj-scitex-todo"
+    assert on_disk["agent"] == "proj-scitex-cards"
 
 
 def test_add_project_flag_persists(tmp_path):
@@ -402,19 +402,19 @@ def test_add_project_flag_persists(tmp_path):
             "a",
             "A",
             "--project",
-            "scitex-todo",
+            "scitex-cards",
         ],
     )
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["project"] == "scitex-todo"
+    assert on_disk["project"] == "scitex-cards"
 
 
 def test_add_pr_url_flag_persists(tmp_path):
     # Arrange
     runner = CliRunner()
     store = _store_path(tmp_path)
-    url = "https://github.com/ywatanabe1989/scitex-todo/pull/65"
+    url = "https://github.com/ywatanabe1989/scitex-cards/pull/65"
     # Act
     runner.invoke(
         main,
@@ -530,10 +530,10 @@ def test_update_agent_persists(tmp_path):
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
     # Act
-    runner.invoke(main, ["update", "a", "--agent", "proj-scitex-todo"])
+    runner.invoke(main, ["update", "a", "--agent", "proj-scitex-cards"])
     on_disk = _model.load_tasks(store)[0]
     # Assert
-    assert on_disk["agent"] == "proj-scitex-todo"
+    assert on_disk["agent"] == "proj-scitex-cards"
 
 
 def test_update_depends_on_replaces_list(tmp_path):
@@ -602,7 +602,7 @@ def test_done_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["done", "a"])
     # Assert
@@ -613,7 +613,7 @@ def test_done_output_mentions_id(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     # Act
     result = runner.invoke(main, ["done", "a"])
     # Assert
@@ -625,7 +625,7 @@ def test_done_persists_status(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -638,7 +638,7 @@ def test_done_persists_completed_by(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -651,7 +651,7 @@ def test_done_persists_completed_at_z_suffix(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:cli-test")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:cli-test")
     runner.invoke(main, ["done", "a"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -663,7 +663,7 @@ def test_done_by_overrides_env_exits_zero(tmp_path, env):
     # Arrange
     runner = CliRunner()
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     # Act
     result = runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Assert
@@ -675,7 +675,7 @@ def test_done_by_overrides_env_on_disk(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     runner.invoke(main, ["add", "--assignee", "agent:test-suite", "a", "A"])
-    env.set("SCITEX_TODO_AGENT_ID", "agent:env")
+    env.set("SCITEX_CARDS_AGENT_ID", "agent:env")
     runner.invoke(main, ["done", "a", "--by", "agent:explicit"])
     # Act
     on_disk = _model.load_tasks(store)[0]
@@ -710,13 +710,13 @@ def test_list_filters_by_scope_exits_zero(tmp_path):
             "b",
             "B",
             "--scope",
-            "agent:proj-scitex-todo",
+            "agent:proj-scitex-cards",
         ],
     )
     # Act
     result = runner.invoke(
         main,
-        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-cards", "--json"],
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -746,12 +746,12 @@ def test_list_filters_by_scope_returns_matching(tmp_path):
             "b",
             "B",
             "--scope",
-            "agent:proj-scitex-todo",
+            "agent:proj-scitex-cards",
         ],
     )
     result = runner.invoke(
         main,
-        ["list-tasks", "--scope", "agent:proj-scitex-todo", "--json"],
+        ["list-tasks", "--scope", "agent:proj-scitex-cards", "--json"],
     )
     # Act
     rows = json.loads(result.output.strip())
@@ -786,8 +786,8 @@ def test_list_env_scope_default(tmp_path, env):
             "agent:other",
         ],
     )
-    env.set("SCITEX_TODO_SCOPE", "agent:lead")
-    # Act — no --scope here so $SCITEX_TODO_SCOPE='agent:lead' applies via the filter path.
+    env.set("SCITEX_CARDS_SCOPE", "agent:lead")
+    # Act — no --scope here so $SCITEX_CARDS_SCOPE='agent:lead' applies via the filter path.
     result = runner.invoke(main, ["list-tasks", "--json", "--status", "deferred"])
     rows = json.loads(result.output.strip())
     # Assert
@@ -1007,7 +1007,6 @@ def test_where_exits_zero(tmp_path, env):
     runner = CliRunner()
     store = _store_path(tmp_path)
     Path(store).write_text("tasks: []\n", encoding="utf-8")
-    env.set("SCITEX_TODO_TASKS_YAML_SHARED", store)
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", store)
     # Act
     result = runner.invoke(main, ["resolve-store", "--json"])
@@ -1021,7 +1020,6 @@ def test_where_resolved_path(tmp_path, env):
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_CARDS_DB", db)
-    env.set("SCITEX_TODO_DB", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
@@ -1035,7 +1033,6 @@ def test_where_exists_true(tmp_path, env):
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_CARDS_DB", db)
-    env.set("SCITEX_TODO_DB", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
     # Act
     info = json.loads(result.output.strip())
@@ -1056,54 +1053,82 @@ def test_init_shared_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
-# THE STORE IS NAMED, NOT LEFT AMBIENT, in the three tests below. They used to
-# `env.delete("SCITEX_CARDS_DB")` and lean on $SCITEX_DIR to steer the
-# zero-config default; that tier was ABOLISHED on 2026-08-13 and now refuses,
-# so leaning on it would test the refusal instead of the verb. Naming the same
-# path through $SCITEX_CARDS_DB keeps each test's actual subject intact --
-# CREATE says "created", the store lands on disk, a second run is a no-op --
-# and it is also the workflow that survives the abolition: an operator states
-# where the store goes, and `init-store --shared` creates it there.
-_FRESH_STORE = ("fake-home", "cards", "cards.db")
+# THE STORE IS A BARE SCHEMA, NOT A NAMED FILE, in the three tests below.
+#
+# They used to point $SCITEX_CARDS_DB at `fake-home/cards/cards.db` and assert
+# the verb CREATED that file -- "created" in the output, the path on disk, a
+# second run reporting "no-op". Every one of those is a statement about a
+# store that is a FILE, and the comment here even called it "the workflow that
+# survives the abolition". It did not survive: `init-store` provisions the
+# RESOLVED STORE, a filename resolves to no store, and the door refuses it
+# before anything is written.
+#
+# What the verb does now is install the schema into whatever the store target
+# resolves to, idempotently, reporting `provisioned: <target>` either way --
+# there is no create/no-op distinction left to assert, because there is no
+# file whose absence could make one. So the arrangement is a schema with NO
+# TABLES, which is the only thing "has something to provision" can still mean.
+@pytest.fixture
+def bare_store(postgres_cluster_dsn):
+    """A real, EMPTY PostgreSQL schema — no tables, so init-store has work.
+
+    Deliberately NOT the per-test store the harness pins: that one is already
+    schema-complete (the root conftest provisions it), so `init-store` against
+    it would be a no-op and these tests would pass without the verb doing
+    anything.
+    """
+    from scitex_dev.store.testing import ephemeral_schema
+
+    with ephemeral_schema(postgres_cluster_dsn, prefix="cards_init") as dsn:
+        yield dsn
 
 
-def test_init_shared_output_mentions_created(tmp_path, env):
-    # Arrange — a fresh, NAMED store so init-store CREATES (not no-op).
+def _tasks_table_exists(dsn: str) -> bool:
+    """Read the catalogue through the package's own probe."""
+    from scitex_cards._db import connect
+    from scitex_cards._schema_probe import has_table
+
+    conn = connect(dsn)
+    try:
+        return has_table(conn, "tasks")
+    finally:
+        conn.close()
+
+
+def test_init_shared_reports_the_store_it_provisioned(bare_store, env):
+    # Arrange — an empty schema, so the verb has a schema to install.
     runner = CliRunner()
-    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
+    env.set("SCITEX_CARDS_DB", bare_store)
     # Act
     result = runner.invoke(main, ["init-store", "--shared"])
-    # Assert
-    assert "created" in result.output
+    # Assert — naming the target is what lets a reader check WHICH store was
+    # provisioned, which matters more than whether it said "created".
+    assert "provisioned" in result.output
 
 
-def test_init_shared_creates_the_db(tmp_path, env):
-    # Arrange — a fresh, NAMED store, so init-store has one to CREATE.
-    runner = CliRunner()
-    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
-    from scitex_cards._db import resolve_db_path
-
-    # Act
-    runner.invoke(main, ["init-store", "--shared"])
-    # Assert — the store is the canonical DB now, not a YAML file.
-    assert resolve_db_path(None).exists()
-
-
-def test_init_shared_is_idempotent(tmp_path, env):
+def test_init_shared_installs_the_schema(bare_store, env):
     # Arrange
     runner = CliRunner()
-    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.set("SCITEX_CARDS_DB", str(tmp_path.joinpath(*_FRESH_STORE)))
-    env.delete("SCITEX_TODO_DB")
+    env.set("SCITEX_CARDS_DB", bare_store)
+    before = _tasks_table_exists(bare_store)
+    # Act
+    runner.invoke(main, ["init-store", "--shared"])
+    # Assert — asserted as a TRANSITION, so a schema that already had the
+    # table could not make this pass without the verb doing anything.
+    assert (before, _tasks_table_exists(bare_store)) == (False, True)
+
+
+def test_init_shared_is_idempotent(bare_store, env):
+    # Arrange
+    runner = CliRunner()
+    env.set("SCITEX_CARDS_DB", bare_store)
     runner.invoke(main, ["init-store", "--shared"])
     # Act
     again = runner.invoke(main, ["init-store", "--shared"])
-    # Assert — second run finds the DB already there.
-    assert "no-op" in again.output
+    # Assert — a second run is additive-only and still succeeds. It no longer
+    # says "no-op": `init_schema` creates what is missing and touches no row,
+    # so both runs report the same thing and neither is a special case.
+    assert again.exit_code == 0, again.output
 
 
 def _init_shared_with_no_store_configured(tmp_path, env):
@@ -1115,7 +1140,6 @@ def _init_shared_with_no_store_configured(tmp_path, env):
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
     env.delete("SCITEX_CARDS_DB")
-    env.delete("SCITEX_TODO_DB")
     return runner.invoke(main, ["init-store", "--shared"])
 
 
@@ -1154,16 +1178,28 @@ def test_init_project_outside_git_errors(tmp_path, env):
     assert result.exit_code != 0
 
 
-def test_init_project_outside_git_mentions_git_repo(tmp_path, env):
-    """`--project` outside a git repo must error rather than silently picking
-    a wrong directory."""
+def test_init_project_says_the_flag_is_removed(tmp_path, env):
+    """The refusal changed REASON, and the reason is the whole point.
+
+    This asserted the error mentions "git repo" -- `--project` used to resolve
+    a per-repository store and had to refuse when it could not find the repo.
+    A project-scoped store is not a thing that can be resolved badly any more;
+    it is not expressible. The store is one board for the fleet, and a
+    per-repository copy of a shared board is the shape that took it from 2,138
+    cards to 3.
+
+    So the refusal no longer depends on WHERE it is run -- outside a git repo
+    or inside one, the answer is the same -- and asserting the old wording
+    would pin a diagnostic that sends the reader looking for a missing repo
+    instead of telling them the flag is gone.
+    """
     # Arrange
     runner = CliRunner()
     env.chdir(tmp_path)
     # Act
     result = runner.invoke(main, ["init-store", "--project"])
     # Assert
-    assert "git repo" in result.output.lower()
+    assert "no project-scoped store" in result.output.lower()
 
 
 # --------------------------------------------------------------------------- #
@@ -1247,7 +1283,7 @@ def test_mcp_install_payload_has_scitex_cards():
 
 
 def _mcp_doctor_info():
-    """Run ``scitex-todo mcp doctor --json`` and return the parsed payload.
+    """Run ``scitex-cards mcp doctor --json`` and return the parsed payload.
 
     Tests that branch on fastmcp's presence call this once and then check a
     single field — keeps each test at one assertion (STX-TQ007).
@@ -1329,7 +1365,7 @@ def test_mcp_doctor_tool_count_when_fastmcp_installed():
 
 
 # --------------------------------------------------------------------------- #
-# kind=status — board card scitex-todo-relocate-q-status-tracking + lead a2a  #
+# kind=status — board card scitex-cards-relocate-q-status-tracking + lead a2a  #
 # 60a1a93d. Per option (b): the CLI surface accepts the new kind and the     #
 # list-tasks --kind filter selects it. Default list behavior UNCHANGED — the #
 # board's default-hide is a separate frontend PR.                             #

@@ -180,7 +180,7 @@ def test_decide_skip_unknown_is_fail_soft():
 def _store(tmp_path):
     """Seed the canonical DB from a small fixture doc; return the STORE path.
 
-    The store is SQLite now: ``reconcile_merged_prs`` / ``load_tasks`` read and
+    The store is the database now: ``reconcile_merged_prs`` / ``load_tasks`` read and
     write the canonical DB and ignore the path (it survives only as the store
     identity). The fixture is still authored as readable YAML text; parse it,
     seed the DB, and return the pinned STORE identity path (NOT the DB path —

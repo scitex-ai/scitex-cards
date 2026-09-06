@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-cards db`` — SQLite operability verbs.
+"""CLI noun group ``scitex-cards dev db`` — store operability verbs.
 
-SQLite is the store. These verbs are its operability surface:
+The database is the store. These verbs are its operability surface:
 
   * ``db path``     — print the resolved database path.
   * ``db verify``   — open the DB, check user_version + table counts.
@@ -21,132 +21,80 @@ the root group via :func:`register`.
 from __future__ import annotations
 
 import json
-import re
 
 import click
 
-#: A snapshot holding less than this FRACTION of the previous one's cards is
-#: treated as a catastrophe rather than churn, and refused. Cards are deleted
-#: routinely; HALF of them vanishing between two hourly fires is not deletion,
-#: it is damage. Deliberately generous — the goal is to catch a wipe, not to
-#: police normal cleanup, and `--allow-shrink` covers the real bulk-delete case.
-_SHRINK_REFUSAL_RATIO = 0.5
+from ._compat import deprecated_alias
+from ._dev import get_dev_group
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
-#: The rail's own commit subject, e.g. ``snapshot: 2138 tasks``. Parsed back to
-#: recover the previous count, so the check needs no state of its own — the
-#: history IS the record.
-_SNAPSHOT_SUBJECT_RE = re.compile(r"snapshot:\s*(\d+)\s+tasks")
-
-
-def _live_task_fingerprint(db_path: str | None) -> tuple[int, str | None]:
-    """``(row count, newest last_activity)`` read from the DB's TYPED columns.
-
-    Deliberately bypasses ``card_json`` — the export (``_db_export.export_json``)
-    reconstructs every task EXCLUSIVELY from the verbatim ``card_json`` payload
-    (the S2 exactness contract), never from the typed columns. Every healthy
-    write populates both from the same call, so in a healthy DB this and the
-    export's own report always agree; a live probe of the typed columns is
-    therefore an INDEPENDENT ground truth to check the export against.
-    """
-    from .._db import open_db
-
-    conn = open_db(db_path)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n, MAX(last_activity) AS newest FROM tasks"
-        ).fetchone()
-        # POSITIONAL INDEXING IS NOT PORTABLE HERE. sqlite3.Row supports both
-        # row[0] and row["n"]; the PostgreSQL wrapper yields a DICT-LIKE row
-        # where row[0] raises `KeyError: 0`. Measured 2026-08-02 — this line
-        # was the SECOND thing to break the off-site snapshot on Postgres,
-        # surfacing only once the resolve-path fix let execution reach it.
-        #
-        # A KeyError here is also easy to misread as "the tasks table is
-        # missing", which is why the columns are named and read BY NAME: the
-        # spelling that works on both backends, and the one whose failure says
-        # what it means.
-        return int(row["n"]), row["newest"]
-    finally:
-        conn.close()
-
-
-def _assert_export_reflects_live_db(db_path: str | None, report: dict) -> None:
-    """RAISE if the export just produced does not match the DB's LIVE state.
-
-    THE 2026-07-21 FALSE-GREEN INCIDENT this exists to catch: the hourly
-    snapshot timer exported, committed "snapshot: 2168 tasks", and pushed
-    off-site — every signal green — while the exported CONTENT was stale.
-    Proof at the time: the 11:00 export showed a card as ``deferred`` that
-    the DB had already marked ``done`` at 10:47, and a card created at 10:47
-    was absent entirely. The shrink-refusal guard below does not catch this
-    shape: the card COUNT can match while the CONTENT lags — shrink and
-    staleness are separate failure modes.
-
-    This probes the DB's typed ``last_activity`` / row-count directly
-    (:func:`_live_task_fingerprint`, bypassing ``card_json`` — the export's
-    own source) and compares against what the export actually reported. Any
-    disagreement means the export does not reflect the DB's current state —
-    whatever the cause (a lagging mirror, a wrong resolved path, a partial
-    write) — and the snapshot must not be committed or pushed as if current.
-    """
-    live_count, live_newest = _live_task_fingerprint(db_path)
-    exported_count = int(report.get("tasks") or 0)
-    exported_newest = report.get("newest_last_activity")
-
-    if live_count != exported_count:
-        raise click.ClickException(
-            f"REFUSING to snapshot: STALE EXPORT. The DB's tasks table has "
-            f"{live_count} rows right now, but the export just produced "
-            f"{exported_count}. The export does not reflect the DB's current "
-            f"state — do not trust or push this snapshot.\n"
-            f"Re-run `db snapshot`. If this keeps happening, the export is "
-            f"reading the wrong database (check --db / $SCITEX_CARDS_DB) or "
-            f"is racing against concurrent writes."
-        )
-    if exported_newest != live_newest:
-        raise click.ClickException(
-            f"REFUSING to snapshot: STALE EXPORT. The DB's newest "
-            f"last_activity (typed column, live) is {live_newest!r}, but the "
-            f"export's newest last_activity (from card_json) is "
-            f"{exported_newest!r} — they disagree, so the export does not "
-            f"reflect the DB's current state. Do not trust or push this "
-            f"snapshot.\n"
-            f"This is the shape of the 2026-07-21 false-green incident (an "
-            f"11:00 export showed a card still `deferred` that the DB had "
-            f"marked `done` 13 minutes earlier). Investigate why card_json "
-            f"and the typed columns disagree — a partial write, a stale "
-            f"mirror, or the wrong resolved DB — before re-running."
-        )
-
-
-def _previous_snapshot_count(git) -> int | None:
-    """Cards recorded by the most recent snapshot commit, or ``None``.
-
-    ``None`` means "no basis to compare" — a fresh repo, an unreadable log, or
-    a subject line that does not parse. Every one of those is a reason to allow
-    the snapshot, not to block it: a backup rail must never refuse because its
-    own bookkeeping is unfamiliar.
-    """
-    log = git("log", "-1", "--format=%s")
-    if log.returncode != 0:
-        return None
-    match = _SNAPSHOT_SUBJECT_RE.search(log.stdout or "")
-    return int(match.group(1)) if match else None
+# THE SNAPSHOT GUARDS live in :mod:`._db_snapshot_guards` -- this module owns
+# the ``dev db`` VERBS, that one owns "is the export safe to bank as a backup".
+# Re-exported under the same private names so every existing caller and test
+# resolves unchanged.
+from ._db_snapshot_guards import (
+    _assert_export_reflects_live_db,
+    _assert_export_reflects_live_dms,
+    _live_dm_count,  # noqa: F401  (re-export: tests and callers import it here)
+    _live_task_fingerprint,  # noqa: F401  (re-export)
+    _previous_snapshot_count,
+    _SHRINK_REFUSAL_RATIO,
+    _SNAPSHOT_SUBJECT_RE,  # noqa: F401  (re-export)
+)
 
 
 def register(main: click.Group) -> None:
-    """Attach the ``db`` noun group to the root group."""
-    main.add_command(db_group)
+    """Attach the ``db`` noun group, with the two renamed leaves aliased.
+
+    ``path`` -> ``get-path`` and ``snapshot`` -> ``create-snapshot``. Audit §1
+    flagged both as noun leaves implying a transitive action, and both fail the
+    constitution's own test: each had to be explained by restating it with a
+    verb ("PRINT the resolved path", "COMMIT the export"), so that verb is the
+    name. The verbs come from the canonical catalog rather than invention —
+    `get` is the data-first fetch (the catalog also records that `show-<x>`
+    compounds are migrating to `get`), and `create` brings a new object into
+    existence ("Never `new`, `make`, `gen`").
+
+    Both old spellings stay as Phase-W aliases: `db path` in particular is the
+    documented way to answer "which store am I actually on", so it turns up in
+    people's notes and in other packages' troubleshooting steps.
+
+    THE GROUP ITSELF MOVED to `dev db` (operator, 2026-08-26): per-package
+    database client commands standardize on `<package> dev db`, and the
+    ecosystem-wide aggregate on `scitex-dev ecosystem dev db`. That is the
+    same §13 split already applied to every other periodic/upkeep verb — a
+    verb that operates on the store as an object is upkeep, not product
+    surface — so `db` belongs beside `cardsync` under `dev` rather than at
+    the root next to the card verbs people actually run.
+
+    The root spelling stays as a Phase-W alias for the same reason the two
+    leaf renames did, and more urgently: the ROOT spelling of get-path is the
+    documented answer to "which store am I on", and it is baked into cron
+    lines, troubleshooting notes and agent prompts across the fleet, none of
+    which are greppable from here. Every hint inside this package was moved
+    to the new spelling in the same change, because the suite enforces that a
+    hint is runnable as printed — an alias resolves at the CLI but is not a
+    verb the enumeration will find.
+    """
+    dev = get_dev_group(main)
+    dev.add_command(db_group)
+    deprecated_alias(
+        main, "db", target=db_group, target_name="dev db", remove_in="0.54"
+    )
+    deprecated_alias(db_group, "path", target="get-path", remove_in="0.52")
+    deprecated_alias(
+        db_group, "snapshot", target="create-snapshot", remove_in="0.52"
+    )
 
 
 @click.group(
     "db",
     help=(
-        "SQLite store verbs. SQLite is the store.\n\n"
-        "`db path` prints the resolved database location, `db verify` checks "
-        "schema health, `db export` writes the store out as YAML text (a "
-        "backup, never a source), and `db snapshot` commits that export "
-        "off-site."
+        "Card-store verbs.\n\n"
+        "`dev db get-path` prints the resolved store location, `dev db verify` "
+        "checks schema health, `dev db export` writes the store out as YAML "
+        "text (a backup, never a source), and `dev db create-snapshot` commits "
+        "that export off-site."
     ),
 )
 def db_group() -> None:
@@ -162,43 +110,60 @@ _DB_OPTION = click.option(
 
 
 @db_group.command(
-    "path",
+    "get-path",
     help=(
         "Print the resolved DB path.\n\n"
-        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_TODO_DB "
+        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_CARDS_DB "
         "(deprecated, warned) > the `store.target` key in the config file. "
         "There is NO tier below that: it used to fall back to "
         "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "
-        "unconfigured store REFUSES instead of naming a SQLite file nobody "
+        "unconfigured store REFUSES instead of naming a file nobody "
         "chose.\n\n"
         "Example:\n"
-        "  scitex-cards db path"
+        "  scitex-cards dev db get-path"
     ),
 )
 @_DB_OPTION
-def db_path_cmd(db_path: str | None) -> None:
-    """Print the resolved DB path."""
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit the resolved target as JSON."
+)
+def db_path_cmd(db_path: str | None, as_json: bool) -> None:
+    """Print the resolved store target, as text or JSON.
+
+    `--json` ARRIVED WITH THE VERB. Renaming this leaf from `path` to the
+    canonical `get-path` raised audit §2 immediately: a read verb owes
+    machine-readable output. That is right for this command specifically —
+    "which store am I actually on" is the question a SCRIPT asks while
+    diagnosing a wrong-store read, and making it parse a bare line is how a
+    DSN containing a colon becomes somebody's split() bug.
+
+    The plain form is unchanged, so anything already piping this keeps working.
+    """
     from .._db import resolve_db_path
 
-    click.echo(str(resolve_db_path(db_path)))
+    resolved = str(resolve_db_path(db_path))
+    if as_json:
+        click.echo(json.dumps({"target": resolved}))
+        return
+    click.echo(resolved)
 
 
 @db_group.command(
     "verify",
     help=(
-        "Open the shadow DB and verify its schema health.\n\n"
-        "Checks PRAGMA user_version, the schema_meta version, presence of "
-        "every expected table (with row counts), and PRAGMA quick_check. "
+        "Open the store and verify its schema health.\n\n"
+        "Checks the schema_meta version stamp against the store's PHYSICAL "
+        "shape, and the presence of every expected table (with row counts). "
         "Exit 0 when healthy, else 1. Pass --json for the raw report.\n\n"
         "Example:\n"
-        "  scitex-cards db verify\n"
-        "  scitex-cards db verify --json"
+        "  scitex-cards dev db verify\n"
+        "  scitex-cards dev db verify --json"
     ),
 )
 @_DB_OPTION
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw report as JSON.")
 def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
-    """Verify the DB schema + integrity."""
+    """Verify the store's schema stamp against its shape."""
     from .._db import verify
 
     report = verify(db_path)
@@ -207,14 +172,18 @@ def db_verify_cmd(db_path: str | None, as_json: bool) -> None:
         raise SystemExit(0 if report["ok"] else 1)
 
     status = "OK" if report["ok"] else "UNHEALTHY"
-    click.echo(f"# scitex-cards db verify: {status} — {report['path']}")
+    click.echo(f"# scitex-cards dev db verify: {status} — {report['target']}")
     if not report["exists"]:
-        click.echo("[FAIL] db does not exist yet (run `init-store`)")
+        # THE REASON, NOT JUST THE VERDICT. This printed "db does not exist yet"
+        # for every failure on the way in -- an unconfigured target, a refused
+        # one and an unreachable server all rendered as "run init-store", which
+        # is the wrong instruction for all three.
+        click.echo(f"[FAIL] no store at this target: {report['error']}")
         raise SystemExit(1)
     click.echo(
-        f"  user_version={report['user_version']} "
-        f"schema_version={report['schema_version']} "
-        f"quick_check={report['quick_check']} source={report['source']}"
+        f"  schema_version={report['schema_version']} "
+        f"observed_version={report['observed_version']} "
+        f"source={report['source']}"
     )
     for name, count in report["tables"].items():
         click.echo(f"  {name}: {count}")
@@ -242,8 +211,9 @@ def _echo_export_report(report: dict) -> None:
         "export is exact by construction. REFUSES loudly if any row has no "
         "payload.\n\n"
         "Example:\n"
-        "  scitex-cards db export\n"
-        "  scitex-cards db export --out /tmp/tasks.json --json"
+        "  scitex-cards dev db export\n"
+        "  scitex-cards dev db export --dry-run\n"
+        "  scitex-cards dev db export --out /tmp/tasks.json --json"
     ),
 )
 @_DB_OPTION
@@ -260,15 +230,40 @@ def _echo_export_report(report: dict) -> None:
     help="threads.json output path (default: beside --out).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the export report as JSON.")
+@mutating_options
 def db_export_cmd(
     db_path: str | None,
     out_path: str | None,
     threads_out: str | None,
     as_json: bool,
+    dry_run: bool,
+    assume_yes: bool,
 ) -> None:
-    """Export the DB to JSON snapshot files."""
-    from .._db_export import export_json
+    """Export the DB to JSON snapshot files.
 
+    This verb ALWAYS writes files — unlike `dm export` there is no stdout
+    path — so both flags apply unconditionally. `--dry-run` names the targets
+    it would write without touching them; `--yes` skips the confirmation asked
+    when a target already exists, because an export somebody is holding should
+    not be replaced silently.
+    """
+    from pathlib import Path
+
+    from .._db_export import export_json, export_targets
+
+    targets = export_targets(db_path=db_path, out=out_path, threads_out=threads_out)
+    if dry_run:
+        for label, target in targets.items():
+            exists = " (would OVERWRITE)" if Path(target).exists() else ""
+            click.echo(f"{DRY_RUN_PREFIX} would write {label}: {target}{exists}")
+        click.echo(f"{DRY_RUN_PREFIX} nothing written")
+        return
+    existing = [t for t in targets.values() if Path(t).exists()]
+    if existing:
+        confirm_or_abort(
+            f"Overwrite {len(existing)} existing export file(s)?",
+            assume_yes=assume_yes,
+        )
     report = export_json(db_path=db_path, out=out_path, threads_out=threads_out)
     if as_json:
         click.echo(json.dumps(report))
@@ -277,15 +272,15 @@ def db_export_cmd(
 
 
 @db_group.command(
-    "snapshot",
+    "create-snapshot",
     help=(
         "Export the DB to the snapshot dir and git-commit the export.\n\n"
         "The ADR-0010 backup rail: git tracks an EXPORT, never live data, so "
         "no git operation can ever roll back the live store. Initialises the "
         "snapshot dir as its own git repo on first run.\n\n"
         "Example:\n"
-        "  scitex-cards db snapshot\n"
-        "  scitex-cards db snapshot --dir ~/.scitex/cards/snapshots"
+        "  scitex-cards dev db create-snapshot\n"
+        "  scitex-cards dev db create-snapshot --dir ~/.scitex/cards/snapshots"
     ),
 )
 @_DB_OPTION
@@ -318,14 +313,25 @@ def db_export_cmd(
 @click.option(
     "--json", "as_json", is_flag=True, help="Emit the snapshot report as JSON."
 )
+@mutating_options
 def db_snapshot_cmd(
     db_path: str | None,
     snap_dir: str | None,
     push: bool,
     allow_shrink: bool,
     as_json: bool,
+    dry_run: bool,
+    assume_yes: bool,
 ) -> None:
-    """Export to the snapshot dir and commit the export in its own git repo."""
+    """Export to the snapshot dir and commit the export in its own git repo.
+
+    THE GUARDS CAME WITH THE VERB. This leaf was `db snapshot` until audit §1
+    called it a noun; renaming it to the canonical `create` immediately raised
+    §2 — a mutating verb owes `--dry-run` and `--yes`. That is the naming
+    system working rather than nagging: `create-snapshot` PROMISES those flags
+    to anyone who has learned them on any other scitex verb, and the promise
+    has to be kept. The rename was half the change.
+    """
     import subprocess
     from pathlib import Path
 
@@ -352,6 +358,21 @@ def db_snapshot_cmd(
         if snap_dir
         else resolve_tasks_path(db_path).parent / "snapshots"
     )
+    # BOTH GUARDS SIT IN FRONT OF THE FIRST WRITE, which is the mkdir below —
+    # not in front of the git commit. A dry run that had already created the
+    # directory and written two export files would have changed the filesystem
+    # while reporting that it changed nothing, and that is the failure the flag
+    # exists to prevent.
+    if dry_run:
+        click.echo(f"{DRY_RUN_PREFIX} snapshot dir: {root}")
+        click.echo(f"{DRY_RUN_PREFIX} would export : tasks.json, threads.json")
+        click.echo(
+            f"{DRY_RUN_PREFIX} would git-commit the export"
+            + (" and push it" if push else " (no push)")
+        )
+        return
+    confirm_or_abort(f"Snapshot the store into {root}?", assume_yes=assume_yes)
+
     root.mkdir(parents=True, exist_ok=True)
 
     report = export_json(
@@ -370,6 +391,11 @@ def db_snapshot_cmd(
     # missing a card created in that same window. Shrink and staleness are
     # separate failure modes; this checks the one the other cannot see.
     _assert_export_reflects_live_db(db_path, report)
+    # ...and the same question for DMs, which the guard above does NOT ask.
+    # The report prints a `messages` count beside the `tasks` count, so both
+    # read as equally certified; only one of them was. Measured 2026-07-28:
+    # the mirror those messages come from had been frozen for nine days.
+    _assert_export_reflects_live_dms(db_path, report)
 
     def _git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(

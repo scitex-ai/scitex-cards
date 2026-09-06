@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Opening a WRITE transaction on either backend.
 
-``BEGIN IMMEDIATE`` is SQLite-only spelling. Issued against PostgreSQL it does
+``BEGIN IMMEDIATE`` is not portable spelling. Issued against PostgreSQL it does
 not degrade, it raises::
 
     syntax error at or near "IMMEDIATE"
@@ -14,8 +14,9 @@ scitex-db 2026-08-01 with a live reproduction.
 
 WHY NOT JUST ``BEGIN``
 ----------------------
-Because ``IMMEDIATE`` is not decoration. SQLite takes the write lock at BEGIN
-rather than at first write, so two appenders SERIALISE instead of racing. The
+Because ``IMMEDIATE`` is not decoration. The engine it was written for takes
+the write lock at BEGIN rather than at first write, so two appenders SERIALISE
+instead of racing. The
 DM append reads ``max(seq)`` and then inserts ``seq + 1``; ``_dm_write_rows``
 says so in as many words ("Read inside the caller's ``BEGIN IMMEDIATE``, so two
 writers cannot observe" the same value).
@@ -32,8 +33,9 @@ construct that matches ``BEGIN IMMEDIATE``'s actual behaviour — block, do not
 abort — is a transaction-scoped advisory lock. It is released automatically on
 commit OR rollback, so no path can leak it.
 
-THE LOCK IS STORE-WIDE, matching SQLite, where the write lock is over the whole
-database file. That is coarser than PostgreSQL needs, and deliberately so: this
+THE LOCK IS STORE-WIDE, matching the semantics this code was written against,
+where the write lock covered the whole store. That is coarser than PostgreSQL
+needs, and deliberately so: this
 is a compatibility seam, not a performance rewrite. Making it finer-grained
 would be a real change in concurrency semantics between the two backends, which
 is the class of difference this module exists to abolish.
@@ -57,8 +59,8 @@ def begin_write_transaction(conn: Any) -> None:
     Parameters
     ----------
     conn
-        An open store connection (``sqlite3`` or the PostgreSQL-backed
-        :class:`~scitex_cards._backend_connect.StoreConnection`).
+        An open store connection (a raw driver connection or the
+        :class:`~scitex_cards._backend_connect.StoreConnection` wrapper).
 
     Notes
     -----

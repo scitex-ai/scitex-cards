@@ -28,13 +28,13 @@ from scitex_cards._inbox_receipt import record_push
 
 AGENT = "ack-class-agent"
 
-#: Both real inbox backends. `sqlite` is what production runs.
-BACKENDS = ("sqlite", "yaml")
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
+BACKENDS = ("yaml",)
 
 
 @pytest.fixture(params=BACKENDS)
 def store(request, env, tmp_path):
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return tmp_path / "tasks.yaml"
 
 

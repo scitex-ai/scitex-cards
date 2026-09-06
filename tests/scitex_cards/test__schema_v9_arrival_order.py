@@ -1,40 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""v9 gives ``notifications`` an arrival-order column, on BOTH creation paths.
-
-WHY THE COLUMN EXISTS. The SQLite inbox delivers and acks by ``ORDER BY rowid``
-at five call sites, and ``rowid`` has no PostgreSQL equivalent. Moving the rail
-without replacing it loses delivery order SILENTLY -- the SQL stays valid on
-both engines and every test stays green, which is the worst shape a correctness
-regression can take.
-
-WHY NOT ``ORDER BY ts, id``, which the export path already uses for this table
-and justifies as "on append-only tables it is the same order rowid produced".
-Measured on the live rail 2026-08-02 and it is not:
-
-    3496 rows; 1256 positions differ from rowid order
-    1051 same-second ties, and 8 genuine TIMESTAMP INVERSIONS
-    e.g. a row stamped 2026-08-02T00:00:00Z followed by one stamped
-         2026-08-01T18:07:41Z -- six hours earlier
-
-``enqueue(ts=...)`` takes a CALLER-SUPPLIED timestamp, so ``ts`` is not an
-insert-time clock. The export only needs a REPRODUCIBLE order and is fine;
-delivery needs the ARRIVAL one and is not.
-
-THE TEST THAT CARRIES THE MOST WEIGHT is the fresh-vs-migrated shape agreement.
-This repo has already been bitten by a fresh store and a migrated store
-disagreeing on shape, which is why NOTIFICATION_RAIL_COLUMNS exists as one list
-consulted by both paths. A new column has to be added in two places, and
-checking only one of them is how the divergence happens again.
-"""
+"""v9 gives ``notifications`` an arrival-order column, on BOTH creation paths."""
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
-from scitex_cards._db import SCHEMA_VERSION
+from scitex_cards._db import SCHEMA_VERSION, connect
 from scitex_cards._db_migrations import (
     NOTIFICATION_ORDER_COLUMN,
     _migrate_v8_to_v9,
@@ -66,22 +38,37 @@ CREATE TABLE notifications (
 """
 
 
+def _empty(new_store, prefix: str, script: str):
+    """An empty throwaway store with ``script`` installed through the package.
+
+    ``bootstrap=False``: the harness's per-test store is already at the current
+    shape, so a v8 fixture built on it would carry the v9 column before the
+    migration ran and every assertion below would be true before the act.
+
+    An in-memory scratch database was what these fixtures used to be. It cannot
+    stand in for the store any more, and not only on principle: every shape
+    question in this file is asked through ``table_columns``, which reads
+    ``information_schema`` and has no second dialect to fall back to — so the
+    old fixtures did not measure an old-shaped store, they errored on the probe.
+    """
+    conn = connect(new_store(prefix, bootstrap=False))
+    execute_ddl(conn, script)
+    conn.commit()
+    return conn
+
+
 @pytest.fixture
-def v8_store():
+def v8_store(new_store):
     """A store at the v8 shape -- the thing the migration must upgrade."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(_V8_NOTIFICATIONS)
+    conn = _empty(new_store, "cards_v9_v8shape", _V8_NOTIFICATIONS)
     yield conn
     conn.close()
 
 
 @pytest.fixture
-def fresh_store():
+def fresh_store(new_store):
     """A store created by the CURRENT fresh-create script."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    execute_ddl(conn, SCHEMA_SQL)
+    conn = _empty(new_store, "cards_v9_fresh", SCHEMA_SQL)
     yield conn
     conn.close()
 
@@ -189,24 +176,36 @@ class TestFreshAndMigratedAgreeOnShape:
 
 
 @pytest.fixture
-def pg_conn():
-    """Live Postgres: skip if UNDECLARED, fail if DECLARED-but-broken."""
-    import os
+def pg_conn(postgres_dsn):
+    """A connection to the harness's throwaway PostgreSQL. NEVER SKIPS.
 
-    declared = os.environ.get("SCITEX_CARDS_TEST_PG_DSN")
-    dsn = declared or "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+    ONE NAME ANSWERS "WHERE IS THE STORE", and this fixture used to add a
+    second. It read ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private
+    marker -- and SKIPPED when it was unset. Nothing sets that name any more,
+    so "unset" is now always, and these tests reported green in CI without ever
+    opening a connection: the exact failure
+    ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` exists to
+    remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
+    a skipped test is indistinguishable from a passing one").
+
+    ``postgres_dsn`` (tests/conftest.py) is the one source of truth: a real
+    throwaway schema on the cluster the harness opened, which FAILS rather than
+    skipping when there is none.
+
+    The driver is a hard requirement rather than a skip for the same reason:
+    this package has one storage engine and psycopg is how it is reached, so
+    an interpreter without it cannot run these tests at all and must say so.
+    """
     try:
         import psycopg
-    except ImportError:
-        if declared:
-            pytest.fail("SCITEX_CARDS_TEST_PG_DSN is set but psycopg is missing")
-        pytest.skip("psycopg not installed")
-    try:
-        conn = psycopg.connect(dsn, connect_timeout=5)
-    except Exception as exc:
-        if declared:
-            pytest.fail(f"declared Postgres at {dsn!r} unreachable: {exc}")
-        pytest.skip(f"no live Postgres: {type(exc).__name__}")
+    except ImportError:  # pragma: no cover - the package requires the driver
+        pytest.fail(
+            "psycopg is not installed, so the only storage engine this "
+            "package has cannot be reached. Install the postgres extra: "
+            "pip install -e '.[postgres]'",
+            pytrace=False,
+        )
+    conn = psycopg.connect(postgres_dsn, connect_timeout=5)
     yield conn
     conn.close()
 
@@ -234,13 +233,21 @@ CREATE TABLE IF NOT EXISTS notifications (
 """
 
 
-class TestThePostgresGeneratorIsRealAndMonotonic:
-    """The half SQLite tests structurally cannot reach.
+class TestTheGeneratorIsRealAndMonotonic:
+    """The SEQUENCE, read through a RAW driver connection.
 
-    On SQLite the column is a plain BIGINT and ``rowid`` remains the generator,
-    so none of the tests above exercise the sequence, the DEFAULT, or ``setval``
-    -- the entire PostgreSQL-specific branch of the migration. Everything here
-    runs inside ``force_rollback``, so the live store is never mutated.
+    This class was written as "the half the retired engine tests structurally cannot
+    reach", back when the fixtures above built an in-memory scratch database in
+    which the column was a plain BIGINT and no sequence existed. They now build
+    a real store, so that division is gone -- but the class is kept, and for a
+    reason the assertions below already state: it holds a RAW psycopg
+    connection, which yields TUPLES, where every other test in this file holds
+    the wrapped ``StoreConnection``, which yields dict-shaped rows. Same table,
+    two row types depending on how it was opened, and this package has already
+    paid three separate ``KeyError: 0`` crashes for assuming one of them.
+
+    Everything here runs inside ``force_rollback``, so nothing it creates
+    survives the test.
     """
 
     def test_the_migration_adds_the_column_on_postgres(self, pg_conn):

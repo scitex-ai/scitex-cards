@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     DEFAULT_STALE_ACTIVE_HOURS,
     ENV_STALE_ACTIVE_HOURS,
     NUDGE_ID_CAP,

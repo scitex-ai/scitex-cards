@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from ._backend import BACKEND_VERBS, LocalBackend
+from ._paths import _user_root
 
 #: Verbs whose store parameter is named ``store`` (the dm/inbox
 #: compositions); every other backend verb takes ``tasks_path``.
@@ -61,11 +62,25 @@ _TOKEN_BYTES = 32
 
 
 def default_tokens_dir() -> Path:
-    return Path.home() / ".scitex" / "cards" / "tokens"
+    """Hub tokens under the user scope — via the SHARED resolver, not our own.
+
+    These two used to spell the path themselves as
+    ``Path.home() / ".scitex" / "cards" / …``, which is byte-identical to
+    ``_user_root()`` on a default host and DIVERGES the moment ``$SCITEX_DIR``
+    is set: every other consumer in the package honours that variable and these
+    two did not. A second private resolution of the same location is how a
+    package ends up writing to a place nothing else reads — the same shape as
+    `resolve_tasks_path` naming a store the reader does not use.
+
+    ``_user_root()`` already appends the package short name, so the default is
+    unchanged: ``~/.scitex/cards/tokens``.
+    """
+    return _user_root() / "tokens"
 
 
 def default_audit_path() -> Path:
-    return Path.home() / ".scitex" / "cards" / "logs" / "hub_access.jsonl"
+    """Hub access log under the user scope — see :func:`default_tokens_dir`."""
+    return _user_root() / "logs" / "hub_access.jsonl"
 
 
 def mint_token(tokens_dir: Path, name: str = "hub") -> Path:

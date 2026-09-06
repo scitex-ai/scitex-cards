@@ -30,7 +30,7 @@ from scitex_cards._reconcile_prs import (
     decide_reconcile_action,
 )
 from scitex_cards._reminders import EVENT_DIGEST, sweep_reminders
-from scitex_cards._stale_active import (
+from scitex_cards._stale.active import (
     detect_pending_backlog,
     detect_stale_active,
     is_stale_active,
@@ -52,7 +52,7 @@ NOW = _utc(2026, 6, 30, 12, 0, 0)
 def _write_store(tmp_path, text):
     """Seed the canonical DB from a YAML-text document; return the STORE path.
 
-    The store is SQLite now; ``load_tasks`` reads the canonical DB and ignores
+    The store is the database now; ``load_tasks`` reads it and ignores
     the path (which survives only as the store IDENTITY a write is stamped for).
     Tests still author fixtures as readable YAML text: parse it, seed the DB,
     and return the pinned STORE-identity path (NOT the DB path).
@@ -300,14 +300,29 @@ class _EnqueueRecorder:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine(env, monkeypatch):
+def _isolate_engine(env, tmp_path):
+    """No ambient configuration reaches the sweep.
+
+    Real isolation rather than replacing ``config_paths`` (PA-306 §3): BOTH
+    locations it resolves are steerable. The user file sits under
+    ``$SCITEX_DIR`` and the project file under the git root of the working
+    directory, so pointing each at an empty tmp dir makes them genuinely
+    absent — which is what ``config_paths() == []`` was standing in for.
+
+    The empty project dir gets a ``.git`` on purpose: without one,
+    ``_find_git_root`` walks UP and would find this repo, so the isolation
+    would silently depend on where the suite was run from.
+    """
     for var in (
-        "SCITEX_TODO_REMINDER_OWNERS",
-        "SCITEX_TODO_STALE_ACTIVE_HOURS",
-        "SCITEX_TODO_PENDING_NUDGE_HOURS",
+        "SCITEX_CARDS_REMINDER_OWNERS",
+        "SCITEX_CARDS_STALE_ACTIVE_HOURS",
+        "SCITEX_CARDS_PENDING_NUDGE_HOURS",
     ):
         env.delete(var)
-    monkeypatch.setattr("scitex_cards._config.config_paths", lambda: [])
+    env.set("SCITEX_DIR", str(tmp_path / "scitex-home"))
+    project = tmp_path / "no-project"
+    (project / ".git").mkdir(parents=True)
+    env.chdir(project)
 
 
 def _sweep(tasks, store):

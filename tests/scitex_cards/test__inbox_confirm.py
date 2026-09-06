@@ -76,7 +76,7 @@ def _raw_records(store, agent=AGENT):
 @pytest.fixture()
 def inbox(env):
     """A real store holding three UNSEEN notifications for one raw-name agent."""
-    env.set("SCITEX_TODO_AGENT_ID", "confirm-tester")
+    env.set("SCITEX_CARDS_AGENT_ID", "confirm-tester")
     env.delete("SCITEX_CARDS_HUB_URL")
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     return {"store": store, "ids": _seed(store)}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`scitex-todo reconcile-merged-prs` CLI verb (CliRunner; no mocks).
+"""`scitex-cards reconcile-merged-prs` CLI verb (CliRunner; no mocks).
 
 The CLI is thin plumbing over ``_reconcile_prs.reconcile_merged_prs``; the
 decision/seam logic is covered in ``tests/scitex_cards/test__reconcile_prs.py``.

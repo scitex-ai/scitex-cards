@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for the under-covered ``_store`` CRUD verbs.
 
-Coverage audit (proj-scitex-todo overnight 2026-06-13, lead a2a
+Coverage audit (proj-scitex-cards overnight 2026-06-13, lead a2a
 `1397f103`) flagged `_store.py` at 54% — 146 of 319 statements
 uncovered. The big test file `tests/scitex_cards/test__store.py`
 exercises `add_task` / `update_task` / `complete_task` /

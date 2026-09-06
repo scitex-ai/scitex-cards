@@ -15,9 +15,9 @@ which is ``connect`` + ``init_schema``) and the write path
 (``_db_mirror.mirror_doc_incremental`` opens the same way) funnel through — so gating it
 there gates both without touching either module.
 
-The S2 SQLite read accelerator (``_store_read_sqlite.list_tasks_sqlite``) this file
+The S2 indexed read accelerator (deleted) that this file
 originally exercised as "the read path" is DELETED (2026-07-21, a separate incident:
-its own freshness guard could never again pass once SQLite became canonical, so it
+its own freshness guard could never again pass once the database became canonical, so it
 refused unconditionally and fell back to an empty YAML/example chain). ``list_tasks``
 now has exactly one read path, and it is the one exercised below.
 
@@ -29,12 +29,11 @@ suite-wide ``_store_env_stays_pinned`` autouse fixture (``tests/conftest.py``);
 from __future__ import annotations
 
 import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from scitex_cards import _db, _db_mirror, _store
+from scitex_cards._backend_connect import connect as backend_connect
 from scitex_cards._min_client_version import (
     ClientTooOldError,
     parse_version_tuple,
@@ -49,19 +48,24 @@ def _db_path() -> str:
 
 
 def _set_floor(version: str) -> None:
-    """Stamp the floor via a RAW ``sqlite3`` connection.
+    """Stamp the floor through the layer BELOW ``_db.connect``.
 
     Deliberately bypasses ``_db.connect`` (and therefore its own gate): the
     production CLI verb (``_cli/_min_client_version.py``) goes through
     ``_db.connect`` and so inherits whatever floor is ALREADY set — which
     means a test that first sets a too-high floor could never lower it again
-    through that path. This helper represents an operator fixing the raw
-    file directly, not the normal CLI flow, so tests can freely move the
-    floor up and down to exercise both sides of the gate.
-    """
-    import sqlite3
+    through that path. This helper represents an operator repairing the store
+    directly, not the normal CLI flow, so tests can freely move the floor up
+    and down to exercise both sides of the gate.
 
-    conn = sqlite3.connect(str(_db_path()))
+    ``_backend_connect.connect`` IS that bypass and is not a lesser one than
+    the raw driver connection this used to open: ``_db.connect`` is exactly
+    this call plus ``enforce_min_client_version``, so opening here reaches the
+    same store by the same driver with precisely the one check removed. Naming
+    the seam rather than the engine also keeps the bypass HONEST — it is
+    visible as "one layer down", not as "a different way in".
+    """
+    conn = backend_connect(_db_path(), read_only=False, rows_by_name=True)
     try:
         stamp_floor(conn, version)
         conn.commit()
@@ -105,13 +109,29 @@ def test_parse_version_tuple_treats_a_non_numeric_segment_as_zero():
     assert parsed == (0, 0, 0)
 
 
-def test_parse_version_tuple_orders_versions_the_way_a_reader_expects():
+def test_parse_version_tuple_orders_a_patch_bump():
     # Arrange
     # Act
+    lower, higher = parse_version_tuple("0.17.4"), parse_version_tuple("0.17.5")
     # Assert
-    assert parse_version_tuple("0.17.4") < parse_version_tuple("0.17.5")
-    assert parse_version_tuple("0.9.9") < parse_version_tuple("0.17.0")
-    assert parse_version_tuple("1.0.0") > parse_version_tuple("0.99.99")
+    assert lower < higher
+
+
+def test_parse_version_tuple_orders_a_minor_bump_numerically_not_lexically():
+    # Arrange
+    # Act
+    lower, higher = parse_version_tuple("0.9.9"), parse_version_tuple("0.17.0")
+    # Assert — the case a string comparison gets WRONG ("0.9" > "0.17"), which
+    # is the whole reason this parses to a tuple of ints.
+    assert lower < higher
+
+
+def test_parse_version_tuple_orders_a_major_bump():
+    # Arrange
+    # Act
+    higher, lower = parse_version_tuple("1.0.0"), parse_version_tuple("0.99.99")
+    # Assert
+    assert higher > lower
 
 
 # --------------------------------------------------------------------------- #
@@ -180,20 +200,25 @@ def test_stamp_floor_replaces_a_previously_set_floor():
     assert floor == "2.0.0"
 
 
-def test_connect_opens_fine_on_a_totally_fresh_database_with_no_schema_meta_table_yet():
-    """`connect()` runs BEFORE `init_schema()`, so a brand-new file has no
+def test_connect_opens_fine_on_a_totally_fresh_store_with_no_schema_meta_table_yet(
+    new_store,
+):
+    """`connect()` runs BEFORE `init_schema()`, so a brand-new store has no
     `schema_meta` table at all — `read_floor` must treat that the same as a
-    present-but-empty table: no floor, proceed."""
+    present-but-empty table: no floor, proceed.
+
+    ``bootstrap=False`` is what makes this the case it is named for. The
+    harness's per-test store is schema-complete, so opening THAT would exercise
+    the present-but-empty branch and pass while saying "no table at all"."""
     # Arrange
-    with tempfile.TemporaryDirectory() as d:
-        fresh_path = Path(d) / "brand-new.db"
+    fresh = new_store("cards_floor_fresh", bootstrap=False)
 
-        # Act
-        conn = _db.connect(fresh_path)
+    # Act
+    conn = _db.connect(fresh)
 
-        # Assert
-        assert conn is not None
-        conn.close()
+    # Assert
+    assert conn is not None
+    conn.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -244,57 +269,72 @@ def test_connect_raises_client_too_old_when_the_client_is_below_the_floor():
         _db.connect(_db_path())
 
 
-def test_the_too_old_error_names_both_the_running_and_the_floor_version():
-    # Arrange
-    running = resolve_running_version()
-    _set_floor("9999.0.0")
+def _refusal_message() -> str:
+    """Set an unreachable floor, provoke the refusal, return its text.
 
-    # Act
+    Exists so each claim about the message is its OWN test with ONE assertion
+    (STX-TQ007). Combining `pytest.raises` with extra asserts hides everything
+    after the first failure — and for an error message that is the wrong
+    trade: the whole point of this error is that a human reads all of it and
+    knows what to run next, so each sentence it must contain deserves to fail
+    on its own line.
+    """
+    _set_floor("9999.0.0")
     with pytest.raises(ClientTooOldError) as exc_info:
         _db.connect(_db_path())
+    return str(exc_info.value)
 
+
+def test_the_too_old_error_names_the_running_version():
+    # Arrange
+    running = resolve_running_version()
+    # Act
+    message = _refusal_message()
     # Assert
-    message = str(exc_info.value)
     assert running in message
+
+
+def test_the_too_old_error_names_the_floor_version():
+    # Arrange
+    # Act
+    message = _refusal_message()
+    # Assert — without the floor, the reader knows they are too old but not
+    # how far, so they cannot tell which release would fix it.
     assert "9999.0.0" in message
 
 
 def test_the_too_old_error_names_the_wheel_upgrade_command():
     # Arrange
-    _set_floor("9999.0.0")
-
     # Act
-    with pytest.raises(ClientTooOldError) as exc_info:
-        _db.connect(_db_path())
-
+    message = _refusal_message()
     # Assert
-    assert "pip install -U scitex-cards" in str(exc_info.value)
+    assert "pip install -U scitex-cards" in message
 
 
-def test_the_too_old_error_names_the_editable_checkout_upgrade_command():
+def test_the_too_old_error_names_the_editable_checkout_command():
     # Arrange
-    _set_floor("9999.0.0")
-
     # Act
-    with pytest.raises(ClientTooOldError) as exc_info:
-        _db.connect(_db_path())
-
-    # Assert
-    message = str(exc_info.value)
+    message = _refusal_message()
+    # Assert — an editable checkout is the common case in this fleet, and
+    # `pip install -U` is the wrong remedy there.
     assert "uv pip install -e" in message
+
+
+def test_the_editable_checkout_command_names_this_package():
+    # Arrange
+    # Act
+    message = _refusal_message()
+    # Assert
     assert "scitex-cards" in message
 
 
 def test_the_too_old_error_never_mentions_yaml():
     # Arrange
-    _set_floor("9999.0.0")
-
     # Act
-    with pytest.raises(ClientTooOldError) as exc_info:
-        _db.connect(_db_path())
-
-    # Assert
-    assert "yaml" not in str(exc_info.value).lower()
+    message = _refusal_message()
+    # Assert — YAML is not a store any more; naming it here would send the
+    # reader to a file that cannot fix their problem.
+    assert "yaml" not in message.lower()
 
 
 # --------------------------------------------------------------------------- #
@@ -318,8 +358,8 @@ def test_the_read_path_is_gated_the_same_as_connect():
     """`_store.list_tasks` -> `_model.load_tasks` ->
     `_store._read_canonical_db_or_raise` -> `_db_export.export_doc` ->
     `_db.open_db` opens via `_db.connect` — the read chokepoint inherits the
-    same floor check. (The S2 SQLite read accelerator this test used to call
-    directly, `_store_read_sqlite.list_tasks_sqlite`, is deleted; `list_tasks`
+    same floor check. (The S2 indexed read accelerator this test used to call
+    directly, `_store_read_retired.list_tasks_retired`, is deleted; `list_tasks`
     is the one read path now.) The floor is stamped only AFTER a card is
     mirrored, so the read path is exercised against a genuinely populated,
     schema-complete database."""
@@ -338,15 +378,16 @@ def test_the_read_path_still_works_once_the_floor_is_cleared_again():
     """Sanity: the gate is not a one-way trap — lowering the floor (or
     unstamping it) restores normal reads, proving the check re-runs on
     every connect rather than caching a bad verdict."""
-    # Arrange
+    # Arrange — raise the floor out of reach, then lower it again. The
+    # blocked-while-high half is NOT re-asserted here: its own test
+    # (`test_the_read_path_is_gated_the_same_as_connect`) owns that claim, and
+    # combining the two would hide this one behind that one's failure.
     doc = {"tasks": [{"id": "t1", "title": "T", "status": "deferred"}]}
     _db_mirror.mirror_doc_incremental(doc, _db_path(), store_path=_db_path())
     _set_floor("9999.0.0")
-    with pytest.raises(ClientTooOldError):
-        _store.list_tasks(scope="")
+    _set_floor("0.0.1")
 
     # Act
-    _set_floor("0.0.1")
     cards = _store.list_tasks(scope="")
 
     # Assert

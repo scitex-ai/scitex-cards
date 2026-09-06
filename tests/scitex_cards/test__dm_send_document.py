@@ -38,16 +38,27 @@ from scitex_cards._mcp_skills import dm_send_document
 
 
 @pytest.fixture
-def store(tmp_path):
-    """An explicit tmp task-store path — never the resolved default."""
-    return str(tmp_path / "cards.db")
+def store(new_store):
+    """An EXPLICIT throwaway store — never the resolved default.
+
+    The intent is unchanged and is the point of the fixture: these tests must
+    never reach the ambient board. Only the spelling moved, because a filesystem
+    path names no store and is refused before the driver is reached.
+    """
+    return new_store()
 
 
 @pytest.fixture
-def agent_id(monkeypatch):
-    """A resolvable sender identity; the DM 'from' must name a real agent."""
-    monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "scitex-cards")
-    monkeypatch.delenv("SCITEX_CARDS_HUB_URL", raising=False)
+def agent_id(env):
+    """A resolvable sender identity; the DM 'from' must name a real agent.
+
+    Uses the `env` fixture (tests/scitex_cards/conftest.py) rather than
+    `monkeypatch`: PA-306 forbids the fixture ecosystem-wide, and `env` is its
+    sanctioned replacement — it saves each touched key, sets it for the test,
+    and restores the prior value on teardown. Same guarantee, real os.environ.
+    """
+    env.set("SCITEX_CARDS_AGENT_ID", "scitex-cards")
+    env.delete("SCITEX_CARDS_HUB_URL")
     return "scitex-cards"
 
 
@@ -177,11 +188,11 @@ def test_a_missing_file_sends_no_message(agent_id, store, tmp_path):
 
 
 def test_a_configured_hub_refuses_rather_than_storing_locally(
-    agent_id, source_pdf, store, monkeypatch
+    agent_id, source_pdf, store, env
 ):
     """A local copy plus a remote message is a link to nothing — say so."""
     # Arrange
-    monkeypatch.setenv("SCITEX_CARDS_HUB_URL", "https://hub.example/api")
+    env.set("SCITEX_CARDS_HUB_URL", "https://hub.example/api")
     # Act
     result = _send(to="operator", file_path=str(source_pdf), tasks_path=store)
     # Assert

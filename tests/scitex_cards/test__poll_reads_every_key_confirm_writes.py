@@ -42,8 +42,9 @@ from scitex_cards._users import register_user
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Path:
-    return tmp_path / "cards.db"
+def store(new_store) -> str:
+    """A fresh throwaway store, as a DSN. See ``new_store`` in tests/conftest."""
+    return new_store()
 
 
 def _enqueue(key: str, store: Path) -> str:

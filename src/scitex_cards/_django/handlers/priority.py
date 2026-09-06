@@ -90,7 +90,7 @@ def handle_priority(request, board):
     _reset_cache()
 
     logger.info(
-        "[scitex-todo] priority reorder: %d ids updated in %s",
+        "[scitex-cards] priority reorder: %d ids updated in %s",
         len(updated),
         board.store_path,
     )

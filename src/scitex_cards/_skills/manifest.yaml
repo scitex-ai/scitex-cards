@@ -1,4 +1,4 @@
-# scitex-todo canonical skill manifest.
+# scitex-cards canonical skill manifest.
 #
 # This is the SINGLE SOURCE OF TRUTH for which skill IDs every fleet agent
 # should have in its `required_skills` list (agent-container's spec.yaml
@@ -8,25 +8,25 @@
 # Why this file exists
 # --------------------
 # Operator directive (board card
-# ``rec-propagate-scitex-todo-skill-into-every-agent-required-skills``):
-# every agent must read the scitex-todo usage skill on boot so they
-# consult the shared YAML store correctly — no parallel todo formats,
+# ``rec-propagate-scitex-cards-skill-into-every-agent-required-skills``):
+# every agent must read the scitex-cards usage skill on boot so they
+# consult the shared YAML store correctly — no parallel card formats,
 # no per-agent invention of board conventions.
 #
-# scitex-todo can't directly edit other agents' spec.yaml files
+# scitex-cards can't directly edit other agents' spec.yaml files
 # (agent-container's territory). Instead:
 #
 #   1. THIS manifest lists the canonical skill IDs that should be
 #      propagated. agent-container's spec-generation script reads it
 #      to bake the IDs into every agent's required_skills.
 #
-#   2. ``scitex-todo skills propagate <agents-dir>`` is the operator-
+#   2. ``scitex-cards skills propagate <agents-dir>`` is the operator-
 #      facing CLI verb that idempotently appends these IDs to each
 #      spec.yaml's skill list (round-trip via ruamel.yaml so comments
 #      survive).
 #
 #   3. The runbook
-#      ``src/scitex_cards/_skills/scitex-todo/21_fleet-mcp-rollout.md``
+#      ``src/scitex_cards/_skills/scitex-cards/21_fleet-mcp-rollout.md``
 #      describes the end-to-end propagation flow.
 #
 # Format
@@ -35,19 +35,19 @@
 # - ``skills[]``: ordered list. Each entry has:
 #     id          — canonical ID (the value that lands in required_skills).
 #     description — one-line "why every agent needs this".
-#     leaf        — path (relative to ``_skills/scitex-todo/``) of the
+#     leaf        — path (relative to ``_skills/scitex-cards/``) of the
 #                   most-load-bearing leaf, for runbook cross-reference.
 #
 # The IDs here MUST match the SKILL.md ``name:`` of bundled packs so
 # Claude Code's skill loader can resolve them after
-# ``scitex-todo skills install``.
+# ``scitex-cards skills install``.
 ---
 version: 1
 skills:
-  - id: scitex-todo
+  - id: scitex-cards
     description: |
       Canonical YAML task store + the fleet-wide mandate that every
-      durable / cross-session / cross-agent todo writes to it. Read
+      durable / cross-session / cross-agent card writes to it. Read
       this on every agent boot to learn the store-resolution chain,
       the write protocol, and the SSoT write-here rule.
     leaf: SKILL.md

@@ -86,9 +86,31 @@ def test_a_fresh_export_passes_the_freshness_guard(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def _desynced_snapshot_output(tmp_path) -> str:
+    """Run the rail against a DB whose card_json lags its typed columns.
+
+    The 2026-07-21 shape. Shared by the four tests below, which were one test
+    with four assertions until STX-TQ007 split them: the exit code, the label,
+    and the TWO timestamps are four separate obligations, and a refusal that
+    reports only one side of the desync does not let the reader see the gap
+    that caused it.
+    """
+    _seed_one_task()
+    _desync_typed_last_activity("t0", "2026-07-21T10:47:00Z")
+    result = CliRunner().invoke(
+        db_group, ["snapshot", "--dir", str(tmp_path / "snapshots")]
+    )
+    if result.exit_code == 0:
+        raise AssertionError(
+            "arrange failed: the desynced export was ACCEPTED, so the "
+            f"assertions below describe nothing. Output:\n{result.output}"
+        )
+    return result.output
+
+
 def test_a_stale_export_is_refused_by_the_freshness_guard(tmp_path):
     """The 2026-07-21 shape: card_json lags the DB's live typed columns."""
-    # Arrange — desync the DB's live state from what the export will read.
+    # Arrange
     _seed_one_task()
     _desync_typed_last_activity("t0", "2026-07-21T10:47:00Z")
 
@@ -99,9 +121,31 @@ def test_a_stale_export_is_refused_by_the_freshness_guard(tmp_path):
 
     # Assert
     assert result.exit_code != 0, "a stale export must not be snapshotted silently"
-    assert "STALE EXPORT" in result.output
-    assert _LAST_ACTIVITY in result.output  # the export's (stale) value
-    assert "2026-07-21T10:47:00Z" in result.output  # the DB's live value
+
+
+def test_the_stale_export_refusal_is_labelled_as_such(tmp_path):
+    # Arrange
+    # Act
+    output = _desynced_snapshot_output(tmp_path)
+    # Assert
+    assert "STALE EXPORT" in output
+
+
+def test_the_stale_export_refusal_reports_the_exports_value(tmp_path):
+    # Arrange
+    # Act
+    output = _desynced_snapshot_output(tmp_path)
+    # Assert
+    assert _LAST_ACTIVITY in output
+
+
+def test_the_stale_export_refusal_reports_the_databases_live_value(tmp_path):
+    # Arrange
+    # Act
+    output = _desynced_snapshot_output(tmp_path)
+    # Assert — the pair is the diagnosis: one value alone shows a number, both
+    # together show the DESYNC, which is the thing being refused.
+    assert "2026-07-21T10:47:00Z" in output
 
 
 def test_a_stale_export_leaves_no_commit_behind(tmp_path):

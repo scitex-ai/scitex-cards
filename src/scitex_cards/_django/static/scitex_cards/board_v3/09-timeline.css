@@ -1,4 +1,4 @@
-/* 09-timeline.css — board_v3 "Timeline" layout (operator TODO 2026-06-17).
+/* 09-timeline.css — board_v3 "Timeline" layout (operator CARD 2026-06-17).
  *
  * Themed via the same --* vars the other board_v3 modules use, so it flips
  * with the dark/light shell theme. Covers: the controls row, the SVG time-
@@ -131,7 +131,7 @@
 }
 
 /* ── per-agent avatar (lane-label icon + the Wall's agent tiles) ───────
-   Operator 2026-07-10 (todo-board-agent-icons-status-rings-20260710):
+   Operator 2026-07-10 (cards-board-agent-icons-status-rings-20260710):
    tracing left across the raster to find the owning agent is slow, so each
    agent lane carries its fleet icon. Markup emitted via window.STX.agentAvatar
    (10-agent-avatar.js).
@@ -151,7 +151,7 @@
   font-family: ui-monospace, monospace;
   pointer-events: none;
 }
-/* Brand labels longer than 3 chars (TODO / Grant / Writer / pClew) shrink to
+/* Brand labels longer than 3 chars (CARD / Grant / Writer / pClew) shrink to
  * stay inside the r=9 circle; 2-3 char labels keep the full 9px. */
 .tl-avatar-text--sm {
   font-size: 6px;

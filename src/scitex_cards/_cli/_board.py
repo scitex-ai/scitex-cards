@@ -8,7 +8,7 @@ a bare NOUN that launched directly — CLI noun-verb violation, and the
 operator had no clean way to restart after a card/source change ("port
 already in use" trap).
 
-Pidfile at ``~/.scitex/todo/board.pid`` so stop/restart/status are
+Pidfile at ``~/.scitex/cards/board.pid`` so stop/restart/status are
 reliable across terminals. Bare ``scitex-cards board`` (no subcommand)
 hard-errors with a redirect (operator directive TG 13316: noun-verb CLI
 convention, no bare-noun back-compat).
@@ -124,7 +124,7 @@ def _board_run_server(
             "The `board` noun REQUIRES an explicit verb — bare `{prog} "
             "board` hard-errors with a redirect (operator directive TG "
             "13316: noun-verb CLI convention, no bare-noun back-compat). "
-            "Writes a pidfile at ~/.scitex/todo/board.pid so `stop` / "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so `stop` / "
             "`restart` / `status` work reliably from any terminal. "
             "`board start --help` documents the web extra it requires."
         ),
@@ -147,7 +147,7 @@ def board_group(ctx: click.Context) -> None:
     the fleet.
 
     In-tree call sites updated in this same PR: ``_jobs_provider.py``.
-    Host-side systemd unit ``scitex-todo.dashboard.service`` ExecStart
+    Host-side systemd unit ``scitex-cards-dashboard.service`` ExecStart
     also needs the same migration — flagged for lead's host-side pass.
     """
     if ctx.invoked_subcommand is not None:
@@ -172,7 +172,7 @@ def board_group(ctx: click.Context) -> None:
     **spec_command_kwargs(
         summary="Launch the board server (blocking, foreground).",
         description=(
-            "Writes a pidfile at ~/.scitex/todo/board.pid so other "
+            "Writes a pidfile at ~/.scitex/cards/board.pid so other "
             "terminals can `board stop` / `board restart`. Requires the "
             "web extra: pip install scitex-cards[all]."
         ),
@@ -227,6 +227,7 @@ def board_start_cmd(
     Django app, and the last guard written for one door only (the
     unconfigured-store refusal) left the other open for three days.
 
+    \b
     Example:
       $ scitex-cards board start --port 8051
       $ scitex-cards board start --force
@@ -329,6 +330,7 @@ def board_stop_cmd(port: int, timeout: float, dry_run: bool, assume_yes: bool) -
     copy. Every message below is unchanged from when the sequence was
     inline; the wording is the contract this verb's tests pin.
 
+    \b
     Example:
       $ scitex-cards board stop
     """
@@ -404,6 +406,7 @@ def board_restart_cmd(
 ) -> None:
     """Stop then start. Both go through the same pidfile contract.
 
+    \b
     Example:
       $ scitex-cards board restart
     """
@@ -467,6 +470,7 @@ def board_restart_cmd(
 def board_status_cmd(port: int, as_json: bool) -> None:
     """One-line status: pidfile first, port fallback if it's stale.
 
+    \b
     Example:
       $ scitex-cards board status
       $ scitex-cards board status --json

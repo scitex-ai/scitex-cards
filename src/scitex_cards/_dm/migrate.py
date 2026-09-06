@@ -34,8 +34,12 @@ a stale snapshot treated as truth, deleting the rows it happened to lack.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 import json
-import sqlite3
 from pathlib import Path
 
 from .ids import (
@@ -77,7 +81,7 @@ MERGE_TABLES: tuple[str, ...] = (
 BACKFILL_SOURCE = "backfill"
 
 
-def _open(db, store) -> sqlite3.Connection:
+def _open(db, store) -> StoreConnection:
     from .._db import open_db
 
     return open_db(resolve_dm_db(db, store=store))
@@ -212,7 +216,7 @@ def _backfill_records(conn, thread_id, records, stamp, host, report) -> None:
             )
 
 
-def _count(conn: sqlite3.Connection) -> int:
+def _count(conn: StoreConnection) -> int:
     return int(_sole_value(conn.execute("SELECT COUNT(*) FROM dm_messages").fetchone()))
 
 
@@ -266,7 +270,7 @@ def merge_dm(
     return report
 
 
-def _insert_row(conn: sqlite3.Connection, table: str, row: dict) -> int:
+def _insert_row(conn: StoreConnection, table: str, row: dict) -> int:
     """``INSERT OR IGNORE`` one payload row. Returns 1 if it was new.
 
     Columns come from the ROW, intersected with what the table actually has,

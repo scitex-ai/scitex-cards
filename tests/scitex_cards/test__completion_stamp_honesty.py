@@ -32,7 +32,7 @@ from scitex_cards._store_lifecycle import (
 def _store(tmp_path, tasks):
     """Seed the canonical DB from an in-memory task list; return the STORE path.
 
-    The store is SQLite now: complete/reopen and the health check read+write the
+    The store is the database now: complete/reopen and the health check read+write the
     canonical DB and IGNORE the path (it survives only as the store IDENTITY).
     Seed the DB and return the pinned STORE path (NOT the DB path — a write
     stamped with any other path is refused on the next read). ``tmp_path`` is

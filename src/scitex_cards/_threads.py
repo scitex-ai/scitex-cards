@@ -78,7 +78,7 @@ from pathlib import Path
 
 from . import _threads_mirror as _mirror
 from ._dm.ids import pair_thread_id, peers_of_pair
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 
 #: The sidecar's file mechanics live in :mod:`scitex_cards._threads_io`.
 #: Re-exported here (rather than imported at each use site) so
@@ -121,8 +121,21 @@ def threads_path(store: str | Path | None = None) -> Path:
     migration design (part 2 §7.3) requires the call gone BEFORE any phase
     runs, so it is gone. A path query is now a path query.
     """
-    tasks = resolve_tasks_path(store) if store is None else Path(store).expanduser()
-    return tasks.parent / THREADS_FILENAME
+    # ``local_store_path``, NOT A FOURTH COPY OF ITS BODY. This line was
+    # byte-identical to the resolver in ``_paths``, whose own docstring says it
+    # was consolidated from three copies "on purpose" because "a triplicated
+    # resolver is the shape that starts answering three different ways". It
+    # answered a fourth way here: ``Path("postgresql://h/d")`` does not raise,
+    # it collapses the slashes into the RELATIVE ``postgresql:/h/d``, and this
+    # function's caller then created that tree and wrote the sidecar into it.
+    #
+    # Measured 2026-08-30, in the repository working directory:
+    #     postgresql:/scitex-primary:55432/threads.json
+    # holding 45 messages accumulated across runs, which is why a test with a
+    # FRESH per-test schema read a thread full of another test's traffic.
+    # Fixing the copy in ``_paths`` did not fix this one -- that is what a
+    # duplicated resolver costs.
+    return local_store_path(store).parent / THREADS_FILENAME
 
 
 def thread_key(a: str, b: str) -> str:

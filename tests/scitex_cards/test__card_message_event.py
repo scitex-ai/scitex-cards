@@ -5,7 +5,7 @@
 Lead a2a `1e8e33d0`, 2026-06-14 — Phase 6 chat surface becomes the
 operator↔card↔owner+collaborators feedback channel. Every comment
 landing via `comment_task` (whether from the chat panel, the
-`scitex-todo comment` CLI, or the MCP tool) emits a `card-message`
+`scitex-cards comment` CLI, or the MCP tool) emits a `card-message`
 event on the `scitex_cards.hooks` bus so SAC can a2a-fan it.
 
 No mocks (STX-NM/PA-306). AAA pattern.

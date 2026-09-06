@@ -233,7 +233,7 @@ be a state the WRITE PATH consults and fails closed on.
 
 Stated limit, so nobody builds against a promise: a gate inside the package is
 honoured only by processes running a version that HAS it. Measured 2026-07-30 —
-one agent resident on 0.17.5, another carrying `scitex_todo` 0.13.5, and the
+one agent resident on 0.17.5, another carrying `scitex_cards` 0.13.5, and the
 operator's own board process running code 57 minutes older than what was
 installed on disk. So for the FIRST migration the real mechanism is the operator
 quiescing the fleet; the in-package gate is what makes later ones unattended-safe.

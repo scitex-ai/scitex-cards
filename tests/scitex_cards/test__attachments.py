@@ -186,40 +186,40 @@ def test_the_shipped_ceiling_is_25_mib():
     assert shipped == expected
 
 
-@pytest.fixture
-def tiny_ceiling(monkeypatch):
-    """Lower the ceiling so the ENFORCEMENT is testable at any value."""
-    monkeypatch.setattr(_attachments, "MAX_UPLOAD_BYTES", 64)
-    return 64
+#: A ceiling small enough to test the ENFORCEMENT without writing the real
+#: 25 MB. Passed to the verbs as ``max_bytes`` rather than written over the
+#: module constant (PA-306 §3) — the boundary logic is identical at any value,
+#: and a test that has to move 25 MB to see a refusal is one nobody runs.
+TINY_CEILING = 64
 
 
-def test_a_file_over_the_ceiling_is_refused(store, tmp_path, tiny_ceiling):
+def test_a_file_over_the_ceiling_is_refused(store, tmp_path):
     """The ceiling guards against a disk-full board, which is a fleet outage."""
     # Arrange
     fat = tmp_path / "over.bin"
-    fat.write_bytes(b"\0" * (tiny_ceiling + 1))
+    fat.write_bytes(b"\0" * (TINY_CEILING + 1))
 
     # Act
     def send():
-        store_local_file(fat, store=store)
+        store_local_file(fat, store=store, max_bytes=TINY_CEILING)
 
     # Assert
     with pytest.raises(AttachmentError):
         send()
 
 
-def test_a_file_at_the_ceiling_is_accepted(store, tmp_path, tiny_ceiling):
+def test_a_file_at_the_ceiling_is_accepted(store, tmp_path):
     """The boundary is a ceiling, not an off-by-one that rejects a legal file."""
     # Arrange
     exact = tmp_path / "exact.bin"
-    exact.write_bytes(b"\0" * tiny_ceiling)
+    exact.write_bytes(b"\0" * TINY_CEILING)
     # Act
     meta = store_local_file(exact, store=store)
     # Assert
-    assert meta["size"] == tiny_ceiling
+    assert meta["size"] == TINY_CEILING
 
 
-def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
+def test_a_stream_that_overruns_mid_write_is_refused(store):
     """A DECLARED size is a claim; the bytes are what count.
 
     ``store_chunks`` is what the browser upload path feeds, and there the
@@ -231,7 +231,9 @@ def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
 
     # Act
     def send():
-        _attachments.store_chunks(iter(chunks), "over.bin", store=store)
+        _attachments.store_chunks(
+            iter(chunks), "over.bin", store=store, max_bytes=TINY_CEILING
+        )
 
     # Assert
     with pytest.raises(AttachmentError):
@@ -239,7 +241,7 @@ def test_a_stream_that_overruns_mid_write_is_refused(store, tiny_ceiling):
 
 
 @pytest.fixture
-def after_an_over_size_refusal(store, tiny_ceiling):
+def after_an_over_size_refusal(store):
     """Drive a refusal, then hand back the store root for inspection.
 
     The refusal lives in the FIXTURE rather than the test body: a
@@ -247,7 +249,12 @@ def after_an_over_size_refusal(store, tiny_ceiling):
     alongside the leftovers check would make this two assertions in one test.
     """
     with pytest.raises(AttachmentError):
-        _attachments.store_chunks(iter([b"\0" * 32] * 4), "over.bin", store=store)
+        _attachments.store_chunks(
+            iter([b"\0" * 32] * 4),
+            "over.bin",
+            store=store,
+            max_bytes=TINY_CEILING,
+        )
     return attachments_root(store)
 
 

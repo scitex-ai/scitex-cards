@@ -24,7 +24,11 @@ Consequence for anything reading the stamp: check the COLUMNS
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 
 from ._ddl import execute_ddl
 
@@ -47,7 +51,7 @@ __all__ = [
 
 
 def record_migration_provenance(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     prior_version: int,
     new_version: int,
     now_iso: str,
@@ -116,7 +120,7 @@ END;
 """
 
 
-def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
+def _migrate_v6_to_v7(conn: StoreConnection) -> None:
     """Install ``tasks_bump_revision``. Idempotent, additive, no rewrite.
 
     WHY THE INCREMENT IS DB-SIDE AND NOT IN ``_store_mutate``: an
@@ -161,7 +165,7 @@ NOTIFICATION_RAIL_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+def _migrate_v7_to_v8(conn: StoreConnection) -> None:
     """Give ``notifications`` the three columns the sidecar rail needs.
 
     Idempotent, additive, no rewrite — each column is added only if absent, and
@@ -177,8 +181,8 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
     rather than into a parallel table nobody else knows about.
 
     WHAT THIS DOES NOT DO, stated because the gap is the dangerous part.
-    Installing the columns does NOT move the rail. ``_inbox_sqlite`` still writes
-    ``runtime/todo.db``, and ``_db_mirror`` still issues ``DELETE FROM
+    Installing the columns does NOT move the rail. The retired per-host inbox
+    still wrote ``runtime/cards.db``, and ``_db_mirror`` still issues ``DELETE FROM
     notifications`` as part of a mirror rebuild — harmless against a derived
     empty table, and DATA LOSS the moment this one becomes the store of record.
     That DELETE must be neutralised in the same change that flips the writers,
@@ -198,22 +202,22 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
 
 #: The v9 arrival-order column. Plain ``BIGINT`` because :func:`execute_ddl`
 #: translates ONLY ``CREATE TRIGGER`` — column types reach the backend verbatim,
-#: so ``BIGSERIAL`` would be a SQLite syntax error and ``AUTOINCREMENT`` a
-#: PostgreSQL one. The generator is attached per-backend in the migration below.
+#: and ``AUTOINCREMENT`` is a PostgreSQL syntax error. The generator is attached
+#: separately in the migration below.
 NOTIFICATION_ORDER_COLUMN = ("seq", "BIGINT")
 
 #: PostgreSQL sequence backing ``notifications.seq``.
 _SEQ_NAME = "notifications_seq_seq"
 
 
-def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+def _migrate_v8_to_v9(conn: StoreConnection) -> None:
     """Give ``notifications`` an ARRIVAL-ORDER column. Idempotent, additive.
 
-    WHY A COLUMN AND NOT AN ORDER BY. The SQLite inbox delivers and acks by
-    ``ORDER BY rowid`` — five call sites — and ``rowid`` has no PostgreSQL
+    WHY A COLUMN AND NOT AN ORDER BY. The retired per-host inbox delivered and
+    acked by an implicit row counter — five call sites — which has no PostgreSQL
     equivalent. Moving the rail without replacing it would silently lose
-    delivery order: the SQL stays valid on both engines and the tests stay
-    green, which is the worst possible shape for a correctness regression.
+    delivery order: the SQL stays valid and the tests stay green, which is the
+    worst possible shape for a correctness regression.
 
     WHY NOT ``ORDER BY ts, id``, which the export path already uses for this
     very table and justifies as "on append-only tables it is the same order
@@ -233,9 +237,10 @@ def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
     measuring the real table is what stopped me.
 
     THE BACKFILL IS NOT DONE HERE, DELIBERATELY. Existing rows get NULL, which
-    is honest: their arrival order lives in the SQLite ``rowid`` of the OTHER
-    database and is only knowable while both are open -- i.e. during the carry
-    (:mod:`scitex_cards._inbox_carry`). Inventing values here, from ``ts`` or
+    is honest: their arrival order lived in the row counter of the OTHER
+    database and was only knowable while both were open -- i.e. during the
+    carry, which is retired with the rail it carried from. Inventing values
+    here, from ``ts`` or
     from insertion order in this table, would manufacture an order that was
     never observed and make the missing data unrecoverable by looking correct.
     """
@@ -248,8 +253,8 @@ def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
     # this rail and two enqueues can read the same MAX, which defeats the total
     # order the column exists to provide.
     #
-    # SQLite keeps ``rowid`` as its generator; the column is still populated by
-    # the carry so a store migrated from SQLite carries its history's order.
+    # The column is populated by the carry as well, so a store migrated from
+    # the retired rail carries its history's order.
     from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
 
     if not _is_postgres(conn):
@@ -320,7 +325,7 @@ NOTIFICATION_SYNC_COLUMNS: tuple[tuple[str, str], ...] = (
 NOTIFICATION_PAYLOAD_TRIGGER = "notifications_fill_payload"
 
 
-def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
+def _migrate_v9_to_v10(conn: StoreConnection) -> None:
     """Sync columns on ``notifications``, and a payload no client can omit.
 
     TWO CHANGES, ONE REASON: a fact that MUST be on every row cannot be left to
@@ -331,9 +336,9 @@ def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
     for the lock to mean anything, and that condition is not establishable".
 
     THE PAYLOAD TRIGGER IS THE STRUCTURAL END OF A LOSS CLASS. ``record_json``
-    was omitted by ``_inbox_postgres.enqueue`` (fixed in #803), by
-    ``_inbox_carry.carry_rows`` and by ``_inbox_migrate_postgres`` (both fixed
-    alongside this) — three writers, the same omission, found one at a time
+    was omitted by ``_inbox_postgres.enqueue`` (fixed in #803) and by the two
+    carry/migrate writers of the retired rail (both fixed alongside this, and
+    both since deleted) — three writers, the same omission, found one at a time
     while the fleet was down. Four MORE payload-less rows appeared on the live
     rail after the enqueue fix landed, at 19:02, 22:03, 22:17, 22:50 and 23:27,
     because merged is not deployed and the containers still ran the old client.
@@ -359,12 +364,10 @@ def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
     from ._schema_probe import _is_postgres  # noqa: PLC0415 -- import cycle
 
     if not _is_postgres(conn):
-        # SQLite gets the columns but not the trigger. `json_object()` is only
-        # enabled by default from SQLite 3.38 and the live host runs 3.37.2 —
-        # this repo has already lost 36 hours to SQL that parsed everywhere
-        # except on the one machine that mattered. The rail's SQLite writers are
-        # in-process and current by construction; the multi-version fleet is on
-        # PostgreSQL, which is where the guard is needed and where it works.
+        # A connection that is not the store gets the columns but not the
+        # trigger: the trigger is plpgsql. This is a defensive no-op rather than
+        # a second code path — the multi-version fleet is on the store, which is
+        # where the guard is needed and where it works.
         return
     conn.execute(_PAYLOAD_TRIGGER_FN_SQL)
     conn.execute(f"DROP TRIGGER IF EXISTS {NOTIFICATION_PAYLOAD_TRIGGER} ON notifications")
@@ -399,7 +402,7 @@ $$ LANGUAGE plpgsql
 """
 
 
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+def table_columns(conn: StoreConnection, table: str) -> set[str]:
     """The column names actually present on ``table`` in THIS database file.
 
     The honest question a guard must ask. ``PRAGMA user_version`` is a STAMP —
@@ -417,7 +420,7 @@ def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {str(name) for name in column_names(conn, table)}
 
 
-def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+def _migrate_v1_to_v2(conn: StoreConnection) -> None:
     """Add ``tasks.card_json`` to a v1 DB. Idempotent, additive, no rewrite.
 
     ``CREATE TABLE IF NOT EXISTS`` is a NO-OP on an existing table — it will not
@@ -437,7 +440,7 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN card_json TEXT")
 
 
-def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
+def _migrate_v2_to_v3(conn: StoreConnection) -> None:
     """Add ``record_json`` to users/notifications/messages. Idempotent, additive.
 
     Same contract as :func:`_migrate_v1_to_v2`: existing rows get NULL and are
@@ -450,7 +453,7 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN record_json TEXT")
 
 
-def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
+def _migrate_v5_to_v6(conn: StoreConnection) -> None:
     """Add ``tasks.revision`` to a pre-v6 DB. Idempotent, additive, no rewrite.
 
     ``DEFAULT 0`` back-fills every existing row, and unlike the ``card_json``
@@ -466,8 +469,8 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
     writers stop conflicting exactly when they should and last-write-wins
     silently. scitex-db's Postgres tool is built against that requirement.
 
-    And preserving it is NOT sufficient. A writer that read revision=5 from
-    SQLite and writes to a copied store finds 5 there and succeeds — its lock is
+    And preserving it is NOT sufficient. A writer that read revision=5 from one
+    store and writes to a copied store finds 5 there and succeeds — its lock is
     satisfied — yet it computed against a read from a DIFFERENT store, so
     anything that landed after the copy point is gone with no error anywhere.
     Preserving the column makes the lock FUNCTION; only quiescing every writer

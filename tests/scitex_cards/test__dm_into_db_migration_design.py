@@ -44,9 +44,16 @@ THREAD_ID = "dm:agent-x::operator"
 
 
 @pytest.fixture()
-def db_path(tmp_path: Path) -> Path:
-    """An EXPLICIT database path nobody else can resolve."""
-    return tmp_path / "cards.db"
+def db_path(new_store) -> str:
+    """An EXPLICIT store nobody else can resolve. A DSN, not a path.
+
+    It returned ``tmp_path / "cards.db"``. That spelling meant "a fresh store
+    only this test can reach", and the temp directory supplied both halves at
+    once; a filesystem path names no store now, so the isolation has to come
+    from a throwaway PostgreSQL schema instead. Same guarantee, different
+    mechanism: nothing outside this test can address the schema either.
+    """
+    return new_store()
 
 
 @pytest.fixture()
@@ -367,7 +374,7 @@ def test_merge_never_shrinks_the_message_count(db_path, sidecar):
     assert message_count(db=db_path) == 2
 
 
-def test_thread_order_is_independent_of_insertion_order(db_path, tmp_path):
+def test_thread_order_is_independent_of_insertion_order(db_path, tmp_path, new_store):
     """Every host holding the same rows must render the same conversation.
 
     Today's order is ``rowid`` — insertion order into one file, which two
@@ -378,7 +385,7 @@ def test_thread_order_is_independent_of_insertion_order(db_path, tmp_path):
     from scitex_cards._dm.store import merge_dm, messages_in
 
     ids = ["m_cccccccccccc", "m_dddddddddddd", "m_eeeeeeeeeeee"]
-    other_db = tmp_path / "peer.db"
+    other_db = new_store(prefix="peer")
     merge_dm(_peer_payload(ids), db=db_path)
     merge_dm(_peer_payload(list(reversed(ids))), db=other_db)
 

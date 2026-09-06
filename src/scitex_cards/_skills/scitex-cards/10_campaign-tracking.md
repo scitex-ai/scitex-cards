@@ -23,7 +23,7 @@ package — they depend on the local fleet layout (campaign repos under
 `~/proj/scitex-*`, board markdown layout). Documenting them here so
 the scitex-cards user knows the campaign-side of the workflow.
 
-## `~/.scitex/todo/check_releases.py`
+## `~/.scitex/cards/check_releases.py`
 
 Scans `~/proj/*/pyproject.toml` against PyPI and classifies each
 package:
@@ -37,15 +37,15 @@ package:
 | `DYNAMIC`     | pyproject uses a dynamic version backend; classification deferred |
 
 ```bash
-~/.scitex/todo/check_releases.py            # human-readable table
-~/.scitex/todo/check_releases.py --json     # JSON for piping
+~/.scitex/cards/check_releases.py            # human-readable table
+~/.scitex/cards/check_releases.py --json     # JSON for piping
 ```
 
 Pair with the scitex-dev release flow (see
 `scitex_dev/_skills/general/05_development_03_release-automation.md`):
 filter `BEHIND` rows → run the develop→main→tag flow on each.
 
-## `~/.scitex/todo/campaign_report.py`
+## `~/.scitex/cards/campaign_report.py`
 
 Renders `GITIGNORED/campaign-status.md` (the orchestrator's board
 markdown, hand-curated rows × columns of package × phase) into a
@@ -55,8 +55,8 @@ operator can see at-a-glance "what moved" without re-reading the
 whole table.
 
 ```bash
-~/.scitex/todo/campaign_report.py
-# → ~/.scitex/todo/reports/campaign-status-YYYYMMDDTHHMMSS.pdf
+~/.scitex/cards/campaign_report.py
+# → ~/.scitex/cards/reports/campaign-status-YYYYMMDDTHHMMSS.pdf
 ```
 
 The snapshot tracking lives next to the PDF outputs; deleting the

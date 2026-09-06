@@ -41,8 +41,8 @@ LIVENESS_FILENAME = "notifyd-liveness.json"
 
 _RESTART_HINT = (
     "delivery is failing — read the underlying reason above, then on the host "
-    "that runs notifyd: `journalctl --user -u scitex-todo-notifyd -n 200` and "
-    "`systemctl --user restart scitex-todo-notifyd`. `scitex-cards deliver` "
+    "that runs notifyd: `journalctl --user -u scitex-cards-notifyd -n 200` and "
+    "`systemctl --user restart scitex-cards-notifyd`. `scitex-cards deliver` "
     "runs ONE pass in the foreground to reproduce the fault directly."
 )
 

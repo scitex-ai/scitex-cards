@@ -1,101 +1,44 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The inbox rail's table/column/order names, resolved per backend.
+"""The inbox rail's table, column and order names, as one object.
 
-THE LOAD-BEARING TEST HERE IS THE SQLITE ONE. The seam is introduced so
-``_inbox_sqlite`` can be rewired without changing behaviour on the rail that is
-actually in production; if the SQLite spelling is not byte-identical to what is
-there today, the rewire is a behaviour change wearing a refactor's clothes.
+WHAT THIS MODULE USED TO BE, AND WHY MOST OF IT IS GONE. It was a per-backend
+SEAM: two shapes, and a ``shape_for(conn)`` that picked between them by looking
+at the live connection. Its load-bearing test asserted that one of those two
+spellings was byte-identical to what production ran, so the other could be
+rewired without changing behaviour.
 
-THE ORDERING IS WHY THIS IS ONE OBJECT AND NOT THREE CONSTANTS. A table rename
-plus a column rename produces SQL that is valid on both engines and silently
-loses delivery order, because ``rowid`` has no PostgreSQL equivalent. Bundling
-the order expression with the names makes "renamed the table but kept rowid"
-unrepresentable rather than merely discouraged.
+There is one storage engine now. A function that chooses between two engines'
+spellings has nothing left to choose, and a constant describing the retired
+engine's table names describes nothing that exists -- so ``shape_for`` and the
+second shape are gone from ``_inbox_shape``, and the tests that pinned the
+DISPATCH went with them. They are listed here rather than silently dropped:
+
+    the retired shape's table / recipient / order clause   (3 tests)
+    "the two shapes differ in all three fields"            (1 test)
+    "the connection selects the shape"                     (2 tests)
+
+The last pair is worth one more sentence, because deleting a test that used to
+pass deserves an argument rather than a shrug. Its subject was that the shape
+is read from WHAT IS ACTUALLY OPEN rather than from a caller's belief -- a good
+rule. But with a single engine there is no second answer for the resolver to
+get wrong: the property is now enforced by there being nothing to resolve,
+which is stronger than a test asserting the resolver resolves correctly.
+
+WHAT SURVIVES IS THE REASON THE OBJECT EXISTS AT ALL. The ordering is bundled
+with the names, and that is why this is one frozen object and not three loose
+constants: a table rename plus a column rename produces SQL that is valid and
+silently loses delivery order. Bundling the order expression with the names
+makes "renamed the table but kept the old order column" unrepresentable rather
+than merely discouraged.
 """
 
 from __future__ import annotations
 
-import sqlite3
-
-import pytest
-
-from scitex_cards._inbox_shape import (
-    POSTGRES_SHAPE,
-    SQLITE_SHAPE,
-    InboxShape,
-    shape_for,
-)
-
-_PG_DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
+from scitex_cards._inbox_shape import POSTGRES_SHAPE, InboxShape
 
 
-@pytest.fixture
-def sqlite_conn():
-    conn = sqlite3.connect(":memory:")
-    yield conn
-    conn.close()
-
-
-@pytest.fixture
-def pg_conn():
-    """Live Postgres: skip if UNDECLARED, fail if DECLARED-but-broken."""
-    import os
-
-    declared = os.environ.get("SCITEX_CARDS_TEST_PG_DSN")
-    dsn = declared or _PG_DSN
-    try:
-        import psycopg
-    except ImportError:
-        if declared:
-            pytest.fail("SCITEX_CARDS_TEST_PG_DSN is set but psycopg is missing")
-        pytest.skip("psycopg not installed")
-    try:
-        conn = psycopg.connect(dsn, connect_timeout=5)
-    except Exception as exc:
-        if declared:
-            pytest.fail(f"declared Postgres at {dsn!r} unreachable: {exc}")
-        pytest.skip(f"no live Postgres: {type(exc).__name__}")
-    yield conn
-    conn.close()
-
-
-class TestTheSqliteShapeMatchesWhatIsInProductionToday:
-    """Byte-identical, or the rewire is a behaviour change in disguise."""
-
-    def test_the_table_is_inbox(self):
-        # Arrange
-        shape = SQLITE_SHAPE
-
-        # Act
-        table = shape.table
-
-        # Assert
-        assert table == "inbox"
-
-    def test_the_recipient_column_is_recipient(self):
-        # Arrange
-        shape = SQLITE_SHAPE
-
-        # Act
-        column = shape.recipient
-
-        # Assert
-        assert column == "recipient"
-
-    def test_the_order_clause_is_order_by_rowid(self):
-        """The exact string the five current call sites contain."""
-        # Arrange
-        shape = SQLITE_SHAPE
-
-        # Act
-        clause = shape.order()
-
-        # Assert
-        assert clause == "ORDER BY rowid"
-
-
-class TestThePostgresShapeNamesTheCanonicalStore:
+class TestTheShapeNamesTheCanonicalStore:
     def test_the_table_is_notifications(self):
         # Arrange
         shape = POSTGRES_SHAPE
@@ -106,7 +49,7 @@ class TestThePostgresShapeNamesTheCanonicalStore:
         # Assert
         assert table == "notifications"
 
-    def test_the_recipient_column_is_renamed(self):
+    def test_the_recipient_column_is_recipient_id(self):
         # Arrange
         shape = POSTGRES_SHAPE
 
@@ -117,7 +60,7 @@ class TestThePostgresShapeNamesTheCanonicalStore:
         assert column == "recipient_id"
 
     def test_the_order_clause_uses_the_v9_column(self):
-        """NOT rowid, which does not exist there, and NOT ts."""
+        """NOT ``rowid``, which does not exist here, and NOT ``ts``."""
         # Arrange
         shape = POSTGRES_SHAPE
 
@@ -126,47 +69,6 @@ class TestThePostgresShapeNamesTheCanonicalStore:
 
         # Assert
         assert clause == "ORDER BY seq"
-
-
-class TestTheTwoShapesDifferInAllThree:
-    """Guards a 'simplification' that shares a field between the two."""
-
-    def test_every_field_differs(self):
-        # Arrange
-        pairs = [
-            (SQLITE_SHAPE.table, POSTGRES_SHAPE.table),
-            (SQLITE_SHAPE.recipient, POSTGRES_SHAPE.recipient),
-            (SQLITE_SHAPE.order_by, POSTGRES_SHAPE.order_by),
-        ]
-
-        # Act
-        shared = [a for a, b in pairs if a == b]
-
-        # Assert
-        assert shared == []
-
-
-class TestTheShapeComesFromTheConnection:
-    def test_a_sqlite_connection_selects_the_sqlite_shape(self, sqlite_conn):
-        # Arrange
-        expected = SQLITE_SHAPE
-
-        # Act
-        resolved = shape_for(sqlite_conn)
-
-        # Assert
-        assert resolved == expected
-
-    def test_a_postgres_connection_selects_the_postgres_shape(self, pg_conn):
-        """The half that cannot be inferred from the SQLite test."""
-        # Arrange
-        expected = POSTGRES_SHAPE
-
-        # Act
-        resolved = shape_for(pg_conn)
-
-        # Assert
-        assert resolved == expected
 
 
 class TestTheShapeIsImmutable:

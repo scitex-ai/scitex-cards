@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# scitex-todo git->card hook: record each local commit on the matching
+# scitex-cards git->card hook: record each local commit on the matching
 # board card's ROUTE (Phase P3, card tcfb-p3-git-to-card).
 #
 # SOFT linking: only fires when a card id is present in the branch name

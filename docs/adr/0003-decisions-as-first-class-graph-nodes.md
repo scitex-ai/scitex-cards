@@ -6,7 +6,7 @@ Accepted (2026-06-07)
 
 ## Context
 
-scitex-todo had two row shapes after ADR-0002: ordinary tasks (`kind:
+scitex-cards had two row shapes after ADR-0002: ordinary tasks (`kind:
 "task"`, the default) and compute jobs (`kind: "compute"`, externally
 updated by an automated writer). A third kind of "row" kept showing up
 in operational reality: **decisions** — moments where the fleet was
@@ -142,7 +142,7 @@ semantics:
   a2a `4691b114` (the "decisions-as-nodes" insight) + `2bd37bd2`
   (orthogonality) + `554435df` (impact-badge for prioritization).
 - The per-task `adr.md` for this decision lives in
-  `tasks/proj-scitex-todo-blocker-dimension/` (task-scoped ADR-0001
+  `tasks/proj-scitex-cards-blocker-dimension/` (task-scoped ADR-0001
   entry mirrors this repo-architectural one with a cross-link in
   Notes).
 - Cross-link forward: ADR-0004 captures the `blocker` enum +

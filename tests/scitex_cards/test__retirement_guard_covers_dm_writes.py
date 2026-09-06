@@ -29,12 +29,18 @@ import pytest
 from scitex_cards._store_retirement import StoreRetired, retire_store
 
 
-def _make_store(tmp_path, *, retired: bool):
-    """A real, schema-complete store, optionally retired through the real verb."""
+def _make_store(new_store, prefix: str, *, retired: bool) -> str:
+    """A real, schema-complete store, optionally retired through the real verb.
+
+    A THROWAWAY SCHEMA, not a scratch filename. ``bootstrap=False`` then
+    ``open_db`` so the store is provisioned by the door production uses; the
+    retirement is then applied through ``retire_store`` rather than by writing
+    the marker row, because a hand-written marker tests a state we invented.
+    """
     from scitex_cards._db import open_db
 
-    db = tmp_path / "cards.db"
-    conn = open_db(str(db))
+    db = new_store(prefix, bootstrap=False)
+    conn = open_db(db)
     if retired:
         retire_store(
             conn,
@@ -44,17 +50,17 @@ def _make_store(tmp_path, *, retired: bool):
         )
         conn.commit()
     conn.close()
-    return str(db)
+    return db
 
 
 class TestRetiredStoreRefusesDmWrites:
     """The gap itself: the DM write funnel must consult the guard."""
 
-    def test_dm_write_funnel_refuses_on_a_retired_store(self, tmp_path):
+    def test_dm_write_funnel_refuses_on_a_retired_store(self, new_store):
         # Arrange
         from scitex_cards._dm.write_rows import _open
 
-        db = _make_store(tmp_path, retired=True)
+        db = _make_store(new_store, "cards_retired_dm", retired=True)
 
         # Act
         try:
@@ -71,12 +77,12 @@ class TestRetiredStoreRefusesDmWrites:
             "write landed in the store everyone had already left."
         )
 
-    def test_dm_write_funnel_still_opens_a_current_store(self, tmp_path):
+    def test_dm_write_funnel_still_opens_a_current_store(self, new_store):
         # Arrange — POSITIVE CONTROL. A guard that refuses everything would
         # pass the test above while breaking every DM in the fleet.
         from scitex_cards._dm.write_rows import _open
 
-        db = _make_store(tmp_path, retired=False)
+        db = _make_store(new_store, "cards_current_dm", retired=False)
 
         # Act
         try:
@@ -96,17 +102,22 @@ class TestRetiredStoreRefusesDmWrites:
 class TestRetiredStoreStaysReadable:
     """The property the over-broad fix would have destroyed."""
 
-    def test_a_retired_store_can_still_be_opened_for_reading(self, tmp_path):
+    def test_a_retired_store_can_still_be_opened_for_reading(self, new_store):
         # Arrange — refusing here is what happens if the guard is placed in
         # open_db instead of at the write funnel.
-        import sqlite3
+        from scitex_cards._backend_connect import connect as backend_connect
 
-        db = _make_store(tmp_path, retired=True)
+        db = _make_store(new_store, "cards_retired_read", retired=True)
 
-        # Act
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        # Act -- OUTSIDE the write funnel, which is the whole point: a reader
+        # must not have to satisfy a guard that exists to stop writers. Opened
+        # read_only, which this package documents as a DECLARATION of intent
+        # rather than an enforced mode.
+        conn = backend_connect(db, read_only=True, rows_by_name=True)
         try:
-            rows = conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
+            rows = conn.execute(
+                "SELECT COUNT(*) AS n FROM schema_meta"
+            ).fetchone()["n"]
         finally:
             conn.close()
 
@@ -116,16 +127,15 @@ class TestRetiredStoreStaysReadable:
             "retirement means reading the store you retired."
         )
 
-    def test_the_retirement_marker_is_readable_after_retiring(self, tmp_path):
+    def test_the_retirement_marker_is_readable_after_retiring(self, new_store):
         # Arrange
-        import sqlite3
-
+        from scitex_cards._backend_connect import connect as backend_connect
         from scitex_cards._store_retirement import STATUS_RETIRED
 
-        db = _make_store(tmp_path, retired=True)
+        db = _make_store(new_store, "cards_retired_marker", retired=True)
 
         # Act
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        conn = backend_connect(db, read_only=True, rows_by_name=True)
         try:
             got = conn.execute(
                 "SELECT value FROM schema_meta WHERE key = 'store_status'"
@@ -134,7 +144,7 @@ class TestRetiredStoreStaysReadable:
             conn.close()
 
         # Assert
-        assert got is not None and got[0] == STATUS_RETIRED, (
+        assert got is not None and got["value"] == STATUS_RETIRED, (
             f"expected the store to report itself retired, got {got!r}. "
             f"The successor pointer and the status must survive retirement or "
             f"nobody can tell WHERE the board went."

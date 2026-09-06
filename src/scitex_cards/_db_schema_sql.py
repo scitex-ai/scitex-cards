@@ -41,10 +41,11 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # ``_log_meta`` ride JSON TEXT columns; comments / edges / roles are child
 # tables. Enum validity stays in ``_model._validate_tasks`` — no SQL CHECKs.
 #
-# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths build this schema:
-# `executescript` (which SQLite records VERBATIM into sqlite_master.sql,
-# comments and all) and `_ddl.execute_ddl` (which strips comments before
-# executing, so sqlite_master records the comment-free text). A comment inside a
+# DO NOT PUT `--` COMMENTS INSIDE THE SQL BELOW. Two paths have built this
+# schema: a driver-level script runner, which records the statement text
+# VERBATIM in the engine's own catalogue, comments and all, and
+# `_ddl.execute_ddl`, which strips comments before executing so the catalogue
+# records the comment-free text. A comment inside a
 # CREATE TABLE therefore makes the two paths produce stores that DISAGREE about
 # their own recorded schema — the fresh-vs-migrated shape divergence this
 # package keeps getting bitten by, minted from a line of prose.
@@ -58,6 +59,17 @@ from ._db_dm_schema import DM_TABLES as _DM_TABLES
 # "task_edges is FK-free" has been relayed once already, and that phrasing drops
 # `src_task_id`, which is a real constraint.
 SCHEMA_SQL = """
+-- v13 lifecycle columns (`is_deleted`, `completed_at`, `reopened_at`). They MUST
+-- match _migrate_v12_to_v13 exactly; a fresh store and a migrated store must
+-- not diverge in shape. `is_deleted` is the HIDE_FLAG column -- the store
+-- primitive REFUSES a non-BOOL hide flag, so the existing `deleted_at` cannot
+-- serve as one and stays beside it as ordinary audit data.
+--
+-- THIS NOTE IS OUTSIDE THE STATEMENT ON PURPOSE. An engine can persist a
+-- CREATE TABLE verbatim in its own catalogue, and `execute_ddl` strips `--`
+-- comments before executing, so a comment INSIDE the body makes the two DDL
+-- paths store different text for the same table. Measured: it fails
+-- test__ddl.py::test_it_builds_the_same_schema_as_executescript.
 CREATE TABLE IF NOT EXISTS tasks (
     id             TEXT PRIMARY KEY,
     title          TEXT NOT NULL,
@@ -91,7 +103,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     log_meta_json  TEXT,
     row_order      INTEGER,
     card_json      TEXT,
-    revision       INTEGER NOT NULL DEFAULT 0
+    revision       INTEGER NOT NULL DEFAULT 0,
+    origin_node    TEXT,
+    row_uuid       TEXT,
+    updated_at     TEXT,
+    deleted_at     TEXT,
+    is_deleted     BOOLEAN,
+    completed_at   TEXT,
+    reopened_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status   ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_agent    ON tasks(agent);
@@ -112,7 +131,12 @@ CREATE TABLE IF NOT EXISTS task_comments (
     author  TEXT,
     ts      TEXT,
     kind    TEXT,
-    text    TEXT NOT NULL
+    text    TEXT NOT NULL,
+    origin_node TEXT,
+    row_uuid    TEXT,
+    revision    INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT,
+    deleted_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, seq);
 
@@ -157,7 +181,7 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 );
 
 -- v8 adds msg_id / pushed_at / confirmed_at so the notification rail can move
--- INTO the store instead of living in runtime/todo.db beside it. `msg_id` makes
+-- INTO the store instead of living in runtime/cards.db beside it. `msg_id` makes
 -- DM dedup exact -- the (event_type, card_id, ts, actor) key is many-to-one by
 -- construction at second resolution. `confirmed_at` is what lets delivery be
 -- proven by the RECIPIENT rather than by the sender's transport returning.
@@ -165,9 +189,9 @@ CREATE TABLE IF NOT EXISTS inbox_recipients (
 -- They MUST match _migrate_v7_to_v8 exactly; a fresh store and a migrated store
 -- disagreeing on shape is this repo's own recorded v4 failure.
 --
--- COMMENTS STAY OUTSIDE THE STATEMENT. SQLite stores the original CREATE text
--- in sqlite_master verbatim, so a comment inside the column list becomes part
--- of the stored schema and test__ddl's round-trip against executescript fails.
+-- COMMENTS STAY OUTSIDE THE STATEMENT. An engine can store the original CREATE
+-- text in its catalogue verbatim, so a comment inside the column list becomes
+-- part of the stored schema and test__ddl's round-trip fails.
 -- Measured: that test caught exactly this on the first push of v8.
 -- v10 adds the SYNC columns. They are here, on the fresh-create path, because
 -- retrofitting them onto a table that is already being replicated is a rewrite:

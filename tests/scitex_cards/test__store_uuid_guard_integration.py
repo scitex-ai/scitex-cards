@@ -32,8 +32,6 @@ EVERY TEST USES AN EXPLICIT TMP STORE. Never the default -- see ``store_db``.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 # THE ``@NOT_YET`` MARKERS ARE GONE — see the companion file. ``strict`` meant
@@ -49,8 +47,8 @@ IDENTITY_B = "7c9e0d21-5b3f-4a08-9e6d-2f4a6b8c0d1e"
 # Fixtures / helpers                                                          #
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def store_db(tmp_path, env):
-    """An EXPLICIT tmp database, pinned as ``$SCITEX_CARDS_DB`` for the test.
+def store_db(new_store, env):
+    """An EXPLICIT throwaway store, pinned as ``$SCITEX_CARDS_DB`` for the test.
 
     NEVER the ambient default. That default is the live fleet board (2646 cards
     on 2026-07-28), and ``_store._read_canonical_db_or_raise`` resolves
@@ -60,9 +58,9 @@ def store_db(tmp_path, env):
     """
     from scitex_cards._db import ENV_DB
 
-    db = tmp_path / "cards.db"
+    db = new_store("cards_uuid_guard", bootstrap=False)
     _seed(db)
-    env.set(ENV_DB, str(db))
+    env.set(ENV_DB, db)
     return db
 
 
@@ -81,7 +79,7 @@ def _seed(db_path) -> None:
                 }
             ]
         },
-        str(db_path),
+        db_path,
     )
 
 
@@ -90,9 +88,10 @@ def _bind(db_path, identity: str) -> None:
     from scitex_cards._db import connect
     from scitex_cards._store_uuid import stamp_store_uuid
 
-    conn = connect(str(db_path))
+    conn = connect(db_path)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        # NO `BEGIN IMMEDIATE`: only one engine ever understood it, and it is a
+        # hard syntax error here. The driver opens a transaction anyway.
         stamp_store_uuid(conn, identity)
         conn.commit()
     finally:
@@ -104,9 +103,8 @@ def _stamp_path(db_path, store_path) -> None:
     from scitex_cards._db import connect
     from scitex_cards._db_freshness import stamp_store_provenance
 
-    conn = connect(str(db_path))
+    conn = connect(db_path)
     try:
-        conn.execute("BEGIN IMMEDIATE")
         stamp_store_provenance(conn, store_path)
         conn.commit()
     finally:
@@ -114,9 +112,13 @@ def _stamp_path(db_path, store_path) -> None:
 
 
 def _card_ids(db_path) -> set[str]:
-    conn = sqlite3.connect(str(db_path))
+    from scitex_cards._db import connect
+
+    conn = connect(db_path)
     try:
-        return {str(r[0]) for r in conn.execute("SELECT id FROM tasks")}
+        return {
+            str(r["id"]) for r in conn.execute("SELECT id FROM tasks").fetchall()
+        }
     finally:
         conn.close()
 
@@ -156,6 +158,10 @@ def test_the_identity_decides_even_when_the_stamped_path_contradicts_it(
 
     someone_elses = tmp_path / "someone-elses.db"
     someone_elses.write_bytes(b"")
+    # A path stamp NAMING SOMETHING ELSE. It is still written as a path because
+    # that is what the legacy `store_path` row holds; what the test needs from
+    # it is only that it is genuinely not this store, and a resolvable file on
+    # disk is the least ambiguous way to be that.
     _stamp_path(store_db, someone_elses)
     _bind(store_db, IDENTITY_A)
     env.set(ENV_EXPECTED_STORE_UUID, IDENTITY_A)
@@ -262,19 +268,28 @@ def test_a_matching_identity_does_not_bypass_the_ambient_store_creation_guard(
 # --------------------------------------------------------------------------- #
 
 
-def test_a_byte_copy_carries_the_same_identity_and_cannot_self_distinguish(
-    store_db, tmp_path
+def test_a_copy_carries_the_same_identity_and_cannot_self_distinguish(
+    store_db, new_store
 ):
     """The residual, pinned as a LIMITATION rather than papered over.
 
-    ``cp cards.db elsewhere.db`` yields a second file with the SAME identity.
-    The file cannot self-distinguish, because everything it could distinguish
-    itself by is inside the thing that was copied. Both copies are ACCEPTed.
+    A COPY IS STILL A COPY, and the engine change did not close this. It was
+    ``cp cards.db elsewhere.db``; it is now a second store carrying the same
+    ``schema_meta.store_uuid`` -- which is what a restore from a dump, a
+    replica promoted by hand, or a schema duplicated for a migration rehearsal
+    all produce. The store cannot self-distinguish, because everything it could
+    distinguish itself by is inside the thing that was copied. Both are ACCEPTed.
+
+    The copy is made here by carrying the IDENTITY ROW across rather than the
+    bytes, and that is the same fact stated in the terms this engine has: the
+    identity is the only thing the guard reads, so copying it is copying
+    everything that matters to the guard.
 
     This test asserts the copy is INDISTINGUISHABLE on purpose. Someone will
-    eventually try to close this gap by mixing a path or an inode back into the
-    identity -- which would reintroduce exactly the view-dependence this change
-    removes, and this test would go red the moment they did.
+    eventually try to close this gap by mixing a path, an inode or an endpoint
+    back into the identity -- which would reintroduce exactly the
+    view-dependence this change removes, and this test would go red the moment
+    they did.
 
     The real close is an INJECTED expectation pairing the identity with
     something OUTSIDE the file: scitex-dev's host registry, carrying
@@ -288,11 +303,12 @@ def test_a_byte_copy_carries_the_same_identity_and_cannot_self_distinguish(
     from scitex_cards._store_uuid import read_store_uuid
 
     _bind(store_db, IDENTITY_A)
-    byte_copy = tmp_path / "byte-copy.db"
-    byte_copy.write_bytes(store_db.read_bytes())
+    copy = new_store("cards_uuid_copy", bootstrap=False)
+    _seed(copy)
+    _bind(copy, IDENTITY_A)
 
     # Act
-    conn = connect(str(byte_copy))
+    conn = connect(copy)
     try:
         copied = read_store_uuid(conn)
     finally:

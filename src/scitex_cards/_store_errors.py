@@ -30,7 +30,47 @@ there is no second flag to set wrongly.
 
 from __future__ import annotations
 
-__all__ = ["StoreNotProvisionedError", "StoreUnavailableError"]
+__all__ = [
+    "RevisionConflictError",
+    "StoreNotProvisionedError",
+    "StoreUnavailableError",
+]
+
+
+class RevisionConflictError(RuntimeError):
+    """An OPT-IN compare-and-set was refused: the row moved since you read it.
+
+    THE PREDICATE IS THE OPT-IN, NOT THE LAYER, and that is what reconciles two
+    statements in this repo that read as opposites:
+
+        _db_bootstrap._insert_tasks   "a lost update is invisible, an exception
+                                       is not"
+        test__revision_compare_and_set  "A LOST RACE IS REPORTED, NOT RAISED ...
+                                       an exception would make routine
+                                       concurrency look like a fault"
+
+    Both are correct about DIFFERENT CALLERS. Passing ``expected_revision`` IS an
+    assertion -- the caller has said "I expect N" -- and a violated explicit
+    assertion that returns quietly is exactly the invisible lost update the first
+    quote warns about. A bulk reconciler that supplied nothing is counting
+    ordinary concurrency, where raising would be both slow and a lie about what
+    happened. So the low-level counts contract is UNCHANGED (three tests pin it);
+    this type is what the caller who ASKED for the guarantee gets.
+
+    ``found`` is ``None`` when the row was absent entirely -- a different failure
+    from losing a race, and worth being able to tell apart.
+    """
+
+    def __init__(self, task_id: str, expected: int, found: int | None) -> None:
+        self.task_id = task_id
+        self.expected = expected
+        self.found = found
+        super().__init__(
+            f"compare-and-set refused for task {task_id!r}: expected revision "
+            f"{expected}, store holds {found!r}. NOTHING was written. Re-read the "
+            f"card and re-apply your change -- retrying this same payload cannot "
+            f"succeed."
+        )
 
 #: Deliberately says nothing about paths, backends or reasons. A stranger learns
 #: only that the server cannot serve them, which is all they need and all they

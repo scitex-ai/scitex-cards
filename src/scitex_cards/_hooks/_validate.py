@@ -27,7 +27,7 @@ from .._events import CARD_EVENT_KIND, EVENT_TYPES
 #:   - ``card-message`` operator/agent comment on a card. Emitted
 #:                      automatically by :func:`scitex_cards._store.comment_task`
 #:                      so any comment landing — via the chat panel,
-#:                      the ``scitex-todo comment`` CLI verb, or the
+#:                      the ``scitex-cards comment`` CLI verb, or the
 #:                      MCP ``comment_task`` tool — fans out through
 #:                      the bus. SAC's consumer a2a-delivers to the
 #:                      card's owner + collaborators (lead a2a

@@ -16,7 +16,7 @@ update stops being expressible. Everything else (WAL, ``busy_timeout``) is the
 store's existing machinery finally covering DMs too.
 
 MIRRORS ``claude-code-telegrammer`` (operator instruction: do it the same way
-as ccd), whose SQLite message log this follows deliberately:
+as ccd), whose message log this follows deliberately:
 
 * schema re-applied idempotently at EVERY open, ``CREATE ... IF NOT EXISTS``;
 * ``INSERT OR IGNORE`` against a stable key as the dedup mechanism, with
@@ -36,8 +36,12 @@ what makes a cross-host merge a pure union.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 import json
-import sqlite3
 from pathlib import Path
 
 from .ids import (
@@ -272,7 +276,7 @@ def remove_member(
     return _member_change(thread_id, who, "leave", db, store, actor)
 
 
-def _known_messages(conn: sqlite3.Connection, message_ids: list[str]) -> list[str]:
+def _known_messages(conn: StoreConnection, message_ids: list[str]) -> list[str]:
     """Those of ``message_ids`` the store actually holds, order preserved."""
     placeholders = ", ".join("?" for _ in message_ids)
     rows = conn.execute(
@@ -296,8 +300,8 @@ def mark_read(
     receipt's primary key is ``(message_id, reader)``.
 
     Ids the store does not hold are SKIPPED rather than attempted. A receipt
-    carries a foreign key onto ``dm_messages`` and SQLite's ``OR IGNORE`` does
-    NOT cover foreign-key violations — it raises. During the migration window
+    carries a foreign key onto ``dm_messages`` and a conflict clause does NOT
+    cover foreign-key violations — it raises. During the migration window
     the sidecar still holds messages the backfill has not carried across yet,
     so without this filter every read of an old message would raise. Skipping
     loses nothing recoverable: the message's own ``read: true`` is still in the

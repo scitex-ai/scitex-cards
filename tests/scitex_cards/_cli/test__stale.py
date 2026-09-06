@@ -27,7 +27,7 @@ def _iso(dt):
 def _store(tmp_path):
     """Seed the canonical DB with the stale-review fixture; return the STORE path.
 
-    The store is SQLite now; the CLI reads the canonical DB via
+    The store is the database now; the CLI reads it via
     ``resolve_tasks_path(None)``. Tests still author the fixture as readable
     YAML text — parse it, seed the DB, and return the STORE identity path (NOT
     the DB path — see THE STORE-PATH RULE in the migration playbook).

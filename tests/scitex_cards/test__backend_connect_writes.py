@@ -1,37 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The seam must carry a WRITE, not just a read.
-
-Until these methods existed the seam had zero importers, and that was not an
-oversight: `_db.init_schema` alone needs `executescript` and `commit`, and every
-mutation module needs `commit`/`rollback`. A connection wrapper that cannot
-close a transaction cannot carry the write path, so nothing could adopt it.
-
-The SQLite half runs here. The PostgreSQL half was exercised against the live
-PostgreSQL 18.4 holding the verified copy of the store -- see the PR -- because
-this module's own header says pure logic could not catch the two defects that
-mattered, and a mocked driver would reproduce exactly the assumptions under
-test. What IS asserted here without a server is the thing a server cannot tell
-you: that the paramstyle and the DSN classification are right BEFORE a
-connection is attempted.
-"""
+"""The seam must carry a WRITE, not just a read."""
 
 from __future__ import annotations
-
-import sqlite3
 
 import pytest
 
 from scitex_cards._backend_connect import connect
-from scitex_cards._store_url import backend_of, is_postgres_conninfo
+from scitex_cards._store_url import (
+    BACKEND_POSTGRES,
+    BACKEND_UNSUPPORTED,
+    backend_of,
+    is_postgres_conninfo,
+)
+
+
+@pytest.fixture
+def empty(new_store):
+    """An unprovisioned throwaway store, opened writable through the seam."""
+    conn = connect(new_store("cards_seam", bootstrap=False), read_only=False)
+    yield conn
+    conn.close()
 
 
 class TestAKeywordValueDsnIsNotAFilename:
     """The defect this file's sibling fix exists for, pinned as a regression.
 
     libpq accepts `host=... port=... dbname=...` and psycopg connects with it
-    happily. Only the URL form was recognised, so such a DSN classified as
-    SQLITE and was opened AS A FILENAME -- creating a database in the working
+    happily. Only the URL form was recognised, so such a DSN classified as a
+    FILENAME and was opened as one -- creating a database in the working
     directory literally named `host=127.0.0.1 port=5432 dbname=...`, which then
     accepted writes and answered queries. A wrong store that works.
     """
@@ -44,7 +41,7 @@ class TestAKeywordValueDsnIsNotAFilename:
         backend = backend_of(dsn)
 
         # Assert
-        assert backend == "postgresql"
+        assert backend == BACKEND_POSTGRES
 
     def test_a_bare_dbname_is_postgres(self):
         # Arrange
@@ -54,13 +51,17 @@ class TestAKeywordValueDsnIsNotAFilename:
         backend = backend_of(dsn)
 
         # Assert
-        assert backend == "postgresql"
+        assert backend == BACKEND_POSTGRES
 
-    def test_a_path_containing_equals_is_still_sqlite(self):
+    def test_a_path_containing_equals_is_not_taken_for_a_dsn(self):
         """Detection is by KEYWORD, not by 'contains ='.
 
-        A filesystem path may legitimately contain '=' and must keep resolving
-        to SQLite, or this fix would break existing stores to fix a new one.
+        THE ANSWER CHANGED NAME, NOT MEANING. This asserted the path classified
+        as "the retired engine"; there is no second engine to classify as, and
+        `BACKEND_UNSUPPORTED` is not the name of one -- it is the symbol for
+        "this names no store I can open". What the test is for is unchanged and
+        is if anything sharper now: a filesystem path that happens to contain
+        '=' must not be mistaken for a conninfo and CONNECTED TO.
         """
         # Arrange
         path = "/srv/data/a=b/cards.db"
@@ -69,9 +70,9 @@ class TestAKeywordValueDsnIsNotAFilename:
         backend = backend_of(path)
 
         # Assert
-        assert backend == "sqlite"
+        assert backend == BACKEND_UNSUPPORTED
 
-    def test_an_ordinary_path_is_still_sqlite(self):
+    def test_an_ordinary_path_is_not_taken_for_a_dsn(self):
         # Arrange
         path = "/home/x/.scitex/cards/cards.db"
 
@@ -79,7 +80,7 @@ class TestAKeywordValueDsnIsNotAFilename:
         backend = backend_of(path)
 
         # Assert
-        assert backend == "sqlite"
+        assert backend == BACKEND_UNSUPPORTED
 
     def test_the_predicate_rejects_a_non_string(self):
         # Arrange
@@ -93,74 +94,72 @@ class TestAKeywordValueDsnIsNotAFilename:
 
 
 class TestTheSeamCarriesAWrite:
-    def test_executescript_reports_how_many_statements_ran(self, tmp_path):
+    def test_executescript_reports_how_many_statements_ran(self, empty):
         """A count, because 'installed nothing' must not look like 'installed all'."""
         # Arrange
-        conn = connect(str(tmp_path / "a.db"), read_only=False)
+        script = "CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);\nCREATE INDEX ix ON t(v);"
 
         # Act
-        ran = conn.executescript(
-            "CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);\nCREATE INDEX ix ON t(v);"
-        )
+        ran = empty.executescript(script)
 
         # Assert
-        conn.close()
         assert ran == 2
 
-    def test_executemany_inserts_every_row(self, tmp_path):
+    def test_executemany_inserts_every_row(self, empty):
         # Arrange
-        conn = connect(str(tmp_path / "b.db"), read_only=False)
-        conn.executescript("CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);")
+        empty.executescript("CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);")
 
         # Act
-        conn.executemany("INSERT INTO t(k,v) VALUES (?,?)", [("a", "1"), ("b", "2")])
+        empty.executemany("INSERT INTO t(k,v) VALUES (?,?)", [("a", "1"), ("b", "2")])
 
-        # Assert
-        count = conn.fetchone("SELECT COUNT(*) FROM t")[0]
-        conn.close()
+        # Assert -- AN EXPLICIT ALIAS: a COUNT has no column name of its own and
+        # this driver's rows do not answer to a position.
+        count = empty.fetchone("SELECT COUNT(*) AS n FROM t")[0]
         assert count == 2
 
-    def test_commit_persists_across_connections(self, tmp_path):
+    def test_commit_persists_across_connections(self, new_store):
         """The point of commit: a SECOND connection sees it."""
         # Arrange
-        db = tmp_path / "c.db"
-        writer = connect(str(db), read_only=False)
+        target = new_store("cards_seam_commit", bootstrap=False)
+        writer = connect(target, read_only=False)
         writer.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
         writer.execute("INSERT INTO t(k) VALUES (?)", ("a",))
         writer.commit()
         writer.close()
 
         # Act
-        reader = connect(str(db), read_only=True)
-        count = reader.fetchone("SELECT COUNT(*) FROM t")[0]
+        reader = connect(target, read_only=True)
+        count = reader.fetchone("SELECT COUNT(*) AS n FROM t")[0]
 
         # Assert
         reader.close()
         assert count == 1
 
-    def test_rollback_discards_the_uncommitted_row(self, tmp_path):
+    def test_rollback_discards_the_uncommitted_row(self, empty):
         # Arrange
-        conn = connect(str(tmp_path / "d.db"), read_only=False)
-        conn.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
-        conn.execute("INSERT INTO t(k) VALUES (?)", ("a",))
-        conn.commit()
-        conn.execute("INSERT INTO t(k) VALUES (?)", ("b",))
+        empty.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
+        empty.execute("INSERT INTO t(k) VALUES (?)", ("a",))
+        empty.commit()
+        empty.execute("INSERT INTO t(k) VALUES (?)", ("b",))
 
         # Act
-        conn.rollback()
+        empty.rollback()
 
         # Assert
-        count = conn.fetchone("SELECT COUNT(*) FROM t")[0]
-        conn.close()
+        count = empty.fetchone("SELECT COUNT(*) AS n FROM t")[0]
         assert count == 1
 
 
 class TestRowsByName:
-    """`_db.connect` sets sqlite3.Row and callers read columns BY NAME."""
+    """`_db.connect` asks for named rows, and callers read columns BY NAME."""
 
-    def test_rows_are_indexable_by_column_name(self, tmp_path):
+    def test_rows_are_indexable_by_column_name(self, new_store):
         # Arrange
-        conn = connect(str(tmp_path / "e.db"), read_only=False, rows_by_name=True)
+        conn = connect(
+            new_store("cards_seam_named", bootstrap=False),
+            read_only=False,
+            rows_by_name=True,
+        )
         conn.executescript("CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);")
         conn.execute("INSERT INTO t(k,v) VALUES (?,?)", ("a", "1"))
 
@@ -171,40 +170,38 @@ class TestRowsByName:
         conn.close()
         assert row["v"] == "1"
 
-    def test_it_is_off_by_default(self, tmp_path):
-        """Opt-in, so existing positional readers are not changed underneath."""
+    def test_it_is_off_by_default(self, empty):
+        """Opt-in, so existing positional readers are not changed underneath.
+
+        Asserted as "the row is a plain tuple" rather than "the row is not the
+        old driver's Row type". Same property, stated about the type this
+        driver actually returns instead of about the absence of one that no
+        longer exists.
+        """
         # Arrange
-        conn = connect(str(tmp_path / "f.db"), read_only=False)
-        conn.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
-        conn.execute("INSERT INTO t(k) VALUES (?)", ("a",))
+        empty.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
+        empty.execute("INSERT INTO t(k) VALUES (?)", ("a",))
 
         # Act
-        row = conn.fetchone("SELECT k FROM t")
+        row = empty.fetchone("SELECT k FROM t")
 
         # Assert
-        conn.close()
-        assert not isinstance(row, sqlite3.Row)
+        assert isinstance(row, tuple)
 
 
-class TestReadOnlyStillRefusesWrites:
-    """The regression guard: adding a write path must not open the read door."""
-
-    def test_a_read_only_connection_refuses_to_write(self, tmp_path):
-        # Arrange
-        db = tmp_path / "g.db"
-        w = connect(str(db), read_only=False)
-        w.executescript("CREATE TABLE t (k TEXT PRIMARY KEY);")
-        w.commit()
-        w.close()
-        ro = connect(str(db), read_only=True)
-
-        # Act
-        raised = pytest.raises(sqlite3.OperationalError)
-
-        # Assert
-        with raised:
-            ro.execute("INSERT INTO t(k) VALUES (?)", ("a",))
-        ro.close()
-
-
-# EOF
+# `TestReadOnlyStillRefusesWrites` WAS DELETED, and the decision that abolished
+# it is stated in the function it tested. `_backend_connect.connect`'s docstring:
+#
+#     ``read_only`` is ADVISORY and is deliberately not faked. Read-only-ness is
+#     a property of the ROLE, not of the connection, so this function will not
+#     claim to enforce something it does not: grant SELECT-only to the role if
+#     that is the guarantee you need.
+#
+# The test asserted that a `read_only=True` connection RAISES on an INSERT.
+# That held on a file store, where the driver could open the file read-only, and
+# it cannot hold here -- the connection is the same connection and the server
+# decides by role. Keeping the test would require the wrapper to fake a refusal,
+# which is precisely what the docstring refuses to do; keeping it green would
+# require granting the harness a SELECT-only role, which would be testing the
+# fixture's grant rather than this seam. The guarantee moved to the database,
+# and a test of it belongs where the grant is.

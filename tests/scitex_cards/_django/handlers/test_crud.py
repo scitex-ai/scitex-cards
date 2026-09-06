@@ -50,8 +50,8 @@ def store():
 
 @pytest.fixture
 def no_agent_id_env(env):
-    """No ``$SCITEX_TODO_AGENT_ID`` — created_by falls back to the board."""
-    env.delete("SCITEX_TODO_AGENT_ID")
+    """No ``$SCITEX_CARDS_AGENT_ID`` — created_by falls back to the board."""
+    env.delete("SCITEX_CARDS_AGENT_ID")
 
 
 def _post(endpoint, store_path, body):
@@ -539,10 +539,10 @@ def test_comment_does_not_await_a_turn_url_post(tmp_path, env):
 
     store_path = _store_with_agent(tmp_path)
     env.set(
-        "SCITEX_TODO_AGENT_TURN_URLS",
+        "SCITEX_CARDS_AGENT_TURN_URLS",
         _json.dumps({"owner-agent": f"http://127.0.0.1:{port}/v1/turn"}),
     )
-    env.delete("SCITEX_TODO_PUSH_DRY_RUN")
+    env.delete("SCITEX_CARDS_PUSH_DRY_RUN")
     try:
         # Act
         resp = _post(
@@ -590,10 +590,10 @@ def test_comment_still_saved_when_owner_unreachable(tmp_path, env):
 
     store_path = _store_with_agent(tmp_path)
     env.set(
-        "SCITEX_TODO_AGENT_TURN_URLS",
+        "SCITEX_CARDS_AGENT_TURN_URLS",
         _json.dumps({"owner-agent": f"http://127.0.0.1:{port}/v1/turn"}),
     )
-    env.delete("SCITEX_TODO_PUSH_DRY_RUN")
+    env.delete("SCITEX_CARDS_PUSH_DRY_RUN")
     try:
         # Act
         _post(

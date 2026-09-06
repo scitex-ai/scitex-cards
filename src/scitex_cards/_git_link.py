@@ -5,7 +5,7 @@
 Phase P3 of the task-driven-feedback epic (card ``tcfb-p3-git-to-card``).
 The companion git hooks (``post-commit`` / ``pre-push``) capture local
 git mutations onto a card's ROUTE by emitting a canonical ``push`` event
-to ``scitex-todo hook push`` (see :mod:`scitex_cards._hooks` for the wire
+to ``scitex-cards hook push`` (see :mod:`scitex_cards._hooks` for the wire
 shape + the idempotent built-in handler).
 
 Linking is **SOFT**: a card is annotated only when a card id is present
@@ -233,7 +233,7 @@ def build_push_event(
     card_id: str | None = None,
     trigger: str = TRIGGER_PUSH,
 ) -> dict | None:
-    """Assemble a canonical ``push`` event for ``scitex-todo hook push``.
+    """Assemble a canonical ``push`` event for ``scitex-cards hook push``.
 
     Resolves the card id (branch, then ``Card:`` message-trailer fallback)
     unless one is passed explicitly, then builds the wire dict consumed by

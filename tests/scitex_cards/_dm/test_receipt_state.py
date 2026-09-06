@@ -11,13 +11,12 @@ is worse than no mark at all — operator DMs were acked-without-arriving for
 weeks precisely because nothing on screen distinguished sent from received, so
 a mark that lies re-creates the outage this feature exists to expose.
 
-Every database is an EXPLICIT ``tmp_path`` file and every call names its store.
-Nothing here resolves the ambient store or touches the live fleet.
+Every store here is an EXPLICIT throwaway from the ``new_store`` factory and
+every call names its store. Nothing here resolves the ambient store or touches
+the live fleet.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
@@ -33,23 +32,26 @@ from scitex_cards._threads import append_message, mark_read, thread_key
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> Path:
-    """The task-store container. Its directory is where ``cards.db`` lands."""
-    path = tmp_path / "tasks.yaml"
-    path.write_text("tasks: []\n", encoding="utf-8")
-    return path
+def store(new_store) -> str:
+    """An EXPLICIT throwaway store nobody else can resolve.
+
+    One store serves both halves of every test here on purpose: the writer
+    (``append_message`` / ``mark_read`` via ``store=``) and the reader
+    (``conn``) MUST be looking at the same database, or a test can pass while
+    scoring rows nobody wrote.
+    """
+    return new_store()
 
 
 @pytest.fixture()
-def db_path(tmp_path: Path) -> Path:
-    """The database ``store`` resolves to — named, never discovered."""
-    return tmp_path / "cards.db"
+def conn(store: str):
+    """A schema-complete connection to that same throwaway store.
 
-
-@pytest.fixture()
-def conn(db_path: Path):
-    """A schema-complete connection to the throwaway database."""
-    connection = open_db(db_path)
+    Closed from a ``finally`` rather than after the assertion: the schema
+    teardown runs ``DROP ... CASCADE``, which BLOCKS on an open connection --
+    a leak here hangs the run instead of failing it.
+    """
+    connection = open_db(store)
     try:
         yield connection
     finally:

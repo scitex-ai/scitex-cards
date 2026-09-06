@@ -13,7 +13,7 @@ Design principles (HARD):
   never duplicate it locally.
 - NO hardcoded proper nouns — the watched-repo list is config-driven
   (``~/.scitex/cards/dashboard.json`` or env
-  ``SCITEX_TODO_FLEET_CI_REPOS=foo,bar``).
+  ``SCITEX_CARDS_FLEET_CI_REPOS=foo,bar``).
 
 Public API (this ``__init__``):
 

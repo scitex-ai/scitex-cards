@@ -13,20 +13,24 @@ onto the card as DATA, and the call returns success::
                                      2026-07-10
     key 'expected_revision' : 0
 
-``expected_revision`` is the one that matters. ``cardsync/__init__.py`` tells
-the next developer to call ``update_task(..., expected_revision=N)`` for a
-compare-and-set, and PR #790 deliberately did NOT implement that: this
-function is a whole-document read-modify-write, so a per-row revision guard
-would assert the lock on the caller's card while overwriting every other card
-from the same read — "strictly worse than the last-write-wins it was meant to
-fix, because it would carry the appearance of safety".
+``expected_revision`` USED TO BE THE ONE THAT MATTERED, AND IT GRADUATED. PR
+#790 refused it here because ``update_task`` was a whole-document
+read-modify-write, so a per-row guard "would assert the lock on the caller's
+card while overwriting every other card from the same read". #872 made the verb
+declare ``touched_ids`` and the mirror intersects the write set with it, so the
+write reaches exactly one row and the guard is honest. It is now a REAL
+KEYWORD-ONLY PARAMETER, which is a stronger protection than refusal ever was:
+a named parameter cannot be swallowed by ``**fields`` at all, so it can never
+be written onto the card as data.
 
-#790 was right to refuse. What it left behind is a call that silently ACCEPTS
-the request for a guard it does not provide, so the caller ends up wrong about
-whether they are protected — the same failure #790 was avoiding, moved one
-level up. Refusing loudly is the honest answer until the write path is
-row-level (card cards-update-task-is-whole-document-rmw-blocks-row-level-
-compare-and-set-20260810).
+Its behaviour is pinned in ``test__update_task_compare_and_set.py``; what
+remains here is the one property this file is about — that it is NOT a control
+kwarg any more, because it is not a kwarg.
+
+``tasks_path`` is unchanged and still refused: it is the backend/MCP name for
+this function's ``store`` parameter, and card ``probe-with-assignee`` has
+carried ``tasks_path='/tmp/seedprobe.yaml'`` as DATA since 2026-07-10 — the
+measured instance that produced this file.
 
 Real round-trips against the canonical store — no mocks of the thing under
 test (Req STX-NM).
@@ -60,47 +64,48 @@ def _refusal_message(**kwargs) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# expected_revision — the compare-and-set that does not exist here            #
+# expected_revision — graduated from "refused control kwarg" to real parameter #
 # --------------------------------------------------------------------------- #
-def test_expected_revision_is_refused():
+# The four tests that stood here asserted the REFUSAL (that the message named
+# it, that it named `_write_card`, that the key never reached card_json, and
+# that a sibling field did not half-apply). #872 removed the premise for that
+# refusal and the parameter is now real, so those assertions were inverted
+# rather than dropped: the behaviour lives in
+# test__update_task_compare_and_set.py, and the ONE property belonging to THIS
+# file is kept below.
+
+
+def test_expected_revision_is_no_longer_a_control_kwarg():
+    """It is a named parameter now, which is a STRONGER guarantee than refusal.
+
+    This file exists because `**fields` writes any unrecognised keyword onto the
+    card as data. A named keyword-only parameter is never seen by `**fields` at
+    all, so the failure this file guards against is structurally impossible for
+    it — not merely refused.
+    """
     # Arrange
-    _card()
+    table = _CONTROL_KWARGS
     # Act
-    message = _refusal_message(expected_revision=5)
+    listed = "expected_revision" in table
     # Assert
-    assert "expected_revision" in message
+    assert listed is False, (
+        "expected_revision is back in _CONTROL_KWARGS. If the parameter was "
+        "removed from update_task, say why in _db.py's revision paragraph and "
+        "update test__revision_is_opt_in.py in the same change."
+    )
 
 
-def test_the_refusal_names_the_real_compare_and_set_path():
-    # A refusal that does not say where to go leaves the caller stuck; a REAL
-    # CAS exists one layer down, and the message must name it.
+def test_it_cannot_be_swallowed_by_the_fields_catch_all():
+    """The structural version of the same claim, checked against the signature
+    rather than against the refusal table."""
     # Arrange
-    _card()
+    import inspect
+
+    sig = inspect.signature(_store.update_task)
     # Act
-    message = _refusal_message(expected_revision=5)
+    kind = sig.parameters["expected_revision"].kind
     # Assert
-    assert "_write_card" in message
-
-
-def test_a_refused_call_does_not_write_the_control_name_onto_the_card():
-    # THE ACTUAL DEFECT: before this guard, the key landed in card_json.
-    # Arrange
-    _card()
-    # Act
-    _refusal_message(expected_revision=5)
-    # Assert
-    assert "expected_revision" not in _store.get_task(task_id="ctl-1")
-
-
-def test_a_refused_call_leaves_a_sibling_field_unapplied():
-    # The refusal happens BEFORE the store is read or locked, so a doomed
-    # call must not half-apply the legitimate fields riding alongside it.
-    # Arrange
-    _card()
-    # Act
-    _refusal_message(status="done", expected_revision=5)
-    # Assert
-    assert _store.get_task(task_id="ctl-1")["status"] == "in_progress"
+    assert kind is inspect.Parameter.KEYWORD_ONLY
 
 
 # --------------------------------------------------------------------------- #

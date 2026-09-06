@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Canonical task model + loader/validator/writer for scitex-todo.
+"""Canonical task model + loader/validator/writer for scitex-cards.
 
-The task store is the SQLite database; this module models it as a
+The task store is the database; this module models it as a
 top-level ``tasks:`` list for the validation + adapter layers built on
 top. Each task is a mapping with ``id`` + ``title`` + ``status`` (required) and
 optional ``repo`` / ``depends_on`` / ``blocks`` / ``note`` / ``priority`` /
@@ -29,7 +29,7 @@ from ._task import VALID_STATUSES, TaskValidationError  # noqa: F401
 from ._validate import _validate_tasks  # noqa: F401
 
 
-def load_tasks(path: str | Path) -> list[dict]:
+def load_tasks(path: str | Path, *, tolerant: bool = False) -> list[dict]:
     """Load and validate the task list from the store.
 
     Parameters
@@ -58,11 +58,13 @@ def load_tasks(path: str | Path) -> list[dict]:
     >>> tasks[0]["id"]                     # doctest: +SKIP
     'design'
     """
-    data = load_doc(path, validate=True)
+    data = load_doc(path, validate=True, tolerant=tolerant)
     return data.get("tasks")
 
 
-def load_doc(path: str | Path, *, validate: bool = False) -> dict:
+def load_doc(
+    path: str | Path, *, validate: bool = False, tolerant: bool = False
+) -> dict:
     """Load the FULL store document from the database.
 
     The single-read primitive that both :func:`load_tasks` and the ``_store``
@@ -97,7 +99,7 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
     """
     path = Path(path).expanduser()
 
-    # DB-CANONICAL: read the doc FROM SQLITE, not from a file that no longer
+    # DB-CANONICAL: read the doc FROM THE DATABASE, not from a file that no longer
     # exists. This is not an optimisation — it is what makes the mode safe.
     #
     # WITHOUT IT, EVERY WRITE ERASES THE BOARD, and the mechanism is worth
@@ -115,9 +117,20 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
     # nothing over everything". Delegated to the one fail-loud reader so every
     # caller shares a single policy — one sibling expression being fixed and
     # another not is exactly how that survived the last time.
-    from ._store import _read_canonical_db_or_raise
+    # `tolerant` is for callers that NEVER write the document back. The
+    # comment above is exactly why it must not become the default: the
+    # read-modify-write verbs hand this doc to the writer, and a row omitted
+    # here would be DELETED there. See `_store_tolerant_read` for the door,
+    # and `test__rmw_refusal_must_not_become_tolerance.py` for the guard that
+    # fails if the mutate path ever acquires this behaviour.
+    if tolerant:
+        from ._store_tolerant_read import read_doc_tolerating_unreadable_rows
 
-    data = _read_canonical_db_or_raise()
+        data = read_doc_tolerating_unreadable_rows()
+    else:
+        from ._store import _read_canonical_db_or_raise
+
+        data = _read_canonical_db_or_raise()
     if validate:
         _validate_tasks(
             data.get("tasks"),
@@ -130,11 +143,11 @@ def load_doc(path: str | Path, *, validate: bool = False) -> dict:
 def _canonical_source_label() -> str:
     """Name the store the rows ACTUALLY came from.
 
-    This label was ``f"<sqlite:{path}>"`` until 2026-08-02, and it was wrong in
+    This label hardcoded an engine name until 2026-08-02, and it was wrong in
     two independent ways at once:
 
-    1. ``sqlite:`` was HARDCODED, so every tolerated-validation warning claimed
-       SQLite even when the canonical store was PostgreSQL.
+    1. The engine was HARDCODED, so every tolerated-validation warning named
+       the wrong one whenever the canonical store was a server.
     2. ``path`` is the YAML argument — and the comment block a few lines above
        states in its own words that the doc is read "not from a file that no
        longer exists". So the label pointed at a file this very function
@@ -146,24 +159,30 @@ def _canonical_source_label() -> str:
     to do with the failure, and they will spend real time there before
     suspecting the label. Reported by scitex-app, who hit exactly that.
 
-    A DSN is rendered WITHOUT its query string and never through ``Path``.
-    ``Path`` collapses ``//`` to ``/``, which is what turned
+    A DSN is rendered through :func:`describe_store_target` - user, host,
+    port and database, never the password, never the query string - and never
+    through ``Path``. ``Path`` collapses ``//`` to ``/``, which is what turned
     ``postgresql://host/db`` into ``postgresql:/host/db`` elsewhere in this
     package and had two agents reporting a malformed-URL bug against a config
     that was correct.
+
+    THE PASSWORD WAS IN THIS LABEL until 2026-09-05. The previous version
+    stripped the query string "because DSNs carry credentials there", and the
+    password is not there: it is in the userinfo before the ``@``. A consumer
+    whose DSN carried its password inline (hub's board mount, minted minutes
+    earlier) printed it to docker logs on its first read, once per legacy
+    ``pending`` row, through the TOLERATED warning this label feeds.
     """
     from ._store_target import resolve_store_target  # noqa: PLC0415
-    from ._store_url import is_postgres_url  # noqa: PLC0415
+    from ._store_url import describe_store_target, is_postgres_url  # noqa: PLC0415
 
     try:
         target = resolve_store_target(None)
     except Exception:  # noqa: BLE001 -- a label must never break the read
         return "<store:unresolved>"
     if is_postgres_url(target):
-        # Strip any query string: DSNs carry credentials there, and this label
-        # is written into warnings that land in logs.
-        return f"<postgres:{str(target).split('?', 1)[0]}>"
-    return f"<sqlite:{target}>"
+        return f"<postgres:{describe_store_target(target)}>"
+    return f"<store:{describe_store_target(target)}>"
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +216,8 @@ from ._task import (  # noqa: E402,F401
     Task,
 )
 from ._validate import (  # noqa: E402,F401
+    WRITE_SOURCE,
+    _side_of,
     _warn_tolerated,
 )
 

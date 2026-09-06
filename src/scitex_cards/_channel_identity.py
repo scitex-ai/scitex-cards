@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Agent-identity resolution for the scitex-todo channel server.
+"""Agent-identity resolution for the scitex-cards channel server.
 
 Answers "whose inbox does this channel drain?" — extracted from
 :mod:`scitex_cards._mcp_channel` (which re-exports both functions for
@@ -18,28 +18,28 @@ logger = logging.getLogger(__name__)
 
 #: Env var carrying the agent identity — same key the rest of the package
 #: uses (``scitex_cards._store.ENV_AGENT``).
-_ENV_AGENT = "SCITEX_TODO_AGENT_ID"
+_ENV_AGENT = "SCITEX_CARDS_AGENT_ID"
 
 #: previous name of :data:`_ENV_AGENT`. Renamed 2026-07-02. The CURRENT var
 #: wins: when it resolves to a valid id we IGNORE a stale export of this old
 #: name (loud warning, no raise). We only fail loud when the current var is
 #: absent/invalid AND this old name is still set — a genuine reliance on the
 #: renamed-away var the operator must migrate.
-_ENV_AGENT_DEPRECATED = "SCITEX_TODO_AGENT"
+_ENV_AGENT_DEPRECATED = "SCITEX_CARDS_AGENT"
 
 
 def resolve_agent_id(arg: str | None = None) -> str:
     """Resolve the agent id; FAIL LOUD when unresolved.
 
-    Precedence: explicit ``arg`` → ``$SCITEX_TODO_AGENT_ID``. Deliberately does
+    Precedence: explicit ``arg`` → ``$SCITEX_CARDS_AGENT_ID``. Deliberately does
     NOT fall back to ``getpass.getuser()`` / ``"unknown"`` — a channel server
     that drains "unknown"'s inbox would silently deliver the wrong agent's
     notifications. The operator mandate (constitution rule 2 "fail fast and
     fail loud, NO silent fallbacks") requires a real identity here.
 
     Deprecated-var tolerance: the CURRENT var WINS. When ``arg`` /
-    ``$SCITEX_TODO_AGENT_ID`` yields a valid id we return it even if the stale
-    ``$SCITEX_TODO_AGENT`` is also exported — we only log a loud warning that
+    ``$SCITEX_CARDS_AGENT_ID`` yields a valid id we return it even if the stale
+    ``$SCITEX_CARDS_AGENT`` is also exported — we only log a loud warning that
     the old name is ignored. We fail loud on the old name ONLY when the current
     var is absent/invalid (a genuine reliance on the renamed-away var).
 
@@ -47,13 +47,13 @@ def resolve_agent_id(arg: str | None = None) -> str:
     ------
     RuntimeError
         When the id resolves to empty / the ``"unknown"`` sentinel (and the
-        deprecated ``$SCITEX_TODO_AGENT`` is set → migrate hint; otherwise the
+        deprecated ``$SCITEX_CARDS_AGENT`` is set → migrate hint; otherwise the
         generic unresolved hint), or to an unexpanded ``$``-placeholder.
     """
     deprecated_set = os.environ.get(_ENV_AGENT_DEPRECATED) is not None
     resolved = (arg or os.environ.get(_ENV_AGENT) or "").strip()
-    # An id that still looks like an env placeholder (e.g. "$SCITEX_TODO_AGENT_ID"
-    # or "${SCITEX_TODO_AGENT_ID}") means the launcher passed the literal text
+    # An id that still looks like an env placeholder (e.g. "$SCITEX_CARDS_AGENT_ID"
+    # or "${SCITEX_CARDS_AGENT_ID}") means the launcher passed the literal text
     # instead of expanding it — Claude Code's .mcp.json only expands the
     # ``${VAR}`` (braces) form, never bare ``$VAR``. Draining an inbox keyed by
     # that literal silently delivers nothing; fail loud instead of polling a
@@ -63,7 +63,7 @@ def resolve_agent_id(arg: str | None = None) -> str:
             f"scitex-cards mcp channel: agent id is an unexpanded placeholder "
             f"({resolved!r}) — the launcher passed the literal text instead of "
             "the value. In .mcp.json use the brace form "
-            '"SCITEX_TODO_AGENT_ID": "${SCITEX_TODO_AGENT_ID}" (Claude Code does '
+            '"SCITEX_CARDS_AGENT_ID": "${SCITEX_CARDS_AGENT_ID}" (Claude Code does '
             'not expand bare "$VAR"), or pass a literal --agent <id>.'
         )
     if resolved and resolved != "unknown":
@@ -92,7 +92,7 @@ def resolve_agent_id(arg: str | None = None) -> str:
         )
     raise RuntimeError(
         "scitex-cards mcp channel: agent id unresolved — set "
-        "SCITEX_TODO_AGENT_ID=<your-agent> or pass --agent <id>. The channel "
+        "SCITEX_CARDS_AGENT_ID=<your-agent> or pass --agent <id>. The channel "
         "server must drain a REAL agent's inbox; no silent fallback to a "
         "blank/'unknown' id."
     )

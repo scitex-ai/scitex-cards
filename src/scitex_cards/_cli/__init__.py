@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""``scitex-todo`` command-line interface package.
+"""``scitex-cards`` command-line interface package.
 
-Public entry point is ``main`` (wired to the ``scitex-todo`` console script).
+Public entry point is ``main`` (wired to the ``scitex-cards`` console script).
 The command tree is split across focused modules:
 
     _main         root group + core verbs (render-graph, list-tasks, board)
@@ -37,8 +37,8 @@ _help_wait_cli.register(main)
 # channel). Wired here (like help-wait) to keep the over-budget _main.py
 # untouched.
 _health_cli.register(main)
-# `db` — the shadow-SQLite operability noun group (SQLite migration S0,
-# RFC #348). Wired here (like health / help-wait) to keep _main.py untouched.
+# `db` — the store operability noun group (store migration S0, RFC #348).
+# Wired here (like health / help-wait) to keep _main.py untouched.
 _db_cli.register(main)
 # `db set-min-client-version` — attaches itself onto `db_group` via a
 # decorator at import time (see the module docstring); `register()` here is

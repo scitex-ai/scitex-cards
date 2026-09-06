@@ -17,14 +17,21 @@ here instead.
 
 THE GUARD IS TWO-SIDED ON PURPOSE, which is the part worth keeping if this file
 is ever rewritten. It fails if the WHERE clause DISAPPEARS — the capability
-regressing to nothing. And it fails if a PUBLIC VERB starts accepting
-``expected_revision`` — because that is the day the comment's "no public verb
-does" stops being true, and the person who makes it true should be told to
-update the prose rather than leaving the next reader with the same overstatement
-in the opposite direction.
+regressing to nothing. And it fails if the OPT-IN DEFAULT changes — because that
+is the day ``_db.py``'s prose stops being true, and the person who makes it true
+should be told to update it rather than leaving the next reader with the same
+overstatement in the opposite direction.
 
 A one-sided test would have caught only the first, and it is the SECOND that
 recreates the original defect.
+
+THE SECOND SIDE HAS NOW FIRED ONCE, WHICH IS WHY THIS PARAGRAPH CHANGED. Until
+2026-08-16 it fired on "a public verb accepts the argument at all", and
+``update_task`` gaining ``expected_revision`` (once #872 made a per-row guard
+honest there) tripped it exactly as designed. The failure message said to update
+the comment and the test in the same change, and that is what happened. What the
+class pins now is the DEFAULT: "opt-in" was never about refusing the argument,
+it is about an un-opted write emitting no clause.
 """
 
 from __future__ import annotations
@@ -112,23 +119,64 @@ class TestTheCapabilityExists:
 
 
 class TestItIsStillOptIn:
-    """The other direction: the day this fails, the COMMENT must change."""
+    """The other direction — and THIS CLASS ALREADY FIRED ONCE, as designed.
 
-    @pytest.mark.parametrize("verb", _PUBLIC_VERBS)
-    def test_the_public_verb_does_not_accept_expected_revision(self, verb):
-        # Arrange: _db.py states that every write through the public surface is
-        # last-write-wins. If that stops being true, this test is how the
-        # person who changed it finds out the prose needs rewriting.
+    It used to assert that no public verb accepted ``expected_revision``, and
+    its failure message said: "That is GOOD — and it makes _db.py's 'no public
+    verb does' FALSE. Update that comment and this test together, in the same
+    change." That day arrived when ``update_task`` gained the parameter, the
+    test failed, and the comment and this class were rewritten together.
+
+    THE PROPERTY IT NOW PINS IS THE ONE THAT SURVIVED. "Opt-in" was never about
+    the verb REFUSING the argument; it is about the DEFAULT emitting no guard,
+    because ``_migrate_v6_to_v7`` ruled REJECT-by-default unusable across a
+    fleet that cannot be made uniformly current. Refusing the kwarg was the
+    stronger claim that happened to be true while nothing had wired it. Pinning
+    the default keeps the guarantee that actually matters and still fails if
+    someone makes the guard mandatory.
+    """
+
+    def test_update_task_can_be_asked_for_the_guard(self):
+        # Arrange
         params = _public_verb_params()
-
         # Act
-        accepts = "expected_revision" in params.get(verb, set())
+        accepts = "expected_revision" in params.get("update_task", set())
+        # Assert
+        assert accepts is True, (
+            "update_task() no longer accepts expected_revision. If that is "
+            "deliberate, _db.py's 'one public entry' paragraph is now false and "
+            "must be rewritten in the same change."
+        )
 
+    def test_the_guard_is_off_unless_asked_for(self):
+        """The REAL opt-in property: the default emits no clause, so an
+        un-opted write stays last-write-wins for a fleet that cannot be made
+        uniformly current."""
+        # Arrange
+        from scitex_cards import _store_mutate
+
+        sig = inspect.signature(_store_mutate.update_task)
+        # Act
+        default = sig.parameters["expected_revision"].default
+        # Assert
+        assert default is None, (
+            "expected_revision is no longer opt-in by default. _migrate_v6_to_v7 "
+            "ruled REJECT-by-default unusable: a writer that knows nothing about "
+            "revision would abort, failing fleet writes until every container is "
+            "current."
+        )
+
+    def test_add_task_still_has_nothing_to_compare_against(self):
+        """An INSERT has no prior revision, so the argument would be meaningless
+        there rather than merely unimplemented."""
+        # Arrange
+        params = _public_verb_params()
+        # Act
+        accepts = "expected_revision" in params.get("add_task", set())
         # Assert
         assert accepts is False, (
-            f"{verb}() now accepts expected_revision. That is GOOD — and it "
-            "makes _db.py's 'no public verb does' FALSE. Update that comment "
-            "and this test together, in the same change."
+            "add_task() now accepts expected_revision. Say what it compares "
+            "against on an insert, and update _db.py's paragraph, together."
         )
 
 

@@ -153,7 +153,7 @@ def test_apply_tasks_env_empty_string_is_noop(env_isolated):
 def test_apply_tasks_env_overrides_inherited_value(env_isolated):
     """Explicit ``--tasks`` MUST win over an already-set env var.
 
-    Matches the resolver precedence documented in ``scitex-todo --help``:
+    Matches the resolver precedence documented in ``scitex-cards --help``:
     "an explicit --tasks path, then $SCITEX_CARDS_DB, then the project
     store, ...". So a non-empty CLI value uses ``os.environ[...]`` (NOT
     ``setdefault``) and clobbers the inherited value.

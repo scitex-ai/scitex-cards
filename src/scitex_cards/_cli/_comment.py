@@ -7,7 +7,7 @@ exists and is exported). Matches the surface shape of the sibling
 mutation verbs in ``_write.py`` (``add`` / ``update`` / ``done``):
 
   * positional ``TASK_ID`` + ``TEXT``
-  * ``--author`` overrides the ``$SCITEX_TODO_AGENT_ID`` → ``$USER``
+  * ``--author`` overrides the ``$SCITEX_CARDS_AGENT_ID`` → ``$USER``
     precedence chain (mirrors ``done --by``)
   * ``--json`` emits the structured ``{task_id, comment}`` payload
   * ``--dry-run`` prints the intended mutation and exits 0
@@ -30,12 +30,12 @@ from ._write import _emit
         description=(
             "Wraps _store.comment_task. The timestamp is auto-stamped "
             "UTC by the store; --author overrides the "
-            "$SCITEX_TODO_AGENT_ID -> $USER precedence chain.",
+            "$SCITEX_CARDS_AGENT_ID -> $USER precedence chain.",
         ),
         examples=(
             (
                 "{prog} comment my-task 'investigating crash' "
-                '--author "$SCITEX_TODO_AGENT_ID"',
+                '--author "$SCITEX_CARDS_AGENT_ID"',
                 "Append a comment as a specific author.",
             ),
         ),
@@ -46,7 +46,7 @@ from ._write import _emit
 @click.option(
     "--author",
     default=None,
-    help="Override comment author (default: $SCITEX_TODO_AGENT_ID, then $USER).",
+    help="Override comment author (default: $SCITEX_CARDS_AGENT_ID, then $USER).",
 )
 @click.option(
     "--json", "as_json", is_flag=True, help="Emit the comment payload as JSON."

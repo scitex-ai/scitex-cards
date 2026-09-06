@@ -139,9 +139,9 @@ def rescore_task(
     """
     from . import _model, _task
     from ._store import (
-        TaskNotFoundError,
         _default_agent,
         _read_write_doc,
+        _task_not_found,
         _utc_now_iso,
     )
 
@@ -158,7 +158,7 @@ def rescore_task(
         # forever but must behave as ABSENT here.
         target = _task._find_live_task(tasks, task_id)
         if target is None:
-            raise TaskNotFoundError(f"task id {task_id!r} not found in {tasks_path}")
+            raise _task_not_found(task_id)
 
         now = _utc_now_iso()
         old_u = target.get("urgency")

@@ -3,7 +3,7 @@
 """The ``gui`` verb group — the operator's startup script calls it.
 
 Regression cover for the 2026-07-12 incident: his `scitex_start_gui_servers`
-loop runs ``<pkg> gui serve &`` across every SciTeX tool, and scitex-todo
+loop runs ``<pkg> gui serve &`` across every SciTeX tool, and scitex-cards
 exited with "No such command 'gui'", so nothing ever bound :8051 and his board
 never came up. The board itself was fine — the VERB did not exist.
 
@@ -48,7 +48,7 @@ def test_gui_exposes_the_four_standard_verbs():
 
 
 def test_gui_serve_runs_without_error():
-    """`scitex-todo gui serve` — the exact call his startup loop makes."""
+    """`scitex-cards gui serve` — the exact call his startup loop makes."""
     # Arrange
     argv = SERVE_ARGV
     # Act

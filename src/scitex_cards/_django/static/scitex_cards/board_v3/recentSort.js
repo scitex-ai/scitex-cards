@@ -1,6 +1,6 @@
 /* recentSort.js — pure helpers for the Recent view (newest-first triage
- * surface). Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のToDo
- * UI. There are many ToDos now — I want to see at a glance when something
+ * surface). Operator TG msg 513 (2026-06-12): "Make a Recent / 最近のカード
+ * UI. There are many CARDs now — I want to see at a glance when something
  * new comes in."
  *
  * Design framing (dogfooding loop, lead-aligned): the Recent view is the
@@ -156,7 +156,7 @@ function countNewIn24h(tasks, now) {
 /** "2h ago" / "yesterday" / "3 days ago" / "2 months ago" style label.
  *
  * Compact, human-scannable. Always English (the title bar carries
- * "最近のToDo" so the per-row label stays compact).
+ * "最近のカード" so the per-row label stays compact).
  */
 function relativeTimestamp(ts, now) {
   if (ts == null) return "no timestamp";

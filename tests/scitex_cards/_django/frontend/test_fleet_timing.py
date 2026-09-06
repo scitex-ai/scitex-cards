@@ -74,28 +74,28 @@ def test_css_has_canonical_selectors() -> None:
     # Act
     # Assert
     for selector in (
-        ".stx-todo-fleet-timing",
-        ".stx-todo-fleet-timing--loading",
-        ".stx-todo-fleet-timing--collapsed",
-        ".stx-todo-fleet-timing--expanded",
-        ".stx-todo-fleet-timing--error",
-        ".stx-todo-fleet-timing__label",
-        ".stx-todo-fleet-timing__dot",
-        ".stx-todo-fleet-timing__header",
-        ".stx-todo-fleet-timing__control",
-        ".stx-todo-fleet-timing__select",
-        ".stx-todo-fleet-timing__close",
-        ".stx-todo-fleet-timing__chart",
-        ".stx-todo-fleet-timing__row",
-        ".stx-todo-fleet-timing__rowlabel",
-        ".stx-todo-fleet-timing__bars",
-        ".stx-todo-fleet-timing__bar",
-        ".stx-todo-fleet-timing__bar--median",
-        ".stx-todo-fleet-timing__bar--p95",
-        ".stx-todo-fleet-timing__bar--ok",
-        ".stx-todo-fleet-timing__bar--warn",
-        ".stx-todo-fleet-timing__bar--slow",
-        ".stx-todo-fleet-timing__footer",
+        ".stx-cards-fleet-timing",
+        ".stx-cards-fleet-timing--loading",
+        ".stx-cards-fleet-timing--collapsed",
+        ".stx-cards-fleet-timing--expanded",
+        ".stx-cards-fleet-timing--error",
+        ".stx-cards-fleet-timing__label",
+        ".stx-cards-fleet-timing__dot",
+        ".stx-cards-fleet-timing__header",
+        ".stx-cards-fleet-timing__control",
+        ".stx-cards-fleet-timing__select",
+        ".stx-cards-fleet-timing__close",
+        ".stx-cards-fleet-timing__chart",
+        ".stx-cards-fleet-timing__row",
+        ".stx-cards-fleet-timing__rowlabel",
+        ".stx-cards-fleet-timing__bars",
+        ".stx-cards-fleet-timing__bar",
+        ".stx-cards-fleet-timing__bar--median",
+        ".stx-cards-fleet-timing__bar--p95",
+        ".stx-cards-fleet-timing__bar--ok",
+        ".stx-cards-fleet-timing__bar--warn",
+        ".stx-cards-fleet-timing__bar--slow",
+        ".stx-cards-fleet-timing__footer",
     ):
         assert selector in css, f"missing CSS selector: {selector}"
 
@@ -191,9 +191,9 @@ _TS_CONTRACT_FRAGMENTS = [
     "export function formatDurationSeconds(seconds: number | null): string {",
     "export function barWidthPct(",
     "export function barColorToken(pct: number): string {",
-    '"stx-todo-fleet-timing__bar--ok"',
-    '"stx-todo-fleet-timing__bar--warn"',
-    '"stx-todo-fleet-timing__bar--slow"',
+    '"stx-cards-fleet-timing__bar--ok"',
+    '"stx-cards-fleet-timing__bar--warn"',
+    '"stx-cards-fleet-timing__bar--slow"',
     "export function sortKeysByP95Desc(",
     "export function timingPanelLabel(",
     "export function pickRows(",
@@ -254,11 +254,11 @@ _JS_RUNTIME = textwrap.dedent(
     }
     function barColorToken(pct) {
       if (!Number.isFinite(pct) || pct <= 0) {
-        return "stx-todo-fleet-timing__bar--ok";
+        return "stx-cards-fleet-timing__bar--ok";
       }
-      if (pct < 50) return "stx-todo-fleet-timing__bar--ok";
-      if (pct < 80) return "stx-todo-fleet-timing__bar--warn";
-      return "stx-todo-fleet-timing__bar--slow";
+      if (pct < 50) return "stx-cards-fleet-timing__bar--ok";
+      if (pct < 80) return "stx-cards-fleet-timing__bar--warn";
+      return "stx-cards-fleet-timing__bar--slow";
     }
     function sortKeysByP95Desc(rows) {
       const entries = Object.entries(rows);
@@ -616,7 +616,7 @@ def test_bar_color_token_thresholds_ok() -> None:
         ).strip()
     )
     # Assert
-    assert out["ok"] == "stx-todo-fleet-timing__bar--ok"
+    assert out["ok"] == "stx-cards-fleet-timing__bar--ok"
 
 
 def test_bar_color_token_thresholds_ok_just_under() -> None:
@@ -638,7 +638,7 @@ def test_bar_color_token_thresholds_ok_just_under() -> None:
         ).strip()
     )
     # Assert
-    assert out["ok_just_under"] == "stx-todo-fleet-timing__bar--ok"
+    assert out["ok_just_under"] == "stx-cards-fleet-timing__bar--ok"
 
 
 def test_bar_color_token_thresholds_warn() -> None:
@@ -660,7 +660,7 @@ def test_bar_color_token_thresholds_warn() -> None:
         ).strip()
     )
     # Assert
-    assert out["warn"] == "stx-todo-fleet-timing__bar--warn"
+    assert out["warn"] == "stx-cards-fleet-timing__bar--warn"
 
 
 def test_bar_color_token_thresholds_warn_just_under() -> None:
@@ -682,7 +682,7 @@ def test_bar_color_token_thresholds_warn_just_under() -> None:
         ).strip()
     )
     # Assert
-    assert out["warn_just_under"] == "stx-todo-fleet-timing__bar--warn"
+    assert out["warn_just_under"] == "stx-cards-fleet-timing__bar--warn"
 
 
 def test_bar_color_token_thresholds_slow() -> None:
@@ -704,7 +704,7 @@ def test_bar_color_token_thresholds_slow() -> None:
         ).strip()
     )
     # Assert
-    assert out["slow"] == "stx-todo-fleet-timing__bar--slow"
+    assert out["slow"] == "stx-cards-fleet-timing__bar--slow"
 
 
 def test_bar_color_token_thresholds_slow_full() -> None:
@@ -726,7 +726,7 @@ def test_bar_color_token_thresholds_slow_full() -> None:
         ).strip()
     )
     # Assert
-    assert out["slow_full"] == "stx-todo-fleet-timing__bar--slow"
+    assert out["slow_full"] == "stx-cards-fleet-timing__bar--slow"
 
 
 # ─── sort helper ────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Task-store path resolution — the store IS the SQLite database.
+"""Task-store path resolution — the store IS the database.
 
 There is ONE store identity and it is ``$SCITEX_CARDS_DB`` (the database path).
 :func:`resolve_tasks_path` returns that path; there is no separate, YAML-named
@@ -51,7 +51,7 @@ def _find_git_root(start: Path) -> Path | None:
 def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     """Resolve the non-task YAML CONTAINER path — NOT the store identity.
 
-    The store IDENTITY is ``$SCITEX_CARDS_DB`` (the SQLite database); see
+    The store IDENTITY is ``$SCITEX_CARDS_DB`` (the database itself); see
     :func:`scitex_cards._db.resolve_db_path`, and the ownership guard in
     :mod:`scitex_cards._dual_write` / :mod:`scitex_cards._store_backend` which
     stamps and compares THAT path. Card DATA lives in the database.
@@ -95,7 +95,11 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
     aware), the same ambient default a fresh install uses.
     """
-    from ._store_url import is_postgres_url, reject_attempted_dsn
+    from ._store_url import (
+        is_postgres_url,
+        reject_attempted_dsn,
+        reject_unexpanded_variable,
+    )
 
     # A MALFORMED DSN IS NOT A PATH EITHER, and the paragraph below is the
     # reason this line exists rather than an extra spelling in that predicate.
@@ -108,7 +112,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # Measured on develop 2026-08-12, WITH the connect-door guards of #815
     # already merged:
     #     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/…'
-    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/todo.db
+    #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/cards.db
     #     and the directory tree was created under the process's CWD.
     # The guards were downstream: runtime_dir() mkdirs during PATH DERIVATION,
     # before any connect happens, so a check at the connect door cannot see it.
@@ -119,6 +123,12 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # error with no correct interpretation -- there is no deployment for which
     # SCITEX_CARDS_DB=":55432" is right -- and quietly serving it a local
     # directory would hide the misconfiguration behind working software.
+    # AN UNRESOLVED TARGET IS CHECKED FIRST, because it is a question about the
+    # value's PROVENANCE rather than its shape, and the shape rules would
+    # misreport it: "${DSN}://x" carries "://" and would be refused as a
+    # malformed server address, sending the reader to look for a typo in a
+    # hostname that was never written.
+    reject_unexpanded_variable(explicit)
     reject_attempted_dsn(explicit)
 
     if explicit is not None:
@@ -131,7 +141,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
         #
         # The failure was a silent SUCCESS, which is why it survived. Measured
         # 2026-08-02: enqueue(store=<DSN>) returned a notification id and left a
-        # phantom store at ``<CWD>/postgresql:/…/runtime/todo.db``. Nothing
+        # phantom store at ``<CWD>/postgresql:/…/runtime/cards.db``. Nothing
         # raised, so the fail-soft caller logged nothing, and the notification
         # was unreachable because nobody polls a directory named after a DSN.
         #
@@ -149,7 +159,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
 
     # NO STORE CONFIGURED IS NOT NO LOCAL STATE, and this is the one place that
     # distinction has to be made in code rather than in the docstring above.
-    # Since 2026-08-13 the zero-config SQLite default RAISES instead of naming a
+    # Since 2026-08-13 the zero-config default RAISES instead of naming a
     # database, so the derivation at the bottom of this function has nothing
     # left to derive from -- but pidfiles, the delivery ledger, reminder state
     # and the users/groups sidecar all still want a real local directory, and
@@ -172,6 +182,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # malformed $SCITEX_CARDS_DB reaches here with explicit=None, so guarding
     # only the argument would leave the commonest configuration mistake --
     # a typo in the environment -- on the unguarded path.
+    reject_unexpanded_variable(ambient)
     reject_attempted_dsn(ambient)
     if is_postgres_url(ambient):
         return _user_root() / "tasks.yaml"
@@ -256,6 +267,66 @@ def runtime_dir(store: str | Path | None = None, *, create: bool = True) -> Path
     if create:
         d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def local_store_path(store: str | Path | None) -> Path:
+    """The LOCAL TASK-FILE PATH for ``store`` — not the resolved store target.
+
+    ``None`` runs the full precedence chain; an explicit value is taken as-is
+    (expanded), because a caller naming a path means that path.
+
+    THE NAME IS THE POINT. This function was called ``_resolved_store`` in three
+    separate modules, and the name was a lie on every PostgreSQL deployment:
+
+        resolve_store().resolved   postgresql://scitex_cards@127.0.0.1:55432/...
+        _resolved_store(None)      /home/agent/.scitex/cards/tasks.yaml
+
+    Two answers to "which store am I on", in the package that warns harder about
+    store identity than about anything else. The error strings that interpolated
+    the second one sent scitex-hub hunting a phantom second store, and cost them
+    a conclusion they had to retract to another agent — an error naming the wrong
+    store is worse than a vague one, because it is actionable in the WRONG
+    direction. So: whatever this returns, it is not "the resolved store", and the
+    name now says which of the two it is.
+
+    IT IS STILL THE RIGHT VALUE FOR SOME CALLERS, which is why it survives rather
+    than being deleted. The per-host file lock, the ``inboxes.json`` sidecar, the
+    attachments root and the ``runtime/`` directory are all genuinely local
+    filesystem neighbours of the store, and they must keep resolving locally even
+    when the authoritative store is a server. Use this when you mean the local
+    file; use ``resolve_store()`` when you mean the store the data is in.
+
+    ONE DEFINITION ON PURPOSE. It previously existed as three byte-identical
+    copies (``_store_list``, ``_inbox``, ``_users._store_read``). Each module
+    keeps importing it under the old private name so no call site changes here,
+    but there is now a single place to correct — a triplicated resolver is the
+    shape that starts answering three different ways.
+
+    A DSN IS NOT A LOCAL PATH, and the else-branch below used to treat it as
+    one. ``Path("postgresql://host/db")`` does not raise: it collapses the
+    doubled slash and yields the RELATIVE ``postgresql:/host/db``, whose
+    ``.parent`` the sidecar callers then create and write into. Measured
+    2026-08-30, once the test harness began pinning a real DSN:
+
+        _inboxes_path(dsn) -> postgresql:/scitex-primary:55432/inboxes.json
+
+    5,579 bytes of it, under the repository working directory, holding twelve
+    notifications that every run appended to. That is the phantom-store
+    regrowth ``is_attempted_dsn`` already records four spellings of, reached
+    through a FIFTH door -- the inbox rail -- and it is the same confusion as
+    ``_live_dm_count`` and the snapshot dir: a LOCAL NEIGHBOUR derived from
+    STORE IDENTITY instead of from the local axis.
+
+    An explicit DSN therefore resolves the way ``None`` does -- through
+    ``resolve_tasks_path``, which returns the user root for a server target.
+    An explicit PATH is still taken as written, because a caller naming a path
+    means that path.
+    """
+    from ._store_url import is_postgres_url  # noqa: PLC0415
+
+    if store is None or is_postgres_url(store):
+        return resolve_tasks_path(store if store is None else None)
+    return Path(store).expanduser()
 
 
 # EOF

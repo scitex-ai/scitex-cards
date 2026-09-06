@@ -13,7 +13,7 @@ import pytest
 
 from scitex_cards._store_url import (
     BACKEND_POSTGRES,
-    BACKEND_SQLITE,
+    BACKEND_UNSUPPORTED,
     backend_of,
     is_postgres_url,
     to_paramstyle,
@@ -49,21 +49,21 @@ class TestBackendSelection:
         ],
         ids=["absolute", "bare", "relative", "path-mentioning-postgres"],
     )
-    def test_filesystem_paths_select_sqlite(self, path):
+    def test_filesystem_paths_are_unsupported(self, path):
         # Arrange
         target = path
         # Act
         backend = backend_of(target)
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_UNSUPPORTED
 
-    def test_a_path_containing_the_word_postgres_is_still_sqlite(self):
+    def test_a_path_containing_the_word_postgres_is_still_unsupported(self):
         # Arrange: the scheme is what decides, not the presence of a substring.
         target = "/var/lib/postgresql/cards.db"
         # Act
         backend = backend_of(target)
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_UNSUPPORTED
 
     def test_non_string_is_not_a_url(self):
         # Arrange
@@ -79,31 +79,31 @@ class TestBackendSelection:
         # Act
         backend = backend_of(target)
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_UNSUPPORTED
 
-    def test_empty_string_defaults_to_sqlite(self):
+    def test_empty_string_is_unsupported(self):
         # Arrange
         target = ""
         # Act
         backend = backend_of(target)
         # Assert
-        assert backend == BACKEND_SQLITE
+        assert backend == BACKEND_UNSUPPORTED
 
 
-class TestParamstyleSqliteIsUntouched:
-    def test_sqlite_sql_is_returned_unchanged(self):
+class TestParamstyleNonPostgresIsUntouched:
+    def test_non_postgres_sql_is_returned_unchanged(self):
         # Arrange
         sql = "SELECT * FROM tasks WHERE id = ? AND agent = ?"
         # Act
-        result = to_paramstyle(sql, BACKEND_SQLITE)
+        result = to_paramstyle(sql, BACKEND_UNSUPPORTED)
         # Assert
         assert result == sql
 
-    def test_sqlite_leaves_percent_signs_alone(self):
+    def test_non_postgres_leaves_percent_signs_alone(self):
         # Arrange
         sql = "SELECT * FROM tasks WHERE title LIKE '%urgent%'"
         # Act
-        result = to_paramstyle(sql, BACKEND_SQLITE)
+        result = to_paramstyle(sql, BACKEND_UNSUPPORTED)
         # Assert
         assert result == sql
 

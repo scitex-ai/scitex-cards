@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Standalone per-recipient pull-inbox for card-message delivery.
 
-scitex-todo MUST deliver card-messages to its members with ZERO dependency
+scitex-cards MUST deliver card-messages to its members with ZERO dependency
 on any external agent runtime. The existing push rail
 (:func:`scitex_cards._push.deliver`) POSTs directly to an agent's turn URL —
 which CANNOT reach a *containerized* agent (the agent subscribes outbound to
 a bus; a direct inbound POST is refused). The standalone-safe delivery model
 is therefore **PULL**: the C4 dispatcher ENQUEUEs a notification record into
-the recipient's inbox here, and the recipient's scitex-todo client POLLs the
+the recipient's inbox here, and the recipient's scitex-cards client POLLs the
 board (via the ``poll_notifications`` MCP tool or, later, an HTTP endpoint)
 for its pending notifications. The out-of-band push rail stays an OPTIONAL
 parallel ACCELERATOR for host-reachable agents — never a dependency.
@@ -16,9 +16,11 @@ parallel ACCELERATOR for host-reachable agents — never a dependency.
 Storage
 -------
 This module is the (non-default, break-glass) file-backed inbox
-implementation, selected only via ``SCITEX_TODO_INBOX_BACKEND=yaml``
-(the default is SQLite — see :mod:`scitex_cards._inbox_sqlite`).
-Inboxes live in their own ``inboxes.json`` SIDECAR next to the task
+implementation, selected only via ``SCITEX_CARDS_INBOX_BACKEND=yaml``
+(the default follows the store — see :mod:`scitex_cards._inbox_backend`;
+production is PostgreSQL, the per-host rail is RETIRED as a backend, operator
+ruling 2026-08-23). Inboxes live in their own ``inboxes.json`` SIDECAR next to
+the task
 store, keyed by recipient id: ``{"inboxes": {"u_3f9a1c0b7e42": [{"id":
 ..., "event_type": ..., "card_id": ..., "body": ..., "actor": ...,
 "ts": ..., "seen": bool}, ...]}}``. A pre-existing legacy embedded
@@ -43,40 +45,25 @@ from pathlib import Path
 from typing import Any
 
 from ._model import _store_lock
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 
 logger = logging.getLogger(__name__)
 
 #: Top-level store key holding the per-recipient inboxes mapping.
 _INBOXES_KEY = "inboxes"
 
-#: Env var selecting the inbox storage backend. The DEFAULT is now ``sqlite``
-#: (the Phase-1 backend in :mod:`scitex_cards._inbox_sqlite`): a 5 s digest poll
-#: is then an indexed ``(recipient, seen)`` lookup on
-#: ``<store_dir>/runtime/todo.db`` instead of a full sidecar parse. This
-#: module (the file-backed break-glass backend, its own ``inboxes.json``
-#: sidecar — see the module docstring) is selected ONLY by
-#: ``SCITEX_TODO_INBOX_BACKEND=yaml`` (the value is a historical name for
-#: "not sqlite"; the on-disk format itself is JSON — see the module
-#: docstring); unset (or any other value) uses SQLite. There is NO silent
-#: fallback: when the SQLite backend raises, the error PROPAGATES
-#: (constitution: fail fast, fail loud). The SQLite path lazily
-#: auto-migrates legacy embedded ``inboxes:`` records on first access, so
-#: flipping the default never loses unseen notifications. See the incident
-#: card ``store-sqlite-migration-o1-writes-future-20260701``.
-_ENV_INBOX_BACKEND = "SCITEX_TODO_INBOX_BACKEND"
-
-
-def _use_sqlite() -> bool:
-    """Back-compat shim. Prefer :func:`._inbox_backend.backend`.
-
-    Two-valued, so it cannot express the Postgres case — which is how a
-    third option gets silently folded into one of the other two. Kept only
-    for callers outside this module.
-    """
-    from ._inbox_backend import SQLITE, backend
-
-    return backend() == SQLITE
+#: Env var selecting the inbox storage backend. The DEFAULT follows the store
+#: (see :mod:`scitex_cards._inbox_backend.backend`): a Postgres DSN selects the
+#: shared ``notifications`` table. This module (the file-backed break-glass
+#: backend, its own ``inboxes.json`` sidecar — see the module docstring) is
+#: selected ONLY by ``SCITEX_CARDS_INBOX_BACKEND=yaml`` (the value is a
+#: historical name for "not the store"; the on-disk format itself is JSON —
+#: see the module docstring). The per-host rail is RETIRED as a backend
+#: (operator ruling 2026-08-23): selecting it, or resolving to it by default, now
+#: raises :class:`~scitex_cards._store_errors.StoreUnavailableError`. There is
+#: NO silent fallback: when the configured backend cannot be reached, the
+#: error PROPAGATES (constitution: fail fast, fail loud).
+_ENV_INBOX_BACKEND = "SCITEX_CARDS_INBOX_BACKEND"
 
 
 def _use_postgres() -> bool:
@@ -97,9 +84,11 @@ _NOTIFY_ID_TOKEN_HEX = 12
 # --------------------------------------------------------------------------- #
 # Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path through the same chain the task/user API uses."""
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path — see :func:`scitex_cards._paths.local_store_path`.
+#: The sidecars resolved below (``inboxes.json`` and friends) are genuine
+#: filesystem neighbours of the store, so they are correct users of it even when
+#: the authoritative store is a server.
+_resolved_store = local_store_path
 
 
 #: Sidecar filename, sibling of the resolved task store.
@@ -341,20 +330,6 @@ def enqueue(
             msg_id=msg_id,
             store=store,
         )
-    if _use_sqlite():
-        from . import _inbox_sqlite
-
-        return _inbox_sqlite.enqueue(
-            recipient_id,
-            event_type=event_type,
-            card_id=card_id,
-            body=body,
-            actor=actor,
-            ts=ts,
-            supersede=supersede,
-            msg_id=msg_id,
-            store=store,
-        )
     if not recipient_id:
         return None
     timestamp = ts if ts is not None else _utc_now_iso()
@@ -447,15 +422,6 @@ def poll_inbox(
             mark_seen=mark_seen,
             store=store,
         )
-    if _use_sqlite():
-        from . import _inbox_sqlite
-
-        return _inbox_sqlite.poll_inbox(
-            recipient_id,
-            unseen_only=unseen_only,
-            mark_seen=mark_seen,
-            store=store,
-        )
     if not recipient_id:
         return []
     path = _inboxes_path(store)
@@ -503,10 +469,6 @@ def ack(
         from . import _inbox_postgres
 
         return _inbox_postgres.ack(recipient_id, notification_ids, store=store)
-    if _use_sqlite():
-        from . import _inbox_sqlite
-
-        return _inbox_sqlite.ack(recipient_id, notification_ids, store=store)
     if not recipient_id:
         return []
     if isinstance(notification_ids, str):

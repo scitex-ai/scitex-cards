@@ -12,7 +12,7 @@ typed columns, and REFUSES a row that has none. That invariant held for as long
 as the only writer of the table was the IMPORTER, which populated the payload.
 
 The shared Postgres inbox (#780) made ``notifications`` a LIVE-WRITTEN table.
-Its ``enqueue`` — and the SQLite twin, and the carry — each spelled their own
+Its ``enqueue`` — and the per-host twin, and the carry — each spelled their own
 INSERT column list, and all three listed the typed columns WITHOUT
 ``record_json``. Every notification they wrote was therefore unreadable by the
 very next read, and because the read assembles the WHOLE document, one such row
@@ -131,6 +131,7 @@ def notification_columns(
     recipient_id: str,
     recipient_column: str,
     payload_column: "str | None" = "record_json",
+    origin_column: "str | None" = None,
 ) -> "tuple[tuple[str, ...], tuple[Any, ...]]":
     """``(column_names, values)`` for an INSERT — derived FROM the record.
 
@@ -139,7 +140,7 @@ def notification_columns(
     id and the body, and it is emitted as part of the same tuple. There is no
     spelling of this call that yields the columns without the payload.
 
-    ``payload_column`` is ``None`` for the SQLite ``inbox`` table, which has no
+    ``payload_column`` is ``None`` for the retired ``inbox`` table, which had no
     payload column at all — it is not the table the export reads, so a payload
     there would be dead weight rather than an invariant. Passing ``None`` is the
     one legitimate way to get a column list without the payload, and it is named
@@ -158,6 +159,22 @@ def notification_columns(
     if payload_column is not None:
         columns.append(payload_column)
         values.append(notification_payload(record))
+    if origin_column is not None:
+        # WHICH NODE WROTE THIS ROW. Emitted here, beside the payload, for the
+        # identical reason: three writers of this table each hand-wrote a
+        # column list and all three omitted the payload, so the list is derived
+        # rather than typed. `origin_node` was omitted by every one of them too
+        # — measured 2026-08-21, 0 of 7,737 notification rows populated, while
+        # `sweep_state` (the one writer that does call it) has 598 of 598.
+        #
+        # The value comes from the existing helper rather than a new one: the
+        # concept, the env override and the hostname fallback are already
+        # decided in `_db_sweep_state._origin_node`, and a second spelling of
+        # "which node am I" is how two answers to one question begin.
+        from ._db_sweep_state import _origin_node  # noqa: PLC0415 -- import cycle
+
+        columns.append(origin_column)
+        values.append(_origin_node())
     return tuple(columns), tuple(values)
 
 

@@ -8,7 +8,7 @@ most dangerous boolean in the payload: whatever sets it decides whether a
 0-card board looks like a fact or like a fault.
 
 It used to be set by INFERENCE — "the resolved store-identity FILE does not
-exist, so this must be a brand-new workspace with no cards yet". Under SQLite
+exist, so this must be a brand-new workspace with no cards yet". Post-cutover
 that file is the ``tasks.yaml`` SIDECAR, which nothing creates, so on the
 operator's live board the inference was permanently true: 0 cards rendered as a
 clean empty board while 2,654 sat in the canonical database, for over a day,
@@ -24,7 +24,7 @@ answers 500 (pinned in ``test__board_reads_the_database.py``).
 
 This file pins the honest-empty side of that contract across the three read
 payloads that carry the flag. RequestFactory against the real views, real
-SQLite stores, no mocks.
+stores, no mocks.
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for ``scitex-todo skills manifest`` + ``skills propagate``.
+"""Tests for ``scitex-cards skills manifest`` + ``skills propagate``.
 
 The propagate verb is the fleet-wide ``required_skills`` enrichment surface
-(board card ``rec-propagate-scitex-todo-skill-into-every-agent-required-
+(board card ``rec-propagate-scitex-cards-skill-into-every-agent-required-
 skills``). Tests use Click's ``CliRunner`` against a tmp tree of
 spec.yaml files (no mocks — STX-NM / PA-306). One assertion per test
 (TQ002 / TQ007); AAA pattern.
@@ -56,7 +56,7 @@ def test_manifest_includes_scitex_cards_skill_id():
     # Act
     ids = canonical_skill_ids()
     # Assert
-    assert "scitex-todo" in ids
+    assert "scitex-cards" in ids
 
 
 # === `skills manifest` CLI ==================================================
@@ -77,7 +77,7 @@ def test_skills_manifest_json_includes_scitex_cards():
     # Act
     result = runner.invoke(main, ["skills", "manifest", "--json"])
     # Assert
-    assert "scitex-todo" in result.output
+    assert "scitex-cards" in result.output
 
 
 # === helpers ===============================================================
@@ -154,7 +154,7 @@ def test_propagate_dry_run_does_not_mutate_spec(tmp_path):
 
 
 def test_propagate_appends_canonical_id_to_csv_field(tmp_path):
-    # Arrange — start with `skills: scitex-dev, git` (no scitex-todo).
+    # Arrange — start with `skills: scitex-dev, git` (no scitex-cards).
     agents = tmp_path / "agents"
     spec = _write_spec(agents, "a1", _MINIMAL_SPEC)
     runner = CliRunner()
@@ -162,7 +162,7 @@ def test_propagate_appends_canonical_id_to_csv_field(tmp_path):
     runner.invoke(main, ["skills", "propagate", "--agents-dir", str(agents), "-y"])
     # Assert
     csv = _read_yaml(spec)["metadata"]["labels"]["skills"]
-    assert "scitex-todo" in [tok.strip() for tok in csv.split(",")]
+    assert "scitex-cards" in [tok.strip() for tok in csv.split(",")]
 
 
 def test_propagate_preserves_existing_csv_entries(tmp_path):
@@ -187,7 +187,7 @@ def test_propagate_creates_field_when_absent(tmp_path):
     runner.invoke(main, ["skills", "propagate", "--agents-dir", str(agents), "-y"])
     # Assert
     csv = _read_yaml(spec)["metadata"]["labels"]["skills"]
-    assert "scitex-todo" in csv
+    assert "scitex-cards" in csv
 
 
 # === idempotence ============================================================
@@ -210,7 +210,7 @@ def test_propagate_twice_is_idempotent(tmp_path):
 
 
 def test_propagate_touches_every_agent_in_dir(tmp_path):
-    # Arrange — three agent dirs, all initially without scitex-todo.
+    # Arrange — three agent dirs, all initially without scitex-cards.
     agents = tmp_path / "agents"
     s1 = _write_spec(agents, "a1", _MINIMAL_SPEC)
     s2 = _write_spec(agents, "a2", _MINIMAL_SPEC)
@@ -218,9 +218,9 @@ def test_propagate_touches_every_agent_in_dir(tmp_path):
     runner = CliRunner()
     # Act
     runner.invoke(main, ["skills", "propagate", "--agents-dir", str(agents), "-y"])
-    # Assert — every spec mentions scitex-todo afterwards.
+    # Assert — every spec mentions scitex-cards afterwards.
     csvs = [_read_yaml(s)["metadata"]["labels"]["skills"] for s in (s1, s2, s3)]
-    assert all("scitex-todo" in csv for csv in csvs)
+    assert all("scitex-cards" in csv for csv in csvs)
 
 
 # === field override ========================================================
@@ -260,7 +260,7 @@ def test_propagate_field_override_writes_yaml_list(tmp_path):
     )
     # Assert
     rs = _read_yaml(spec)["spec"]["required_skills"]
-    assert "scitex-todo" in rs
+    assert "scitex-cards" in rs
 
 
 # === error paths ===========================================================

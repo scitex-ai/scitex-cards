@@ -21,7 +21,7 @@ _SKILLS_PKG = "scitex-cards"
 #: nobody declared — it is a MIGRATION, not a rename. Kept as a read fallback
 #: for the transition window: a checkout or wheel that still carries the old
 #: directory keeps working, and nothing new is written under it.
-_SKILLS_PKG_LEGACY = "scitex-todo"
+_SKILLS_PKG_LEGACY = "scitex-cards"
 
 
 def _skills_root():

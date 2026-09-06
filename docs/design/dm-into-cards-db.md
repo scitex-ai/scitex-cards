@@ -39,7 +39,7 @@ it stays reversible, and what happens when two hosts write.
 
 ### 1.1 The sidecar
 
-DMs live in a JSON **sidecar**, not in the canonical SQLite store:
+DMs live in a JSON **sidecar**, not in the canonical store:
 
 ```
 <store_dir>/threads.json          # the data
@@ -288,8 +288,8 @@ bypassed but an *unreachable state* cannot. Applied here:
 **4.1 No `DELETE FROM dm_*` exists in the source.** Testable by inspection of
 the module set, and it is one of the companion tests.
 
-**4.2 SQLite triggers make it unreachable at the engine**, not just in Python —
-they fire for the `sqlite3` CLI, for a stray script, for anything:
+**4.2 Database triggers make it unreachable at the engine**, not just in
+Python — they fire for a psql session, for a stray script, for anything:
 
 ```sql
 CREATE TRIGGER IF NOT EXISTS dm_messages_no_delete
@@ -330,8 +330,8 @@ rows than its pre-state **raises**, it does not warn.
 **4.5 Membership removal is a `leave` event, not a row deletion.** The fold
 yields "not a member now"; the record of having been one survives.
 
-**Stated honestly:** `DROP TRIGGER`, a raw file copy, or `sqlite3 .recover`
-still bypass all of this. The triggers close the accident class, not the
+**Stated honestly:** `DROP TRIGGER`, a physical copy of the data directory, or
+any out-of-band recovery tool still bypass all of this. The triggers close the accident class, not the
 adversary class, and rows accumulate forever by design — unbounded growth is a
 storage cost, and the alternative was data loss.
 

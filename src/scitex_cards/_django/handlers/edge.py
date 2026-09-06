@@ -108,7 +108,7 @@ def handle_edge(request, board):
         return JsonResponse({"error": f"no task with id {missing!r}"}, status=404)
     _reset_cache()
     logger.info(
-        "[scitex-todo] edge %s %s %s->%s in %s",
+        "[scitex-cards] edge %s %s %s->%s in %s",
         action,
         kind,
         source,

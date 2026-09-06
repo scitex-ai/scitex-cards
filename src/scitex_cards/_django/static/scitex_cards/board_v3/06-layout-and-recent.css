@@ -307,7 +307,7 @@
 }
 
 /* === Multi-select board toolbar (PR(h) Stage 1) ===========================
-   Board card todo-multiselect-batch-ops, lead a2a 1ebc792c. HIDDEN at zero
+   Board card cards-multiselect-batch-ops, lead a2a 1ebc792c. HIDDEN at zero
    selection (operator 2026-07-09: an always-visible "selected: 0" bar is
    clutter). `renderBoardToolbar()` toggles --active whenever MULTISELECT.size
    changes, so the bar appears the moment a card is picked and disappears when

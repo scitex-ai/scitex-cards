@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Size guards for the scitex-todo channel push path.
+"""Size guards for the scitex-cards channel push path.
 
 The Claude Agent SDK reads server-initiated ``notifications/claude/channel``
 messages through a **stdio** JSON reader with a hard 1 MB per-message buffer

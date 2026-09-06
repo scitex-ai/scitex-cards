@@ -14,7 +14,7 @@ These tests pin that property: a ``users:`` section present in the store at
 CRUD-call time survives every mutation verb, and the doc still round-trips (the
 mutated task is present after reload).
 
-Store is SQLite (the YAML store was removed): the fixtures SEED the canonical
+The store is the database (the YAML store was removed): the fixtures SEED the canonical
 database via ``seed_db_from_doc`` and address the store through its pinned
 identity path (``SCITEX_CARDS_TASKS_YAML_SHARED``). The ``users:`` registry is a
 typed table — each entry carries an ``id`` (and ``kind``) — and it round-trips
@@ -45,7 +45,7 @@ def _store_path() -> str:
 
 def _seed_store_with_users(tasks, users):
     """Seed the canonical DB with BOTH a ``tasks`` list and a ``users`` registry,
-    the way the real shared store looks. Fixture-only DB seed (SQLite store).
+    the way the real shared store looks. Fixture-only DB seed.
 
     ``users`` is the typed-table LIST shape: each entry is a ``{"id": ...,
     "kind": ...}`` record. It comes back from ``load_doc`` as the same list,

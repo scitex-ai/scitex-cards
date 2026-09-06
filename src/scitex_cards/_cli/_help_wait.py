@@ -4,12 +4,12 @@
 the operator" card, lifted out of the dotfiles Notification hook.
 
 A dotfiles hook used to hand-roll these cards by shelling out to the generic
-``scitex-todo add / update / list-tasks`` verbs; a schema drift broke it
+``scitex-cards add / update / list-tasks`` verbs; a schema drift broke it
 silently. These two verbs own the card semantics in-package (the single
 source of truth) so the hook can become a thin trigger that calls one verb.
 
-  scitex-todo help-wait  <agent> [--question TEXT] [--host HOST]
-  scitex-todo help-clear <agent>
+  scitex-cards help-wait  <agent> [--question TEXT] [--host HOST]
+  scitex-cards help-clear <agent>
 
 The card contract (byte-for-byte what the old hook produced) lives in
 :mod:`scitex_cards._help_wait`; these verbs are thin click wrappers around it,
@@ -36,7 +36,7 @@ from ._write import _emit
         ),
         examples=(
             (
-                '{prog} help-wait "$SCITEX_TODO_AGENT_ID" '
+                '{prog} help-wait "$SCITEX_CARDS_AGENT_ID" '
                 "--question 'merge PR #240 or wait for CI?'",
                 "Raise (or refresh) the waiting card.",
             ),
@@ -74,7 +74,7 @@ def help_wait_cmd(agent, question, host, as_json) -> None:
         summary="Resolve the help-<agent>-waiting card (status=done + clear blocker).",
         description="No-op (exit 0) if the card does not exist.",
         examples=(
-            ('{prog} help-clear "$SCITEX_TODO_AGENT_ID"', "Clear the waiting card."),
+            ('{prog} help-clear "$SCITEX_CARDS_AGENT_ID"', "Clear the waiting card."),
         ),
     ),
 )

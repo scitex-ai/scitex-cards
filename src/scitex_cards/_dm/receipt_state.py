@@ -52,7 +52,7 @@ recipient confirm at all?" must be answered from the RECIPIENT's standing, never
 from the absence of a receipt — decide it from absence and every genuinely
 unconfirmed message quietly becomes "cannot tell", and the detector is dead.
 The registry looks like the right oracle and is not: ``list_users`` parses the
-store as YAML, so on the canonical SQLite store it raises, ``_registry_agents``
+store as YAML, so on the canonical database store it raises, ``_registry_agents``
 fail-softs to ``[]``, and the live ``/dm/threads`` reports ``kind: null`` for
 every peer. Keying capability on "is registered" would therefore mark EVERY
 message unknowable and hide the outage completely. Membership is the honest
@@ -64,7 +64,11 @@ has none, and that -- not a missing receipt -- is what "cannot tell" means.
 
 from __future__ import annotations
 
-import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from .._backend_connect import StoreConnection
+
 from pathlib import Path
 
 from .read import CURRENT_MEMBERS_SQL, _open
@@ -113,7 +117,7 @@ def state_for(recipients: set[str], confirmed: set[str]) -> str:
     return STATE_PENDING
 
 
-def _current_members(conn: sqlite3.Connection, thread_id: str) -> set[str]:
+def _current_members(conn: StoreConnection, thread_id: str) -> set[str]:
     """Peers currently joined to ``thread_id``, folded from the event log."""
     rows = conn.execute(
         f"SELECT member FROM ({CURRENT_MEMBERS_SQL}) "
@@ -124,7 +128,7 @@ def _current_members(conn: sqlite3.Connection, thread_id: str) -> set[str]:
 
 
 def _readers_by_message(
-    conn: sqlite3.Connection, thread_id: str
+    conn: StoreConnection, thread_id: str
 ) -> dict[str, set[str]]:
     """``{message_id: {reader}}`` for one thread, joined ONLY on ``message_id``.
 
@@ -160,30 +164,59 @@ def queued_message_ids(
     store, two distinct durable messages collapsed onto one notification. A
     lossy join here would mark a message that was never delivered.
 
-    THE INBOX IS A DIFFERENT STORE, which is why it is passed rather than taken
-    from the caller's connection. Notifications live in a SQLite sidecar at
-    ``runtime/todo.db`` while the messages live in the card store, so this is a
-    cross-store question today. Schema v8 adds these columns to the store's own
-    ``notifications`` table; when the rail moves, this becomes one query and
-    this function collapses into the main one.
+    THE INBOX IS A DIFFERENT CONNECTION, which is why it is passed rather than
+    taken from the caller's connection: on the PostgreSQL backend the rail's
+    ``notifications`` table lives in the same server as the messages but is
+    queried through its own dedicated connection (mirroring
+    :mod:`scitex_cards._inbox_receipt_postgres`), and on the file break-glass
+    backend it is a genuinely different store (``inboxes.json``). The per-host
+    rail is RETIRED as an inbox backend (operator ruling 2026-08-23); this function
+    now dispatches on :func:`scitex_cards._inbox_backend.backend` exactly like
+    the rest of the rail does.
     """
     if not message_ids:
         return set()
-    try:
-        from .._inbox_sqlite import inbox_target, open_connection
+    from .._inbox_backend import POSTGRES, backend
 
-        with open_connection(inbox_target(store)) as inbox:
-            rows = inbox.execute(
-                "SELECT DISTINCT msg_id FROM inbox WHERE msg_id IS NOT NULL"
-            ).fetchall()
+    try:
+        active = backend()
+    except Exception:  # noqa: BLE001 — an unresolvable backend is UNKNOWN
+        return None
+    if active == POSTGRES:
+        from .._inbox_postgres import _connect  # noqa: PLC0415 -- import cycle
+
+        try:
+            with _connect(store if isinstance(store, str) else None) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT DISTINCT msg_id FROM notifications "
+                        "WHERE msg_id IS NOT NULL"
+                    )
+                    rows = cur.fetchall()
+                conn.rollback()
+        except Exception:  # noqa: BLE001 — unreadable inbox is UNKNOWN, not empty
+            return None
+        present = {str(row[0]) for row in rows}
+        return message_ids & present
+    # The file break-glass backend: read the sidecar directly.
+    try:
+        from .._inbox import _inboxes_path, _load_inboxes_section
+
+        path = _inboxes_path(store)
+        section = _load_inboxes_section(path) if path.exists() else {}
     except Exception:  # noqa: BLE001 — unreadable inbox is UNKNOWN, not empty
         return None
-    present = {str(row_values(row)[0]) for row in rows}
+    present = {
+        str(record["msg_id"])
+        for records in section.values()
+        for record in records
+        if record.get("msg_id")
+    }
     return message_ids & present
 
 
 def receipt_state_for_conn(
-    conn: sqlite3.Connection,
+    conn: StoreConnection,
     thread_id: str,
     store: str | Path | None = None,
 ) -> dict[str, dict]:

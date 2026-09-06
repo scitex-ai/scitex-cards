@@ -6,7 +6,7 @@ The one question every other channel check leaves unasked. ``channel_capable``
 asks "can we push at all", ``channel_drain`` asks "is the inbox being consumed",
 ``channel_reaches_session`` asks "does this session's launch line name us". All
 three were GREEN for weeks while this agent's operator DMs were destroyed on
-arrival: the spec allowlisted ``server:scitex-todo`` while ``.mcp.json``
+arrival: the spec allowlisted ``server:scitex-cards`` while ``.mcp.json``
 registers the server as ``scitex-cards``, so Claude Code read each push and
 dropped it. The inbox held 228 rows for the agent and ZERO unseen — enqueued,
 then consumed, then gone. Nothing was ever red.
@@ -129,7 +129,7 @@ def check_delivery_confirmed(
                 "delivery confirmation unevaluated"
             ),
             "hint": (
-                "set SCITEX_TODO_AGENT_ID=<your-agent-id> so this agent's inbox "
+                "set SCITEX_CARDS_AGENT_ID=<your-agent-id> so this agent's inbox "
                 "can be identified, then re-run the doctor"
             ),
         }
@@ -164,7 +164,7 @@ def check_delivery_confirmed(
             ),
             "hint": (
                 "start the channel server for this agent (`scitex-cards mcp "
-                "start` with SCITEX_TODO_AGENT_ID set) and re-run the doctor; "
+                "start` with SCITEX_CARDS_AGENT_ID set) and re-run the doctor; "
                 "records enqueued before this version carry no receipt and "
                 "stay unknown until new ones are pushed"
             ),

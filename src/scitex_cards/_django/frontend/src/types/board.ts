@@ -1,4 +1,4 @@
-/** Shared types for the scitex-todo board. Mirror the backend graph payload. */
+/** Shared types for the scitex-cards board. Mirror the backend graph payload. */
 
 /** One entry in a task's append-only comment thread. `ts` is an ISO-8601 UTC
  * timestamp and `author` the commenter, both stamped server-side. */
@@ -58,7 +58,7 @@ export interface GraphNode {
   /** Task kind. `null` (absent over the wire) is equivalent to `"task"`.
    *  `"compute"` marks a row representing an external compute job whose
    *  status is updated by an automated writer (north-star pillar #1; full
-   *  design in `tasks/proj-scitex-todo-compute-state-deps/description.md`).
+   *  design in `tasks/proj-scitex-cards-compute-state-deps/description.md`).
    */
   kind: TaskKind | null;
   /** Opaque compute-job identifier (slurm id, GH Actions run id, k8s job, …).

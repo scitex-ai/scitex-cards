@@ -9,7 +9,7 @@ Measured on develop with #815 already merged:
 
     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/scitex_cards'
     inbox_db_path()
-      -> postgresql:/scitex_cards@127.0.0.1:55432/runtime/todo.db
+      -> postgresql:/scitex_cards@127.0.0.1:55432/runtime/cards.db
     and the directory tree was CREATED under the process's working directory.
 
 The inbox rail never reaches either guarded door. It calls
@@ -17,7 +17,7 @@ The inbox rail never reaches either guarded door. It calls
 is a `mkdir(parents=True)` during PATH DERIVATION -- upstream of every connect.
 A guard at the connect door is downstream of the damage and cannot see it.
 
-I FOUND THE DOORS BY GREPPING FOR `sqlite3.connect`, WHICH WAS THE WRONG
+I FOUND THE DOORS BY GREPPING FOR THE DRIVER'S `connect`, WHICH WAS THE WRONG
 INSTRUMENT. The manufacture happens at mkdir, one layer above. Counting connect
 sites gave a confident, complete-looking, wrong answer -- this package's own
 recurring defect, applied to my search rather than to its code.
@@ -53,7 +53,9 @@ MALFORMED = [
     "127.0.0.1:55432",
 ]
 
-_TARGET_VARS = ("SCITEX_CARDS_DB", "SCITEX_TODO_DB")
+#: The env names that can supply a store target. This listed the current name
+#: and its retired twin; the twin is gone, which left the same name twice.
+_TARGET_VARS = ("SCITEX_CARDS_DB",)
 
 
 @pytest.fixture()

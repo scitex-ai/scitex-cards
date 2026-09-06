@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Size / burst guards for the scitex-todo channel push path.
+"""Size / burst guards for the scitex-cards channel push path.
 
 Regression coverage for the 2026-07-02 incident: 180 solver apptainer
 containers died on boot with ``JSON message exceeded maximum buffer size of
-1048576 bytes`` when an oversized scitex-todo channel push overflowed the SDK's
+1048576 bytes`` when an oversized scitex-cards channel push overflowed the SDK's
 1 MB stdio reader. Two guards are pinned here:
 
 * :func:`build_channel_params` truncates an oversized ``content`` body to
@@ -21,6 +21,7 @@ pytest-asyncio).
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
 
@@ -212,7 +213,18 @@ def burst(tmp_path_factory):
     assertion below reads a different field of the SAME run. Re-running it
     per test would multiply that cost without testing anything new — the run
     is a pure observation, nothing mutates it.
+
+    SETS ``SCITEX_CARDS_INBOX_BACKEND`` DIRECTLY rather than relying on the
+    suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
+    a FUNCTION-scoped one on the first test that needs both, so this fixture's
+    real enqueue/drain calls would otherwise run before
+    ``_default_inbox_backend_yaml`` ever pins the var — inheriting whatever
+    the ambient environment happens to hold. The file rail retired (operator ruling
+    2026-08-23): an unset var now means "no backend at all" rather than a
+    working default, so this ordering gap turned silent-but-fine into a hard
+    failure. Matches the suite-wide default; no teardown needed.
     """
+    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
     return _drain_a_burst_twice(tmp_path_factory.mktemp("burst"))
 
 
@@ -409,7 +421,7 @@ def test_non_dm_record_keeps_the_channel_source_label():
     # Act
     meta = build_channel_params(rec)["meta"]
     # Assert
-    assert meta["source"] == "stodo", "non-DM keeps the configured channel label"
+    assert meta["source"] == "scards", "non-DM keeps the configured channel label"
 
 
 def test_non_dm_record_carries_no_conversation_id():
@@ -427,7 +439,7 @@ def test_dm_record_missing_actor_falls_back_to_channel_source():
     # Act
     meta = build_channel_params(rec)["meta"]
     # Assert
-    assert meta["source"] == "stodo"
+    assert meta["source"] == "scards"
 
 
 def test_dm_record_missing_actor_still_carries_the_thread_key():

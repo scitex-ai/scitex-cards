@@ -17,7 +17,7 @@ future maintainer (or a re-implementer in scitex-ui as the productize
 step lands) has one place to read what the board MUST do.
 
 Prior ADRs in scope:
-- ADR-0001 — scitex-todo as the fleet's universal task layer.
+- ADR-0001 — scitex-cards as the fleet's universal task layer.
 - ADR-0002 — `kind` as a closed Literal enum, fail-loud.
 - ADR-0003 — `kind: "decision"` for decision-nodes as first-class
   graph nodes.
@@ -31,8 +31,8 @@ and HOW THE GUI WIRES BACK INTO CODE.
 
 Operator's defining architectural principle, verbatim (TG 9678):
 
-> "scitex-todo はそれだけで独立したパッケージであるべきで、他を知らないが、extension port は持っている"
-> (scitex-todo MUST be a standalone package that knows nothing about
+> "scitex-cards はそれだけで独立したパッケージであるべきで、他を知らないが、extension port は持っている"
+> (scitex-cards MUST be a standalone package that knows nothing about
 > the fleet/sac/scitex-specifics, but exposes extension ports through
 > which fleet-specific behaviour plugs in.)
 
@@ -50,7 +50,7 @@ this lens; the next section names every port the design needs.
 │   • SacAgentsLivenessAdapter (SSH-fanout of `sac agents list`)       │
 │   • SacFleetGroupsACLAdapter (sac fleet groups model — task #2)      │
 │  → LIVES OUTSIDE `scitex_cards` (separate package, e.g. `scitex-      │
-│    todo-fleet`; or in `scitex-agent-container` / a similar glue pkg) │
+│    cards-fleet`; or in `scitex-agent-container` / a similar glue pkg) │
 └──────────────────────────────────────────────────────────────────────┘
                                 ↑ implements
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -78,7 +78,7 @@ this lens; the next section names every port the design needs.
 The core ships with **default no-op / single-host implementations** of
 each port (in-memory pub/sub, file-backed sync, identity ACL that
 allows everything) so the package is **independently usable** without
-the fleet glue — a single-user installing `pip install scitex-todo`
+the fleet glue — a single-user installing `pip install scitex-cards`
 gets a working local task board. Drop in the fleet adapters and the
 same code becomes the fleet's shared SSoT.
 
@@ -98,7 +98,7 @@ class TaskSyncPort(Protocol):
     port; the adapter decides what 'durable' means.
 
     Default impl (`_adapters.LocalFileSync`) = atomic ruamel write to
-    `~/.scitex/todo/tasks.yaml`. The fleet swaps in a git-backed
+    `~/.scitex/cards/tasks.yaml`. The fleet swaps in a git-backed
     variant: write → git commit → push to GitHub. Cross-host pull is
     a side-loop in the adapter, never in the core.
     """
@@ -113,7 +113,7 @@ class NotificationPort(Protocol):
 
     Default impl (`_adapters.InProcessPubSub`) = a simple in-process
     callback registry. The fleet swaps in a SacChannelAdapter that
-    publishes on `scitex-todo:task:<id>` and uses the
+    publishes on `scitex-cards:task:<id>` and uses the
     wake-generalize wire to wake idle agent subscribers.
     """
     def publish(self, channel: str, payload: dict) -> None: ...
@@ -166,7 +166,7 @@ from scitex_cards_fleet import (
 )
 app = create_board(
     sync=GitTaskSyncAdapter(repo="ywatanabe1989/scitex-tasks", branch="main"),
-    notify=SacChannelNotificationAdapter(channel_prefix="scitex-todo:task:"),
+    notify=SacChannelNotificationAdapter(channel_prefix="scitex-cards:task:"),
     liveness=SacAgentsLivenessAdapter(host_list="~/.config/sac/peers.yaml"),
     acl=SacFleetGroupsACLAdapter(group_source="sac fleet groups list --json"),
 )
@@ -175,13 +175,13 @@ app = create_board(
 ### Consequences of the standalone+ports principle
 
 Positive:
-- `scitex-todo` is independently usable (operator's "それだけで独立")
-  — a researcher who never heard of sac can `pip install scitex-todo`
+- `scitex-cards` is independently usable (operator's "それだけで独立")
+  — a researcher who never heard of sac can `pip install scitex-cards`
   and get a working local task board. Standalone-package-value
   preserved.
 - The fleet glue (sac / SSH-fanout / a2a / git-sync) lives OUTSIDE
-  scitex-todo, in a separate package. scitex-todo's CI doesn't need
-  sac installed; sac's CI doesn't pull in scitex-todo's whole UI tree.
+  scitex-cards, in a separate package. scitex-cards's CI doesn't need
+  sac installed; sac's CI doesn't pull in scitex-cards's whole UI tree.
   Ecosystem standalone-vs-module rule satisfied.
 - The productize-step (HANDOFF.md LONG-ARC EXIT — ship the board as
   a scitex.ai / scitex-hub built-in) becomes trivial: ship the core,
@@ -203,7 +203,7 @@ Negative:
   belongs at the deployment layer.
 
 Notes:
-- This principle SUPERSEDES any prior assumption that scitex-todo
+- This principle SUPERSEDES any prior assumption that scitex-cards
   imports sac / a2a / SSH directly. If you read an earlier section of
   this ADR (or skill 30) that says "the board does SSH-fanout to peer
   hosts," translate to "the core's LivenessPort is asked; the
@@ -222,7 +222,7 @@ Notes:
 
 ## Decision
 
-The scitex-todo board renders ONE PAGE with three regions and a
+The scitex-cards board renders ONE PAGE with three regions and a
 strict GUI-to-code wiring contract.
 
 ### Region 1 — Filter bar (top)
@@ -246,7 +246,7 @@ title / id) is a v1.1 candidate; not in v1.
 ### Region 2 — Center: 6 project columns
 
 The 6 active streams (Clew paper / NeuroVista paper / SciTeX-Hub /
-Ripple-WM paper / scitex-todo / scitex-dogfooding — definitive list
+Ripple-WM paper / scitex-cards / scitex-dogfooding — definitive list
 operator TG 9666 + 9671) render as fixed columns. Each column header
 shows the project name + a task-count pill. Each task = ONE CARD
 inside its project's column.
@@ -333,7 +333,7 @@ Backend wire (the data flow direction):
 
 ### Cross-machine + cross-agent sharing (operator TG 9671)
 
-The `tasks.yaml` lives at `~/.scitex/todo/tasks.yaml` on the
+The `tasks.yaml` lives at `~/.scitex/cards/tasks.yaml` on the
 operator's host (current SSoT per HANDOFF.md). Cross-host
 visibility is the north-star pillar #3 (cross-host sync via
 GitHub) — until that lands, the operator's-host board is the
@@ -352,7 +352,7 @@ to, but every agent sees every file.
 ### ACL — wire to the sac group model (task #2)
 
 The sac fleet has a shared-`fleet` ACL group (task #2:
-`e1-sac-fleet-acl`, queued). When that lands, scitex-todo grafts
+`e1-sac-fleet-acl`, queued). When that lands, scitex-cards grafts
 onto it:
 
 - READ ACL: every fleet-group member sees every task by default
@@ -407,7 +407,7 @@ a time in v1; multi-tag conjunction is a v1.1 candidate.
 
 - The full UI is a significant build relative to today's drag-graph
   + table view. Mitigated by incrementalism: the v3 static
-  prototype at `/tmp/scitex-todo-prototype/prototype-v3.html` (served
+  prototype at `/tmp/scitex-cards-prototype/prototype-v3.html` (served
   on `:8052`) is the deliverable for visual review; the live wire-up
   lands across two PRs (quality-hygiene = Task dataclass + write
   endpoints; fleet-liveness = SSH-fanout + `/agents` endpoint).
@@ -422,28 +422,28 @@ a time in v1; multi-tag conjunction is a v1.1 candidate.
 
 ## Cross-host sync — GitHub-backed (durable) + SSH-fanout (live, ephemeral) split
 
-Operator + lead a2a `3d7a20e7` extension: scitex-todo must sync task
+Operator + lead a2a `3d7a20e7` extension: scitex-cards must sync task
 state across hosts WITHOUT inventing a peer-rsync protocol (ecosystem
 rule: "GitHub is the SSoT, no peer rsync"). But a LIVE board needs
 faster propagation than a typical git-pull cycle. The split:
 
 | Tier                          | Storage                                              | Sync mechanism                                                                | Latency      |
 | ----------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- | ------------ |
-| project tier `<proj>/.scitex/todo/`  | per-project git repo (skill-30 convention)    | **git-backed via GitHub** — commits + push + pull on hosts                    | minutes      |
-| global tier `~/.scitex/todo/` (tasks.yaml + tasks/<id>/) | host-local file                | **rebuilt by aggregator sidecar** from project-tier reads (SSH-fanout per ADR-0005) | 5s tick     |
-| global tier `~/.scitex/todo/agents.json` | host-local file                            | **rebuilt by sac-status-writer sidecar** (SSH-fanout, ADR-0005)               | 5s tick     |
+| project tier `<proj>/.scitex/cards/`  | per-project git repo (skill-30 convention)    | **git-backed via GitHub** — commits + push + pull on hosts                    | minutes      |
+| global tier `~/.scitex/cards/` (tasks.yaml + tasks/<id>/) | host-local file                | **rebuilt by aggregator sidecar** from project-tier reads (SSH-fanout per ADR-0005) | 5s tick     |
+| global tier `~/.scitex/cards/agents.json` | host-local file                            | **rebuilt by sac-status-writer sidecar** (SSH-fanout, ADR-0005)               | 5s tick     |
 
 Design rule:
-- **Durable** = git. The project-tier `.scitex/todo/` directory IS
+- **Durable** = git. The project-tier `.scitex/cards/` directory IS
   the SSoT. Each agent commits + pushes its own project-tier
   directory to its project's GitHub repo (or a dedicated
   `<project>-tasks` repo per the operator's preference). Other hosts
-  pull. Standard GitHub-as-sync-substrate, no scitex-todo-specific
+  pull. Standard GitHub-as-sync-substrate, no scitex-cards-specific
   transport.
 - **Live** = SSH-fanout to the project tiers + aggregator-rebuild of
   the global. The operator's host runs the aggregator; it reads each
-  project's `.scitex/todo/tasks.yaml` (via `sac host exec <peer>
-  "cat <proj>/.scitex/todo/tasks.yaml"` or a thin sac fleet
+  project's `.scitex/cards/tasks.yaml` (via `sac host exec <peer>
+  "cat <proj>/.scitex/cards/tasks.yaml"` or a thin sac fleet
   read-helper) every 5s and rebuilds the global. The global is
   EPHEMERAL — durable state lives in git per-project.
 
@@ -484,7 +484,7 @@ Examples:
 ```
 paper-scitex-clew/cohort-a-rerun
 scitex-hub/decide-prod-cutover-final-go
-scitex-todo/proj-scitex-todo-fleet-liveness
+scitex-cards/proj-scitex-cards-fleet-liveness
 ```
 
 Validator enforces:
@@ -495,7 +495,7 @@ Validator enforces:
   guards it), the validator raises with both rows' provenance.
 
 Backward-compat: existing tasks today carry single-segment ids
-(`proj-scitex-todo-compute-state-deps`). The validator accepts both
+(`proj-scitex-cards-compute-state-deps`). The validator accepts both
 during a deprecation window; the aggregator stamps
 `_log_meta.canonical_id = "<project>/<id>"` on read so the URL scheme
 works on legacy rows.
@@ -541,17 +541,17 @@ def update_task(task_id, **changes):
 
 `notify_subscribers` posts a typed event onto the sac channel bus
 (payload: `{task_id, changes, ts, actor}`). The event channel is
-`scitex-todo:task:<project>/<local-id>` so subscribers can match by
+`scitex-cards:task:<project>/<local-id>` so subscribers can match by
 glob pattern.
 
 ### Subscription rules
 
 | Subscriber       | Subscribes to                                                                                            | Action on receive                                                                                          |
 | ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| owning agent     | `scitex-todo:task:<own-project>/*` (every task they own)                                                 | the empty-beacon-wake + wake-generalize means an idle agent WAKES on this event and acts on the change.   |
-| dependent agent  | `scitex-todo:task:<each-of-its-depends_on-ids>` (every task on its dep chain)                            | wakes + re-evaluates; if a dep just flipped to `done`, re-checks own readiness.                            |
-| UI (every viewer)| `scitex-todo:task:*` (all changes; UI filters client-side)                                              | re-fetches `/graph` and re-renders the affected card / panel. Same wire as today's AutoRefresh `/rev` poll, but pushed instead of polled when the bus is available. |
-| lead             | `scitex-todo:task:*` (full firehose; lead's own filter on top)                                          | logs into its own `_log_meta`; no auto-action — lead decides.                                              |
+| owning agent     | `scitex-cards:task:<own-project>/*` (every task they own)                                                 | the empty-beacon-wake + wake-generalize means an idle agent WAKES on this event and acts on the change.   |
+| dependent agent  | `scitex-cards:task:<each-of-its-depends_on-ids>` (every task on its dep chain)                            | wakes + re-evaluates; if a dep just flipped to `done`, re-checks own readiness.                            |
+| UI (every viewer)| `scitex-cards:task:*` (all changes; UI filters client-side)                                              | re-fetches `/graph` and re-renders the affected card / panel. Same wire as today's AutoRefresh `/rev` poll, but pushed instead of polled when the bus is available. |
+| lead             | `scitex-cards:task:*` (full firehose; lead's own filter on top)                                          | logs into its own `_log_meta`; no auto-action — lead decides.                                              |
 | operator         | (none — operator interacts via UI; the UI is the subscriber on their behalf)                            | UI surfaces the change visually.                                                                            |
 
 ### Synergy with empty-beacon + wake-generalize
@@ -559,8 +559,8 @@ glob pattern.
 The empty-beacon fix (proj-scitex-agent-container task) ensures the
 a2a transport's "no messages → still alive" beacon doesn't crash
 the channel subscriber. The wake-generalize (any-channel-wakes-idle-
-agent) lets a task-update event on `scitex-todo:task:<id>` wake an
-idle agent the same way an a2a-direct message would. **scitex-todo
+agent) lets a task-update event on `scitex-cards:task:<id>` wake an
+idle agent the same way an a2a-direct message would. **scitex-cards
 is one of the loadiest consumers of that hardening work** — every
 task update is a potential agent-wake event.
 
@@ -587,12 +587,12 @@ durable path. Same shape as the GitHub-vs-SSH-fanout split above.
     → drives the filter bar + the sharing model + the ACL
     insertion point (this ADR).
 
-- Per-task `adr.md` for this work lives in `tasks/proj-scitex-todo-
+- Per-task `adr.md` for this work lives in `tasks/proj-scitex-cards-
   full-board-ui-spec/` (new task to be added at PR open). The
   per-task ADR tracks the implementation rollout; this repo-arch
   ADR is the lasting spec.
 
-- Visual reference: `/tmp/scitex-todo-prototype/prototype-v3.html`
+- Visual reference: `/tmp/scitex-cards-prototype/prototype-v3.html`
   (served on `:8052`). v1/v2/v3 history kept in the same dir as
   the design evolves: v1 = stream-strip prototype; v2 = card
   renderer from operator schema; v3 = full UI spec (this ADR).

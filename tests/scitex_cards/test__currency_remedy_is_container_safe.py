@@ -49,8 +49,6 @@ from __future__ import annotations
 
 import logging
 import re
-import sys
-import types
 
 import pytest
 
@@ -109,12 +107,16 @@ def _forbidden_hits(text: str) -> list[str]:
     ]
 
 
-def _install_stale_scitex_dev(monkeypatch, message: str) -> None:
-    """Publish a REAL module object under ``scitex_dev.staleness`` (no mocks).
+def _gate_args(message: str, *, overlay: bool) -> dict:
+    """``check_currency`` arguments for ONE rail with ONE upstream message.
 
-    ``check_currency()`` does ``from scitex_dev.staleness import
-    ensure_current``, which resolves straight out of ``sys.modules``; this is
-    the file's existing idiom and needs no scitex-dev install and no network.
+    Both collaborators are supplied as ARGUMENTS through the seams the verb
+    obtains them from — no ``sys.modules`` publishing and no module attribute
+    rewriting, so nothing here depends on a real scitex-dev install, on the
+    network, or on the filesystem the runner sits on (PA-306 §3).
+
+    ``overlay`` is the ONLY variable between the two rails, which is what lets
+    the bare-host tests below claim the branch is the thing under test.
     """
 
     class _StalenessError(RuntimeError):
@@ -123,12 +125,10 @@ def _install_stale_scitex_dev(monkeypatch, message: str) -> None:
     def _ensure_current(dist_name):
         raise _StalenessError(message)
 
-    package = types.ModuleType("scitex_dev")
-    module = types.ModuleType("scitex_dev.staleness")
-    module.ensure_current = _ensure_current
-    module.StalenessError = _StalenessError
-    monkeypatch.setitem(sys.modules, "scitex_dev", package)
-    monkeypatch.setitem(sys.modules, "scitex_dev.staleness", module)
+    return {
+        "is_overlay": lambda: overlay,
+        "load_ensure_current": lambda: _ensure_current,
+    }
 
 
 def _emitted_warnings(caplog) -> list[str]:
@@ -140,22 +140,18 @@ def _emitted_warnings(caplog) -> list[str]:
 
 
 @pytest.fixture
-def overlay_warning(monkeypatch, caplog) -> str:
+def overlay_warning(caplog) -> str:
     """The text an agent INSIDE a container actually sees when the gate fires."""
-    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: True)
-    _install_stale_scitex_dev(monkeypatch, _UPSTREAM_STALE_MESSAGE)
     caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
-    _currency.check_currency()
+    _currency.check_currency(**_gate_args(_UPSTREAM_STALE_MESSAGE, overlay=True))
     return "\n".join(_emitted_warnings(caplog))
 
 
 @pytest.fixture
-def overlay_warning_for_ambiguous_dist_info(monkeypatch, caplog) -> str:
+def overlay_warning_for_ambiguous_dist_info(caplog) -> str:
     """Same, for the integrity half — the ``--force-reinstall`` remedy."""
-    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: True)
-    _install_stale_scitex_dev(monkeypatch, _UPSTREAM_AMBIGUOUS_MESSAGE)
     caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
-    _currency.check_currency()
+    _currency.check_currency(**_gate_args(_UPSTREAM_AMBIGUOUS_MESSAGE, overlay=True))
     return "\n".join(_emitted_warnings(caplog))
 
 
@@ -225,31 +221,29 @@ def test_the_forbidden_patterns_detect_the_forced_reinstall_remedy():
 # --------------------------------------------------------------------------- #
 # (2) IN AN OVERLAY THE GATE WARNS — it does not block                        #
 # --------------------------------------------------------------------------- #
-def test_the_overlay_case_does_not_raise(monkeypatch):
+def test_the_overlay_case_does_not_raise():
     """A gate that cannot be satisfied is a trap, not a gate. Blocking here
     leaves the agent with no working rail AND a harmful instruction; reaching
     the assert at all is the did-not-raise evidence."""
     # Arrange
-    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: True)
-    _install_stale_scitex_dev(monkeypatch, _UPSTREAM_STALE_MESSAGE)
+    gate = _gate_args(_UPSTREAM_STALE_MESSAGE, overlay=True)
 
     # Act
-    returned = _currency.check_currency()
+    returned = _currency.check_currency(**gate)
 
     # Assert
     assert returned is None
 
 
-def test_the_overlay_case_emits_exactly_one_warning(monkeypatch, caplog):
+def test_the_overlay_case_emits_exactly_one_warning(caplog):
     """Warning is not the same as staying quiet: the agent still has to learn
     their install is stale, they just must not be told to "fix" it here."""
     # Arrange
-    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: True)
-    _install_stale_scitex_dev(monkeypatch, _UPSTREAM_STALE_MESSAGE)
+    gate = _gate_args(_UPSTREAM_STALE_MESSAGE, overlay=True)
     caplog.set_level(logging.WARNING, logger=_CURRENCY_LOGGER)
 
     # Act
-    _currency.check_currency()
+    _currency.check_currency(**gate)
 
     # Assert
     assert len(_emitted_warnings(caplog)) == 1
@@ -362,25 +356,24 @@ def test_the_overlay_message_preserves_the_installed_and_latest_versions(
 # (4) ON A BARE HOST THE GATE STILL RAISES — that path is NOT weakened        #
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def bare_host_gate(monkeypatch) -> None:
+def bare_host_gate() -> dict:
     """A stale install where the overlay probe answers False.
 
     Identical arrangement to ``overlay_warning`` with the single difference
     that decides the behaviour under test, so the branch is the only variable.
     """
-    monkeypatch.setattr(_currency, "_running_over_overlay", lambda: False)
-    _install_stale_scitex_dev(monkeypatch, _UPSTREAM_STALE_MESSAGE)
+    return _gate_args(_UPSTREAM_STALE_MESSAGE, overlay=False)
 
 
 @pytest.fixture
-def bare_host_error(bare_host_gate) -> str:
+def bare_host_error(bare_host_gate: dict) -> str:
     """The message a caller sees when the gate fires OUTSIDE a container."""
     with pytest.raises(RuntimeError) as excinfo:
-        _currency.check_currency()
+        _currency.check_currency(**bare_host_gate)
     return str(excinfo.value)
 
 
-def test_a_bare_host_install_still_fails_the_currency_gate(bare_host_gate):
+def test_a_bare_host_install_still_fails_the_currency_gate(bare_host_gate: dict):
     """Warning in overlays must not have turned the gate off where it applies.
     A gate that stops firing on bare hosts would be the quiet way to delete
     this whole check on exactly the installs where an upgrade IS the repair."""
@@ -388,7 +381,7 @@ def test_a_bare_host_install_still_fails_the_currency_gate(bare_host_gate):
     # Act
     # Assert
     with pytest.raises(RuntimeError):
-        _currency.check_currency()
+        _currency.check_currency(**bare_host_gate)
 
 
 def test_a_bare_host_error_still_carries_the_upstream_upgrade_command(

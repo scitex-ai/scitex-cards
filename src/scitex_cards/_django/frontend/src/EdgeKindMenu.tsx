@@ -38,7 +38,7 @@ export function EdgeKindMenu() {
 
   return (
     <div
-      className="stx-todo-menu__backdrop"
+      className="stx-cards-menu__backdrop"
       onClick={closeEdgePicker}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -46,20 +46,20 @@ export function EdgeKindMenu() {
       }}
     >
       <div
-        className="stx-todo-menu"
+        className="stx-cards-menu"
         style={{ left, top }}
         role="menu"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="stx-todo-menu__label">New edge</div>
+        <div className="stx-cards-menu__label">New edge</div>
         <button
           type="button"
-          className="stx-todo-menu__item"
+          className="stx-cards-menu__item"
           role="menuitem"
           onClick={() => choose("depends_on")}
         >
           <span
-            className="stx-todo-menu__edge-swatch"
+            className="stx-cards-menu__edge-swatch"
             style={{ background: EDGE_COLOR_DEPENDS }}
             aria-hidden="true"
           />
@@ -67,12 +67,12 @@ export function EdgeKindMenu() {
         </button>
         <button
           type="button"
-          className="stx-todo-menu__item"
+          className="stx-cards-menu__item"
           role="menuitem"
           onClick={() => choose("blocks")}
         >
           <span
-            className="stx-todo-menu__edge-swatch"
+            className="stx-cards-menu__edge-swatch"
             style={{ background: EDGE_COLOR_BLOCKS }}
             aria-hidden="true"
           />

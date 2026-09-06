@@ -8,7 +8,7 @@ WHY THIS EXISTS (incident 2026-07-12)
 directory can OUTLIVE the code it describes, and then it lies — confidently,
 permanently, and with nothing anywhere reporting a problem:
 
-* scitex-todo's own container: an old ``pip install -e`` left an ORPHANED
+* scitex-cards's own container: an old ``pip install -e`` left an ORPHANED
   ``scitex_cards-0.7.26.dist-info`` in site-packages with NO package files beside
   it, plus a path entry pointing at the live repo. The CODE loaded fresh from the
   working tree (0.8.7); the VERSION reported 0.7.26. Thirty releases apart.
@@ -52,7 +52,7 @@ source's: both describe the DISK.
 is exactly what ``features`` does, because ``hasattr`` reads ``sys.modules`` and
 therefore interrogates the code the process is ACTUALLY RUNNING::
 
-    p = probe_install("scitex-todo", features={
+    p = probe_install("scitex-cards", features={
         "post_migration_enum": "scitex_cards._model:VALID_BLOCKERS",
     })
     if not p.features["post_migration_enum"]:
@@ -77,7 +77,7 @@ back as a populated result with an actionable ``hint``, because a diagnostic tha
 fails silently is the very disease it is meant to detect.
 
 The probe is generic — pass any distribution name. sac probes ``sac``, scitex-dev
-probes the ecosystem; nothing here is scitex-todo-specific.
+probes the ecosystem; nothing here is scitex-cards-specific.
 """
 
 from __future__ import annotations
@@ -237,6 +237,7 @@ def probe_install(
     module: str | None = None,
     *,
     features: dict[str, str] | None = None,
+    read_version=_md.version,
 ) -> InstallProbe:
     """Probe ``dist``'s install and report whether its version string can be trusted.
 
@@ -251,13 +252,21 @@ def probe_install(
             "blocked_check_v087": "scitex_cards._stale_active:detect_blocked_external",
         })
 
+    ``read_version`` is how the CLAIMED version is obtained — by default
+    ``importlib.metadata.version``. It is a parameter because this function's
+    whole subject is DISAGREEMENT between what the metadata claims and what the
+    code on disk actually is, and a test cannot stage that disagreement without
+    controlling the claim. Supplying it as an argument is the mock-free way
+    (PA-306 §3); it must still raise ``_md.PackageNotFoundError`` to mean "no
+    metadata", because that is the signal this function branches on.
+
     Never raises. Any internal failure comes back in ``probe_error`` with a hint.
     """
     mod_name = module or dist.replace("-", "_")
     probe = InstallProbe(dist=dist, kind=KIND_ORPHANED)
 
     try:
-        probe.metadata_version = _md.version(dist)
+        probe.metadata_version = read_version(dist)
     except _md.PackageNotFoundError:
         probe.metadata_version = None
     except Exception as exc:  # noqa: BLE001 - a probe must never crash its caller
@@ -352,7 +361,7 @@ def probe_install(
         # and it is FALSE whenever pip leaves MORE THAN ONE .dist-info behind.
         #
         # Found 2026-07-12, by this probe FAILING on the first live install it was
-        # pointed at. Upgrading scitex-todo 0.7.50 -> 0.9.0 in the agent venv left
+        # pointed at. Upgrading scitex-cards 0.7.50 -> 0.9.0 in the agent venv left
         # BOTH directories in place:
         #     scitex_cards-0.9.0.dist-info/    (real, from the upgrade)
         #     scitex_cards-0.7.50.dist-info/   (orphaned fossil)
@@ -484,14 +493,19 @@ def _has_feature(target: str) -> bool:
     return hasattr(mod, attr)
 
 
-def check_install_honest(dist: str = "scitex-cards") -> dict[str, object]:
+def check_install_honest(
+    dist: str = "scitex-cards", *, read_version=_md.version
+) -> dict[str, object]:
     """Health-doctor check: is ``dist``'s reported version actually true?
 
     Returns the doctor's ``{ok, detail, hint}`` contract. ``ok`` is False exactly
     when the version string cannot be trusted — an orphaned install, or metadata
     that has drifted from the code it claims to describe.
+
+    ``read_version`` is forwarded to :func:`probe_install`; see there for why it
+    is a parameter.
     """
-    probe = probe_install(dist)
+    probe = probe_install(dist, read_version=read_version)
     return {
         "ok": probe.trustworthy,
         "detail": probe.detail,

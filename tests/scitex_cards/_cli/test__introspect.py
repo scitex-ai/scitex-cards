@@ -52,7 +52,7 @@ def test_list_python_apis_verbose_ladder_is_monotonic():
 
 
 def _invoke_mcp_help():
-    """Helper: run ``scitex-todo mcp --help`` and return the CliRunner result."""
+    """Helper: run ``scitex-cards mcp --help`` and return the CliRunner result."""
     return CliRunner().invoke(main, ["mcp", "--help"])
 
 

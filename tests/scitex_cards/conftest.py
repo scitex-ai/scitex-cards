@@ -9,8 +9,8 @@ without using monkeypatch under the hood.
 
 The fixture is intentionally minimal: just ``set(key, value)`` and
 ``delete(key)``. Tests that previously did
-``monkeypatch.setenv("SCITEX_TODO_AGENT_ID", "agent:test")`` now do
-``env.set("SCITEX_TODO_AGENT_ID", "agent:test")``.
+``monkeypatch.setenv("SCITEX_CARDS_AGENT_ID", "agent:test")`` now do
+``env.set("SCITEX_CARDS_AGENT_ID", "agent:test")``.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import pytest
 class _EnvHelper:
     """Captures the original env-var state + cwd and restores them on teardown.
 
-    Implements just the slice of monkeypatch's API the scitex-todo test
+    Implements just the slice of monkeypatch's API the scitex-cards test
     suite actually uses: ``set`` / ``delete`` (env vars) and ``chdir``
     (process working directory). New keys are removed on teardown;
     previously-set keys are restored to their original value; cwd is
@@ -93,13 +93,13 @@ def env():
 #
 # PR introducing the per-project lane UNION (lead a2a `1ceec0ef` /
 # `40c0a42d`, operator-validated) made ``services.get_board`` glob
-# ``~/proj/*/.scitex/todo/tasks.yaml`` by default. Without an opt-out,
+# ``~/proj/*/.scitex/cards/tasks.yaml`` by default. Without an opt-out,
 # test harnesses that pass an explicit ``tmp_path`` global store would
 # ALSO pick up the test runner's HOST ``~/proj`` lanes — contaminating
 # fixture-pure assertions (e.g. the priority-endpoint test asserts a
 # fixture-exact id set).
 #
-# This autouse fixture pins ``SCITEX_TODO_LANE_GLOBS=""`` for every
+# This autouse fixture pins ``SCITEX_CARDS_LANE_GLOBS=""`` for every
 # test in the suite so callers get the pre-union behavior unless they
 # explicitly opt back in via the ``env`` fixture (the lane-union
 # tests do exactly that). PA-306-compliant: uses :class:`_EnvHelper`
@@ -108,15 +108,15 @@ def env():
 
 @pytest.fixture(autouse=True)
 def _isolate_host_lane_globs():
-    """Empty out ``SCITEX_TODO_LANE_GLOBS`` for every test by default.
+    """Empty out ``SCITEX_CARDS_LANE_GLOBS`` for every test by default.
 
     Stacks safely with the ``env`` fixture — a test that opts back into
-    lane discovery via ``env.set("SCITEX_TODO_LANE_GLOBS", "...")``
+    lane discovery via ``env.set("SCITEX_CARDS_LANE_GLOBS", "...")``
     will see its later value during the test body; this fixture
     restores the pre-test value on teardown.
     """
     helper = _EnvHelper()
-    helper.set("SCITEX_TODO_LANE_GLOBS", "")
+    helper.set("SCITEX_CARDS_LANE_GLOBS", "")
     try:
         yield
     finally:
@@ -128,26 +128,26 @@ def _isolate_host_lane_globs():
 # add_task now FAILS LOUD when the card CREATOR cannot be resolved
 # (operator mandate 2026-06-26: "blank creator -> fail loud", no silent
 # fallback to a blank/"unknown" creator — see _store._resolve_creator_or_raise).
-# The CI/dev environment running the suite has no SCITEX_TODO_AGENT_ID set, so
+# The CI/dev environment running the suite has no SCITEX_CARDS_AGENT_ID set, so
 # without a default EVERY add_task in the suite would raise. This autouse
 # fixture pins a real resolvable creator so the bulk of the suite (which
 # tests OTHER behaviour and doesn't care who created the card) keeps working.
 #
 # The dedicated fail-loud test for the unresolved-creator path opts BACK OUT
-# via ``env.delete("SCITEX_TODO_AGENT_ID")`` to prove the raise — this fixture
+# via ``env.delete("SCITEX_CARDS_AGENT_ID")`` to prove the raise — this fixture
 # restores the value on teardown, so the two stack safely.
 
 
 @pytest.fixture(autouse=True)
 def _default_resolvable_creator():
-    """Set a resolvable ``SCITEX_TODO_AGENT_ID`` for every test by default.
+    """Set a resolvable ``SCITEX_CARDS_AGENT_ID`` for every test by default.
 
     Mirrors a real fleet agent's environment (agents MUST set
-    ``SCITEX_TODO_AGENT_ID``); a test that needs to prove the unresolved-creator
+    ``SCITEX_CARDS_AGENT_ID``); a test that needs to prove the unresolved-creator
     raise deletes it via the ``env`` fixture for the scope of that test.
     """
     helper = _EnvHelper()
-    helper.set("SCITEX_TODO_AGENT_ID", "agent:test-suite")
+    helper.set("SCITEX_CARDS_AGENT_ID", "agent:test-suite")
     try:
         yield
     finally:
@@ -156,7 +156,7 @@ def _default_resolvable_creator():
 
 # === Suite-wide: never let the deprecated store var leak in ==================
 #
-# ``SCITEX_TODO_TASKS`` was renamed to ``SCITEX_TODO_TASKS_YAML_SHARED``
+# ``SCITEX_CARDS_TASKS`` was renamed to ``SCITEX_CARDS_TASKS_YAML_SHARED``
 # (2026-07-02) and is now REJECTED fail-loud by ``resolve_tasks_path`` if set.
 # A dev/agent shell may still export the old name; without this, any test that
 # resolves the store in such an environment would raise. Clear it for every
@@ -166,9 +166,9 @@ def _default_resolvable_creator():
 
 @pytest.fixture(autouse=True)
 def _reject_deprecated_tasks_env():
-    """Unset the deprecated ``SCITEX_TODO_TASKS`` for every test by default."""
+    """Unset the deprecated ``SCITEX_CARDS_TASKS`` for every test by default."""
     helper = _EnvHelper()
-    helper.delete("SCITEX_TODO_TASKS")
+    helper.delete("SCITEX_CARDS_TASKS")
     try:
         yield
     finally:
@@ -177,7 +177,7 @@ def _reject_deprecated_tasks_env():
 
 # === Suite-wide: never let the deprecated agent var leak in =================
 #
-# ``SCITEX_TODO_AGENT`` was renamed to ``SCITEX_TODO_AGENT_ID`` (2026-07-02)
+# ``SCITEX_CARDS_AGENT`` was renamed to ``SCITEX_CARDS_AGENT_ID`` (2026-07-02)
 # and is now REJECTED fail-loud by the identity resolvers
 # (``_store._reject_deprecated_agent_env`` / ``_mcp_channel.resolve_agent_id``)
 # if set. A dev/agent shell may still export the old name; without this, any
@@ -189,9 +189,9 @@ def _reject_deprecated_tasks_env():
 
 @pytest.fixture(autouse=True)
 def _reject_deprecated_agent_env():
-    """Unset the deprecated ``SCITEX_TODO_AGENT`` for every test by default."""
+    """Unset the deprecated ``SCITEX_CARDS_AGENT`` for every test by default."""
     helper = _EnvHelper()
-    helper.delete("SCITEX_TODO_AGENT")
+    helper.delete("SCITEX_CARDS_AGENT")
     try:
         yield
     finally:
@@ -200,36 +200,77 @@ def _reject_deprecated_agent_env():
 
 # === Suite-wide: pin the YAML inbox backend by default ======================
 #
-# The inbox storage backend DEFAULT flipped to SQLite (operator decision
-# 2026-07-09: SQLite is ON, YAML is explicit break-glass). But the bulk of the
-# suite asserts the YAML on-disk inbox format / semantics (the ``inboxes:``
-# section shape, tasks:/users: coexistence, the digest-collapse maintenance
-# path, etc.). Pin the (still-supported) YAML break-glass backend for every
-# test by default so those assertions keep exercising the path they were
-# written for. The dedicated SQLite-backend tests opt BACK OUT via
-# ``env.delete("SCITEX_TODO_INBOX_BACKEND")`` (to prove the real default) or
-# set it explicitly; this fixture restores the pre-test value on teardown, so
-# the two stack safely. Production agents set NEITHER var and therefore get the
-# real SQLite default.
+# The inbox storage backend defaulted to a local file rail from 2026-07-09
+# until it was RETIRED entirely (operator ruling 2026-08-23, PR #938 / #944):
+# it is no longer a legal inbox backend under any resolution path, so an unset var now
+# means "no backend at all" against a non-shared store rather than a working
+# default. The bulk of the suite asserts the YAML on-disk inbox format /
+# semantics (the ``inboxes:`` section shape, tasks:/users: coexistence, the
+# digest-collapse maintenance path, etc.), so this fixture pins the
+# (still-supported) YAML break-glass backend for every test by default —
+# every real-store fixture needs SOME resolvable backend now, not only the
+# ones that used to assert YAML specifically. A module-scoped fixture that
+# does real inbox I/O must set this var itself rather than relying on this
+# (function-scoped) autouse fixture: pytest sets up a module-scoped fixture
+# BEFORE a function-scoped one on the first test that needs both, so this
+# fixture's pin would not yet be in effect (see e.g.
+# ``test__channel_size_guard.py``'s ``burst`` fixture).
 
 
 @pytest.fixture(autouse=True)
 def _default_inbox_backend_yaml():
-    """Pin ``SCITEX_TODO_INBOX_BACKEND=yaml`` for every test by default."""
+    """Pin ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test by default."""
     helper = _EnvHelper()
-    helper.set("SCITEX_TODO_INBOX_BACKEND", "yaml")
+    helper.set("SCITEX_CARDS_INBOX_BACKEND", "yaml")
     try:
         yield
     finally:
         helper.restore()
 
 
+def _refuse_swapped_args(doc, db_path) -> None:
+    """Fail loudly when the two positional arguments are swapped.
+
+    THE ARGUMENT ORDER IS (doc, db_path) AND GETTING IT BACKWARDS USED TO BE
+    SILENT — measured 2026-08-17, by me, in this repo. `seed_db_from_doc(db,
+    {"tasks": []})` handed the DICT to the engine as a path, and it did exactly
+    what it is asked to: it CREATED A DATABASE at a path whose name is the
+    repr of the dict. A 225 KB file called `{'tasks': []}` landed at the repo
+    root, `git add -A` committed it, and it was the CI quality gate that
+    noticed — three commits later, on a PR whose test suite was green.
+
+    The shape is the one this branch exists to fix, one layer up: a store
+    argument that is not a path gets USED as a path and manufactures a store,
+    quietly. `_db_users._db_target` prevents it in the product; nothing
+    prevented it in the harness, so the harness got it.
+
+    Two sanity conditions, both cheap:
+      * a doc is a mapping — a Path or str here means the args are swapped;
+      * a db_path is a path — a mapping here means the same.
+    Either way the call is wrong in a way no assertion downstream would
+    attribute correctly, so it dies here naming the fix.
+    """
+    from pathlib import Path as _Path
+
+    if isinstance(doc, (str, _Path)) or isinstance(db_path, dict):
+        raise TypeError(
+            "seed_db_from_doc(doc, db_path) — the arguments look SWAPPED.\n"
+            f"  doc     = {type(doc).__name__}\n"
+            f"  db_path = {type(db_path).__name__}\n"
+            "Passing a mapping as db_path makes the engine CREATE a database at a "
+            "path named after the dict's repr (measured: a 225 KB file called "
+            "\"{'tasks': []}\" at the repo root, committed, caught only by the "
+            "CI quality gate). Call it as seed_db_from_doc({'tasks': [...]}, "
+            "tmp_path / 'cards.db')."
+        )
+
+
 def seed_db_from_doc(doc, db_path, *, threads=None):
     """Populate a fresh database from an IN-MEMORY document. Returns the summary.
 
     THE REPLACEMENT FOR ``import_from_yaml`` IN TESTS. That function read a doc
-    off a YAML file and rebuilt the DB from it; it is deleted, because SQLite is
-    the only store and there is no YAML to read. Tests that used it to *seed* a
+    off a YAML file and rebuilt the DB from it; it is deleted, because the
+    database is the only store and there is no YAML to read. Tests that used it to *seed* a
     database (build a doc, write YAML, import) now build the same doc and call
     this — which reaches the SAME surviving primitive (``_rebuild_from_doc``),
     so every downstream assertion about schema / columns / counts is unchanged.
@@ -250,10 +291,24 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
     from scitex_cards._db import connect, init_schema
     from scitex_cards._db_bootstrap import _rebuild_from_doc, _stamp_meta
 
+    _refuse_swapped_args(doc, db_path)
     conn = connect(str(db_path))
     try:
         init_schema(conn)
-        conn.execute("BEGIN IMMEDIATE")
+        # NO EXPLICIT `BEGIN` HERE, and the absence is the fix rather than an
+        # omission. This read `conn.execute("BEGIN IMMEDIATE")` -- a statement
+        # only one engine has ever understood, taking a write lock upfront so a
+        # later read-to-write upgrade could not fail under concurrency.
+        #
+        # It never ran against a server before, because the store this seeded
+        # was a file. Against the engine that ships it is a hard syntax error
+        # ("syntax error at or near IMMEDIATE"), and it took down 14 tests
+        # across three CLI modules the moment the harness pinned a real DSN.
+        #
+        # Nothing replaces it: the driver opens a transaction on the first
+        # statement of a non-autocommit connection, so the rebuild below is
+        # already atomic, and the lock it was reaching for is taken per row as
+        # the writes happen. The `conn.commit()` at the end is what ends it.
         summary = _rebuild_from_doc(conn, doc, threads=threads)
         summary["db_path"] = str(db_path)
         _stamp_meta(conn, "test-seed")

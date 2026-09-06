@@ -78,7 +78,7 @@ somewhere other than loopback.
 
 To read it on the machine running the board:
 
-  systemctl --user show scitex-todo.dashboard.service -p Environment
+  systemctl --user show scitex-cards-dashboard.service -p Environment
   grep -rh {_ENV_VAR} ~/.config/systemd/user/
 
 IF YOU DID NOT SET THIS PASSWORD, DO NOT TYPE ONE. A credential prompt that

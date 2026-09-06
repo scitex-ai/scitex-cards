@@ -9,17 +9,18 @@ surface. They share nothing but a store path, and the read surface is the half t
 the fleet hits on every poll. ``_store`` re-exports every name defined here, so no
 caller had to move.
 
-SQLite IS the store (see :mod:`scitex_cards._store_backend`) — there is no other
+THE DATABASE IS the store (see :mod:`scitex_cards._store_backend`) — no other
 backend and no way to select one. :func:`list_tasks` always reads through
 :func:`scitex_cards._model.load_tasks`, which reads the canonical database via
 :func:`scitex_cards._store._read_canonical_db_or_raise`. An unresolvable or
 unreadable store RAISES with an actionable message; there is no YAML chain and no
 bundled example left to fall back to (both were deleted 2026-07-19/21).
 
-This module used to also dispatch to a second, SQLite-indexed read path
-(``_store_read_sqlite`` — S2) when a set of runtime checks passed, and fell back to
-this Python-predicate path otherwise. That accelerator is DELETED (2026-07-21
-incident): now that SQLite is canonical rather than a mirror, its freshness guard
+This module used to also dispatch to a second, index-backed read path (the S2
+accelerator) when a set of runtime checks passed, and fell back to this
+Python-predicate path otherwise. That accelerator is DELETED (2026-07-21
+incident): once the database became canonical rather than a mirror, its
+freshness guard
 compared the DB's provenance stamp against a YAML file that no longer exists, so it
 refused to serve and fell back — and that fallback resolved to an empty bundled
 example, silently serving a blank board while claiming reads were merely slow. A
@@ -34,14 +35,14 @@ import os
 from pathlib import Path
 
 from ._model import VALID_STATUSES, load_tasks
-from ._paths import resolve_tasks_path
+from ._paths import local_store_path
 from ._store_target import resolve_store_target
 from ._task import _is_tombstoned
 
 #: Env var an agent sets to scope its default `list_tasks` / `summary` view. The
 #: CLI's `--scope` flag overrides this; pass `scope=""` in the Python API to see
 #: the unfiltered store.
-ENV_SCOPE = "SCITEX_TODO_SCOPE"
+ENV_SCOPE = "SCITEX_CARDS_SCOPE"
 
 #: The one scope spelling that names an OWNER rather than a lens. Written by
 #: ``reassign_task`` and the help-card writer as ``f"agent:{who}"``; read here.
@@ -111,18 +112,16 @@ def _in_scope(task: dict, scope: str) -> bool:
     return task.get("assignee") == owner or task.get("agent") == owner
 
 
-def _resolved_store(store: str | Path | None) -> Path:
-    """Resolve a store path argument through the precedence chain.
-
-    ``None`` ⇒ apply the full resolution chain (`_paths.resolve_tasks_path`).
-    Explicit path ⇒ used as-is (must exist for reads; will be created for
-    fresh writes by :func:`_model.save_tasks`).
-    """
-    return resolve_tasks_path(store) if store is None else Path(store).expanduser()
+#: The LOCAL task-file path for a store, NOT the resolved store target (which
+#: may be a PostgreSQL DSN). Defined once in :mod:`scitex_cards._paths`; this
+#: private alias keeps every existing call site and the ``_store`` re-export
+#: working unchanged. See that function's docstring for why the old name was
+#: wrong and why the value is still needed.
+_resolved_store = local_store_path
 
 
 def _default_scope(arg: str | None) -> str | None:
-    """Resolve a scope argument, honoring ``$SCITEX_TODO_SCOPE`` as the default.
+    """Resolve a scope argument, honoring ``$SCITEX_CARDS_SCOPE`` as the default.
 
     ``None`` (caller didn't pass anything) → env var if set, else ``None``
     (no filter).
@@ -252,7 +251,7 @@ def list_tasks(
 
     Filter semantics:
 
-    - ``scope=None`` (default): use ``$SCITEX_TODO_SCOPE`` if set, else
+    - ``scope=None`` (default): use ``$SCITEX_CARDS_SCOPE`` if set, else
       no filter. ``scope=""`` opts out of the env default explicitly.
       ``scope="agent:<id>"`` names an OWNER, not a lens: it returns every
       card assigned to ``<id>`` as well as those filed under that scope,
@@ -279,13 +278,16 @@ def list_tasks(
     affecting the on-disk store (no save here).
 
     Reads always go through :func:`scitex_cards._model.load_tasks`, which reads the
-    ONE canonical SQLite database and raises rather than returning an empty or
+    ONE canonical database and raises rather than returning an empty or
     stale document when the store cannot be resolved (see the module docstring —
-    the S2 SQLite-indexed accelerator that used to dispatch here is deleted).
+    the S2 index-backed accelerator that used to dispatch here is deleted).
     """
     resolved = _resolved_store(store)
     scope_eff = _default_scope(scope)
-    tasks = load_tasks(resolved)
+    # tolerant=True: this is a PURE read — nothing it returns is written back,
+    # so one unreadable row must not blank the whole board. The mutate verbs
+    # keep the strict door, where omitting a row would DELETE it.
+    tasks = load_tasks(resolved, tolerant=True)
     return [
         dict(t)
         for t in tasks
@@ -347,7 +349,10 @@ def summarize_tasks(
     intentional rather than wrong.)
     """
     resolved = _resolved_store(store)
-    tasks = load_tasks(resolved)
+    # tolerant=True: this is a PURE read — nothing it returns is written back,
+    # so one unreadable row must not blank the whole board. The mutate verbs
+    # keep the strict door, where omitting a row would DELETE it.
+    tasks = load_tasks(resolved, tolerant=True)
     scope_eff = _default_scope(scope)
     by_status: dict[str, int] = {s: 0 for s in VALID_STATUSES}
     by_scope: dict[str, int] = {}

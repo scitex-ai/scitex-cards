@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """The reconciler stamps ITSELF when nothing else names an author.
 
-An unattended cron run has no ``$SCITEX_TODO_AGENT_ID``, so every close raised
+An unattended cron run has no ``$SCITEX_CARDS_AGENT_ID``, so every close raised
 "creator unresolved" and the job closed nothing — measured on the live */15
 entry 2026-08-01, once the store-target failure that had been masking it was
 fixed.
@@ -27,7 +27,7 @@ _MANAGED = (ENV_AGENT, "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
-def unattended_store(tmp_path):
+def unattended_store(tmp_path, new_store):
     """A real store with one merged-PR card, and NO ambient identity."""
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
@@ -36,7 +36,7 @@ def unattended_store(tmp_path):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
-    store = tmp_path / "cards.db"
+    store = new_store()
     os.environ["SCITEX_CARDS_DB"] = str(store)
     os.chdir(tmp_path)
     # The canonical read REFUSES a missing database rather than bootstrapping

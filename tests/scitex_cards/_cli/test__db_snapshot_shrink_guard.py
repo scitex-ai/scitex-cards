@@ -22,7 +22,7 @@ from scitex_cards._cli._db import db_group
 def _seed(n: int) -> None:
     """Seed the canonical DB with ``n`` done cards.
 
-    The snapshot guard reads the canonical SQLite DB (``db snapshot`` exports it
+    The snapshot guard reads the canonical DB (``db snapshot`` exports it
     and counts the rows), so seeding is a full DB rebuild from an in-memory doc —
     the same doc the old YAML fixture held. ``seed_db_from_doc`` replaces every
     row, so re-seeding with a smaller ``n`` genuinely collapses the store.
@@ -65,6 +65,23 @@ def test_a_collapsed_card_count_is_refused(rail):
 
     # Assert
     assert result.exit_code != 0, "a wipe must not be snapshotted silently"
+
+
+def test_the_collapse_refusal_reports_the_before_and_after_counts(rail):
+    """Split under STX-TQ007, and it is the half that makes the refusal usable.
+
+    A non-zero exit tells the operator the rail stopped; only the counts tell
+    them WHY and how bad it is. Merged, this could never be the reported
+    failure — it ran only once the exit-code claim had already passed.
+    """
+    # Arrange
+    snaps = rail
+    _seed(3)
+
+    # Act
+    result = CliRunner().invoke(db_group, ["snapshot", "--dir", str(snaps)])
+
+    # Assert
     assert "collapsed from 100 to 3" in result.output
 
 

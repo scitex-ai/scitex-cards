@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Shared helpers for the scitex-todo git->card hooks (post-commit, pre-push).
+# Shared helpers for the scitex-cards git->card hooks (post-commit, pre-push).
 #
 # Phase P3 of the task-driven-feedback epic (card tcfb-p3-git-to-card).
 # These helpers capture a local git mutation onto the matching board
 # card's ROUTE by emitting a canonical "push" event to
-#   scitex-todo hook push --payload -
+#   scitex-cards hook push --payload -
 #
 # SOFT linking: a card is annotated only when a card id is present in the
 # branch name (or a `Card: <id>` commit-message trailer). Ad-hoc commits
@@ -18,7 +18,7 @@
 
 # Resolve a python interpreter that can import scitex_cards. Preference:
 #   1. repo-local venv (.venv/bin/python) -- CI-parity dev setup
-#   2. `scitex-todo` console-script's interpreter (best proxy on PATH)
+#   2. `scitex-cards` console-script's interpreter (best proxy on PATH)
 #   3. plain python3
 # Echoes the interpreter path; callers test importability separately.
 sttc_python() {
@@ -57,7 +57,7 @@ sttc_repo_slug() {
 #   matching canonical card-event type (committed vs pushed).
 # - Resolves the card id (branch, then Card: trailer in the msg file).
 # - If a card id resolves, builds the event JSON in python and pipes it
-#   to `scitex-todo hook push --payload -`.
+#   to `scitex-cards hook push --payload -`.
 # - No card id  -> silent exit 0 (SOFT).
 # - Any failure -> swallowed (|| true); the hook never blocks git.
 sttc_emit_push() {
@@ -91,14 +91,14 @@ sttc_emit_push() {
     [ -n "${event}" ] || return 0
 
     # Pipe to the consumer. Prefer the repo-venv console script; fall back
-    # to `scitex-todo` on PATH, then to `python -m scitex_cards`.
-    if [ -x "${repo_root}/.venv/bin/scitex-todo" ]; then
+    # to `scitex-cards` on PATH, then to `python -m scitex_cards`.
+    if [ -x "${repo_root}/.venv/bin/scitex-cards" ]; then
         printf '%s\n' "${event}" |
-            "${repo_root}/.venv/bin/scitex-todo" hook push --payload - \
+            "${repo_root}/.venv/bin/scitex-cards" hook push --payload - \
                 >/dev/null 2>&1 || true
-    elif command -v scitex-todo >/dev/null 2>&1; then
+    elif command -v scitex-cards >/dev/null 2>&1; then
         printf '%s\n' "${event}" |
-            scitex-todo hook push --payload - >/dev/null 2>&1 || true
+            scitex-cards hook push --payload - >/dev/null 2>&1 || true
     else
         printf '%s\n' "${event}" |
             "${py}" -m scitex_cards hook push --payload - \

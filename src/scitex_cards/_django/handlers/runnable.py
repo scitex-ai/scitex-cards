@@ -4,7 +4,7 @@
 
 Lead a2a `74db4f2d`, 2026-06-14 — TRACK 1 dispatch backbone, HTTP
 surface. The parallelism dispatcher (lead-side) consumes JSON over
-HTTP instead of shelling out to `scitex-todo runnable` / `blocked`.
+HTTP instead of shelling out to `scitex-cards runnable` / `blocked`.
 
 Endpoints:
 

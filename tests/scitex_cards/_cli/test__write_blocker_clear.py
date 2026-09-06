@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI gap fix: `scitex-todo update --blocker ''` / `--blocker none`
+"""CLI gap fix: `scitex-cards update --blocker ''` / `--blocker none`
 should CLEAR the blocker field (dev a2a, lead `f5a54f85`).
 
 Lives in a sibling test file (not `test__write.py`) to stay under the

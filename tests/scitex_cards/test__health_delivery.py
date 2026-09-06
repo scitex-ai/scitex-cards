@@ -4,7 +4,7 @@
 
 Regression cover for the silence measured 2026-07-29: this agent's operator DMs
 never arrived for weeks. The inbox held 228 rows and ZERO unseen — enqueued,
-consumed, gone — because the agent spec allowlisted ``server:scitex-todo`` while
+consumed, gone — because the agent spec allowlisted ``server:scitex-cards`` while
 ``.mcp.json`` registers this server as ``scitex-cards``, so Claude Code read
 every push and discarded it. ``channel_capable``, ``channel_drain`` and the
 drain itself were all green: the drain ack'd on ``send()`` RETURNING, which is
@@ -21,10 +21,13 @@ rather than passing — a check that measured nothing must not read as a check
 that found nothing.
 
 No mocks (STX-NM / PA-306): a real store, real inbox records, real receipts, and
-a genuinely broken inbox on each backend — a database path aimed at a directory,
-and a corrupt sidecar — so the read really fails and the result does not depend
-on the test user's privileges. Both backends are exercised explicitly: this
-suite's conftest pins the YAML break-glass one, while production runs SQLite.
+a genuinely broken inbox — a corrupt sidecar — so the read really fails and the
+result does not depend on the test user's privileges.
+
+The file rail is RETIRED as an inbox backend (operator ruling 2026-08-23); the file
+break-glass backend (``SCITEX_CARDS_INBOX_BACKEND=yaml``) is the only
+non-server option left, and it is what production runs when the store is not
+PostgreSQL. This suite's conftest already pins it for every test.
 """
 
 from __future__ import annotations
@@ -43,8 +46,8 @@ from scitex_cards._inbox_receipt import record_confirmation, record_push
 
 AGENT = "delivery-agent"
 
-#: Both real inbox backends. ``sqlite`` is what production runs.
-BACKENDS = ("sqlite", "yaml")
+#: The one real non-server inbox backend left. The file rail was retired 2026-08-23.
+BACKENDS = ("yaml",)
 
 #: The push instant every fixture stamps, and a "now" five hours later.
 PUSHED_AT_STAMP = "2026-07-29T07:00:00Z"
@@ -74,7 +77,7 @@ def _push_two(store):
 @pytest.fixture(params=BACKENDS)
 def backend(request, env):
     """Run the test body on each real inbox backend, in turn."""
-    env.set("SCITEX_TODO_INBOX_BACKEND", request.param)
+    env.set("SCITEX_CARDS_INBOX_BACKEND", request.param)
     return {"name": request.param, "env": env}
 
 
@@ -252,17 +255,10 @@ def test_an_unresolved_agent_id_reports_unknown(store):
 
 
 def _break_the_inbox(backend, store, tmp_path):
-    """Make the ACTIVE backend's inbox genuinely unreadable.
-
-    Backend-specific because "unreadable" is: SQLite is pointed at a path that
-    is a DIRECTORY (``sqlite3`` refuses to open it), and the file backend gets a
-    sidecar holding bytes that are not JSON. Neither depends on file permissions,
-    so neither silently succeeds when the suite runs as root.
+    """Make the file backend's inbox genuinely unreadable: a sidecar holding
+    bytes that are not JSON. Does not depend on file permissions, so it does
+    not silently succeed when the suite runs as root.
     """
-    if backend == "sqlite":
-        blocked = tmp_path / "not-a-database"
-        blocked.mkdir()
-        return ("SCITEX_TODO_INBOX_DB", str(blocked))
     from scitex_cards._inbox import _INBOXES_FILENAME
 
     sidecar = store.parent / _INBOXES_FILENAME

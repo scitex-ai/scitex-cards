@@ -24,9 +24,13 @@ import-time snapshot of those flags.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import logging
 import os
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +137,35 @@ def _refusal(row, table: str, *, detail: str) -> ExportRefused:
     )
 
 
+def missing_payload_refusal(task_id, stamp) -> ExportRefused:
+    """The refusal for a ``tasks`` row with no ``card_json`` payload.
+
+    ONE WORDING, two readers: the whole-board export and the single-card read
+    (:mod:`scitex_cards._store_single_card`) both meet such a row, and the
+    diagnosis must not depend on which door found it. ``stamp`` is the row's
+    ``last_activity`` — the one fact that lets the reader tell an old row from
+    one a current writer just broke.
+    """
+    when = f" (last activity {stamp})" if stamp else ""
+    return ExportRefused(
+        f"task {task_id!r}{when} has no card_json payload, and a "
+        "card CANNOT be rebuilt from its columns: 22 distinct card "
+        "keys measured on the live store are not columns at all, "
+        "so a rebuild would drop them silently.\n"
+        "\n"
+        "Two different faults look like this:\n"
+        "  * an OLD row predating the payload columns — re-import "
+        "the database from an export written by a current "
+        "version;\n"
+        "  * a row a CURRENT writer stored without a payload — "
+        "that is a WRITER defect; report it with the id and "
+        "timestamp above.\n"
+        "\n"
+        "Nothing was deleted or modified. Inspect the row with:\n"
+        f"  SELECT * FROM tasks WHERE id = '{task_id}';"
+    )
+
+
 def _record(row, table: str, *, repair: bool = True) -> dict[str, Any]:
     """Rebuild one record from its verbatim payload + mutable-column overlay.
 
@@ -220,11 +253,47 @@ def _repair(row, table: str) -> dict[str, Any]:
     return rebuilt
 
 
+#: Policy for a row that carries no payload AND cannot be rebuilt.
+#:
+#: ``"raise"`` (the default) refuses the WHOLE export. That is correct for two
+#: of this function's three callers and MUST stay the default:
+#:
+#:   backup rail   ADR-0010 says a snapshot is exact or absent.
+#:   READ-MODIFY-WRITE  whatever this returns is written back as the whole
+#:                      store, so omitting a row DELETES it. Measured
+#:                      2026-08-17: making the users loop tolerant and running
+#:                      one `comment_task` reported SUCCESS and left the row
+#:                      gone. Pinned by
+#:                      tests/…/test__rmw_refusal_must_not_become_tolerance.py.
+#:
+#: ``"omit"`` is for a PURE read — one that never writes the document back.
+#: There, refusing the whole result set over a row the caller does not even
+#: return is the larger harm: an unreadable `users` row blanks `list_tasks`,
+#: and `help_wait` (the card an agent files to say it is stuck) is refused at
+#: exactly the moment it is needed.
+_ON_UNREBUILDABLE = ("raise", "omit")
+
+
+def _omit_or_raise(exc: "ExportRefused", policy: str, table: str, row_id) -> None:
+    """Re-raise, or NAME the row being skipped. Never drop one in silence."""
+    if policy != "omit":
+        raise exc
+    logger.warning(
+        "[scitex-cards] SKIPPED an unreadable %s row %r on a read-only query: "
+        "%s — the rest of the result is complete. This row is NOT deleted and "
+        "a WRITE will still refuse until its payload is repaired.",
+        table,
+        row_id,
+        exc,
+    )
+
+
 def export_doc(
     db_path: str | Path | None = None,
     *,
-    conn: sqlite3.Connection | None = None,
+    conn: StoreConnection | None = None,
     repair: bool = True,
+    on_unrebuildable: str = "raise",
 ) -> tuple[dict, dict]:
     """Assemble ``({tasks, users, inboxes}, threads)`` from the DB, exactly.
 
@@ -240,7 +309,7 @@ def export_doc(
     concurrent writer in that window makes the two disagree with no card
     missing at all. That false "INCOMPLETE" refusal blanked ``list_tasks``
     fleet-wide (observed 2,374 exported vs 2,375 in-table while
-    ``scitex-cards db verify`` reported the DB perfectly healthy).
+    ``scitex-cards dev db verify`` reported the DB perfectly healthy).
 
     So the caller opens ONE connection, begins ONE read transaction, and hands
     it here. When ``conn`` is supplied it is used as-is and NOT closed —
@@ -250,7 +319,7 @@ def export_doc(
 
     The connection MUST have been opened through :func:`scitex_cards._db.connect`
     (directly or via :func:`open_db`), because that is where the
-    min-client-version gate lives. Hand-rolling a bare ``sqlite3.connect`` here
+    min-client-version gate lives. Hand-rolling a bare driver connect here
     would silently delete that gate.
     """
     owned = conn is None
@@ -266,29 +335,15 @@ def export_doc(
             "SELECT id, card_json, last_activity FROM tasks ORDER BY row_order"
         ).fetchall():
             if r["card_json"] is None:
-                stamp = r["last_activity"]
-                when = f" (last activity {stamp})" if stamp else ""
-                raise ExportRefused(
-                    f"task {r['id']!r}{when} has no card_json payload, and a "
-                    "card CANNOT be rebuilt from its columns: 22 distinct card "
-                    "keys measured on the live store are not columns at all, "
-                    "so a rebuild would drop them silently.\n"
-                    "\n"
-                    "Two different faults look like this:\n"
-                    "  * an OLD row predating the payload columns — re-import "
-                    "the database from an export written by a current "
-                    "version;\n"
-                    "  * a row a CURRENT writer stored without a payload — "
-                    "that is a WRITER defect; report it with the id and "
-                    "timestamp above.\n"
-                    "\n"
-                    "Nothing was deleted or modified. Inspect the row with:\n"
-                    f"  SELECT * FROM tasks WHERE id = '{r['id']}';"
+                _omit_or_raise(
+                    missing_payload_refusal(r["id"], r["last_activity"]),
+                    on_unrebuildable, "tasks", r["id"],
                 )
+                continue
             tasks.append(card_from_payload(r["card_json"]))
 
-        # ORDERED BY REAL COLUMNS, NOT ``rowid``. ``rowid`` is a SQLite
-        # implementation detail with no PostgreSQL equivalent, so these four
+        # ORDERED BY REAL COLUMNS, NOT an implicit row counter. That counter
+        # has no PostgreSQL equivalent, so these four
         # queries were the export path's hard stop against a server backend --
         # and they would have failed at CUTOVER, not at porting time.
         #
@@ -300,12 +355,14 @@ def export_doc(
         # produced. The tie-break is not decorative: timestamps here have
         # one-second resolution, so same-second rows would otherwise order
         # arbitrarily and the export would differ run to run.
-        users = [
-            _record(r, "users", repair=repair)
-            for r in conn.execute(
-                "SELECT * FROM users ORDER BY created_at, id"
-            ).fetchall()
-        ]
+        users = []
+        for r in conn.execute(
+            "SELECT * FROM users ORDER BY created_at, id"
+        ).fetchall():
+            try:
+                users.append(_record(r, "users", repair=repair))
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "users", r["id"])
 
         # Seed from the recipients table first so a DRAINED inbox (a
         # key with zero rows) still appears as an empty list (v4).
@@ -316,13 +373,21 @@ def export_doc(
             ).fetchall()
         }
         for r in conn.execute("SELECT * FROM notifications ORDER BY ts, id").fetchall():
-            inboxes.setdefault(r["recipient_id"], []).append(
-                _record(r, "notifications", repair=repair)
-            )
+            try:
+                rec = _record(r, "notifications", repair=repair)
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "notifications", r["id"])
+                continue
+            inboxes.setdefault(r["recipient_id"], []).append(rec)
 
         threads: dict[str, list[dict]] = {}
         for r in conn.execute("SELECT * FROM messages ORDER BY ts, id").fetchall():
-            threads.setdefault(r["thread_key"], []).append(_record(r, "messages", repair=repair))
+            try:
+                rec = _record(r, "messages", repair=repair)
+            except ExportRefused as exc:
+                _omit_or_raise(exc, on_unrebuildable, "messages", r["id"])
+                continue
+            threads.setdefault(r["thread_key"], []).append(rec)
     finally:
         if owned:
             conn.close()
@@ -361,6 +426,37 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def export_targets(
+    db_path: str | Path | None = None,
+    out: str | Path | None = None,
+    threads_out: str | Path | None = None,
+) -> dict[str, str]:
+    """Where :func:`export_json` WOULD write, resolved the same way it does.
+
+    Extracted so a dry run and the real export cannot disagree about their
+    targets. A preview that re-derived the paths itself would be a second
+    implementation of the defaulting rules, and the first time those two drift
+    the preview starts naming files the export does not touch — which is worse
+    than having no preview, because it reads as confirmation.
+
+    Returns ``{"tasks_json": ..., "threads_json": ...}``. Resolves paths only;
+    it does not open the database.
+    """
+    from ._paths import resolve_tasks_path
+
+    out_path = (
+        Path(out).expanduser()
+        if out
+        else resolve_tasks_path(db_path).parent / "export" / "tasks.json"
+    )
+    threads_path = (
+        Path(threads_out).expanduser()
+        if threads_out
+        else out_path.parent / "threads.json"
+    )
+    return {"tasks_json": str(out_path), "threads_json": str(threads_path)}
+
+
 def export_json(
     db_path: str | Path | None = None,
     out: str | Path | None = None,
@@ -375,7 +471,6 @@ def export_json(
     """
     import json
 
-    from ._paths import resolve_tasks_path
     from ._store_target import resolve_store_target
 
     # STRICT: a snapshot is exact or it is absent (ADR-0010). The board read
@@ -392,16 +487,9 @@ def export_json(
     # `resolve_db_path` meant a DSN raised before either was needed, which is
     # what killed the hourly off-site snapshot for ~31 hours (2026-08-02).
     db = resolve_store_target(db_path)
-    out_path = (
-        Path(out).expanduser()
-        if out
-        else resolve_tasks_path(db_path).parent / "export" / "tasks.json"
-    )
-    threads_path = (
-        Path(threads_out).expanduser()
-        if threads_out
-        else out_path.parent / "threads.json"
-    )
+    targets = export_targets(db_path=db_path, out=out, threads_out=threads_out)
+    out_path = Path(targets["tasks_json"])
+    threads_path = Path(targets["threads_json"])
 
     _atomic_write(out_path, json.dumps(doc, indent=2, ensure_ascii=False))
     # The sidecar contract is a top-level ``threads:`` mapping
@@ -425,6 +513,6 @@ def export_json(
     }
 
 
-__all__ = ["ExportRefused", "export_doc", "export_json"]
+__all__ = ["ExportRefused", "export_doc", "export_json", "missing_payload_refusal"]
 
 # EOF

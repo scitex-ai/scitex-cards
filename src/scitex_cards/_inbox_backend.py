@@ -10,11 +10,12 @@ testable without importing the whole inbox surface.
 
 The default is the fix
 ----------------------
-When ``SCITEX_TODO_INBOX_BACKEND`` is unset, the inbox FOLLOWS THE STORE:
-a Postgres DSN selects the shared inbox, anything else selects SQLite.
+When ``SCITEX_CARDS_INBOX_BACKEND`` is unset, the inbox FOLLOWS THE STORE:
+a Postgres DSN selects the shared inbox; anything else is a CONFIGURATION
+ERROR and raises.
 
 That is deliberate, not a convenience. Measured 2026-08-09, the inbox was a
-per-host SQLite file while the cards lived in a shared database::
+per-host file while the cards lived in a shared database::
 
     laptop      4901 rows, 1981 unseen, 130 recipients
     compute-04   162 rows,   87 unseen,  12 recipients
@@ -35,15 +36,16 @@ from __future__ import annotations
 import os
 from typing import Final
 
-__all__ = ["POSTGRES", "SQLITE", "YAML", "backend", "store_is_shared"]
+from ._store_errors import StoreUnavailableError
+
+__all__ = ["POSTGRES", "YAML", "backend", "store_is_shared"]
 
 POSTGRES: Final[str] = "postgres"
-SQLITE: Final[str] = "sqlite"
 YAML: Final[str] = "yaml"
 
-#: The explicit override. Any of the three names selects that backend
-#: outright; anything else falls through to the store-following default.
-ENV_INBOX_BACKEND: Final[str] = "SCITEX_TODO_INBOX_BACKEND"
+#: The explicit override. Either name selects that backend outright; anything
+#: else falls through to the store-following default.
+ENV_INBOX_BACKEND: Final[str] = "SCITEX_CARDS_INBOX_BACKEND"
 
 #: Store settings consulted when the backend is not named. A Postgres store
 #: means the CARDS are shared, and an inbox that is not shared alongside
@@ -51,14 +53,13 @@ ENV_INBOX_BACKEND: Final[str] = "SCITEX_TODO_INBOX_BACKEND"
 ENV_STORE_SETTINGS: Final[tuple[str, ...]] = (
     "SCITEX_CARDS_INBOX_DSN",
     "SCITEX_CARDS_DB",
-    "SCITEX_TODO_DB",
 )
 
 _DSN_PREFIXES: Final[tuple[str, ...]] = ("postgres://", "postgresql://")
 
 #: Spellings accepted for the Postgres backend. `pg` is included because it
-#: is what people type, and a config that silently means "sqlite" because
-#: the spelling was not recognised would reproduce the original defect.
+#: is what people type, and a config that silently missed the shared inbox
+#: because the spelling was not recognised would reproduce the original defect.
 _POSTGRES_ALIASES: Final[frozenset[str]] = frozenset({"postgres", "postgresql", "pg"})
 
 
@@ -71,20 +72,34 @@ def store_is_shared() -> bool:
 
 
 def backend() -> str:
-    """``postgres`` | ``sqlite`` | ``yaml`` — the backend in force.
+    """``postgres`` | ``yaml`` — the backend in force.
 
-    An explicit ``SCITEX_TODO_INBOX_BACKEND`` always wins; otherwise the
-    inbox follows the store. See the module docstring for why the default
-    is not "sqlite unless told otherwise".
+    An explicit ``SCITEX_CARDS_INBOX_BACKEND`` always wins; otherwise the
+    inbox follows the store. A store that is not a Postgres DSN is a
+    CONFIGURATION ERROR rather than a reason to pick a per-host file, and
+    raises :class:`~scitex_cards._store_errors.StoreUnavailableError`.
+
+    THERE ARE ONLY THE TWO NAMES BELOW. An unrecognised value is not an
+    alternative backend and is never treated as one: it falls through to the
+    store-following default, where a store that is not a DSN raises. A name the
+    selector quietly accepted would be a second inbox that merely happens to be
+    switched off today (operator ruling 2026-08-23, 「ポストグレスのみです」).
     """
     explicit = (os.environ.get(ENV_INBOX_BACKEND) or "").strip().lower()
     if explicit in _POSTGRES_ALIASES:
         return POSTGRES
     if explicit == YAML:
         return YAML
-    if explicit == SQLITE:
-        return SQLITE
-    return POSTGRES if store_is_shared() else SQLITE
+    if store_is_shared():
+        return POSTGRES
+    raise StoreUnavailableError(
+        "no inbox backend can be selected: the configured store is not a "
+        "Postgres DSN. Point one of "
+        f"{', '.join(ENV_STORE_SETTINGS)} at a postgresql://...:55432/... "
+        "DSN. This case used to select a per-host file SILENTLY, which is how "
+        "a store misconfiguration became an invisible second inbox that "
+        "nobody polled."
+    )
 
 
 # EOF

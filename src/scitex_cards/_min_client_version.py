@@ -16,7 +16,7 @@ string). Every process that OPENS the database — read or write, CLI, MCP,
 or library — compares its own running version against that floor
 (:func:`enforce_min_client_version`, called from
 :func:`scitex_cards._db.connect`, the ONE function both the read path
-(``_store_read_sqlite.list_tasks_sqlite``) and the write path
+(``load_tasks``) and the write path
 (``_db_mirror.mirror_doc_incremental`` via ``_db.open_db``) open every
 connection through). Below the floor: :class:`ClientTooOldError` — a RAISE,
 not a log line — carrying the exact upgrade command.
@@ -24,7 +24,7 @@ not a log line — carrying the exact upgrade command.
 MISSING KEY MEANS NO FLOOR. An old database that predates this feature (or
 one where nobody has deliberately set a floor) has no ``min_client_version``
 row, and :func:`read_floor` returns ``None`` — the gate is then a no-op. Old
-databases keep working until a floor is DELIBERATELY set (``scitex-cards db
+databases keep working until a floor is DELIBERATELY set (``scitex-cards dev db
 set-min-client-version``, see ``_cli/_min_client_version.py``); nothing in
 this module ever sets one on its own. Auto-bumping on an ordinary write is
 exactly the failure this must not become — a mid-fleet upgrade would
@@ -47,16 +47,26 @@ only the LEADING digits of the segment that carries it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
+    from ._backend_connect import StoreConnection
+
 import re
-import sqlite3
 from pathlib import Path
 
 #: ``schema_meta`` key holding the store's minimum-client-version floor.
 KEY_MIN_CLIENT_VERSION = "min_client_version"
 
-#: Distribution names to try, in order — the current name first, then the
-#: pre-rename name (mirrors ``scitex_cards.__version__``'s own fallback).
-_DIST_NAMES = ("scitex-cards", "scitex-todo")
+#: The distribution to read this client's version from. This was a two-name
+#: fallback (current, then pre-rename) mirroring ``scitex_cards.__version__``;
+#: both entries collapsed onto the same string when the retired name went, so
+#: the "fallback" could only re-raise the first lookup's error. That matters
+#: more here than in a version banner: a floor check that cannot determine its
+#: own version falls back to ``_UNKNOWN_VERSION`` and reads as too old.
+_DIST_NAMES = ("scitex-cards",)
 
 #: Version used when NEITHER importlib.metadata NOR a pyproject.toml can be
 #: found. Deliberately the smallest possible version — an install this
@@ -161,7 +171,7 @@ def resolve_running_version() -> str:
     return pyproject_version or _UNKNOWN_VERSION
 
 
-def read_floor(conn: sqlite3.Connection) -> str | None:
+def read_floor(conn: StoreConnection) -> str | None:
     """The stamped ``min_client_version`` floor, or ``None`` if unset.
 
     ``None`` covers BOTH "the key is absent" and "the ``schema_meta`` table
@@ -171,8 +181,8 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     floor has ever been set, so the gate is a no-op.
     """
     # ABSENCE IS ASKED, NOT CAUGHT. This used to be a bare
-    # ``except sqlite3.OperationalError`` around the SELECT, which reads the
-    # "table does not exist yet" case off a SQLite-SPECIFIC exception type. On
+    # ``except OperationalError`` around the SELECT, which read the
+    # "table does not exist yet" case off a DRIVER-SPECIFIC exception type. On
     # PostgreSQL the same condition raises ``psycopg.errors.UndefinedTable``,
     # which that clause does not catch — so a brand-new PostgreSQL store would
     # have RAISED out of a function whose whole contract is "no floor yet, this
@@ -188,7 +198,7 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     ).fetchone()
     if row is None:
         return None
-    # BY NAME, NOT BY POSITION. ``sqlite3.Row`` accepts both ``row[0]`` and
+    # BY NAME, NOT BY POSITION. ``Mapping[str, Any]`` accepts both ``row[0]`` and
     # ``row["value"]``; psycopg's ``dict_row`` accepts only the latter and
     # raises on the former. ``_backend_connect.connect`` deliberately leaves
     # that asymmetry visible rather than papering over it, so that the port
@@ -197,11 +207,11 @@ def read_floor(conn: sqlite3.Connection) -> str | None:
     return str(row["value"])
 
 
-def stamp_floor(conn: sqlite3.Connection, version: str) -> None:
+def stamp_floor(conn: StoreConnection, version: str) -> None:
     """Set (or replace) the store's ``min_client_version`` floor.
 
     Call inside the caller's own write transaction — this does not commit.
-    The ONLY writer should be the deliberate admin verb (``scitex-cards db
+    The ONLY writer should be the deliberate admin verb (``scitex-cards dev db
     set-min-client-version``, see ``_cli/_min_client_version.py``);
     ordinary card reads/writes must never call this, or a routine write from
     a newer agent would cascade-brick every OLDER agent still running
@@ -214,13 +224,13 @@ def stamp_floor(conn: sqlite3.Connection, version: str) -> None:
     )
 
 
-def enforce_min_client_version(conn: sqlite3.Connection) -> None:
+def enforce_min_client_version(conn: StoreConnection) -> None:
     """RAISE :class:`ClientTooOldError` if this client is below the store's floor.
 
     A no-op when no floor is stamped (:func:`read_floor` returns ``None``)
     or when the running client (:func:`resolve_running_version`) meets it.
     Called from :func:`scitex_cards._db.connect` — the one function both the
-    read path and the write path open every SQLite connection through — so
+    read path and the write path open every connection through — so
     this single call site gates both.
     """
     floor = read_floor(conn)

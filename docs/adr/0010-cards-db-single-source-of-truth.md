@@ -32,7 +32,7 @@ deltas the operator's rulings introduced and the sequencing they force.
 ## Context
 
 The RFC designed the yaml→sqlite migration when the package was still
-scitex-todo, target path `~/.scitex/todo/todo.db`, with open questions Q5 (git
+scitex-cards, target path `~/.scitex/cards/cards.db`, with open questions Q5 (git
 audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 
 1. The package was renamed **scitex-cards** (S1 shipped in v0.14.0: import
@@ -55,11 +55,11 @@ audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 ## Decision
 
 1. **Path.** `resolve_db_path`: explicit arg → `$SCITEX_CARDS_DB` →
-   `$SCITEX_TODO_DB` (deprecated, loud warning, one transition window) →
+   `$SCITEX_CARDS_DB` (deprecated, loud warning, one transition window) →
    `local_state.user_path("cards", "cards.db")`. The final tier stays
    DELEGATED to the ecosystem resolver — a project scope remains structurally
    inexpressible (the 2026-07-06 stale-store class stays dead).
-2. **The pre-rename shadow db is dead weight.** `~/.scitex/todo/todo.db`
+2. **The pre-rename shadow db is dead weight.** `~/.scitex/cards/cards.db`
    (stale since 2026-07-13, dual-write off fleet-wide) is never moved, read,
    or trusted; `cards.db` is REBUILT from the live yaml by the idempotent
    importer at cutover, then verified (RFC-R4 A/B equivalence, counts printed
@@ -74,7 +74,7 @@ audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
    the store. Order: publish scitex-cards (S3) → SIF floor bump → sac env flip
    → dotfiles store-path pin flip (their card
    `dotfiles-env-store-path-flip-to-scitex-cards-20260716`, pinged by us after
-   verification) → db becomes canonical → `~/.scitex/todo` becomes a symlink
+   verification) → db becomes canonical → `~/.scitex/cards` becomes a symlink
    to `~/.scitex/cards` (operator-ruled end shape). Exactly one canonical
    store at any moment.
 5. **Multi-host (RFC-Q6).** Spartan's island store and its project-shadow fork

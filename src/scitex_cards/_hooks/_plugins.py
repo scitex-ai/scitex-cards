@@ -65,10 +65,22 @@ logger = logging.getLogger(__name__)
 #: Entry-point group external producers register their plugins under.
 ENTRY_POINT_GROUP = "scitex_cards.hooks"
 
-#: Pre-rename group name (package renamed 2026-07-16). External producers
-#: that registered under the old group keep firing until they re-release
-#: against the new name; drop together with the ``scitex_todo`` shim.
-LEGACY_ENTRY_POINT_GROUP = "scitex_todo.hooks"
+#: The PRE-RENAME group, still honoured. An entry-point group is a
+#: PUBLISHED CONTRACT held by OTHER packages' metadata, so renaming it
+#: is a MIGRATION and not a rename: "alias first, then remove"
+#: (constitution §3). That step was skipped when this package was
+#: renamed, and the cost was measured on 2026-08-17 — the ONLY
+#: registered card-event consumer in the fleet,
+#: ``scitex_agent_container._listen._card_event_delivery``, sits in
+#: this group, so dispatch looked in an empty group and called nobody.
+#: Nothing failed; the push rail was simply silent.
+#:
+#: Do NOT "fix" a dead consumer by flipping the constant above, and do
+#: NOT ask one producer to re-register: either repairs exactly the
+#: consumer you know about and leaves every other one dead AND
+#: invisible. Reading both groups repairs all of them at once and makes
+#: the stragglers announce themselves via the warning below.
+RETIRED_ENTRY_POINT_GROUP = "scitex_todo.hooks"
 
 #: Default per-plugin wall-time budget (seconds). Each entry-point
 #: handler runs in a worker thread joined with this timeout, so a
@@ -80,7 +92,7 @@ PLUGIN_TIMEOUT_S = 5.0
 
 #: Env override for :data:`PLUGIN_TIMEOUT_S`. Parsed as a float; a value
 #: <= 0 disables the wall-time budget (inline/legacy execution).
-PLUGIN_TIMEOUT_ENV = "SCITEX_TODO_HOOK_PLUGIN_TIMEOUT_S"
+PLUGIN_TIMEOUT_ENV = "SCITEX_CARDS_HOOK_PLUGIN_TIMEOUT_S"
 
 
 def _plugin_timeout_s() -> float:
@@ -197,7 +209,7 @@ def _run_plugins(
         # does not block interpreter shutdown.
         worker = threading.Thread(
             target=_worker,
-            name=f"scitex-todo-hook-{name}",
+            name=f"scitex-cards-hook-{name}",
             daemon=True,
         )
         worker.start()
@@ -292,7 +304,7 @@ def _iter_entry_points() -> Iterable:
     ``entry_points.txt`` — ~126 files in a real fleet venv — on each call. This
     runs on EVERY card event via :func:`dispatch_event`, so uncached it was the
     single largest cost in a card write: sac profiled 2.18 s of a 3.24 s warm
-    ``add_task`` HERE (card todo-reassign-all-bulk-primitive, 2026-07-14). It is
+    ``add_task`` HERE (card cards-reassign-all-bulk-primitive, 2026-07-14). It is
     FIXED overhead — paid in full on every write regardless of store size — so
     the cache makes every card write in the fleet ~2.2 s faster.
 
@@ -307,18 +319,51 @@ def _iter_entry_points() -> Iterable:
         eps = importlib.metadata.entry_points()
     except Exception:  # noqa: BLE001 — packaging surprises
         return []
+    return merge_hook_entry_points(eps)
+
+
+def merge_hook_entry_points(eps: Any) -> list:
+    """Hooks from the current group PLUS the retired one, de-duplicated.
+
+    Takes the discovered entry-point set as an ARGUMENT rather than
+    calling ``importlib.metadata`` itself, so this — the part carrying
+    the alias and dedupe decisions — is exercised by handing it a real
+    object, with no patching of production internals.
+    """
+    current = _select_group(eps, ENTRY_POINT_GROUP)
+    retired = _select_group(eps, RETIRED_ENTRY_POINT_GROUP)
+    if not retired:
+        return current
+
+    # DEDUPE ACROSS THE TWO GROUPS. A producer migrating correctly
+    # registers in BOTH for one release, and dispatching such a plugin
+    # once per group would deliver every card event TWICE — turning an
+    # alias meant to repair delivery into a duplicate-notification bug.
+    # Identity is (name, value): the same callable under the same name
+    # is the same handler however many groups advertise it.
+    seen = {(ep.name, ep.value) for ep in current}
+    extra = [ep for ep in retired if (ep.name, ep.value) not in seen]
+
+    logger.warning(
+        "card-event hooks found in the retired entry-point group %r: %s. "
+        "These still run, but the group is deprecated — re-register them "
+        "under %r. Registering under BOTH during the migration is safe; "
+        "duplicates are collapsed by (name, value).",
+        RETIRED_ENTRY_POINT_GROUP,
+        ", ".join(sorted(ep.name for ep in retired)) or "<none>",
+        ENTRY_POINT_GROUP,
+    )
+    return current + extra
+
+
+def _select_group(eps: Any, group: str) -> list:
+    """Entry points in ``group``, across importlib.metadata API versions."""
     # 3.10+: eps is an EntryPoints, supports .select(group=)
     select = getattr(eps, "select", None)
     if callable(select):
-        return [
-            *select(group=ENTRY_POINT_GROUP),
-            *select(group=LEGACY_ENTRY_POINT_GROUP),
-        ]
+        return list(select(group=group))
     # 3.9 fallback: dict-like keyed by group.
-    return [
-        *eps.get(ENTRY_POINT_GROUP, []),
-        *eps.get(LEGACY_ENTRY_POINT_GROUP, []),
-    ]
+    return list(eps.get(group, []))
 
 
 # EOF

@@ -13,32 +13,74 @@ literal slash, and a denylist at a security boundary fails by omission. The case
 below are the ones a denylist would have let through.
 """
 
+import contextlib
 import os
+import uuid
+from urllib.parse import urlsplit
 
 import pytest
 
 from scitex_cards._store_errors import StoreUnavailableError
 from scitex_cards._workspace import (
-    ENV_WORKSPACE_ROOT,
+    ENV_WORKSPACE_DB,
     InvalidWorkspaceIdentity,
     is_valid_identity,
+    provision_workspace_store,
     resolve_workspace_store,
 )
 
 
 @pytest.fixture
-def workspace_root(tmp_path):
-    """A real root with one provisioned workspace, restored afterwards."""
-    saved = os.environ.get(ENV_WORKSPACE_ROOT)
-    os.environ[ENV_WORKSPACE_ROOT] = str(tmp_path)
-    store = tmp_path / "acme" / ".scitex" / "cards" / "cards.db"
-    store.parent.mkdir(parents=True, exist_ok=True)
-    store.write_bytes(b"")
-    yield tmp_path
-    if saved is None:
-        os.environ.pop(ENV_WORKSPACE_ROOT, None)
-    else:
-        os.environ[ENV_WORKSPACE_ROOT] = saved
+def workspace_root(new_store, tenant):
+    """A real cluster with one provisioned workspace, restored afterwards.
+
+    Named `workspace_root` still, because every test below asks it for the same
+    thing: somewhere isolated with `acme` already provisioned. What it hands back
+    changed from a directory to a cluster DSN when a tenant became a SCHEMA.
+    """
+    cluster = new_store("workspace", bootstrap=False)
+    saved = os.environ.get(ENV_WORKSPACE_DB)
+    os.environ[ENV_WORKSPACE_DB] = cluster
+    provision_workspace_store(tenant)
+    try:
+        yield cluster
+    finally:
+        if saved is None:
+            os.environ.pop(ENV_WORKSPACE_DB, None)
+        else:
+            os.environ[ENV_WORKSPACE_DB] = saved
+        # DROP THE TENANT SCHEMA THIS TEST PROVISIONED. The throwaway cluster
+        # schema is dropped by `new_store`, but a tenant schema is GLOBAL to
+        # the database (its name is a digest of the identity alone), so one
+        # left behind outlives the run and, owned by whichever role ran it,
+        # makes every later provision of the same identity from another role
+        # fail with "no schema has been selected to create in". Measured
+        # 2026-09-05 on the fleet primary. Read back from this test's own
+        # registry rather than a catalog sweep, so a neighbour under -n keeps
+        # its tenants.
+        from scitex_cards._backend_connect import connect
+
+        with contextlib.suppress(Exception):
+            conn = connect(cluster, read_only=False, rows_by_name=True)
+            try:
+                for row in conn.fetchall("SELECT schema_name FROM scitex_cards_workspaces"):
+                    conn.execute(f'DROP SCHEMA IF EXISTS "{row["schema_name"]}" CASCADE')
+                conn.commit()
+            finally:
+                conn.close()
+
+
+@pytest.fixture
+def tenant() -> str:
+    """A tenant identity UNIQUE TO THIS TEST, valid under the identity regex.
+
+    A fixed identity ("acme") derives a fixed, database-global schema name, so
+    every xdist worker provisioning it shares ONE schema: one worker's teardown
+    drops it while another's open runs - the CI flake measured on #964/#965
+    (two different tests of this family, two legs, two PRs). A per-test suffix
+    makes the schema this test's alone.
+    """
+    return "acme" + uuid.uuid4().hex[:10]
 
 
 # === what a valid identity is ============================================
@@ -79,7 +121,7 @@ def test_slug_shaped_identities_are_accepted(ok):
         "_acme",
         "acme.db",  # looks like a file
         "acme.yaml",
-        "base/acme/.scitex/todo/tasks.yaml",  # exactly what hub used to inject
+        "base/acme/.scitex/cards/tasks.yaml",  # exactly what hub used to inject
         "",  # empty
         "a" * 64,  # over length
     ],
@@ -147,8 +189,8 @@ def test_the_refusal_does_not_echo_the_rejected_value(workspace_root):
 def test_an_unconfigured_root_refuses_rather_than_using_the_ambient_store():
     """THE ISOLATION TEST. A fallback here would serve one tenant another's cards."""
     # Arrange
-    saved = os.environ.get(ENV_WORKSPACE_ROOT)
-    os.environ.pop(ENV_WORKSPACE_ROOT, None)
+    saved = os.environ.get(ENV_WORKSPACE_DB)
+    os.environ.pop(ENV_WORKSPACE_DB, None)
 
     # Act
     try:
@@ -158,7 +200,7 @@ def test_an_unconfigured_root_refuses_rather_than_using_the_ambient_store():
         raised = exc
     finally:
         if saved is not None:
-            os.environ[ENV_WORKSPACE_ROOT] = saved
+            os.environ[ENV_WORKSPACE_DB] = saved
 
     # Assert
     assert raised is not None
@@ -182,27 +224,56 @@ def test_an_unprovisioned_workspace_refuses(workspace_root):
 # === the happy path, last because it is the least interesting ============
 
 
-def test_a_provisioned_workspace_resolves_under_the_root(workspace_root):
+def test_a_provisioned_workspace_resolves_to_what_provision_made(workspace_root, tenant):
     # Arrange
-    identity = "acme"
+    identity = tenant
 
     # Act
     store = resolve_workspace_store(identity)
 
     # Assert
-    assert store == workspace_root / "acme" / ".scitex" / "cards" / "cards.db"
+    assert store == provision_workspace_store(identity)
 
 
-def test_the_resolved_store_is_inside_the_root(workspace_root):
-    """Pins the containment property itself, not just one expected string."""
+def test_the_resolved_store_is_scoped_to_its_own_schema(workspace_root, tenant):
+    """Pins the isolation property itself, not one expected string.
+
+    The old form asserted a filesystem location under the root. Containment is
+    still the property that matters, but it is now carried by `search_path`: the
+    handle names one schema, so a statement made on it cannot reach another
+    tenant's tables without qualifying them. That IS the boundary (ADR-0017).
+    """
     # Arrange
-    identity = "acme"
+    identity = tenant
 
     # Act
     store = resolve_workspace_store(identity)
 
     # Assert
-    assert workspace_root.resolve() in store.resolve().parents
+    assert "search_path%3Dws_" in store
+
+
+def test_the_resolved_store_stays_on_the_configured_cluster(workspace_root, tenant):
+    """The other half of containment: the right schema on the RIGHT server.
+
+    Scoping to a tenant schema means nothing if the handle points at a
+    different cluster, which is exactly what a stale or half-applied
+    configuration produces.
+    """
+    # Arrange
+    identity = tenant
+
+    # Act
+    store = resolve_workspace_store(identity)
+
+    # Assert
+    # SERVER AND DATABASE, not a string prefix. `startswith` looked equivalent
+    # and was not: the cluster DSN can carry more than one `options` parameter,
+    # only the last of which libpq honours, so the resolved DSN legitimately
+    # differs from the cluster string before the schema is even appended.
+    # Comparing the parts that actually name the server says what this test
+    # means without depending on how the query string was assembled.
+    assert urlsplit(store)[:3] == urlsplit(workspace_root)[:3]
 
 
 if __name__ == "__main__":
