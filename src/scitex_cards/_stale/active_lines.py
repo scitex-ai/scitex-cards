@@ -35,8 +35,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 NUDGE_ID_CAP = 12
 
 
-def _cap_ids(cards: list[StaleCard]) -> str:
+def _cap_ids(cards: list[StaleCard], *, render=lambda c: c.id) -> str:
     """Render the card ids for a nudge line, capped with a "+K more" tail.
+
+    ``render`` is a per-card seam whose DEFAULT is exactly the old behaviour,
+    so a rail that wants more per card (the blocked-check's edge columns) gets
+    it without moving the other two lines by a byte — and the cap keeps living
+    in one place, which is the whole reason this helper exists.
 
     Extracted so the cap is enforced in ONE place: three composers each
     carrying their own copy is three chances for one to drift and emit an
@@ -46,12 +51,31 @@ def _cap_ids(cards: list[StaleCard]) -> str:
     rather than an empty string, so a malformed row is visible instead of
     producing a nudge line that trails off into nothing.
     """
-    ids = [c.id for c in cards if c.id]
+    ids = [render(c) for c in cards if c.id]
     if not ids:
         return "(no ids)"
     shown = ids[:NUDGE_ID_CAP]
     tail = f", +{len(ids) - NUDGE_ID_CAP} more" if len(ids) > NUDGE_ID_CAP else ""
     return ", ".join(shown) + tail
+
+
+def _with_edges(card: StaleCard) -> str:
+    """``<id> [parent=… deps=N children=N]`` — the fields that decide the case.
+
+    ALWAYS PRINTS ALL THREE, including ``parent=-`` for a card that has none.
+    A column that appeared only on cards WITH edges would make the edged ones
+    stand out and teach the reader to skim the rest, which is the habit this
+    change exists to break: "looked and found none" and "never asked" are
+    different states, and only a printed value distinguishes them.
+
+    Counts rather than lists for ``deps`` and ``children``, so the line stays
+    bounded — the cap above bounds the number of CARDS, and an unbounded
+    per-card expansion would defeat it from the inside.
+    """
+    return (
+        f"{card.id} [parent={card.parent or '-'} "
+        f"deps={len(card.depends_on)} children={card.children}]"
+    )
 
 
 def stale_active_nudge_line(
@@ -112,7 +136,7 @@ def blocked_external_nudge_line(
     return (
         f"BLOCKED-CHECK: {len(cards)} card(s) blocked >{thr}h on something "
         f"outside your control — has the blocker cleared? If so, unblock; "
-        f"if not, leave it: {_cap_ids(cards)}"
+        f"if not, leave it: {_cap_ids(cards, render=_with_edges)}"
     )
 
 
