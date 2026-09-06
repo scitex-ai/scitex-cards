@@ -22,6 +22,32 @@ This is a read-path change only; no card content, ordering or field shape moved.
 The payload's size problem is not solved by it — comments are still serialised
 in full for every card returned, which is tracked separately.
 
+### The BLOCKED-CHECK line prints the edges that decide the case
+
+The rail listed card ids and asked the reader to remember the rest, so a card
+whose real work lives in its children was indistinguishable from a stalled
+leaf. That is not hypothetical: scitex-ui judged `scitex-ui-quality` "an empty
+shell" and cancelled it on 08-05 (retracted 20 minutes later), again on 08-23
+(retracted 12 minutes later), and wrote a wrong conclusion about it on 09-04 —
+each time reading status, blocker, last_activity and priority, and never
+`parent` or `depends_on`. Their words: "the information was always there; it
+was not in my query."
+
+Each id now renders as `<id> [parent=… deps=N children=N]`, always all three,
+including `parent=-` for a card with no parent: "looked and found none" and
+"never asked" are different states, and a column that appeared only on edged
+cards would teach the reader to skim the rest.
+
+`StaleCard` carries the three fields and the detector fills them, because they
+cannot be recovered downstream — the line composer receives one owner's bucket,
+and a card's children usually belong to other owners, so `children` is
+uncomputable at render time. Counting costs one extra O(N) pass over the list
+the detector already holds. The `_cap_ids` helper gains a per-card render seam
+whose default is the previous behaviour, so the cap keeps living in one place
+and the STALE-ACTIVE and BACKLOG lines are unchanged to the byte; `deps` and
+`children` are counts rather than lists so an unbounded per-card expansion
+cannot defeat the cap from the inside.
+
 ### A deferred card whose start date is still ahead is no longer reported as backlog
 
 The backlog nudge aged a card by `deferred_at` and never read `scheduled`, so
