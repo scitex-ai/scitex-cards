@@ -81,14 +81,46 @@ def test__the_message_names_the_verb_that_refused():
     assert "comment_task" in message
 
 
-def test__a_different_database_on_the_same_server_is_refused():
-    """Two databases on one host are two stores; only the text differs."""
+def test__a_dsn_is_never_refused_even_for_a_different_database():
+    """A DELIBERATE GAP, and the reason matters more than the gap.
+
+    Two spellings can name one store: `postgresql://scitex-primary:55432/scitex`
+    and `postgresql://100.64.0.5:55432/scitex` are the same database and unequal
+    as strings. Comparing DSN text would refuse callers who did nothing wrong —
+    a LOUD wrong answer, the mirror of the silent one this module exists to
+    stop. So no DSN argument is refused until identity can be compared properly,
+    and that includes one naming a genuinely different database.
+    """
     # Arrange
     other = "postgresql://scitex-primary:55432/scitex_cards"
     # Act
     message = _refusal(other)
     # Assert
-    assert message is not None
+    assert message is None
+
+
+def test__an_equivalent_dsn_spelling_is_not_refused():
+    """The case that would fail under string equality.
+
+    Same store, different spelling — a host alias resolved to its address. A
+    rule keyed on text would refuse this correct-and-redundant argument.
+    """
+    # Arrange
+    by_address = "postgresql://100.64.0.5:55432/scitex"
+    # Act
+    message = _refusal(by_address)
+    # Assert
+    assert message is None
+
+
+def test__a_credentialled_spelling_of_the_resolved_store_is_not_refused():
+    """Adding a user does not make it a different store."""
+    # Arrange
+    with_user = "postgresql://scitex_cards@scitex-primary:55432/scitex"
+    # Act
+    message = _refusal(with_user)
+    # Assert
+    assert message is None
 
 
 def test__a_server_target_is_detected_from_the_scheme_without_a_backend():
@@ -179,12 +211,13 @@ def test__normalise_strips_only_whitespace_and_one_trailing_slash(raw, expected)
     assert got == expected
 
 
-def test__normalise_does_not_equate_two_spellings_of_one_database():
-    """Deliberate under-matching.
+def test__normalise_is_not_a_dsn_comparator():
+    """Two spellings of one database are NOT equal after normalising.
 
-    A credentialled and a bare spelling of the same database are NOT equated.
-    Over-matching would wave through a genuinely different target; the cost of
-    under-matching is one clear refusal the caller can act on.
+    Kept as a warning, not a feature: it is exactly why
+    `store_argument_refusal` never compares one DSN against another. Anyone
+    tempted to reintroduce a text comparison should read this assertion as the
+    reason it cannot work.
     """
     # Arrange
     creds = "postgresql://user@scitex-primary:55432/scitex"

@@ -47,9 +47,22 @@ WHAT IT MUST NOT DO
 Refuse an argument that is merely redundant. The test suite pins
 ``$SCITEX_CARDS_DB`` to a schema-scoped throwaway DSN and hands tests that same
 DSN, so ``store=<that DSN>`` names exactly the store the data is in. Refusing
-there would break the suite while reporting no real defect. The discriminator is
-therefore DISAGREEMENT with the resolved target, never the mere presence of an
-argument.
+there would break the suite while reporting no real defect. So the mere PRESENCE
+of an argument is never the discriminator.
+
+Nor is text equality with the resolved target. Two spellings can name one store
+— a host alias against its address, the same DSN with or without a user, an
+``sslmode`` parameter or an ``options=-csearch_path=`` suffix — and comparing
+strings would refuse callers who did nothing wrong. That is the exact mirror of
+the defect above: a LOUD wrong answer in place of a quiet one, and it is the
+harder one to argue with, because the refusal looks authoritative.
+
+THE RULE THEREFORE FIRES ONLY ON THE UNAMBIGUOUS CASE: the argument is not a
+server target at all — a filesystem path — while the data lives on a server.
+A DSN argument is left alone until store identity can be compared properly
+rather than spelled. That is a deliberate gap: a DSN naming a genuinely
+different database is NOT caught here, and closing it needs identity
+resolution, not a better string comparison.
 """
 
 from __future__ import annotations
@@ -69,12 +82,10 @@ _SERVER_SCHEMES = ("postgresql://", "postgres://")
 def normalise_store_target(value: object) -> str:
     """Return ``value`` as a comparable target string.
 
-    Only whitespace and a single trailing ``/`` are stripped. Deliberately NOT a
-    DSN parser: two spellings of one database (credentials present or absent, a
-    ``options=-csearch_path=`` suffix, a host alias) are NOT treated as equal
-    here. Under-matching costs a caller one clear refusal it can act on;
-    over-matching would wave through a genuinely different target, which is the
-    failure this module exists to stop.
+    Only whitespace and a single trailing ``/`` are stripped. This is NOT a DSN
+    parser and must not be used to decide that two DSNs name the same store —
+    see :func:`store_argument_refusal`, which deliberately never compares one
+    DSN against another.
     """
     text = str(value).strip()
     return text[:-1] if len(text) > 1 and text.endswith("/") else text
@@ -125,7 +136,22 @@ def store_argument_refusal(
 
     if not _is_server_target(target, backend):
         return None
-    if passed == target:
+
+    # NEVER compare one DSN against another. Two spellings can name one store
+    # -- `postgresql://scitex-primary:55432/scitex` and
+    # `postgresql://100.64.0.5:55432/scitex` are the same database and unequal
+    # as strings; so are the same DSN with and without a user, an sslmode
+    # parameter, or an `options=-csearch_path=` suffix. String equality would
+    # therefore REFUSE callers who did nothing wrong, which is the exact mirror
+    # of the silent wrong answer this module exists to stop -- a loud wrong
+    # answer instead of a quiet one. (Raised by scitex-writer, who lost time in
+    # August to two clusters that a string comparison could not tell apart.)
+    #
+    # So the refusal fires ONLY on the case that is unambiguous without
+    # resolving identity: the caller passed something that is not a server
+    # target at all -- a filesystem path -- while the data lives on a server.
+    # A DSN argument is left alone until identity can be compared properly.
+    if _is_server_target(passed, None):
         return None
 
     return (
