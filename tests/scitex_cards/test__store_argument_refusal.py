@@ -11,14 +11,21 @@ refusal keyed on the mere PRESENCE of an argument would fail thousands of tests
 while reporting no real defect. That test is the guard on the guard.
 """
 
+import contextlib
+import os
+import warnings
 from pathlib import Path
 
 import pytest
 
 from scitex_cards._store_arg import (
+    deliver_refusal,
     normalise_store_target,
     store_argument_refusal,
+    strict_store_arg,
 )
+
+STRICT_ENV = "SCITEX_CARDS_STRICT_STORE_ARG"
 
 PRIMARY = "postgresql://scitex-primary:55432/scitex"
 
@@ -225,6 +232,112 @@ def test__normalise_is_not_a_dsn_comparator():
     got = normalise_store_target(creds)
     # Assert
     assert got != normalise_store_target(PRIMARY)
+
+
+# ------------------------------------------------- warn by default, raise strict
+#
+# THE DOCSTRING ABOVE PREDICTED THIS AND THE GUARD-ON-THE-GUARD MISSED IT. It
+# says a refusal keyed on mere PRESENCE "would fail thousands of tests while
+# reporting no real defect", and `test__a_redundant_dsn_is_not_refused` guards
+# exactly that -- for DSNs. The suite also hands tests PATH labels, and on the
+# real-PostgreSQL job every one of those armed the rule: 357 failed + 219 errors
+# (job 101605547958, 2026-09-07). So the delivery warns by default and raises
+# only when a caller opts in.
+#
+# NO MOCKS (PA-306 SS3). `deliver_refusal` reads the real environment and nothing
+# else, so these set the real variable and put it back. The first cut of these
+# tests used pytest fixture-patching to fake `resolve_store()`; the audit refused
+# it, correctly -- a faked resolver would have tested my stub, not the switch.
+
+
+@contextlib.contextmanager
+def _strict(value):
+    """Set the REAL env var (None removes it) and restore whatever was there."""
+    was = os.environ.get(STRICT_ENV)
+    if value is None:
+        os.environ.pop(STRICT_ENV, None)
+    else:
+        os.environ[STRICT_ENV] = value
+    try:
+        yield
+    finally:
+        if was is None:
+            os.environ.pop(STRICT_ENV, None)
+        else:
+            os.environ[STRICT_ENV] = was
+
+
+def test__strict_mode_is_off_unless_asked_for():
+    # Arrange
+    with _strict(None):
+        # Act
+        got = strict_store_arg()
+    # Assert
+    assert got is False
+
+
+@pytest.mark.parametrize("raw", ["1", "true", "TRUE", "yes", "on"])
+def test__strict_mode_accepts_the_usual_spellings(raw):
+    # Arrange
+    with _strict(raw):
+        # Act
+        got = strict_store_arg()
+    # Assert
+    assert got is True
+
+
+def test__an_ineffective_store_warns_rather_than_raising_by_default():
+    """576 broken tests is not a guard, it is an outage."""
+    # Arrange
+    message = "add_task(store=...): selects a LOCAL FILE PATH"
+
+    # Act
+    def act():
+        with _strict(None):
+            deliver_refusal(message)
+
+    # Assert
+    with pytest.warns(DeprecationWarning):
+        act()
+
+
+def test__the_default_delivery_does_not_raise():
+    # Arrange
+    with _strict(None), warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        # Act
+        result = deliver_refusal("add_task(store=...): a message")
+    # Assert
+    assert result is None
+
+
+def test__an_ineffective_store_raises_under_strict_mode():
+    """The hard answer stays available to whoever wants it today."""
+
+    # Arrange
+    message = "add_task(store=...): selects a LOCAL FILE PATH"
+
+    # Act
+    def act():
+        with _strict("1"):
+            deliver_refusal(message)
+
+    # Assert
+    with pytest.raises(ValueError, match="LOCAL FILE PATH"):
+        act()
+
+
+def test__the_delivered_message_is_carried_through_verbatim():
+    """The message names the passed label and the real target; delivery must
+    not paraphrase it, or the caller cannot act on it."""
+    # Arrange
+    text = "add_task(store='/tmp/x/tasks.yaml'): data would go to " + PRIMARY
+    # Act
+    with _strict(None), warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        deliver_refusal(text)
+    # Assert
+    assert str(caught[0].message) == text
 
 
 # EOF

@@ -35,6 +35,7 @@ from ._model import (
     _store_lock,
 )
 from ._store_add import add_task  # noqa: F401 -- re-export, see module docstring
+from ._store_arg import refuse_ineffective_store
 from ._store_clocks import (
     _clear_completion_stamp_on_leaving_done,
     _stamp_blocked_at,
@@ -194,6 +195,7 @@ def update_task(
     # bulk batches). `status` is refused loudly instead: it cannot be
     # cleared. Done BEFORE the lock so a doomed mutation never takes it.
     fields = _resolve_enum_clears(fields, source="update_task")
+    refuse_ineffective_store(store, verb="update_task")
     resolved = _resolved_store(store)
     result: dict | None = None
     transitioned_to_done = False

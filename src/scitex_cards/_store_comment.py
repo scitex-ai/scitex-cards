@@ -26,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ._comment_ids import stamp_comment_id
+from ._store_arg import refuse_ineffective_store
 from ._store_events import _emit_card_event
 from ._store_list import _resolved_store
 
@@ -67,6 +68,7 @@ def comment_task(
     )
     from ._store_target import resolve_store_target
 
+    refuse_ineffective_store(store, verb="comment_task")
     tasks_path = _resolved_store(store)
     # THE STORE THE ROW LIVES IN, not the local sidecar path above. This is the
     # identity the whole-document read and write both keyed on (both resolved

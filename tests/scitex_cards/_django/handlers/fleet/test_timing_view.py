@@ -45,19 +45,26 @@ def _now_minus(minutes: float) -> str:
 @pytest.fixture()
 def store_with_done_task() -> str:
     """Seed the canonical DB with one done task carrying a full ``_log_meta``
-    set so the timing compute has something to aggregate. The store is the
-    pinned scratch DB; ``add_task`` writes there and the view's
-    ``resolve_tasks_path(None)`` resolves the SAME pinned identity, so the
-    seeded card round-trips into the payload. Passing the pinned STORE path
-    (never a ``tmp_path`` yaml) keeps the DB provenance stamp matching what the
-    read path resolves — see THE STORE-PATH RULE."""
+    set so the timing compute has something to aggregate.
+
+    THE INTENT WAS ALWAYS RIGHT; THE MECHANISM DID NOT EXIST. This fixture used
+    to pass ``store=$SCITEX_CARDS_TASKS_YAML_SHARED`` and explain that doing so
+    "keeps the DB provenance stamp matching what the read path resolves". That
+    reasoning was careful and the argument it relied on was inert: ``store=``
+    resolves to a LOCAL FILE PATH (the lock and the sidecars) while the DATA
+    goes wherever ``resolve_store()`` names, so it never steered the write.
+
+    The write landed on the ambient store either way — which is the pinned
+    scratch DB, which is what the view's own resolution reaches. So the
+    round-trip this fixture depends on worked for a different reason than the
+    docstring gave. Passing nothing states that directly.
+    """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     # add_task's **extras pathway accepts arbitrary keys; the writer
     # validator gates closed enums but lets free-form fields through —
     # we use it to inject ``_log_meta`` directly so the test doesn't
     # need a separate started-stamping API.
     add_task(
-        store=store,
         id="t-done",
         title="Completed task",
         agent="agent-alpha",

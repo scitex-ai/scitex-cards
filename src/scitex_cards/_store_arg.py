@@ -67,7 +67,24 @@ resolution, not a better string comparison.
 
 from __future__ import annotations
 
-__all__ = ["store_argument_refusal", "normalise_store_target"]
+import os
+import warnings
+
+__all__ = [
+    "StoreArgumentError",
+    "refuse_ineffective_store",
+    "store_argument_refusal",
+    "normalise_store_target",
+]
+
+
+class StoreArgumentError(ValueError):
+    """An explicit ``store=`` cannot select where this write goes.
+
+    A ``ValueError`` because it is a bad ARGUMENT, not a store outage —
+    :class:`StoreUnavailableError` means the store could not be reached, and a
+    caller retrying on that would retry forever on this one.
+    """
 
 #: Backends whose data location an explicit ``store=`` cannot select. A
 #: file-backed deployment CAN honour a path, so the rule is backend-specific
@@ -159,9 +176,94 @@ def store_argument_refusal(
         f"not a store target.\n"
         f"  you passed        {passed}\n"
         f"  data would go to  {target}   (resolve_store())\n"
-        f"A write cannot be isolated by this argument. Unset it, or set "
-        f"SCITEX_CARDS_DB to the store you mean."
+        f"A write cannot be isolated by this argument.\n"
+        f"BUT IT IS NOT INERT, SO DO NOT SIMPLY DELETE IT: the same value\n"
+        f"also selects the file LOCK (_store_lock) and the destination of\n"
+        f"the card-event / inbox rail (_emit_card_event(store=...)).\n"
+        f"Dropping it MOVES WHERE NOTIFICATIONS LAND -- measured\n"
+        f"2026-09-07, dropping it stopped a `commented` event reaching\n"
+        f"the card owner entirely.\n"
+        f"To isolate a write, set SCITEX_CARDS_DB to the store you mean."
     )
+
+
+#: Opt-in HARD refusal. Default is a DeprecationWarning, because a raise here
+#: breaks 576 tests on the real-PostgreSQL job (measured 2026-09-07, job
+#: 101605547958: 357 failed + 219 errors, 2238 StoreArgumentError). That is not
+#: a sloppy rule -- passing a store label is this tree's dominant calling
+#: convention, so refusing it outright is an API MIGRATION, not a wiring change.
+#: Strict mode exists so a downstream suite that WANTS the hard answer today can
+#: have it without waiting for that migration.
+_STRICT_ENV = "SCITEX_CARDS_STRICT_STORE_ARG"
+
+
+def strict_store_arg() -> bool:
+    """True when an ineffective ``store=`` should RAISE rather than warn."""
+    return os.environ.get(_STRICT_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def deliver_refusal(message: str) -> None:
+    """Raise under strict mode, otherwise warn. THE STAGING DECISION, ALONE.
+
+    Split out from :func:`refuse_ineffective_store` so it can be tested without
+    a store and without a mock: the wrapper needs ``resolve_store()`` to answer,
+    this needs nothing but the environment. Same reason
+    :func:`store_argument_refusal` is a pure rule -- the parts that can be
+    decided without a server are kept where a test can reach them honestly.
+
+    `-W error::DeprecationWarning` promotes every one of these to the hard
+    failure, which is how a caller finds their own sites without the whole
+    fleet's suite going red first.
+    """
+    if strict_store_arg():
+        raise StoreArgumentError(message)
+    warnings.warn(message, DeprecationWarning, stacklevel=4)
+
+
+def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
+    """Raise :class:`StoreArgumentError` when ``explicit`` cannot take effect.
+
+    THE ENFORCING WRAPPER. :func:`store_argument_refusal` is the rule and stays
+    pure so it can be tested without a server; this resolves the store and
+    raises, and is what the public write verbs call.
+
+    Deliberately NOT called from :func:`~scitex_cards._paths.local_store_path`.
+    That resolver has callers who legitimately mean the local file — the
+    delivery daemon, the recipients sidecar, the notifyd log line — and refusing
+    there would break them for doing the right thing. The refusal belongs at the
+    verbs whose ``store=`` a caller believes selects where DATA goes.
+
+    Fail-open on a resolution error, and that is a considered choice: if
+    ``resolve_store()`` itself cannot answer, the caller is about to hit a real
+    store failure with a real message, and masking it with an argument
+    complaint would send them to the wrong problem.
+
+    WARNS BY DEFAULT, RAISES UNDER ``$SCITEX_CARDS_STRICT_STORE_ARG``. The first
+    cut of this raised unconditionally, and the real-PostgreSQL job answered:
+    357 failed + 219 errors. Every green pytest-matrix run had been blind to it,
+    because that job's target does not resolve to a server, so the guard never
+    armed there. The lesson is in the staging: a refusal whose precondition is
+    the DEPLOYMENT (a server target) cannot be validated on a job that does not
+    deploy that way.
+    """
+    if explicit is None:
+        return
+    try:
+        from ._store import resolve_store
+
+        info = resolve_store()
+        target = str(info.get("resolved") or "")
+        backend = info.get("backend")
+    except Exception:  # noqa: BLE001 — see the fail-open note above
+        return
+    if not target:
+        return
+    message = store_argument_refusal(
+        explicit, resolved_target=target, backend=backend, verb=verb
+    )
+    if not message:
+        return
+    deliver_refusal(message)
 
 
 # EOF
