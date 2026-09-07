@@ -182,8 +182,19 @@ def chat_view(request: HttpRequest, card_id: str) -> HttpResponse:
     # the text, stamps the ts, and persists via the standard YAML writer.
     from ..._store import comment_task
 
+    # NO `store=` HERE. `path` is `get_board().store_path` — the ambient
+    # resolution's PATH LABEL, handed straight back in. It cannot select a
+    # store: on this deployment `store=` resolves to a local file path (the
+    # lock and the sidecars) while the data goes wherever `resolve_store()`
+    # names. So passing it round-tripped a value that steered nothing while
+    # reading as if it targeted something.
+    #
+    # Omitting it is behaviour-identical: the verb resolves the SAME ambient
+    # store `get_board()` just resolved, one line above. No tenancy is lost —
+    # `get_board()` is called here with no argument, so no caller-supplied
+    # store ever entered this path.
     result = comment_task(
-        store=path, task_id=card_id, text=text, by=author,
+        task_id=card_id, text=text, by=author,
     )
     return JsonResponse(
         {
