@@ -180,7 +180,6 @@ def sync_github_cmd(since: str | None, dry_run: bool, assume_yes: bool) -> None:
             new_tasks += 1
             if not dry_run:
                 add_task(
-                    str(path),
                     id=bundle_id,
                     title=title,
                     status="done",
@@ -216,7 +215,7 @@ def sync_github_cmd(since: str | None, dry_run: bool, assume_yes: bool) -> None:
                 actions_planned += 1
                 done_updates += 1
                 if not dry_run:
-                    update_task(str(path), task_id=existing["id"], status="done")
+                    update_task(task_id=existing["id"], status="done")
             continue
 
         new_id = f"pr-{repo.replace('/', '-')}-{n}"
@@ -228,7 +227,6 @@ def sync_github_cmd(since: str | None, dry_run: bool, assume_yes: bool) -> None:
         new_tasks += 1
         if not dry_run:
             add_task(
-                str(path),
                 id=new_id,
                 title=f"{repo}#{n}: {title}",
                 status="done",

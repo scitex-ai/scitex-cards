@@ -66,14 +66,12 @@ def store_with_timeline_tasks() -> str:
     """
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store,
         id="t-live",
         title="Live now",
         agent="agent-a",
         group="paper",
     )
     add_task(
-        store=store,
         id="t-dep",
         title="Depends on live",
         agent="agent-b",
@@ -82,7 +80,6 @@ def store_with_timeline_tasks() -> str:
     )
     # Stale row — created a year ago so the 24h window filter removes it.
     add_task(
-        store=store,
         id="t-stale",
         title="Old row",
         agent="agent-a",
@@ -332,14 +329,12 @@ def test_timeline_view_edge_dropped_when_endpoint_out_of_window():
     # Arrange — t-old is from 2020; t-new is fresh and depends_on t-old.
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store,
         id="t-old",
         title="Older",
         agent="a",
         created_at="2020-01-01T00:00:00+00:00",
     )
     add_task(
-        store=store,
         id="t-new",
         title="Newer",
         agent="a",
@@ -412,7 +407,6 @@ def test_timeline_view_completed_task_in_window_renders():
     # being stale would otherwise drop it; completed_at saves it.
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
-        store=store,
         id="t-done",
         title="Just completed",
         agent="a",

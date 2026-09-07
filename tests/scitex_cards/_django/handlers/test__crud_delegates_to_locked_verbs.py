@@ -123,7 +123,6 @@ def _land_concurrent_write(store_path):
     from scitex_cards._store import add_task
 
     add_task(
-        store_path,
         id="concurrent",
         title="Concurrent Card",
         status="deferred",
