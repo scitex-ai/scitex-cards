@@ -63,21 +63,21 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from ._reminder_bodies import (
+from ._reminder.bodies import (
     DIGEST_CARD_CAP,
     _creator_escalation_body,
     _digest_body,
     _escalation_body,
 )
-from ._reminder_enqueue import (
+from ._reminder.enqueue import (
     _digest_fingerprint,
     _floor_minutes,
     _iso,
     _safe_enqueue,
     _safe_resolve,
 )
-from ._reminder_liveness import _card_creator, _owner_liveness
-from ._reminder_cadence import resolve_owner_interval
+from ._reminder.liveness import _card_creator, _owner_liveness
+from ._reminder.cadence import resolve_owner_interval
 from ._stale.active import detect_pending_backlog, detect_stale_active
 from ._throughput import _now_utc, _parse_iso
 
@@ -372,7 +372,7 @@ def sweep_reminders(
 
         # Cadence: tightest interval any ACTIVE card asks for. A deferred card
         # can no longer drag the digest onto a 5-minute clock — see
-        # _reminder_cadence for why that was an interrupt loop, not a reminder.
+        # _reminder.cadence for why that was an interrupt loop, not a reminder.
         owner_interval = resolve_owner_interval(
             cards,
             backlog_ids=backlog_ids,

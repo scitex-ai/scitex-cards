@@ -1,210 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Fail-soft dispatch helpers for the reminder engine (:mod:`_reminders`).
+"""Deprecated import alias: ``scitex_cards._reminder_enqueue`` -> :mod:`scitex_cards._reminder.enqueue`.
 
-Extracted from :mod:`scitex_cards._reminders` to keep that orchestrator within
-the file-size budget, matching the sibling ``_reminder_bodies`` /
-``_reminder_liveness`` split. These two helpers wrap recipient-key resolution
-and the standalone inbox enqueue so one bad resolution/enqueue is LOGGED and
-skipped — never aborting the whole notifyd sweep.
+Grouped into the ``_reminder/`` subpackage 2026-09-06, the second family after
+``_stale/`` (#856). This shim keeps the old top-level name importable for
+external callers, and aliases it to the VERY SAME module object rather than
+re-exporting its names -- a second module execution would fork module-level
+state (caches, thresholds read once from the environment), so two live copies
+could disagree about the digest floor with nothing to notice it.
+
+THE CONSTRAINT THIS SHAPE CARRIES: the ``sys.modules[__name__]`` reassignment
+must be the LAST statement this module executes. After the swap the original
+module object is unreferenced and may be collected, so anything running past it
+would read globals that can already be gone.
+
+In-repo callers already use the new path; this exists for anything outside the
+repo that does not. Deleting it is a separate, deliberate decision.
 """
 
 from __future__ import annotations
 
-import datetime as _dt
-import hashlib
-import logging
-import os
-from pathlib import Path
-from typing import Any, Callable
+import sys
 
-logger = logging.getLogger(__name__)
+from ._reminder import enqueue as _canonical
 
-#: How long an UNCHANGED digest stays suppressed before it is re-sent anyway.
-#: The floor exists so an owner who is simply stuck still gets nudged; without
-#: it, deliver-on-change would go silent forever on a frozen backlog.
-ENV_DIGEST_FLOOR_HOURS = "SCITEX_CARDS_DIGEST_FLOOR_HOURS"
-DEFAULT_DIGEST_FLOOR_HOURS = 24.0
-
-
-def _floor_minutes() -> float:
-    """Suppression floor for an unchanged digest, in minutes (env-overridable)."""
-    raw = os.environ.get(ENV_DIGEST_FLOOR_HOURS)
-    try:
-        hours = float(raw) if raw is not None else DEFAULT_DIGEST_FLOOR_HOURS
-    except (TypeError, ValueError):
-        hours = DEFAULT_DIGEST_FLOOR_HOURS
-    return hours * 60.0
-
-
-def _digest_fingerprint(cards) -> str:
-    """Identity of a digest's CONTENT — the card set and each card's status.
-
-    Deliberately excludes the attempt counter and the rendered ages: both tick
-    on their own, and including them would make every digest look "changed",
-    defeating the suppression. Status IS included, so a card moving
-    in_progress -> blocked re-notifies even when the id set is unchanged.
-    """
-    parts = sorted(
-        f"{getattr(c, 'id', '')}:{getattr(c, 'status', '')}" for c in cards
-    )
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
-
-
-def _iso(now: _dt.datetime) -> str:
-    return now.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _safe_resolve(resolve_key: Callable[[str], str], name: str) -> str:
-    try:
-        return resolve_key(name) or name
-    except Exception as exc:  # noqa: BLE001 — resolution must not break the sweep
-        logger.warning("reminders: key resolution for %r failed: %s", name, exc)
-        return name
-
-
-def _computing_host() -> str:
-    """The host this notification was COMPUTED ON. Never raises.
-
-    Deliberately the hostname and not the store DSN. Every daemon in this fleet
-    resolves ``127.0.0.1:55432``, so the DSN string is byte-identical on every
-    host and identifies nothing; the hostname is what differs and what a reader
-    can act on. `store_uuid` is worse than useless here — it lives in a
-    ``schema_meta`` row, so ``pg_dump`` copies it, and three of this fleet's
-    stores currently answer the same one.
-    """
-    try:
-        import socket  # noqa: PLC0415 -- import-cheap, keeps module import clean
-
-        return socket.gethostname()
-    except Exception:  # noqa: BLE001 -- a label must never break delivery
-        return "unknown-host"
-
-
-def _computing_version() -> str:
-    """The scitex-cards version that PRODUCED this notification. Never raises.
-
-    THE HOSTNAME SAYS WHERE, AND SAYS NOTHING ABOUT WHICH CODE. Measured
-    2026-09-06, and it cost a peer a wasted bug report:
-
-        my container    /opt/venv-sac   scitex_cards 0.50.0
-        hub's container /opt/venv-sac   scitex_cards 0.51.1
-        PyPI latest                     0.51.2
-
-    Same path, different file, because that path names a per-container install.
-    Each agent runs whatever was newest when ITS image was built, and those
-    build dates differ, so there is no fleet-wide answer to "which code is
-    running" -- only a per-container one.
-
-    scitex-hub reported the backlog nudge conflating "untouched" with
-    "deliberately scheduled forward". That defect was real and had been fixed
-    hours earlier; the daemon producing their nudge was executing a release two
-    versions older than the fix, and would have kept producing it through any
-    number of merges. Nothing in the notification could have told them that.
-
-    VERSION SKEW IS WORSE THAN UNIFORM STALENESS for exactly one reason: with a
-    uniformly old fleet a single measurement generalises correctly, while under
-    skew EVERY measurement generalises wrongly -- including a reassuring one.
-    Sampling the newer container would have produced "nearly current, fine".
-    """
-    try:
-        from importlib.metadata import version  # noqa: PLC0415 -- keep import cheap
-
-        return version("scitex-cards")
-    except Exception:  # noqa: BLE001 -- a label must never break delivery
-        return "unknown-version"
-
-
-def _stamp_provenance(body: str) -> str:
-    """Append the computing host and version to a notification body. Never raises.
-
-    WHY EVERY NOTIFICATION AND NOT JUST THE DIGEST. Two notifyd daemons on two
-    hosts each resolve ``127.0.0.1:55432`` to their OWN database, and both are
-    correct about the store they read. Measured 2026-08-20:
-
-        16:59:51Z  backlog nudge  said  "deferred"   -- true on ywata-note-win
-        17:11:02Z  blocked-check  said  "blocked"    -- true on compute-04
-
-    One card, eleven minutes, two labels, neither wrong and neither traceable.
-    Three agents re-derived that by hand across a day; one fitted and then
-    retracted a whole predictive model against it; two proposed remedies aimed
-    at the delivery path that could not have worked, because a notification that
-    does not name its store cannot be reasoned about -- every available
-    hypothesis assumes one store and asks what happened to a row inside it.
-
-    STAMPED HERE, AT THE ENQUEUE CHOKE POINT, rather than in each body builder.
-    The digest, the escalations, the backlog nudge and the blocked-check are
-    composed in four different modules; labelling them one at a time is a rule
-    each new notification type has to remember, and the next one will not. This
-    is the single function they all pass through.
-
-    THE VERSION RIDES IN THE SAME STAMP, for the same reason the host does. The
-    argument above is that a notification which cannot name its origin cannot be
-    reasoned about; "which store" and "which code" are two halves of that origin,
-    and 2026-09-06 supplied the second half's incident. Adding it here rather
-    than beside each body builder follows the same choke-point reasoning: a rule
-    each new notification type must remember is a rule the next one forgets.
-    """
-    try:
-        return (
-            f"{body}\n  [computed on {_computing_host()}"
-            f" · scitex-cards {_computing_version()}]"
-        )
-    except Exception:  # noqa: BLE001 -- never lose a notification to a label
-        return body
-
-
-def _safe_enqueue(
-    enqueue: Callable[..., Any],
-    recipient_key: str,
-    event_type: str,
-    card_id: str,
-    body: str,
-    now: _dt.datetime,
-    store: str | Path | None,
-    *,
-    supersede: bool = False,
-) -> bool:
-    """Enqueue one notification; fail-soft. Returns True on a real enqueue.
-
-    ``ts`` is the sweep instant so each re-nag is a DISTINCT inbox record (the
-    inbox dedups on ``(event_type, card_id, ts, actor)``).
-
-    ``supersede`` is forwarded to :func:`scitex_cards._inbox.enqueue`. It is set
-    ONLY for the cumulative owner digest (``EVENT_DIGEST`` / ``DIGEST_CARD_ID``):
-    a digest is a full point-in-time snapshot, so a fresh one strictly replaces
-    any unseen predecessor — the recipient never accumulates a replay-storm of
-    stale digests. Per-card events (escalation / creator_escalation) are each
-    DISTINCT and are enqueued with ``supersede=False`` (the default).
-    """
-    try:
-        rec = enqueue(
-            recipient_key,
-            event_type=event_type,
-            card_id=card_id,
-            body=_stamp_provenance(body),
-            actor="notifyd",
-            ts=_iso(now),
-            supersede=supersede,
-            store=store,
-        )
-        return rec is not None
-    except Exception as exc:  # noqa: BLE001 — one bad enqueue must not abort the sweep
-        logger.warning(
-            "reminders: enqueue %s for %s to %s failed: %s",
-            event_type, card_id, recipient_key, exc,
-        )
-        return False
-
-
-__all__ = [
-    "_iso",
-    "_safe_enqueue",
-    "_safe_resolve",
-    "_digest_fingerprint",
-    "_floor_minutes",
-    "ENV_DIGEST_FLOOR_HOURS",
-    "DEFAULT_DIGEST_FLOOR_HOURS",
-]
+sys.modules[__name__] = _canonical
 
 # EOF
