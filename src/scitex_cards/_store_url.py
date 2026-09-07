@@ -268,11 +268,43 @@ def reject_attempted_dsn(target: object) -> None:
         "cards database that answers every query, and a wrong board that works "
         "is far worse than one that will not start.\n"
         "Accepted forms:\n"
-        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
-        "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
+        "    postgresql://scitex-primary:55432/scitex_cards\n"
+        "    host=scitex-primary port=55432 dbname=scitex_cards\n"
         "Check $SCITEX_CARDS_DB, and note a DSN that has been through Path() "
         "loses one slash: 'postgresql:/host/db' is this error, not a directory."
     )
+
+
+#: WHY THE OPERATOR-FACING EXAMPLES CARRY NO USER, and must not grow one back.
+#:
+#: They used to read ``postgresql://scitex_cards@127.0.0.1:.../scitex_cards``,
+#: and THAT EXAMPLE NEVER WORKED, in two independent ways:
+#:
+#:   - ``scitex_cards`` was never an application login. It was the cluster's
+#:     BOOTSTRAP SUPERUSER, created by initdb, and it is NOLOGIN. An operator who
+#:     copied it got "role cannot log in" -- from the one line in this codebase
+#:     whose entire job is to show them a correct value. It was renamed to
+#:     ``scitex_owner`` on 2026-08-25, so the name in the example does not even
+#:     exist any more.
+#:   - ``127.0.0.1`` is not where the store listens. Measured 2026-09-07 by
+#:     scitex-writer, who lost an evening to it: ``127.0.0.1:55432`` fails
+#:     ("fe_sendauth: no password supplied") while ``scitex-primary:55432``
+#:     connects, same principal either way. The authentication error names a
+#:     credential problem for what is actually a wrong host.
+#:
+#: Identity moved OUT of the DSN on 2026-08-25: specs carry a DSN with no
+#: userinfo and the principal comes from PGUSER / ~/.pgpass, so one DSN serves
+#: 120+ per-principal roles instead of naming one shared account.
+#:
+#: TWO FACTS ABOUT THE OLD ROLE, recorded because each was independently
+#: re-derived and each cost a rehearsal to settle:
+#:   - ``ALTER ROLE scitex_owner NOSUPERUSER`` is REFUSED by PostgreSQL --
+#:     "the bootstrap superuser must have the SUPERUSER attribute". It cannot be
+#:     de-privileged, by design, however many other superusers exist.
+#:   - ``REASSIGN OWNED BY scitex_owner`` is likewise REFUSED -- its objects are
+#:     "required by the database system". Its ownership cannot be moved either.
+#: So "strip the legacy role's superuser" is not a task anyone can complete.
+#: What protects the store is that it is NOLOGIN and no one can SET ROLE to it.
 
 
 def reject_non_postgres_target(target: object) -> None:
@@ -299,8 +331,8 @@ def reject_non_postgres_target(target: object) -> None:
     raise UnrecognisedStoreTarget(
         f"the cards store target {describe_store_target(target)!r} does not name the store.\n"
         "The store is a PostgreSQL database and the target must be a DSN:\n"
-        "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
-        "    host=127.0.0.1 port=55432 dbname=scitex_cards user=scitex_cards\n"
+        "    postgresql://scitex-primary:55432/scitex_cards\n"
+        "    host=scitex-primary port=55432 dbname=scitex_cards\n"
         "Refusing is deliberate: opened as a file, this target MANUFACTURES a "
         "new and empty cards database that answers every query, and a wrong "
         "board that works is far worse than one that will not start.\n"
