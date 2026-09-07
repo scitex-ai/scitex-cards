@@ -11,14 +11,16 @@ refusal keyed on the mere PRESENCE of an argument would fail thousands of tests
 while reporting no real defect. That test is the guard on the guard.
 """
 
+import contextlib
+import os
 import warnings
 from pathlib import Path
 
 import pytest
 
 from scitex_cards._store_arg import (
+    deliver_refusal,
     normalise_store_target,
-    refuse_ineffective_store,
     store_argument_refusal,
     strict_store_arg,
 )
@@ -239,91 +241,93 @@ def test__normalise_is_not_a_dsn_comparator():
 # reporting no real defect", and `test__a_redundant_dsn_is_not_refused` guards
 # exactly that -- for DSNs. The suite also hands tests PATH labels, and on the
 # real-PostgreSQL job every one of those armed the rule: 357 failed + 219 errors
-# (job 101605547958, 2026-09-07). So the wrapper warns by default and raises only
-# when a caller opts in.
+# (job 101605547958, 2026-09-07). So the delivery warns by default and raises
+# only when a caller opts in.
+#
+# NO MOCKS (PA-306 SS3). `deliver_refusal` reads the real environment and nothing
+# else, so these set the real variable and put it back. The first cut of these
+# tests used pytest fixture-patching to fake `resolve_store()`; the audit refused
+# it, correctly -- a faked resolver would have tested my stub, not the switch.
 
 
-def _server_store(monkeypatch):
-    """Pin resolve_store() to a server target so the rule can arm at all."""
-    import scitex_cards._store as store_mod
+@contextlib.contextmanager
+def _strict(value):
+    """Set the REAL env var (None removes it) and restore whatever was there."""
+    was = os.environ.get(STRICT_ENV)
+    if value is None:
+        os.environ.pop(STRICT_ENV, None)
+    else:
+        os.environ[STRICT_ENV] = value
+    try:
+        yield
+    finally:
+        if was is None:
+            os.environ.pop(STRICT_ENV, None)
+        else:
+            os.environ[STRICT_ENV] = was
 
-    monkeypatch.setattr(
-        store_mod,
-        "resolve_store",
-        lambda: {"resolved": PRIMARY, "backend": "postgresql"},
-    )
 
-
-def test__strict_mode_is_off_unless_asked_for(monkeypatch):
+def test__strict_mode_is_off_unless_asked_for():
     # Arrange
-    monkeypatch.delenv(STRICT_ENV, raising=False)
-    # Act
-    got = strict_store_arg()
+    with _strict(None):
+        # Act
+        got = strict_store_arg()
     # Assert
     assert got is False
 
 
-def test__an_ineffective_path_warns_rather_than_raising_by_default(monkeypatch):
+@pytest.mark.parametrize("raw", ["1", "true", "TRUE", "yes", "on"])
+def test__strict_mode_accepts_the_usual_spellings(raw):
+    # Arrange
+    with _strict(raw):
+        # Act
+        got = strict_store_arg()
+    # Assert
+    assert got is True
+
+
+def test__an_ineffective_store_warns_rather_than_raising_by_default():
     """576 broken tests is not a guard, it is an outage."""
     # Arrange
-    monkeypatch.delenv(STRICT_ENV, raising=False)
-    _server_store(monkeypatch)
-    # Act / Assert
-    with pytest.warns(DeprecationWarning):
-        refuse_ineffective_store("/tmp/somewhere/tasks.yaml", verb="add_task")
+    with _strict(None):
+        # Act / Assert
+        with pytest.warns(DeprecationWarning):
+            deliver_refusal("add_task(store=...): selects a LOCAL FILE PATH")
 
 
-def test__the_default_warning_does_not_raise(monkeypatch):
+def test__the_default_delivery_does_not_raise():
     # Arrange
-    monkeypatch.delenv(STRICT_ENV, raising=False)
-    _server_store(monkeypatch)
-    # Act
-    with warnings.catch_warnings():
+    with _strict(None), warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        result = refuse_ineffective_store("/tmp/somewhere/tasks.yaml", verb="add_task")
+        # Act
+        result = deliver_refusal("add_task(store=...): a message")
     # Assert
     assert result is None
 
 
-def test__an_ineffective_path_raises_under_strict_mode(monkeypatch):
+def test__an_ineffective_store_raises_under_strict_mode():
     """The hard answer stays available to whoever wants it today."""
+
     # Arrange
-    monkeypatch.setenv(STRICT_ENV, "1")
-    _server_store(monkeypatch)
-
-    # Act
     def act():
-        refuse_ineffective_store("/tmp/somewhere/tasks.yaml", verb="add_task")
+        with _strict("1"):
+            deliver_refusal("add_task(store=...): selects a LOCAL FILE PATH")
 
-    # Assert
+    # Act / Assert
     with pytest.raises(ValueError, match="LOCAL FILE PATH"):
         act()
 
 
-def test__a_redundant_dsn_is_not_even_warned_about(monkeypatch):
-    """The guard on the guard, extended to the warn path: handing back the
-    store's own DSN is redundant, not a defect, and must stay silent."""
+def test__the_delivered_message_is_carried_through_verbatim():
+    """The message names the passed label and the real target; delivery must
+    not paraphrase it, or the caller cannot act on it."""
     # Arrange
-    monkeypatch.delenv(STRICT_ENV, raising=False)
-    _server_store(monkeypatch)
+    text = "add_task(store='/tmp/x/tasks.yaml'): data would go to " + PRIMARY
     # Act
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        refuse_ineffective_store(PRIMARY, verb="add_task")
+    with _strict(None), pytest.warns(DeprecationWarning) as caught:
+        deliver_refusal(text)
     # Assert
-    assert caught == []
-
-
-def test__no_argument_is_not_warned_about_either(monkeypatch):
-    # Arrange
-    monkeypatch.delenv(STRICT_ENV, raising=False)
-    _server_store(monkeypatch)
-    # Act
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        refuse_ineffective_store(None, verb="add_task")
-    # Assert
-    assert caught == []
+    assert str(caught[0].message) == text
 
 
 # EOF

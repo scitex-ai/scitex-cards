@@ -196,6 +196,24 @@ def strict_store_arg() -> bool:
     return os.environ.get(_STRICT_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def deliver_refusal(message: str) -> None:
+    """Raise under strict mode, otherwise warn. THE STAGING DECISION, ALONE.
+
+    Split out from :func:`refuse_ineffective_store` so it can be tested without
+    a store and without a mock: the wrapper needs ``resolve_store()`` to answer,
+    this needs nothing but the environment. Same reason
+    :func:`store_argument_refusal` is a pure rule -- the parts that can be
+    decided without a server are kept where a test can reach them honestly.
+
+    `-W error::DeprecationWarning` promotes every one of these to the hard
+    failure, which is how a caller finds their own sites without the whole
+    fleet's suite going red first.
+    """
+    if strict_store_arg():
+        raise StoreArgumentError(message)
+    warnings.warn(message, DeprecationWarning, stacklevel=4)
+
+
 def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
     """Raise :class:`StoreArgumentError` when ``explicit`` cannot take effect.
 
@@ -239,12 +257,7 @@ def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
     )
     if not message:
         return
-    if strict_store_arg():
-        raise StoreArgumentError(message)
-    # Audible but not fatal. `-W error::DeprecationWarning` turns every one of
-    # these into the hard failure, which is how a caller finds their own sites
-    # without the whole fleet's suite going red first.
-    warnings.warn(message, DeprecationWarning, stacklevel=3)
+    deliver_refusal(message)
 
 
 # EOF
