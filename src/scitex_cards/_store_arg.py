@@ -67,6 +67,9 @@ resolution, not a better string comparison.
 
 from __future__ import annotations
 
+import os
+import warnings
+
 __all__ = [
     "StoreArgumentError",
     "refuse_ineffective_store",
@@ -178,6 +181,21 @@ def store_argument_refusal(
     )
 
 
+#: Opt-in HARD refusal. Default is a DeprecationWarning, because a raise here
+#: breaks 576 tests on the real-PostgreSQL job (measured 2026-09-07, job
+#: 101605547958: 357 failed + 219 errors, 2238 StoreArgumentError). That is not
+#: a sloppy rule -- passing a store label is this tree's dominant calling
+#: convention, so refusing it outright is an API MIGRATION, not a wiring change.
+#: Strict mode exists so a downstream suite that WANTS the hard answer today can
+#: have it without waiting for that migration.
+_STRICT_ENV = "SCITEX_CARDS_STRICT_STORE_ARG"
+
+
+def strict_store_arg() -> bool:
+    """True when an ineffective ``store=`` should RAISE rather than warn."""
+    return os.environ.get(_STRICT_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
     """Raise :class:`StoreArgumentError` when ``explicit`` cannot take effect.
 
@@ -195,6 +213,14 @@ def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
     ``resolve_store()`` itself cannot answer, the caller is about to hit a real
     store failure with a real message, and masking it with an argument
     complaint would send them to the wrong problem.
+
+    WARNS BY DEFAULT, RAISES UNDER ``$SCITEX_CARDS_STRICT_STORE_ARG``. The first
+    cut of this raised unconditionally, and the real-PostgreSQL job answered:
+    357 failed + 219 errors. Every green pytest-matrix run had been blind to it,
+    because that job's target does not resolve to a server, so the guard never
+    armed there. The lesson is in the staging: a refusal whose precondition is
+    the DEPLOYMENT (a server target) cannot be validated on a job that does not
+    deploy that way.
     """
     if explicit is None:
         return
@@ -211,8 +237,14 @@ def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
     message = store_argument_refusal(
         explicit, resolved_target=target, backend=backend, verb=verb
     )
-    if message:
+    if not message:
+        return
+    if strict_store_arg():
         raise StoreArgumentError(message)
+    # Audible but not fatal. `-W error::DeprecationWarning` turns every one of
+    # these into the hard failure, which is how a caller finds their own sites
+    # without the whole fleet's suite going red first.
+    warnings.warn(message, DeprecationWarning, stacklevel=3)
 
 
 # EOF
