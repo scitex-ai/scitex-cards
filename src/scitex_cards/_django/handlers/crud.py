@@ -188,11 +188,8 @@ def handle_create(request, board):
     from ..services import _reset_cache
 
     try:
-        # NO store ARGUMENT. ``board.store_path`` is the ambient resolution's
-        # PATH LABEL handed back in; on a server deployment the data goes
-        # wherever ``resolve_store()`` names, so it steered nothing while
-        # reading as if it targeted something.
         task = add_task(
+            board.store_path,
             id=new_id,
             title=title.strip(),
             status=payload.get("status") or "deferred",
@@ -265,11 +262,7 @@ def handle_update(request, board):
     from ..services import _reset_cache
 
     try:
-        # NO store ARGUMENT. ``board.store_path`` is the ambient resolution's
-        # PATH LABEL handed back in; on a server deployment the data goes
-        # wherever ``resolve_store()`` names, so it steered nothing while
-        # reading as if it targeted something.
-        task = update_task(task_id=task_id, **fields)
+        task = update_task(board.store_path, task_id, **fields)
     except TaskNotFoundError:
         # Passed the cached-union fast-path but absent from the GLOBAL store
         # the verb writes (a lane-only card, or a delete race) -> clean 404.
@@ -337,12 +330,8 @@ def handle_comment(request, board):
 
     # SSOT append + `commented` emit (→ C4 enqueues to each recipient's inbox).
     try:
-        # NO store ARGUMENT. ``board.store_path`` is the ambient resolution's
-        # PATH LABEL handed back in; on a server deployment the data goes
-        # wherever ``resolve_store()`` names, so it steered nothing while
-        # reading as if it targeted something.
         result = comment_task(
-            task_id=task_id, text=text.strip(), by=author
+            store=board.store_path, task_id=task_id, text=text.strip(), by=author
         )
     except TaskNotFoundError:
         # Passed the cached-union fast-path but absent from the GLOBAL store

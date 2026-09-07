@@ -176,8 +176,14 @@ def store_argument_refusal(
         f"not a store target.\n"
         f"  you passed        {passed}\n"
         f"  data would go to  {target}   (resolve_store())\n"
-        f"A write cannot be isolated by this argument. Unset it, or set "
-        f"SCITEX_CARDS_DB to the store you mean."
+        f"A write cannot be isolated by this argument.\n"
+        f"BUT IT IS NOT INERT, SO DO NOT SIMPLY DELETE IT: the same value\n"
+        f"also selects the file LOCK (_store_lock) and the destination of\n"
+        f"the card-event / inbox rail (_emit_card_event(store=...)).\n"
+        f"Dropping it MOVES WHERE NOTIFICATIONS LAND -- measured\n"
+        f"2026-09-07, dropping it stopped a `commented` event reaching\n"
+        f"the card owner entirely.\n"
+        f"To isolate a write, set SCITEX_CARDS_DB to the store you mean."
     )
 
 

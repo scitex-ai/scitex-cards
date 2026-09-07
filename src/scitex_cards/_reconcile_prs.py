@@ -447,6 +447,7 @@ def reconcile_merged_prs(
             result.would_close.append(entry)
             continue
         _apply_close(
+            resolved,
             task_id=str(task.get("id")),
             pr_url=pr_url,
             by=by,
@@ -459,6 +460,7 @@ def reconcile_merged_prs(
 
 
 def _apply_close(
+    resolved: Path,
     *,
     task_id: str,
     pr_url: str,
@@ -479,10 +481,10 @@ def _apply_close(
     """
     from ._store import comment_task, complete_task
 
-    complete_task(task_id=task_id, by=by)
+    complete_task(resolved, task_id, by=by)
     text = f"auto-closed {_utc_now_iso()}: linked PR {pr_url} merged"
     try:
-        comment_task(task_id=task_id, text=text, by=by, kind="done")
+        comment_task(resolved, task_id, text=text, by=by, kind="done")
     except Exception:  # noqa: BLE001 — the close already landed; comment is audit-only.
         import logging
 

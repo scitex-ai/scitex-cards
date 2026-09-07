@@ -289,10 +289,16 @@ def test__strict_mode_accepts_the_usual_spellings(raw):
 def test__an_ineffective_store_warns_rather_than_raising_by_default():
     """576 broken tests is not a guard, it is an outage."""
     # Arrange
-    with _strict(None):
-        # Act / Assert
-        with pytest.warns(DeprecationWarning):
-            deliver_refusal("add_task(store=...): selects a LOCAL FILE PATH")
+    message = "add_task(store=...): selects a LOCAL FILE PATH"
+
+    # Act
+    def act():
+        with _strict(None):
+            deliver_refusal(message)
+
+    # Assert
+    with pytest.warns(DeprecationWarning):
+        act()
 
 
 def test__the_default_delivery_does_not_raise():
@@ -309,11 +315,14 @@ def test__an_ineffective_store_raises_under_strict_mode():
     """The hard answer stays available to whoever wants it today."""
 
     # Arrange
+    message = "add_task(store=...): selects a LOCAL FILE PATH"
+
+    # Act
     def act():
         with _strict("1"):
-            deliver_refusal("add_task(store=...): selects a LOCAL FILE PATH")
+            deliver_refusal(message)
 
-    # Act / Assert
+    # Assert
     with pytest.raises(ValueError, match="LOCAL FILE PATH"):
         act()
 
@@ -324,7 +333,8 @@ def test__the_delivered_message_is_carried_through_verbatim():
     # Arrange
     text = "add_task(store='/tmp/x/tasks.yaml'): data would go to " + PRIMARY
     # Act
-    with _strict(None), pytest.warns(DeprecationWarning) as caught:
+    with _strict(None), warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         deliver_refusal(text)
     # Assert
     assert str(caught[0].message) == text
