@@ -405,14 +405,13 @@ def test_timeline_view_completed_task_in_window_renders():
     # Arrange — add a row created long ago, then mark it done now so
     # _log_meta.completed_at lands inside the window. The created_at
     # being stale would otherwise drop it; completed_at saves it.
-    store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     add_task(
         id="t-done",
         title="Just completed",
         agent="a",
         created_at="2020-01-01T00:00:00+00:00",
     )
-    complete_task(store=store, task_id="t-done")
+    complete_task(task_id="t-done")
     _reset_cache()
     rf = RequestFactory()
     req = rf.get("/timeline")
