@@ -19,8 +19,20 @@ from scitex_cards._store import add_task, complete_task, delete_task, get_task
 from scitex_cards._store_upsert import upsert_task
 
 
+#: Seeds for the reopen cases. ``assignee`` is NOT optional -- add_task rejects
+#: an owner-less card outright ("creator+assignee are mandatory ... no silent
+#: fallback"), which is what CI caught here.
+OWNER = "agent:tester"
+
+
 def _mk(card_id: str, status: str = "deferred") -> None:
-    add_task(id=card_id, title="seed", status=status)
+    add_task(
+        id=card_id,
+        title="seed",
+        status=status,
+        assignee=OWNER,
+        created_by=OWNER,
+    )
 
 
 # ---------------------------------------------------------------- create
@@ -30,16 +42,34 @@ def test__upsert_creates_the_card_when_it_does_not_exist():
     # Arrange
     card_id = "upsert-create-1"
     # Act
-    upsert_task(id=card_id, title="fresh", status="in_progress")
+    upsert_task(id=card_id, title="fresh", status="in_progress", assignee=OWNER)
     # Assert
     assert get_task(task_id=card_id)["id"] == card_id
+
+
+def test__upsert_refuses_to_create_an_owner_less_card():
+    """CI caught the mirror of this: add_task rejects an owner-less card, and
+    this verb appends straight to the document, so without the same gate the
+    new door would mint exactly what the old door refuses."""
+    # Arrange
+    card_id = "upsert-owner-1"
+
+    # Act
+    def act():
+        upsert_task(id=card_id, title="no owner", status="in_progress")
+
+    # Assert
+    with pytest.raises(ValueError, match="assignee"):
+        act()
 
 
 def test__upsert_reports_created_for_a_new_card():
     # Arrange
     card_id = "upsert-create-2"
     # Act
-    result = upsert_task(id=card_id, title="fresh", status="in_progress")
+    result = upsert_task(
+        id=card_id, title="fresh", status="in_progress", assignee=OWNER
+    )
     # Assert
     assert result["_upsert_action"] == "created"
 
@@ -103,7 +133,14 @@ def test__upsert_clears_the_blocker_when_leaving_a_blocked_state():
     complete_task learned in 2026-08."""
     # Arrange
     card_id = "upsert-blocker-1"
-    add_task(id=card_id, title="seed", status="blocked", blocker="dependency")
+    add_task(
+        id=card_id,
+        title="seed",
+        status="blocked",
+        blocker="dependency",
+        assignee=OWNER,
+        created_by=OWNER,
+    )
     # Act
     upsert_task(id=card_id, title="seed", status="in_progress")
     # Assert

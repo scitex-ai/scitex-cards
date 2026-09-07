@@ -166,6 +166,22 @@ def upsert_task(
             break
 
         if result is None:
+            # AN UPSERT THAT CREATES IS A SECOND DOOR INTO THE STORE, and it
+            # must not be a laxer one. `add_task` refuses an owner-less card
+            # outright -- "creator+assignee are mandatory ... no silent
+            # fallback" -- and this path appends straight to the document, so
+            # without this check the new verb would mint exactly the cards the
+            # old verb rejects. An owner-less row then fails WHOLE-document
+            # validation, which is how ONE bad card stops every other write.
+            owner = fields.get("assignee") or fields.get("agent")
+            if not (isinstance(owner, str) and owner.strip()):
+                raise _task.TaskValidationError(
+                    "upsert_task: assignee is required when the card does not "
+                    "exist yet — pass assignee=<user> (or agent=<user>). "
+                    "creator+assignee are mandatory and an owner-less card is "
+                    "rejected; this verb creates, so it enforces the same gate "
+                    "as add_task rather than routing around it."
+                )
             now = _utc_now_iso()
             new = {"id": card_id, "title": title, "status": status}
             for key, value in fields.items():
