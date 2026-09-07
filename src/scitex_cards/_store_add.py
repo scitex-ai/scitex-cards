@@ -27,6 +27,7 @@ from ._model import (
     _store_lock,
 )
 from ._paths import refuse_ambient_store_creation as _refuse_ambient_store_creation
+from ._store_arg import refuse_ineffective_store
 from ._store_clocks import _clear_completion_stamp_on_leaving_done
 from ._store_enums import resolve_enum_clears as _resolve_enum_clears
 from ._store_events import _emit_card_event
@@ -84,6 +85,7 @@ def add_task(
     _enum_in = _resolve_enum_clears({"status": status, **extras}, source="add_task")
     status = _enum_in.pop("status")
     extras = _enum_in
+    refuse_ineffective_store(store, verb="add_task")
     resolved = _resolved_store(store)
     # A write against a store that does not exist must not INVENT one when
     # nothing named the path — that is how a decoy board accumulates and then

@@ -67,7 +67,21 @@ resolution, not a better string comparison.
 
 from __future__ import annotations
 
-__all__ = ["store_argument_refusal", "normalise_store_target"]
+__all__ = [
+    "StoreArgumentError",
+    "refuse_ineffective_store",
+    "store_argument_refusal",
+    "normalise_store_target",
+]
+
+
+class StoreArgumentError(ValueError):
+    """An explicit ``store=`` cannot select where this write goes.
+
+    A ``ValueError`` because it is a bad ARGUMENT, not a store outage —
+    :class:`StoreUnavailableError` means the store could not be reached, and a
+    caller retrying on that would retry forever on this one.
+    """
 
 #: Backends whose data location an explicit ``store=`` cannot select. A
 #: file-backed deployment CAN honour a path, so the rule is backend-specific
@@ -162,6 +176,43 @@ def store_argument_refusal(
         f"A write cannot be isolated by this argument. Unset it, or set "
         f"SCITEX_CARDS_DB to the store you mean."
     )
+
+
+def refuse_ineffective_store(explicit: object | None, *, verb: str) -> None:
+    """Raise :class:`StoreArgumentError` when ``explicit`` cannot take effect.
+
+    THE ENFORCING WRAPPER. :func:`store_argument_refusal` is the rule and stays
+    pure so it can be tested without a server; this resolves the store and
+    raises, and is what the public write verbs call.
+
+    Deliberately NOT called from :func:`~scitex_cards._paths.local_store_path`.
+    That resolver has callers who legitimately mean the local file — the
+    delivery daemon, the recipients sidecar, the notifyd log line — and refusing
+    there would break them for doing the right thing. The refusal belongs at the
+    verbs whose ``store=`` a caller believes selects where DATA goes.
+
+    Fail-open on a resolution error, and that is a considered choice: if
+    ``resolve_store()`` itself cannot answer, the caller is about to hit a real
+    store failure with a real message, and masking it with an argument
+    complaint would send them to the wrong problem.
+    """
+    if explicit is None:
+        return
+    try:
+        from ._store import resolve_store
+
+        info = resolve_store()
+        target = str(info.get("resolved") or "")
+        backend = info.get("backend")
+    except Exception:  # noqa: BLE001 — see the fail-open note above
+        return
+    if not target:
+        return
+    message = store_argument_refusal(
+        explicit, resolved_target=target, backend=backend, verb=verb
+    )
+    if message:
+        raise StoreArgumentError(message)
 
 
 # EOF
