@@ -116,23 +116,24 @@ def _write_store_of(request: HttpRequest):
 
 
 def _author_of(request: HttpRequest) -> str:
-    """Who is writing — the AUTHENTICATED principal, not a constant.
+    """Who is writing — delegates to the user-scope boundary (``_user_scope``).
 
-    The write path hardcoded :data:`OPERATOR_NAME`, so any caller admitted by
-    any gate posted AS the operator: a human who did not write the message.
-    When an authenticated identity exists we use it.
+    The single "who is this request" answer now lives in
+    :func:`scitex_cards._django._user_scope.current_user` (own-ledger #230/#231:
+    the common-authenticated-identity point, separate from Cards-specific
+    task/board logic). This function keeps its name and signature — existing
+    tests import it — and is now a thin delegation so there is exactly ONE
+    implementation of "resolve the principal from the authenticated request",
+    not one per view.
 
-    :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board,
-    which binds loopback and has no auth layer at all — there the sole caller
-    IS the operator at their own keyboard. It is a default for the
-    single-user case, never an attribution for an anonymous remote caller.
+    :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board
+    (loopback, no auth layer — the sole caller IS the operator); it is a
+    default for the single-user case, never an attribution for an anonymous
+    remote caller.
     """
-    user = getattr(request, "user", None)
-    if user is not None and getattr(user, "is_authenticated", False):
-        name = (getattr(user, "get_username", lambda: "")() or "").strip()
-        if name:
-            return name
-    return OPERATOR_NAME
+    from .._user_scope import current_user
+
+    return current_user(request)
 
 
 def _registry_agents(store) -> list[dict]:
