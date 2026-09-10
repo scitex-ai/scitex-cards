@@ -49,6 +49,7 @@ unreachable there.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 #: Cards is a USER-SCOPED app. This is the leaf-package-side declaration #48
@@ -61,8 +62,34 @@ SCOPE = "user"
 
 #: The request attribute the hub's tenancy middleware sets (server-side). Cards
 #: reads its store scope from this, never from a client-controllable query param.
-#: Kept beside SCOPE so the boundary's two common inputs live in one place.
-STORE_ATTR = "scitex_store"
+#: It is RE-EXPORTED here (not re-spelled) so ``_request_store`` remains the
+#: single source of truth for the name — a second literal that drifts from it
+#: would silently break the tenancy contract. Kept beside SCOPE so the
+#: boundary's two common inputs live in one place.
+from ._request_store import STORE_REQUEST_ATTR as STORE_ATTR  # noqa: E402
+
+
+@dataclass(frozen=True)
+class UserScope:
+    """The resolved authorization for ONE request: who it acts as and which
+    store it may touch.
+
+    This is the value the common infrastructure produces and the Cards-SPECIFIC
+    domain logic (graph / timeline / DM content / matrix / export) consumes. A
+    view should read its scope from :func:`resolve_scope` rather than re-deriving
+    the principal and the store separately in its own body — that is the #231
+    separation (domain logic stays a consumer of the boundary, not a re-implementation
+    of it).
+    """
+
+    #: The authenticated principal (``current_user``): the common Django user, or
+    #: OPERATOR_NAME on the standalone loopback board.
+    principal: str
+
+    #: The trusted store the hub tenancy middleware resolved for this user, or
+    #: ``None`` (no tenant injected — a standalone board resolves its own ambient
+    #: store server-side). A browser ``?store=``/``?project=`` never appears here.
+    store: Optional[str]
 
 
 def current_user(request: Any) -> str:
@@ -97,9 +124,25 @@ def user_scoped_store(request: Any) -> Optional[str]:
     select this: an attribute cannot be forged over HTTP, and a project
     selector is not a tenancy input for a user-scoped app.
     """
-    from ._request_store import STORE_REQUEST_ATTR
-
-    return getattr(request, STORE_REQUEST_ATTR, None)
+    return getattr(request, STORE_ATTR, None)
 
 
-__all__ = ["SCOPE", "STORE_ATTR", "current_user", "user_scoped_store"]
+def resolve_scope(request: Any) -> UserScope:
+    """The SINGLE authorization entry point for a Cards request.
+
+    Returns the :class:`UserScope` — the common-infrastructure answer to "who
+    acts as, and on which store" — composed from exactly the two common inputs
+    (:func:`current_user` and :func:`user_scoped_store`). Views should call this
+    once and pass the resulting scope to the domain logic, instead of each
+    re-deriving the principal and the store in its own body (#231: domain logic
+    consumes the boundary; it does not re-implement it).
+
+    It reads ONLY ``request.user`` and the trusted ``request.scitex_store``
+    attribute. It reads NO project selector and NO query parameter, which is
+    what makes a user-scoped app safe by construction: a browser can name
+    itself and its project, but it cannot set the attribute nor forge the user.
+    """
+    return UserScope(principal=current_user(request), store=user_scoped_store(request))
+
+
+__all__ = ["SCOPE", "STORE_ATTR", "UserScope", "current_user", "user_scoped_store", "resolve_scope"]
