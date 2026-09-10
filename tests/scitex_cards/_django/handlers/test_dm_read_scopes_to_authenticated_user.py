@@ -146,47 +146,60 @@ def test_an_unauthenticated_browser_cannot_claim_operator_via_params() -> None:
 def test_read_views_resolve_the_reader_from_the_principal() -> None:
     """Each read view derives its reader from the authenticated principal via
     _author_of, not from a constant or a caller-supplied identity."""
-    for view in (dm.dm_threads_view, dm.dm_thread_view, dm.dm_reaction_view):
-        src = inspect.getsource(view)
-        assert "_author_of(request)" in src, (
-            f"{view.__name__} no longer resolves the reader via _author_of — "
-            "it may have reverted to a constant or a caller-supplied identity"
-        )
+    # Arrange
+    views = (dm.dm_threads_view, dm.dm_thread_view, dm.dm_reaction_view)
+    # Act
+    sources = {v.__name__: inspect.getsource(v) for v in views}
+    missing = [n for n, s in sources.items() if "_author_of(request)" not in s]
+    # Assert
+    assert not missing, (
+        f"{missing!r} no longer resolve the reader via _author_of — a view "
+        "reverted to a constant or a caller-supplied identity"
+    )
 
 
 def test_dm_threads_view_scopes_the_summary_to_the_reader() -> None:
+    # Arrange
     src = inspect.getsource(dm.dm_threads_view)
-    assert "threads_summary(" in src, "dm_threads_view must call threads_summary"
-    # The reader, not OPERATOR_NAME, is the argument.
-    assert re.search(r"threads_summary\(\s*reader\b", src), (
-        "dm_threads_view passes OPERATOR_NAME (not `reader`) to threads_summary "
-        "— a hub user would see the operator's thread list"
+    # Act
+    # threads_summary(reader, …) is the fix; threads_summary(OPERATOR_NAME, …)
+    # is the bug (a hub user would see the operator's thread list).
+    scoped_to_reader = re.search(r"threads_summary\(\s*reader\b", src) is not None
+    # Assert
+    assert scoped_to_reader, (
+        "dm_threads_view does not scope threads_summary to `reader` — it "
+        "passes OPERATOR_NAME, so a hub user would see the operator's list"
     )
-    assert "threads_summary(\n        OPERATOR_NAME" not in src.replace(
-        "threads_summary(OPERATOR_NAME", "threads_summary(\n        OPERATOR_NAME"
-    ), "threads_summary still keyed on the OPERATOR_NAME constant"
 
 
 def test_dm_thread_view_scopes_the_thread_key_to_the_reader() -> None:
+    # Arrange
     src = inspect.getsource(dm.dm_thread_view)
-    # The thread the caller SEES is (reader, peer). The constant form is the
-    # exact bug: a hub user reading dm_thread_view rendered the operator's
-    # conversation.
-    assert "thread_key(OPERATOR_NAME, peer)" not in src, (
-        "dm_thread_view still derives the thread from the OPERATOR_NAME "
-        "constant — a hub user reads the operator's conversation"
+    # Act
+    # The thread the caller SEES is (reader, peer). The constant form
+    # thread_key(OPERATOR_NAME, peer) is the exact bug: a hub user rendered
+    # the operator's conversation.
+    scoped_to_reader = (
+        re.search(r"thread_key\(\s*reader\s*,\s*peer\s*\)", src) is not None
     )
-    assert re.search(r"thread_key\(\s*reader\s*,\s*peer\s*\)", src), (
-        "dm_thread_view does not derive its thread from `reader`"
+    # Assert
+    assert scoped_to_reader, (
+        "dm_thread_view does not derive its thread from `reader` — a hub user "
+        "reads the operator's conversation"
     )
 
 
 def test_dm_reaction_view_scopes_the_thread_key_to_the_reader() -> None:
+    # Arrange
     src = inspect.getsource(dm.dm_reaction_view)
-    assert "thread_key(OPERATOR_NAME, peer)" not in src, (
-        "dm_reaction_view still derives the thread from the OPERATOR_NAME "
-        "constant — a hub user could react to a thread they cannot see"
+    # Act
+    # A hub user must not be able to react to a thread they cannot see; the
+    # thread is derived from the authenticated reader, not the constant.
+    scoped_to_reader = (
+        re.search(r"thread_key\(\s*reader\s*,\s*peer\s*\)", src) is not None
     )
-    assert re.search(r"thread_key\(\s*reader\s*,\s*peer\s*\)", src), (
-        "dm_reaction_view does not derive its thread from `reader`"
+    # Assert
+    assert scoped_to_reader, (
+        "dm_reaction_view does not derive its thread from `reader` — a hub "
+        "user could react to a thread they cannot see"
     )
