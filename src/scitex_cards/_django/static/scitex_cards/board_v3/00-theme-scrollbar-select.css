@@ -30,7 +30,7 @@ html,
 body,
 body * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border, #2a3140) var(--col-bg, #21262d);
+  scrollbar-color: var(--border, #30363d) var(--col-bg, #21262d);
 }
 
 body ::-webkit-scrollbar,
@@ -46,7 +46,7 @@ body::-webkit-scrollbar-track {
 
 body ::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb {
-  background: var(--border, #2a3140);
+  background: var(--border, #30363d);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -54,7 +54,7 @@ body::-webkit-scrollbar-thumb {
 
 body ::-webkit-scrollbar-thumb:hover,
 body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted, #8a96a8);
+  background: var(--text-muted, #8b949e);
   background-clip: padding-box;
 }
 
@@ -78,10 +78,10 @@ body::-webkit-scrollbar-corner {
 body select {
   appearance: auto;
   padding: 4px 8px;
-  border: 1px solid var(--border, #2a3140);
+  border: 1px solid var(--border, #30363d);
   border-radius: 4px;
   background: var(--col-bg, #21262d);
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
   font: inherit;
   font-size: 0.82rem;
   cursor: pointer;
@@ -105,5 +105,5 @@ body select:disabled {
 
 body select option {
   background: var(--card-bg, #161b22);
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
 }

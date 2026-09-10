@@ -80,7 +80,7 @@
   min-height: 26px;
   /* `--border` is the board_v3 token; `--stx-border` is the React-side
    * sibling. Both reference the same neutral-muted line. */
-  background: var(--border, var(--stx-border, #2a3140));
+  background: var(--border, var(--stx-border, #30363d));
   flex: 0 0 auto;
   opacity: 0.85;
 }

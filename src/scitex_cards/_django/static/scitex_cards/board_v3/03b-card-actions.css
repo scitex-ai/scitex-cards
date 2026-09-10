@@ -442,7 +442,7 @@
 .route-hint {
   font-weight: 400;
   font-size: 0.72rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 .route-hop {
   display: flex;
@@ -450,7 +450,7 @@
   gap: 8px;
   padding: 6px 0 6px 10px;
   margin-left: 4px;
-  border-left: 2px solid var(--border, #2a3140);
+  border-left: 2px solid var(--border, #30363d);
 }
 .route-hop--push {
   border-left-color: var(--green, #30a46c);
@@ -472,8 +472,8 @@
   border: 1px solid transparent;
 }
 .route-badge--created {
-  color: var(--text-muted, #8a96a8);
-  border-color: var(--border, #2a3140);
+  color: var(--text-muted, #8b949e);
+  border-color: var(--border, #30363d);
 }
 .route-badge--push {
   color: var(--green, #30a46c);
@@ -508,7 +508,7 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 0.68rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 .route-actor {
   font-weight: 600;
@@ -518,7 +518,7 @@
 }
 .route-text {
   font-size: 0.82rem;
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
   line-height: 1.4;
   word-break: break-word;
   white-space: pre-wrap;

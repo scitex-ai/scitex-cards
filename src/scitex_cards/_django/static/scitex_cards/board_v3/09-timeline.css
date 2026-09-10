@@ -22,24 +22,24 @@
   flex-wrap: wrap;
   gap: 8px 16px;
   font-size: 0.8rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 .tl-ctl {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
 }
 .tl-ctl select {
   background: var(--card-bg, #161b22);
-  color: var(--text, #e0e6f0);
-  border: 1px solid var(--border, #2a3140);
+  color: var(--text, #e6edf3);
+  border: 1px solid var(--border, #30363d);
   border-radius: 6px;
   padding: 3px 6px;
   font-size: 0.8rem;
 }
 .tl-count {
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 
 /* ── dependency-edge legend (raster views only) ───────────────────────
@@ -53,7 +53,7 @@
   gap: 12px;
   margin-left: auto;
   font-size: 0.72rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 .tl-edge-legend-item {
   display: inline-flex;
@@ -85,7 +85,7 @@
 /* ── raster SVG ────────────────────────────────────────────────────── */
 .tl-scroll {
   overflow: auto;
-  border: 1px solid var(--border, #2a3140);
+  border: 1px solid var(--border, #30363d);
   border-radius: 8px;
   background: var(--col-bg, #21262d);
 }
@@ -94,12 +94,12 @@
   font-family: -apple-system, system-ui, sans-serif;
 }
 .tl-tickline {
-  stroke: var(--border, #2a3140);
+  stroke: var(--border, #30363d);
   stroke-width: 1;
   opacity: 0.5;
 }
 .tl-ticktext {
-  fill: var(--text-muted, #8a96a8);
+  fill: var(--text-muted, #8b949e);
   font-size: 10px;
 }
 .tl-lane-bg {
@@ -125,7 +125,7 @@
   stroke-width: 2;
 }
 .tl-lane-label {
-  fill: var(--text, #e0e6f0);
+  fill: var(--text, #e6edf3);
   font-size: 11px;
   font-weight: 600;
 }
@@ -166,7 +166,7 @@
     stroke-width 0.12s ease;
 }
 .tl-edge--depends {
-  stroke: var(--text-muted, #8a96a8);
+  stroke: var(--text-muted, #8b949e);
   stroke-dasharray: 3 2;
 }
 .tl-edge--blocks {
@@ -243,7 +243,7 @@
 /* Live (still-running) tasks get a bright ring so the operator can spot
    what's being processed at a glance. */
 .tl-dot--live {
-  stroke: var(--text, #e0e6f0);
+  stroke: var(--text, #e6edf3);
   stroke-width: 2;
 }
 /* Multi-select (timelineSelect.js): a distinct accent ring so selected
@@ -277,7 +277,7 @@
 }
 .tl-card {
   background: var(--card-bg, #161b22);
-  border: 1px solid var(--border, #2a3140);
+  border: 1px solid var(--border, #30363d);
   border-left: 3px solid var(--grey, #6b7280);
   border-radius: 8px;
   padding: 8px 12px;
@@ -285,7 +285,7 @@
   transition: border-color 0.12s ease;
 }
 .tl-card:hover {
-  border-color: var(--text-muted, #8a96a8);
+  border-color: var(--text-muted, #8b949e);
 }
 /* Multi-select highlight for the simple per-task list (timelineSelect.js). */
 .tl-card--selected {
@@ -326,7 +326,7 @@
   letter-spacing: 0.04em;
   font-weight: 700;
   font-size: 0.62rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
 }
 /* Status label color = the status's SSOT stroke (7 distinct). */
 .tl-card[data-status="goal"] .tl-card-status {
@@ -352,11 +352,11 @@
 }
 .tl-card-time {
   font-size: 0.72rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
   white-space: nowrap;
 }
 .tl-card-title {
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
   font-weight: 600;
   font-size: 0.9rem;
   margin: 2px 0;
@@ -364,30 +364,30 @@
 }
 .tl-card-meta {
   font-size: 0.72rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
   margin-bottom: 4px;
 }
 .tl-card-comment {
   font-size: 0.8rem;
-  color: var(--text, #e0e6f0);
+  color: var(--text, #e6edf3);
   background: var(--col-bg, #21262d);
   border-radius: 6px;
   padding: 5px 8px;
   line-height: 1.4;
 }
 .tl-card-comment-author {
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
   font-weight: 600;
 }
 .tl-card-comment--none {
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
   font-style: italic;
   background: transparent;
   padding: 2px 0;
 }
 .tl-card-count {
   font-size: 0.7rem;
-  color: var(--text-muted, #8a96a8);
+  color: var(--text-muted, #8b949e);
   margin-top: 4px;
 }
 
