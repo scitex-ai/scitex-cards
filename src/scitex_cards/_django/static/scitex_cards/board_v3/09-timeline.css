@@ -31,7 +31,7 @@
   color: var(--text, #e0e6f0);
 }
 .tl-ctl select {
-  background: var(--card-bg, #1a1f29);
+  background: var(--card-bg, #161b22);
   color: var(--text, #e0e6f0);
   border: 1px solid var(--border, #2a3140);
   border-radius: 6px;
@@ -87,7 +87,7 @@
   overflow: auto;
   border: 1px solid var(--border, #2a3140);
   border-radius: 8px;
-  background: var(--col-bg, #131820);
+  background: var(--col-bg, #21262d);
 }
 .tl-svg {
   display: block;
@@ -107,7 +107,7 @@
   transition: fill 90ms ease;
 }
 .tl-lane-bg--even {
-  fill: var(--card-bg, #1a1f29);
+  fill: var(--card-bg, #161b22);
   opacity: 0.4;
 }
 /* ── ROW HOVER (operator 2026-07-13: "マウスホバーに合わせてその行をハイライト
@@ -141,7 +141,7 @@
    its `.tl-avatar-ring*` rules are gone with it. Status still reads off the
    dots, the cards and the legend, which is where anyone looks for it. */
 .tl-avatar-bg {
-  stroke: var(--col-bg, #131820);
+  stroke: var(--col-bg, #21262d);
   stroke-width: 1.5;
 }
 .tl-avatar-text {
@@ -276,7 +276,7 @@
   max-width: 760px;
 }
 .tl-card {
-  background: var(--card-bg, #1a1f29);
+  background: var(--card-bg, #161b22);
   border: 1px solid var(--border, #2a3140);
   border-left: 3px solid var(--grey, #6b7280);
   border-radius: 8px;
@@ -370,7 +370,7 @@
 .tl-card-comment {
   font-size: 0.8rem;
   color: var(--text, #e0e6f0);
-  background: var(--col-bg, #131820);
+  background: var(--col-bg, #21262d);
   border-radius: 6px;
   padding: 5px 8px;
   line-height: 1.4;
