@@ -34,8 +34,10 @@ from scitex_cards._django import views  # noqa: E402
 
 
 def test_tasks_is_stale_ok_alongside_its_read_only_siblings() -> None:
-    # Arrange / Act
+    # Arrange
     stale_ok = views.STALE_OK_ENDPOINTS
+    # Act
+    # (stale_ok is already the value; the act is reading it)
     # Assert
     assert {"graph", "timeline", "tasks"} <= stale_ok, (
         f"STALE_OK_ENDPOINTS={stale_ok!r} — the read-only board views must all "
