@@ -39,7 +39,9 @@ export function toMarkdown(graph: GraphPayload, nodes: GraphNode[]): string {
   }
   const out: string[] = [
     `# scitex-cards — ${nodes.length} tasks`,
-    `*store: \`${graph.store_path}\`*`,
+    // store_path is internal: omit the store line entirely on a public
+    // deployment (the server omits the key there) rather than exporting "null".
+    ...(graph.store_path ? [`*store: \`${graph.store_path}\`*`] : []),
     "",
   ];
   const status_order = [

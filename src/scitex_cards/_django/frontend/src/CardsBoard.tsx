@@ -534,9 +534,14 @@ export function CardsBoard() {
         <span className="stx-cards-board__title">
           SciTeX Card — dependency graph
         </span>
-        <span className="stx-cards-board__meta">
-          <code>{graph.store_path}</code>
-        </span>
+        {/* store_path is internal: shown on the loopback board, absent on a
+            public deployment (server omits the key when DEBUG is false). Only
+            render the chip when it is actually present. */}
+        {graph.store_path ? (
+          <span className="stx-cards-board__meta">
+            <code>{graph.store_path}</code>
+          </span>
+        ) : null}
         <CountBreakdown graph={graph} />
         <Progress graph={graph} />
         {/* Fleet CI-status pills (Phase 1 of FLEET DASHBOARD vision —

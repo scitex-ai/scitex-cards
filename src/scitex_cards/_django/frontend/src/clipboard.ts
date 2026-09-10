@@ -30,7 +30,9 @@ function formatOne(graph: GraphPayload, id: string): string | null {
     `parent: ${n.parent ?? "-"}`,
     `depends_on: ${dependsOn.length ? dependsOn.join(", ") : "-"}`,
     `blocks: ${blocks.length ? blocks.join(", ") : "-"}`,
-    `file: ${graph.store_path}`,
+    // store_path is internal: omit the line entirely on a public deployment
+    // (the server omits the key there) rather than exporting "null".
+    ...(graph.store_path ? [`file: ${graph.store_path}`] : []),
   ];
   const note = (n.note ?? "").trim();
   if (note && note !== "uncategorized") {

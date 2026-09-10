@@ -27,6 +27,26 @@ from .graph_fleet import (  # noqa: F401
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "scitex_cards"
 
 
+def _store_path_for_wire(board) -> str | None:
+    """The store path to put in a JSON payload, or None on a public board.
+
+    ``store_path`` is the deployment's database/identity location — internal
+    information. The loopback board (DEBUG=true) keeps it so the operator can
+    see WHICH store answered; a PUBLIC deployment (settings.py:86 forces DEBUG
+    off under SCITEX_CARDS_PUBLIC_HOST) must not leak it over the wire, so we
+    return None and the caller omits the key. This is the same operator-vs-
+    external split ``_store_errors.public_summary`` uses, extended from the
+    rendered footer to the JSON endpoints — a public deployment leaks nothing
+    on either surface. Returns the path as ``str`` (the payload contract is a
+    string, not a Path) when shown, else None.
+    """
+    from django.conf import settings
+
+    if settings.DEBUG:
+        return str(board.store_path)
+    return None
+
+
 def _board_asset_rev() -> float:
     """Max mtime across the board's HTML templates — a cheap GUI-version stamp.
 
@@ -219,6 +239,14 @@ def _build_graph(board) -> dict:
             if target in ids:
                 edges.append({"source": tid, "target": target, "kind": "blocks"})
 
+    # store_path is internal (the deployment's database location): shown on the
+    # loopback board (DEBUG=true), omitted on a public deployment (settings.py:86
+    # forces DEBUG off under SCITEX_CARDS_PUBLIC_HOST). Same operator-vs-external
+    # split _store_errors.public_summary uses, extended from the rendered footer
+    # to the wire. None -> the dict below drops the key, so the payload carries
+    # nothing on public.
+    _wire_store_path = _store_path_for_wire(board)
+
     return {
         "nodes": nodes,
         "edges": edges,
@@ -250,7 +278,7 @@ def _build_graph(board) -> dict:
         # `static/scitex_cards/assets/index.js` contains the string zero
         # times. `frontend/src/types/board.ts` merely DECLARED the field, and
         # that declaration goes with this commit.
-        "store_path": str(board.store_path),
+        **({"store_path": _wire_store_path} if _wire_store_path is not None else {}),
         "task_count": len(board.tasks),
         # HONEST EMPTY STATE: True when the store was READ and held no cards —
         # a legitimate 0-card board, on which the frontend renders the normal
@@ -422,11 +450,12 @@ def handle_tasks(request, board):
             not_modified = HttpResponse(status=304)
             not_modified["ETag"] = etag
             return not_modified
+    _wire_store_path = _store_path_for_wire(board)
     response = JsonResponse(
         {
             "generation": str(board.sig[0]) if getattr(board, "sig", None) else None,
             "tasks": _selected_tasks(request, list(board.tasks)),
-            "store_path": str(board.store_path),
+            **({"store_path": _wire_store_path} if _wire_store_path is not None else {}),
             # Same honest-empty-state flag as the /graph payload: the store
             # was read and holds no cards (see BoardState.empty_store). An
             # unreadable store never reaches here — it is a 500.
@@ -451,11 +480,12 @@ def handle_rev(request, board):
     another agent has changed the shared YAML and trigger a refresh. The board
     is loaded mtime-cached, so unchanged stores hit the cache.
     """
+    _wire_store_path = _store_path_for_wire(board)
     return JsonResponse(
         {
             "mtime": board.mtime,
             "count": len(board.tasks),
-            "store_path": str(board.store_path),
+            **({"store_path": _wire_store_path} if _wire_store_path is not None else {}),
             # GUI-code version stamp: lets the open pane hard-reload itself
             # when the board template changes (no manual restart/F5).
             "asset_rev": _board_asset_rev(),

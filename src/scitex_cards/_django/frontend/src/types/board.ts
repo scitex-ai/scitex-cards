@@ -122,6 +122,11 @@ export interface GraphPayload {
   // No `mermaid` field: the server stopped shipping it (38.4% of the /graph
   // payload, and no reader). Graph views build their own source from `edges`
   // + `status_colors`, which is what lets them respect the filter set.
-  store_path: string;
+  // store_path is internal (the deployment's database location): present on the
+  // loopback board, ABSENT on a public deployment (the server omits the key
+  // when settings.DEBUG is false — settings.py:86 forces that off under
+  // SCITEX_CARDS_PUBLIC_HOST). So it is `string | null` here: consumers must
+  // treat its absence as "not shown", never as an error.
+  store_path: string | null;
   task_count: number;
 }
