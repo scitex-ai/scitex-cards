@@ -228,6 +228,8 @@ def board_v3_page(request):
     # too. See :func:`_include_root` for why the strip is segment-anchored.
     api_base = _include_root(request.path, _BOARD_ALIASES)
 
+    from django.conf import settings
+
     try:
         html = render_to_string(
             "scitex_cards/board_v3.html",
@@ -243,6 +245,14 @@ def board_v3_page(request):
                 # <head> renders a `:root{--status-fill-<s>...}` block from
                 # this so cards/timeline/mermaid never collapse 7→4 colors).
                 "status_colors": status_colors,
+                # Internal-only chrome (version/ADR provenance line + store
+                # path in the footer). Shown to the operator on the loopback
+                # board (DEBUG=true), hidden on any PUBLIC deployment
+                # (settings.py:86 forces DEBUG off under
+                # SCITEX_CARDS_PUBLIC_HOST). This is the same operator-vs-
+                # external split _store_errors.public_summary uses, so the
+                # board has one "who is looking" answer, not two.
+                "show_internal_chrome": settings.DEBUG,
             },
             request=request,
         )

@@ -617,10 +617,24 @@
     </aside>
   </div>
 
+  {% if show_internal_chrome %}
+  <!-- INTERNAL-ONLY CHROME (compass §13 L478/L479, §21 L643). The whole footer
+       is gated, not just its contents: in public mode an empty `.foot` div
+       would still paint (its CSS carries padding + border-top + background),
+       leaving a stray horizontal bar at the bottom with nothing in it. The
+       `.foot` div holds ONLY this chrome, so removing it removes the bar too.
+       Gated on `show_internal_chrome`, which the board view sets from
+       `settings.DEBUG`: a standalone board runs DEBUG=true (loopback), so the
+       operator keeps this line; a PUBLIC deployment sets DEBUG=false
+       (settings.py forces it off under SCITEX_CARDS_PUBLIC_HOST), so an
+       external viewer never sees the version/ADR provenance line or the store
+       path. Same operator-vs-external split `_store_errors.public_summary`
+       uses — one "who is looking" answer, not two. -->
   <div class="foot">
     <span>v3 LIVE · real data · operator schema (ADR-0007) · GUI→code (ADR-0006)</span>
     <span><code id="store-path">…</code></span>
   </div>
+  {% endif %}
 
   <div class="detail-backdrop" id="detail-backdrop" onclick="closeDetail(event)">
     <div class="detail" onclick="event.stopPropagation()">
@@ -930,7 +944,14 @@
           return;
         }
         const _scrollSnap = preserveScroll ? captureScroll() : null;
-        document.getElementById("store-path").textContent = STATE.graph.store_path || "—";
+        // store-path is an internal-only footer element (gated on
+        // show_internal_chrome / settings.DEBUG). In a public deployment the
+        // .foot div is not rendered, so this is a no-op there — guard against
+        // the absent node instead of throwing and killing the whole render.
+        const _storePathEl = document.getElementById("store-path");
+        if (_storePathEl) {
+          _storePathEl.textContent = STATE.graph.store_path || "—";
+        }
         // A zero-card payload gets a SENTENCE, not a blank canvas. After
         // store-path is set, so the footer still names WHICH store answered —
         // "no cards visible" plus the store identity is a diagnosis; the same
