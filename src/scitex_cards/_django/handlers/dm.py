@@ -119,7 +119,7 @@ def _write_store_of(request: HttpRequest):
 
 
 def _author_of(request: HttpRequest) -> str:
-    """Who is writing — delegates to the user-scope boundary (``_user_scope``).
+    """Current DM principal — delegates to the shared user-scope boundary.
 
     The single "who is this request" answer now lives in
     :func:`scitex_cards._django._user_scope.current_user` (own-ledger #230/#231:
@@ -127,7 +127,8 @@ def _author_of(request: HttpRequest) -> str:
     task/board logic). This function keeps its name and signature — existing
     tests import it — and is now a thin delegation so there is exactly ONE
     implementation of "resolve the principal from the authenticated request",
-    not one per view.
+    not one per view. Both reads and writes use this function; an authenticated
+    Hub user can therefore see and mutate only their own DM threads.
 
     :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board
     (loopback, no auth layer — the sole caller IS the operator); it is a
@@ -313,12 +314,22 @@ def _typed_store_refusals(view):
 
 @_typed_store_refusals
 def dm_threads_view(request: HttpRequest) -> HttpResponse:
-    """GET the operator's agent list + per-agent thread summaries."""
+    """GET the CURRENT USER's agent list + per-agent thread summaries.
+
+    ``reader`` is the authenticated principal (:func:`_author_of`), NOT a
+    constant: the DM read path used to hardcode ``OPERATOR_NAME`` so every
+    authenticated hub user saw the *operator's* threads (a cross-user leak),
+    while the write path already attributed to the real user — reads and writes
+    disagreed about who was looking. On the standalone loopback board
+    ``_author_of`` falls back to ``OPERATOR_NAME`` (the sole caller IS the
+    operator), so that deployment is byte-identical to before.
+    """
     if request.method != "GET":
         return JsonResponse(
             {"error": "method-not-allowed", "method": request.method}, status=405
         )
     store = _store_of(request)
+    reader = _author_of(request)
     rows: dict[str, dict] = {}
     for agent in _registry_agents(store):
         rows[agent["name"]] = {
@@ -328,23 +339,23 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             "last_ts": None,
             "last_body": None,
         }
-    # Merge in any peer that already has a thread with the operator (covers
-    # unregistered senders — the thread store is the SSOT of who talked).
-    # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
-    # a PER-HOST FILE, and nothing else — so this view showed only the threads
-    # of agents running on the same machine as the board. Measured 2026-08-09
-    # on the operator's laptop: its sidecar had scitex-agent-container live at
-    # 12:33 (that agent runs laptop-side) while scitex-cards sat at 2026-08-02,
-    # and five agents on scitex-compute-04 were invisible entirely. All 4150
-    # messages were in the store the whole time. Operator's ruling the same
-    # day: "never use threads.json but database".
+    # Merge in any peer that already has a thread with the CURRENT reader
+    # (covers unregistered senders — the thread store is the SSOT of who
+    # talked). THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads
+    # `threads.json`, a PER-HOST FILE, and nothing else — so this view showed
+    # only the threads of agents running on the same machine as the board.
+    # Measured 2026-08-09 on the operator's laptop: its sidecar had
+    # scitex-agent-container live at 12:33 (that agent runs laptop-side) while
+    # scitex-cards sat at 2026-08-02, and five agents on scitex-compute-04 were
+    # invisible entirely. All 4150 messages were in the store the whole time.
+    # Operator's ruling the same day: "never use threads.json but database".
     for key, summary in _dm_read.threads_summary(
-        OPERATOR_NAME, store=store
+        reader, store=store
     ).items():
         a, b = summary["peers"]
-        if OPERATOR_NAME not in (a, b):
+        if reader not in (a, b):
             continue
-        peer = b if a == OPERATOR_NAME else a
+        peer = b if a == reader else a
         row = rows.setdefault(
             peer,
             {
@@ -355,7 +366,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
                 "last_body": None,
             },
         )
-        row["unread"] = summary["unread"].get(OPERATOR_NAME, 0)
+        row["unread"] = summary["unread"].get(reader, 0)
         last = summary["last"]
         if last is not None:
             row["last_ts"] = last.get("ts")
@@ -380,7 +391,12 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     peer = peer.strip()
 
     if request.method == "GET":
-        key = _threads.thread_key(OPERATOR_NAME, peer)
+        # THE CURRENT USER's thread, not a constant: the read path used to
+        # hardcode OPERATOR_NAME (see dm_threads_view), so a hub user reading
+        # dm_thread_view would render the operator's conversation. Same
+        # principal the POST below writes as.
+        reader = _author_of(request)
+        key = _threads.thread_key(reader, peer)
         # Poll-and-ack: the open pane passes mark_read=1 so viewing the
         # thread clears the operator-side unread counter.
         if request.GET.get("mark_read") in ("1", "true"):
@@ -406,8 +422,8 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # stale one it replaced.
             #
             # Idempotent by primary key `(message_id, reader)`, so a re-open
-            # inserts nothing and returns 0 rather than erroring.
-            reader = _author_of(request)
+            # inserts nothing and returns 0 rather than erroring. `reader` is
+            # the principal resolved at the top of this GET branch.
             unread_ids = [
                 m["id"]
                 for m in _dm_read.unread_for(reader, store=store, thread_id=key)
@@ -429,7 +445,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         # eventually by construction. Reading both from `dm_messages` is what
         # makes the badge and the pane the same claim.
         messages = _dm_read.messages_in(
-            _threads.thread_key(OPERATOR_NAME, peer), store=store
+            key, store=store
         )
         # Reactions ride ALONGSIDE the messages, never inside them. The stored
         # DM records stay byte-identical to what an older client already
@@ -472,12 +488,14 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
 @csrf_exempt
 @_typed_store_refusals
 def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
-    """POST one reaction event onto a message in the operator↔``peer`` thread.
+    """POST one reaction event onto a message in the CURRENT USER's thread.
 
-    The THREAD is derived server-side from ``(operator, peer)`` — the caller
-    names a message and an emoji, never a thread id. A client that could name
-    the thread could attach a reaction to a conversation it is not part of;
-    deriving it means the URL already carries that authority.
+    The THREAD is derived server-side from ``(reader, peer)`` where ``reader``
+    is the authenticated principal — the caller names a message and an emoji,
+    never a thread id. A client that could name the thread could attach a
+    reaction to a conversation it is not part of; deriving it from the
+    authenticated user means the URL already carries that authority, and a hub
+    user cannot react to a thread they cannot see.
     """
     if request.method != "POST":
         return JsonResponse(
@@ -486,6 +504,7 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     if not peer or not peer.strip():
         return JsonResponse({"error": "empty peer name"}, status=400)
     peer = peer.strip()
+    reader = _author_of(request)
     try:
         payload = json.loads(request.body or b"{}")
     except json.JSONDecodeError as exc:
@@ -512,11 +531,11 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
-    key = _threads.thread_key(OPERATOR_NAME, peer)
+    key = _threads.thread_key(reader, peer)
     event = _reactions.append_reaction_event(
         thread=key,
         message_id=message_id.strip(),
-        actor=_author_of(request),
+        actor=reader,
         emoji=emoji,
         action=action,
         store=_write_store_of(request),
