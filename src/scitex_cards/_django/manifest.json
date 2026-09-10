@@ -17,6 +17,7 @@
     "Resolve the task store via $SCITEX_CARDS_DB"
   ],
   "wip": false,
+  "release_stage": "internal",
   "standalone": true,
   "standalone_command": "scitex-cards board",
   "standalone_port": 8051,
