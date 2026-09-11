@@ -305,9 +305,9 @@ class TestRecurringDeadlineIsNeverOverdue:
 #: to notify, it happens in one of these — and the docs must change with it.
 _DELIVERY_MODULES = (
     "scitex_cards._reminders",
-    "scitex_cards._reminder_bodies",
-    "scitex_cards._reminder_enqueue",
-    "scitex_cards._reminder_liveness",
+    "scitex_cards._reminder.bodies",
+    "scitex_cards._reminder.enqueue",
+    "scitex_cards._reminder.liveness",
     "scitex_cards._stale_active",
     "scitex_cards._stale_active_nudge",
     "scitex_cards._backlog_triage",

@@ -7,7 +7,7 @@ that module decides WHICH cards are stale-active / pending-backlog and
 groups them by owner; THIS module delivers a concise per-owner nudge
 over the SAME rail the owner DIGEST uses — the standalone per-recipient
 PULL-INBOX (:func:`scitex_cards._inbox.enqueue`, wrapped by
-:func:`scitex_cards._reminder_enqueue._safe_enqueue`). One sweep emits up to
+:func:`scitex_cards._reminder.enqueue._safe_enqueue`). One sweep emits up to
 two distinct per-owner lines:
 
 * ``stale-active`` (kind="stale-active"): "close/update the in_progress
@@ -33,8 +33,8 @@ delivered to NOBODY::
 The DIGEST (:mod:`scitex_cards._reminders`) has always used the rail that
 works: it ENQUEUES into the recipient's per-agent pull-inbox, which every
 agent already drains. The nudge now uses the SAME path, the SAME helpers
-(:func:`~scitex_cards._reminder_enqueue._safe_resolve` /
-:func:`~scitex_cards._reminder_enqueue._safe_enqueue`) and the SAME record
+(:func:`~scitex_cards._reminder.enqueue._safe_resolve` /
+:func:`~scitex_cards._reminder.enqueue._safe_enqueue`) and the SAME record
 shape, so an agent's existing drain picks nudges up with no change on its
 side. The turn-url push survives ONLY as an explicitly OPT-IN, strictly
 SECONDARY echo (:data:`ENV_NUDGE_PUSH`) for a host-reachable receiver; it
@@ -85,7 +85,7 @@ import logging
 import os
 from pathlib import Path
 
-from scitex_cards._reminder_enqueue import _iso, _safe_enqueue, _safe_resolve
+from scitex_cards._reminder.enqueue import _iso, _safe_enqueue, _safe_resolve
 from .active import (
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -117,7 +117,7 @@ ENV_NUDGE_PUSH = "SCITEX_CARDS_NUDGE_PUSH"
 NUDGE_SIDECAR_NAME = "nudges.yaml"
 
 #: How long an UNCHANGED nudge stays suppressed before it is re-sent anyway.
-#: Mirrors :data:`scitex_cards._reminder_enqueue.ENV_DIGEST_FLOOR_HOURS`: without
+#: Mirrors :data:`scitex_cards._reminder.enqueue.ENV_DIGEST_FLOOR_HOURS`: without
 #: a floor, deliver-on-change would go silent forever on a frozen backlog.
 ENV_NUDGE_FLOOR_HOURS = "SCITEX_CARDS_NUDGE_FLOOR_HOURS"
 DEFAULT_NUDGE_FLOOR_HOURS = 24.0

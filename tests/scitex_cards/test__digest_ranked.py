@@ -13,7 +13,7 @@ cards and demotes the total to a footnote.
 
 from __future__ import annotations
 
-from scitex_cards._reminder_bodies import DIGEST_ACT_ON, _digest_body, _rank_key
+from scitex_cards._reminder.bodies import DIGEST_ACT_ON, _digest_body, _rank_key
 from scitex_cards._stale.active import StaleCard
 
 

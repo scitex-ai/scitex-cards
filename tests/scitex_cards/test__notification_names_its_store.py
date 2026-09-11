@@ -39,7 +39,7 @@ import datetime as dt
 import socket
 from importlib import metadata
 
-from scitex_cards._reminder_enqueue import _safe_enqueue
+from scitex_cards._reminder.enqueue import _safe_enqueue
 
 NOW = dt.datetime(2026, 8, 20, 17, 0, 0, tzinfo=dt.timezone.utc)
 

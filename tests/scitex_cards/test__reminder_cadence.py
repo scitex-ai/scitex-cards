@@ -20,7 +20,7 @@ interrupts you about decided work is a channel you learn to ignore.
 """
 
 from scitex_cards._config import DEFAULT_INTERVAL_MINUTES
-from scitex_cards._reminder_cadence import (
+from scitex_cards._reminder.cadence import (
     DEFAULT_BACKLOG_INTERVAL_MINUTES,
     backlog_interval_minutes,
     resolve_owner_interval,
