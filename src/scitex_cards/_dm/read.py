@@ -164,10 +164,10 @@ def unread_for_conn(
 
 
 def _open(db, store):
-    from .._db import open_db
+    from .._db import open_read_db
     from .ids import resolve_dm_db
 
-    return open_db(resolve_dm_db(db, store=store))
+    return open_read_db(resolve_dm_db(db, store=store))
 
 
 def messages_in(

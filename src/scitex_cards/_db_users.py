@@ -247,10 +247,10 @@ def load_users_rows(store: str | Path | None = None) -> list[dict]:
     This is the form the WRITE path uses, deliberately — see
     :func:`load_users_rows_cached`.
     """
-    from ._db import open_db
+    from ._db import open_read_db
     from ._db_export import _record
 
-    conn = open_db(_db_target(store))
+    conn = open_read_db(_db_target(store))
     try:
         rows = conn.execute(
             "SELECT * FROM users ORDER BY created_at, id"
