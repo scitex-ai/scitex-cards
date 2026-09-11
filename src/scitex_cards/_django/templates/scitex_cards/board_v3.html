@@ -2822,8 +2822,10 @@
         ["creator", escapeHtml(creator)],
         ["assignee", escapeHtml(assignee)],
         ["collaborators", fmtList(t.collaborators)],
-        ["subscribers", fmtList(t.subscribers)],
-        ["last_activity", t.last_activity || "—"], ["created_at", t.created_at || "—"],
+        ["subscribers", fmtList(STX.cardHelpers.subscriberUnion(
+          t.subscribers, creator, assignee))],
+        ["last_activity", STX.dateInfo.fmtLocalTime(t.last_activity)],
+        ["created_at", STX.dateInfo.fmtLocalTime(t.created_at)],
         ["goal", t.goal || "—"],
         ["pr_url", t.pr_url ? `<a href="${escapeHtml(t.pr_url)}" target="_blank">${escapeHtml(t.pr_url)}</a>` : "—"],
         ["issue_url", t.issue_url ? `<a href="${escapeHtml(t.issue_url)}" target="_blank">${escapeHtml(t.issue_url)}</a>` : "—"],

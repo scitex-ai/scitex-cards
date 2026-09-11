@@ -106,8 +106,39 @@
     return { date: pick, daysFromNow: pdays, all: dates, source: "title" };
   }
 
+
+  /* fmtLocalTime(ts) — a stored UTC ISO stamp, rendered in the VIEWER's zone.
+   *
+   * The board stores and ships UTC. The detail panel used to print that
+   * string raw, so an operator in JST read every timestamp NINE HOURS in the
+   * past — the complaint that produced PR #330 (2026-07-18, the operator's
+   * own patch, stranded unmergeable against the pre-rename tree until it was
+   * re-implemented here).
+   *
+   * TWO BEHAVIOURS KEPT VERBATIM FROM HIS PATCH, both deliberate:
+   *   - `hourCycle: "h23"`, NOT `hour12: false`. The latter renders midnight
+   *     as "24:59" in some engines; h23 is the one that says 00:59.
+   *   - an UNPARSEABLE value is returned AS GIVEN, never "Invalid Date". A
+   *     raw stamp a reader can copy beats a string that says only that the
+   *     formatter gave up.
+   */
+  function fmtLocalTime(ts) {
+    if (!ts) return "—";
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return String(ts);
+    try {
+      return d.toLocaleString(undefined, {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      });
+    } catch (e) {
+      return String(ts);
+    }
+  }
+
   var _api = {
     dateInfo: dateInfo,
+    fmtLocalTime: fmtLocalTime,
     _parseAllDates: _parseAllDates,
     _extractRepeaterSuffix: _extractRepeaterSuffix,
     _firstRecurringDeadline: _firstRecurringDeadline,

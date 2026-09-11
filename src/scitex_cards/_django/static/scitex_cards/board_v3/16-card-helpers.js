@@ -55,8 +55,43 @@
     return o || null;
   }
 
+
+  /* subscriberUnion(t) — who is actually subscribed to a card.
+   *
+   * The stored `subscribers` list is EXPLICIT subscriptions only. The
+   * operator's rule (2026-07-06) is that a card's CREATOR and its ASSIGNEE
+   * are subscribers whether or not anyone wrote them into that list, so the
+   * detail panel was under-reporting: it rendered the explicit list while the
+   * creator and assignee sat computed two lines above it, unused.
+   *
+   * Order is explicit-first, then creator, then assignee, so the stored list
+   * still reads in its own order and the implied members are visibly appended
+   * rather than shuffled in. Duplicates collapse; "—" and blanks are not
+   * people and never appear.
+   *
+   * Re-implemented from the operator's stranded PR #330, whose own call sites
+   * no longer exist. Pure — the caller resolves creator/assignee, because the
+   * fallback chain for those is the template's business, not this module's.
+   */
+  function subscriberUnion(explicit, creator, assignee) {
+    var out = [];
+    var seen = Object.create(null);
+    var push = function (who) {
+      if (typeof who !== "string") return;
+      var name = who.trim();
+      if (!name || name === "—" || seen[name]) return;
+      seen[name] = true;
+      out.push(name);
+    };
+    (Array.isArray(explicit) ? explicit : []).forEach(push);
+    push(creator);
+    push(assignee);
+    return out;
+  }
+
   var _api = {
     escapeHtml: escapeHtml,
+    subscriberUnion: subscriberUnion,
     cardOwner: cardOwner,
   };
   if (typeof globalThis !== "undefined") {
