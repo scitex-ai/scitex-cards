@@ -31,6 +31,7 @@ import sys
 from pathlib import Path
 
 from .._inbox import poll_inbox
+from .._inbox_confirm import recipient_keys
 from ._channel import DeliveryChannel, DeliveryResult, Status
 from ._ledger import MAX_ATTEMPTS, Ledger
 from ._recipients import Recipient, load_recipients, should_deliver_now
@@ -198,13 +199,35 @@ def deliver_pending(
 
     for recipient in recipients:
         # READ-ONLY: full history, never advance the user's seen cursor.
+        #
+        # BOTH KEYS, and this reader was the last one that did not. A producer
+        # enqueues under whatever `_notify.resolve_recipients` returned — the
+        # stable `u_*` id for a registered agent, the raw name otherwise — so
+        # a `recipients.json` row spelled with the raw name reads the wrong
+        # drawer whenever that agent IS registered, and finds nothing. The
+        # messages are in the store, readable, and the reader looks elsewhere:
+        # the exact silent-miss shape this whole rail exists to catch, which
+        # `_inbox_confirm.recipient_keys` and `_mcp_channel.recipient_keys`
+        # were both written to stop. `deliver_pending` never adopted it.
         try:
-            notes = poll_inbox(
-                recipient.user,
-                unseen_only=False,
-                mark_seen=False,
-                store=store,
-            )
+            notes = []
+            _seen_ids: set[str] = set()
+            for _key in recipient_keys(recipient.user, store):
+                for _note in poll_inbox(
+                    _key,
+                    unseen_only=False,
+                    mark_seen=False,
+                    store=store,
+                ):
+                    # De-duplicated by id because the two keys can resolve to
+                    # the same inbox; delivering one notification twice would
+                    # be a worse defect than the one being fixed.
+                    _nid = _note.get("id")
+                    if _nid and _nid in _seen_ids:
+                        continue
+                    if _nid:
+                        _seen_ids.add(_nid)
+                    notes.append(_note)
         except Exception as exc:  # noqa: BLE001 — one bad recipient ≠ all.
             _warn(
                 f"failed to read inbox for {recipient.user!r}: "
