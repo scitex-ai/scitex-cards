@@ -279,8 +279,8 @@ from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._db_schema_sql import SCHEMA_TABLES
 
 
-def connect(path: str | Path) -> "StoreConnection":
-    """Open a writable connection to the store named by ``target``.
+def connect(path: str | Path, *, read_only: bool = False) -> "StoreConnection":
+    """Open a connection to the store named by ``target``.
 
     Does NOT create the schema — call :func:`init_schema` (or the combined
     :func:`open_db`) for that. Rows are name-addressable, because the store
@@ -313,7 +313,7 @@ def connect(path: str | Path) -> "StoreConnection":
     from ._backend_connect import connect as _connect_backend  # noqa: PLC0415
     from ._min_client_version import enforce_min_client_version  # noqa: PLC0415
 
-    conn = _connect_backend(str(path), read_only=False, rows_by_name=True)
+    conn = _connect_backend(str(path), read_only=read_only, rows_by_name=True)
     try:
         enforce_min_client_version(conn)
     except Exception:
@@ -346,6 +346,18 @@ def open_db(explicit: str | Path | None = None) -> "StoreConnection":
     from ._store_target import resolve_store_target  # noqa: PLC0415
 
     return _open_at(resolve_store_target(explicit))
+
+
+def open_read_db(explicit: str | Path | None = None) -> "StoreConnection":
+    """Resolve and connect for SELECTs without running schema DDL.
+
+    Replicas and SELECT-only roles are valid read targets.  Schema creation and
+    migration belong to :func:`open_db` on the primary/deployment path; making
+    a GET request run ``init_schema`` turns a healthy replica into an HTTP 500.
+    """
+    from ._store_target import resolve_store_target  # noqa: PLC0415
+
+    return connect(resolve_store_target(explicit), read_only=True)
 
 
 def _open_at(path: str | Path) -> "StoreConnection":
@@ -385,6 +397,7 @@ __all__ = [
     "connect",
     "init_schema",
     "open_db",
+    "open_read_db",
     "resolve_db_path",
     "table_columns",
     "verify",

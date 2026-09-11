@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.parse import urlencode
+import socket
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import pytest
 from django.test import RequestFactory
@@ -77,6 +78,39 @@ def _get(url):
 
 def _agents_of(response) -> list:
     return json.loads(response.content)["agents"]
+
+
+def _read_only_session_dsn(dsn: str) -> str:
+    """Keep the fixture's isolated search_path and make every transaction RO."""
+    parts = urlsplit(dsn)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    for index in range(len(query) - 1, -1, -1):
+        if query[index][0] == "options":
+            query[index] = (
+                "options",
+                query[index][1] + " -cdefault_transaction_read_only=on",
+            )
+            break
+    else:
+        query.append(("options", "-cdefault_transaction_read_only=on"))
+    return urlunsplit(
+        (*parts[:3], urlencode(query, quote_via=quote), parts.fragment)
+    )
+
+
+@pytest.fixture()
+def unreachable_dm_store():
+    """A real TCP endpoint that is bound but accepts no PostgreSQL connection."""
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    port = blocker.getsockname()[1]
+    try:
+        yield (
+            f"postgresql://scitex_cards@127.0.0.1:{port}/scitex_cards"
+            "?connect_timeout=1"
+        )
+    finally:
+        blocker.close()
 
 
 def _threads_with_one_inbound(store):
@@ -184,6 +218,66 @@ def test_threads_view_rejects_post(store):
     response = dm_threads_view(request)
     # Assert
     assert response.status_code == 405
+
+
+def test_threads_get_succeeds_through_a_read_only_postgres_session(store):
+    """A GET must issue SELECTs only; schema DDL belongs on the primary."""
+    # Arrange
+    append_message("agent-x", "operator", "ping", store=store)
+    read_only_store = _read_only_session_dsn(store)
+    # Act
+    response = dm_threads_view(_get(f"/dm/threads?{_q(read_only_store)}"))
+    # Assert
+    assert response.status_code == 200
+
+
+def test_the_read_only_postgres_control_rejects_ddl(store):
+    """Positive control: the session above really refuses CREATE TABLE."""
+    import psycopg
+
+    from scitex_cards._backend_connect import connect
+
+    # Arrange
+    conn = connect(_read_only_session_dsn(store), rows_by_name=True)
+    # Act
+    statement = "CREATE TABLE read_path_must_not_create_this(id integer)"
+    # Assert
+    with conn, pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+        conn.execute(statement)
+
+
+def test_threads_store_failure_uses_actionable_status_envelope(unreachable_dm_store):
+    """A database refusal is JSON status, never Django's traceback page."""
+    # Arrange
+    request = _get(f"/dm/threads?{_q(unreachable_dm_store)}")
+    # Act
+    response = dm_threads_view(request)
+    payload = json.loads(response.content)
+    # Assert
+    assert payload == {
+        "error": "The direct-message store is temporarily unavailable.",
+        "reason": "store_unavailable",
+        "status": {
+            "kind": "http",
+            "code": 503,
+            "message": "The direct-message store is temporarily unavailable.",
+        },
+        "check": {
+            "name": "dm_store_read",
+            "ok": False,
+            "detail": "The direct-message store is temporarily unavailable.",
+            "hint": (
+                "Direct-message store read failed; run `scitex-cards "
+                "validate-health --json` and retry `/dm/threads` after the "
+                "store check passes."
+            ),
+            "cause": {
+                "kind": "http",
+                "code": 503,
+                "message": "The direct-message store is temporarily unavailable.",
+            },
+        },
+    }
 
 
 # === GET /dm/thread/<peer> =================================================
@@ -540,6 +634,44 @@ def test_a_send_through_a_read_only_credential_names_the_reason(read_only_dm_sto
     response = dm_thread_view(request, "agent-x")
     # Assert
     assert json.loads(response.content)["reason"] == STORE_READ_ONLY_REASON
+
+
+def test_a_read_only_send_has_an_actionable_status_check(read_only_dm_store):
+    # Arrange
+    request = RequestFactory().post(
+        "/dm/thread/agent-x",
+        data=json.dumps({"body": "sent from a read-only mount"}),
+        content_type="application/json",
+    )
+    setattr(request, STORE_REQUEST_ATTR, read_only_dm_store)
+    # Act
+    response = dm_thread_view(request, "agent-x")
+    payload = json.loads(response.content)
+    # Assert
+    status = {
+        "kind": "http",
+        "code": 403,
+        "message": (
+            "This board's store credential is read-only; direct messages "
+            "cannot be sent from it."
+        ),
+    }
+    assert payload == {
+        "error": status["message"],
+        "reason": "store_read_only",
+        "status": status,
+        "check": {
+            "name": "dm_store_write",
+            "ok": False,
+            "detail": status["message"],
+            "hint": (
+                "Configure a direct-message write credential, run `scitex-cards "
+                "validate-health --json`, and retry the send after the store "
+                "check passes."
+            ),
+            "cause": status,
+        },
+    }
 
 
 def test_a_label_with_an_ambient_store_reads_the_fleet_threads(store, tmp_path):
