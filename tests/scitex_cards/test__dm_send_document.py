@@ -33,7 +33,7 @@ import json
 import anyio
 import pytest
 
-from scitex_cards import _threads
+from scitex_cards import dm_list
 from scitex_cards._mcp_skills import dm_send_document
 
 
@@ -91,7 +91,7 @@ def uncaptioned(agent_id, source_pdf, store):
 
 def test_the_document_reaches_the_operators_thread(sent, agent_id, store):
     # Arrange
-    thread = _threads.get_thread(agent_id, "operator", store=store)
+    thread = dm_list(peer="operator", sender=agent_id, store=store)["messages"]
     # Act
     count = len(thread)
     # Assert
@@ -182,7 +182,7 @@ def test_a_missing_file_sends_no_message(agent_id, store, tmp_path):
     absent = tmp_path / "nope.pdf"
     _send(to="operator", file_path=str(absent), tasks_path=store)
     # Act
-    thread = _threads.get_thread(agent_id, "operator", store=store)
+    thread = dm_list(peer="operator", sender=agent_id, store=store)["messages"]
     # Assert
     assert thread == []
 

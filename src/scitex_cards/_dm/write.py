@@ -95,6 +95,7 @@ def append(
     msg_id: str | None = None,
     ts: str | None = None,
     record: dict | None = None,
+    client_request_id: str | None = None,
 ) -> dict:
     """Append one message to ``thread_id``. Returns the stored row.
 
@@ -130,7 +131,7 @@ def append(
         ).fetchone():
             raise KeyError(f"unknown group thread {thread_id!r}: create it first")
         seq = next_seq(conn, thread_id)
-        insert_message(
+        inserted = insert_message(
             conn,
             message_id=message_id,
             thread_id=thread_id,
@@ -140,7 +141,22 @@ def append(
             seq=seq,
             host=host,
             record=record if record is not None else {},
+            client_request_id=client_request_id,
         )
+        if not inserted and client_request_id is not None:
+            existing = conn.execute(
+                "SELECT * FROM dm_messages WHERE sender = ? "
+                "AND client_request_id = ?",
+                (sender, client_request_id),
+            ).fetchone()
+            if existing is None:
+                raise RuntimeError("idempotent DM conflict had no existing row")
+            existing = dict(existing)
+            conn.commit()
+            return {
+                **existing,
+                "idempotent_replay": True,
+            }
         conn.commit()
     except Exception:
         conn.rollback()
@@ -155,6 +171,8 @@ def append(
         "ts": stamp,
         "seq": seq,
         "origin_host": host,
+        "client_request_id": client_request_id,
+        "idempotent_replay": False,
     }
 
 
@@ -168,6 +186,7 @@ def append_pair(
     msg_id: str | None = None,
     ts: str | None = None,
     record: dict | None = None,
+    client_request_id: str | None = None,
 ) -> dict:
     """Append a two-peer DM, addressed the legacy way. Returns the stored row."""
     return append(
@@ -179,6 +198,7 @@ def append_pair(
         msg_id=msg_id,
         ts=ts,
         record=record,
+        client_request_id=client_request_id,
     )
 
 

@@ -380,12 +380,27 @@ class LocalBackend:
 
     # -- DMs (composition: thread key + ack + read) --------------------- #
 
-    def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
+    def dm_send(
+        self,
+        sender: str,
+        to: str,
+        body: str,
+        store: Any = None,
+        client_request_id: str | None = None,
+    ) -> dict:
         # CURRENCY VISIBILITY (module docstring): the confirmed entry point
         # from the incident. Non-raising and warn-once by contract, so the DM
         # still goes out even when the currency check itself is unhappy.
         self._warn_currency()
-        return _threads.append_message(sender, to, body, store=store)
+        from ._dm_exchange import new_client_request_id, persist_dm
+
+        return persist_dm(
+            sender,
+            to,
+            body,
+            store=store,
+            client_request_id=client_request_id or new_client_request_id(),
+        )
 
     def dm_list(
         self,

@@ -253,6 +253,7 @@ def enqueue(
     ts: str | None = None,
     supersede: bool = False,
     msg_id: str | None = None,
+    exchange_id: str | None = None,
     store: str | Path | None = None,
 ) -> "dict | None":
     """Append a notification record to ``recipient_id``'s inbox (STANDALONE).
@@ -328,6 +329,7 @@ def enqueue(
             ts=ts,
             supersede=supersede,
             msg_id=msg_id,
+            exchange_id=exchange_id,
             store=store,
         )
     if not recipient_id:
@@ -371,6 +373,7 @@ def enqueue(
             "ts": timestamp,
             "seen": False,
             "msg_id": msg_id,
+            "exchange_id": exchange_id,
         }
         records.append(record)
         _save_inboxes_unlocked(inboxes, path)

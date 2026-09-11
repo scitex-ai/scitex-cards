@@ -26,7 +26,7 @@ loud path would be worth exactly as much as the silent one it replaced.
 
 import logging
 
-from scitex_cards._db import SCHEMA_VERSION, open_db
+from scitex_cards._db import SCHEMA_VERSION, connect, init_schema, open_db
 
 
 def _wind_back_to_the_previous_rung(conn, value: int) -> None:
@@ -42,11 +42,11 @@ def _wind_back_to_the_previous_rung(conn, value: int) -> None:
     file failed: two red tests that looked like a missing log line and were
     actually a test that never reached the code.
 
-    Dropping a v13 column as well makes the shape genuinely behind, which is
-    the real state a v12 client leaves — and the migration is additive and
-    idempotent, so re-adding it is exactly what the ladder is for.
+    Dropping the current rung's notification exchange column makes the shape
+    genuinely one rung behind.  The migration is additive and idempotent, so
+    re-adding it is exactly what the ladder is for.
     """
-    conn.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS reopened_at")
+    conn.execute("ALTER TABLE notifications DROP COLUMN IF EXISTS exchange_id")
     conn.execute(
         "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
         (str(value),),
@@ -65,7 +65,8 @@ def test_a_genuine_upgrade_is_announced(new_store, caplog):
         conn.close()
     # Act
     with caplog.at_level(logging.WARNING, logger="scitex_cards._db_init_schema"):
-        again = open_db(store)
+        again = connect(store)
+        init_schema(again, allow_migration=True)
         again.close()
     # Assert
     assert "SCHEMA MIGRATED" in caplog.text
@@ -82,7 +83,8 @@ def test_the_announcement_names_both_rungs(new_store, caplog):
         conn.close()
     # Act
     with caplog.at_level(logging.WARNING, logger="scitex_cards._db_init_schema"):
-        again = open_db(store)
+        again = connect(store)
+        init_schema(again, allow_migration=True)
         again.close()
     # Assert
     assert f"rung {SCHEMA_VERSION - 1} to rung {SCHEMA_VERSION}" in caplog.text

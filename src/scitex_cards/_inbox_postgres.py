@@ -74,6 +74,7 @@ _SHAPE: Final = POSTGRES_SHAPE
 _TABLE: Final[str] = _SHAPE.table
 _RECIPIENT: Final[str] = _SHAPE.recipient
 _ORDER: Final[str] = _SHAPE.order()
+NOTIFICATION_CHANNEL: Final[str] = "scitex_cards_notifications"
 
 
 class InboxUnavailableError(RuntimeError):
@@ -161,6 +162,7 @@ _SELECT_COLUMNS: Final[tuple[str, ...]] = (
     "ts",
     "seen",
     "msg_id",
+    "exchange_id",
 )
 _SELECT_LIST: Final[str] = ", ".join(_SELECT_COLUMNS)
 
@@ -175,6 +177,7 @@ def enqueue(
     ts: "str | None" = None,
     supersede: bool = False,
     msg_id: "str | None" = None,
+    exchange_id: "str | None" = None,
     store: "str | Path | None" = None,
 ) -> "dict | None":
     """Postgres twin of :func:`scitex_cards._inbox.enqueue` — same contract.
@@ -237,6 +240,7 @@ def enqueue(
                 ts=timestamp,
                 seen=False,
                 msg_id=msg_id,
+                exchange_id=exchange_id,
             )
             # `record_json` IS NOT OPTIONAL, and omitting it is a fleet outage.
             #
@@ -274,8 +278,33 @@ def enqueue(
                 "ON CONFLICT (id) DO NOTHING",
                 values,
             )
+            # Transactional doorbell, never the data path. PostgreSQL delivers
+            # it only if this INSERT commits; a disconnected listener merely
+            # falls back to polling the durable row.
+            cur.execute(
+                "SELECT pg_notify(%s, %s)",
+                (NOTIFICATION_CHANNEL, recipient_id),
+            )
         conn.commit()
     return dict(record)
+
+
+def notification_for_exchange(
+    exchange_id: str, *, store: "str | Path | None" = None
+) -> "dict | None":
+    """Return the durable notification for an idempotent DM replay."""
+    import json
+
+    with _connect(store) as conn:
+        row = conn.execute(
+            "SELECT record_json FROM notifications WHERE exchange_id = %s",
+            (exchange_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    raw = row[0] if not isinstance(row, dict) else row["record_json"]
+    record = json.loads(raw)
+    return record if isinstance(record, dict) else None
 
 
 def poll_inbox(

@@ -90,12 +90,16 @@ CREATE TABLE IF NOT EXISTS dm_messages (
     origin_host  TEXT NOT NULL,
     deleted_at   TEXT,
     deleted_by   TEXT,
+    client_request_id TEXT,
     record_json  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dm_messages_thread
     ON dm_messages(thread_id, seq, id);
 CREATE INDEX IF NOT EXISTS idx_dm_messages_sender
     ON dm_messages(sender, ts);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_client_request
+    ON dm_messages(sender, client_request_id)
+    WHERE client_request_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dm_receipts (
     message_id   TEXT NOT NULL REFERENCES dm_messages(id),
@@ -138,6 +142,7 @@ WHEN OLD.thread_id   IS NOT NEW.thread_id
   OR OLD.ts          IS NOT NEW.ts
   OR OLD.seq         IS NOT NEW.seq
   OR OLD.origin_host IS NOT NEW.origin_host
+  OR OLD.client_request_id IS NOT NEW.client_request_id
   OR OLD.record_json IS NOT NEW.record_json
 BEGIN
     SELECT RAISE(ABORT,

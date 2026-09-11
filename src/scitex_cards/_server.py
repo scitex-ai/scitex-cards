@@ -253,6 +253,7 @@ class RpcHandler(BaseHTTPRequestHandler):
         store_kwarg = "store" if verb in _STORE_KWARG_IS_STORE else "tasks_path"
         kwargs[store_kwarg] = self.server.store
 
+        from scitex_cards._dm_exchange import DmExchangeError
         from scitex_cards._store import TaskNotFoundError
 
         try:
@@ -262,21 +263,69 @@ class RpcHandler(BaseHTTPRequestHandler):
 
         try:
             result = getattr(self.server.backend, verb)(**kwargs)
+        except DmExchangeError as exc:
+            code = int(exc.status.code)
+            self.server.audit(agent, verb, code)
+            payload = {
+                "error": exc.status.message,
+                "type": type(exc).__name__,
+                "exchange_id": exc.exchange_id,
+                "status": exc.status.to_dict(),
+            }
+            if exc.message_id is not None:
+                payload["message_id"] = exc.message_id
+            self._send_json(code, payload)
+            return
         except TaskNotFoundError as exc:
             self.server.audit(agent, verb, 404)
             self._send_json(404, {"error": str(exc), "type": "TaskNotFoundError"})
             return
         except (TaskValidationError, ValueError, TypeError) as exc:
+            if verb == "dm_send":
+                from scitex_cards._dm_exchange import failure_status
+
+                status = failure_status(
+                    exc, None, persistence_known_absent=True
+                )
+                code = int(status.code)
+                self.server.audit(agent, verb, code)
+                self._send_json(
+                    code,
+                    {
+                        "error": status.message,
+                        "type": "DmExchangeError",
+                        "exchange_id": None,
+                        "status": status.to_dict(),
+                    },
+                )
+                return
             self.server.audit(agent, verb, 400)
             self._send_json(400, {"error": str(exc), "type": type(exc).__name__})
             return
         except Exception as exc:  # noqa: BLE001 — no tracebacks over the wire
+            if verb == "dm_send":
+                from scitex_cards._dm_exchange import failure_status
+
+                status = failure_status(exc, None)
+                code = int(status.code)
+                self.server.audit(agent, verb, code)
+                self._send_json(
+                    code,
+                    {
+                        "error": status.message,
+                        "type": "DmExchangeError",
+                        "exchange_id": None,
+                        "status": status.to_dict(),
+                    },
+                )
+                return
             self.server.audit(agent, verb, 500)
             self._send_json(500, {"error": str(exc), "type": type(exc).__name__})
             return
 
-        self.server.audit(agent, verb, 200)
-        self._send_json(200, result)
+        response_code = 202 if verb == "dm_send" else 200
+        self.server.audit(agent, verb, response_code)
+        self._send_json(response_code, result)
 
 
 def make_server(

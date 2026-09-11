@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI noun group ``scitex-cards dm`` — the DM migration's operator surface.
+"""CLI noun group ``scitex-cards dm`` — direct-message store verbs.
 
+  * ``dm send``     — persist one direct message through the public API.
   * ``dm backfill`` — copy ``threads.json`` into the ``dm_*`` tables.
   * ``dm verify``   — diff the sidecar against the store, by message id.
   * ``dm export``   — dump the DM tables in the shape a peer host can merge.
@@ -28,6 +29,7 @@ import json
 
 import click
 
+from ._compat import spec_command_kwargs
 from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 
@@ -40,7 +42,9 @@ def register(main: click.Group) -> None:
     "dm",
     help=(
         "Direct-message store verbs.\n\n"
-        "DMs live in cards.db (schema v5). `dm backfill` copies the legacy "
+        "DMs live in the canonical PostgreSQL store. `dm send` persists a "
+        "message through the public dm_send API; persistence never claims "
+        "live delivery or acknowledgement. `dm backfill` copies the legacy "
         "threads.json sidecar into the store (dry-run by default), "
         "`dm verify` checks the two agree, and `dm export`/`dm merge` move "
         "DM rows between hosts as an append-only union."
@@ -48,6 +52,242 @@ def register(main: click.Group) -> None:
 )
 def dm_group() -> None:
     """DM store verbs."""
+
+
+@dm_group.command(
+    "send",
+    **spec_command_kwargs(
+        summary="Persist a direct message and open its delivery exchange.",
+        description=(
+            "Calls the public scitex_cards.dm_send API with no fallback store. "
+            "HTTP 202 means accepted and persisted; live visibility and "
+            "recipient acknowledgement remain a later status.",
+        ),
+        examples=(
+            (
+                '{prog} dm send agent:worker "Please review card-123"',
+                "Persist a DM using the environment sender identity.",
+            ),
+        ),
+    ),
+)
+@click.argument("recipient")
+@click.argument("message")
+@click.option(
+    "--sender",
+    default=None,
+    help=(
+        "Sender identity (default: SCITEX_CARDS_AGENT_ID; unresolved identity "
+        "fails loud)."
+    ),
+)
+@click.option(
+    "--client-request-id",
+    default=None,
+    help=(
+        "Caller retry key. Reuse it after a timeout to receive the original "
+        "message, notification, and exchange ids."
+    ),
+)
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit one structured JSON result."
+)
+@mutating_options
+def send_cmd(
+    recipient: str,
+    message: str,
+    sender: str | None,
+    client_request_id: str | None,
+    as_json: bool,
+    dry_run: bool,
+    assume_yes: bool,
+) -> None:
+    """Persist MESSAGE for RECIPIENT in the canonical DM store.
+
+    This calls the public ``scitex_cards.dm_send`` API and has no fallback
+    store. Success means the returned message id is durable in PostgreSQL; it
+    does not mean a live session received or acknowledged the message.
+
+    \b
+    Examples:
+      $ scitex-cards dm send agent:worker "Please review card-123"
+      $ scitex-cards dm send operator "Done" --sender agent:worker --json
+    """
+    from .. import _dm_exchange
+
+    if client_request_id is None:
+        client_request_id = _dm_exchange.new_client_request_id()
+        click.echo(f"client_request_id={client_request_id}", err=True)
+
+    if dry_run:
+        status = _dm_exchange.StatusCode(
+            kind="http",
+            code=200,
+            message=(
+                "OBSERVED: dry-run completed; no DM or exchange was written. "
+                "NEXT: remove --dry-run to persist the message."
+            ),
+        )
+        _emit_status(
+            {
+                "dry_run": True,
+                "client_request_id": client_request_id,
+                "status": status.to_dict(),
+            },
+            as_json,
+        )
+        return
+    confirm_or_abort(f"Persist a DM to {recipient!r}?", assume_yes=assume_yes)
+    try:
+        import scitex_cards
+
+        record = scitex_cards.dm_send(
+            recipient,
+            message,
+            sender=sender,
+            client_request_id=client_request_id,
+        )
+    except _dm_exchange.DmExchangeError as exc:
+        _emit_failure(
+            exc.exchange_id,
+            exc.status,
+            as_json,
+            message_id=exc.message_id,
+            client_request_id=client_request_id,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - ledger open/close failure
+        status = _dm_exchange.failure_status(
+            exc, None, persistence_known_absent=True
+        )
+        _emit_failure(
+            None, status, as_json, client_request_id=client_request_id
+        )
+        return
+    if (
+        not isinstance(record, dict)
+        or not record.get("id")
+        or not record.get("exchange_id")
+        or not record.get("notification_id")
+        or record.get("client_request_id") != client_request_id
+        or not isinstance(record.get("status"), dict)
+    ):
+        status = _dm_exchange.StatusCode(
+            kind="http",
+            code=502,
+            message=(
+                "OBSERVED: the Cards responder returned no canonical exchange "
+                "id/status. NOT ESTABLISHED: whether the DM was persisted. "
+                "NEXT: upgrade the Cards responder, then inspect dm_messages "
+                "before sending again."
+            ),
+        )
+        _emit_failure(
+            None,
+            status,
+            as_json,
+            message_id=record.get("id"),
+            client_request_id=client_request_id,
+        )
+        return
+    payload = {
+        "exchange_id": record["exchange_id"],
+        "message_id": record["id"],
+        "notification_id": record.get("notification_id"),
+        "client_request_id": record["client_request_id"],
+        "status": record["status"],
+    }
+    _emit_status(payload, as_json)
+
+
+def _emit_status(payload: dict, as_json: bool) -> None:
+    """Emit the protocol payload without serialising derived ``ok``/``final``."""
+    if as_json:
+        click.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+    status = payload["status"]
+    prefix = f"{status['kind']}/{status['code']}"
+    if payload.get("exchange_id"):
+        prefix += f" exchange={payload['exchange_id']}"
+    if payload.get("message_id"):
+        prefix += f" message={payload['message_id']}"
+    click.echo(prefix)
+    click.echo(status["message"])
+
+
+def _emit_failure(
+    exchange_id,
+    status,
+    as_json,
+    *,
+    message_id=None,
+    client_request_id=None,
+) -> None:
+    """Emit one native status failure and stop with process status 1."""
+    payload = {"exchange_id": exchange_id, "status": status.to_dict()}
+    if message_id is not None:
+        payload["message_id"] = message_id
+    if client_request_id is not None:
+        payload["client_request_id"] = client_request_id
+    _emit_status(payload, as_json)
+    raise click.exceptions.Exit(1)
+
+
+@dm_group.command(
+    "get-status",
+    **spec_command_kwargs(
+        summary="Read the latest status for a DM delivery exchange.",
+        description=(
+            "HTTP 202 is non-final: it proves acceptance and persistence, "
+            "not live visibility or recipient acknowledgement.",
+        ),
+        examples=(
+            (
+                "{prog} dm get-status xch_20260811T061508Z_host_a1b2c3 --json",
+                "Read one exchange from the shared status ledger.",
+            ),
+        ),
+    ),
+)
+@click.argument("exchange_id")
+@click.option("--sender", default=None, help="Ledger reader identity.")
+@click.option("--json", "as_json", is_flag=True, help="Emit structured JSON.")
+def get_status_cmd(exchange_id: str, sender: str | None, as_json: bool) -> None:
+    """Read the latest recorded status for EXCHANGE_ID.
+
+    A 202 is accepted/persisted and non-final. A later delivery or recipient
+    acknowledgement must update the same exchange separately before this
+    command can report a final status.
+    """
+    from .._dm_exchange import StatusCode, get_exchange
+    from .._messaging import resolve_sender
+
+    try:
+        payload = get_exchange(exchange_id, sender=resolve_sender(sender))
+    except Exception:
+        status = StatusCode(
+            kind="http",
+            code=503,
+            message=(
+                "OBSERVED: the canonical exchange ledger could not be read. "
+                "NEXT: run `scitex-cards health`, then retry this query."
+            ),
+        )
+        _emit_failure(exchange_id, status, as_json)
+        return
+    if payload is None:
+        status = StatusCode(
+            kind="http",
+            code=404,
+            message=(
+                f"OBSERVED: exchange {exchange_id} is absent from the canonical "
+                "ledger. NEXT: copy the exchange_id from the dm send result and "
+                "rerun `scitex-cards dm get-status EXCHANGE_ID --json`."
+            ),
+        )
+        _emit_failure(exchange_id, status, as_json)
+        return
+    _emit_status(payload, as_json)
 
 
 def _default_sidecar(store: str | None) -> str:
@@ -214,6 +454,6 @@ def merge_cmd(payload_path, db_path, store, dry_run, assume_yes) -> None:
     click.echo(json.dumps(report, indent=2, sort_keys=True))
 
 
-__all__ = ["dm_group", "register"]
+__all__ = ["dm_group", "register", "send_cmd"]
 
 # EOF

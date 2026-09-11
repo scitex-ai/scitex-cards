@@ -217,13 +217,25 @@ def insert_message(
     seq: int,
     host: str,
     record: dict,
+    client_request_id: str | None = None,
 ) -> bool:
     """Insert one message row if absent. True iff it was new."""
     cur = conn.execute(
         "INSERT INTO dm_messages"
-        "(id, thread_id, sender, body, ts, seq, origin_host, record_json)"
-        " VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-        (message_id, thread_id, sender, body, ts, seq, host, _dumps(record)),
+        "(id, thread_id, sender, body, ts, seq, origin_host, "
+        "client_request_id, record_json)"
+        " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+        (
+            message_id,
+            thread_id,
+            sender,
+            body,
+            ts,
+            seq,
+            host,
+            client_request_id,
+            _dumps(record),
+        ),
     )
     return cur.rowcount > 0
 
