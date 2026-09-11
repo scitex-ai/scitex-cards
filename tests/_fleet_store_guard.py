@@ -72,7 +72,7 @@ def fleet_store_declined(env: Mapping[str, str]) -> str | None:
     abandoned run leaves a schema behind. Data isolation was never the whole
     exposure.
 
-    A NO-OP IN CI, BY CONSTRUCTION: the postgres-backend workflow sets
+    A NO-OP IN CI, BY CONSTRUCTION: each pytest-matrix leg sets
     ``SCITEX_STORE_DSN`` to its own ``postgres:16`` service and does NOT set
     ``SCITEX_CARDS_DB``, so there is no board to match and this returns
     ``None``. The guard fires exactly where the exposure is.

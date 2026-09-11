@@ -37,9 +37,8 @@ def _card(title="Original"):
 # The store speaks to a server now and its rows are mapping-shaped, so an
 # integer subscript raises `KeyError: 0`. Reading by name is what the
 # package itself does throughout -- and it is the same defect that made
-# every commented card read-only fleet-wide on 2026-08-23, which
-# .github/workflows/postgres-backend-on-ubuntu-latest.yml names in its
-# header. A COUNT needs an explicit alias to have a name at all.
+# every commented card read-only fleet-wide on 2026-08-23. A COUNT needs an
+# explicit alias to have a name at all.
 def _revision_of(conn, task_id="c1"):
     row = conn.execute(
         "SELECT revision FROM tasks WHERE id = ?", (task_id,)

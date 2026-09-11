@@ -325,11 +325,9 @@ def _insert_tasks(
             # path a caller reaches by asking for safety.
             #
             # Same defect that made every commented card read-only fleet-wide
-            # on 2026-08-23, named in the header of
-            # .github/workflows/postgres-backend-on-ubuntu-latest.yml. It
-            # survived the sweep that left warnings about `row[0]` in nine
-            # other modules because no test had ever run this branch against a
-            # server: the harness handed every test a file.
+            # on 2026-08-23. It survived the sweep that left warnings about
+            # `row[0]` in nine other modules because no test had ever run this
+            # branch against a server: the harness handed every test a file.
             found = None if found_row is None else found_row["revision"]
             if found != expected_revision:
                 counts["revision_skipped"] = 1

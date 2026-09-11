@@ -67,10 +67,10 @@ jobs:
       runs_on: '["ubuntu-latest"]'
 
       # THE STORE IS A POSTGRESQL DATABASE, so this leg needs one or it is not
-      # testing this package. The three contexts this input flips are the
-      # REQUIRED ones; `postgres-backend`, which has always had a server, is
-      # not. So until now the gate that blocks a merge could not see the thing
-      # the store conversion changed.
+      # testing this package. These three contexts are the required checks and
+      # each runs the full suite against PostgreSQL. Keep this coverage here:
+      # duplicating it in a standalone workflow makes feedback slower without
+      # adding a distinct test population or protected check.
       #
       # WITHOUT IT THE LEG DOES NOT SKIP — IT REFUSES, WHICH IS WHY THIS IS A
       # FIX AND NOT A NEW FEATURE. tests/conftest.py pins $SCITEX_CARDS_DB to a

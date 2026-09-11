@@ -220,11 +220,11 @@ postgres = [
     # hard dependency (see `dependencies`), so this extra adds nothing.
     #
     # It stays because `scitex-cards[postgres]` is PINNED IN THINGS I DO NOT
-    # CONTROL -- .github/workflows/postgres-backend-on-ubuntu-latest.yml, the
-    # agent-container def files, and whatever else in the fleet copied that
-    # string. Deleting an extra does not fail loudly; pip warns and continues,
-    # so the breakage would be silent and would land on someone else. An empty
-    # alias costs one line and keeps every existing pin resolving.
+    # CONTROL -- historical agent-container def files and whatever else in the
+    # fleet copied that string. Deleting an extra does not fail loudly; pip
+    # warns and continues, so the breakage would be silent and would land on
+    # someone else. An empty alias costs one line and keeps every existing pin
+    # resolving.
     #
     # Do not "clean this up" without first checking who still names it.
     #
