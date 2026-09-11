@@ -1,0 +1,186 @@
+{
+  "_README": [
+    "SYNTHESIZED, NOT A SNAPSHOT. Every entry below exists because someone",
+    "decided that SHAPE matters to _graphSrc. There is no real card text here:",
+    "no agent ids, host names, project names or titles written by people who",
+    "were not writing for publication. scitex-cards' ruling (2026-08-15): a",
+    "test fixture is a permanent, copied, greppable artefact, and 'it is just a",
+    "test fixture' is how data ends up somewhere nobody audits.",
+    "",
+    "WHY SYNTHESIZED BEATS A SCRUBBED REAL SUBSET, and this is the deciding",
+    "reason rather than the privacy one: A REAL SNAPSHOT GOES STALE INVISIBLY.",
+    "It looks authoritative forever, so nobody asks whether it still represents",
+    "the store. This file WEARS ITS ASSUMPTIONS ON ITS FACE — a reader can read",
+    "the list and notice what is MISSING.",
+    "",
+    "THE DISCIPLINE THAT KEEPS IT HONEST, and it is not optional: a synthesized",
+    "fixture can only hold shapes someone THOUGHT OF, and real data eventually",
+    "produces one nobody did. So WHEN A SHAPE-RELATED BUG IS FOUND IN",
+    "PRODUCTION, THE FIX ADDS THAT SHAPE HERE. This then becomes a growing",
+    "record of every shape that has ever mattered, which beats a snapshot of one",
+    "Tuesday.",
+    "",
+    "Volume is deliberately absent. The builders branch on shape; 4,488 rows",
+    "exercise each branch many times and add no coverage past the first. The",
+    "volume only ever demonstrated the mermaid size ceiling, which has its own",
+    "card and its own reproduction."
+  ],
+  "_shapes_covered": {
+    "id-needs-sanitising": "clew-spec-v0.2 — a dot, which _esc rewrites to _. Dots are the ONLY escaped character on the real board (14 of 4,517 ids, all version numbers), measured 2026-08-15.",
+    "id-collision-under-esc": "clew-spec-v0_2 alongside clew-spec-v0.2 — both escape to the same mermaid id, so one node is drawn for two cards. Real, silent, and the reason stats.nodes counts DISTINCT ESCAPED IDS rather than cards (#853/#857).",
+    "title-with-quotes-and-brackets": "_safe strips [ ] and \" to spaces — they terminate a mermaid label.",
+    "title-over-60-chars": "_safe slices at 60.",
+    "depends_on-edge": "the canonical server payload's kind=depends_on.",
+    "blocks-edge": "kind=blocks — same arrow direction, server already orients it.",
+    "parent-edge": "a separate axis, NOT in edges[]; drawn dashed.",
+    "self-parent": "p !== t.id guard — a card parented to itself must not draw a loop.",
+    "parent-outside-the-visible-set": "visibleIds guard — a dangling parent must not draw an edge to nothing.",
+    "edge-touching-an-invisible-card": "same guard on the edges[] axis.",
+    "disconnected-card": "no edge touches it, so it is NOT drawn and only ever counted.",
+    "status-variety": "each node carries its RAW status class st-<status>, no 4-bucket collapse.",
+    "project-prefix": "the label is `project.slice(0,18)<br>...`; a card with no project renders the em-dash.",
+    "project-over-18-chars": "the 18-char slice on the project half of the label.",
+    "task-overrides-title": "the label reads `t.task || t.title` — task wins where both exist.",
+    "status-with-stripped-characters": "the class is `st-` + status with /[^a-z_]/gi removed, so digits and hyphens vanish from the CLASS while the card keeps its status.",
+    "status_colors-present-and-dashed": "classDefs come from the SSOT status_colors projected into the payload, never a second colour table; `dashed` adds a stroke-dasharray.",
+    "status-failed-and-cancelled-are-present-but-disconnected": "they sit on the self-parented and orphan-parent cards, so they are counted and never drawn — which is itself the behaviour under test."
+  },
+  "visible": [
+    {
+      "id": "clew-spec-v0.2",
+      "title": "Spec [draft] with \"quotes\" and brackets",
+      "status": "in_progress"
+    },
+    {
+      "id": "clew-spec-v0_2",
+      "title": "Collides with the dotted id under _esc",
+      "status": "blocked"
+    },
+    {
+      "id": "root-goal",
+      "title": "A standing goal",
+      "status": "goal"
+    },
+    {
+      "id": "child-a",
+      "title": "Child of the goal",
+      "status": "deferred",
+      "parent": "root-goal"
+    },
+    {
+      "id": "child-b",
+      "title": "A title that is comfortably longer than sixty characters so the slice is exercised",
+      "status": "done",
+      "parent": "root-goal"
+    },
+    {
+      "id": "self-parented",
+      "title": "Parented to itself, which draws nothing",
+      "status": "failed",
+      "parent": "self-parented"
+    },
+    {
+      "id": "orphan-parent",
+      "title": "Parent id is not in the visible set",
+      "status": "cancelled",
+      "parent": "not-visible-at-all"
+    },
+    {
+      "id": "dep-source",
+      "title": "Prerequisite",
+      "status": "done"
+    },
+    {
+      "id": "dep-target",
+      "title": "Consumer",
+      "status": "in_progress"
+    },
+    {
+      "id": "blocks-source",
+      "title": "Blocker",
+      "status": "blocked"
+    },
+    {
+      "id": "blocks-target",
+      "title": "Blocked",
+      "status": "deferred"
+    },
+    {
+      "id": "lonely",
+      "title": "No edge touches this one, so it is never drawn",
+      "status": "deferred"
+    },
+    {
+      "id": "owned-card",
+      "title": "Has a project prefix",
+      "status": "in_progress",
+      "project": "scitex-cards"
+    },
+    {
+      "id": "long-project",
+      "title": "Project name is sliced at eighteen",
+      "status": "done",
+      "project": "a-project-name-far-longer-than-eighteen"
+    },
+    {
+      "id": "task-not-title",
+      "title": "This title must NOT appear",
+      "task": "The task field wins",
+      "status": "blocked"
+    },
+    {
+      "id": "odd-status",
+      "title": "Status carries characters the class strips",
+      "status": "in_progress-2"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "source": "dep-source",
+        "target": "dep-target",
+        "kind": "depends_on"
+      },
+      {
+        "source": "blocks-source",
+        "target": "blocks-target",
+        "kind": "blocks"
+      },
+      {
+        "source": "clew-spec-v0.2",
+        "target": "clew-spec-v0_2",
+        "kind": "depends_on"
+      },
+      {
+        "source": "dep-source",
+        "target": "never-visible",
+        "kind": "depends_on"
+      },
+      {
+        "source": "owned-card",
+        "target": "long-project",
+        "kind": "depends_on"
+      },
+      {
+        "source": "task-not-title",
+        "target": "odd-status",
+        "kind": "blocks"
+      }
+    ],
+    "status_colors": {
+      "in_progress": {
+        "fill": "#e8f0ff",
+        "stroke": "#4a7fd4"
+      },
+      "done": {
+        "fill": "#eaf7ea",
+        "stroke": "#4caf50"
+      },
+      "blocked": {
+        "fill": "#fdeaea",
+        "stroke": "#d44a4a",
+        "dashed": true
+      }
+    }
+  }
+}
