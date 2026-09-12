@@ -278,6 +278,8 @@ def append_message(
     store: str | Path | None = None,
     msg_id: str | None = None,
     ts: str | None = None,
+    exchange_id: str | None = None,
+    client_request_id: str | None = None,
 ) -> dict:
     """Append one DM to the DATABASE, mirror it to the sidecar, dispatch it.
 
@@ -293,8 +295,9 @@ def append_message(
     only the sidecar copy would re-open the exact gap this change closes.
 
     Mints the id (unless ``msg_id`` is given), then enqueues a ``dm``
-    notification into the recipient's inbox (fail-soft). Returns a copy of the
-    stored record — unchanged in shape, so no caller has to know any of this.
+    notification into the recipient's inbox. When ``exchange_id`` is present,
+    the notification handoff is strict: no HTTP 202 may be returned without
+    the durable row SAC will consume. Returns a copy of the stored record.
     """
     if not from_ or not to:
         raise ValueError("append_message requires non-empty 'from_' and 'to'")
@@ -310,9 +313,13 @@ def append_message(
         "ts": ts or _utc_now_iso(),
         "read": False,
     }
+    if exchange_id is not None:
+        record["exchange_id"] = exchange_id
+    if client_request_id is not None:
+        record["client_request_id"] = client_request_id
     from ._dm.write import append_pair
 
-    append_pair(
+    stored = append_pair(
         from_,
         to,
         body,
@@ -320,9 +327,33 @@ def append_message(
         msg_id=record["id"],
         ts=record["ts"],
         record=record,
+        client_request_id=client_request_id,
     )
-    _mirror_to_sidecar(record, key, store)
-    _dispatch_to_inbox(record, store)
+    if stored.get("idempotent_replay"):
+        import json
+
+        original = json.loads(stored["record_json"])
+        if original.get("to") != to or original.get("body") != body:
+            raise ValueError(
+                "client_request_id was already used with a different recipient "
+                "or message"
+            )
+        original["idempotent_replay"] = True
+        return original
+    # A responder-issued exchange is the new PostgreSQL-only contract. Do not
+    # create a second file-backed copy whose success could be mistaken for
+    # durability or whose contents could drift from the shared store. Legacy
+    # callers without an exchange retain the staged migration mirror.
+    if exchange_id is None:
+        _mirror_to_sidecar(record, key, store)
+    notification = _dispatch_to_inbox(record, store)
+    # The responder exchange owns these acknowledgement fields.  Keep the
+    # legacy ``append_message`` result byte-for-byte a stored DM record: the
+    # board POST endpoint and existing Python callers publish that shape.
+    if exchange_id is not None:
+        if notification is not None:
+            record["notification_id"] = notification["id"]
+        record["idempotent_replay"] = False
     return dict(record)
 
 

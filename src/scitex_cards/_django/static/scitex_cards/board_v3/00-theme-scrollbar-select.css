@@ -30,7 +30,7 @@ html,
 body,
 body * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border, #2a3140) var(--col-bg, #131820);
+  scrollbar-color: var(--border, #2a3140) var(--col-bg, #21262d);
 }
 
 body ::-webkit-scrollbar,
@@ -80,7 +80,7 @@ body select {
   padding: 4px 8px;
   border: 1px solid var(--border, #2a3140);
   border-radius: 4px;
-  background: var(--col-bg, #131820);
+  background: var(--col-bg, #21262d);
   color: var(--text, #e0e6f0);
   font: inherit;
   font-size: 0.82rem;
@@ -104,6 +104,6 @@ body select:disabled {
 }
 
 body select option {
-  background: var(--card-bg, #1a1f29);
+  background: var(--card-bg, #161b22);
   color: var(--text, #e0e6f0);
 }

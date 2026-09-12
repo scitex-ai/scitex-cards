@@ -26,7 +26,14 @@ from scitex_cards._store import add_task
 @pytest.fixture()
 def store_with_card(tmp_path: Path, env) -> Path:
     store = tmp_path / "tasks.yaml"
-    add_task(store=store, id="card-1", title="x", assignee="agent:test-suite")
+    # NO `store=` HERE. Passing this path never isolated the write: `store=`
+    # resolves to a LOCAL FILE PATH (the lock + sidecars), while the data goes
+    # to whatever `resolve_store()` names — so the card landed in the ambient
+    # store all along and this path only ever looked like isolation.
+    # conftest already pins $SCITEX_CARDS_DB to a throwaway schema, so the
+    # ambient store IS the isolated one; writing to it is what the read below
+    # resolves to as well.
+    add_task(id="card-1", title="x", assignee="agent:test-suite")
     env.set("SCITEX_CARDS_TASKS_YAML_SHARED", str(store))
     return store
 

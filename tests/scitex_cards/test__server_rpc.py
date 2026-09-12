@@ -450,11 +450,24 @@ def _dm_listed(rig):
 
 def test_dm_send_over_http_returns_the_stored_record(rig):
     # Arrange
-    expected = (200, "remote-agent")
+    expected = (202, "remote-agent")
     # Act
     status, record = _dm_sent(rig)
     # Assert — the sender the CLIENT declared is the record's author.
     assert (status, record["from"]) == expected
+
+
+def test_dm_send_over_http_returns_responder_exchange(rig):
+    # Arrange
+    expected_code = 202
+    # Act
+    status, record = _dm_sent(rig)
+    # Assert
+    assert (
+        status,
+        record["exchange_id"].startswith("xch_"),
+        record["status"]["code"],
+    ) == (expected_code, True, expected_code)
 
 
 def test_dm_list_over_http_returns_200(rig):

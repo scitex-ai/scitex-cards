@@ -2,6 +2,85 @@
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-09-12
+
+- Existing database schemas are no longer migrated as a side effect of
+  `open_db()`. The call fails before DDL with an actionable diagnostic; the
+  explicit `scitex-cards init-store --shared` administrative path owns schema
+  upgrades.
+- DM submission accepts a caller-owned `client_request_id`; schema v15 enforces
+  uniqueness per sender and retries return the original message, notification,
+  and responder-issued exchange identifiers.
+
+### One responder-issued exchange follows a DM through visible delivery
+
+`scitex_cards.dm_send` now returns HTTP 202 with one Cards-issued `xch_`
+exchange id after the DM and its recipient notification are durable. The same
+id is stored on the `n_` notification and in the shared `scitex_dev.status`
+ledger; SAC preserves it through terminal-visible completion instead of
+minting a second exchange. The `m_` and `n_` ids remain resource and
+acknowledgement identifiers, respectively. `scitex-cards dm send` exposes this
+contract directly, and `dm get-status` polls its non-final acceptance.
+
+### The suite declines to carve its schemas on the live board's server
+
+Tests create a throwaway PostgreSQL schema each, and ``writable_dsn()``'s first
+route is whatever ``SCITEX_STORE_DSN`` names. Its docstring states the fleet
+store is not among its routes, and that is true of the function and false of
+this deployment: in a sac agent container that variable IS the board, so route
+one succeeded and every local run carved on the production primary. Measured
+2026-09-06: three leaked ``cards_test*`` schemas were sitting there, because
+killing a run skips ``ephemeral_schema``'s ``finally``.
+
+The existing design was not careless about this — the schema-scoped DSN keeps
+``public`` off the search_path, so a test cannot read the fleet's cards. That
+reasoning is sound and covers only the DATA. It says nothing about the
+CATALOGUE, which is what a test store writes: every fresh schema runs the full
+DDL, so a parallel run is a DDL storm beside the operator's own writes.
+
+``tests/_fleet_store_guard.py`` now compares the configured cluster against the
+board by SERVER (host, port, dbname — credentials and search_path dropped, so
+two spellings of one primary still match) and clears the variable when they are
+the same, dropping through to a private throwaway cluster. CI is unaffected by
+construction: postgres-backend sets its own service-container DSN and no board
+variable, so there is nothing to match.
+
+Where no throwaway cluster can be started, PostgreSQL tests now FAIL rather than
+run against the board, and the failure names the guard as the cause and says to
+point ``SCITEX_STORE_DSN`` at a scratch server. Without that the message reads
+as a broken environment, and the reasonable response to a broken environment is
+to delete the guard.
+
+### A notification names the version that produced it, not just the host
+
+The provenance stamp said *where* a notification was computed and nothing about
+*which code* computed it, and that gap cost a peer a wasted bug report.
+
+scitex-hub reported the backlog nudge conflating "untouched" with "deliberately
+scheduled forward" — a real defect, fixed hours earlier the same day. The daemon
+producing their nudge was running a release two versions older than the fix and
+would have kept producing it through any number of merges. Nothing in the
+notification could have said so.
+
+Measured 2026-09-06: `0.50.0` in one container, `0.51.1` in another, `0.51.2` on
+PyPI — all at the same `/opt/venv-sac` path, because that path names a
+per-container install and each agent runs whatever was newest when *its* image
+was built. That is version skew rather than uniform staleness, and skew is worse
+in one specific way: with a uniformly old fleet a single measurement generalises
+correctly, while under skew every measurement generalises wrongly, including a
+reassuring one.
+
+The stamp now carries both halves:
+
+    [computed on scitex-compute-04 · scitex-cards 0.50.0]
+
+Added at the same enqueue choke point as the host, for the reason that code
+already gives about the host: the digest, escalations, backlog nudge and
+blocked-check are composed in four different modules, so a rule each new
+notification type has to remember is a rule the next one forgets. It never
+raises — an unresolvable version reads `unknown-version`, the same discipline
+`unknown-host` already follows, because a label must not break delivery.
+
 ## [0.51.3] - 2026-09-06
 
 ### `claim_sweep`: one host takes each sweep, so one board produces one digest

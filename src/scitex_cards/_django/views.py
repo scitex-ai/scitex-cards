@@ -384,7 +384,13 @@ def _static_graph_page(request) -> str:
 #: board, and adding it here would make the operator's posted comment vanish
 #: until the next refresh. Read-your-own-writes beats latency; the default is
 #: strict and membership here is the deliberate exception.
-STALE_OK_ENDPOINTS = frozenset({"graph", "timeline"})
+#:
+#: ``tasks`` qualifies: it is GET-only (api_dispatch passes it to handle_tasks,
+#: which ignores the method; there is no /tasks write) and the SPA renders the
+#: board from /graph, not /tasks, so nothing writes and then reads it back. A
+#: stale grid is invisible while the multi-MB rebuild wait is not — the same
+#: property its siblings have.
+STALE_OK_ENDPOINTS = frozenset({"graph", "timeline", "tasks"})
 
 
 def _get_board(request, *, allow_stale: bool = False):

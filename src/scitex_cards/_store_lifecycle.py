@@ -25,6 +25,7 @@ from pathlib import Path
 
 from ._comment_ids import stamp_comment_id
 from ._model import _save_doc_unlocked, _store_lock
+from ._store_arg import refuse_ineffective_store
 from ._store_events import _emit_card_event, _emit_unblock_for_dependents
 from ._store_list import _resolved_store
 from ._touch import touch_last_activity
@@ -95,6 +96,7 @@ def complete_task(
 
     if not task_id:
         raise TypeError("complete_task() requires a non-empty task_id")
+    refuse_ineffective_store(store, verb="complete_task")
     resolved = _resolved_store(store)
     result: dict | None = None
     transitioned = False
@@ -199,6 +201,7 @@ def delete_task(  # hook-bypass: line-limit — verb-module split still queued
     from . import _model, _task
     from ._store import _default_agent, _read_write_doc, _task_not_found, _utc_now_iso
 
+    refuse_ineffective_store(store, verb="delete_task")
     tasks_path = _resolved_store(store)
     if not task_id:
         raise ValueError("delete_task: 'task_id' is required")
@@ -304,6 +307,7 @@ def restore_task(
     from . import _model, _task
     from ._store import _read_write_doc, _utc_now_iso
 
+    refuse_ineffective_store(store, verb="restore_task")
     tasks_path = _resolved_store(store)
     if not isinstance(task, dict) or not task.get("id"):
         raise ValueError("restore_task: 'task' must be a dict with 'id'")
@@ -360,6 +364,7 @@ def resolve_task(
     if not task_id:
         raise ValueError("resolve_task: 'task_id' is required")
     who = _default_agent(actor)
+    refuse_ineffective_store(store, verb="resolve_task")
     tasks_path = _resolved_store(store)
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)
@@ -442,6 +447,7 @@ def reopen_task(
     if not task_id:
         raise ValueError("reopen_task: 'task_id' is required")
     who = _default_agent(by)
+    refuse_ineffective_store(store, verb="reopen_task")
     tasks_path = _resolved_store(store)
     with _model._store_lock(tasks_path):
         doc, tasks = _read_write_doc(tasks_path)

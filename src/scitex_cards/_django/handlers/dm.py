@@ -52,6 +52,7 @@ of the board uses, so tests drive a real tmp store.
 from __future__ import annotations
 
 import json
+import logging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -60,14 +61,16 @@ from scitex_cards import (
     _reactions,
     _threads,
 )
-from scitex_cards._dm import read as _dm_read
-from scitex_cards._dm import receipt_state as _dm_receipt_state
-from scitex_cards._dm import write as _dm_write
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
 from scitex_cards._django._request_store import read_store, write_store
+from scitex_cards._dm import read as _dm_read
+from scitex_cards._dm import receipt_state as _dm_receipt_state
+from scitex_cards._dm import write as _dm_write
 from scitex_cards._threads import OPERATOR_NAME
+
+logger = logging.getLogger(__name__)
 
 
 def _store_of(request: HttpRequest):
@@ -116,23 +119,24 @@ def _write_store_of(request: HttpRequest):
 
 
 def _author_of(request: HttpRequest) -> str:
-    """Who is writing — the AUTHENTICATED principal, not a constant.
+    """Who is writing — delegates to the user-scope boundary (``_user_scope``).
 
-    The write path hardcoded :data:`OPERATOR_NAME`, so any caller admitted by
-    any gate posted AS the operator: a human who did not write the message.
-    When an authenticated identity exists we use it.
+    The single "who is this request" answer now lives in
+    :func:`scitex_cards._django._user_scope.current_user` (own-ledger #230/#231:
+    the common-authenticated-identity point, separate from Cards-specific
+    task/board logic). This function keeps its name and signature — existing
+    tests import it — and is now a thin delegation so there is exactly ONE
+    implementation of "resolve the principal from the authenticated request",
+    not one per view.
 
-    :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board,
-    which binds loopback and has no auth layer at all — there the sole caller
-    IS the operator at their own keyboard. It is a default for the
-    single-user case, never an attribution for an anonymous remote caller.
+    :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board
+    (loopback, no auth layer — the sole caller IS the operator); it is a
+    default for the single-user case, never an attribution for an anonymous
+    remote caller.
     """
-    user = getattr(request, "user", None)
-    if user is not None and getattr(user, "is_authenticated", False):
-        name = (getattr(user, "get_username", lambda: "")() or "").strip()
-        if name:
-            return name
-    return OPERATOR_NAME
+    from .._user_scope import current_user
+
+    return current_user(request)
 
 
 def _registry_agents(store) -> list[dict]:
@@ -168,6 +172,49 @@ _NO_DM_STORE_SUMMARY = "No direct-message store is configured for this board."
 STORE_READ_ONLY_STATUS = 403
 STORE_READ_ONLY_REASON = "store_read_only"
 _READ_ONLY_STORE_SUMMARY = "This board's store credential is read-only; direct messages cannot be sent from it."
+_READ_ONLY_STORE_HINT = (
+    "Configure a direct-message write credential, run `scitex-cards "
+    "validate-health --json`, and retry the send after the store check passes."
+)
+
+STORE_UNAVAILABLE_STATUS = 503
+STORE_UNAVAILABLE_REASON = "store_unavailable"
+_STORE_UNAVAILABLE_SUMMARY = "The direct-message store is temporarily unavailable."
+_STORE_UNAVAILABLE_HINT = (
+    "Direct-message store read failed; run `scitex-cards validate-health --json` "
+    "and retry `/dm/threads` after the store check passes."
+)
+
+
+def _http_status(code: int, message: str) -> dict:
+    """Return the canonical scitex-dev StatusCode wire shape."""
+    try:
+        from scitex_dev.status import StatusCode
+    except ModuleNotFoundError:
+        # scitex-dev remains an optional ecosystem peer for the standalone
+        # package.  The wire contract is still exactly its three-field shape.
+        return {"kind": "http", "code": code, "message": message}
+    return StatusCode(kind="http", code=code, message=message).to_dict()
+
+
+def _failed_store_check(name: str, detail: str, hint: str, status: dict) -> dict:
+    """Return the canonical actionable scitex-dev Check wire shape."""
+    try:
+        from scitex_dev.status import Check, StatusCode
+    except ModuleNotFoundError:
+        return {
+            "name": name,
+            "ok": False,
+            "detail": detail,
+            "hint": hint,
+            "cause": status,
+        }
+    return Check.not_ok(
+        name,
+        detail,
+        hint,
+        cause=StatusCode.from_dict(status),
+    ).to_dict()
 
 
 def _typed_store_refusals(view):
@@ -183,17 +230,18 @@ def _typed_store_refusals(view):
     """
     from functools import wraps
 
+    import psycopg
+    from psycopg.errors import InsufficientPrivilege, ReadOnlySqlTransaction
+
     from scitex_cards._store_errors import StoreNotProvisionedError
     from scitex_cards._store_target import StoreTargetNotConfigured
     from scitex_cards._store_url import UnrecognisedStoreTarget
-
-    from psycopg.errors import InsufficientPrivilege
 
     @wraps(view)
     def _wrapped(request: HttpRequest, *args, **kwargs) -> HttpResponse:
         try:
             return view(request, *args, **kwargs)
-        except InsufficientPrivilege as exc:
+        except (InsufficientPrivilege, ReadOnlySqlTransaction) as exc:
             # A READ-ONLY CREDENTIAL MET A WRITE. scitex-hub's board mount
             # reads the fleet store as a SELECT-only role by design; a DM send
             # through it reaches PostgreSQL and is refused there. Predicted by
@@ -208,8 +256,19 @@ def _typed_store_refusals(view):
                 if settings.DEBUG
                 else _READ_ONLY_STORE_SUMMARY
             )
+            status = _http_status(STORE_READ_ONLY_STATUS, _READ_ONLY_STORE_SUMMARY)
             return JsonResponse(
-                {"error": detail, "reason": STORE_READ_ONLY_REASON},
+                {
+                    "error": detail,
+                    "reason": STORE_READ_ONLY_REASON,
+                    "status": status,
+                    "check": _failed_store_check(
+                        "dm_store_write",
+                        _READ_ONLY_STORE_SUMMARY,
+                        _READ_ONLY_STORE_HINT,
+                        status,
+                    ),
+                },
                 status=STORE_READ_ONLY_STATUS,
             )
         except (StoreTargetNotConfigured, UnrecognisedStoreTarget, StoreNotProvisionedError) as exc:
@@ -228,6 +287,25 @@ def _typed_store_refusals(view):
             return JsonResponse(
                 {"error": _store_error_body(exc), "reason": STORE_ABSENT_REASON},
                 status=STORE_ABSENT_STATUS,
+            )
+        except psycopg.Error:
+            logger.exception("[scitex-cards] direct-message store read failed")
+            status = _http_status(
+                STORE_UNAVAILABLE_STATUS, _STORE_UNAVAILABLE_SUMMARY
+            )
+            return JsonResponse(
+                {
+                    "error": _STORE_UNAVAILABLE_SUMMARY,
+                    "reason": STORE_UNAVAILABLE_REASON,
+                    "status": status,
+                    "check": _failed_store_check(
+                        "dm_store_read",
+                        _STORE_UNAVAILABLE_SUMMARY,
+                        _STORE_UNAVAILABLE_HINT,
+                        status,
+                    ),
+                },
+                status=STORE_UNAVAILABLE_STATUS,
             )
 
     return _wrapped

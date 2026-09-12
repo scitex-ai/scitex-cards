@@ -1,0 +1,24 @@
+flowchart LR
+  classDef st-in_progress fill:#e8f0ff,stroke:#4a7fd4,stroke-width:1px,color:#222;
+  classDef st-done fill:#eaf7ea,stroke:#4caf50,stroke-width:1px,color:#222;
+  classDef st-blocked fill:#fdeaea,stroke:#d44a4a,stroke-width:1px,color:#222,stroke-dasharray:5 3;
+  clew-spec-v0_2["—<br>Spec  draft  with  quotes  and brackets"]:::st-in_progress
+  clew-spec-v0_2["—<br>Collides with the dotted id under _esc"]:::st-blocked
+  root-goal["—<br>A standing goal"]:::st-goal
+  child-a["—<br>Child of the goal"]:::st-deferred
+  child-b["—<br>A title that is comfortably longer than sixty characters so "]:::st-done
+  dep-source["—<br>Prerequisite"]:::st-done
+  dep-target["—<br>Consumer"]:::st-in_progress
+  blocks-source["—<br>Blocker"]:::st-blocked
+  blocks-target["—<br>Blocked"]:::st-deferred
+  owned-card["scitex-cards<br>Has a project prefix"]:::st-in_progress
+  long-project["a-project-name-far<br>Project name is sliced at eighteen"]:::st-done
+  task-not-title["—<br>The task field wins"]:::st-blocked
+  odd-status["—<br>Status carries characters the class strips"]:::st-in_progress
+  dep-source --> dep-target
+  blocks-source --> blocks-target
+  clew-spec-v0_2 --> clew-spec-v0_2
+  owned-card --> long-project
+  task-not-title --> odd-status
+  root-goal -.-> child-a
+  root-goal -.-> child-b

@@ -265,7 +265,7 @@ def refuse_zero_config_default() -> NoReturn:
         # every reference to it is a defect. An example inside a refusal is the
         # worst place to carry one -- it is read by someone who is already lost
         # and looking for exactly this line to copy.
-        f"  ${ENV_DB}   e.g. postgresql://scitex_cards@127.0.0.1:55432/scitex_cards\n"
+        f"  ${ENV_DB}   e.g. postgresql://scitex-primary:55432/scitex_cards\n"
         # The KEY PATH, not the section name. `store` alone sends the reader to
         # write {"store": "<dsn>"}, which _config's fail-soft branch discards in
         # silence -- landing them back here with no idea why.

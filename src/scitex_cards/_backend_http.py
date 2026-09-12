@@ -185,6 +185,16 @@ class HubBackend:
             payload = {}
         error = payload.get("error", f"HTTP {exc.code}")
         kind = payload.get("type", "")
+        if kind == "DmExchangeError" and isinstance(payload.get("status"), dict):
+            from scitex_dev.status import StatusCode
+
+            from ._dm_exchange import DmExchangeError
+
+            raise DmExchangeError(
+                payload.get("exchange_id"),
+                StatusCode.from_dict(payload["status"]),
+                message_id=payload.get("message_id"),
+            ) from exc
         if exc.code == 401:
             raise HubBackendError(
                 f"hub rejected the bearer token ({error}) — the token may "
@@ -397,9 +407,28 @@ class HubBackend:
         self._forbid_store(store)
         return self._call("ack_notifications", {"agent": agent, "ids": ids})
 
-    def dm_send(self, sender: str, to: str, body: str, store: Any = None) -> dict:
+    def dm_send(
+        self,
+        sender: str,
+        to: str,
+        body: str,
+        store: Any = None,
+        client_request_id: str | None = None,
+    ) -> dict:
         self._forbid_store(store)
-        return self._call("dm_send", {"sender": sender, "to": to, "body": body})
+        if client_request_id is None:
+            from ._dm_exchange import new_client_request_id
+
+            client_request_id = new_client_request_id()
+        return self._call(
+            "dm_send",
+            {
+                "sender": sender,
+                "to": to,
+                "body": body,
+                "client_request_id": client_request_id,
+            },
+        )
 
     def dm_list(
         self,

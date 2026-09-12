@@ -702,6 +702,58 @@ def test_two_ids_that_escape_to_the_same_node_are_counted_once():
     assert built["stats"]["nodes"] == 2
 
 
+def test_a_collision_does_not_make_a_good_render_look_failed():
+    # THE INTERACTION, WHICH WAS CORRECT BY CONSTRUCTION AND NEVER EXECUTED.
+    # `stats.nodes` exists so `_graphRenderFailed` measures a render against
+    # what mermaid will DRAW rather than how many cards were selected. On a
+    # board with a colliding pair those numbers differ — and until this test
+    # they differed only in reasoning, never in a run: scitex-cards measured
+    # the live board on 2026-08-15 and found 0 colliding groups of 4,517, so
+    # the branch had never been taken by anything.
+    #
+    # The realistic collision is a DOT, not a colon: all 14 ids on the real
+    # board containing a character `_esc` rewrites are version numbers
+    # (`clew-spec-v0.2`, `cct-release-0.5.6`). A generator emitting both
+    # `x-v0.2` and `x-v0_2` is the plausible way this arrives.
+    # Arrange
+    visible = [_card("x-v0.2"), _card("x-v0_2"), _card("hub")]
+    graph = {"edges": [_edge("x-v0.2", "hub"), _edge("x-v0_2", "hub")]}
+    built = _src(visible, graph)
+    drawn = built["stats"]["nodes"]
+    good_svg = _diagram(drawn)
+    # Act
+    verdict = _render_failed(good_svg, drawn)
+    # Assert
+    assert verdict is False
+
+
+def test_a_collision_makes_the_node_count_smaller_than_the_card_count():
+    # The other half: if these two ever became equal the test above would pass
+    # vacuously, because it would no longer be exercising a collision at all.
+    # Arrange
+    visible = [_card("x-v0.2"), _card("x-v0_2"), _card("hub")]
+    graph = {"edges": [_edge("x-v0.2", "hub"), _edge("x-v0_2", "hub")]}
+    # Act
+    built = _src(visible, graph)
+    # Assert
+    assert built["stats"]["nodes"] == built["stats"]["connected"] - 1
+
+
+def test_measuring_that_render_against_the_card_count_would_have_failed_it():
+    # WHY `stats.nodes` RATHER THAN `stats.connected` — stated as an
+    # executable fact rather than a comment. Feed the same good render the
+    # CARD count and the guard condemns it, blanking a perfectly good diagram.
+    # Arrange
+    visible = [_card("x-v0.2"), _card("x-v0_2"), _card("hub")]
+    graph = {"edges": [_edge("x-v0.2", "hub"), _edge("x-v0_2", "hub")]}
+    built = _src(visible, graph)
+    good_svg = _diagram(built["stats"]["nodes"])
+    # Act
+    verdict = _render_failed(good_svg, built["stats"]["connected"])
+    # Assert
+    assert verdict is True
+
+
 def test_the_card_count_and_the_node_count_are_reported_separately():
     # Arrange
     visible = [_card("a:b"), _card("a/b"), _card("d")]

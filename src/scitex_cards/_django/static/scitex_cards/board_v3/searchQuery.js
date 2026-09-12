@@ -52,7 +52,6 @@
  * status:foo and there are 0 matches" instead of silently matching all). */
 const VALID_STATUSES = [
   "goal",
-  "pending",
   "in_progress",
   "blocked",
   "done",
@@ -63,7 +62,7 @@ const VALID_STATUSES = [
   "cancelled",
 ];
 
-const VALID_KINDS = ["task", "compute", "decision"];
+const VALID_KINDS = ["task", "compute", "decision", "status"];
 
 /* === Qualifier dictionary =================================================
  * Map every accepted qualifier (incl. aliases) to a canonical key + a

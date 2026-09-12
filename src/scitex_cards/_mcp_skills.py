@@ -306,7 +306,9 @@ async def dm_send(
     their live session. ``from`` is THIS agent's resolved identity
     ($SCITEX_CARDS_AGENT_ID). The operator's reserved peer name is
     ``"operator"`` — the operator reads the thread on the board's /chat view.
-    Returns the stored record as JSON.
+    Returns the stored record plus Cards' responder-issued ``exchange_id`` and
+    native HTTP status as JSON. HTTP 202 means persisted and queued, not visible
+    or acknowledged; follow the status message's exact poll command.
 
     TEXT ONLY. To send a FILE — a PDF, a screenshot, a log — use
     ``dm_send_document(to=..., file_path=..., caption=...)`` instead. Do NOT

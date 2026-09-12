@@ -33,9 +33,9 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 
 from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
+from ._db_dm_idempotency import _migrate_v14_to_v15
 from ._db_foreign_keys import _migrate_v10_to_v11
 from ._db_lifecycle_columns import _migrate_v12_to_v13
-from ._db_sync_columns import _migrate_v11_to_v12
 from ._db_migrations import (
     _migrate_v1_to_v2,
     _migrate_v2_to_v3,
@@ -46,13 +46,15 @@ from ._db_migrations import (
     _migrate_v9_to_v10,
     record_migration_provenance,
 )
+from ._db_notification_exchange import _migrate_v13_to_v14
+from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
+from ._db_sync_columns import _migrate_v11_to_v12
 from ._ddl import execute_ddl
 from ._schema_shape import (
     SCHEMA_VERSION_FLOOR_TRIGGER_SQL,
     observed_version,
     stamp_schema_version,
 )
-from ._db_schema_sql import SCHEMA_SQL as _SCHEMA_SQL
 from ._store_retirement import RETIREMENT_TRIGGER_SQL
 
 #: The first logger this module has ever had. Its only call site is the
@@ -60,10 +62,16 @@ from ._store_retirement import RETIREMENT_TRIGGER_SQL
 #: an already-current one stay silent, so ordinary opens are unchanged.
 _logger = _logging.getLogger(__name__)
 
-__all__ = ["init_schema"]
+__all__ = ["SchemaMigrationRequired", "init_schema"]
 
 
-def init_schema(conn: StoreConnection) -> None:
+class SchemaMigrationRequired(RuntimeError):
+    """An ordinary database open found an existing schema requiring DDL."""
+
+
+def init_schema(
+    conn: StoreConnection, *, allow_migration: bool = True
+) -> None:
     """Create the schema idempotently + stamp version. Commits on success.
 
     Runs the ``CREATE TABLE/INDEX IF NOT EXISTS`` script, applies the additive
@@ -144,6 +152,21 @@ def init_schema(conn: StoreConnection) -> None:
         conn.commit()
         return
 
+    # A fresh target may be provisioned by its first writer, but moving an
+    # EXISTING shared schema is an administrative act. In particular, a read
+    # or diagnostic path must never advance the configured live database just
+    # because it called open_db(). `init-store` is the explicit owner of that
+    # operation and opts in below this guard. Calling init_schema directly is
+    # likewise an explicit administrative API; ordinary open_db always passes
+    # False.
+    if _prior_version != 0 and not allow_migration:
+        raise SchemaMigrationRequired(
+            "OBSERVED: the configured Cards store is at schema rung "
+            f"{_prior_version}; this client requires rung {SCHEMA_VERSION}. "
+            "No schema changes were attempted. NEXT: an administrator must run "
+            "`scitex-cards init-store --shared` with the same SCITEX_CARDS_DB."
+        )
+
     execute_ddl(conn, _SCHEMA_SQL)
     # Separate, not folded into _SCHEMA_SQL: per the note below, that script
     # reaches FRESH files only, and these guards must reach every store the
@@ -181,6 +204,8 @@ def init_schema(conn: StoreConnection) -> None:
     # additive ADD COLUMN rung with no trigger and no lock, so it belongs with
     # the cheap ones and must not be pushed behind the advisory-lock rung below.
     _migrate_v12_to_v13(conn)
+    _migrate_v13_to_v14(conn)
+    _migrate_v14_to_v15(conn)
     # LAST, and after every column rung, because it is the only rung that takes
     # locks on tables the fleet is actively writing. It also SERIALISES ~90
     # clients on an advisory lock rather than letting them race — the same width

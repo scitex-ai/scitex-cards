@@ -74,6 +74,7 @@ _SHAPE: Final = POSTGRES_SHAPE
 _TABLE: Final[str] = _SHAPE.table
 _RECIPIENT: Final[str] = _SHAPE.recipient
 _ORDER: Final[str] = _SHAPE.order()
+NOTIFICATION_CHANNEL: Final[str] = "scitex_cards_notifications"
 
 
 class InboxUnavailableError(RuntimeError):
@@ -145,9 +146,14 @@ def _safe_dsn(dsn: str) -> str:
     return f"postgres://{host}{port}/{database}"
 
 
-def _row_to_record(row: Sequence[Any], columns: Sequence[str]) -> dict:
+def _row_by_name(row: Sequence[Any] | dict, columns: Sequence[str]) -> dict:
+    """Return either supported driver row shape keyed by selected column name."""
+    return dict(row) if isinstance(row, dict) else dict(zip(columns, row))
+
+
+def _row_to_record(row: Sequence[Any] | dict, columns: Sequence[str]) -> dict:
     """One API row. ``seen`` is normalised to a bool for the MCP contract."""
-    record = dict(zip(columns, row))
+    record = _row_by_name(row, columns)
     record["seen"] = bool(record.get("seen"))
     return record
 
@@ -161,6 +167,7 @@ _SELECT_COLUMNS: Final[tuple[str, ...]] = (
     "ts",
     "seen",
     "msg_id",
+    "exchange_id",
 )
 _SELECT_LIST: Final[str] = ", ".join(_SELECT_COLUMNS)
 
@@ -175,6 +182,7 @@ def enqueue(
     ts: "str | None" = None,
     supersede: bool = False,
     msg_id: "str | None" = None,
+    exchange_id: "str | None" = None,
     store: "str | Path | None" = None,
 ) -> "dict | None":
     """Postgres twin of :func:`scitex_cards._inbox.enqueue` — same contract.
@@ -237,6 +245,7 @@ def enqueue(
                 ts=timestamp,
                 seen=False,
                 msg_id=msg_id,
+                exchange_id=exchange_id,
             )
             # `record_json` IS NOT OPTIONAL, and omitting it is a fleet outage.
             #
@@ -274,8 +283,33 @@ def enqueue(
                 "ON CONFLICT (id) DO NOTHING",
                 values,
             )
+            # Transactional doorbell, never the data path. PostgreSQL delivers
+            # it only if this INSERT commits; a disconnected listener merely
+            # falls back to polling the durable row.
+            cur.execute(
+                "SELECT pg_notify(%s, %s)",
+                (NOTIFICATION_CHANNEL, recipient_id),
+            )
         conn.commit()
     return dict(record)
+
+
+def notification_for_exchange(
+    exchange_id: str, *, store: "str | Path | None" = None
+) -> "dict | None":
+    """Return the durable notification for an idempotent DM replay."""
+    import json
+
+    with _connect(store) as conn:
+        row = conn.execute(
+            "SELECT record_json FROM notifications WHERE exchange_id = %s",
+            (exchange_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    raw = _row_by_name(row, ("record_json",))["record_json"]
+    record = json.loads(raw)
+    return record if isinstance(record, dict) else None
 
 
 def poll_inbox(
@@ -354,7 +388,8 @@ def ack(
                 "RETURNING id, seq",
                 (recipient_id, wanted),
             )
-            flipped = [row[0] for row in sorted(cur.fetchall(), key=lambda r: r[1])]
+            rows = [_row_by_name(row, ("id", "seq")) for row in cur.fetchall()]
+            flipped = [row["id"] for row in sorted(rows, key=lambda row: row["seq"])]
         conn.commit()
     return flipped
 

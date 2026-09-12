@@ -111,8 +111,12 @@ def _stale_board(store_path):
 def _land_concurrent_write(store_path):
     from scitex_cards._store import add_task
 
+    # NO positional store. `add_task`'s FIRST POSITIONAL is `store`, so
+    # `add_task(store_path, ...)` was passing a path as the store — the
+    # positional spelling of the same defect, and the one a `store=` grep
+    # cannot see. It never isolated the write; conftest's pinned throwaway
+    # store is the ambient one and is where this landed all along.
     add_task(
-        store_path,
         id="concurrent",
         title="Concurrent Card",
         status="deferred",

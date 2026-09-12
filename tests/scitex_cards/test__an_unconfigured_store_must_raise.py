@@ -285,13 +285,22 @@ class TestTheRefusalIsActionable:
         assert str(unconfigured_store) in message
 
     def test_the_example_dsn_carries_the_fleet_port(self, unconfigured_store):
-        """55432, never 5432. An example inside a refusal gets copied verbatim."""
+        """55432, never 5432. An example inside a refusal gets copied verbatim.
+
+        ASSERTS THE PORT, NOT A HOST. This used to read
+        ``"127.0.0.1:55432" in message``, which pinned the example to loopback
+        while its docstring only ever claimed something about the PORT. That
+        made a correct fix look like a regression: 127.0.0.1 is not where the
+        store listens (measured 2026-09-07 — it fails with "fe_sendauth: no
+        password supplied", which reads as a credential problem), so correcting
+        the host broke a test whose stated purpose was untouched.
+        """
         # Arrange
         # Act
         message = self._message()
 
         # Assert
-        assert "127.0.0.1:55432" in message
+        assert ":55432" in message
 
     def test_the_example_dsn_never_shows_the_stock_port(self, unconfigured_store):
         """The stock port is always wrong here, and a wrong example is copied
@@ -301,7 +310,29 @@ class TestTheRefusalIsActionable:
         message = self._message()
 
         # Assert
-        assert "127.0.0.1:5432" not in message
+        assert ":5432" not in message
+
+    def test_the_example_dsn_does_not_point_at_loopback(self, unconfigured_store):
+        """The other half of the same lesson. The port was guarded and the HOST
+        was not, so the example sat wrong for weeks while a test watched it."""
+        # Arrange
+        # Act
+        message = self._message()
+
+        # Assert
+        assert "127.0.0.1" not in message
+
+    def test_the_example_dsn_carries_no_userinfo(self, unconfigured_store):
+        """Identity moved OUT of the DSN on 2026-08-25 (PGUSER / ~/.pgpass).
+        The old example named ``scitex_cards``, which was the cluster's NOLOGIN
+        bootstrap superuser and has since been renamed ``scitex_owner`` — so it
+        could never have worked, and the name no longer exists either."""
+        # Arrange
+        # Act
+        message = self._message()
+
+        # Assert
+        assert "@" not in message.split("postgresql://", 1)[-1].split()[0]
 
     def test_it_names_the_config_key_path_not_just_the_section(
         self, unconfigured_store

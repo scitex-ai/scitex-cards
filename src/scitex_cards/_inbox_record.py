@@ -79,6 +79,7 @@ NOTIFICATION_RECORD_KEYS: Final[tuple[str, ...]] = (
     "ts",
     "seen",
     "msg_id",
+    "exchange_id",
 )
 
 #: Keys whose column is NOT NULL in the schema — a row missing any of them
@@ -96,6 +97,7 @@ def notification_record(
     ts: str,
     seen: bool = False,
     msg_id: "str | None" = None,
+    exchange_id: "str | None" = None,
 ) -> dict:
     """The record every inbox backend enqueues — one shape, one definition.
 
@@ -103,7 +105,7 @@ def notification_record(
     eight values positionally into their own INSERT, and a positional list is
     exactly what silently drifts when a column is added.
     """
-    return {
+    record = {
         "id": id,
         "event_type": event_type,
         "card_id": card_id,
@@ -113,6 +115,9 @@ def notification_record(
         "seen": bool(seen),
         "msg_id": msg_id,
     }
+    if exchange_id is not None:
+        record["exchange_id"] = exchange_id
+    return record
 
 
 def notification_payload(record: Mapping[str, Any]) -> str:
@@ -205,6 +210,7 @@ def rebuild_notification_record(row: Any) -> "dict | None":
         ts=values["ts"],
         seen=bool(values.get("seen")),
         msg_id=values.get("msg_id"),
+        exchange_id=values.get("exchange_id"),
     )
 
 
