@@ -97,10 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_dm_messages_thread
     ON dm_messages(thread_id, seq, id);
 CREATE INDEX IF NOT EXISTS idx_dm_messages_sender
     ON dm_messages(sender, ts);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_client_request
-    ON dm_messages(sender, client_request_id)
-    WHERE client_request_id IS NOT NULL;
-
 CREATE TABLE IF NOT EXISTS dm_receipts (
     message_id   TEXT NOT NULL REFERENCES dm_messages(id),
     reader       TEXT NOT NULL,

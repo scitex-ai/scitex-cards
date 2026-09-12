@@ -146,9 +146,14 @@ def _safe_dsn(dsn: str) -> str:
     return f"postgres://{host}{port}/{database}"
 
 
-def _row_to_record(row: Sequence[Any], columns: Sequence[str]) -> dict:
+def _row_by_name(row: Sequence[Any] | dict, columns: Sequence[str]) -> dict:
+    """Return either supported driver row shape keyed by selected column name."""
+    return dict(row) if isinstance(row, dict) else dict(zip(columns, row))
+
+
+def _row_to_record(row: Sequence[Any] | dict, columns: Sequence[str]) -> dict:
     """One API row. ``seen`` is normalised to a bool for the MCP contract."""
-    record = dict(zip(columns, row))
+    record = _row_by_name(row, columns)
     record["seen"] = bool(record.get("seen"))
     return record
 
@@ -302,7 +307,7 @@ def notification_for_exchange(
         ).fetchone()
     if row is None:
         return None
-    raw = row[0] if not isinstance(row, dict) else row["record_json"]
+    raw = _row_by_name(row, ("record_json",))["record_json"]
     record = json.loads(raw)
     return record if isinstance(record, dict) else None
 
@@ -383,7 +388,8 @@ def ack(
                 "RETURNING id, seq",
                 (recipient_id, wanted),
             )
-            flipped = [row[0] for row in sorted(cur.fetchall(), key=lambda r: r[1])]
+            rows = [_row_by_name(row, ("id", "seq")) for row in cur.fetchall()]
+            flipped = [row["id"] for row in sorted(rows, key=lambda row: row["seq"])]
         conn.commit()
     return flipped
 

@@ -42,11 +42,12 @@ def _wind_back_to_the_previous_rung(conn, value: int) -> None:
     file failed: two red tests that looked like a missing log line and were
     actually a test that never reached the code.
 
-    Dropping the current rung's notification exchange column makes the shape
+    Dropping the current rung's caller-idempotency column makes the shape
     genuinely one rung behind.  The migration is additive and idempotent, so
     re-adding it is exactly what the ladder is for.
     """
-    conn.execute("ALTER TABLE notifications DROP COLUMN IF EXISTS exchange_id")
+    conn.execute("DROP INDEX IF EXISTS idx_dm_messages_client_request")
+    conn.execute("ALTER TABLE dm_messages DROP COLUMN IF EXISTS client_request_id")
     conn.execute(
         "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
         (str(value),),
