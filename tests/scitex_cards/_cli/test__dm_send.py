@@ -70,6 +70,25 @@ def test_public_api_is_the_responder_that_issues_the_exchange():
     ) == (True, True, 202)
 
 
+def test_scope_spelling_is_canonicalized_to_the_live_agent_identity():
+    # Arrange
+    request_id = f"req_canonical_{uuid.uuid4().hex}"
+    # Act
+    record = scitex_cards.dm_send(
+        "agent:recipient",
+        "one durable address",
+        sender="agent:sender",
+        client_request_id=request_id,
+    )
+    notifications = poll_inbox("recipient", unseen_only=False)
+    # Assert
+    assert (
+        record["from"],
+        record["to"],
+        any(row.get("msg_id") == record["id"] for row in notifications),
+    ) == ("sender", "recipient", True)
+
+
 def test_json_success_does_not_claim_delivery_or_ack():
     # Arrange
     args = ("agent:recipient", "hello", "--json")
@@ -84,7 +103,7 @@ def test_json_success_does_not_claim_delivery_or_ack():
 
 def test_default_sender_is_persisted_in_postgres():
     # Arrange
-    key = thread_key("agent:test-suite", "agent:recipient")
+    key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "from the environment", "--json")
     payload = json.loads(result.output)
@@ -101,7 +120,7 @@ def test_sender_flag_overrides_the_environment_identity():
         "agent:recipient", "explicit sender", "--sender", sender, "--json"
     )
     payload = json.loads(result.output)
-    stored = messages_in(thread_key(sender, "agent:recipient"))
+    stored = messages_in(thread_key("explicit", "recipient"))
     # Assert
     assert any(row["id"] == payload["message_id"] for row in stored)
 
@@ -146,7 +165,7 @@ def test_unresolved_sender_uses_native_http_status(env):
 def test_invalid_shared_ledger_target_fails_before_persisting(env):
     # Arrange
     env.set("SCITEX_STORE_DSN", "not-a-postgres-dsn")
-    key = thread_key("agent:test-suite", "agent:recipient")
+    key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "must not land", "--json")
     payload = json.loads(result.output)
@@ -195,14 +214,14 @@ def test_exchange_status_round_trips_through_shared_ledger():
         payload["initiator"],
         payload["responder"],
         payload["operation"],
-    ) == (202, False, "agent:test-suite", "agent:recipient", "cards.dm.delivery")
+    ) == (202, False, "test-suite", "recipient", "cards.dm.delivery")
 
 
 def test_same_responder_exchange_id_reaches_notification_row():
     # Arrange
     sent = json.loads(_invoke("agent:recipient", "one exchange", "--json").output)
     # Act
-    notifications = poll_inbox("agent:recipient", unseen_only=False)
+    notifications = poll_inbox("recipient", unseen_only=False)
     matching = [n for n in notifications if n.get("msg_id") == sent["message_id"]]
     # Assert
     assert (len(matching), matching[0]["exchange_id"]) == (
@@ -215,8 +234,8 @@ def test_delivery_retry_reuses_the_same_notification_and_exchange():
     # Arrange
     sent = json.loads(_invoke("agent:recipient", "retry rail", "--json").output)
     # Act -- a consumer may die after either poll; neither poll acknowledges.
-    first = poll_inbox("agent:recipient")
-    second = poll_inbox("agent:recipient")
+    first = poll_inbox("recipient")
+    second = poll_inbox("recipient")
     first_row = next(n for n in first if n.get("msg_id") == sent["message_id"])
     second_row = next(n for n in second if n.get("msg_id") == sent["message_id"])
     # Assert -- the retry cannot mint a second delivery identity.
@@ -260,7 +279,7 @@ def test_generated_cli_retry_key_is_surfaced_before_submission():
 
 def test_dry_run_writes_no_dm():
     # Arrange
-    key = thread_key("agent:test-suite", "agent:recipient")
+    key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "preview", "--dry-run", "--json")
     stored = messages_in(key)
