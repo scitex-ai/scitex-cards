@@ -254,16 +254,18 @@ def rotate_failed_notification_exchange(
     from psycopg import sql
 
     from ._inbox_postgres import _connect as connect_inbox
+    from ._inbox_postgres import _row_by_name
 
     with connect_inbox(store) as inbox_connection:
         inbox_location_row = inbox_connection.execute(
             "SELECT current_database() AS database, current_schema() AS schema"
         ).fetchone()
-        inbox_database, inbox_schema = (
-            (inbox_location_row["database"], inbox_location_row["schema"])
-            if isinstance(inbox_location_row, dict)
-            else (inbox_location_row[0], inbox_location_row[1])
+        inbox_location = _row_by_name(
+            inbox_location_row,
+            ("database", "schema"),
         )
+        inbox_database = inbox_location["database"]
+        inbox_schema = inbox_location["schema"]
     with open_exchange_store(sender) as ledger:
         with ledger.batch():
             # Cross-record atomicity is intentional here: Store owns the
