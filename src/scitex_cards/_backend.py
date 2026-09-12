@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The verb-level backend seam (remote-hub design, docs/design/remote-hub-backend.md §2).
+"""The verb-level backend seam.
+
+See ``docs/design/remote-hub-backend.md`` section 2.
 
 One seam, above the storage engine and below the MCP/CLI surfaces: every
 store-touching MCP tool calls ``get_backend().<verb>(...)`` instead of
@@ -43,8 +45,8 @@ import os
 from typing import Any
 
 from . import _help_wait, _inbox, _store, _threads
-from ._dm import read as _dm_read
 from ._currency import warn_if_stale_once
+from ._dm import read as _dm_read
 from ._inbox_confirm import confirm_notifications, warn_ack_on_read
 
 _HUB_URL_ENV = "SCITEX_CARDS_HUB_URL"
@@ -298,6 +300,7 @@ class LocalBackend:
         # than "I looked under one key" — the distinction sac asked for.
         notifications: list = []
         seen_ids: set = set()
+        notification_recipients: dict[str, str] = {}
         for key in keys:
             for record in _inbox.poll_inbox(
                 key, unseen_only=unseen_only, mark_seen=ack, store=store
@@ -307,8 +310,35 @@ class LocalBackend:
                     continue
                 if rid is not None:
                     seen_ids.add(rid)
+                    notification_recipients[str(rid)] = key
                 notifications.append(record)
+        # An unconfirmed DM whose exchange ended in a terminal failure needs a
+        # new immutable attempt. Reusing the failed xch would ask the consumer
+        # to rewrite history; rotating here keeps the durable delivery id while
+        # every poller observes the same successor exchange.
+        from ._dm_exchange import rotate_failed_notification_exchange
         from ._inbox_receipt import unconfirmed_ids
+
+        outstanding = {
+            notification_id
+            for key in keys
+            for notification_id in unconfirmed_ids(key, store=store)
+        }
+
+        notifications = [
+            rotate_failed_notification_exchange(
+                row,
+                recipient=notification_recipients[str(row.get("id"))],
+                store=store,
+            )
+            if (
+                row.get("event_type") == "dm"
+                and row.get("exchange_id")
+                and row.get("id") in outstanding
+            )
+            else row
+            for row in notifications
+        ]
         from ._store_target import store_label
 
         payload = {
@@ -422,8 +452,7 @@ class LocalBackend:
             from ._dm import write as _dm_write
 
             unread_ids = [
-                m["id"]
-                for m in _dm_read.unread_for(sender, store=store, thread_id=key)
+                m["id"] for m in _dm_read.unread_for(sender, store=store, thread_id=key)
             ]
             if unread_ids:
                 _dm_write.mark_read(unread_ids, sender, store=store)

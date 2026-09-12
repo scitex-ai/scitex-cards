@@ -8,8 +8,12 @@ import ast
 import inspect
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from click.testing import CliRunner
+from scitex_dev.status import StatusCode, ledger_record
+from scitex_dev.store import ANY_REVISION
 
 import scitex_cards
 from scitex_cards import _dm_exchange
@@ -18,6 +22,15 @@ from scitex_cards._cli import main
 from scitex_cards._dm.read import messages_in
 from scitex_cards._inbox_postgres import poll_inbox
 from scitex_cards._threads import thread_key
+
+SENDER = "sender"
+RECIPIENT = "recipient"
+
+
+@pytest.fixture(autouse=True)
+def _shared_postgres_inbox(env):
+    """Exercise the same shared inbox backend that ``persist_dm`` writes."""
+    env.set("SCITEX_CARDS_INBOX_BACKEND", "postgres")
 
 
 def _invoke(*args: str):
@@ -96,9 +109,10 @@ def test_json_success_does_not_claim_delivery_or_ack():
     result = _invoke(*args)
     payload = json.loads(result.output)
     # Assert
-    assert payload["status"]["code"] == 202 and "NOT ESTABLISHED" in payload[
-        "status"
-    ]["message"]
+    assert (
+        payload["status"]["code"] == 202
+        and "NOT ESTABLISHED" in payload["status"]["message"]
+    )
 
 
 def test_default_sender_is_persisted_in_postgres():
@@ -116,9 +130,7 @@ def test_sender_flag_overrides_the_environment_identity():
     # Arrange
     sender = "agent:explicit"
     # Act
-    result = _invoke(
-        "agent:recipient", "explicit sender", "--sender", sender, "--json"
-    )
+    result = _invoke("agent:recipient", "explicit sender", "--sender", sender, "--json")
     payload = json.loads(result.output)
     stored = messages_in(thread_key("explicit", "recipient"))
     # Assert
@@ -132,8 +144,7 @@ def test_human_success_says_persisted_but_unconfirmed():
     result = _invoke("agent:recipient", message)
     # Assert
     assert (
-        "http/202 exchange=xch_" in result.output
-        and "NOT ESTABLISHED" in result.output
+        "http/202 exchange=xch_" in result.output and "NOT ESTABLISHED" in result.output
     )
 
 
@@ -144,9 +155,10 @@ def test_unresolved_sender_json_is_actionable(env):
     result = _invoke("agent:recipient", "nobody", "--json")
     payload = json.loads(result.output)
     # Assert
-    assert result.exit_code == 1 and "SCITEX_CARDS_AGENT_ID" in payload["status"][
-        "message"
-    ]
+    assert (
+        result.exit_code == 1
+        and "SCITEX_CARDS_AGENT_ID" in payload["status"]["message"]
+    )
 
 
 def test_unresolved_sender_uses_native_http_status(env):
@@ -244,6 +256,154 @@ def test_delivery_retry_reuses_the_same_notification_and_exchange():
         first_row["exchange_id"],
         second_row["exchange_id"],
     ) == (second_row["id"], sent["exchange_id"], sent["exchange_id"])
+
+
+def _conclude_exchange(exchange_id: str, status: StatusCode) -> None:
+    # The public API canonicalizes ``agent:<name>`` to the durable bare inbox
+    # identity. Mirror that production boundary in this ledger fixture.
+    with _dm_exchange.open_exchange_store(RECIPIENT) as ledger:
+        current = ledger.get({"exchange_id": exchange_id})
+        assert current is not None
+        values = dict(current.values)
+        ledger.put(
+            ledger_record(
+                exchange_id=exchange_id,
+                initiator=values["initiator"],
+                responder=values["responder"],
+                operation=values["operation"],
+                status=status,
+                opened_at=values["opened_at"],
+            ),
+            expected_revision=ANY_REVISION,
+            actor=RECIPIENT,
+        )
+
+
+def test_terminal_failure_rotates_exchange_but_preserves_delivery_id():
+    # Arrange
+    sent = scitex_cards.dm_send(
+        f"agent:{RECIPIENT}",
+        "retry final failure",
+        sender=f"agent:{SENDER}",
+        client_request_id=f"req_rotate_{uuid.uuid4().hex}",
+    )
+    _conclude_exchange(
+        sent["exchange_id"],
+        StatusCode(kind="http", code=502, message="visibility failed"),
+    )
+    # Act
+    predecessor = _dm_exchange.get_exchange(sent["exchange_id"], sender=SENDER)
+    payload = scitex_cards.poll_notifications(RECIPIENT, unseen_only=False)
+    row = next(
+        item for item in payload["notifications"] if item.get("msg_id") == sent["id"]
+    )
+    # Assert
+    old = _dm_exchange.get_exchange(sent["exchange_id"], sender=SENDER)
+    successor = _dm_exchange.get_exchange(row["exchange_id"], sender=SENDER)
+    assert (
+        row["id"],
+        row["exchange_id"] != sent["exchange_id"],
+        old["status"]["code"],
+        successor["status"]["code"],
+        old["operation"],
+        successor["operation"],
+        old == predecessor,
+    ) == (
+        sent["notification_id"],
+        True,
+        502,
+        202,
+        "cards.dm.delivery",
+        "cards.dm.delivery",
+        True,
+    )
+
+
+def test_nonfinal_102_reuses_original_exchange():
+    # Arrange
+    sent = scitex_cards.dm_send(
+        f"agent:{RECIPIENT}",
+        "keep progress exchange",
+        sender=f"agent:{SENDER}",
+        client_request_id=f"req_progress_{uuid.uuid4().hex}",
+    )
+    _conclude_exchange(
+        sent["exchange_id"],
+        StatusCode(
+            kind="http",
+            code=102,
+            message=(
+                "visibility is pending; poll "
+                f"`scitex-cards dm get-status {sent['exchange_id']} --json`"
+            ),
+        ),
+    )
+    # Act
+    payload = scitex_cards.poll_notifications(RECIPIENT, unseen_only=False)
+    row = next(
+        item for item in payload["notifications"] if item.get("msg_id") == sent["id"]
+    )
+    # Assert
+    assert row["exchange_id"] == sent["exchange_id"]
+
+
+def test_concurrent_failed_delivery_retries_converge_on_one_successor():
+    # Arrange
+    sent = scitex_cards.dm_send(
+        f"agent:{RECIPIENT}",
+        "concurrent retry",
+        sender=f"agent:{SENDER}",
+        client_request_id=f"req_concurrent_{uuid.uuid4().hex}",
+    )
+    _conclude_exchange(
+        sent["exchange_id"],
+        StatusCode(kind="http", code=502, message="visibility failed"),
+    )
+    stored = next(
+        item
+        for item in poll_inbox(RECIPIENT, unseen_only=False)
+        if item.get("msg_id") == sent["id"]
+    )
+
+    def rotate() -> str:
+        return _dm_exchange.rotate_failed_notification_exchange(
+            dict(stored), recipient=RECIPIENT
+        )["exchange_id"]
+
+    # Act
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        successors = list(pool.map(lambda _index: rotate(), range(2)))
+    # Assert
+    assert successors[0] == successors[1] != sent["exchange_id"]
+
+
+def test_confirmed_terminal_failure_is_not_reopened():
+    # Arrange: confirmation is stronger than the failed attempt status. Once
+    # the recipient has acknowledged this delivery id, polling history must
+    # not create fresh work for it.
+    sent = scitex_cards.dm_send(
+        f"agent:{RECIPIENT}",
+        "confirmed before retry",
+        sender=f"agent:{SENDER}",
+        client_request_id=f"req_confirmed_{uuid.uuid4().hex}",
+    )
+    _conclude_exchange(
+        sent["exchange_id"],
+        StatusCode(kind="http", code=502, message="visibility failed"),
+    )
+    acknowledged = scitex_cards.ack_notifications(RECIPIENT, [sent["notification_id"]])
+
+    # Act
+    payload = scitex_cards.poll_notifications(RECIPIENT, unseen_only=False)
+    row = next(
+        item for item in payload["notifications"] if item.get("msg_id") == sent["id"]
+    )
+
+    # Assert
+    assert (
+        acknowledged["confirmed"],
+        row["exchange_id"],
+    ) == ([sent["notification_id"]], sent["exchange_id"])
 
 
 def test_timeout_after_commit_retry_returns_original_three_ids():
