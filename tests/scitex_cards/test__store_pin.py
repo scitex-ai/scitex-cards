@@ -61,10 +61,10 @@ from scitex_cards._store_pin import (
 #: ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private marker -- and
 #: SKIPPED when it was unset, which is now always: nothing sets that name any
 #: more. The five tests below therefore reported green in CI without opening a
-#: connection, which is the exact failure
-#: ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` was written to
-#: remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
-#: a skipped test is indistinguishable from a passing one").
+#: connection, which is the exact failure the PostgreSQL-enabled pytest matrix
+#: was configured to remove ("a Postgres-only test does not FAIL without a
+#: server, it SKIPS, and a skipped test is indistinguishable from a passing
+#: one").
 #:
 #: ONE NAME NOW ANSWERS "WHERE IS THE STORE": ``$SCITEX_CARDS_DB``, which
 #: ``tests/conftest.py`` pins per test to a throwaway PostgreSQL schema. A
@@ -160,8 +160,8 @@ def live_store_uuid(pg_dsn):
     # `system_identifier` is a property of any live PostgreSQL CLUSTER, so its
     # absence really is a broken declaration and failing is right. `store_uuid`
     # is a `schema_meta` ROW: it exists only once a store has been bootstrapped.
-    # A bare `postgres:16` service container — exactly what the postgres-backend
-    # CI job spins up — has an instance and NO store, which is a legitimate
+    # A bare `postgres:16` service container — exactly what each pytest-matrix
+    # CI leg spins up — has an instance and NO store, which is a legitimate
     # state. My first version called `pytest.fail` here and turned that
     # legitimate state into a red leg on the first CI run.
     #

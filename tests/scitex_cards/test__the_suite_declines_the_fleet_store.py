@@ -40,9 +40,9 @@ def test_the_declining_reason_names_the_server_it_refused():
 
 
 def test_the_ci_shape_is_untouched_because_no_board_is_configured():
-    # postgres-backend sets the cluster to its own service container and does
-    # NOT set the board variable. If this ever returns a reason, CI stops using
-    # its service container and starts trying to raise a throwaway one.
+    # pytest-matrix sets the cluster to its own service container and does NOT
+    # set the board variable. If this ever returns a reason, CI stops using its
+    # service container and starts trying to raise a throwaway one.
     # Arrange
     env = {CLUSTER_ENV: "postgresql://scitex_cards:scitex_cards@127.0.0.1:5432/scitex_cards"}
     # Act

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### PostgreSQL CI has one deterministic feedback path
+
+The three branch-protection-required pytest-matrix checks already start
+PostgreSQL, export ``SCITEX_STORE_DSN``, and run the full suite with xdist on
+Python 3.11, 3.12, and 3.13. The standalone ``postgres-backend`` workflow ran
+the same full suite a fourth time on Python 3.12 but was not a required check.
+It has been removed so PostgreSQL regressions still fail every required matrix
+leg without adding a redundant long-running result to each push and pull
+request.
+
 ## [0.52.0] - 2026-09-12
 
 - Existing database schemas are no longer migrated as a side effect of
@@ -42,7 +52,7 @@ DDL, so a parallel run is a DDL storm beside the operator's own writes.
 board by SERVER (host, port, dbname — credentials and search_path dropped, so
 two spellings of one primary still match) and clears the variable when they are
 the same, dropping through to a private throwaway cluster. CI is unaffected by
-construction: postgres-backend sets its own service-container DSN and no board
+construction: the pytest matrix sets its own service-container DSN and no board
 variable, so there is nothing to match.
 
 Where no throwaway cluster can be started, PostgreSQL tests now FAIL rather than
