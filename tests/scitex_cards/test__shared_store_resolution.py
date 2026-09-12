@@ -15,38 +15,50 @@ _RETIRED_INBOX = "SCITEX_CARDS_" + "INBOX_DSN"
 
 
 @pytest.fixture
-def shared_store(monkeypatch: pytest.MonkeyPatch) -> str:
-    monkeypatch.setenv("SCITEX_STORE_DSN", _SHARED)
-    monkeypatch.setenv(_RETIRED_STORE, _OTHER)
-    monkeypatch.setenv(_RETIRED_INBOX, _OTHER)
-    monkeypatch.setenv("SCITEX_CARDS_NOTIFY_DSN", _OTHER)
+def shared_store(env) -> str:
+    env.set("SCITEX_STORE_DSN", _SHARED)
+    env.set(_RETIRED_STORE, _OTHER)
+    env.set(_RETIRED_INBOX, _OTHER)
+    env.set("SCITEX_CARDS_NOTIFY_DSN", _OTHER)
     return _SHARED
 
 
 def test_ambient_card_and_inbox_state_use_the_primitive(shared_store: str) -> None:
-    assert resolve_store_target() == shared_store
-    assert resolve_dsn() == shared_store
+    # Arrange
+    expected = (shared_store, shared_store)
+    # Act
+    observed = (resolve_store_target(), resolve_dsn())
+    # Assert
+    assert observed == expected
 
 
 def test_explicit_store_still_wins(shared_store: str) -> None:
-    assert resolve_store_target(_OTHER) == _OTHER
-    assert resolve_dsn(_OTHER) == _OTHER
+    # Arrange
+    expected = (_OTHER, _OTHER)
+    # Act
+    observed = (resolve_store_target(_OTHER), resolve_dsn(_OTHER))
+    # Assert
+    assert observed == expected
 
 
-def test_primitive_rejects_a_filesystem_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SCITEX_STORE_DSN", "/tmp/cards.db")
+def test_primitive_rejects_a_filesystem_store(env) -> None:
+    # Arrange
+    env.set("SCITEX_STORE_DSN", "/tmp/cards.db")
+    # Act
+    # Assert
     with pytest.raises(Exception, match="not a Postgres DSN"):
         resolve_store_target()
 
 
 def test_cards_specific_store_variables_are_not_consulted(
-    monkeypatch: pytest.MonkeyPatch,
+    env,
 ) -> None:
-    monkeypatch.delenv("SCITEX_STORE_DSN", raising=False)
-    monkeypatch.setenv(_RETIRED_STORE, _OTHER)
-    monkeypatch.setenv(_RETIRED_INBOX, _OTHER)
-
+    # Arrange
+    env.delete("SCITEX_STORE_DSN")
+    env.set(_RETIRED_STORE, _OTHER)
+    env.set(_RETIRED_INBOX, _OTHER)
+    # Act
     resolved = resolve_store_target()
-    assert resolved != _OTHER
-    assert ":55432/" in resolved
-    assert resolve_dsn() == resolved
+    observed = (resolved != _OTHER, ":55432/" in resolved, resolve_dsn())
+    # Assert
+    assert observed == (True, True, resolved)

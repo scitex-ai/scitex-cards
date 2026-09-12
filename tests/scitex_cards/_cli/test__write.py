@@ -1015,13 +1015,16 @@ def test_where_exits_zero(tmp_path, env):
 
 
 def test_resolve_store_refuses_a_filesystem_dsn(tmp_path, env):
+    # Arrange
     runner = CliRunner()
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_STORE_DSN", db)
+    # Act
     result = runner.invoke(main, ["resolve-store", "--json"])
-    assert result.exit_code != 0
-    assert "not a Postgres DSN" in str(result.exception)
+    observed = (result.exit_code != 0, "not a Postgres DSN" in str(result.exception))
+    # Assert
+    assert observed == (True, True)
 
 
 def test_resolve_store_does_not_probe_a_filesystem_dsn(tmp_path, env):
@@ -1030,9 +1033,11 @@ def test_resolve_store_does_not_probe_a_filesystem_dsn(tmp_path, env):
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
     env.set("SCITEX_STORE_DSN", db)
+    # Act
     result = runner.invoke(main, ["resolve-store", "--json"])
-    assert result.exit_code != 0
-    assert "not a Postgres DSN" in str(result.exception)
+    observed = (result.exit_code != 0, "not a Postgres DSN" in str(result.exception))
+    # Assert
+    assert observed == (True, True)
 
 
 # --------------------------------------------------------------------------- #

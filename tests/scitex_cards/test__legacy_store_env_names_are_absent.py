@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def test_shipped_surfaces_do_not_name_retired_store_environment_variables() -> None:
+    # Arrange
     root = Path(__file__).resolve().parents[2]
     retired = (
         "SCITEX_CARDS_" + "DB",
@@ -15,6 +16,7 @@ def test_shipped_surfaces_do_not_name_retired_store_environment_variables() -> N
     for tree in (root / "src", root / "docs", root / "tests"):
         candidates.extend(path for path in tree.rglob("*") if path.is_file())
 
+    # Act
     offenders: list[str] = []
     for path in candidates:
         if path.suffix in {".pyc", ".png", ".jpg", ".jpeg", ".gif"}:
@@ -27,5 +29,5 @@ def test_shipped_surfaces_do_not_name_retired_store_environment_variables() -> N
             if name in text:
                 offenders.append(f"{path.relative_to(root)}: {name}")
 
+    # Assert
     assert offenders == [], "retired store selectors remain:\n" + "\n".join(offenders)
-

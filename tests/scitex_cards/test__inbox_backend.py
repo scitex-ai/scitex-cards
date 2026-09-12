@@ -75,7 +75,9 @@ class TestExplicitRetiredEngineIsNotHonoured:
         env.set("SCITEX_STORE_DSN", _PG_DSN)
 
         # Act
-        assert backend() == POSTGRES
+        active = backend()
+        # Assert
+        assert active == POSTGRES
 
     def test_an_unrecognised_name_is_refused(self, env):
         # Arrange
@@ -86,7 +88,9 @@ class TestExplicitRetiredEngineIsNotHonoured:
         env.set("SCITEX_STORE_DSN", _PG_DSN)
 
         # Act
-        assert backend() == POSTGRES
+        active = backend()
+        # Assert
+        assert active == POSTGRES
 
 
 class TestExplicitOverridesStillWork:
@@ -109,7 +113,9 @@ class TestExplicitOverridesStillWork:
         env.set("SCITEX_STORE_DSN", _PG_DSN)
 
         # Act
-        assert backend() == POSTGRES
+        active = backend()
+        # Assert
+        assert active == POSTGRES
 
 
 # EOF

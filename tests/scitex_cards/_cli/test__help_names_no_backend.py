@@ -69,10 +69,17 @@ def test_the_resolution_text_reaches_a_user_invoking_help(rendered_help):
 
 
 def test_help_names_ports_and_the_distinct_notification_transport(resolution_text):
-    assert "55432" in resolution_text
-    assert "SCITEX_CARDS_NOTIFY_DSN" in resolution_text
-    assert "55433" in resolution_text
-    assert "SQLite" in resolution_text and "no SQLite" in resolution_text
+    # Arrange
+    expected = (True, True, True, True)
+    # Act
+    observed = (
+        "55432" in resolution_text,
+        "SCITEX_CARDS_NOTIFY_DSN" in resolution_text,
+        "55433" in resolution_text,
+        "no SQLite" in resolution_text,
+    )
+    # Assert
+    assert observed == expected
 
 
 def test_the_summary_reaches_a_user_invoking_help(rendered_help):

@@ -501,6 +501,7 @@ def test_an_unrecognised_backend_name_is_not_a_second_rail(env):
     # Act
     out = _decide()
 
+    # Assert
     assert out["warnings"] == []
 
 
