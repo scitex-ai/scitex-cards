@@ -97,6 +97,13 @@ SHAPE_LADDER: tuple[tuple[int, str, str, str], ...] = (
     # existing (a lifecycle that must be able to go backwards without lowering
     # a monotone stamp), so nothing else plausibly grows it by accident.
     (13, "column", "tasks", "reopened_at"),
+    # v14 gives a Cards notification the responder-issued exchange id that
+    # SAC preserves through terminal-visible delivery. The n_ id remains the
+    # inbox acknowledgement key; this xch_ joins the status ledger.
+    (14, "column", "notifications", "exchange_id"),
+    # v15 makes a caller retry resolve to the original durable message and
+    # responder-issued exchange instead of creating a second A->B edge.
+    (15, "column", "dm_messages", "client_request_id"),
 )
 
 #: The lowest version this module can justify from physical evidence.

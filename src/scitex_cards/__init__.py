@@ -137,7 +137,13 @@ _LAZY_IMPORTS = {
     "dm_list": ("._messaging", "dm_list"),
     "dm_send": ("._messaging", "dm_send"),
     "dm_send_document": ("._messaging", "dm_send_document"),
+    "DmExchangeError": ("._dm_exchange", "DmExchangeError"),
+    "NotificationWatchUnavailable": (
+        "._notification_watch",
+        "NotificationWatchUnavailable",
+    ),
     "poll_notifications": ("._messaging", "poll_notifications"),
+    "watch_notifications": ("._messaging", "watch_notifications"),
 }
 
 
@@ -175,9 +181,11 @@ __all__ = [
     "AgentDirectoryPort",
     "AgentIdentityError",
     "AgentInfo",
+    "DmExchangeError",
     "EmptyAgentDirectory",
     "ENV_AGENT",
     "ENV_SCOPE",
+    "NotificationWatchUnavailable",
     "TaskNotFoundError",
     "TaskValidationError",
     "ack_notifications",
@@ -209,6 +217,7 @@ __all__ = [
     "set_subscriber",
     "summarize_tasks",
     "update_task",
+    "watch_notifications",
 ]
 
 # EOF

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-09-12
+
+- Existing database schemas are no longer migrated as a side effect of
+  `open_db()`. The call fails before DDL with an actionable diagnostic; the
+  explicit `scitex-cards init-store --shared` administrative path owns schema
+  upgrades.
+- DM submission accepts a caller-owned `client_request_id`; schema v15 enforces
+  uniqueness per sender and retries return the original message, notification,
+  and responder-issued exchange identifiers.
+
+### One responder-issued exchange follows a DM through visible delivery
+
+`scitex_cards.dm_send` now returns HTTP 202 with one Cards-issued `xch_`
+exchange id after the DM and its recipient notification are durable. The same
+id is stored on the `n_` notification and in the shared `scitex_dev.status`
+ledger; SAC preserves it through terminal-visible completion instead of
+minting a second exchange. The `m_` and `n_` ids remain resource and
+acknowledgement identifiers, respectively. `scitex-cards dm send` exposes this
+contract directly, and `dm get-status` polls its non-final acceptance.
+
 ### The suite declines to carve its schemas on the live board's server
 
 Tests create a throwaway PostgreSQL schema each, and ``writable_dsn()``'s first

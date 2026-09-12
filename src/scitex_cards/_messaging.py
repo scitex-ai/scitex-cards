@@ -45,6 +45,7 @@ __all__ = [
     "dm_send",
     "dm_send_document",
     "poll_notifications",
+    "watch_notifications",
 ]
 
 
@@ -116,6 +117,37 @@ def poll_notifications(
     )
 
 
+def watch_notifications(agent: str, *, timeout: float | None = None, store: Any = None):
+    """Wait for PostgreSQL doorbell hints; poll the durable inbox after each.
+
+    Hints are event-driven latency improvements, not delivery. They carry no
+    message data and may be lost while disconnected, so a consumer must retain
+    long, jittered polling as its fallback.
+    """
+    import os
+
+    from scitex_dev.status import StatusCode
+
+    from ._backend import _HUB_URL_ENV
+    from ._notification_watch import NotificationWatchUnavailable
+    from ._notification_watch import watch_notifications as _watch
+
+    if os.environ.get(_HUB_URL_ENV):
+        raise NotificationWatchUnavailable(
+            StatusCode(
+                kind="http",
+                code=503,
+                message=(
+                    "OBSERVED: a remote Cards hub is configured, but this "
+                    "release has no streaming hub watch route. NEXT: use long, "
+                    "jittered `poll_notifications` calls; do not open the hub "
+                    "database directly."
+                ),
+            )
+        )
+    return _watch(agent, timeout=timeout, store=store)
+
+
 def ack_notifications(agent: str, ids: list[str], store: Any = None) -> dict:
     """CONFIRM delivery of ``ids`` — the only cursor-advancing verb.
 
@@ -129,8 +161,23 @@ def ack_notifications(agent: str, ids: list[str], store: Any = None) -> dict:
     return get_backend().ack_notifications(agent, ids, store=store)
 
 
-def dm_send(to: str, body: str, store: Any = None, sender: str | None = None) -> dict:
-    """Send a text direct message to ``to``. Returns the stored DM record.
+def dm_send(
+    to: str,
+    body: str,
+    store: Any = None,
+    sender: str | None = None,
+    client_request_id: str | None = None,
+) -> dict:
+    """Persist a text DM and return its responder-issued delivery exchange.
+
+    The result extends the stored DM record with ``exchange_id`` and a native
+    HTTP ``status``. Immediate 202 means the DM and its SAC notification are
+    durable; live visibility and recipient acknowledgement remain non-final.
+    Pass a stable ``client_request_id`` before the first attempt and reuse it
+    after an uncertain timeout; the retry returns the original message,
+    notification, and responder-issued exchange ids. When omitted, the API
+    generates and returns a key, which is convenient but cannot repair a
+    timeout that hid the first response.
 
     TEXT ONLY — use :func:`dm_send_document` to send a file. Describing a file
     in prose, or pasting a filesystem path, hands the operator something they
@@ -138,7 +185,17 @@ def dm_send(to: str, body: str, store: Any = None, sender: str | None = None) ->
     """
     from ._backend import get_backend
 
-    return get_backend().dm_send(resolve_sender(sender), to, body, store=store)
+    if not client_request_id:
+        from ._dm_exchange import new_client_request_id
+
+        client_request_id = new_client_request_id()
+    return get_backend().dm_send(
+        resolve_sender(sender),
+        to,
+        body,
+        store=store,
+        client_request_id=client_request_id,
+    )
 
 
 def dm_send_document(
@@ -192,8 +249,14 @@ def dm_send_document(
     # operator-side uploads produce and what the chat pane already renders.
     # No second convention, and an older client still shows something.
     label = (caption or "").strip() or meta["filename"]
+    from ._dm_exchange import new_client_request_id
+
     record = get_backend().dm_send(
-        resolved_sender, to, f"{label}\n{meta['url']}", store=store
+        resolved_sender,
+        to,
+        f"{label}\n{meta['url']}",
+        store=store,
+        client_request_id=new_client_request_id(),
     )
     return {"message": record, "attachment": meta}
 

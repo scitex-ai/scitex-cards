@@ -108,6 +108,53 @@ reach (`identity_verdict: cannot-tell`).
 Runtime state (pidfiles, the delivery ledger, the reminder sidecar) lives under
 `<store-dir>/runtime/` (gitignored).
 
+### Direct messages from the CLI
+
+Persist a DM through the same public API used by the Python and MCP surfaces:
+
+```bash
+scitex-cards dm send agent:worker "Please review card-123"
+scitex-cards dm send operator "Done" --sender agent:worker \
+  --client-request-id req_my_stable_key --json
+```
+
+The sender defaults to `$SCITEX_CARDS_AGENT_ID`; an unresolved identity or
+store configuration fails loudly with an exact next action. The JSON result
+includes the durable `dm_messages` id, a SciTeX exchange id, and the native
+`StatusCode` `{kind: "http", code: 202, message: ...}`. The 202 is accepted
+and persisted but non-final; poll it with `scitex-cards dm get-status
+EXCHANGE_ID --json`. A successful PostgreSQL write is not evidence that a live
+session displayed or acknowledged the message. The exchange is recorded in
+the shared `scitex_dev.status` ledger. Cards, as the responder, issues that one
+exchange id and persists it on the `n_` notification; SAC preserves the same id
+through visible delivery instead of minting another. Notification ids remain
+separate acknowledgement keys. This command has no file-store or alternate-
+store fallback. `client_request_id` is caller-owned and distinct from the
+responder-issued `xch_`. The CLI prints an auto-generated key to stderr before
+submission, or accepts `--client-request-id`; reuse that key after an uncertain
+timeout to receive the original `m_`, `n_`, and `xch_` rather than duplicating
+the request.
+
+When SAC owns the Cards-to-Hermes delivery loop, launch the stdio MCP surface
+with `scitex-cards mcp start --tools-only`. That keeps
+`SCITEX_CARDS_AGENT_ID` available for tool attribution while disabling Cards'
+competing notification poller.
+
+SAC can wait event-first with `scitex_cards.watch_notifications(agent)`. Each
+PostgreSQL `LISTEN`/`NOTIFY` event is only a recipient doorbell; after it, call
+`poll_notifications`. PostgreSQL does not retain doorbells while disconnected,
+so a long, jittered durable poll remains mandatory as the fallback. Polling is
+non-acknowledging and idempotent: a retry returns the same `n_` row and `xch_`.
+The delivery initiator must validate the same exchange's final responder and
+operation before separately acknowledging the `n_`; a timeout or a doorbell is
+never completion.
+
+Ordinary `open_db()` calls never migrate an existing schema. If a client finds
+an older rung, it stops before DDL and names the exact administrative action:
+run `scitex-cards init-store --shared` against the same `SCITEX_CARDS_DB`.
+That explicit command is the schema-upgrade boundary; imports, reads, and
+diagnostics cannot silently advance a configured live database.
+
 ## The card and its roles
 
 A card carries four **roles** (ADR-0009). Each role feeds the notify resolver:

@@ -178,7 +178,7 @@ ENV_DB = "SCITEX_CARDS_DB"
 #: ``require_pinned_store`` REPORTS and gates nothing while nothing is pinned.
 #: The artifact exists and its effect does not yet, which is a state worth being
 #: able to name.
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 15
 
 
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
@@ -362,7 +362,11 @@ def open_read_db(explicit: str | Path | None = None) -> "StoreConnection":
 
 def _open_at(path: str | Path) -> "StoreConnection":
     conn = connect(path)
-    init_schema(conn)
+    try:
+        init_schema(conn, allow_migration=False)
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 

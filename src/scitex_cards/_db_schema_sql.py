@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     seen         INTEGER NOT NULL DEFAULT 0,
     record_json  TEXT,
     msg_id       TEXT,
+    exchange_id  TEXT,
     pushed_at    TEXT,
     confirmed_at TEXT,
     seq          BIGINT,

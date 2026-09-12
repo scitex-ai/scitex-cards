@@ -271,7 +271,7 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
     # additive only: `init_schema` creates what is missing and touches no row.
     conn = connect(target)
     try:
-        init_schema(conn)
+        init_schema(conn, allow_migration=True)
         conn.commit()
     finally:
         conn.close()

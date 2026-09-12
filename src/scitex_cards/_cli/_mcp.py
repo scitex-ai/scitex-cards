@@ -118,6 +118,7 @@ def _attach_unified_start(group: click.Group) -> None:
             summary="Launch the MCP server (stdio): tools + this agent's digest push.",
             examples=(
                 ("{prog} mcp start", "stdio (tools + digest)."),
+                ("{prog} mcp start --tools-only", "stdio tools, no poller."),
                 ("{prog} mcp start --http --port 7700", "HTTP, tools only."),
             ),
         ),
@@ -125,27 +126,41 @@ def _attach_unified_start(group: click.Group) -> None:
     @click.option(
         "--http", is_flag=True, help="Use HTTP transport (tools only, no digest push)."
     )
+    @click.option(
+        "--tools-only",
+        is_flag=True,
+        help=(
+            "Use stdio tools without the notification poller; preserves "
+            "SCITEX_CARDS_AGENT_ID for tool attribution."
+        ),
+    )
     @click.option("--host", default="127.0.0.1", show_default=True)
     @click.option("--port", type=int, default=0, help="HTTP port (0 = auto).")
     @click.option(
         "--dry-run",
         is_flag=True,
-        help="Print what would happen (transport/host/port) and exit 0 without launching.",
+        help=(
+            "Print what would happen (transport/host/port) and exit 0 "
+            "without launching."
+        ),
     )
     @click.option(
         "-y",
         "--yes",
         is_flag=True,
-        help="Skip confirmation (no-op for the default stdio path; reserved for HTTP mode).",
+        help=(
+            "Skip confirmation (no-op for default stdio; reserved for HTTP mode)."
+        ),
     )
-    def start(http, host, port, dry_run, yes) -> None:
+    def start(http, tools_only, host, port, dry_run, yes) -> None:
         _ = yes  # accepted for §2 compliance; no interactive prompt today
         if dry_run:
             transport = "http" if http else "stdio"
+            mode = "tools only" if http or tools_only else "tools + digest push"
             click.echo(
                 f"# dry-run: would launch MCP server transport={transport} "
                 f"host={host} port={port or 'auto'} "
-                f"({'tools only' if http else 'tools + digest push'})"
+                f"({mode})"
             )
             return
         # CURRENCY gate, first line of the REAL launch path (operator
@@ -169,6 +184,12 @@ def _attach_unified_start(group: click.Group) -> None:
                 mcp_obj.run(transport="http", host=host, port=port or None)
             except TypeError:
                 mcp_obj.run_http(host=host, port=port or 0)
+            return
+        if tools_only:
+            # The identity remains in the environment: tools still need it for
+            # attribution. Only the competing five-second channel poller is
+            # omitted, so SAC is the sole notification consumer.
+            mcp_obj.run(transport="stdio")
             return
         _run_unified_server()
 

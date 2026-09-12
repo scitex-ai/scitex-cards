@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The fail-soft side rails of a DM write: inbox dispatch, sidecar, receipts.
+"""The side rails of a DM write: durable inbox dispatch, sidecar, receipts.
 
 Split out of :mod:`scitex_cards._threads` when the DM-into-the-store dual write
 pushed that module past its size budget. The seam is a real one and worth
 naming: everything here is a MIRROR — work a DM write does IN ADDITION to
 committing the message, none of which may fail the write.
 
-That shared property is the point of collecting them. Each function swallows
-its exception and logs loudly, and each is safe to do so for the SAME reason:
-by the time any of them runs, the message is already durable in ``cards.db``.
-Raising from here would report as lost a message that was not lost, and the
-one thing worse than a mirror that lags is a store of record that refuses a
-write because a mirror hiccuped.
+Legacy dispatches, the sidecar, and receipts remain fail-soft after the DM is
+durable. A responder-issued ``exchange_id`` changes the inbox's role: that row
+is the durable handoff SAC consumes, so its failure is raised and HTTP 202 is
+withheld. The exception does not claim the already-written DM vanished; the
+exchange error carries its uncertainty and tells the caller to inspect by id.
 
 The polarity is the load-bearing detail. Before schema v5 the SIDECAR was the
 store of record and everything else was best-effort; now the DATABASE is, and
@@ -27,16 +26,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def dispatch_to_inbox(record: dict, store: str | Path | None) -> None:
-    """Enqueue the DM into the recipient's pull-inbox (fail-soft).
+def dispatch_to_inbox(record: dict, store: str | Path | None) -> "dict | None":
+    """Enqueue the DM; responder-issued exchanges make this handoff strict.
 
     Keyed exactly like ``poll_notifications``: the recipient name resolves to
     its stable ``u_*`` user id when registered, else the raw name is the key.
-    This is a DELIVERY ACCELERATOR — the message is already committed, so an
-    enqueue failure costs a push, never a message.
+    A legacy record has no delivery exchange and retains fail-soft behaviour.
+    For a new responder-issued exchange the inbox row is the durable handoff
+    to SAC, so failure propagates and prevents an inaccurate HTTP 202.
     """
     try:
-        from . import _inbox
         from ._users import resolve_user
 
         to = record["to"]
@@ -45,7 +44,15 @@ def dispatch_to_inbox(record: dict, store: str | Path | None) -> None:
         except Exception:  # noqa: BLE001 — unresolvable ⇒ raw-name key
             user = None
         recipient_id = user.id if user is not None else to
-        _inbox.enqueue(
+        if record.get("exchange_id"):
+            # New delivery exchanges are PostgreSQL-only. Selecting the legacy
+            # inbox backend here would create a private second queue that SAC
+            # cannot observe, so the canonical door is named directly.
+            from ._inbox_postgres import enqueue
+        else:
+            from ._inbox import enqueue
+
+        return enqueue(
             recipient_id,
             event_type="dm",
             card_id=record["thread"],
@@ -59,9 +66,12 @@ def dispatch_to_inbox(record: dict, store: str | Path | None) -> None:
             # lamp never lit for a channel-delivered agent, and why `queued`
             # was left uncomputable (_dm_receipt_state.py:43-48).
             msg_id=record.get("id"),
+            exchange_id=record.get("exchange_id"),
             store=store,
         )
     except Exception:  # noqa: BLE001 — delivery accelerator, not the SSOT
+        if record.get("exchange_id"):
+            raise
         logger.warning(
             "dm-dispatch: inbox enqueue failed for %r (message %s already "
             "committed to the database)",
@@ -69,6 +79,7 @@ def dispatch_to_inbox(record: dict, store: str | Path | None) -> None:
             record.get("id"),
             exc_info=True,
         )
+        return None
 
 
 def mirror_to_sidecar(record: dict, key: str, store: str | Path | None) -> None:
