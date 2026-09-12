@@ -490,17 +490,8 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
 
 
 @pytest.fixture()
-def hubs_label_with_nothing_configured(env, tmp_path):
-    """A per-project label on the trusted attribute, and no store anywhere.
-
-    Both ambient tiers are silenced on purpose: on a developer host the user
-    config file answers with the fleet DSN when the env alone is unset, and the
-    view would then read a real store and pass for the wrong reason.
-    """
-    from scitex_cards._store_target import ENV_STORE_DSN
-
-    env.delete(ENV_STORE_DSN)
-    env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
+def hubs_file_label(tmp_path):
+    """A retired per-project path label beside the shared ambient store."""
     label = tmp_path / "users" / "alice" / "proj" / "dotfiles" / ".scitex" / "todo" / "tasks.yaml"
     yield str(label)
 
@@ -511,47 +502,23 @@ def _threads_for_label(label: str):
     return dm_threads_view(request)
 
 
-def test_a_label_with_no_store_answers_the_store_absent_status(hubs_label_with_nothing_configured):
-    from scitex_cards._django.views import STORE_ABSENT_STATUS
-
+def test_a_file_label_cannot_hide_the_shared_store(hubs_file_label):
     # Arrange
-    label = hubs_label_with_nothing_configured
+    label = hubs_file_label
     # Act
     response = _threads_for_label(label)
     # Assert
-    assert response.status_code == STORE_ABSENT_STATUS
+    assert response.status_code == 200
 
 
-def test_a_label_with_no_store_names_the_reason_machine_readably(hubs_label_with_nothing_configured):
-    from scitex_cards._django.views import STORE_ABSENT_REASON
-
-    # Arrange
-    label = hubs_label_with_nothing_configured
-    # Act
-    response = _threads_for_label(label)
-    # Assert
-    assert json.loads(response.content)["reason"] == STORE_ABSENT_REASON
-
-
-def test_a_label_with_no_store_carries_an_error_sentence(hubs_label_with_nothing_configured):
-    # Arrange
-    label = hubs_label_with_nothing_configured
-    # Act
-    response = _threads_for_label(label)
-    # Assert
-    assert json.loads(response.content)["error"]
-
-
-def test_the_thread_view_refuses_the_same_way(hubs_label_with_nothing_configured):
-    from scitex_cards._django.views import STORE_ABSENT_STATUS
-
+def test_the_thread_view_also_uses_the_shared_store(hubs_file_label):
     # Arrange
     request = _get("/dm/thread/agent-x")
-    setattr(request, STORE_REQUEST_ATTR, hubs_label_with_nothing_configured)
+    setattr(request, STORE_REQUEST_ATTR, hubs_file_label)
     # Act
     response = dm_thread_view(request, "agent-x")
     # Assert
-    assert response.status_code == STORE_ABSENT_STATUS
+    assert response.status_code == 200
 
 
 # The reaction view is wrapped the same way but is NOT pinned here: reactions
