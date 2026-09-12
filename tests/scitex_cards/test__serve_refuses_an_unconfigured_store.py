@@ -3,7 +3,7 @@
 """A SERVER must refuse to start rather than invent a store. No silent fallback.
 
 MEASURED INCIDENT, 2026-08-09. The operator's board (`scitex-cards gui serve`,
-127.0.0.1:8051) ran with NO ``SCITEX_CARDS_DB`` in its environment. Its only
+127.0.0.1:8051) ran with NO ``SCITEX_STORE_DSN`` in its environment. Its only
 store-related variables pointed at ``~/.scitex/cards/tasks.yaml`` -- A FILE THAT
 DOES NOT EXIST. Resolution therefore fell to the zero-config default and served
 ``~/.scitex/cards/cards.db``, whose mtime was 2026-08-02 22:47.
@@ -50,7 +50,7 @@ from scitex_cards._store_target import (
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
 #: The env names that can supply a store target. This listed the current name
 #: and its retired twin; the twin is gone, which left the same name twice.
-_TARGET_VARS = ("SCITEX_CARDS_DB",)
+_TARGET_VARS = ("SCITEX_STORE_DSN",)
 
 
 @pytest.fixture()
@@ -75,7 +75,7 @@ def unconfigured_store():
 def configured_store():
     """A store target chosen explicitly, via the real environment."""
     saved = {name: os.environ.get(name) for name in _TARGET_VARS}
-    os.environ["SCITEX_CARDS_DB"] = _DSN
+    os.environ["SCITEX_STORE_DSN"] = _DSN
     yield _DSN
     for name, value in saved.items():
         if value is None:
@@ -119,7 +119,7 @@ def test_the_refusal_names_the_variable_to_set(unconfigured_store):
     result = runner.invoke(gui_serve_cmd, [])
 
     # Assert
-    assert "SCITEX_CARDS_DB" in result.output
+    assert "SCITEX_STORE_DSN" in result.output
 
 
 def test_serve_does_not_refuse_when_a_target_is_configured(configured_store):

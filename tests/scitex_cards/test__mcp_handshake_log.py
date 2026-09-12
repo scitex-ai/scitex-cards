@@ -216,7 +216,7 @@ def rotated_sink(tmp_path):
 def default_sink_path(tmp_path, env):
     """The sink path resolved with no override — the deployed default."""
     env.delete(ENV_LOG_PATH)
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "cards.db"))
     return resolve_log_path()
 
 

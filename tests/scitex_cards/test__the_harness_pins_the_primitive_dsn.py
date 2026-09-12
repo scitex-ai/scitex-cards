@@ -11,7 +11,7 @@ That list had a hole. It named every variable ``scitex_cards`` resolves and
 none of the variable the STORAGE PRIMITIVE resolves. Measured 2026-08-30 in a
 sac-managed container::
 
-    SCITEX_CARDS_DB=postgresql://scitex-primary:55432/scitex   <- pinned
+    SCITEX_STORE_DSN=postgresql://scitex-primary:55432/scitex   <- pinned
     SCITEX_STORE_DSN=postgresql://scitex-primary:55432/scitex  <- inherited
 
 Same cluster, same database, same 6,399 cards. Nothing in ``src/scitex_cards``
@@ -141,7 +141,7 @@ def test_the_card_store_variable_is_still_pinned_too():
     # Arrange
     expected_marker = "search_path"
     # Act
-    observed = os.environ.get("SCITEX_CARDS_DB", "")
+    observed = os.environ.get("SCITEX_STORE_DSN", "")
     # Assert
     assert expected_marker in observed
 

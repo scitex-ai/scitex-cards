@@ -113,7 +113,7 @@ def failure_status(
         persistence_known = True
         observation = "no canonical PostgreSQL target was configured"
         action = (
-            "set SCITEX_CARDS_DB, then inspect it with "
+            "set SCITEX_STORE_DSN, then inspect it with "
             "`scitex-cards resolve-store` before retrying"
         )
     elif isinstance(exc, ModuleNotFoundError):
@@ -185,7 +185,7 @@ def failure_status(
             else "the DM API returned no durable message id"
         )
         action = (
-            "verify SCITEX_CARDS_DB and SCITEX_STORE_DSN name the writable "
+            "verify SCITEX_STORE_DSN names the writable "
             "canonical PostgreSQL, then run `scitex-cards health`"
             if persistence_known_absent
             else "run `scitex-cards health`; inspect dm_messages before retrying"
@@ -280,7 +280,7 @@ def rotate_failed_notification_exchange(
                 raise RuntimeError(
                     "Cards notifications and the canonical status ledger are in "
                     "different PostgreSQL databases; refusing a non-atomic exchange "
-                    "rotation. Point SCITEX_CARDS_DB and SCITEX_STORE_DSN at the "
+                    "rotation. Point SCITEX_STORE_DSN at the "
                     "same database, then retry the unconfirmed notification."
                 )
             notification_table = sql.Identifier(inbox_schema, "notifications")

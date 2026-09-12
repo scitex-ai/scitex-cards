@@ -211,7 +211,7 @@ substrate handles axis 2.
 ```
 Store identity (ONE axis, not a search order):
   1. explicit `store` / `--store` argument   (wins even if missing)
-  2. $SCITEX_CARDS_DB                        (PostgreSQL on 55432)
+  2. $SCITEX_STORE_DSN                        (PostgreSQL on 55432)
   -. nothing else                            (unset => RAISES)
 ```
 
@@ -227,7 +227,7 @@ true and following it silently does nothing: `scitex_cards._paths` states
 outright that there is DELIBERATELY no project-scope layer for the data
 store. A per-repo store meant one agent saw a different board depending on
 which directory it started in, so resolution was collapsed onto the single
-`$SCITEX_CARDS_DB` axis. If you create that path expecting an override, you
+`$SCITEX_STORE_DSN` axis. If you create that path expecting an override, you
 will get the user-scope board and no warning.
 
 The bundled `<package>/examples/tasks.yaml` fallback is likewise gone (#512,

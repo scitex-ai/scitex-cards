@@ -114,7 +114,7 @@ CLI verb above.
 ### The wake side (`scitex-cards watch --push`)
 
 The watcher runs once per ~2 seconds on the host that hosts the
-canonical store (`$SCITEX_CARDS_DB`). On each tick:
+canonical store (`$SCITEX_STORE_DSN`). On each tick:
 
 - Diff against the previous snapshot.
 - For every NEW task assigned to an agent, OR every newly-appended

@@ -1014,30 +1014,25 @@ def test_where_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
-def test_where_resolved_path(tmp_path, env):
-    # Arrange — the store identity is the database path ($SCITEX_CARDS_DB).
+def test_resolve_store_refuses_a_filesystem_dsn(tmp_path, env):
     runner = CliRunner()
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
-    env.set("SCITEX_CARDS_DB", db)
+    env.set("SCITEX_STORE_DSN", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
-    # Act
-    info = json.loads(result.output.strip())
-    # Assert
-    assert info["resolved"] == db
+    assert result.exit_code != 0
+    assert "not a Postgres DSN" in str(result.exception)
 
 
-def test_where_exists_true(tmp_path, env):
+def test_resolve_store_does_not_probe_a_filesystem_dsn(tmp_path, env):
     # Arrange
     runner = CliRunner()
     db = str(tmp_path / "cards.db")
     Path(db).write_text("", encoding="utf-8")
-    env.set("SCITEX_CARDS_DB", db)
+    env.set("SCITEX_STORE_DSN", db)
     result = runner.invoke(main, ["resolve-store", "--json"])
-    # Act
-    info = json.loads(result.output.strip())
-    # Assert
-    assert info["exists"] is True
+    assert result.exit_code != 0
+    assert "not a Postgres DSN" in str(result.exception)
 
 
 # --------------------------------------------------------------------------- #
@@ -1055,7 +1050,7 @@ def test_init_shared_exits_zero(tmp_path, env):
 
 # THE STORE IS A BARE SCHEMA, NOT A NAMED FILE, in the three tests below.
 #
-# They used to point $SCITEX_CARDS_DB at `fake-home/cards/cards.db` and assert
+# They used to point $SCITEX_STORE_DSN at `fake-home/cards/cards.db` and assert
 # the verb CREATED that file -- "created" in the output, the path on disk, a
 # second run reporting "no-op". Every one of those is a statement about a
 # store that is a FILE, and the comment here even called it "the workflow that
@@ -1098,7 +1093,7 @@ def _tasks_table_exists(dsn: str) -> bool:
 def test_init_shared_reports_the_store_it_provisioned(bare_store, env):
     # Arrange — an empty schema, so the verb has a schema to install.
     runner = CliRunner()
-    env.set("SCITEX_CARDS_DB", bare_store)
+    env.set("SCITEX_STORE_DSN", bare_store)
     # Act
     result = runner.invoke(main, ["init-store", "--shared"])
     # Assert — naming the target is what lets a reader check WHICH store was
@@ -1109,7 +1104,7 @@ def test_init_shared_reports_the_store_it_provisioned(bare_store, env):
 def test_init_shared_installs_the_schema(bare_store, env):
     # Arrange
     runner = CliRunner()
-    env.set("SCITEX_CARDS_DB", bare_store)
+    env.set("SCITEX_STORE_DSN", bare_store)
     before = _tasks_table_exists(bare_store)
     # Act
     runner.invoke(main, ["init-store", "--shared"])
@@ -1121,7 +1116,7 @@ def test_init_shared_installs_the_schema(bare_store, env):
 def test_init_shared_is_idempotent(bare_store, env):
     # Arrange
     runner = CliRunner()
-    env.set("SCITEX_CARDS_DB", bare_store)
+    env.set("SCITEX_STORE_DSN", bare_store)
     runner.invoke(main, ["init-store", "--shared"])
     # Act
     again = runner.invoke(main, ["init-store", "--shared"])
@@ -1139,7 +1134,7 @@ def _init_shared_with_no_store_configured(tmp_path, env):
     """
     runner = CliRunner()
     env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_CARDS_DB")
+    env.delete("SCITEX_STORE_DSN")
     return runner.invoke(main, ["init-store", "--shared"])
 
 
@@ -1163,7 +1158,7 @@ def test_init_shared_refusal_names_the_variable_to_set(tmp_path, env):
     # Act
     result = _init_shared_with_no_store_configured(tmp_path, env)
     # Assert
-    assert "SCITEX_CARDS_DB" in result.output
+    assert "SCITEX_STORE_DSN" in result.output
 
 
 def test_init_project_outside_git_errors(tmp_path, env):

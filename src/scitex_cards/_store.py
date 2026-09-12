@@ -31,7 +31,7 @@ Design constraints
 - **Generic** (Req 8): scope/assignee/status are free-form strings. The
   helpers don't know what an "agent" is.
 - **Centralized** (Req 3): the default store is the database resolved by
-  ``$SCITEX_CARDS_DB``; callers can override with an explicit ``store=``
+  ``$SCITEX_STORE_DSN``; callers can override with an explicit ``store=``
   target. One board for the fleet covers Req 7.
 - **Shared with scopes** (Req 1): ``$SCITEX_CARDS_SCOPE`` provides the
   default value for ``list_tasks(scope=...)`` when the caller doesn't pass
@@ -377,7 +377,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         {
           "resolved":         "/abs/path/to/cards.db",
           "explicit":         <the `store` arg you passed, or None>,
-          "db_env":           <value of $SCITEX_CARDS_DB, or None>,
+          "db_env":           <value of $SCITEX_STORE_DSN, or None>,
           "user_store":       "/abs/path/to/~/.scitex/cards/cards.db",
           "pkg_short":        "cards",
           "exists":           bool,
@@ -428,8 +428,8 @@ def resolve_store(store: str | Path | None = None) -> dict:
     """
     import os
 
-    from ._db import DEFAULT_DB_FILENAME, ENV_DB, resolve_db_path
-    from ._paths import PKG_SHORT, _user_root
+    from ._db import ENV_STORE_DSN, resolve_db_path
+    from ._paths import PKG_SHORT
     from ._store_target import resolve_store_target
     from ._store_url import (
         backend_of,
@@ -458,13 +458,12 @@ def resolve_store(store: str | Path | None = None) -> dict:
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
-        "db_env": os.environ.get(ENV_DB),
-        "user_store": str(_user_root() / DEFAULT_DB_FILENAME),
+        "store_dsn_env": os.environ.get(ENV_STORE_DSN),
         "pkg_short": PKG_SHORT,
         "backend": backend_of(target),
         # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
         # 2026-08-12 this verb answered `backend: <a file>, exists: false` for
-        # SCITEX_CARDS_DB=":55432" — a port, reported as a file that merely does
+        # SCITEX_STORE_DSN=":55432" — a port, reported as a file that merely does
         # not exist yet. Both fields were true of the string and neither was
         # true of the intent, so the report read as "fresh install" to every
         # agent who ran it. `backend` cannot carry this: thirteen call sites
@@ -474,7 +473,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # THE SIBLING MALFORMATION, and it was missing from this dict while its
         # detector sat in the same module as `is_attempted_dsn`. The argument
         # above generalises verbatim: `backend` cannot carry it either, because
-        # an unexpanded `${SCITEX_CARDS_DB}` is not DSN-shaped, so `backend_of`
+        # an unexpanded `${SCITEX_STORE_DSN}` is not DSN-shaped, so `backend_of`
         # cannot name the store and `exists` answers False -- both true of the string
         # and neither true of the intent, exactly as ":55432" once read as a
         # fresh install.
@@ -487,7 +486,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
         # surface and this surface did not consult it.
         #
         # Measured 2026-08-21 by claude-code-telegrammer: with the literal
-        # `${SCITEX_CARDS_DB}` set, this verb named a file as the backend,
+        # `${SCITEX_STORE_DSN}` set, this verb named a file as the backend,
         # target_is_malformed_dsn=False and exit 0, while an actual read refused
         # (exit 1). The system was safe; the DIAGNOSTIC said nothing, which is
         # the surface an agent runs precisely when it is confused.

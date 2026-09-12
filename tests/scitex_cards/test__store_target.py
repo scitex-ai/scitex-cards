@@ -21,12 +21,12 @@ from scitex_cards._store_target import (
 )
 
 PG_URL = "postgresql://user@host:5432/scitex_cards"
-ENV = "SCITEX_CARDS_DB"
+ENV = "SCITEX_STORE_DSN"
 
 
 @pytest.fixture
 def store_env():
-    """Set ``$SCITEX_CARDS_DB`` for one test and restore the real value after."""
+    """Set ``$SCITEX_STORE_DSN`` for one test and restore the real value after."""
     saved = os.environ.get(ENV)
 
     def _set(value: str) -> None:
@@ -82,7 +82,7 @@ class TestTheOldResolverNoLongerMangles:
     re-derivation.
 
     WHY IT CHANGED. The mangling was not merely untidy. Measured on the live
-    system: with ``$SCITEX_CARDS_DB`` set to a PostgreSQL URL, ``list_tasks``
+    system: with ``$SCITEX_STORE_DSN`` set to a PostgreSQL URL, ``list_tasks``
     returned 0 cards against a real board of 2960, ``resolve-store`` reported
     ``exists: True``, and a real EMPTY 217 KB the retired engine database was created at
     the mangled path. An empty board reporting itself healthy is the outage

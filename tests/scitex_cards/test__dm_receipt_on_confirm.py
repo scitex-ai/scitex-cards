@@ -46,7 +46,7 @@ def store(tmp_path, env, new_store):
     override needed here any more.
     """
     dsn = new_store()
-    env.set("SCITEX_CARDS_DB", dsn)
+    env.set("SCITEX_STORE_DSN", dsn)
     return dsn
 
 

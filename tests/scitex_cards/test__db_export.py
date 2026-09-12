@@ -214,7 +214,7 @@ def test_export_keeps_unknown_notification_keys_under_the_overlay(seeded):
 def test_resolve_db_path_still_delegates_to_the_chain(env, tmp_path):
     """Guard: the exporter's default path rides the S4a resolution chain."""
     # Arrange
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "x.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "x.db"))
 
     # Act
     resolved = resolve_db_path()

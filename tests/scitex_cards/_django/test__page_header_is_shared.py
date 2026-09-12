@@ -83,7 +83,7 @@ def store():
     from scitex_cards._yaml import safe_load
 
     doc = safe_load(_STORE_TEXT) or {}
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()

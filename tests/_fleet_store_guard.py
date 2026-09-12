@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 #: The variable ``scitex_dev.store.testing.writable_dsn()`` consults first.
 CLUSTER_ENV = "SCITEX_STORE_DSN"
 #: The variable naming the board this agent actually reads and writes.
-BOARD_ENV = "SCITEX_CARDS_DB"
+BOARD_ENV = "SCITEX_STORE_DSN"
 
 
 def server_of(dsn: str | None) -> tuple[str, str, str] | None:
@@ -74,7 +74,7 @@ def fleet_store_declined(env: Mapping[str, str]) -> str | None:
 
     A NO-OP IN CI, BY CONSTRUCTION: each pytest-matrix leg sets
     ``SCITEX_STORE_DSN`` to its own ``postgres:16`` service and does NOT set
-    ``SCITEX_CARDS_DB``, so there is no board to match and this returns
+    ``SCITEX_STORE_DSN``, so there is no board to match and this returns
     ``None``. The guard fires exactly where the exposure is.
     """
     here = server_of(env.get(CLUSTER_ENV))

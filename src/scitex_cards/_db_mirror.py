@@ -230,7 +230,7 @@ def mirror_doc_incremental(
         def _stamp() -> None:
             # Record WHICH STORE this database is the database of, in the same
             # transaction as the rows. The identity is the store's resolved path
-            # (post-cutover, the database's own $SCITEX_CARDS_DB path); the
+            # (post-cutover, the database's own $SCITEX_STORE_DSN path); the
             # ownership guard compares it before every write.
             if store_path is not None:
                 stamp_store_provenance(conn, store_path)

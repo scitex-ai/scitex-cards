@@ -54,7 +54,7 @@ def test_skill_does_not_assert_which_engine_the_store_is(path):
     # Assert
     assert not found, (
         f"{path.name} tells agents the store is a specific engine: {found}. "
-        "The deployment picks the backend via $SCITEX_CARDS_DB -- say so and "
+        "The deployment picks the backend via $SCITEX_STORE_DSN -- say so and "
         "point at `scitex-cards resolve-store` instead of naming one."
     )
 

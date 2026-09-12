@@ -221,7 +221,7 @@ def decide_identity(
                     "store_uuid and different data — measured 2026-08-12 on "
                     "THREE databases sharing "
                     "1d55dd6e-3d2a-4c24-a429-a78835ab988f — so a matching uuid "
-                    "is not evidence. Point $SCITEX_CARDS_DB at the pinned "
+                    "is not evidence. Point $SCITEX_STORE_DSN at the pinned "
                     "store, or re-pin deliberately if the move was intended."
                 ),
             )

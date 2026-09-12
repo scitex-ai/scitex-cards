@@ -24,7 +24,7 @@ Render it to a dependency-graph PNG from Python:
 
 .. code-block:: bash
 
-    # store: $SCITEX_CARDS_DB (PostgreSQL on 55432); unset raises
+    # store: $SCITEX_STORE_DSN (PostgreSQL on 55432); unset raises
     scitex-cards render-graph -o tasks.png
 
     # inspect the generated mermaid without rendering
@@ -80,7 +80,7 @@ Where your task data lives
 **PostgreSQL on 55432**, and there is ONE store identity:
 
 1. an explicit ``store`` / ``--store`` argument (wins even if missing)
-2. ``$SCITEX_CARDS_DB`` — e.g. ``postgresql://scitex_cards@127.0.0.1:55432/scitex_cards``
+2. ``$SCITEX_STORE_DSN`` — e.g. ``postgresql://scitex_cards@127.0.0.1:55432/scitex_cards``
 
 Nothing else. Unset **raises**. There is deliberately no second-engine tier, no project
 scope (a per-repo store meant one agent saw a different board depending on which

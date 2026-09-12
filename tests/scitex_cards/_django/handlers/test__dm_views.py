@@ -50,10 +50,10 @@ def store(env) -> str:
     for months.
     """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    dsn = os.environ.get("SCITEX_STORE_DSN", "")
     if "search_path" not in dsn:
         pytest.fail(
-            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            "the root conftest did not pin $SCITEX_STORE_DSN to a throwaway "
             f"PostgreSQL schema; it holds {dsn!r}.",
             pytrace=False,
         )
@@ -433,7 +433,7 @@ def test_a_query_store_does_not_become_the_write_target(store, tmp_path, env):
     attacker.parent.mkdir(parents=True, exist_ok=True)
     attacker.write_text("tasks: []\n", encoding="utf-8")
     # THE AMBIENT PIN IS STILL THE POINT, and it is now the harness's. This
-    # read `env.set("SCITEX_CARDS_DB", str(tmp_path / "ambient.db"))` -- a
+    # read `env.set("SCITEX_STORE_DSN", str(tmp_path / "ambient.db"))` -- a
     # FILENAME, which the doors refuse, so the handler's fallback would raise
     # instead of writing anywhere and the test would pass without ever
     # exercising the property. The autouse fixture already pins the ambient
@@ -497,9 +497,9 @@ def hubs_label_with_nothing_configured(env, tmp_path):
     config file answers with the fleet DSN when the env alone is unset, and the
     view would then read a real store and pass for the wrong reason.
     """
-    from scitex_cards._store_target import ENV_DB
+    from scitex_cards._store_target import ENV_STORE_DSN
 
-    env.delete(ENV_DB)
+    env.delete(ENV_STORE_DSN)
     env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
     label = tmp_path / "users" / "alice" / "proj" / "dotfiles" / ".scitex" / "todo" / "tasks.yaml"
     yield str(label)

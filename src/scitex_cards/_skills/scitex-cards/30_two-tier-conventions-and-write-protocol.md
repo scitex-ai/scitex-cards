@@ -31,7 +31,7 @@ other's task state from one place + the board surfaces the whole map.
 
 Historically each project had its own on-disk `<project>/.scitex/cards/`
 directory. That layout is retired: the canonical store is now a single
-database (`$SCITEX_CARDS_DB`; the deployment picks the engine — never
+database (`$SCITEX_STORE_DSN`; the deployment picks the engine — never
 assume one), and "project tier" is a `scope` value on rows in it, not a file. The agent
 owning a project still writes its OWN tasks with that project's scope;
 the per-task `tasks/<task-id>/` directory (`README.md` + `adr.md`
@@ -66,7 +66,7 @@ one-file-per-project rolled up into a second file.
 
 The board (`scitex-cards board`) reads from this database. The mermaid
 adapter, the MCP tools, every UI surface — all read from the resolved
-`$SCITEX_CARDS_DB` as the canonical source.
+`$SCITEX_STORE_DSN` as the canonical source.
 
 Fleet-liveness data (`agents.json`, machine-written by the
 sac-status-writer sidecar, ADR-0005) is a separate, purely
@@ -76,7 +76,7 @@ never human-edited, never part of the task store.
 ## Store resolution — one canonical database
 
 Follows `src/scitex_cards/_paths.py` / `_db.py`: the store identity is
-`$SCITEX_CARDS_DB`, and there is NO fallback — an unconfigured target
+`$SCITEX_STORE_DSN`, and there is NO fallback — an unconfigured target
 RAISES rather than resolving a filename nobody chose. That zero-config
 tier was deleted 2026-08-13 after proving reachable in production: a host
 exported the var below `.bashrc`'s non-interactive early return, so cron

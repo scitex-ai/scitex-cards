@@ -7,7 +7,7 @@ WHERE THE DAMAGE ACTUALLY HAPPENS, which is not where I first guarded. #815 put
 `_backend_connect.connect` -- and I reported the class closed. It was not.
 Measured on develop with #815 already merged:
 
-    SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/scitex_cards'
+    SCITEX_STORE_DSN='postgresql:/scitex_cards@127.0.0.1:55432/scitex_cards'
     inbox_db_path()
       -> postgresql:/scitex_cards@127.0.0.1:55432/runtime/cards.db
     and the directory tree was CREATED under the process's working directory.
@@ -55,14 +55,14 @@ MALFORMED = [
 
 #: The env names that can supply a store target. This listed the current name
 #: and its retired twin; the twin is gone, which left the same name twice.
-_TARGET_VARS = ("SCITEX_CARDS_DB",)
+_TARGET_VARS = ("SCITEX_STORE_DSN",)
 
 
 @pytest.fixture()
 def ambient(request):
-    """Set $SCITEX_CARDS_DB for the ambient (explicit=None) path."""
+    """Set $SCITEX_STORE_DSN for the ambient (explicit=None) path."""
     saved = {name: os.environ.get(name) for name in _TARGET_VARS}
-    os.environ["SCITEX_CARDS_DB"] = request.param
+    os.environ["SCITEX_STORE_DSN"] = request.param
     yield request.param
     for name, value in saved.items():
         if value is None:
@@ -94,7 +94,7 @@ class TestTheExplicitArgumentIsRefused:
 
 
 class TestTheAmbientEnvironmentIsRefused:
-    """A typo in $SCITEX_CARDS_DB is the commonest way to get here, and it
+    """A typo in $SCITEX_STORE_DSN is the commonest way to get here, and it
     arrives with explicit=None -- so guarding only the argument would leave the
     likeliest case on the unguarded path."""
 

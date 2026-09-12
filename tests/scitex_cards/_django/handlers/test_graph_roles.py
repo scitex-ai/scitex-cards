@@ -66,7 +66,7 @@ def store():
     # provenance label. The board/services layer (get_board -> load_groups)
     # stat()s the identity file, which the _django autouse fixture already
     # creates at the pinned path.
-    seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()
     yield store_path

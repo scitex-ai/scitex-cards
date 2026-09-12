@@ -54,7 +54,7 @@ from scitex_cards._paths import _user_root
 #: port to the next reader (operator ruling; see
 #: ``test__store_url_attempted_dsn`` for the same rule applied to messages).
 _DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
-_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND")
+_MANAGED = ("SCITEX_STORE_DSN", "HOME", "SCITEX_DIR", "SCITEX_CARDS_INBOX_BACKEND")
 
 
 def _write_user_config(target: str) -> None:
@@ -92,7 +92,7 @@ def file_store(tmp_path):
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
     store = tmp_path / ".scitex" / "cards" / "cards.db"
-    os.environ["SCITEX_CARDS_DB"] = str(store)
+    os.environ["SCITEX_STORE_DSN"] = str(store)
     os.chdir(tmp_path)
 
     yield str(store)
@@ -113,7 +113,7 @@ def postgres_rails(file_store):
     Real environment variables, because which backend the rail picks is read
     from ``os.environ`` and that resolution is exactly what is under test.
     """
-    os.environ["SCITEX_CARDS_DB"] = _DSN
+    os.environ["SCITEX_STORE_DSN"] = _DSN
     yield _DSN
 
 
@@ -121,9 +121,9 @@ def postgres_rails(file_store):
 def postgres_inbox_only(file_store):
     """Inbox on a server, cards in a file — the split the other way round."""
     os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "postgres"
-    os.environ["SCITEX_CARDS_INBOX_DSN"] = _DSN
+    os.environ["SCITEX_STORE_DSN"] = _DSN
     yield file_store
-    os.environ.pop("SCITEX_CARDS_INBOX_DSN", None)
+    os.environ.pop("SCITEX_STORE_DSN", None)
 
 
 class TestAFileStoreHasNoInboxBackend:
@@ -191,7 +191,7 @@ class TestASplitIsReportedAsFailure:
         hint = check_backend_mode(store)["hint"]
 
         # Assert
-        assert "SCITEX_CARDS_DB" in hint
+        assert "SCITEX_STORE_DSN" in hint
 
     def test_it_does_not_raise_on_a_nonsense_store(self, file_store):
         """A doctor reports; it must not crash the caller asking for a report."""
@@ -272,7 +272,7 @@ class TestASplitTheOtherWayIsAlsoReported:
         hint = check_backend_mode(store)["hint"]
 
         # Assert
-        assert "SCITEX_CARDS_DB" in hint
+        assert "SCITEX_STORE_DSN" in hint
 
 
 class TestItNamesWhichTierChoseTheTarget:
@@ -291,7 +291,7 @@ class TestItNamesWhichTierChoseTheTarget:
     def test_the_environment_variable_is_named_when_it_wins(self, file_store):
         """The env var outranks the file -- that is the confusing case."""
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = file_store
+        os.environ["SCITEX_STORE_DSN"] = file_store
 
         # Act
         detail = check_backend_mode(None)["detail"]
@@ -306,9 +306,9 @@ class TestItNamesWhichTierChoseTheTarget:
         deleted. It asserted only ``"chosen by" in detail``, which every tier
         satisfies, and it wrote no config file at all -- so the tier it is named
         after was never exercised. What actually answered was the deleted
-        ``_env_compat`` module: it mirrored the ambient ``SCITEX_CARDS_DB`` onto
+        ``_env_compat`` module: it mirrored the ambient ``SCITEX_STORE_DSN`` onto
         the retired env name AT IMPORT, the fixture did not manage that name,
-        and popping ``SCITEX_CARDS_DB`` therefore left the REAL production
+        and popping ``SCITEX_STORE_DSN`` therefore left the REAL production
         PostgreSQL DSN visible through the retired one. Measured 2026-08-16:
         with the env popped, ``resolve_store_target`` returned
         ``postgresql://...:55432/scitex_cards``. A unit test was reading the
@@ -320,7 +320,7 @@ class TestItNamesWhichTierChoseTheTarget:
         exactly how it hid a leak of production state for as long as it did.
         """
         # Arrange
-        os.environ.pop("SCITEX_CARDS_DB", None)
+        os.environ.pop("SCITEX_STORE_DSN", None)
         _write_user_config(file_store)
 
         # Act
@@ -342,7 +342,7 @@ class TestTheWriteTargetNamesTheRealEngine:
         written to prevent -- just with a different constant.
         """
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = file_store
+        os.environ["SCITEX_STORE_DSN"] = file_store
 
         # Act
         detail = check_single_write_target()["detail"]
@@ -353,7 +353,7 @@ class TestTheWriteTargetNamesTheRealEngine:
     def test_it_reports_postgres_when_the_store_is_a_server(self, file_store):
         """The regression: this line used to name the wrong engine here too."""
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = _DSN
+        os.environ["SCITEX_STORE_DSN"] = _DSN
 
         # Act
         detail = check_single_write_target()["detail"]

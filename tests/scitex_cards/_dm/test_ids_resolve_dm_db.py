@@ -28,7 +28,7 @@ import pytest
 
 from scitex_cards._db import DEFAULT_DB_FILENAME
 from scitex_cards._dm.ids import resolve_dm_db
-from scitex_cards._store_target import ENV_DB, StoreTargetNotConfigured
+from scitex_cards._store_target import ENV_STORE_DSN, StoreTargetNotConfigured
 from scitex_cards._store_url import UnrecognisedStoreTarget
 
 DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
@@ -43,7 +43,7 @@ def nothing_configured(env, tmp_path):
     fleet DSN -- measured 2026-09-05 -- so a test that only unset the variable
     would resolve the live board and pass for the wrong reason.
     """
-    env.delete(ENV_DB)
+    env.delete(ENV_STORE_DSN)
     env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
     yield tmp_path
 
@@ -64,7 +64,7 @@ class TestResolveDmDbStoreTier:
         # Act
         got = resolve_dm_db(store=store)
         # Assert
-        assert got == os.environ[ENV_DB]
+        assert got == os.environ[ENV_STORE_DSN]
 
     def test_a_path_label_never_yields_a_cards_file(self, tmp_path):
         """The old derivation, pinned closed: no filename comes out of a label."""

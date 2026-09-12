@@ -168,7 +168,7 @@ def imported(store):
 # --------------------------------------------------------------------------- #
 def test_resolve_db_path_explicit_wins(tmp_path, env):
     # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "env.db"))
+    env.set(_db.ENV_STORE_DSN, str(tmp_path / "env.db"))
 
     # Act
     got = _db.resolve_db_path(tmp_path / "explicit.db")
@@ -179,7 +179,7 @@ def test_resolve_db_path_explicit_wins(tmp_path, env):
 
 def test_resolve_db_path_env_over_userpath(tmp_path, env):
     # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "env.db"))
+    env.set(_db.ENV_STORE_DSN, str(tmp_path / "env.db"))
 
     # Act
     got = _db.resolve_db_path()
@@ -207,7 +207,7 @@ def _resolve_with_delegated_user_path(tmp_path, env):
     a reader following the message depends on, and the one a recorder cannot
     check, because it supplied the answer it then asserted.
     """
-    env.delete(_db.ENV_DB)
+    env.delete(_db.ENV_STORE_DSN)
     env.set("SCITEX_DIR", str(tmp_path / "userscope"))
     expected = tmp_path / "userscope" / "cards" / "cards.db"
     try:

@@ -70,7 +70,7 @@ def _run_over_an_unreadable_store(env, tmp_path, argv, *, hold_lock):
     the 0.7.47 regression (rollup computed ABOVE the guard) hide behind a
     push-only spy.
     """
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
     if not hold_lock:
         return CliRunner().invoke(main, argv)
     with single_instance(notify_lock_path(None)):

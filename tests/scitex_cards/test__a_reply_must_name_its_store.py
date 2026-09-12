@@ -3,7 +3,7 @@
 """A SPLIT STORE IS INVISIBLE UNLESS BOTH REPLIES NAME THEIR TARGET.
 
 THE DEFECT. An agent polls its inbox from one store and confirms against
-another — two containers whose `SCITEX_CARDS_DB` resolved differently, a
+another — two containers whose `SCITEX_STORE_DSN` resolved differently, a
 restart that silently repointed a loopback DSN from one port to another. Every
 call SUCCEEDS. The poll returns nothing and the confirmation answers
 ``unknown`` for every id, and BOTH of those are exactly what a correct call

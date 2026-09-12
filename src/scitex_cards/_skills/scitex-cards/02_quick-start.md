@@ -37,7 +37,7 @@ tasks:
 ## CLI
 
 ```bash
-# default store: $SCITEX_CARDS_DB, else the user-canonical database
+# default store: $SCITEX_STORE_DSN, else the user-canonical database
 scitex-cards render-graph -o tasks.png
 
 # inspect the generated mermaid without rendering

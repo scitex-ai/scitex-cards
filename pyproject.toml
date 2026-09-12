@@ -128,7 +128,7 @@ dev = [
     # `writable_dsn` / `ephemeral_schema`, which is how every test gets its own
     # throwaway PostgreSQL schema now that a scratch FILE names no store. If
     # that import fails the harness has no store to pin to, and it deliberately
-    # does NOT fall back to leaving $SCITEX_CARDS_DB unset — that is the live
+    # does NOT fall back to leaving $SCITEX_STORE_DSN unset — that is the live
     # fleet board — so every test errors on configuration instead.
     #
     # Measured from the tag, not a changelog: `scitex_dev/store/testing.py`

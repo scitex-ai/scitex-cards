@@ -6,7 +6,7 @@ WHY THIS FILE EXISTS. Measured 2026-08-03 against the live PostgreSQL board::
 
     $ scitex-cards list-tasks
     ...301 cards read from PostgreSQL, validated, in memory...
-    StoreTargetIsNotAPath: $SCITEX_CARDS_DB names a PostgreSQL server
+    StoreTargetIsNotAPath: $SCITEX_STORE_DSN names a PostgreSQL server
 
 The read had ALREADY SUCCEEDED. What raised was the header line above the
 results, which called ``resolve_db_path`` for one reason: to print where the
@@ -38,7 +38,7 @@ import pytest
 from scitex_cards._cli import _admin
 from scitex_cards._store_target import store_label
 
-ENV = "SCITEX_CARDS_DB"
+ENV = "SCITEX_STORE_DSN"
 PG_URL = "postgresql://user@host:5432/scitex_cards"
 PG_WITH_PASSWORD = "postgresql://user:sekret@host:5432/scitex_cards"
 PG_WITH_QUERY = "postgresql://user@host:5432/scitex_cards?sslmode=require&password=zzz"
@@ -46,7 +46,7 @@ PG_WITH_QUERY = "postgresql://user@host:5432/scitex_cards?sslmode=require&passwo
 
 @pytest.fixture
 def store_env():
-    """Set ``$SCITEX_CARDS_DB`` for one test and restore the real value after."""
+    """Set ``$SCITEX_STORE_DSN`` for one test and restore the real value after."""
     saved = os.environ.get(ENV)
 
     def _set(value: str) -> None:

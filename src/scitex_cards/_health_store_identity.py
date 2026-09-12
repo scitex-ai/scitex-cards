@@ -53,7 +53,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
             "ok": False,
             "detail": f"could not read the identity from {describe_store_target(target)!r} ({exc})",
             "hint": (
-                "check the server is reachable and $SCITEX_CARDS_DB names the "
+                "check the server is reachable and $SCITEX_STORE_DSN names the "
                 f"right database. {type(exc).__name__}: {exc}"
             ),
         }
@@ -86,7 +86,7 @@ def _identity_on_postgres(target: str) -> dict[str, Any]:
             "hint": (
                 f"fix the EXPECTATION, not the database. Either unset "
                 f"${ENV_EXPECTED_STORE_UUID} or set it to the identity the "
-                f"store you meant actually carries, or point $SCITEX_CARDS_DB "
+                f"store you meant actually carries, or point $SCITEX_STORE_DSN "
                 f"at that store. Do NOT set ${ENV_EXPECTED_STORE_UUID} to a "
                 f"value this database has never carried -- that manufactures "
                 f"the evidence instead of checking it."
@@ -156,7 +156,7 @@ def _check_store_identity_agrees(store: str | Path | None) -> dict[str, Any]:
             f"carries no identity to check (store_uuid=none)"
         ),
         "hint": (
-            "point $SCITEX_CARDS_DB at the store's DSN "
+            "point $SCITEX_STORE_DSN at the store's DSN "
             "(postgresql://...:55432/...). Do NOT create a store at this target "
             "to make the check green -- a fresh empty one becomes a SECOND "
             "store, which is how the board was destroyed on 2026-07-19."

@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from scitex_cards._cli._admin import resolve_store_cmd
-from scitex_cards._db import ENV_DB, resolve_db_path
+from scitex_cards._db import ENV_STORE_DSN, resolve_db_path
 from scitex_cards._paths import resolve_tasks_path
 from scitex_cards._store_target import (
     TIER_DEFAULT,
@@ -22,7 +22,7 @@ from scitex_cards._store_target import (
 )
 
 DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
-_MANAGED = (ENV_DB, "HOME", "SCITEX_DIR")
+_MANAGED = (ENV_STORE_DSN, "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def unconfigured_store(tmp_path):
     saved_env = {name: os.environ.get(name) for name in _MANAGED}
     saved_cwd = os.getcwd()
 
-    for name in (ENV_DB, "SCITEX_DIR"):
+    for name in (ENV_STORE_DSN, "SCITEX_DIR"):
         os.environ.pop(name, None)
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
@@ -60,10 +60,10 @@ def unconfigured_store(tmp_path):
 @pytest.fixture
 def env_store(tmp_path):
     """A store CHOSEN through the real environment, restored on teardown."""
-    saved = {name: os.environ.get(name) for name in (ENV_DB,)}
+    saved = {name: os.environ.get(name) for name in (ENV_STORE_DSN,)}
 
     def _set(value: str) -> str:
-        os.environ[ENV_DB] = value
+        os.environ[ENV_STORE_DSN] = value
         return value
 
     try:
@@ -270,7 +270,7 @@ class TestTheRefusalIsActionable:
         message = self._message()
 
         # Assert
-        assert ENV_DB in message
+        assert ENV_STORE_DSN in message
 
     def test_it_names_the_file_that_would_have_been_served(
         self, unconfigured_store
@@ -380,7 +380,7 @@ class TestTheRemedyTheRefusalNamesStillWorks:
         result = runner.invoke(resolve_store_cmd, [])
 
         # Assert
-        assert ENV_DB in result.output
+        assert ENV_STORE_DSN in result.output
 
     def test_resolve_store_explains_rather_than_traceback(self, unconfigured_store):
         """A traceback here reads as "the store is broken" and costs the reader

@@ -52,7 +52,7 @@ def _seed_db(body: str) -> None:
     from conftest import seed_db_from_doc
 
     doc = yaml.safe_load(body) or {}
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
 
 
 def _store_lane() -> Path:

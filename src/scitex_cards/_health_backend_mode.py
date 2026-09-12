@@ -5,7 +5,7 @@
 Operator directive 2026-08-02: "fail fast, fail loud, no fallbacks", and
 a doctor verb that can say which mode a process is in.
 
-TWO RAILS, AND THEY CAN DISAGREE. The card store follows ``$SCITEX_CARDS_DB``.
+TWO RAILS, AND THEY CAN DISAGREE. The card store follows ``$SCITEX_STORE_DSN``.
 The notification inbox used NOT to: it was a per-host sidecar file at
 ``runtime_dir(store)/cards.db``, chosen by a path derived from the store rather
 than by the store's own backend. So a fleet pointed at a server ran its cards on
@@ -70,28 +70,9 @@ def _which_tier_won(store: str | Path | None, resolved: str) -> str:
     highest-ranked one whose value MATCHES what actually resolved. When two
     tiers hold the same value the higher one is named, which is also what wins.
     """
-    import os
-
     if store is not None:
         return "an explicit argument"
-
-    from ._db import ENV_DB
-
-    env_value = os.environ.get(ENV_DB)
-    if env_value and str(env_value) == resolved:
-        return f"the {ENV_DB} environment variable"
-
-    try:
-        from ._config import CONFIG_NAME, store_config_target
-
-        if store_config_target() == resolved:
-            return f"{CONFIG_NAME} (store.target)"
-    except Exception:  # noqa: BLE001 — a doctor must not crash the caller
-        pass
-
-    if env_value:
-        return f"the {ENV_DB} environment variable"
-    return "the built-in default"
+    return "the scitex-dev shared-store primitive"
 
 
 def _inbox_mode(store: str | Path | None) -> tuple[str, str]:
@@ -165,7 +146,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
                 f"{store_mode} ({describe_store_target(target)}, chosen by {source}). {inbox_where}"
             ),
             "hint": (
-                f"point $SCITEX_CARDS_DB at a postgresql://...:55432/... DSN. "
+                f"point $SCITEX_STORE_DSN at a postgresql://...:55432/... DSN. "
                 "There is no fallback rail to select for a store target that "
                 "names no store (operator ruling 2026-08-23)."
             ),
@@ -196,7 +177,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
                 "so no read can join the two and no transaction can span them."
             ),
             "hint": (
-                "Point $SCITEX_CARDS_DB at the same server the inbox uses, so "
+                "Point $SCITEX_STORE_DSN at the same server the inbox uses, so "
                 "a notification and the card it is about live in one database."
             ),
         }
@@ -214,7 +195,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
             "created."
         ),
         "hint": (
-            "Point $SCITEX_CARDS_DB at the store's DSN so both rails live in "
+            "Point $SCITEX_STORE_DSN at the store's DSN so both rails live in "
             "one database. There is no setting that makes a split correct: a "
             "toggle here would be a fallback wearing a switch. Until the two "
             "agree, treat notification delivery as unverified by this doctor "

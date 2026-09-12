@@ -97,7 +97,7 @@ def test_a_conninfo_quoted_password_is_dropped_whole():
 
 def test_a_non_dsn_target_is_returned_as_it_was():
     # Arrange
-    targets = ["/tmp/cards.db", "${SCITEX_CARDS_DB}", "CHANGEME", ""]
+    targets = ["/tmp/cards.db", "${SCITEX_STORE_DSN}", "CHANGEME", ""]
     # Act
     shown = [describe_store_target(t) for t in targets]
     # Assert
@@ -175,19 +175,19 @@ def test_the_health_identity_failure_does_not_echo_the_password():
 
 @pytest.fixture
 def store_env_with_inline_secret() -> Iterator[str]:
-    """$SCITEX_CARDS_DB pointing at a DSN that carries its password inline,
+    """$SCITEX_STORE_DSN pointing at a DSN that carries its password inline,
     restored on teardown. The label under test resolves from this variable."""
-    from scitex_cards._db import ENV_DB
+    from scitex_cards._db import ENV_STORE_DSN
 
-    previous = os.environ.get(ENV_DB)
-    os.environ[ENV_DB] = INLINE_SECRET_DSN
+    previous = os.environ.get(ENV_STORE_DSN)
+    os.environ[ENV_STORE_DSN] = INLINE_SECRET_DSN
     try:
         yield INLINE_SECRET_DSN
     finally:
         if previous is None:
-            os.environ.pop(ENV_DB, None)
+            os.environ.pop(ENV_STORE_DSN, None)
         else:
-            os.environ[ENV_DB] = previous
+            os.environ[ENV_STORE_DSN] = previous
 
 
 def test_the_tolerated_read_label_does_not_echo_the_password(store_env_with_inline_secret):

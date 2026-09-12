@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for store-path resolution (no mocks; real env + tmp files).
 
-The store IDENTITY is the database ``$SCITEX_CARDS_DB``
+The store IDENTITY is the database ``$SCITEX_STORE_DSN``
 (:func:`scitex_cards._db.resolve_db_path`). :func:`resolve_tasks_path` returns
 the YAML CONTAINER beside that database (``<db_dir>/tasks.yaml``) that still
 holds the non-task sections (users/groups/inboxes) — NOT the identity, and no
@@ -23,7 +23,7 @@ import pytest
 
 from scitex_cards._db import (
     DEFAULT_DB_FILENAME,
-    ENV_DB,
+    ENV_STORE_DSN,
     resolve_db_path,
 )
 from scitex_cards._paths import (
@@ -38,8 +38,8 @@ from scitex_cards._store_target import StoreTargetNotConfigured
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
-    for v in (ENV_DB,):
+    saved = {v: os.environ.get(v) for v in (ENV_STORE_DSN,)}
+    for v in (ENV_STORE_DSN,):
         os.environ.pop(v, None)
     try:
         yield
@@ -65,7 +65,7 @@ def test_ambient_container_is_beside_the_database(tmp_path, clean_store_env):
     """The non-task YAML container sits next to the resolved database."""
     # Arrange
     target = tmp_path / "fromenv.db"
-    os.environ[ENV_DB] = str(target)
+    os.environ[ENV_STORE_DSN] = str(target)
     # Act
     resolved = resolve_tasks_path(None)
     # Assert — the container is `<db_dir>/tasks.yaml`, next to the identity DB.
@@ -76,7 +76,7 @@ def test_ambient_database_resolves_to_the_named_target(tmp_path, clean_store_env
     """The identity half of the pair above, split under STX-TQ007."""
     # Arrange
     target = tmp_path / "fromenv.db"
-    os.environ[ENV_DB] = str(target)
+    os.environ[ENV_STORE_DSN] = str(target)
     # Act
     resolved = resolve_db_path(None)
     # Assert

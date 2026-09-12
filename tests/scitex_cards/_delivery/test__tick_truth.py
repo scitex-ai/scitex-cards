@@ -6,7 +6,7 @@ Reproduces the 2026-07-28/29 silent outage AGAINST REAL FAILURES — no mocks,
 no substituted functions. The two conditions are induced the way the incident
 induced them:
 
-* **the store cannot be read** — ``$SCITEX_CARDS_DB`` points at a database that
+* **the store cannot be read** — ``$SCITEX_STORE_DSN`` points at a database that
   does not exist, so the package's own fail-loud reader
   (``_store_canonical_read._read_canonical_db_or_raise``) refuses, the reminder
   sweep's guard swallows it, and delivery carries on exactly as it did on the
@@ -66,7 +66,7 @@ def _break_the_canonical_store(env, tmp_path) -> None:
     database as an empty board. This is the same class of fault the live daemon
     hit ("REFUSING TO READ ... as the store") and it recurs on EVERY tick.
     """
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
 
 
 def _break_the_inbox(tmp_path) -> None:

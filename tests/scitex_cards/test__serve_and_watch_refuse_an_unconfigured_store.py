@@ -44,7 +44,7 @@ from scitex_cards._store_target import TIER_DEFAULT, resolve_store_tier
 
 #: The env names that can supply a store target. This listed the current name
 #: and its retired twin; the twin is gone, which left the same name twice.
-_TARGET_VARS = ("SCITEX_CARDS_DB",)
+_TARGET_VARS = ("SCITEX_STORE_DSN",)
 
 
 class GuardDidNotFire(AssertionError):
@@ -117,7 +117,7 @@ def configured_store(tmp_path):
     """A cards database chosen explicitly, via the real environment.
 
     A TMP PATH, NOT THE PRODUCTION DSN, and the first draft got this wrong. It
-    set SCITEX_CARDS_DB to the real 127.0.0.1:55432 board, and
+    set SCITEX_STORE_DSN to the real 127.0.0.1:55432 board, and
     `test_watch_does_not_refuse_when_a_target_is_configured` duly CONNECTED TO
     THE LIVE FLEET BOARD and read real cards -- visible in the run's warnings,
     which named actual production card ids. Read-only and harmless in effect,
@@ -130,7 +130,7 @@ def configured_store(tmp_path):
     """
     saved = {name: os.environ.get(name) for name in _TARGET_VARS}
     target = str(tmp_path / "cards.db")
-    os.environ["SCITEX_CARDS_DB"] = target
+    os.environ["SCITEX_STORE_DSN"] = target
     yield target
     for name, value in saved.items():
         if value is None:
@@ -230,7 +230,7 @@ def test_the_watch_refusal_names_the_variable_to_set(unconfigured_store):
     # Act
     result = runner.invoke(watch_cmd, ["--once"])
     # Assert
-    assert "SCITEX_CARDS_DB" in result.output
+    assert "SCITEX_STORE_DSN" in result.output
 
 
 def test_watch_does_not_refuse_when_a_target_is_configured(configured_store):

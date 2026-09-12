@@ -52,7 +52,7 @@ def _seed_store_with_users(tasks, users):
     verbatim, in insertion order.
     """
     norm = [{"status": "pending", **t} for t in tasks]  # status is required
-    seed_db_from_doc({"tasks": norm, "users": users}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": norm, "users": users}, os.environ["SCITEX_STORE_DSN"])
 
 
 #: Each CRUD verb below is exercised once and then asserted on two ways: the

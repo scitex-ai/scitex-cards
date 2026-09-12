@@ -11,7 +11,7 @@ the narrower, load-bearing question of IDENTITY.
 THE FAILURE THIS PREVENTS
 -------------------------
 A database file is opaque about which logical store it belongs to. Point
-``$SCITEX_CARDS_DB`` at a database that was built as store B's, then write store
+``$SCITEX_STORE_DSN`` at a database that was built as store B's, then write store
 A into it, and nothing merges — B's rows are REPLACED with A's. That is not
 hypothetical: on 2026-07-19 this package's own concurrency test rebuilt the live
 fleet database from a 21-card fixture because the destination came from the
@@ -77,7 +77,7 @@ from pathlib import Path
 #: ``schema_meta`` key holding the resolved path of the store this database IS.
 #: (Was ``yaml_path`` before the cutover, when the database mirrored a
 #: YAML file; renamed with the cutover — the identity is now the database's own
-#: ``$SCITEX_CARDS_DB`` path, not a YAML file that no longer exists.)
+#: ``$SCITEX_STORE_DSN`` path, not a YAML file that no longer exists.)
 KEY_STORE_PATH = "store_path"
 
 _KEYS = (KEY_STORE_PATH,)
@@ -264,7 +264,7 @@ def check_fresh(
     return False, (
         f"this database belongs to a DIFFERENT store ({stamped!r}) than the "
         f"one being read ({canonical_path(store_path)!r}). Point "
-        "$SCITEX_CARDS_DB at this store's own database."
+        "$SCITEX_STORE_DSN at this store's own database."
     )
 
 
