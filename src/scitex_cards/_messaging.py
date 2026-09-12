@@ -77,19 +77,38 @@ _NO_IDENTITY_MESSAGE = (
 )
 
 
+def canonical_agent_identity(value: str) -> str:
+    """Return the agent's durable address, accepting ``agent:`` scope syntax.
+
+    ``agent:<name>`` is the Cards *scope* spelling.  SAC's inbox subscriber
+    identity is the bare ``<name>``.  Treating both strings as inbox keys made
+    the documented ``dm send agent:worker`` example persist a notification no
+    running SAC subscriber could consume.  Canonicalise at the public message
+    boundary so every backend and transport sees one identity.
+    """
+    if not isinstance(value, str):
+        raise ValueError("agent identity must be a string")
+    identity = value.strip()
+    if identity.startswith("agent:"):
+        identity = identity.removeprefix("agent:").strip()
+    if not identity:
+        raise ValueError("agent identity must be non-empty")
+    return identity
+
+
 def resolve_sender(sender: str | None = None) -> str:
     """Return the DM sender identity, or raise :class:`AgentIdentityUnresolved`.
 
     An explicit ``sender`` wins; otherwise the environment identity is used.
     """
     if sender is not None:
-        return sender
+        return canonical_agent_identity(sender)
     from ._mcp_channel import resolve_agent_id_optional
 
     resolved = resolve_agent_id_optional()
     if resolved is None:
         raise AgentIdentityUnresolved(_NO_IDENTITY_MESSAGE)
-    return resolved
+    return canonical_agent_identity(resolved)
 
 
 def poll_notifications(
@@ -191,7 +210,7 @@ def dm_send(
         client_request_id = new_client_request_id()
     return get_backend().dm_send(
         resolve_sender(sender),
-        to,
+        canonical_agent_identity(to),
         body,
         store=store,
         client_request_id=client_request_id,
@@ -253,7 +272,7 @@ def dm_send_document(
 
     record = get_backend().dm_send(
         resolved_sender,
-        to,
+        canonical_agent_identity(to),
         f"{label}\n{meta['url']}",
         store=store,
         client_request_id=new_client_request_id(),
@@ -275,8 +294,9 @@ def dm_list(
     """
     from ._backend import get_backend
 
+    canonical_peer = canonical_agent_identity(peer) if peer is not None else None
     return get_backend().dm_list(
-        resolve_sender(sender), peer=peer, ack=ack, store=store
+        resolve_sender(sender), peer=canonical_peer, ack=ack, store=store
     )
 
 
