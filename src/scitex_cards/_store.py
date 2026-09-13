@@ -433,6 +433,7 @@ def resolve_store(store: str | Path | None = None) -> dict:
     from ._store_target import resolve_store_target
     from ._store_url import (
         backend_of,
+        describe_store_target,
         is_attempted_dsn,
         is_postgres_url,
         is_unexpanded_variable,
@@ -455,12 +456,20 @@ def resolve_store(store: str | Path | None = None) -> dict:
     # sites reading the same value independently is how they come to disagree.
     observed_uuid = store_uuid_at(resolved)
     pinned_uuid = expected_store_uuid()
+    from scitex_dev.status import Check
+
+    resolution_check = Check.ok(
+        "cards_store_resolution",
+        "Cards shared state resolves through scitex-dev to "
+        f"{describe_store_target(resolved)!r}.",
+    )
     return {
         "resolved": resolved,
         "explicit": str(store) if store is not None else None,
         "store_dsn_env": os.environ.get(ENV_STORE_DSN),
         "pkg_short": PKG_SHORT,
         "backend": backend_of(target),
+        "store_resolution": resolution_check.to_dict(),
         # THE FIELD THAT WOULD HAVE ENDED THIS IN MINUTES INSTEAD OF DAYS. On
         # 2026-08-12 this verb answered `backend: <a file>, exists: false` for
         # SCITEX_STORE_DSN=":55432" — a port, reported as a file that merely does

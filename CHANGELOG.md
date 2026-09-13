@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-09-14
+
+### Cards resolves shared state through the SciTeX store primitive
+
+Ambient Cards, DM, and inbox access now delegates to
+`scitex_dev.store.host_store`. With no explicit override it resolves the one
+writable fleet primary at `scitex-primary:55432/scitex`; Cards-specific
+environment variables and `~/.scitex/cards/config.json` can no longer redirect
+one caller to a private or retired store. Explicit test targets remain
+supported.
+
+This patch release is intentionally cut after the resolver change. Version
+0.52.0 predates that change even though a later source checkout still reported
+0.52.0, so a version floor could not distinguish the safe resolver from the
+retired one.
+
 ### PostgreSQL CI has one deterministic feedback path
 
 The three branch-protection-required pytest-matrix checks already start
