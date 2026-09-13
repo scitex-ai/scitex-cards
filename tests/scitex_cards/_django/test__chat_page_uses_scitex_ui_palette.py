@@ -89,15 +89,22 @@ def test_the_page_declares_no_hex_colour_of_its_own():
     assert offenders == []
 
 
-def test_the_dark_theme_is_activated(rendered):
-    """Without the attribute, base tokens resolve LIGHT onto a dark surface.
-
-    theme.css defines its tokens twice, under [data-theme="light"] and
-    [data-theme="dark"], and defaults to light when the attribute is absent.
-    That default is what made the context menu unreadable.
-    """
+def test_the_shared_shell_defaults_to_dark_before_theme_resolution(rendered):
+    """The canonical shell must declare dark as its pre-paint fallback."""
     # Arrange
-    marker = 'data-theme="dark"'
+    marker = 'data-theme-default="dark"'
+
+    # Act
+    present = marker in rendered
+
+    # Assert
+    assert present
+
+
+def test_the_shared_shell_resolves_data_theme_before_first_paint(rendered):
+    """The shared boot script turns the stored preference/default into tokens."""
+    # Arrange
+    marker = 'root.setAttribute("data-theme", theme)'
 
     # Act
     present = marker in rendered

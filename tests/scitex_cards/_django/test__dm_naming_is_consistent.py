@@ -53,7 +53,10 @@ _PARTIAL = _DJANGO_DIR / "templates" / "scitex_cards" / "_page_switcher.html"
 _URLCONF = "scitex_cards._django.urls"
 
 _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.DOTALL)
-_ITEM_RE = re.compile(r"<a[^>]*stx-cards-switcher__item[^>]*>([^<]*)</a>")
+_ITEM_RE = re.compile(
+    r'<a[^>]*stx-cards-switcher__item[^>]*aria-label="([^"]+)"[^>]*>.*?</a>',
+    re.DOTALL,
+)
 
 
 @pytest.fixture
@@ -131,7 +134,7 @@ def test_the_switcher_labels_the_dm_surface_dm(chat_html):
     # Act
     labels = _switcher_labels(html)
     # Assert
-    assert labels == ["Board", "DM"]
+    assert labels == ["Board", "Direct messages"]
 
 
 def test_the_switcher_has_no_item_labelled_chat(chat_html):
@@ -164,7 +167,7 @@ def test_the_switcher_landmark_is_announced_as_dm(chat_html):
     # Arrange
     html = chat_html
     # Act
-    announced = 'aria-label="Board or DM"' in html
+    announced = 'aria-label="Cards sections"' in html
     # Assert
     assert announced
 
@@ -196,9 +199,11 @@ def test_the_switcher_tooltip_uses_the_longer_direct_message_wording(chat_html):
 def test_no_switcher_tooltip_still_says_chat(chat_html):
     """A tooltip is user-visible text too — it was the other half of the label."""
     # Arrange
-    html = chat_html
+    switcher = re.search(
+        r'<nav class="stx-cards-switcher".*?</nav>', chat_html, re.DOTALL
+    )
     # Act
-    stale = 'title="Chat' in html
+    stale = switcher is not None and 'title="Chat' in switcher.group(0)
     # Assert
     assert not stale
 
@@ -247,7 +252,7 @@ def test_the_page_still_identifies_itself_as_dm_somewhere_visible(chat_html):
     html = chat_html
 
     # Act
-    identified = ">DM</a>" in html
+    identified = ">Direct messages</span>" in html
 
     # Assert
     assert identified
@@ -328,7 +333,9 @@ def test_the_switcher_href_points_at_the_dm_route(chat_html):
     # Arrange
     html = chat_html
     # Act
-    hrefs = re.findall(r'href="([^"]*)"[^>]*>DM</a>', html)
+    hrefs = re.findall(
+        r'href="([^"]*)"[^>]*aria-label="Direct messages[^"]*"', html
+    )
     # Assert
     assert hrefs == ["/dm"]
 

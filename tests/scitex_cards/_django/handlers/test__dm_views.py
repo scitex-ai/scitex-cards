@@ -6,8 +6,8 @@ Minimal-slice contract (card fleet-agent-direct-message-board-pane-20260707):
 
   - GET  /dm/threads      → registry agents ∪ thread peers, with unread + last.
   - GET  /dm/thread/<p>   → chronological messages; mark_read=1 acks.
-  - POST /dm/thread/<p>   → appends from=operator, dm-dispatches to the
-                            agent's pull-inbox; 400 on empty body.
+  - POST /dm/thread/<p>   → persists a user-authored DM and returns a delivery
+                            exchange; 400 on empty body.
   - 405 on other verbs.
 
 Django RequestFactory against a REAL store via ``?store=``; no mocks
@@ -33,10 +33,12 @@ from django.test import RequestFactory
 
 from scitex_cards._django.handlers.dm import (
     STORE_REQUEST_ATTR,
+    dm_exchange_view,
     dm_thread_view,
     dm_threads_view,
 )
-from scitex_cards._inbox import poll_inbox
+from scitex_cards._dm import read as dm_read
+from scitex_cards._inbox_postgres import poll_inbox
 from scitex_cards._threads import append_message, get_thread
 
 
@@ -127,7 +129,7 @@ def _threads_with_a_silent_registry_agent(store):
     return dm_threads_view(_get(f"/dm/threads?{_q(store)}"))
 
 
-def _post_operator_message(store, body: str):
+def _post_operator_message(store, body: str, client_request_id: str | None = None):
     """A write, scoped the way a WRITE is now allowed to be scoped.
 
     The store arrives on the request ATTRIBUTE, exactly as scitex-hub's
@@ -135,9 +137,12 @@ def _post_operator_message(store, body: str):
     any more: a write no longer honours the query, so scoping these tests
     through it would have them exercise a path that production refuses.
     """
+    payload = {"body": body}
+    if client_request_id is not None:
+        payload["client_request_id"] = client_request_id
     request = RequestFactory().post(
         "/dm/thread/agent-x",
-        data=json.dumps({"body": body}),
+        data=json.dumps(payload),
         content_type="application/json",
     )
     setattr(request, STORE_REQUEST_ATTR, str(store))
@@ -329,12 +334,95 @@ def test_thread_view_mark_read_acks_operator_messages(store):
 # === POST /dm/thread/<peer> ================================================
 
 
-def test_post_operator_message_returns_ok(store):
+def test_post_operator_message_returns_accepted(store):
     # Arrange
     # Act
     response = _post_operator_message(store, "check the deploy")
     # Assert
+    assert response.status_code == 202
+
+
+def test_post_operator_message_returns_exchange_id(store):
+    # Arrange
+    response = _post_operator_message(store, "check the deploy")
+    # Act
+    exchange_id = json.loads(response.content)["exchange"]["exchange_id"]
+    # Assert
+    assert exchange_id.startswith("xch_")
+
+
+def test_post_operator_message_exchange_is_non_final(store):
+    # Arrange
+    response = _post_operator_message(store, "check the deploy")
+    # Act
+    exchange = json.loads(response.content)["exchange"]
+    # Assert
+    assert exchange["final"] is False
+
+
+def test_retry_with_same_client_request_id_returns_same_message(store):
+    # Arrange
+    first = json.loads(
+        _post_operator_message(store, "retry safely", "req_browser_test").content
+    )
+    # Act
+    second = json.loads(
+        _post_operator_message(store, "retry safely", "req_browser_test").content
+    )
+    # Assert
+    assert first["message"]["id"] == second["message"]["id"]
+
+
+def test_sender_can_read_the_delivery_exchange(store):
+    # Arrange
+    sent = json.loads(
+        _post_operator_message(store, "check the deploy").content
+    )["exchange"]
+    # Act
+    response = dm_exchange_view(
+        _get(f"/dm/exchange/{sent['exchange_id']}"), sent["exchange_id"]
+    )
+    # Assert
     assert response.status_code == 200
+
+
+def test_delivery_exchange_response_is_canonical(store):
+    # Arrange
+    sent = json.loads(
+        _post_operator_message(store, "check the deploy").content
+    )["exchange"]
+    # Act
+    exchange = json.loads(
+        dm_exchange_view(
+            _get(f"/dm/exchange/{sent['exchange_id']}"), sent["exchange_id"]
+        ).content
+    )
+    # Assert
+    assert (exchange["exchange_id"], exchange["status"]["code"], exchange["final"]) == (
+        sent["exchange_id"],
+        202,
+        False,
+    )
+
+
+def test_other_authenticated_user_cannot_read_delivery_exchange(store):
+    # Arrange
+    sent = json.loads(
+        _post_operator_message(store, "check the deploy").content
+    )["exchange"]
+    request = _get(f"/dm/exchange/{sent['exchange_id']}")
+
+    class _Alice:
+        is_authenticated = True
+
+        def get_username(self):
+            return "alice"
+
+    request.user = _Alice()
+    # Act
+    response = dm_exchange_view(request, sent["exchange_id"])
+    # Assert
+    assert response.status_code == 404
 
 
 def test_post_operator_message_is_stored_from_the_operator(store):
@@ -360,9 +448,9 @@ def test_post_operator_message_is_appended_to_the_thread(store):
     response = _post_operator_message(store, "check the deploy")
     message = json.loads(response.content)["message"]
     # Act
-    stored = get_thread("operator", "agent-x", store=store)
+    stored = dm_read.messages_in("dm:agent-x::operator", store=store)
     # Assert
-    assert stored == [message]
+    assert [item["id"] for item in stored] == [message["id"]]
 
 
 def test_post_operator_message_dispatches_one_inbox_item(store):
@@ -474,7 +562,7 @@ def test_a_trusted_attribute_still_scopes_the_write(store):
     # Arrange
     _post_operator_message(store, "scoped by the trusted attribute")
     # Act
-    stored = get_thread("operator", "agent-x", store=store)
+    stored = dm_read.messages_in("dm:agent-x::operator", store=store)
     # Assert
     assert stored[-1]["body"] == "scoped by the trusted attribute"
 
@@ -550,7 +638,8 @@ def read_only_dm_store(store):
             conn.execute(f"REVOKE INSERT ON {table} FROM current_user")
         conn.commit()
         row = conn.execute(
-            "SELECT has_table_privilege(current_user, 'dm_messages', 'INSERT') AS can_insert, "
+            "SELECT has_table_privilege(current_user, 'dm_messages', "
+            "'INSERT') AS can_insert, "
             "current_user AS me, "
             "(SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su"
         ).fetchone()

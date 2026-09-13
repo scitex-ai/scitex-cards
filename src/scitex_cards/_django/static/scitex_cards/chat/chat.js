@@ -3,7 +3,7 @@
  * Minimal slice (card fleet-agent-direct-message-board-pane-20260707):
  *   - GET  /dm/threads              -> agent list + unread badges (poll ~10s)
  *   - GET  /dm/thread/<peer>?mark_read=1 -> open thread (poll ~5s)
- *   - POST /dm/thread/<peer>        -> compose (from=operator)
+ *   - POST /dm/thread/<peer>        -> compose (authenticated user)
  *
  * The thread pane repaints INCREMENTALLY: every poll is diffed against what
  * is already on screen, so an unchanged poll paints nothing, an arriving
@@ -20,17 +20,16 @@
   /* Mount-aware API base (same contract as board_v3.html's API_BASE const).
    * The hub mounts this app under a sub-path (e.g. /apps/cards/), where
    * root-absolute fetches escape the mount and 404. chat.html ALWAYS renders
-   * the include root on <body data-api-base> ("/" standalone, "/apps/cards/"
+   * the include root on #cards-dm-app ("/" standalone, "/apps/cards/"
    * on the hub); trailing slashes are stripped so a root mount yields "" and
    * every call below stays "/dm/…"-shaped. A missing marker is an
    * INTEGRATION BUG (a template that forgot to set it), so it throws loudly
    * instead of silently guessing a root mount that would 404 on the hub. */
-  var apiBaseRaw = document.body
-    ? document.body.getAttribute("data-api-base")
-    : null;
+  var appRoot = document.getElementById("cards-dm-app");
+  var apiBaseRaw = appRoot ? appRoot.getAttribute("data-api-base") : null;
   if (apiBaseRaw === null) {
     throw new Error(
-      'chat.js: <body data-api-base="…"> is missing — the page template ' +
+      'chat.js: #cards-dm-app[data-api-base="…"] is missing — the page template ' +
         'must always set it ("/" at a root mount); refusing to guess the ' +
         "mount root.",
     );
@@ -57,10 +56,12 @@
    * chips). Assigned at boot; messageNode asks it where chips go. */
   var menu = null;
 
-  /* This page IS the operator's side of the DM board — every POST it makes is
-   * attributed to the operator server-side — so the operator is who a reaction
-   * chip should light up for. */
-  var VIEWER = "operator";
+  /* The authenticated user scope is rendered server-side; standalone falls
+   * back to the local operator identity. */
+  var VIEWER = (appRoot && appRoot.getAttribute("data-user-scope")) || "operator";
+  var exchange = window.ChatExchange
+    ? window.ChatExchange.mount({ apiBase: API_BASE, viewer: VIEWER })
+    : null;
 
   var state = {
     peer: null, // currently open peer name, or null
@@ -245,6 +246,7 @@
     // purpose: that row already exists, so the track costs no vertical space
     // and cannot push the timestamp onto a second line on a phone.
     if (receipts) receipts.render(meta, m, state.receipts);
+    if (exchange) exchange.render(meta, m);
     wrap.appendChild(meta);
     // Reaction chips belong to the menu module (it owns every reaction write),
     // so this file only says WHERE they go, never what they are.
@@ -455,7 +457,8 @@
       getPeer: function () {
         return state.peer;
       },
-      onSent: function () {
+      onSent: function (data) {
+        if (exchange && data && data.exchange) exchange.accepted(data.exchange);
         refreshThread();
         refreshAgents();
       },

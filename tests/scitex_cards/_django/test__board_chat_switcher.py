@@ -62,7 +62,10 @@ _DJANGO_DIR = Path(views.__file__).resolve().parent
 _PARTIAL = _DJANGO_DIR / "templates" / "scitex_cards" / "_page_switcher.html"
 _SWITCHER_CSS = _DJANGO_DIR / "static" / "scitex_cards" / "page-switcher.css"
 
-_ITEM_RE = re.compile(r"<a[^>]*stx-cards-switcher__item[^>]*>([^<]*)</a>")
+_ITEM_RE = re.compile(
+    r'<a[^>]*stx-cards-switcher__item[^>]*aria-label="([^"]+)"[^>]*>.*?</a>',
+    re.DOTALL,
+)
 
 
 def _switcher_item(html: str, label: str) -> str:
@@ -120,6 +123,21 @@ def chat_at_root():
     return views.chat_page(request).content.decode("utf-8")
 
 
+@pytest.fixture
+def pages_with_one_unread(store):
+    """Both mounted surfaces after one agent message to the current user."""
+    from scitex_cards._threads import append_message
+
+    append_message("agent-x", "operator", "please review", store=store)
+    board = views.board_v3_page(
+        RequestFactory().get(f"/apps/cards/?store={store}")
+    ).content.decode("utf-8")
+    dm = views.chat_page(
+        RequestFactory().get(f"/apps/cards/dm?store={store}")
+    ).content.decode("utf-8")
+    return board, dm
+
+
 # --- the board home offers a way INTO the chat -----------------------------
 
 
@@ -129,7 +147,7 @@ def test_board_page_links_to_the_dm_page_under_the_mount_prefix(board_at_subpath
     # Arrange
     html = board_at_subpath
     # Act
-    item = _switcher_item(html, "DM")
+    item = _switcher_item(html, "Direct messages")
     # Assert
     assert 'href="/apps/cards/dm"' in item
 
@@ -140,7 +158,7 @@ def test_board_page_sends_the_operator_to_slash_dm_at_root_mount(board_at_root):
     # Arrange
     html = board_at_root
     # Act
-    item = _switcher_item(html, "DM")
+    item = _switcher_item(html, "Direct messages")
     # Assert
     assert 'href="/dm"' in item
 
@@ -163,7 +181,7 @@ def test_board_page_does_not_mark_chat_as_active(board_at_subpath):
     # Arrange
     html = board_at_subpath
     # Act
-    item = _switcher_item(html, "DM")
+    item = _switcher_item(html, "Direct messages")
     # Assert
     assert "aria-current" not in item
 
@@ -210,7 +228,7 @@ def test_chat_page_marks_chat_as_the_active_surface(chat_at_subpath):
     # Arrange
     html = chat_at_subpath
     # Act
-    item = _switcher_item(html, "DM")
+    item = _switcher_item(html, "Direct messages")
     # Assert
     assert 'aria-current="page"' in item
 
@@ -234,6 +252,49 @@ def test_chat_page_loads_the_shared_switcher_stylesheet(chat_at_subpath):
     linked = stylesheet in chat_at_subpath
     # Assert
     assert linked
+
+
+def test_both_surfaces_render_the_full_direct_messages_label(
+    board_at_subpath, chat_at_subpath
+):
+    # Arrange
+    pages = (board_at_subpath, chat_at_subpath)
+    # Act
+    visible = ["Direct messages</span>" in page for page in pages]
+    # Assert
+    assert visible == [True, True]
+
+
+def test_both_surfaces_render_unread_badge_from_the_same_user_scope(
+    pages_with_one_unread,
+):
+    # Arrange
+    board, dm = pages_with_one_unread
+    # Act
+    badge_counts = [
+        page.count('class="stx-cards-switcher__badge"') for page in (board, dm)
+    ]
+    # Assert
+    assert badge_counts == [1, 1]
+
+
+def test_unread_count_is_in_the_direct_messages_accessible_name(
+    pages_with_one_unread,
+):
+    # Arrange
+    board, _dm = pages_with_one_unread
+    # Act
+    item = _switcher_item(board, "Direct messages, 1 unread")
+    # Assert
+    assert item != ""
+
+
+def test_switcher_has_a_keyboard_focus_treatment():
+    # Arrange
+    css = _SWITCHER_CSS.read_text(encoding="utf-8")
+    # Act
+    # Assert
+    assert ".stx-cards-switcher__item:focus-visible" in css
 
 
 # --- lint: the partial may never hardcode a root-absolute href -------------
