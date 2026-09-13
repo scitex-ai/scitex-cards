@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from scitex_cards._inbox_postgres import resolve_dsn
+from scitex_cards._store import resolve_store
 from scitex_cards._store_target import resolve_store_target
 
 
@@ -62,3 +63,20 @@ def test_cards_specific_store_variables_are_not_consulted(
     observed = (resolved != _OTHER, ":55432/" in resolved, resolve_dsn())
     # Assert
     assert observed == (True, True, resolved)
+
+
+def test_resolution_report_uses_the_shared_check_contract(shared_store: str) -> None:
+    # Arrange
+    expected = {
+        "name": "cards_store_resolution",
+        "ok": True,
+        "detail": (
+            "Cards shared state resolves through scitex-dev to "
+            "'postgresql://cards@127.0.0.1:55432/scitex'."
+        ),
+        "hint": None,
+    }
+    # Act
+    observed = resolve_store()["store_resolution"]
+    # Assert
+    assert observed == expected
