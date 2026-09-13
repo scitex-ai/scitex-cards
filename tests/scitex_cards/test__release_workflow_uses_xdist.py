@@ -22,6 +22,18 @@ def test_release_installs_xdist_explicitly():
     assert install_is_explicit
 
 
+def test_release_provisions_node_for_javascript_contract_tests():
+    # Arrange
+    workflow = _RELEASE.read_text(encoding="utf-8")
+    # Act
+    node_is_provisioned = (
+        "uses: actions/setup-node@v4" in workflow
+        and 'node-version: "22"' in workflow
+    )
+    # Assert
+    assert node_is_provisioned
+
+
 def test_release_sets_the_auto_worker_override():
     # Arrange
     workflow = _RELEASE.read_text(encoding="utf-8")
