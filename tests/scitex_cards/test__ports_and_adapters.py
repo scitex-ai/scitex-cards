@@ -96,7 +96,7 @@ def test_local_file_sync_load_returns_validated_tasks(tmp_path):
 
     seed_db_from_doc(
         {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
     # Act
@@ -121,7 +121,7 @@ def local_file_sync_round_trip(tmp_path):
 
     seed_db_from_doc(
         {"tasks": [{"id": "a", "title": "A", "status": "pending"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     sync = LocalFileSync(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
     tasks = sync.load()

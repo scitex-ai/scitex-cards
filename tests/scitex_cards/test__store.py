@@ -1208,7 +1208,7 @@ def _legacy_row_without_created_by(tmp_path):
     # YAML is gone, so seed the canonical DB from the same in-memory doc the YAML
     # text held and read it back through the pinned store (THE STORE-PATH RULE).
     doc = {"tasks": [{"id": "legacy", "title": "Legacy", "status": "pending"}]}
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     return _model.load_tasks(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
 
 

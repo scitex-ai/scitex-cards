@@ -6,7 +6,7 @@ opened, no environment is read, so these run identically with or without a
 PostgreSQL server — which is the point of keeping the rule in a pure module.
 
 The case that matters most is `test__a_redundant_dsn_is_not_refused`: the suite
-pins $SCITEX_CARDS_DB to a throwaway DSN and hands tests that same DSN, so a
+pins $SCITEX_STORE_DSN to a throwaway DSN and hands tests that same DSN, so a
 refusal keyed on the mere PRESENCE of an argument would fail thousands of tests
 while reporting no real defect. That test is the guard on the guard.
 """
@@ -166,7 +166,7 @@ def test__no_argument_is_never_refused():
 def test__a_redundant_dsn_is_not_refused():
     """THE GUARD ON THE GUARD.
 
-    The suite passes the SAME DSN it pinned $SCITEX_CARDS_DB to. That argument
+    The suite passes the SAME DSN it pinned $SCITEX_STORE_DSN to. That argument
     is redundant, not wrong, and refusing it would break the suite while
     reporting nothing real. The discriminator is disagreement.
     """

@@ -54,7 +54,7 @@ from conftest import seed_db_from_doc
 from scitex_cards._db import connect
 from scitex_cards._db_export import ExportRefused
 
-_STORE_ENV = "SCITEX_CARDS_DB"
+_STORE_ENV = "SCITEX_STORE_DSN"
 _UNREADABLE_USER = "u_000000000002"
 
 

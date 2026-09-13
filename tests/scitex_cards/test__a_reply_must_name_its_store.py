@@ -3,7 +3,7 @@
 """A SPLIT STORE IS INVISIBLE UNLESS BOTH REPLIES NAME THEIR TARGET.
 
 THE DEFECT. An agent polls its inbox from one store and confirms against
-another — two containers whose `SCITEX_CARDS_DB` resolved differently, a
+another — two containers whose `SCITEX_STORE_DSN` resolved differently, a
 restart that silently repointed a loopback DSN from one port to another. Every
 call SUCCEEDS. The poll returns nothing and the confirmation answers
 ``unknown`` for every id, and BOTH of those are exactly what a correct call
@@ -130,20 +130,14 @@ def test_a_split_store_makes_the_two_replies_disagree(inbox, tmp_path):
     assert confirmed["store"] != polled["store"]
 
 
-def test_the_split_confirmation_still_reports_unknown(inbox, tmp_path):
-    """The old, indistinguishable signal is UNCHANGED — this adds, not replaces.
-
-    Pinned deliberately: `unknown` remains exactly what a wrong-store
-    confirmation answers, which is why the label had to be added rather than
-    the classification changed. A consumer that already branches on `unknown`
-    keeps working.
-    """
+def test_a_file_label_cannot_redirect_confirmation_from_shared_state(inbox, tmp_path):
+    """A retired file-shaped label still confirms in the shared store."""
     # Arrange
     elsewhere = str(tmp_path / "a-second-store.yaml")
     # Act
     confirmed = confirm_notifications(AGENT, inbox["ids"], store=elsewhere)
     # Assert
-    assert confirmed["unknown"] == inbox["ids"]
+    assert confirmed["confirmed"] == inbox["ids"]
 
 
 # EOF

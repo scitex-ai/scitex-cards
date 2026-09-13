@@ -57,7 +57,7 @@ def rig(tmp_path, env):
     address the same thing, which is what the paragraph above already asks for.
     """
     env.set("SCITEX_CARDS_AGENT_ID", "rpc-tester")
-    store = os.environ["SCITEX_CARDS_DB"]
+    store = os.environ["SCITEX_STORE_DSN"]
     tokens_dir = tmp_path / "tokens"
     audit_path = tmp_path / "logs" / "hub_access.jsonl"
 

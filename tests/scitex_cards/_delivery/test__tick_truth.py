@@ -6,7 +6,7 @@ Reproduces the 2026-07-28/29 silent outage AGAINST REAL FAILURES — no mocks,
 no substituted functions. The two conditions are induced the way the incident
 induced them:
 
-* **the store cannot be read** — ``$SCITEX_CARDS_DB`` points at a database that
+* **the store cannot be read** — ``$SCITEX_STORE_DSN`` points at a database that
   does not exist, so the package's own fail-loud reader
   (``_store_canonical_read._read_canonical_db_or_raise``) refuses, the reminder
   sweep's guard swallows it, and delivery carries on exactly as it did on the
@@ -66,28 +66,7 @@ def _break_the_canonical_store(env, tmp_path) -> None:
     database as an empty board. This is the same class of fault the live daemon
     hit ("REFUSING TO READ ... as the store") and it recurs on EVERY tick.
     """
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
-
-
-def _break_the_inbox(tmp_path) -> None:
-    """Make the inbox genuinely unreadable — on EITHER inbox backend.
-
-    Both are broken deliberately. The suite pins
-    ``SCITEX_CARDS_INBOX_BACKEND=yaml`` while production runs the database
-    rail, so breaking only the one this harness happens to use would make the
-    test pass for a reason that does not exist in production — and a test that
-    cannot fail on the real path is not a test.
-
-    * yaml backend: ``inboxes.json`` is not JSON, so ``json.load`` raises.
-    * database backend: the inbox database path is a DIRECTORY, which no
-      engine can open.
-
-    :func:`test_the_broken_inbox_really_raises` is the positive control — it
-    proves this function actually broke something, because "the inbox is empty"
-    and "the instrument is broken" otherwise look identical from the outside.
-    """
-    (tmp_path / "inboxes.json").write_text("{ not json at all", encoding="utf-8")
-    (tmp_path / "runtime" / "cards.db").mkdir(parents=True, exist_ok=True)
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
 
 
 def _run_ticks(
@@ -138,12 +117,6 @@ def _broken_store_run(env, tmp_path, caplog, **kw) -> dict:
     return _run_ticks(tmp_path, caplog, **kw)
 
 
-def _broken_inbox_run(tmp_path, caplog, **kw) -> dict:
-    """A tick whose INBOX READ raises, so pending is undeterminable."""
-    _break_the_inbox(tmp_path)
-    return _run_ticks(tmp_path, caplog, **kw)
-
-
 # --------------------------------------------------------------------------- #
 # (1) a tick whose store read raises reports FAILED, not zero-work            #
 # --------------------------------------------------------------------------- #
@@ -191,20 +164,19 @@ class TestStoreReadFailureIsCounted:
 # (2) "nothing pending" and "cannot tell" are distinguishable                 #
 # --------------------------------------------------------------------------- #
 class TestPendingIsThreeValued:
-    def test_the_broken_inbox_really_raises(self, tmp_path):
+    def test_retired_file_damage_cannot_redirect_the_postgres_inbox(self, tmp_path):
         # Arrange
-        # POSITIVE CONTROL. Without it, an inbox that was never
-        # broken and an inbox that is empty produce the same green test.
-        _break_the_inbox(tmp_path)
+        (tmp_path / "inboxes.json").write_text("{ not json at all", encoding="utf-8")
+        (tmp_path / "runtime" / "cards.db").mkdir(parents=True, exist_ok=True)
         # Act
+        records = poll_inbox(
+            "u_alice",
+            unseen_only=False,
+            mark_seen=False,
+            store=tmp_path / "tasks.yaml",
+        )
         # Assert
-        with pytest.raises(Exception):
-            poll_inbox(
-                "u_alice",
-                unseen_only=False,
-                mark_seen=False,
-                store=tmp_path / "tasks.yaml",
-            )
+        assert records == []
 
     def test_a_recipient_is_actually_configured(self, tmp_path):
         # Arrange
@@ -222,30 +194,6 @@ class TestPendingIsThreeValued:
         run = _healthy_run(tmp_path, caplog)
         # Assert
         assert "pending=0" in run["ticks"][0].getMessage()
-
-    def test_an_unreadable_inbox_reports_pending_unknown(self, tmp_path, caplog):
-        # Arrange
-        # Act
-        run = _broken_inbox_run(tmp_path, caplog)
-        # Assert
-        assert "pending=unknown" in run["ticks"][0].getMessage()
-
-    def test_an_unreadable_inbox_never_claims_zero_pending(self, tmp_path, caplog):
-        # Arrange
-        # "do not report 0-pending when the answer is unknown" —
-        # collapsing unknown into a pole is the bug named in the constitution.
-        # Act
-        run = _broken_inbox_run(tmp_path, caplog)
-        # Assert
-        assert "pending=0" not in run["ticks"][0].getMessage()
-
-    def test_an_unreadable_inbox_is_a_failed_tick(self, tmp_path, caplog):
-        # Arrange
-        # Act
-        run = _broken_inbox_run(tmp_path, caplog)
-        # Assert
-        assert "FAILED" in run["ticks"][0].getMessage()
-
 
 # --------------------------------------------------------------------------- #
 # (3) consecutive failures escalate                                           #

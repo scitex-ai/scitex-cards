@@ -68,10 +68,10 @@ def store_dsn() -> str:
     a skip here is indistinguishable from a pass, and that is precisely how the
     old ``requires_postgres`` marker hid this whole file for months.
     """
-    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    dsn = os.environ.get("SCITEX_STORE_DSN", "")
     if "search_path" not in dsn:
         pytest.fail(
-            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            "the root conftest did not pin $SCITEX_STORE_DSN to a throwaway "
             f"PostgreSQL schema; it holds {dsn!r}. Without that pin this test "
             "would run against whatever store the ambient environment names, "
             "which is the live fleet board.",

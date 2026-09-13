@@ -31,7 +31,7 @@ import pytest
 
 import scitex_cards
 from scitex_cards._store import TaskNotFoundError, _task_not_found
-from scitex_cards._store_target import ENV_DB
+from scitex_cards._store_target import ENV_STORE_DSN
 
 #: A DSN whose password must never reach a log, and whose host must.
 DSN_WITH_SECRET = "postgresql://cards_user:hunter2@10.0.0.7:55432/scitex_cards"
@@ -39,7 +39,7 @@ DSN_WITH_SECRET = "postgresql://cards_user:hunter2@10.0.0.7:55432/scitex_cards"
 
 @pytest.fixture
 def store_env():
-    """Set the real ``$SCITEX_CARDS_DB``, restoring it on teardown.
+    """Set the real ``$SCITEX_STORE_DSN``, restoring it on teardown.
 
     A real environment variable rather than a patched one: ``store_label``
     reads it through ``os.environ`` at call time and that lookup is the thing
@@ -49,16 +49,16 @@ def store_env():
     ``_task_not_found`` only NAMES the store, it never opens one, so nothing
     here can reach a database whatever this variable is set to.
     """
-    before = os.environ.get(ENV_DB)
+    before = os.environ.get(ENV_STORE_DSN)
 
     def _set(value):
-        os.environ[ENV_DB] = value
+        os.environ[ENV_STORE_DSN] = value
 
     yield _set
     if before is None:
-        os.environ.pop(ENV_DB, None)
+        os.environ.pop(ENV_STORE_DSN, None)
     else:
-        os.environ[ENV_DB] = before
+        os.environ[ENV_STORE_DSN] = before
 
 
 def test_the_error_names_the_store_that_was_searched(store_env):

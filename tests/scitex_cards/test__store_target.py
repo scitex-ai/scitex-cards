@@ -21,12 +21,12 @@ from scitex_cards._store_target import (
 )
 
 PG_URL = "postgresql://user@host:5432/scitex_cards"
-ENV = "SCITEX_CARDS_DB"
+ENV = "SCITEX_STORE_DSN"
 
 
 @pytest.fixture
 def store_env():
-    """Set ``$SCITEX_CARDS_DB`` for one test and restore the real value after."""
+    """Set ``$SCITEX_STORE_DSN`` for one test and restore the real value after."""
     saved = os.environ.get(ENV)
 
     def _set(value: str) -> None:
@@ -82,7 +82,7 @@ class TestTheOldResolverNoLongerMangles:
     re-derivation.
 
     WHY IT CHANGED. The mangling was not merely untidy. Measured on the live
-    system: with ``$SCITEX_CARDS_DB`` set to a PostgreSQL URL, ``list_tasks``
+    system: with ``$SCITEX_STORE_DSN`` set to a PostgreSQL URL, ``list_tasks``
     returned 0 cards against a real board of 2960, ``resolve-store`` reported
     ``exists: True``, and a real EMPTY 217 KB the retired engine database was created at
     the mangled path. An empty board reporting itself healthy is the outage
@@ -190,33 +190,31 @@ class TestAPathTargetIsNoLongerABackend:
       query-answering database.
     """
 
-    def test_a_path_target_still_resolves_to_that_path(self, store_env, tmp_path):
+    def test_a_path_target_still_resolves_to_that_path(self, tmp_path):
         # Arrange
         db = tmp_path / "cards.db"
-        store_env(str(db))
-
         # Act
-        resolved = require_db_path()
+        resolved = require_db_path(db)
 
         # Assert
         assert resolved == Path(str(db))
 
-    def test_a_path_target_reports_an_unsupported_backend(self, store_env, tmp_path):
+    def test_a_path_target_reports_an_unsupported_backend(self, tmp_path):
         # Arrange
-        store_env(str(tmp_path / "cards.db"))
+        db = tmp_path / "cards.db"
 
         # Act
-        backend = resolve_store_backend()
+        backend = resolve_store_backend(db)
 
         # Assert
         assert backend == BACKEND_UNSUPPORTED
 
-    def test_the_two_resolvers_agree_for_paths(self, store_env, tmp_path):
+    def test_the_two_resolvers_agree_for_paths(self, tmp_path):
         # Arrange
-        store_env(str(tmp_path / "cards.db"))
+        db = tmp_path / "cards.db"
 
         # Act
-        old, new = resolve_db_path(), require_db_path()
+        old, new = resolve_db_path(db), require_db_path(db)
 
         # Assert
         assert old == new

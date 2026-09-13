@@ -293,7 +293,7 @@ class TestNoFileIsManufactured:
 
         from scitex_cards._db import connect
 
-        target = os.environ["SCITEX_CARDS_DB"]
+        target = os.environ["SCITEX_STORE_DSN"]
         # Act
         conn = connect(target)
         backend = conn.backend

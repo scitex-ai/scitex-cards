@@ -10,9 +10,8 @@ testable without importing the whole inbox surface.
 
 The default is the fix
 ----------------------
-When ``SCITEX_CARDS_INBOX_BACKEND`` is unset, the inbox FOLLOWS THE STORE:
-a Postgres DSN selects the shared inbox; anything else is a CONFIGURATION
-ERROR and raises.
+The inbox follows the primitive-owned shared store. PostgreSQL is the only
+backend; historical selector values are ignored and cannot reopen a file rail.
 
 That is deliberate, not a convenience. Measured 2026-08-09, the inbox was a
 per-host file while the cards lived in a shared database::
@@ -33,73 +32,21 @@ let this hide for weeks.
 
 from __future__ import annotations
 
-import os
 from typing import Final
-
-from ._store_errors import StoreUnavailableError
 
 __all__ = ["POSTGRES", "YAML", "backend", "store_is_shared"]
 
 POSTGRES: Final[str] = "postgres"
 YAML: Final[str] = "yaml"
 
-#: The explicit override. Either name selects that backend outright; anything
-#: else falls through to the store-following default.
-ENV_INBOX_BACKEND: Final[str] = "SCITEX_CARDS_INBOX_BACKEND"
-
-#: Store settings consulted when the backend is not named. A Postgres store
-#: means the CARDS are shared, and an inbox that is not shared alongside
-#: them is exactly the defect above.
-ENV_STORE_SETTINGS: Final[tuple[str, ...]] = (
-    "SCITEX_CARDS_INBOX_DSN",
-    "SCITEX_CARDS_DB",
-)
-
-_DSN_PREFIXES: Final[tuple[str, ...]] = ("postgres://", "postgresql://")
-
-#: Spellings accepted for the Postgres backend. `pg` is included because it
-#: is what people type, and a config that silently missed the shared inbox
-#: because the spelling was not recognised would reproduce the original defect.
-_POSTGRES_ALIASES: Final[frozenset[str]] = frozenset({"postgres", "postgresql", "pg"})
-
-
 def store_is_shared() -> bool:
-    """True when the configured store is a Postgres DSN rather than a file."""
-    for name in ENV_STORE_SETTINGS:
-        if (os.environ.get(name) or "").strip().startswith(_DSN_PREFIXES):
-            return True
-    return False
+    """True: ambient Cards state is always the shared PostgreSQL store."""
+    return True
 
 
 def backend() -> str:
-    """``postgres`` | ``yaml`` — the backend in force.
-
-    An explicit ``SCITEX_CARDS_INBOX_BACKEND`` always wins; otherwise the
-    inbox follows the store. A store that is not a Postgres DSN is a
-    CONFIGURATION ERROR rather than a reason to pick a per-host file, and
-    raises :class:`~scitex_cards._store_errors.StoreUnavailableError`.
-
-    THERE ARE ONLY THE TWO NAMES BELOW. An unrecognised value is not an
-    alternative backend and is never treated as one: it falls through to the
-    store-following default, where a store that is not a DSN raises. A name the
-    selector quietly accepted would be a second inbox that merely happens to be
-    switched off today (operator ruling 2026-08-23, 「ポストグレスのみです」).
-    """
-    explicit = (os.environ.get(ENV_INBOX_BACKEND) or "").strip().lower()
-    if explicit in _POSTGRES_ALIASES:
-        return POSTGRES
-    if explicit == YAML:
-        return YAML
-    if store_is_shared():
-        return POSTGRES
-    raise StoreUnavailableError(
-        "no inbox backend can be selected: the configured store is not a "
-        "Postgres DSN. Point one of "
-        f"{', '.join(ENV_STORE_SETTINGS)} at a postgresql://...:55432/... "
-        "DSN. This case used to select a per-host file SILENTLY, which is how "
-        "a store misconfiguration became an invisible second inbox that "
-        "nobody polled."
-    )
+    """Return the only inbox backend: the shared PostgreSQL store."""
+    return POSTGRES
 
 
 # EOF

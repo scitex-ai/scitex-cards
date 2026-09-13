@@ -78,7 +78,7 @@ def _run_against_unreadable_store():
     return CliRunner().invoke(
         stop_hook_cmd,
         ["--agent", "worker-x"],
-        env={"SCITEX_CARDS_DB": "/proc/1/definitely-not-a-directory/cards.db"},
+        env={"SCITEX_STORE_DSN": "/proc/1/definitely-not-a-directory/cards.db"},
     )
 
 

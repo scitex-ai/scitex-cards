@@ -62,7 +62,7 @@ def test_apply_writes_correct_command_args(tmp_path):
 #
 # When the fleet operator (typically agent-container at to_home/.mcp.json
 # generation time) passes --env-tasks-path, the MCP entry gets an `env`
-# block with SCITEX_CARDS_DB pinned to that absolute path. This makes the
+# block with SCITEX_STORE_DSN pinned to that absolute path. This makes the
 # wire-up self-documenting in the generated config AND immune to $HOME /
 # symlink drift in any container that loads the .mcp.json.
 
@@ -88,7 +88,7 @@ def test_apply_env_tasks_path_pins_env_block(tmp_path):
     )
     # Assert
     entry = _read_json(target)["mcpServers"]["scitex-cards"]
-    assert entry.get("env") == {"SCITEX_CARDS_DB": pinned}
+    assert entry.get("env") == {"SCITEX_STORE_DSN": pinned}
 
 
 def test_apply_env_tasks_path_preserves_command_args(tmp_path):
@@ -182,7 +182,7 @@ def test_apply_env_tasks_path_updates_when_pin_changes(tmp_path):
     )
     # Assert
     entry = _read_json(target)["mcpServers"]["scitex-cards"]
-    assert entry["env"]["SCITEX_CARDS_DB"] == "/new/cards.db"
+    assert entry["env"]["SCITEX_STORE_DSN"] == "/new/cards.db"
 
 
 def test_print_only_env_tasks_path_emits_env_block(tmp_path):

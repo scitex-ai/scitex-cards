@@ -21,8 +21,6 @@ pytest-asyncio).
 from __future__ import annotations
 
 import asyncio
-import os
-
 import pytest
 
 from scitex_cards import _inbox
@@ -205,32 +203,14 @@ _BURST_EXTRA = 7
 _BURST_TOTAL = MAX_PUSH_PER_DRAIN + _BURST_EXTRA
 
 
-@pytest.fixture(scope="module")
-def burst(tmp_path_factory):
-    """One over-cap enqueue + two drains, shared by every burst assertion.
-
-    Module-scoped on purpose: the scenario costs ~57 store writes, and each
-    assertion below reads a different field of the SAME run. Re-running it
-    per test would multiply that cost without testing anything new — the run
-    is a pure observation, nothing mutates it.
-
-    SETS ``SCITEX_CARDS_INBOX_BACKEND`` DIRECTLY rather than relying on the
-    suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
-    a FUNCTION-scoped one on the first test that needs both, so this fixture's
-    real enqueue/drain calls would otherwise run before
-    ``_default_inbox_backend_yaml`` ever pins the var — inheriting whatever
-    the ambient environment happens to hold. The file rail retired (operator ruling
-    2026-08-23): an unset var now means "no backend at all" rather than a
-    working default, so this ordering gap turned silent-but-fine into a hard
-    failure. Matches the suite-wide default; no teardown needed.
-    """
-    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
-    return _drain_a_burst_twice(tmp_path_factory.mktemp("burst"))
+@pytest.fixture()
+def burst(new_store):
+    """One over-cap enqueue plus two drains in an isolated PostgreSQL store."""
+    return _drain_a_burst_twice(new_store())
 
 
-def _drain_a_burst_twice(tmp_path, agent="agent-burst"):
+def _drain_a_burst_twice(store, agent="agent-burst"):
     """Enqueue more than the cap, then drain twice; return everything seen."""
-    store = _store(tmp_path)
     _enqueue_n(agent, _BURST_TOTAL, store)
     recorder1 = _SendRecorder()
     pushed1 = asyncio.run(drain_once(agent, recorder1, store=store))

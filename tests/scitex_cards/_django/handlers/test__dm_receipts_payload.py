@@ -43,10 +43,10 @@ def store(env) -> str:
     test and a passing one are indistinguishable in a summary line.
     """
     env.set("SCITEX_CARDS_STORE_GIT_AUTOCOMMIT", "0")
-    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    dsn = os.environ.get("SCITEX_STORE_DSN", "")
     if "search_path" not in dsn:
         pytest.fail(
-            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            "the root conftest did not pin $SCITEX_STORE_DSN to a throwaway "
             f"PostgreSQL schema; it holds {dsn!r}.",
             pytrace=False,
         )

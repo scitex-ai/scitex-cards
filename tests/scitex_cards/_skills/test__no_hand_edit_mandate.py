@@ -9,7 +9,7 @@ every fleet agent reads it on boot (via the #161 `skills propagate`
 mechanism). If a future refactor drops the phrase, every agent silently
 loses the read-on-boot guard — pin it here so CI catches the drift.
 
-The store has since moved to the database (`$SCITEX_CARDS_DB`); the assertion
+The store has since moved to the database (`$SCITEX_STORE_DSN`); the assertion
 below pins the CURRENT canonical identity, not the retired YAML path.
 
 WHY THIS NOW PINS TWO FILES. It pinned four strings, all in SKILL.md, and
@@ -73,7 +73,7 @@ def test_skill_md_names_the_canonical_store_identity():
     # Act
     text = _skill_text()
     # Assert
-    assert "$SCITEX_CARDS_DB" in text
+    assert "$SCITEX_STORE_DSN" in text
 
 
 def test_skill_md_links_the_long_form():

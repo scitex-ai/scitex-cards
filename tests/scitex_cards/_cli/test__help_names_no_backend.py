@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""The root --help must not advertise a storage backend or a default path.
+"""The root --help must name the primitive-owned PostgreSQL contract.
 
 Asserts the CONSTRAINT, not today's sentence: no default file path, and the
 one honest answer to "which database?" is present. Any rewording that keeps
@@ -61,11 +61,25 @@ def test_the_config_resolution_block_points_at_resolve_store(resolution_text):
 
 def test_the_resolution_text_reaches_a_user_invoking_help(rendered_help):
     # Arrange
-    a_distinctive_phrase = "SOLE identity"
+    a_distinctive_phrase = "SCITEX_STORE_DSN"
     # Act
     present = a_distinctive_phrase in rendered_help
     # Assert
     assert present, "the config-resolution block must reach --help, not just exist"
+
+
+def test_help_names_ports_and_the_distinct_notification_transport(resolution_text):
+    # Arrange
+    expected = (True, True, True, True)
+    # Act
+    observed = (
+        "55432" in resolution_text,
+        "SCITEX_CARDS_NOTIFY_DSN" in resolution_text,
+        "55433" in resolution_text,
+        "no SQLite" in resolution_text,
+    )
+    # Assert
+    assert observed == expected
 
 
 def test_the_summary_reaches_a_user_invoking_help(rendered_help):

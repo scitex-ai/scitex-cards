@@ -211,16 +211,15 @@ def test_export_keeps_unknown_notification_keys_under_the_overlay(seeded):
     assert record["unknown_notif_key"] == 42
 
 
-def test_resolve_db_path_still_delegates_to_the_chain(env, tmp_path):
-    """Guard: the exporter's default path rides the S4a resolution chain."""
+def test_resolve_db_path_rejects_a_filesystem_store_override(env, tmp_path):
+    """Ambient shared state cannot be redirected to a file path."""
     # Arrange
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "x.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "x.db"))
 
     # Act
-    resolved = resolve_db_path()
-
     # Assert
-    assert resolved == tmp_path / "x.db"
+    with pytest.raises(Exception, match="not a Postgres DSN"):
+        resolve_db_path()
 
 
 def _export_a_store_with_one_drained_inbox(tmp_path, new_store) -> dict:

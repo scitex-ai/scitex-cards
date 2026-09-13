@@ -164,7 +164,7 @@ def init_schema(
             "OBSERVED: the configured Cards store is at schema rung "
             f"{_prior_version}; this client requires rung {SCHEMA_VERSION}. "
             "No schema changes were attempted. NEXT: an administrator must run "
-            "`scitex-cards init-store --shared` with the same SCITEX_CARDS_DB."
+            "`scitex-cards init-store --shared` with the same SCITEX_STORE_DSN."
         )
 
     execute_ddl(conn, _SCHEMA_SQL)

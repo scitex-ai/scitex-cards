@@ -609,7 +609,7 @@ def _reassigned_from_unowned(tmp_path: Path):
     # row straight into the canonical DB to exercise reassign-from-None.
     seed_db_from_doc(
         {"tasks": [{"id": "c-1", "title": "x", "status": "pending"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     sink = _Capturing()
     reassign_task(store, "c-1", "proj-new", by="operator", entry_points=_eps(sink))

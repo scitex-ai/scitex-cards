@@ -60,7 +60,7 @@ _STORE_DOC = {
 @pytest.fixture
 def store():
     """Seed the canonical DB and hand the handler the pinned store-identity path."""
-    seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()
@@ -254,7 +254,7 @@ def two_card_store_after_reorder():
                 {"id": "beta", "title": "Second", "status": "pending"},
             ]
         },
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")

@@ -641,25 +641,25 @@ def test_summary_returns_deferred_count(tmp_path):
 
 
 def test_where_returns_resolved_path(tmp_path):
-    # Arrange — the store identity is the database path ($SCITEX_CARDS_DB).
+    # Arrange — the store identity is the database path ($SCITEX_STORE_DSN).
     from scitex_cards._mcp_server import resolve_store
 
-    store = os.environ["SCITEX_CARDS_DB"]
+    store = os.environ["SCITEX_STORE_DSN"]
     # Act
     info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert
     assert info["resolved"] == store
 
 
-def test_where_returns_exists_false_when_absent(tmp_path, env):
-    # Arrange — point the store identity at a database that does not exist.
+def test_where_rejects_a_filesystem_store_override(tmp_path, env):
+    # Arrange
     from scitex_cards._mcp_server import resolve_store
 
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "absent.db"))
+    env.set("SCITEX_STORE_DSN", str(tmp_path / "absent.db"))
     # Act
-    info = json.loads(asyncio.run(_call_tool(resolve_store)))
     # Assert
-    assert info["exists"] is False
+    with pytest.raises(Exception, match="not a Postgres DSN"):
+        asyncio.run(_call_tool(resolve_store))
 
 
 # --------------------------------------------------------------------------- #

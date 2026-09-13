@@ -59,13 +59,13 @@ def _store_env(path):
 
     The ENVIRONMENT is what actually selects the store. Measured 2026-08-24:
     passing `store=<tmp path>` to run_notifyd does NOT redirect its reads -- it
-    still loaded the production board over SCITEX_CARDS_DB (postgres, 5,962
+    still loaded the production board over SCITEX_STORE_DSN (postgres, 5,962
     cards) and validated every row, which made an earlier version of this test
     look hung.
     """
-    keys = ("SCITEX_CARDS_DB", "SCITEX_CARDS_INBOX_BACKEND")
+    keys = ("SCITEX_STORE_DSN", "SCITEX_CARDS_INBOX_BACKEND")
     saved = {k: os.environ.get(k) for k in keys}
-    os.environ["SCITEX_CARDS_DB"] = str(path)
+    os.environ["SCITEX_STORE_DSN"] = str(path)
     # Not popped: the file-backed inbox backend is RETIRED (operator ruling
     # 2026-08-23), so an unset var against this local file store would now
     # raise StoreUnavailableError instead of falling back to a working

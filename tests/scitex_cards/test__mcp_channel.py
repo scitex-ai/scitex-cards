@@ -13,7 +13,6 @@ with real objects so the receive→push path is covered end to end.
 from __future__ import annotations
 
 import asyncio
-import os
 
 import pytest
 
@@ -161,51 +160,22 @@ def user_id_keyed_inbox(tmp_path):
 
 
 @pytest.fixture()
-def mtime_gate_verdicts(tmp_path):
-    """``should_drain`` verdicts across four ticks: first (seeds last_mtime),
-    unchanged, mtime-advanced, and settled again.
-
-    The gate stats the ACTUAL file the break-glass inbox backend reads —
-    ``inboxes.json``, a sibling of the (legacy) task-store path — not the
-    task-store path itself (see ``_channel_drain_state._resolve_store_file``).
-    """
-    store = _store(tmp_path)
-    from scitex_cards._inbox import _inboxes_path
-
-    gated_file = _inboxes_path(store)
-    gated_file.write_text('{"inboxes": {}}', encoding="utf-8")
-    state = _DrainState()
-    verdicts = [
-        should_drain(state, store=store),  # first tick → drain (seed)
-        should_drain(state, store=store),  # unchanged → skip
-    ]
-    # Force a strictly-later mtime (deterministic — no sleep / no FS-granularity
-    # race): an advanced store mtime must re-open the drain.
-    bumped = os.stat(gated_file).st_mtime + 10.0
-    os.utime(gated_file, (bumped, bumped))
-    verdicts.append(should_drain(state, store=store))  # advanced → drain
-    verdicts.append(should_drain(state, store=store))  # settled again → skip
-    return verdicts
-
-
-@pytest.fixture()
-def unstatable_store_verdicts(tmp_path):
-    """``should_drain`` verdicts for two ticks against an unstatable path."""
-    missing = tmp_path / "does-not-exist.yaml"
+def postgres_gate_verdicts(new_store):
+    """Four gate decisions against one provisioned PostgreSQL store."""
+    store = new_store(prefix="channel_gate")
     state = _DrainState()
     return [
-        should_drain(state, store=missing),
-        should_drain(state, store=missing),
+        should_drain(state, store=store),
+        should_drain(state, store=store),
+        should_drain(state, store=store),
+        should_drain(state, store=store),
     ]
 
 
 @pytest.fixture()
-def gated_drain_on_unchanged_store(tmp_path):
-    """A gated tick on an UNCHANGED store, with spy counters on the parsers.
-
-    The spies delegate to the REAL functions (not mocks); they only count.
-    """
-    store = _store(tmp_path)
+def repeated_postgres_gated_drain(new_store):
+    """Two gated ticks against one explicitly provisioned PostgreSQL store."""
+    store = new_store(prefix="channel_repeated_drain")
     agent = "agent-gate"
     _inbox.enqueue(
         agent,
@@ -216,30 +186,25 @@ def gated_drain_on_unchanged_store(tmp_path):
         ts="2026-06-28T10:00:00Z",
         store=store,
     )
-    # Seed the gate so its last_mtime matches the store's CURRENT mtime; no
-    # drain runs (so no ack-write bumps the mtime).
     state = _DrainState()
-    seeded = should_drain(state, store=store)
-
     recorder = _SendRecorder()
-    pushed = asyncio.run(
+    first_pushed = asyncio.run(
+        gated_drain_once(agent, recorder, state, source="scards", store=store)
+    )
+    second_pushed = asyncio.run(
         gated_drain_once(agent, recorder, state, source="scards", store=store)
     )
     return {
-        "seeded": seeded,
-        "pushed": pushed,
+        "first_pushed": first_pushed,
+        "second_pushed": second_pushed,
         "recorder": recorder,
     }
 
 
 @pytest.fixture()
-def gated_drain_after_change(tmp_path):
-    """A first gated tick that drains, then a NEW enqueue and a second tick.
-
-    After the first tick drains+acks, a NEW enqueue changes the store → the
-    next gated tick sees the advanced mtime and delivers the new record.
-    """
-    store = _store(tmp_path)
+def gated_drain_after_change(new_store):
+    """A PostgreSQL drain, enqueue, and second drain on the same schema."""
+    store = new_store(prefix="channel_changed_drain")
     agent = "agent-chg"
     _inbox.enqueue(
         agent,
@@ -263,14 +228,6 @@ def gated_drain_after_change(tmp_path):
         ts="2026-06-28T10:01:00Z",
         store=store,
     )
-    # Guarantee a strictly-later mtime regardless of FS granularity. Stat the
-    # ACTUAL gated file (see _channel_drain_state._resolve_store_file) — the
-    # break-glass backend's inboxes.json sidecar, not the legacy store path.
-    from scitex_cards._inbox import _inboxes_path
-
-    gated_file = _inboxes_path(store)
-    bumped = os.stat(gated_file).st_mtime + 10.0
-    os.utime(gated_file, (bumped, bumped))
     recorder = _SendRecorder()
     pushed = asyncio.run(
         gated_drain_once(agent, recorder, state, source="scards", store=store)
@@ -633,109 +590,77 @@ def test_drain_once_acks_on_the_user_id_key(user_id_keyed_inbox):
 
 
 # --------------------------------------------------------------------------- #
-# mtime-gate — the drain short-circuit that stops the per-agent 9MB re-parse   #
-# (real store tmp files, spy counters — NO mocks of the store)                 #
+# PostgreSQL gate — server-side notifications have no filesystem mtime         #
 # --------------------------------------------------------------------------- #
-def test_should_drain_seeds_the_first_tick(mtime_gate_verdicts):
+def test_should_drain_opens_the_first_postgres_tick(postgres_gate_verdicts):
     # Arrange
-    verdicts = mtime_gate_verdicts
+    verdicts = postgres_gate_verdicts
     # Act
     first = verdicts[0]
     # Assert — the FIRST tick always drains (it seeds last_mtime).
     assert first is True
 
 
-def test_should_drain_seeds_first_tick_then_skips_unchanged(mtime_gate_verdicts):
+def test_should_drain_keeps_second_postgres_tick_open(postgres_gate_verdicts):
     # Arrange
-    verdicts = mtime_gate_verdicts
+    verdicts = postgres_gate_verdicts
     # Act
     second = verdicts[1]
-    # Assert — an UNCHANGED store skips: one stat(), no parse.
-    assert second is False
+    # Assert — a PostgreSQL table has no sound filesystem-mtime shortcut.
+    assert second is True
 
 
-def test_should_drain_true_after_mtime_advances(mtime_gate_verdicts):
+def test_should_drain_keeps_third_postgres_tick_open(postgres_gate_verdicts):
     # Arrange
-    verdicts = mtime_gate_verdicts
+    verdicts = postgres_gate_verdicts
     # Act
     after_bump = verdicts[2]
     # Assert
     assert after_bump is True
 
 
-def test_should_drain_skips_after_settling_again(mtime_gate_verdicts):
+def test_should_drain_keeps_fourth_postgres_tick_open(postgres_gate_verdicts):
     # Arrange
-    verdicts = mtime_gate_verdicts
+    verdicts = postgres_gate_verdicts
     # Act
     settled = verdicts[3]
     # Assert
-    assert settled is False
+    assert settled is True
 
 
-def test_should_drain_fail_safe_when_store_unstatable(unstatable_store_verdicts):
-    # An explicit-but-missing store path can't be stat'd → fail SAFE = drain
-    # EVERY tick, so an unresolvable path never silently drops a notification.
+def test_gated_drain_first_postgres_tick_delivers(repeated_postgres_gated_drain):
     # Arrange
-    verdicts = unstatable_store_verdicts
+    result = repeated_postgres_gated_drain
     # Act
-    first = verdicts[0]
+    pushed = result["first_pushed"]
     # Assert
-    assert first is True
+    assert pushed == 1
 
 
-def test_should_drain_fail_safe_stays_open_every_tick(unstatable_store_verdicts):
-    # Arrange
-    verdicts = unstatable_store_verdicts
-    # Act
-    second = verdicts[1]
-    # Assert — it must not "settle" into skipping an unstatable path.
-    assert second is True
-
-
-def test_gated_drain_seed_tick_opens_the_gate(gated_drain_on_unchanged_store):
-    # Arrange
-    result = gated_drain_on_unchanged_store
-    # Act
-    seeded = result["seeded"]
-    # Assert — without this the skip assertions below would be vacuous.
-    assert seeded is True
-
-
-def test_gated_drain_pushes_nothing_when_mtime_unchanged(
-    gated_drain_on_unchanged_store,
+def test_gated_drain_second_postgres_tick_finds_no_unseen_record(
+    repeated_postgres_gated_drain,
 ):
     # Arrange
-    result = gated_drain_on_unchanged_store
+    result = repeated_postgres_gated_drain
     # Act
-    pushed = result["pushed"]
-    # Assert
+    pushed = result["second_pushed"]
+    # Assert — the first tick acknowledged the record in PostgreSQL.
     assert pushed == 0
 
 
-def test_gated_drain_calls_no_send_when_mtime_unchanged(gated_drain_on_unchanged_store):
+def test_gated_drain_postgres_tick_delivers_the_body(repeated_postgres_gated_drain):
     # Arrange
-    recorder = gated_drain_on_unchanged_store["recorder"]
+    recorder = repeated_postgres_gated_drain["recorder"]
     # Act
-    calls = recorder.calls
-    # Assert — AND THIS COVERS THE PARSING CLAIM TOO, which is the whole point
-    # of the gate (a CPU fix, not a delivery fix). The fixture leaves a record
-    # PENDING, and `test_gated_drain_first_tick_delivers_pending` below shows an
-    # identical record IS delivered once the gate opens. So a tick that parsed
-    # would have found this one and pushed it; pushing nothing means nothing was
-    # parsed.
-    #
-    # A separate test used to assert that by counting calls to
-    # `recipient_keys` / `poll_inbox` through replaced module attributes. It
-    # could only agree with this one or be wrong about which binding the code
-    # reaches, so it was removed rather than ported (STX-NM002: "rewrite or
-    # delete it").
-    assert calls == []
+    content = recorder.calls[0]["content"]
+    # Assert
+    assert content == "hi"
 
 
-def test_gated_drain_first_tick_delivers_pending(tmp_path):
+def test_gated_drain_first_tick_delivers_pending(new_store):
     # A fresh loop's first tick always drains — a pending record is delivered.
     # Arrange
-    store = _store(tmp_path)
+    store = new_store(prefix="channel_first_pending")
     agent = "agent-first"
     _inbox.enqueue(
         agent,
@@ -755,9 +680,9 @@ def test_gated_drain_first_tick_delivers_pending(tmp_path):
     assert pushed == 1
 
 
-def test_gated_drain_first_tick_delivers_the_body(tmp_path):
+def test_gated_drain_first_tick_delivers_the_body(new_store):
     # Arrange
-    store = _store(tmp_path)
+    store = new_store(prefix="channel_first_body")
     agent = "agent-first"
     _inbox.enqueue(
         agent,
@@ -791,7 +716,7 @@ def test_gated_drain_pushes_when_store_changed(gated_drain_after_change):
     result = gated_drain_after_change
     # Act
     pushed = result["pushed"]
-    # Assert — the advanced mtime re-opened the gate.
+    # Assert — PostgreSQL is polled again and exposes the new durable row.
     assert pushed == 1
 
 

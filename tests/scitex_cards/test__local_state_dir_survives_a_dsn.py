@@ -10,7 +10,7 @@ half — the refusal must not take the LOCAL STATE DIR down with it.
 
 Two axes that used to be one:
 
-    store IDENTITY  - ``$SCITEX_CARDS_DB``; a path OR a server URL
+    store IDENTITY  - ``$SCITEX_STORE_DSN``; a path OR a server URL
     local state DIR - pidfiles, the delivery ledger, reminder state, and the
                       users/groups sidecar; ALWAYS a real directory
 
@@ -34,7 +34,7 @@ import os
 
 import pytest
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._paths import _user_root, resolve_tasks_path, runtime_dir
 
 DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
@@ -43,8 +43,8 @@ DSN = "postgresql://someone@127.0.0.1:1/scitex_cards"
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
-    for v in (ENV_DB,):
+    saved = {v: os.environ.get(v) for v in (ENV_STORE_DSN,)}
+    for v in (ENV_STORE_DSN,):
         os.environ.pop(v, None)
     try:
         yield
@@ -61,7 +61,7 @@ class TestLocalStateDirOnAServerStore:
 
     def test_resolve_tasks_path_does_not_raise_on_a_dsn(self, clean_store_env):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         try:
@@ -79,7 +79,7 @@ class TestLocalStateDirOnAServerStore:
 
     def test_resolve_tasks_path_lands_under_the_user_root(self, clean_store_env):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         resolved = resolve_tasks_path()
@@ -93,7 +93,7 @@ class TestLocalStateDirOnAServerStore:
 
     def test_resolved_container_is_absolute(self, clean_store_env):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         resolved = resolve_tasks_path()
@@ -108,7 +108,7 @@ class TestLocalStateDirOnAServerStore:
 
     def test_the_dsn_does_not_leak_into_the_path(self, clean_store_env):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         resolved = resolve_tasks_path()
@@ -120,7 +120,7 @@ class TestLocalStateDirOnAServerStore:
 
     def test_runtime_dir_resolves_on_a_server_store(self, clean_store_env):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         try:
@@ -135,25 +135,10 @@ class TestLocalStateDirOnAServerStore:
         )
 
 
-class TestFileStoreResolutionIsUnchanged:
-    """The the retired engine path must behave exactly as it did before the split."""
-
-    def test_container_sits_beside_the_database(self, clean_store_env, tmp_path):
-        # Arrange
-        db = tmp_path / "cards.db"
-        os.environ[ENV_DB] = str(db)
-
-        # Act
-        resolved = resolve_tasks_path()
-
-        # Assert
-        assert resolved == tmp_path / "tasks.yaml", (
-            f"expected the container beside the database, got {resolved}"
-        )
-
+class TestExplicitLocalStatePath:
     def test_explicit_argument_still_wins_outright(self, clean_store_env, tmp_path):
         # Arrange
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
         explicit = tmp_path / "elsewhere" / "tasks.yaml"
 
         # Act
@@ -173,7 +158,7 @@ class TestResolveStoreReportsTheBackend:
         # Arrange
         from scitex_cards._store import resolve_store
 
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         try:
@@ -191,7 +176,7 @@ class TestResolveStoreReportsTheBackend:
         # Arrange
         from scitex_cards._store import resolve_store
 
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         info = resolve_store()
@@ -205,7 +190,7 @@ class TestResolveStoreReportsTheBackend:
         # Arrange
         from scitex_cards._store import resolve_store
 
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         info = resolve_store()
@@ -221,7 +206,7 @@ class TestResolveStoreReportsTheBackend:
         # Arrange
         from scitex_cards._store import resolve_store
 
-        os.environ[ENV_DB] = DSN
+        os.environ[ENV_STORE_DSN] = DSN
 
         # Act
         info = resolve_store()
@@ -230,24 +215,6 @@ class TestResolveStoreReportsTheBackend:
         assert info["resolved"] == DSN, (
             f"expected the target as written, got {info['resolved']!r}"
         )
-
-    def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):
-        # Arrange
-        from scitex_cards._store import resolve_store
-
-        db = tmp_path / "cards.db"
-        db.touch()
-        os.environ[ENV_DB] = str(db)
-
-        # Act
-        info = resolve_store()
-
-        # Assert
-        assert info["exists"] is True, (
-            f"a file store must still answer the existence question, got "
-            f"{info['exists']!r}"
-        )
-
 
 class TestStoreUuidReaderIsNotPathOnly:
     """A server identity must not read as 'absent' — that disarms the guard."""

@@ -27,7 +27,7 @@ from scitex_cards._store import get_task
 from scitex_cards._store_lifecycle import complete_task
 from scitex_cards._store_mutate import add_task
 
-_MANAGED = ("SCITEX_CARDS_AGENT_ID", "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
+_MANAGED = ("SCITEX_CARDS_AGENT_ID", "SCITEX_STORE_DSN", "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def store_with_blocked_card(tmp_path, new_store):
     os.environ["SCITEX_CARDS_AGENT_ID"] = "test-agent"
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
     store = new_store()
-    os.environ["SCITEX_CARDS_DB"] = str(store)
+    os.environ["SCITEX_STORE_DSN"] = str(store)
     os.chdir(tmp_path)
     open_db(str(store)).close()
 

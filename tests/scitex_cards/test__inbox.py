@@ -218,9 +218,9 @@ def bus_dispatch(tmp_path, env):
 
 
 @pytest.fixture()
-def store_with_task_user_and_inbox(tmp_path):
-    """A store holding a real user, a real task, and one inbox record."""
-    store = _store(tmp_path)
+def store_with_task_user_and_inbox(new_store):
+    """A provisioned PostgreSQL store with a user, task, and inbox record."""
+    store = new_store(prefix="inbox_persistence")
     register_user(kind="agent", names=["alice"], store=store)
     add_task(store=store, id="c1", title="hello", agent="alice", note="keep me")
     _enqueue_completed(store, body="x")
@@ -683,31 +683,30 @@ def test_emit_is_fire_and_forget_and_non_raising(bus_dispatch):
     assert result is None
 
 
-def test_dispatch_enqueue_error_is_recorded_not_raised(tmp_path):
-    # Fail-soft guarantee for the inbox rail: if enqueue raises for a
-    # recipient, the dispatcher records the error and continues (the push
-    # rail still runs) — it never re-raises. We force a REAL enqueue error
-    # with no mock: point the store at a path whose parent is a regular file,
-    # so enqueue's `path.parent.mkdir(...)` raises NotADirectoryError. This is
-    # the exception the dispatcher's try/except catches.
+def test_dispatch_enqueue_error_is_recorded_not_raised(new_store):
+    """A missing inbox table is folded into the dispatch summary."""
     # Arrange
-    import scitex_cards._inbox as inbox_mod
+    from scitex_cards._db import connect
 
-    blocker = tmp_path / "afile"
-    blocker.write_text("x", encoding="utf-8")
-    bad_store = blocker / "tasks.yaml"  # parent is a file → mkdir fails
+    store = new_store(prefix="dispatch_missing_notifications")
+    alice = register_user(kind="agent", names=["alice"], store=store)
+    add_task(store=store, id="c1", title="x", agent="alice", created_by="alice")
+    conn = connect(store)
+    try:
+        conn.execute("DROP TABLE notifications")
+        conn.commit()
+    finally:
+        conn.close()
     # Act
-    # Assert — the raise IS the behaviour; act and assert are one statement.
-    with pytest.raises(OSError):
-        inbox_mod.enqueue(
-            "u_x",
-            event_type="completed",
-            card_id="c1",
-            body="b",
-            actor=None,
-            ts="2026-06-26T00:00:00Z",
-            store=bad_store,
-        )
+    summary = dispatch_notifications(
+        Event(type=EventType.COMPLETED, card_id="c1", actor="bob"),
+        store=store,
+    )
+    # Assert — the real PostgreSQL enqueue error is recorded, never re-raised.
+    assert (summary["enqueued"], [row["recipient"] for row in summary["errors"]]) == (
+        [],
+        [alice.id],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -911,15 +910,13 @@ def test_inbox_write_keeps_the_users_section(store_with_task_user_and_inbox):
     assert isinstance(users, list)
 
 
-def test_inbox_write_creates_the_inboxes_sidecar(store_with_task_user_and_inbox):
+def test_inbox_write_persists_the_notification(store_with_task_user_and_inbox):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — inboxes now live in their OWN sidecar, not embedded in `store`.
-    from scitex_cards._inbox import _inboxes_path
-
-    data = json.loads(_inboxes_path(store).read_text(encoding="utf-8"))
+    # Act
+    records = poll_inbox("u_abc", unseen_only=False, store=store)
     # Assert
-    assert isinstance(data.get("inboxes"), dict)
+    assert len(records) == 1
 
 
 def test_inbox_write_keeps_the_seeded_task(store_with_task_user_and_inbox):
@@ -958,28 +955,24 @@ def test_inbox_write_preserves_the_registered_user(store_with_task_user_and_inbo
 def test_inbox_write_stores_the_record(store_with_task_user_and_inbox):
     # Arrange
     store = store_with_task_user_and_inbox
-    # Act — read the inboxes sidecar directly (not embedded in `store`).
-    from scitex_cards._inbox import _inboxes_path
-
-    data = json.loads(_inboxes_path(store).read_text(encoding="utf-8"))
+    # Act
+    records = poll_inbox("u_abc", unseen_only=False, store=store)
     # Assert
-    assert data["inboxes"]["u_abc"][0]["card_id"] == "c1"
+    assert records[0]["card_id"] == "c1"
 
 
-def test_inbox_only_write_does_not_touch_the_task_store_file(tmp_path):
-    # An inbox write now lands ONLY in its own inboxes.json sidecar — it must
-    # not create or touch the (unrelated) legacy task-store file at all.
+def test_inbox_only_write_does_not_create_a_task(new_store):
     # Arrange
-    store = _store(tmp_path)
+    store = new_store(prefix="inbox_without_task")
     # Act
     _enqueue_completed(store, body="x")
     # Assert
-    assert not store.exists()
+    assert load_tasks(store) == []
 
 
-def test_add_task_after_inbox_write_still_works(tmp_path):
+def test_add_task_after_inbox_write_still_works(new_store):
     # Arrange
-    store = _store(tmp_path)
+    store = new_store(prefix="task_after_inbox")
     _enqueue_completed(store, body="x")
     # Act
     add_task(store=store, id="c2", title="later", agent="alice")
@@ -989,17 +982,15 @@ def test_add_task_after_inbox_write_still_works(tmp_path):
     assert any(t["id"] == "c2" for t in tasks)
 
 
-def test_inbox_survives_a_later_task_write(tmp_path):
+def test_inbox_survives_a_later_task_write(new_store):
     # Arrange
-    store = _store(tmp_path)
+    store = new_store(prefix="inbox_before_task")
     _enqueue_completed(store, body="x")
     # Act
     add_task(store=store, id="c2", title="later", agent="alice")
-    from scitex_cards._inbox import _inboxes_path
-
-    data = json.loads(_inboxes_path(store).read_text(encoding="utf-8"))
+    records = poll_inbox("u_abc", unseen_only=False, store=store)
     # Assert — the inbox is still intact after the task write.
-    assert data["inboxes"]["u_abc"][0]["card_id"] == "c1"
+    assert records[0]["card_id"] == "c1"
 
 
 # EOF

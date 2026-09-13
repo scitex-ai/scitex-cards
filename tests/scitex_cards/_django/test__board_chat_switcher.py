@@ -78,7 +78,7 @@ def store():
     """Seed the canonical DB and reset the board cache around the test.
 
     The board page renders through the live board loader, so it needs a store
-    it may read — an EXPLICIT, per-test one (``$SCITEX_CARDS_DB`` is repointed
+    it may read — an EXPLICIT, per-test one (``$SCITEX_STORE_DSN`` is repointed
     at a scratch path by the top-level conftest), never the fleet's.
     """
     from conftest import seed_db_from_doc
@@ -86,7 +86,7 @@ def store():
     from scitex_cards._yaml import safe_load
 
     doc = safe_load(_STORE_TEXT) or {}
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()

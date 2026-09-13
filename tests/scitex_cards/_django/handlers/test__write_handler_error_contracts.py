@@ -56,7 +56,7 @@ def store(env):
     # authoritative for content; the path is a provenance label. The
     # board/services layer (get_board -> load_groups) still stat()s the identity
     # file, but an autouse fixture in _django/conftest.py guarantees it exists.
-    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()
     yield store_path

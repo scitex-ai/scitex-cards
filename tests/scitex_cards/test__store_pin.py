@@ -7,7 +7,7 @@ THE TEST THIS FILE EXISTS FOR is
 Everything else here supports it.
 
 WHAT IT WOULD HAVE CAUGHT, measured 2026-08-12. One agent's MCP server and its
-own container shell disagreed about ``$SCITEX_CARDS_DB`` — ``:5442`` versus
+own container shell disagreed about ``$SCITEX_STORE_DSN`` — ``:5442`` versus
 ``:55432`` — because the value was baked into a materialised ``.mcp.json`` from
 whichever shell ``sac agents start`` was typed in. Two resolutions, two
 different PostgreSQL clusters, no error on either side. The agent wrote cards to
@@ -44,7 +44,7 @@ import os
 import time
 import pytest
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._store import resolve_store
 from scitex_cards._store_instance import Certainty, IdentityVerdict
 from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID
@@ -66,7 +66,7 @@ from scitex_cards._store_pin import (
 #: server, it SKIPS, and a skipped test is indistinguishable from a passing
 #: one").
 #:
-#: ONE NAME NOW ANSWERS "WHERE IS THE STORE": ``$SCITEX_CARDS_DB``, which
+#: ONE NAME NOW ANSWERS "WHERE IS THE STORE": ``$SCITEX_STORE_DSN``, which
 #: ``tests/conftest.py`` pins per test to a throwaway PostgreSQL schema. A
 #: second name could disagree with the first, and two names resolving
 #: differently is how this repo lost its live board on 2026-07-19.
@@ -121,14 +121,14 @@ def environment():
 def pg_dsn():
     """The live PostgreSQL store this test was given. NEVER SKIPS.
 
-    Whatever ``$SCITEX_CARDS_DB`` names is the store, so that is what a test
+    Whatever ``$SCITEX_STORE_DSN`` names is the store, so that is what a test
     about store IDENTITY must interrogate. When no cluster could be opened the
     harness pins a target the doors refuse rather than unsetting the variable,
     so the fixtures below fail naming the unreadable identity instead of
     quietly not running -- which is the contract this file's header describes
     and the old skip quietly broke.
     """
-    return os.environ[ENV_DB]
+    return os.environ[ENV_STORE_DSN]
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def live_instance_id(pg_dsn):
     observed = instance_at(pg_dsn)
     if observed.certainty is not Certainty.KNOWN:
         pytest.fail(
-            f"{ENV_DB} names a store whose instance is unreadable: "
+            f"{ENV_STORE_DSN} names a store whose instance is unreadable: "
             f"{observed.reason}"
         )
     return observed.instance_id
@@ -180,7 +180,7 @@ def live_store_uuid(pg_dsn):
     observed = store_uuid_at(pg_dsn)
     if not observed:
         pytest.skip(
-            f"{ENV_DB} names a server with no store on it (no "
+            f"{ENV_STORE_DSN} names a server with no store on it (no "
             "schema_meta.store_uuid), so a BOTH-HALVES pin cannot be satisfied "
             "against it. The contract's positive control lives in "
             "test__identity_decision_both_halves.py and needs no server."
@@ -214,9 +214,9 @@ def two_stores(new_store):
 def two_resolutions(environment, two_stores):
     """The same call, twice, under two genuinely different environments."""
     alpha, beta = two_stores
-    environment(**{ENV_DB: alpha})
+    environment(**{ENV_STORE_DSN: alpha})
     first = resolve_store()
-    environment(**{ENV_DB: beta})
+    environment(**{ENV_STORE_DSN: beta})
     second = resolve_store()
     return first, second
 
@@ -251,7 +251,7 @@ def test_resolving_under_two_environments_never_silently_yields_two_databases(
 def test_the_two_environments_really_did_reach_different_stores(two_resolutions):
     """Guard the guard: the property must not pass by resolving equal.
 
-    Without this, a resolver that ignored ``$SCITEX_CARDS_DB`` entirely would
+    Without this, a resolver that ignored ``$SCITEX_STORE_DSN`` entirely would
     satisfy the disjunction through its ``agreed`` branch, and the suite would
     go green on a store nobody chose.
     """
@@ -275,7 +275,7 @@ def test_an_unpinned_resolution_may_not_proceed(environment, two_stores):
     """
     # Arrange
     alpha, _ = two_stores
-    environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
+    environment(**{ENV_STORE_DSN: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
     # Assert
@@ -286,7 +286,7 @@ def test_an_unpinned_resolution_is_named_cannot_tell(environment, two_stores):
     """The verdict is NAMED, so a caller must handle it rather than inherit it."""
     # Arrange
     alpha, _ = two_stores
-    environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
+    environment(**{ENV_STORE_DSN: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
     # Assert
@@ -297,7 +297,7 @@ def test_an_unpinned_resolution_says_why(environment, two_stores):
     """A refusal a caller cannot print is a refusal nobody can act on."""
     # Arrange
     alpha, _ = two_stores
-    environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: None})
+    environment(**{ENV_STORE_DSN: alpha, ENV_PINNED_INSTANCE: None})
     # Act
     report = resolve_store()
     # Assert
@@ -308,7 +308,7 @@ def test_resolve_store_reports_the_pin_it_was_given(environment, two_stores):
     """``expected_instance`` echoes the pin, so a mismatch shows both sides."""
     # Arrange
     alpha, _ = two_stores
-    environment(**{ENV_DB: alpha, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
+    environment(**{ENV_STORE_DSN: alpha, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
     # Act
     report = resolve_store()
     # Assert
@@ -449,7 +449,7 @@ def test_a_correct_pin_matches_a_live_server(
     # Arrange
     environment(
         **{
-            ENV_DB: pg_dsn,
+            ENV_STORE_DSN: pg_dsn,
             ENV_PINNED_INSTANCE: live_instance_id,
             ENV_EXPECTED_STORE_UUID: live_store_uuid,
         }
@@ -471,7 +471,7 @@ def test_a_correct_pin_permits_the_resolution(
     # Arrange
     environment(
         **{
-            ENV_DB: pg_dsn,
+            ENV_STORE_DSN: pg_dsn,
             ENV_PINNED_INSTANCE: live_instance_id,
             ENV_EXPECTED_STORE_UUID: live_store_uuid,
         }
@@ -490,7 +490,7 @@ def test_a_wrong_pin_differs_from_a_live_server(environment, pg_dsn):
     reached store B".
     """
     # Arrange
-    environment(**{ENV_DB: pg_dsn})
+    environment(**{ENV_STORE_DSN: pg_dsn})
     # Act
     check = check_resolution(expected=_FOREIGN_INSTANCE)
     # Assert
@@ -500,7 +500,7 @@ def test_a_wrong_pin_differs_from_a_live_server(environment, pg_dsn):
 def test_a_wrong_pin_forbids_the_resolution(environment, pg_dsn):
     """DIFFERS refuses — the verdict is not merely informational."""
     # Arrange
-    environment(**{ENV_DB: pg_dsn})
+    environment(**{ENV_STORE_DSN: pg_dsn})
     # Act
     check = check_resolution(expected=_FOREIGN_INSTANCE)
     # Assert
@@ -510,7 +510,7 @@ def test_a_wrong_pin_forbids_the_resolution(environment, pg_dsn):
 def test_a_wrong_pin_names_both_sides(environment, pg_dsn):
     """Print both values rather than assert a mismatch the reader cannot check."""
     # Arrange
-    environment(**{ENV_DB: pg_dsn})
+    environment(**{ENV_STORE_DSN: pg_dsn})
     # Act
     check = check_resolution(expected=_FOREIGN_INSTANCE)
     # Assert
@@ -520,7 +520,7 @@ def test_a_wrong_pin_names_both_sides(environment, pg_dsn):
 def test_require_pinned_store_raises_on_a_wrong_pin(environment, pg_dsn):
     """The refusal DOOR actually refuses — the report alone changes nothing."""
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
+    environment(**{ENV_STORE_DSN: pg_dsn, ENV_PINNED_INSTANCE: _FOREIGN_INSTANCE})
     # Act
     act = require_pinned_store
     # Assert
@@ -535,7 +535,7 @@ def test_require_pinned_store_raises_when_nothing_is_pinned(environment, pg_dsn)
     which is the collapse that kept three databases indistinguishable.
     """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: None})
+    environment(**{ENV_STORE_DSN: pg_dsn, ENV_PINNED_INSTANCE: None})
     # Act
     act = require_pinned_store
     # Assert
@@ -555,7 +555,7 @@ def test_require_pinned_store_returns_the_target_when_the_pin_holds(
     # Arrange
     environment(
         **{
-            ENV_DB: pg_dsn,
+            ENV_STORE_DSN: pg_dsn,
             ENV_PINNED_INSTANCE: live_instance_id,
             ENV_EXPECTED_STORE_UUID: live_store_uuid,
         }
@@ -575,7 +575,7 @@ def test_resolve_store_reports_a_live_servers_instance(
     the machine-readable half that ends the archaeology.
     """
     # Arrange
-    environment(**{ENV_DB: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
+    environment(**{ENV_STORE_DSN: pg_dsn, ENV_PINNED_INSTANCE: live_instance_id})
     # Act
     report = resolve_store()
     # Assert
@@ -598,7 +598,7 @@ def test_a_correctly_pinned_resolution_may_proceed(
     # Arrange
     environment(
         **{
-            ENV_DB: pg_dsn,
+            ENV_STORE_DSN: pg_dsn,
             ENV_PINNED_INSTANCE: live_instance_id,
             ENV_EXPECTED_STORE_UUID: live_store_uuid,
         }

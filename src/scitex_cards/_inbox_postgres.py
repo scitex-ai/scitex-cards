@@ -49,7 +49,6 @@ destroyed five operator DMs on 2026-07-29.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Final, Sequence
 
@@ -57,12 +56,6 @@ from ._inbox_record import notification_columns, notification_record
 from ._inbox_shape import POSTGRES_SHAPE
 
 __all__ = ["ack", "enqueue", "poll_inbox", "resolve_dsn"]
-
-#: Where the DSN comes from. The store setting is consulted first because
-#: the inbox belongs with the cards; the dedicated variable is an override
-#: for the case where they genuinely differ.
-_ENV_INBOX_DSN: Final[str] = "SCITEX_CARDS_INBOX_DSN"
-_ENV_STORE: Final[str] = "SCITEX_CARDS_DB"
 
 #: Table/column/ordering names come from the shared shape, NOT from
 #: constants here. `_inbox_shape` already measured why the three travel
@@ -95,20 +88,12 @@ def resolve_dsn(store: "str | Path | None" = None) -> str:
         text = str(store)
         if text.startswith(("postgres://", "postgresql://")):
             return text
-    for name in (_ENV_INBOX_DSN, _ENV_STORE):
-        value = (os.environ.get(name) or "").strip()
-        if value.startswith(("postgres://", "postgresql://")):
-            return value
-    raise InboxUnavailableError(
-        "The Postgres inbox backend is selected but no DSN was found.\n"
-        "\n"
-        f"Looked at: store argument, ${_ENV_INBOX_DSN}, ${_ENV_STORE}, "
-        "\n"
-        "Set one to a 'postgresql://...' URL, or select the file break-glass "
-        "with SCITEX_CARDS_INBOX_BACKEND=yaml. This does NOT fall back to "
-        "a local file on its own: a private inbox nobody else can read is "
-        "the exact failure this backend was written to remove."
-    )
+    from ._store_target import resolve_store_target
+
+    # Inbox rows are shared Cards state, so they use the same primitive-owned
+    # target as cards and DMs.  SCITEX_CARDS_NOTIFY_DSN remains separate: it is
+    # the LISTEN/NOTIFY transport, not a second state store.
+    return resolve_store_target(None)
 
 
 def _connect(store: "str | Path | None"):
@@ -119,8 +104,7 @@ def _connect(store: "str | Path | None"):
     except ImportError as exc:  # pragma: no cover - environment-dependent
         raise InboxUnavailableError(
             "The Postgres inbox backend needs the 'psycopg' driver, which is "
-            f"not installed ({exc}). Install psycopg[binary], or select the "
-            "file break-glass with SCITEX_CARDS_INBOX_BACKEND=yaml."
+            f"not installed ({exc}). Install psycopg[binary]."
         ) from None
     try:
         return psycopg.connect(dsn, autocommit=False)

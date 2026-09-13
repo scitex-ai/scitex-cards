@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """An unexpanded shell variable is not a store target and must be refused.
 
-Measured 2026-08-18: ``SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'`` -- the literal --
+Measured 2026-08-18: ``SCITEX_STORE_DSN='${SCITEX_STORE_DSN}'`` -- the literal --
 resolved to a legitimate target, because it is non-empty (so the zero-config
 refusal never fires) and not DSN-shaped (so the DSN refusal never inspects it).
 Eight agents then shared one database file named after the variable, and four
@@ -18,7 +18,7 @@ from scitex_cards._store_url import (
     reject_unexpanded_variable,
 )
 
-THE_FIELD_LITERAL = "${SCITEX_CARDS_DB}"
+THE_FIELD_LITERAL = "${SCITEX_STORE_DSN}"
 
 
 def test_the_braced_literal_that_was_measured_in_the_field_is_detected():

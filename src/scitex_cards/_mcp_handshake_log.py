@@ -51,9 +51,11 @@ reported in the `server_start` line as `setup_ms`, so the instrument's own
 overhead is visible in its own output rather than asserted in a docstring.
 
 STANDALONE. Resolves its path via `scitex_cards._paths.runtime_dir` — the same
-`<store_dir>/runtime/` every other piece of cards runtime state uses — with a
-pure `$SCITEX_DIR`/`$HOME` fallback if even that fails. Nothing here imports or
-assumes `scitex_agent_container` or a sac-managed environment.
+local `$SCITEX_DIR/cards/runtime/` every other piece of cards runtime state uses
+when `$SCITEX_STORE_DSN` names PostgreSQL — with a pure `$SCITEX_DIR`/`$HOME`
+fallback if even that fails. The sink is a local diagnostic sidecar, not a
+second store: card identity remains the canonical PostgreSQL target. Nothing
+here imports or assumes `scitex_agent_container` or a sac-managed environment.
 """
 
 from __future__ import annotations
@@ -123,9 +125,11 @@ def resolve_log_path(explicit: str | Path | None = None) -> Path | None:
     """Resolve the sink path, or ``None`` when the recorder is switched off.
 
     Precedence: ``explicit`` → ``$SCITEX_CARDS_MCP_HANDSHAKE_LOG`` → the
-    canonical ``<store_dir>/runtime/mcp-handshake.jsonl``. The store-derived
-    default puts the record beside every other piece of cards runtime state, so
-    an agent that knows where its store is knows where its handshake log is.
+    canonical local ``<state_dir>/cards/runtime/mcp-handshake.jsonl``. The
+    runtime-derived default puts the record beside every other piece of local
+    cards runtime state. On PostgreSQL, the store and local-state axes remain
+    deliberately separate: ``$SCITEX_STORE_DSN`` keeps naming the database;
+    the diagnostic sink lives under ``$SCITEX_DIR`` (or the user default).
 
     The last resort (``$SCITEX_DIR``/``$HOME`` directly) exists because
     :func:`~scitex_cards._paths.runtime_dir` resolves through the database path,

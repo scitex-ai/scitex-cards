@@ -59,7 +59,7 @@ from scitex_cards._store_url import BACKEND_POSTGRES, BACKEND_UNSUPPORTED
 
 #: The store this test is pinned to by the root ``conftest.py`` -- a uniquely
 #: named, throwaway PostgreSQL schema, created and dropped per test.
-_ENV_STORE = "SCITEX_CARDS_DB"
+_ENV_STORE = "SCITEX_STORE_DSN"
 
 
 @pytest.fixture

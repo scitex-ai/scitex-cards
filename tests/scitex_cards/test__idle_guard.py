@@ -95,7 +95,7 @@ def _store(tmp_path, tasks):
 
     from conftest import seed_db_from_doc
 
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
@@ -250,10 +250,10 @@ def test_main_failsoft_allows_on_error(env, silent_stdin):
     # A broken store makes the load raise; the guard must NOT trap (exit 0).
     # Against the database store the failure mode is a MISSING canonical DB, not a
     # missing YAML file — the store path is a label now and a broken path is read
-    # as the (empty) DB — so point $SCITEX_CARDS_DB at a database that does not
+    # as the (empty) DB — so point $SCITEX_STORE_DSN at a database that does not
     # exist; the canonical read raises RuntimeError, which the guard fails soft on.
     # Arrange
-    env.set("SCITEX_CARDS_DB", "/no/such/dir/cards.db")
+    env.set("SCITEX_STORE_DSN", "/no/such/dir/cards.db")
     # Act
     rc = _idle_guard.main(["--agent", "alice"])
     # Assert — a guard that traps the agent on its own bug is worse than no guard.

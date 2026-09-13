@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -176,11 +177,13 @@ def test_unresolved_sender_uses_native_http_status(env):
 
 def test_invalid_shared_ledger_target_fails_before_persisting(env):
     # Arrange
+    valid_store = os.environ["SCITEX_STORE_DSN"]
     env.set("SCITEX_STORE_DSN", "not-a-postgres-dsn")
     key = thread_key("test-suite", "recipient")
     # Act
     result = _invoke("agent:recipient", "must not land", "--json")
     payload = json.loads(result.output)
+    env.set("SCITEX_STORE_DSN", valid_store)
     stored = messages_in(key)
     # Assert
     assert (

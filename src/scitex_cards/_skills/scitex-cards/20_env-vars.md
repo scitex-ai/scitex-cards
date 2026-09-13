@@ -1,9 +1,8 @@
 ---
 description: |
   [TOPIC] Environment Variables & Local State
-  [DETAILS] $SCITEX_CARDS_DB is the SOLE store identity and is REQUIRED —
-  there is no default and no fallback; SCITEX_DIR relocates the user-scope
-  ~/.scitex root.
+  [DETAILS] $SCITEX_STORE_DSN selects the scitex-dev shared PostgreSQL store;
+  there is no SQLite fallback. SCITEX_DIR relocates local runtime sidecars.
 tags: [scitex-cards-env-vars]
 ---
 
@@ -11,31 +10,30 @@ tags: [scitex-cards-env-vars]
 
 | Name                | Default                      | Purpose                                              |
 |---------------------|------------------------------|------------------------------------------------------|
-| `SCITEX_CARDS_DB`    | none — REQUIRED              | The store target; the deployment picks the backend, so this is a DSN or a path and you must not assume which. The SOLE store-identity axis, with NO fallback: unset is an unconfigured target and RAISES rather than resolving a filename nobody chose (that zero-config tier was deleted 2026-08-13). See `scitex_cards._paths`. |
+| `SCITEX_STORE_DSN`    | scitex-dev host default       | Shared PostgreSQL store DSN (port 55432). A filesystem path is rejected; there is no SQLite fallback. |
+| `SCITEX_CARDS_NOTIFY_DSN` | notification service default | Optional separate PostgreSQL LISTEN/NOTIFY transport (port 55433). Never selects the state store. |
 | `SCITEX_CARDS_AGENT_ID` | (unset)                   | This agent's identity — stamps every write's `created_by`/`updated_by`, keys the channel inbox, and is the `--mine` filter. Fail-loud when unresolved. (Renamed 2026-07-02 from the now-rejected `SCITEX_CARDS_AGENT`.) **Headless lever:** leave it UNSET and `scitex-cards mcp start` runs TOOLS-ONLY — the inbox poll loop is not started and the session receives ZERO channel pushes. This is the intended mode for solver / headless capsules that must not receive unsolicited pushes. |
 | `SCITEX_CARDS_CHANNEL_SOURCE` | `scards` | `mcp channel` `meta.source` (drives the `<- scards` render — the fleet's short sender-identity label, deliberately distinct from the `scitex-cards` agent id). Overridden by `--name`. |
 | `SCITEX_CARDS_CHANNEL_INTERVAL` | `5.0`             | `mcp channel` poll interval (seconds) between inbox drains. Overridden by `--interval`. |
-| `SCITEX_DIR`        | `~/.scitex`                  | Relocates the user-scope state root (runtime sidecars, per-task prose). It does NOT set the store target — only `$SCITEX_CARDS_DB` does. |
+| `SCITEX_DIR`        | `~/.scitex`                  | Relocates the user-scope state root (runtime sidecars, per-task prose). It does NOT set the store target — only `$SCITEX_STORE_DSN` does. |
 
 Copy [`.env.example`](../../../../.env.example) to `.env` at your project root
 to set these; CLI flags always override env vars.
 
-## Store resolution order (first existing wins)
+## Store resolution
 
-1. explicit path passed to the calling function
-2. `$SCITEX_CARDS_DB`
-3. user scope: `~/.scitex/cards/cards.db` (relocatable via `$SCITEX_DIR`)
+1. An explicit `store=` argument wins for that function call.
+2. Otherwise scitex-dev resolves `$SCITEX_STORE_DSN`, or its central PostgreSQL
+   host default on port 55432.
 
-There is no project-scope layer for the data store — a process run with
-cwd inside any repo resolves the same canonical database (see
-`scitex_cards._paths` for the rationale).
+There is no Cards-specific DB variable, config-file store tier, project-scope
+store, or SQLite fallback.
 
 ## Local state directories
 
 | Path                                  | Scope         | Purpose                  |
 |---------------------------------------|---------------|--------------------------|
-| `~/.scitex/cards/cards.db`            | user-global   | the canonical task store |
-| `~/.scitex/cards/*.json`              | user-global   | sidecar state (threads, inboxes, notify config, dashboard, reminders) |
+| `~/.scitex/cards/*.json`              | user-global   | local runtime/UI preferences only; never shared task, DM, or inbox state |
 
 See `general/01_ecosystem_04_environment-variables.md` and
 `general/01_ecosystem_06_local-state-directories.md`.

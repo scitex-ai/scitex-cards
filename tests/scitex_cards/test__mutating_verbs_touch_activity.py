@@ -133,7 +133,7 @@ def _delinquents():
 
 
 def _store(tasks):
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 

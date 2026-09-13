@@ -110,7 +110,7 @@ def _assert_export_reflects_live_db(db_path: str | None, report: dict) -> None:
             f"{exported_count}. The export does not reflect the DB's current "
             f"state — do not trust or push this snapshot.\n"
             f"Re-run `db snapshot`. If this keeps happening, the export is "
-            f"reading the wrong database (check --db / $SCITEX_CARDS_DB) or "
+            f"reading the wrong database (check --db / $SCITEX_STORE_DSN) or "
             f"is racing against concurrent writes."
         )
     if exported_newest != live_newest:
@@ -154,7 +154,7 @@ def _live_dm_count(db_path: str | None) -> int:
     # It was missed when the snapshot dir was repaired, because the two sat
     # ~350 lines apart and only the other one had an incident attached. The
     # failure mode is identical: every ``create-snapshot`` dies on
-    # ``$SCITEX_CARDS_DB names a PostgreSQL server, not a file path`` before it
+    # ``$SCITEX_STORE_DSN names a PostgreSQL server, not a file path`` before it
     # counts a single DM -- which is how the off-site backup was down for ~31
     # hours on 2026-08-02.
     #

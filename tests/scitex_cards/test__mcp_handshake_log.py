@@ -213,10 +213,11 @@ def rotated_sink(tmp_path):
 
 
 @pytest.fixture()
-def default_sink_path(tmp_path, env):
-    """The sink path resolved with no override — the deployed default."""
+def default_sink_path(tmp_path, env, postgres_dsn):
+    """The local sink beside a canonical, schema-scoped PostgreSQL store."""
     env.delete(ENV_LOG_PATH)
-    env.set("SCITEX_CARDS_DB", str(tmp_path / "cards.db"))
+    env.set("SCITEX_DIR", str(tmp_path))
+    env.set("SCITEX_STORE_DSN", postgres_dsn)
     return resolve_log_path()
 
 
@@ -484,13 +485,27 @@ def test_the_default_sink_is_named_for_the_handshake(default_sink_path):
     assert name == LOG_FILENAME
 
 
-def test_the_default_sink_follows_the_configured_store(default_sink_path, tmp_path):
+def test_the_default_sink_uses_local_state_beside_a_server_store(
+    default_sink_path, tmp_path
+):
     # Arrange
     path = default_sink_path
     # Act
-    under_store = str(path).startswith(str(tmp_path))
-    # Assert — an agent that knows its store knows its handshake log.
-    assert under_store, "the sink must track the store the agent actually uses"
+    expected = tmp_path / "cards" / "runtime" / LOG_FILENAME
+    # Assert — a PostgreSQL DSN must never be coerced into a filesystem path.
+    assert path == expected
+
+
+def test_resolving_the_default_sink_does_not_replace_the_canonical_store(
+    default_sink_path, postgres_dsn
+):
+    # Arrange — resolving the sink has already exercised the deployed default.
+    from scitex_cards._store_target import resolve_store_target
+
+    # Act
+    target = resolve_store_target()
+    # Assert — the local diagnostic sidecar cannot become a second store axis.
+    assert target == postgres_dsn
 
 
 # EOF

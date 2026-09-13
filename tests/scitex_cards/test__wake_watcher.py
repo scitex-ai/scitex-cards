@@ -568,7 +568,7 @@ def _write_store(path, tasks, *, agents=None) -> None:
     doc: dict = {"tasks": tasks}
     if agents is not None:
         doc["agents"] = agents
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     with open(path, "w", encoding="utf-8") as handle:
         yaml.safe_dump(doc, handle, sort_keys=False)
 

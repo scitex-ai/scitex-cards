@@ -3,7 +3,7 @@
 """``resolve_db_path`` must REFUSE a PostgreSQL target, never coerce it.
 
 THE FAILURE THIS PREVENTS WAS MEASURED ON THE LIVE SYSTEM, 2026-07-31, while
-testing the cutover before performing it. With ``SCITEX_CARDS_DB`` pointed at a
+testing the cutover before performing it. With ``SCITEX_STORE_DSN`` pointed at a
 PostgreSQL URL:
 
     list_tasks()              ->    0 cards      (real target: 2960)
@@ -30,7 +30,7 @@ import os
 
 import pytest
 
-from scitex_cards._db import ENV_DB, resolve_db_path
+from scitex_cards._db import ENV_STORE_DSN, resolve_db_path
 from scitex_cards._store_target import StoreTargetIsNotAPath
 
 PG_URL = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
@@ -39,24 +39,24 @@ PG_KV = "host=127.0.0.1 port=5432 dbname=scitex_cards user=scitex_cards"
 
 @pytest.fixture
 def env_db(tmp_path):
-    """Set ``$SCITEX_CARDS_DB`` for one test and restore it afterwards.
+    """Set ``$SCITEX_STORE_DSN`` for one test and restore it afterwards.
 
     A real environment variable rather than a patched lookup: the production
     code reads ``os.environ`` directly, and the bug lived in what it did with
     that value.
     """
-    saved = os.environ.get(ENV_DB)
+    saved = os.environ.get(ENV_STORE_DSN)
 
     def _set(value: str) -> None:
-        os.environ[ENV_DB] = value
+        os.environ[ENV_STORE_DSN] = value
 
     try:
         yield _set
     finally:
         if saved is None:
-            os.environ.pop(ENV_DB, None)
+            os.environ.pop(ENV_STORE_DSN, None)
         else:
-            os.environ[ENV_DB] = saved
+            os.environ[ENV_STORE_DSN] = saved
 
 
 @pytest.fixture

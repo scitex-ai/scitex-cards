@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._inbox import enqueue as real_enqueue
 from scitex_cards._inbox import poll_inbox
 from scitex_cards._push import ENV_DRY_RUN
@@ -60,7 +60,7 @@ def _isolated_store(tmp_path, env, new_store):
     from scitex_cards._db import connect, init_schema
 
     db = new_store()
-    env.set(ENV_DB, str(db))
+    env.set(ENV_STORE_DSN, str(db))
     conn = connect(str(db))
     try:
         init_schema(conn)

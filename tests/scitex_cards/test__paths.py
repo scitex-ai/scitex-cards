@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Tests for store-path resolution (no mocks; real env + tmp files).
 
-The store IDENTITY is the database ``$SCITEX_CARDS_DB``
+The store IDENTITY is the database ``$SCITEX_STORE_DSN``
 (:func:`scitex_cards._db.resolve_db_path`). :func:`resolve_tasks_path` returns
 the YAML CONTAINER beside that database (``<db_dir>/tasks.yaml``) that still
 holds the non-task sections (users/groups/inboxes) — NOT the identity, and no
@@ -23,7 +23,7 @@ import pytest
 
 from scitex_cards._db import (
     DEFAULT_DB_FILENAME,
-    ENV_DB,
+    ENV_STORE_DSN,
     resolve_db_path,
 )
 from scitex_cards._paths import (
@@ -32,14 +32,13 @@ from scitex_cards._paths import (
     _user_root,
     resolve_tasks_path,
 )
-from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 @pytest.fixture
 def clean_store_env():
     """Save and restore the store-identity env vars around a test."""
-    saved = {v: os.environ.get(v) for v in (ENV_DB,)}
-    for v in (ENV_DB,):
+    saved = {v: os.environ.get(v) for v in (ENV_STORE_DSN,)}
+    for v in (ENV_STORE_DSN,):
         os.environ.pop(v, None)
     try:
         yield
@@ -59,30 +58,6 @@ def test_explicit_existing_path_wins_resolution(tmp_path, clean_store_env):
     resolved = resolve_tasks_path(explicit)
     # Assert
     assert resolved == explicit
-
-
-def test_ambient_container_is_beside_the_database(tmp_path, clean_store_env):
-    """The non-task YAML container sits next to the resolved database."""
-    # Arrange
-    target = tmp_path / "fromenv.db"
-    os.environ[ENV_DB] = str(target)
-    # Act
-    resolved = resolve_tasks_path(None)
-    # Assert — the container is `<db_dir>/tasks.yaml`, next to the identity DB.
-    assert resolved == target.parent / "tasks.yaml"
-
-
-def test_ambient_database_resolves_to_the_named_target(tmp_path, clean_store_env):
-    """The identity half of the pair above, split under STX-TQ007."""
-    # Arrange
-    target = tmp_path / "fromenv.db"
-    os.environ[ENV_DB] = str(target)
-    # Act
-    resolved = resolve_db_path(None)
-    # Assert
-    assert resolved == target
-
-
 
 
 def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store_env):
@@ -113,34 +88,8 @@ def test_unresolvable_store_does_NOT_fall_back_to_a_packaged_fixture(clean_store
 #: docstrings, which survives a split and does not depend on assertion order.
 
 
-def test_an_unconfigured_store_identity_refuses(clean_store_env):
-    """The store IDENTITY has NO default. It used to name a local database file.
-
-    This asserted the abolished behaviour by name -- ``resolve_db_path(None)
-    .name == DEFAULT_DB_FILENAME == "cards.db"``, i.e. that a store nobody
-    configured still had an identity. On 2026-08-13 the operator abolished that
-    tier: the file-backed engine is gone fleet-wide, and a filename is not a decision.
-
-    PAIRED WITH `test_the_local_state_container_still_resolves_with_no_database`
-    — refusing here must not take the container down with it.
-    """
-    # Arrange
-    # Act
-    # Assert
-    with pytest.raises(StoreTargetNotConfigured):
-        resolve_db_path(None)
-
-
-def test_the_local_state_container_still_resolves_with_no_database(clean_store_env):
-    """The local-state axis answers even when the identity axis refuses.
-
-    The container the two used to share was ``<db_dir>/tasks.yaml``; with no
-    db_dir to sit beside, it must still resolve, under the local root.
-
-    PAIRED WITH `test_an_unconfigured_store_identity_refuses`. "The query side
-    went down because the store went away" is the 2026-07-31 failure, and this
-    is the half that catches it.
-    """
+def test_the_local_state_container_resolves_without_an_override(clean_store_env):
+    """Primitive-owned store identity does not change the local state root."""
     # Arrange
     # Act
     resolved = resolve_tasks_path(None)
