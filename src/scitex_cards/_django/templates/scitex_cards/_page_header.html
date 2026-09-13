@@ -38,7 +38,7 @@ indistinguishable. page-header.css styles it
 through `.stx-cards-header h1` so the typography is shared without the markup
 having to say so.
 {% endcomment %}
-<div class="stx-cards-header">
+<div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
   {% include "scitex_cards/_page_switcher.html" with active=active %}
   <h1>{{ page_title }}</h1>
   <span class="stx-cards-header__ver">v{{ scitex_cards_version|default:"?" }}</span>

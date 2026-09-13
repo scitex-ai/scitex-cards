@@ -54,6 +54,26 @@
   flex: 0 0 auto;
 }
 
+/* A mounted app gets a fixed 44px "Back to Store" link from the released
+ * scitex-ui shell.  The link deliberately floats above app content, so Cards
+ * must reserve its footprint: without this clearance it covers the Board
+ * half of the page switcher even though the switcher is present and usable in
+ * the DOM.  The class is emitted only when api_base is a non-root include
+ * path, keeping the standalone server's switcher at its true left edge. */
+.stx-cards-header--mounted {
+  margin-inline-start: 126px;
+}
+
+/* On a phone, put app navigation on the row below the shell escape route.
+ * Side-by-side clearance would consume most of a 390px viewport before the
+ * Cards controls begin. */
+@media (max-width: 768px) {
+  .stx-cards-header--mounted {
+    margin-block-start: 48px;
+    margin-inline-start: 0;
+  }
+}
+
 /* THE SWITCHER SITS AT THE LEFT EDGE OF THE HEADER, on both pages (operator's
  * standing instruction). It is first in the partial's markup, so this rule
  * only has to make sure nothing pushes it away: `margin-left: auto` on the
