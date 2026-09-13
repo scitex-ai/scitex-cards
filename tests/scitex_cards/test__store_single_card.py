@@ -27,7 +27,7 @@ import pytest
 from conftest import seed_db_from_doc
 
 from scitex_cards import _store
-from scitex_cards._db import ENV_DB, connect
+from scitex_cards._db import ENV_STORE_DSN, connect
 from scitex_cards._db_export import export_doc
 from scitex_cards._store_errors import RevisionConflictError, StoreNotProvisionedError
 from scitex_cards._store_retirement import StoreRetired, retire_store
@@ -64,10 +64,10 @@ _DOC = {
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def store_db(new_store, env):
-    """A real two-card throwaway store, pinned as ``$SCITEX_CARDS_DB``."""
+    """A real two-card throwaway store, pinned as ``$SCITEX_STORE_DSN``."""
     db = new_store("cards_one_card", bootstrap=False)
     seed_db_from_doc(_DOC, db)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     return db
 
 
@@ -219,7 +219,7 @@ def test_a_store_stamped_for_another_identity_is_refused(store_db, env):
 def test_a_schemaless_store_is_not_provisioned_rather_than_empty(new_store, env):
     # Arrange -- a schema that exists and holds no tables at all
     bare = new_store("cards_bare", bootstrap=False)
-    env.set(ENV_DB, bare)
+    env.set(ENV_STORE_DSN, bare)
     # Act
     target = resolve_store_target(None)
     # Assert

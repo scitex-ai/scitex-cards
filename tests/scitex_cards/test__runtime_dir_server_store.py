@@ -43,7 +43,7 @@ import pytest
 from scitex_cards import _paths
 
 _DSN = "postgresql://scitex_cards@127.0.0.1:5432/scitex_cards"
-_MANAGED = ("SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
+_MANAGED = ("SCITEX_STORE_DSN", "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def isolated_home(tmp_path):
     saved_cwd = os.getcwd()
 
     os.environ.pop("SCITEX_DIR", None)
-    os.environ.pop("SCITEX_CARDS_DB", None)
+    os.environ.pop("SCITEX_STORE_DSN", None)
     os.environ["HOME"] = str(tmp_path)
     work = tmp_path / "cwd"
     work.mkdir()
@@ -108,7 +108,7 @@ class TestAnExplicitServerStoreResolvesLocally:
     def test_it_agrees_with_the_ambient_branch(self, isolated_home):
         """The two branches disagreeing IS the defect, so pin them together."""
         # Arrange
-        os.environ["SCITEX_CARDS_DB"] = _DSN
+        os.environ["SCITEX_STORE_DSN"] = _DSN
 
         # Act
         ambient = _paths.resolve_tasks_path(None)

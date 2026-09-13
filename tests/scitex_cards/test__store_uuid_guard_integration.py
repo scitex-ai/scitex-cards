@@ -48,19 +48,19 @@ IDENTITY_B = "7c9e0d21-5b3f-4a08-9e6d-2f4a6b8c0d1e"
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def store_db(new_store, env):
-    """An EXPLICIT throwaway store, pinned as ``$SCITEX_CARDS_DB`` for the test.
+    """An EXPLICIT throwaway store, pinned as ``$SCITEX_STORE_DSN`` for the test.
 
     NEVER the ambient default. That default is the live fleet board (2646 cards
     on 2026-07-28), and ``_store._read_canonical_db_or_raise`` resolves
-    ``$SCITEX_CARDS_DB`` regardless of any ``store`` argument a caller passes --
+    ``$SCITEX_STORE_DSN`` regardless of any ``store`` argument a caller passes --
     so a test that forgets this pin does not merely read the operator's board,
     it can rewrite it. Pinning here rather than per-test makes forgetting hard.
     """
-    from scitex_cards._db import ENV_DB
+    from scitex_cards._db import ENV_STORE_DSN
 
     db = new_store("cards_uuid_guard", bootstrap=False)
     _seed(db)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     return db
 
 
@@ -250,10 +250,10 @@ def test_a_matching_identity_does_not_bypass_the_ambient_store_creation_guard(
     nonexistent store creatable -- no matter how confidently it is spelled.
     """
     # Arrange
-    from scitex_cards._db import ENV_DB
+    from scitex_cards._db import ENV_STORE_DSN
     from scitex_cards._paths import refuse_ambient_store_creation
 
-    env.delete(ENV_DB)
+    env.delete(ENV_STORE_DSN)
     env.set("SCITEX_CARDS_STORE_UUID", IDENTITY_A)
     nobody_named_this = tmp_path / "ambient" / "cards.db"
 

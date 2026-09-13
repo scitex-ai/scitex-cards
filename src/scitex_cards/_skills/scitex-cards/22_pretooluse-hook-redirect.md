@@ -13,7 +13,7 @@ tags: [scitex-cards-pretooluse-hook-redirect, scitex-cards-one-store]
 # PreToolUse hook — redirect Claude `TaskCreate`/`TaskUpdate`/`TaskList` to scitex-cards
 
 Operator op-12038 doctrine: **every fleet agent uses ONE shared task
-store**. (That store is whatever `$SCITEX_CARDS_DB` resolves to — the
+store**. (That store is whatever `$SCITEX_STORE_DSN` resolves to — the
 deployment picks the backend. This line used to say "scitex-cards's YAML",
 which stopped being true when the store moved to PostgreSQL; the doctrine is
 about there being ONE store, not about its format.) Claude Code's built-in

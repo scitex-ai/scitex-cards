@@ -106,7 +106,7 @@ PLAN=(
     #   scitex-todo-notifyd.service       scitex-cards notifyd
     #   scitex-todo.wake-watcher.service  scitex-cards watch --push --interval 2
     #   scitex-todo.dashboard.service     scitex-cards gui serve --port 8051
-    #   all three:  SCITEX_CARDS_DB=postgresql://...127.0.0.1:55432/scitex_cards
+    #   all three:  SCITEX_STORE_DSN=postgresql://...127.0.0.1:55432/scitex_cards
     #               scitex_cards 0.48.0
     #
     # So the migration REACHED this host in substance — current code, current

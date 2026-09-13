@@ -216,7 +216,7 @@ def check_resolution(
 
     THE ORDER IS THE POINT. The target is resolved through the SAME
     ``resolve_store_target`` precedence a write uses (explicit, then
-    ``$SCITEX_CARDS_DB``, then config, then the packaged default), and the
+    ``$SCITEX_STORE_DSN``, then config, then the packaged default), and the
     identity is read from whatever that resolution actually landed on. A guard
     that consults a target the writes do not use is a guard that agrees with
     itself and nothing else.

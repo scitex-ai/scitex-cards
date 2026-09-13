@@ -119,7 +119,7 @@ def store_config_target() -> str | None:
     """The configured store target, or ``None`` when the file does not set one.
 
     WHY THIS EXISTS. Until this was added, the ONLY way to point a client at a
-    non-default store was ``$SCITEX_CARDS_DB``, set at every single invocation
+    non-default store was ``$SCITEX_STORE_DSN``, set at every single invocation
     site. Everything that forgot fell through to a hardcoded local
     filename. During the 2026-08-01 PostgreSQL cutover that cost us eight
     host-side writers (four systemd units, three cron entries, one hourly timer)

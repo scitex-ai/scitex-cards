@@ -105,7 +105,7 @@ _DB_OPTION = click.option(
     "--db",
     "db_path",
     default=None,
-    help="Explicit DB path (default: $SCITEX_CARDS_DB, else the configured store).",
+    help="Explicit DB path (default: $SCITEX_STORE_DSN, else the configured store).",
 )
 
 
@@ -113,12 +113,9 @@ _DB_OPTION = click.option(
     "get-path",
     help=(
         "Print the resolved DB path.\n\n"
-        "Precedence: --db arg > $SCITEX_CARDS_DB > $SCITEX_CARDS_DB "
-        "(deprecated, warned) > the `store.target` key in the config file. "
-        "There is NO tier below that: it used to fall back to "
-        "local_state.user_path('cards','cards.db'), and since 2026-08-13 an "
-        "unconfigured store REFUSES instead of naming a file nobody "
-        "chose.\n\n"
+        "Precedence: explicit --db argument, otherwise the scitex-dev shared "
+        "PostgreSQL target selected by $SCITEX_STORE_DSN. There is no Cards "
+        "config or filesystem fallback.\n\n"
         "Example:\n"
         "  scitex-cards dev db get-path"
     ),
@@ -344,7 +341,7 @@ def db_snapshot_cmd(
     # derives a filesystem location from the STORE TARGET. That is fine while
     # the target is a file and raises outright once it is a DSN — measured
     # 2026-08-02, and it took the off-site backup down for ~31 hours: every
-    # hourly run died on `$SCITEX_CARDS_DB names a PostgreSQL server, not a
+    # hourly run died on `$SCITEX_STORE_DSN names a PostgreSQL server, not a
     # file path`, with the traceback going to a log file nobody reads.
     #
     # The guard was right; the caller was wrong. Store identity (which may be a

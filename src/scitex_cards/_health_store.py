@@ -60,7 +60,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
             "ok": False,
             "detail": f"PostgreSQL store {describe_store_target(target)!r} did not open ({exc})",
             "hint": (
-                "check the server is reachable and that $SCITEX_CARDS_DB names "
+                "check the server is reachable and that $SCITEX_STORE_DSN names "
                 "the right database. NOTE `scitex-cards dev db get-path` does NOT help "
                 "here -- it resolves a filesystem path and refuses a DSN. Do NOT "
                 "point the store elsewhere to make this green -- a fresh empty "
@@ -136,7 +136,7 @@ def _verify_postgres_store(target: str) -> dict[str, Any]:
 def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
     """Resolve the task store and verify it is the canonical, healthy store.
 
-    The canonical store is the database named by ``$SCITEX_CARDS_DB``. ok when
+    The canonical store is the database named by ``$SCITEX_STORE_DSN``. ok when
     it is reachable, carries a ``tasks`` table, and the role can write it. An
     EXPLICIT file store (tests, ``--tasks <file>``) is taken as the intended
     target and checked as a serialized document with a top-level ``tasks`` key.
@@ -200,7 +200,7 @@ def _check_store_canonical(store: str | Path | None) -> dict[str, Any]:
         "detail": f"no store: {describe_store_target(target)!r} does not name a reachable store",
         "hint": (
             "if this agent should have the FLEET board, the target is wrong — "
-            "fix $SCITEX_CARDS_DB rather than creating a store, because a fresh "
+            "fix $SCITEX_STORE_DSN rather than creating a store, because a fresh "
             "empty one here becomes a SECOND store, which is how the board was "
             "destroyed on 2026-07-19. `scitex-cards dev db get-path` shows "
             "what resolved. "

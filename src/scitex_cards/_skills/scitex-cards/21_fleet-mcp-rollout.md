@@ -4,7 +4,7 @@ description: |
   block and the binding "MCP-only for durable cards" mandate.
   [DETAILS] The wire is MCP, not the CLI: durable cards go through the MCP
   server so every write carries an agent identity and reaches the shared
-  store. Requires `SCITEX_CARDS_AGENT_ID` and `SCITEX_CARDS_DB` in the
+  store. Requires `SCITEX_CARDS_AGENT_ID` and `SCITEX_STORE_DSN` in the
   server env — the latter is the SOLE store identity, with no default and
   no fallback.
   [WHEN] Read on every agent boot. This is the leaf that locks in WHY
@@ -92,7 +92,7 @@ a soft default.
 |---|---|---|---|
 | `SCITEX_CARDS_AGENT_ID` | **YES** | `<your-peer-name>` | Stamps every write's `_log_meta.created_by` / `updated_by`. The board's "by agent" lens, throughput stats, and notify routing all key off this. |
 | `SCITEX_CARDS_SCOPE` | recommended | `agent:<your-peer-name>` | Default scope for `list_tasks` / `summarize_tasks` so the agent sees its own slice by default. Pass `scope=""` to opt out per-call. |
-| `SCITEX_CARDS_DB` | **YES** | The store target — a DSN or a path; the deployment picks the backend | The SOLE store identity. There is no default to fall back on: unset RAISES. Confirm with `scitex-cards resolve-store` rather than assuming. |
+| `SCITEX_STORE_DSN` | **YES** | The store target — a DSN or a path; the deployment picks the backend | The SOLE store identity. There is no default to fall back on: unset RAISES. Confirm with `scitex-cards resolve-store` rather than assuming. |
 
 For agent-container's `to_home/_base/.mcp.json` rollout, the per-agent
 `SCITEX_CARDS_AGENT_ID` value is templated from the agent's name; see the

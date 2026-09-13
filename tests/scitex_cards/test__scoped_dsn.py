@@ -34,10 +34,10 @@ from scitex_cards._scoped_dsn import (
 
 @pytest.fixture
 def store_dsn() -> str:
-    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    dsn = os.environ.get("SCITEX_STORE_DSN", "")
     if "search_path" not in dsn:
         pytest.fail(
-            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            "the root conftest did not pin $SCITEX_STORE_DSN to a throwaway "
             f"PostgreSQL schema; it holds {dsn!r}. A failure, not a skip: a "
             "skipped gate test and a passing one look identical.",
             pytrace=False,

@@ -23,7 +23,7 @@ now has exactly one read path, and it is the one exercised below.
 
 Every test gets its OWN scratch, schema-complete, floor-UNSET database via the
 suite-wide ``_store_env_stays_pinned`` autouse fixture (``tests/conftest.py``);
-``os.environ["SCITEX_CARDS_DB"]`` is that path.
+``os.environ["SCITEX_STORE_DSN"]`` is that path.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from scitex_cards._min_client_version import (
 
 
 def _db_path() -> str:
-    return os.environ["SCITEX_CARDS_DB"]
+    return os.environ["SCITEX_STORE_DSN"]
 
 
 def _set_floor(version: str) -> None:

@@ -468,7 +468,7 @@ def bulk_move_of_legacy_assignee_card(tmp_path: Path):
             {"id": "c-1", "title": "x", "status": "pending", "assignee": "proj-old"}
         ]
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     result = reassign_all(store, "proj-old", "proj-new", by="operator")
     return {"result": result, "card": _by_id(store, "c-1")}

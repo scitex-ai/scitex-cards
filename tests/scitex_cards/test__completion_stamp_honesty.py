@@ -38,7 +38,7 @@ def _store(tmp_path, tasks):
     stamped with any other path is refused on the next read). ``tmp_path`` is
     kept in the signature for the callers that pass a per-marker subdir, but the
     canonical DB is the single store now, so it is not used for a file."""
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 

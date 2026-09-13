@@ -49,7 +49,7 @@ running. The unit is the declared owner of the board on this host.
 NO ``Environment=`` LINE, DELIBERATELY
 --------------------------------------
 systemd does not source the login shell, so a unit that depended on
-``$SCITEX_CARDS_DB`` from ``~/.bashrc`` would start, refuse the unconfigured
+``$SCITEX_STORE_DSN`` from ``~/.bashrc`` would start, refuse the unconfigured
 store, and crash-loop. Verified under a fully stripped environment
 (``env -i``) that the store resolves from ``~/.scitex/cards/config.json``
 alone, so no environment is baked into the unit — baking a store target into

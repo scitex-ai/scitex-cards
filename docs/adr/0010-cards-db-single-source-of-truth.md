@@ -54,8 +54,8 @@ audit trail) and Q6 (multi-host). Since then (all 2026-07-16):
 
 ## Decision
 
-1. **Path.** `resolve_db_path`: explicit arg → `$SCITEX_CARDS_DB` →
-   `$SCITEX_CARDS_DB` (deprecated, loud warning, one transition window) →
+1. **Path.** `resolve_db_path`: explicit arg → scitex-dev shared target from
+   `$SCITEX_STORE_DSN` →
    `local_state.user_path("cards", "cards.db")`. The final tier stays
    DELEGATED to the ecosystem resolver — a project scope remains structurally
    inexpressible (the 2026-07-06 stale-store class stays dead).

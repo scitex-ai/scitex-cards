@@ -91,7 +91,7 @@ def test_the_public_summary_says_something_useful():
 
 
 def test_the_public_summary_mentions_no_internal_vocabulary():
-    """'canonical', 'exporter', 'SCITEX_CARDS_DB' are ours, not theirs."""
+    """'canonical', 'exporter', 'SCITEX_STORE_DSN' are ours, not theirs."""
     # Arrange
     exc = StoreUnavailableError(_DETAIL)
 
@@ -146,8 +146,8 @@ def test_the_missing_store_refusal_raises_this_type(new_store):
 
     from scitex_cards import _store_canonical_read
 
-    saved = os.environ.get("SCITEX_CARDS_DB")
-    os.environ["SCITEX_CARDS_DB"] = new_store("errors_unprovisioned", bootstrap=False)
+    saved = os.environ.get("SCITEX_STORE_DSN")
+    os.environ["SCITEX_STORE_DSN"] = new_store("errors_unprovisioned", bootstrap=False)
 
     # Act
     try:
@@ -159,9 +159,9 @@ def test_the_missing_store_refusal_raises_this_type(new_store):
         raised = exc
     finally:
         if saved is None:
-            os.environ.pop("SCITEX_CARDS_DB", None)
+            os.environ.pop("SCITEX_STORE_DSN", None)
         else:
-            os.environ["SCITEX_CARDS_DB"] = saved
+            os.environ["SCITEX_STORE_DSN"] = saved
 
     # Assert
     assert isinstance(raised, StoreUnavailableError), f"got {type(raised).__name__}"

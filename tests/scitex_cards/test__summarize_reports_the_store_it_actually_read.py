@@ -26,7 +26,7 @@ evening on exactly that class, because his board silently served a store nobody
 had chosen.
 
 NO ENVIRONMENT OVERRIDE IN THIS FILE, and the first version's failure is the
-reason it is worth stating. That version pointed ``SCITEX_CARDS_DB`` at a live
+reason it is worth stating. That version pointed ``SCITEX_STORE_DSN`` at a live
 PostgreSQL DSN so it could assert against the real fleet store. It passed here
 and failed all three CI legs, because CI has no such server -- a test that
 depends on one machine's running database is not a test, it is a local probe

@@ -41,7 +41,7 @@ def _seed(n: int) -> None:
             for i in range(n)
         ]
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
 
 
 @pytest.fixture()

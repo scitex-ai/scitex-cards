@@ -97,7 +97,7 @@ def test_install_fleet_pins_env_tasks_path(tmp_path):
     )
     # Assert
     entry = _read_json(agents / "agent-a" / "to_home" / ".mcp.json")["mcpServers"]["scitex-cards"]
-    assert entry.get("env") == {"SCITEX_CARDS_DB": pinned}
+    assert entry.get("env") == {"SCITEX_STORE_DSN": pinned}
 
 
 def test_install_fleet_preserves_sibling_mcp_servers(tmp_path):

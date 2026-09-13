@@ -45,7 +45,7 @@ def _seed(tmp_path, n=2):
             {"id": f"t{i}", "title": f"T{i}", "status": "deferred"} for i in range(n)
         ]
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
@@ -57,7 +57,7 @@ def _seed_with_users(tmp_path):
         "users": [{"id": "u1", "kind": "agent", "name": "someone"}],
         "tasks": [{"id": "t0", "title": "T", "status": "deferred"}],
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
@@ -123,7 +123,7 @@ class TestOptimisticConcurrency:
     def test_generation_of_missing_store(self, env, new_store):
         # Arrange — the store IS the canonical DB, and store_generation hashes
         # THAT (ignoring the path arg), so the "store absent" case the sentinel
-        # is for is a store with nothing in it. `os.remove` on $SCITEX_CARDS_DB
+        # is for is a store with nothing in it. `os.remove` on $SCITEX_STORE_DSN
         # was how that used to be arranged; the variable holds a DSN now, so
         # removing it raised FileNotFoundError before the assertion ran. The
         # comment above it already said the pinned value "never was a real file
@@ -146,7 +146,7 @@ class TestOptimisticConcurrency:
         # store is exactly what let an empty document look like a legitimate
         # generation. So the test keeps its subject — what happens when the
         # store is not there — and follows the behaviour to its refusal.
-        env.set("SCITEX_CARDS_DB", new_store("concurrency_absent", bootstrap=False))
+        env.set("SCITEX_STORE_DSN", new_store("concurrency_absent", bootstrap=False))
 
         # Act
         def read_the_generation():

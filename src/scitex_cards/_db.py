@@ -7,7 +7,7 @@ THE STORE IS THIS DATABASE
 The PostgreSQL database opened here is THE canonical store — not a shadow of a
 YAML file. There is no second document to reconcile to: the CRUD / MCP /
 ``load_doc`` / ``_save_doc_unlocked`` path reads and writes this database
-directly (see :mod:`scitex_cards._store_backend`). ``$SCITEX_CARDS_DB`` (the
+directly (see :mod:`scitex_cards._store_backend`). ``$SCITEX_STORE_DSN`` (the
 DSN) is the SOLE store identity, stamped into ``schema_meta`` and enforced by
 the ownership guard (:mod:`scitex_cards._dual_write`). The YAML that remains in
 the package is a BACKUP/EXPORT rail (``db export``) and a set of non-card
@@ -56,7 +56,7 @@ DEFAULT_DB_FILENAME = "cards.db"
 PKG_SHORT = "cards"
 
 #: env var that overrides the resolved DB path entirely (2nd tier).
-ENV_DB = "SCITEX_CARDS_DB"
+ENV_STORE_DSN = "SCITEX_STORE_DSN"
 
 #: schema version — mirrored into both ``PRAGMA user_version`` and the
 #: ``schema_meta`` table so a fast gate (pragma) and a human-readable row exist.
@@ -184,18 +184,9 @@ SCHEMA_VERSION = 15
 def resolve_db_path(explicit: str | Path | None = None) -> Path:
     """Resolve the DB path, following the precedence chain.
 
-    Precedence (highest first):
-
-    1. ``explicit`` argument (CLI ``--db`` / function arg),
-    2. ``$SCITEX_CARDS_DB`` environment override,
-    3. ``$SCITEX_CARDS_DB`` — deprecated pre-rename name, honoured with a
-       loud warning for one transition window,
-    4. NOTHING — there is no fourth tier. Until 2026-08-13 this DELEGATED to
-       the ecosystem user-canonical resolver,
-       ``local_state.user_path("cards", "cards.db")``; an unconfigured store
-       now RAISES
-       :class:`scitex_cards._store_target.StoreTargetNotConfigured` instead of
-       naming a file nobody chose.
+    An explicit function argument is returned as a path. Without one, the
+    ambient target is resolved through scitex-dev; because that target is
+    PostgreSQL, this path-only API raises :class:`StoreTargetIsNotAPath`.
 
     Returns a :class:`~pathlib.Path`; does NOT create the file. THIS IS A
     SIDECAR RESOLVER, NOT A STORE DOOR — the store is reached through
@@ -207,7 +198,7 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     the relative path ``postgresql:/host/db`` — the ``//`` silently collapses.
 
     MEASURED 2026-07-31, and it is the worst failure this store can have.
-    With ``SCITEX_CARDS_DB`` set to a PostgreSQL URL:
+    With ``SCITEX_STORE_DSN`` set to a PostgreSQL URL:
 
         list_tasks()            ->     0 cards   (the real store held 2960)
         resolve-store `exists`  ->  True         the guard reported healthy
@@ -242,34 +233,9 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
 
     if explicit is not None:
         return _as_path(explicit, "the explicit target")
-    env_val = os.environ.get(ENV_DB)
-    if env_val:
-        return _as_path(env_val, f"${ENV_DB}")
-    # CONFIG TIER — kept in lockstep with resolve_store_target, whose docstring
-    # promises this function's precedence is mirrored exactly. Routed through
-    # _as_path deliberately: this function is typed `-> Path`, so a DSN written
-    # into the config must produce the same loud refusal an env DSN does rather
-    # than being coerced into a mangled relative path.
-    from ._config import store_config_target
+    from ._store_target import resolve_store_target  # noqa: PLC0415
 
-    configured = store_config_target()
-    if configured:
-        return _as_path(configured, "the configured store target")
-    # Final tier — ABOLISHED 2026-08-13. It used to DELEGATE to the ecosystem
-    # user-canonical resolver and return that path:
-    #
-    #     from scitex_config._ecosystem import local_state
-    #     return local_state.user_path(PKG_SHORT, DEFAULT_DB_FILENAME)
-    #
-    # which is a filename nobody chose, indistinguishable at the call site from
-    # one somebody did. The refusal is the SAME object raised from the
-    # SAME place `resolve_store_target` raises it, not a second message here:
-    # this function's docstring promises its precedence mirrors that one
-    # exactly, and a tier closed in one resolver but open in the other is the
-    # original fallback with an extra hop. See `_store_target` for the ruling.
-    from ._store_target import refuse_zero_config_default  # noqa: PLC0415
-
-    refuse_zero_config_default()
+    return _as_path(resolve_store_target(), f"${ENV_STORE_DSN}")
 
 
 # The core schema DDL and the table roster live in ``_db_schema_sql`` --
@@ -394,7 +360,7 @@ def _utc_now_iso() -> str:
 
 __all__ = [
     "DEFAULT_DB_FILENAME",
-    "ENV_DB",
+    "ENV_STORE_DSN",
     "PKG_SHORT",
     "SCHEMA_TABLES",
     "SCHEMA_VERSION",

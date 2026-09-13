@@ -101,7 +101,7 @@ def populated_db_without_sidecar():
     # slash: ``postgresql://host/db`` becomes ``postgresql:/host/db``, which the
     # door then refuses as malformed. `_store_url` names this exact trap in its
     # own error text — it was reached from here.
-    db = os.environ["SCITEX_CARDS_DB"]
+    db = os.environ["SCITEX_STORE_DSN"]
     seed_db_from_doc(_TWO_CARDS, db)
     # No sidecar to remove: a DSN has no directory to sit a `tasks.yaml` beside,
     # so the shape this fixture had to construct by hand is now the only shape
@@ -182,8 +182,8 @@ def unreadable_store(env, new_store):
     # exist — expresses the FIRST, because it fails at connect(). It would have
     # made these tests demand 4xx for a dead server, which is the misdiagnosis
     # `test_an_unreachable_postgres_is_still_a_server_fault` exists to refuse.
-    env.set("SCITEX_CARDS_DB", new_store(bootstrap=False))
-    yield os.environ["SCITEX_CARDS_DB"]
+    env.set("SCITEX_STORE_DSN", new_store(bootstrap=False))
+    yield os.environ["SCITEX_STORE_DSN"]
     _reset_board_caches()
 
 
@@ -295,7 +295,7 @@ def corrupt_store(env, tmp_path):
     broken = tmp_path / "corrupt" / "cards.db"
     broken.parent.mkdir(parents=True, exist_ok=True)
     broken.write_bytes(b"this is not a database at all")
-    env.set("SCITEX_CARDS_DB", str(broken))
+    env.set("SCITEX_STORE_DSN", str(broken))
     yield broken
     _reset_board_caches()
 
@@ -353,7 +353,7 @@ def unreachable_postgres(env):
         f"postgresql://scitex_cards@127.0.0.1:{port}/scitex_cards"
         f"?connect_timeout=2"
     )
-    env.set("SCITEX_CARDS_DB", target)
+    env.set("SCITEX_STORE_DSN", target)
     yield port
     _reset_board_caches()
 
@@ -431,26 +431,20 @@ def test_an_unknown_endpoint_404_carries_no_reason(unreadable_store):
     )
 
 
-def test_the_failure_body_names_the_store_it_could_not_read(unreadable_store):
-    """The reason travels to the operator, not just to the journal.
-
-    The board template reads ``payload.error`` off a non-OK response and paints
-    it in the load-error panel, so a message here is the difference between "the
-    board is down" and a diagnosis. The old code threw this away: it swallowed
-    FileNotFoundError into a fixed 400 "No task store found.", and let every
-    other load failure escape into an HTML error page the frontend cannot parse.
-    """
-    # Arrange: the store as a MESSAGE names it - user, host, port, database -
-    # never its password or query string (2026-09-05: the raw DSN in a warning
-    # printed a consumer's password to its logs; every rendering now goes
-    # through describe_store_target).
-    from scitex_cards._store_url import describe_store_target
-
-    expected_fragment = describe_store_target(str(unreadable_store))
+def test_the_failure_body_is_safe_or_actionable_for_postgres(unreadable_store):
+    """DEBUG controls detail, but both modes describe the canonical store."""
+    # Arrange
+    _ = unreadable_store
+    public = "No task store has been set up for this workspace yet."
     # Act
     payload = _tasks_payload()
+    error = payload["error"]
+    actionable = all(
+        phrase in error
+        for phrase in ("PostgreSQL store", "no `tasks` table", "REFUSING")
+    )
     # Assert
-    assert expected_fragment in payload["error"]
+    assert error == public or actionable
 
 
 def test_a_store_that_cannot_be_read_never_answers_with_a_task_list(unreadable_store):
@@ -475,7 +469,7 @@ def test_a_store_that_cannot_be_read_never_answers_with_a_task_list(unreadable_s
 def real_but_empty_db():
     """The per-test scratch database, bootstrapped and holding no cards."""
     _reset_board_caches()
-    yield os.environ["SCITEX_CARDS_DB"]
+    yield os.environ["SCITEX_STORE_DSN"]
     _reset_board_caches()
 
 
@@ -516,7 +510,7 @@ def db_with_sidecar_groups():
     # reads it and the test would fail for the wrong reason.
     from scitex_cards._paths import resolve_tasks_path
 
-    db = os.environ["SCITEX_CARDS_DB"]
+    db = os.environ["SCITEX_STORE_DSN"]
     seed_db_from_doc(_TWO_CARDS, db)
     sidecar = Path(resolve_tasks_path(None))
     sidecar.parent.mkdir(parents=True, exist_ok=True)

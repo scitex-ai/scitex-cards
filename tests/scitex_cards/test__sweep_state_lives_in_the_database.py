@@ -38,7 +38,7 @@ from pathlib import Path
 import pytest
 from conftest import seed_db_from_doc
 
-_STORE_ENV = "SCITEX_CARDS_DB"
+_STORE_ENV = "SCITEX_STORE_DSN"
 
 
 @pytest.fixture()

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._paths import _user_root
 from scitex_cards._store_target import resolve_store_target
 
@@ -79,7 +79,7 @@ def test_the_resolved_store_is_scoped_to_a_schema_at_all():
         "the resolved store target carries no search_path, so it resolves to "
         f"the {_LIVE_SCHEMA} schema — the LIVE board. The session isolation "
         "fixture in tests/conftest.py does not appear to be pinning "
-        f"${ENV_DB} to an ephemeral schema any more."
+        f"${ENV_STORE_DSN} to an ephemeral schema any more."
     )
 
 
@@ -107,8 +107,8 @@ def test_scitex_dir_fallback_is_also_pinned_under_tmp(tmp_path_factory):
     must ALSO resolve under pytest's tmp root, not the real home.
 
     This guards the ``SCITEX_DIR`` pin added alongside the end-of-session
-    real-store assert: a test that clears both ``$SCITEX_CARDS_DB`` and
-    ``$SCITEX_CARDS_DB`` (see ``tests/scitex_cards/test__paths.py``'s
+    real-store assert: a test that clears both ``$SCITEX_STORE_DSN`` and
+    ``$SCITEX_STORE_DSN`` (see ``tests/scitex_cards/test__paths.py``'s
     ``clean_store_env`` fixture) falls through to this path, and it must
     land in scratch even then.
     """
@@ -154,7 +154,7 @@ def test_scitex_dir_fallback_is_not_under_any_real_store_root(tmp_path_factory):
 
 
 def test_env_db_still_names_the_winning_precedence_tier():
-    """Sanity: ``$SCITEX_CARDS_DB`` (the env var, not just the resolved path)
+    """Sanity: ``$SCITEX_STORE_DSN`` (the env var, not just the resolved path)
     is actually set — a fixture that stopped SETTING it (as opposed to one
     that set it to the wrong place) would pass the two tests above vacuously
     if ``resolve_db_path`` fell through to an explicit-arg-only code path
@@ -164,8 +164,8 @@ def test_env_db_still_names_the_winning_precedence_tier():
     import os
 
     # Assert
-    assert os.environ.get(ENV_DB), (
-        f"${ENV_DB} is unset — the session isolation fixture in "
+    assert os.environ.get(ENV_STORE_DSN), (
+        f"${ENV_STORE_DSN} is unset — the session isolation fixture in "
         "tests/conftest.py is not pinning it."
     )
 

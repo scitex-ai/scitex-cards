@@ -280,7 +280,7 @@ What it must NOT do, and why this is the part worth reading:
 - It does NOT touch the `tasks` table, the `messages` table, or any other row.
   Pinned by `test_binding_an_identity_leaves_every_card_row_untouched`.
 - It does NOT change what any resolver resolves. `resolve_db_path` reads
-  `$SCITEX_CARDS_DB`; nothing in the resolution chain reads `store_uuid`.
+  `$SCITEX_STORE_DSN`; nothing in the resolution chain reads `store_uuid`.
 
 The drive-by alternative -- the first write to an unstamped database claims it --
 survives only in the row 1 shape: no expectation was declared, so the write mints

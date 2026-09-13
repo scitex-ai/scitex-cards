@@ -33,9 +33,9 @@
 
 ## What it is
 
-`scitex-cards` is a **standalone YAML task board** for a fleet of agents and humans. One
-plain-YAML file at `~/.scitex/cards/tasks.yaml` is the single source of truth (SSoT), holding
-three top-level sections in one document:
+`scitex-cards` is a shared task board for a fleet of agents and humans.
+PostgreSQL on port 55432 is the single source of truth for cards, identities,
+messages, and inbox rows:
 
 - `tasks:` — the cards (dependency graph, statuses, roles, comments).
 - `users:` — the user registry (stable ids + display-name aliases; humans and agents alike).
@@ -50,21 +50,18 @@ It is **two things at once**:
    inboxes. Each agent runs a small **channel server** that drains its inbox and pushes the
    notification straight into its Claude session. The cards *are* the message bus.
 
-**Hard standalone constraint.** The package has ZERO dependency on any external agent runtime
-or fleet package (no `sac` / `claude-code-telegrammer` imports, in either direction). The
-delivery rail is a PULL inbox persisted in the same YAML file, so it works with no network and
-no external service present. An out-of-band push accelerator is always OPTIONAL, never a
-dependency.
+The package does not depend on an agent runtime such as SAC. It does depend on
+scitex-dev for the shared-state resolution primitive; an out-of-band push
+accelerator remains optional.
 
 ## Architecture
 
-The YAML store sits at the center. Every other component is a producer or consumer that reads
-(and, for a few, writes) that one file — no component owns the data.
+The shared PostgreSQL store sits at the center. Every component resolves it
+through the same primitive-owned target.
 
 ```mermaid
 flowchart TB
-    store["`**~/.scitex/cards/tasks.yaml** (SSoT)
-    tasks: · users: · inboxes:`"]
+    store["`**SCITEX_STORE_DSN**<br/>PostgreSQL :55432<br/>cards · users · messages · inboxes`"]
 
     mcp["MCP server<br/>(scitex-cards mcp start)<br/>CRUD + roles + edges + poll"]
     board["Board GUI<br/>(scitex-cards board · :8051)<br/>kanban + timeline + resolve"]
@@ -81,25 +78,24 @@ flowchart TB
 ```
 
 <sub><b>Figure 1.</b> The store is the hub. The MCP server, board GUI, and notifyd all read and
-write it; each agent's channel server drains its slice of the <code>inboxes:</code> section and
+write it; each agent's channel server drains its slice of the shared inbox and
 pushes into that agent's Claude session.</sub>
 
 ### Where your task data lives (store resolution)
 
-**The store is PostgreSQL on 55432, and its identity is `$SCITEX_CARDS_DB`.** One
-axis, not a search order:
+**The store is PostgreSQL on 55432, resolved by the scitex-dev shared-state
+primitive from `$SCITEX_STORE_DSN`.** One axis, not a search order:
 
 | Precedence | Source | Value |
 |---|---|---|
 | 1 | explicit `store` / `--store` | wins even if missing |
-| 2 | `$SCITEX_CARDS_DB` | e.g. `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards` |
-| — | *nothing else* | **unset ⇒ raises `StoreTargetNotConfigured`** |
+| 2 | `$SCITEX_STORE_DSN` | e.g. `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards` |
+| 2 | scitex-dev host default | central PostgreSQL on port 55432 |
 
-**There is no second backend and no fallback tier.** Each removed tier was a way to
-silently answer with the wrong board: the zero-config **file-backed** default raises as of
-2026-08-13; **project scope** is gone (a per-repo store meant one agent saw a
-different board per directory); the **bundled example** went with #512. An
-unconfigured store is a configuration error and says so.
+**There is no second backend or private-file fallback.** Cards does not read a
+Cards-specific DB variable or a project-local store target. A malformed
+`SCITEX_STORE_DSN` is rejected by scitex-dev instead of being interpreted as a
+filesystem path.
 
 Call `resolve_store` to see the target actually resolved, and pin the identity you
 expect — an unpinned client cannot tell a stale replica from the store it meant to
@@ -151,7 +147,7 @@ never completion.
 
 Ordinary `open_db()` calls never migrate an existing schema. If a client finds
 an older rung, it stops before DDL and names the exact administrative action:
-run `scitex-cards init-store --shared` against the same `SCITEX_CARDS_DB`.
+run `scitex-cards init-store --shared` against the same `SCITEX_STORE_DSN`.
 That explicit command is the schema-upgrade boundary; imports, reads, and
 diagnostics cannot silently advance a configured live database.
 
@@ -333,7 +329,7 @@ rows = cards.list_tasks(None, status="in_progress")
 From the shell:
 
 ```bash
-# store: $SCITEX_CARDS_DB (PostgreSQL on 55432); unset raises
+# store: $SCITEX_STORE_DSN (PostgreSQL on 55432); unset raises
 scitex-cards render-graph -o tasks.png     # dependency PNG
 scitex-cards render-graph --print-mermaid  # inspect the mermaid without rendering
 scitex-cards list-tasks --json             # resolved tasks, machine-readable
@@ -369,16 +365,13 @@ flags always override env vars; the full list of variables (with inline comments
 `.env.example`. Notable ones for the fleet slice:
 
 ```bash
-export SCITEX_CARDS_DB=postgresql://…/scitex_cards  # the store identity — a path OR a server URL
+export SCITEX_STORE_DSN=postgresql://…:55432/scitex  # shared PostgreSQL state
 export SCITEX_CARDS_AGENT_ID='agent:<name>'    # this agent's identity (channel + author + last_seen)
 export SCITEX_CARDS_SCOPE='agent:<name>'       # default list/summary filter
 ```
 
-The legacy `SCITEX_CARDS_*` spellings are still honoured **for one transition
-window only** and emit a deprecation warning naming the variable to rename.
-`SCITEX_CARDS_TASKS_YAML_SHARED` in particular no longer overrides the store —
-`$SCITEX_CARDS_DB` wins — so a script still exporting it is not doing what its
-name says.
+`SCITEX_CARDS_NOTIFY_DSN` is separate by design: it may point at the PostgreSQL
+LISTEN/NOTIFY transport on port 55433, but it never selects the state store.
 
 ## 5 Interfaces (Python · CLI · MCP · Skills · Web)
 

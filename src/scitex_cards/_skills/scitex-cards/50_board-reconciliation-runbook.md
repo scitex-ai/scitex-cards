@@ -185,7 +185,7 @@ non-destructive guarantees, and the lead-coordinated broadcast shape) lives in
 
 ## 8. Gotchas
 
-1. **Store resolution.** The store identity is `$SCITEX_CARDS_DB` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
+1. **Store resolution.** The store identity is `$SCITEX_STORE_DSN` — a DSN or a path, since the deployment picks the backend. Check with `scitex-cards resolve-store` and READ the `backend` it reports rather than assuming one.
 2. **`done` vs `update --status done`.** `done` is shorthand without PR-pointer recording. Prefer `update` when there's a PR.
 3. **PR pointer field.** It's `pr_url` (string), not `pr-url` (the CLI flag).
 4. **Close uses `deferred` today.** If/when `VALID_STATUSES` grows a dedicated `closed` value, `close` will switch over — the verb shape stays the same.

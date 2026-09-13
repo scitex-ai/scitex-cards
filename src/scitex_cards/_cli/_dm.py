@@ -65,7 +65,7 @@ def dm_group() -> None:
         ),
         examples=(
             (
-                '{prog} dm send agent:worker "Please review card-123"',
+                '{prog} dm send worker "Please review card-123"',
                 "Persist a DM using the environment sender identity.",
             ),
         ),
@@ -110,8 +110,11 @@ def send_cmd(
 
     \b
     Examples:
-      $ scitex-cards dm send agent:worker "Please review card-123"
-      $ scitex-cards dm send operator "Done" --sender agent:worker --json
+      $ scitex-cards dm send worker "Please review card-123"
+      $ scitex-cards dm send operator "Done" --sender worker --json
+
+    The task-scope spelling ``agent:worker`` is accepted at this boundary and
+    canonicalized to the live inbox identity ``worker`` before persistence.
     """
     from .. import _dm_exchange
 

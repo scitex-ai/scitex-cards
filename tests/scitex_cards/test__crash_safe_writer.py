@@ -27,7 +27,7 @@ STORE-PATH RULE: reads ignore the path argument and read the canonical DB, but
 a WRITE stamps the DB with the path passed, and the next read refuses a DB
 stamped for a different store. So every call here passes the PINNED store
 identity (`SCITEX_CARDS_TASKS_YAML_SHARED`), never a test-local tmp path, and
-prior rows are SEEDED into the canonical DB (`SCITEX_CARDS_DB`) via
+prior rows are SEEDED into the canonical DB (`SCITEX_STORE_DSN`) via
 `seed_db_from_doc`. In the database `users` round-trips as a LIST of records and
 `inboxes` as a `{recipient: [notification]}` map (the DB table shapes) — not
 the old YAML dict-of-users shape.
@@ -70,7 +70,7 @@ def good_store() -> Path:
                 {"id": "t-b", "title": "task b", "status": "pending"},
             ]
         },
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     return Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
 
@@ -251,7 +251,7 @@ def _seed_store_with_extra_sections() -> Path:
                 ]
             },
         },
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     return Path(os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"])
 

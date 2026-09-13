@@ -45,7 +45,7 @@ obvious thing to try.
 WHAT IT MUST NOT DO
 -------------------
 Refuse an argument that is merely redundant. The test suite pins
-``$SCITEX_CARDS_DB`` to a schema-scoped throwaway DSN and hands tests that same
+``$SCITEX_STORE_DSN`` to a schema-scoped throwaway DSN and hands tests that same
 DSN, so ``store=<that DSN>`` names exactly the store the data is in. Refusing
 there would break the suite while reporting no real defect. So the mere PRESENCE
 of an argument is never the discriminator.
@@ -183,7 +183,7 @@ def store_argument_refusal(
         f"Dropping it MOVES WHERE NOTIFICATIONS LAND -- measured\n"
         f"2026-09-07, dropping it stopped a `commented` event reaching\n"
         f"the card owner entirely.\n"
-        f"To isolate a write, set SCITEX_CARDS_DB to the store you mean."
+        f"To isolate a write, set SCITEX_STORE_DSN to the store you mean."
     )
 
 

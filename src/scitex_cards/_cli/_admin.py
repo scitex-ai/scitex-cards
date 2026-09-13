@@ -190,8 +190,7 @@ def resolve_store_cmd(as_json) -> None:
     # beside it is the kind of output an operator reads as "broken".
     click.echo(f"exists:          {info['exists']}")
     click.echo(f"explicit:        {info['explicit']}")
-    click.echo(f"$SCITEX_CARDS_DB:  {info['db_env']}")
-    click.echo(f"user store:      {info['user_store']}")
+    click.echo(f"$SCITEX_STORE_DSN:  {info['store_dsn_env']}")
 
 
 # --------------------------------------------------------------------------- #
@@ -202,7 +201,7 @@ def resolve_store_cmd(as_json) -> None:
     **spec_command_kwargs(
         summary="Install the task schema into the resolved store (idempotent).",
         description=(
-            "Connects to the store $SCITEX_CARDS_DB resolves to and creates "
+            "Connects to the store $SCITEX_STORE_DSN resolves to and creates "
             "the tables, indexes and triggers if they are absent. Idempotent: "
             "a store that already carries the schema is left untouched. It "
             "does NOT create a database -- the database must exist and the "
@@ -216,7 +215,7 @@ def resolve_store_cmd(as_json) -> None:
     "scope_choice",
     flag_value="shared",
     default="shared",
-    help="Provision the store $SCITEX_CARDS_DB resolves to (the default).",
+    help="Provision the store $SCITEX_STORE_DSN resolves to (the default).",
 )
 @click.option(
     "--project",
@@ -251,8 +250,8 @@ def init_store_cmd(scope_choice, dry_run, yes) -> None:
         # from a command whose author meant something else.
         raise click.ClickException(
             "`--project` is removed: there is no project-scoped store. The "
-            "store is whatever $SCITEX_CARDS_DB resolves to, one board for the "
-            "fleet. Re-run without the flag, or point $SCITEX_CARDS_DB at the "
+            "store is whatever $SCITEX_STORE_DSN resolves to, one board for the "
+            "fleet. Re-run without the flag, or point $SCITEX_STORE_DSN at the "
             "store you actually mean."
         )
 
@@ -411,7 +410,7 @@ def store_adopt_uuid_cmd(identity, as_json) -> None:
         raise click.ClickException(
             f"no database at {db_path}. REFUSING to create one: an identity "
             f"belongs to a store that already exists, and manufacturing a "
-            f"board here is how one gets replaced. Point $SCITEX_CARDS_DB at "
+            f"board here is how one gets replaced. Point $SCITEX_STORE_DSN at "
             f"the real database first."
         )
     try:

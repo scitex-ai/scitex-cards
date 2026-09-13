@@ -319,7 +319,7 @@ def test_the_withheld_remainder_is_reported_rather_than_hidden():
 def test_an_unreadable_board_allows_the_stop(env):
     """Our own bug must never be the reason an agent cannot finish a turn."""
     # Arrange — the canonical database does not exist, so reading it raises.
-    env.set("SCITEX_CARDS_DB", UNREADABLE_DB)
+    env.set("SCITEX_STORE_DSN", UNREADABLE_DB)
 
     # Act
     out = _decide(store=None)
@@ -331,7 +331,7 @@ def test_an_unreadable_board_allows_the_stop(env):
 def test_an_unreadable_board_says_why_it_is_silent(env):
     """Silence with no explanation is how the original outage stayed hidden."""
     # Arrange
-    env.set("SCITEX_CARDS_DB", UNREADABLE_DB)
+    env.set("SCITEX_STORE_DSN", UNREADABLE_DB)
 
     # Act
     out = _decide(store=None)
@@ -344,7 +344,7 @@ def test_an_unreadable_inbox_allows_the_stop(env):
     """The message rail fails on its own terms — a mail read that raises must
     not wedge the agent any more than a board read that raises."""
     # Arrange — a store that names no backend, so the rail cannot be selected.
-    env.set("SCITEX_CARDS_DB", UNSELECTABLE_STORE)
+    env.set("SCITEX_STORE_DSN", UNSELECTABLE_STORE)
 
     # Act
     out = _decide()
@@ -355,7 +355,7 @@ def test_an_unreadable_inbox_allows_the_stop(env):
 
 def test_an_unreadable_inbox_says_why_it_is_silent(env):
     # Arrange
-    env.set("SCITEX_CARDS_DB", UNSELECTABLE_STORE)
+    env.set("SCITEX_STORE_DSN", UNSELECTABLE_STORE)
 
     # Act
     out = _decide()
@@ -494,35 +494,14 @@ def test_the_hook_prints_its_decision_as_json_on_stdout():
 
 
 def test_an_unrecognised_backend_name_is_not_a_second_rail(env):
-    """It follows the STORE, exactly as an unset value does.
-
-    REPLACES THREE TESTS that selected the retired engine by name and asserted
-    the rail went unavailable with a "RETIRED" warning. Two things ended them.
-
-    The operator ruled that the retired engine gets no special handling at all
-    (「スクライドと言うのは例外でも何でもなくて、そんなものは一切扱いません」), so a
-    warning naming it would be the exception the ruling forbids -- the code
-    would still know the engine's name in order to be rude about it.
-
-    And the behaviour they asserted was never about the engine. ``backend()``
-    documents that an unrecognised value "is not an alternative backend and is
-    never treated as one: it falls through to the store-following default".
-    With a real store that default SUCCEEDS, which is why those tests began
-    failing the moment the harness pinned one -- they had been observing a
-    non-DSN store, not a retired engine.
-
-    What survives is the property that actually matters and is engine-agnostic:
-    a name the selector does not know must not become a second inbox that
-    merely happens to be switched off today.
-    """
+    """An unknown selector is refused, never treated as a second rail."""
     # Arrange
     env.set("SCITEX_CARDS_INBOX_BACKEND", "no-such-backend")
 
     # Act
     out = _decide()
 
-    # Assert — the store is a DSN, so the fall-through selects the store's own
-    # rail and the hook proceeds normally rather than inventing a rail.
+    # Assert
     assert out["warnings"] == []
 
 

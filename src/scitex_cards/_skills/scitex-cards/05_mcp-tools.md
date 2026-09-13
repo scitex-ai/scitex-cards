@@ -64,7 +64,7 @@ So:
 
 ## Store resolution (every tool)
 
-`tasks_path` argument → `$SCITEX_CARDS_DB` → the user-canonical
+`tasks_path` argument → `$SCITEX_STORE_DSN` → the user-canonical
 database. See [20_env-vars.md](20_env-vars.md).
 
 ## Scope filtering

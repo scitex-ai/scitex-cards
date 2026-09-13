@@ -11,7 +11,7 @@ fixtures THREE TIMES in one session:
 
 All three were recovered from the snapshot repo's git history. All three had
 the same enabling condition, and it is not any of the three bugs that were
-fixed afterwards: **a test that never sets ``$SCITEX_CARDS_DB``**. With the
+fixed afterwards: **a test that never sets ``$SCITEX_STORE_DSN``**. With the
 variable unset, ``resolve_db_path(None)`` walks its precedence chain to the
 user-canonical path — which IS the real board — and every in-code ownership
 guard then sees a perfectly legitimate write to the store it was told to use.
@@ -31,7 +31,7 @@ and it must also be inherited by SUBPROCESSES — the concurrency tests pass
 first wipe happened. ``monkeypatch`` is per-test and would leave the gap open
 during collection and in any test that forgets it.
 
-Per-test overrides still work exactly as before: a test that sets ``ENV_DB``
+Per-test overrides still work exactly as before: a test that sets ``ENV_STORE_DSN``
 via ``monkeypatch.setenv`` shadows this for its own duration. This fixture only
 supplies a SAFE DEFAULT where there previously was a dangerous one.
 """
@@ -53,9 +53,8 @@ from _fleet_store_guard import fleet_store_declined as _fleet_store_declined
 #: Every env name that can point the package at a store. All are pinned, so a
 #: half-applied rename cannot leave one of them aimed at the live board.
 _STORE_ENV_VARS = (
-    "SCITEX_CARDS_DB",
-    "SCITEX_CARDS_TASKS_YAML_SHARED",
     "SCITEX_STORE_DSN",
+    "SCITEX_CARDS_TASKS_YAML_SHARED",
 )
 
 #: Env names that select WHICH BACKEND is canonical. These are CLEARED, not
@@ -74,9 +73,9 @@ _BACKEND_ENV_VARS = (
 #: ``$SCITEX_STORE_DSN`` names the PostgreSQL the storage primitive
 #: (``scitex_dev.store``) opens. IT IS THE LIVE FLEET BOARD on every machine
 #: this suite runs on -- measured 2026-08-30, injected into every sac-managed
-#: agent container alongside ``$SCITEX_CARDS_DB``.
+#: agent container.
 #:
-#: The four variables above are pinned because a test that resolves the real
+#: The variables above are pinned because a test that resolves the real
 #: board can rewrite it, which this suite did three times in 2026-07. That
 #: reasoning does not stop at this package's own resolver: the moment one test
 #: reaches the store through the PRIMITIVE instead of through
@@ -307,8 +306,7 @@ def postgres_cluster_dsn() -> str:
 #: fallback (``scitex_config._ecosystem.local_state.user_path``), which reads
 #: ``os.environ.get("SCITEX_DIR", str(Path.home() / ".scitex"))`` on EVERY
 #: call — not just at import. It is pinned for the same reason the four vars
-#: above are: a test that legitimately clears BOTH ``SCITEX_CARDS_DB`` and
-#: ``SCITEX_CARDS_DB`` to exercise that fallback (see
+#: above are: a test that clears ``SCITEX_STORE_DSN`` to exercise resolution (see
 #: ``tests/scitex_cards/test__paths.py``'s ``clean_store_env`` fixture, which
 #: pops only the two DB vars) falls straight through to ``Path.home()`` — the
 #: REAL home — unless something ALSO names ``$SCITEX_DIR``. Every test that
@@ -353,7 +351,7 @@ def _refused_placeholder(scratch: Path) -> str:
     """A store target the source doors REFUSE, for when no server was opened.
 
     Not "unset", which is the one value that must never be reached: with
-    ``$SCITEX_CARDS_DB`` absent, ``resolve_db_path(None)`` walks its precedence
+    ``$SCITEX_STORE_DSN`` absent, ``resolve_db_path(None)`` walks its precedence
     chain to the user-canonical target -- the live board -- and that is the
     exact enabling condition of all three 2026-07 wipes this file exists to
     prevent. A filename is refused by ``reject_non_postgres_target`` before the
@@ -371,7 +369,6 @@ def _point_env_at(scratch: Path, store_dsn: "str | None") -> None:
     WAY -- see :func:`_refused_placeholder` for why the absent case is not
     allowed to mean "unset".
     """
-    os.environ["SCITEX_CARDS_DB"] = store_dsn or _refused_placeholder(scratch)
     os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"] = str(scratch / "tasks.yaml")
     # Same scratch tree, own subdir — no separate tempfile.mkdtemp() call
     # needed, and it means a test's own $SCITEX_DIR override (every one that
@@ -382,10 +379,10 @@ def _point_env_at(scratch: Path, store_dsn: "str | None") -> None:
     # one could be opened; otherwise REMOVED — never left inherited. Removing
     # it is strictly safer than the value it replaces, because the value it
     # replaces is the live fleet board.
-    if _EPHEMERAL_DSN is None:
+    if store_dsn is None:
         os.environ.pop(_STORE_DSN_ENV, None)
     else:
-        os.environ[_STORE_DSN_ENV] = _EPHEMERAL_DSN
+        os.environ[_STORE_DSN_ENV] = store_dsn
 
 
 def _bootstrap_empty_store(store_dsn: str) -> None:

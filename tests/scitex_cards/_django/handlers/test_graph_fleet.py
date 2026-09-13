@@ -121,7 +121,7 @@ def _store_text() -> str:
 
 @pytest.fixture
 def store(tmp_path):
-    seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_store_text()) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()
@@ -359,7 +359,7 @@ _OVERDUE_FIXTURE = (
 
 @pytest.fixture
 def overdue_store(tmp_path):
-    seed_db_from_doc(safe_load(_OVERDUE_FIXTURE) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_OVERDUE_FIXTURE) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()
@@ -412,7 +412,7 @@ _BLOCKING_FIXTURE = (
 
 @pytest.fixture
 def blocking_store(tmp_path):
-    seed_db_from_doc(safe_load(_BLOCKING_FIXTURE) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_BLOCKING_FIXTURE) or {}, os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     yield os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     _reset_cache()

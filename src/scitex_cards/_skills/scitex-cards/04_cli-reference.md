@@ -42,7 +42,7 @@ scitex-cards --help-recursive    # flattened help for every subcommand
 ## Store resolution
 
 Every command resolves the task store the same way: an explicit path →
-`$SCITEX_CARDS_DB` → the user-canonical database. See
+`$SCITEX_STORE_DSN` → the user-canonical database. See
 [20_env-vars.md](20_env-vars.md).
 
 See `general/03_interface_02_cli/` for the ecosystem-wide CLI grammar.

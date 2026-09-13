@@ -25,12 +25,12 @@ import os
 
 import pytest
 from conftest import seed_db_from_doc
+from scitex_dev.store import StoreTargetError
 
 from scitex_cards import _db, _db_bootstrap, _model
 from scitex_cards._ddl import execute_ddl
 from scitex_cards._schema_probe import column_names, table_names
 from scitex_cards._schema_shape import observed_version
-from scitex_cards._store_target import StoreTargetNotConfigured
 
 
 def _stamped(conn) -> int | None:
@@ -168,7 +168,7 @@ def imported(store):
 # --------------------------------------------------------------------------- #
 def test_resolve_db_path_explicit_wins(tmp_path, env):
     # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "env.db"))
+    env.set(_db.ENV_STORE_DSN, str(tmp_path / "env.db"))
 
     # Act
     got = _db.resolve_db_path(tmp_path / "explicit.db")
@@ -177,93 +177,14 @@ def test_resolve_db_path_explicit_wins(tmp_path, env):
     assert got == (tmp_path / "explicit.db")
 
 
-def test_resolve_db_path_env_over_userpath(tmp_path, env):
+def test_resolve_db_path_rejects_a_filesystem_environment_target(tmp_path, env):
     # Arrange
-    env.set(_db.ENV_DB, str(tmp_path / "env.db"))
+    env.set(_db.ENV_STORE_DSN, str(tmp_path / "env.db"))
 
     # Act
-    got = _db.resolve_db_path()
-
     # Assert
-    assert got == (tmp_path / "env.db")
-
-
-def _resolve_with_delegated_user_path(tmp_path, env):
-    """Neutralise both env tiers and let the REAL ecosystem resolver run.
-
-    Returns ``(outcome, expected_path)``, where ``outcome`` is the raised
-    exception rather than a path. It could not be a path since 2026-08-13:
-    the final tier no longer RETURNS the delegated filename, it REFUSES and
-    names it.
-
-    NO fake. `scitex_config`'s `local_state.user_root()` reads $SCITEX_DIR on
-    every call — its own docstring says "resolved per call so live SCITEX_DIR
-    changes are honoured" — so setting that variable steers the real
-    `user_path("cards", "cards.db")` to a known location under ``tmp_path``.
-
-    Replacing that function with a recorder proved only that SOMETHING was
-    called with those arguments. Running it for real proves the refusal names
-    the path the ecosystem resolver ACTUALLY produces — which is the property
-    a reader following the message depends on, and the one a recorder cannot
-    check, because it supplied the answer it then asserted.
-    """
-    env.delete(_db.ENV_DB)
-    env.set("SCITEX_DIR", str(tmp_path / "userscope"))
-    expected = tmp_path / "userscope" / "cards" / "cards.db"
-    try:
-        outcome = _db.resolve_db_path()
-    except StoreTargetNotConfigured as exc:
-        outcome = exc
-    return outcome, expected
-
-
-def test_resolve_db_path_refuses_instead_of_returning_the_user_path(tmp_path, env):
-    """Final tier REFUSES. It used to return the delegated filename.
-
-    The abolished behaviour was returning a the retired engine path nobody chose, handed
-    back with the same type as one somebody did choose. That is the whole
-    defect, so this asserts the type of the outcome and not merely that
-    something went wrong.
-    """
-    # Arrange
-    # Act
-    got, _expected = _resolve_with_delegated_user_path(tmp_path, env)
-
-    # Assert
-    assert isinstance(got, StoreTargetNotConfigured)
-
-
-def test_resolve_db_path_delegates_with_the_cards_package_key(tmp_path, env):
-    """The delegation still routes through the ecosystem resolver.
-
-    UNCHANGED BY THE ABOLITION, and deliberately still pinned: the filename is
-    still resolved through `local_state.user_path`, now to NAME the store in
-    the refusal rather than to serve it. A refusal that guessed the path itself
-    would send the reader to a file this package does not actually use.
-
-    The old version asserted `calls == [("cards", ("cards.db",))]` against a
-    recorder. That could not distinguish "the resolver produced this path" from
-    "the test supplied this path" — the fake returned its own sentinel and the
-    assertion checked the arguments it had just been handed. Asserting the
-    ``<pkg>/cards.db`` SHAPE of the real resolver's output covers the same
-    contract with the resolver actually in the loop.
-    """
-    # Arrange
-    # Act
-    got, expected = _resolve_with_delegated_user_path(tmp_path, env)
-
-    # Assert — user_root()/cards/cards.db, i.e. the package key and filename.
-    assert str(expected).endswith(f"{os.sep}cards{os.sep}cards.db")
-
-
-def test_the_refusal_names_the_delegated_path(tmp_path, env):
-    """And the name it reports is the one the real delegation produced."""
-    # Arrange
-    # Act
-    got, expected = _resolve_with_delegated_user_path(tmp_path, env)
-
-    # Assert
-    assert str(expected) in str(got)
+    with pytest.raises(StoreTargetError, match="not a Postgres DSN"):
+        _db.resolve_db_path()
 
 
 # --------------------------------------------------------------------------- #

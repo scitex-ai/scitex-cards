@@ -403,7 +403,7 @@ def _export_and_count_in_one_snapshot(db_path: str) -> dict:
             f"{exported} cards but the tasks table holds {in_table}. REFUSING "
             f"to continue — this document is written back as the whole store, "
             f"so the {in_table - exported} missing cards would be DELETED. "
-            f"Verify with `scitex-cards dev db verify`, then point $SCITEX_CARDS_DB "
+            f"Verify with `scitex-cards dev db verify`, then point $SCITEX_STORE_DSN "
             f"at a complete database for this store."
         )
     return doc

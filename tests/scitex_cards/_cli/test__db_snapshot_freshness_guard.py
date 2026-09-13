@@ -50,7 +50,7 @@ def _seed_one_task(task_id: str = "t0") -> None:
             }
         ]
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
 
 
 def _desync_typed_last_activity(task_id: str, newer: str) -> None:
@@ -62,7 +62,7 @@ def _desync_typed_last_activity(task_id: str, newer: str) -> None:
     """
     from scitex_cards._db import connect
 
-    conn = connect(os.environ["SCITEX_CARDS_DB"])
+    conn = connect(os.environ["SCITEX_STORE_DSN"])
     try:
         conn.execute(
             "UPDATE tasks SET last_activity = ? WHERE id = ?", (newer, task_id)

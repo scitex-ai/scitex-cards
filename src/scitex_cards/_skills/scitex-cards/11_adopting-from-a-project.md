@@ -14,7 +14,7 @@ tags: [scitex-cards-adopting-from-a-project]
 
 You are a project agent. The operator's board lives at
 `http://127.0.0.1:8051/` and renders from the shared store
-(`$SCITEX_CARDS_DB`). This skill is the SHORTEST useful adoption path
+(`$SCITEX_STORE_DSN`). This skill is the SHORTEST useful adoption path
 so your tasks show up as your own column on the operator's board
 within 5 seconds of your first write. The full convention +
 write-protocol contract lives in
@@ -151,10 +151,10 @@ database, just filtered differently by consumers. Spec in
 ## Store resolution
 
 ```
-explicit path  →  $SCITEX_CARDS_DB  →  ~/.scitex/cards/cards.db
+explicit path  →  $SCITEX_STORE_DSN  →  ~/.scitex/cards/cards.db
 ```
 
-Set `$SCITEX_CARDS_DB` to point every call in this process at a
+Set `$SCITEX_STORE_DSN` to point every call in this process at a
 specific database (useful for tests / scratch stores); unset it to use
 the user-canonical default.
 

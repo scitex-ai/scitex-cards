@@ -4,7 +4,7 @@
 
 WHY THIS FILE EXISTS. `reject_unexpanded_variable` already guards every door
 that OPENS a store (`_paths`, `_backend_connect`, `_db`), so a real read with
-`SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'` correctly fails. But `resolve_store` --
+`SCITEX_STORE_DSN='${SCITEX_STORE_DSN}'` correctly fails. But `resolve_store` --
 the verb an agent runs precisely when it is confused about its configuration --
 reported the file backend, `target_is_malformed_dsn: False` and exit 0, and
 said nothing about the placeholder.
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from scitex_cards._store import resolve_store
 
-BRACED = "${SCITEX_CARDS_DB}"
+BRACED = "${SCITEX_STORE_DSN}"
 COMMAND_SUBSTITUTION = "$(cat /tmp/whatever)"
 PLAIN_PATH = "/tmp/a-real-looking-store.db"
 
@@ -95,7 +95,7 @@ def test_a_bare_dollar_variable_is_deliberately_not_flagged():
     that widens the pattern has to argue with this test first.
     """
     # Arrange
-    target = "$SCITEX_CARDS_DB"
+    target = "$SCITEX_STORE_DSN"
     # Act
     report = resolve_store(target)
     # Assert

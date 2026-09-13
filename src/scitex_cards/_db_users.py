@@ -13,7 +13,7 @@ users/groups sidecar"*. The first three genuinely are local. The fourth is
 not: :func:`scitex_cards._users.resolve_user` answers "who is this agent"
 for every card on a board every agent shares.
 
-MEASURED 2026-08-17 inside a sac container, with ``$SCITEX_CARDS_DB`` set to
+MEASURED 2026-08-17 inside a sac container, with ``$SCITEX_STORE_DSN`` set to
 the fleet server::
 
     resolve_tasks_path(None)   -> /home/agent/.scitex/cards/tasks.yaml

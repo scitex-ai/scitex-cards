@@ -26,7 +26,7 @@ from ._help_tree import _emit_help_recursive
 #
 # This block and the `summary` below are the two strings a human reads first
 # from `scitex-cards --help`. They used to name a backend and a default file
-# path -- "Canonical store: the ... database at $SCITEX_CARDS_DB (default
+# path -- "Canonical store: the ... database at $SCITEX_STORE_DSN (default
 # ~/.scitex/cards/cards.db...)".
 #
 # Both named a backend the code does not verify and the operator has banned,
@@ -38,11 +38,11 @@ from ._help_tree import _emit_help_recursive
 # identity, and `resolve-store` is the only honest answer to "which one?".
 # Guarded by tests/scitex_cards/_cli/test__help_names_no_backend.py.
 _STORE_RESOLUTION = (
-    "The cards database is whatever $SCITEX_CARDS_DB resolves to, and that",
-    "resolved target is the SOLE identity — the deployment decides it, so do",
-    "not assume a backend or a path. An unresolvable/absent target RAISES",
-    "rather than standing in an empty board. Run `scitex-cards resolve-store`",
-    "to see what you actually resolved to.",
+    "Cards shared state uses scitex-dev's PostgreSQL store primitive. Set",
+    "$SCITEX_STORE_DSN to the shared PostgreSQL service on port 55432; there",
+    "is no SQLite or private-file fallback. SCITEX_CARDS_NOTIFY_DSN may name",
+    "the separate LISTEN/NOTIFY transport on port 55433. Run",
+    "`scitex-cards resolve-store` to see the resolved state store.",
 )
 
 # Doctrine §4a (10a_command-categories.md): fixed, ordered category headers.

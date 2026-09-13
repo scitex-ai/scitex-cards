@@ -30,7 +30,7 @@ interfaces:
 
 A canonical task store with pluggable adapters. One `tasks` table is the
 single source of truth; adapters render or import it. Store identity is
-`$SCITEX_CARDS_DB`, and the deployment picks the BACKEND — never assume
+`$SCITEX_STORE_DSN`, and the deployment picks the BACKEND — never assume
 one. Run `scitex-cards resolve-store` to see what this process resolved.
 No zero-config default: an unconfigured target REFUSES rather than
 inventing a file.

@@ -91,7 +91,7 @@ from scitex_cards._db_export import ExportRefused
 
 _UNREADABLE_USER = "u_000000000002"
 _CARD = "t-one"
-_STORE_ENV = "SCITEX_CARDS_DB"
+_STORE_ENV = "SCITEX_STORE_DSN"
 
 
 def _user_ids(db: Path) -> set[str]:

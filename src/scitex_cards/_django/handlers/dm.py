@@ -24,10 +24,10 @@ Endpoints::
          read (poll-and-ack in one call — what the open thread pane does).
 
     POST /dm/thread/<peer>   body = {"body": "<text>"}
-      -> 200 + {"message": <stored record>}
-         Appends ``from=operator`` and dm-dispatches into the agent's
-         pull-inbox (the unified channel server pushes it into the agent's
-         session). 400 on an empty body.
+      -> 202 + {"message": <stored record>, "exchange": <delivery state>}
+         Persists the current user's message and recipient notification, then
+         returns the canonical exchange id the browser polls for delivery.
+         400 on an empty body.
 
          This is ALSO the forward path. A forward is not a distinct kind of
          record — it is an ordinary message whose body opens with a
@@ -64,7 +64,7 @@ from scitex_cards import (
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
-from scitex_cards._django._request_store import read_store, write_store
+from scitex_cards._django._request_store import read_store
 from scitex_cards._dm import read as _dm_read
 from scitex_cards._dm import receipt_state as _dm_receipt_state
 from scitex_cards._dm import write as _dm_write
@@ -119,7 +119,7 @@ def _write_store_of(request: HttpRequest):
 
 
 def _author_of(request: HttpRequest) -> str:
-    """Who is writing — delegates to the user-scope boundary (``_user_scope``).
+    """Current DM principal — delegates to the shared user-scope boundary.
 
     The single "who is this request" answer now lives in
     :func:`scitex_cards._django._user_scope.current_user` (own-ledger #230/#231:
@@ -127,7 +127,8 @@ def _author_of(request: HttpRequest) -> str:
     task/board logic). This function keeps its name and signature — existing
     tests import it — and is now a thin delegation so there is exactly ONE
     implementation of "resolve the principal from the authenticated request",
-    not one per view.
+    not one per view. Both reads and writes use this function; an authenticated
+    Hub user can therefore see and mutate only their own DM threads.
 
     :data:`OPERATOR_NAME` remains the fallback ONLY for the standalone board
     (loopback, no auth layer — the sole caller IS the operator); it is a
@@ -171,7 +172,10 @@ _NO_DM_STORE_SUMMARY = "No direct-message store is configured for this board."
 #: missing store without parsing the sentence.
 STORE_READ_ONLY_STATUS = 403
 STORE_READ_ONLY_REASON = "store_read_only"
-_READ_ONLY_STORE_SUMMARY = "This board's store credential is read-only; direct messages cannot be sent from it."
+_READ_ONLY_STORE_SUMMARY = (
+    "This board's store credential is read-only; direct messages cannot be "
+    "sent from it."
+)
 _READ_ONLY_STORE_HINT = (
     "Configure a direct-message write credential, run `scitex-cards "
     "validate-health --json`, and retry the send after the store check passes."
@@ -271,7 +275,11 @@ def _typed_store_refusals(view):
                 },
                 status=STORE_READ_ONLY_STATUS,
             )
-        except (StoreTargetNotConfigured, UnrecognisedStoreTarget, StoreNotProvisionedError) as exc:
+        except (
+            StoreTargetNotConfigured,
+            UnrecognisedStoreTarget,
+            StoreNotProvisionedError,
+        ) as exc:
             from scitex_cards._django.views import (  # noqa: PLC0415 - avoids the import cycle
                 STORE_ABSENT_REASON,
                 STORE_ABSENT_STATUS,
@@ -313,12 +321,22 @@ def _typed_store_refusals(view):
 
 @_typed_store_refusals
 def dm_threads_view(request: HttpRequest) -> HttpResponse:
-    """GET the operator's agent list + per-agent thread summaries."""
+    """GET the CURRENT USER's agent list + per-agent thread summaries.
+
+    ``reader`` is the authenticated principal (:func:`_author_of`), NOT a
+    constant: the DM read path used to hardcode ``OPERATOR_NAME`` so every
+    authenticated hub user saw the *operator's* threads (a cross-user leak),
+    while the write path already attributed to the real user — reads and writes
+    disagreed about who was looking. On the standalone loopback board
+    ``_author_of`` falls back to ``OPERATOR_NAME`` (the sole caller IS the
+    operator), so that deployment is byte-identical to before.
+    """
     if request.method != "GET":
         return JsonResponse(
             {"error": "method-not-allowed", "method": request.method}, status=405
         )
     store = _store_of(request)
+    reader = _author_of(request)
     rows: dict[str, dict] = {}
     for agent in _registry_agents(store):
         rows[agent["name"]] = {
@@ -328,23 +346,23 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
             "last_ts": None,
             "last_body": None,
         }
-    # Merge in any peer that already has a thread with the operator (covers
-    # unregistered senders — the thread store is the SSOT of who talked).
-    # THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads `threads.json`,
-    # a PER-HOST FILE, and nothing else — so this view showed only the threads
-    # of agents running on the same machine as the board. Measured 2026-08-09
-    # on the operator's laptop: its sidecar had scitex-agent-container live at
-    # 12:33 (that agent runs laptop-side) while scitex-cards sat at 2026-08-02,
-    # and five agents on scitex-compute-04 were invisible entirely. All 4150
-    # messages were in the store the whole time. Operator's ruling the same
-    # day: "never use threads.json but database".
+    # Merge in any peer that already has a thread with the CURRENT reader
+    # (covers unregistered senders — the thread store is the SSOT of who
+    # talked). THE STORE, NOT THE SIDECAR. `_threads.list_threads` reads
+    # `threads.json`, a PER-HOST FILE, and nothing else — so this view showed
+    # only the threads of agents running on the same machine as the board.
+    # Measured 2026-08-09 on the operator's laptop: its sidecar had
+    # scitex-agent-container live at 12:33 (that agent runs laptop-side) while
+    # scitex-cards sat at 2026-08-02, and five agents on scitex-compute-04 were
+    # invisible entirely. All 4150 messages were in the store the whole time.
+    # Operator's ruling the same day: "never use threads.json but database".
     for key, summary in _dm_read.threads_summary(
-        OPERATOR_NAME, store=store
+        reader, store=store
     ).items():
         a, b = summary["peers"]
-        if OPERATOR_NAME not in (a, b):
+        if reader not in (a, b):
             continue
-        peer = b if a == OPERATOR_NAME else a
+        peer = b if a == reader else a
         row = rows.setdefault(
             peer,
             {
@@ -355,7 +373,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
                 "last_body": None,
             },
         )
-        row["unread"] = summary["unread"].get(OPERATOR_NAME, 0)
+        row["unread"] = summary["unread"].get(reader, 0)
         last = summary["last"]
         if last is not None:
             row["last_ts"] = last.get("ts")
@@ -369,7 +387,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @_typed_store_refusals
 def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
-    """GET the operator↔``peer`` thread, or POST a new operator message."""
+    """GET the current user's thread, or POST a message to ``peer``."""
     if request.method not in {"GET", "POST"}:
         return JsonResponse(
             {"error": "method-not-allowed", "method": request.method}, status=405
@@ -380,7 +398,12 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     peer = peer.strip()
 
     if request.method == "GET":
-        key = _threads.thread_key(OPERATOR_NAME, peer)
+        # THE CURRENT USER's thread, not a constant: the read path used to
+        # hardcode OPERATOR_NAME (see dm_threads_view), so a hub user reading
+        # dm_thread_view would render the operator's conversation. Same
+        # principal the POST below writes as.
+        reader = _author_of(request)
+        key = _threads.thread_key(reader, peer)
         # Poll-and-ack: the open pane passes mark_read=1 so viewing the
         # thread clears the operator-side unread counter.
         if request.GET.get("mark_read") in ("1", "true"):
@@ -406,8 +429,8 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
             # stale one it replaced.
             #
             # Idempotent by primary key `(message_id, reader)`, so a re-open
-            # inserts nothing and returns 0 rather than erroring.
-            reader = _author_of(request)
+            # inserts nothing and returns 0 rather than erroring. `reader` is
+            # the principal resolved at the top of this GET branch.
             unread_ids = [
                 m["id"]
                 for m in _dm_read.unread_for(reader, store=store, thread_id=key)
@@ -429,7 +452,7 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
         # eventually by construction. Reading both from `dm_messages` is what
         # makes the badge and the pane the same claim.
         messages = _dm_read.messages_in(
-            _threads.thread_key(OPERATOR_NAME, peer), store=store
+            key, store=store
         )
         # Reactions ride ALONGSIDE the messages, never inside them. The stored
         # DM records stay byte-identical to what an older client already
@@ -463,21 +486,116 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     body = payload.get("body") if isinstance(payload, dict) else None
     if not isinstance(body, str) or not body.strip():
         return JsonResponse({"error": "dm send requires non-empty 'body'"}, status=400)
-    record = _threads.append_message(
-        _author_of(request), peer, body, store=_write_store_of(request)
+    client_request_id = payload.get("client_request_id")
+    if client_request_id is not None and (
+        not isinstance(client_request_id, str) or not client_request_id.strip()
+    ):
+        return JsonResponse(
+            {"error": "client_request_id must be a non-empty string"}, status=400
+        )
+
+    from scitex_cards import _messaging
+    from scitex_cards._dm_exchange import DmExchangeError
+
+    try:
+        record = _messaging.dm_send(
+            peer,
+            body,
+            store=_write_store_of(request),
+            sender=_author_of(request),
+            client_request_id=client_request_id,
+        )
+    except DmExchangeError as exc:
+        response = {
+            "error": exc.status.message,
+            "reason": "delivery_exchange_failed",
+            "exchange_id": exc.exchange_id,
+            "status": exc.status.to_dict(),
+        }
+        if exc.message_id is not None:
+            response["message_id"] = exc.message_id
+        return JsonResponse(response, status=int(exc.status.code))
+
+    return JsonResponse(
+        {
+            "message": record,
+            "exchange": {
+                "exchange_id": record["exchange_id"],
+                "client_request_id": record["client_request_id"],
+                "status": record["status"],
+                "final": False,
+            },
+        },
+        status=202,
+        json_dumps_params={"default": str},
     )
-    return JsonResponse({"message": record}, json_dumps_params={"default": str})
+
+
+def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
+    """Return the authenticated sender's current delivery-exchange state."""
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+
+    from scitex_cards._dm_exchange import get_exchange
+
+    reader = _author_of(request)
+    try:
+        exchange = get_exchange(exchange_id, sender=reader)
+    except Exception:  # noqa: BLE001 - canonical status, no traceback wire
+        status = _http_status(
+            503,
+            "The delivery-exchange ledger is temporarily unavailable.",
+        )
+        return JsonResponse(
+            {
+                "error": status["message"],
+                "reason": "exchange_store_unavailable",
+                "status": status,
+                "check": _failed_store_check(
+                    "dm_exchange_read",
+                    status["message"],
+                    "Run `scitex-cards health`, verify SCITEX_STORE_DSN, and retry.",
+                    status,
+                ),
+            },
+            status=503,
+        )
+
+    if exchange is None or exchange.get("initiator") != reader:
+        status = _http_status(
+            404,
+            "No delivery exchange with that id is visible to this user.",
+        )
+        return JsonResponse(
+            {
+                "error": status["message"],
+                "reason": "exchange_not_found",
+                "status": status,
+                "check": _failed_store_check(
+                    "dm_exchange_visible",
+                    status["message"],
+                    "Copy the exchange id from this user's send result and retry.",
+                    status,
+                ),
+            },
+            status=404,
+        )
+    return JsonResponse(exchange, json_dumps_params={"default": str})
 
 
 @csrf_exempt
 @_typed_store_refusals
 def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
-    """POST one reaction event onto a message in the operator↔``peer`` thread.
+    """POST one reaction event onto a message in the CURRENT USER's thread.
 
-    The THREAD is derived server-side from ``(operator, peer)`` — the caller
-    names a message and an emoji, never a thread id. A client that could name
-    the thread could attach a reaction to a conversation it is not part of;
-    deriving it means the URL already carries that authority.
+    The THREAD is derived server-side from ``(reader, peer)`` where ``reader``
+    is the authenticated principal — the caller names a message and an emoji,
+    never a thread id. A client that could name the thread could attach a
+    reaction to a conversation it is not part of; deriving it from the
+    authenticated user means the URL already carries that authority, and a hub
+    user cannot react to a thread they cannot see.
     """
     if request.method != "POST":
         return JsonResponse(
@@ -486,6 +604,7 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     if not peer or not peer.strip():
         return JsonResponse({"error": "empty peer name"}, status=400)
     peer = peer.strip()
+    reader = _author_of(request)
     try:
         payload = json.loads(request.body or b"{}")
     except json.JSONDecodeError as exc:
@@ -512,11 +631,11 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
-    key = _threads.thread_key(OPERATOR_NAME, peer)
+    key = _threads.thread_key(reader, peer)
     event = _reactions.append_reaction_event(
         thread=key,
         message_id=message_id.strip(),
-        actor=_author_of(request),
+        actor=reader,
         emoji=emoji,
         action=action,
         store=_write_store_of(request),
@@ -531,6 +650,11 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     )
 
 
-__all__ = ["dm_reaction_view", "dm_thread_view", "dm_threads_view"]
+__all__ = [
+    "dm_exchange_view",
+    "dm_reaction_view",
+    "dm_thread_view",
+    "dm_threads_view",
+]
 
 # EOF

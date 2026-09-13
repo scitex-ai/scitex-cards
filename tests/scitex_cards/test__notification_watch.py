@@ -3,6 +3,7 @@
 """PostgreSQL doorbells wake consumers without becoming a data rail."""
 
 import scitex_cards
+from scitex_cards import _notification_watch as notification_watch
 from scitex_cards._inbox_postgres import enqueue, poll_inbox
 
 
@@ -58,6 +59,32 @@ def test_watch_timeout_is_a_normal_empty_iteration():
         observed = list(events)
     # Assert
     assert observed == []
+
+
+def test_explicit_notification_dsn_is_not_inferred_from_store_port(env):
+    # Arrange
+    direct = "postgresql://direct-session-endpoint:6543/cards"
+    env.set("SCITEX_CARDS_NOTIFY_DSN", direct)
+    # Act
+    resolved = notification_watch.resolve_notification_dsn(
+        "postgresql://transaction-pool:55432/cards"
+    )
+    # Assert
+    assert resolved == direct
+
+
+def test_invalid_explicit_notification_dsn_fails_loud(env):
+    # Arrange
+    env.set("SCITEX_CARDS_NOTIFY_DSN", "55433")
+    # Act
+    try:
+        notification_watch.resolve_notification_dsn()
+    except ValueError as exc:
+        detail = str(exc)
+    else:
+        detail = ""
+    # Assert
+    assert "SCITEX_CARDS_NOTIFY_DSN" in detail and "PostgreSQL DSN" in detail
 
 
 def test_one_doorbell_drains_multiple_durable_rows():

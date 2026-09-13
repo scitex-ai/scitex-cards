@@ -207,21 +207,14 @@ def _reject_deprecated_agent_env():
 # default. The bulk of the suite asserts the YAML on-disk inbox format /
 # semantics (the ``inboxes:`` section shape, tasks:/users: coexistence, the
 # digest-collapse maintenance path, etc.), so this fixture pins the
-# (still-supported) YAML break-glass backend for every test by default —
-# every real-store fixture needs SOME resolvable backend now, not only the
-# ones that used to assert YAML specifically. A module-scoped fixture that
-# does real inbox I/O must set this var itself rather than relying on this
-# (function-scoped) autouse fixture: pytest sets up a module-scoped fixture
-# BEFORE a function-scoped one on the first test that needs both, so this
-# fixture's pin would not yet be in effect (see e.g.
-# ``test__channel_size_guard.py``'s ``burst`` fixture).
+# Production and tests use the same PostgreSQL inbox backend by default.
 
 
 @pytest.fixture(autouse=True)
-def _default_inbox_backend_yaml():
-    """Pin ``SCITEX_CARDS_INBOX_BACKEND=yaml`` for every test by default."""
+def _default_inbox_backend_postgres():
+    """Leave the PostgreSQL-only inbox selector at its default."""
     helper = _EnvHelper()
-    helper.set("SCITEX_CARDS_INBOX_BACKEND", "yaml")
+    helper.delete("SCITEX_CARDS_INBOX_BACKEND")
     try:
         yield
     finally:

@@ -113,7 +113,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         type=str,
         default=None,
         help=(
-            "Pin $SCITEX_CARDS_DB in the snippet's `env` block — the MCP\n"
+            "Pin $SCITEX_STORE_DSN in the snippet's `env` block — the MCP\n"
             "subprocess uses this database path as the store (the sole store\n"
             "identity). Fleet use case: when this CLI is run by agent-container\n"
             "to seed every container's ``to_home/.mcp.json``, the pinned\n"
@@ -145,12 +145,12 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
             "args": ["mcp", "start"],
         }
         # Host-store wire-up: when an explicit database path is provided, pin
-        # it in the MCP entry's `env` block as $SCITEX_CARDS_DB (the sole store
+        # it in the MCP entry's `env` block as $SCITEX_STORE_DSN (the sole store
         # identity), so a containerized agent reads the shared host store
         # regardless of its $HOME or symlink state. OPT-IN preserves back-compat
         # with the existing snippet shape.
         if env_tasks_path:
-            entry["env"] = {"SCITEX_CARDS_DB": env_tasks_path}
+            entry["env"] = {"SCITEX_STORE_DSN": env_tasks_path}
         snippet = {"mcpServers": {_CLI_NAME: entry}}
 
         if not do_apply:
@@ -261,7 +261,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         "env_tasks_path",
         type=str,
         default=None,
-        help="Pin $SCITEX_CARDS_DB in every emitted entry's env block.",
+        help="Pin $SCITEX_STORE_DSN in every emitted entry's env block.",
     )
     @click.option(
         "--dry-run", is_flag=True, help="Print planned per-agent action; no writes."
@@ -276,7 +276,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
             )
         entry: dict = {"command": _CLI_NAME, "args": ["mcp", "start"]}
         if env_tasks_path:
-            entry["env"] = {"SCITEX_CARDS_DB": env_tasks_path}
+            entry["env"] = {"SCITEX_STORE_DSN": env_tasks_path}
 
         agent_count = applied = noop = 0
         errors: list[str] = []

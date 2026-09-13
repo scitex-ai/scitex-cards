@@ -43,6 +43,18 @@
     var clearError = opts.clearError || function () {};
     var showError = opts.showError || function () {};
     var fetchImpl = opts.fetchImpl || root.fetch;
+    var retry = null;
+
+    function requestId() {
+      if (root.crypto && typeof root.crypto.randomUUID === "function")
+        return "req_" + root.crypto.randomUUID().replace(/-/g, "");
+      return (
+        "req_web_" +
+        Date.now().toString(36) +
+        "_" +
+        Math.random().toString(36).slice(2)
+      );
+    }
 
     // Re-entry guard. `$send.disabled` does NOT prevent re-entry on its own:
     // Enter calls `$form.requestSubmit()`, which runs the submit handler
@@ -67,6 +79,9 @@
       if (!peer) return;
       var text = $body.value.trim();
       if (!text) return;
+      if (!retry || retry.peer !== peer || retry.text !== text) {
+        retry = { peer: peer, text: text, clientRequestId: requestId() };
+      }
 
       sending = true;
       $send.disabled = true;
@@ -78,7 +93,10 @@
       return fetchImpl(apiBase + "/dm/thread/" + encodeURIComponent(peer), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({
+          body: text,
+          client_request_id: retry.clientRequestId,
+        }),
       })
         .then(function (resp) {
           if (!resp.ok) {
@@ -91,8 +109,11 @@
                 throw new Error(data.error || "HTTP " + resp.status);
               });
           }
-          clearError();
-          onSent();
+          return resp.json().then(function (data) {
+            retry = null;
+            clearError();
+            onSent(data);
+          });
         })
         .catch(function (err) {
           // Put the text back. Clearing `value` from script fires no `input`

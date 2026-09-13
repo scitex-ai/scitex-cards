@@ -11,7 +11,7 @@ are not.
 
 ## Context
 
-The store is one SQLite file (`$SCITEX_CARDS_DB`, ~46 MB, ~2,860 cards) written
+The store is one SQLite file (`$SCITEX_STORE_DSN`, ~46 MB, ~2,860 cards) written
 by roughly 90 fleet agents. Three needs collided:
 
 1. The board is unusable from another machine — the public deployment at

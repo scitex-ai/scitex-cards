@@ -43,11 +43,11 @@ Three rules, in priority order:
 
 ---
 
-## Store identity — one database, `$SCITEX_CARDS_DB`
+## Store identity — one database, `$SCITEX_STORE_DSN`
 
 The canonical store is a database; the deployment picks the engine, so
 never assume one. There is **one** identity
-axis: `$SCITEX_CARDS_DB` (the resolved target) — see
+axis: `$SCITEX_STORE_DSN` (the resolved target) — see
 `src/scitex_cards/_paths.py`. There is no tiered legacy-sidecar
 precedence chain anymore; older docs describing a "project root vs
 user root" file precedence are historical and no longer apply.

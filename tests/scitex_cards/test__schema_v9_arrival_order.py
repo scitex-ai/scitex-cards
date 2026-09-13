@@ -183,10 +183,10 @@ def pg_conn(postgres_dsn):
     second. It read ``$SCITEX_CARDS_TEST_PG_DSN`` -- this package's own private
     marker -- and SKIPPED when it was unset. Nothing sets that name any more,
     so "unset" is now always, and these tests reported green in CI without ever
-    opening a connection: the exact failure
-    ``.github/workflows/postgres-backend-on-ubuntu-latest.yml`` exists to
-    remove ("a Postgres-only test does not FAIL without a server, it SKIPS, and
-    a skipped test is indistinguishable from a passing one").
+    opening a connection: the exact failure the PostgreSQL-enabled pytest
+    matrix exists to remove ("a Postgres-only test does not FAIL without a
+    server, it SKIPS, and a skipped test is indistinguishable from a passing
+    one").
 
     ``postgres_dsn`` (tests/conftest.py) is the one source of truth: a real
     throwaway schema on the cluster the harness opened, which FAILS rather than

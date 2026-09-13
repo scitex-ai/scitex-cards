@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """Task-store path resolution — the store IS the database.
 
-There is ONE store identity and it is ``$SCITEX_CARDS_DB`` (the database path).
+There is ONE store identity and it is ``$SCITEX_STORE_DSN`` (the database path).
 :func:`resolve_tasks_path` returns that path; there is no separate, YAML-named
 identity any more. It used to resolve a ``tasks.yaml`` PATH from a dedicated
 ``…_TASKS_YAML_SHARED`` variable, stamp that path into the database, and refuse a
 write when the two disagreed — two identity axes that could drift apart, which is
 exactly how the fleet went read-only on 2026-07-19/20. Collapsing to the single
-``$SCITEX_CARDS_DB`` axis removes that failure class rather than guarding it.
+``$SCITEX_STORE_DSN`` axis removes that failure class rather than guarding it.
 
 The database path is USER-CANONICAL: it resolves to the same user file from any
 working directory (see :func:`scitex_cards._db.resolve_db_path`), never a
@@ -51,7 +51,7 @@ def _find_git_root(start: Path) -> Path | None:
 def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     """Resolve the non-task YAML CONTAINER path — NOT the store identity.
 
-    The store IDENTITY is ``$SCITEX_CARDS_DB`` (the database itself); see
+    The store IDENTITY is ``$SCITEX_STORE_DSN`` (the database itself); see
     :func:`scitex_cards._db.resolve_db_path`, and the ownership guard in
     :mod:`scitex_cards._dual_write` / :mod:`scitex_cards._store_backend` which
     stamps and compares THAT path. Card DATA lives in the database.
@@ -66,11 +66,11 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     store directory (pidfiles, the delivery ledger, reminder state live there).
 
     Resolution: an explicit path wins outright; otherwise the container is the
-    ``tasks.yaml`` beside the resolved database (``$SCITEX_CARDS_DB``'s dir), so
+    ``tasks.yaml`` beside the resolved database (``$SCITEX_STORE_DSN``'s dir), so
     there is no separate, YAML-named identity variable.
 
     A SERVER STORE HAS NO DIRECTORY, and that is the whole reason this function
-    stopped deriving from the database unconditionally. ``$SCITEX_CARDS_DB`` may
+    stopped deriving from the database unconditionally. ``$SCITEX_STORE_DSN`` may
     now name a PostgreSQL server, and ``resolve_db_path`` RAISES on one rather
     than coerce it (``Path("postgresql://h/db")`` silently collapses to the
     relative ``postgresql:/h/db``). Every caller here — the users/groups sidecar,
@@ -81,7 +81,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
 
     Measured 2026-07-31, the failure this removes::
 
-        SCITEX_CARDS_DB=postgresql:///scitex_cards  scitex-cards list-tasks
+        SCITEX_STORE_DSN=postgresql:///scitex_cards  scitex-cards list-tasks
         StoreTargetIsNotAPath: names a PostgreSQL server, not a file path
 
     Card DATA never needed this path: :func:`scitex_cards._model.load_doc` calls
@@ -89,7 +89,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     into an error message only. So the two axes are genuinely independent, and
     are now resolved independently:
 
-    - store IDENTITY — ``$SCITEX_CARDS_DB``; a path OR a server URL
+    - store IDENTITY — ``$SCITEX_STORE_DSN``; a path OR a server URL
     - local state DIR — always a real directory, whatever the backend
 
     On a server store the local root is ``~/.scitex/cards`` (``$SCITEX_DIR``
@@ -111,7 +111,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     #
     # Measured on develop 2026-08-12, WITH the connect-door guards of #815
     # already merged:
-    #     SCITEX_CARDS_DB='postgresql:/scitex_cards@127.0.0.1:55432/…'
+    #     SCITEX_STORE_DSN='postgresql:/scitex_cards@127.0.0.1:55432/…'
     #     inbox_db_path() -> postgresql:/scitex_cards@…/runtime/cards.db
     #     and the directory tree was created under the process's CWD.
     # The guards were downstream: runtime_dir() mkdirs during PATH DERIVATION,
@@ -121,7 +121,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
     # branch is deliberate. A well-formed DSN is a legitimate deployment whose
     # runtime state simply belongs locally. A malformed one is a configuration
     # error with no correct interpretation -- there is no deployment for which
-    # SCITEX_CARDS_DB=":55432" is right -- and quietly serving it a local
+    # SCITEX_STORE_DSN=":55432" is right -- and quietly serving it a local
     # directory would hide the misconfiguration behind working software.
     # AN UNRESOLVED TARGET IS CHECKED FIRST, because it is a question about the
     # value's PROVENANCE rather than its shape, and the shape rules would
@@ -179,7 +179,7 @@ def resolve_tasks_path(explicit: str | Path | None = None) -> Path:
         return _user_root() / "tasks.yaml"
 
     # The AMBIENT branch needs the same check as the explicit one above: a
-    # malformed $SCITEX_CARDS_DB reaches here with explicit=None, so guarding
+    # malformed $SCITEX_STORE_DSN reaches here with explicit=None, so guarding
     # only the argument would leave the commonest configuration mistake --
     # a typo in the environment -- on the unguarded path.
     reject_unexpanded_variable(ambient)
@@ -210,14 +210,14 @@ def refuse_ambient_store_creation(
     tests, imports and deliberate bootstraps work). An AMBIENT one may not:
     nothing named it, so a missing file there is far more likely to mean the
     resolution is wrong than that the fleet has no board yet. A set
-    ``$SCITEX_CARDS_DB`` counts as naming it.
+    ``$SCITEX_STORE_DSN`` counts as naming it.
 
     Raises
     ------
     RuntimeError
         When ``resolved`` does not exist and nothing named it.
     """
-    from ._db import ENV_DB
+    from ._db import ENV_STORE_DSN
     from ._store_url import is_postgres_url
 
     # A SERVER TARGET CANNOT BE MANUFACTURED BY A WRITE, so the question this
@@ -232,7 +232,7 @@ def refuse_ambient_store_creation(
         return
 
     path = Path(resolved)
-    if path.exists() or explicit is not None or os.environ.get(ENV_DB):
+    if path.exists() or explicit is not None or os.environ.get(ENV_STORE_DSN):
         return
     raise RuntimeError(
         f"REFUSING to create a task store at {path}: it does not exist, and "
@@ -241,7 +241,7 @@ def refuse_ambient_store_creation(
         f"new board, which then looks like a real store to anything that reads "
         f"it.\n"
         f"If you meant to write to the fleet board, your store resolution is "
-        f"wrong: set ${ENV_DB} to the real database, or pass the path "
+        f"wrong: set ${ENV_STORE_DSN} to the real database, or pass the path "
         f"explicitly.\n"
         f"If you genuinely want a NEW empty board here, create it deliberately "
         f"first: `scitex-cards init-store`."

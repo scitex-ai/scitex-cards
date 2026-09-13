@@ -270,7 +270,7 @@ def reject_attempted_dsn(target: object) -> None:
         "Accepted forms:\n"
         "    postgresql://scitex-primary:55432/scitex_cards\n"
         "    host=scitex-primary port=55432 dbname=scitex_cards\n"
-        "Check $SCITEX_CARDS_DB, and note a DSN that has been through Path() "
+        "Check $SCITEX_STORE_DSN, and note a DSN that has been through Path() "
         "loses one slash: 'postgresql:/host/db' is this error, not a directory."
     )
 
@@ -336,7 +336,7 @@ def reject_non_postgres_target(target: object) -> None:
         "Refusing is deliberate: opened as a file, this target MANUFACTURES a "
         "new and empty cards database that answers every query, and a wrong "
         "board that works is far worse than one that will not start.\n"
-        "Fix the SOURCE of the value -- $SCITEX_CARDS_DB or the config that "
+        "Fix the SOURCE of the value -- $SCITEX_STORE_DSN or the config that "
         "sets it. Repointing a live store at a fresh target is how the board "
         "was destroyed 2026-07-19."
     )
@@ -355,7 +355,7 @@ def is_unexpanded_variable(target: object) -> bool:
 
     THE THIRD SHAPE THAT IS NOT A FILENAME, and the one that threaded between
     the two guards already here. Measured 2026-08-18: with
-    ``SCITEX_CARDS_DB='${SCITEX_CARDS_DB}'`` -- the literal, brace and all --
+    ``SCITEX_STORE_DSN='${SCITEX_STORE_DSN}'`` -- the literal, brace and all --
     :func:`~scitex_cards._store_target.resolve_store_target` returned that
     string as a legitimate store target, because
 
@@ -370,7 +370,7 @@ def is_unexpanded_variable(target: object) -> bool:
 
     WHAT IT COST. Eight handyman agents on scitex-compute-03 held exactly this
     literal in their environment, so every cards client resolved to one database
-    file named ``${SCITEX_CARDS_DB}`` in the project directory. Four direct
+    file named ``${SCITEX_STORE_DSN}`` in the project directory. Four direct
     messages addressed to the operator were written into it and delivered to
     nobody. Two of those agents diagnosed the defect themselves, at 00:20 and
     00:41, and declined to redirect the store -- citing the 2026-07-19 board
@@ -412,7 +412,7 @@ def reject_unexpanded_variable(target: object) -> None:
         "messages on scitex-compute-03.\n"
         "Fix the SOURCE of the value, never the symptom: repointing a live "
         "store at a fresh target is how the board was destroyed 2026-07-19.\n"
-        "Check $SCITEX_CARDS_DB and the config that sets it; the intended "
+        "Check $SCITEX_STORE_DSN and the config that sets it; the intended "
         "value looks like\n"
         "    postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
     )

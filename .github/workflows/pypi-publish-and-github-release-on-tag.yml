@@ -99,8 +99,26 @@ jobs:
           uv pip install --python .venv/bin/python -e ".[all,dev]" \
             || uv pip install --python .venv/bin/python -e ".[dev]" \
             || uv pip install --python .venv/bin/python -e .
+          # Keep release testing on the same proven execution path as the
+          # required pytest matrix. xdist is explicit because nothing in this
+          # package's runtime dependencies promises to install it.
+          uv pip install --python .venv/bin/python "pytest-xdist>=3.0.0"
+          # xdist consults psutil before sched_getaffinity for `auto`; on the
+          # Spartan runners that reports the host's CPUs rather than this
+          # runner's lease. Override it with the cgroup-visible affinity count,
+          # exactly as the required matrix does.
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
-          .venv/bin/python -m pytest tests/ --cov="src/$PKG" --cov-report=xml --cov-report=term
+          .venv/bin/python -m pytest tests/ -n auto \
+            --cov="src/$PKG" --cov-report=xml --cov-report=term
+
+          # Known, unchanged gap: test__pg_triggers.py selects a legacy DSN
+          # during collection and its tests currently skip in both this job
+          # and the required matrix. That file also uses one fixed `freshstore`
+          # schema. Enabling it therefore requires a separate correctness PR
+          # that routes it through postgres_dsn and gives each test a unique
+          # schema (or an explicit xdist group). This speed-only change neither
+          # sets its legacy variable nor converts that skip into a pass.
 
   build:
     needs: test

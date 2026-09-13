@@ -10,7 +10,7 @@ client setting it), and a valid call must actually persist the floor.
 
 ``db_group`` is invoked directly (the same pattern as
 ``test__db_snapshot_freshness_guard.py``), relying on the suite-wide
-``$SCITEX_CARDS_DB`` pin (``tests/conftest.py``) for the target database.
+``$SCITEX_STORE_DSN`` pin (``tests/conftest.py``) for the target database.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from scitex_cards._min_client_version import read_floor, resolve_running_version
 
 
 def _db_path() -> str:
-    return os.environ["SCITEX_CARDS_DB"]
+    return os.environ["SCITEX_STORE_DSN"]
 
 
 def _read_floor_now() -> str | None:

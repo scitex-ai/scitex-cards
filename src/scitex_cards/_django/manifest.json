@@ -14,7 +14,7 @@
     "Color nodes by task status",
     "Show depends_on and blocks edges",
     "Comment on cards, send DMs and reactions, upload attachments",
-    "Resolve the task store via $SCITEX_CARDS_DB"
+    "Resolve the task store via $SCITEX_STORE_DSN"
   ],
   "wip": false,
   "scope": "user",

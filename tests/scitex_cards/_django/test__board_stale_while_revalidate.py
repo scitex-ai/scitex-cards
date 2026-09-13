@@ -58,7 +58,7 @@ def store(env):
                 {"id": "b", "title": "b", "status": "done"},
             ]
         },
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +121,7 @@ def _append_card(store, cid: str, status: str = "deferred") -> None:
     """
     tasks = list(load_tasks(store))
     tasks.append({"id": cid, "title": cid, "status": status})
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     with open(store, "a", encoding="utf-8") as fh:
         fh.write(f"# {cid}\n")
 
@@ -171,7 +171,7 @@ def _rewrite_same_length(store, before) -> None:
     for task in tasks:
         if task.get("id") == "a":
             task["title"] = "A"
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     text = Path(store).read_text(encoding="utf-8")
     tmp = Path(str(store) + ".tmp")
     tmp.write_text(text, encoding="utf-8")

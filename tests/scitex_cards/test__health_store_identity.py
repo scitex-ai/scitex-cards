@@ -129,7 +129,7 @@ def test_the_hint_names_the_store_pointer_the_reader_can_change(disagreeing_stor
     # Act
     check = _check(health(store=disagreeing_store), "store_identity")
     # Assert
-    assert "SCITEX_CARDS_DB" in check["hint"]
+    assert "SCITEX_STORE_DSN" in check["hint"]
 
 
 def test_the_hint_names_the_expectation_the_reader_can_change(disagreeing_store):

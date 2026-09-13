@@ -47,7 +47,7 @@ def store(env):
     # reason this returns the PINNED target rather than a fresh throwaway: a
     # write stamped with a different store identity fails the next read's stamp
     # check.
-    return os.environ["SCITEX_CARDS_DB"]
+    return os.environ["SCITEX_STORE_DSN"]
 
 
 def _add(backend, store_path, cid, title, assignee):

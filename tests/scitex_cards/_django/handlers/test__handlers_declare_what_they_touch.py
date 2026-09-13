@@ -61,7 +61,7 @@ def store():
     this directory green. A single write after a seed cannot detect a
     `touched_ids` defect, in this file or any other.
     """
-    seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(_STORE_DOC, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()

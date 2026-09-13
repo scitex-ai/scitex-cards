@@ -23,7 +23,7 @@ from scitex_cards._reconcile_prs import SYSTEM_ACTOR, reconcile_merged_prs
 from scitex_cards._store import ENV_AGENT
 from scitex_cards._store_mutate import add_task
 
-_MANAGED = (ENV_AGENT, "SCITEX_CARDS_DB", "HOME", "SCITEX_DIR")
+_MANAGED = (ENV_AGENT, "SCITEX_STORE_DSN", "HOME", "SCITEX_DIR")
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def unattended_store(tmp_path, new_store):
     os.environ["HOME"] = str(tmp_path)
     (tmp_path / ".scitex" / "cards").mkdir(parents=True)
     store = new_store()
-    os.environ["SCITEX_CARDS_DB"] = str(store)
+    os.environ["SCITEX_STORE_DSN"] = str(store)
     os.chdir(tmp_path)
     # The canonical read REFUSES a missing database rather than bootstrapping
     # one, so create it the way normal operation does.

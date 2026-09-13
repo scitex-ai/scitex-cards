@@ -391,31 +391,23 @@ def test_a_small_backlog_drain_check_carries_no_hint(tmp_path):
 
 
 @pytest.fixture(scope="module")
-def undrained_backlog_check(tmp_path_factory):
-    """One over-threshold, NEVER-drained inbox (seen == 0), judged once.
+def undrained_backlog_check(postgres_cluster_dsn):
+    """Build the expensive backlog in its own module-scoped PostgreSQL schema."""
+    from scitex_dev.store.testing import ephemeral_schema
 
-    Module-scoped because building it enqueues UNSEEN_BACKLOG_THRESHOLD+1
-    notifications through the real store — expensive to repeat per assertion.
+    from scitex_cards._db import connect, init_schema
 
-    SETS ``SCITEX_CARDS_INBOX_BACKEND`` DIRECTLY rather than relying on the
-    suite-wide autouse fixture: pytest sets up a MODULE-scoped fixture before
-    a FUNCTION-scoped one on the first test that needs both, so this
-    fixture's real enqueue calls would otherwise run before
-    ``_default_inbox_backend_yaml`` ever pins the var. The file rail retired
-    (operator ruling 2026-08-23): an unset var now means "no backend at all"
-    rather than a working default. Matches the suite-wide default; no
-    teardown needed.
-    """
-    os.environ["SCITEX_CARDS_INBOX_BACKEND"] = "yaml"
-    # A DATABASE, not a `tasks.yaml`. The rail now enqueues into the STORE
-    # itself rather than a `runtime/cards.db` beside it, so handing it a YAML
-    # path makes the driver refuse with "file is not a database" — correctly. The
-    # operator's ruling the same day was that no cards store is ever a file
-    # like this; a fixture that builds one is testing a store that must not
-    # exist.
-    store = tmp_path_factory.mktemp("undrained") / "cards.db"
-    _enqueue_backlog(store, "agent-x", UNSEEN_BACKLOG_THRESHOLD + 1)
-    return _check(health(store=store, agent_id="agent-x"), "channel_drain")
+    with ephemeral_schema(postgres_cluster_dsn, prefix="cards_health_backlog") as store:
+        conn = connect(store)
+        try:
+            init_schema(conn)
+        finally:
+            conn.close()
+        _enqueue_backlog(store, "agent-x", UNSEEN_BACKLOG_THRESHOLD + 1)
+        yield {
+            "check": _check(health(store=store, agent_id="agent-x"), "channel_drain"),
+            "store": store,
+        }
 
 
 def test_channel_drain_fails_on_large_unseen_backlog_with_no_seen(
@@ -423,7 +415,7 @@ def test_channel_drain_fails_on_large_unseen_backlog_with_no_seen(
 ):
     # Arrange
     # Act
-    c = undrained_backlog_check
+    c = undrained_backlog_check["check"]
 
     # Assert
     assert c["ok"] is False
@@ -434,7 +426,7 @@ def test_the_undrained_backlog_hint_says_the_channel_is_not_draining(
 ):
     # Arrange
     # Act
-    c = undrained_backlog_check
+    c = undrained_backlog_check["check"]
 
     # Assert
     assert c["hint"] and "not draining" in c["hint"]
@@ -445,10 +437,20 @@ def test_the_undrained_backlog_hint_names_the_command_that_fixes_it(
 ):
     # Arrange
     # Act
-    c = undrained_backlog_check
+    c = undrained_backlog_check["check"]
 
     # Assert
     assert "mcp start" in c["hint"]
+
+
+def test_module_backlog_reads_the_schema_it_provisioned(undrained_backlog_check):
+    """The module fixture never falls through to a worker's ambient schema."""
+    # Arrange
+    store = undrained_backlog_check["store"]
+    # Act
+    records = _inbox.poll_inbox("agent-x", unseen_only=True, store=store)
+    # Assert
+    assert len(records) == UNSEEN_BACKLOG_THRESHOLD + 1
 
 
 def test_channel_drain_ok_when_some_seen_even_if_unseen_large(tmp_path):

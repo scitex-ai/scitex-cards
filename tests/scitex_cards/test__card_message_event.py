@@ -248,7 +248,7 @@ def test_card_message_owner_is_none_when_card_has_neither(
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     seed_db_from_doc(
         {"tasks": [{"id": "c-1", "title": "x", "status": "deferred"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     # Act
     comment_task(

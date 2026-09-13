@@ -29,7 +29,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from scitex_cards._db import ENV_DB
+from scitex_cards._db import ENV_STORE_DSN
 from scitex_cards._push import (
     DEFAULT_TIMEOUT_S,
     ENV_DRY_RUN,
@@ -72,8 +72,8 @@ def _hermetic_resolution(tmp_path, new_store):
         conn.commit()
     finally:
         conn.close()
-    saved = {k: os.environ.get(k) for k in (ENV_DB,)}
-    os.environ[ENV_DB] = str(store)
+    saved = {k: os.environ.get(k) for k in (ENV_STORE_DSN,)}
+    os.environ[ENV_STORE_DSN] = str(store)
     try:
         yield
     finally:

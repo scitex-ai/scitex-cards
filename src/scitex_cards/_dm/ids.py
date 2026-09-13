@@ -229,7 +229,7 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
 
     # THE AMBIENT TIER RETURNS THE TARGET AS WRITTEN, path or server URL.
     # It used to call resolve_db_path, which RAISES on a DSN -- so with
-    # $SCITEX_CARDS_DB pointing at PostgreSQL every DM write died here, while
+    # $SCITEX_STORE_DSN pointing at PostgreSQL every DM write died here, while
     # card reads and writes worked. Measured 2026-08-01 by booting the rebuilt
     # image the way an agent does: list_tasks returned 2971 cards and the DM
     # write funnel raised StoreTargetIsNotAPath.

@@ -32,7 +32,7 @@ def _write(tmp_path, text):
     from scitex_cards._yaml import safe_load
 
     doc = safe_load(text) or {}
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 
@@ -191,7 +191,7 @@ def test_save_tasks_round_trips_data_across_rewrite(tmp_path):
 
     seed_db_from_doc(
         {"tasks": [{"id": "a", "title": "First", "status": "done"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     tasks = load_tasks(store)
@@ -223,7 +223,7 @@ def test_save_tasks_does_not_write_when_validation_fails(tmp_path):
 
     seed_db_from_doc(
         {"tasks": [{"id": "a", "title": "First", "status": "done"}]},
-        os.environ["SCITEX_CARDS_DB"],
+        os.environ["SCITEX_STORE_DSN"],
     )
     store = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     bad = [{"id": "a", "status": "done"}]
@@ -1388,26 +1388,26 @@ def test_save_tasks_round_trip_preserves_kind_status(tmp_path):
 
 @pytest.fixture
 def cards_db_env():
-    """Set/restore SCITEX_CARDS_DB around a test.
+    """Set/restore SCITEX_STORE_DSN around a test.
 
     Real env manipulation, restored on teardown -- the label reads the resolved
     target, so faking the resolver would only prove the fake.
     """
-    saved = os.environ.get("SCITEX_CARDS_DB")
+    saved = os.environ.get("SCITEX_STORE_DSN")
 
     def _set(value):
         if value is None:
-            os.environ.pop("SCITEX_CARDS_DB", None)
+            os.environ.pop("SCITEX_STORE_DSN", None)
         else:
-            os.environ["SCITEX_CARDS_DB"] = str(value)
+            os.environ["SCITEX_STORE_DSN"] = str(value)
 
     try:
         yield _set
     finally:
         if saved is None:
-            os.environ.pop("SCITEX_CARDS_DB", None)
+            os.environ.pop("SCITEX_STORE_DSN", None)
         else:
-            os.environ["SCITEX_CARDS_DB"] = saved
+            os.environ["SCITEX_STORE_DSN"] = saved
 
 
 def test_label_names_postgres_when_the_store_is_postgres(cards_db_env):

@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from scitex_cards import _dual_write, _store, _store_backend
-from scitex_cards._db import ENV_DB, connect
+from scitex_cards._db import ENV_STORE_DSN, connect
 
 
 def test_the_dual_write_module_now_exposes_only_the_ownership_guard():
@@ -67,7 +67,7 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(new_store, env, tm
     had every write silently routed to a dead YAML file instead of the
     canonical database. The toggle that made that possible is deleted, so
     setting the EXACT env vars from the incident must have no effect at all —
-    the write still lands in ``$SCITEX_CARDS_DB``, or the caller sees a
+    the write still lands in ``$SCITEX_STORE_DSN``, or the caller sees a
     real error. There is no silent third outcome.
     """
     # Arrange — bootstrap a real (empty) canonical DB first; `add_task` itself
@@ -78,7 +78,7 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(new_store, env, tm
     env.set("SCITEX_CARDS_DUAL_WRITE", "1")
     store = tmp_path / "tasks.yaml"
     db = new_store("cards_dual_flag", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     _store_backend.write_doc_to_db({"tasks": []}, store)
 
     # Act — the legacy dual-write env var stays set for the actual write too.
@@ -96,7 +96,7 @@ def test_a_write_reaches_the_db_even_with_the_legacy_flag_set(new_store, env, tm
 #: YAML CONTAINER path -- NOT the store identity": the sidecar that still holds
 #: the `users:` and `groups:` sections, and whose `.parent` is the store
 #: DIRECTORY that pidfiles and the delivery ledger live in. Card data lives in
-#: the database, which is what `$SCITEX_CARDS_DB` names. Feeding a DSN in as
+#: the database, which is what `$SCITEX_STORE_DSN` names. Feeding a DSN in as
 #: `store=` would not be a conversion, it would be wrong.
 
 
@@ -127,7 +127,7 @@ def test_a_card_write_does_not_touch_the_messages_table(new_store, env, tmp_path
     # Arrange — one canonical write builds the DB, then a DM lands in `messages`.
     store = tmp_path / "tasks.yaml"
     db = new_store("cards_dual_messages", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -201,7 +201,7 @@ def _mirror_of_store_a(env, new_store, tmp_path):
     from scitex_cards._store_uuid import ENV_EXPECTED_STORE_UUID, stamp_store_uuid
 
     db = new_store("cards_dual_mirror_a", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     doc = {
         "tasks": [
             {
@@ -288,7 +288,7 @@ def test_an_unstamped_db_is_adoptable_so_a_fresh_mirror_still_bootstraps(new_sto
     # Arrange
     store = tmp_path / "tasks.yaml"
     db = new_store("cards_dual_fresh", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
 
     # Act — the first canonical write to an un-adopted DB must claim it.
     _store_backend.write_doc_to_db(
@@ -316,7 +316,7 @@ def test_a_store_writing_to_its_own_mirror_is_not_refused(new_store, env, tmp_pa
     # Arrange — first write adopts the DB and stamps it for `store`.
     store = tmp_path / "tasks.yaml"
     db = new_store("cards_dual_own", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -426,7 +426,7 @@ def test_reading_the_db_that_owns_this_store_returns_its_cards(new_store, env, t
     from scitex_cards._store import _read_canonical_db_or_raise
 
     db = new_store("cards_dual_owning", bootstrap=False)
-    env.set(ENV_DB, db)
+    env.set(ENV_STORE_DSN, db)
     _store_backend.write_doc_to_db(
         {
             "tasks": [
@@ -469,7 +469,7 @@ def test_a_missing_canonical_db_RAISES_instead_of_reading_an_empty_store(new_sto
     # Arrange — point at a store that is reachable and has nothing in it.
     from scitex_cards._store import _read_canonical_db_or_raise
 
-    env.set(ENV_DB, new_store("cards_dual_unprovisioned", bootstrap=False))
+    env.set(ENV_STORE_DSN, new_store("cards_dual_unprovisioned", bootstrap=False))
 
     # Act
     # Assert

@@ -22,14 +22,14 @@ of the canonical database: every call returned SUCCESS, ``health`` stayed
 green, and an entire session of card writes never reached the board. The flag
 made that possible; removing it makes it unrepresentable — there is no
 environment variable left to read that could send a write anywhere but the
-database at ``$SCITEX_CARDS_DB``.
+database at ``$SCITEX_STORE_DSN``.
 
 WHAT SURVIVES HERE, and is load-bearing, is the OWNERSHIP GUARD that keeps one
 database from being written with another store's rows.
 
 THE INVARIANT
 -------------
-A database is the database of exactly ONE store. Point ``$SCITEX_CARDS_DB`` at a
+A database is the database of exactly ONE store. Point ``$SCITEX_STORE_DSN`` at a
 database built as store B's, then write store A into it, and nothing merges —
 B's rows are REPLACED with A's. On 2026-07-19 this package's own concurrency
 test did exactly that to the live fleet database, rebuilding it from a 21-card
@@ -219,7 +219,7 @@ def _db_mirrors_this_store(db_path: str | Path, store_path: str | Path) -> bool:
             "!! REFUSING: %s carries store identity %r but this process expects "
             "%r. These are two DIFFERENT stores, whatever they are called in "
             "this mount namespace, and writing one into the other would REPLACE "
-            "its rows. Fix the EXPECTATION ($%s) or point $SCITEX_CARDS_DB at "
+            "its rows. Fix the EXPECTATION ($%s) or point $SCITEX_STORE_DSN at "
             "the store you meant. If this database predates store identities it "
             "carries none, and the fix is to bind it once, deliberately: "
             "`scitex-cards store adopt-uuid`. Do NOT set $%s to a uuid the "

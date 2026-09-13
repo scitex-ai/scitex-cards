@@ -15,17 +15,17 @@ from django.core.management.base import BaseCommand
 
 
 def _apply_tasks_env(tasks: str) -> None:
-    """Export ``SCITEX_CARDS_DB=tasks`` when the operator passed ``--tasks PATH``.
+    """Export ``SCITEX_STORE_DSN=tasks`` when the operator passed ``--tasks PATH``.
 
     Lifted out of ``Command.handle`` so the env-precedence behaviour can be
     unit-tested without starting a Django ``runserver``. Empty string (the
     argparse default for a missing ``--tasks``) is a no-op so an inherited
-    ``$SCITEX_CARDS_DB`` keeps winning. A non-empty value overrides any inherited
+    ``$SCITEX_STORE_DSN`` keeps winning. A non-empty value overrides any inherited
     env (``os.environ[...]`` instead of ``setdefault``) so an explicit ``--tasks``
     database path wins.
     """
     if tasks:
-        os.environ["SCITEX_CARDS_DB"] = tasks
+        os.environ["SCITEX_STORE_DSN"] = tasks
 
 
 class Command(BaseCommand):
@@ -36,7 +36,7 @@ class Command(BaseCommand):
             "--tasks",
             dest="tasks",
             default="",
-            help="Path to the store database (default: $SCITEX_CARDS_DB).",
+            help="Path to the store database (default: $SCITEX_STORE_DSN).",
         )
         parser.add_argument(
             "--port",
@@ -63,7 +63,7 @@ class Command(BaseCommand):
 
         tasks = options["tasks"]
         port = options["port"]
-        # When the operator passes ``--tasks PATH``, export ``SCITEX_CARDS_DB=PATH``
+        # When the operator passes ``--tasks PATH``, export ``SCITEX_STORE_DSN=PATH``
         # so the in-process Django views (and any subprocess they fork) actually
         # resolve to that database. The ``?store=`` query-string we add below only
         # hints the browser, it never reaches the resolver. The helper uses

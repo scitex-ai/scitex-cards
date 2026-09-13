@@ -176,7 +176,7 @@ def write_doc_to_db(
     # ``.parent`` or ``.exists()`` on it, which is precisely the assumption
     # that took the query side down.
     db_target = resolve_store_target(None)
-    # The store identity IS the store target ($SCITEX_CARDS_DB). The caller's
+    # The store identity IS the store target ($SCITEX_STORE_DSN). The caller's
     # ``store_path`` names the logical store for messages and sidecar dirs, but
     # it is NOT a second identity axis: reads (``_read_canonical_db_or_raise``)
     # and writes both key on ``db_target``, so a fresh database is adopted on
@@ -188,7 +188,7 @@ def write_doc_to_db(
         raise RuntimeError(
             f"refusing to write {db_target}: it is stamped for a DIFFERENT "
             f"database, and writing it would replace that store's rows with "
-            f"this one's. Point $SCITEX_CARDS_DB at this store's own database."
+            f"this one's. Point $SCITEX_STORE_DSN at this store's own database."
         )
 
     # WRITE-SIDE SHRINK GUARD (P0, 2026-07-21 third board wipe). Checked

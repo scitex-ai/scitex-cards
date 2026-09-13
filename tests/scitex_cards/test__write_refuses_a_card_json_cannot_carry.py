@@ -46,7 +46,7 @@ from conftest import seed_db_from_doc
 from scitex_cards._db import connect
 from scitex_cards._db_payload import CardNotSerialisableError
 
-_STORE_ENV = "SCITEX_CARDS_DB"
+_STORE_ENV = "SCITEX_STORE_DSN"
 _BAD = "t-carries-a-datetime"
 
 
@@ -65,7 +65,7 @@ def _card_json_state(db: Path, task_id: str) -> str:
 
 @pytest.fixture()
 def store(tmp_path: Path, new_store):
-    """An ordinary healthy store, with $SCITEX_CARDS_DB pinned at it."""
+    """An ordinary healthy store, with $SCITEX_STORE_DSN pinned at it."""
     db = new_store()
     seed_db_from_doc(
         {

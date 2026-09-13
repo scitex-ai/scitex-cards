@@ -19,7 +19,7 @@ with two coupled changes, both covered here:
      `get_task` / ...) treats it as absent by default.
 
 Real fixtures (no mocks per STX-NM / PA-306); the autouse conftest fixture
-pins `$SCITEX_CARDS_DB` to a fresh, schema-complete scratch database per
+pins `$SCITEX_STORE_DSN` to a fresh, schema-complete scratch database per
 test, so every test here is safely isolated from the live store.
 """
 

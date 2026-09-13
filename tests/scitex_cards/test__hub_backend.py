@@ -53,7 +53,7 @@ def hub(tmp_path, env):
     #
     # Handing the server the DSN makes both kinds of verb address the same
     # thing, which is what the paragraph above was already asking for.
-    store = os.environ["SCITEX_CARDS_DB"]
+    store = os.environ["SCITEX_STORE_DSN"]
     tokens_dir = tmp_path / "tokens"
     audit_path = tmp_path / "logs" / "hub_access.jsonl"
 

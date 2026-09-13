@@ -61,7 +61,7 @@ def real_but_empty_store():
     """
     _reset_cache()
     _graph_cache_reset()
-    yield Path(os.environ["SCITEX_CARDS_DB"])
+    yield Path(os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     _graph_cache_reset()
 
@@ -73,8 +73,8 @@ def seeded_store():
 
     _reset_cache()
     _graph_cache_reset()
-    seed_db_from_doc(_SEEDED, os.environ["SCITEX_CARDS_DB"])
-    yield Path(os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(_SEEDED, os.environ["SCITEX_STORE_DSN"])
+    yield Path(os.environ["SCITEX_STORE_DSN"])
     _reset_cache()
     _graph_cache_reset()
 

@@ -213,27 +213,6 @@
   Operator CARD 2026-06-17.
 {% endcomment %}
 <script defer src="{% static 'scitex_cards/board_v3/timeline.js' %}"></script>
-<style>
-  /* P12 (operator TG, lead a2a 2026-06-12) — board reclaims the left
-     IDE-style panes. The scitex-ui standalone shell renders an AI
-     console pane + a worktree file tree + a media viewer to the LEFT
-     of the module pane; the kanban board doesn't need any of them, and
-     the operator was photographed reporting "left empty space" eating
-     the columns area. Override the shell defaults here so the kanban
-     grid uses the full viewport width. The shell's resizer/toggle JS
-     still no-ops cleanly when the targets are display:none. */
-  #workspace-three-col > .ws-ai-pane,
-  #workspace-three-col > .ws-worktree-pane,
-  #workspace-three-col > .ws-viewer-pane {
-    display: none !important;
-  }
-  #workspace-three-col > .ws-module-pane,
-  #workspace-three-col > #main-content.ws-module-pane {
-    flex: 1 1 100%;
-    max-width: 100vw;
-    width: 100vw;
-  }
-</style>
 {% comment %}
   FIRST-PAINT status-color CSS vars — the SINGLE source of truth for the
   board's per-status color layer (hook-bypass: line-limit). Server-rendered

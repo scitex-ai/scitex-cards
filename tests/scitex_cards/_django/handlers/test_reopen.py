@@ -78,7 +78,7 @@ def store():
     # provenance label. The board/services layer (get_board -> load_groups)
     # still stat()s the identity file, so it must EXIST even though its content
     # is never read — an empty file is enough.
-    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(safe_load(_STORE_TEXT) or {}, os.environ["SCITEX_STORE_DSN"])
     store_path = os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
     Path(store_path).write_text("", encoding="utf-8")
     _reset_cache()

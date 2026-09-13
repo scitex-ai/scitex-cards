@@ -33,8 +33,8 @@ jobs:
     # `vars.CI_RUNS_ON` is the escape hatch the release workflow in this repo
     # already uses, so pointing the repo back at Spartan when it returns is a
     # variable change rather than a PR. What changes here is the DEFAULT:
-    # `ubuntu-latest`, which the audit, postgres-backend, pytest-matrix and
-    # cla jobs in this same repo all ran on successfully the same day.
+    # `ubuntu-latest`, which the audit, pytest-matrix and cla jobs in this same
+    # repo all ran on successfully the same day.
     #
     # The uv-managed Python below is unaffected: it was introduced because
     # self-hosted runners have no setup-python tool cache, and it works on

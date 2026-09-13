@@ -63,7 +63,7 @@ _POSTGRES_INSTANCE_SQL = "select system_identifier::text from pg_control_system(
 _NO_INSTANCE_ID_OFF_SERVER = (
     "unsupported: this target does not name the store, so there is no cluster "
     "to ask for an instance identity. The store is a PostgreSQL DSN; check "
-    "$SCITEX_CARDS_DB."
+    "$SCITEX_STORE_DSN."
 )
 
 

@@ -37,7 +37,7 @@ _DB_OPTION = click.option(
     "--db",
     "db_path",
     default=None,
-    help="Explicit DB path (default: $SCITEX_CARDS_DB, else ~/.scitex/cards/cards.db).",
+    help="Explicit DB path (default: $SCITEX_STORE_DSN, else ~/.scitex/cards/cards.db).",
 )
 
 

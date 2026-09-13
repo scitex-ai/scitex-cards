@@ -61,7 +61,7 @@ from __future__ import annotations
 #: the store as it actually is. IT MUST NOT NAME A BACKEND OR A DEFAULT PATH.
 #:
 #: It used to say "the canonical store is the database file at
-#: $SCITEX_CARDS_DB (default ~/.scitex/cards/cards.db)". After the PostgreSQL
+#: $SCITEX_STORE_DSN (default ~/.scitex/cards/cards.db)". After the PostgreSQL
 #: cutover that sentence was FALSE in both halves at once: the backend is
 #: postgres on this fleet, and ``~/.scitex/cards/cards.db`` is the abandoned
 #: pre-migration file, still on disk, still holding thousands of real cards.
@@ -80,7 +80,7 @@ from __future__ import annotations
 #: this is the second time it has fallen out of step (YAML -> a local
 #: database, then that -> PostgreSQL).
 _STORE_LINE = (
-    "The store is whatever $SCITEX_CARDS_DB resolves to, and that resolved "
+    "The store is whatever $SCITEX_STORE_DSN resolves to, and that resolved "
     "target is the SOLE store identity. Do NOT assume a backend or a default "
     "path — the deployment decides both. Call resolve_store, which reports the "
     "target you actually resolved to, and read the store ONLY through this "

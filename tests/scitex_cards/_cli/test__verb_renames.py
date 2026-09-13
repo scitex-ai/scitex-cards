@@ -68,7 +68,7 @@ def store():
             {"id": "build", "title": "Build the thing", "status": "deferred"},
         ]
     }
-    seed_db_from_doc(doc, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc(doc, os.environ["SCITEX_STORE_DSN"])
 
 
 @pytest.fixture

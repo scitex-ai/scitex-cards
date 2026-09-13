@@ -9,7 +9,7 @@ the config still lists it and everyone believes it is working" (constitution
 §2).
 
 It is not hypothetical. On 2026-07-28 every card CREATE refused for any agent
-without `$SCITEX_CARDS_DB` while `health` reported that same store readable AND
+without `$SCITEX_STORE_DSN` while `health` reported that same store readable AND
 writable — the check that should have caught the outage was the reason it stayed
 invisible. Reported by scitex-ui.
 
@@ -89,10 +89,10 @@ def writable_store() -> str:
     reads exactly like one that passed, which is the failure mode this whole
     module is about.
     """
-    dsn = os.environ.get("SCITEX_CARDS_DB", "")
+    dsn = os.environ.get("SCITEX_STORE_DSN", "")
     if "search_path" not in dsn:
         pytest.fail(
-            "the root conftest did not pin $SCITEX_CARDS_DB to a throwaway "
+            "the root conftest did not pin $SCITEX_STORE_DSN to a throwaway "
             f"PostgreSQL schema; it holds {dsn!r}.",
             pytrace=False,
         )

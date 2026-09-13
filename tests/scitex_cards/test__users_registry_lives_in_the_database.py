@@ -9,7 +9,7 @@ unknown length of time, while the whole users suite was green. It was green
 honestly: every store under ``tests/scitex_cards/_users/`` is an EXPLICIT
 ``tmp_path / "tasks.yaml"``, the registry code is correct against a file, and
 so the tests proved a true thing about a backend nobody runs. Measured
-2026-08-17 in a sac container with ``$SCITEX_CARDS_DB`` set to the fleet
+2026-08-17 in a sac container with ``$SCITEX_STORE_DSN`` set to the fleet
 server::
 
     resolve_tasks_path(None)   /home/agent/.scitex/cards/tasks.yaml
@@ -59,7 +59,7 @@ from conftest import seed_db_from_doc
 
 from scitex_cards._db import connect
 
-_STORE_ENV = "SCITEX_CARDS_DB"
+_STORE_ENV = "SCITEX_STORE_DSN"
 
 
 def _registry_ids(db: Path) -> set[str]:

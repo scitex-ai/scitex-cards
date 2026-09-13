@@ -100,7 +100,7 @@ def add_task(
     # good enough to name a store in a message, never a thing on disk. The YAML
     # tier was deleted (#512), so that label can NEVER exist, and passing it here
     # made the guard refuse unconditionally: every `add` failed for any agent
-    # without $SCITEX_CARDS_DB while its own reads and updates succeeded, and the
+    # without $SCITEX_STORE_DSN while its own reads and updates succeeded, and the
     # error told you to run `init-store` — which did not help, because the file
     # it created was not the file being tested. Reported and reproduced by
     # scitex-ui on 0.17.7. Guard the database, not the label.

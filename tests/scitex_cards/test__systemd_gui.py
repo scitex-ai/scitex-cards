@@ -191,7 +191,7 @@ def test_a_custom_port_reaches_the_description():
 def test_the_unit_carries_no_environment_line():
     # Arrange
     # systemd does not source the login shell, so a unit depending on
-    # $SCITEX_CARDS_DB from ~/.bashrc would start, refuse the unconfigured
+    # $SCITEX_STORE_DSN from ~/.bashrc would start, refuse the unconfigured
     # store and crash-loop. The store resolves from ~/.scitex/cards/config.json
     # with no environment at all — and the store has exactly ONE identity, so a
     # unit file must not become a second place it is declared.

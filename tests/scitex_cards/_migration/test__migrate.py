@@ -160,7 +160,7 @@ class TestScanLane:
                     },
                 ]
             },
-            os.environ["SCITEX_CARDS_DB"],
+            os.environ["SCITEX_STORE_DSN"],
         )
         _mk_dir_card(lane, "ok")
         _mk_dir_card(lane, "bad")
@@ -181,7 +181,7 @@ class TestScanLane:
         # into an empty plan + a WARNING — the swallow-and-warn contract is
         # unique to the scanner and survives the store cutover.
         lane = tmp_path / "tasks.yaml"
-        env.set("SCITEX_CARDS_DB", str(tmp_path / "does-not-exist.db"))
+        env.set("SCITEX_STORE_DSN", str(tmp_path / "does-not-exist.db"))
         # Act
         with caplog.at_level("WARNING", logger="scitex_cards._migration._migrate"):
             plan = _mig.scan_lane(lane)
@@ -207,7 +207,7 @@ class TestScanAllLanes:
                     {"id": "bx", "title": "BX", "status": "deferred"},
                 ]
             },
-            os.environ["SCITEX_CARDS_DB"],
+            os.environ["SCITEX_STORE_DSN"],
         )
         lane_a = tmp_path / "a" / "tasks.yaml"
         _mk_dir_card(lane_a, "ax")
@@ -231,7 +231,7 @@ class TestRenderMarkdown:
         lane = tmp_path / "tasks.yaml"
         seed_db_from_doc(
             {"tasks": [{"id": "ok", "title": "OK", "status": "deferred"}]},
-            os.environ["SCITEX_CARDS_DB"],
+            os.environ["SCITEX_STORE_DSN"],
         )
         _mk_dir_card(lane, "ok")
         fleet = _mig.scan_all_lanes([lane])

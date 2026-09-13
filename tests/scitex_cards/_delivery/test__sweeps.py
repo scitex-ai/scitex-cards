@@ -188,7 +188,7 @@ class TestSweepIsFailSoft:
         # REAL failure: the canonical database does not exist, so
         # `_read_canonical_db_or_raise` refuses and load_tasks raises inside
         # the sweep. The guard must swallow it — the delivery pass follows.
-        env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+        env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
         # Act
         outcome = _run_stale_nudge_sweep(store=tmp_path / "tasks.yaml", now=T0)
         # Assert
@@ -201,7 +201,7 @@ class TestSweepIsFailSoft:
         # Arrange
         # swallowing is right; swallowing SILENTLY is the 2026-07-28
         # outage. The guard hands the fault back so the tick can count it.
-        env.set("SCITEX_CARDS_DB", str(tmp_path / "absent" / "cards.db"))
+        env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
         # Act
         outcome = _run_stale_nudge_sweep(store=tmp_path / "tasks.yaml", now=T0)
         # Assert

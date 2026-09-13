@@ -16,7 +16,7 @@ def _revision(task_id="c1"):
     """The row's current revision, read straight from the isolated database.
 
     NO ``store`` ARGUMENT, DELIBERATELY. conftest's autouse fixture gives every
-    test its own empty database and pins ``$SCITEX_CARDS_DB`` at it, and its
+    test its own empty database and pins ``$SCITEX_STORE_DSN`` at it, and its
     docstring records that a test passing its OWN ``tmp_path`` store is refused
     by a database already stamped for a different one. So the ambient store IS
     the isolation here; naming one would fight it.
@@ -31,7 +31,7 @@ def _revision(task_id="c1"):
 
     from scitex_cards._db import connect
 
-    db = os.environ["SCITEX_CARDS_DB"]
+    db = os.environ["SCITEX_STORE_DSN"]
     conn = connect(db)
     try:
         row = conn.execute(

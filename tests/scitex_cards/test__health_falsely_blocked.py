@@ -29,7 +29,7 @@ def _store(tmp_path, tasks):
     YAML file. Seed the DB the harness pinned + bootstrapped, and return the
     pinned STORE identity path (NOT the DB path — see THE STORE-PATH RULE).
     """
-    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_CARDS_DB"])
+    seed_db_from_doc({"tasks": tasks}, os.environ["SCITEX_STORE_DSN"])
     return os.environ["SCITEX_CARDS_TASKS_YAML_SHARED"]
 
 

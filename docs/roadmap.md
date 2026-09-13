@@ -37,7 +37,7 @@ This keeps the data portable and the surfaces swappable.
 - **Web board (read-only + drag-reorder)** — React-Flow board served by Django
   (`scitex-cards board`); the priority handler persists drag-reorder back to the
   YAML store (the agent↔user GUI interface, first write path).
-- **Store identity** — explicit `store` -> `$SCITEX_CARDS_DB` (PostgreSQL on
+- **Store identity** — explicit `store` -> `$SCITEX_STORE_DSN` (PostgreSQL on
   55432); unset raises. One axis, one backend: no second-engine tier, no project
   scope,
   no bundled-example fallback.
