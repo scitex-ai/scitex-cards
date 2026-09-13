@@ -139,6 +139,21 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
 
     from ._user_scope import current_user
 
+    cards_user = current_user(request)
+    try:
+        from scitex_cards._dm import read as dm_read
+
+        dm_unread_count = len(
+            dm_read.unread_for(cards_user, store=read_store(request))
+        )
+    except Exception:  # noqa: BLE001 - navigation remains usable without DM state
+        logger.warning(
+            "[scitex-cards] DM unread count unavailable for %s",
+            cards_user,
+            exc_info=True,
+        )
+        dm_unread_count = None
+
     relative_view = request.path[len(api_base) :].strip("/")
     return {
         **shell_context(
@@ -147,7 +162,8 @@ def _cards_shell_context(request, api_base: str) -> dict[str, object]:
         ),
         **mount_context(request, view_path=relative_view),
         "app_name": "scitex-cards",
-        "cards_user": current_user(request),
+        "cards_user": cards_user,
+        "dm_unread_count": dm_unread_count,
     }
 
 

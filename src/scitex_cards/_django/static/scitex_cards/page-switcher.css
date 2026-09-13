@@ -1,6 +1,4 @@
-/* Board | DM page switcher — shared by board_v3.html and chat.html.
- * (The second item is LABELLED "DM"; its route is still /chat and the files
- * are still chat.*. See _page_switcher.html for why the URL is not renamed.)
+/* Board | Direct messages page switcher — shared by both Cards surfaces.
  *
  * Markup: templates/scitex_cards/_page_switcher.html (one partial, both
  * pages), so the two surfaces cannot drift into two different switchers.
@@ -12,26 +10,18 @@
  * one of these", so the page switcher borrows it rather than inventing a
  * second idiom.
  *
- * WHY LOCAL `--sw-*` TOKENS instead of scitex-ui's theme tokens directly:
- * both consumer pages ship their OWN fixed-dark palette in a `:root` block
- * (board: board_v3/01-filterbar.css; chat: the <style> in chat.html), and
- * those blocks SHADOW scitex-ui's `--text-muted` / `--border-*` — so reading
- * the theme tokens here would resolve to a different (and on chat, a LIGHT)
- * value per page. The component therefore exposes six variables and each host
- * page feeds its own palette in. When a page adopts the scitex-ui theme layer
- * it re-points these six at the theme tokens and the component follows the
- * light/dark switch with no change here.
+ * Every value comes from released scitex-ui theme tokens. Workspace-prefixed
+ * tokens are intentional: the legacy board still defines private generic
+ * names such as --text-muted, and must not shadow this shared navigation.
  */
 
 .stx-cards-switcher {
-  /* Defaults = the board's palette (board_v3/01-filterbar.css). chat.html
-   * overrides them with its own; see the mapping block there. */
-  --sw-line: var(--border, #2a3140);
-  --sw-surface: var(--col-bg, #131820);
-  --sw-fg: var(--text-muted, #8a96a8);
-  --sw-fg-on: #fff;
-  --sw-surface-on: var(--purple, #6d4cad);
-  --sw-hover: rgba(255, 255, 255, 0.06);
+  --sw-line: var(--workspace-border-default);
+  --sw-surface: var(--workspace-bg-primary);
+  --sw-fg: var(--workspace-text-secondary);
+  --sw-fg-on: var(--text-inverse);
+  --sw-surface-on: var(--app-accent-todo);
+  --sw-hover: var(--app-accent-todo-tint);
 
   display: inline-flex;
   flex: 0 0 auto;
@@ -82,6 +72,24 @@
   outline-offset: -2px;
 }
 
+.stx-cards-switcher__label-short {
+  display: none;
+}
+
+.stx-cards-switcher__badge {
+  min-width: 1.25rem;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-align: center;
+}
+
 /* Phone: Apple HIG tap targets. Same 768px breakpoint the board's
  * 05-responsive.css uses, so the two agree on what "phone" means. */
 @media (max-width: 768px) {
@@ -89,5 +97,13 @@
     min-height: 40px;
     padding: 8px 14px;
     font-size: 0.9rem;
+  }
+
+  .stx-cards-switcher__label-full {
+    display: none;
+  }
+
+  .stx-cards-switcher__label-short {
+    display: inline;
   }
 }
