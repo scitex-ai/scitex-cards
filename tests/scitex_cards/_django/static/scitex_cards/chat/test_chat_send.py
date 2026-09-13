@@ -52,7 +52,8 @@ globalThis.__mk = function (opts) {
   const form = el(), body = el(), send = el();
   const calls = [];
   const fetchImpl = function (url, init) {
-    calls.push({ url, body: JSON.parse(init.body).body });
+    const payload = JSON.parse(init.body);
+    calls.push({ url, body: payload.body, requestId: payload.client_request_id });
     return opts.ok
       ? Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
       : Promise.resolve({ ok: false, status: 500,
@@ -182,6 +183,24 @@ def test_a_repeated_submit_during_the_round_trip_sends_once():
     out = _run(script)
     # Assert
     assert out["n"] == 1, "Enter-mash re-sent the same text — the guard is gone"
+
+
+def test_retry_after_uncertain_failure_reuses_client_request_id():
+    """A retry must identify the first attempt so the server can deduplicate it."""
+    # Arrange
+    script = """
+    const h = __mk({ ok: false });
+    h.body.value = "retry safely";
+    Promise.resolve(h.api.send({ preventDefault() {} })).then(() => {
+      return h.api.send({ preventDefault() {} });
+    }).then(() => {
+      console.log(JSON.stringify({ ids: h.calls.map((c) => c.requestId) }));
+    });
+    """
+    # Act
+    out = _run(script)
+    # Assert
+    assert out["ids"][0] == out["ids"][1]
 
 
 # EOF

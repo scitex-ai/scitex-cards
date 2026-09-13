@@ -42,4 +42,7 @@ having to say so.
   {% include "scitex_cards/_page_switcher.html" with active=active %}
   <h1>{{ page_title }}</h1>
   <span class="stx-cards-header__ver">v{{ scitex_cards_version|default:"?" }}</span>
+  <span class="stx-cards-header__scope" data-user-scope="{{ cards_user }}">
+    {{ cards_user }}
+  </span>
 </div>

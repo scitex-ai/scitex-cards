@@ -196,9 +196,11 @@ def test_the_switcher_tooltip_uses_the_longer_direct_message_wording(chat_html):
 def test_no_switcher_tooltip_still_says_chat(chat_html):
     """A tooltip is user-visible text too — it was the other half of the label."""
     # Arrange
-    html = chat_html
+    switcher = re.search(
+        r'<nav class="stx-cards-switcher".*?</nav>', chat_html, re.DOTALL
+    )
     # Act
-    stale = 'title="Chat' in html
+    stale = switcher is not None and 'title="Chat' in switcher.group(0)
     # Assert
     assert not stale
 

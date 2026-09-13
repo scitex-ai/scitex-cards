@@ -132,6 +132,25 @@ _BOARD_ALIASES = ("board-v3", "board")
 _DM_ALIASES = ("chat", "dm")
 
 
+def _cards_shell_context(request, api_base: str) -> dict[str, object]:
+    """Build the shared SciTeX app shell context for either Cards page."""
+    from scitex_ui.branding import shell_context
+    from scitex_ui.mount import mount_context
+
+    from ._user_scope import current_user
+
+    relative_view = request.path[len(api_base) :].strip("/")
+    return {
+        **shell_context(
+            "Cards",
+            panes={"ai": "unused", "files": "unused", "viewer": "unused"},
+        ),
+        **mount_context(request, view_path=relative_view),
+        "app_name": "scitex-cards",
+        "cards_user": current_user(request),
+    }
+
+
 def favicon_view(request):
     """Serve the bundled SciTeX "S" SVG for the implicit `/favicon.ico` request.
 
@@ -155,12 +174,13 @@ def board_page(request):
 
     if built:
         try:
+            api_base = request.path
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
                 # stays ``scitex-cards`` — it keys the shell's static/asset
                 # namespace, not the product name the operator reads.
-                {"app_name": "scitex-cards", "app_label": "SciTeX Cards"},
+                _cards_shell_context(request, api_base),
                 request=request,
             )
             return HttpResponse(html)
@@ -194,13 +214,6 @@ def board_v3_page(request):
         from scitex_cards import __version__ as _version
     except Exception:  # noqa: BLE001
         _version = "?"
-    # PRODUCT NAME (operator TG 2026-07-13: "製品なので、scitex-cards ではなく、
-    # SciTeX Cards としてタイトルを書いてください"). This is the DISPLAY string only
-    # — the browser tab + the in-page header. The package, module, CLI, MCP
-    # tool prefix and store path are all still `scitex-cards`; renaming those
-    # is a separate, coordinated change.
-    label = f"SciTeX Cards v{_version}"
-
     # SSOT status colors (kill the 4-bucket color collapse). The board's
     # color layer is single-sourced from ``STATUS_STYLE`` via the same
     # projection the /graph payload uses (``handlers.graph._status_colors``),
@@ -229,21 +242,17 @@ def board_v3_page(request):
     api_base = _include_root(request.path, _BOARD_ALIASES)
 
     try:
+        context = _cards_shell_context(request, api_base)
+        context.update(
+            {
+                "scitex_cards_version": _version,
+                "api_base": api_base,
+                "status_colors": status_colors,
+            }
+        )
         html = render_to_string(
             "scitex_cards/board_v3.html",
-            {
-                "app_name": "scitex-cards",
-                "app_label": label,
-                "scitex_cards_version": _version,
-                # Include-root prefix for every board fetch (see above). The
-                # template strips trailing slashes, so a root mount renders
-                # API_BASE == "" and calls stay "/graph"-shaped.
-                "api_base": api_base,
-                # Per-status SSOT colors for first-paint CSS vars (board_v3
-                # <head> renders a `:root{--status-fill-<s>...}` block from
-                # this so cards/timeline/mermaid never collapse 7→4 colors).
-                "status_colors": status_colors,
-            },
+            context,
             request=request,
         )
         return HttpResponse(html)
@@ -284,9 +293,17 @@ def chat_page(request):
     # root-mount guess).
     api_base = _include_root(request.path, _DM_ALIASES)
 
+    context = _cards_shell_context(request, api_base)
+    context.update(
+        {
+            "app_label": f"DM — SciTeX Cards v{_version}",
+            "scitex_cards_version": _version,
+            "api_base": api_base,
+        }
+    )
     html = render_to_string(
         "scitex_cards/chat.html",
-        {"scitex_cards_version": _version, "api_base": api_base},
+        context,
         request=request,
     )
     return HttpResponse(html)

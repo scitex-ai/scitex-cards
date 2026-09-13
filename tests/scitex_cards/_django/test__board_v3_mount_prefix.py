@@ -146,7 +146,7 @@ def test_board_v3_static_js_has_no_root_absolute_fetch(js_name):
 @pytest.mark.parametrize("js_name", sorted(p.name for p in _CHAT_STATIC.glob("*.js")))
 def test_chat_static_js_has_no_root_absolute_fetch(js_name):
     """The chat page's static JS must not hardcode root-absolute fetch paths
-    either — chat.js reads the include root off <body data-api-base> (set by
+    either — chat.js reads the include root off #cards-dm-app (set by
     chat.html) and prefixes every /dm/* call with it."""
     # Arrange
     js_path = _CHAT_STATIC / js_name
@@ -173,7 +173,7 @@ def test_chat_static_js_has_no_root_absolute_getjson(js_name):
 
 
 def test_chat_page_api_base_marker_carries_subpath_mount():
-    """At a sub-path mount the chat page's <body data-api-base> carries the
+    """At a sub-path mount the chat page's app-root data-api-base carries the
     include root chat.js prefixes every /dm/* call with. The marker must
     ALWAYS be rendered — chat.js throws when it is absent (a missing marker
     is an integration bug, never a silently-guessed root mount)."""

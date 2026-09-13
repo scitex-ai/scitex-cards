@@ -24,10 +24,10 @@ Endpoints::
          read (poll-and-ack in one call — what the open thread pane does).
 
     POST /dm/thread/<peer>   body = {"body": "<text>"}
-      -> 200 + {"message": <stored record>}
-         Appends ``from=operator`` and dm-dispatches into the agent's
-         pull-inbox (the unified channel server pushes it into the agent's
-         session). 400 on an empty body.
+      -> 202 + {"message": <stored record>, "exchange": <delivery state>}
+         Persists the current user's message and recipient notification, then
+         returns the canonical exchange id the browser polls for delivery.
+         400 on an empty body.
 
          This is ALSO the forward path. A forward is not a distinct kind of
          record — it is an ordinary message whose body opens with a
@@ -64,7 +64,7 @@ from scitex_cards import (
 from scitex_cards._django._request_store import (  # noqa: F401  (re-export)
     STORE_REQUEST_ATTR as STORE_REQUEST_ATTR,
 )
-from scitex_cards._django._request_store import read_store, write_store
+from scitex_cards._django._request_store import read_store
 from scitex_cards._dm import read as _dm_read
 from scitex_cards._dm import receipt_state as _dm_receipt_state
 from scitex_cards._dm import write as _dm_write
@@ -172,7 +172,10 @@ _NO_DM_STORE_SUMMARY = "No direct-message store is configured for this board."
 #: missing store without parsing the sentence.
 STORE_READ_ONLY_STATUS = 403
 STORE_READ_ONLY_REASON = "store_read_only"
-_READ_ONLY_STORE_SUMMARY = "This board's store credential is read-only; direct messages cannot be sent from it."
+_READ_ONLY_STORE_SUMMARY = (
+    "This board's store credential is read-only; direct messages cannot be "
+    "sent from it."
+)
 _READ_ONLY_STORE_HINT = (
     "Configure a direct-message write credential, run `scitex-cards "
     "validate-health --json`, and retry the send after the store check passes."
@@ -272,7 +275,11 @@ def _typed_store_refusals(view):
                 },
                 status=STORE_READ_ONLY_STATUS,
             )
-        except (StoreTargetNotConfigured, UnrecognisedStoreTarget, StoreNotProvisionedError) as exc:
+        except (
+            StoreTargetNotConfigured,
+            UnrecognisedStoreTarget,
+            StoreNotProvisionedError,
+        ) as exc:
             from scitex_cards._django.views import (  # noqa: PLC0415 - avoids the import cycle
                 STORE_ABSENT_REASON,
                 STORE_ABSENT_STATUS,
@@ -380,7 +387,7 @@ def dm_threads_view(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 @_typed_store_refusals
 def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
-    """GET the operator↔``peer`` thread, or POST a new operator message."""
+    """GET the current user's thread, or POST a message to ``peer``."""
     if request.method not in {"GET", "POST"}:
         return JsonResponse(
             {"error": "method-not-allowed", "method": request.method}, status=405
@@ -479,10 +486,103 @@ def dm_thread_view(request: HttpRequest, peer: str) -> HttpResponse:
     body = payload.get("body") if isinstance(payload, dict) else None
     if not isinstance(body, str) or not body.strip():
         return JsonResponse({"error": "dm send requires non-empty 'body'"}, status=400)
-    record = _threads.append_message(
-        _author_of(request), peer, body, store=_write_store_of(request)
+    client_request_id = payload.get("client_request_id")
+    if client_request_id is not None and (
+        not isinstance(client_request_id, str) or not client_request_id.strip()
+    ):
+        return JsonResponse(
+            {"error": "client_request_id must be a non-empty string"}, status=400
+        )
+
+    from scitex_cards import _messaging
+    from scitex_cards._dm_exchange import DmExchangeError
+
+    try:
+        record = _messaging.dm_send(
+            peer,
+            body,
+            store=_write_store_of(request),
+            sender=_author_of(request),
+            client_request_id=client_request_id,
+        )
+    except DmExchangeError as exc:
+        response = {
+            "error": exc.status.message,
+            "reason": "delivery_exchange_failed",
+            "exchange_id": exc.exchange_id,
+            "status": exc.status.to_dict(),
+        }
+        if exc.message_id is not None:
+            response["message_id"] = exc.message_id
+        return JsonResponse(response, status=int(exc.status.code))
+
+    return JsonResponse(
+        {
+            "message": record,
+            "exchange": {
+                "exchange_id": record["exchange_id"],
+                "client_request_id": record["client_request_id"],
+                "status": record["status"],
+                "final": False,
+            },
+        },
+        status=202,
+        json_dumps_params={"default": str},
     )
-    return JsonResponse({"message": record}, json_dumps_params={"default": str})
+
+
+def dm_exchange_view(request: HttpRequest, exchange_id: str) -> HttpResponse:
+    """Return the authenticated sender's current delivery-exchange state."""
+    if request.method != "GET":
+        return JsonResponse(
+            {"error": "method-not-allowed", "method": request.method}, status=405
+        )
+
+    from scitex_cards._dm_exchange import get_exchange
+
+    reader = _author_of(request)
+    try:
+        exchange = get_exchange(exchange_id, sender=reader)
+    except Exception:  # noqa: BLE001 - canonical status, no traceback wire
+        status = _http_status(
+            503,
+            "The delivery-exchange ledger is temporarily unavailable.",
+        )
+        return JsonResponse(
+            {
+                "error": status["message"],
+                "reason": "exchange_store_unavailable",
+                "status": status,
+                "check": _failed_store_check(
+                    "dm_exchange_read",
+                    status["message"],
+                    "Run `scitex-cards health`, verify SCITEX_STORE_DSN, and retry.",
+                    status,
+                ),
+            },
+            status=503,
+        )
+
+    if exchange is None or exchange.get("initiator") != reader:
+        status = _http_status(
+            404,
+            "No delivery exchange with that id is visible to this user.",
+        )
+        return JsonResponse(
+            {
+                "error": status["message"],
+                "reason": "exchange_not_found",
+                "status": status,
+                "check": _failed_store_check(
+                    "dm_exchange_visible",
+                    status["message"],
+                    "Copy the exchange id from this user's send result and retry.",
+                    status,
+                ),
+            },
+            status=404,
+        )
+    return JsonResponse(exchange, json_dumps_params={"default": str})
 
 
 @csrf_exempt
@@ -550,6 +650,11 @@ def dm_reaction_view(request: HttpRequest, peer: str) -> HttpResponse:
     )
 
 
-__all__ = ["dm_reaction_view", "dm_thread_view", "dm_threads_view"]
+__all__ = [
+    "dm_exchange_view",
+    "dm_reaction_view",
+    "dm_thread_view",
+    "dm_threads_view",
+]
 
 # EOF

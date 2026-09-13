@@ -80,3 +80,16 @@
   white-space: nowrap;
   color: var(--stx-cards-header-dim, #8a96a8);
 }
+
+.stx-cards-header__scope {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--stx-cards-header-dim, #8a96a8);
+  font-size: 0.72rem;
+}
+
+.stx-cards-header__scope::before {
+  content: "Signed in as ";
+}
