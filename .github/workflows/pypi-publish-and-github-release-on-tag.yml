@@ -78,6 +78,9 @@ jobs:
         with:
           ref: ${{ steps.ver.outputs.version }}
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       # uv-provisioned test run — the exact install+pytest mechanism of the
       # org-level pytest-matrix reusable workflow, proven green on these same
       # spartan-cpu runners (uv downloads a standalone CPython; nothing is
