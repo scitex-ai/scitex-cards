@@ -21,6 +21,7 @@ from click.testing import CliRunner
 from scitex_cards import _model, _store
 from scitex_cards._cli import main
 from scitex_cards._paths import PKG_SHORT
+from scitex_cards._store_target import resolve_store_target
 
 
 def _store_path(tmp_path) -> str:
@@ -1053,6 +1054,16 @@ def test_init_shared_exits_zero(tmp_path, env):
     assert result.exit_code == 0, result.output
 
 
+def test_shared_store_defaults_to_the_scitex_dev_primitive(env):
+    """An absent override resolves the shared PostgreSQL primitive."""
+    # Arrange
+    env.delete("SCITEX_STORE_DSN")
+    # Act
+    resolved = resolve_store_target()
+    # Assert
+    assert resolved.startswith("postgresql://") and ":55432/" in resolved
+
+
 # THE STORE IS A BARE SCHEMA, NOT A NAMED FILE, in the three tests below.
 #
 # They used to point $SCITEX_STORE_DSN at `fake-home/cards/cards.db` and assert
@@ -1129,41 +1140,6 @@ def test_init_shared_is_idempotent(bare_store, env):
     # says "no-op": `init_schema` creates what is missing and touches no row,
     # so both runs report the same thing and neither is a special case.
     assert again.exit_code == 0, again.output
-
-
-def _init_shared_with_no_store_configured(tmp_path, env):
-    """Invoke ``init-store --shared`` with nothing naming a store.
-
-    ``$SCITEX_DIR`` steers only local state, so setting it leaves the store
-    axis genuinely unconfigured -- which is the state under test.
-    """
-    runner = CliRunner()
-    env.set("SCITEX_DIR", str(tmp_path / "fake-home"))
-    env.delete("SCITEX_STORE_DSN")
-    return runner.invoke(main, ["init-store", "--shared"])
-
-
-def test_init_shared_refuses_when_no_store_is_configured(tmp_path, env):
-    """The tier those three tests used to ride on is GONE, and says so.
-
-    Without this, the edits above would read as "the fixture changed" rather
-    than "the behaviour changed", and nothing would notice if the zero-config
-    default came back: the three tests above would simply pass again.
-    """
-    # Arrange
-    # Act
-    result = _init_shared_with_no_store_configured(tmp_path, env)
-    # Assert
-    assert result.exit_code != 0
-
-
-def test_init_shared_refusal_names_the_variable_to_set(tmp_path, env):
-    """Refusing is half the job; the reader needs the variable to export."""
-    # Arrange
-    # Act
-    result = _init_shared_with_no_store_configured(tmp_path, env)
-    # Assert
-    assert "SCITEX_STORE_DSN" in result.output
 
 
 def test_init_project_outside_git_errors(tmp_path, env):

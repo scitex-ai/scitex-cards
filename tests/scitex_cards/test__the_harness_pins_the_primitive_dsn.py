@@ -67,14 +67,14 @@ def root_conftest(pytestconfig):
     )
 
 
-def test_the_primitive_dsn_variable_is_not_inherited(root_conftest):
-    """It is either pinned to a throwaway or removed — never left as it was."""
+def test_the_primitive_dsn_variable_is_pinned_per_test(root_conftest):
+    """The active value names a throwaway schema, never inherited state."""
     # Arrange
-    pinned = root_conftest._EPHEMERAL_DSN
+    _ = root_conftest
     # Act
     observed = os.environ.get(ENV_STORE_DSN)
     # Assert
-    assert observed == pinned
+    assert observed is not None and "search_path%3Dcards_test_" in observed
 
 
 def test_a_pinned_dsn_is_scoped_to_a_throwaway_schema(root_conftest):

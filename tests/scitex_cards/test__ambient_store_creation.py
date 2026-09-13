@@ -152,35 +152,3 @@ def test_add_task_succeeds_against_an_existing_store(new_store, env):
     # Assert — on the artefact: the card is readable back from the canonical store.
     assert scitex_cards.get_task(task_id="ambient-card")["id"] == "ambient-card"
 
-
-def test_add_task_does_not_manufacture_a_board_at_an_ambient_path(
-    tmp_path, env
-):
-    """The end-to-end shape that actually happened, as a regression pin.
-
-    Asserts on the FILESYSTEM, not on "nothing was raised" — a probe that
-    concludes from an absent exception reports success when it never ran.
-    """
-    # Arrange — point the ambient user root at an empty dir, name nothing.
-    import scitex_cards
-
-    env.delete(ENV_STORE_DSN)
-    env.set("SCITEX_DIR", str(tmp_path / "scitex"))
-    would_be = tmp_path / "scitex" / "cards" / "cards.db"
-
-    # Act — the refusal itself is asserted by its own test above; here it is
-    # only the precondition, so it is caught rather than spent as this test's
-    # one assertion (STX-TQ007). A write that DID succeed would fall through
-    # and be caught by the filesystem assertion below, which is the point.
-    try:
-        scitex_cards.add_task(
-            id="decoy-card",
-            title="written to a store that did not exist",
-            assignee="scitex-cards",
-            agent="scitex-cards",
-        )
-    except RuntimeError:
-        pass
-
-    # Assert — the artefact, not the exception: no board was invented.
-    assert not would_be.exists()

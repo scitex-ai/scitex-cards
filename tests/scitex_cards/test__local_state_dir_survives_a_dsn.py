@@ -135,22 +135,7 @@ class TestLocalStateDirOnAServerStore:
         )
 
 
-class TestFileStoreResolutionIsUnchanged:
-    """The the retired engine path must behave exactly as it did before the split."""
-
-    def test_container_sits_beside_the_database(self, clean_store_env, tmp_path):
-        # Arrange
-        db = tmp_path / "cards.db"
-        os.environ[ENV_STORE_DSN] = str(db)
-
-        # Act
-        resolved = resolve_tasks_path()
-
-        # Assert
-        assert resolved == tmp_path / "tasks.yaml", (
-            f"expected the container beside the database, got {resolved}"
-        )
-
+class TestExplicitLocalStatePath:
     def test_explicit_argument_still_wins_outright(self, clean_store_env, tmp_path):
         # Arrange
         os.environ[ENV_STORE_DSN] = DSN
@@ -230,24 +215,6 @@ class TestResolveStoreReportsTheBackend:
         assert info["resolved"] == DSN, (
             f"expected the target as written, got {info['resolved']!r}"
         )
-
-    def test_exists_stays_boolean_for_a_path(self, clean_store_env, tmp_path):
-        # Arrange
-        from scitex_cards._store import resolve_store
-
-        db = tmp_path / "cards.db"
-        db.touch()
-        os.environ[ENV_STORE_DSN] = str(db)
-
-        # Act
-        info = resolve_store()
-
-        # Assert
-        assert info["exists"] is True, (
-            f"a file store must still answer the existence question, got "
-            f"{info['exists']!r}"
-        )
-
 
 class TestStoreUuidReaderIsNotPathOnly:
     """A server identity must not read as 'absent' — that disarms the guard."""

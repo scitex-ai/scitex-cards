@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the digest replay-storm fix (supersede-on-enqueue + collapse).
+"""Tests for the PostgreSQL digest replay-storm fix (supersede-on-enqueue).
 
 Real round-trips, NO mocks (STX-NM / PA-306): a real ``tmp_path`` store, real
 ``enqueue`` / ``poll_inbox`` / ``collapse_digests`` against it. Covers:
 
 * ``enqueue(..., supersede=True)`` for the cumulative digest keeps at most ONE
-  unseen digest — a fresh snapshot strictly replaces its unseen predecessors.
+  unseen digest while retaining its predecessors as seen history.
 * supersede leaves SEEN digests + OTHER event_types untouched.
 * the non-supersede path keeps the ``(type,card,ts,actor)`` dedup unchanged.
-* ``collapse_digests`` clears an accumulated backlog to the single newest
-  unseen digest in one locked pass, marking the rest seen, others untouched.
 """
 
 from __future__ import annotations
@@ -18,7 +16,6 @@ from __future__ import annotations
 import pytest
 
 from scitex_cards._inbox import enqueue, poll_inbox
-from scitex_cards._inbox_maint import collapse_digests
 from scitex_cards._reminders import DIGEST_CARD_ID, EVENT_DIGEST
 
 
@@ -83,45 +80,6 @@ def mixed_event_store(tmp_path):
     return store
 
 
-@pytest.fixture()
-def backlog_store(tmp_path):
-    """Five accumulated digests (the old buggy non-supersede path) plus one
-    genuine per-card event that must survive the collapse untouched."""
-    store = _store(tmp_path)
-    for day in range(4, 9):
-        _enqueue_digest(store, "u_owner", f"2026-07-0{day}T00:00:00Z", supersede=False)
-    enqueue(
-        "u_owner",
-        event_type="reassigned",
-        card_id="c9",
-        body="c9 reassigned to you",
-        actor="alice",
-        ts="2026-07-05T12:00:00Z",
-        store=store,
-    )
-    return store
-
-
-@pytest.fixture()
-def three_digest_store(tmp_path):
-    """A three-digest backlog for a single recipient."""
-    store = _store(tmp_path)
-    for day in range(4, 7):
-        _enqueue_digest(store, "u_owner", f"2026-07-0{day}T00:00:00Z", supersede=False)
-    return store
-
-
-@pytest.fixture()
-def two_recipient_store(tmp_path):
-    """Backlogs of three and four digests, for two different recipients."""
-    store = _store(tmp_path)
-    for day in range(4, 7):
-        _enqueue_digest(store, "u_a", f"2026-07-0{day}T00:00:00Z", supersede=False)
-    for day in range(4, 8):
-        _enqueue_digest(store, "u_b", f"2026-07-0{day}T00:00:00Z", supersede=False)
-    return store
-
-
 # --------------------------------------------------------------------------- #
 # Change 1 — supersede-on-enqueue                                             #
 # --------------------------------------------------------------------------- #
@@ -153,15 +111,17 @@ def test_supersede_keeps_the_last_enqueued_record(superseded_store):
     assert unseen[0]["id"] == last["id"]
 
 
-def test_supersede_removes_predecessors_from_history(superseded_store):
-    # The two earlier snapshots are GONE (removed, not merely marked seen):
-    # the full inbox history holds only the surviving digest.
+def test_supersede_retains_predecessors_as_seen_history(superseded_store):
     # Arrange
     store = superseded_store["store"]
     # Act
     everything = poll_inbox("u_owner", unseen_only=False, store=store)
     # Assert
-    assert [r["ts"] for r in everything] == ["2026-07-08T00:00:00Z"]
+    assert [r["ts"] for r in everything] == [
+        "2026-07-06T00:00:00Z",
+        "2026-07-07T00:00:00Z",
+        "2026-07-08T00:00:00Z",
+    ]
 
 
 def test_supersede_leaves_the_seen_digest_in_history(drained_then_new_digest_store):
@@ -255,125 +215,3 @@ def test_non_supersede_distinct_ts_kept(tmp_path):
     unseen = poll_inbox("u_owner", unseen_only=True, store=store)
     # Assert
     assert len(unseen) == 2
-
-
-# --------------------------------------------------------------------------- #
-# Change 3 — collapse_digests backlog sweep                                   #
-# --------------------------------------------------------------------------- #
-def test_collapse_digests_counts_the_collapsed_recipient(backlog_store):
-    # Arrange
-    store = backlog_store
-    # Act
-    summary = collapse_digests(store=store)
-    # Assert
-    assert summary["recipients_collapsed"] == 1
-
-
-def test_collapse_digests_counts_the_digests_marked_seen(backlog_store):
-    # Arrange
-    store = backlog_store
-    # Act
-    summary = collapse_digests(store=store)
-    # Assert — 5 digests → keep 1, mark the other 4 seen.
-    assert summary["digests_marked_seen"] == 4
-
-
-def test_collapse_digests_clears_backlog(backlog_store):
-    # Arrange
-    store = backlog_store
-    # Act
-    collapse_digests(store=store)
-    unseen = poll_inbox("u_owner", unseen_only=True, store=store)
-    unseen_digests = [r for r in unseen if r["event_type"] == EVENT_DIGEST]
-    # Assert
-    assert len(unseen_digests) == 1
-
-
-def test_collapse_digests_keeps_the_newest_digest(backlog_store):
-    # Arrange
-    store = backlog_store
-    # Act
-    collapse_digests(store=store)
-    unseen = poll_inbox("u_owner", unseen_only=True, store=store)
-    unseen_digests = [r for r in unseen if r["event_type"] == EVENT_DIGEST]
-    # Assert — the survivor is the newest snapshot.
-    assert unseen_digests[0]["ts"] == "2026-07-08T00:00:00Z"
-
-
-def test_collapse_digests_leaves_other_events_unseen(backlog_store):
-    # The non-digest event is still unseen (untouched).
-    # Arrange
-    store = backlog_store
-    # Act
-    collapse_digests(store=store)
-    unseen = poll_inbox("u_owner", unseen_only=True, store=store)
-    # Assert
-    assert any(r["event_type"] == "reassigned" for r in unseen)
-
-
-def test_collapse_digests_deletes_nothing_from_history(backlog_store):
-    # Nothing deleted — the full history still holds all 6 records.
-    # Arrange
-    store = backlog_store
-    # Act
-    collapse_digests(store=store)
-    everything = poll_inbox("u_owner", unseen_only=False, store=store)
-    # Assert
-    assert len(everything) == 6
-
-
-def test_collapse_digests_first_pass_collapses_the_backlog(three_digest_store):
-    # Arrange
-    store = three_digest_store
-    # Act
-    first = collapse_digests(store=store)
-    # Assert
-    assert first["recipients_collapsed"] == 1
-
-
-def test_collapse_digests_idempotent(three_digest_store):
-    # Arrange
-    store = three_digest_store
-    collapse_digests(store=store)
-    # Act
-    second = collapse_digests(store=store)
-    # Assert — a second pass has nothing left to collapse.
-    assert second == {"recipients_collapsed": 0, "digests_marked_seen": 0}
-
-
-def test_collapse_digests_multi_recipient(two_recipient_store):
-    # Arrange
-    store = two_recipient_store
-    # Act
-    summary = collapse_digests(store=store)
-    # Assert
-    assert summary["recipients_collapsed"] == 2
-
-
-def test_collapse_digests_marks_seen_per_recipient(two_recipient_store):
-    # Arrange
-    store = two_recipient_store
-    # Act
-    summary = collapse_digests(store=store)
-    # Assert — each recipient keeps exactly one, so 2 + 3 are marked seen.
-    assert summary["digests_marked_seen"] == (3 - 1) + (4 - 1)
-
-
-def test_collapse_digests_leaves_one_digest_for_recipient_a(two_recipient_store):
-    # Arrange
-    store = two_recipient_store
-    # Act
-    collapse_digests(store=store)
-    remaining = poll_inbox("u_a", store=store)
-    # Assert
-    assert len(remaining) == 1
-
-
-def test_collapse_digests_leaves_one_digest_for_recipient_b(two_recipient_store):
-    # Arrange
-    store = two_recipient_store
-    # Act
-    collapse_digests(store=store)
-    remaining = poll_inbox("u_b", store=store)
-    # Assert
-    assert len(remaining) == 1

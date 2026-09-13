@@ -33,8 +33,7 @@ store, or SQLite fallback.
 
 | Path                                  | Scope         | Purpose                  |
 |---------------------------------------|---------------|--------------------------|
-| `~/.scitex/cards/cards.db`            | user-global   | the canonical task store |
-| `~/.scitex/cards/*.json`              | user-global   | sidecar state (threads, inboxes, notify config, dashboard, reminders) |
+| `~/.scitex/cards/*.json`              | user-global   | local runtime/UI preferences only; never shared task, DM, or inbox state |
 
 See `general/01_ecosystem_04_environment-variables.md` and
 `general/01_ecosystem_06_local-state-directories.md`.

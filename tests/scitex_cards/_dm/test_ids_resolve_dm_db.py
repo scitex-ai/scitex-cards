@@ -28,21 +28,15 @@ import pytest
 
 from scitex_cards._db import DEFAULT_DB_FILENAME
 from scitex_cards._dm.ids import resolve_dm_db
-from scitex_cards._store_target import ENV_STORE_DSN, StoreTargetNotConfigured
+from scitex_cards._store_target import ENV_STORE_DSN
 from scitex_cards._store_url import UnrecognisedStoreTarget
 
 DSN = "postgresql://scitex_cards@127.0.0.1:55432/scitex_cards"
 
 
 @pytest.fixture()
-def nothing_configured(env, tmp_path):
-    """No store target anywhere: no env, and a user config root holding no file.
-
-    Both tiers must be silenced. Deleting the env alone is not enough on a
-    developer host, whose ``~/.scitex/cards/config.json`` answers with the
-    fleet DSN -- measured 2026-09-05 -- so a test that only unset the variable
-    would resolve the live board and pass for the wrong reason.
-    """
+def primitive_default(env, tmp_path):
+    """No explicit override, so scitex-dev supplies the shared store."""
     env.delete(ENV_STORE_DSN)
     env.set("SCITEX_DIR", str(tmp_path / "empty-user-root"))
     yield tmp_path
@@ -75,18 +69,16 @@ class TestResolveDmDbStoreTier:
         # Assert
         assert DEFAULT_DB_FILENAME not in str(got)
 
-    def test_a_path_label_with_nothing_configured_refuses(self, nothing_configured):
-        """No ambient target means NO DM store, said loudly.
-
-        The alternative -- an empty thread list manufactured beside the label
-        -- is the silent fallback the operator ruled out on 2026-09-05.
-        """
+    def test_a_path_label_without_an_override_uses_the_primitive(
+        self, primitive_default
+    ):
+        """A label cannot bypass the primitive-owned ambient store."""
         # Arrange
-        store = nothing_configured / "tasks.yaml"
+        store = primitive_default / "tasks.yaml"
         # Act
+        got = resolve_dm_db(store=store)
         # Assert
-        with pytest.raises(StoreTargetNotConfigured):
-            resolve_dm_db(store=store)
+        assert got.startswith("postgresql://") and ":55432/" in got
 
     def test_a_dsn_store_comes_back_as_the_same_dsn(self):
         """The regression. Against the old tier this returned a path."""

@@ -190,33 +190,31 @@ class TestAPathTargetIsNoLongerABackend:
       query-answering database.
     """
 
-    def test_a_path_target_still_resolves_to_that_path(self, store_env, tmp_path):
+    def test_a_path_target_still_resolves_to_that_path(self, tmp_path):
         # Arrange
         db = tmp_path / "cards.db"
-        store_env(str(db))
-
         # Act
-        resolved = require_db_path()
+        resolved = require_db_path(db)
 
         # Assert
         assert resolved == Path(str(db))
 
-    def test_a_path_target_reports_an_unsupported_backend(self, store_env, tmp_path):
+    def test_a_path_target_reports_an_unsupported_backend(self, tmp_path):
         # Arrange
-        store_env(str(tmp_path / "cards.db"))
+        db = tmp_path / "cards.db"
 
         # Act
-        backend = resolve_store_backend()
+        backend = resolve_store_backend(db)
 
         # Assert
         assert backend == BACKEND_UNSUPPORTED
 
-    def test_the_two_resolvers_agree_for_paths(self, store_env, tmp_path):
+    def test_the_two_resolvers_agree_for_paths(self, tmp_path):
         # Arrange
-        store_env(str(tmp_path / "cards.db"))
+        db = tmp_path / "cards.db"
 
         # Act
-        old, new = resolve_db_path(), require_db_path()
+        old, new = resolve_db_path(db), require_db_path(db)
 
         # Assert
         assert old == new

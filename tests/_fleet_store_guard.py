@@ -16,8 +16,7 @@ from urllib.parse import urlparse
 
 #: The variable ``scitex_dev.store.testing.writable_dsn()`` consults first.
 CLUSTER_ENV = "SCITEX_STORE_DSN"
-#: The variable naming the board this agent actually reads and writes.
-BOARD_ENV = "SCITEX_STORE_DSN"
+CI_ENV = "GITHUB_ACTIONS"
 
 
 def server_of(dsn: str | None) -> tuple[str, str, str] | None:
@@ -78,8 +77,7 @@ def fleet_store_declined(env: Mapping[str, str]) -> str | None:
     ``None``. The guard fires exactly where the exposure is.
     """
     here = server_of(env.get(CLUSTER_ENV))
-    live = server_of(env.get(BOARD_ENV))
-    if here is None or live is None or here != live:
+    if here is None or env.get(CI_ENV, "").lower() == "true":
         return None
     host, port, dbname = here
     return (

@@ -54,7 +54,7 @@ def _seed_store() -> None:
 _DELIVER_RESULT = "no-turn-url-configured"
 
 
-def _run_over_an_unreadable_store(env, tmp_path, argv, *, hold_lock):
+def _run_over_an_unreadable_store(env, argv, *, hold_lock):
     """Run ``argv`` against a store that CANNOT be read, and return the result.
 
     THE UNREADABLE STORE IS THE INSTRUMENT, and it is what replaced the counter
@@ -70,7 +70,7 @@ def _run_over_an_unreadable_store(env, tmp_path, argv, *, hold_lock):
     the 0.7.47 regression (rollup computed ABOVE the guard) hide behind a
     push-only spy.
     """
-    env.set("SCITEX_STORE_DSN", str(tmp_path / "absent" / "cards.db"))
+    env.set("SCITEX_STORE_DSN", "postgresql://cards@127.0.0.1:1/unreachable")
     if not hold_lock:
         return CliRunner().invoke(main, argv)
     with single_instance(notify_lock_path(None)):
@@ -144,7 +144,7 @@ def test_notify_skip_never_delivers(notify_run_while_lock_held):
     assert _DELIVER_RESULT not in result.output
 
 
-def test_notify_skip_never_parses_the_store(env, tmp_path):
+def test_notify_skip_never_parses_the_store(env):
     """CRITICAL regression (0.7.48): the EXPENSIVE store parse / rollup must
     NOT run when the lock is held.
 
@@ -155,7 +155,7 @@ def test_notify_skip_never_parses_the_store(env, tmp_path):
     # Arrange
     # Act
     result = _run_over_an_unreadable_store(
-        env, tmp_path, ["print-stats", "--by", "agent", "--notify"], hold_lock=True
+        env, ["print-stats", "--by", "agent", "--notify"], hold_lock=True
     )
     # Assert
     assert result.exit_code == 0, result.output
@@ -204,7 +204,7 @@ def test_notify_run_pushes_for_the_owning_agent(notify_run_with_lock_free):
     assert "proj-x" in result.output
 
 
-def test_notify_run_parses_the_store(env, tmp_path):
+def test_notify_run_parses_the_store(env):
     """The complement of the skip case, and the reason the guard is not just a
     mute button: with no prior holder the rollup MUST reach the store.
 
@@ -215,7 +215,7 @@ def test_notify_run_parses_the_store(env, tmp_path):
     # Arrange
     # Act
     result = _run_over_an_unreadable_store(
-        env, tmp_path, ["print-stats", "--by", "agent", "--notify"], hold_lock=False
+        env, ["print-stats", "--by", "agent", "--notify"], hold_lock=False
     )
     # Assert
     assert result.exit_code != 0
@@ -295,7 +295,7 @@ def test_plain_read_never_delivers(plain_read_while_lock_held):
     assert _DELIVER_RESULT not in result.output
 
 
-def test_plain_read_still_parses_the_store(env, tmp_path):
+def test_plain_read_still_parses_the_store(env):
     """The plain read is UNGUARDED: it parses the store even while the notify
     lock is held, because an interactive read must never be blocked or skipped
     by a cron's lock.
@@ -307,7 +307,7 @@ def test_plain_read_still_parses_the_store(env, tmp_path):
     # Arrange
     # Act
     result = _run_over_an_unreadable_store(
-        env, tmp_path, ["print-stats", "--by", "agent"], hold_lock=True
+        env, ["print-stats", "--by", "agent"], hold_lock=True
     )
     # Assert
     assert result.exit_code != 0

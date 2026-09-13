@@ -41,6 +41,7 @@ import os
 from pathlib import Path
 
 import pytest
+from scitex_dev.store import StoreTargetError
 
 from scitex_cards._paths import resolve_tasks_path, runtime_dir
 from scitex_cards._store_url import UnrecognisedStoreTarget
@@ -103,7 +104,7 @@ class TestTheAmbientEnvironmentIsRefused:
         # Arrange
         _ = ambient
         # Act
-        expected = pytest.raises(UnrecognisedStoreTarget)
+        expected = pytest.raises(StoreTargetError)
         # Assert
         with expected:
             runtime_dir(None, create=True)

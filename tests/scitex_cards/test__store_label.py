@@ -127,28 +127,24 @@ class TestTheLabelCarriesNoCredentials:
         assert "zzz" not in label and "?" not in label
 
 
-class TestAFileTargetIsUnaffected:
-    """Positive control: the backend every deployment used before PostgreSQL."""
+class TestAnExplicitPathLabelIsUnaffected:
+    """Explicit display labels remain supported independently of shared state."""
 
-    def test_a_path_target_is_returned_as_written(self, store_env, tmp_path):
+    def test_a_path_target_is_returned_as_written(self, tmp_path):
         # Arrange
         db = tmp_path / "cards.db"
-        store_env(str(db))
-
         # Act
-        label = store_label(None)
+        label = store_label(db)
 
         # Assert
         assert label == str(db)
 
-    def test_a_path_is_not_mistaken_for_a_dsn_and_stripped(self, store_env, tmp_path):
+    def test_a_path_is_not_mistaken_for_a_dsn_and_stripped(self, tmp_path):
         """A filename may contain '@' or '?'. Neither may trigger DSN handling."""
         # Arrange
         db = tmp_path / "weird@name?x.db"
-        store_env(str(db))
-
         # Act
-        label = store_label(None)
+        label = store_label(db)
 
         # Assert
         assert label == str(db)
