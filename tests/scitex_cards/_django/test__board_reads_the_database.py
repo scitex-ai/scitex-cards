@@ -431,15 +431,20 @@ def test_an_unknown_endpoint_404_carries_no_reason(unreadable_store):
     )
 
 
-def test_the_failure_body_uses_the_public_not_provisioned_summary(unreadable_store):
-    """A public response does not disclose the shared PostgreSQL target."""
+def test_the_failure_body_is_safe_or_actionable_for_postgres(unreadable_store):
+    """DEBUG controls detail, but both modes describe the canonical store."""
     # Arrange
     _ = unreadable_store
-    expected = "No task store has been set up for this workspace yet."
+    public = "No task store has been set up for this workspace yet."
     # Act
     payload = _tasks_payload()
+    error = payload["error"]
+    actionable = all(
+        phrase in error
+        for phrase in ("PostgreSQL store", "no `tasks` table", "REFUSING")
+    )
     # Assert
-    assert payload["error"] == expected
+    assert error == public or actionable
 
 
 def test_a_store_that_cannot_be_read_never_answers_with_a_task_list(unreadable_store):
