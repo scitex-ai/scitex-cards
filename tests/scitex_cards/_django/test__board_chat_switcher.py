@@ -297,6 +297,49 @@ def test_switcher_has_a_keyboard_focus_treatment():
     assert ".stx-cards-switcher__item:focus-visible" in css
 
 
+def test_mounted_pages_reserve_the_shell_launcher_footprint(
+    board_at_subpath,
+    chat_at_subpath,
+):
+    """The shell's fixed Back-to-Store link must not cover Board navigation."""
+    # Arrange
+    pages = (board_at_subpath, chat_at_subpath)
+    # Act
+    mounted = [
+        'class="stx-cards-header stx-cards-header--mounted"' in page
+        for page in pages
+    ]
+    # Assert
+    assert mounted == [True, True]
+
+
+def test_standalone_pages_keep_the_switcher_at_the_true_left_edge(
+    board_at_root,
+    chat_at_root,
+):
+    # Arrange
+    pages = (board_at_root, chat_at_root)
+    # Act
+    mounted = ["stx-cards-header--mounted" in page for page in pages]
+    # Assert
+    assert mounted == [False, False]
+
+
+def test_mounted_clearance_is_horizontal_on_desktop_and_stacked_on_phone():
+    # Arrange
+    css = (_DJANGO_DIR / "static" / "scitex_cards" / "page-header.css").read_text(
+        encoding="utf-8"
+    )
+    # Act
+    # Assert
+    assert (
+        ".stx-cards-header--mounted" in css,
+        "margin-inline-start: 126px" in css,
+        "@media (max-width: 768px)" in css,
+        "margin-block-start: 48px" in css,
+    ) == (True, True, True, True)
+
+
 # --- lint: the partial may never hardcode a root-absolute href -------------
 
 

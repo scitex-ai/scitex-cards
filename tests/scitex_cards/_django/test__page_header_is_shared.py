@@ -58,6 +58,7 @@ _HEADER_CSS = _STATIC / "page-header.css"
 #: The partial's own opening tag. Nothing else may emit it — see
 #: ``test_the_shared_header_markup_lives_in_exactly_one_template``.
 _BAND_OPEN = '<div class="stx-cards-header">'
+_BAND_SOURCE_PREFIX = '<div class="stx-cards-header{% if api_base'
 
 #: The include line each page must carry, spelled as it appears in the source.
 _INCLUDE = '{% include "scitex_cards/_page_header.html"'
@@ -172,7 +173,9 @@ def test_the_shared_header_markup_lives_in_exactly_one_template():
     templates = sorted(_TEMPLATES.glob("*.html"))
     # Act
     emitting = [
-        p.name for p in templates if _BAND_OPEN in p.read_text(encoding="utf-8")
+        p.name
+        for p in templates
+        if _BAND_SOURCE_PREFIX in p.read_text(encoding="utf-8")
     ]
     # Assert
     assert emitting == ["_page_header.html"]
