@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Notifyd admits one current snapshot instead of replaying every producer
+
+Recurring reminder and liveness producers now claim their shared sweep before
+enqueuing notifications, so simultaneous notifyd instances do not each emit
+the same fleet snapshot. Delivery also coalesces superseded reminder,
+stale-active, pending-backlog, and blocked-check rows while preserving distinct
+card events, comments, and direct messages.
+
 ## [0.52.1] - 2026-09-14
 
 ### Cards resolves shared state through the SciTeX store primitive
