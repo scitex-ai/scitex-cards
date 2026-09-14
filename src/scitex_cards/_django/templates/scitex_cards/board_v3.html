@@ -1,11 +1,11 @@
-{% extends "scitex_ui/standalone_shell.html" %}
+{% extends "scitex_app/app_shell.html" %}
 {% load static %}
 {% comment %}
   Board v3 now extends the scitex-ui workspace shell (operator-asked,
   TG msg 302 / 303 — wants Alt+I element-inspector + shared chrome
   parity with the legacy GraphView). All inline content is repacked
   into the shell's three blocks: extra_css holds the page-local
-  styles, app_content holds the kanban + BLOCKING-YOU panel + detail
+  styles, scitex_app_content holds the kanban + BLOCKING-YOU panel + detail
   modal, extra_js holds the page logic.
 
   Alt+I element-inspector wires up automatically via scitex-ui's
@@ -231,7 +231,7 @@
 {% endfor %}}</style>
 {% endblock extra_css %}
 
-{% block app_content %}
+{% block scitex_app_content %}
   {% comment %}
     Filterbar reorg (operator TG, lead a2a `b48f7c2c438b464698183d2e95d3bb04`,
     2026-06-12). Three explicit groups end the flex-wrap chaos:
@@ -743,7 +743,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
-{% endblock app_content %}
+{% endblock scitex_app_content %}
 
 {% block extra_js %}
   <script>

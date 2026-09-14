@@ -115,6 +115,7 @@ if _extra_hosts:
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
+    "scitex_app",
     "scitex_cards._django",
 ]
 
