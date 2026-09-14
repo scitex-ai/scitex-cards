@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -352,11 +352,38 @@ def unconfirmed_ids(
     return out
 
 
+def outstanding_records_off_page(
+    notifications: Sequence[Mapping[str, Any]],
+    outstanding_ids: Sequence[str],
+    receipts_by_id: Mapping[str, Mapping[str, Any]],
+    *,
+    rotate,
+) -> list[dict]:
+    """Full records for the outstanding ids the returned page did NOT include.
+
+    PURE (no store, no cursor): the load-bearing half of the ``outstanding``
+    poll field, factored out so it is unit-testable without a database. Given
+    the ids ``unconfirmed`` reports, the receipts those ids resolve to, and the
+    rows already on the page, this returns the receipt records for the ids that
+    are BOTH outstanding and off-page — the seen-but-unconfirmed rows the
+    default unseen-only page omits. Each survivor is passed through ``rotate``
+    (the same failed-DM exchange-rotation the page gets). Order follows
+    ``outstanding_ids``. Reading this advances no cursor and confirms nothing.
+    """
+    on_page = {row.get("id") for row in notifications}
+    return [
+        rotate(receipt)
+        for nid in outstanding_ids
+        if (receipt := receipts_by_id.get(nid)) is not None and nid not in on_page
+    ]
+
+
 __all__ = [
     "CONFIRMED_AT",
     "PUSHED_AT",
     "RECEIPT_COLUMNS",
     "is_confirmed",
+    "outstanding_records_off_page",
     "receipts",
     "record_confirmation",
     "record_push",

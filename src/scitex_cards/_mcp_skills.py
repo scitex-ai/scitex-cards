@@ -166,7 +166,15 @@ async def poll_notifications(
          "notifications": [ {id, event_type, card_id, body, actor, ts, seen},
                             ... ],
          "unconfirmed": [<ids still awaiting ack_notifications>],
+         "outstanding": [ {id, event_type, card_id, body, actor, ts, seen,
+                           pushed_at, confirmed_at}, ... ],
          "confirm_with": "ack_notifications"}
+
+    ``outstanding`` carries the full records for the ids in ``unconfirmed``
+    that this page did not already return — the seen-but-unconfirmed rows the
+    default unseen-only page omits (a record the drain pushed, then whose
+    session died). Confirm what you ACTUALLY delivered from it with
+    ``ack_notifications``; reading it advances no cursor.
 
     ``store`` names the target this poll actually read. ``ack_notifications``
     reports the same field, and COMPARING THE TWO is the point: if you poll
