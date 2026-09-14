@@ -27,7 +27,10 @@ import json
 
 from scitex_cards._delivery import _recipients
 from scitex_cards._delivery._ledger import BASE_BACKOFF_SEC, MAX_ATTEMPTS, Ledger
-from scitex_cards._delivery._loop import deliver_pending
+from scitex_cards._delivery._loop import (
+    _drop_superseded_snapshots,
+    deliver_pending,
+)
 from scitex_cards._inbox import enqueue, poll_inbox
 
 from ._fakes import AlwaysFailChannel, FlakyChannel, RecorderChannel
@@ -101,6 +104,137 @@ def _drive_until_terminal(store, chan, *, start):
 
 
 T0 = _dt.datetime(2026, 6, 27, 10, 0, 0, tzinfo=_dt.timezone.utc)
+
+
+def _cumulative_backlog():
+    """Three old digest snapshots plus distinct event history."""
+    return [
+        {"id": "comment", "event_type": "commented", "card_id": "c1"},
+        {"id": "digest-old", "event_type": "reminder", "card_id": "(digest)"},
+        {"id": "dm", "event_type": "dm", "card_id": "dm:a::b"},
+        {"id": "digest-mid", "event_type": "reminder", "card_id": "(digest)"},
+        {"id": "digest-new", "event_type": "reminder", "card_id": "(digest)"},
+    ]
+
+
+def _arrange_cumulative_delivery_backlog(tmp_path):
+    """Two durable digest rows, as produced by the cross-host race."""
+    store = _store(tmp_path)
+    old = enqueue(
+        "u_owner",
+        event_type="reminder",
+        card_id="(digest)",
+        body="old snapshot",
+        actor="notifyd",
+        ts="2026-09-14T00:00:00Z",
+        supersede=False,
+        store=store,
+    )
+    new = enqueue(
+        "u_owner",
+        event_type="reminder",
+        card_id="(digest)",
+        body="new snapshot",
+        actor="notifyd",
+        ts="2026-09-14T00:00:01Z",
+        supersede=False,
+        store=store,
+    )
+    if old is None or new is None:
+        raise AssertionError("cumulative backlog enqueue unexpectedly deduped")
+    _write_recipients(tmp_path, {"u_owner": {"channels": [{"kind": "log"}]}})
+    return store, new["id"]
+
+
+def test_delivery_coalescing_keeps_only_the_newest_cumulative_snapshot():
+    # Arrange
+    notes = _cumulative_backlog()
+    # Act
+    kept = _drop_superseded_snapshots(notes)
+    # Assert
+    assert [note["id"] for note in kept if note["event_type"] == "reminder"] == [
+        "digest-new"
+    ]
+
+
+def test_delivery_coalescing_preserves_distinct_event_history():
+    # Arrange
+    notes = _cumulative_backlog()
+    # Act
+    kept = _drop_superseded_snapshots(notes)
+    # Assert
+    assert [note["id"] for note in kept if note["event_type"] != "reminder"] == [
+        "comment",
+        "dm",
+    ]
+
+
+def test_delivery_coalescing_keeps_one_snapshot_of_each_liveness_kind():
+    # Arrange
+    notes = [
+        {"id": "stale-old", "event_type": "stale-active", "card_id": "(stale-active)"},
+        {
+            "id": "pending",
+            "event_type": "pending-backlog",
+            "card_id": "(pending-backlog)",
+        },
+        {"id": "blocked", "event_type": "blocked-check", "card_id": "(blocked-check)"},
+        {"id": "stale-new", "event_type": "stale-active", "card_id": "(stale-active)"},
+    ]
+    # Act
+    kept = _drop_superseded_snapshots(notes)
+    # Assert
+    assert [note["id"] for note in kept] == ["pending", "blocked", "stale-new"]
+
+
+def test_delivery_loop_sends_one_turn_for_a_cumulative_backlog(tmp_path):
+    # Arrange
+    store, _new_id = _arrange_cumulative_delivery_backlog(tmp_path)
+    recorder = RecorderChannel(name="log")
+    # Act
+    summary = deliver_pending(store=store, channels={"log": recorder})
+    # Assert
+    assert summary["sent"] == 1
+
+
+def test_delivery_loop_sends_the_newest_cumulative_snapshot(tmp_path):
+    # Arrange
+    store, new_id = _arrange_cumulative_delivery_backlog(tmp_path)
+    recorder = RecorderChannel(name="log")
+    # Act
+    deliver_pending(store=store, channels={"log": recorder})
+    # Assert
+    assert recorder.calls[0]["notification"]["id"] == new_id
+
+
+def test_delivery_loop_preserves_exact_target_task_events(tmp_path):
+    # Arrange
+    store = _store(tmp_path)
+    for event_type in ("created", "commented"):
+        enqueue(
+            "u_owner",
+            event_type=event_type,
+            card_id="c_real_task",
+            body=f"{event_type} event",
+            actor="u_actor",
+            ts=f"2026-09-14T00:00:0{len(event_type)}Z",
+            store=store,
+        )
+    _write_recipients(tmp_path, {"u_owner": {"channels": [{"kind": "log"}]}})
+    recorder = RecorderChannel(name="log")
+    # Act
+    summary = deliver_pending(store=store, channels={"log": recorder})
+    # Assert
+    observed = {
+        "sent": summary["sent"],
+        "recipients": [call["recipient"] for call in recorder.calls],
+        "events": [call["notification"]["event_type"] for call in recorder.calls],
+    }
+    assert observed == {
+        "sent": 2,
+        "recipients": ["u_owner", "u_owner"],
+        "events": ["created", "commented"],
+    }
 
 
 # --------------------------------------------------------------------------- #

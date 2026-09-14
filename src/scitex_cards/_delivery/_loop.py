@@ -37,6 +37,43 @@ from ._recipients import Recipient, load_recipients, should_deliver_now
 from ._registry import discover_channels
 from ._tick import fault_text
 
+# Cumulative notifications are full point-in-time snapshots, not an event log.
+# Their producers intentionally use stable synthetic card ids so a newer row
+# can supersede an older one. Keep the keys here at the delivery boundary: this
+# is where full inbox history is turned into external pushes, and where the old
+# implementation accidentally replayed every superseded snapshot.
+_CUMULATIVE_SNAPSHOT_KEYS = frozenset(
+    {
+        ("reminder", "(digest)"),
+        ("stale-active", "(stale-active)"),
+        ("pending-backlog", "(pending-backlog)"),
+        ("blocked-check", "(blocked-check)"),
+    }
+)
+
+
+def _drop_superseded_snapshots(notes: list[dict]) -> list[dict]:
+    """Keep only the newest row for each cumulative snapshot key.
+
+    ``poll_inbox(..., unseen_only=False)`` is deliberate: delivery state and a
+    user's read cursor are independent. That full-history read must not imply
+    that every historical *snapshot* remains deliverable, though. Arrival
+    order is authoritative, so the last matching row wins; distinct card
+    events and DMs remain byte-for-byte in their original order.
+    """
+    newest: dict[tuple[str, str], int] = {}
+    for index, note in enumerate(notes):
+        key = (note.get("event_type"), note.get("card_id"))
+        if key in _CUMULATIVE_SNAPSHOT_KEYS:
+            newest[key] = index
+    return [
+        note
+        for index, note in enumerate(notes)
+        if (note.get("event_type"), note.get("card_id"))
+        not in _CUMULATIVE_SNAPSHOT_KEYS
+        or newest[(note.get("event_type"), note.get("card_id"))] == index
+    ]
+
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
@@ -220,7 +257,7 @@ def deliver_pending(
 
         if pending is not None:
             pending += len(notes)
-        for note in notes:
+        for note in _drop_superseded_snapshots(notes):
             note_id = note.get("id")
             if not note_id:
                 continue
@@ -257,6 +294,6 @@ def deliver_pending(
     return {**counts, "pending": pending, "faults": faults, "outcomes": outcomes}
 
 
-__all__ = ["deliver_pending"]
+__all__ = ["_drop_superseded_snapshots", "deliver_pending"]
 
 # EOF

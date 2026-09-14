@@ -57,7 +57,6 @@ import logging
 import os
 import signal
 import threading
-import time
 from pathlib import Path
 
 from .._inbox import _resolved_store
@@ -415,7 +414,13 @@ def run_notifyd(
                 # Each guard RETURNS what it swallowed so the summary can count
                 # it. Guarding the loop is right; letting the guard also hide
                 # the failure is the 2026-07-28 outage.
-                faults.append(_run_reminder_sweep(store=store, now=now_fn()))
+                faults.append(
+                    _run_reminder_sweep(
+                        store=store,
+                        now=now_fn(),
+                        claim_minutes=max(float(interval) / 60.0, 1e-6),
+                    )
+                )
                 # LIVENESS sweep on its OWN (much slower) cadence — the stale/
                 # backlog nudge scans the whole store, so it stays OUT of the
                 # per-tick delivery path.
@@ -427,7 +432,18 @@ def run_notifyd(
                     # sweep escaped, which is precisely the coupling the sweep
                     # must never have. Delivery runs even when detection dies.
                     try:
-                        faults.append(nudge_sweep(store=store, now=tick_now))
+                        if nudge_sweep is _run_stale_nudge_sweep:
+                            faults.append(
+                                nudge_sweep(
+                                    store=store,
+                                    now=tick_now,
+                                    claim_minutes=sweep_minutes,
+                                )
+                            )
+                        else:
+                            # Preserve the long-standing two-keyword test/plugin
+                            # seam for injected sweep implementations.
+                            faults.append(nudge_sweep(store=store, now=tick_now))
                     except Exception as exc:  # noqa: BLE001 — never block delivery
                         logger.exception(
                             "notifyd liveness sweep raised; continuing to delivery"
