@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.53.1] - 2026-09-15
+
+### Release workflow provisions the same PostgreSQL the PR matrix does
+
+The tag-driven release `test` job ran bare `pytest tests/` on the self-hosted
+pool with no store: after #1005 moved the ambient resolver to the fleet
+primary (`scitex-primary`), the self-hosted runner resolved that fleet DSN it
+cannot reach (`failed to resolve host 'scitex-primary'`), the conftest
+throwaway-schema guard fired (`did not pin $SCITEX_STORE_DSN ... it holds ''`),
+and 15 tests failed + 10 errors on 3.11/3.12. 3.13 passed by runner luck,
+proving the leg's result depended on ambient state, not on the code. v0.53.0's
+tag run 34996423777 is the instance; v0.52.1's push-tag run failed the same
+way and was published via workflow_dispatch.
+
+The release `test` job now provisions the same store as the required PR
+matrix: a `postgres:16` service container on `127.0.0.1:5432`, a per-job
+`SCITEX_STORE_DSN`, and the ambient fleet store/inbox config cleared, so the
+conftest carves its throwaway schema from the service instead of reaching for
+a fleet DSN. A regression test pins that the release workflow and the PR
+matrix pass the same store contract, so the two legs cannot drift apart
+again. No application code changed; this is release-pipeline isolation only.
+`v0.53.0` is immutable and is not retagged.
+
 ## [0.53.0] - 2026-09-15
 
 ### The board ships inside the scitex-app shell for Hub 0.20.0-alpha
