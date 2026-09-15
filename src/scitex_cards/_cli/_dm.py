@@ -457,6 +457,45 @@ def merge_cmd(payload_path, db_path, store, dry_run, assume_yes) -> None:
     click.echo(json.dumps(report, indent=2, sort_keys=True))
 
 
+@dm_group.command(
+    "list",
+    help=(
+        "READ this agent's DM thread with a peer (default: the operator). "
+        "The STANDALONE read surface that used to be MCP-only: when the MCP "
+        "server is the single DM read path and it is absent from a session, an "
+        "agent cannot read its own messages. Read-only — it does not mark "
+        "messages read.\n\n"
+        "\b\n"
+        "Example:\n"
+        "  $ scitex-cards dm list --peer scitex-hub"
+    ),
+)
+@click.option("--peer", default=None, help="Peer to read the thread with (default: the operator).")
+@click.option("--sender", default=None, help="Read as this identity (default: $SCITEX_CARDS_AGENT_ID).")
+@click.option("--store", default=None, help="Task-store container path (default: the configured store).")
+@click.option("--json", "as_json", is_flag=True, help="Emit the thread payload as JSON.")
+def dm_list_cmd(peer: str | None, sender: str | None, store: str | None, as_json: bool) -> None:
+    """Read a DM thread with a peer (chronological, read-only).
+
+    \b
+    Example:
+      $ scitex-cards dm list --peer scitex-hub
+    """
+    from .._messaging import dm_list
+
+    result = dm_list(peer=peer, ack=False, store=store, sender=sender)
+    if as_json:
+        click.echo(json.dumps(result))
+        return
+    msgs = result.get("messages", [])
+    click.echo(
+        f"# thread {result.get('thread')}  peer={result.get('peer')}  "
+        f"{len(msgs)} message(s)"
+    )
+    for m in msgs:
+        click.echo(f"  {m.get('ts')}  {m.get('from')!r} -> {m.get('to')!r}: {m.get('body')}")
+
+
 __all__ = ["dm_group", "register", "send_cmd"]
 
 # EOF
