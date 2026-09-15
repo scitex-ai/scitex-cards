@@ -1,0 +1,103 @@
+/* DM page panes: the phone master-detail layout and the no-conversations state.
+ *
+ * Phones show the conversation list full width; tapping one swaps in the
+ * thread with a back arrow (chat_panes.js toggles `dm-thread-open`). Desktop
+ * keeps list and thread side by side. Loaded after chat.html's own <style>,
+ * so these rules win at equal specificity. Colours are the page's token
+ * aliases only.
+ */
+
+/* Fill the viewport above the hub dock so the composer sits at the bottom
+ * and only the message list scrolls ("height: 100%" had no sized parent). */
+#cards-dm-app {
+  height: calc(100dvh - var(--site-dock-clearance, 0px));
+}
+
+#thread-head {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--line);
+}
+#thread-head #thread-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#thread-back {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  font: inherit;
+  font-size: 1.25rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#dm-empty {
+  display: none;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 40px 20px;
+  color: var(--text);
+  line-height: 1.5;
+  text-align: center;
+}
+#dm-empty h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+#dm-empty p {
+  margin: 0 0 10px;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+#dm-empty a {
+  color: var(--text-link);
+}
+#cards-dm-app.dm-no-agents #dm-empty {
+  display: block;
+}
+#cards-dm-app.dm-no-agents #agent-list,
+#cards-dm-app.dm-no-agents #agent-filter-row,
+#cards-dm-app.dm-no-agents #thread-pane {
+  display: none;
+}
+#cards-dm-app.dm-no-agents #agents {
+  flex: 1 1 auto;
+  width: 100%;
+  border-right: 0;
+  background: var(--bg);
+}
+
+@media (max-width: 720px) {
+  #agents {
+    flex: 1 1 auto;
+    width: 100%;
+    border-right: 0;
+  }
+  #agents .agent {
+    min-height: 60px;
+  }
+  #thread-pane {
+    display: none;
+  }
+  #cards-dm-app.dm-thread-open #agents {
+    display: none;
+  }
+  #cards-dm-app.dm-thread-open #thread-pane {
+    display: flex;
+  }
+  #thread-back {
+    display: inline-flex;
+  }
+}

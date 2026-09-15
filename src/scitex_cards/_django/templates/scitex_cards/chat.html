@@ -385,13 +385,18 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      restyled by the page hosting it. The combinator is still load-bearing now
      that the row is the parent: the picker lives INSIDE #compose-field, so it
      is not a direct child of the row and these rules cannot reach it. */
+  /* Send is the one primary action: the theme's link blue with inverse text
+     reads as a button in both themes. Disabled is a flat muted fill, not a
+     faded accent, so it cannot be mistaken for a live control. */
   #compose-row > button {
     flex: 0 0 auto; min-height: var(--compose-control);
-    background: var(--accent); color: var(--text-primary); border: 0;
+    background: var(--text-link); color: var(--text-inverse); border: 1px solid var(--text-link);
     border-radius: 10px; padding: 0 16px; font: inherit; font-size: 0.9rem;
     font-weight: 600; cursor: pointer; touch-action: manipulation;
   }
-  #compose-row > button:disabled { opacity: 0.45; cursor: default; }
+  #compose-row > button:disabled {
+    background: var(--panel-2); color: var(--dim); border-color: var(--line); cursor: not-allowed;
+  }
   /* Two ids, so this outranks the `#compose-row > button` rule above it —
      an id-plus-element selector is MORE specific than a bare id, so the
      shorter `#compose-attach` would have lost and the paperclip would have
@@ -421,6 +426,8 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
     min-height: var(--compose-control); overflow-y: hidden;
   }
   #compose-field textarea:focus { outline: 1px solid var(--accent); }
+  #compose-field textarea::placeholder { color: var(--dim); opacity: 1; }
+  #compose-field textarea:disabled { cursor: not-allowed; }
   /* The emoji picker is a shared primitive (static/scitex_cards/ui/). The
      page maps ITS palette onto the component's tokens instead of overriding
      the component's rules — that is the whole contract, and it is what lets
@@ -539,26 +546,8 @@ reads window.ChatDiff. Line-limit discipline: template <1024 lines, js
      pair and converted here, caught by the palette guard rather than by review. */
   #error-bar.ok { background: var(--status-success); color: var(--text-inverse); }
 
-  /* ---- mobile: agent list becomes a drawer ---- */
-  @media (max-width: 720px) {
-    #menu-btn { display: block; }
-    /* The version chip is the first thing to go on a 375pt iPhone: hamburger
-       + title + version + switcher overflows the header, and the switcher is
-       the one item that MUST stay reachable. The board page still shows the
-       version. */
-    #cards-dm-app > header .ver { display: none; }
-    #agents {
-      position: fixed; top: 0; bottom: 0; left: 0; z-index: 20;
-      width: min(78vw, 300px); transform: translateX(-105%);
-      transition: transform 0.18s ease; box-shadow: 4px 0 18px rgba(0,0,0,0.5);
-    }
-    #agents.open { transform: translateX(0); }
-    #scrim {
-      display: none; position: fixed; inset: 0; z-index: 15;
-      background: rgba(0,0,0,0.45);
-    }
-    #scrim.open { display: block; }
-  }
+  /* Phone layout (list first, thread on tap) and the no-conversations state
+     live in chat/chat_panes.css. */
 </style>
 {% comment %}
 Right-click menu comes from scitex-ui — we do NOT ship our own. The operator's
@@ -605,6 +594,7 @@ and the page needs both — this was a textual collision, not a real one.)
 <link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_marquee.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">
 <link rel="stylesheet" href="{% static 'scitex_cards/page-header.css' %}">
+<link rel="stylesheet" href="{% static 'scitex_cards/chat/chat_panes.css' %}">
 <style>
   /* Positioning only — every visual rule comes from base. */
   #msg-menu-wrap, #react-bar, #forward-menu { position: fixed; display: none; z-index: 40; }
@@ -760,7 +750,13 @@ every `#agents .agent` rule still matches through the new wrapper.
              placeholder="Filter agents&hellip;" aria-label="Filter agents"
              aria-controls="agent-list">
     </div>
-    <div id="agent-list"><div class="empty">Loading agents&hellip;</div></div>
+    <div id="agent-list"><div class="empty">Loading conversations&hellip;</div></div>
+    <div id="dm-empty">
+      <h2>No conversations yet</h2>
+      <p>DM is a one-to-one chat with your agents: you send a message, the agent reads it in its session and replies here.</p>
+      <p>An agent shows up in this list once it is set up for your account or messages you. Tap it to open the thread.</p>
+      <p><a href="{{ api_base }}">Open the Board</a></p>
+    </div>
   </nav>
   <div id="scrim"></div>
 {% comment %}
@@ -837,7 +833,10 @@ about who exists).
   <div id="react-bar" class="stx-app-context-menu" role="menu" aria-label="React"></div>
   <div id="forward-menu" class="stx-app-context-menu" role="menu" aria-label="Forward to"></div>
   <main id="thread-pane">
-    <div id="thread-title">Select an agent to open the thread.</div>
+    <div id="thread-head">
+      <button id="thread-back" type="button" aria-label="Back to conversations">&larr;</button>
+      <div id="thread-title">Choose a conversation from the list.</div>
+    </div>
 {% comment %}
 Selection mode's own bar. Hidden until "Select" is chosen, and it is the ONLY
 reason Select is in the menu at all: a selection that cannot be acted on is a
@@ -851,7 +850,7 @@ Forward uses.
       <button id="sb-forward" type="button">Forward&hellip;</button>
       <button id="sb-cancel" type="button">Cancel</button>
     </div>
-    <div id="messages"><div class="hint">No agent selected.</div></div>
+    <div id="messages"><div class="hint">Pick a conversation on the left to read and reply.</div></div>
     <form id="compose">
       <input id="compose-file" type="file" multiple hidden>
       {% comment %}
@@ -950,6 +949,7 @@ if the symbol is missing, so an old scitex-ui costs behaviour, not the page.
 <script defer src="{% static 'scitex_cards/chat/chat_exchange.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat_send.js' %}"></script>
 <script defer src="{% static 'scitex_cards/chat/chat.js' %}"></script>
+<script defer src="{% static 'scitex_cards/chat/chat_panes.js' %}"></script>
 <script defer src="{% static 'scitex_cards/ui/emoji_picker.js' %}"></script>
 {% comment %}
 SELF-VERIFYING WIRING, and it belongs HERE rather than in chat.js.

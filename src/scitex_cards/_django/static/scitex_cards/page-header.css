@@ -74,6 +74,39 @@
   }
 }
 
+/* The hub's site dock already offers a way out, so the shell's floating link
+ * and the clearance reserved for it go (same rule as scitex-writer #393). */
+body:has(.site-dock) .stx-shell-launcher-link {
+  display: none;
+}
+body:has(.site-dock) .stx-cards-header--mounted {
+  margin-block-start: 0;
+  margin-inline-start: 0;
+}
+
+/* Phone: one row — menu, Board/DM switcher, then the title truncated. The
+ * version and signed-in scope are desktop-only. */
+@media (max-width: 720px) {
+  .stx-cards-headerbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+  .stx-cards-header {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .stx-cards-header h1 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stx-cards-header__ver,
+  .stx-cards-header__scope {
+    display: none;
+  }
+}
+
 /* THE SWITCHER SITS AT THE LEFT EDGE OF THE HEADER, on both pages (operator's
  * standing instruction). It is first in the partial's markup, so this rule
  * only has to make sure nothing pushes it away: `margin-left: auto` on the
@@ -86,19 +119,25 @@
   margin-right: 0;
 }
 
+/* The heading follows the theme on both pages: a literal white here was
+ * invisible on the light theme (01-filterbar.css still feeds #fff). */
+.stx-cards-headerbar.filterbar {
+  --stx-cards-header-fg: var(--text-primary);
+}
+
 .stx-cards-header h1 {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
   white-space: nowrap;
-  color: var(--stx-cards-header-fg, #fff);
+  color: var(--stx-cards-header-fg, var(--text-primary));
 }
 
 .stx-cards-header__ver {
   font-size: 0.72rem;
   font-weight: 400;
   white-space: nowrap;
-  color: var(--stx-cards-header-dim, #8a96a8);
+  color: var(--stx-cards-header-dim, var(--text-muted));
 }
 
 .stx-cards-header__scope {
@@ -106,7 +145,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--stx-cards-header-dim, #8a96a8);
+  color: var(--stx-cards-header-dim, var(--text-muted));
   font-size: 0.72rem;
 }
 
