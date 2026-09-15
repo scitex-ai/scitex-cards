@@ -53,6 +53,12 @@ def _pyproject_path() -> Path:
     return Path(__file__).resolve().parents[3] / "pyproject.toml"
 
 
+def _project_dependencies() -> list[str]:
+    """Shared Arrange: the ``project.dependencies`` list, as plain strings."""
+    data = tomllib.loads(_pyproject_path().read_text(encoding="utf-8"))
+    return list(data.get("project", {}).get("dependencies", []))
+
+
 def _scitex_app_lower_bound() -> tuple[int, int, int] | None:
     """Parse the lower bound of the ``scitex-app`` dependency, or None.
 
@@ -60,9 +66,7 @@ def _scitex_app_lower_bound() -> tuple[int, int, int] | None:
     ``scitex-app``) — a floorless pin is worse than a wrong one, so the caller
     treats None as a failure, not as "no constraint to check".
     """
-    data = tomllib.loads(_pyproject_path().read_text(encoding="utf-8"))
-    deps = data.get("project", {}).get("dependencies", [])
-    for dep in deps:
+    for dep in _project_dependencies():
         match = _REQ_RE.search(dep)
         if not match:
             continue
@@ -74,6 +78,44 @@ def _scitex_app_lower_bound() -> tuple[int, int, int] | None:
     return None
 
 
+def _installed_scitex_app_version() -> tuple[int, int, int] | None:
+    """Shared Arrange: the installed scitex-app version as a comparable triple.
+
+    Returns None when the distribution is absent OR its version string is not
+    PEP 440-parseable — the single fixture below turns that one outcome into a
+    skip, so the tests stay one-assertion each (STX-TQ007).
+    """
+    try:
+        installed = importlib.metadata.version("scitex-app")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    parts = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", installed)
+    if not parts:
+        return None
+    return (
+        int(parts.group(1)),
+        int(parts.group(2)),
+        int(parts.group(3)) if parts.group(3) else 0,
+    )
+
+
+@pytest.fixture
+def installed_version() -> tuple[int, int, int]:
+    """The installed scitex-app version, or skip when it cannot be measured.
+
+    scitex-app is an optional *runtime* presence for this hermetic contract:
+    when it is not installed (or its version is unparseable) the board renders
+    through the graceful-degradation seam that
+    ``test__board_shell_migration.py`` covers, so the floor-vs-install check is
+    genuinely not applicable here and skipping is the honest outcome — not a
+    masked assertion.
+    """
+    version = _installed_scitex_app_version()
+    if version is None:
+        pytest.skip("scitex-app not installed (or version unparseable) here")
+    return version
+
+
 def test_scitex_app_floor_is_pinned() -> None:
     """Positive control: ``pyproject.toml`` actually declares a scitex-app pin.
 
@@ -81,8 +123,7 @@ def test_scitex_app_floor_is_pinned() -> None:
     vacuously; pin the scan's own reach first (STX-TQ007, one intent here).
     """
     # Arrange
-    data = tomllib.loads(_pyproject_path().read_text(encoding="utf-8"))
-    deps = data.get("project", {}).get("dependencies", [])
+    deps = _project_dependencies()
     # Act
     has_pin = any(_REQ_RE.search(dep) for dep in deps)
     # Assert
@@ -108,33 +149,21 @@ def test_scitex_app_floor_is_at_least_the_shell_bearing_version() -> None:
     )
 
 
-def test_hub_app_floor_satisfies_the_board_shell_floor() -> None:
+def test_hub_app_floor_satisfies_the_board_shell_floor(installed_version) -> None:
     """If scitex-app is installed, its version clears the shell-bearing floor.
 
     This is the Hub's own guarantee restated as an import test: the Hub pins
     ``scitex-app>=0.25.0``; when the real distribution is present in the
     environment it must be >= 0.24.0 so the board renders the shell, not the
-    graph fallback. Skipped only when scitex-app is genuinely absent (the
-    graceful-degradation seam is covered by test__board_shell_migration.py).
+    graph fallback.
     """
-    # Arrange
-    try:
-        installed = importlib.metadata.version("scitex-app")
-    except importlib.metadata.PackageNotFoundError:
-        pytest.skip("scitex-app not installed in this environment")
-    # Act — parse to a comparable triple; a version like '0.25.0' is 0,25,0.
-    parts = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", installed)
-    if not parts:
-        pytest.skip(f"scitex-app version {installed!r} is not parseable")
-    version = (
-        int(parts.group(1)),
-        int(parts.group(2)),
-        int(parts.group(3)) if parts.group(3) else 0,
-    )
+    # Arrange — the fixture measured the installed version (skipping when absent)
+    version = installed_version
+    # Act
     sufficient = version >= _SHELL_BEARING
     # Assert
     assert sufficient, (
-        f"installed scitex-app {installed!r} is below the shell-bearing floor "
+        f"installed scitex-app {version!r} is below the shell-bearing floor "
         f"{_SHELL_BEARING}; the board would render the graph fallback, not the "
         "shell. The Hub's scitex-app>=0.25.0 must clear this."
     )
