@@ -91,4 +91,65 @@ def inbox_ack_cmd(agent: str | None, as_json: bool, ids: tuple) -> None:
     )
 
 
+@inbox_group.command(
+    "list",
+    help=(
+        "READ (PULL) an agent's pending notifications. READING NEVER CONFIRMS — "
+        "a record you do not `inbox ack` stays unseen and comes back on the "
+        "next list. This is the STANDALONE read surface that used to be MCP-"
+        "only (the MCP server being the single read path was the defect: when it "
+        "vanished from a session the agent could not read its inbox at all). "
+        "Reachable without MCP."
+    ),
+)
+@click.option(
+    "--agent",
+    default=None,
+    help="Whose inbox to read (default: $SCITEX_CARDS_AGENT_ID).",
+)
+@click.option(
+    "--all",
+    "unseen_only",
+    flag_value=False,
+    default=True,
+    help="Include already-seen notifications (default: unseen only).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the inbox payload as JSON.",
+)
+def inbox_list_cmd(agent: str | None, unseen_only: bool, as_json: bool) -> None:
+    """Pull an agent's pending notifications (read-only, never acks).
+
+    \b
+    Example:
+      $ scitex-cards inbox list --agent scitex-cards
+    """
+    import json as _json
+
+    from scitex_cards._messaging import poll_notifications
+    from scitex_cards._store import _default_agent
+
+    result = poll_notifications(_default_agent(agent), unseen_only=unseen_only)
+    if as_json:
+        click.echo(_json.dumps(result))
+        return
+    notifs = result.get("notifications", [])
+    click.echo(
+        f"# inbox for {result.get('recipient_id')} "
+        f"({len(notifs)} {'unseen' if unseen_only else 'total'}); "
+        f"unconfirmed={len(result.get('unconfirmed', []))}; "
+        f"store={result.get('store')}"
+    )
+    for n in notifs:
+        click.echo(
+            f"  {n.get('id')}  {n.get('event_type')}  card={n.get('card_id')}  "
+            f"actor={n.get('actor')}  {n.get('ts')}"
+        )
+        if n.get("body"):
+            click.echo(f"      {n.get('body')}")
+
+
 # EOF
