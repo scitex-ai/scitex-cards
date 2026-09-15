@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.53.0] - 2026-09-15
+
+### The board ships inside the scitex-app shell for Hub 0.20.0-alpha
+
+The two operator-facing board pages (board_v3, standalone) render through
+`scitex_app/app_shell.html`, and the per-user board-read scoping gate
+(`SCITEX_CARDS_USER_SCOPE`) plus the DM/theme header fixes now ship with the
+release. This is the compatibility cut for the Hub v0.20.0-alpha mount, whose
+app floor is `scitex-app>=0.25.0`; the shell-bearing floor for the board is
+`scitex-app>=0.24.0` (the first wheel to ship `app_shell.html`), asserted by
+`tests/scitex_cards/_django/test__board_shell_migration.py`.
 
 ### Notifyd admits one current snapshot instead of replaying every producer
 
