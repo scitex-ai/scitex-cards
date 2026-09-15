@@ -152,9 +152,9 @@ def test_release_test_job_clears_the_ambient_fleet_dsns() -> None:
     )
     # Assert
     assert cleared, (
-        "release test job never clears the ambient fleet DSNs "
-        "(SCITEX_STORE_DSN / SCITEX_CARDS_DB / SCITEX_CARDS_NOTIFY_DSN); a "
-        "runner with a fleet DSN baked in would contaminate the result, so the "
+        "release test job never clears the ambient fleet store/inbox selectors "
+        "before pinning SCITEX_STORE_DSN (it must `unset` them, so a runner with "
+        "a fleet DSN baked in cannot contaminate the result); without that the "
         "job's green/red would depend on which runner it landed on."
     )
 
