@@ -464,7 +464,10 @@ def merge_cmd(payload_path, db_path, store, dry_run, assume_yes) -> None:
         "The STANDALONE read surface that used to be MCP-only: when the MCP "
         "server is the single DM read path and it is absent from a session, an "
         "agent cannot read its own messages. Read-only — it does not mark "
-        "messages read."
+        "messages read.\n\n"
+        "\b\n"
+        "Example:\n"
+        "  $ scitex-cards dm list --peer scitex-hub"
     ),
 )
 @click.option("--peer", default=None, help="Peer to read the thread with (default: the operator).")
