@@ -99,7 +99,10 @@ def inbox_ack_cmd(agent: str | None, as_json: bool, ids: tuple) -> None:
         "next list. This is the STANDALONE read surface that used to be MCP-"
         "only (the MCP server being the single read path was the defect: when it "
         "vanished from a session the agent could not read its inbox at all). "
-        "Reachable without MCP."
+        "Reachable without MCP.\n\n"
+        "\b\n"
+        "Example:\n"
+        "  $ scitex-cards inbox list --agent scitex-cards --json"
     ),
 )
 @click.option(
