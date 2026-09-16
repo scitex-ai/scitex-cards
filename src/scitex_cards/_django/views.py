@@ -7,12 +7,15 @@
 are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 """
 
+import dataclasses
 import logging
+import os
 from pathlib import Path
 
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from .._user_row_scope import scope_rows_for_user
 from .._store_errors import StoreNotProvisionedError, StoreUnavailableError
 from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
@@ -437,7 +440,57 @@ def _get_board(request, *, allow_stale: bool = False):
     got a generic banner instead. The caller now renders the real reason; see
     :func:`api_dispatch`.
     """
-    return get_board(_tasks_path_from_request(request), allow_stale=allow_stale)
+    return _scope_board_for_request(
+        request,
+        get_board(_tasks_path_from_request(request), allow_stale=allow_stale),
+    )
+
+
+def _user_scope_enabled() -> bool:
+    """Per-user read scoping is OFF by default (behind a flag).
+
+    The operator wants Cards usable by every signed-in user as a free-install
+    app, but each user must see ONLY their own cards. Until this is proven on
+    the live fleet the hub keeps /apps/cards/ staff-only (#805); enabling the
+    flag here is the Cards half of that, and it must not surprise a deployment
+    that has not asked for it. Explicit opt-in via env.
+    """
+    return os.environ.get("SCITEX_CARDS_USER_SCOPE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _scope_board_for_request(request, board):
+    """Return a per-request, per-user scoped COPY of ``board`` (or ``board``).
+
+    Reads the resolved scope via the USER-SCOPE boundary (``resolve_scope``)
+    and filters ``board.tasks`` to the rows the principal owns — creator,
+    assignee, or agent (Hub decision (iii), 2026-09-14). Staff bypass the
+    predicate and see the full set. A request that cannot resolve a user fails
+    closed and sees no cards.
+
+    A pure read over an in-memory list: it does NOT touch the store, the cache,
+    or the cursor. When scoping is disabled (the default) or the principal is
+    staff it returns the shared ``board`` unchanged — no copy to leak. When it
+    scopes, it returns a shallow copy with a filtered ``tasks`` list so the
+    shared cache entry is never mutated.
+    """
+    if not _user_scope_enabled():
+        return board
+    from ._user_scope import resolve_scope
+
+    scope = resolve_scope(request)
+    user = getattr(request, "user", None)
+    is_staff = bool(getattr(user, "is_staff", False)) if user is not None else False
+    if is_staff:
+        return board
+    if not scope.principal:
+        return dataclasses.replace(board, tasks=[], empty_store=True)
+    tasks = scope_rows_for_user(board.tasks, scope.principal)
+    return dataclasses.replace(board, tasks=tasks, empty_store=not tasks)
 
 
 @csrf_exempt

@@ -1,6 +1,47 @@
 # Changelog
 
-## [Unreleased]
+## [0.53.1] - 2026-09-15
+
+### Release workflow provisions the same PostgreSQL the PR matrix does
+
+The tag-driven release `test` job ran bare `pytest tests/` on the self-hosted
+pool with no store: after #1005 moved the ambient resolver to the fleet
+primary (`scitex-primary`), the self-hosted runner resolved that fleet DSN it
+cannot reach (`failed to resolve host 'scitex-primary'`), the conftest
+throwaway-schema guard fired (`did not pin $SCITEX_STORE_DSN ... it holds ''`),
+and 15 tests failed + 10 errors on 3.11/3.12. 3.13 passed by runner luck,
+proving the leg's result depended on ambient state, not on the code. v0.53.0's
+tag run 34996423777 is the instance; v0.52.1's push-tag run failed the same
+way and was published via workflow_dispatch.
+
+The release `test` job now provisions the same store as the required PR
+matrix: a `postgres:16` service container on `127.0.0.1:5432`, a per-job
+`SCITEX_STORE_DSN`, and the ambient fleet store/inbox config cleared, so the
+conftest carves its throwaway schema from the service instead of reaching for
+a fleet DSN. A regression test pins that the release workflow and the PR
+matrix pass the same store contract, so the two legs cannot drift apart
+again. No application code changed; this is release-pipeline isolation only.
+`v0.53.0` is immutable and is not retagged.
+
+## [0.53.0] - 2026-09-15
+
+### The board ships inside the scitex-app shell for Hub 0.20.0-alpha
+
+The two operator-facing board pages (board_v3, standalone) render through
+`scitex_app/app_shell.html`, and the per-user board-read scoping gate
+(`SCITEX_CARDS_USER_SCOPE`) plus the DM/theme header fixes now ship with the
+release. This is the compatibility cut for the Hub v0.20.0-alpha mount, whose
+app floor is `scitex-app>=0.25.0`; the shell-bearing floor for the board is
+`scitex-app>=0.24.0` (the first wheel to ship `app_shell.html`), asserted by
+`tests/scitex_cards/_django/test__board_shell_migration.py`.
+
+### Notifyd admits one current snapshot instead of replaying every producer
+
+Recurring reminder and liveness producers now claim their shared sweep before
+enqueuing notifications, so simultaneous notifyd instances do not each emit
+the same fleet snapshot. Delivery also coalesces superseded reminder,
+stale-active, pending-backlog, and blocked-check rows while preserving distinct
+card events, comments, and direct messages.
 
 ## [0.52.1] - 2026-09-14
 

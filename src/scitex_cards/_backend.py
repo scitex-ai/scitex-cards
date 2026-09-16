@@ -42,7 +42,7 @@ same fact twice on a rail that is already erroring is noise.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Mapping
 
 from . import _help_wait, _inbox, _store, _threads
 from ._currency import warn_if_stale_once
@@ -317,7 +317,7 @@ class LocalBackend:
         # to rewrite history; rotating here keeps the durable delivery id while
         # every poller observes the same successor exchange.
         from ._dm_exchange import rotate_failed_notification_exchange
-        from ._inbox_receipt import unconfirmed_ids
+        from ._inbox_receipt import outstanding_records_off_page, receipts, unconfirmed_ids
 
         outstanding = {
             notification_id
@@ -325,20 +325,48 @@ class LocalBackend:
             for notification_id in unconfirmed_ids(key, store=store)
         }
 
+        def _maybe_rotate(row: dict, recipient_key: str) -> dict:
+            """A failed-DM exchange gets one immutable successor per poll."""
+            return (
+                rotate_failed_notification_exchange(
+                    row, recipient=recipient_key, store=store
+                )
+                if (
+                    row.get("event_type") == "dm"
+                    and row.get("exchange_id")
+                    and row.get("id") in outstanding
+                )
+                else row
+            )
+
         notifications = [
-            rotate_failed_notification_exchange(
-                row,
-                recipient=notification_recipients[str(row.get("id"))],
-                store=store,
-            )
-            if (
-                row.get("event_type") == "dm"
-                and row.get("exchange_id")
-                and row.get("id") in outstanding
-            )
-            else row
+            _maybe_rotate(row, notification_recipients[str(row.get("id"))])
             for row in notifications
         ]
+
+        # OUTSTANDING = the ids still awaiting confirmation (same set the
+        # `unconfirmed` field reports), lifted to FULL RECORDS. The default page
+        # is unseen-only and the channel drain marks a record `seen` the moment
+        # it pushes it, so a record handed to a session that then died is seen,
+        # unconfirmed, and ABSENT from `notifications` — yet still named by
+        # `unconfirmed`. `outstanding` is the consumer-facing half of that
+        # difference: the ids with their rows, so a poller need not fetch the
+        # full history to learn what it was actually handed. Built from
+        # `outstanding` + `receipts`, the same two sources `unconfirmed` uses,
+        # so the two fields cannot disagree. A record already on the page is
+        # not duplicated here. Pure read: advances no cursor, confirms nothing.
+        receipts_by_id: dict[str, Mapping[str, Any]] = {}
+        for receipt in receipts(recipient_id, store=store):
+            rid = receipt.get("id")
+            if rid is not None:
+                receipts_by_id[rid] = receipt
+        outstanding_records = outstanding_records_off_page(
+            notifications,
+            sorted(outstanding),
+            receipts_by_id,
+            rotate=lambda r: _maybe_rotate(r, recipient_id),
+        )
+
         from ._store_target import store_label
 
         payload = {
@@ -392,6 +420,13 @@ class LocalBackend:
             # outstanding, and had to query the rail directly to find the
             # notification it had just acted on.
             "unconfirmed": unconfirmed_ids(recipient_id, store=store),
+            # The same ids as `unconfirmed`, lifted to full records — but ONLY
+            # the ones the returned page did not already include (the seen-
+            # but-unconfirmed rows the default unseen-only page omits). This is
+            # the field a poller was previously forced to reconstruct by
+            # fetching `unseen_only=false` and diffing against `unconfirmed`
+            # on every call. See the construction comment above.
+            "outstanding": outstanding_records,
             "confirm_with": "ack_notifications",
         }
         if deprecation is not None:

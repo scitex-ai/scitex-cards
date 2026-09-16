@@ -33,6 +33,12 @@ from scitex_cards._db_sweep_state import (
     load_sections,
     save_sections,
 )
+from scitex_cards._delivery._sweeps import (
+    LIVENESS_SWEEP_CLAIM,
+    REMINDER_SWEEP_CLAIM,
+    _run_reminder_sweep,
+    _run_stale_nudge_sweep,
+)
 
 SWEEP = "pending-backlog"
 CADENCE = 30.0
@@ -131,6 +137,40 @@ def test_the_nudge_state_is_unharmed_by_a_claim(new_store):
     sections = load_sections(SCOPE_NUDGES, ("some-section",), store=store)
     # Assert
     assert sections["some-section"]["k"]["v"] == 1
+
+
+def test_notifyd_reminder_runner_arms_the_existing_claim(new_store):
+    """The primitive alone fixed nothing until the production runner used it."""
+    # Arrange
+    store = new_store()
+    now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+    # Act
+    _run_reminder_sweep(store=store, now=now, claim_minutes=CADENCE)
+    second = claim_sweep(
+        REMINDER_SWEEP_CLAIM,
+        cadence_minutes=CADENCE,
+        store=store,
+        now=now.isoformat().replace("+00:00", "Z"),
+    )
+    # Assert
+    assert second is False
+
+
+def test_notifyd_liveness_runner_arms_the_existing_claim(new_store):
+    """Stale/backlog production is also single-producer across notifyds."""
+    # Arrange
+    store = new_store()
+    now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+    # Act
+    _run_stale_nudge_sweep(store=store, now=now, claim_minutes=CADENCE)
+    second = claim_sweep(
+        LIVENESS_SWEEP_CLAIM,
+        cadence_minutes=CADENCE,
+        store=store,
+        now=now.isoformat().replace("+00:00", "Z"),
+    )
+    # Assert
+    assert second is False
 
 
 # EOF

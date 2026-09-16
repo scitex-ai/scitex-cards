@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scitex-cards"
-version = "0.52.1"
+version = "0.53.1"
 description = "Canonical task-card store with pluggable adapters (mermaid dependency graphs)"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -80,7 +80,16 @@ dependencies = [
     # recognise: the board IS how the operator reads the store, and the MCP
     # server IS how every agent writes to it.
     "django>=4.2",
-    "scitex-app",
+    # >=0.24.0 is MEASURED, 2026-09-14: the board pages (board_v3.html,
+    # standalone.html) extend `scitex_app/app_shell.html`, and that template
+    # first shipped in the 0.24.0 wheel (verified from the published PyPI
+    # wheel: scitex_app/templates/scitex_app/app_shell.html, blocks
+    # app_content/scitex_app_content, extends scitex_ui/standalone_shell.html).
+    # 0.22.1 and 0.23.0 ship no Django templates at all (the wheel is a Python
+    # SDK), so below the floor the pages degrade to the static-graph fallback
+    # and the rich-board rendering tests fail — the silent wrong-board shape
+    # the migration gate (test__board_shell_migration.py) exists to surface.
+    "scitex-app>=0.24.0",
     # >=0.11.1 is MEASURED, not aspirational -- see the note in the `dev`
     # extra below for what breaks at 0.7.1 and why presence is not currency.
     "scitex-ui>=0.11.1",

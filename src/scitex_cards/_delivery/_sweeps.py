@@ -46,6 +46,16 @@ logger = logging.getLogger("scitex_cards.delivery.notifyd")
 ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
 DEFAULT_NUDGE_SWEEP_MINUTES = 30.0
 
+#: Cross-host claim names. They are deliberately notifyd-specific: the
+#: interactive ``print-stats --notify`` path remains an operator action and
+#: must not turn into a silent no-op merely because a daemon swept recently.
+REMINDER_SWEEP_CLAIM = "notifyd-reminders"
+LIVENESS_SWEEP_CLAIM = "notifyd-liveness"
+
+#: ``notifyd``'s default delivery tick is 120 seconds. The daemon passes its
+#: actual interval at runtime; this default keeps direct callers equivalent.
+DEFAULT_REMINDER_CLAIM_MINUTES = 2.0
+
 
 def _sweep_store(store: "str | Path | None"):
     """The STORE the sweep's BOOKKEEPING belongs in — never the local task file.
@@ -82,7 +92,12 @@ def _sweep_store(store: "str | Path | None"):
     return resolve_store_target(None)
 
 
-def _run_reminder_sweep(*, store, now) -> "str | None":
+def _run_reminder_sweep(
+    *,
+    store,
+    now,
+    claim_minutes: float = DEFAULT_REMINDER_CLAIM_MINUTES,
+) -> "str | None":
     """Enqueue any DUE owner digests + operator escalations for this tick.
 
     Fully guarded: loads the task list, runs the escalating-cadence sweep
@@ -108,6 +123,20 @@ def _run_reminder_sweep(*, store, now) -> "str | None":
         # It must resolve to the STORE, not to the local task file — see
         # _sweep_store for the two-ledger split that the local path caused.
         resolved = _sweep_store(store)
+        from .._db_sweep_state import claim_sweep
+
+        if not claim_sweep(
+            REMINDER_SWEEP_CLAIM,
+            cadence_minutes=claim_minutes,
+            store=resolved,
+            now=now.isoformat().replace("+00:00", "Z"),
+        ):
+            logger.info(
+                "notifyd reminder sweep: peer already claimed this board's "
+                "%.3g-minute cadence; skipping local producer",
+                claim_minutes,
+            )
+            return None
         tasks = load_tasks(resolved)
         result = sweep_reminders(tasks, store=resolved, now=now)
         if result["digested"] or result["escalated"]:
@@ -143,7 +172,12 @@ def _nudge_sweep_due(
     return (now - last_at).total_seconds() / 60.0 >= minutes
 
 
-def _run_stale_nudge_sweep(*, store, now) -> "str | None":
+def _run_stale_nudge_sweep(
+    *,
+    store,
+    now,
+    claim_minutes: float = DEFAULT_NUDGE_SWEEP_MINUTES,
+) -> "str | None":
     """Low-cadence fleet-liveness sweep: nudge owners of untouched work.
 
     Runs :func:`scitex_cards._stale_active_nudge.sweep_and_nudge`, which is
@@ -168,6 +202,20 @@ def _run_stale_nudge_sweep(*, store, now) -> "str | None":
         from .._stale.active_nudge import sweep_and_nudge
 
         resolved = _sweep_store(store)
+        from .._db_sweep_state import claim_sweep
+
+        if not claim_sweep(
+            LIVENESS_SWEEP_CLAIM,
+            cadence_minutes=claim_minutes,
+            store=resolved,
+            now=now.isoformat().replace("+00:00", "Z"),
+        ):
+            logger.info(
+                "notifyd liveness sweep: peer already claimed this board's "
+                "%.3g-minute cadence; skipping local producer",
+                claim_minutes,
+            )
+            return None
         tasks = load_tasks(resolved)
         for line in sweep_and_nudge(tasks, store=resolved, now=now):
             logger.info("notifyd liveness sweep: %s", line.strip())
@@ -179,7 +227,10 @@ def _run_stale_nudge_sweep(*, store, now) -> "str | None":
 
 __all__ = [
     "DEFAULT_NUDGE_SWEEP_MINUTES",
+    "DEFAULT_REMINDER_CLAIM_MINUTES",
     "ENV_NUDGE_SWEEP_MINUTES",
+    "LIVENESS_SWEEP_CLAIM",
+    "REMINDER_SWEEP_CLAIM",
     "_nudge_sweep_due",
     "_nudge_sweep_minutes",
     "_run_reminder_sweep",

@@ -1,4 +1,4 @@
-{% extends "scitex_ui/standalone_shell.html" %}
+{% extends "scitex_app/app_shell.html" %}
 {% load static %}
 {% block extra_css %}
     {% comment %}
@@ -16,7 +16,7 @@
           crossorigin
           href="{% static 'scitex_cards/assets/index.css' %}">
 {% endblock %}
-{% block app_content %}<div id="app-mount" data-app-name="scitex-cards" data-embedded="false"></div>{% endblock %}
+{% block scitex_app_content %}<div id="app-mount" data-app-name="scitex-cards" data-embedded="false"></div>{% endblock %}
 {% block extra_js %}
     <script type="module"
             crossorigin

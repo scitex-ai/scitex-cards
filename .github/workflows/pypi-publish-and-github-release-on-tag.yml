@@ -59,11 +59,52 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","Linux","X64","scitex-ci"]') }}
+    # The test job must provision the SAME store the required PR matrix does.
+    # The matrix leg is the org reusable workflow `pytest-matrix.yml@main` with
+    # `runs_on: ["ubuntu-latest"]` + `postgres: true` (a `postgres:16` service
+    # on 127.0.0.1:5432, per-job SCITEX_STORE_DSN, conftest throwaway schema).
+    # If this job drifts from that contract, the release leg can go red/green
+    # independently of the PR leg — which is exactly what bit v0.53.0 (run
+    # 34996423777): this job ran bare `pytest tests/` on the self-hosted pool
+    # with no store, so after #1005 the ambient resolver reached for the fleet
+    # DSN `scitex-primary` (unresolvable from the CI host), the conftest
+    # guard fired, and 3.11/3.12 failed while 3.13 passed by runner luck.
+    # tests/scitex_cards/test__release_store_contract.py pins this invariant
+    # so the two legs cannot drift apart again.
+    #
+    # `ubuntu-latest`, not the self-hosted pool, is required for a job that
+    # opts in to a postgres service: a fixed host port (5432) is a shared
+    # resource, and two concurrent self-hosted jobs would contend for it. The
+    # reusable workflow's own comment says a postgres opt-in should pass
+    # `runs_on: ["ubuntu-latest"]`; the matrix leg already does. The release
+    # `build`/`publish`/`release` jobs below keep the self-hosted pool — they
+    # need no store and the OIDC pypi env is unchanged.
+    runs-on: ["ubuntu-latest"]
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    services:
+      # Identical to the org reusable workflow's `postgres: true` service
+      # (scitex-ai/.github/.github/workflows/pytest-matrix.yml): a throwaway
+      # `postgres:16` whose only client is the DSN pinned in the test step.
+      # 5432, not the fleet's 55432 — 55432 is the per-host fleet port and
+      # this container is not a fleet host.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scitex
+          POSTGRES_PASSWORD: scitex
+          POSTGRES_DB: scitex
+        ports:
+          - 5432:5432
+        # Without a health check the steps race the server's startup and fail
+        # with a connection error that reads exactly like a real defect.
+        options: >-
+          --health-cmd "pg_isready -U scitex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Resolve version
         id: ver
@@ -88,6 +129,25 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           cache-dependency-glob: pyproject.toml
+      # Pin the store to the per-job service container and CLEAR the ambient
+      # fleet store/inbox config. This is the exact "Point the store at the
+      # service container" step from the org reusable workflow's `postgres`
+      # opt-in. 127.0.0.1, not `postgres`: the job runs on the runner, not in
+      # a container, so only the published port is reachable. Clearing
+      # SCITEX_STORE_DSN / SCITEX_CARDS_DB / SCITEX_CARDS_NOTIFY_DSN first is
+      # what makes the result independent of the runner's ambient state — the
+      # self-hosted pool had a fleet DSN baked in that reached for
+      # `scitex-primary` (unresolvable from CI) and took 3.11/3.12 down while
+      # 3.13 passed by luck. The conftest then carves its throwaway schema
+      # from this service, exactly as it does for the PR matrix.
+      - name: Point the store at the service container
+        run: |
+          set -euo pipefail
+          # Remove any ambient fleet store/inbox DSN the runner might carry,
+          # so this job's only store is the per-job service.
+          unset SCITEX_STORE_DSN SCITEX_CARDS_DB SCITEX_CARDS_NOTIFY_DSN
+          echo "SCITEX_STORE_DSN=postgresql://scitex:***@127.0.0.1:5432/scitex" \
+            >> "$GITHUB_ENV"
       # MIRROR the org pytest-matrix reusable workflow's invocation EXACTLY —
       # including the coverage flags and the package-derived --cov path. Not
       # cosmetic: a simplified `pytest tests/` here selected a different plugin

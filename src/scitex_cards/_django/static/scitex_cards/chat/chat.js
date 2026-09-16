@@ -167,7 +167,7 @@
     $agents.textContent = "";
     if (!agents.length) {
       $agents.appendChild(
-        el("div", "empty", "No agents registered and no threads yet."),
+        el("div", "empty no-agents", "No conversations yet."),
       );
       return;
     }
