@@ -102,6 +102,7 @@ dependencies = [
     # is its own card (cards-fresh-install-resolves-fastmcp-4-mcp-2-...),
     # and this line must not outlive that decision.
     "fastmcp>=2.0,<4",
+    "pydantic>=2,<3",
 ]
 
 [project.optional-dependencies]
