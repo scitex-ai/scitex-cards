@@ -501,8 +501,18 @@ export function CardsBoard() {
   const { graph, loading, error, load } = useBoardStore();
   const view = useBoardStore((s) => s.view);
 
+  // `data` is marked ONLY when a payload actually landed. `load()` resolves on
+  // failure too (it records the error in the store), and marking the milestone
+  // unconditionally would report a data time for a page that never received
+  // data — a timing that lies is worse than no timing, because the next
+  // change would be judged against it.
+  const loadBoard = () =>
+    load().then(() => {
+      if (useBoardStore.getState().graph) markTiming("data");
+    });
+
   useEffect(() => {
-    void load().then(() => markTiming("data"));
+    void loadBoard();
   }, [load]);
 
   // The board's first paint is what "interactive" means: effects run after
@@ -548,7 +558,7 @@ export function CardsBoard() {
           <button
             type="button"
             className="stx-cards-status__retry"
-            onClick={() => void load().then(() => markTiming("data"))}
+            onClick={() => void loadBoard()}
           >
             Retry
           </button>
