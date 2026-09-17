@@ -666,4 +666,63 @@ def _store_env_stays_pinned(tmp_path_factory) -> "Iterator[None]":
         yield
 
 
+# === Board-lifecycle real-process fixtures: registered as a PLUGIN ===========
+#
+# `pidfile_path` / `board_process` / `zombie_pid` / `reaped_pid` are defined in
+# `tests/_board_process_fixtures.py` and registered HERE, as a plugin, instead
+# of living in `tests/scitex_cards/_cli/conftest.py` where they used to live.
+#
+# WHY THAT IS LOAD-BEARING RATHER THAN TIDINESS: pytest 9 parses a conftest's
+# fixtures when the Directory collector for ITS directory is collected, and
+# binds each FixtureDef to that Directory NODE OBJECT; resolution then matches
+# by node identity (`FixtureManager._matchfactories`: the def counts only if
+# `fixturedef.node in set(item.iter_parents())`). Given explicit FILE
+# arguments, `Session.collect()` re-collects an argument's parent directory
+# with `handle_dupes=False` — so ONE argument sitting directly in
+# `tests/scitex_cards/` mints a FRESH `tests/scitex_cards/_cli` Directory node,
+# the pending-conftest pop has already happened (the plugin is registered once,
+# so no new pending entry appears), and every item collected under the new node
+# loses the fixtures while the definitions still exist somewhere:
+#
+#     E   fixture 'pidfile_path' not found
+#     >   available fixtures: ... env, monkeypatch, new_store, tmp_path ...
+#
+# Measured on develop 2026-09-17 (pytest 9.1.1, no xdist required):
+#
+#     pytest tests/scitex_cards/_cli/test__board_force_takeover.py \
+#            tests/scitex_cards/test__release_workflow_uses_xdist.py \
+#            tests/scitex_cards/_cli/test__board_stop_process.py -p no:anyio
+#
+# and it is the shape required CI uses: the org matrix orders its argument list
+# by descending test count, so `tests/scitex_cards/test__*.py` and
+# `tests/scitex_cards/_cli/test__*.py` interleave, and the py3.11 leg died with
+# exactly this error in exactly those two files. A plugin's fixtures are parsed
+# with `node=session` instead, and the Session node is an ancestor of every
+# item in every collection generation — which is also why the fixtures defined
+# in THIS file kept working through that failure.
+# `tests/_board_process_fixtures.py` carries the long-form mechanism, and
+# `tests/scitex_cards/_cli/test__board_lifecycle_fixtures_survive_any_argument_order.py`
+# is the regression guard that runs the three-argument reproduction.
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection(session) -> None:
+    """Register the board-lifecycle process fixtures with SESSION scope.
+
+    `tryfirst` so the registration happens before the default collection impl
+    (and therefore before any item is collected); `pytest_collection` rather
+    than `pytest_configure` because the fixture manager only exists from
+    `pytest_sessionstart` onward, and it is the fixture manager that parses a
+    newly registered plugin's fixtures.
+    """
+    import _board_process_fixtures as _fixtures
+
+    plugin_name = "scitex-cards-board-process-fixtures"
+    if session.config.pluginmanager.has_plugin(plugin_name):
+        # `pytest_collection` can legitimately run more than once in a session
+        # (watch/rerun plugins); a second `register()` would raise.
+        return
+    session.config.pluginmanager.register(_fixtures, plugin_name)
+
+
 # EOF
