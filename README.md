@@ -416,6 +416,13 @@ scitex-cards mcp channel --agent X           # drain inbox → push into Claude
 scitex-cards notifyd [--interval N | --once] # reminders + delivery daemon
 ```
 
+The MCP `list_tasks` tool always returns the static
+`scitex.cards.list_tasks.page.v1` envelope. Each response contains `items` and
+`page` metadata with the total match count, returned count, truncation state,
+and an opaque `next_cursor`. Pass that cursor with the same filters to read the
+next page. The default page size is 100 and the maximum is 200; malformed,
+stale, or cross-filter cursors fail with an explicit restart instruction.
+
 </details>
 
 <details>

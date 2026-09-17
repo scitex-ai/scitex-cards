@@ -17,8 +17,9 @@ agent-facing instructions text lives in :mod:`scitex_cards._mcp_instructions`.
 
 The task-store tool surface is a thin wrapper around :mod:`scitex_cards._store`
 (the Python API) so MCP / CLI / GUI all share one logic path — §6 Python-API
-parity. JSON-shape parity: every tool returns a JSON-string of the dict /
-list the Python API returns.
+parity. Read tools return JSON strings. ``list_tasks`` adds a bounded,
+versioned pagination envelope because serializing the complete fleet store is
+not a safe MCP response contract.
 
 Import semantics
 ----------------
@@ -33,8 +34,10 @@ from __future__ import annotations
 
 import functools
 import json
+from typing import Annotated
 
 import anyio
+from pydantic import Field
 
 from . import _store  # resolve_store only — every verb routes via the seam
 from ._backend import get_backend
@@ -113,8 +116,29 @@ async def list_tasks(
     id_prefix: str | None = None,
     blocking_me: bool = False,
     overdue: bool = False,
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=200,
+            description="Maximum tasks in this page (1-200; default 100).",
+        ),
+    ] = 100,
+    cursor: Annotated[
+        str | None,
+        Field(
+            max_length=512,
+            description="Opaque next_cursor from the preceding list_tasks page.",
+        ),
+    ] = None,
 ) -> str:
-    """List tasks, filtered by any combination of fields. Returns a JSON array.
+    """List tasks in a bounded, cursor-paginated JSON response.
+
+    Every result has the same shape: ``schema_version``, ``items``, and
+    ``page``. Follow ``page.next_cursor`` while ``page.truncated`` is true.
+    A cursor is bound to its original filters and result snapshot; stale,
+    malformed, or cross-query cursors fail with an actionable message rather
+    than silently skipping or duplicating tasks.
 
     ``scope=None`` (default) uses $SCITEX_CARDS_SCOPE if set; ``scope=""``
     opts out of that env default. ``statuses`` (multi) OR-combines with
@@ -149,7 +173,24 @@ async def list_tasks(
         overdue=overdue,
     )
     rows = await anyio.to_thread.run_sync(_call)
-    return json.dumps(rows)
+    from ._mcp_list_page import paginate_task_rows
+
+    query = {
+        "scope": scope,
+        "assignee": assignee,
+        "status": status,
+        "statuses": statuses,
+        "agent": agent,
+        "project": project,
+        "host": host,
+        "blocker": blocker,
+        "kind": kind,
+        "id_prefix": id_prefix,
+        "blocking_me": blocking_me,
+        "overdue": overdue,
+    }
+    page = paginate_task_rows(rows, limit=limit, cursor=cursor, query=query)
+    return page.model_dump_json()
 
 
 @mcp.tool()

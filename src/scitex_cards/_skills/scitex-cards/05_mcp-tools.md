@@ -19,16 +19,17 @@ scitex-cards mcp start              # launch the FastMCP server (stdio)
 
 ## Tool surface (Convention A)
 
-Tool name matches the Python API name 1:1 (no `scitex_cards_` prefix). Every
-tool returns `json.dumps(...)` of the dict / list the matching Python API
-returns.
+Tool name matches the Python API name 1:1 (no `scitex_cards_` prefix). Write
+tools return `json.dumps(...)` of the matching Python API result. The MCP
+`list_tasks` read is deliberately bounded and wraps its Python API rows in a
+versioned page envelope.
 
 | Tool | Python API | Purpose |
 |---|---|---|
 | `add_task` | `scitex_cards.add_task` | Append a new task to the store. |
 | `update_task` | `scitex_cards.update_task` | Mutate fields of an existing task. |
 | `complete_task` | `scitex_cards.complete_task` | Mark done + stamp `_log_meta.completed_{at,by}`. |
-| `list_tasks` | `scitex_cards.list_tasks` | Filter the store by scope / assignee / status. |
+| `list_tasks` | `scitex_cards.list_tasks` | Filter the store by scope / assignee / status; returns `items` plus explicit pagination metadata. |
 | `summarize_tasks` | `scitex_cards.summarize_tasks` | Counts by status / scope / assignee. |
 | `resolve_store` | `scitex_cards.resolve_store` | Resolved store path + the precedence chain. |
 | `cards_skills_list` | (skills introspection) | List bundled agent skills (file names). |
@@ -73,6 +74,16 @@ database. See [20_env-vars.md](20_env-vars.md).
 `scope` value. Pass `scope=""` (empty string) to opt out of that env
 default and see every task. The agent-facing convention these tools
 respect is documented in [02_quick-start.md](02_quick-start.md).
+
+## MCP task-list pagination
+
+Every MCP `list_tasks` response has the same
+`scitex.cards.list_tasks.page.v1` shape: `items` contains the current page and
+`page` contains `limit`, `returned`, `total`, `truncated`, and `next_cursor`.
+The default page size is 100 and the maximum is 200. While `truncated` is true,
+pass `next_cursor` back with exactly the same filters. A malformed cursor,
+changed filter, or changed result set fails loudly and tells you to restart
+from the first page; it never silently skips cards.
 
 ## Discovering tool names at runtime
 
