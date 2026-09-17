@@ -194,8 +194,8 @@
       <div class="stx-cards-project__state" data-stx-state-block="filtered-empty">
         <h2 class="stx-cards-project__state-title">No cards match these filters</h2>
         <p class="stx-cards-project__state-body">
-          {{ board.project }} has {{ board.total }} card{{ board.total|pluralize }}, none of
-          which match the filters above. The board is not empty — the filters are.
+          {{ board.project }} has {{ board.project_total }} card{{ board.project_total|pluralize }},
+          none of which match the filters above. The board is not empty — the filters are.
         </p>
         <a class="stx-cards-project__clear"
            href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
@@ -213,12 +213,12 @@
         <nav class="stx-cards-project__pager" data-stx-pager aria-label="Board pages">
           {% if board.has_prev %}
             <a class="stx-cards-project__retry"
-               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;offset={{ board.offset|add:"-500" }}"
+               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;q={{ board.filters.q|urlencode }}&amp;status={{ board.filters.status|urlencode }}&amp;assignee={{ board.filters.assignee|urlencode }}&amp;offset={{ board.offset|add:"-500" }}"
                data-stx-page-prev>Previous 500</a>
           {% endif %}
           {% if board.has_next %}
             <a class="stx-cards-project__retry"
-               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;offset={{ board.offset|add:"500" }}"
+               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;q={{ board.filters.q|urlencode }}&amp;status={{ board.filters.status|urlencode }}&amp;assignee={{ board.filters.assignee|urlencode }}&amp;offset={{ board.offset|add:"500" }}"
                data-stx-page-next>Next 500</a>
           {% endif %}
         </nav>

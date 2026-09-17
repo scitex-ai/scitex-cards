@@ -97,6 +97,7 @@ class BoardState:
     projects: tuple[str, ...] = ()
     rows: tuple[Mapping[str, Any], ...] = ()
     total: int = 0
+    project_total: int = 0
     offset: int = 0
     page_size: int = 0
     filters: dict = field(default_factory=dict)
@@ -302,7 +303,7 @@ def _default_projects_loader(request: Any) -> list[str]:
     return projects_for(principal, store=read_store(request), is_staff=is_staff)
 
 
-def _default_rows_loader(request: Any, project: str, offset: int = 0) -> list[dict]:
+def _default_rows_loader(request: Any, project: str, offset: int = 0, filters=None) -> list[dict]:
     """ONE page of ONE project's authorized cards, bounded fields — never the graph."""
     from .._user_scope import current_user
     from .._request_store import read_store
@@ -310,12 +311,20 @@ def _default_rows_loader(request: Any, project: str, offset: int = 0) -> list[di
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    active = filters or {}
     return rows_for(
-        project, principal, store=read_store(request), is_staff=is_staff, offset=offset
+        project,
+        principal,
+        store=read_store(request),
+        is_staff=is_staff,
+        offset=offset,
+        q=active.get(PARAM_Q, ""),
+        status=active.get(PARAM_STATUS, ""),
+        assignee=active.get(PARAM_ASSIGNEE, ""),
     )
 
 
-def _default_count_loader(request: Any, project: str) -> int:
+def _default_count_loader(request: Any, project: str, filters=None) -> int:
     """The project's real card count for this viewer — one indexed aggregate.
 
     Without it the page could only report how many rows it happened to fetch, and
@@ -328,7 +337,16 @@ def _default_count_loader(request: Any, project: str) -> int:
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
-    return count_for(project, principal, store=read_store(request), is_staff=is_staff)
+    active = filters or {}
+    return count_for(
+        project,
+        principal,
+        store=read_store(request),
+        is_staff=is_staff,
+        q=active.get(PARAM_Q, ""),
+        status=active.get(PARAM_STATUS, ""),
+        assignee=active.get(PARAM_ASSIGNEE, ""),
+    )
 
 
 def board_state(
@@ -336,7 +354,7 @@ def board_state(
     *,
     projects_loader: Optional[Callable[[Any], Sequence[str]]] = None,
     rows_loader: Optional[Callable[[Any, str, int], Sequence[dict]]] = None,
-    count_loader: Optional[Callable[[Any, str], int]] = None,
+    count_loader: Optional[Callable[[Any, str, Optional[Mapping[str, Any]]], int]] = None,
     provider: Optional[Any] = None,
 ) -> BoardState:
     """Decide which of the six states this request is in, and with what rows.
@@ -420,7 +438,12 @@ def board_state(
         )
 
     try:
-        total = int(count_loader_default(request, current))
+        total = int(count_loader_default(request, current, filters))
+        # TWO COUNTS, because one number cannot answer both questions once the
+        # filters are in SQL: `total` is the filtered set the reader is paging
+        # through, `project_total` is whether this project has any cards at all.
+        # Without the second, empty and filtered-empty collapse into one state.
+        project_total = int(count_loader_default(request, current, None))
     except Exception as exc:  # noqa: BLE001 - same single answer as above
         logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
         return BoardState(
@@ -457,7 +480,7 @@ def board_state(
     # memory so a future loader swap cannot quietly widen what the page shows.
     project_rows = authorized_rows(rows_of_project(loaded, current), principal, is_staff=is_staff)
 
-    if not project_rows and total == 0:
+    if not project_rows and project_total == 0:
         return BoardState(
             state=EMPTY,
             principal=principal,
@@ -476,6 +499,7 @@ def board_state(
             project=current,
             projects=projects,
             total=total,
+            project_total=project_total,
             offset=offset,
             page_size=len(project_rows),
             filters=filters,
@@ -489,6 +513,7 @@ def board_state(
         projects=projects,
         rows=tuple(visible),
         total=total,
+        project_total=project_total,
         offset=offset,
         page_size=len(project_rows),
         filters=filters,

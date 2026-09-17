@@ -109,14 +109,24 @@ def _sources(rows, viewer, *, is_staff=False):
     def _projects(request):
         return pb.projects_of(authorized)
 
-    def _rows(request, project, offset=0):
-        # LIMIT + OFFSET, like the SQL: the fake must not hand back more than a
-        # page, or a test could pass while the real query is unbounded.
-        page = pb.rows_of_project(authorized, project)[offset : offset + pb.DEFAULT_ROW_LIMIT]
-        return page
+    def _filtered(project, filters=None):
+        active = filters or {}
+        return pb.apply_filters(
+            pb.rows_of_project(authorized, project),
+            q=active.get(pb.PARAM_Q, ""),
+            status=active.get(pb.PARAM_STATUS, ""),
+            assignee=active.get(pb.PARAM_ASSIGNEE, ""),
+        )
 
-    def _count(request, project):
-        return len(pb.rows_of_project(authorized, project))
+    def _rows(request, project, offset=0, filters=None):
+        # The fake models the REAL query: filters and tenancy FIRST (both are in the
+        # SQL now), then LIMIT/OFFSET. That ordering IS reviewer blocker #4 — a fake
+        # that filtered after the slice would let the defect back in while the suite
+        # stayed green.
+        return _filtered(project, filters)[offset : offset + pb.DEFAULT_ROW_LIMIT]
+
+    def _count(request, project, filters=None):
+        return len(_filtered(project, filters))
 
     return {
         "projects_loader": _projects,
@@ -269,8 +279,9 @@ def test_filtered_empty_still_reports_the_projects_real_total():
     params = {"project": "proj-alpha", "status": "done"}
     # Act
     state = _state("alice", rows, params)
-    # Assert
-    assert state.total == 2
+    # Assert — the PROJECT total: the number that says the FILTERS are the reason
+    # nothing is shown, rather than the board being empty.
+    assert state.project_total == 2
 
 
 def test_unavailable_state_when_the_store_cannot_be_read():
@@ -1180,7 +1191,7 @@ def test_the_total_is_the_stores_count_not_the_page_length():
     # Arrange
     rows = _alice_rows(3)
     sources = _sources(rows, "alice")
-    sources["count_loader"] = lambda request, project: 1200
+    sources["count_loader"] = lambda request, project, filters=None: 1200
     sources["rows_loader"] = lambda request, project, offset=0: rows
     # Act
     state = pb.board_state(_Request(_User("alice"), {"project": "proj-alpha"}), **sources)

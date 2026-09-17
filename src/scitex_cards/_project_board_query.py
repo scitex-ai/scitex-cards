@@ -62,6 +62,30 @@ DEFAULT_ROW_LIMIT = 500
 _DELETED_FILTER = "COALESCE(is_deleted, false) = false"
 
 
+def filter_clause(*, q: str = "", status: str = "", assignee: str = "") -> tuple[str, tuple]:
+    """The WHERE fragment for the page's three filters, and its parameters.
+
+    REVIEWER BLOCKER #4: filtering happened in PYTHON, after the SQL LIMIT/OFFSET.
+    Two wrong RESULTS followed: a page whose 500 rows missed the match reported "no
+    cards match these filters" while matches sat further down, and the count and the
+    "showing X-Y of N" range described the UNFILTERED set. The fragment now rides in
+    the same statement as the tenancy predicate, so rows, count and range all
+    describe the same question.
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if q:
+        clauses.append("title ILIKE ?")
+        params.append(f"%{q}%")
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if assignee:
+        clauses.append("assignee = ?")
+        params.append(assignee)
+    return ("".join(f" AND {c}" for c in clauses), tuple(params))
+
+
 def _tenancy_clause() -> str:
     """``AND ( created_by = ? OR assignee = ? OR agent = ? )`` — from OWNED_FIELDS.
 
@@ -84,19 +108,19 @@ def projects_sql(*, is_staff: bool = False) -> str:
     )
 
 
-def rows_sql(*, is_staff: bool = False) -> str:
+def rows_sql(*, is_staff: bool = False, filter_sql: str = "") -> str:
     """SQL for ONE project's cards: bounded fields, tenancy, ordering, LIMIT."""
     clause = "" if is_staff else _tenancy_clause()
     fields = ", ".join(BOARD_ROW_FIELDS)
     return (
         f"SELECT {fields} FROM tasks "
-        f"WHERE project = ? AND {_DELETED_FILTER}{clause} "
+        f"WHERE project = ? AND {_DELETED_FILTER}{clause}{filter_sql} "
         "ORDER BY priority NULLS LAST, updated_at DESC NULLS LAST, id "
         "LIMIT ? OFFSET ?"
     )
 
 
-def count_sql(*, is_staff: bool = False) -> str:
+def count_sql(*, is_staff: bool = False, filter_sql: str = "") -> str:
     """How many cards this viewer has in this project — the number the page needs.
 
     WITHOUT THIS the bounded page lies: it can show at most ``limit`` rows, and a
@@ -105,7 +129,9 @@ def count_sql(*, is_staff: bool = False) -> str:
     the same indexed predicate, and the page says "showing X-Y of N".
     """
     clause = "" if is_staff else _tenancy_clause()
-    return f"SELECT COUNT(*) FROM tasks WHERE project = ? AND {_DELETED_FILTER}{clause}"
+    return (
+        f"SELECT COUNT(*) FROM tasks WHERE project = ? AND {_DELETED_FILTER}{clause}{filter_sql}"
+    )
 
 
 def projects_params(principal: str, *, is_staff: bool = False) -> tuple:
@@ -122,6 +148,7 @@ def rows_params(
     is_staff: bool = False,
     limit: int = DEFAULT_ROW_LIMIT,
     offset: int = 0,
+    filters: tuple = (),
 ) -> tuple:
     """Parameters for :func:`rows_sql`, in the order the SQL expects them.
 
@@ -132,15 +159,17 @@ def rows_params(
     base: tuple = (project,)
     if not is_staff:
         base += tuple(principal for _ in OWNED_FIELDS)
-    return base + (limit, offset)
+    return base + tuple(filters) + (limit, offset)
 
 
-def count_params(project: str, principal: str, *, is_staff: bool = False) -> tuple:
+def count_params(
+    project: str, principal: str, *, is_staff: bool = False, filters: tuple = ()
+) -> tuple:
     """Parameters for :func:`count_sql` — no limit, because a count is not paged."""
     base: tuple = (project,)
     if not is_staff:
         base += tuple(principal for _ in OWNED_FIELDS)
-    return base
+    return base + tuple(filters)
 
 
 def _default_connect(store: Any = None):
@@ -262,17 +291,23 @@ def rows_for(
     is_staff: bool = False,
     limit: int = DEFAULT_ROW_LIMIT,
     offset: int = 0,
+    q: str = "",
+    status: str = "",
+    assignee: str = "",
     connect: Optional[Callable[..., Any]] = None,
 ) -> list[dict]:
-    """ONE project's authorized cards, bounded to the fields a card shows.
+    """ONE page of ONE project's authorized cards, filtered IN SQL.
 
     Returns plain dicts so the state machine and the template do not depend on
     the driver's row type.
     """
     if not project:
         return []
-    sql = rows_sql(is_staff=is_staff)
-    params = rows_params(project, principal, is_staff=is_staff, limit=limit, offset=offset)
+    filter_sql, filter_params = filter_clause(q=q, status=status, assignee=assignee)
+    sql = rows_sql(is_staff=is_staff, filter_sql=filter_sql)
+    params = rows_params(
+        project, principal, is_staff=is_staff, limit=limit, offset=offset, filters=filter_params
+    )
     rows = _fetch(sql, params, connect=connect, store=store)
     out = []
     for row in rows:
@@ -289,14 +324,22 @@ def count_for(
     *,
     store: Any = None,
     is_staff: bool = False,
+    q: str = "",
+    status: str = "",
+    assignee: str = "",
     connect: Optional[Callable[..., Any]] = None,
 ) -> int:
-    """How many cards this viewer has in this project, indexed and exact."""
+    """How many cards this viewer has in this project — FILTERED the same way.
+
+    A count that ignored the filters would make "showing X-Y of N" describe a
+    different question from the rows printed under it (blocker #4, second half).
+    """
     if not project:
         return 0
+    filter_sql, filter_params = filter_clause(q=q, status=status, assignee=assignee)
     rows = _fetch(
-        count_sql(is_staff=is_staff),
-        count_params(project, principal, is_staff=is_staff),
+        count_sql(is_staff=is_staff, filter_sql=filter_sql),
+        count_params(project, principal, is_staff=is_staff, filters=filter_params),
         connect=connect,
         store=store,
     )
