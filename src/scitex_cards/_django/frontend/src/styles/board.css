@@ -394,8 +394,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   font-weight: 600;
   letter-spacing: 0.03em;
   background: rgba(155, 127, 214, 0.18);
-  color: #6d4cad;
-  border: 1px solid #9b7fd6;
+  color: var(--stx-accent);
+  border: 1px solid var(--stx-accent);
   border-radius: 999px;
   opacity: 0;
   transition: opacity 0.12s ease;
@@ -451,7 +451,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   top: -10px;
   right: -8px;
   background: var(--stx-accent, #6a4fb0);
-  color: #fff;
+  color: var(--stx-accent-on);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 10px;
@@ -1562,9 +1562,9 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   display: inline-block;
   margin-left: 6px;
   padding: 1px 7px;
-  border: 1px solid #9b7fd6;
+  border: 1px solid var(--stx-accent);
   background: rgba(155, 127, 214, 0.14);
-  color: #6d4cad;
+  color: var(--stx-accent);
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 600;
@@ -1575,9 +1575,9 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   /* High-leverage decisions pop louder so the operator can prioritize
    * "deciding hub-cutover unblocks the whole prod chain" vs single-task
    * decisions at a glance. Lead a2a `554435df` impact-badge spec. */
-  background: #6d4cad;
-  color: #fff;
-  border-color: #6d4cad;
+  background: var(--stx-accent);
+  color: var(--stx-accent-on);
+  border-color: var(--stx-accent);
   box-shadow: 0 0 8px 1px rgba(155, 127, 214, 0.6);
 }
 
@@ -1589,14 +1589,14 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 .stx-cards-flow .react-flow__node.stx-cards-node--decision-operator {
   box-shadow:
     0 0 0 3px #ffc107,
-    0 0 0 6px #6d4cad,
+    0 0 0 6px var(--stx-accent),
     0 0 18px 6px rgba(255, 193, 7, 0.45),
     0 0 28px 10px rgba(155, 127, 214, 0.35);
 }
 .stx-cards-flow .react-flow__node.stx-cards-node--decision-operator:hover {
   box-shadow:
     0 0 0 3px #ffc107,
-    0 0 0 6px #6d4cad,
+    0 0 0 6px var(--stx-accent),
     0 0 24px 8px rgba(255, 193, 7, 0.65),
     0 0 36px 14px rgba(155, 127, 214, 0.5);
   filter: brightness(1.1);
@@ -1647,8 +1647,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
  * pure status display. */
 .stx-cards-progress__chip--awaiting-operator {
   background: #ffc107;
-  color: #6d4cad;
-  border: 1px solid #6d4cad;
+  color: var(--stx-accent);
+  border: 1px solid var(--stx-accent);
   font-weight: 700;
   padding: 0 9px;
   border-radius: 999px;
@@ -1672,8 +1672,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   display: inline-block;
   padding: 2px 9px;
   background: rgba(155, 127, 214, 0.18);
-  color: #6d4cad;
-  border: 1px solid #9b7fd6;
+  color: var(--stx-accent);
+  border: 1px solid var(--stx-accent);
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1684,7 +1684,7 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 
 .stx-cards-breadcrumb__hint {
   margin-right: 6px;
-  color: #6d4cad;
+  color: var(--stx-accent);
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1698,9 +1698,9 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
 .stx-cards-breadcrumb__back {
   margin-right: 8px;
   padding: 2px 8px;
-  border: 1px solid #6d4cad;
+  border: 1px solid var(--stx-accent);
   background: rgba(155, 127, 214, 0.14);
-  color: #6d4cad;
+  color: var(--stx-accent);
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 600;
@@ -1710,8 +1710,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
     color 100ms ease;
 }
 .stx-cards-breadcrumb__back:hover {
-  background: #6d4cad;
-  color: #fff;
+  background: var(--stx-accent);
+  color: var(--stx-accent-on);
 }
 
 /* Empty-canvas explainer when drilled in but no edges exist in the scope
@@ -1765,8 +1765,8 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   z-index: 6; /* above React Flow's `.react-flow__panel` (z-index 5) */
   padding: 2px 9px;
   background: rgba(155, 127, 214, 0.18);
-  color: #6d4cad;
-  border: 1px solid #9b7fd6;
+  color: var(--stx-accent);
+  border: 1px solid var(--stx-accent);
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1799,9 +1799,9 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   white-space: nowrap;
 }
 .stx-cards-counts__chip--total {
-  border-color: #6d4cad;
+  border-color: var(--stx-accent);
   background: rgba(155, 127, 214, 0.14);
-  color: #6d4cad;
+  color: var(--stx-accent);
   font-weight: 700;
 }
 .stx-cards-counts__sep {
