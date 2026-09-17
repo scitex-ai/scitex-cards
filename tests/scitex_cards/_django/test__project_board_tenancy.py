@@ -755,3 +755,165 @@ def test_a_refused_create_answers_400_and_says_why():
     response = _render(state, create_error="A card needs a title.")
     # Assert
     assert (response.status_code, "A card needs a title." in response.content.decode()) == (400, True)
+
+
+# --- act on a card: status, assignee, archive (slice 2b) ---------------------
+
+
+def _board(rows=None, project="proj-alpha", principal="alice"):
+    return pb.BoardState(
+        state=pb.READY, principal=principal, is_staff=False, project=project, rows=tuple(rows or [_ALICE])
+    )
+
+
+def test_update_refuses_a_card_that_is_not_on_this_board():
+    """The card id is the one thing the client controls, so it is only ever a
+    LOOKUP key into the rows this page already rendered. A card from another
+    tenant (or another project, or nowhere) is simply not in that set."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"card_id": "bob-b", "status": "done"}
+    # Act
+    result = pb.update_card(_board(), form, update=recorder)
+    # Assert
+    assert (result.ok, recorder.calls) == (False, [])
+
+
+def test_update_hands_the_store_only_the_fields_a_board_may_change():
+    """A crafted form naming project/title/created_by must not reach the writer:
+    the allowed verbs are status, assignee and priority."""
+    # Arrange
+    recorder = _Recorder()
+    form = {
+        "card_id": "alice-a",
+        "status": "done",
+        "project": "proj-beta",
+        "title": "pwned",
+        "created_by": "dana",
+    }
+    # Act
+    pb.update_card(_board(), form, update=recorder)
+    # Assert
+    assert sorted(k for k in recorder.calls[0] if k not in ("store", "task_id")) == ["status"]
+
+
+def test_update_names_the_card_it_was_given_and_not_another():
+    """task_id reaches the store as the id that was validated, not as a rewritten
+    one."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.update_card(_board(), {"card_id": "alice-a", "status": "done"}, update=recorder)
+    # Assert
+    assert recorder.calls[0]["task_id"] == "alice-a"
+
+
+def test_update_refuses_a_status_the_store_does_not_have():
+    """Same vocabulary check as create: the board cannot invent a column."""
+    # Arrange
+    form = {"card_id": "alice-a", "status": "banana"}
+    # Act
+    result = pb.update_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_update_refuses_when_nothing_would_change():
+    """An empty change is refused rather than written as a no-op revision bump —
+    the store's revision counter is a compare-and-set signal, not noise."""
+    # Arrange
+    form = {"card_id": "alice-a"}
+    # Act
+    result = pb.update_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_update_refuses_a_non_numeric_priority():
+    """Same rule as create: the field is an integer on the row."""
+    # Arrange
+    form = {"card_id": "alice-a", "priority": "high"}
+    # Act
+    result = pb.update_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_update_refuses_when_the_board_is_not_open():
+    """No board means no card actions: a denied or unavailable page must not
+    accept a change just because a form was posted to it."""
+    # Arrange
+    state = pb.BoardState(state=pb.DENIED, principal="alice", is_staff=False)
+    # Act
+    result = pb.update_card(state, {"card_id": "alice-a", "status": "done"})
+    # Assert
+    assert result.ok is False
+
+
+def test_archive_is_a_status_change_to_the_terminal_state():
+    """Nothing is deleted on this board; archiving is the store's own terminal
+    status, so the row keeps its history and the board stops showing it."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"card_id": "alice-a", "status": pb.ARCHIVE_STATUS}
+    # Act
+    pb.update_card(_board(), form, update=recorder)
+    # Assert
+    assert recorder.calls[0]["status"] == "cancelled"
+
+
+def test_assignee_is_only_sent_when_it_was_actually_supplied():
+    """A form with no assignee field must not blank the assignee — "absent" and
+    "empty" are different statements about a card."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.update_card(_board(), {"card_id": "alice-a", "status": "done"}, update=recorder)
+    # Assert
+    assert "assignee" not in recorder.calls[0]
+
+
+def test_the_card_forms_carry_the_card_id_and_the_card_action_hook():
+    """The browser evidence and the docs pipeline locate the control by its
+    stable hook, and the server needs the id it must validate."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert ('data-stx-card-action="alice-a"' in body, 'name="card_id" value="alice-a"' in body) == (True, True)
+
+
+def test_the_archive_control_sends_the_terminal_status():
+    """The archive button is its own form with the status baked in, so it cannot
+    be confused with the Update button's select."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert f'<input type="hidden" name="status" value="{pb.ARCHIVE_STATUS}">' in body
+
+
+def test_no_card_actions_on_a_page_with_no_board():
+    """A denied page must not render controls that cannot work."""
+    # Arrange
+    state = _state_only(pb.DENIED)
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert "data-stx-card-action" not in body
+
+
+def test_the_view_dispatches_an_update_action_to_the_update_path():
+    """The POST entry point routes by the form's action field, and refuses a verb
+    it does not have instead of treating it as a create."""
+    # Arrange
+    from django.test import RequestFactory
+
+    request = RequestFactory().post("/projects", {"action": "explode"}, HTTP_HOST="127.0.0.1")
+    request.user = _User("alice")
+    # Act
+    response = pb.project_board_page(request)
+    # Assert
+    assert "Unknown action" in response.content.decode()

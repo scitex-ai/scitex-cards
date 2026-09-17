@@ -311,6 +311,59 @@
   filter: brightness(1.08);
 }
 
+.stx-cards-project__card-actions,
+.stx-cards-project__card-archive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.stx-cards-project__card-actions label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__card-actions select,
+.stx-cards-project__card-actions input {
+  padding: 5px 8px;
+  min-height: 34px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.stx-cards-project__card-actions input[name="assignee"] {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.stx-cards-project__card-actions button,
+.stx-cards-project__card-archive button {
+  padding: 6px 14px;
+  min-height: 34px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.stx-cards-project__card-actions button:hover,
+.stx-cards-project__card-archive button:hover {
+  background: var(--pb-accent);
+  color: var(--pb-accent-on);
+  border-color: var(--pb-accent);
+}
+
 /* Phone: the band and the filters each become their own wrapped rows, and the
  * picker stops being pushed to the right edge where it would sit off-screen —
  * the measured defect on the fleet board's header at 390px.
@@ -355,6 +408,20 @@
   .stx-cards-project__create input,
   .stx-cards-project__create select,
   .stx-cards-project__create button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .stx-cards-project__card-actions label {
+    flex: 1 1 100%;
+    margin-top: 2px;
+  }
+  .stx-cards-project__card-actions select,
+  .stx-cards-project__card-actions input,
+  .stx-cards-project__card-archive button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .stx-cards-project__card-actions button {
     flex: 1 1 100%;
     min-height: 44px;
   }

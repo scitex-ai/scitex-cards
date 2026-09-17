@@ -513,6 +513,100 @@ def _default_add(**fields: Any) -> dict:
     return add_task(**fields)
 
 
+@dataclass(frozen=True)
+class UpdateResult:
+    """What happened when someone changed a card from the board."""
+
+    ok: bool
+    card_id: Optional[str] = None
+    error: str = ""
+
+
+#: The fields this page will change on an existing card, and nothing else. A
+#: board column offers exactly these three verbs; letting the form name other
+#: fields would make the page a general-purpose store editor with a board's
+#: styling, which is a different product and a much larger blast radius.
+UPDATABLE_FIELDS: tuple[str, ...] = ("status", "assignee", "priority")
+
+#: Sending a card here is how "archive" is spelled on this board: the store keeps
+#: the row (nothing is ever deleted — house rule) and the board stops showing it
+#: as work in flight.
+ARCHIVE_STATUS = "cancelled"
+
+
+def update_card(
+    state: BoardState,
+    form: Mapping[str, Any],
+    *,
+    update: Optional[Callable[..., dict]] = None,
+    store: Any = None,
+) -> UpdateResult:
+    """Change ONE card that is already visible on this board, or refuse.
+
+    THE CARD MUST BE IN THE STATE THE PAGE RENDERED. ``card_id`` comes from the
+    form, so it is the one thing an attacker controls; it is therefore not trusted
+    for anything except a LOOKUP into ``state.rows`` — the rows the page already
+    resolved through the SQL tenancy predicate. A card id from another tenant, or
+    from another project, is simply not in that set, and the update is refused
+    BEFORE the store is opened. That is a stronger check than re-querying the
+    store with the id, because it cannot be satisfied by a row the page would not
+    have shown.
+
+    Refusals are STATES rather than exceptions for the same reason as create: each
+    one is something the reader can fix.
+    """
+    if state.state != READY:
+        return UpdateResult(ok=False, error="This project's board is not open, so no card can be changed.")
+
+    card_id = str(form.get("card_id") or "").strip()
+    if not card_id:
+        return UpdateResult(ok=False, error="No card was named.")
+    known = {str(row.get("id")) for row in state.rows}
+    if card_id not in known:
+        # Deliberately the same sentence whether the card belongs to another
+        # tenant, another project, or does not exist: the page must not become an
+        # oracle for what is out there.
+        return UpdateResult(ok=False, error="That card is not on this board.")
+
+    changes: dict = {}
+    status = str(form.get("status") or "").strip()
+    if status:
+        if status not in canonical_statuses():
+            return UpdateResult(ok=False, error=f"{status!r} is not a status this store has.")
+        changes["status"] = status
+
+    if "assignee" in form:
+        assignee = str(form.get("assignee") or "").strip()
+        if assignee:
+            changes["assignee"] = assignee
+
+    if "priority" in form:
+        priority_raw = str(form.get("priority") or "").strip()
+        if priority_raw:
+            try:
+                changes["priority"] = int(priority_raw)
+            except ValueError:
+                return UpdateResult(ok=False, error="Priority must be a whole number.")
+
+    if not changes:
+        return UpdateResult(ok=False, error="Nothing was changed.")
+
+    writer = update or _default_update
+    try:
+        writer(store=store, task_id=card_id, **changes)
+    except Exception as exc:  # noqa: BLE001 - one answer for every write failure
+        logger.warning("[scitex-cards] project board update failed: %s", exc, exc_info=True)
+        return UpdateResult(ok=False, error="The card could not be saved. Try again.")
+    return UpdateResult(ok=True, card_id=card_id)
+
+
+def _default_update(**fields: Any) -> dict:
+    """Mutate through the store API, for the same reasons as ``_default_add``."""
+    from ..._store import update_task
+
+    return update_task(**fields)
+
+
 def group_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
     """Rows grouped into ``[(status, rows), ...]`` in canonical order.
 
@@ -571,6 +665,7 @@ def render_project_board(
     host_picker_available: Optional[bool] = None,
     create_error: str = "",
     created_id: str = "",
+    updated_id: str = "",
     create_status: int = 200,
 ):
     """Render ``state`` as this page's HTTP response.
@@ -600,8 +695,10 @@ def render_project_board(
         "statuses": canonical_statuses(),
         "create_default_status": CREATE_DEFAULT_STATUS,
         "create_title_max": CREATE_TITLE_MAX,
+        "archive_status": ARCHIVE_STATUS,
         "create_error": create_error,
         "created_id": created_id,
+        "updated_id": updated_id,
         "host_picker_available": (
             _host_picker_available() if host_picker_available is None else host_picker_available
         ),
@@ -627,18 +724,45 @@ def project_board_page(request):
 
     state = board_state(request)
     if getattr(request, "method", "GET").upper() != "POST":
-        created = str((getattr(request, "GET", None) or {}).get("created") or "").strip()
-        return render_project_board(request, state, created_id=created)
+        query = getattr(request, "GET", None) or {}
+        marker = str(query.get("created") or query.get("updated") or "").strip()
+        return render_project_board(
+            request,
+            state,
+            created_id=marker if query.get("created") else "",
+            updated_id=marker if query.get("updated") else "",
+        )
 
     from .._request_store import read_store
     from ..views import _BOARD_ALIASES, _include_root
 
-    result = create_card(state, getattr(request, "POST", {}), store=read_store(request))
-    if not result.ok:
-        return render_project_board(request, state, create_error=result.error)
+    form = getattr(request, "POST", {}) or {}
+    action = str(form.get("action") or "create").strip().lower()
+    store = read_store(request)
+
+    if action == "update":
+        changed = update_card(state, form, store=store)
+        if not changed.ok:
+            return render_project_board(request, state, create_error=changed.error)
+        marker = f"updated={changed.card_id}"
+    elif action == "create":
+        created = create_card(state, form, store=store)
+        if not created.ok:
+            return render_project_board(request, state, create_error=created.error)
+        marker = f"created={created.card_id}"
+    else:
+        # An unknown action is refused rather than treated as the default: a form
+        # field naming a verb this page does not have is a caller error, and
+        # guessing which verb it meant is how a board starts writing things nobody
+        # asked for.
+        return render_project_board(
+            request,
+            state,
+            create_error=f"Unknown action {action!r}.",
+        )
 
     api_base = _include_root(request.path, ("projects",) + tuple(_BOARD_ALIASES))
-    target = f"{api_base}/projects?project={state.project}&created={result.card_id}"
+    target = f"{api_base}/projects?project={state.project}&{marker}"
     return HttpResponseRedirect(target)
 
 

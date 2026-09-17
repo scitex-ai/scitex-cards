@@ -94,6 +94,11 @@
         Card created: <code>{{ created_id }}</code>
       </p>
     {% endif %}
+    {% if updated_id %}
+      <p class="stx-cards-project__created" data-stx-updated="{{ updated_id }}">
+        Card updated: <code>{{ updated_id }}</code>
+      </p>
+    {% endif %}
     {% if create_error %}
       <p class="stx-cards-project__create-error" data-stx-create-error role="alert">
         {{ create_error }}
@@ -210,6 +215,41 @@
                   <span>priority {{ row.priority|default:"—" }}</span>
                   <code data-stx-card-id>{{ row.id }}</code>
                 </p>
+                {% comment %}
+                  ACT ON A CARD — status, assignee, archive. Plain form controls,
+                  no drag, no JavaScript, keyboard-first: the product requires
+                  "accessible non-drag alternatives", and a server-rendered form
+                  satisfies it by construction rather than by bolting an
+                  alternative beside a drag-only control.
+
+                  The form carries the card id, and the SERVER refuses any id that
+                  is not already in the rows this page rendered — so the tenancy
+                  check does not depend on the client sending an honest id.
+                {% endcomment %}
+                <form class="stx-cards-project__card-actions" method="post"
+                      action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+                      data-stx-card-action="{{ row.id }}">
+                  <input type="hidden" name="action" value="update">
+                  <input type="hidden" name="card_id" value="{{ row.id }}">
+                  <label for="stx-card-{{ row.id }}-status">Status</label>
+                  <select id="stx-card-{{ row.id }}-status" name="status" data-stx-card-status-select>
+                    {% for status in statuses %}
+                      <option value="{{ status }}" {% if status == row.status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                  </select>
+                  <label for="stx-card-{{ row.id }}-assignee">Assignee</label>
+                  <input id="stx-card-{{ row.id }}-assignee" type="text" name="assignee"
+                         value="{{ row.assignee|default:'' }}" data-stx-card-assignee>
+                  <button type="submit" data-stx-card-submit>Update</button>
+                </form>
+                <form class="stx-cards-project__card-archive" method="post"
+                      action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+                      data-stx-card-archive="{{ row.id }}">
+                  <input type="hidden" name="action" value="update">
+                  <input type="hidden" name="card_id" value="{{ row.id }}">
+                  <input type="hidden" name="status" value="{{ archive_status }}">
+                  <button type="submit" data-stx-card-archive-submit>Archive</button>
+                </form>
               </li>
             {% endfor %}
           </ul>
