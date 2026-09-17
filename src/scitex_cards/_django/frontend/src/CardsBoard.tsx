@@ -511,6 +511,12 @@ export function CardsBoard() {
     if (graph) markTiming("interactive");
   }, [graph]);
 
+  // EVERY STATE CARRIES THE BAND, failures included. "Which app is this, which
+  // version, which project" is exactly what a reader needs WHEN something is
+  // broken — hiding the identity on a failed load hides it at the moment it
+  // matters most, and the operator's report was an unidentified leaf.
+  const band = <LeafHeader graph={graph} />;
+
   // THREE STATES, EACH NAMED. The page used to answer all of them with the
   // same bare sentence — "Loading task graph…" / "No graph." — which reads as
   // the page breaking rather than as a fact about the store. Each branch now
@@ -519,39 +525,48 @@ export function CardsBoard() {
   // hang (the operator's "ambiguous loading...").
   if (loading && !graph) {
     return (
-      <div className="stx-cards-status stx-cards-status--loading" role="status">
-        <span className="stx-cards-status__head">Loading the board…</span>
-        <span className="stx-cards-status__detail">
-          first load — fetching the task graph from this store
-        </span>
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--loading" role="status">
+          <span className="stx-cards-status__head">Loading the board…</span>
+          <span className="stx-cards-status__detail">
+            first load — fetching the task graph from this store
+          </span>
+        </div>
       </div>
     );
   }
   if (error && !graph) {
     return (
-      <div className="stx-cards-status stx-cards-status--err" role="alert">
-        <span className="stx-cards-status__head">
-          The board could not load.
-        </span>
-        <span className="stx-cards-status__detail">{error}</span>
-        <button
-          type="button"
-          className="stx-cards-status__retry"
-          onClick={() => void load().then(() => markTiming("data"))}
-        >
-          Retry
-        </button>
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--err" role="alert">
+          <span className="stx-cards-status__head">
+            The board could not load.
+          </span>
+          <span className="stx-cards-status__detail">{error}</span>
+          <button
+            type="button"
+            className="stx-cards-status__retry"
+            onClick={() => void load().then(() => markTiming("data"))}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
   if (!graph) {
     return (
-      <div className="stx-cards-status stx-cards-status--empty" role="status">
-        <span className="stx-cards-status__head">No board to show.</span>
-        <span className="stx-cards-status__detail">
-          the store answered with no graph payload at all — this is not an empty
-          board, it is a missing answer
-        </span>
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--empty" role="status">
+          <span className="stx-cards-status__head">No board to show.</span>
+          <span className="stx-cards-status__detail">
+            the store answered with no graph payload at all — this is not an
+            empty board, it is a missing answer
+          </span>
+        </div>
       </div>
     );
   }

@@ -43,7 +43,7 @@ function appVersion(): string {
   return version === "?" ? "" : version;
 }
 
-export function LeafHeader({ graph }: { graph: GraphPayload }) {
+export function LeafHeader({ graph }: { graph?: GraphPayload | null }) {
   const activeRepos = useBoardStore((s) => s.activeRepos);
   const setRepos = useBoardStore((s) => s.setRepos);
   const [timings, setTimings] = useState<LeafTiming[]>(() => readTimings());
@@ -57,7 +57,7 @@ export function LeafHeader({ graph }: { graph: GraphPayload }) {
   // read would be a second source of truth to keep in sync.
   const projects = useMemo(() => {
     const seen = new Set<string>();
-    for (const node of graph.nodes) {
+    for (const node of graph?.nodes ?? []) {
       const repo = (node.repo ?? "").trim();
       if (repo) seen.add(repo);
     }

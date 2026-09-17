@@ -134,4 +134,18 @@ def test_the_project_picker_is_bound_to_the_boards_own_filter_state():
     )
 
 
+def test_the_identity_band_is_not_conditional_on_a_successful_load():
+    """Which app / which version must be readable WHEN the board is broken."""
+    # Arrange
+    source = (_FRONTEND_SRC / "CardsBoard.tsx").read_text(encoding="utf-8")
+    # Act
+    bands_in_state_branches = source.count("{band}")
+    # Assert
+    assert bands_in_state_branches == 3, (
+        f"expected the leaf band in all three non-happy states (loading / "
+        f"failed / no answer), found {bands_in_state_branches} — the identity "
+        "of the app is exactly what a reader needs while something is wrong"
+    )
+
+
 # EOF
