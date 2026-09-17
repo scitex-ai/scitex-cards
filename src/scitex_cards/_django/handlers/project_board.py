@@ -522,11 +522,16 @@ class UpdateResult:
     error: str = ""
 
 
-#: The fields this page will change on an existing card, and nothing else. A
-#: board column offers exactly these three verbs; letting the form name other
-#: fields would make the page a general-purpose store editor with a board's
-#: styling, which is a different product and a much larger blast radius.
-UPDATABLE_FIELDS: tuple[str, ...] = ("status", "assignee", "priority")
+#: The fields this page will change on an existing card, and nothing else. The
+#: board's inline controls offer status / assignee / priority; the card's own page
+#: adds the two fields that need room to type (title, note). A form cannot name
+#: anything outside this set, so the page is a board with an editor, not a
+#: general-purpose store editor wearing a board's styling.
+UPDATABLE_FIELDS: tuple[str, ...] = ("status", "assignee", "priority", "title", "note")
+
+#: Longest note accepted, for the same reason as the title limit: a note is a
+#: human's paragraph, and a 1 MB note is a paste accident.
+NOTE_MAX = 4000
 
 #: Sending a card here is how "archive" is spelled on this board: the store keeps
 #: the row (nothing is ever deleted — house rule) and the board stops showing it
@@ -587,6 +592,25 @@ def update_card(
                 changes["priority"] = int(priority_raw)
             except ValueError:
                 return UpdateResult(ok=False, error="Priority must be a whole number.")
+
+    if "title" in form:
+        title = str(form.get("title") or "").strip()
+        if not title:
+            return UpdateResult(ok=False, error="A card needs a title.")
+        if len(title) > CREATE_TITLE_MAX:
+            return UpdateResult(
+                ok=False, error=f"A title can be up to {CREATE_TITLE_MAX} characters."
+            )
+        changes["title"] = title
+
+    if "note" in form:
+        note = str(form.get("note") or "")
+        if len(note) > NOTE_MAX:
+            return UpdateResult(ok=False, error=f"A note can be up to {NOTE_MAX} characters.")
+        # An EMPTY note is sent deliberately here, unlike assignee above: clearing
+        # a note is a thing people mean to do, while clearing an assignee by
+        # accident is how a card stops being anybody's.
+        changes["note"] = note
 
     if not changes:
         return UpdateResult(ok=False, error="Nothing was changed.")
@@ -656,6 +680,104 @@ def _version() -> str:
     from scitex_cards import __version__
 
     return __version__
+
+
+def render_project_card(
+    request: Any,
+    state: BoardState,
+    card_id: str,
+    *,
+    edit_error: str = "",
+):
+    """Render ONE card's page, or the reason it cannot be shown.
+
+    The card is looked up in ``state.rows`` — the rows the page already resolved
+    through the SQL tenancy predicate — so the detail view inherits exactly the
+    same boundary as the board, with no second query and no second rule. An id
+    that is not in that set gets a 404 and one sentence, identical whether the card
+    belongs to another tenant, another project or nothing at all: a detail route
+    that distinguished those would be a better oracle than the board is.
+    """
+    from django.http import HttpResponse
+    from django.template.loader import render_to_string
+
+    from ..views import _BOARD_ALIASES, _cards_shell_context, _include_root
+
+    api_base = _card_page_api_base(request, card_id)
+    card = next((row for row in state.rows if str(row.get("id")) == card_id), None)
+
+    if card is None or state.state != READY:
+        # ONE answer for "no such card", "not yours" and "no board here": the
+        # reader is told what happened, and told nothing about what else exists.
+        context = {
+            **_cards_shell_context(request, api_base),
+            "api_base": api_base,
+            "scitex_cards_version": _version(),
+            "board": state,
+            "card_id": card_id,
+            "card": None,
+            "edit_error": "",
+        }
+        html = render_to_string("scitex_cards/project_card.html", context, request=request)
+        status = STATUS_FOR_STATE.get(state.state, 404)
+        return HttpResponse(html, status=status if status != 200 else 404)
+
+    context = {
+        **_cards_shell_context(request, api_base),
+        "api_base": api_base,
+        "scitex_cards_version": _version(),
+        "board": state,
+        "card": card,
+        "card_id": card_id,
+        "statuses": canonical_statuses(),
+        "edit_error": edit_error,
+        "note_max": NOTE_MAX,
+        "title_max": CREATE_TITLE_MAX,
+    }
+    html = render_to_string("scitex_cards/project_card.html", context, request=request)
+    status = 400 if edit_error else 200
+    return HttpResponse(html, status=status)
+
+
+def _card_page_api_base(request: Any, card_id: str) -> str:
+    """The include root for a page whose own path ENDS with a card id.
+
+    ``_include_root`` strips a known alias segment off the END of the path, which
+    is right for ``/projects`` and wrong for ``/projects/<id>``: the last segment
+    there is the card, not the alias, so the function would hand back the card's own
+    URL as the mount root and every link on the page would nest one level deeper
+    per click. So the card segment is removed FIRST, and the same alias strip then
+    runs on the remainder — at a sub-path mount too, where ``/apps/cards/projects/
+    <id>`` must yield ``/apps/cards`` and not ``/apps/cards/projects/<id>``.
+    """
+    from ..views import _BOARD_ALIASES, _include_root
+
+    path = str(getattr(request, "path", "") or "")
+    for suffix in (f"/{card_id}/", f"/{card_id}"):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)] or "/"
+            break
+    return _include_root(path, ("projects",) + tuple(_BOARD_ALIASES))
+
+
+def project_card_page(request, card_id: str):
+    """One card: its content, and the editor for the two fields that need room."""
+    from django.http import HttpResponseRedirect
+
+    from .._request_store import read_store
+
+    state = board_state(request)
+    if getattr(request, "method", "GET").upper() != "POST":
+        return render_project_card(request, state, card_id)
+
+    form = getattr(request, "POST", {}) or {}
+    changed = update_card(state, form, store=read_store(request))
+    if not changed.ok:
+        return render_project_card(request, state, card_id, edit_error=changed.error)
+
+    api_base = _card_page_api_base(request, card_id)
+    target = f"{api_base}/projects/{card_id}?project={state.project}&updated={changed.card_id}"
+    return HttpResponseRedirect(target)
 
 
 def render_project_board(

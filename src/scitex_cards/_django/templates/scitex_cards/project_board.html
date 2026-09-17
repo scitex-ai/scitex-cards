@@ -1,5 +1,5 @@
 {% extends "scitex_app/app_shell.html" %}
-{% load static scitex_project_picker %}
+{% load static scitex_project_picker scitex_paths %}
 {% comment %}
   project_board.html — the PROJECT-SCOPED board (Hub PR #923, section 5 "Cards":
   "current project, canonical picker, authorized cards only").
@@ -46,7 +46,7 @@
       {% if host_picker_available %}
         {% scitex_project_picker scope="project" current=board.project %}
       {% elif board.projects %}
-        <form method="get" action="{{ api_base }}/projects" data-stx-picker-form>
+        <form method="get" action="{{ api_base|stx_path:"/projects" }}" data-stx-picker-form>
           <label class="stx-cards-project__current" for="stx-project-select">Project</label>
           <select id="stx-project-select" name="project" data-stx-picker-select>
             <option value="">Choose a project…</option>
@@ -62,7 +62,7 @@
 
   {% if board.state == "ready" or board.state == "filtered-empty" %}
   <form class="stx-cards-project__filters" method="get"
-        action="{{ api_base }}/projects"
+        action="{{ api_base|stx_path:"/projects" }}"
         data-stx-filters role="search">
     <input type="hidden" name="project" value="{{ board.project }}">
     <label class="stx-cards-project__current" for="stx-filter-q">Search</label>
@@ -81,7 +81,7 @@
     <button type="submit" data-stx-filter-apply>Apply</button>
     {% if board.filters_active %}
       <a class="stx-cards-project__clear"
-         href="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+         href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
          data-stx-filter-clear>Clear filters</a>
     {% endif %}
   </form>
@@ -122,7 +122,7 @@
         default and behind the hub's auth + Cloudflare Access when exposed.
       {% endcomment %}
       <form class="stx-cards-project__create" method="post"
-            action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+            action="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
             data-stx-create>
         <label for="stx-create-title">New card in {{ board.project }}</label>
         <input id="stx-create-title" type="text" name="title"
@@ -191,7 +191,7 @@
           which match the filters above. The board is not empty — the filters are.
         </p>
         <a class="stx-cards-project__clear"
-           href="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+           href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
            data-stx-filter-clear>Clear filters</a>
       </div>
 
@@ -208,7 +208,10 @@
           <ul class="stx-cards-project__cards">
             {% for row in group.rows %}
               <li class="stx-cards-project__card" data-stx-card="{{ row.id }}">
-                <p class="stx-cards-project__card-title" data-stx-card-title>{{ row.title|default:row.id }}</p>
+                <p class="stx-cards-project__card-title" data-stx-card-title>
+                  <a href="{{ api_base|stx_path:"/projects" }}/{{ row.id }}?project={{ board.project|urlencode }}"
+                     data-stx-card-open="{{ row.id }}">{{ row.title|default:row.id }}</a>
+                </p>
                 <p class="stx-cards-project__meta">
                   <span data-stx-card-status>{{ row.status|default:"—" }}</span>
                   <span>assignee <code>{{ row.assignee|default:"—" }}</code></span>
@@ -227,7 +230,7 @@
                   check does not depend on the client sending an honest id.
                 {% endcomment %}
                 <form class="stx-cards-project__card-actions" method="post"
-                      action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+                      action="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
                       data-stx-card-action="{{ row.id }}">
                   <input type="hidden" name="action" value="update">
                   <input type="hidden" name="card_id" value="{{ row.id }}">
@@ -243,7 +246,7 @@
                   <button type="submit" data-stx-card-submit>Update</button>
                 </form>
                 <form class="stx-cards-project__card-archive" method="post"
-                      action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+                      action="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
                       data-stx-card-archive="{{ row.id }}">
                   <input type="hidden" name="action" value="update">
                   <input type="hidden" name="card_id" value="{{ row.id }}">

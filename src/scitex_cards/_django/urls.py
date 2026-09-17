@@ -19,7 +19,7 @@ from .handlers.fleet import (
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
-from .handlers.project_board import project_board_page
+from .handlers.project_board import project_board_page, project_card_page
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -194,6 +194,13 @@ urlpatterns = [
     # slash is the most natural thing in the world to type.
     path("projects", project_board_page, name="project_board"),
     path("projects/", project_board_page, name="project_board_slash"),
+    # ONE CARD. The id is a path segment rather than a query parameter because a
+    # card is a thing with an address: it can be linked, bookmarked and reported,
+    # and `?card=` would make every card the same URL with a different tail. The
+    # segment is still only ever a LOOKUP key into the rows the board rendered —
+    # see render_project_card.
+    path("projects/<str:card_id>", project_card_page, name="project_card"),
+    path("projects/<str:card_id>/", project_card_page, name="project_card_slash"),
     # `/favicon.ico` must precede the catch-all `<path:endpoint>` route — the
     # browser requests it implicitly and the catch-all would otherwise route
     # it to api_dispatch (→ 404). favicon_view serves the bundled SVG.

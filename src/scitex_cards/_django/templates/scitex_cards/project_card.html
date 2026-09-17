@@ -1,0 +1,103 @@
+{% extends "scitex_app/app_shell.html" %}
+{% load static scitex_paths %}
+{% comment %}
+  project_card.html — ONE card, and the editor for the fields that need room.
+
+  SELECTORS: data-stx-* hooks on everything a browser check or the docs/video
+  pipeline needs to locate, so a recording does not depend on a translated label.
+
+  NO CARD, ONE SENTENCE: when the id is not one of the rows this page rendered,
+  the page says the card is not on this board — the same sentence whether the card
+  belongs to another tenant, another project, or does not exist. A detail route
+  that distinguished those cases would be a better oracle than the board it sits
+  beside, which is the opposite of the point.
+
+  NO csrf_token, for the same stated reason as the board's create form: this app
+  installs no CsrfViewMiddleware, so no cookie would be set and a token could never
+  validate. Writes inherit the DM POST endpoints' stance; flagged to the owner.
+{% endcomment %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'scitex_cards/project_board.css' %}">
+{% endblock %}
+
+{% block scitex_app_content %}
+<main class="stx-cards-project"
+      data-stx-page="project-card"
+      data-stx-state="{{ board.state }}"
+      data-stx-card="{{ card_id }}">
+
+  <header class="stx-cards-project__band">
+    <h1 class="stx-cards-project__title" data-stx-leaf-title>SciTeX Cards</h1>
+    <span class="stx-cards-project__ver" data-stx-leaf-version>v{{ scitex_cards_version }}</span>
+    <span class="stx-cards-project__current" data-stx-card-project>
+      Project <code>{{ board.project|default:"—" }}</code>
+    </span>
+    <a class="stx-cards-project__clear"
+       href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
+       data-stx-back-to-board>Back to the board</a>
+  </header>
+
+  <section class="stx-cards-project__body" aria-live="polite">
+
+    {% if edit_error %}
+      <p class="stx-cards-project__create-error" data-stx-edit-error role="alert">
+        {{ edit_error }}
+      </p>
+    {% endif %}
+
+    {% if not card %}
+      <div class="stx-cards-project__state" data-stx-state-block="no-such-card">
+        <h2 class="stx-cards-project__state-title">This card is not on this board</h2>
+        <p class="stx-cards-project__state-body">
+          Either it does not exist, or it is not a card you can open in
+          {{ board.project|default:"this project" }}. Nothing about other projects
+          or other people's cards is shown here.
+        </p>
+        <a class="stx-cards-project__retry"
+           href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}"
+           data-stx-back-to-board>Back to the board</a>
+      </div>
+
+    {% else %}
+      <article class="stx-cards-project__card" data-stx-card-detail="{{ card.id }}">
+        <h2 class="stx-cards-project__card-title" data-stx-detail-title>{{ card.title|default:card.id }}</h2>
+        <p class="stx-cards-project__meta">
+          <span data-stx-detail-status>{{ card.status|default:"—" }}</span>
+          <span>assignee <code>{{ card.assignee|default:"—" }}</code></span>
+          <span>priority {{ card.priority|default:"—" }}</span>
+          <code data-stx-detail-id>{{ card.id }}</code>
+        </p>
+        {% if card.note %}
+          <p class="stx-cards-project__state-body" data-stx-detail-note>{{ card.note }}</p>
+        {% endif %}
+      </article>
+
+      <form class="stx-cards-project__create" method="post"
+            action="{{ api_base|stx_path:"/projects" }}/{{ card_id }}?project={{ board.project|urlencode }}"
+            data-stx-card-edit="{{ card.id }}">
+        <input type="hidden" name="action" value="update">
+        <input type="hidden" name="card_id" value="{{ card_id }}">
+        <label for="stx-edit-title">Title</label>
+        <input id="stx-edit-title" type="text" name="title"
+               value="{{ card.title|default:'' }}" maxlength="{{ title_max }}"
+               data-stx-edit-title>
+        <label for="stx-edit-status">Status</label>
+        <select id="stx-edit-status" name="status" data-stx-edit-status>
+          {% for status in statuses %}
+            <option value="{{ status }}" {% if status == card.status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+        <label for="stx-edit-assignee">Assignee</label>
+        <input id="stx-edit-assignee" type="text" name="assignee"
+               value="{{ card.assignee|default:'' }}" data-stx-edit-assignee>
+        <label for="stx-edit-note">Note</label>
+        <textarea id="stx-edit-note" name="note" maxlength="{{ note_max }}"
+                  rows="6" data-stx-edit-note>{{ card.note|default:'' }}</textarea>
+        <button type="submit" data-stx-edit-submit>Save</button>
+      </form>
+    {% endif %}
+
+  </section>
+</main>
+{% endblock %}

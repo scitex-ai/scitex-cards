@@ -780,16 +780,19 @@ def test_update_refuses_a_card_that_is_not_on_this_board():
 
 
 def test_update_hands_the_store_only_the_fields_a_board_may_change():
-    """A crafted form naming project/title/created_by must not reach the writer:
-    the allowed verbs are status, assignee and priority."""
+    """A crafted form naming fields OUTSIDE `UPDATABLE_FIELDS` must not reach the
+    writer — project, creator and scope are not the board's to change. (title and
+    note ARE in the set now, because the card page edits them; that is asserted
+    separately rather than by widening this test.)"""
     # Arrange
     recorder = _Recorder()
     form = {
         "card_id": "alice-a",
         "status": "done",
         "project": "proj-beta",
-        "title": "pwned",
         "created_by": "dana",
+        "agent": "dana",
+        "scope": "fleet",
     }
     # Act
     pb.update_card(_board(), form, update=recorder)
@@ -917,3 +920,199 @@ def test_the_view_dispatches_an_update_action_to_the_update_path():
     response = pb.project_board_page(request)
     # Assert
     assert "Unknown action" in response.content.decode()
+
+
+# --- one card: open it, and edit the two fields that need room (slice 2c) ----
+
+
+def _card_page(card_id="alice-a", *, state=None, path="/projects/alice-a", edit_error="", user="alice"):
+    """Render the card page through the REAL view, no patching."""
+    from django.test import RequestFactory
+
+    request = RequestFactory().get(path, HTTP_HOST="127.0.0.1")
+    request.user = _User(user) if user else None
+    return pb.render_project_card(request, state or _board(), card_id, edit_error=edit_error)
+
+
+def test_the_card_page_shows_the_card_it_was_asked_for():
+    """The title, the status and the id are on the page: it is the card, not a
+    generic panel."""
+    # Arrange
+    card_id = "alice-a"
+    # Act
+    body = _card_page(card_id).content.decode()
+    # Assert
+    assert (f'data-stx-card-detail="{card_id}"' in body, "Alice A" in body) == (True, True)
+
+
+def test_the_card_page_refuses_a_card_that_is_not_on_this_board():
+    """Same boundary as the inline controls: the id is a lookup key into the rows
+    the board rendered, never a permission."""
+    # Arrange
+    state = _board()
+    # Act
+    response = _card_page("bob-b", state=state)
+    # Assert
+    assert response.status_code == 404
+
+
+def test_the_refusal_does_not_say_whether_the_card_exists_elsewhere():
+    """One sentence for "not yours", "not here" and "does not exist" — a page that
+    distinguished them would be a better oracle than the board it sits beside."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _card_page("bob-b", state=state).content.decode()
+    # Assert
+    assert "not on this board" in body
+
+
+def test_the_card_page_refuses_when_the_board_is_not_open():
+    """A denied project has no cards to open, and the page must not accept a POST
+    just because the URL looked right."""
+    # Arrange
+    state = pb.BoardState(state=pb.DENIED, principal="alice", is_staff=False)
+    # Act
+    response = _card_page("alice-a", state=state)
+    # Assert
+    assert response.status_code == 403
+
+
+def test_the_card_page_offers_the_editor_with_the_current_values():
+    """An editor pre-filled from the row is what makes "edit" a change rather than
+    a rewrite."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _card_page(state=state).content.decode()
+    # Assert
+    assert ('data-stx-edit-title' in body, 'value="Alice A"' in body) == (True, True)
+
+
+def test_an_edit_refusal_answers_400_and_says_why():
+    """The reader's input was wrong: a different answer from a refusal to show the
+    card, and it is on the page rather than only in the status code."""
+    # Arrange
+    state = _board()
+    # Act
+    response = _card_page(state=state, edit_error="A note can be up to 4000 characters.")
+    # Assert
+    assert (response.status_code, "A note can be up to 4000 characters." in response.content.decode()) == (400, True)
+
+
+def test_update_accepts_a_title_and_a_note():
+    """The two fields the card page adds to the board's inline verbs."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"card_id": "alice-a", "title": "Renamed", "note": "a paragraph"}
+    # Act
+    pb.update_card(_board(), form, update=recorder)
+    # Assert
+    assert (recorder.calls[0]["title"], recorder.calls[0]["note"]) == ("Renamed", "a paragraph")
+
+
+def test_update_refuses_an_empty_title():
+    """A card with no title is a row nobody can read in a graph."""
+    # Arrange
+    form = {"card_id": "alice-a", "title": "   "}
+    # Act
+    result = pb.update_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_update_refuses_a_note_past_the_page_limit():
+    """A note is a paragraph; a paste accident must not reach the store."""
+    # Arrange
+    form = {"card_id": "alice-a", "note": "x" * (pb.NOTE_MAX + 1)}
+    # Act
+    result = pb.update_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_update_can_clear_a_note_on_purpose():
+    """An empty note is sent, unlike an empty assignee: clearing a note is a thing
+    people mean, while losing an assignee to a stray save is not."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.update_card(_board(), {"card_id": "alice-a", "note": ""}, update=recorder)
+    # Assert
+    assert recorder.calls[0]["note"] == ""
+
+
+def test_the_board_links_each_card_to_its_own_page():
+    """A card is a thing with an address: the board must offer the way in."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert 'data-stx-card-open="alice-a"' in body
+
+
+def test_both_card_urls_are_registered():
+    """The address of a card, in the two spellings people type."""
+    # Arrange
+    from django.urls import reverse
+
+    # Act
+    both = (reverse("project_card", args=["alice-a"]), reverse("project_card_slash", args=["alice-a"]))
+    # Assert
+    assert both == ("/projects/alice-a", "/projects/alice-a/")
+
+
+# --- the mount-relative URL defect (found by a browser click, 2026-09-17) ----
+
+
+def test_no_url_on_the_board_is_protocol_relative_at_a_root_mount():
+    """`{{ api_base }}/projects` renders `//projects` when api_base is empty, and a
+    browser reads a leading `//` as a HOST. Measured: clicking a card left the
+    browser on chrome-error://chromewebdata/ without a request ever reaching this
+    app. Every href and form action must therefore be root-absolute."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert ('action="//' in body, 'href="//' in body) == (False, False)
+
+
+def test_no_url_on_the_card_page_is_protocol_relative_at_a_root_mount():
+    """Same defect, same rule, on the card page's own links and edit form."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _card_page(state=state).content.decode()
+    # Assert
+    assert ('action="//' in body, 'href="//' in body) == (False, False)
+
+
+def test_the_board_urls_carry_the_mount_prefix_at_a_sub_path_mount():
+    """Behind the hub the app lives at /apps/cards, and the links must go there —
+    root-absolute is necessary but not sufficient."""
+    # Arrange
+    from django.test import RequestFactory
+
+    request = RequestFactory().get("/apps/cards/projects", HTTP_HOST="127.0.0.1")
+    request.user = _User("alice")
+    # Act
+    body = pb.render_project_board(request, _board(), host_picker_available=False).content.decode()
+    # Assert
+    assert f'action="/apps/cards/projects?project=' in body
+
+
+def test_the_card_page_recovers_the_mount_root_from_a_card_path():
+    """On /apps/cards/projects/<id> the last segment is the CARD, not an alias: the
+    mount root must still be /apps/cards, or every link on the page nests one level
+    deeper per click."""
+    # Arrange
+    from django.test import RequestFactory
+
+    request = RequestFactory().get("/apps/cards/projects/alice-a", HTTP_HOST="127.0.0.1")
+    request.user = _User("alice")
+    # Act
+    body = pb.render_project_card(request, _board(), "alice-a").content.decode()
+    # Assert
+    assert f'action="/apps/cards/projects/alice-a?project=' in body

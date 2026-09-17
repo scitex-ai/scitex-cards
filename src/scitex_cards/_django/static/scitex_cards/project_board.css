@@ -364,6 +364,31 @@
   border-color: var(--pb-accent);
 }
 
+.stx-cards-project__card-title a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.stx-cards-project__card-title a:hover,
+.stx-cards-project__card-title a:focus-visible {
+  border-bottom-color: var(--pb-accent);
+  color: var(--pb-accent);
+}
+
+.stx-cards-project__create textarea {
+  flex: 1 1 100%;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.82rem;
+  resize: vertical;
+}
+
 /* Phone: the band and the filters each become their own wrapped rows, and the
  * picker stops being pushed to the right edge where it would sit off-screen —
  * the measured defect on the fleet board's header at 390px.
