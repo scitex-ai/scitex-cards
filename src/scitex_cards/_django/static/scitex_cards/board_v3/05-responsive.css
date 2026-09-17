@@ -42,11 +42,20 @@
     display: none !important;
   }
 
-  /* Filter bar — wrap to multiple rows; smaller controls. */
+  /* Filter bar — WRAP, don't scroll. This sheet used to give the bar
+   * `overflow-x: auto` and set no `flex-wrap`, so it stayed the flex default
+   * `nowrap` and the phone got a horizontally SCROLLABLE header instead of a
+   * wrapped one. Measured 390px 2026-09-17 (scitex-cards-gui's slice,
+   * reproduced): bar 606px inside a 390px viewport, the search field at
+   * x=330..590 and the ACTIVE layout toggle at x=374..443 — the controls a
+   * user needs were off-screen AT REST, reachable only by discovering a
+   * scroll. Same defect class as the light-theme hybrid: a rule asserting a
+   * behaviour the computed layout does not have. */
   .filterbar {
     gap: 6px;
     padding: 8px 10px;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
   .filterbar h1 {
     font-size: 0.95rem;
@@ -58,12 +67,27 @@
     font-size: 0.84rem;
     min-height: 38px;
   }
-  /* P1 mobile-responsive override — search wraps to its own row at
-   * ~100% width, font bumped, kbd-hint hidden (no physical kbd on
-   * phones). Restored 2026-06-12 with the rest of the P1 wave. */
-  .filt-search {
-    min-width: 200px;
+  /* P1 mobile-responsive override — search takes its OWN ROW at full width,
+   * font bumped, kbd-hint hidden (no physical kbd on phones).
+   *
+   * THIS RULE COULD NOT FIRE, and the reason is one line: `.fb-center` (the
+   * search group's wrapper) carries `min-width: 260px` in 01-filterbar.css,
+   * which is exactly the 260px you measure on the input at 390px — a floor
+   * the bar's `nowrap` then pushed past the viewport edge. `flex: 1 1 100%` on
+   * the INPUT cannot widen its parent; the floor has to come off the GROUP.
+   * `min-width: 0` is what lets flex-wrap actually fire (same lesson as
+   * `.fb-right`'s operator note of 2026-07-10: 「すげえはみ出してる」). */
+  .fb-center {
     flex: 1 1 100%;
+    min-width: 0;
+  }
+  .fb-center.stx-cards-filterbar__group--search > .filt-search-wrap {
+    flex: 1 1 100%;
+    min-width: 0; /* 07-toolbar-groups sets 200px; unbounded room at 390px */
+  }
+  .filt-search {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 0.95rem;
     padding: 9px 12px !important;
   }
