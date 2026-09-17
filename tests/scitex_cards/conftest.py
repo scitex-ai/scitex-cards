@@ -16,9 +16,135 @@ The fixture is intentionally minimal: just ``set(key, value)`` and
 from __future__ import annotations
 
 import os
+import signal
+import subprocess
+import sys
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
+
+from scitex_cards._cli._board_proc import _board_pid_alive
+
+# === Board-process fixtures ==================================================
+#
+# These fixtures serve tests split across multiple ``_cli`` modules.  They
+# belong in this parent conftest because the CI matrix invokes every test file
+# explicitly under xdist.  With that invocation, pytest 9 can collect a child
+# module without registering the non-package ``_cli/conftest.py``; fixtures
+# defined only there then disappear for whichever worker receives the module.
+# Keeping the definitions at this package root makes their ownership match
+# their cross-module scope.  The child conftest re-exports the same fixture
+# objects for compatibility with direct, directory-scoped pytest invocations.
+
+_BOARD_SUPERVISOR = (
+    "import subprocess, sys\n"
+    "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+    "print(p.pid)\n"
+    "sys.stdout.flush()\n"
+    "p.wait()\n"
+)
+
+
+def _terminate_board_helper(proc: subprocess.Popen) -> None:
+    """Best-effort shutdown of a helper subprocess. Never raises."""
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+class BoardProcess:
+    """A live stand-in for a running board, with a parent that reaps it."""
+
+    def __init__(self) -> None:
+        self.supervisor = subprocess.Popen(
+            [sys.executable, "-c", _BOARD_SUPERVISOR],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        self.pid = int(self.supervisor.stdout.readline().strip())
+
+    @property
+    def alive(self) -> bool:
+        """Report liveness with the same probe used by the product."""
+        return _board_pid_alive(self.pid)
+
+    def await_exit(self, tries: int = 200) -> None:
+        """Wait a bounded interval for the supervised process to exit."""
+        for _ in range(tries):
+            if not self.alive:
+                return
+            time.sleep(0.05)
+
+    def cleanup(self) -> None:
+        """Kill any remaining child and reap its supervisor."""
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        _terminate_board_helper(self.supervisor)
+
+
+@pytest.fixture
+def pidfile_path(env, tmp_path):
+    """Redirect the board pidfile so tests never touch the real one."""
+    path = tmp_path / "board.pid"
+    env.set("SCITEX_CARDS_BOARD_PIDFILE", str(path))
+    yield path
+
+
+@pytest.fixture
+def board_process():
+    """Provide a live process that really exits on SIGTERM."""
+    board = BoardProcess()
+    try:
+        yield board
+    finally:
+        board.cleanup()
+
+
+def _proc_state(pid: int) -> str | None:
+    """Return the single-letter /proc state, or None if the pid is gone."""
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            if line.startswith("State:"):
+                return line.split()[1]
+    except OSError:
+        return None
+    return None
+
+
+@pytest.fixture
+def zombie_pid():
+    """Provide a pid that accepts every signal and dies from none of them."""
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child never runs test code
+        os._exit(0)
+    try:
+        for _ in range(200):
+            if _proc_state(pid) == "Z":
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError(f"forked child {pid} never became a zombie")
+        yield pid
+    finally:
+        try:
+            os.waitpid(pid, 0)
+        except ChildProcessError:
+            pass
+
+
+@pytest.fixture
+def reaped_pid() -> int:
+    """Provide a pid guaranteed dead after its child has been reaped."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
 
 
 @dataclass

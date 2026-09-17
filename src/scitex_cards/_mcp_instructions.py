@@ -129,7 +129,9 @@ def build_instructions(agent_id: str | None) -> str:
         )
     return (
         "scitex-cards: shared task store across agents and hosts. "
-        f"{slice_line} {_STORE_LINE}"
+        f"{slice_line} list_tasks is paginated: read items and follow "
+        "page.next_cursor with unchanged filters while page.truncated is true. "
+        f"{_STORE_LINE}"
     )
 
 

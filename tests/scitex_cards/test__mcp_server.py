@@ -271,7 +271,7 @@ def test_add_then_list_round_trip(tmp_path):
     )
     # Act
     listed = asyncio.run(_call_tool(list_tasks))
-    rows = json.loads(listed)
+    rows = json.loads(listed)["items"]
     # Assert
     assert {r["id"] for r in rows} == {"a"}
 
@@ -293,7 +293,7 @@ def test_scope_filter_excludes_other_scope(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope="agent:proj-scitex-cards"))
     # Assert
-    assert {r["id"] for r in json.loads(listed)} == {"b"}
+    assert {r["id"] for r in json.loads(listed)["items"]} == {"b"}
 
 
 def test_list_tasks_filter_by_agent(tmp_path):
@@ -306,7 +306,7 @@ def test_list_tasks_filter_by_agent(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope="", agent="proj-x"))
     # Assert
-    assert {r["id"] for r in json.loads(listed)} == {"a"}
+    assert {r["id"] for r in json.loads(listed)["items"]} == {"a"}
 
 
 def test_list_tasks_filter_blocking_me(tmp_path):
@@ -327,7 +327,7 @@ def test_list_tasks_filter_blocking_me(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope="", blocking_me=True))
     # Assert
-    assert {r["id"] for r in json.loads(listed)} == {"b"}
+    assert {r["id"] for r in json.loads(listed)["items"]} == {"b"}
 
 
 def test_list_tasks_filter_overdue(tmp_path):
@@ -379,7 +379,7 @@ def test_list_tasks_filter_overdue(tmp_path):
         )
     )
     # Assert
-    assert {r["id"] for r in json.loads(listed)} == {"late"}
+    assert {r["id"] for r in json.loads(listed)["items"]} == {"late"}
 
 
 def test_add_task_with_deadline_sets_deadline_field(tmp_path):
@@ -402,7 +402,7 @@ def test_add_task_with_deadline_sets_deadline_field(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
-    rows = json.loads(listed)
+    rows = json.loads(listed)["items"]
     assert rows[0]["deadline"] == "2030-01-01"
 
 
@@ -424,7 +424,7 @@ def test_update_task_with_deadline_sets_deadline_field(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
-    rows = json.loads(listed)
+    rows = json.loads(listed)["items"]
     assert rows[0]["deadline"] == "2030-06-15"
 
 
@@ -446,7 +446,7 @@ def test_add_task_with_deadlines_list_sets_multi_deadlines(tmp_path):
     # Act
     listed = asyncio.run(_call_tool(list_tasks, scope=""))
     # Assert
-    rows = json.loads(listed)
+    rows = json.loads(listed)["items"]
     assert rows[0]["deadlines"] == ["2030-01-01", "2030-07-01"]
 
 
