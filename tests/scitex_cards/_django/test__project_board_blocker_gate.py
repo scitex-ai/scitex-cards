@@ -237,3 +237,48 @@ def test_the_edit_form_offers_the_gates_and_preselects_the_current_one():
     body = _card_page(state=state).content.decode()
     # Assert
     assert (f'<option value="agent-wait" selected>' in body, 'data-stx-edit-blocker' in body) == (True, True)
+
+
+# --- leaving `blocked` clears the gate (reviewer blocker #1, second half) ----
+
+
+def test_leaving_blocked_clears_the_stale_gate():
+    """The store's own gate rule is ONE-DIRECTIONAL: a blocked card must name a
+    gate, and nothing forces the other direction. So a card moved back to
+    `in_progress` keeps a blocker it is no longer gated by, and the board then
+    reports a state that does not exist. The page must keep the direction the
+    validator does not enforce."""
+    # Arrange
+    recorder = _Recorder()
+    state = _board(blocker="operator-decision")
+    form = {"card_id": "alice-a", "status": "in_progress"}
+    # Act
+    result = pb.update_card(state, form, update=recorder)
+    # Assert
+    assert (result.ok, recorder.calls[0].get("blocker")) == (True, "")
+
+
+def test_a_card_that_stays_blocked_keeps_its_gate():
+    """Clearing on exit must not clear on a no-op: the gate is still the answer
+    to "what is this waiting on"."""
+    # Arrange
+    recorder = _Recorder()
+    state = _board(blocker="compute")
+    form = {"card_id": "alice-a", "status": "blocked"}
+    # Act
+    pb.update_card(state, form, update=recorder)
+    # Assert
+    assert "blocker" not in recorder.calls[0]
+
+
+def test_an_explicit_gate_is_not_cleared_when_the_status_leaves_blocked():
+    """A form that names a gate is stating something on purpose; the page does not
+    overrule it."""
+    # Arrange
+    recorder = _Recorder()
+    state = _board(blocker="compute")
+    form = {"card_id": "alice-a", "status": "in_progress", "blocker": "compute"}
+    # Act
+    pb.update_card(state, form, update=recorder)
+    # Assert
+    assert recorder.calls[0]["blocker"] == "compute"

@@ -750,6 +750,18 @@ def update_card(
         if not (blocker or existing):
             return UpdateResult(ok=False, error=BLOCKED_NEEDS_GATE)
 
+    # LEAVING `blocked` MUST CLEAR THE GATE — the second half of the invariant, and
+    # the half the STORE DOES NOT ENFORCE. `_validate` only checks the direction
+    # "blocked must name a gate"; nothing forces the other, so a card moved back to
+    # `in_progress` keeps a blocker it is no longer gated by and the board then
+    # reports a state that does not exist. Reviewer blocker #1 on PR #1028 found
+    # this; the page has to keep the direction the validator leaves open.
+    # An EXPLICIT gate from the form is kept: a caller naming one is stating
+    # something on purpose, and this rule is about staleness, not about authority.
+    if changes.get("status") and changes["status"] != BLOCKED_STATUS and not blocker:
+        if str((current or {}).get("blocker") or "").strip():
+            changes["blocker"] = ""
+
     if "assignee" in form:
         assignee = str(form.get("assignee") or "").strip()
         if assignee:
