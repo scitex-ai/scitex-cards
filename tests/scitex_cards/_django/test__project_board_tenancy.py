@@ -653,14 +653,22 @@ def test_create_defaults_the_assignee_to_the_viewer(new_store):
 
 
 def test_create_keeps_a_status_the_store_has(new_store):
-    """An explicit status from the form is honoured when the vocabulary knows it."""
+    """An explicit status from the form is honoured when the vocabulary knows it.
+
+    It now carries its GATE: this test used to write `blocked` with no blocker,
+    which is the defect the blocker gate exists for — the store tolerated it with a
+    warning, and after the gate landed the same call was refused (accepted item 5
+    of card gui-project-board-blocker-gate-20260917). Writing the gate is the fix,
+    and asserting the row carries it is the point of doing so.
+    """
     # Arrange
     dsn = new_store()
-    form = {"title": "Ship the slice", "status": "blocked"}
+    form = {"title": "Ship the slice", "status": "blocked", "blocker": "dependency"}
     # Act
     result = pb.create_card(_ready(), form, store=dsn, now="20260917070005")
     # Assert
-    assert [row["status"] for row in _rows(dsn, result.card_id)] == ["blocked"]
+    rows = _rows(dsn, result.card_id)
+    assert [(row["status"], row["blocker"]) for row in rows] == [("blocked", "dependency")]
 
 
 def test_create_refuses_a_status_the_store_does_not_have():
