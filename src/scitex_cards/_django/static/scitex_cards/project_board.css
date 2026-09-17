@@ -235,6 +235,82 @@
   font-weight: 700;
 }
 
+.stx-cards-project__created,
+.stx-cards-project__create-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__created {
+  border-color: var(--pb-accent);
+}
+
+.stx-cards-project__create-error {
+  border-color: var(--pb-status-blocked);
+}
+
+.stx-cards-project__create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--pb-border);
+  border-radius: 8px;
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__create label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__create input,
+.stx-cards-project__create select {
+  padding: 6px 10px;
+  min-height: 36px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.stx-cards-project__create input[name="title"] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.stx-cards-project__create input[name="priority"] {
+  width: 4.5rem;
+}
+
+.stx-cards-project__create button {
+  margin-left: auto;
+  padding: 8px 16px;
+  min-height: 36px;
+  border: 1px solid var(--pb-accent);
+  border-radius: 6px;
+  background: var(--pb-accent);
+  color: var(--pb-accent-on);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stx-cards-project__create button:hover {
+  filter: brightness(1.08);
+}
+
 /* Phone: the band and the filters each become their own wrapped rows, and the
  * picker stops being pushed to the right edge where it would sit off-screen —
  * the measured defect on the fleet board's header at 390px.
@@ -271,6 +347,20 @@
   .stx-cards-project__filters label {
     flex: 1 1 100%;
     margin-top: 4px;
+  }
+  .stx-cards-project__create label {
+    flex: 1 1 100%;
+    margin-top: 4px;
+  }
+  .stx-cards-project__create input,
+  .stx-cards-project__create select,
+  .stx-cards-project__create button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .stx-cards-project__create button {
+    margin-left: 0;
+    padding: 10px 18px;
   }
   .stx-cards-project__filters input,
   .stx-cards-project__filters select,

@@ -336,7 +336,8 @@ def test_the_module_does_not_restate_the_canonical_status_vocabulary():
 # --- the route ---------------------------------------------------------------
 
 
-def _render(state, *, path="/projects", user="alice", host_picker_available=None):
+def _render(state, *, path="/projects", user="alice", host_picker_available=None,
+            create_error="", created_id=""):
     """Render a state through the REAL page view, no patching.
 
     ``render_project_board`` is the production function the view delegates to;
@@ -347,7 +348,13 @@ def _render(state, *, path="/projects", user="alice", host_picker_available=None
 
     request = RequestFactory().get(path, HTTP_HOST="127.0.0.1")
     request.user = _User(user) if user else None
-    return pb.render_project_board(request, state, host_picker_available=host_picker_available)
+    return pb.render_project_board(
+        request,
+        state,
+        host_picker_available=host_picker_available,
+        create_error=create_error,
+        created_id=created_id,
+    )
 
 
 def _state_only(status, **kwargs):
@@ -454,3 +461,259 @@ def test_the_page_is_reachable_by_both_spellings():
     both = (reverse("project_board"), reverse("project_board_slash"))
     # Assert
     assert both == ("/projects", "/projects/")
+
+
+# --- create (slice 2a) -------------------------------------------------------
+#
+# EVERY test below writes to a REAL store handed out by the harness (`new_store`
+# gives a throwaway Postgres store per call) and reads the row back. No test
+# double for the writer, because the claims worth making here are about what
+# LANDED: that the project came from the resolved state rather than the form,
+# and that the creator came from the principal rather than the form. A stub
+# would let those pass while the real call sent something else.
+
+
+def _ready(project="proj-alpha", principal="alice"):
+    return pb.BoardState(state=pb.READY, principal=principal, is_staff=False, project=project)
+
+
+class _Recorder:
+    """A hand-written stand-in for the store's writer, for the cases that are
+    about WHAT WAS SENT rather than about what a store accepted.
+
+    Not a mock library and not a monkeypatch: it is a callable handed in through
+    the same ``add=`` argument the production default arrives through, and it
+    records the payload so the forcing claims can be asserted on a machine with
+    no writable PostgreSQL. The store-backed tests below assert the same claims
+    end to end for the environments that have one.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, **fields):
+        self.calls.append(fields)
+        return {"id": fields.get("id")}
+
+
+def test_the_writer_is_handed_the_states_project_not_the_forms():
+    """Hermetic twin of the store-backed case, for a machine with no scratch PG."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"title": "Ship the slice", "project": "proj-beta"}
+    # Act
+    pb.create_card(_ready(), form, add=recorder, now="20260917070006")
+    # Assert
+    assert recorder.calls[0]["project"] == "proj-alpha"
+
+
+def test_the_writer_is_handed_the_principal_not_the_forms_author():
+    """The created_by and agent fields both come from the resolved principal."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"title": "Ship the slice", "created_by": "dana", "agent": "dana"}
+    # Act
+    pb.create_card(_ready(), form, add=recorder, now="20260917070007")
+    # Assert
+    assert (recorder.calls[0]["created_by"], recorder.calls[0]["agent"]) == ("alice", "alice")
+
+
+def test_the_writer_gets_a_whole_number_priority_or_none():
+    """Priority reaches the store as an int, because the store validates an int."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.create_card(_ready(), {"title": "Ship the slice", "priority": "3"},
+                   add=recorder, now="20260917070008")
+    # Assert
+    assert recorder.calls[0]["priority"] == 3
+
+
+def test_the_generated_id_reads_like_a_card_id():
+    """Ids on this board are readable; a page-created card joins that, and the
+    stamp+suffix keeps two cards with the same title distinct."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.create_card(_ready(), {"title": "Fix the Graph Layout!"},
+                   add=recorder, now="20260917070909")
+    # Assert
+    assert recorder.calls[0]["id"].startswith("fix-the-graph-layout-20260917070909-")
+
+
+def _rows(dsn, card_id):
+    from scitex_cards import _store
+
+    return [row for row in _store.list_tasks(store=dsn) if row["id"] == card_id]
+
+
+def test_create_writes_a_card_into_the_current_project(new_store):
+    """The happy path, against a real store, read back by id."""
+    # Arrange
+    dsn = new_store()
+    # Act
+    result = pb.create_card(_ready(), {"title": "Ship the slice"}, store=dsn, now="20260917070000")
+    # Assert
+    assert [row["project"] for row in _rows(dsn, result.card_id)] == ["proj-alpha"]
+
+
+def test_create_signs_the_card_with_the_principal_not_the_form(new_store):
+    """A crafted POST cannot file a card under someone else's name."""
+    # Arrange
+    dsn = new_store()
+    form = {"title": "Ship the slice", "created_by": "dana", "agent": "dana"}
+    # Act
+    result = pb.create_card(_ready(), form, store=dsn, now="20260917070001")
+    # Assert
+    assert [row["created_by"] for row in _rows(dsn, result.card_id)] == ["alice"]
+
+
+def test_create_cannot_file_into_another_tenants_project(new_store):
+    """A crafted POST cannot choose a project: the state's wins."""
+    # Arrange
+    dsn = new_store()
+    form = {"title": "Ship the slice", "project": "proj-beta"}
+    # Act
+    result = pb.create_card(_ready(), form, store=dsn, now="20260917070002")
+    # Assert
+    assert [row["project"] for row in _rows(dsn, result.card_id)] == ["proj-alpha"]
+
+
+def test_create_defaults_the_status_to_in_flight(new_store):
+    """A card typed into a board is in flight; 'deferred' is the store's own
+    default and the wrong one for a person who just typed a title."""
+    # Arrange
+    dsn = new_store()
+    # Act
+    result = pb.create_card(_ready(), {"title": "Ship the slice"}, store=dsn, now="20260917070003")
+    # Assert
+    assert [row["status"] for row in _rows(dsn, result.card_id)] == [pb.CREATE_DEFAULT_STATUS]
+
+
+def test_create_defaults_the_assignee_to_the_viewer(new_store):
+    """An unassigned card on a personal board is a card nobody picks up."""
+    # Arrange
+    dsn = new_store()
+    # Act
+    result = pb.create_card(_ready(), {"title": "Ship the slice"}, store=dsn, now="20260917070004")
+    # Assert
+    assert [row["assignee"] for row in _rows(dsn, result.card_id)] == ["alice"]
+
+
+def test_create_keeps_a_status_the_store_has(new_store):
+    """An explicit status from the form is honoured when the vocabulary knows it."""
+    # Arrange
+    dsn = new_store()
+    form = {"title": "Ship the slice", "status": "blocked"}
+    # Act
+    result = pb.create_card(_ready(), form, store=dsn, now="20260917070005")
+    # Assert
+    assert [row["status"] for row in _rows(dsn, result.card_id)] == ["blocked"]
+
+
+def test_create_refuses_a_status_the_store_does_not_have():
+    """An invented status must be refused rather than written as a new column."""
+    # Arrange
+    form = {"title": "Ship the slice", "status": "banana"}
+    # Act
+    result = pb.create_card(_ready(), form)
+    # Assert
+    assert (result.ok, result.card_id) == (False, None)
+
+
+def test_create_refuses_an_empty_title():
+    """A card with no title is a row nobody can read in a graph."""
+    # Arrange
+    form = {"title": "   "}
+    # Act
+    result = pb.create_card(_ready(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_create_refuses_a_title_past_the_page_limit():
+    """The page limit is stated once and enforced on the write, not the input."""
+    # Arrange
+    form = {"title": "x" * (pb.CREATE_TITLE_MAX + 1)}
+    # Act
+    result = pb.create_card(_ready(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_create_refuses_a_non_numeric_priority():
+    """Priority is an integer field; 'high' must not reach the store."""
+    # Arrange
+    form = {"title": "Ship the slice", "priority": "high"}
+    # Act
+    result = pb.create_card(_ready(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_create_refuses_when_there_is_no_project_to_file_into():
+    """No project selected: there is nowhere for the card to go, and saying so
+    is better than filing it in whichever project happens to be around."""
+    # Arrange
+    state = pb.BoardState(state=pb.NO_PROJECT, principal="alice", is_staff=False)
+    # Act
+    result = pb.create_card(state, {"title": "Orphan"})
+    # Assert
+    assert result.ok is False
+
+
+def test_create_refuses_on_a_denied_project():
+    """A refused project must not become a write target."""
+    # Arrange
+    state = pb.BoardState(state=pb.DENIED, principal="alice", is_staff=False)
+    # Act
+    result = pb.create_card(state, {"title": "Trespass"})
+    # Assert
+    assert result.ok is False
+
+
+def test_a_refused_create_writes_nothing(new_store):
+    """The refusal is a decision, not a write that was rolled back: the store
+    must gain no row at all."""
+    # Arrange
+    from scitex_cards import _store
+
+    dsn = new_store()
+    before = len(_store.list_tasks(store=dsn))
+    # Act
+    pb.create_card(_ready(), {"title": ""}, store=dsn)
+    # Assert
+    assert len(_store.list_tasks(store=dsn)) == before
+
+
+def test_the_create_form_carries_the_projects_url_and_the_page_limit():
+    """The form POSTs back to this page with the project it belongs to, and
+    says the same title limit the server enforces."""
+    # Arrange
+    state = _state_only(pb.READY, project="proj-alpha")
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert ('data-stx-create-title' in body, f'maxlength="{pb.CREATE_TITLE_MAX}"' in body) == (True, True)
+
+
+def test_no_create_form_where_there_is_no_project_to_create_in():
+    """A create form on a denied or project-less page would be a button that
+    cannot work."""
+    # Arrange
+    state = _state_only(pb.DENIED)
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert "data-stx-create-submit" not in body
+
+
+def test_a_refused_create_answers_400_and_says_why():
+    """The reader's input was wrong, which is a different answer from every
+    state above — and it is on the page, not only in the status code."""
+    # Arrange
+    state = _state_only(pb.READY, project="proj-alpha")
+    # Act
+    response = _render(state, create_error="A card needs a title.")
+    # Assert
+    assert (response.status_code, "A card needs a title." in response.content.decode()) == (400, True)

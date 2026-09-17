@@ -44,7 +44,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional, Sequence
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +360,123 @@ def canonical_statuses() -> tuple[str, ...]:
     return tuple(VALID_STATUSES)
 
 
+#: A new card on a project board starts IN FLIGHT rather than deferred: the
+#: store's own default ("deferred") is the right default for a harvested backlog
+#: and the wrong one for something a person just typed into a board.
+CREATE_DEFAULT_STATUS = "in_progress"
+
+#: Longest title accepted. Not a store limit (the store has none) — a page limit,
+#: because a title is a label on a card and a 4 KB label is a bug report waiting
+#: to happen. Chosen to fit a phone column without truncation games.
+CREATE_TITLE_MAX = 200
+
+
+@dataclass(frozen=True)
+class CreateResult:
+    """What happened when someone pressed Create."""
+
+    ok: bool
+    card_id: Optional[str] = None
+    error: str = ""
+
+
+def _slug(text: str) -> str:
+    """A URL- and id-safe slug, ASCII-only, hyphenated.
+
+    Ids on this board are human-readable (``board-graph-ids-collide-...``), and a
+    card created from a page should join that convention rather than arrive as a
+    uuid nobody can read in a graph label.
+    """
+    kept = [c if (c.isalnum() and c.isascii()) else "-" for c in text.lower()]
+    slug = "".join(kept)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")[:60] or "card"
+
+
+def create_card(
+    state: BoardState,
+    form: Mapping[str, Any],
+    *,
+    add: Optional[Callable[..., dict]] = None,
+    store: Any = None,
+    now: Optional[str] = None,
+) -> CreateResult:
+    """Create ONE card inside the current project, or refuse with a reason.
+
+    THE FORM CANNOT CHOOSE WHO OR WHERE. ``project``, ``created_by`` and ``agent``
+    are taken from the resolved state and the principal — never from the POST
+    body — so a crafted request cannot file a card into another tenant's project
+    or sign it with someone else's name. That is the whole reason this function
+    takes the resolved ``state`` rather than a request: by the time it runs, the
+    tenancy question has already been answered once and cannot be re-answered by
+    the client.
+
+    Refusals are STATES rather than exceptions because every one of them is
+    something the reader can fix: they typed no title, chose a status the store
+    does not have, or are looking at a page with no project to file into.
+    """
+    if state.state in (DENIED, UNAVAILABLE, NO_PROJECT):
+        return CreateResult(ok=False, error="There is no project to file this card into.")
+
+    title = str(form.get("title") or "").strip()
+    if not title:
+        return CreateResult(ok=False, error="A card needs a title.")
+    if len(title) > CREATE_TITLE_MAX:
+        return CreateResult(ok=False, error=f"A title can be up to {CREATE_TITLE_MAX} characters.")
+
+    status = str(form.get("status") or "").strip() or CREATE_DEFAULT_STATUS
+    if status not in canonical_statuses():
+        return CreateResult(ok=False, error=f"{status!r} is not a status this store has.")
+
+    assignee = str(form.get("assignee") or "").strip() or state.principal
+    priority_raw = str(form.get("priority") or "").strip()
+    if priority_raw:
+        try:
+            priority: Optional[int] = int(priority_raw)
+        except ValueError:
+            return CreateResult(ok=False, error="Priority must be a whole number.")
+    else:
+        priority = None
+
+    # A suffix, because two cards may legitimately share a title and the store
+    # keys on the id. A timestamp plus four hex characters keeps the id readable
+    # AND collision-resistant without an existence query over the whole fleet.
+    stamp = (now or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))[-14:]
+    card_id = f"{_slug(title)}-{stamp}-{uuid4().hex[:4]}"
+
+    writer = add or _default_add
+    try:
+        written = writer(
+            store=store,
+            id=card_id,
+            title=title,
+            status=status,
+            project=state.project,
+            assignee=assignee,
+            priority=priority,
+            created_by=state.principal,
+            agent=state.principal,
+        )
+    except Exception as exc:  # noqa: BLE001 - one answer for every write failure
+        logger.warning("[scitex-cards] project board create failed: %s", exc, exc_info=True)
+        return CreateResult(ok=False, error="The card could not be saved. Try again.")
+    return CreateResult(ok=True, card_id=str(written.get("id") or card_id))
+
+
+def _default_add(**fields: Any) -> dict:
+    """Write through the store API — never SQL, never a hand-edit.
+
+    The board's second mandate is that the store is mutated only through its own
+    API, which validates the row, races correctly with other writers and leaves
+    the audit trail. A GUI is not an exception to that; it is the case the rule
+    was written for.
+    """
+    from ..._store import add_task
+
+    return add_task(**fields)
+
+
 def group_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
     """Rows grouped into ``[(status, rows), ...]`` in canonical order.
 
@@ -414,6 +533,9 @@ def render_project_board(
     state: BoardState,
     *,
     host_picker_available: Optional[bool] = None,
+    create_error: str = "",
+    created_id: str = "",
+    create_status: int = 200,
 ):
     """Render ``state`` as this page's HTTP response.
 
@@ -440,17 +562,48 @@ def render_project_board(
         "board": state,
         "groups": group_rows(state.rows),
         "statuses": canonical_statuses(),
+        "create_default_status": CREATE_DEFAULT_STATUS,
+        "create_title_max": CREATE_TITLE_MAX,
+        "create_error": create_error,
+        "created_id": created_id,
         "host_picker_available": (
             _host_picker_available() if host_picker_available is None else host_picker_available
         ),
     }
     html = render_to_string("scitex_cards/project_board.html", context, request=request)
-    return HttpResponse(html, status=STATUS_FOR_STATE.get(state.state, 200))
+    status = STATUS_FOR_STATE.get(state.state, 200)
+    if create_error:
+        # A refused create is a 400, not a board: the reader's input was wrong and
+        # they can fix it, which is different from every state above.
+        status = create_status if create_status != 200 else 400
+    return HttpResponse(html, status=status)
 
 
 def project_board_page(request):
-    """Serve the project-scoped board (Hub PR #923's Cards surface)."""
-    return render_project_board(request, board_state(request))
+    """Serve the project-scoped board, and take its Create submission.
+
+    CREATE IS POST-REDIRECT-GET, deliberately: a browser refresh after a create
+    must not file a second card, and the redirect target is derived from the
+    RESOLVED state rather than from the POST body, so the one thing the client
+    can influence is the title it typed.
+    """
+    from django.http import HttpResponseRedirect
+
+    state = board_state(request)
+    if getattr(request, "method", "GET").upper() != "POST":
+        created = str((getattr(request, "GET", None) or {}).get("created") or "").strip()
+        return render_project_board(request, state, created_id=created)
+
+    from .._request_store import read_store
+    from ..views import _BOARD_ALIASES, _include_root
+
+    result = create_card(state, getattr(request, "POST", {}), store=read_store(request))
+    if not result.ok:
+        return render_project_board(request, state, create_error=result.error)
+
+    api_base = _include_root(request.path, ("projects",) + tuple(_BOARD_ALIASES))
+    target = f"{api_base}/projects?project={state.project}&created={result.card_id}"
+    return HttpResponseRedirect(target)
 
 
 def _host_picker_available() -> bool:

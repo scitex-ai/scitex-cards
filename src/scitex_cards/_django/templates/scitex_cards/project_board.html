@@ -89,6 +89,56 @@
 
   <section class="stx-cards-project__body" aria-live="polite">
 
+    {% if created_id %}
+      <p class="stx-cards-project__created" data-stx-created="{{ created_id }}">
+        Card created: <code>{{ created_id }}</code>
+      </p>
+    {% endif %}
+    {% if create_error %}
+      <p class="stx-cards-project__create-error" data-stx-create-error role="alert">
+        {{ create_error }}
+      </p>
+    {% endif %}
+
+    {% if board.state == "ready" or board.state == "empty" %}
+      {% comment %}
+        CREATE. Plain form controls, keyboard-first, no drag and nothing that
+        needs JavaScript — "accessible non-drag alternatives" is the product
+        requirement, and a server-rendered form satisfies it by construction
+        rather than by adding an alternative beside a drag-only control.
+
+        NO {% templatetag openblock %} csrf_token {% templatetag closeblock %} HERE ON PURPOSE, and it is a
+        stated gap rather than an oversight: this app's settings install no
+        CsrfViewMiddleware, so no cookie would ever be set and a token that
+        cannot be validated would break the form outright. Writes on this board
+        therefore inherit the same stance as the existing DM POST endpoints
+        (csrf-exempt). Flagged to the package owner as a decision for the write
+        surface rather than silently assumed safe; the page is loopback-only by
+        default and behind the hub's auth + Cloudflare Access when exposed.
+      {% endcomment %}
+      <form class="stx-cards-project__create" method="post"
+            action="{{ api_base }}/projects?project={{ board.project|urlencode }}"
+            data-stx-create>
+        <label for="stx-create-title">New card in {{ board.project }}</label>
+        <input id="stx-create-title" type="text" name="title"
+               maxlength="{{ create_title_max }}" required
+               placeholder="What needs doing?" data-stx-create-title>
+        <label for="stx-create-status">Status</label>
+        <select id="stx-create-status" name="status" data-stx-create-status>
+          {% for status in statuses %}
+            <option value="{{ status }}" {% if status == create_default_status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+        <label for="stx-create-assignee">Assignee</label>
+        <input id="stx-create-assignee" type="text" name="assignee"
+               placeholder="me ({{ board.principal }})" data-stx-create-assignee>
+        <label for="stx-create-priority">Priority</label>
+        <input id="stx-create-priority" type="text" name="priority" inputmode="numeric"
+               size="3" placeholder="—" data-stx-create-priority>
+        <button type="submit" data-stx-create-submit>Create card</button>
+      </form>
+    {% endif %}
+
     {% if board.state == "no-project" %}
       <div class="stx-cards-project__state" data-stx-state-block="no-project">
         <h2 class="stx-cards-project__state-title">Choose a project</h2>
@@ -124,9 +174,7 @@
       <div class="stx-cards-project__state" data-stx-state-block="empty">
         <h2 class="stx-cards-project__state-title">No cards in {{ board.project }}</h2>
         <p class="stx-cards-project__state-body">
-          This project has no cards yet. Creating one from here is the next slice
-          of this board, not a missing button: until it lands, files are created
-          with the scitex-cards CLI or the MCP tools.
+          This project has no cards yet. Create the first one below.
         </p>
       </div>
 
