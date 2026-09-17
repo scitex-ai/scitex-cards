@@ -186,6 +186,74 @@ def projects_for(
     return found
 
 
+#: The fields the DETAIL page needs — the board's list projection PLUS ``note`` and
+#: ``blocker``. Separate from BOARD_ROW_FIELDS on purpose: the reviewer found that
+#: the detail page was rendering and SAVING from the list projection, which has no
+#: ``note``, so opening a card that had one and saving erased it.
+DETAIL_FIELDS: tuple[str, ...] = BOARD_ROW_FIELDS + ("note", "blocker")
+
+
+def card_sql(*, is_staff: bool = False) -> str:
+    """ONE card, addressed by (id, project) and gated by the tenancy predicate.
+
+    Addressing the card by BOTH its id and its project is what makes authorization
+    offset-independent: the previous shape asked whether the id was among the rows
+    on the current PAGE, so a card the viewer can legitimately see on page two was
+    refused by its own detail page. This query answers the question directly, and
+    it carries the tenancy predicate instead of trusting the caller to have
+    authorized the id first — which is the other half of the reviewer's finding
+    ("comments loaded before tenancy").
+    """
+    from ._user_row_scope import OWNED_FIELDS as _OWNED
+
+    clause = "" if is_staff else " AND ( " + " OR ".join(f"{f} = ?" for f in _OWNED) + " )"
+    fields = ", ".join(DETAIL_FIELDS)
+    return (
+        f"SELECT {fields} FROM tasks "
+        f"WHERE id = ? AND project = ? AND {_DELETED_FILTER}{clause}"
+    )
+
+
+def card_params(card_id: str, project: str, principal: str, *, is_staff: bool = False) -> tuple:
+    """Parameters for :func:`card_sql`."""
+    from ._user_row_scope import OWNED_FIELDS as _OWNED
+
+    base: tuple = (card_id, project)
+    if not is_staff:
+        base += tuple(principal for _ in _OWNED)
+    return base
+
+
+def card_for(
+    card_id: str,
+    project: str,
+    principal: str,
+    *,
+    store: Any = None,
+    is_staff: bool = False,
+    connect: Optional[Callable[..., Any]] = None,
+) -> Optional[dict]:
+    """The card, or None when this viewer may not see it in this project.
+
+    None is the SAME answer for "no such card", "another tenant's card" and "a card
+    in another project", so the route cannot become an oracle for what exists.
+    """
+    if not card_id or not project:
+        return None
+    rows = _fetch(
+        card_sql(is_staff=is_staff),
+        card_params(card_id, project, principal, is_staff=is_staff),
+        connect=connect,
+        store=store,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if hasattr(row, "keys"):
+        return {field: row[field] for field in DETAIL_FIELDS if field in row.keys()}
+    return dict(zip(DETAIL_FIELDS, row))
+
+
 def rows_for(
     project: str,
     principal: str,
@@ -256,16 +324,34 @@ def comments_sql() -> str:
     is about exactly that cost. This query is for the DETAIL page, one card at a
     time, and it is bounded.
     """
+    from ._user_row_scope import OWNED_FIELDS as _OWNED
+
+    predicate = " OR ".join(f"t.{field} = ?" for field in _OWNED)
     return (
-        "SELECT author, ts, text FROM task_comments "
-        "WHERE task_id = ? AND deleted_at IS NULL "
-        "ORDER BY seq LIMIT ?"
+        "SELECT author, ts, text FROM task_comments c "
+        "WHERE c.task_id = ? AND c.deleted_at IS NULL "
+        "AND EXISTS (SELECT 1 FROM tasks t "
+        "            WHERE t.id = c.task_id AND t.project = ? "
+        f"            AND ( {predicate} )) "
+        "ORDER BY c.seq LIMIT ?"
     )
 
 
-def comments_params(card_id: str, *, limit: int = DEFAULT_COMMENT_LIMIT) -> tuple:
-    """Parameters for :func:`comments_sql`."""
-    return (card_id, limit)
+def comments_params(
+    card_id: str,
+    project: str,
+    principal: str,
+    *,
+    limit: int = DEFAULT_COMMENT_LIMIT,
+    is_staff: bool = False,
+) -> tuple:
+    """Parameters for :func:`comments_sql` — the card id, then the gate it must pass."""
+    from ._user_row_scope import OWNED_FIELDS as _OWNED
+
+    base: tuple = (card_id, project)
+    if not is_staff:
+        base += tuple(principal for _ in _OWNED)
+    return base + (limit,)
 
 
 #: The fields one rendered comment carries, named as a TUPLE rather than spelled
@@ -281,23 +367,31 @@ COMMENT_FIELDS: tuple[str, ...] = ("author", "ts", "text")
 
 def comments_for(
     card_id: str,
+    project: str,
+    principal: str,
     *,
     store: Any = None,
     limit: int = DEFAULT_COMMENT_LIMIT,
+    is_staff: bool = False,
     connect: Optional[Callable[..., Any]] = None,
 ) -> list[dict]:
     """One card's comments, in the order they were written.
 
-    No tenancy predicate here, and that is deliberate rather than an omission: the
-    caller only ever asks for a card id it has ALREADY resolved through the
-    tenancy-scoped board query (``update_card``/``comment_card`` both refuse an id
-    that is not in ``state.rows``). A second predicate here would be a second
-    definition of the boundary, which is the drift this codebase keeps paying for.
+    THE TENANCY PREDICATE IS IN THE QUERY, not a promise from the caller. The first
+    version of this function argued the opposite — that the caller only ever passes
+    an id it already authorized — and the reviewer showed it loaded comments for a
+    caller-supplied id BEFORE any authorization ran. That argument was true of
+    today's two callers and false as a property of the query, which is exactly the
+    kind of reasoning an independent read catches; the predicate now travels with
+    the query so a second caller cannot arrive without it.
     """
     if not card_id:
         return []
     rows = _fetch(
-        comments_sql(), comments_params(card_id, limit=limit), connect=connect, store=store
+        comments_sql(),
+        comments_params(card_id, project, principal, limit=limit, is_staff=is_staff),
+        connect=connect,
+        store=store,
     )
     out = []
     for row in rows:

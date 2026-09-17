@@ -961,6 +961,12 @@ def _card_page(card_id="alice-a", *, state=None, path="/projects/alice-a", edit_
         edit_error=edit_error,
         comment_error=comment_error,
         comments=comments,
+        # The page resolves its card from the STORE now (a tenancy-scoped single-card
+        # read, so a note cannot be erased and page-two cards authorize), which is
+        # why the tests hand it the card directly instead of relying on state.rows.
+        card_loader=lambda req, cid, project: next(
+            (dict(r) for r in (state or _board()).rows if str(r.get("id")) == cid), None
+        ),
     )
 
 
@@ -1143,7 +1149,10 @@ def test_the_card_page_recovers_the_mount_root_from_a_card_path():
     request = RequestFactory().get("/apps/cards/projects/alice-a", HTTP_HOST="127.0.0.1")
     request.user = _User("alice")
     # Act
-    body = pb.render_project_card(request, _board(), "alice-a").content.decode()
+    body = pb.render_project_card(
+        request, _board(), "alice-a",
+        card_loader=lambda req, cid, project: dict(_board().rows[0]),
+    ).content.decode()
     # Assert
     assert f'action="/apps/cards/projects/alice-a?project=' in body
 

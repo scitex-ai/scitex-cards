@@ -159,7 +159,7 @@ def test_the_comments_query_is_keyed_by_the_card_and_bounded():
     # Arrange
     sql = pbq.comments_sql()
     # Act
-    shape = ("WHERE task_id = ?" in sql, "ORDER BY seq" in sql, "LIMIT ?" in sql)
+    shape = ("c.task_id = ?" in sql, "ORDER BY c.seq" in sql, "LIMIT ?" in sql)
     # Assert
     assert shape == (True, True, True)
 
@@ -179,7 +179,7 @@ def test_asking_for_comments_without_a_card_asks_the_store_nothing():
     # Arrange
     expected = []
     # Act
-    comments = pbq.comments_for("")
+    comments = pbq.comments_for("", "proj-alpha", "alice")
     # Assert
     assert comments == expected
 

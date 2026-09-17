@@ -871,12 +871,35 @@ def _default_comment(**fields: Any) -> dict:
     return comment_task(**fields)
 
 
-def _default_comments_loader(request: Any, card_id: str) -> list[dict]:
-    """ONE card's comments, bounded, from the child table the index covers."""
+def _default_card_loader(request: Any, card_id: str, project: str) -> Optional[dict]:
+    """ONE card from the store, gated by the tenancy predicate, INCLUDING its note.
+
+    This replaced reading the card out of ``state.rows`` — the board's list
+    projection — which had no ``note``: the detail page therefore rendered an empty
+    textarea for a card that had one and ERASED it on save. It also makes
+    authorization offset-independent, because the card is addressed by (id,
+    project) rather than by membership in whatever page happens to be loaded.
+    """
+    from .._user_scope import current_user
+    from .._request_store import read_store
+    from ..._project_board_query import card_for
+
+    principal = current_user(request) or ""
+    is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    return card_for(card_id, project, principal, store=read_store(request), is_staff=is_staff)
+
+
+def _default_comments_loader(request: Any, card_id: str, project: str) -> list[dict]:
+    """ONE card's comments, bounded — and gated by the same predicate in the SQL."""
+    from .._user_scope import current_user
     from .._request_store import read_store
     from ..._project_board_query import comments_for
 
-    return comments_for(card_id, store=read_store(request))
+    principal = current_user(request) or ""
+    is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    return comments_for(
+        card_id, project, principal, store=read_store(request), is_staff=is_staff
+    )
 
 
 def group_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
@@ -938,6 +961,7 @@ def render_project_card(
     edit_error: str = "",
     comment_error: str = "",
     comments: Sequence[Mapping[str, Any]] = (),
+    card_loader: Optional[Callable[[Any, str, str], Optional[dict]]] = None,
 ):
     """Render ONE card's page, or the reason it cannot be shown.
 
@@ -954,7 +978,13 @@ def render_project_card(
     from ..views import _BOARD_ALIASES, _cards_shell_context, _include_root
 
     api_base = _card_page_api_base(request, card_id)
-    card = next((row for row in state.rows if str(row.get("id")) == card_id), None)
+    # RESOLVE THE CARD FROM THE STORE, under the predicate, BEFORE anything else is
+    # read for it: the reviewer's finding was that comments were fetched for a
+    # caller-supplied id before any authorization ran. Now nothing about a card is
+    # read until the card itself has been authorized — including on page two, where
+    # membership in the loaded page was the old (and wrong) test.
+    resolve = card_loader or _default_card_loader
+    card = resolve(request, card_id, state.project) if state.project else None
 
     if card is None or state.state != READY:
         # ONE answer for "no such card", "not yours" and "no board here": the
@@ -1023,7 +1053,7 @@ def project_card_page(request, card_id: str):
     state = board_state(request)
     if getattr(request, "method", "GET").upper() != "POST":
         try:
-            comments = list(_default_comments_loader(request, card_id))
+            comments = list(_default_comments_loader(request, card_id, state.project or ""))
         except Exception as exc:  # noqa: BLE001 - the card is worth showing without them
             logger.warning("[scitex-cards] project board: comments unavailable: %s", exc)
             comments = []

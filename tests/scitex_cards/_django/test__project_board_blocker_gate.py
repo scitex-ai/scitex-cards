@@ -92,7 +92,14 @@ def _render(state):
 
 
 def _card_page(state):
-    return pb.render_project_card(_request("/projects/alice-a"), state, "alice-a")
+    """The page resolves its card from the store now (tenancy-scoped single-card
+    read: no note erasure, page-two authorization), so the helper injects it."""
+    return pb.render_project_card(
+        _request("/projects/alice-a"), state, "alice-a",
+        card_loader=lambda req, cid, project: next(
+            (dict(r) for r in state.rows if str(r.get("id")) == cid), None
+        ),
+    )
 
 
 def _row_with_blocker(blocker):
