@@ -1,0 +1,576 @@
+{
+ "base": "http://127.0.0.1:8123",
+ "results": [
+  {
+   "shot": "desktop-01-wall",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-01-wall.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-timeline"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER "
+   }
+  },
+  {
+   "shot": "desktop-02-timeline",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-02-timeline.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-timeline"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER "
+   }
+  },
+  {
+   "shot": "desktop-03-graph",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-03-graph.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-graph"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER "
+   }
+  },
+  {
+   "shot": "desktop-04-matrix",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-04-matrix.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-matrix"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER "
+   }
+  },
+  {
+   "shot": "desktop-06-search-project",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-06-search-project.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-wall"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task project: scitex-cards search: project:scitex-cards \u00d7 LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All project"
+   }
+  },
+  {
+   "shot": "desktop-07-light-theme",
+   "path": "/uvwork/tmp/gui-baseline/shots/desktop-07-light-theme.png",
+   "overflow": {
+    "innerWidth": 1440,
+    "docScrollWidth": 1440,
+    "bodyScrollWidth": 1440,
+    "overflowingCount": 0,
+    "examples": [],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-wall"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board Direct messages 116 SciTeX Cards v0.53.1 operator LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task project: scitex-cards search: project:scitex-cards \u00d7 LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All project"
+   }
+  },
+  {
+   "shot": "mobile-01-wall",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-01-wall.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 12,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-center",
+      330,
+      590,
+      260
+     ],
+     [
+      "span",
+      "f-search-wrap",
+      "filt-search-wrap",
+      330,
+      590,
+      260
+     ],
+     [
+      "input",
+      "f-search",
+      "filt",
+      330,
+      590,
+      260
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-filterbar__group",
+      320,
+      596,
+      276
+     ],
+     [
+      "span",
+      "",
+      "filt-layout",
+      320,
+      592,
+      272
+     ],
+     [
+      "div",
+      "",
+      "filt-layout-seg",
+      373,
+      592,
+      219
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-timeline"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER All blockers HOST All hosts DA"
+   }
+  },
+  {
+   "shot": "mobile-02-timeline",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-02-timeline.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 15,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-left",
+      -43,
+      271,
+      314
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-header",
+      -43,
+      225,
+      268
+     ],
+     [
+      "nav",
+      "",
+      "stx-cards-switcher",
+      -43,
+      114,
+      157
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -42,
+      29,
+      71
+     ],
+     [
+      "div",
+      "",
+      "fb-center",
+      277,
+      537,
+      260
+     ],
+     [
+      "span",
+      "f-search-wrap",
+      "filt-search-wrap",
+      277,
+      537,
+      260
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-timeline"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER All blockers HOST All hosts DA"
+   }
+  },
+  {
+   "shot": "mobile-03-graph",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-03-graph.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 8,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-left",
+      -206,
+      108,
+      314
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-header",
+      -206,
+      62,
+      268
+     ],
+     [
+      "nav",
+      "",
+      "stx-cards-switcher",
+      -206,
+      -49,
+      157
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -205,
+      -134,
+      71
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -134,
+      -50,
+      84
+     ],
+     [
+      "span",
+      "",
+      "stx-cards-switcher__label-short",
+      -120,
+      -98,
+      22
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-graph"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER All blockers HOST All hosts DA"
+   }
+  },
+  {
+   "shot": "mobile-04-matrix",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-04-matrix.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 8,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-left",
+      -206,
+      108,
+      314
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-header",
+      -206,
+      62,
+      268
+     ],
+     [
+      "nav",
+      "",
+      "stx-cards-switcher",
+      -206,
+      -49,
+      157
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -205,
+      -134,
+      71
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -134,
+      -50,
+      84
+     ],
+     [
+      "span",
+      "",
+      "stx-cards-switcher__label-short",
+      -120,
+      -98,
+      22
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-matrix"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATUS All statuses BLOCKER All blockers HOST All hosts DA"
+   }
+  },
+  {
+   "shot": "mobile-06-search-project",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-06-search-project.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 8,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-left",
+      -206,
+      108,
+      314
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-header",
+      -206,
+      62,
+      268
+     ],
+     [
+      "nav",
+      "",
+      "stx-cards-switcher",
+      -206,
+      -49,
+      157
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -205,
+      -134,
+      71
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -134,
+      -50,
+      84
+     ],
+     [
+      "span",
+      "",
+      "stx-cards-switcher__label-short",
+      -120,
+      -98,
+      22
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-wall"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task project: scitex-cards search: project:scitex-cards \u00d7 LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATU"
+   }
+  },
+  {
+   "shot": "mobile-07-light-theme",
+   "path": "/uvwork/tmp/gui-baseline/shots/mobile-07-light-theme.png",
+   "overflow": {
+    "innerWidth": 390,
+    "docScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "overflowingCount": 8,
+    "examples": [
+     [
+      "div",
+      "",
+      "fb-left",
+      -206,
+      108,
+      314
+     ],
+     [
+      "div",
+      "",
+      "stx-cards-header",
+      -206,
+      62,
+      268
+     ],
+     [
+      "nav",
+      "",
+      "stx-cards-switcher",
+      -206,
+      -49,
+      157
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -205,
+      -134,
+      71
+     ],
+     [
+      "a",
+      "",
+      "stx-cards-switcher__item",
+      -134,
+      -50,
+      84
+     ],
+     [
+      "span",
+      "",
+      "stx-cards-switcher__label-short",
+      -120,
+      -98,
+      22
+     ]
+    ],
+    "title": "SciTeX Cards"
+   },
+   "state": {
+    "layout": [
+     "f-layout-wall"
+    ],
+    "counts": "(0)",
+    "boardTitle": "",
+    "nodes": 0,
+    "cards": 0,
+    "tableRows": 0,
+    "visibleText": "Board DM 116 SciTeX Cards LIVE LAYOUT \u23f1 Timeline \ud83d\uddd2 Wall \ud83d\udcca Graph \ud83c\udfaf Matrix + Add Task project: scitex-cards search: project:scitex-cards \u00d7 LEGEND goal done in_progress blocked pending deferred failed loading\u2026 \ud83d\udcca Details \u203a Stats \u25b8 D W M Filters (0) \u25b8 PROJECT All projects ASSIGNEE All assignees STATU"
+   }
+  }
+ ],
+ "console": []
+}
