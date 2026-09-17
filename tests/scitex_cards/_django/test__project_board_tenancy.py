@@ -939,13 +939,21 @@ def test_the_view_dispatches_an_update_action_to_the_update_path():
 # --- one card: open it, and edit the two fields that need room (slice 2c) ----
 
 
-def _card_page(card_id="alice-a", *, state=None, path="/projects/alice-a", edit_error="", user="alice"):
+def _card_page(card_id="alice-a", *, state=None, path="/projects/alice-a", edit_error="",
+               comment_error="", comments=(), user="alice"):
     """Render the card page through the REAL view, no patching."""
     from django.test import RequestFactory
 
     request = RequestFactory().get(path, HTTP_HOST="127.0.0.1")
     request.user = _User(user) if user else None
-    return pb.render_project_card(request, state or _board(), card_id, edit_error=edit_error)
+    return pb.render_project_card(
+        request,
+        state or _board(),
+        card_id,
+        edit_error=edit_error,
+        comment_error=comment_error,
+        comments=comments,
+    )
 
 
 def test_the_card_page_shows_the_card_it_was_asked_for():
@@ -1262,3 +1270,122 @@ def test_no_pager_when_everything_fits_on_one_page():
     body = _render(state).content.decode()
     # Assert
     assert 'data-stx-pager' not in body
+
+
+# --- comments on a card (slice 2e) -------------------------------------------
+
+
+def test_comment_refuses_a_card_that_is_not_on_this_board():
+    """Same boundary as every other card action: the id is a lookup key into the
+    rows this page rendered, so another tenant's card is refused before any write."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"card_id": "bob-b", "text": "hello"}
+    # Act
+    result = pb.comment_card(_board(), form, comment=recorder)
+    # Assert
+    assert (result.ok, recorder.calls) == (False, [])
+
+
+def test_comment_signs_with_the_principal_not_the_forms_author():
+    """The store keeps an author on every entry; a page that let the client name it
+    would let a comment be signed by someone else."""
+    # Arrange
+    recorder = _Recorder()
+    form = {"card_id": "alice-a", "text": "hello", "by": "dana", "author": "dana"}
+    # Act
+    pb.comment_card(_board(), form, comment=recorder)
+    # Assert
+    assert recorder.calls[0]["by"] == "alice"
+
+
+def test_comment_names_the_card_it_was_given():
+    """task_id reaches the store as the id that was validated."""
+    # Arrange
+    recorder = _Recorder()
+    # Act
+    pb.comment_card(_board(), {"card_id": "alice-a", "text": "hello"}, comment=recorder)
+    # Assert
+    assert recorder.calls[0]["task_id"] == "alice-a"
+
+
+def test_comment_refuses_an_empty_one():
+    """A blank entry in an audit log is noise the next reader has to skip."""
+    # Arrange
+    form = {"card_id": "alice-a", "text": "   "}
+    # Act
+    result = pb.comment_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_comment_refuses_one_past_the_page_limit():
+    """A comment is a note to the next reader, not a document."""
+    # Arrange
+    form = {"card_id": "alice-a", "text": "x" * (pb.COMMENT_MAX + 1)}
+    # Act
+    result = pb.comment_card(_board(), form)
+    # Assert
+    assert result.ok is False
+
+
+def test_comment_refuses_when_the_board_is_not_open():
+    """A denied project must not accept a comment just because a form was posted."""
+    # Arrange
+    state = pb.BoardState(state=pb.DENIED, principal="alice", is_staff=False)
+    # Act
+    result = pb.comment_card(state, {"card_id": "alice-a", "text": "hello"})
+    # Assert
+    assert result.ok is False
+
+
+def test_the_card_page_shows_the_comments_it_was_given():
+    """The detail page is where a card's history lives."""
+    # Arrange
+    comments = [{"author": "operator", "ts": "2026-09-17T00:00:00Z", "text": "take a look"}]
+    # Act
+    body = _card_page(state=_board(), comments=comments).content.decode()
+    # Assert
+    assert ('data-stx-comment-text' in body, "take a look" in body) == (True, True)
+
+
+def test_the_card_page_says_when_there_are_no_comments():
+    """An empty list and a failed read look the same to a reader unless the page
+    says which one it is."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _card_page(state=state).content.decode()
+    # Assert
+    assert 'data-stx-comments-empty' in body
+
+
+def test_the_comment_form_names_the_principal_as_the_author():
+    """The author is decided server-side, and the form says so rather than
+    pretending to let the reader choose."""
+    # Arrange
+    state = _board()
+    # Act
+    body = _card_page(state=state).content.decode()
+    # Assert
+    assert "Add a comment as alice" in body
+
+
+def test_no_comment_form_on_a_page_with_no_card_to_comment_on():
+    """Controls that cannot work must not be rendered."""
+    # Arrange
+    state = _state_only(pb.DENIED)
+    # Act
+    body = _card_page(state=state).content.decode()
+    # Assert
+    assert 'data-stx-comment-form' not in body
+
+
+def test_a_refused_comment_answers_400_and_says_why():
+    """The reader's input was wrong, and the page says so rather than only the code."""
+    # Arrange
+    state = _board()
+    # Act
+    response = _card_page(state=state, comment_error="A comment needs something in it.")
+    # Assert
+    assert (response.status_code, "A comment needs something in it." in response.content.decode()) == (400, True)

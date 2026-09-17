@@ -153,6 +153,37 @@ def test_asking_for_a_count_without_a_project_asks_the_store_nothing():
     assert total == expected
 
 
+def test_the_comments_query_is_keyed_by_the_card_and_bounded():
+    """The child table is indexed (task_id, seq) for exactly this read, and a card
+    with hundreds of comments must not make the page grow without limit."""
+    # Arrange
+    sql = pbq.comments_sql()
+    # Act
+    shape = ("WHERE task_id = ?" in sql, "ORDER BY seq" in sql, "LIMIT ?" in sql)
+    # Assert
+    assert shape == (True, True, True)
+
+
+def test_the_comments_query_skips_deleted_entries():
+    """A deleted comment must not reappear on the page that deleted it."""
+    # Arrange
+    sql = pbq.comments_sql()
+    # Act
+    filtered = "deleted_at IS NULL" in sql
+    # Assert
+    assert filtered is True
+
+
+def test_asking_for_comments_without_a_card_asks_the_store_nothing():
+    """An empty id is a bug upstream, not a query for every comment."""
+    # Arrange
+    expected = []
+    # Act
+    comments = pbq.comments_for("")
+    # Assert
+    assert comments == expected
+
+
 def test_projects_parameters_repeat_the_principal_per_owned_field():
     """A DISTINCT query needs the same predicate parameters, in the same order."""
     # Arrange

@@ -389,6 +389,16 @@
   resize: vertical;
 }
 
+.stx-cards-project__comments {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pb-border);
+}
+
+.stx-cards-project__comments .stx-cards-project__cards {
+  margin-bottom: 12px;
+}
+
 /* Phone: the band and the filters each become their own wrapped rows, and the
  * picker stops being pushed to the right edge where it would sit off-screen —
  * the measured defect on the fleet board's header at 390px.

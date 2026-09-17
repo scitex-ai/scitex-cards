@@ -237,3 +237,61 @@ def count_for(
     first = rows[0]
     value = first["count"] if hasattr(first, "keys") else first[0]
     return int(value or 0)
+
+
+#: Most comments one card page will render. `task_comments` is an append-only log
+#: (a long-lived card can carry hundreds of entries), so the read is bounded for
+#: the same reason the card page is: a page whose size depends on how long the
+#: conversation has been running is a page that eventually stops loading.
+DEFAULT_COMMENT_LIMIT = 200
+
+
+def comments_sql() -> str:
+    """ONE card's comments, by the index that exists for exactly this read.
+
+    ``task_comments`` is keyed ``(task_id, seq)`` (``idx_comments_task``) and the
+    card's comments are carried in that CHILD table, not in the tasks row — which is
+    why the board's list projection deliberately does not ask for them: the sibling
+    complaint ``cards-the-board-list-payload-should-not-carry-17511-comment-bodies``
+    is about exactly that cost. This query is for the DETAIL page, one card at a
+    time, and it is bounded.
+    """
+    return (
+        "SELECT author, ts, text FROM task_comments "
+        "WHERE task_id = ? AND deleted_at IS NULL "
+        "ORDER BY seq LIMIT ?"
+    )
+
+
+def comments_params(card_id: str, *, limit: int = DEFAULT_COMMENT_LIMIT) -> tuple:
+    """Parameters for :func:`comments_sql`."""
+    return (card_id, limit)
+
+
+def comments_for(
+    card_id: str,
+    *,
+    store: Any = None,
+    limit: int = DEFAULT_COMMENT_LIMIT,
+    connect: Optional[Callable[..., Any]] = None,
+) -> list[dict]:
+    """One card's comments, newest LAST (the order they were written in).
+
+    No tenancy predicate here, and that is deliberate rather than an omission: the
+    caller only ever asks for a card id it has ALREADY resolved through the
+    tenancy-scoped board query (``update_card``/``comment_card`` both refuse an id
+    that is not in ``state.rows``). A second predicate here would be a second
+    definition of the boundary, which is the drift this codebase keeps paying for.
+    """
+    if not card_id:
+        return []
+    rows = _fetch(
+        comments_sql(), comments_params(card_id, limit=limit), connect=connect, store=store
+    )
+    out = []
+    for row in rows:
+        if hasattr(row, "keys"):
+            out.append({"author": row["author"], "ts": row["ts"], "text": row["text"]})
+        else:
+            out.append({"author": row[0], "ts": row[1], "text": row[2]})
+    return out

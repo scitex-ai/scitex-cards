@@ -742,6 +742,72 @@ def _default_update(**fields: Any) -> dict:
     return update_task(**fields)
 
 
+#: Longest comment accepted. A comment is a note to the next reader, not a document.
+COMMENT_MAX = 2000
+
+
+@dataclass(frozen=True)
+class CommentResult:
+    """What happened when someone commented from the card page."""
+
+    ok: bool
+    card_id: Optional[str] = None
+    error: str = ""
+
+
+def comment_card(
+    state: BoardState,
+    form: Mapping[str, Any],
+    *,
+    comment: Optional[Callable[..., dict]] = None,
+    store: Any = None,
+) -> CommentResult:
+    """Append a comment to ONE card that is already on this board, or refuse.
+
+    Same boundary as :func:`update_card`, for the same reason: the card id comes
+    from the form, so it is only ever a LOOKUP key into the rows the page already
+    resolved under the tenancy predicate. The AUTHOR is taken from the resolved
+    principal and never from the form, so a comment cannot be signed by someone
+    else — the store keeps an author on every entry.
+    """
+    if state.state != READY:
+        return CommentResult(ok=False, error="This project's board is not open.")
+
+    card_id = str(form.get("card_id") or "").strip()
+    known = {str(row.get("id")) for row in state.rows}
+    if not card_id or card_id not in known:
+        return CommentResult(ok=False, error="That card is not on this board.")
+
+    text = str(form.get("text") or "").strip()
+    if not text:
+        return CommentResult(ok=False, error="A comment needs something in it.")
+    if len(text) > COMMENT_MAX:
+        return CommentResult(ok=False, error=f"A comment can be up to {COMMENT_MAX} characters.")
+
+    writer = comment or _default_comment
+    try:
+        writer(store=store, task_id=card_id, text=text, by=state.principal)
+    except Exception as exc:  # noqa: BLE001 - one answer for every write failure
+        logger.warning("[scitex-cards] project board comment failed: %s", exc, exc_info=True)
+        return CommentResult(ok=False, error="The comment could not be saved. Try again.")
+    return CommentResult(ok=True, card_id=card_id)
+
+
+def _default_comment(**fields: Any) -> dict:
+    """Append through the store's own comment API — the audit trail is the point."""
+    from ..._store import comment_task
+
+    return comment_task(**fields)
+
+
+def _default_comments_loader(request: Any, card_id: str) -> list[dict]:
+    """ONE card's comments, bounded, from the child table the index covers."""
+    from .._request_store import read_store
+    from ..._project_board_query import comments_for
+
+    return comments_for(card_id, store=read_store(request))
+
+
 def group_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
     """Rows grouped into ``[(status, rows), ...]`` in canonical order.
 
@@ -799,6 +865,8 @@ def render_project_card(
     card_id: str,
     *,
     edit_error: str = "",
+    comment_error: str = "",
+    comments: Sequence[Mapping[str, Any]] = (),
 ):
     """Render ONE card's page, or the reason it cannot be shown.
 
@@ -842,11 +910,14 @@ def render_project_card(
         "card_id": card_id,
         "statuses": canonical_statuses(),
         "edit_error": edit_error,
+        "comment_error": comment_error,
+        "comments": comments,
+        "comment_max": COMMENT_MAX,
         "note_max": NOTE_MAX,
         "title_max": CREATE_TITLE_MAX,
     }
     html = render_to_string("scitex_cards/project_card.html", context, request=request)
-    status = 400 if edit_error else 200
+    status = 400 if (edit_error or comment_error) else 200
     return HttpResponse(html, status=status)
 
 
@@ -879,15 +950,34 @@ def project_card_page(request, card_id: str):
 
     state = board_state(request)
     if getattr(request, "method", "GET").upper() != "POST":
-        return render_project_card(request, state, card_id)
+        try:
+            comments = list(_default_comments_loader(request, card_id))
+        except Exception as exc:  # noqa: BLE001 - the card is worth showing without them
+            logger.warning("[scitex-cards] project board: comments unavailable: %s", exc)
+            comments = []
+        return render_project_card(
+            request,
+            state,
+            card_id,
+            comments=comments,
+            comment_error="" if comments is not None else "",
+        )
 
     form = getattr(request, "POST", {}) or {}
-    changed = update_card(state, form, store=read_store(request))
-    if not changed.ok:
-        return render_project_card(request, state, card_id, edit_error=changed.error)
+    action = str(form.get("action") or "update").strip().lower()
+    store = read_store(request)
+
+    if action == "comment":
+        written = comment_card(state, form, store=store)
+        if not written.ok:
+            return render_project_card(request, state, card_id, comment_error=written.error)
+    else:
+        changed = update_card(state, form, store=store)
+        if not changed.ok:
+            return render_project_card(request, state, card_id, edit_error=changed.error)
 
     api_base = _card_page_api_base(request, card_id)
-    target = f"{api_base}/projects/{card_id}?project={state.project}&updated={changed.card_id}"
+    target = f"{api_base}/projects/{card_id}?project={state.project}&updated={card_id}"
     return HttpResponseRedirect(target)
 
 

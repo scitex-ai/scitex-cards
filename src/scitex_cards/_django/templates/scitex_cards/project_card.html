@@ -96,6 +96,48 @@
                   rows="6" data-stx-edit-note>{{ card.note|default:'' }}</textarea>
         <button type="submit" data-stx-edit-submit>Save</button>
       </form>
+
+      <section class="stx-cards-project__comments" data-stx-comments>
+        <h3 class="stx-cards-project__group-title">
+          <span>Comments</span>
+          <span data-stx-comment-count>{{ comments|length }}</span>
+        </h3>
+        {% if comment_error %}
+          <p class="stx-cards-project__create-error" data-stx-comment-error role="alert">{{ comment_error }}</p>
+        {% endif %}
+        {% if comments %}
+          <ul class="stx-cards-project__cards" data-stx-comment-list>
+            {% for comment in comments %}
+              <li class="stx-cards-project__card" data-stx-comment>
+                <p class="stx-cards-project__meta">
+                  <span data-stx-comment-author>{{ comment.author|default:"unknown" }}</span>
+                  <span data-stx-comment-ts>{{ comment.ts|default:"" }}</span>
+                </p>
+                <p class="stx-cards-project__state-body" data-stx-comment-text>{{ comment.text }}</p>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="stx-cards-project__state-body" data-stx-comments-empty>
+            No comments on this card yet.
+          </p>
+        {% endif %}
+        {% comment %}
+          The author is the RESOLVED principal, not a form field: the store keeps an
+          author on every entry, and a page that let the client name it would let a
+          comment be signed by someone else.
+        {% endcomment %}
+        <form class="stx-cards-project__create" method="post"
+              action="{{ api_base|stx_path:"/projects" }}/{{ card_id }}?project={{ board.project|urlencode }}"
+              data-stx-comment-form="{{ card.id }}">
+          <input type="hidden" name="action" value="comment">
+          <input type="hidden" name="card_id" value="{{ card_id }}">
+          <label for="stx-comment-text">Add a comment as {{ board.principal }}</label>
+          <textarea id="stx-comment-text" name="text" maxlength="{{ comment_max }}"
+                    rows="3" required data-stx-comment-input></textarea>
+          <button type="submit" data-stx-comment-submit>Comment</button>
+        </form>
+      </section>
     {% endif %}
 
   </section>
