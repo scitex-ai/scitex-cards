@@ -1808,3 +1808,187 @@ body:has(#app-mount[data-app-name="scitex-cards"]) #main-content.ws-module-pane 
   color: var(--stx-text-muted);
   opacity: 0.5;
 }
+
+/* ── The leaf band: product identity + project picker + load timings ──────
+ * The band answers "which app is this, which version, which project, and how
+ * long did it take" — the four facts the operator's Hub-mount report found
+ * missing. It reads the SAME --stx-* tokens as the toolbar (which map onto
+ * scitex-ui's semantic variables in the .stx-cards-board block above) rather
+ * than carrying a palette of its own: a private palette does not merely
+ * diverge in style, it starves every scitex-ui component the page later
+ * adopts — the failure documented at length in the chat-palette guard.
+ *
+ * It is OUTSIDE .stx-cards-board__header but INSIDE .stx-cards-board, so the
+ * token block still applies and the two bands share one theme. */
+.stx-cards-leaf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--stx-border);
+  background: var(--stx-panel-bg);
+  color: var(--stx-text);
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+.stx-cards-leaf__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.stx-cards-leaf__ver {
+  padding: 1px 7px;
+  border: 1px solid var(--stx-border-strong);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--stx-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stx-cards-leaf__picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.stx-cards-leaf__picker-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--stx-text-faint);
+}
+
+.stx-cards-leaf__project {
+  max-width: 42vw;
+  padding: 4px 8px;
+  border: 1px solid var(--stx-border);
+  border-radius: 6px;
+  background: var(--stx-input-bg);
+  color: var(--stx-text);
+  font-size: 0.8rem;
+}
+
+/* A filter that is ON must be visible as ON: an unmarked picker silently
+ * hides cards, and a hidden filter reads as a broken board. */
+.stx-cards-leaf__project--on {
+  border-color: var(--stx-accent);
+  color: var(--stx-text);
+}
+
+.stx-cards-leaf__timings {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  color: var(--stx-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Truthful states: loading is not empty is not failed ──────────────────
+ * One bare sentence answered all three, so a hung first load, an API failure
+ * and a store with no cards looked identical. Each state now carries a head
+ * (what this is), a detail (the fact behind it) and — for failure — the one
+ * control that helps. They are separated by BORDER and TEXT, never by a
+ * hardcoded colour, so the shell's theme owns the palette. */
+.stx-cards-status__head {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--stx-text);
+}
+
+.stx-cards-status__detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: inherit;
+}
+
+.stx-cards-status--loading .stx-cards-status__detail,
+.stx-cards-status--empty .stx-cards-status__detail {
+  color: var(--stx-text-muted);
+}
+
+.stx-cards-status__retry {
+  margin-top: 12px;
+  padding: 6px 14px;
+  border: 1px solid var(--stx-accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--stx-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.stx-cards-status__retry:hover {
+  background: var(--stx-hover-bg);
+}
+
+/* ── Phone widths: nothing may be clipped, and nothing may need a hover ───
+ * Measured complaint: at 390px the board toolbar ran off the right edge. The
+ * cause was structural — board.css had NO media query at all, and the toolbar
+ * is a single flex row whose search box claims 320px while the status chips,
+ * repo picker and export controls follow it. At 390px the row's intrinsic
+ * width exceeds the viewport, and since the page does not scroll horizontally
+ * the tail of the row was simply unreachable.
+ *
+ * The rule is the same at every width: what cannot fit must WRAP, and a
+ * wrapped control must stay tappable (>= 32px tall) — a control you can see
+ * but not hit is the same defect one step later. */
+@media (max-width: 700px) {
+  .stx-cards-leaf {
+    gap: 8px;
+  }
+
+  .stx-cards-leaf__picker {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .stx-cards-leaf__project {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  /* The status chip row and the repo picker each take a full line, so the
+   * search box cannot push them past the edge. */
+  .stx-cards-toolbar__search {
+    flex: 1 1 100%;
+  }
+
+  .stx-cards-toolbar__chips {
+    flex: 1 1 100%;
+  }
+
+  .stx-cards-toolbar__repo,
+  .stx-cards-toolbar__export {
+    flex: 1 1 auto;
+    min-height: 32px;
+  }
+
+  .stx-cards-board__header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
+@media (max-width: 430px) {
+  /* 390px is the narrowest target in the operator's report: iPhone-class
+   * portrait. Padding shrinks rather than the controls, because shrinking the
+   * controls is what puts a tap target under the thumb's accuracy floor. */
+  .stx-cards-leaf,
+  .stx-cards-toolbar {
+    padding: 6px 10px;
+  }
+
+  .stx-cards-leaf__title {
+    font-size: 0.9rem;
+  }
+
+  .stx-cards-leaf__project {
+    min-height: 32px;
+  }
+}
