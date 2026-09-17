@@ -1,0 +1,284 @@
+/* project_board.css — the PROJECT-SCOPED board's page-local styles.
+ *
+ * TWO RULES THIS FILE FOLLOWS, both learned from measured defects on the fleet
+ * board rather than from taste:
+ *
+ * 1. BOTH SIDES OF EVERY PAIR COME FROM THE SAME SOURCE. board_v3 keeps its own
+ *    dark PALETTE while it takes its text colour from the shell's tokens, so
+ *    under the light theme its chrome measures dark-grey-on-dark (1.20:1
+ *    measured 2026-09-17). Here every surface AND its foreground resolve from
+ *    the same shell variables, so a theme switch moves both together.
+ * 2. THE FALLBACKS ARE THE ONLY HEXES, and they live inside var() so a bare SPA
+ *    mount (no shell stylesheet) stays readable while a themed mount still
+ *    follows the theme — the rule the fleet board's token block already states.
+ */
+
+.stx-cards-project {
+  --pb-bg: var(--bg-page, #1b1b29);
+  --pb-panel: var(--bg-surface, #232334);
+  --pb-text: var(--text-primary, #e0e0e0);
+  --pb-text-muted: var(--text-muted, #a0a0b0);
+  --pb-border: var(--border-muted, #3a3a4a);
+  --pb-accent: var(--stx-accent, var(--accent-primary, #a78bfa));
+  --pb-accent-on: var(--stx-accent-on, var(--bg-page, #1b1b29));
+  --pb-status-blocked: #c0392b;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 100%;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+}
+
+/* One band, three slots: leaf identity, current project, picker. */
+.stx-cards-project__band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--pb-border);
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.stx-cards-project__ver {
+  padding: 1px 7px;
+  border: 1px solid var(--pb-border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--pb-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stx-cards-project__current {
+  font-size: 0.8rem;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__current code {
+  color: var(--pb-text);
+}
+
+.stx-cards-project__picker {
+  margin-left: auto;
+}
+
+.stx-cards-project__picker select {
+  padding: 6px 10px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.82rem;
+  min-height: 36px;
+}
+
+.stx-cards-project__picker button {
+  margin-left: 6px;
+  padding: 6px 14px;
+  min-height: 36px;
+  border: 1px solid var(--pb-accent);
+  border-radius: 6px;
+  background: var(--pb-accent);
+  color: var(--pb-accent-on);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stx-cards-project__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--pb-border);
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__filters input,
+.stx-cards-project__filters select {
+  padding: 6px 10px;
+  min-height: 36px;
+  border: 1px solid var(--pb-border);
+  border-radius: 6px;
+  background: var(--pb-bg);
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.stx-cards-project__filters input[type="search"] {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.stx-cards-project__clear {
+  font-size: 0.78rem;
+  color: var(--pb-accent);
+}
+
+.stx-cards-project__body {
+  flex: 1 1 auto;
+  padding: 12px 14px 24px;
+}
+
+.stx-cards-project__state {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 16px 18px;
+  border: 1px solid var(--pb-border);
+  border-radius: 8px;
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__state-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.stx-cards-project__state-body {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--pb-text-muted);
+  line-height: 1.5;
+}
+
+.stx-cards-project__retry {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 16px;
+  min-height: 40px;
+  border: 1px solid var(--pb-accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pb-text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.stx-cards-project__retry:hover,
+.stx-cards-project__retry:focus-visible {
+  background: var(--pb-accent);
+  color: var(--pb-accent-on);
+}
+
+.stx-cards-project__count {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__group {
+  margin: 0 0 18px;
+}
+
+.stx-cards-project__group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.stx-cards-project__card {
+  padding: 10px 12px;
+  border: 1px solid var(--pb-border);
+  border-radius: 8px;
+  background: var(--pb-panel);
+}
+
+.stx-cards-project__card-title {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.stx-cards-project__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--pb-text-muted);
+}
+
+.stx-cards-project__meta code {
+  font-size: 0.72rem;
+}
+
+.stx-cards-project__blocked {
+  color: var(--pb-status-blocked);
+  font-weight: 700;
+}
+
+/* Phone: the band and the filters each become their own wrapped rows, and the
+ * picker stops being pushed to the right edge where it would sit off-screen —
+ * the measured defect on the fleet board's header at 390px.
+ *
+ * TAP TARGETS ARE 44px HERE, not the 36px the desktop block uses. Measured
+ * 2026-09-17: at the 36px height the picker's Open button and the Apply button
+ * rendered ~30px and ~28px tall, under the 44px floor Apple's HIG sets and the
+ * floor this repo already states for its own mobile board (05-responsive.css:
+ * "44px+ tap targets per Apple HIG"). A phone page whose primary action is the
+ * smallest target on it is a page that loses a tap to the field behind it.
+ *
+ * ONE CONTROL PER ROW, with its own label and a full-width Apply. The desktop
+ * row puts Apply last, which on a wrapped phone layout lands it beside the
+ * assignee field and reads as "apply the assignee filter" — the filter model is
+ * "one form, three filters, one submit", so the button belongs on its own row. */
+@media (max-width: 700px) {
+  .stx-cards-project__band,
+  .stx-cards-project__filters {
+    padding: 8px 10px;
+  }
+  .stx-cards-project__picker {
+    margin-left: 0;
+    flex: 1 1 100%;
+  }
+  .stx-cards-project__picker select {
+    flex: 1 1 auto;
+    max-width: none;
+    min-height: 44px;
+  }
+  .stx-cards-project__picker button {
+    min-height: 44px;
+    padding: 10px 18px;
+  }
+  .stx-cards-project__filters label {
+    flex: 1 1 100%;
+    margin-top: 4px;
+  }
+  .stx-cards-project__filters input,
+  .stx-cards-project__filters select,
+  .stx-cards-project__filters button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .stx-cards-project__filters button {
+    padding: 10px 18px;
+  }
+}

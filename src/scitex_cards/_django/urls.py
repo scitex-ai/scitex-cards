@@ -19,6 +19,7 @@ from .handlers.fleet import (
     fleet_timing_view,
 )
 from .handlers.hooks import hook_done_view, hook_push_view
+from .handlers.project_board import project_board_page
 from .handlers.runnable import blocked_batch_view, runnable_view
 from .handlers.timeline import timeline_view
 
@@ -183,6 +184,16 @@ urlpatterns = [
     # would make the address bar disagree with the link the operator clicked.
     path("board", views.board_v3_page, name="board_alias"),
     path("board/", views.board_v3_page, name="board_alias_slash"),
+    # `/projects` — the PROJECT-SCOPED board (Hub PR #923 §5 "Cards": "current
+    # project, canonical picker, authorized cards only"). A SEPARATE route from
+    # the fleet board, not a flag on it: the fleet board's value is that it is
+    # NOT scoped, and this page's value is that it is, so they cannot be one
+    # page with a switch. Registered BEFORE the catch-all `<path:endpoint>`
+    # route, like every other page, or `api_dispatch` swallows it into
+    # `{"error": "Unknown endpoint: projects"}`. Both spellings: a trailing
+    # slash is the most natural thing in the world to type.
+    path("projects", project_board_page, name="project_board"),
+    path("projects/", project_board_page, name="project_board_slash"),
     # `/favicon.ico` must precede the catch-all `<path:endpoint>` route — the
     # browser requests it implicitly and the catch-all would otherwise route
     # it to api_dispatch (→ 404). favicon_view serves the bundled SVG.
