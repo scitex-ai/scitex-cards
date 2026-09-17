@@ -389,9 +389,10 @@ def seed_db_from_doc(doc, db_path, *, threads=None):
 
     THE REPLACEMENT FOR ``import_from_yaml`` IN TESTS. That function read a doc
     off a YAML file and rebuilt the DB from it; it is deleted, because the
-    database is the only store and there is no YAML to read. Tests that used it to *seed* a
-    database (build a doc, write YAML, import) now build the same doc and call
-    this — which reaches the SAME surviving primitive (``_rebuild_from_doc``),
+    database is the only store and there is no YAML to read. Tests that used it
+    to *seed* a database (build a doc, write YAML, import) now build the same doc
+    and call this — which reaches the SAME surviving primitive
+    (``_rebuild_from_doc``),
     so every downstream assertion about schema / columns / counts is unchanged.
 
     Use this to SEED. Do NOT use it to test importing — the import path is gone;

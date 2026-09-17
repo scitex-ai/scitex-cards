@@ -40,8 +40,9 @@ decision) and scitex-app (4), none of whom were looking for it. As scitex-app
 put it, disbelieving this sentence would have required suspecting the tool's own
 documentation.
 
-BOTH HALVES WERE FIXED, and the order mattered: :func:`scitex_cards._store_list._in_scope`
-now treats ``agent:<id>`` as an OWNER rather than a lens, so the sentence is
+Both halves were fixed, and the order mattered:
+:func:`scitex_cards._store_list._in_scope` now treats ``agent:<id>`` as an OWNER
+rather than a lens, so the sentence is
 TRUE before it is repeated. Changing only the wording — telling agents to query
 by ``assignee`` instead — would have moved the failure into the tool-result size
 cap, which both reporters had already hit that same session, and an agent that
