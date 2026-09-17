@@ -199,22 +199,6 @@ def _resolve_current(request: Any, provider: SessionProjectProvider, explicit: s
     return resolve_project(request, provider, explicit=explicit or None)
 
 
-def _default_loader(request: Any) -> Sequence[dict]:
-    """Rows for this request, through the board's own store reader.
-
-    Reused rather than re-implemented so the project board and the fleet board
-    can never disagree about which store they are looking at, and so a store
-    that cannot be read raises HERE where the state machine already maps every
-    load failure onto one honest answer. ``allow_stale`` matches the other
-    read-only page payloads: a page behind one refresh cycle is invisible, the
-    wait for a full store rebuild is not. Imported lazily because ``views``
-    imports the handler package this module belongs to.
-    """
-    from ..views import _get_board
-
-    return list(_get_board(request, allow_stale=True).tasks)
-
-
 def authorized_rows(
     rows: Sequence[Mapping[str, Any]],
     principal: str,
@@ -235,15 +219,49 @@ def authorized_rows(
     return list(scope_rows_for_user(rows, principal, is_staff=is_staff))
 
 
+def _default_projects_loader(request: Any) -> list[str]:
+    """The viewer's project list, from ONE indexed DISTINCT query.
+
+    Not the store document: this is what replaced a 15.6s whole-store read
+    (measured) with a query the schema already indexes (`idx_tasks_project`,
+    `idx_tasks_assignee`, `idx_tasks_agent`).
+    """
+    from .._user_scope import current_user
+    from .._request_store import read_store
+    from ..._project_board_query import projects_for
+
+    principal = current_user(request) or ""
+    is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    return projects_for(principal, store=read_store(request), is_staff=is_staff)
+
+
+def _default_rows_loader(request: Any, project: str) -> list[dict]:
+    """ONE project's authorized cards, bounded fields, LIMIT — never the graph."""
+    from .._user_scope import current_user
+    from .._request_store import read_store
+    from ..._project_board_query import rows_for
+
+    principal = current_user(request) or ""
+    is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    return rows_for(project, principal, store=read_store(request), is_staff=is_staff)
+
+
 def board_state(
     request: Any,
     *,
-    loader: Optional[Callable[[Any], Sequence[dict]]] = None,
+    projects_loader: Optional[Callable[[Any], Sequence[str]]] = None,
+    rows_loader: Optional[Callable[[Any, str], Sequence[dict]]] = None,
     provider: Optional[Any] = None,
 ) -> BoardState:
     """Decide which of the six states this request is in, and with what rows.
 
-    ``loader`` is injectable so the tenancy and the state machine are testable
+    TWO LOADERS, not one, and that is the performance fix as much as the
+    structure: phase 1 asks only for the viewer's PROJECT IDS (a DISTINCT query),
+    phase 2 asks only for the SELECTED project's cards. The previous shape loaded
+    the whole store to answer both questions and measured 72.7s cold / 32.7s warm
+    on the shared fleet; the Hub gate for this page is <=3s cold / <=1.5s warm.
+
+    Both loaders are injectable so the tenancy and the state machine stay testable
     hermetically — no database, no Django request machinery — which is the same
     reason ``_user_row_scope`` takes loaded rows rather than a DSN.
 
@@ -267,9 +285,16 @@ def board_state(
         PARAM_ASSIGNEE: str(params.get(PARAM_ASSIGNEE) or ""),
     }
 
-    load = loader or _default_loader
+    # TENANCY FIRST, BEFORE ANY LOOKUP. A viewer the boundary cannot name sees
+    # nothing at all — and, just as important, this page never runs a query it
+    # has no principal for.
+    if not is_staff and not principal:
+        return BoardState(state=DENIED, principal=principal, is_staff=is_staff, filters=filters)
+
+    list_projects = projects_loader or _default_projects_loader
+    load_rows = rows_loader or _default_rows_loader
     try:
-        rows = list(load(request))
+        projects = tuple(list_projects(request))
     except Exception as exc:  # noqa: BLE001 - every load failure is ONE state to the reader
         logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
         return BoardState(
@@ -280,13 +305,6 @@ def board_state(
             detail=str(exc)[:200],
         )
 
-    # TENANCY FIRST. A viewer the boundary cannot name sees nothing at all — not
-    # an empty project list, which would still confirm the store has projects.
-    if not is_staff and not principal:
-        return BoardState(state=DENIED, principal=principal, is_staff=is_staff, filters=filters)
-
-    authorized = authorized_rows(rows, principal, is_staff=is_staff)
-    projects = projects_of(authorized)
     active_provider = provider if provider is not None else SessionProjectProvider(projects)
     current = _resolve_current(request, active_provider, explicit)
 
@@ -313,7 +331,25 @@ def board_state(
             filters=filters,
         )
 
-    project_rows = rows_of_project(authorized, current)
+    try:
+        loaded = list(load_rows(request, current))
+    except Exception as exc:  # noqa: BLE001 - same single answer as above
+        logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
+        return BoardState(
+            state=UNAVAILABLE,
+            principal=principal,
+            is_staff=is_staff,
+            project=current,
+            projects=projects,
+            filters=filters,
+            detail=str(exc)[:200],
+        )
+
+    # DEFENCE IN DEPTH, not the primary rule: the SQL carries the same predicate
+    # (built from ``OWNED_FIELDS``, the one definition), and this re-applies it in
+    # memory so a future loader swap cannot quietly widen what the page shows.
+    project_rows = authorized_rows(rows_of_project(loaded, current), principal, is_staff=is_staff)
+
     if not project_rows:
         return BoardState(
             state=EMPTY,

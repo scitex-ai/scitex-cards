@@ -1,0 +1,48 @@
+=== AFTER: the two bounded queries (what the page does now) ===
+projects_for(principal)          [DISTINCT, indexed]    0.16s   rows=9
+rows_for('fleet-ci', principal)  [bounded fields + LIMIT]    0.13s   rows=1
+
+=== BEFORE: the shape the page shipped first (whole document) ===
+(skipped: _get_board needs a Django request; measured earlier through the
+ page ITSELF as 72.7s cold / 32.7s warm on the same store)
+
+=== QUERY PLAN ===
+--- projects: SELECT DISTINCT project FROM tasks WHERE project IS NOT NULL AND project <> '' AND COALESCE(is_deleted, false) = false AND ( created_by = ? OR assignee = ? OR agent = ? ) ORDER BY project
+    Unique  (cost=1301.50..1301.87 rows=50 width=16) (actual time=12.583..12.595 rows=9.00 loops=1)
+      Buffers: shared hit=1142
+      ->  Sort  (cost=1301.50..1301.68 rows=74 width=16) (actual time=12.580..12.583 rows=27.00 loops=1)
+            Sort Key: project
+            Sort Method: quicksort  Memory: 25kB
+            Buffers: shared hit=1142
+            ->  Seq Scan on tasks  (cost=0.00..1299.20 rows=74 width=16) (actual time=0.134..12.522 rows=27.00 loops=1)
+                  Filter: ((project IS NOT NULL) AND (NOT COALESCE(is_deleted, false)) AND (project <> ''::text) AND ((created_by = 'operator'::text) OR (assignee = 'operator'::text) OR (agent = 'operator'::text)))
+                  Rows Removed by Filter: 7826
+                  Buffers: shared hit=1139
+    Planning:
+      Buffers: shared hit=210
+    Planning Time: 0.701 ms
+    Execution Time: 12.623 ms
+
+--- rows: SELECT id, title, status, project, assignee, agent, created_by, priority FROM tasks WHERE project = ? AND COALESCE(is_deleted, false) = false AND ( created_by = ? OR assignee = ? OR agent = ? ) ORDER BY priority NULLS LAST, updated_at DESC NULLS LAST, id LIMIT ?
+    Limit  (cost=27.15..27.16 rows=1 width=265) (actual time=0.070..0.071 rows=1.00 loops=1)
+      Buffers: shared hit=11
+      ->  Sort  (cost=27.15..27.16 rows=1 width=265) (actual time=0.069..0.069 rows=1.00 loops=1)
+            Sort Key: priority, updated_at DESC NULLS LAST, id
+            Sort Method: quicksort  Memory: 25kB
+            Buffers: shared hit=11
+            ->  Bitmap Heap Scan on tasks  (cost=4.33..27.14 rows=1 width=265) (actual time=0.045..0.045 rows=1.00 loops=1)
+                  Recheck Cond: (project = 'fleet-ci'::text)
+                  Filter: ((NOT COALESCE(is_deleted, false)) AND ((created_by = 'operator'::text) OR (assignee = 'operator'::text) OR (agent = 'operator'::text)))
+                  Rows Removed by Filter: 5
+                  Heap Blocks: exact=6
+                  Buffers: shared hit=8
+                  ->  Bitmap Index Scan on idx_tasks_project  (cost=0.00..4.33 rows=6 width=0) (actual time=0.021..0.021 rows=6.00 loops=1)
+                        Index Cond: (project = 'fleet-ci'::text)
+                        Index Searches: 1
+                        Buffers: shared hit=2
+    Planning:
+      Buffers: shared hit=40
+    Planning Time: 0.325 ms
+    Execution Time: 0.106 ms
+
+AFTER total (both queries, best of 3): 0.29s

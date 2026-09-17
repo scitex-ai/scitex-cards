@@ -91,9 +91,29 @@ def _loader(rows):
     return lambda request: rows
 
 
+def _sources(rows, viewer, *, is_staff=False):
+    """The two loaders the state machine asks for, built from one fixture list.
+
+    TENANCY LIVES IN THE LOADER NOW, and the fakes model that rather than
+    filtering afterwards: in production the predicate is in the SQL ``WHERE``
+    (``_project_board_query``, built from ``OWNED_FIELDS``), so a fake that
+    handed back every row would be testing a loader this page never uses. The
+    state machine still re-applies the predicate as defence in depth.
+
+    The two questions stay separate — the viewer's project list, then one
+    project's rows — because that is what the page now asks, and the shape that
+    asked once for everything measured 72.7s cold on the shared store.
+    """
+    authorized = pb.authorized_rows(rows, viewer, is_staff=is_staff)
+    return {
+        "projects_loader": lambda request: pb.projects_of(authorized),
+        "rows_loader": lambda request, project: pb.rows_of_project(authorized, project),
+    }
+
+
 def _state(viewer, rows, params=None, *, is_staff=False, provider=None, session=None):
     request = _Request(_User(viewer, is_staff=is_staff), params, session)
-    return pb.board_state(request, loader=_loader(rows), provider=provider)
+    return pb.board_state(request, provider=provider, **_sources(rows, viewer, is_staff=is_staff))
 
 
 # --- A/B tenant isolation ---------------------------------------------------
@@ -247,7 +267,25 @@ def test_unavailable_state_when_the_store_cannot_be_read():
         raise RuntimeError("connection to server failed")
 
     # Act
-    state = pb.board_state(_Request(_User("alice")), loader=_boom)
+    state = pb.board_state(_Request(_User("alice")), projects_loader=_boom)
+    # Assert
+    assert state.state == pb.UNAVAILABLE
+
+
+def test_unavailable_also_when_only_the_second_query_fails():
+    """The project list answering is not the page working: a failure while
+    loading the cards is the same retryable answer, not a half-rendered board."""
+    # Arrange
+    def _boom(request, selected):
+        raise RuntimeError("connection to server failed")
+
+    rows = [_ALICE]
+    # Act
+    state = pb.board_state(
+        _Request(_User("alice"), {"project": "proj-alpha"}),
+        projects_loader=lambda request: pb.projects_of(rows),
+        rows_loader=_boom,
+    )
     # Assert
     assert state.state == pb.UNAVAILABLE
 
