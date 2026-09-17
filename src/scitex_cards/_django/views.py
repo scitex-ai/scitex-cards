@@ -185,6 +185,26 @@ def favicon_view(request):
     return FileResponse(_FAVICON_PATH.open("rb"), content_type="image/svg+xml")
 
 
+def _cards_version() -> str:
+    """The installed scitex-cards version, or ``"?"`` when it cannot be read.
+
+    ONE READER FOR THREE PAGES. The board-v3 page, the DM page and the SPA
+    shell each carried their own `try: from scitex_cards import __version__`
+    block, which is how a version string starts disagreeing with itself: the
+    SPA renders its version from `standalone.html`, so the moment the shell
+    needs the number there are three copies of "the" answer and two of them
+    are stale-able. Read it in one place.
+
+    `"?"` rather than raising: a page whose version cannot be determined is
+    still a working board, and the templates already render the placeholder.
+    """
+    try:
+        from scitex_cards import __version__ as version
+    except Exception:  # noqa: BLE001
+        return "?"
+    return version
+
+
 def board_page(request):
     """Serve the React SPA inside the scitex-ui shell, or a static fallback."""
     from django.template.loader import render_to_string
@@ -194,12 +214,18 @@ def board_page(request):
     if built:
         try:
             api_base = request.path
+            context = _cards_shell_context(request, api_base)
+            # The SPA's leaf band prints this version (standalone.html ->
+            # #app-mount[data-app-version] -> src/LeafHeader.tsx). It is the
+            # same number board_v3 and the DM page print, from the same
+            # reader — a bundle that hard-coded it would go stale silently.
+            context["scitex_cards_version"] = _cards_version()
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
                 # stays ``scitex-cards`` — it keys the shell's static/asset
                 # namespace, not the product name the operator reads.
-                _cards_shell_context(request, api_base),
+                context,
                 request=request,
             )
             return HttpResponse(html)
@@ -225,14 +251,11 @@ def board_v3_page(request):
     """
     from django.template.loader import render_to_string
 
-    # Operator UX (TG 407): show the actual scitex-cards package version
-    # in the page title AND the in-page header so the operator can verify
-    # at a glance which release the board is running. Read __version__
-    # straight off the package import — no second source of truth to drift.
-    try:
-        from scitex_cards import __version__ as _version
-    except Exception:  # noqa: BLE001
-        _version = "?"
+    # Operator UX (TG 407): the operator verifies at a glance which release the
+    # board is running. The number comes from _cards_version() — the ONE reader
+    # every Cards page shares (see it for why this stopped being an inline
+    # try/except; there were three copies of "the" version).
+    _version = _cards_version()
     # SSOT status colors (kill the 4-bucket color collapse). The board's
     # color layer is single-sourced from ``STATUS_STYLE`` via the same
     # projection the /graph payload uses (``handlers.graph._status_colors``),
@@ -294,10 +317,7 @@ def chat_page(request):
     """
     from django.template.loader import render_to_string
 
-    try:
-        from scitex_cards import __version__ as _version
-    except Exception:  # noqa: BLE001
-        _version = "?"
+    _version = _cards_version()
 
     # Mount-aware API base — same contract as board_v3_page (see there for the
     # full story). The chat page is served at "<include-root>chat" and, since
