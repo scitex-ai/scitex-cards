@@ -105,9 +105,23 @@ def _sources(rows, viewer, *, is_staff=False):
     asked once for everything measured 72.7s cold on the shared store.
     """
     authorized = pb.authorized_rows(rows, viewer, is_staff=is_staff)
+
+    def _projects(request):
+        return pb.projects_of(authorized)
+
+    def _rows(request, project, offset=0):
+        # LIMIT + OFFSET, like the SQL: the fake must not hand back more than a
+        # page, or a test could pass while the real query is unbounded.
+        page = pb.rows_of_project(authorized, project)[offset : offset + pb.DEFAULT_ROW_LIMIT]
+        return page
+
+    def _count(request, project):
+        return len(pb.rows_of_project(authorized, project))
+
     return {
-        "projects_loader": lambda request: pb.projects_of(authorized),
-        "rows_loader": lambda request, project: pb.rows_of_project(authorized, project),
+        "projects_loader": _projects,
+        "rows_loader": _rows,
+        "count_loader": _count,
     }
 
 
@@ -1116,3 +1130,135 @@ def test_the_card_page_recovers_the_mount_root_from_a_card_path():
     body = pb.render_project_card(request, _board(), "alice-a").content.decode()
     # Assert
     assert f'action="/apps/cards/projects/alice-a?project=' in body
+
+
+# --- paging: a bounded page must not present itself as the whole board -------
+#
+# The page shows at most DEFAULT_ROW_LIMIT cards. Reporting the PAGE LENGTH as the
+# total would render "500 of 500" for a project holding 1,200 cards — a bounded
+# view presented as a complete one, which is the failure this section exists to
+# prevent. The total therefore comes from a COUNT query, and the page says
+# "showing X-Y of N".
+
+
+def _paged_state(rows, params, viewer="alice"):
+    request = _Request(_User(viewer), params, None)
+    return pb.board_state(request, **_sources(rows, viewer))
+
+
+def _alice_rows(n, project="proj-alpha"):
+    return [_row(f"alice-{i:04d}", owner="alice", project=project) for i in range(n)]
+
+
+def test_the_total_is_the_stores_count_not_the_page_length():
+    """1,200 cards and a 500-row page must read as 1,200, not as 500."""
+    # Arrange
+    rows = _alice_rows(3)
+    sources = _sources(rows, "alice")
+    sources["count_loader"] = lambda request, project: 1200
+    sources["rows_loader"] = lambda request, project, offset=0: rows
+    # Act
+    state = pb.board_state(_Request(_User("alice"), {"project": "proj-alpha"}), **sources)
+    # Assert
+    assert (state.total, len(state.rows), state.has_next) == (1200, 3, True)
+
+
+def test_a_full_page_with_more_to_come_says_so():
+    """A page of exactly the limit with a larger count has a next page."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(pb.DEFAULT_ROW_LIMIT)), total=pb.DEFAULT_ROW_LIMIT * 2,
+                          offset=0, page_size=pb.DEFAULT_ROW_LIMIT)
+    # Act
+    more = state.has_next
+    # Assert
+    assert more is True
+
+
+def test_the_last_page_does_not_offer_a_next_one():
+    """has_next is arithmetic over the count, so the end of the board is the end."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(10)), total=10, offset=0, page_size=10)
+    # Act
+    more = state.has_next
+    # Assert
+    assert more is False
+
+
+def test_the_first_page_does_not_offer_a_previous_one():
+    """A Previous link on the first page is a control that cannot work."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(10)), total=10, offset=0, page_size=10)
+    # Act
+    previous = state.has_prev
+    # Assert
+    assert previous is False
+
+
+def test_an_offset_past_the_end_is_clamped_to_the_last_page():
+    """A bookmarked page of a project that has since shrunk must show that
+    project's remainder, not an empty board the reader reads as "empty project"."""
+    # Arrange
+    rows = _alice_rows(3)
+    # Act
+    state = _paged_state(rows, {"project": "proj-alpha", "offset": "99999"})
+    # Assert
+    assert (state.offset, len(state.rows)) == (0, 3)
+
+
+def test_a_junk_offset_is_treated_as_the_first_page():
+    """"?offset=banana" is a hand-edited link: the board is the honest answer."""
+    # Arrange
+    rows = _alice_rows(2)
+    # Act
+    state = _paged_state(rows, {"project": "proj-alpha", "offset": "banana"})
+    # Assert
+    assert state.offset == 0
+
+
+def test_the_offset_reaches_the_page_start():
+    """Paging is a SQL OFFSET, not a slice of a bigger fetch — the rows returned
+    for the second page are the ones after the first page's end."""
+    # Arrange
+    rows = _alice_rows(5)
+    # Act
+    state = _paged_state(rows, {"project": "proj-alpha", "offset": "2"})
+    # Assert
+    assert [row["id"] for row in state.rows] == ["alice-0002", "alice-0003", "alice-0004"]
+
+
+def test_the_page_says_which_cards_it_is_showing():
+    """The reader is told the slice, not left to infer it from a bare count."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(3)), total=42, offset=500, page_size=3)
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert ('data-stx-shown-from="501"' in body, 'data-stx-shown-to="503"' in body,
+            'data-stx-total="42"' in body) == (True, True, True)
+
+
+def test_the_page_offers_a_next_link_when_there_is_one():
+    """The way forward is a link, so it works with the keyboard and without
+    JavaScript — the same rule the rest of this page follows."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(2)), total=99, offset=0, page_size=2)
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert 'data-stx-page-next' in body
+
+
+def test_no_pager_when_everything_fits_on_one_page():
+    """A pager on a project that fits is a control that cannot do anything."""
+    # Arrange
+    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="p",
+                          rows=tuple(_alice_rows(2)), total=2, offset=0, page_size=2)
+    # Act
+    body = _render(state).content.decode()
+    # Assert
+    assert 'data-stx-pager' not in body

@@ -74,6 +74,13 @@ PARAM_PROJECT = "project"
 PARAM_Q = "q"
 PARAM_STATUS = "status"
 PARAM_ASSIGNEE = "assignee"
+PARAM_OFFSET = "offset"
+
+#: How many cards one page shows. Imported from the query module rather than
+#: restated, because the SQL's LIMIT and the paging arithmetic must agree: a clamp
+#: that used a different page size than the query would jump to a page boundary
+#: the database never produces.
+from ..._project_board_query import DEFAULT_ROW_LIMIT  # noqa: E402  (kept beside its use)
 
 #: The row field a card's project lives in, named once so a rename is one edit.
 PROJECT_FIELD = "project"
@@ -90,12 +97,40 @@ class BoardState:
     projects: tuple[str, ...] = ()
     rows: tuple[Mapping[str, Any], ...] = ()
     total: int = 0
+    offset: int = 0
+    page_size: int = 0
     filters: dict = field(default_factory=dict)
     detail: str = ""
 
     @property
     def filters_active(self) -> bool:
         return any(bool(v) for v in self.filters.values())
+
+    @property
+    def has_prev(self) -> bool:
+        """True when this page is not the first — the reader can go back."""
+        return self.offset > 0
+
+    @property
+    def has_next(self) -> bool:
+        """True when the project holds cards past this page.
+
+        ``total`` is a COUNT from the store, not the length of what was fetched:
+        a bounded page that reported its own length as the total would say
+        "500 of 500" for a project holding 1,200 cards, which is not a bounded
+        view but a wrong one.
+        """
+        return (self.offset + len(self.rows)) < self.total
+
+    @property
+    def shown_from(self) -> int:
+        """1-based index of the first card on this page (0 when there are none)."""
+        return self.offset + 1 if self.rows else 0
+
+    @property
+    def shown_to(self) -> int:
+        """1-based index of the last card on this page."""
+        return self.offset + len(self.rows)
 
 
 def projects_of(rows: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
@@ -199,6 +234,38 @@ def _resolve_current(request: Any, provider: SessionProjectProvider, explicit: s
     return resolve_project(request, provider, explicit=explicit or None)
 
 
+def _offset_from(params: Mapping[str, Any]) -> int:
+    """The page start the request asked for, or 0.
+
+    A junk offset is treated as the first page rather than refused: this is a LINK
+    target a reader can edit by hand, and the honest answer to "?offset=banana" is
+    the board, not an error page.
+    """
+    raw = str(params.get(PARAM_OFFSET) or "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        return 0
+    return value if value > 0 else 0
+
+
+def _clamp_offset(offset: int, total: int, limit: int = DEFAULT_ROW_LIMIT) -> int:
+    """The nearest valid page start at or before ``offset``.
+
+    Clamping rather than refusing matters for the case that actually happens: a
+    bookmarked page N of a project that has since shrunk would otherwise render an
+    empty board, which a reader reads as "my project is empty" rather than "that
+    page is gone".
+    """
+    if offset <= 0 or total <= 0:
+        return 0
+    if offset < total:
+        return offset
+    return max(0, ((total - 1) // limit) * limit)
+
+
 def authorized_rows(
     rows: Sequence[Mapping[str, Any]],
     principal: str,
@@ -235,22 +302,41 @@ def _default_projects_loader(request: Any) -> list[str]:
     return projects_for(principal, store=read_store(request), is_staff=is_staff)
 
 
-def _default_rows_loader(request: Any, project: str) -> list[dict]:
-    """ONE project's authorized cards, bounded fields, LIMIT — never the graph."""
+def _default_rows_loader(request: Any, project: str, offset: int = 0) -> list[dict]:
+    """ONE page of ONE project's authorized cards, bounded fields — never the graph."""
     from .._user_scope import current_user
     from .._request_store import read_store
     from ..._project_board_query import rows_for
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
-    return rows_for(project, principal, store=read_store(request), is_staff=is_staff)
+    return rows_for(
+        project, principal, store=read_store(request), is_staff=is_staff, offset=offset
+    )
+
+
+def _default_count_loader(request: Any, project: str) -> int:
+    """The project's real card count for this viewer — one indexed aggregate.
+
+    Without it the page could only report how many rows it happened to fetch, and
+    a bounded page reporting its own bound as the total is a page that lies about
+    the board.
+    """
+    from .._user_scope import current_user
+    from .._request_store import read_store
+    from ..._project_board_query import count_for
+
+    principal = current_user(request) or ""
+    is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
+    return count_for(project, principal, store=read_store(request), is_staff=is_staff)
 
 
 def board_state(
     request: Any,
     *,
     projects_loader: Optional[Callable[[Any], Sequence[str]]] = None,
-    rows_loader: Optional[Callable[[Any, str], Sequence[dict]]] = None,
+    rows_loader: Optional[Callable[[Any, str, int], Sequence[dict]]] = None,
+    count_loader: Optional[Callable[[Any, str], int]] = None,
     provider: Optional[Any] = None,
 ) -> BoardState:
     """Decide which of the six states this request is in, and with what rows.
@@ -293,6 +379,8 @@ def board_state(
 
     list_projects = projects_loader or _default_projects_loader
     load_rows = rows_loader or _default_rows_loader
+    count_loader_default = count_loader or _default_count_loader
+    offset = _offset_from(params)
     try:
         projects = tuple(list_projects(request))
     except Exception as exc:  # noqa: BLE001 - every load failure is ONE state to the reader
@@ -332,7 +420,26 @@ def board_state(
         )
 
     try:
-        loaded = list(load_rows(request, current))
+        total = int(count_loader_default(request, current))
+    except Exception as exc:  # noqa: BLE001 - same single answer as above
+        logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
+        return BoardState(
+            state=UNAVAILABLE,
+            principal=principal,
+            is_staff=is_staff,
+            project=current,
+            projects=projects,
+            filters=filters,
+            detail=str(exc)[:200],
+        )
+
+    # THE OFFSET IS CLAMPED BEFORE THE PAGE IS FETCHED, against the store's own
+    # count: ?offset=99999 on a 3-card project would otherwise render an empty
+    # board with a "next" link, which reads as "your project is empty".
+    offset = _clamp_offset(offset, total)
+
+    try:
+        loaded = list(load_rows(request, current, offset))
     except Exception as exc:  # noqa: BLE001 - same single answer as above
         logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
         return BoardState(
@@ -350,7 +457,7 @@ def board_state(
     # memory so a future loader swap cannot quietly widen what the page shows.
     project_rows = authorized_rows(rows_of_project(loaded, current), principal, is_staff=is_staff)
 
-    if not project_rows:
+    if not project_rows and total == 0:
         return BoardState(
             state=EMPTY,
             principal=principal,
@@ -368,7 +475,9 @@ def board_state(
             is_staff=is_staff,
             project=current,
             projects=projects,
-            total=len(project_rows),
+            total=total,
+            offset=offset,
+            page_size=len(project_rows),
             filters=filters,
         )
 
@@ -379,7 +488,9 @@ def board_state(
         project=current,
         projects=projects,
         rows=tuple(visible),
-        total=len(project_rows),
+        total=total,
+        offset=offset,
+        page_size=len(project_rows),
         filters=filters,
     )
 

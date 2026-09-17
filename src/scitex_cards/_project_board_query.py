@@ -92,8 +92,20 @@ def rows_sql(*, is_staff: bool = False) -> str:
         f"SELECT {fields} FROM tasks "
         f"WHERE project = ? AND {_DELETED_FILTER}{clause} "
         "ORDER BY priority NULLS LAST, updated_at DESC NULLS LAST, id "
-        "LIMIT ?"
+        "LIMIT ? OFFSET ?"
     )
+
+
+def count_sql(*, is_staff: bool = False) -> str:
+    """How many cards this viewer has in this project — the number the page needs.
+
+    WITHOUT THIS the bounded page lies: it can show at most ``limit`` rows, and a
+    page that renders "500 of 500" for a project holding 1,200 cards is not a
+    bounded view, it is a wrong one. The count is a separate cheap aggregate over
+    the same indexed predicate, and the page says "showing X-Y of N".
+    """
+    clause = "" if is_staff else _tenancy_clause()
+    return f"SELECT COUNT(*) FROM tasks WHERE project = ? AND {_DELETED_FILTER}{clause}"
 
 
 def projects_params(principal: str, *, is_staff: bool = False) -> tuple:
@@ -103,12 +115,32 @@ def projects_params(principal: str, *, is_staff: bool = False) -> tuple:
     return tuple(principal for _ in OWNED_FIELDS)
 
 
-def rows_params(project: str, principal: str, *, is_staff: bool = False, limit: int = DEFAULT_ROW_LIMIT) -> tuple:
-    """Parameters for :func:`rows_sql`, in the order the SQL expects them."""
+def rows_params(
+    project: str,
+    principal: str,
+    *,
+    is_staff: bool = False,
+    limit: int = DEFAULT_ROW_LIMIT,
+    offset: int = 0,
+) -> tuple:
+    """Parameters for :func:`rows_sql`, in the order the SQL expects them.
+
+    The offset is passed to the DATABASE, not applied by slicing a larger fetch:
+    a page that pulls 500 rows and shows the last 50 has still paid for 500, which
+    is the cost this module exists to remove.
+    """
     base: tuple = (project,)
     if not is_staff:
         base += tuple(principal for _ in OWNED_FIELDS)
-    return base + (limit,)
+    return base + (limit, offset)
+
+
+def count_params(project: str, principal: str, *, is_staff: bool = False) -> tuple:
+    """Parameters for :func:`count_sql` — no limit, because a count is not paged."""
+    base: tuple = (project,)
+    if not is_staff:
+        base += tuple(principal for _ in OWNED_FIELDS)
+    return base
 
 
 def _default_connect(store: Any = None):
@@ -161,6 +193,7 @@ def rows_for(
     store: Any = None,
     is_staff: bool = False,
     limit: int = DEFAULT_ROW_LIMIT,
+    offset: int = 0,
     connect: Optional[Callable[..., Any]] = None,
 ) -> list[dict]:
     """ONE project's authorized cards, bounded to the fields a card shows.
@@ -171,7 +204,7 @@ def rows_for(
     if not project:
         return []
     sql = rows_sql(is_staff=is_staff)
-    params = rows_params(project, principal, is_staff=is_staff, limit=limit)
+    params = rows_params(project, principal, is_staff=is_staff, limit=limit, offset=offset)
     rows = _fetch(sql, params, connect=connect, store=store)
     out = []
     for row in rows:
@@ -180,3 +213,27 @@ def rows_for(
         else:  # positional rows (a driver without rows_by_name)
             out.append(dict(zip(BOARD_ROW_FIELDS, row)))
     return out
+
+
+def count_for(
+    project: str,
+    principal: str,
+    *,
+    store: Any = None,
+    is_staff: bool = False,
+    connect: Optional[Callable[..., Any]] = None,
+) -> int:
+    """How many cards this viewer has in this project, indexed and exact."""
+    if not project:
+        return 0
+    rows = _fetch(
+        count_sql(is_staff=is_staff),
+        count_params(project, principal, is_staff=is_staff),
+        connect=connect,
+        store=store,
+    )
+    if not rows:
+        return 0
+    first = rows[0]
+    value = first["count"] if hasattr(first, "keys") else first[0]
+    return int(value or 0)

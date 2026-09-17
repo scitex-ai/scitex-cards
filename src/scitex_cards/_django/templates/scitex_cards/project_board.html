@@ -196,9 +196,26 @@
       </div>
 
     {% else %}
-      <p class="stx-cards-project__count" data-stx-count>
-        {{ board.rows|length }} of {{ board.total }} card{{ board.total|pluralize }} in {{ board.project }}
+      <p class="stx-cards-project__count" data-stx-count
+         data-stx-shown-from="{{ board.shown_from }}" data-stx-shown-to="{{ board.shown_to }}"
+         data-stx-total="{{ board.total }}" data-stx-offset="{{ board.offset }}">
+        showing {{ board.shown_from }}–{{ board.shown_to }} of {{ board.total }}
+        card{{ board.total|pluralize }} in {{ board.project }}
       </p>
+      {% if board.has_prev or board.has_next %}
+        <nav class="stx-cards-project__pager" data-stx-pager aria-label="Board pages">
+          {% if board.has_prev %}
+            <a class="stx-cards-project__retry"
+               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;offset={{ board.offset|add:"-500" }}"
+               data-stx-page-prev>Previous 500</a>
+          {% endif %}
+          {% if board.has_next %}
+            <a class="stx-cards-project__retry"
+               href="{{ api_base|stx_path:"/projects" }}?project={{ board.project|urlencode }}&amp;offset={{ board.offset|add:"500" }}"
+               data-stx-page-next>Next 500</a>
+          {% endif %}
+        </nav>
+      {% endif %}
       {% for group in groups %}
         <section class="stx-cards-project__group" data-stx-group="{{ group.status|default:'other' }}">
           <h2 class="stx-cards-project__group-title">

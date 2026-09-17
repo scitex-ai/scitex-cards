@@ -90,14 +90,67 @@ def test_staff_reads_drop_the_predicate_entirely():
 
 
 def test_rows_parameters_match_the_order_the_sql_expects():
-    """project first, then the principal per owned field, then the limit — the
-    order a positional driver requires, asserted rather than assumed."""
+    """project first, then the principal per owned field, then the limit, then the
+    offset — the order a positional driver requires, asserted rather than assumed."""
     # Arrange
-    expected = ("proj-alpha", "alice", "alice", "alice", 7)
+    expected = ("proj-alpha", "alice", "alice", "alice", 7, 21)
     # Act
-    params = pbq.rows_params("proj-alpha", "alice", limit=7)
+    params = pbq.rows_params("proj-alpha", "alice", limit=7, offset=21)
     # Assert
     assert params == expected
+
+
+def test_the_rows_query_pages_in_the_database_not_in_python():
+    """OFFSET belongs to the SQL: fetching 500 rows to show the last 50 has still
+    paid for 500, which is the cost this module exists to remove."""
+    # Arrange
+    sql = pbq.rows_sql()
+    # Act
+    paged = "LIMIT ? OFFSET ?" in sql
+    # Assert
+    assert paged is True
+
+
+def test_the_count_query_is_a_count_not_a_page():
+    """The total must come from the store's own COUNT: a page reporting its own
+    length as the total says "500 of 500" for a project holding 1,200 cards."""
+    # Arrange
+    sql = pbq.count_sql()
+    # Act
+    shape = ("COUNT(*)" in sql, "LIMIT" in sql, "OFFSET" in sql)
+    # Assert
+    assert shape == (True, False, False)
+
+
+def test_the_count_carries_the_same_tenancy_predicate_as_the_rows():
+    """A count that ignored the predicate would leak another tenant's card COUNT —
+    the leak the page refuses to make even in aggregate."""
+    # Arrange
+    sql = pbq.count_sql()
+    # Act
+    missing = [field for field in OWNED_FIELDS if f"{field} = ?" not in sql]
+    # Assert
+    assert missing == []
+
+
+def test_the_count_query_takes_no_limit_parameter():
+    """A count is not paged; a stray limit parameter would be a driver error."""
+    # Arrange
+    expected = ("proj-alpha", "alice", "alice", "alice")
+    # Act
+    params = pbq.count_params("proj-alpha", "alice")
+    # Assert
+    assert params == expected
+
+
+def test_asking_for_a_count_without_a_project_asks_the_store_nothing():
+    """No project means no count, and no query for one."""
+    # Arrange
+    expected = 0
+    # Act
+    total = pbq.count_for("", "alice")
+    # Assert
+    assert total == expected
 
 
 def test_projects_parameters_repeat_the_principal_per_owned_field():
