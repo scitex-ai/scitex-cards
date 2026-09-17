@@ -425,6 +425,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _ci_watch,
     _completion,
     _deliver,
+    _freshness,
     _gui,
     _hooks,
     _inbox,
@@ -519,6 +520,8 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# freshness-gc — the store's own card-forgetting verb (atomic, one transaction).
+_freshness.register(main)
 
 
 if __name__ == "__main__":
