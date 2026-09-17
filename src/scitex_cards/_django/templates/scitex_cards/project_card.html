@@ -66,6 +66,7 @@
           <span data-stx-detail-status>{{ card.status|default:"—" }}</span>
           <span>assignee <code>{{ card.assignee|default:"—" }}</code></span>
           <span>priority {{ card.priority|default:"—" }}</span>
+          {% if card.blocker %}<span data-stx-detail-blocker>gate {{ card.blocker }}</span>{% endif %}
           <code data-stx-detail-id>{{ card.id }}</code>
         </p>
         {% if card.note %}
@@ -86,6 +87,13 @@
         <select id="stx-edit-status" name="status" data-stx-edit-status>
           {% for status in statuses %}
             <option value="{{ status }}" {% if status == card.status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+        <label for="stx-edit-blocker">Blocker</label>
+        <select id="stx-edit-blocker" name="blocker" data-stx-edit-blocker>
+          <option value="" {% if not card.blocker %}selected{% endif %}>— none —</option>
+          {% for blocker in blockers %}
+            <option value="{{ blocker }}" {% if blocker == card.blocker %}selected{% endif %}>{{ blocker }}</option>
           {% endfor %}
         </select>
         <label for="stx-edit-assignee">Assignee</label>

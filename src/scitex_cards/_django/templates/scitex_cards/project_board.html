@@ -134,6 +134,13 @@
             <option value="{{ status }}" {% if status == create_default_status %}selected{% endif %}>{{ status }}</option>
           {% endfor %}
         </select>
+        <label for="stx-create-blocker">Blocker</label>
+        <select id="stx-create-blocker" name="blocker" data-stx-create-blocker>
+          <option value="">— none (only needed for a blocked card) —</option>
+          {% for blocker in blockers %}
+            <option value="{{ blocker }}">{{ blocker }}</option>
+          {% endfor %}
+        </select>
         <label for="stx-create-assignee">Assignee</label>
         <input id="stx-create-assignee" type="text" name="assignee"
                placeholder="me ({{ board.principal }})" data-stx-create-assignee>
@@ -233,6 +240,7 @@
                   <span data-stx-card-status>{{ row.status|default:"—" }}</span>
                   <span>assignee <code>{{ row.assignee|default:"—" }}</code></span>
                   <span>priority {{ row.priority|default:"—" }}</span>
+                  {% if row.blocker %}<span data-stx-card-blocker>gate {{ row.blocker }}</span>{% endif %}
                   <code data-stx-card-id>{{ row.id }}</code>
                 </p>
                 {% comment %}

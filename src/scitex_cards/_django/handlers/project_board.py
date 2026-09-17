@@ -495,6 +495,43 @@ def board_state(
     )
 
 
+#: The status that REQUIRES a gate. Not named in the page's own words after this:
+#: the store's validator is the authority (see ``canonical_blockers``), and this
+#: constant is the one place the page agrees with it about which status is gated.
+BLOCKED_STATUS = "blocked"
+
+#: The refusal a reader gets for a gated status with no gate. It says what to do,
+#: because a refusal a reader cannot act on is only half a refusal.
+BLOCKED_NEEDS_GATE = (
+    "A blocked card must name its gate, so whoever can clear it knows what to do. "
+    "Choose a blocker, or use a status that reflects reality."
+)
+
+
+def canonical_blockers() -> tuple[str, ...]:
+    """The store's own blocker vocabulary, asked for rather than restated.
+
+    This is the list the writer's validator checks; a page-local copy would be a
+    second list to forget. The page needs it because of a defect the CI log handed
+    me: a create through this form could write a card with status 'blocked' and NO
+    gate, which the store accepts with a warning — so the GUI could file work the
+    fleet's own validator calls incomplete.
+    """
+    from ..._task import VALID_BLOCKERS
+
+    return tuple(VALID_BLOCKERS)
+
+
+def _blocker_or_error(form: Mapping[str, Any]) -> tuple[Optional[str], str]:
+    """The blocker the form asked for, validated against the canonical set."""
+    raw = str(form.get("blocker") or "").strip()
+    if not raw:
+        return None, ""
+    if raw not in canonical_blockers():
+        return None, f"{raw!r} is not a blocker this store has."
+    return raw, ""
+
+
 def canonical_statuses() -> tuple[str, ...]:
     """The store's OWN status vocabulary, asked for rather than restated.
 
@@ -576,6 +613,12 @@ def create_card(
     if status not in canonical_statuses():
         return CreateResult(ok=False, error=f"{status!r} is not a status this store has.")
 
+    blocker, blocker_error = _blocker_or_error(form)
+    if blocker_error:
+        return CreateResult(ok=False, error=blocker_error)
+    if status == BLOCKED_STATUS and not blocker:
+        return CreateResult(ok=False, error=BLOCKED_NEEDS_GATE)
+
     assignee = str(form.get("assignee") or "").strip() or state.principal
     priority_raw = str(form.get("priority") or "").strip()
     if priority_raw:
@@ -599,6 +642,7 @@ def create_card(
             id=card_id,
             title=title,
             status=status,
+            blocker=blocker,
             project=state.project,
             assignee=assignee,
             priority=priority,
@@ -683,6 +727,10 @@ def update_card(
         # tenant, another project, or does not exist: the page must not become an
         # oracle for what is out there.
         return UpdateResult(ok=False, error="That card is not on this board.")
+    # The ROW is needed as well as the id, because the blocker rule is about what
+    # the card will say AFTER the change: a card that is already blocked and keeps
+    # its gate must not be refused for "having no blocker" it never lost.
+    current = next((row for row in state.rows if str(row.get("id")) == card_id), None)
 
     changes: dict = {}
     status = str(form.get("status") or "").strip()
@@ -690,6 +738,17 @@ def update_card(
         if status not in canonical_statuses():
             return UpdateResult(ok=False, error=f"{status!r} is not a status this store has.")
         changes["status"] = status
+
+    blocker, blocker_error = _blocker_or_error(form)
+    if blocker_error:
+        return UpdateResult(ok=False, error=blocker_error)
+    if blocker:
+        changes["blocker"] = blocker
+
+    if changes.get("status") == BLOCKED_STATUS:
+        existing = str((current or {}).get("blocker") or "").strip()
+        if not (blocker or existing):
+            return UpdateResult(ok=False, error=BLOCKED_NEEDS_GATE)
 
     if "assignee" in form:
         assignee = str(form.get("assignee") or "").strip()
@@ -909,6 +968,7 @@ def render_project_card(
         "card": card,
         "card_id": card_id,
         "statuses": canonical_statuses(),
+        "blockers": canonical_blockers(),
         "edit_error": edit_error,
         "comment_error": comment_error,
         "comments": comments,
@@ -1016,6 +1076,7 @@ def render_project_board(
         "board": state,
         "groups": group_rows(state.rows),
         "statuses": canonical_statuses(),
+        "blockers": canonical_blockers(),
         "create_default_status": CREATE_DEFAULT_STATUS,
         "create_title_max": CREATE_TITLE_MAX,
         "archive_status": ARCHIVE_STATUS,
