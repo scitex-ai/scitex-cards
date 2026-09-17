@@ -213,6 +213,26 @@ def _default_loader(request: Any) -> Sequence[dict]:
     return list(_get_board(request, allow_stale=True).tasks)
 
 
+def authorized_rows(
+    rows: Sequence[Mapping[str, Any]],
+    principal: str,
+    *,
+    is_staff: bool = False,
+) -> list[Mapping[str, Any]]:
+    """The rows this viewer may see AT ALL, before any project is applied.
+
+    This is the fail-closed seam, named rather than inlined so it can be tested
+    as itself: an empty principal with no staff bypass returns NOTHING — not an
+    empty list of projects (which would still confirm the store has projects),
+    and not an unfiltered set (which is the P0 this predicate's sibling fixed).
+    """
+    from ..._user_row_scope import scope_rows_for_user
+
+    if not is_staff and not principal:
+        return []
+    return list(scope_rows_for_user(rows, principal, is_staff=is_staff))
+
+
 def board_state(
     request: Any,
     *,
@@ -231,7 +251,6 @@ def board_state(
     which is exactly the state this page must render as EMPTY rather than as
     "you have access to nothing".
     """
-    from ..._user_row_scope import scope_rows_for_user
     from .._user_scope import current_user
 
     principal = current_user(request) or ""
@@ -264,7 +283,7 @@ def board_state(
     if not is_staff and not principal:
         return BoardState(state=DENIED, principal=principal, is_staff=is_staff, filters=filters)
 
-    authorized = scope_rows_for_user(rows, principal, is_staff=is_staff)
+    authorized = authorized_rows(rows, principal, is_staff=is_staff)
     projects = projects_of(authorized)
     active_provider = provider if provider is not None else SessionProjectProvider(projects)
     current = _resolve_current(request, active_provider, explicit)
@@ -390,8 +409,19 @@ def _version() -> str:
     return __version__
 
 
-def project_board_page(request):
-    """Serve the project-scoped board (Hub PR #923's Cards surface)."""
+def render_project_board(
+    request: Any,
+    state: BoardState,
+    *,
+    host_picker_available: Optional[bool] = None,
+):
+    """Render ``state`` as this page's HTTP response.
+
+    Split from :func:`project_board_page` so the HTTP CONTRACT — which state is a
+    403, which is a 503, which is a 200 — is a function of the state rather than
+    of a request that had to reach a store first. The view below is then three
+    lines and has nothing left to test that this does not.
+    """
     from django.http import HttpResponse
     from django.template.loader import render_to_string
 
@@ -403,7 +433,6 @@ def project_board_page(request):
     aliases = ("projects",) + tuple(_BOARD_ALIASES)
     api_base = _include_root(request.path, aliases)
 
-    state = board_state(request)
     context = {
         **_cards_shell_context(request, api_base),
         "api_base": api_base,
@@ -411,10 +440,17 @@ def project_board_page(request):
         "board": state,
         "groups": group_rows(state.rows),
         "statuses": canonical_statuses(),
-        "host_picker_available": _host_picker_available(),
+        "host_picker_available": (
+            _host_picker_available() if host_picker_available is None else host_picker_available
+        ),
     }
     html = render_to_string("scitex_cards/project_board.html", context, request=request)
     return HttpResponse(html, status=STATUS_FOR_STATE.get(state.state, 200))
+
+
+def project_board_page(request):
+    """Serve the project-scoped board (Hub PR #923's Cards surface)."""
+    return render_project_board(request, board_state(request))
 
 
 def _host_picker_available() -> bool:
