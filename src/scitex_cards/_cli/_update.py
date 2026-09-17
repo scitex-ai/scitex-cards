@@ -286,6 +286,33 @@ def update_cmd(
             "no fields to update; pass at least one field flag (see --help)"
         )
 
+    # A DISPOSAL MUST CARRY A REASON — this verb cannot be a second, silent door.
+    #
+    # `status=cancelled` through the generic update records NEITHER a comment
+    # NOR a closer: it is `update_task(status=...)` and nothing else. The
+    # doctrine names the way to dispose of a card ("exactly `done` for success
+    # and `close --reason` for everything else"), and `close` enforces it —
+    # `_close.py` raises when `--reason` is empty. This verb was the door beside
+    # it, and measured on the shared store 2026-09-17 the result is large: of
+    # 2,308 cancelled cards, **993 carry no reason-ish comment at all**, and the
+    # recent ones carry no `closed_by` either. That is the shape of
+    # hub-224-cards-cancelled-in-one-sweep-with-no-recorded-reason-20260822:
+    # 224 cards disposed of in one sweep with zero reason, 26 of them SECURITY.
+    # A disposal nobody can attribute later is indistinguishable from a deletion,
+    # which is why this refuses rather than warning.
+    #
+    # `failed` is deliberately NOT included: machine paths legitimately mark
+    # failures through the store API (CI sync, sweeps), and this verb is not
+    # where those run. If a human is disposing of a card, `close --reason` is
+    # the verb, and it exists precisely so the reason has somewhere to live.
+    if fields.get("status") == "cancelled":
+        raise click.UsageError(
+            "`--status cancelled` is a DISPOSAL and this verb records no reason "
+            "for it. Use: scitex-cards close <task_id> --reason '<why>'. "
+            "(Doctrine: `done` for success, `close --reason` for everything "
+            "else.)"
+        )
+
     if dry_run:
         click.echo(f"# dry-run: would update task_id={task_id!r} fields={fields!r}")
         return
