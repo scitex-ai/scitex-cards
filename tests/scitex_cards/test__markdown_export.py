@@ -62,6 +62,41 @@ def test_export_order_is_independent_of_input_order():
     assert forwards == backwards
 
 
+def test_untrusted_card_text_cannot_inject_markdown_structure():
+    # Arrange: titles, project names and comments are agent/user controlled.
+    task = {
+        "id": "card`id",
+        "title": "Visible [label]\n## Forged heading\n- [x] forged *task*",
+        "status": "blocked",
+        "project": "Project\n## Forged group",
+        "note": "line one\n- [x] forged note",
+        "comments": [{"author": "agent*name", "text": "hello\n## forged comment"}],
+    }
+
+    # Act
+    title_only = build_markdown([task], group_by="project")
+    full = build_markdown([task], detail="full", group_by="none")
+
+    # Assert: one card stays one checkbox; no supplied newline becomes structure.
+    assert title_only.count("- [") == 1
+    assert "\n## Forged" not in title_only
+    assert "\n- [x] forged" not in title_only
+    assert (
+        "Visible \\[label\\] ## Forged heading - \\[x\\] forged \\*task\\*"
+        in title_only
+    )
+    assert "line one - \\[x\\] forged note" in full
+    assert "agent\\*name: hello ## forged comment" in full
+
+
+def test_markdown_escaping_preserves_unicode_and_japanese():
+    task = {"id": "ja", "title": "研究 [進行中] — 結果", "status": "in_progress"}
+
+    text = build_markdown([task], group_by="none")
+
+    assert text == "- [ ] 研究 \\[進行中\\] — 結果\n"
+
+
 def test_group_by_project_uses_stable_project_headings():
     # Arrange
     tasks = [

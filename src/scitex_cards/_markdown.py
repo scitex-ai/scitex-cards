@@ -9,6 +9,30 @@ from collections.abc import Iterable
 from ._task import VALID_STATUSES
 
 _UNASSIGNED = "Unassigned"
+_INLINE_MARKDOWN = "\\`*_[]<>|!"
+
+
+def _inline_text(value: object) -> str:
+    """Return one Markdown-safe line while preserving Unicode text."""
+    text = " ".join(str(value or "").split())
+    for character in _INLINE_MARKDOWN:
+        text = text.replace(character, f"\\{character}")
+    return text
+
+
+def _inline_code(value: object) -> str:
+    """Return a code span whose fence cannot be closed by the value."""
+    text = " ".join(str(value or "").split())
+    current = maximum = 0
+    for character in text:
+        if character == "`":
+            current += 1
+            maximum = max(maximum, current)
+        else:
+            current = 0
+    fence = "`" * (maximum + 1)
+    padding = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{padding}{text}{padding}{fence}"
 
 
 def _status_label(status: str) -> str:
@@ -30,10 +54,10 @@ def _task_sort_key(task: dict) -> tuple[str, str, str]:
 
 def _task_lines(task: dict, detail: str) -> list[str]:
     checked = "x" if task.get("status") == "done" else " "
-    title = str(task.get("title") or "")
+    title = _inline_text(task.get("title"))
     if detail == "summary":
         if task.get("task"):
-            title = f"{title} — {task['task']}"
+            title = f"{title} — {_inline_text(task['task'])}"
     elif detail == "full":
         lines = [f"- [{checked}] {title}"]
         fields = (
@@ -49,7 +73,7 @@ def _task_lines(task: dict, detail: str) -> list[str]:
             value = task.get(key)
             if value in (None, ""):
                 continue
-            rendered = f"`{value}`" if key == "id" else str(value)
+            rendered = _inline_code(value) if key == "id" else _inline_text(value)
             lines.append(f"  - **{label}:** {rendered}")
         comments = task.get("comments")
         if isinstance(comments, list) and comments:
@@ -57,10 +81,10 @@ def _task_lines(task: dict, detail: str) -> list[str]:
             for comment in comments:
                 if not isinstance(comment, dict):
                     continue
-                author = str(comment.get("author") or "unknown")
-                timestamp = str(comment.get("ts") or "")
+                author = _inline_text(comment.get("author") or "unknown")
+                timestamp = _inline_text(comment.get("ts") or "")
                 prefix = f"{author} ({timestamp})" if timestamp else author
-                lines.append(f"    - {prefix}: {comment.get('text') or ''}")
+                lines.append(f"    - {prefix}: {_inline_text(comment.get('text'))}")
         return lines
     elif detail != "title":
         raise ValueError(f"unsupported Markdown detail: {detail!r}")
@@ -144,7 +168,7 @@ def build_markdown(
         return ""
     sections: list[str] = []
     for heading, grouped_rows in _groups(rows, group_by):
-        lines = [f"## {heading}", ""] if heading is not None else []
+        lines = [f"## {_inline_text(heading)}", ""] if heading is not None else []
         ordered_rows = (
             _hierarchical_rows(grouped_rows)
             if hierarchy
