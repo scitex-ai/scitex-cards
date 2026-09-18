@@ -62,7 +62,9 @@ DEFAULT_ROW_LIMIT = 500
 _DELETED_FILTER = "COALESCE(is_deleted, false) = false"
 
 
-def filter_clause(*, q: str = "", status: str = "", assignee: str = "") -> tuple[str, tuple]:
+def filter_clause(
+    *, q: str = "", status: str = "", assignee: str = ""
+) -> tuple[str, tuple]:
     """The WHERE fragment for the page's three filters, and its parameters.
 
     REVIEWER BLOCKER #4: filtering happened in PYTHON, after the SQL LIMIT/OFFSET.
@@ -130,7 +132,8 @@ def count_sql(*, is_staff: bool = False, filter_sql: str = "") -> str:
     """
     clause = "" if is_staff else _tenancy_clause()
     return (
-        f"SELECT COUNT(*) FROM tasks WHERE project = ? AND {_DELETED_FILTER}{clause}{filter_sql}"
+        "SELECT COUNT(*) FROM tasks WHERE project = ? AND "
+        f"{_DELETED_FILTER}{clause}{filter_sql}"
     )
 
 
@@ -185,7 +188,12 @@ def _default_connect(store: Any = None):
     return open_read_db(store)
 
 
-def _fetch(sql: str, params: Iterable[Any], connect: Optional[Callable[..., Any]] = None, store: Any = None) -> list:
+def _fetch(
+    sql: str,
+    params: Iterable[Any],
+    connect: Optional[Callable[..., Any]] = None,
+    store: Any = None,
+) -> list:
     """Run one bounded query and return plain rows (dicts where possible)."""
     opener = connect or _default_connect
     with opener(store) as conn:
@@ -235,7 +243,9 @@ def card_sql(*, is_staff: bool = False) -> str:
     """
     from ._user_row_scope import OWNED_FIELDS as _OWNED
 
-    clause = "" if is_staff else " AND ( " + " OR ".join(f"{f} = ?" for f in _OWNED) + " )"
+    clause = (
+        "" if is_staff else " AND ( " + " OR ".join(f"{f} = ?" for f in _OWNED) + " )"
+    )
     fields = ", ".join(DETAIL_FIELDS)
     return (
         f"SELECT {fields} FROM tasks "
@@ -243,7 +253,9 @@ def card_sql(*, is_staff: bool = False) -> str:
     )
 
 
-def card_params(card_id: str, project: str, principal: str, *, is_staff: bool = False) -> tuple:
+def card_params(
+    card_id: str, project: str, principal: str, *, is_staff: bool = False
+) -> tuple:
     """Parameters for :func:`card_sql`."""
     from ._user_row_scope import OWNED_FIELDS as _OWNED
 
@@ -306,13 +318,20 @@ def rows_for(
     filter_sql, filter_params = filter_clause(q=q, status=status, assignee=assignee)
     sql = rows_sql(is_staff=is_staff, filter_sql=filter_sql)
     params = rows_params(
-        project, principal, is_staff=is_staff, limit=limit, offset=offset, filters=filter_params
+        project,
+        principal,
+        is_staff=is_staff,
+        limit=limit,
+        offset=offset,
+        filters=filter_params,
     )
     rows = _fetch(sql, params, connect=connect, store=store)
     out = []
     for row in rows:
         if hasattr(row, "keys"):
-            out.append({field: row[field] for field in BOARD_ROW_FIELDS if field in row.keys()})
+            out.append(
+                {field: row[field] for field in BOARD_ROW_FIELDS if field in row.keys()}
+            )
         else:  # positional rows (a driver without rows_by_name)
             out.append(dict(zip(BOARD_ROW_FIELDS, row)))
     return out

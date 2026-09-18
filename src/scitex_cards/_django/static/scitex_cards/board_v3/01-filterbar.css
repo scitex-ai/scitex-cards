@@ -19,6 +19,37 @@
   --purple: #6d4cad;
   --gold: #ffc107;
 }
+
+/* LIGHT THEME — THE BOARD'S OWN PALETTE HAS TO FLIP, and until now nothing
+ * made it. The shell sets `data-theme` on <html> and switches its own text
+ * tokens; no board_v3 stylesheet had a `[data-theme="light"]` rule at all, so
+ * the surfaces above stayed dark while the text turned dark too. Measured on
+ * the served board 2026-09-17 (scitex-cards-gui's slice, reproduced exactly):
+ * the page title read rgb(51,51,51) on rgb(33,38,45) = 1.20:1, against
+ * 12.88:1 in dark. The operator's words were "mixed dark/light surfaces"; this
+ * block is that, stated as one place the board answers the theme.
+ *
+ * SAME SPECIFICITY AS :root (0,1,0), later in the cascade, so it wins. The
+ * STATUS colours (green/amber/red/gold/grey/purple) deliberately do NOT flip:
+ * they are semantic — blocked is blocked in either theme — and the operator
+ * ruled they stay as they are.
+ *
+ * The header's two variables are re-declared here as well, because the header
+ * takes its TEXT from the board's palette and its SURFACE from --col-bg: if
+ * only one of them followed the theme, the header would be the hybrid surface
+ * again, one file over. */
+[data-theme="light"] {
+  --bg: #ffffff;
+  --card-bg: #ffffff;
+  --col-bg: #f6f8fa;
+  --text: #1f2328;
+  --text-muted: #57606a;
+  --border: #d0d7de;
+}
+[data-theme="light"] .filterbar {
+  --stx-cards-header-fg: var(--text);
+  --stx-cards-header-dim: var(--text-muted);
+}
 * {
   box-sizing: border-box;
 }
@@ -70,9 +101,14 @@ a {
    * 595-line stylesheet; this change removes lines from it.) */
   background: var(--col-bg);
   border-bottom: 1px solid var(--border);
-  /* Palette for the shared identity band (page-header.css reads these). */
+  /* Palette for the shared identity band (page-header.css reads these). Both
+   * the band's TEXT and the bar's own text come from the board's palette, so
+   * the bar cannot end up as a hybrid surface: a foreground taken from the
+   * shell while the background stayed on the page palette is exactly the
+   * 1.20:1 light-theme reading this change removes. */
   --stx-cards-header-fg: #fff;
   --stx-cards-header-dim: var(--text-muted);
+  color: var(--stx-cards-header-fg);
 }
 .fb-left {
   display: flex;

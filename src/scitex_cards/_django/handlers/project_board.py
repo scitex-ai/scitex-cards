@@ -48,6 +48,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional, Sequence
 from uuid import uuid4
 
+from ..._project_board_query import DEFAULT_ROW_LIMIT
+
 logger = logging.getLogger(__name__)
 
 #: The page's terminal states. Each is DISTINCT because the operator-facing
@@ -80,7 +82,6 @@ PARAM_OFFSET = "offset"
 #: restated, because the SQL's LIMIT and the paging arithmetic must agree: a clamp
 #: that used a different page size than the query would jump to a page boundary
 #: the database never produces.
-from ..._project_board_query import DEFAULT_ROW_LIMIT  # noqa: E402  (kept beside its use)
 
 #: The row field a card's project lives in, named once so a rename is one edit.
 PROJECT_FIELD = "project"
@@ -149,7 +150,9 @@ def projects_of(rows: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
-def rows_of_project(rows: Sequence[Mapping[str, Any]], project: str) -> list[Mapping[str, Any]]:
+def rows_of_project(
+    rows: Sequence[Mapping[str, Any]], project: str
+) -> list[Mapping[str, Any]]:
     """The subset of ``rows`` that belongs to ``project`` (exact match)."""
     return [row for row in rows if str(row.get(PROJECT_FIELD) or "").strip() == project]
 
@@ -222,7 +225,9 @@ class SessionProjectProvider:
         session[SESSION_KEY] = project_id
 
 
-def _resolve_current(request: Any, provider: SessionProjectProvider, explicit: str) -> Optional[str]:
+def _resolve_current(
+    request: Any, provider: SessionProjectProvider, explicit: str
+) -> Optional[str]:
     """scitex-ui's precedence, called rather than re-derived.
 
     Imported lazily: this module is imported by ``urls.py`` at Django startup,
@@ -294,20 +299,22 @@ def _default_projects_loader(request: Any) -> list[str]:
     (measured) with a query the schema already indexes (`idx_tasks_project`,
     `idx_tasks_assignee`, `idx_tasks_agent`).
     """
-    from .._user_scope import current_user
-    from .._request_store import read_store
     from ..._project_board_query import projects_for
+    from .._request_store import read_store
+    from .._user_scope import current_user
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
     return projects_for(principal, store=read_store(request), is_staff=is_staff)
 
 
-def _default_rows_loader(request: Any, project: str, offset: int = 0, filters=None) -> list[dict]:
+def _default_rows_loader(
+    request: Any, project: str, offset: int = 0, filters=None
+) -> list[dict]:
     """ONE page of ONE project's authorized cards, bounded fields — never the graph."""
-    from .._user_scope import current_user
-    from .._request_store import read_store
     from ..._project_board_query import rows_for
+    from .._request_store import read_store
+    from .._user_scope import current_user
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
@@ -331,9 +338,9 @@ def _default_count_loader(request: Any, project: str, filters=None) -> int:
     a bounded page reporting its own bound as the total is a page that lies about
     the board.
     """
-    from .._user_scope import current_user
-    from .._request_store import read_store
     from ..._project_board_query import count_for
+    from .._request_store import read_store
+    from .._user_scope import current_user
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
@@ -354,7 +361,9 @@ def board_state(
     *,
     projects_loader: Optional[Callable[[Any], Sequence[str]]] = None,
     rows_loader: Optional[Callable[[Any, str, int], Sequence[dict]]] = None,
-    count_loader: Optional[Callable[[Any, str, Optional[Mapping[str, Any]]], int]] = None,
+    count_loader: Optional[
+        Callable[[Any, str, Optional[Mapping[str, Any]]], int]
+    ] = None,
     provider: Optional[Any] = None,
 ) -> BoardState:
     """Decide which of the six states this request is in, and with what rows.
@@ -393,7 +402,9 @@ def board_state(
     # nothing at all — and, just as important, this page never runs a query it
     # has no principal for.
     if not is_staff and not principal:
-        return BoardState(state=DENIED, principal=principal, is_staff=is_staff, filters=filters)
+        return BoardState(
+            state=DENIED, principal=principal, is_staff=is_staff, filters=filters
+        )
 
     list_projects = projects_loader or _default_projects_loader
     load_rows = rows_loader or _default_rows_loader
@@ -402,7 +413,9 @@ def board_state(
     try:
         projects = tuple(list_projects(request))
     except Exception as exc:  # noqa: BLE001 - every load failure is ONE state to the reader
-        logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
+        logger.warning(
+            "[scitex-cards] project board: store unavailable: %s", exc, exc_info=True
+        )
         return BoardState(
             state=UNAVAILABLE,
             principal=principal,
@@ -411,7 +424,9 @@ def board_state(
             detail=str(exc)[:200],
         )
 
-    active_provider = provider if provider is not None else SessionProjectProvider(projects)
+    active_provider = (
+        provider if provider is not None else SessionProjectProvider(projects)
+    )
     current = _resolve_current(request, active_provider, explicit)
 
     # The project was named but is not one this viewer may see. scitex-ui's
@@ -445,7 +460,9 @@ def board_state(
         # Without the second, empty and filtered-empty collapse into one state.
         project_total = int(count_loader_default(request, current, None))
     except Exception as exc:  # noqa: BLE001 - same single answer as above
-        logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
+        logger.warning(
+            "[scitex-cards] project board: store unavailable: %s", exc, exc_info=True
+        )
         return BoardState(
             state=UNAVAILABLE,
             principal=principal,
@@ -464,7 +481,9 @@ def board_state(
     try:
         loaded = list(load_rows(request, current, offset))
     except Exception as exc:  # noqa: BLE001 - same single answer as above
-        logger.warning("[scitex-cards] project board: store unavailable: %s", exc, exc_info=True)
+        logger.warning(
+            "[scitex-cards] project board: store unavailable: %s", exc, exc_info=True
+        )
         return BoardState(
             state=UNAVAILABLE,
             principal=principal,
@@ -478,7 +497,9 @@ def board_state(
     # DEFENCE IN DEPTH, not the primary rule: the SQL carries the same predicate
     # (built from ``OWNED_FIELDS``, the one definition), and this re-applies it in
     # memory so a future loader swap cannot quietly widen what the page shows.
-    project_rows = authorized_rows(rows_of_project(loaded, current), principal, is_staff=is_staff)
+    project_rows = authorized_rows(
+        rows_of_project(loaded, current), principal, is_staff=is_staff
+    )
 
     if not project_rows and project_total == 0:
         return BoardState(
@@ -626,17 +647,23 @@ def create_card(
     does not have, or are looking at a page with no project to file into.
     """
     if state.state in (DENIED, UNAVAILABLE, NO_PROJECT):
-        return CreateResult(ok=False, error="There is no project to file this card into.")
+        return CreateResult(
+            ok=False, error="There is no project to file this card into."
+        )
 
     title = str(form.get("title") or "").strip()
     if not title:
         return CreateResult(ok=False, error="A card needs a title.")
     if len(title) > CREATE_TITLE_MAX:
-        return CreateResult(ok=False, error=f"A title can be up to {CREATE_TITLE_MAX} characters.")
+        return CreateResult(
+            ok=False, error=f"A title can be up to {CREATE_TITLE_MAX} characters."
+        )
 
     status = str(form.get("status") or "").strip() or CREATE_DEFAULT_STATUS
     if status not in canonical_statuses():
-        return CreateResult(ok=False, error=f"{status!r} is not a status this store has.")
+        return CreateResult(
+            ok=False, error=f"{status!r} is not a status this store has."
+        )
 
     blocker, blocker_error = _blocker_or_error(form)
     if blocker_error:
@@ -675,7 +702,9 @@ def create_card(
             agent=state.principal,
         )
     except Exception as exc:  # noqa: BLE001 - one answer for every write failure
-        logger.warning("[scitex-cards] project board create failed: %s", exc, exc_info=True)
+        logger.warning(
+            "[scitex-cards] project board create failed: %s", exc, exc_info=True
+        )
         return CreateResult(ok=False, error="The card could not be saved. Try again.")
     return CreateResult(ok=True, card_id=str(written.get("id") or card_id))
 
@@ -741,7 +770,10 @@ def update_card(
     one is something the reader can fix.
     """
     if state.state != READY:
-        return UpdateResult(ok=False, error="This project's board is not open, so no card can be changed.")
+        return UpdateResult(
+            ok=False,
+            error="This project's board is not open, so no card can be changed.",
+        )
 
     card_id = str(form.get("card_id") or "").strip()
     if not card_id:
@@ -761,7 +793,9 @@ def update_card(
     status = str(form.get("status") or "").strip()
     if status:
         if status not in canonical_statuses():
-            return UpdateResult(ok=False, error=f"{status!r} is not a status this store has.")
+            return UpdateResult(
+                ok=False, error=f"{status!r} is not a status this store has."
+            )
         changes["status"] = status
 
     blocker, blocker_error = _blocker_or_error(form)
@@ -813,7 +847,9 @@ def update_card(
     if "note" in form:
         note = str(form.get("note") or "")
         if len(note) > NOTE_MAX:
-            return UpdateResult(ok=False, error=f"A note can be up to {NOTE_MAX} characters.")
+            return UpdateResult(
+                ok=False, error=f"A note can be up to {NOTE_MAX} characters."
+            )
         # An EMPTY note is sent deliberately here, unlike assignee above: clearing
         # a note is a thing people mean to do, while clearing an assignee by
         # accident is how a card stops being anybody's.
@@ -826,7 +862,9 @@ def update_card(
     try:
         writer(store=store, task_id=card_id, **changes)
     except Exception as exc:  # noqa: BLE001 - one answer for every write failure
-        logger.warning("[scitex-cards] project board update failed: %s", exc, exc_info=True)
+        logger.warning(
+            "[scitex-cards] project board update failed: %s", exc, exc_info=True
+        )
         return UpdateResult(ok=False, error="The card could not be saved. Try again.")
     return UpdateResult(ok=True, card_id=card_id)
 
@@ -878,14 +916,20 @@ def comment_card(
     if not text:
         return CommentResult(ok=False, error="A comment needs something in it.")
     if len(text) > COMMENT_MAX:
-        return CommentResult(ok=False, error=f"A comment can be up to {COMMENT_MAX} characters.")
+        return CommentResult(
+            ok=False, error=f"A comment can be up to {COMMENT_MAX} characters."
+        )
 
     writer = comment or _default_comment
     try:
         writer(store=store, task_id=card_id, text=text, by=state.principal)
     except Exception as exc:  # noqa: BLE001 - one answer for every write failure
-        logger.warning("[scitex-cards] project board comment failed: %s", exc, exc_info=True)
-        return CommentResult(ok=False, error="The comment could not be saved. Try again.")
+        logger.warning(
+            "[scitex-cards] project board comment failed: %s", exc, exc_info=True
+        )
+        return CommentResult(
+            ok=False, error="The comment could not be saved. Try again."
+        )
     return CommentResult(ok=True, card_id=card_id)
 
 
@@ -905,20 +949,22 @@ def _default_card_loader(request: Any, card_id: str, project: str) -> Optional[d
     authorization offset-independent, because the card is addressed by (id,
     project) rather than by membership in whatever page happens to be loaded.
     """
-    from .._user_scope import current_user
-    from .._request_store import read_store
     from ..._project_board_query import card_for
+    from .._request_store import read_store
+    from .._user_scope import current_user
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
-    return card_for(card_id, project, principal, store=read_store(request), is_staff=is_staff)
+    return card_for(
+        card_id, project, principal, store=read_store(request), is_staff=is_staff
+    )
 
 
 def _default_comments_loader(request: Any, card_id: str, project: str) -> list[dict]:
     """ONE card's comments, bounded — and gated by the same predicate in the SQL."""
-    from .._user_scope import current_user
-    from .._request_store import read_store
     from ..._project_board_query import comments_for
+    from .._request_store import read_store
+    from .._user_scope import current_user
 
     principal = current_user(request) or ""
     is_staff = bool(getattr(getattr(request, "user", None), "is_staff", False))
@@ -939,7 +985,9 @@ def group_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
     for status in canonical_statuses():
         in_status = [row for row in rows if str(row.get("status") or "") == status]
         if in_status:
-            grouped.append({"status": status, "rows": in_status, "count": len(in_status)})
+            grouped.append(
+                {"status": status, "rows": in_status, "count": len(in_status)}
+            )
     leftover = [
         row for row in rows if str(row.get("status") or "") not in canonical_statuses()
     ]
@@ -1000,7 +1048,7 @@ def render_project_card(
     from django.http import HttpResponse
     from django.template.loader import render_to_string
 
-    from ..views import _BOARD_ALIASES, _cards_shell_context, _include_root
+    from ..views import _cards_shell_context
 
     api_base = _card_page_api_base(request, card_id)
     # RESOLVE THE CARD FROM THE STORE, under the predicate, BEFORE anything else is
@@ -1023,7 +1071,9 @@ def render_project_card(
             "card": None,
             "edit_error": "",
         }
-        html = render_to_string("scitex_cards/project_card.html", context, request=request)
+        html = render_to_string(
+            "scitex_cards/project_card.html", context, request=request
+        )
         status = STATUS_FOR_STATE.get(state.state, 404)
         return HttpResponse(html, status=status if status != 200 else 404)
 
@@ -1078,9 +1128,13 @@ def project_card_page(request, card_id: str):
     state = board_state(request)
     if getattr(request, "method", "GET").upper() != "POST":
         try:
-            comments = list(_default_comments_loader(request, card_id, state.project or ""))
+            comments = list(
+                _default_comments_loader(request, card_id, state.project or "")
+            )
         except Exception as exc:  # noqa: BLE001 - the card is worth showing without them
-            logger.warning("[scitex-cards] project board: comments unavailable: %s", exc)
+            logger.warning(
+                "[scitex-cards] project board: comments unavailable: %s", exc
+            )
             comments = []
         return render_project_card(
             request,
@@ -1097,11 +1151,15 @@ def project_card_page(request, card_id: str):
     if action == "comment":
         written = comment_card(state, form, store=store)
         if not written.ok:
-            return render_project_card(request, state, card_id, comment_error=written.error)
+            return render_project_card(
+                request, state, card_id, comment_error=written.error
+            )
     else:
         changed = update_card(state, form, store=store)
         if not changed.ok:
-            return render_project_card(request, state, card_id, edit_error=changed.error)
+            return render_project_card(
+                request, state, card_id, edit_error=changed.error
+            )
 
     api_base = _card_page_api_base(request, card_id)
     target = f"{api_base}/projects/{card_id}?project={state.project}&updated={card_id}"
@@ -1151,7 +1209,9 @@ def render_project_board(
         "created_id": created_id,
         "updated_id": updated_id,
         "host_picker_available": (
-            _host_picker_available() if host_picker_available is None else host_picker_available
+            _host_picker_available()
+            if host_picker_available is None
+            else host_picker_available
         ),
     }
     html = render_to_string("scitex_cards/project_board.html", context, request=request)

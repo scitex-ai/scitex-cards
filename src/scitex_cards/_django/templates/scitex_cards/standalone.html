@@ -16,7 +16,7 @@
           crossorigin
           href="{% static 'scitex_cards/assets/index.css' %}">
 {% endblock %}
-{% block scitex_app_content %}<div id="app-mount" data-app-name="scitex-cards" data-embedded="false"></div>{% endblock %}
+{% block scitex_app_content %}<div id="app-mount" data-app-name="scitex-cards" data-app-version="{{ scitex_cards_version|default:'?' }}" data-embedded="false"></div>{% endblock %}
 {% block extra_js %}
     <script type="module"
             crossorigin

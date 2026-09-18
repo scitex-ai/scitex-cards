@@ -69,12 +69,17 @@ def _card(blocker=None):
 
 def _ready():
     """A resolved READY state — the shape the view hands the writer paths."""
-    return pb.BoardState(state=pb.READY, principal="alice", is_staff=False, project="proj-alpha")
+    return pb.BoardState(
+        state=pb.READY, principal="alice", is_staff=False, project="proj-alpha"
+    )
 
 
 def _board(blocker=None):
     return pb.BoardState(
-        state=pb.READY, principal="alice", is_staff=False, project="proj-alpha",
+        state=pb.READY,
+        principal="alice",
+        is_staff=False,
+        project="proj-alpha",
         rows=(_card(blocker),),
     )
 
@@ -95,7 +100,9 @@ def _card_page(state):
     """The page resolves its card from the store now (tenancy-scoped single-card
     read: no note erasure, page-two authorization), so the helper injects it."""
     return pb.render_project_card(
-        _request("/projects/alice-a"), state, "alice-a",
+        _request("/projects/alice-a"),
+        state,
+        "alice-a",
         card_loader=lambda req, cid, project: next(
             (dict(r) for r in state.rows if str(r.get("id")) == cid), None
         ),
@@ -191,8 +198,13 @@ def test_update_accepts_blocked_when_the_row_already_names_a_gate():
     """A card that is ALREADY blocked keeps its gate: asking again is friction."""
     # Arrange
     row = _row_with_blocker("operator-decision")
-    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False,
-                          project="proj-alpha", rows=(row,))
+    state = pb.BoardState(
+        state=pb.READY,
+        principal="alice",
+        is_staff=False,
+        project="proj-alpha",
+        rows=(row,),
+    )
     form = {"card_id": "alice-a", "status": "blocked"}
     # Act
     result = pb.update_card(state, form, update=_Recorder())
@@ -231,19 +243,27 @@ def test_the_create_form_offers_the_canonical_gates():
     # Act
     body = _render(state).content.decode()
     # Assert
-    assert 'data-stx-create-blocker' in body
+    assert "data-stx-create-blocker" in body
 
 
 def test_the_edit_form_offers_the_gates_and_preselects_the_current_one():
     """An editor that hides the current value invites a silent overwrite."""
     # Arrange
     row = _row_with_blocker("agent-wait")
-    state = pb.BoardState(state=pb.READY, principal="alice", is_staff=False,
-                          project="proj-alpha", rows=(row,))
+    state = pb.BoardState(
+        state=pb.READY,
+        principal="alice",
+        is_staff=False,
+        project="proj-alpha",
+        rows=(row,),
+    )
     # Act
     body = _card_page(state=state).content.decode()
     # Assert
-    assert (f'<option value="agent-wait" selected>' in body, 'data-stx-edit-blocker' in body) == (True, True)
+    assert (
+        '<option value="agent-wait" selected>' in body,
+        "data-stx-edit-blocker" in body,
+    ) == (True, True)
 
 
 # --- leaving `blocked` clears the gate (reviewer blocker #1, second half) ----

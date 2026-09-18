@@ -65,6 +65,7 @@ _COMMAND_CATEGORIES = (
             "runnable",
             "triage",
             "summary",
+            "export",
             "render-graph",
             "emit-event",
             "help-wait",
@@ -425,6 +426,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _ci_watch,
     _completion,
     _deliver,
+    _export,
     _gui,
     _hooks,
     _inbox,
@@ -467,6 +469,7 @@ _stats.register(main)
 # Phase 1 mutation/admin verbs: add / update / done / list / summary /
 # where / init / sync(stub). See GITIGNORED/ARCHITECTURE.md.
 _write.register(main)
+_export.register(main)
 # Phase 1 MCP subgroup — §3 required four (start / doctor / list-tools /
 # install). The module itself loads cleanly without fastmcp installed;
 # individual verbs print a clear install hint when fastmcp is missing.
