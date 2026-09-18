@@ -1,0 +1,107 @@
+[
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/desktop-1440x900-create-form.png",
+  "state": "ready",
+  "form": true,
+  "controls": [
+   {
+    "tag": "input",
+    "id": "stx-create-title",
+    "w": 505,
+    "h": 50,
+    "right": 681,
+    "label": "What needs doing?"
+   },
+   {
+    "tag": "select",
+    "id": "stx-create-status",
+    "w": 111,
+    "h": 36,
+    "right": 854,
+    "label": "goal\n          \n    "
+   },
+   {
+    "tag": "input",
+    "id": "stx-create-assignee",
+    "w": 198,
+    "h": 50,
+    "right": 1131,
+    "label": "me (operator)"
+   },
+   {
+    "tag": "input",
+    "id": "stx-create-priority",
+    "w": 94,
+    "h": 50,
+    "right": 1299,
+    "label": "\u2014"
+   },
+   {
+    "tag": "button",
+    "id": "",
+    "w": 106,
+    "h": 39,
+    "right": 1413,
+    "label": "Create card"
+   }
+  ],
+  "under44": [
+   "goal\n          \n    ",
+   "Create card"
+  ],
+  "clipped": 0,
+  "innerWidth": 1440,
+  "docW": 1440
+ },
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/mobile-390x844-create-form.png",
+  "state": "ready",
+  "form": true,
+  "controls": [
+   {
+    "tag": "input",
+    "id": "stx-create-title",
+    "w": 336,
+    "h": 58,
+    "right": 363,
+    "label": "What needs doing?"
+   },
+   {
+    "tag": "select",
+    "id": "stx-create-status",
+    "w": 336,
+    "h": 44,
+    "right": 363,
+    "label": "goal\n          \n    "
+   },
+   {
+    "tag": "input",
+    "id": "stx-create-assignee",
+    "w": 336,
+    "h": 58,
+    "right": 363,
+    "label": "me (operator)"
+   },
+   {
+    "tag": "input",
+    "id": "stx-create-priority",
+    "w": 336,
+    "h": 58,
+    "right": 363,
+    "label": "\u2014"
+   },
+   {
+    "tag": "button",
+    "id": "",
+    "w": 336,
+    "h": 44,
+    "right": 363,
+    "label": "Create card"
+   }
+  ],
+  "under44": [],
+  "clipped": 0,
+  "innerWidth": 390,
+  "docW": 390
+ }
+]

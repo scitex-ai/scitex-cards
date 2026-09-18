@@ -1,0 +1,59 @@
+{
+ "base": "http://127.0.0.1:8124",
+ "results": [
+  {
+   "shot": "mobile-390x844-01-no-project",
+   "info": {
+    "state": "no-project",
+    "project": "",
+    "count": "",
+    "groups": [],
+    "cards": 0,
+    "docScrollWidth": 390,
+    "innerWidth": 390,
+    "clippedRight": []
+   }
+  },
+  {
+   "shot": "mobile-390x844-02-project-ready",
+   "info": {
+    "state": "ready",
+    "project": "fleet-ci",
+    "count": "1 of 1 card in fleet-ci",
+    "groups": [
+     "blocked"
+    ],
+    "cards": 1,
+    "docScrollWidth": 390,
+    "innerWidth": 390,
+    "clippedRight": []
+   }
+  },
+  {
+   "shot": "mobile-390x844-03-filtered-empty",
+   "info": {
+    "state": "filtered-empty",
+    "project": "fleet-ci",
+    "count": "",
+    "groups": [],
+    "cards": 0,
+    "docScrollWidth": 390,
+    "innerWidth": 390,
+    "clippedRight": []
+   }
+  },
+  {
+   "shot": "mobile-390x844-04-denied",
+   "info": {
+    "state": "denied",
+    "project": "",
+    "count": "",
+    "groups": [],
+    "cards": 0,
+    "docScrollWidth": 390,
+    "innerWidth": 390,
+    "clippedRight": []
+   }
+  }
+ ]
+}

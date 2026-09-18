@@ -1,0 +1,82 @@
+[
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/desktop-1440x900-card-actions.png",
+  "state": "ready",
+  "cardActions": 1,
+  "archiveForms": 1,
+  "controls": [
+   {
+    "id": "stx-card-spartan-orphaned-runner-processes-cleanup-status",
+    "w": 105,
+    "h": 34,
+    "right": 185,
+    "label": "goal\n             "
+   },
+   {
+    "id": "stx-card-spartan-orphaned-runner-processes-cleanup-assignee",
+    "w": 1072,
+    "h": 46,
+    "right": 1334,
+    "label": "operator"
+   },
+   {
+    "id": "",
+    "w": 71,
+    "h": 34,
+    "right": 1413,
+    "label": "Update"
+   },
+   {
+    "id": "",
+    "w": 73,
+    "h": 34,
+    "right": 100,
+    "label": "Archive"
+   }
+  ],
+  "under44": 3,
+  "clipped": 0,
+  "docW": 1440,
+  "innerWidth": 1440
+ },
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/mobile-390x844-card-actions.png",
+  "state": "ready",
+  "cardActions": 1,
+  "archiveForms": 1,
+  "controls": [
+   {
+    "id": "stx-card-spartan-orphaned-runner-processes-cleanup-status",
+    "w": 336,
+    "h": 44,
+    "right": 363,
+    "label": "goal\n             "
+   },
+   {
+    "id": "stx-card-spartan-orphaned-runner-processes-cleanup-assignee",
+    "w": 336,
+    "h": 56,
+    "right": 363,
+    "label": "operator"
+   },
+   {
+    "id": "",
+    "w": 336,
+    "h": 44,
+    "right": 363,
+    "label": "Update"
+   },
+   {
+    "id": "",
+    "w": 336,
+    "h": 44,
+    "right": 363,
+    "label": "Archive"
+   }
+  ],
+  "under44": 0,
+  "clipped": 0,
+  "docW": 390,
+  "innerWidth": 390
+ }
+]

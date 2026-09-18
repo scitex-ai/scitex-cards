@@ -1,0 +1,102 @@
+[
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/desktop-1440x900-card-page.png",
+  "navigated": "http://127.0.0.1:8130/projects/spartan-orphaned-runner-processes-cleanup?project=fleet-ci",
+  "page": "project-card",
+  "card": "spartan-orphaned-runner-processes-cleanup",
+  "hasEdit": true,
+  "hasTitle": true,
+  "hasNote": true,
+  "controls": [
+   {
+    "id": "stx-edit-title",
+    "tag": "input",
+    "w": 852,
+    "h": 50,
+    "label": "[spartan] 20 orphane"
+   },
+   {
+    "id": "stx-edit-status",
+    "tag": "select",
+    "w": 111,
+    "h": 36,
+    "label": "goal\n          \n    "
+   },
+   {
+    "id": "stx-edit-assignee",
+    "tag": "input",
+    "w": 198,
+    "h": 50,
+    "label": "operator"
+   },
+   {
+    "id": "stx-edit-note",
+    "tag": "textarea",
+    "w": 1386,
+    "h": 144,
+    "label": ""
+   },
+   {
+    "id": "",
+    "tag": "button",
+    "w": 65,
+    "h": 39,
+    "label": "Save"
+   }
+  ],
+  "under44": 2,
+  "clipped": 0,
+  "docW": 1440,
+  "innerWidth": 1440
+ },
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/mobile-390x844-card-page.png",
+  "navigated": "http://127.0.0.1:8130/projects/spartan-orphaned-runner-processes-cleanup?project=fleet-ci",
+  "page": "project-card",
+  "card": "spartan-orphaned-runner-processes-cleanup",
+  "hasEdit": true,
+  "hasTitle": true,
+  "hasNote": true,
+  "controls": [
+   {
+    "id": "stx-edit-title",
+    "tag": "input",
+    "w": 336,
+    "h": 58,
+    "label": "[spartan] 20 orphane"
+   },
+   {
+    "id": "stx-edit-status",
+    "tag": "select",
+    "w": 336,
+    "h": 44,
+    "label": "goal\n          \n    "
+   },
+   {
+    "id": "stx-edit-assignee",
+    "tag": "input",
+    "w": 336,
+    "h": 58,
+    "label": "operator"
+   },
+   {
+    "id": "stx-edit-note",
+    "tag": "textarea",
+    "w": 336,
+    "h": 144,
+    "label": ""
+   },
+   {
+    "id": "",
+    "tag": "button",
+    "w": 336,
+    "h": 44,
+    "label": "Save"
+   }
+  ],
+  "under44": 0,
+  "clipped": 0,
+  "docW": 390,
+  "innerWidth": 390
+ }
+]
