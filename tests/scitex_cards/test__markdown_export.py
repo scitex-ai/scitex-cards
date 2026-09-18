@@ -78,22 +78,35 @@ def test_untrusted_card_text_cannot_inject_markdown_structure():
     full = build_markdown([task], detail="full", group_by="none")
 
     # Assert: one card stays one checkbox; no supplied newline becomes structure.
-    assert title_only.count("- [") == 1
-    assert "\n## Forged" not in title_only
-    assert "\n- [x] forged" not in title_only
-    assert (
-        "Visible \\[label\\] ## Forged heading - \\[x\\] forged \\*task\\*"
-        in title_only
-    )
-    assert "line one - \\[x\\] forged note" in full
-    assert "agent\\*name: hello ## forged comment" in full
+    facts = {
+        "checkboxes": title_only.count("- ["),
+        "forged_heading": "\n## Forged" in title_only,
+        "forged_checkbox": "\n- [x] forged" in title_only,
+        "escaped_title": (
+            "Visible \\[label\\] ## Forged heading - \\[x\\] forged \\*task\\*"
+            in title_only
+        ),
+        "escaped_note": "line one - \\[x\\] forged note" in full,
+        "escaped_comment": "agent\\*name: hello ## forged comment" in full,
+    }
+    assert facts == {
+        "checkboxes": 1,
+        "forged_heading": False,
+        "forged_checkbox": False,
+        "escaped_title": True,
+        "escaped_note": True,
+        "escaped_comment": True,
+    }
 
 
 def test_markdown_escaping_preserves_unicode_and_japanese():
+    # Arrange
     task = {"id": "ja", "title": "研究 [進行中] — 結果", "status": "in_progress"}
 
+    # Act
     text = build_markdown([task], group_by="none")
 
+    # Assert
     assert text == "- [ ] 研究 \\[進行中\\] — 結果\n"
 
 
