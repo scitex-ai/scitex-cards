@@ -333,6 +333,7 @@ From the shell:
 scitex-cards render-graph -o tasks.png     # dependency PNG
 scitex-cards render-graph --print-mermaid  # inspect the mermaid without rendering
 scitex-cards list-tasks --json             # resolved tasks, machine-readable
+scitex-cards export --format markdown      # stable status-grouped task list
 
 # communication surfaces
 scitex-cards mcp start                     # MCP CRUD server (stdio)
@@ -397,6 +398,8 @@ complete_task(None, "my-card")
 scitex-cards render-graph -o tasks.png       # dependency PNG
 scitex-cards list-tasks --json               # resolved tasks, machine-readable
 scitex-cards list-tasks --assignee X --status in_progress
+scitex-cards export --format markdown         # title-only task list on stdout
+scitex-cards export --format markdown --detail full --output tasks.md
 scitex-cards runnable --mine                 # what this agent can pick up now
 scitex-cards resolve-store                   # which store am I actually reading?
 scitex-cards install-shell-completion        # bash/zsh/fish tab-completion
