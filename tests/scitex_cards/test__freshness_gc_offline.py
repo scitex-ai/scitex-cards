@@ -423,9 +423,12 @@ def test_a_forgotten_card_is_cancelled_and_its_blocker_is_cleared():
     # Act
     freshness_gc(cutoff=_CUTOFF, conn=store)
     blocked = store.cards()["old-blocked"]
-    # Assert
-    assert (blocked["status"], blocked["blocker"]) == ("cancelled", None)
-    assert store.statuses()["old-blocked"] == "cancelled"
+    # Assert — the payload AND the column, so neither half can flip alone.
+    assert (blocked["status"], blocked["blocker"], store.statuses()["old-blocked"]) == (
+        "cancelled",
+        None,
+        "cancelled",
+    )
 
 
 def test_the_payload_and_the_status_column_agree_after_a_flip():
@@ -454,10 +457,13 @@ def test_the_whole_target_set_is_flipped_in_one_statement():
         for entry in store.statements
         if entry[0].startswith(("UPDATE", "INSERT", "DELETE"))
     ]
-    # Assert
-    assert len(writes) == 1
-    assert writes[0][0].startswith("UPDATE tasks SET")
-    assert len(store.statements) == 4  # lock, select, update, readback
+    # Assert — ONE write, it is the bulk UPDATE, and the sweep's whole
+    # transaction is four statements: lock, select, that UPDATE, readback.
+    assert (
+        len(writes),
+        [sql.split(" SET")[0] for sql in (entry[0] for entry in writes)],
+        len(store.statements),
+    ) == (1, ["UPDATE tasks"], 4)
 
 
 def test_a_forgotten_card_is_still_a_row_with_its_history():
@@ -467,10 +473,16 @@ def test_a_forgotten_card_is_still_a_row_with_its_history():
     # Act
     freshness_gc(cutoff=_CUTOFF, conn=store)
     payloads = store.cards()
-    # Assert
-    assert store.comments == []
-    assert set(_MUST_FORGET) <= set(payloads)
-    assert all(payloads[card_id].get("title") for card_id in _MUST_FORGET)
+    # Assert — no comment was appended, and every forgotten card is STILL a row
+    # that can be read back with its history.
+    assert (
+        store.comments,
+        [
+            card_id
+            for card_id in _MUST_FORGET
+            if not payloads.get(card_id, {}).get("title")
+        ],
+    ) == ([], [])
 
 
 # ── the protocol: order, parameters, ownership ───────────────────────────────
@@ -482,10 +494,15 @@ def test_the_lock_is_taken_before_the_first_read():
     store = _seeded()
     # Act
     freshness_gc(cutoff=_CUTOFF, conn=store)
-    # Assert
-    assert store.statements[0][0].startswith("SELECT pg_advisory_xact_lock")
-    assert store.statements[0][1] == (FRESHNESS_GC_LOCK_KEY,)
-    assert store.index_of("UPDATE tasks SET") > store.index_of("SELECT id FROM tasks")
+    flipped_after_selecting = store.index_of("UPDATE tasks SET") > store.index_of(
+        "SELECT id FROM tasks"
+    )
+    # Assert — the FIRST statement is the lock, with the sweep's own key, and
+    # the flip does not run before the read it is based on.
+    assert (store.statements[0], flipped_after_selecting) == (
+        ("SELECT pg_advisory_xact_lock(?)", (FRESHNESS_GC_LOCK_KEY,)),
+        True,
+    )
 
 
 def test_the_cutoff_travels_as_a_parameter_and_the_clock_is_cast():
@@ -495,18 +512,22 @@ def test_the_cutoff_travels_as_a_parameter_and_the_clock_is_cast():
     # Act
     freshness_gc(cutoff=_CUTOFF, conn=store)
     selections = [
-        sql
-        for sql, _ in store.statements
+        (sql, params)
+        for sql, params in store.statements
         if sql.startswith(("SELECT id FROM tasks", "SELECT count(*) AS n FROM tasks"))
     ]
-    # Assert
-    assert len(selections) == 2
-    for statement in selections:
-        assert "::timestamptz" in statement
-        assert "COALESCE(NULLIF(last_activity, ''), created_at)" in statement
-    for sql, params in store.statements:
-        if sql.startswith(("SELECT id FROM tasks", "SELECT count(*) AS n")):
-            assert params == (*FORGETTABLE_STATUSES, _CUTOFF)
+    # Assert — TWO statements read the clock; both cast it on both sides, both
+    # name the created_at fallback rather than assuming last_activity, and both
+    # carry the cutoff as their LAST parameter.
+    assert (
+        len(selections),
+        all("::timestamptz" in sql for sql, _ in selections),
+        all(
+            "COALESCE(NULLIF(last_activity, ''), created_at)" in sql
+            for sql, _ in selections
+        ),
+        [params for _, params in selections],
+    ) == (2, True, True, [(*FORGETTABLE_STATUSES, _CUTOFF)] * 2)
 
 
 def test_the_readback_runs_after_the_flip_and_comes_from_the_same_transaction():
@@ -515,12 +536,17 @@ def test_the_readback_runs_after_the_flip_and_comes_from_the_same_transaction():
     store = _seeded()
     # Act
     result = freshness_gc(cutoff=_CUTOFF, conn=store)
-    # Assert
     readback = store.index_of("SELECT count(*) AS n FROM tasks")
-    assert readback > store.index_of("UPDATE tasks SET")
-    assert readback == len(store.statements) - 1  # nothing runs after it
-    assert result.remaining == 0
-    assert store.commits == 0  # the caller owns the commit
+    # Assert — the readback is the LAST statement and comes after the flip; its
+    # count is what the sweep reports; and the caller-owned connection is left
+    # uncommitted, because the sweep does not manage a transaction it did not
+    # open.
+    assert (
+        readback > store.index_of("UPDATE tasks SET"),
+        readback == len(store.statements) - 1,
+        result.remaining,
+        store.commits,
+    ) == (True, True, 0, 0)
 
 
 def test_a_dry_run_reports_the_same_count_and_changes_nothing():
@@ -530,11 +556,15 @@ def test_a_dry_run_reports_the_same_count_and_changes_nothing():
     before = store.statuses()
     # Act
     result = freshness_gc(cutoff=_CUTOFF, conn=store, dry_run=True)
-    # Assert
-    assert (result.matched, result.cancelled) == (3, 0)
-    assert store.statuses() == before
-    assert store.statements_starting_with("UPDATE tasks SET") == []
-    assert len(store.statements) == 3  # lock, select, readback — no write
+    # Assert — the same count as the real run, nothing written, and three
+    # statements rather than four: lock, select, readback, no UPDATE.
+    assert (
+        result.matched,
+        result.cancelled,
+        store.statuses() == before,
+        store.statements_starting_with("UPDATE tasks SET") == [],
+        len(store.statements),
+    ) == (3, 0, True, True, 3)
 
 
 def test_a_second_sweep_is_a_no_op():
@@ -544,9 +574,14 @@ def test_a_second_sweep_is_a_no_op():
     freshness_gc(cutoff=_CUTOFF, conn=store)
     # Act
     second = freshness_gc(cutoff=_CUTOFF, conn=store)
-    # Assert
-    assert (second.matched, second.cancelled, second.remaining) == (0, 0, 0)
-    assert len(store.statements_starting_with("UPDATE tasks SET")) == 1
+    # Assert — the second sweep selected nothing, wrote nothing, and did not
+    # issue a second UPDATE.
+    assert (
+        second.matched,
+        second.cancelled,
+        second.remaining,
+        len(store.statements_starting_with("UPDATE tasks SET")),
+    ) == (0, 0, 0, 1)
 
 
 def test_a_caller_owned_connection_is_not_committed_or_closed():
@@ -577,23 +612,22 @@ def test_a_card_completed_between_the_select_and_the_flip_is_not_cancelled():
     store = _seeded(on_select=lambda: store.set_status("old-goal", "done"))
     # Act
     result = freshness_gc(cutoff=_CUTOFF, conn=store)
-    # Assert
-    assert store.statuses()["old-goal"] == "done", (
-        "a card completed inside the sweep's window was flipped to "
-        f"{store.statuses()['old-goal']!r}: the flip's WHERE clause re-checks the "
-        "id list and nothing else"
+    # Assert — the column, the payload and all three counts AT ONCE. The
+    # selection saw the card (matched=3), the flip did not touch it
+    # (cancelled=2), it is still `done` in both places, and nothing is left.
+    assert (
+        store.statuses()["old-goal"],
+        store.cards()["old-goal"]["status"],
+        result.matched,
+        result.cancelled,
+        result.remaining,
+    ) == ("done", "done", 3, 2, 0), (
+        "a card completed inside the sweep's window was flipped: "
+        f"column={store.statuses()['old-goal']!r} "
+        f"payload={store.cards()['old-goal']['status']!r} "
+        f"matched={result.matched} cancelled={result.cancelled} "
+        f"remaining={result.remaining}"
     )
-    assert store.cards()["old-goal"]["status"] == "done", (
-        "the payload disagrees with the column: "
-        f"{store.cards()['old-goal']['status']!r} vs "
-        f"{store.statuses()['old-goal']!r}"
-    )
-    assert result.matched == 3, f"the selection saw {result.matched} cards"
-    assert result.cancelled == 2, (
-        f"cancelled={result.cancelled}: the count names the SELECTION, not the "
-        "rows the flip actually wrote"
-    )
-    assert result.remaining == 0
 
 
 def test_the_flip_count_and_sample_name_the_cards_actually_flipped():
@@ -602,12 +636,17 @@ def test_the_flip_count_and_sample_name_the_cards_actually_flipped():
     store = _seeded(on_select=lambda: store.set_status("old-goal", "done"))
     # Act
     result = freshness_gc(cutoff=_CUTOFF, conn=store)
-    # Assert
-    assert "old-goal" not in result.sample_ids, (
-        f"sample_ids names a card that was NOT forgotten: {result.sample_ids}"
+    # Assert — the sample names the two cards the flip WROTE, in store order,
+    # and the completed card is neither named nor cancelled.
+    assert (
+        result.sample_ids,
+        sorted(result.sample_ids),
+        store.statuses()["old-goal"],
+    ) == (
+        ("old-blocked", "no-last-activity"),
+        ["no-last-activity", "old-blocked"],
+        "done",
     )
-    assert sorted(result.sample_ids) == ["no-last-activity", "old-blocked"]
-    assert store.statuses()["old-goal"] != "cancelled"
 
 
 # ── the instrument itself ────────────────────────────────────────────────────
@@ -623,9 +662,8 @@ def test_the_fake_store_refuses_a_statement_it_does_not_model():
         store.execute("SELECT * FROM cards", ())
     except _UnmodelledStatement:
         refused = True
-    # Assert
-    assert refused
-    assert store.statuses()["old-goal"] == "goal"
+    # Assert — refused, and the refusal left the store untouched.
+    assert (refused, store.statuses()["old-goal"]) == (True, "goal")
 
 
 def test_the_fake_store_refuses_a_half_guarded_flip():
