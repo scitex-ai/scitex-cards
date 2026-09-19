@@ -15,7 +15,8 @@ WHAT IT DOES, in one transaction:
     SELECT pg_advisory_xact_lock(<key>)          -- serialise forgetters
     SELECT id FROM tasks WHERE <predicate>       -- the targets
     UPDATE tasks SET status='cancelled', blocker=NULL, card_json=<mirrored>
-      WHERE id = ANY(<targets>)                  -- ONE statement, not N
+      WHERE id = ANY(<targets>) AND <predicate>  -- ONE statement, not N;
+      RETURNING id                               -- the predicate RE-CHECKED
     SELECT count(*) FROM tasks WHERE <predicate> -- the readback
 
 WHAT IT DELIBERATELY DOES NOT DO:
@@ -79,7 +80,14 @@ _PLACEHOLDERS = ", ".join("?" * len(FORGETTABLE_STATUSES))
 
 @dataclass(frozen=True)
 class FreshnessGCResult:
-    """What one sweep did, in counts a caller can assert on."""
+    """What one sweep did, in counts a caller can assert on.
+
+    ``matched`` is what the predicate SELECTED; ``cancelled`` is what the flip
+    actually WROTE. The two differ only when a row left the forgettable set in
+    the window between them — a card completed while the sweep was selecting —
+    and that difference is the point: a count that named the selection would
+    claim a card was forgotten that the guarded statement declined to touch.
+    """
 
     cutoff: str
     dry_run: bool
@@ -137,6 +145,12 @@ def freshness_gc(
     The transaction is REQUIRED, not decorative: the advisory lock is
     transaction-scoped, so a sweep that autocommitted between the SELECT and
     the UPDATE would serialise against nothing.
+
+    THE FLIP RE-CHECKS THE PREDICATE, and that is a statement-level
+    compare-and-set rather than a formality. The lock excludes other SWEEPS and
+    nothing else in this package takes it, so the engine's own re-check is what
+    stops the sweep overwriting a card that stopped being forgettable while it
+    was being selected.
     """
     from ._store_canonical_read import _guarded_connection
     from ._store_target import resolve_store_target
@@ -156,23 +170,43 @@ def freshness_gc(
         targets = [r["id"] for r in rows]
 
         cancelled = 0
+        forgotten: list[str] = []
         if targets and not dry_run:
             # ONE statement for the whole set. The row-level `status` and the
             # verbatim `card_json` payload are updated TOGETHER, because a read
             # reconstructs cards from the payload while every query filters on
             # the column: updating one and not the other produces a store that
             # disagrees with itself about the same card.
-            conn.execute(
+            #
+            # THE PREDICATE IS RE-APPLIED IN THE WHERE CLAUSE, and this clause
+            # is the only thing serialising the sweep against the rest of the
+            # fleet. The advisory lock above excludes OTHER FORGETTERS; it does
+            # not exclude writers, because nothing else takes it — the CRUD path
+            # holds a file lock, and `_store_tx.STORE_WRITE_LOCK_KEY` belongs to
+            # the DM and store-uuid paths. So a card that stops matching between
+            # the SELECT above and this statement (somebody completes it in that
+            # window) is safe only because the ENGINE re-checks the predicate
+            # here. `done` is excluded from the forgettable set precisely
+            # because it is already terminal, and a flip that reached it anyway
+            # would take a card the sweep is forbidden to touch.
+            #
+            # `RETURNING id`, not a bare rowcount: the ids the statement really
+            # wrote are what `cancelled` counts and what `sample_ids` names, in
+            # the same idiom `_inbox_receipt_postgres.stamp` uses for a
+            # select-then-write whose SELECT cannot be trusted by itself.
+            flipped = conn.execute(
                 "UPDATE tasks SET "
                 "  status = 'cancelled', "
                 "  blocker = NULL, "
                 "  card_json = jsonb_set("
                 "    jsonb_set(card_json::jsonb, '{status}', '\"cancelled\"'), "
                 "    '{blocker}', 'null')::text "
-                "WHERE id = ANY(?)",
-                (targets,),
-            )
-            cancelled = len(targets)
+                f"WHERE id = ANY(?) AND {_predicate()} "
+                "RETURNING id",
+                (targets, *FORGETTABLE_STATUSES, cutoff),
+            ).fetchall()
+            forgotten = [r["id"] for r in flipped]
+            cancelled = len(forgotten)
 
         # THE READBACK, from the same transaction: 'remaining' is what a caller
         # asserts on, and it is the only statement here that can prove the
@@ -188,13 +222,18 @@ def freshness_gc(
         if owned:
             conn.close()
 
+    # WHAT THE SAMPLE NAMES. On a real run it names cards the flip actually
+    # wrote, so a caller cannot be handed a card as "forgotten" that the
+    # guarded statement declined to touch. A dry run writes nothing, so it
+    # names the selection — which is exactly what a rehearsal is reporting.
+    shown = targets if dry_run else forgotten
     return FreshnessGCResult(
         cutoff=cutoff,
         dry_run=dry_run,
         matched=len(targets),
         cancelled=cancelled,
         remaining=int(remaining),
-        sample_ids=tuple(targets[:sample]),
+        sample_ids=tuple(shown[:sample]),
     )
 
 
