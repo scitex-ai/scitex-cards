@@ -100,14 +100,27 @@ def resolve_sender(sender: str | None = None) -> str:
     """Return the DM sender identity, or raise :class:`AgentIdentityUnresolved`.
 
     An explicit ``sender`` wins; otherwise the environment identity is used.
+
+    Resolution is STRICT, and deliberately not the MCP server's
+    ``resolve_agent_id_optional``: that one is the unified server's tools-only
+    fallback, and it logs a channel-server warning ("serving tools only, digest
+    push disabled") before returning ``None``. On a DM call that warning is
+    both WRONG (no channel server is involved, and the DM is not being
+    skipped in favour of serving tools) and a SECOND report of the failure
+    this function is about to raise. Worse, it is written to stderr, which
+    Click's ``CliRunner`` folds into ``result.output`` — so a ``dm send --json``
+    consumer received a channel-server diagnostic ahead of the JSON payload.
+    Resolving strictly keeps this API's own actionable error the single
+    message on every DM path (``dm send``, ``dm send-document``, ``dm list``).
     """
     if sender is not None:
         return canonical_agent_identity(sender)
-    from ._mcp_channel import resolve_agent_id_optional
+    from ._mcp_channel import resolve_agent_id
 
-    resolved = resolve_agent_id_optional()
-    if resolved is None:
-        raise AgentIdentityUnresolved(_NO_IDENTITY_MESSAGE)
+    try:
+        resolved = resolve_agent_id()
+    except Exception as exc:  # noqa: BLE001 - re-raised as the DM wording
+        raise AgentIdentityUnresolved(_NO_IDENTITY_MESSAGE) from exc
     return canonical_agent_identity(resolved)
 
 
