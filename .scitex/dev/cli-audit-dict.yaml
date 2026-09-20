@@ -64,6 +64,19 @@ intransitive_verbs:
                # implicitly resolved store. The source is deliberately
                # implicit under the existing one-store contract, so this verb
                # takes options rather than a positional object.
+  - freshness-gc  # `scitex-cards freshness-gc` ACTS on the store: it flips
+                  # stale cards to cancelled in one locked transaction. The
+                  # compound is therefore the imperative, not a noun phrase.
+                  # Moby carries no POS for a hyphenated coinage, so §1 sees no
+                  # verb label at all — the same shape as `ci-watch` above, an
+                  # action named by its object.
+                  #
+                  # A rename to `<verb>-freshness-gc` was considered and NOT
+                  # chosen: `freshness_gc` is the name the store-side API
+                  # (`_store_freshness_gc.py`) and the ecosystem job already
+                  # use, and giving the CLI leaf a different name would make
+                  # one operation wear two. Flagged for the operator as an
+                  # optional future rename, as `summary`/`manifest` are above.
 
 # §1d vocabulary the Moby POS classifier does not carry. Each is a real name
 # in THIS CLI, not a token that would read better renamed — which is the test
