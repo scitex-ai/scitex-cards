@@ -93,9 +93,9 @@ def _emit_unblock_for_dependents(
         )
         return unblocked
     except Exception:  # noqa: BLE001 — unblock drive must not break `done`
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "unblock drive failed for completed card %r", completed_id, exc_info=True
         )
         return []
@@ -136,9 +136,9 @@ def _emit_card_event(
         ev = getattr(Event, factory)(card_id, actor=actor, **kw)
         emit(ev, store=store, entry_points=entry_points)  # hook-bypass: line-limit
     except Exception:  # noqa: BLE001 — emit must never break a mutation
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "scitex_cards._store: card-event emit failed for factory=%r card_id=%r",
             factory,
             card_id,

@@ -103,6 +103,15 @@ dependencies = [
     # and this line must not outlive that decision.
     "fastmcp>=2.0,<4",
     "pydantic>=2,<3",
+    # The mandated output transport. PS-220 (source-uses-print-not-scitex-
+    # logging) requires every human-facing record in shippable source to go
+    # through scitex-logging, so `import scitex_logging as slogging` is
+    # unguarded module-level code on the package's core paths — a hard
+    # requirement, not an optional capability, and PS-233 requires an unguarded
+    # import to resolve from `[project.dependencies]` rather than an extra.
+    # Floor matches the fleet's own declarations (scitex-dev, scitex-scholar,
+    # scitex-stats all pin >=0.1.0).
+    "scitex-logging>=0.1.0",
 ]
 
 [project.optional-dependencies]

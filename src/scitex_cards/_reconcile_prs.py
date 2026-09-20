@@ -486,9 +486,9 @@ def _apply_close(
     try:
         comment_task(resolved, task_id, text=text, by=by, kind="done")
     except Exception:  # noqa: BLE001 — the close already landed; comment is audit-only.
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "auto-close comment failed for %r", task_id, exc_info=True
         )
 
@@ -520,9 +520,9 @@ def _emit_merged_event(
             entry_points=entry_points,
         )
     except Exception:  # noqa: BLE001 — emit must never break the producer
-        import logging
+        import scitex_logging as slogging
 
-        logging.getLogger(__name__).warning(
+        slogging.getLogger(__name__).warning(
             "reconcile merged-event emit failed for %r", task_id, exc_info=True
         )
 

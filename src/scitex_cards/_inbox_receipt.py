@@ -55,11 +55,11 @@ ZERO external-runtime imports (this sits under the standalone delivery rail).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Column/key: when WE handed the record to the transport.
 PUSHED_AT = "pushed_at"

@@ -42,7 +42,7 @@ ZERO external-runtime imports (this sits under the standalone delivery rail).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 import warnings
 from pathlib import Path
 from typing import Any
@@ -50,7 +50,7 @@ from typing import Any
 from . import _inbox
 from ._store_target import store_label
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: The safe consumer loop, in one line. Quoted verbatim by every surface that
 #: reports the deprecation so the fix always travels with the complaint.

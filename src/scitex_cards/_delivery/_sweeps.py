@@ -34,13 +34,13 @@ keeps it honest.
 from __future__ import annotations
 
 import datetime as _dt
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 
 from ._tick import fault_text
 
-logger = logging.getLogger("scitex_cards.delivery.notifyd")
+logger = slogging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Cadence (MINUTES) of the fleet-liveness sweep. ``<= 0`` disables it.
 ENV_NUDGE_SWEEP_MINUTES = "SCITEX_CARDS_NUDGE_SWEEP_MINUTES"
