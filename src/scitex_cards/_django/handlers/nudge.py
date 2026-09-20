@@ -32,12 +32,12 @@ the cron-driven hourly notify.
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 import time
 
 from django.http import JsonResponse
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 # In-process cooldown registry. ``{agent: last_send_unix_ts}``.
 _LAST_SENT_AT: dict[str, float] = {}

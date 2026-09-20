@@ -4,7 +4,7 @@
 
 WHY THIS MODULE EXISTS — an instrument you cannot read is not an instrument.
 
-``_mcp_channel`` calls ``logging.getLogger(__name__)`` and nothing ever attaches
+``_mcp_channel`` calls ``slogging.getLogger(__name__)`` and nothing ever attaches
 a handler or sets a level. Under stdio-MCP the server is a CHILD of the Claude
 session, so its stderr is not somewhere an operator (or an agent debugging
 itself) can conveniently read either. The practical consequence, measured
@@ -27,6 +27,7 @@ failure mode. An UNSET variable is not an error — no sink is the default.
 from __future__ import annotations
 
 import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 
@@ -82,7 +83,7 @@ def install_channel_log_sink(
     if path is None:
         return None
 
-    logger = logging.getLogger(_PACKAGE_LOGGER)
+    logger = slogging.getLogger(_PACKAGE_LOGGER)
 
     for existing in logger.handlers:
         if getattr(existing, _MARKER, None) == str(path):

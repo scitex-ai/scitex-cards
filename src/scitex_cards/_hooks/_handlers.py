@@ -14,13 +14,13 @@ straight to plugins (the built-in card-event handler is C5).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from typing import Any, Iterable
 
 from .. import _store
 from .._git_link import TRIGGER_COMMIT
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def _handle_push(

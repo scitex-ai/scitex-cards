@@ -52,10 +52,12 @@ required mid-outage: filing a P0/P1 simply works.
 
 from __future__ import annotations
 
-import sys
+import scitex_logging as slogging
 
 from ._comment_ids import stamp_comment_id
 from ._throughput import WIP_STATUSES, evaluate_wip
+
+logger = slogging.getLogger(__name__)
 
 # Cards at or below this priority are never gated. Lower = more urgent, so this
 # is "P0 and P1" — the emergency band.
@@ -165,21 +167,19 @@ def enforce_wip_gate(new: dict, tasks: list[dict], *, now_iso: str) -> None:
         comments.append(
             _override_comment(rep, priority, new.get("created_by"), now_iso)
         )
-        print(
+        logger.warning(
             f"WARN: WIP gate OVERRIDDEN — {rep.agent} is at {rep.wip_count} "
             f"tasks in_progress (>= 2 × limit {rep.limit}); admitted "
             f"{new.get('id')!r} because priority={priority} <= "
-            f"{EXEMPT_PRIORITY_MAX}. The card carries an audit stamp.",
-            file=sys.stderr,
+            f"{EXEMPT_PRIORITY_MAX}. The card carries an audit stamp."
         )
         return
 
     if rep.is_warn:
-        print(
+        logger.warning(
             f"WARN: WIP gate — {rep.agent} now has {rep.wip_count + 1} tasks "
             f"in_progress (limit {rep.limit}). Completion is not keeping up "
-            f"with starts; finish existing before starting more.",
-            file=sys.stderr,
+            f"with starts; finish existing before starting more."
         )
 
 

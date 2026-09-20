@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Any, Callable
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: How long an UNCHANGED digest stays suppressed before it is re-sent anyway.
 #: The floor exists so an owner who is simply stuck still gets nudged; without

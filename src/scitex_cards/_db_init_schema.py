@@ -25,7 +25,7 @@ last passenger getting off.
 
 from __future__ import annotations
 
-import logging as _logging
+import scitex_logging as slogging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
@@ -60,7 +60,7 @@ from ._store_retirement import RETIREMENT_TRIGGER_SQL
 #: The first logger this module has ever had. Its only call site is the
 #: genuine-upgrade branch at the end of :func:`init_schema`; a fresh store and
 #: an already-current one stay silent, so ordinary opens are unchanged.
-_logger = _logging.getLogger(__name__)
+_logger = slogging.getLogger(__name__)
 
 __all__ = ["SchemaMigrationRequired", "init_schema"]
 

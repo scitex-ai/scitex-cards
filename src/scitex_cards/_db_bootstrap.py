@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
-import logging
+import scitex_logging as slogging
 from dataclasses import dataclass
 
 from ._db import SCHEMA_VERSION
@@ -41,7 +41,7 @@ from ._db_sections import (  # re-exported: _db_mirror imports these from here
     _insert_users,
 )
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: (column, doc-key) pairs for the scalar ``tasks`` columns. ``group`` maps to
 #: the ``grp`` column (SQL reserved word); ``deadlines`` / ``_log_meta`` /

@@ -19,8 +19,13 @@ import json
 import sys
 
 import click
+import scitex_logging as slogging
 
 from .._may_stop import may_stop
+
+#: PS-220: the may-stop hint list goes to stderr (sac's idle-at-prompt re-drive
+#: injects it as the resume prompt) — scitex-logging owns that stream.
+logger = slogging.getLogger(__name__)
 
 
 @click.command("may-stop")
@@ -54,7 +59,7 @@ def may_stop_cmd(agent):
         + (f" (idle {idle}s)" if idle is not None else "")
         + " — an agent does not stop while the board holds work:"
     )
-    print("\n".join([header, *lines]), file=sys.stderr)
+    logger.warning("%s", "\n".join([header, *lines]))
     sys.exit(2)
 
 
