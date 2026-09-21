@@ -1,4 +1,4 @@
-{% extends "scitex_ui/standalone_shell.html" %}
+{% extends "scitex_app/app_shell.html" %}
 {% load static %}
 {% comment %}
   Board v3 now extends the scitex-ui workspace shell (operator-asked,
@@ -252,7 +252,7 @@
 {% endfor %}}</style>
 {% endblock extra_css %}
 
-{% block app_content %}
+{% block scitex_app_content %}
   {% comment %}
     Filterbar reorg (operator TG, lead a2a `b48f7c2c438b464698183d2e95d3bb04`,
     2026-06-12). Three explicit groups end the flex-wrap chaos:
@@ -764,7 +764,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
-{% endblock app_content %}
+{% endblock scitex_app_content %}
 
 {% block extra_js %}
   <script>
