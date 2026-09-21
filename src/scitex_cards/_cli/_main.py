@@ -86,7 +86,22 @@ _COMMAND_CATEGORIES = (
         # that operates on the store as an object is upkeep, so it belongs under
         # `dev`. The root spelling is a hidden Phase-W alias now and is
         # deliberately NOT listed here, for the same reason `health` is not.
-        ("dm", "store", "sync-github", "sync-store", "deliver-notifications"),
+        #
+        # `freshness-gc` belongs HERE rather than in a new category: it is the
+        # canonical store's own card-forgetting verb, which is the same class of
+        # subject as `store` and `sync-store` next to it. It used to be the ONE
+        # visible root command no category claimed, and an unclaimed command is
+        # exactly what §4a's `Other:` bucket renders — an audit finding, and the
+        # failure `test__verb_renames.test_root_help_has_empty_other_catch_all`
+        # exists to catch.
+        (
+            "dm",
+            "store",
+            "sync-github",
+            "sync-store",
+            "deliver-notifications",
+            "freshness-gc",
+        ),
     ),
     (
         "Service",
@@ -427,6 +442,7 @@ from . import (  # hook-bypass: line-limit (_main.py pre-existing over-cap; mini
     _completion,
     _deliver,
     _export,
+    _freshness,
     _gui,
     _hooks,
     _inbox,
@@ -522,6 +538,8 @@ _deliver.register(main)
 # src/scitex_cards/_delivery/_daemon.py + _systemd.py.
 _notifyd.register(main)
 _cardsync.register(main)  # hook-bypass: line-limit (pre-existing over-cap; minimal wire)
+# freshness-gc — the store's own card-forgetting verb (atomic, one transaction).
+_freshness.register(main)
 
 
 if __name__ == "__main__":
