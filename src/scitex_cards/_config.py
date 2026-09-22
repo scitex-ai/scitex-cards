@@ -31,7 +31,6 @@ running daemon pick it up on its next tick — no restart.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 

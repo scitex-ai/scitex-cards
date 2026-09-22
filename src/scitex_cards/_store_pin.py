@@ -75,9 +75,7 @@ from typing import Final, Optional
 from ._store_instance import (
     Certainty,
     IdentityCheck,
-    IdentityVerdict,
     StoreInstance,
-    check_store_identity,
 )
 
 #: Environment variable carrying the caller's EXPECTATION of WHICH SERVER it

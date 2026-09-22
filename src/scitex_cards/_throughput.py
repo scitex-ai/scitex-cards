@@ -27,8 +27,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 DONE_STATUSES = frozenset({"done"})
 # Closed/terminal states — a card here is NOT open and does NOT count as

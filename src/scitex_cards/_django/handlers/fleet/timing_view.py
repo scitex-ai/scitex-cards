@@ -85,7 +85,6 @@ def fleet_timing_view(request: HttpRequest) -> HttpResponse:
     from ...services import get_board
 
     board = get_board()
-    path = board.store_path
     tasks = board.tasks
 
     payload = compute_timing(tasks, window_days=window_days)

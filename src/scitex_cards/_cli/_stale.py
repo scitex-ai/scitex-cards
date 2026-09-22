@@ -37,7 +37,6 @@ from .._backlog_triage import BACKLOG_STATUS
 from .._paths import resolve_tasks_path
 from .._store import load_tasks
 from ._compat import deprecated_alias, spec_command_kwargs
-from ._write import _emit
 
 #: Age cutoff for `list-stale`. SEVEN DAYS, matching the forgetting horizon —
 #: the operator closed the gap himself on 2026-08-19 (「はい7日でお願いします」)

@@ -15,14 +15,9 @@ would be a contract change dressed up as a bug fix.
 
 from __future__ import annotations
 
-import contextlib
-import fcntl
 import logging
-import os
 from dataclasses import dataclass
-from pathlib import Path
 
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import TaskValidationError
 
 _LOG = logging.getLogger(__name__)

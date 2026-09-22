@@ -73,9 +73,6 @@ from dataclasses import dataclass
 from ._schema_probe import (
     _is_postgres,
     _sole_value,
-    has_column,
-    has_table,
-    has_trigger,
 )
 
 __all__ = [
@@ -83,6 +80,7 @@ __all__ = [
     "SCHEMA_VERSION_FLOOR_TRIGGER",
     "SCHEMA_VERSION_DOWNGRADE_KEYS",
     "downgrade_report",
+    "DowngradeReport",
     "SHAPE_LADDER",
     "ShapeAgreement",
     "SchemaShape",

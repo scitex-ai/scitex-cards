@@ -41,18 +41,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from .._backend_connect import StoreConnection
 
-import json
 from pathlib import Path
 
 from .ids import (
-    derived_member_event_id,
     is_pair_thread,
     new_group_thread_id,
     new_message_id,
     origin_host,
     pair_thread_id,
     peers_of_pair,
-    resolve_dm_db,
     utc_now_iso,
 )
 from .storable import to_storable
@@ -81,7 +78,6 @@ from .write_rows import (  # noqa: E402,F401
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from .._schema_probe import _sole_value
 from .._store_tx import begin_write_transaction
 
 
