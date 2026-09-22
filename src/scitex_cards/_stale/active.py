@@ -47,12 +47,11 @@ Design
 from __future__ import annotations
 
 import datetime as _dt
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from .active_clocks import (
-    FIELD_BLOCKED_AT,
+    FIELD_BLOCKED_AT,  # noqa: F401  (re-export: tests import the field from here)
     _age_hours,
     _blocked_age_hours,
     _deferred_age_hours,
@@ -69,7 +68,6 @@ from .active_thresholds import (
     ENV_STALE_ACTIVE_HOURS,
     _blocked_nudge_hours,
     _pending_nudge_hours,
-    _resolve_hours,
     _stale_active_hours,
 )
 from scitex_cards._throughput import _now_utc
@@ -450,6 +448,7 @@ __all__ = [
     "EXTERNAL_BLOCKERS",
     "BACKLOG_STATUSES",
     "PENDING_STATUSES",
+    "FIELD_BLOCKED_AT",
     "StaleCard",
     "is_stale_active",
     "is_owner_actionable",

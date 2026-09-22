@@ -12,9 +12,7 @@ from pathlib import Path
 import scitex_logging as slogging
 
 from ._deadlines import _parse_deadline_or_raise
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import (
-    _BLOCKER_ALIASES,
     ABOLISHED_STATUSES,
     VALID_BLOCKERS,
     VALID_KINDS,

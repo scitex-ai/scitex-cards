@@ -164,7 +164,6 @@ def resolve_dm_db(db: str | Path | None = None, *, store: str | Path | None = No
     reads do; a tmp PATH no longer isolates anything, because nothing writes a
     file beside it any more.
     """
-    from .._db import DEFAULT_DB_FILENAME
     from .._store_url import BACKEND_POSTGRES, backend_of, reject_attempted_dsn
 
     if db is not None:

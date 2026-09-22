@@ -32,7 +32,6 @@ import datetime as _dt
 import os
 from pathlib import Path
 
-from .._inbox import _resolved_store
 from .._model import _store_lock
 from ._channel import DeliveryResult, Status
 

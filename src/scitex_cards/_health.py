@@ -49,7 +49,7 @@ from env).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from . import _inbox
 from ._health_backend_mode import check_backend_mode
