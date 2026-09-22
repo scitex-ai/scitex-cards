@@ -61,7 +61,6 @@ import json
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
-
 # ---------------------------------------------------------------------------
 # Defaults — operator-stated floor.
 # ---------------------------------------------------------------------------

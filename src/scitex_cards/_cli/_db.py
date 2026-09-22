@@ -25,22 +25,22 @@ import json
 import click
 
 from ._compat import deprecated_alias
-from ._dev import get_dev_group
-from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 # THE SNAPSHOT GUARDS live in :mod:`._db_snapshot_guards` -- this module owns
 # the ``dev db`` VERBS, that one owns "is the export safe to bank as a backup".
 # Re-exported under the same private names so every existing caller and test
 # resolves unchanged.
 from ._db_snapshot_guards import (
+    _SHRINK_REFUSAL_RATIO,
+    _SNAPSHOT_SUBJECT_RE,  # noqa: F401  (re-export)
     _assert_export_reflects_live_db,
     _assert_export_reflects_live_dms,
     _live_dm_count,  # noqa: F401  (re-export: tests and callers import it here)
     _live_task_fingerprint,  # noqa: F401  (re-export)
     _previous_snapshot_count,
-    _SHRINK_REFUSAL_RATIO,
-    _SNAPSHOT_SUBJECT_RE,  # noqa: F401  (re-export)
 )
+from ._dev import get_dev_group
+from ._mutating import DRY_RUN_PREFIX, confirm_or_abort, mutating_options
 
 
 def register(main: click.Group) -> None:

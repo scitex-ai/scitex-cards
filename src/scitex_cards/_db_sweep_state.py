@@ -312,8 +312,8 @@ def claim_sweep(
 
     Returns True at most once per ``cadence_minutes`` across every host.
     """
-    from ._store_url import BACKEND_POSTGRES, backend_of
     from ._db_users import _db_target
+    from ._store_url import BACKEND_POSTGRES, backend_of
 
     target = _db_target(store)
     if backend_of(target) != BACKEND_POSTGRES:

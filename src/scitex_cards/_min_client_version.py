@@ -47,8 +47,6 @@ only the LEADING digits of the segment that carries it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime

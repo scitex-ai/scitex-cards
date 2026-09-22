@@ -32,8 +32,8 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
 
-from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_dm_idempotency import _migrate_v14_to_v15
+from ._db_dm_schema import migrate_v4_to_v5 as _migrate_v4_to_v5
 from ._db_foreign_keys import _migrate_v10_to_v11
 from ._db_lifecycle_columns import _migrate_v12_to_v13
 from ._db_migrations import (

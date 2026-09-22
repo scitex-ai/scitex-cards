@@ -53,7 +53,6 @@ union per row + per-project totals.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,15 +129,15 @@ class FleetPlan:
     lanes: List[LanePlan] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        total = sum(l.total for l in self.lanes)
-        canonical = sum(l.canonical_count for l in self.lanes)
-        migrate = sum(l.needs_migration_count for l in self.lanes)
+        total = sum(lane.total for lane in self.lanes)
+        canonical = sum(lane.canonical_count for lane in self.lanes)
+        migrate = sum(lane.needs_migration_count for lane in self.lanes)
         return {
             "lane_count": len(self.lanes),
             "total_rows": total,
             "canonical_rows": canonical,
             "needs_migration_rows": migrate,
-            "lanes": [l.to_dict() for l in self.lanes],
+            "lanes": [lane.to_dict() for lane in self.lanes],
         }
 
 

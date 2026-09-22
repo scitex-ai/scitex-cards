@@ -1,24 +1,31 @@
 Quick Start
 ===========
 
-A minimal ``tasks.yaml``:
-
-.. code-block:: yaml
-
-    tasks:
-      - {id: design, title: Design, status: done}
-      - {id: build, title: Build, status: in_progress, depends_on: [design]}
-      - {id: ship, title: Ship, status: goal, depends_on: [build]}
-
-Render it to a dependency-graph PNG from Python:
+The store is **PostgreSQL on 55432** (``$SCITEX_STORE_DSN``); unset raises.
+Add a card and read back the in-progress list:
 
 .. code-block:: python
 
     import scitex_cards as cards
 
-    tasks = cards.load_tasks("tasks.yaml")
-    mermaid_src = cards.build_mermaid(tasks)
-    engine = cards.render(mermaid_src, "tasks.png")   # 'mmdc' or 'kroki'
+    cards.add_task(None, id="design", title="Design", status="done")
+    cards.add_task(
+        None, id="build", title="Build",
+        status="in_progress", depends_on=["design"],
+    )
+    rows = cards.list_tasks(None, status="in_progress")
+
+Render the store's dependency graph to a PNG from Python:
+
+.. code-block:: python
+
+    import scitex_cards as cards
+
+    rows = cards.list_tasks(None, status="in_progress")
+    from scitex_cards._diagram import build_mermaid, render
+
+    mermaid_src = build_mermaid(rows)
+    engine = render(mermaid_src, "tasks.png")   # 'mmdc' or 'kroki'
 
 …or from the shell:
 

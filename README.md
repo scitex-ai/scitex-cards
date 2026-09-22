@@ -12,7 +12,7 @@
 <p align="center"><b>A standalone fleet task-card board — the single source of truth for tasks <em>and</em> the agent-to-agent communication medium that rides on top of the cards.</b></p>
 
 <p align="center">
-  <a href="https://scitex-cards.readthedocs.io/">Full Documentation</a> · <code>uv pip install scitex-cards[all]</code>
+  <a href="https://scitex-cards.readthedocs.io/">Full Documentation</a> · <code>uv pip install scitex-cards</code>
 </p>
 
 <!-- scitex-badges:start -->
@@ -24,7 +24,7 @@
 <p align="center">
   <a href="https://github.com/scitex-ai/scitex-cards/actions/workflows/pytest-matrix-on-ubuntu-py3-11-3-12-3-13.yml"><img src="https://img.shields.io/github/actions/workflow/status/scitex-ai/scitex-cards/pytest-matrix-on-ubuntu-py3-11-3-12-3-13.yml?branch=develop&label=tests" alt="tests"></a>
   <a href="https://github.com/scitex-ai/scitex-cards/actions/workflows/import-smoke-on-ubuntu-py3-12.yml"><img src="https://img.shields.io/github/actions/workflow/status/scitex-ai/scitex-cards/import-smoke-on-ubuntu-py3-12.yml?branch=develop&label=install-check" alt="install-check"></a>
-  <a href="https://github.com/scitex-ai/scitex-cards/actions/workflows/scitex-dev-quality-audit-on-ubuntu-latest.yml"><img src="https://img.shields.io/github/actions/workflow/status/scitex-ai/scitex-cards/scitex-dev-quality-audit-on-ubuntu-latest.yml?branch=develop&label=quality" alt="quality"></a>
+  <a href="https://github.com/scitex-ai/scitex-cards/actions/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml"><img src="https://img.shields.io/github/actions/workflow/status/scitex-ai/scitex-cards/scitex-cards-quality-audit-on-ubuntu-latest.yml?branch=develop&label=quality" alt="quality"></a>
   <a href="https://codecov.io/gh/scitex-ai/scitex-cards"><img src="https://img.shields.io/codecov/c/github/scitex-ai/scitex-cards/develop?label=cov" alt="cov"></a>
 </p>
 <!-- scitex-badges:end -->
@@ -344,12 +344,14 @@ scitex-cards board start --port 8051       # kanban / timeline GUI
 
 ## Installation
 
-> **Recommended**: `uv pip install scitex-cards[all]` — uv's Rust resolver
-> handles the SciTeX dep set quickly. Plain `pip install` still works.
+> **Recommended**: `uv pip install scitex-cards` — uv's Rust resolver
+> handles the SciTeX dep set quickly. Plain `pip install` still works
+> (`[all]` additionally pulls the dev/docs toolchain; the bare install
+> already carries the full runtime — board, MCP server, and store driver).
 
 ```bash
 # Recommended — uv resolver
-uv pip install scitex-cards[all]
+uv pip install scitex-cards
 
 # Plain pip also works
 pip install scitex-cards
@@ -443,7 +445,7 @@ scitex-cards skills install                  # install into ~/.claude/skills
 <summary><strong>Web board</strong></summary>
 
 ```bash
-pip install scitex-cards[all]
+pip install scitex-cards
 scitex-cards board start --port 8051         # kanban + timeline, http://127.0.0.1:8051/
 scitex-cards board status | stop | restart   # pidfile-backed lifecycle
 ```

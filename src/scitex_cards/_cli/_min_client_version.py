@@ -21,8 +21,6 @@ in ``_cli/__init__.py``.
 
 from __future__ import annotations
 
-from .._store_url import describe_store_target
-
 import click
 
 from .._min_client_version import (
@@ -31,6 +29,7 @@ from .._min_client_version import (
     resolve_running_version,
     stamp_floor,
 )
+from .._store_url import describe_store_target
 from ._db import db_group
 
 _DB_OPTION = click.option(

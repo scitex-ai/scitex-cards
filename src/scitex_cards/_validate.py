@@ -4,22 +4,14 @@
 
 from __future__ import annotations
 
-import contextlib
-import fcntl
-import os
-from pathlib import Path
-
 from ._deadlines import _parse_deadline_or_raise
-from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import (
-    _BLOCKER_ALIASES,
     ABOLISHED_STATUSES,
     VALID_BLOCKERS,
     VALID_KINDS,
     VALID_STATUSES,
     TaskValidationError,
 )
-
 
 #: The ``source`` :func:`_validate_tasks` is given on the WRITE side. Every
 #: other source is a store being read. Kept as a constant because two places

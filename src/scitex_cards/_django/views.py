@@ -15,8 +15,8 @@ from pathlib import Path
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .._user_row_scope import scope_rows_for_user
 from .._store_errors import StoreNotProvisionedError, StoreUnavailableError
+from .._user_row_scope import scope_rows_for_user
 from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
