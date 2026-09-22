@@ -86,6 +86,8 @@ import os
 from pathlib import Path
 
 from scitex_cards._reminder.enqueue import _iso, _safe_enqueue, _safe_resolve
+from scitex_cards._throughput import _now_utc, _parse_iso
+
 from .active import (
     blocked_external_nudge_line,
     detect_blocked_external,
@@ -94,7 +96,6 @@ from .active import (
     pending_backlog_nudge_line,
     stale_active_nudge_line,
 )
-from scitex_cards._throughput import _now_utc, _parse_iso
 
 logger = logging.getLogger(__name__)
 

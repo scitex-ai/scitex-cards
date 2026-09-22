@@ -50,6 +50,8 @@ import datetime as _dt
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from scitex_cards._throughput import _now_utc
+
 from .active_clocks import (
     FIELD_BLOCKED_AT,  # noqa: F401  (re-export: tests import the field from here)
     _age_hours,
@@ -70,7 +72,6 @@ from .active_thresholds import (
     _pending_nudge_hours,
     _stale_active_hours,
 )
-from scitex_cards._throughput import _now_utc
 
 #: An extra row filter applied on top of the status filter — see
 #: ``_detect_owned_untouched``'s ``where`` parameter.

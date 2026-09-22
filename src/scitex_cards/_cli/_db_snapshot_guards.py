@@ -34,7 +34,6 @@ import re
 
 import click
 
-
 #: A snapshot holding less than this FRACTION of the previous one's cards is
 #: treated as a catastrophe rather than churn, and refused. Cards are deleted
 #: routinely; HALF of them vanishing between two hourly fires is not deletion,

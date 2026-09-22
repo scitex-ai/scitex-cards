@@ -81,7 +81,6 @@ from ._mirror_rows import _delete_card, _drop_card_rows, _write_card  # noqa: F4
 # package, so a module-level import here cannot cycle.
 from ._schema_probe import _sole_value
 
-
 #: Sections of the doc that are NOT per-card. They change rarely, so they get one
 #: hash each and are only rebuilt when that hash moves.
 #:

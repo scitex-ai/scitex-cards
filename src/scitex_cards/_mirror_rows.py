@@ -26,7 +26,6 @@ from ._db_bootstrap import _insert_tasks
 from ._mirror_hashes import HASH_TABLE
 
 
-
 def _drop_card_rows(conn: StoreConnection, task_id: str) -> None:
     """Remove one card's derived rows so it can be re-inserted cleanly.
 

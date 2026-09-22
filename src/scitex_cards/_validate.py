@@ -13,7 +13,6 @@ from ._task import (
     TaskValidationError,
 )
 
-
 #: The ``source`` :func:`_validate_tasks` is given on the WRITE side. Every
 #: other source is a store being read. Kept as a constant because two places
 #: now depend on the exact spelling, and a silent drift between them would

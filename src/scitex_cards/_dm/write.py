@@ -43,6 +43,11 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 from pathlib import Path
 
+# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
+# KeyError on a positional index, and since #693 open_db can hand this
+# module a PostgreSQL connection. _schema_probe imports nothing from this
+# package, so a module-level import here cannot cycle.
+from .._store_tx import begin_write_transaction
 from .ids import (
     is_pair_thread,
     new_group_thread_id,
@@ -73,12 +78,6 @@ from .write_rows import (  # noqa: E402,F401
     next_seq,
     record_member_event,
 )
-
-# Shape-agnostic row access. psycopg's dict_row is a real dict and raises
-# KeyError on a positional index, and since #693 open_db can hand this
-# module a PostgreSQL connection. _schema_probe imports nothing from this
-# package, so a module-level import here cannot cycle.
-from .._store_tx import begin_write_transaction
 
 
 def append(

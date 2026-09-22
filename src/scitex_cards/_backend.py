@@ -317,7 +317,11 @@ class LocalBackend:
         # to rewrite history; rotating here keeps the durable delivery id while
         # every poller observes the same successor exchange.
         from ._dm_exchange import rotate_failed_notification_exchange
-        from ._inbox_receipt import outstanding_records_off_page, receipts, unconfirmed_ids
+        from ._inbox_receipt import (
+            outstanding_records_off_page,
+            receipts,
+            unconfirmed_ids,
+        )
 
         outstanding = {
             notification_id
