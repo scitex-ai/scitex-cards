@@ -301,3 +301,41 @@ from a shrinking debt into a permanent exemption.
 
 15 entries remain. Each deletion is one module that can no longer create a cards
 database.
+
+---
+
+## Status
+
+Accepted. Operator ruling 2026-08-17, executed in the same change: bucket D1
+stripped, the AST barrier test landed, buckets A–C kept per the verdicts
+below.
+
+## Context
+
+The operator ordered SQLite out of source entirely (ruling quoted at the top
+of this document). The trap: most SQLite vocabulary in the package is the
+abolition guard — code that names SQLite only to refuse it — so a keyword
+sweep would delete the mechanism that prevents recreation. Every module is
+therefore classified by what the code *does* with the driver (AST walk),
+not by grep hits.
+
+## Decision
+
+Four buckets, four dispositions (see Buckets A–D and Counts above):
+
+- **A — live backend**: must go, but NOT in this change (behavioural; doors
+  and tests move together).
+- **B — abolition guard**: keep, and pin that it needs no driver.
+- **C — legacy reader**: keep pending Phase 2; Phase 2 returned **cannot
+  prove** lossless, so the readers stay.
+- **D1/D2 — annotation-only / comment-only**: D1 stripped in this change
+  (30 → 15 importers); D2 left alone.
+
+## Consequences
+
+- `import sqlite3` in `src/scitex_cards` went 30 files → 15, and the
+  `KNOWN_SQLITE_IMPORTERS` ratchet in the barrier test accepts exactly one
+  kind of edit — deletion — so the debt can only shrink.
+- The three create-capable doors, the SQLite inbox backend, `_index.py`, and
+  the legacy readers remain as tracked follow-ups with the blockers stated
+  under "Not landed, and why" — not as silent survivors.

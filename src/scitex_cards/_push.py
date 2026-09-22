@@ -57,8 +57,9 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import logging
+import scitex_logging as slogging
 import os
+import sys
 import urllib.error
 import urllib.request
 
@@ -74,7 +75,7 @@ from ._turn_url import (
     turn_url_for,
 )
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 ENV_DRY_RUN = "SCITEX_CARDS_PUSH_DRY_RUN"
 
@@ -215,11 +216,15 @@ def deliver(
         timeout = _default_timeout_s()
     # Dev / test escape hatch.
     if os.environ.get(ENV_DRY_RUN) == "1":
-        print(
+        # Machine-readable data transport: the dry-run body goes to stdout
+        # (a shell consumes it), never through the logging tier.
+        # `sys.stdout.write` is the form PS-220 spares for exactly this —
+        # bytes for a consumer, not a status line for a human.
+        sys.stdout.write(
             f"\n=== scitex-cards PUSH dry-run → {agent} ({kind}) ===\n"
-            f"{body}\n=== end {agent} ===\n",
-            flush=True,
+            f"{body}\n=== end {agent} ===\n"
         )
+        sys.stdout.flush()
         return {
             "ok": True,
             "agent": agent,

@@ -1,6 +1,6 @@
 # ADR-0017 — Identity, tenancy, and file SSOT
 
-- **Status**: proposed
+**Status:** proposed
 - **Date**: 2026-08-02
 - **Depends on**: ADR-0009 (roles), ADR-0010 (cards.db as SSOT), the operator's
   append-only ruling

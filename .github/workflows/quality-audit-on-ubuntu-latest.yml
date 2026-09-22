@@ -99,7 +99,7 @@ on:
       - "tests/**"
       - "pyproject.toml"
       - ".scitex/dev/config.yaml"
-      - ".github/workflows/scitex-cards-quality-audit-on-ubuntu-latest.yml"
+      - ".github/workflows/quality-audit-on-ubuntu-latest.yml"
   pull_request:
     branches: [main, develop]
 

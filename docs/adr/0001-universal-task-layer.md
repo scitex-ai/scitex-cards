@@ -1,6 +1,9 @@
 # ADR-0001 — scitex-cards as the fleet's universal task-driven layer
 
-**Status.** Strawman — operator review pending.
+**Status:** Accepted as founding context. The storage-backend choice (§3,
+GitHub-backed YAML) was later superseded by the cards.db / PostgreSQL
+direction (ADR-0010), and the scheduling design by ADR-0011 — both amend,
+rather than repeal, the layering decided here.
 
 **Date.** 2026-06-02
 
@@ -455,6 +458,30 @@ new order. The board is the *one rope* every agent rows behind.
    growth.
 
 ---
+
+## Decision
+
+Three things were decided here, and all three held:
+
+1. **scitex-cards is the fleet's universal task-driven layer** — every level
+   (operator, team, single agent, Orochi's todo tab) consumes the card store
+   rather than reimplementing tasks (§2, §5).
+2. **The multi-level model** — one shared board, scope/assignee filters give
+   every participant "their direction" (§2).
+3. **The storage substrate available at the time** — a private GitHub repo
+   backing `~/.scitex/cards/`, with the sac listen DB as an optional
+   notification adapter, not the store (§3). Later superseded by ADR-0010;
+   recorded here because the layering above it did not change with the
+   substrate.
+
+## Consequences
+
+- Phase-1 MVP (PR #14) became the floor everything above assumed.
+- Orochi's todo tab and the operator's own memos moved onto the card store
+  (§7), which is why the store's later migrations had to be lossless.
+- The backend supersession (ADR-0010) and the scheduler hardening (ADR-0011)
+  were substrate and policy changes inside this layering, not replacements
+  of it.
 
 ## 9 — Decision log
 

@@ -26,7 +26,7 @@ Wiring (in ``pyproject.toml``)
 
 After install, ``scitex-dev ecosystem up --yes`` materialises
 ``~/.config/systemd/user/scitex-cards-dashboard.service`` and brings
-it up. The master ``scitex-dev-ecosystem-reconcile.service``
+it up. The ``scitex-dev-ecosystem-reconcile.service`` unit
 (installed via ``ecosystem up --install-master-unit``) keeps it
 reconciled on every boot.
 """
@@ -50,7 +50,7 @@ def provide_jobs() -> list[JobSpec]:
     * ``restart_policy="on-failure"`` — the board MUST come back if
       the Python process crashes. The operator notices a missing 8051
       board immediately (his daily inbox is the board UI); ``Restart=
-      on-failure`` plus the master reconcile unit on boot keeps the
+      on-failure`` plus the upstream reconcile unit on boot keeps the
       MTBF on operator-visible loss measured in seconds, not hours.
     * ``on_boot_sec="15s"`` — short delay after boot before starting,
       enough for network-online.target to settle. Materialised by

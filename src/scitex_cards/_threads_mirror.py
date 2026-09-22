@@ -20,10 +20,10 @@ the sidecar has joined the mirrors. See ``docs/design/dm-into-cards-db.md``.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def dispatch_to_inbox(record: dict, store: str | Path | None) -> "dict | None":

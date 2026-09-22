@@ -84,7 +84,7 @@ ship.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 import os
 import sys
 import threading
@@ -106,7 +106,7 @@ from ._currency_text import (
     stale_warning_text,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = slogging.getLogger(__name__)
 
 #: The distribution this gate speaks for.
 _DIST_NAME = "scitex-cards"

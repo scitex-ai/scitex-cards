@@ -54,12 +54,12 @@ union per row + per-project totals.
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 # === Tuning knobs ==========================================================

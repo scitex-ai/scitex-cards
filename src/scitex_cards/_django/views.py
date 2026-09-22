@@ -8,7 +8,7 @@ are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 """
 
 import dataclasses
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 
@@ -21,7 +21,7 @@ from ._request_store import read_store
 from .handlers import HANDLERS, NO_BOARD_ENDPOINTS
 from .services import get_board
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Answer for "this deployment has no task store for you YET".
 #:
