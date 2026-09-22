@@ -11,13 +11,13 @@ was silently clobbered (lost update).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 
 from django.http import JsonResponse
 
 from .crud import _parse_body
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def handle_edge(request, board):

@@ -9,6 +9,8 @@ import fcntl
 import os
 from pathlib import Path
 
+import scitex_logging as slogging
+
 from ._deadlines import _parse_deadline_or_raise
 from ._store_verify import _verify_dumped_tmp  # hook-bypass: line-limit
 from ._task import (
@@ -26,6 +28,8 @@ from ._task import (
 #: now depend on the exact spelling, and a silent drift between them would
 #: reintroduce the mislabel this constant exists to prevent.
 WRITE_SOURCE = "<save_tasks>"
+
+log = slogging.getLogger(__name__)
 
 
 def _side_of(source: str) -> str:
@@ -60,13 +64,12 @@ def _warn_tolerated(msg: str, side: str = "read-side") -> None:
     treated as the tolerant-read case it historically was, rather than silently
     accusing a reader of writing.
     """
-    import sys as _sys
     import warnings as _warnings
 
     from ._tolerated import record as _record
 
     banner = f"[scitex-cards] TOLERATED ({side}): {msg}"
-    print(banner, file=_sys.stderr, flush=True)
+    log.warning("%s", banner)
     _warnings.warn(banner, stacklevel=3)
     # AND BACK TO THE CALLER, when one is collecting. stderr and `warnings`
     # reach a log scraper and a human reading the server's output; neither

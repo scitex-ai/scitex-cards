@@ -332,7 +332,9 @@ def _main(argv: list[str] | None = None) -> int:
         message = _read(rest[1] if len(rest) > 1 else None)
         card_id = resolve_card_id(branch, message)
         if card_id:
-            print(card_id)
+            # Machine-readable data transport: the shell hook consumes the
+            # bare id on stdout (empty output = soft skip). NOT a log line.
+            sys.stdout.write(card_id + "\n")
         return 0
 
     if mode == "emit-event":

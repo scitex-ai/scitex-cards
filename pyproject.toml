@@ -103,6 +103,12 @@ dependencies = [
     # and this line must not outlive that decision.
     "fastmcp>=2.0,<4",
     "pydantic>=2,<3",
+    # ADDED 2026-09-22 with the PS-220 pass: ~70 modules now acquire their
+    # logger via `scitex_logging.getLogger` at module top, so a bare
+    # `pip install scitex-cards` without this would ModuleNotFoundError on
+    # first `import scitex_cards` — it is hard, not optional. >=0.2.0 is
+    # MEASURED: the version this pass was built and tested against.
+    "scitex-logging>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -489,6 +495,13 @@ artifacts = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# PS-211 / PS-212 test layers: `-m smoke` (fast CLI happy-path, every PR) and
+# `-m e2e` (real-subsystem round-trips, RUN_E2E=1 only). Registered here so
+# `-m` selection works without PytestUnknownMarkWarning.
+markers = [
+    "smoke: fast CLI happy-path tests (<60s, runs on every PR)",
+    "e2e: slow end-to-end workflows against real subsystems (RUN_E2E=1)",
+]
 # `-p no:anyio` — DO NOT REMOVE WITHOUT READING THIS.
 #
 # The anyio pytest plugin is auto-loaded (anyio is a transitive dependency, so the
@@ -551,7 +564,16 @@ library_dirs = ["src", "tests", "examples"]
 # would not rename it inside puppeteer — it would simply stop working, which
 # is the opposite of what the rule is protecting. Exempted by name, not by
 # prefix, so a future third-party variable still has to be argued for.
-env_allowlist = ["PUPPETEER_EXECUTABLE_PATH"]
+#
+# `SAC_NAME` is the SciTeX Agent Container runtime's own variable, set by the
+# container platform (like HOSTNAME is set by the OS). `_process_inventory.py`
+# only READS it, to tell container vantage from host vantage when `/proc`
+# shows a private namespace. Renaming it to `SCITEX_CARDS_*` would not rename
+# it in the container — the read would simply stop matching, and an empty
+# container scan would be misreported as host evidence (the exact wrong
+# fleet-wide conclusion of 2026-08-21). Same "not ours to name" shape as
+# above, exempted by name for the same reason.
+env_allowlist = ["PUPPETEER_EXECUTABLE_PATH", "SAC_NAME"]
 
 [tool.scitex_dev.audit]
 # PS-168 — Per-package secret + env-var prefix in GitHub Actions workflows.

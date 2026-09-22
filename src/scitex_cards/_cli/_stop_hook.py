@@ -47,8 +47,11 @@ import json
 import sys
 
 import click
+import scitex_logging as slogging
 
 from ._mutating import dry_run_option
+
+log = slogging.getLogger(__name__)
 
 #: Cap on items named in the reason. The reason becomes the agent's next
 #: instruction, and an instruction listing forty cards is not an instruction.
@@ -297,15 +300,16 @@ def stop_hook_cmd(agent, dry_run):
             record=not dry_run,
         )
         for warning in result.get("warnings") or []:
-            print(f"scitex-cards stop-hook: {warning}", file=sys.stderr)
+            log.warning("scitex-cards stop-hook: %s", warning)
         click.echo(json.dumps(result["decision"]))
     except Exception as exc:  # noqa: BLE001 — fail-open is the whole design
         # Never block on our own failure. Say so on stderr so the silence is
         # explainable, but let the agent stop.
-        print(
-            f"scitex-cards stop-hook: allowing stop, detector failed "
-            f"({type(exc).__name__}: {exc})",
-            file=sys.stderr,
+        log.error(
+            "scitex-cards stop-hook: allowing stop, detector failed "
+            "(%s: %s)",
+            type(exc).__name__,
+            exc,
         )
         click.echo(json.dumps({}))
 

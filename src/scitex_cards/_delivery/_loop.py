@@ -27,8 +27,9 @@ separation of concerns:
 from __future__ import annotations
 
 import datetime as _dt
-import sys
 from pathlib import Path
+
+import scitex_logging as slogging
 
 from .._inbox import poll_inbox
 from .._inbox_confirm import recipient_keys
@@ -37,6 +38,8 @@ from ._ledger import MAX_ATTEMPTS, Ledger
 from ._recipients import Recipient, load_recipients, should_deliver_now
 from ._registry import discover_channels
 from ._tick import fault_text
+
+log = slogging.getLogger(__name__)
 
 # Cumulative notifications are full point-in-time snapshots, not an event log.
 # Their producers intentionally use stable synthetic card ids so a newer row
@@ -78,7 +81,7 @@ def _drop_superseded_snapshots(notes: list[dict]) -> list[dict]:
 
 def _warn(msg: str) -> None:
     """Surface a per-item delivery fault to stderr (fail-loud)."""
-    print(f"[scitex-cards delivery] WARNING: {msg}", file=sys.stderr)
+    log.warning("[scitex-cards delivery] WARNING: %s", msg)
 
 
 def _resolve_channels(
