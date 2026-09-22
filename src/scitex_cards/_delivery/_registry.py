@@ -50,9 +50,8 @@ def _warn(msg: str) -> None:
     Fail-loud, never silent: a channel that can't load is an operational
     problem the operator must SEE — a swallowed warning would mean a user
     silently stops receiving notifications. scitex-logging writes console
-    records to stderr, so both shapes below reach stderr as they always did.
+    records to stderr, so the shape below reaches stderr as it always did.
     """
-    logger.warning("%s", msg)
     logger.warning("[scitex-cards delivery] WARNING: %s", msg)
 
 

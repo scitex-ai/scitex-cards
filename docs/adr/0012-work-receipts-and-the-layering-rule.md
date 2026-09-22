@@ -7,7 +7,9 @@ executes work — today that is scitex-agent-container
 **Cards:** `incident-fleet-liveness-agents-stop-silently-20260718`,
 `may-stop-hook-cards-runnable-work-20260718`
 
-## Context — an incident, and eight failures with one shape
+## Context
+
+An incident, and eight failures with one shape.
 
 An agent (`scitex-hub`) sat idle for 80+ minutes holding five `in_progress`
 cards. The OPERATOR noticed, twice, and had to supply the cause himself

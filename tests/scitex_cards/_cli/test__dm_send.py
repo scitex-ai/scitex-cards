@@ -154,7 +154,10 @@ def test_unresolved_sender_json_is_actionable(env):
     env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
     result = _invoke("agent:recipient", "nobody", "--json")
-    payload = json.loads(result.output)
+    # stdout is the machine-readable channel (stderr carries the loud
+    # unresolved-identity warning by design — the Claude Code contract:
+    # stdout is the decision, stderr is commentary).
+    payload = json.loads(result.stdout)
     # Assert
     assert (
         result.exit_code == 1
@@ -166,7 +169,9 @@ def test_unresolved_sender_uses_native_http_status(env):
     # Arrange
     env.delete("SCITEX_CARDS_AGENT_ID")
     # Act
-    payload = json.loads(_invoke("agent:recipient", "nobody", "--json").output)
+    # stdout is the machine-readable channel here for the same reason as
+    # above: the unresolved-identity warning goes to stderr by design.
+    payload = json.loads(_invoke("agent:recipient", "nobody", "--json").stdout)
     # Assert
     assert (
         payload["status"]["kind"] == "http"

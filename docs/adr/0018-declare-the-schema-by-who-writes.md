@@ -138,7 +138,9 @@ The residue of `_log_meta` (`deleted_by`, `completed_by`, and anything else agen
 put there) continues to ride in the document under LWW. Promotion is per-fact and
 reasoned, never wholesale.
 
-## THE COST — stated here, not buried
+## Consequences
+
+The cost, stated here, not buried.
 
 **Two agents editing DIFFERENT scalar fields of the SAME card concurrently WILL
 clobber each other.** The later HLC wins the entire document, so an edit to `note`

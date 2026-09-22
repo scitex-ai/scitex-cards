@@ -168,18 +168,26 @@ def enforce_wip_gate(new: dict, tasks: list[dict], *, now_iso: str) -> None:
             _override_comment(rep, priority, new.get("created_by"), now_iso)
         )
         logger.warning(
-            f"WARN: WIP gate OVERRIDDEN — {rep.agent} is at {rep.wip_count} "
-            f"tasks in_progress (>= 2 × limit {rep.limit}); admitted "
-            f"{new.get('id')!r} because priority={priority} <= "
-            f"{EXEMPT_PRIORITY_MAX}. The card carries an audit stamp."
+            "WARN: WIP gate OVERRIDDEN — %s is at %s tasks in_progress "
+            "(>= 2 × limit %s); admitted %r because priority=%s <= %s. "
+            "The card carries an audit stamp.",
+            rep.agent,
+            rep.wip_count,
+            rep.limit,
+            new.get("id"),
+            priority,
+            EXEMPT_PRIORITY_MAX,
         )
         return
 
     if rep.is_warn:
         logger.warning(
-            f"WARN: WIP gate — {rep.agent} now has {rep.wip_count + 1} tasks "
-            f"in_progress (limit {rep.limit}). Completion is not keeping up "
-            f"with starts; finish existing before starting more."
+            "WARN: WIP gate — %s now has %s tasks in_progress (limit %s). "
+            "Completion is not keeping up with starts; finish existing "
+            "before starting more.",
+            rep.agent,
+            rep.wip_count + 1,
+            rep.limit,
         )
 
 
