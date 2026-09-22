@@ -31,10 +31,10 @@ axis fails LOUDLY instead of this check silently trusting the deletion held.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 import os
 from typing import Any
+
+from ._store_url import describe_store_target
 
 #: Legacy dual-write toggle names. The feature they gated was DELETED
 #: entirely — the store is the only write target, unconditionally, with no env

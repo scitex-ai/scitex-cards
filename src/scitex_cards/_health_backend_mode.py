@@ -27,10 +27,10 @@ configuration, and a knob here would be a fallback wearing a switch.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 from pathlib import Path
 from typing import Any
+
+from ._store_url import describe_store_target
 
 #: What the card store is on, and what the inbox rail is on, as short tokens.
 POSTGRES = "postgres"

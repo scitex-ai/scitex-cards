@@ -16,10 +16,10 @@ process RESOLVED match the identity the database on disk actually carries?
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 from pathlib import Path
 from typing import Any
+
+from ._store_url import describe_store_target
 
 
 def _identity_on_postgres(target: str) -> dict[str, Any]:

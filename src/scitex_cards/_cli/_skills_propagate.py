@@ -36,7 +36,6 @@ import click
 
 from ._compat import spec_command_kwargs
 
-
 _DEFAULT_SKILL_FIELD = "metadata.labels.skills"
 
 

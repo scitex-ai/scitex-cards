@@ -17,11 +17,11 @@ this same object. A split that breaks its callers is a rename with extra steps.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 import os
 from pathlib import Path
 from typing import Any
+
+from ._store_url import describe_store_target
 
 
 def _verify_postgres_store(target: str) -> dict[str, Any]:
