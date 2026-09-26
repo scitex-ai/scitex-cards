@@ -56,18 +56,43 @@ def test_import_does_not_load_importlib_metadata():
     assert loaded == "False"
 
 
-def test_touching_version_does_load_importlib_metadata():
-    """Deferred, not deleted — asking for a version still reads metadata."""
+def test_touching_version_does_not_need_metadata_in_a_source_checkout():
+    """The tree answers first, so the expensive reader is never even asked for.
+
+    Was `test_touching_version_does_load_importlib_metadata`, asserting the
+    opposite, and CI caught the change: in a checkout the version now comes from
+    the tree's own `pyproject.toml`, so `importlib.metadata` is not imported at
+    all. The LAZINESS the file exists to protect is intact — stricter, if
+    anything — but the old assertion encoded an implementation detail (which
+    reader answers) rather than the property (nothing is read at import).
+    """
     # Arrange
     probe = (
         "import sys, scitex_cards;"
         "scitex_cards.__version__;"
         "print('importlib.metadata' in sys.modules)"
     )
-
     # Act
     loaded = _run_probe(probe)
+    # Assert
+    assert loaded == "False"
 
+
+def test_the_metadata_reader_is_still_reachable_without_a_tree():
+    """Deferred, not deleted — a site-packages copy has no pyproject to read.
+
+    This is the half that keeps the old guarantee honest: where there is no tree,
+    the metadata reader IS loaded, on demand, exactly as before.
+    """
+    # Arrange
+    probe = (
+        "import sys;"
+        "from scitex_cards import _resolve_version;"
+        "_resolve_version(tree_file='somewhere/else/site-packages/scitex_cards/__init__.py');"
+        "print('importlib.metadata' in sys.modules)"
+    )
+    # Act
+    loaded = _run_probe(probe)
     # Assert
     assert loaded == "True"
 
@@ -148,7 +173,11 @@ def test_resolver_prefers_scitex_cards_dist():
     claims = {"scitex-cards": "9.9.9"}
 
     # Act
-    resolved = scitex_cards._resolve_version(read_version=lambda dist: claims[dist])
+    # The metadata branch is the subject here, so the tree must not answer:
+    # with a tree present the resolver never even asks the dist.
+    resolved = scitex_cards._resolve_version(
+        read_version=lambda dist: claims[dist], tree_file='somewhere/else/site-packages/scitex_cards/__init__.py'
+    )
 
     # Assert
     assert resolved == "9.9.9"
@@ -180,7 +209,8 @@ def test_resolver_falls_back_to_local_when_uninstalled():
         raise md.PackageNotFoundError(dist)
 
     # Act
-    resolved = scitex_cards._resolve_version(read_version=_uninstalled)
+    # Both halves of "not installed": no dist AND no tree to read instead.
+    resolved = scitex_cards._resolve_version(read_version=_uninstalled, tree_file='somewhere/else/site-packages/scitex_cards/__init__.py')
 
     # Assert
     assert resolved == "0.0.0+local"

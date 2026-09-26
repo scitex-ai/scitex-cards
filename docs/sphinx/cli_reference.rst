@@ -16,6 +16,8 @@ CLI Reference
      - Render the dependency graph to PNG (or print mermaid source).
    * - ``list-tasks [--tasks PATH] [--json]``
      - List resolved tasks (id / status / title).
+   * - ``export --format markdown [--detail LEVEL] [--group-by FIELD] [-o FILE]``
+     - Export a deterministic Markdown task list (stdout by default).
    * - ``board [--port N] [--tasks PATH] [--no-browser]``
      - Launch the read-only web board (needs the ``[web]`` extra).
    * - ``list-python-apis [-v/-vv/-vvv] [--json]``

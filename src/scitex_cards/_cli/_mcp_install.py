@@ -73,7 +73,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
                 ),
                 (
                     "{prog} mcp install --apply --to to_home/.mcp.json "
-                    "--env-tasks-path /home/agent/.scitex/cards/cards.db -y",
+                    "--env-tasks-path postgresql://scitex-primary:55432/scitex -y",
                     "Fleet host-store pin (P3a).",
                 ),
             ),
@@ -114,12 +114,14 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
         default=None,
         help=(
             "Pin $SCITEX_STORE_DSN in the snippet's `env` block — the MCP\n"
-            "subprocess uses this database path as the store (the sole store\n"
-            "identity). Fleet use case: when this CLI is run by agent-container\n"
-            "to seed every container's ``to_home/.mcp.json``, the pinned\n"
-            "path makes the wire-up self-documenting and immune to $HOME\n"
-            "or symlink drift in any container. Omit to leave the entry\n"
-            "without an env block (back-compat default)."
+            "subprocess resolves this STORE TARGET as the store (the sole\n"
+            "store identity). It is a target, not a file path: the resolver\n"
+            "refuses anything that is not a store. Fleet use case: when this\n"
+            "CLI is run by agent-container to seed every container's\n"
+            "``to_home/.mcp.json``, the pinned target makes the wire-up\n"
+            "self-documenting and immune to $HOME or symlink drift in any\n"
+            "container. Omit to leave the entry without an env block\n"
+            "(back-compat default)."
         ),
     )
     @click.option(
@@ -243,7 +245,7 @@ def attach_install_verbs(mcp_group: click.Group) -> None:
                 (
                     "{prog} mcp install-fleet "
                     "--agents-dir ~/.dotfiles/src/.scitex/agent-container/agents "
-                    "--env-tasks-path /home/agent/.scitex/cards/cards.db -y",
+                    "--env-tasks-path postgresql://scitex-primary:55432/scitex -y",
                     "Sweep every agent's to_home/.mcp.json.",
                 ),
             ),

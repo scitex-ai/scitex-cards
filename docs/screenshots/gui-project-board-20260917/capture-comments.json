@@ -1,0 +1,46 @@
+[
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/desktop-1440x900-card-comments.png",
+  "count": 25,
+  "controls": [
+   {
+    "tag": "textarea",
+    "w": 1386,
+    "h": 114,
+    "right": 1413
+   },
+   {
+    "tag": "button",
+    "w": 94,
+    "h": 39,
+    "right": 1413
+   }
+  ],
+  "under44": 1,
+  "clipped": 0,
+  "docW": 1440,
+  "innerW": 1440
+ },
+ {
+  "shot": "/uvwork/tmp/gui-project-board/shots/mobile-390x844-card-comments.png",
+  "count": 25,
+  "controls": [
+   {
+    "tag": "textarea",
+    "w": 336,
+    "h": 114,
+    "right": 363
+   },
+   {
+    "tag": "button",
+    "w": 336,
+    "h": 44,
+    "right": 363
+   }
+  ],
+  "under44": 0,
+  "clipped": 0,
+  "docW": 390,
+  "innerW": 390
+ }
+]

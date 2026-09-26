@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Cards board opens first, fills in behind itself
+
+`/apps/cards/` blocked first paint on a full server-side board rebuild —
+measured 4.1 s TTFB cold on the hub mount (3.5 s `get_board` for ~8 k tasks
+inside the boot announce, with the ~24 MB `/graph` payload behind it) while
+showing a bare `loading…` line. The page shell now needs no store read: the
+one-shot turn-URL boot announce runs on a daemon thread, first paint carries
+server-rendered skeleton cards + spinner (`aria-busy` until data or a named
+empty/error state lands), and the board JSON is warmed cheaply via a
+mount-aware `<link rel="prefetch">` for `/graph` plus hover/focus warming of
+`/dm/threads` behind the Board|DM switcher.
+
+### MCP task listing is bounded and explicitly paginated
+
+The MCP `list_tasks` tool now returns the static
+`scitex.cards.list_tasks.page.v1` envelope instead of serializing the entire
+fleet store into one response. Pages default to 100 tasks, allow at most 200,
+and carry explicit totals, truncation state, and an opaque continuation
+cursor. Pydantic publishes and enforces the input constraints at dispatch;
+malformed, stale, or cross-filter cursors fail with an actionable restart
+message. Explicit filters retain the same matching semantics.
+
 ## [0.53.1] - 2026-09-15
 
 ### Release workflow provisions the same PostgreSQL the PR matrix does

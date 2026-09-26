@@ -35,21 +35,43 @@ from __future__ import annotations
 # The public surface is unchanged: `scitex_cards.__version__` still answers.
 # It just pays for the metadata reader when someone asks for a version, which
 # tab-completion never does.
-def _resolve_version(read_version=None) -> str:
-    """The installed version, read on demand. See the note above for why.
+def _resolve_version(read_version=None, tree_file=None) -> str:
+    """The version, resolved from the TREE when this is a source checkout.
 
-    ONE DIST NAME. This loop used to try the current name and then fall back to
-    a transition-window name for un-cutover editable installs. The retired name
-    is gone, which left the loop iterating the SAME string twice: a second
-    `version()` call that can only raise the same `PackageNotFoundError` the
-    first one did, and a fallback chain with nothing to fall back to.
+    WHY THE TREE COMES FIRST, measured 2026-09-17 on one host, one checkout,
+    five answers to "which release is this?":
 
-    `read_version` defaults to `importlib.metadata.version`. It is a parameter
-    so the UNINSTALLED branch is reachable without rewriting the stdlib module
-    (PA-306 §3) — that branch is exactly the one that cannot be reached in an
-    environment where this package IS installed, which is every environment the
-    suite runs in.
+        /uvwork/venv-agent (editable)      0.51.3
+        /opt/venv-sac      (a copy)        0.52.1
+        repo .venv         (editable)      0.53.0
+        /uvwork/venv-py311 (editable)      0.53.0
+        pyproject.toml     (the tree)      0.53.1
+
+    `importlib.metadata.version()` answers THE VERSION THE ENV WAS INSTALLED AT,
+    and for an editable install that number is frozen at install time while the
+    code underneath keeps moving. So `__version__` — and every surface that
+    prints it, including the board's leaf band and the DM page's title — reports
+    a release that is not the code being run. That is the same user-visible lie
+    as incident-version-string-lies-orphaned-distinfo-20260712 (an orphaned
+    dist-info froze scitex-todo at 0.7.26 while the code ran newer); the
+    mechanism here is a FROZEN editable metadata rather than an orphan, and the
+    fix is the same shape: ask the thing that cannot drift.
+
+    So: if a `pyproject.toml` with a `version` sits beside the package, that is
+    the answer — it is the tree we are actually importing from. Otherwise the
+    installed metadata is right (a site-packages copy's code and metadata ship
+    together, which is why /opt/venv-sac's 0.52.1 is honest), and the last resort
+    stays the local sentinel.
+
+    `read_version` and `tree_file` are both injectable — the first so the
+    metadata branch is reachable without rewriting the stdlib module, the second
+    so the NO-TREE branch (a site-packages install) is reachable without faking
+    a filesystem. Both were previously unreachable in a test, which is how a
+    resolver keeps a branch nobody has ever run.
     """
+    tree = _version_from_tree(package_file=tree_file)
+    if tree is not None:
+        return tree
     try:
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:  # pragma: no cover — only on ancient Pythons
@@ -59,6 +81,48 @@ def _resolve_version(read_version=None) -> str:
         return read("scitex-cards")
     except PackageNotFoundError:
         return "0.0.0+local"
+
+
+def _version_from_tree(package_file=None) -> str | None:
+    """The `version` declared by the pyproject beside this package, or None.
+
+    None means "not a source checkout", and the caller falls back to the
+    installed metadata — a wheel installed into site-packages has no pyproject
+    above it, and its metadata is not stale because it shipped with the code.
+
+    `re` and `pathlib` are imported HERE, not at module scope, for the same
+    measured reason the metadata reader is lazy (223 ms of a 425 ms cold import
+    was `importlib.metadata`): this module's cold path is a budget, and a version
+    lookup is the only caller that needs either of them.
+    """
+    import re
+    from pathlib import Path
+
+    package_file = package_file or __file__
+    if package_file is None:  # pragma: no cover — namespace-package shape
+        return None
+    # WALK UP, do not count directories: this repo uses a src-layout
+    # (`<repo>/src/scitex_cards/__init__.py`), so the pyproject is THREE levels
+    # above the module file, not two — and a flat-layout consumer of this
+    # function would be wrong the other way. Walking finds the declaration in
+    # either shape and finds nothing in site-packages, which is the answer the
+    # caller needs there.
+    package_dir = Path(package_file).resolve().parent
+    for candidate in (package_dir, *list(package_dir.parents)[:3]):
+        pyproject = candidate / "pyproject.toml"
+        if not pyproject.is_file():
+            continue
+        try:
+            text = pyproject.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        # A narrow literal match, not a TOML parse: `tomllib` would be a third
+        # import on a path that runs on first attribute access, and the
+        # declaration read here is a single top-level line.
+        found = re.search(r'(?m)^version\s*=\s*["\']([^"\']+)["\']', text)
+        if found:
+            return found.group(1)
+    return None
 
 
 #: Public API — Convention A (audit §6: every public Python API must match a

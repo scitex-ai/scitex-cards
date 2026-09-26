@@ -331,6 +331,20 @@ def export_doc(
         # payload-less row's own timestamp is what says whether it is an old
         # row or one a current writer just broke, and those need opposite
         # responses. The record itself still comes from the verbatim payload.
+        # `ORDER BY row_order` — LEFT AS IT WAS, and the reason is a measured
+        # surprise rather than inertia. `row_order` is NOT unique (on the fleet
+        # store two cards in one project both carry row_order = 0), so this is a
+        # tie the planner breaks arbitrarily; adding `, id` to make it
+        # deterministic LOOKS like the obvious fix and BREAKS a documented
+        # contract: `list-tasks --json` returns cards in document order, which is
+        # pinned by tests/scitex_cards/_cli/test__main.py::test_list_tasks_json_emits_parseable_array,
+        # and the id tie-break reorders tied rows alphabetically (measured in CI:
+        # ['build', 'design'] where the contract says ['design', 'build']).
+        # So the store has no ordered column to be deterministic with — document
+        # order here is de facto physical order. Changing that is a data-model
+        # question with its own migration, not a one-word read fix, and this
+        # change stays out of it. (A SCOPED read is free to be deterministic
+        # because it makes no document-order promise; see export_tasks_scoped.)
         for r in conn.execute(
             "SELECT id, card_json, last_activity FROM tasks ORDER BY row_order"
         ).fetchall():
@@ -513,6 +527,91 @@ def export_json(
     }
 
 
-__all__ = ["ExportRefused", "export_doc", "export_json", "missing_payload_refusal"]
+def export_tasks_scoped(
+    db_path: str | Path | None = None,
+    *,
+    project: str,
+    conn: StoreConnection | None = None,
+    on_unrebuildable: str = "raise",
+) -> list[dict]:
+    """The task records for ONE project — the scoped read, not the whole store.
+
+    WHY THIS EXISTS, measured on the shared store (7,859 tasks, 2026-09-17):
+
+        whole-table SELECT + per-row payload parse     10.5s  (the base of the
+                                                               ~20s document read)
+        SELECT ... WHERE project = <one> + parse        0.9s  (698 rows)
+
+    so a page that shows ONE project was paying ~12-22x the cost of the rows it
+    renders, before it filtered anything. Both page families already pay it:
+    board_v3's ``/graph`` (91.8s) and the project board's ``/projects`` (72.7s
+    cold). Slimming the PAYLOAD is a different job and already done; this is the
+    read SHAPE, which no payload change can fix.
+
+    READ-ONLY BY CONSTRUCTION. This function issues one SELECT and returns
+    records. It has no write path to disable, no document to hand back to a
+    read-modify-write, and no ``load_doc``-shaped full mapping — the failure
+    this module family has produced three times (2026-07-19: 2,138 cards -> 3,
+    from one read whose emptiness was written back as the whole store) cannot
+    be expressed through it. A scoped read must never become the read half of a
+    write cycle; if a caller wants to mutate, it takes the full-document path
+    and the guards that come with it.
+
+    ORDER AND FIELDS MATCH :func:`export_doc` exactly — ``row_order``, and each
+    record built by the same ``card_from_payload`` — so a consumer can switch
+    reads without a second dialect. ``users``/``inboxes``/``threads`` are NOT
+    returned: they are store-wide, not project-wide, and a page that needs them
+    is by definition not scoped (see the callers' own payload slimming).
+
+    ``project`` must be non-empty. An empty one would return the rows whose
+    project is NULL — 1,325 of them on the fleet store — which is the opposite
+    of a scope, so it raises instead.
+    """
+    if not project or not str(project).strip():
+        raise ValueError(
+            "export_tasks_scoped(project=...) needs a project; an empty value "
+            "would silently return the UNASSIGNED rows instead of a scope"
+        )
+    owned = conn is None
+    if owned:
+        conn = open_db(db_path)
+    try:
+        tasks: list[dict] = []
+        # `row_order, id` — DETERMINISTIC HERE, and only here. `row_order` is not
+        # unique in this store (two cards in one project both carry 0), so a bare
+        # `ORDER BY row_order` is a tie the planner breaks arbitrarily. The FULL
+        # read keeps that bare order because a test pins its contract (document
+        # order — see the note in export_doc); a SCOPED read makes no
+        # document-order promise, so it can and should be reproducible: a board
+        # that renders a project's cards in a different order per request is a
+        # defect nobody can reproduce. The asymmetry is deliberate and measured.
+        rows = conn.execute(
+            "SELECT id, card_json, last_activity FROM tasks "
+            "WHERE project = ? ORDER BY row_order, id",
+            (project,),
+        ).fetchall()
+        for r in rows:
+            if r["card_json"] is None:
+                _omit_or_raise(
+                    missing_payload_refusal(r["id"], r["last_activity"]),
+                    on_unrebuildable,
+                    "tasks",
+                    r["id"],
+                )
+                continue
+            tasks.append(card_from_payload(r["card_json"]))
+    finally:
+        if owned:
+            conn.close()
+    return tasks
+
+
+__all__ = [
+    "ExportRefused",
+    "export_doc",
+    "export_json",
+    "export_tasks_scoped",
+    "missing_payload_refusal",
+]
 
 # EOF

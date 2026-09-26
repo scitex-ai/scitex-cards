@@ -159,7 +159,7 @@ python_api_name`, no prefix), plus two skills-discovery tools:
 | `add_task`          | Append a new task. Returns the inserted dict as JSON. |
 | `update_task`       | Mutate fields of an existing task. Returns merged dict as JSON. |
 | `complete_task`     | `status=done` + stamp `_log_meta`. Idempotent. |
-| `list_tasks`        | Filter by scope/assignee/status. Returns list as JSON. |
+| `list_tasks`        | Filter by scope/assignee/status. Returns a bounded JSON page with `items` and explicit `page.next_cursor` / `page.truncated` metadata. |
 | `summarize_tasks`   | Counts by status/scope/assignee. Returns dict as JSON. |
 | `resolve_store`     | Resolved store path + precedence chain.      |
 | `cards_skills_list`  | List bundled scitex-cards agent skill files.  |

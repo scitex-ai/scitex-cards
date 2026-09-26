@@ -10,6 +10,7 @@ are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 import dataclasses
 import logging
 import os
+import threading
 from pathlib import Path
 
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
@@ -185,6 +186,26 @@ def favicon_view(request):
     return FileResponse(_FAVICON_PATH.open("rb"), content_type="image/svg+xml")
 
 
+def _cards_version() -> str:
+    """The installed scitex-cards version, or ``"?"`` when it cannot be read.
+
+    ONE READER FOR THREE PAGES. The board-v3 page, the DM page and the SPA
+    shell each carried their own `try: from scitex_cards import __version__`
+    block, which is how a version string starts disagreeing with itself: the
+    SPA renders its version from `standalone.html`, so the moment the shell
+    needs the number there are three copies of "the" answer and two of them
+    are stale-able. Read it in one place.
+
+    `"?"` rather than raising: a page whose version cannot be determined is
+    still a working board, and the templates already render the placeholder.
+    """
+    try:
+        from scitex_cards import __version__ as version
+    except Exception:  # noqa: BLE001
+        return "?"
+    return version
+
+
 def board_page(request):
     """Serve the React SPA inside the scitex-ui shell, or a static fallback."""
     from django.template.loader import render_to_string
@@ -194,12 +215,18 @@ def board_page(request):
     if built:
         try:
             api_base = request.path
+            context = _cards_shell_context(request, api_base)
+            # The SPA's leaf band prints this version (standalone.html ->
+            # #app-mount[data-app-version] -> src/LeafHeader.tsx). It is the
+            # same number board_v3 and the DM page print, from the same
+            # reader — a bundle that hard-coded it would go stale silently.
+            context["scitex_cards_version"] = _cards_version()
             html = render_to_string(
                 "scitex_cards/standalone.html",
                 # DISPLAY string only (operator TG 2026-07-13). ``app_name``
                 # stays ``scitex-cards`` — it keys the shell's static/asset
                 # namespace, not the product name the operator reads.
-                _cards_shell_context(request, api_base),
+                context,
                 request=request,
             )
             return HttpResponse(html)
@@ -210,7 +237,7 @@ def board_page(request):
     return HttpResponse(_static_graph_page(request))
 
 
-def board_v3_page(request):
+def board_v3_page(request, *, _announce=None):
     """Serve the live board-v3 layout — operator's visual deliverable.
 
     Parallel to ``board_page`` (per lead a2a `62094366` — isolable, screen-
@@ -222,17 +249,20 @@ def board_v3_page(request):
     Server-rendered + inline-everything so it works regardless of Vite
     build state. The future React-SPA equivalent can re-render the same
     shape at the same URL when the FE rewrite lands.
+
+    ``_announce`` is a test seam for the no-mock rule: it substitutes the
+    daemon-thread target used by :func:`_maybe_announce_missing_turn_urls`
+    (a callable taking the resolved store path). Tests pass a slow fake to
+    prove the shell never waits for the announce while substituting no
+    module globals. Production callers (Django URL resolution) never pass it.
     """
     from django.template.loader import render_to_string
 
-    # Operator UX (TG 407): show the actual scitex-cards package version
-    # in the page title AND the in-page header so the operator can verify
-    # at a glance which release the board is running. Read __version__
-    # straight off the package import — no second source of truth to drift.
-    try:
-        from scitex_cards import __version__ as _version
-    except Exception:  # noqa: BLE001
-        _version = "?"
+    # Operator UX (TG 407): the operator verifies at a glance which release the
+    # board is running. The number comes from _cards_version() — the ONE reader
+    # every Cards page shares (see it for why this stopped being an inline
+    # try/except; there were three copies of "the" version).
+    _version = _cards_version()
     # SSOT status colors (kill the 4-bucket color collapse). The board's
     # color layer is single-sourced from ``STATUS_STYLE`` via the same
     # projection the /graph payload uses (``handlers.graph._status_colors``),
@@ -248,7 +278,7 @@ def board_v3_page(request):
     # so the operator sees the gap before any nudge / comment-relay
     # silently returns ok=false. Behind a module-level flag so we only
     # WARN once per process even if board_v3_page is hit many times.
-    _maybe_announce_missing_turn_urls(request)
+    _maybe_announce_missing_turn_urls(request, _announce=_announce)
 
     # Mount-aware API base (P1, scitex-hub): the hub mounts this board under
     # a sub-path (e.g. /apps/cards/), where the template's former root-absolute
@@ -266,6 +296,12 @@ def board_v3_page(request):
             {
                 "scitex_cards_version": _version,
                 "api_base": api_base,
+                # Instant-open: the mount-aware /graph URL for the
+                # <link rel="prefetch"> hint. api_base keeps its trailing
+                # slash for the API_BASE const ("/" at a root mount); the
+                # hint needs it stripped ("//graph" would be read as a
+                # protocol-relative URL).
+                "graph_prefetch_url": api_base.rstrip("/") + "/graph",
                 "status_colors": status_colors,
             }
         )
@@ -294,10 +330,7 @@ def chat_page(request):
     """
     from django.template.loader import render_to_string
 
-    try:
-        from scitex_cards import __version__ as _version
-    except Exception:  # noqa: BLE001
-        _version = "?"
+    _version = _cards_version()
 
     # Mount-aware API base — same contract as board_v3_page (see there for the
     # full story). The chat page is served at "<include-root>chat" and, since
@@ -331,21 +364,65 @@ def chat_page(request):
 _TURN_URL_ANNOUNCED = False
 
 
-def _maybe_announce_missing_turn_urls(request) -> None:
+def _maybe_announce_missing_turn_urls(request, *, _announce=None) -> None:
     """Boot-time WARN listing agents without a configured turn URL.
 
     Fires once per process (the module-level guard). The agent set is
     read from the live store via :func:`get_board` so the warning
     reflects whatever store the request resolves to.
+
+    OFF THE RESPONSE PATH. :func:`get_board` costs seconds on the live
+    store (measured 3.5 s fresh for 8 k tasks), and awaiting it here put
+    the full rebuild on the critical path of first paint (measured
+    4.1 s TTFB cold on the hub mount). The shell — skeleton, chrome,
+    and the ``/graph`` fetch that actually paints the cards — needs no
+    store read at all, so the announce runs in a daemon thread while the
+    response goes out immediately. The warning still fires exactly once
+    per process; it just no longer gates the bytes.
+
+    ``_announce`` substitutes the daemon-thread target (a callable taking
+    the resolved store path); ``None`` (production) uses
+    :func:`_announce_missing_turn_urls_in_background`. Threaded through
+    from :func:`board_v3_page`'s own seam — see it for why the parameter
+    exists instead of substituting module globals in tests.
     """
     global _TURN_URL_ANNOUNCED
     if _TURN_URL_ANNOUNCED:
         return
     _TURN_URL_ANNOUNCED = True
     try:
+        store = _tasks_path_from_request(request)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[scitex-cards] turn-url boot announce: cannot resolve store (non-fatal)"
+        )
+        return
+    thread = threading.Thread(
+        target=(
+            _announce_missing_turn_urls_in_background
+            if _announce is None
+            else _announce
+        ),
+        args=(store,),
+        name="scitex-cards-turn-url-announce",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _announce_missing_turn_urls_in_background(store) -> None:
+    """The deferred half of :func:`_maybe_announce_missing_turn_urls`.
+
+    Runs on a daemon thread: the request that queued it is long gone, so
+    only the already-resolved store path crosses the boundary (the
+    ``request`` object itself is never touched off-thread). Any failure
+    stays a log line — an announce must never take the board down, and
+    there is no response left to fail.
+    """
+    try:
         from scitex_cards._push import announce_missing_at_boot
 
-        board = get_board(_tasks_path_from_request(request))
+        board = get_board(store)
         announce_missing_at_boot(list(board.tasks))
     except Exception:  # noqa: BLE001
         logger.exception("[scitex-cards] turn-url boot announce failed (non-fatal)")

@@ -27,6 +27,8 @@ import { parseSearchQuery } from "./searchQuery";
 import { SearchAutocomplete } from "./SearchAutocomplete";
 import { downloadText, toCsv, toJson, toMarkdown } from "./exportBoard";
 import type { GraphPayload, StatusColor } from "./types/board";
+import { LeafHeader } from "./LeafHeader";
+import { markTiming } from "./timing";
 
 /** Segmented toggle between the graph and the flat table view. */
 function ViewToggle() {
@@ -499,40 +501,107 @@ export function CardsBoard() {
   const { graph, loading, error, load } = useBoardStore();
   const view = useBoardStore((s) => s.view);
 
+  // `data` is marked ONLY when a payload actually landed. `load()` resolves on
+  // failure too (it records the error in the store), and marking the milestone
+  // unconditionally would report a data time for a page that never received
+  // data — a timing that lies is worse than no timing, because the next
+  // change would be judged against it.
+  const loadBoard = () =>
+    load().then(() => {
+      if (useBoardStore.getState().graph) markTiming("data");
+    });
+
   useEffect(() => {
-    void load();
+    void loadBoard();
   }, [load]);
 
+  // The board's first paint is what "interactive" means: effects run after
+  // commit, so this is the earliest honest moment — and it is marked once.
+  useEffect(() => {
+    if (graph) markTiming("interactive");
+  }, [graph]);
+
+  // EVERY STATE CARRIES THE BAND, failures included. "Which app is this, which
+  // version, which project" is exactly what a reader needs WHEN something is
+  // broken — hiding the identity on a failed load hides it at the moment it
+  // matters most, and the operator's report was an unidentified leaf.
+  const band = <LeafHeader graph={graph} />;
+
+  // THREE STATES, EACH NAMED. The page used to answer all of them with the
+  // same bare sentence — "Loading task graph…" / "No graph." — which reads as
+  // the page breaking rather than as a fact about the store. Each branch now
+  // says which it is, and the error branch carries the message AND a retry,
+  // because a failure the reader cannot act on is indistinguishable from a
+  // hang (the operator's "ambiguous loading...").
   if (loading && !graph) {
-    return <div className="stx-cards-status">Loading task graph…</div>;
-  }
-  if (error) {
     return (
-      <div className="stx-cards-status stx-cards-status--err">Error: {error}</div>
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--loading" role="status">
+          <span className="stx-cards-status__head">Loading the board…</span>
+          <span className="stx-cards-status__detail">
+            first load — fetching the task graph from this store
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (error && !graph) {
+    return (
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--err" role="alert">
+          <span className="stx-cards-status__head">
+            The board could not load.
+          </span>
+          <span className="stx-cards-status__detail">{error}</span>
+          <button
+            type="button"
+            className="stx-cards-status__retry"
+            onClick={() => void loadBoard()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
     );
   }
   if (!graph) {
-    return <div className="stx-cards-status">No graph.</div>;
+    return (
+      <div className="stx-cards-board">
+        {band}
+        <div className="stx-cards-status stx-cards-status--empty" role="status">
+          <span className="stx-cards-status__head">No board to show.</span>
+          <span className="stx-cards-status__detail">
+            the store answered with no graph payload at all — this is not an
+            empty board, it is a missing answer
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="stx-cards-board">
+      {/* The leaf band — product title, version, project picker, load timings.
+       * It sits ABOVE the board's own header on purpose: the band identifies
+       * the APP (the operator's "no Cards leaf title/version/project picker"),
+       * the header below identifies the VIEW and the current store. */}
+      <LeafHeader graph={graph} />
       <header className="stx-cards-board__header">
         {/* "Board" region hint — operator UX 2026-06-06: "canvas/drill/pool/
          * table/board とか UI 上にヒント的に書いておいて" — pairs with the
          * "Drill:" label on the breadcrumb, "Canvas" on the React Flow root,
-         * and the "Pool —" prefix in the UncategorizedPool. The original
-         * "SciTeX Card — dependency graph" still sits next to it as the
-         * full title; the new chip is just the at-a-glance region name. */}
+         * and the "Pool —" prefix in the UncategorizedPool. The descriptive
+         * sentence that used to stand beside it ("SciTeX Card — dependency
+         * graph") is gone: it named the view in the app's slot, and the leaf
+         * band above now says which app this is. */}
         <span
           className="stx-cards-board__region"
           aria-hidden="true"
           title="Board — the whole dependency graph page"
         >
           Board
-        </span>
-        <span className="stx-cards-board__title">
-          SciTeX Card — dependency graph
         </span>
         <span className="stx-cards-board__meta">
           <code>{graph.store_path}</code>
