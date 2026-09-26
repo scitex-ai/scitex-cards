@@ -237,7 +237,7 @@ def board_page(request):
     return HttpResponse(_static_graph_page(request))
 
 
-def board_v3_page(request):
+def board_v3_page(request, *, _announce=None):
     """Serve the live board-v3 layout — operator's visual deliverable.
 
     Parallel to ``board_page`` (per lead a2a `62094366` — isolable, screen-
@@ -249,6 +249,12 @@ def board_v3_page(request):
     Server-rendered + inline-everything so it works regardless of Vite
     build state. The future React-SPA equivalent can re-render the same
     shape at the same URL when the FE rewrite lands.
+
+    ``_announce`` is a test seam for the no-mock rule: it substitutes the
+    daemon-thread target used by :func:`_maybe_announce_missing_turn_urls`
+    (a callable taking the resolved store path). Tests pass a slow fake to
+    prove the shell never waits for the announce while substituting no
+    module globals. Production callers (Django URL resolution) never pass it.
     """
     from django.template.loader import render_to_string
 
@@ -272,7 +278,7 @@ def board_v3_page(request):
     # so the operator sees the gap before any nudge / comment-relay
     # silently returns ok=false. Behind a module-level flag so we only
     # WARN once per process even if board_v3_page is hit many times.
-    _maybe_announce_missing_turn_urls(request)
+    _maybe_announce_missing_turn_urls(request, _announce=_announce)
 
     # Mount-aware API base (P1, scitex-hub): the hub mounts this board under
     # a sub-path (e.g. /apps/cards/), where the template's former root-absolute
@@ -358,7 +364,7 @@ def chat_page(request):
 _TURN_URL_ANNOUNCED = False
 
 
-def _maybe_announce_missing_turn_urls(request) -> None:
+def _maybe_announce_missing_turn_urls(request, *, _announce=None) -> None:
     """Boot-time WARN listing agents without a configured turn URL.
 
     Fires once per process (the module-level guard). The agent set is
@@ -373,6 +379,12 @@ def _maybe_announce_missing_turn_urls(request) -> None:
     store read at all, so the announce runs in a daemon thread while the
     response goes out immediately. The warning still fires exactly once
     per process; it just no longer gates the bytes.
+
+    ``_announce`` substitutes the daemon-thread target (a callable taking
+    the resolved store path); ``None`` (production) uses
+    :func:`_announce_missing_turn_urls_in_background`. Threaded through
+    from :func:`board_v3_page`'s own seam — see it for why the parameter
+    exists instead of substituting module globals in tests.
     """
     global _TURN_URL_ANNOUNCED
     if _TURN_URL_ANNOUNCED:
@@ -386,7 +398,11 @@ def _maybe_announce_missing_turn_urls(request) -> None:
         )
         return
     thread = threading.Thread(
-        target=_announce_missing_turn_urls_in_background,
+        target=(
+            _announce_missing_turn_urls_in_background
+            if _announce is None
+            else _announce
+        ),
         args=(store,),
         name="scitex-cards-turn-url-announce",
         daemon=True,

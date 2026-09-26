@@ -79,33 +79,69 @@ def board_html(store):
 # --- the shell must not wait on the store ---------------------------------
 
 
-def test_board_shell_returns_while_a_rebuild_is_still_running(
-    store, monkeypatch
-):
-    """The boot announce's ``get_board`` takes seconds; the response must
-    not wait for it. A 5 s rebuild with a 3 s budget proves the response
-    path is decoupled, not merely fast."""
-    # Arrange — a rebuild slow enough to overlap any blocking read, and a
-    # fresh announce guard so this request is the one that fires it.
+@pytest.fixture
+def instant_open_probe(store):
+    """One ``board_v3_page`` call against a slow announce target.
+
+    The fake announce sleeps 5 s on the daemon thread — slower than the
+    3 s budget — so a fast response proves the shell never waited for
+    it. The fake arrives via the ``_announce`` seam (an injected
+    collaborator, so the test substitutes no module globals).
+    The once-per-process announce guard is reset around the probe so
+    this request is the one that fires it.
+    """
     started = threading.Event()
 
-    def slow_board(store_path=None, **kwargs):
+    def slow_announce(store_path=None, **kwargs):
         started.set()
         time.sleep(5)
-        return SimpleNamespace(tasks=[])
 
-    monkeypatch.setattr(views, "get_board", slow_board)
-    monkeypatch.setattr(views, "_TURN_URL_ANNOUNCED", False)
-    request = RequestFactory().get(f"/apps/cards/?store={store}")
+    saved = views._TURN_URL_ANNOUNCED
+    views._TURN_URL_ANNOUNCED = False
+    try:
+        request = RequestFactory().get(f"/apps/cards/?store={store}")
+        begin = time.monotonic()
+        response = views.board_v3_page(request, _announce=slow_announce)
+        elapsed = time.monotonic() - begin
+        yield SimpleNamespace(
+            response=response, elapsed=elapsed, announced=started
+        )
+    finally:
+        views._TURN_URL_ANNOUNCED = saved
+
+
+def test_board_shell_answers_while_announce_still_running(instant_open_probe):
+    """The boot announce's slow work must not gate the response status."""
+    # Arrange
+    probe = instant_open_probe
     # Act
-    begin = time.monotonic()
-    response = views.board_v3_page(request)
-    elapsed = time.monotonic() - begin
-    # Assert — the shell is out while the rebuild still sleeps …
-    assert response.status_code == 200
+    status = probe.response.status_code
+    # Assert
+    assert status == 200
+
+
+def test_board_shell_returns_inside_budget_while_announce_sleeps(
+    instant_open_probe,
+):
+    """A 5 s announce with a 3 s budget proves decoupling, not mere speed."""
+    # Arrange
+    probe = instant_open_probe
+    # Act
+    elapsed = probe.elapsed
+    # Assert
     assert elapsed < 3
-    # … and the deferred announce still ran, off the response path.
-    assert started.wait(timeout=15)
+
+
+def test_board_shell_still_fires_announce_off_response_path(
+    instant_open_probe,
+):
+    """The deferred announce still ran, off the response path."""
+    # Arrange
+    probe = instant_open_probe
+    # Act
+    fired = probe.announced.wait(timeout=15)
+    # Assert
+    assert fired
 
 
 # --- first paint carries feedback ------------------------------------------
