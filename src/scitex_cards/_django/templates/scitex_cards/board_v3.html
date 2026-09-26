@@ -53,6 +53,21 @@
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/11-sticky-wall.css' %}">{# 11-sticky-wall.css: Wall layout (notes + islands) + the shared .stx-flash status-transition glow #}
 <link rel="stylesheet" href="{% static 'scitex_cards/board_v3/14-matrix.css' %}">{# 14-matrix.css: Matrix layout — urgency×importance 5x5 plane + quadrant divide + unscored tray (ADR-0011 §8). (hook-bypass: line-limit) #}
 <link rel="stylesheet" href="{% static 'scitex_cards/page-switcher.css' %}">{# page-switcher.css: the shared Board|Chat switcher — NOT board-only, chat.html links the same file. Loaded after the board CSS so it reads the board palette off :root. #}
+{% comment %}
+  18-skeleton.css: the open-first shell — skeleton cards + spinner the server
+  paints BEFORE /graph resolves, so first paint carries feedback even when
+  the store rebuild takes seconds. render()/boardStates painters replace it
+  wholesale the moment data (or a named state) lands and flip aria-busy off.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'scitex_cards/board_v3/18-skeleton.css' %}">
+{% comment %}
+  Prefetch the board JSON this page is about to request anyway. Mount-aware
+  via graph_prefetch_url (the view strips api_base exactly like the API_BASE
+  const does: "" + "/graph" at a root mount, "/apps/cards/graph" on the
+  hub). Low-priority and cache-deduped against loadGraph()'s own call, so
+  revisits and Back/forward navigations start warm.
+{% endcomment %}
+<link rel="prefetch" href="{{ graph_prefetch_url }}" as="fetch" crossorigin="anonymous">
 {# combobox.css (loaded below the page-CSS so its specificity sits ON TOP if needed) #}
 <link rel="stylesheet" href="{% static 'scitex_ui/css/app/combobox.css' %}">
 <script defer src="{% static 'scitex_ui/js/app/combobox.js' %}"></script>
@@ -449,8 +464,27 @@
       <button type="button" id="filter-empty-banner-clear"
               style="margin-left:10px; cursor:pointer;">Clear all filters</button>
     </div>
-    <div class="columns" id="columns">
-      <div class="loading">loading…</div>
+    <div class="columns" id="columns" aria-busy="true">
+      {% comment %}
+        Open-first skeleton: the server paints placeholder cards + a spinner
+        BEFORE /graph resolves, so first paint carries feedback even when the
+        store rebuild takes seconds. loadGraph()'s render() and the
+        boardStates painters replace this wholesale and flip aria-busy to
+        false the moment data — or a named empty/error state — lands. Pure
+        markup + 18-skeleton.css: no JS needed to show it.
+      {% endcomment %}
+      <div class="board-skeleton" role="status" aria-label="Loading board">
+        <div class="board-skeleton__spinner" aria-hidden="true"></div>
+        <p class="board-skeleton__msg">Loading board…</p>
+        <div class="board-skeleton__grid" aria-hidden="true">
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+          <div class="sk-card"><div class="sk-line sk-line--title"></div><div class="sk-line"></div><div class="sk-line sk-line--short"></div><div class="sk-chips"><span></span><span></span></div></div>
+        </div>
+      </div>
     </div>
     </div>{# end .board-area #}
 
@@ -935,6 +969,12 @@
         const _sdBox = document.getElementById("f-showdone");
         if (_sdBox) _sdBox.checked = !!STATE.filters.showDone;
         render();
+        // Instant-open: retire the server-painted skeleton (aria-busy on
+        // #columns) the moment real cards paint. The named empty /
+        // signed-out / error states clear it in boardStates.js, which owns
+        // those painters — this site covers only the happy path.
+        // (hook-bypass: line-limit.)
+        document.getElementById("columns")?.setAttribute("aria-busy", "false");
         // Record what we just painted so the next auto-refresh tick can
         // detect "no change" and skip the redraw entirely. Restore the
         // scroll offsets captured before render() so a real change
@@ -3563,6 +3603,35 @@
       });
     }
     attachSearchKeyboardLauncher();
+
+    // Instant-open: hover/focus-warm the JSON behind the Board|DM switcher.
+    // The board's own /graph is already in flight; the DM side is what a
+    // Board→Chat hop would otherwise wait on, so warm exactly that — once,
+    // on first hover or keyboard focus, via a low-priority hint the browser
+    // may drop under pressure. Best effort by design: a missing link or a
+    // refused insert changes nothing about the navigation itself.
+    // (hook-bypass: line-limit.)
+    (function _warmSwitcherJson() {
+      let warmed = false;
+      function warm(url) {
+        if (warmed || !url) return;
+        warmed = true;
+        try {
+          const hint = document.createElement("link");
+          hint.rel = "prefetch";
+          hint.href = url;
+          document.head.appendChild(hint);
+        } catch { /* best effort — the click still works */ }
+      }
+      document.querySelectorAll(".stx-cards-switcher__item").forEach((a) => {
+        if (a.getAttribute("aria-current") === "page") return;
+        const href = a.getAttribute("href") || "";
+        const url = /dm\/?$/.test(href) ? API_BASE + "/dm/threads" : null;
+        if (!url) return;
+        a.addEventListener("mouseenter", () => warm(url), { once: true });
+        a.addEventListener("focus", () => warm(url), { once: true });
+      });
+    })();
 
     _syncDetailsPane();
     _syncDetailsSections();

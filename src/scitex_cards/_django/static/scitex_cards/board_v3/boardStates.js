@@ -52,19 +52,27 @@
   function renderLoadState(status, payload) {
     const cols = document.getElementById("columns");
     if (!cols) return false;
+    // Instant-open: whichever named state paints here replaces the
+    // server-rendered skeleton, so its aria-busy retires with it.
+    function painted(html) {
+      cols.setAttribute("aria-busy", "false");
+      cols.innerHTML = html;
+    }
     if (status === 401 && payload && payload.error === "signed-out" && payload.login_url) {
-      cols.innerHTML =
+      painted(
         `<div class="loading board-state board-state--signed-out">` +
         `<p>Signed out — the board needs a session.</p>` +
-        `<p><a href="${escapeHtml(payload.login_url)}">Sign in to continue</a></p></div>`;
+        `<p><a href="${escapeHtml(payload.login_url)}">Sign in to continue</a></p></div>`
+      );
       return true;
     }
     const err = payload && payload.error ? String(payload.error) : "";
     if (status === 404 && payload && payload.hint && /^no active project/i.test(err)) {
-      cols.innerHTML =
+      painted(
         `<div class="loading board-state board-state--no-project">` +
         `<p>No active project — the board shows your project&#39;s cards.</p>` +
-        `<p><a href="${escapeHtml(payload.hint)}">Create or open a project</a></p></div>`;
+        `<p><a href="${escapeHtml(payload.hint)}">Create or open a project</a></p></div>`
+      );
       return true;
     }
     return false;
@@ -87,6 +95,8 @@
     if (nodes.length) return false;
     const cols = document.getElementById("columns");
     if (!cols) return false;
+    // Instant-open: the empty panel replaces the skeleton (see above).
+    cols.setAttribute("aria-busy", "false");
     if (graph && graph.empty_store) {
       cols.innerHTML =
         `<div class="loading board-state board-state--empty-store">` +
@@ -132,6 +142,8 @@
   function renderLoadError(err) {
     const cols = document.getElementById("columns");
     if (!cols) return false;
+    // Instant-open: the error panel replaces the skeleton (see above).
+    cols.setAttribute("aria-busy", "false");
     const full = String((err && err.message) || err || "unknown error");
     cols.innerHTML =
       `<div class="loading board-state board-state--error">` +

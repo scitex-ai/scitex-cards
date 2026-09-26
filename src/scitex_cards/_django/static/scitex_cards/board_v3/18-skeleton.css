@@ -1,0 +1,110 @@
+/* board_v3 — open-first skeleton (instant-open shell).
+ *
+ * The server paints placeholder cards + a spinner BEFORE /graph resolves, so
+ * first paint carries feedback even when the store rebuild takes seconds.
+ * loadGraph()'s render() and the boardStates painters replace the skeleton
+ * wholesale the moment data — or a named empty/error state — lands, and flip
+ * aria-busy on #columns to false at the same time.
+ *
+ * Every colour sources from the board_v3 :root palette (01-filterbar.css) —
+ * the token contract this directory already keeps — so the skeleton follows
+ * whatever theme work lands later rather than pinning a second palette.
+ */
+
+.board-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 16px;
+}
+
+/* Spinner: the board's accent ring, no extra asset. */
+.board-skeleton__spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent, #7c5cbf);
+  animation: board-skeleton-spin 0.9s linear infinite;
+}
+
+@keyframes board-skeleton-spin {
+  to { transform: rotate(360deg); }
+}
+
+.board-skeleton__msg {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Placeholder cards echo the real card geometry (02-card.css) closely
+   enough that the swap to real cards does not reflow the page shape. */
+.board-skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 1100px;
+}
+
+.sk-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sk-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--card-bg) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  animation: board-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.sk-line--title {
+  height: 15px;
+  width: 75%;
+}
+
+.sk-line--short {
+  width: 45%;
+}
+
+.sk-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.sk-chips span {
+  width: 52px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--border);
+  animation: board-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes board-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Motion-sensitive viewers get static placeholders, not animation. */
+@media (prefers-reduced-motion: reduce) {
+  .board-skeleton__spinner,
+  .sk-line,
+  .sk-chips span {
+    animation: none;
+  }
+}

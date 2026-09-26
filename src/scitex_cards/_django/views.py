@@ -10,6 +10,7 @@ are absent). ``api_dispatch`` routes ``/<endpoint>`` to the ``HANDLERS`` dict.
 import dataclasses
 import logging
 import os
+import threading
 from pathlib import Path
 
 from django.http import FileResponse, HttpResponse, HttpResponseNotFound, JsonResponse
@@ -289,6 +290,12 @@ def board_v3_page(request):
             {
                 "scitex_cards_version": _version,
                 "api_base": api_base,
+                # Instant-open: the mount-aware /graph URL for the
+                # <link rel="prefetch"> hint. api_base keeps its trailing
+                # slash for the API_BASE const ("/" at a root mount); the
+                # hint needs it stripped ("//graph" would be read as a
+                # protocol-relative URL).
+                "graph_prefetch_url": api_base.rstrip("/") + "/graph",
                 "status_colors": status_colors,
             }
         )
@@ -357,15 +364,49 @@ def _maybe_announce_missing_turn_urls(request) -> None:
     Fires once per process (the module-level guard). The agent set is
     read from the live store via :func:`get_board` so the warning
     reflects whatever store the request resolves to.
+
+    OFF THE RESPONSE PATH. :func:`get_board` costs seconds on the live
+    store (measured 3.5 s fresh for 8 k tasks), and awaiting it here put
+    the full rebuild on the critical path of first paint (measured
+    4.1 s TTFB cold on the hub mount). The shell — skeleton, chrome,
+    and the ``/graph`` fetch that actually paints the cards — needs no
+    store read at all, so the announce runs in a daemon thread while the
+    response goes out immediately. The warning still fires exactly once
+    per process; it just no longer gates the bytes.
     """
     global _TURN_URL_ANNOUNCED
     if _TURN_URL_ANNOUNCED:
         return
     _TURN_URL_ANNOUNCED = True
     try:
+        store = _tasks_path_from_request(request)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[scitex-cards] turn-url boot announce: cannot resolve store (non-fatal)"
+        )
+        return
+    thread = threading.Thread(
+        target=_announce_missing_turn_urls_in_background,
+        args=(store,),
+        name="scitex-cards-turn-url-announce",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _announce_missing_turn_urls_in_background(store) -> None:
+    """The deferred half of :func:`_maybe_announce_missing_turn_urls`.
+
+    Runs on a daemon thread: the request that queued it is long gone, so
+    only the already-resolved store path crosses the boundary (the
+    ``request`` object itself is never touched off-thread). Any failure
+    stays a log line — an announce must never take the board down, and
+    there is no response left to fail.
+    """
+    try:
         from scitex_cards._push import announce_missing_at_boot
 
-        board = get_board(_tasks_path_from_request(request))
+        board = get_board(store)
         announce_missing_at_boot(list(board.tasks))
     except Exception:  # noqa: BLE001
         logger.exception("[scitex-cards] turn-url boot announce failed (non-fatal)")
