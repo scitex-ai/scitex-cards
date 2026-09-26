@@ -346,6 +346,14 @@ Documentation = "https://scitex-cards.readthedocs.io"
 # scitex_dev.* groups are ITERATED by scitex-dev (not looked up by key), so
 # each registers the NEW key only — a legacy twin key would list the package
 # twice (and `scitex_dev.jobs` would double-schedule every job).
+[project.entry-points."scitex.apps"]
+# Generic hub mount (thin-hub rule): ``pip install`` is the whole install.
+# The host mounts ``scitex_cards._django.urls`` at the manifest route
+# (apps/cards/ via manifest "url") and lists the tile from the manifest.
+# Tenancy/audience/write policy travels IN the manifest ("mount_policy")
+# so the host enforces it without app-specific code.
+cards = "scitex_cards._django.apps:ScitexCardsConfig"
+
 [project.entry-points."scitex_dev.docs"]
 scitex-cards = "scitex_cards"
 
