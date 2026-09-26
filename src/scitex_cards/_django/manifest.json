@@ -37,6 +37,7 @@
   },
   "url": "apps/cards/",
   "mount_policy": {
+    "login_required": true,
     "audience": "staff",
     "tenant_store": ".scitex/todo/tasks.yaml",
     "tenant_attribute": "scitex_store",
