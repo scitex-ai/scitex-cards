@@ -37,6 +37,22 @@ heading AND pins that the switcher still says DM, so the two pages cannot become
 indistinguishable. page-header.css styles it
 through `.stx-cards-header h1` so the typography is shared without the markup
 having to say so.
+
+THE PROJECT SLOT IS LAST AND IS THE SDK'S. It holds the canonical
+`scitex_project_picker`, pulled in through `_project_picker.html` — NEVER by
+`{% templatetag openblock %} load {% templatetag closeblock %}`ing the tag library
+here. This partial is rendered by BOTH top-level pages, so a top-level load would
+make an absent SDK library a hard TemplateSyntaxError on the operator's own
+fleet board and on DM, not just on the project-scoped page. Read
+`_project_picker.html` before moving the load.
+
+The `{% templatetag openblock %} if {% templatetag closeblock %}` is
+`cards_project_picker_available`, which the view sets to "the library resolves
+AND a host registered a provider". When it is false the band renders exactly as
+it did before the slot existed, so a standalone install and a Hub mount that
+registers no provider are byte-identical to the pre-slot header. The SDK's tag
+independently renders nothing for a viewer who is not signed in or an app that is
+not project-scoped, so nothing here can invent a selector the SDK would withhold.
 {% endcomment %}
 <div class="stx-cards-header{% if api_base != '/' %} stx-cards-header--mounted{% endif %}">
   {% include "scitex_cards/_page_switcher.html" with active=active %}
@@ -45,4 +61,9 @@ having to say so.
   <span class="stx-cards-header__scope" data-user-scope="{{ cards_user }}">
     {{ cards_user }}
   </span>
+  {% if cards_project_picker_available %}
+  <div class="stx-cards-header__project" data-stx-project-slot>
+    {% include "scitex_cards/_project_picker.html" with current=cards_current_project_id %}
+  </div>
+  {% endif %}
 </div>

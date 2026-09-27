@@ -1,5 +1,5 @@
 {% extends "scitex_app/app_shell.html" %}
-{% load static scitex_project_picker scitex_paths %}
+{% load static scitex_paths %}
 {% comment %}
   project_board.html — the PROJECT-SCOPED board (Hub PR #923, section 5 "Cards":
   "current project, canonical picker, authorized cards only").
@@ -9,8 +9,8 @@
   locate controls by stable attributes "not translated labels", so the labels
   below are free to move and translate without breaking a recording.
 
-  THE PICKER IS THE SDK's. When the host registers a project provider,
-  {% templatetag openblock %} scitex_project_picker {% templatetag closeblock %} renders the canonical selector and this page adds no second one. Only a
+  THE PICKER IS THE SDK's. When the host registers a project provider, the
+  {% templatetag openblock %} include {% templatetag closeblock %} below renders the canonical selector and this page adds no second one. Only a
   STANDALONE mount (no host provider) falls back to the plain form below, which
   offers exactly the projects the viewer's own authorized cards name — the same
   set the provider would answer with, so the two can never disagree.
@@ -44,7 +44,7 @@
     </span>
     <div class="stx-cards-project__picker" data-stx-picker>
       {% if host_picker_available %}
-        {% scitex_project_picker scope="project" current=board.project %}
+        {% include "scitex_cards/_project_picker.html" with current=board.project %}
       {% elif board.projects %}
         <form method="get" action="{{ api_base|stx_path:"/projects" }}" data-stx-picker-form>
           <label class="stx-cards-project__current" for="stx-project-select">Project</label>

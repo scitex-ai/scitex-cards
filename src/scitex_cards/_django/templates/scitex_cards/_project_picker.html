@@ -1,0 +1,31 @@
+{% load scitex_project_picker %}{% comment %}
+  _project_picker.html — the canonical SDK project picker, wrapped so that NO
+  page `{% load %}`s the tag library directly.
+
+  WHY THE LOAD LIVES HERE AND NOWHERE ELSE. `{% templatetag openblock %} load
+  scitex_project_picker {% templatetag closeblock %}` against a library that is
+  not installed is a hard TemplateSyntaxError raised while the template
+  COMPILES — before any view runs, before any context flag is read, before any
+  runtime guard gets a say. A page-level guard therefore cannot save a page that
+  loads this library at its own top level; the page 500s first, and the guard is
+  inert. Putting the load in a partial that is reached ONLY through an
+  `{% templatetag openblock %} include {% templatetag closeblock %}` inside an
+  `{% templatetag openblock %} if {% templatetag closeblock %}` makes the
+  degradation real, because a partial that is never included is never compiled.
+
+  THIS IS THE FLEET'S SHAPE, NOT A LOCAL INVENTION. scitex-writer carries the
+  same partial for the same measured reason (its
+  `views._project_picker_available`, whose docstring names the hard
+  TemplateSyntaxError verbatim), and scitex-ui ships `scitex_project_picker`
+  from 0.22.0 onwards.
+
+  The caller passes the project to mark as current, and gates the include on the
+  availability flag that suits its context — `host_picker_available` on the
+  project board, `cards_project_picker_available` in the shared header:
+
+      {% templatetag openblock %} include "scitex_cards/_project_picker.html" with current=board.project {% templatetag closeblock %}
+
+  The SDK's own tag renders NOTHING unless the app is project-scoped, the viewer
+  is signed in AND a host provider is registered, so including this partial adds
+  no second selector and no standalone behaviour of its own.
+{% endcomment %}{% scitex_project_picker scope="project" current=current %}
