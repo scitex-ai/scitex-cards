@@ -181,14 +181,16 @@ def test_real_mcp_schema_exposes_pydantic_limit_contract():
 
 def test_real_mcp_dispatch_rejects_invalid_limit_before_store_access():
     # Arrange
-    from fastmcp.exceptions import ValidationError
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
 
     from scitex_cards._mcp_server import mcp
 
     async def call_invalid_limit():
-        await mcp.call_tool("list_tasks", {"limit": 0})
+        async with Client(mcp) as client:
+            await client.call_tool("list_tasks", {"limit": 0})
 
     # Act
     # Assert
-    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+    with pytest.raises(ToolError, match="greater than or equal to 1"):
         asyncio.run(call_invalid_limit())
