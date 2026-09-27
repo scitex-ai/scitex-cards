@@ -3,7 +3,7 @@
   "slug": "scitex-cards",
   "label": "Cards",
   "pip_package": "scitex-cards",
-  "icon": "fas fa-diagram-project",
+  "icon": "fas fa-list-check",
   "subtitle": "Dependency-graph view of the scitex-cards task store",
   "about": "Browse and work the scitex-cards task board. View the dependency graph, comment on cards, send DMs and reactions, and attach files.",
   "description": "scitex-cards board is a browser view of the canonical task store. It renders the task dependency DAG with React Flow: nodes colored by status (goal, pending, in_progress, blocked, done, deferred, failed), depends_on arrows, and blocks inhibition edges. It also writes: card comments, DM send and reactions, and file uploads.",
