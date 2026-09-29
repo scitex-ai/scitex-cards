@@ -218,8 +218,11 @@ def deliver(
     # caller keeps control of the stream, level and capture.
     if os.environ.get(ENV_DRY_RUN) == "1":
         logger.info(
-            f"\n=== scitex-cards PUSH dry-run → {agent} ({kind}) ===\n"
-            f"{body}\n=== end {agent} ===\n"
+            "\n=== scitex-cards PUSH dry-run → %s (%s) ===\n%s\n=== end %s ===\n",
+            agent,
+            kind,
+            body,
+            agent,
         )
         return {
             "ok": True,

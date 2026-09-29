@@ -54,6 +54,71 @@ The package does not depend on an agent runtime such as SAC. It does depend on
 scitex-dev for the shared-state resolution primitive; an out-of-band push
 accelerator remains optional.
 
+## Quick Start
+
+```python
+import scitex_cards as cards
+
+# Task CRUD + roles (the same functions the MCP tools wrap)
+cards.add_task(None, id="c1", title="Wire the notify rail", status="in_progress")
+cards.comment_task(None, "c1", "resolver done; dispatch next", by="alice")
+cards.set_subscriber(None, task_id="c1", who="bob", action="add")
+rows = cards.list_tasks(None, status="in_progress")
+```
+
+From the shell:
+
+```bash
+# store: $SCITEX_STORE_DSN (PostgreSQL on 55432); unset raises
+scitex-cards render-graph -o tasks.png     # dependency PNG
+scitex-cards render-graph --print-mermaid  # inspect the mermaid without rendering
+scitex-cards list-tasks --json             # resolved tasks, machine-readable
+scitex-cards export --format markdown      # stable status-grouped task list
+
+# communication surfaces
+scitex-cards mcp start                     # MCP CRUD server (stdio)
+scitex-cards mcp channel --agent scitex-cards   # push inbox → Claude
+scitex-cards notifyd --interval 120        # reminders + delivery daemon
+scitex-cards board start --port 8051       # kanban / timeline GUI
+```
+
+## Installation
+
+```bash
+uv pip install "scitex-cards[all]"
+```
+
+> uv's Rust resolver handles the SciTeX dep set quickly. Plain `pip install scitex-cards` also works.
+>
+> ```bash
+> # Plain pip alternative
+> pip install scitex-cards
+> ```
+
+<details>
+<summary>Per-surface extras</summary>
+
+`[mcp]` for the MCP + channel servers, `[web]` for the Django board. Rendering a PNG
+additionally needs either `mmdc` (mermaid-cli, with a puppeteer/playwright chromium) on `PATH`,
+or outbound access to `kroki.io` (the automatic fallback).
+
+</details>
+
+### Configuration
+
+Copy [`.env.example`](.env.example) to `.env` (gitignored) at your project root, then edit. CLI
+flags always override env vars; the full list of variables (with inline comments) lives in
+`.env.example`. Notable ones for the fleet slice:
+
+```bash
+export SCITEX_STORE_DSN=postgresql://…:55432/scitex  # shared PostgreSQL state
+export SCITEX_CARDS_AGENT_ID='agent:<name>'    # this agent's identity (channel + author + last_seen)
+export SCITEX_CARDS_SCOPE='agent:<name>'       # default list/summary filter
+```
+
+`SCITEX_CARDS_NOTIFY_DSN` is separate by design: it may point at the PostgreSQL
+LISTEN/NOTIFY transport on port 55433, but it never selects the state store.
+
 ## Architecture
 
 The shared PostgreSQL store sits at the center. Every component resolves it
@@ -91,6 +156,8 @@ primitive from `$SCITEX_STORE_DSN`.** One axis, not a search order:
 | 1 | explicit `store` / `--store` | wins even if missing |
 | 2 | `$SCITEX_STORE_DSN` | e.g. `postgresql://scitex_cards@127.0.0.1:55432/scitex_cards` |
 | 2 | scitex-dev host default | central PostgreSQL on port 55432 |
+
+<sub><b>Table 1.</b> Store resolution precedence — an explicit target wins, otherwise the shared PostgreSQL on 55432.</sub>
 
 **There is no second backend or private-file fallback.** Cards does not read a
 Cards-specific DB variable or a project-local store target. A malformed
@@ -161,6 +228,8 @@ A card carries four **roles** (ADR-0009). Each role feeds the notify resolver:
 | `assignee` | `assignee` | the legacy owner field, also targetable on its own |
 | `collaborators` | `collaborators[]` | working with the owner; subscribed to the thread by default |
 | `subscribers` | `subscribers[]` | watching the card; get thread + lifecycle notices |
+
+<sub><b>Table 2.</b> The four card roles and the fields that carry them.</sub>
 
 Roles are mutated through first-class verbs — `set_collaborator`, `set_subscriber`,
 `reassign_task` — on the MCP surface, the CLI, and the board.
@@ -310,69 +379,11 @@ NOT alive escalates straight to the card's creator (the assignee will never act)
 | `scitex-cards notifyd` | always-on delivery + reminder daemon | Ticks the reminder sweep + delivery pass every `--interval` seconds under a single-instance lock; `--once` runs a single pass; `notifyd install-unit` writes an operator-gated systemd user unit. |
 | `scitex-cards board [start] --port 8051` | board GUI (Django) | Serves the `board_v3` app (kanban columns, timeline, multi-select toolbar, resolve→notify). Lifecycle verbs `start` / `stop` / `restart` / `status` via a pidfile at `~/.scitex/cards/board.pid`. Embedded in the scitex-ui shell. |
 
+<sub><b>Table 3.</b> The long-running roles of the one CLI — MCP server, channel server, notifyd, and board.</sub>
+
 The `mcp start` and `mcp channel` servers are launched by each agent's Claude Code `.mcp.json`
 (`scitex-cards mcp install` / `install-fleet` writes the entries). `notifyd` runs as a systemd
 user service; `board` is started by the operator or the UI shell.
-
-## Quick Start
-
-```python
-import scitex_cards as cards
-
-# Task CRUD + roles (the same functions the MCP tools wrap)
-cards.add_task(None, id="c1", title="Wire the notify rail", status="in_progress")
-cards.comment_task(None, "c1", "resolver done; dispatch next", by="alice")
-cards.set_subscriber(None, task_id="c1", who="bob", action="add")
-rows = cards.list_tasks(None, status="in_progress")
-```
-
-From the shell:
-
-```bash
-# store: $SCITEX_STORE_DSN (PostgreSQL on 55432); unset raises
-scitex-cards render-graph -o tasks.png     # dependency PNG
-scitex-cards render-graph --print-mermaid  # inspect the mermaid without rendering
-scitex-cards list-tasks --json             # resolved tasks, machine-readable
-scitex-cards export --format markdown      # stable status-grouped task list
-
-# communication surfaces
-scitex-cards mcp start                     # MCP CRUD server (stdio)
-scitex-cards mcp channel --agent scitex-cards   # push inbox → Claude
-scitex-cards notifyd --interval 120        # reminders + delivery daemon
-scitex-cards board start --port 8051       # kanban / timeline GUI
-```
-
-## Installation
-
-> **Recommended**: `uv pip install scitex-cards[all]` — uv's Rust resolver
-> handles the SciTeX dep set quickly. Plain `pip install` still works.
-
-```bash
-# Recommended — uv resolver
-uv pip install scitex-cards[all]
-
-# Plain pip also works
-pip install scitex-cards
-```
-
-Extras: `[mcp]` for the MCP + channel servers, `[web]` for the Django board. Rendering a PNG
-additionally needs either `mmdc` (mermaid-cli, with a puppeteer/playwright chromium) on `PATH`,
-or outbound access to `kroki.io` (the automatic fallback).
-
-### Configuration
-
-Copy [`.env.example`](.env.example) to `.env` (gitignored) at your project root, then edit. CLI
-flags always override env vars; the full list of variables (with inline comments) lives in
-`.env.example`. Notable ones for the fleet slice:
-
-```bash
-export SCITEX_STORE_DSN=postgresql://…:55432/scitex  # shared PostgreSQL state
-export SCITEX_CARDS_AGENT_ID='agent:<name>'    # this agent's identity (channel + author + last_seen)
-export SCITEX_CARDS_SCOPE='agent:<name>'       # default list/summary filter
-```
-
-`SCITEX_CARDS_NOTIFY_DSN` is separate by design: it may point at the PostgreSQL
-LISTEN/NOTIFY transport on port 55433, but it never selects the state store.
 
 ## 5 Interfaces (Python · CLI · MCP · Skills · Web)
 
@@ -496,6 +507,8 @@ managed by the registry + inbox layers). Each task:
 | `job_id` / `host` / `command` / `started_at` / `finished_at` | no | compute-job metadata; only with `kind: compute` |
 | `deadline` / `deadlines` / `scheduled` | no | ISO-8601 deadline schema with optional `+1d`/`+1w`/`+1m`/`+1y` repeater. **A view, never a notifier** — see below |
 
+<sub><b>Table 4.</b> Task document fields — identity, roles, graph edges, and views.</sub>
+
 ### A deadline is a VIEW, never a notifier
 
 **A deadline never sends a notification.** Nothing fires when one arrives — no
@@ -531,6 +544,8 @@ untouched `deferred` cards.
 | `pending`     | grey `#eceff1`          | solid |
 | `deferred`    | amber `#ffca28`         | dashed border |
 | `failed`      | red `#ffcdd2`   | solid         |
+
+<sub><b>Table 5.</b> Board status colours — fill and edge per status.</sub>
 
 ## Part of SciTeX
 

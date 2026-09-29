@@ -5,8 +5,10 @@ refutation; implementation on the 0.17 line)
 **Owner:** scitex-cards
 **Card:** `scitex-cards-slurm-model-queued-replaces-deferred-20260717`
 
-## Context — the operator's five statements (2026-07-17, translated; the
-## Japanese originals live on the board card, which is the internal record)
+## Context
+
+The operator's five statements (2026-07-17, translated; the Japanese
+originals live on the board card, which is the internal record):
 
 1. "`deferred` is wrong — it should be *queued* with a priority, like
    SLURM. I don't understand what 'stopping' even means here; the
