@@ -253,6 +253,28 @@ def sdk_library():
             sys.modules["scitex_ui.project_scope"] = previous_module
 
 
+@pytest.fixture
+def no_sdk_library():
+    """Evict the REAL tag library for one test, restoring it afterwards.
+
+    The absence-premise tests pin behaviour "without the library", but the
+    suite also runs where scitex-ui SHIPS it (0.22.0+, including the fleet
+    CI) — there the premise is false unless a test establishes it, and the
+    un-evicted render takes the include path: the real tag, with no provider
+    behind it, renders nothing, so the body carries NEITHER marker. Eviction
+    goes through the engine registry, the exact dict ``{% load %}`` and
+    ``views._project_picker_library_registered`` consult, so the render sees
+    "library absent" exactly as a pre-0.22.0 deployment would.
+    """
+    engine = engines["django"].engine
+    previous = engine.template_libraries.pop(_TAG_LIBRARY, None)
+    try:
+        yield
+    finally:
+        if previous is not None:
+            engine.template_libraries[_TAG_LIBRARY] = previous
+
+
 # --- the load lives in the partial, and nowhere else -----------------------
 
 
@@ -324,10 +346,17 @@ def test_the_standalone_form_still_answers_when_the_sdk_library_is_absent():
     assert _STANDALONE_MARKER in body
 
 
-def test_a_host_provider_cannot_conjure_the_sdk_picker_without_the_library():
+def test_a_host_provider_cannot_conjure_the_sdk_picker_without_the_library(
+    no_sdk_library,  # noqa: ARG001 - the fixture IS the arrangement (eviction)
+):
     """The library half is NOT overridable, and it has to be: a caller that
     claims a host provider while the library is missing would otherwise rebuild
-    the compile-time crash this fix removes."""
+    the compile-time crash this fix removes.
+
+    The fixture evicts the library first: the premise is "without the
+    library", and on an SDK that ships it (0.22.0+) only an eviction makes
+    that true.
+    """
     # Arrange
     state = _state(pb.NO_PROJECT, projects=("proj-alpha",))
     # Act
