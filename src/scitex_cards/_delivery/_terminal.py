@@ -23,12 +23,12 @@ with extra steps.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from pathlib import Path
 
 from ._ledger import _KEY_SEP, TERMINAL_STATUS, Ledger
 
-logger = logging.getLogger("scitex_cards.delivery.notifyd")
+logger = slogging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Default cadence (in ticks) for the throttled terminal-miss re-report.
 DEFAULT_TERMINAL_REPORT_EVERY = 10

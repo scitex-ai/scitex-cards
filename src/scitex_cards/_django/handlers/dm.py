@@ -52,7 +52,7 @@ of the board uses, so tests drive a real tmp store.
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -70,7 +70,7 @@ from scitex_cards._dm import receipt_state as _dm_receipt_state
 from scitex_cards._dm import write as _dm_write
 from scitex_cards._threads import OPERATOR_NAME
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def _store_of(request: HttpRequest):

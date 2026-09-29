@@ -40,12 +40,12 @@ producer is never broken by emit.
 from __future__ import annotations
 
 import dataclasses
-import logging
+import scitex_logging as slogging
 from typing import Any, Iterable
 
 from ._store import _utc_now_iso
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 #: Stable envelope discriminator. Every dict produced by

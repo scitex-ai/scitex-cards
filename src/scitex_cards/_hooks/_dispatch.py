@@ -91,9 +91,9 @@ def dispatch_event(
 
             notify_summary = dispatch_notifications(event, store=store)
         except Exception:  # noqa: BLE001 — notify must never break the producer
-            import logging
+            import scitex_logging as slogging
 
-            logging.getLogger(__name__).warning(
+            slogging.getLogger(__name__).warning(
                 "scitex_cards._hooks: card-event notify dispatch failed",
                 exc_info=True,
             )

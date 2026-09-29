@@ -12,11 +12,11 @@ channel every user can be given without any external configuration.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 
 from .._channel import DeliveryResult, Status
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 class LogChannel:

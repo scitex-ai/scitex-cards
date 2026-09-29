@@ -44,7 +44,7 @@ See :class:`BoardState`.
 """
 
 import glob
-import logging
+import scitex_logging as slogging
 import os
 import threading
 import time
@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 # In-process cache: store_path_str -> (BoardState, last_access_time)
 _board_cache: Dict[str, Tuple["BoardState", float]] = {}

@@ -38,7 +38,7 @@ delivery sink and works with no external runtime present.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 import os
 import secrets
 from pathlib import Path
@@ -47,7 +47,7 @@ from typing import Any
 from ._model import _store_lock
 from ._paths import local_store_path
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Top-level store key holding the per-recipient inboxes mapping.
 _INBOXES_KEY = "inboxes"

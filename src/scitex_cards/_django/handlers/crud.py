@@ -24,13 +24,13 @@ mutation surfaces as a 400 rather than corrupting the store.
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 import os
 import re
 
 from django.http import JsonResponse
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 # Fields a client may set on create / patch on update. ``id`` is server-owned
 # (generated on create, immutable on update) so it is deliberately excluded.

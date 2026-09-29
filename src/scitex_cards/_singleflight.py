@@ -34,14 +34,14 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Iterator, Optional, TextIO
 
 from ._paths import runtime_dir
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Lockfile basename for the ``print-stats --notify`` single-instance guard.
 NOTIFY_LOCK_NAME = "print-stats-notify.lock"

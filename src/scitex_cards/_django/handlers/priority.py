@@ -13,11 +13,11 @@ its hand-written comments via the ruamel writer).
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 
 from django.http import JsonResponse
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def handle_priority(request, board):

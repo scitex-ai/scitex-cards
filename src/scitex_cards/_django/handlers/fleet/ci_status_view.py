@@ -30,7 +30,7 @@ per-repo); CONFIG failure DOES (the whole strip is unconfigurable).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 
 from django.http import JsonResponse
 
@@ -38,7 +38,7 @@ from ._config import fleet_config_load
 from ._errors import FleetAdapterError
 from .gh_ci import fetch_many_ci_status
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def fleet_ci_status_view(request):  # noqa: ARG001 — request unused (GET only)

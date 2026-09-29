@@ -29,10 +29,10 @@ separate card.
 from __future__ import annotations
 
 import json
-import logging
+import scitex_logging as slogging
 import os
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 ENV_MAP = "SCITEX_CARDS_AGENT_TURN_URLS"
 PER_AGENT_PREFIX = "SCITEX_CARDS_TURN_URL_"

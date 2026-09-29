@@ -64,6 +64,8 @@ from __future__ import annotations
 
 import re
 
+from ._output import write_content
+
 #: Branch ``<type>`` prefixes the fleet's git hooks enforce. A branch
 #: must start with one of these followed by ``/`` for the remainder to be
 #: considered a candidate card id. (Mirrors the set documented in the
@@ -332,7 +334,11 @@ def _main(argv: list[str] | None = None) -> int:
         message = _read(rest[1] if len(rest) > 1 else None)
         card_id = resolve_card_id(branch, message)
         if card_id:
-            print(card_id)
+            # The hook does `card_id=$(… card-id …)`: the bare id IS the
+            # product line, so it is emitted through the content-rendering
+            # contract rather than the logger (which writes to stderr and
+            # prepends a level prefix).
+            write_content(card_id)
         return 0
 
     if mode == "emit-event":

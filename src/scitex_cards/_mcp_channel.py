@@ -49,7 +49,7 @@ that must not receive unsolicited pushes: just do not export the id for them.
 from __future__ import annotations
 
 import asyncio
-import logging
+import scitex_logging as slogging
 import os
 from typing import Any, Awaitable, Callable
 
@@ -76,7 +76,7 @@ from ._channel_tick_timing import TickTimer, format_inconsistency, format_spans
 # `_inbox_receipt` for what the MCP transport can and cannot tell us.
 from ._inbox_receipt import record_push
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Env var overriding ``meta.source`` (the ``<- scards`` render name)
 #: when ``--name`` is not passed explicitly. Precedence: CLI > env > default.

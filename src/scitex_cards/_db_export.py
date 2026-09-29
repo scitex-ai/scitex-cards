@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from ._backend_connect import StoreConnection
 
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 from typing import Any
@@ -37,7 +37,7 @@ from typing import Any
 from ._db import open_db
 from ._db_payload import card_from_payload
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: (table, mutable-column overlays applied on top of the verbatim payload)
 _OVERLAYS: dict[str, tuple[str, ...]] = {

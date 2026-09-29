@@ -21,13 +21,13 @@ validated 1..5 fail-loud by the verb (a bad axis surfaces as 400).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 
 from django.http import JsonResponse
 
 from .crud import _parse_body
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 # The matrix is the human instrument (ADR-0011 §8: "humans update by
 # DRAGGING"), so a drag is attributed to the operator, not to the GUI

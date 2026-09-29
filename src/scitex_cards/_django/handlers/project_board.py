@@ -42,7 +42,7 @@ MVP with the tenancy off, which is the one way it must never ship.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -50,7 +50,7 @@ from uuid import uuid4
 
 from ..._project_board_query import DEFAULT_ROW_LIMIT
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: The page's terminal states. Each is DISTINCT because the operator-facing
 #: contract in Hub PR #923 requires them to be, and because they need different

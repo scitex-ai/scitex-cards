@@ -16,7 +16,7 @@ stops being a trap.
 from __future__ import annotations
 
 import datetime
-import logging
+import scitex_logging as slogging
 import os
 
 from django.http import JsonResponse
@@ -24,7 +24,7 @@ from django.http import JsonResponse
 from ..._comment_ids import stamp_comment_id
 from .crud import _parse_body
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 
 def handle_reopen(request, board):

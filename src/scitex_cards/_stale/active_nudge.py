@@ -81,7 +81,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 
@@ -96,7 +96,7 @@ from .active import (
 )
 from scitex_cards._throughput import _now_utc, _parse_iso
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 ENV_EMIT_HOOK = "SCITEX_CARDS_STALE_ACTIVE_EMIT_HOOK"
 

@@ -21,11 +21,11 @@ not data — keeps its project-override layer in :mod:`scitex_cards._config`.
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: package short name (``scitex-cards`` with the ``scitex-`` prefix stripped).
 #: It names the user-scope directory: ``~/.scitex/<PKG_SHORT>``.

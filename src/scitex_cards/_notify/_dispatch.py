@@ -69,10 +69,10 @@ no monkeypatch of the wire (STX-NM / PA-306-compliant).
 
 from __future__ import annotations
 
-import logging
+import scitex_logging as slogging
 from typing import Any, Callable, Mapping
 
-logger = logging.getLogger(__name__)
+logger = slogging.getLogger(__name__)
 
 #: Event types we deliberately DO NOT deliver via C4.
 #:

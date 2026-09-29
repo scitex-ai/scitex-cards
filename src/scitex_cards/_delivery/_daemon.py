@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import fcntl
-import logging
+import scitex_logging as slogging
 import os
 import signal
 import threading
@@ -84,7 +84,7 @@ from ._terminal import (
 from ._terminal import report_terminal_if_due as _report_terminal_if_due
 from ._tick import DEFAULT_ESCALATE_AFTER, build_report, fault_text
 
-logger = logging.getLogger("scitex_cards.delivery.notifyd")
+logger = slogging.getLogger("scitex_cards.delivery.notifyd")
 
 #: Default seconds between delivery ticks — ALSO the heartbeat cadence, so it is
 #: defined next to the pidfile format (whose READER needs it to judge freshness)
