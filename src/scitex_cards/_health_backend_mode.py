@@ -27,10 +27,10 @@ configuration, and a knob here would be a fallback wearing a switch.
 
 from __future__ import annotations
 
-from ._store_url import describe_store_target
-
 from pathlib import Path
 from typing import Any
+
+from ._store_url import describe_store_target
 
 #: What the card store is on, and what the inbox rail is on, as short tokens.
 POSTGRES = "postgres"
@@ -146,7 +146,7 @@ def check_backend_mode(store: str | Path | None = None) -> dict[str, Any]:
                 f"{store_mode} ({describe_store_target(target)}, chosen by {source}). {inbox_where}"
             ),
             "hint": (
-                f"point $SCITEX_STORE_DSN at a postgresql://...:55432/... DSN. "
+                "point $SCITEX_STORE_DSN at a postgresql://...:55432/... DSN. "
                 "There is no fallback rail to select for a store target that "
                 "names no store (operator ruling 2026-08-23)."
             ),

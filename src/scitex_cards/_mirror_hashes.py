@@ -29,7 +29,6 @@ import json
 # module a PostgreSQL connection.
 from ._schema_probe import row_values
 
-
 #: Per-card content hashes, so a write can tell what actually changed.
 HASH_TABLE = "mirror_hashes"
 

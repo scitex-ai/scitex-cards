@@ -24,8 +24,7 @@ hosts the log merges by union with no arbitration — where a mutable
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
     from .._backend_connect import StoreConnection
@@ -34,10 +33,10 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
-from .._schema_probe import _sole_value
-
 import json
 from pathlib import Path
+
+from .._schema_probe import _sole_value
 
 #: Current membership: the LATEST event per ``(thread_id, member)``.
 #:

@@ -33,7 +33,7 @@ unit the read path wires in next.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 #: The row fields that mark a card as "owned by" a principal. A card is visible
 #: to user U if U appears in ANY of these fields. Kept as data (not scattered

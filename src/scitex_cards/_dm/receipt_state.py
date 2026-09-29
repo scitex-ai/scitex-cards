@@ -71,13 +71,12 @@ if TYPE_CHECKING:  # annotations only -- no driver is imported at runtime
 
 from pathlib import Path
 
-from .read import CURRENT_MEMBERS_SQL, _open
-
 # Shape-agnostic row access. psycopg's dict_row is a real dict and raises
 # KeyError on a positional index, and since #693 open_db can hand this
 # module a PostgreSQL connection. _schema_probe imports nothing from this
 # package, so a module-level import here cannot cycle.
 from .._schema_probe import _sole_value, row_values
+from .read import CURRENT_MEMBERS_SQL, _open
 
 #: Durable, and no recipient has confirmed it yet. The read dot stays hollow.
 STATE_PENDING = "pending"

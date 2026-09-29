@@ -27,7 +27,7 @@ dangerous mode is the one you have to ask for.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol
+from typing import Mapping, Protocol
 
 from ._decide import Side, Verdict, decide
 

@@ -8,11 +8,9 @@ PNG) ships today. See the project roadmap for org and Web-UI adapters.
 
 Quick Start
 -----------
->>> import scitex_cards as card
->>> tasks = card.load_tasks()                    # doctest: +SKIP
->>> src = card.build_mermaid(tasks)              # doctest: +SKIP
->>> card.render(src, "tasks.png")                # doctest: +SKIP
-'mmdc'
+>>> import scitex_cards as cards
+>>> cards.add_task(None, id="c1", title="Wire the notify rail")  # doctest: +SKIP
+>>> cards.list_tasks(None, status="in_progress")                 # doctest: +SKIP
 """
 
 from __future__ import annotations
