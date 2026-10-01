@@ -31,8 +31,7 @@
     "python": [
       "scitex-cards",
       "django",
-      "scitex-app",
-      "scitex-ui"
+      "scitex-sdk"
     ]
   },
   "url": "apps/cards/",

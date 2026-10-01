@@ -138,8 +138,8 @@ _DM_ALIASES = ("chat", "dm")
 
 def _cards_shell_context(request, api_base: str) -> dict[str, object]:
     """Build the shared SciTeX app shell context for either Cards page."""
-    from scitex_ui.branding import shell_context
-    from scitex_ui.mount import mount_context
+    from scitex_sdk.ui.branding import shell_context
+    from scitex_sdk.ui.mount import mount_context
 
     from ._user_scope import current_user
 
