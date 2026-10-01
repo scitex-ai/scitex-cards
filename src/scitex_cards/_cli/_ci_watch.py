@@ -67,8 +67,11 @@ from pathlib import Path
 from typing import Any
 
 import click
+import scitex_logging as slogging
 
 from ._compat import deprecated_alias, spec_command_kwargs
+
+logger = slogging.getLogger(__name__)
 
 
 def register(main: click.Group) -> None:
@@ -106,7 +109,8 @@ def classify_transition(
     ``96afacc7``).
     """
     cur_overall = current.get("overall") or "unknown"
-    _cur_head = current.get("head_sha") or ""  # part of the (head_sha, overall) key; read by callers, not here
+    # Part of the (head_sha, overall) key; read by callers, not here.
+    _cur_head = current.get("head_sha") or ""
     if prior is None:
         return "first-seen"
     prior_overall = prior.get("overall") or "unknown"
@@ -207,7 +211,8 @@ def save_state(state: dict[str, dict[str, Any]], path: Path | None = None) -> No
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Print the planned per-repo transition + summary without writing the state cache.",
+    help="Print the planned per-repo transition + summary "
+    "without writing the state cache.",
 )
 def watch_ci_cmd(once: bool, interval: int, dry_run: bool) -> None:
     """Poll GH CI for every configured repo + record transitions."""
@@ -231,7 +236,7 @@ def _run_one_sweep(*, dry_run: bool) -> dict[str, int]:
     try:
         cfg = fleet_config_load()
     except Exception as exc:  # noqa: BLE001
-        click.echo(f"# watch-ci: config load failed: {exc}", err=True)
+        logger.error("# watch-ci: config load failed: %s", exc)
         return {"agents": 0, "errors": 1, "transitions": 0}
     repos = list(((cfg.get("fleet") or {}).get("ci_status") or {}).get("repos") or [])
     state = load_state()
@@ -239,22 +244,19 @@ def _run_one_sweep(*, dry_run: bool) -> dict[str, int]:
     errors = 0
     for slug in repos:
         if not isinstance(slug, str) or "/" not in slug:
-            click.echo(f"# watch-ci: skipping invalid slug {slug!r}", err=True)
+            logger.warning("# watch-ci: skipping invalid slug %r", slug)
             continue
         try:
             current = fetch_repo_ci_status(slug)
         except FleetAdapterError as exc:
-            click.echo(f"# watch-ci: {slug} adapter error: {exc}", err=True)
+            logger.error("# watch-ci: %s adapter error: %s", slug, exc)
             errors += 1
             continue
         prior = state.get(slug)
         label = classify_transition(prior, current)
         head_sha = (current.get("head_sha") or "")[:10]
         overall = current.get("overall") or "unknown"
-        click.echo(
-            f"# watch-ci: {slug} @ {head_sha} → {overall} ({label})",
-            err=True,
-        )
+        logger.info("# watch-ci: %s @ %s → %s (%s)", slug, head_sha, overall, label)
         if label != "unchanged":
             transitions += 1
             state[slug] = {
@@ -268,12 +270,14 @@ def _run_one_sweep(*, dry_run: bool) -> dict[str, int]:
         try:
             save_state(state)
         except OSError as exc:
-            click.echo(f"# watch-ci: state save failed: {exc}", err=True)
+            logger.error("# watch-ci: state save failed: %s", exc)
             errors += 1
-    click.echo(
-        f"# watch-ci: repos={len(repos)} transitions={transitions} "
-        f"errors={errors} dry_run={dry_run}",
-        err=True,
+    logger.info(
+        "# watch-ci: repos=%s transitions=%s errors=%s dry_run=%s",
+        len(repos),
+        transitions,
+        errors,
+        dry_run,
     )
     return {"agents": len(repos), "errors": errors, "transitions": transitions}
 
