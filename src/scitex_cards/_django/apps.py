@@ -9,7 +9,7 @@ functional without a hard scitex-app dependency.
 """
 
 try:
-    from scitex_app._django import ScitexAppConfig
+    from scitex_sdk.app._django import ScitexAppConfig
 except ImportError:  # scitex-app not installed — standalone still works
     from django.apps import AppConfig as ScitexAppConfig
 

@@ -115,16 +115,16 @@ if _extra_hosts:
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
-    "scitex_app",
+    "scitex_sdk.app",
     "scitex_cards._django",
 ]
 
 # Optional: scitex-ui shared shell components (static + templates served via
 # AppDirectoriesFinder). Absent installs fall back to the bare React SPA.
 try:
-    import scitex_ui  # noqa: F401
+    import scitex_sdk.ui as scitex_ui  # noqa: F401
 
-    INSTALLED_APPS.append("scitex_ui")
+    INSTALLED_APPS.append("scitex_sdk.ui")
 except ImportError:
     pass
 
@@ -169,9 +169,9 @@ TEMPLATES = [
 # processor sets the gating flag it checks. Guard on the module actually
 # existing (scitex-ui>=0.5.0) rather than just scitex-ui being installed,
 # so an older scitex-ui degrades gracefully instead of raising on import.
-if importlib.util.find_spec("scitex_ui.context_processors") is not None:
+if importlib.util.find_spec("scitex_sdk.ui.context_processors") is not None:
     TEMPLATES[0]["OPTIONS"]["context_processors"].append(
-        "scitex_ui.context_processors.element_inspector"
+        "scitex_sdk.ui.context_processors.element_inspector"
     )
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

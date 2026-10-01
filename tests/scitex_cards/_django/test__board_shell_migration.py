@@ -59,12 +59,12 @@ from django.test import RequestFactory  # noqa: E402
 _PAGES = ("scitex_cards/standalone.html", "scitex_cards/board_v3.html")
 
 #: The shell the migration points at, and the block our pages must override.
-_SHELL = "scitex_app/app_shell.html"
+_SHELL = 'scitex_sdk/app/app_shell.html'
 _NEW_BLOCK = "scitex_app_content"
 _RETIRED_BLOCK = "app_content"
 
 #: The retired scitex-ui shell the pages used to extend.
-_OLD_SHELL = "scitex_ui/standalone_shell.html"
+_OLD_SHELL = 'scitex_sdk/ui/standalone_shell.html'
 
 _EXTENDS = re.compile(r"""\{%[-\s]*extends\s+['"]([^'"]+)['"]""")
 _BLOCK = re.compile(r"""\{%[-\s]*block\s+([A-Za-z0-9_]+)""")
@@ -196,7 +196,7 @@ def test_scitex_app_is_registered_in_installed_apps() -> None:
     # Arrange
     installed = settings.INSTALLED_APPS
     # Act
-    present = "scitex_app" in installed
+    present = 'scitex_sdk.app' in installed
     # Assert
     assert present, (
         f"INSTALLED_APPS={installed!r} does not register `scitex_app`; the "
