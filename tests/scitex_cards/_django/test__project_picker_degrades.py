@@ -173,12 +173,17 @@ class _StubLibrary:
         return mark_safe(fragment)  # noqa: S308 - a literal this test controls
 
 
-#: ONE stub for the whole module, deliberately. Django's cached template loader
-#: keeps the COMPILED partial, and a compiled ``{% include %}`` node holds the
-#: tag function object it resolved at compile time — so a fresh stub per test
-#: would leave the cached template calling the previous instance and a call
-#: counter that never moves. The fixture clears the record instead.
+#: The fixture resets compiled templates as it swaps this library, so a partial
+#: compiled by another test cannot keep calling that test's SDK tag function.
 _STUB = _StubLibrary()
+
+
+def _reset_template_loaders(engine):
+    """Discard compiled tag functions when a fixture changes their registry."""
+    for loader in engine.template_loaders:
+        reset = getattr(loader, "reset", None)
+        if reset is not None:
+            reset()
 
 
 @pytest.fixture
@@ -206,6 +211,7 @@ def sdk_library():
     import types
 
     engine = engines["django"].engine
+    previous_library = engine.template_libraries.get(_TAG_LIBRARY)
     previous_module = sys.modules.get("scitex_ui.project_scope")
     stub_sdk = types.ModuleType("scitex_ui.project_scope")
 
@@ -243,14 +249,19 @@ def sdk_library():
     _STUB.calls.clear()
     engine.template_libraries[_TAG_LIBRARY] = _STUB.library
     sys.modules["scitex_ui.project_scope"] = stub_sdk
+    _reset_template_loaders(engine)
     try:
         yield _STUB
     finally:
-        engine.template_libraries.pop(_TAG_LIBRARY, None)
+        if previous_library is None:
+            engine.template_libraries.pop(_TAG_LIBRARY, None)
+        else:
+            engine.template_libraries[_TAG_LIBRARY] = previous_library
         if previous_module is None:
             sys.modules.pop("scitex_ui.project_scope", None)
         else:
             sys.modules["scitex_ui.project_scope"] = previous_module
+        _reset_template_loaders(engine)
 
 
 @pytest.fixture
@@ -268,11 +279,13 @@ def no_sdk_library():
     """
     engine = engines["django"].engine
     previous = engine.template_libraries.pop(_TAG_LIBRARY, None)
+    _reset_template_loaders(engine)
     try:
         yield
     finally:
         if previous is not None:
             engine.template_libraries[_TAG_LIBRARY] = previous
+        _reset_template_loaders(engine)
 
 
 # --- the load lives in the partial, and nowhere else -----------------------
@@ -476,7 +489,9 @@ def test_the_picker_flag_follows_the_engine_registry(sdk_library):  # noqa: ARG0
     assert registered
 
 
-def test_the_flag_is_false_when_the_library_is_not_registered():
+def test_the_flag_is_false_when_the_library_is_not_registered(
+    no_sdk_library,  # noqa: ARG001 - establish absence on SDKs that ship it
+):
     """The other half of the same claim, and the state this host is in."""
     # Arrange
     # Act
