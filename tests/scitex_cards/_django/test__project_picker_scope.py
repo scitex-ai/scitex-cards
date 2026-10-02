@@ -89,44 +89,58 @@ def _canonical(context, request):
 @pytest.mark.parametrize("active", ["board", "dm"])
 @pytest.mark.parametrize("scope", [MISSING, "user", "", "project"])
 def test_shared_header_follows_real_canonical_scope(real_picker, active, scope):
+    # Arrange
     request = _request()
     context = _context(scope, active=active)
     canonical = _canonical(context, request)
+    # Act
     html = render_to_string("scitex_cards/_page_header.html", context, request=request)
-    assert html.count(PICKER) == int(bool(canonical))
-    assert html.count(SLOT) == int(bool(canonical))
-    if canonical:
-        assert canonical in html
+    # Assert
+    assert (html.count(PICKER), html.count(SLOT), canonical in html) == (
+        int(bool(canonical)), int(bool(canonical)), True
+    )
 
 
 @pytest.mark.parametrize("scope", [MISSING, "user", "project"])
 def test_signed_out_header_has_no_empty_added_slot(real_picker, scope):
+    # Arrange
+    context = _context(scope)
+    request = _request(False)
+    # Act
     html = render_to_string(
-        "scitex_cards/_page_header.html", _context(scope), request=_request(False)
+        "scitex_cards/_page_header.html", context, request=request
     )
-    assert PICKER not in html
-    assert SLOT not in html
+    # Assert
+    assert (PICKER in html, SLOT in html) == (False, False)
 
 
 def test_project_context_survives_omitted_caller_scope(real_picker):
+    # Arrange
+    context = _context("project", picker_slot=True)
+    request = _request()
+    # Act
     html = render_to_string(
-        "scitex_cards/_project_picker.html",
-        _context("project", picker_slot=True),
-        request=_request(),
+        "scitex_cards/_project_picker.html", context, request=request
     )
+    # Assert
     assert (html.count(PICKER), html.count(SLOT)) == (1, 1)
 
 
 def test_shared_header_does_not_inherit_project_override(real_picker):
+    # Arrange
     request = _request()
     context = _context("user", picker_scope="project")
-    html = render_to_string("scitex_cards/_page_header.html", context, request=request)
     canonical = _canonical(context, request)
-    assert html.count(PICKER) == int(bool(canonical))
-    assert html.count(SLOT) == int(bool(canonical))
+    # Act
+    html = render_to_string("scitex_cards/_page_header.html", context, request=request)
+    # Assert
+    assert (html.count(PICKER), html.count(SLOT)) == (
+        int(bool(canonical)), int(bool(canonical))
+    )
 
 
 def test_distinct_project_board_requests_project_scope(real_picker):
+    # Arrange
     state = pb.BoardState(
         state=pb.NO_PROJECT,
         principal="alice",
@@ -138,32 +152,40 @@ def test_distinct_project_board_requests_project_scope(real_picker):
     # picker is expected; the user-scoped shared header stays canonical.
     request = _request()
     context = _context("user", board=state, host_picker_available=True)
-    html = render_to_string("scitex_cards/project_board.html", context, request=request)
     canonical = _canonical(context, request)
-    assert html.count(PICKER) == 1 + int(bool(canonical))
-    assert html.count(SLOT) == int(bool(canonical))
-    assert 'data-current="A"' in html
+    # Act
+    html = render_to_string("scitex_cards/project_board.html", context, request=request)
+    # Assert
+    assert (html.count(PICKER), html.count(SLOT), 'data-current="A"' in html) == (
+        1 + int(bool(canonical)), int(bool(canonical)), True
+    )
 
 
 def test_provider_absence_does_not_leave_slot(real_picker):
+    # Arrange
+    context = _context("project")
+    request = _request()
+    # Act
     with override_settings(SCITEX_PROJECT_PROVIDER_URL=""):
         html = render_to_string(
-            "scitex_cards/_page_header.html", _context("project"), request=_request()
+            "scitex_cards/_page_header.html", context, request=request
         )
-    assert PICKER not in html
-    assert SLOT not in html
+    # Assert
+    assert (PICKER in html, SLOT in html) == (False, False)
 
 
 def test_missing_library_flag_avoids_compiling_real_partial(real_picker):
+    # Arrange
     engine = engines["django"].engine
     engine.template_libraries.pop("scitex_project_picker")
     for loader in engine.template_loaders:
         if hasattr(loader, "reset"):
             loader.reset()
+    context = _context("project", cards_project_picker_available=False)
+    request = _request()
+    # Act
     html = render_to_string(
-        "scitex_cards/_page_header.html",
-        _context("project", cards_project_picker_available=False),
-        request=_request(),
+        "scitex_cards/_page_header.html", context, request=request
     )
-    assert PICKER not in html
-    assert SLOT not in html
+    # Assert
+    assert (PICKER in html, SLOT in html) == (False, False)
